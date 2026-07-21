@@ -639,22 +639,6 @@ def _pollution_guard(request):
         )
 
 
-def pytest_configure(config):
-    """Register markers used by the isolation fixtures and pollution guard."""
-    config.addinivalue_line(
-        'markers',
-        'allow_pollution: test may legitimately mutate the real '
-        '~/.plan-marshall/credentials/ directory or the tracked .plan/ tree '
-        '(opts out of the autouse PLAN_BASE_DIR and CREDENTIALS_DIR sandboxes '
-        'and the pollution guard).',
-    )
-    config.addinivalue_line(
-        'markers',
-        'xdist_group(name): pin all tests sharing the same group name to a '
-        'single xdist worker (requires --dist=loadgroup).',
-    )
-
-
 @pytest.fixture(autouse=True)
 def _plan_base_dir_sandbox(request, tmp_path_factory, monkeypatch):
     """Default ``PLAN_BASE_DIR`` to a per-test, xdist-worker-safe tmp sandbox.

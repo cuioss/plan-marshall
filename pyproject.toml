@@ -92,6 +92,24 @@ addopts = ["-v", "--tb=short"]
 # used deliberately: the thread method's watchdog leaves the worker in an
 # unclean state on teardown under xdist.
 timeout = 300
+# Custom-marker registry — the SINGLE source of truth for every non-built-in
+# ``@pytest.mark.<name>`` in the suite. Declared here rather than through
+# ``config.addinivalue_line`` in ``test/conftest.py::pytest_configure`` so the
+# registry is data, not code, and so enabling ``--strict-markers`` later needs
+# no relocation. A whole-tree sweep of ``@pytest.mark.<name>`` confirms these
+# two are the complete set of custom markers in use.
+markers = [
+    # ``allow_pollution`` is a DELIBERATE ESCAPE HATCH, retained by design: it
+    # is the single opt-out a test uses when it must exercise the real
+    # credentials path or the real tracked ``.plan/`` tree instead of the
+    # per-test sandboxes. Three autouse fixtures honour it
+    # (``_pollution_guard``, ``_plan_base_dir_sandbox``,
+    # ``_credentials_dir_sandbox``), so it is intentionally NOT a candidate for
+    # removal — a real-tree test has no other way to reach the genuine
+    # resolvers.
+    "allow_pollution: test may legitimately mutate the real ~/.plan-marshall/credentials/ directory or the tracked .plan/ tree (opts out of the autouse PLAN_BASE_DIR and CREDENTIALS_DIR sandboxes and the pollution guard).",
+    "xdist_group(name): pin all tests sharing the same group name to a single xdist worker (requires --dist=loadgroup).",
+]
 
 [tool.coverage.run]
 source = ["marketplace/bundles"]
