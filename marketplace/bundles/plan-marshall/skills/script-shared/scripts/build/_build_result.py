@@ -376,8 +376,6 @@ def assert_truthful_status(result: dict) -> None:
     Raises:
         TruthfulStatusError: When status is success but exit_code != 0.
     """
-    if not isinstance(result, dict):
-        return
     if result.get('status') == STATUS_SUCCESS and result.get('exit_code', 0) != 0:
         raise TruthfulStatusError(
             f"truthful-status violation: result reports status='success' with "
