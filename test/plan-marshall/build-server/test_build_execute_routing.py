@@ -403,18 +403,29 @@ def _run_args(**overrides) -> Namespace:
     return Namespace(**base)
 
 
-def test_cmd_run_routes_and_takes_no_fallback_slot(monkeypatch):
-    canned = {'status': 'success', 'exit_code': 0, 'duration_seconds': 1, 'log_file': 'l', 'command': 'c'}
-    monkeypatch.setattr(factory, '_route_to_daemon', lambda *a, **k: (canned, ''))
+def _recording_slot_stub(entered: dict):
+    """A ``build_queue_slot`` stub that only records whether it was entered.
 
-    entered = {'slot': False}
+    Shared by the "routed, no fallback slot" assertions below — those tests
+    care solely about whether the slot context manager was entered, not the
+    ``plan_id`` it was called with (contrast ``_install_in_process_stubs``,
+    whose in-process variant also records ``plan_id``).
+    """
 
     @contextmanager
     def _recording_slot(plan_id, *, routed=False):
         entered['slot'] = True
         yield
 
-    monkeypatch.setattr(factory, 'build_queue_slot', _recording_slot)
+    return _recording_slot
+
+
+def test_cmd_run_routes_and_takes_no_fallback_slot(monkeypatch):
+    canned = {'status': 'success', 'exit_code': 0, 'duration_seconds': 1, 'log_file': 'l', 'command': 'c'}
+    monkeypatch.setattr(factory, '_route_to_daemon', lambda *a, **k: (canned, ''))
+
+    entered = {'slot': False}
+    monkeypatch.setattr(factory, 'build_queue_slot', _recording_slot_stub(entered))
 
     seen = {}
     monkeypatch.setattr(factory, 'cmd_run_common', lambda **kw: (seen.update(kw), 0)[1])
@@ -556,13 +567,7 @@ def test_cmd_run_daemon_routes_successfully(monkeypatch):
     monkeypatch.setattr(factory, '_route_to_daemon', lambda *a, **k: (canned, ''))
 
     entered = {'slot': False}
-
-    @contextmanager
-    def _recording_slot(plan_id, *, routed=False):
-        entered['slot'] = True
-        yield
-
-    monkeypatch.setattr(factory, 'build_queue_slot', _recording_slot)
+    monkeypatch.setattr(factory, 'build_queue_slot', _recording_slot_stub(entered))
 
     seen: dict = {}
     monkeypatch.setattr(factory, 'cmd_run_common', lambda **kw: (seen.update(kw), 0)[1])
