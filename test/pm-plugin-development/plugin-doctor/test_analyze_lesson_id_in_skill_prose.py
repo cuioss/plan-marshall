@@ -65,6 +65,10 @@ Test layers:
   * (j) Inline-marker removal guard — the analyzer source references none of
         the retired ``_SUPPRESS_MARKER`` / ``_IGNORE_MARKER`` / ``doctor-ignore``
         markers.
+  * (k) Housekeeping promotion-form executable contract — the promote-then-
+        retire artifact the lessons-housekeeping finalize step prescribes
+        (a durable rule with tombstone-only provenance) lints clean, while the
+        retired citation-bearing form still produces a finding.
 """
 
 from pathlib import Path
@@ -905,6 +909,89 @@ class TestSuppressionAwareAllowlist:
             encoding='utf-8',
         )
         findings = analyze_lesson_id_in_skill_prose(tmp_path)
+        assert len(findings) == 1
+        assert findings[0]['rule_id'] == RULE_ID
+
+
+# ===========================================================================
+# (k) Housekeeping promotion-form executable contract
+# ===========================================================================
+
+
+class TestHousekeepingPromotionForm:
+    """The promote-then-retire artifact this rule governs must lint clean.
+
+    The lessons-housekeeping finalize step promotes a completely-covered
+    lesson's durable residue into a governing skill's ``standards/*.md`` before
+    retiring the lesson. Provenance is carried by the retirement tombstone's
+    ``--reason`` and the decision-log entry — NOT by an in-prose citation,
+    which this very rule rejects in exactly that scope. These two cases are the
+    executable contract pinning that reconciliation: the prescribed promotion
+    form produces zero findings, and the pre-reconciliation citation-bearing
+    form still produces one (so the positive case cannot pass vacuously).
+    """
+
+    _PROMOTED_RULE_BODY = (
+        '# Worktree Handling\n'
+        '\n'
+        '## Never judge a merge lock stale from a worktree-scoped store\n'
+        '\n'
+        'Query the main checkout when deciding whether a merge lock is stale.\n'
+        'An empty worktree-scoped store means "unknown", never "stale" — a\n'
+        'fail-closed verdict is the only safe reading.\n'
+    )
+
+    def test_housekeeping_promotion_form_produces_no_finding(
+        self, tmp_path: Path
+    ) -> None:
+        """A durable rule with tombstone-only provenance lints clean.
+
+        This is the artifact shape the reconciled Step 4b procedure prescribes:
+        the rule is written in the host doc's voice, and carries no lesson
+        identifier anywhere in its prose.
+        """
+        std_dir = (
+            tmp_path
+            / 'plan-marshall'
+            / 'skills'
+            / 'workflow-integration-git'
+            / 'standards'
+        )
+        std_dir.mkdir(parents=True)
+        (std_dir / 'worktree-handling.md').write_text(
+            self._PROMOTED_RULE_BODY, encoding='utf-8'
+        )
+
+        findings = analyze_lesson_id_in_skill_prose(tmp_path)
+
+        assert findings == []
+
+    def test_pre_reconciliation_citation_form_still_produces_finding(
+        self, tmp_path: Path
+    ) -> None:
+        """The negative companion: the retired citation form is still flagged.
+
+        The pre-reconciliation procedure appended a
+        ``(promoted from lesson {id})`` cross-reference to the promoted rule.
+        That form must still trip the rule — otherwise the positive case above
+        would pass for the wrong reason.
+        """
+        std_dir = (
+            tmp_path
+            / 'plan-marshall'
+            / 'skills'
+            / 'workflow-integration-git'
+            / 'standards'
+        )
+        std_dir.mkdir(parents=True)
+        (std_dir / 'worktree-handling.md').write_text(
+            self._PROMOTED_RULE_BODY
+            + '\n(promoted from lesson 2026-07-21-10-001)\n',
+            encoding='utf-8',
+        )
+
+        findings = analyze_lesson_id_in_skill_prose(tmp_path)
+
         assert len(findings) == 1
         assert findings[0]['rule_id'] == RULE_ID
 

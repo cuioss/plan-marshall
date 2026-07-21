@@ -101,6 +101,7 @@ _DESCRIPTOR_MODULES: tuple[str, ...] = (
     '_analyze_manage_invocation',
     '_analyze_markdown',
     '_analyze_metadata_field_validity',
+    '_analyze_mutates_source_order',
     '_analyze_notation_staleness',
     '_analyze_orphan_argparse_flags',
     '_analyze_persona_binding_resolves',

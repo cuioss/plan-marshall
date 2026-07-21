@@ -9,7 +9,8 @@ description: Finalize-phase wrapper that reconciles the just-finished plan's out
 user-invocable: false
 mode: workflow
 allowed-tools: Bash, Read, Edit
-order: 996
+order: 4
+mutates_source: true
 default_on: false
 presets: []
 implements: plan-marshall:extension-api/standards/ext-point-finalize-step
@@ -22,7 +23,7 @@ implements: plan-marshall:extension-api/standards/ext-point-finalize-step
 Perform lessons-learned housekeeping after a plan finishes. Reason from the just-completed plan's outcome (what it changed, what it codified, which failure modes it eliminated) about the standing lessons-learned corpus, reconciling it into an actionable-by-construction queue rather than running a plain remove/trim pass:
 
 - **Remove** lessons the plan made wholly redundant — the guarded failure mode can no longer occur, or the recommended practice is now codified/enforced, and no durable reusable rule remains to relocate.
-- **Promote-then-retire** lessons that are completely covered *and* whose residue is a durable reusable rule — promote that rule into the governing skill's `standards/`/`references/` (or `CLAUDE.md` for repo-wide rules), cross-referencing the originating lesson id, then tombstone + remove the now-promoted lesson.
+- **Promote-then-retire** lessons that are completely covered *and* whose residue is a durable reusable rule — promote that rule into the governing skill's `standards/`/`references/` (or `CLAUDE.md` for repo-wide rules), then tombstone + remove the now-promoted lesson.
 - **Trim** lessons the plan made only partly redundant, removing the now-covered portion while preserving the still-relevant guidance.
 - **Retain** everything else, biasing toward retention whenever coverage is ambiguous.
 
@@ -37,7 +38,12 @@ Accepts the standard finalize-step arguments:
 - `--plan-id` — plan identifier (required, used to read the plan outcome and to scope decision-log entries)
 - `--iteration` — finalize iteration counter (accepted for contract compliance, no effect)
 
-MUST be ordered **after** `plan-marshall:plan-retrospective` (order 995) — the retrospective produces the `quality-verification-report.md` this step reads — and **before** `default:finalize-step-print-phase-breakdown` (order 997).
+This step edits tracked source (its Step 4b promotions write governing-skill docs), so it declares `mutates_source: true` and MUST run in the **pre-merge settle band** (`order < 10`):
+
+- **before `default:pre-push-quality-gate` (5)** — so its promotion edits are linted in the same finalize run that wrote them, rather than surfacing as a lint failure on a later plan.
+- **before `default:push` (10) and `default:branch-cleanup` (70)** — so those edits are pushable onto the still-open feature branch and covered by the PR's CI run and review.
+
+This settle-band constraint **supersedes** the former requirement to run after `plan-marshall:plan-retrospective` (order 995): pushability of source edits outranks reading a retrospective artifact that this step already treats as best-effort. See [marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/source-edit-pushability.md](../../../marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/source-edit-pushability.md) for the governing contract.
 
 ## Direct-file-access allowance
 
@@ -54,13 +60,15 @@ The exception is deliberately narrow:
 
 The canonical phase-6-finalize chain (resolved by each step's `order:` frontmatter):
 
+```text
+default:finalize-step-sync-baseline             (3)
+project:finalize-step-lessons-housekeeping      (4)    <-- this step
+default:pre-push-quality-gate                   (5)
+...                                             (settle band, order < 10)
+default:push                                    (10)
 ```
-default:record-metrics                          (990)
-plan-marshall:plan-retrospective                (995)
-project:finalize-step-lessons-housekeeping      (996)   <-- this step
-default:finalize-step-print-phase-breakdown     (997)
-default:archive-plan                            (1000)
-```
+
+The step runs inside the pre-merge settle band, so its promotion edits are linted by `default:pre-push-quality-gate` and shipped by the single `default:push` barrier. The step itself issues **no git call** and invents no push path: the dispatcher's commit instrumentation (phase-6-finalize Step 3 item 5f) commits every settle-band mutating step's edits onto the feature branch before the barrier runs.
 
 ## Workflow
 
@@ -76,7 +84,7 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-
   --plan-id {plan_id}
 ```
 
-Read the retrospective's quality-verification report (written by `plan-marshall:plan-retrospective`, order 995):
+Read the retrospective's quality-verification report (written by `plan-marshall:plan-retrospective`, order 995). At this step's settle-band order the retrospective has not yet run, so this read is **best-effort**: the report is normally absent, and its absence is already non-fatal — see the "Missing `quality-verification-report.md`" row in Error Handling, which proceeds on `request.md` + `modified_files` alone.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-files:manage-files read \
@@ -146,13 +154,15 @@ This writes a tombstone — the removal stays auditable. The owning `{plan_id}` 
 
 For each lesson classified **completely covered, residue is a reusable rule**, promote the residue into its load-bearing home *before* retiring the lesson — never the reverse, so the rule is never momentarily lost:
 
-1. **Promote** the reusable rule into the home selected by the **Placement test** — the governing skill's `standards/*.md` / `references/*.md` (or `CLAUDE.md` for repo-wide rules) — using the `Edit` tool, cross-referencing the originating lesson id so the promoted rule's provenance stays traceable:
+1. **Promote** the reusable rule into the home selected by the **Placement test** — the governing skill's `standards/*.md` / `references/*.md` (or `CLAUDE.md` for repo-wide rules) — using the `Edit` tool:
 
-   ```
+   ```text
    Edit: marketplace/bundles/{bundle}/skills/{skill}/standards/{file}.md   (or references/{file}.md, or CLAUDE.md)
    ```
 
-   Write the rule as a durable standard in the host doc's voice (not a transcription of the lesson record) and include a short `(extends lesson {id})` / `(promoted from lesson {id})` cross-reference.
+   Write the rule as a durable standard in the host doc's voice (not a transcription of the lesson record).
+
+   The promoted rule MUST NOT embed a lesson identifier in its prose: the plugin-doctor `no-lesson-id-in-skill-prose` rule — build-failing under `quality-gate` — rejects exactly that citation shape in exactly the `standards/` / `references/` scope this step writes to. Provenance is already recoverable without an in-prose citation, from the Step 4b.2 tombstone's `--reason "residue promoted to {target}"` plus the Step 6 decision-log entry naming the retired lesson. A citation-bearing promotion is therefore an authoring error to be written correctly the first time, not a finding to suppress.
 
 2. **Retire** the now-promoted lesson via the tombstone-writing `remove` verb — never by deleting the file:
 
@@ -169,7 +179,7 @@ Keep the bias-to-retain posture: Step 4b fires only when the residue clearly map
 
 Use the `Edit` tool directly against the lesson body:
 
-```
+```text
 Edit: .plan/local/lessons-learned/{id}.md
 ```
 
@@ -201,6 +211,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 | Coverage ambiguous (including ambiguous residue home) | Retain the lesson untouched (bias to retain) and log the no-action decision via `manage-logging decision` |
 | `manage-lessons remove` failure on one lesson | Non-fatal — log the failure, leave that lesson in place, and continue with the remaining lessons. Housekeeping must never block finalize. |
 | Promotion `Edit` failure (Step 4b.1) on one lesson | Non-fatal — log the failure, leave the lesson in place, and **do NOT** proceed to the Step 4b.2 retirement for that lesson. A retirement without a successful promotion would lose the rule, so the two stay atomic-by-convention: no promotion, no retire. Continue with the remaining lessons. |
+| Promote-then-retire disposition — commit carriage | The step issues no git call. Its promotion edits are committed onto the feature branch by the dispatcher's commit instrumentation (phase-6-finalize Step 3 item 5f); because the step runs in the settle band it never writes source after the push barrier, every promotion edit it makes is still ahead of that commit and is therefore carried onto the branch — no promotion can be stranded as an uncommitted edit. |
 | Adaptation `Edit` failure on one lesson | Non-fatal — log the failure, leave that lesson untouched, and continue. |
 | Missing `quality-verification-report.md` | Non-fatal — proceed using `request.md` + `modified_files` alone; log that the retrospective report was unavailable |
 | Step completes | Record `mark-step-done --outcome done --display-detail "{N} removed, {P} promoted, {M} adapted, {K} retained"` |
