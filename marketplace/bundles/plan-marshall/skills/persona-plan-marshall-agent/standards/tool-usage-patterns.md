@@ -295,6 +295,13 @@ Bash(command="sleep 180")
 Bash(command="python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr wait-for-comments --pr-number N --timeout 180")
 ```
 
+The canonical waiting standard is
+[`plan-marshall:plan-marshall/standards/waiting.md`](../../plan-marshall/standards/waiting.md)
+— when to wait, which component may hold a wait, the terminal-state coverage
+rule, the tiered realization, and the budget-is-a-bound rule all live there.
+Consult it for any wait-class decision; it is not restated on this
+always-loaded floor.
+
 See [blocking-wait-pattern.md](../../tools-integration-ci/standards/blocking-wait-pattern.md)
 in the `tools-integration-ci` standards for the full pattern (polling cadence,
 timeout semantics, TOON contract for wait-for-* results, and guidance on
