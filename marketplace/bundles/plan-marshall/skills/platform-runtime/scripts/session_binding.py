@@ -217,18 +217,24 @@ def _plan_is_live(plan_id: str) -> bool:
         return False
 
 
-def _iter_slots() -> list[tuple[str, str]]:
-    """Return ``(session_id, plan_id)`` for every readable active-plan slot.
+def _scan_session_dirs() -> tuple[list[tuple[str, str]], list[str]]:
+    """Walk the cache root once, splitting live slots from orphan directories.
 
-    Scans ``_SESSION_CACHE_BASE/*/active-plan``. Slots with a malformed
-    session-dir name or an empty/unreadable value are skipped. Best-effort — a
-    scan error yields an empty list.
+    Visits every directory under ``_SESSION_CACHE_BASE``, resolving each valid
+    session-id exactly once. Returns ``(slots, orphans)``: ``slots`` is
+    ``(session_id, plan_id)`` for every readable active-plan slot, ``orphans`` is
+    the session-dir names whose ``active-plan`` file is absent, empty, or
+    unreadable (:func:`resolve_plan` returns ``None``) — the residue
+    :func:`unbind`'s prune could not remove (a non-empty dir at teardown, or a
+    slot written by a crashed writer). A directory with a malformed name is
+    skipped from both. Best-effort — a scan error yields two empty lists.
     """
     slots: list[tuple[str, str]] = []
+    orphans: list[str] = []
     try:
         session_dirs = sorted(_SESSION_CACHE_BASE.iterdir())
     except OSError:
-        return slots
+        return slots, orphans
     for session_dir in session_dirs:
         try:
             if not session_dir.is_dir():
@@ -241,36 +247,9 @@ def _iter_slots() -> list[tuple[str, str]]:
         plan_id = resolve_plan(session_id)
         if plan_id:
             slots.append((session_id, plan_id))
-    return slots
-
-
-def _iter_orphan_dirs() -> list[str]:
-    """Return the session-dir names under the cache root that yield no live slot.
-
-    An orphan directory is one that :func:`_iter_slots` skips — its
-    ``active-plan`` file is absent, empty, or unreadable, so :func:`resolve_plan`
-    returns ``None`` and the directory carries no binding at all. These are the
-    residue :func:`unbind`'s prune could not remove (a non-empty dir at teardown,
-    or a slot written by a crashed writer). Best-effort — a scan error yields an
-    empty list.
-    """
-    orphans: list[str] = []
-    try:
-        session_dirs = sorted(_SESSION_CACHE_BASE.iterdir())
-    except OSError:
-        return orphans
-    for session_dir in session_dirs:
-        try:
-            if not session_dir.is_dir():
-                continue
-        except OSError:
-            continue
-        session_id = session_dir.name
-        if not _valid_session_id(session_id):
-            continue
-        if resolve_plan(session_id) is None:
+        else:
             orphans.append(session_id)
-    return orphans
+    return slots, orphans
 
 
 def _gc_slot(session_id: str) -> bool:
@@ -324,7 +303,13 @@ def doctor(fix: bool = False) -> dict[str, Any]:
     reverse: dict[str, list[str]] = {}
     stale: list[dict[str, str]] = []
 
-    for session_id, plan_id in _iter_slots():
+    # A single pass over the cache root splits live slots from orphan dirs, so
+    # a stale slot (resolves to a plan_id) and an orphan (resolves to None) are
+    # disjoint by construction — the two prune loops below never double-count
+    # the same directory.
+    slots, orphans = _scan_session_dirs()
+
+    for session_id, plan_id in slots:
         reverse.setdefault(plan_id, []).append(session_id)
         if not _plan_is_live(plan_id):
             stale.append({"session_id": session_id, "plan_id": plan_id})
@@ -334,11 +319,6 @@ def doctor(fix: bool = False) -> dict[str, Any]:
         for pid, sids in sorted(reverse.items())
         if len(sids) > 1
     ]
-
-    # Computed against the pre-fix state: orphan dirs and stale slots are
-    # disjoint (a stale slot resolves to a plan_id, an orphan resolves to None),
-    # so the two prune loops below never double-count the same directory.
-    orphans = _iter_orphan_dirs()
 
     gc_removed = 0
     orphans_removed = 0
