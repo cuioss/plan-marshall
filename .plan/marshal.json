@@ -73,6 +73,9 @@
           "auto_rebase_threshold": "no_overlap_only",
           "lane": "minimal"
         },
+        "project:finalize-step-lessons-housekeeping": {
+          "lane": "minimal"
+        },
         "default:pre-push-quality-gate": {
           "lane": "minimal"
         },
@@ -101,9 +104,6 @@
         "project:finalize-step-era-stamp-fill": {
           "lane": "minimal"
         },
-        "default:ci-verify": {
-          "lane": "minimal"
-        },
         "plan-marshall:automatic-review": {
           "enabled_bots": "coderabbit,sourcery,gemini",
           "review_bot_buffer_seconds": 180,
@@ -114,6 +114,9 @@
           "review_rate_window_await": false,
           "review_rate_window_timeout_seconds": 3600,
           "review_completion_poll_timeout_seconds": 600,
+          "lane": "minimal"
+        },
+        "default:ci-verify": {
           "lane": "minimal"
         },
         "default:sonar-roundtrip": {
@@ -147,16 +150,13 @@
           "preference_min_recurrence": 2,
           "lane": "minimal"
         },
-        "project:finalize-step-deploy-target": {
-          "lane": "minimal"
-        },
         "plan-marshall:plan-retrospective": {
           "lane": "minimal"
         },
-        "project:finalize-step-sync-plugin-cache": {
+        "project:finalize-step-deploy-target": {
           "lane": "minimal"
         },
-        "project:finalize-step-lessons-housekeeping": {
+        "project:finalize-step-sync-plugin-cache": {
           "lane": "minimal"
         },
         "default:record-metrics": {
@@ -299,7 +299,7 @@
       "lessons_superseded_days": 0,
       "temp_on_maintenance": true
     },
-    "provisioned_version": "0.1.1163",
-    "config_seed_fingerprint": "38d03331"
+    "provisioned_version": "0.1.1180",
+    "config_seed_fingerprint": "daa4978b"
   }
 }
