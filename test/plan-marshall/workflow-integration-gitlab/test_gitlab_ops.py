@@ -10,10 +10,7 @@ is exercised via a stubbed ``glab mr list``.
 import argparse
 
 import gitlab_ops
-
-
-def _ok_auth():
-    return True, ''
+from _ci_wait_contract import _ok_auth
 
 
 def _capture_run_glab(*, mr_list_iid: int = 7):

@@ -7,27 +7,24 @@ Sibling helper module imported explicitly by every per-section
 test_phase_handshake_*.py file. This avoids a sibling conftest.py that
 would shadow the top-level test/conftest.py.
 
-The imports below mirror the original test_phase_handshake.py prologue,
-including the sys.path manipulation needed to load the
-``_git_helpers`` / ``_handshake_store`` / ``_handshake_commands`` /
-``_invariants`` modules that ship under the script directory but are
-not on PYTHONPATH at test-collection time.
+The four ``_git_helpers`` / ``_handshake_store`` / ``_handshake_commands`` /
+``_invariants`` modules reference each other by bare name at import time, so
+``conftest.load_script_module`` (which loads a single module by file location)
+cannot serve them. This is the sanctioned use of
+``conftest.add_skill_scripts_to_path``: the scripts directory itself has to be
+importable before the bare-name imports below can resolve.
 """
 
 from __future__ import annotations
 
-import sys
 import types
 from pathlib import Path
 
 import pytest
-from conftest import get_script_path
+from conftest import add_skill_scripts_to_path, get_script_path
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'plan-marshall', 'phase_handshake.py')
-SCRIPTS_DIR = SCRIPT_PATH.parent
-
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
+SCRIPTS_DIR = add_skill_scripts_to_path('plan-marshall', 'plan-marshall')
 
 import _git_helpers as git_helpers  # noqa: E402, F401
 import _handshake_commands as cmds  # noqa: E402

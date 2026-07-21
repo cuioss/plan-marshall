@@ -8,7 +8,7 @@ Covers the ``--plan-id`` flag declared by the ``surface`` subcommand
 malformed input now produces ``status: error / error: invalid_plan_id``
 on stdout TOON (exit 0) instead of argparse's default exit-2 stderr error.
 
-Re-uses ``test/plan-marshall/_pm_input_validation_fixtures.py`` for the
+Re-uses ``test/_shared/_input_validation_fixtures.py`` for the
 canonical 6-axis matrix (TASK-2 foundation).
 """
 
@@ -17,11 +17,11 @@ from __future__ import annotations
 import pytest
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from _pm_input_validation_fixtures import (
+from _input_validation_fixtures import (
     HAPPY_VALUES,
     MALFORMED_AXES,
-    assert_invalid_field,
     assert_not_invalid_field,
+    assert_plan_id_axis_rejected,
 )
 
 from conftest import get_script_path, run_script
@@ -37,15 +37,7 @@ def test_surface_rejects_invalid_plan_id(axis, bad_value, tmp_path):
     so argparse's required-arg machinery is satisfied and the failure
     is unambiguously attributed to --plan-id.
     """
-    result = run_script(
-        SCRIPT_PATH,
-        'surface',
-        '--plan-id',
-        bad_value,
-        '--project-dir',
-        str(tmp_path),
-    )
-    assert_invalid_field(result, 'invalid_plan_id')
+    assert_plan_id_axis_rejected(SCRIPT_PATH, 'surface', bad_value, extra_args=('--project-dir', str(tmp_path)))
 
 
 def test_surface_accepts_canonical_plan_id(tmp_path):

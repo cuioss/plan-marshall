@@ -8,10 +8,11 @@ In-scope flags from TASK-1: ``--component``, ``--lesson-id``, ``--plan-id``.
 from __future__ import annotations
 
 import pytest
-from _pm_input_validation_fixtures import (
+from _input_validation_fixtures import (
     HAPPY_VALUES,
     MALFORMED_AXES,
     assert_invalid_field,
+    assert_plan_id_axis_rejected,
 )
 
 from conftest import get_script_path, run_script
@@ -60,15 +61,9 @@ def test_get_rejects_invalid_lesson_id(axis, bad_value):
 @pytest.mark.parametrize('axis,bad_value', MALFORMED_AXES['plan_id'])
 def test_convert_to_plan_rejects_invalid_plan_id(axis, bad_value):
     """``manage-lessons convert-to-plan --lesson-id <ok> --plan-id <bad>`` → invalid_plan_id TOON."""
-    result = run_script(
-        SCRIPT_PATH,
-        'convert-to-plan',
-        '--lesson-id',
-        HAPPY_VALUES['lesson_id'],
-        '--plan-id',
-        bad_value,
+    assert_plan_id_axis_rejected(
+        SCRIPT_PATH, 'convert-to-plan', bad_value, extra_args=('--lesson-id', HAPPY_VALUES['lesson_id'])
     )
-    assert_invalid_field(result, 'invalid_plan_id')
 
 
 def test_get_accepts_canonical_lesson_id():

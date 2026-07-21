@@ -15,7 +15,7 @@ which uses ``add_plan_id_arg`` (line 627 in ci_base.py). Malformed input
 must surface ``status: error / error: invalid_plan_id`` on stdout TOON
 with exit code 0.
 
-Re-uses ``test/plan-marshall/_pm_input_validation_fixtures.py`` for the
+Re-uses ``test/_shared/_input_validation_fixtures.py`` for the
 canonical 6-axis matrix (TASK-2 foundation).
 """
 
@@ -27,7 +27,7 @@ from pathlib import Path
 import pytest
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from _pm_input_validation_fixtures import (
+from _input_validation_fixtures import (
     HAPPY_VALUES,
     MALFORMED_AXES,
     assert_not_invalid_field,

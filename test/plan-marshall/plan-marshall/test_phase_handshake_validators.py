@@ -11,7 +11,7 @@ Covers the canonical identifier flags declared by the script:
   starts with ``argument --phase:`` so ``parse_args_with_toon_errors``
   translates it into the canonical ``invalid_phase`` TOON contract.
 
-Re-uses ``test/plan-marshall/_pm_input_validation_fixtures.py`` for the
+Re-uses ``test/_shared/_input_validation_fixtures.py`` for the
 canonical 6-axis matrix (TASK-2 foundation).
 """
 
@@ -22,11 +22,12 @@ import sys
 import pytest
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from _pm_input_validation_fixtures import (
+from _input_validation_fixtures import (
     HAPPY_VALUES,
     MALFORMED_AXES,
     assert_invalid_field,
     assert_not_invalid_field,
+    assert_plan_id_axis_rejected,
 )
 
 from conftest import get_script_path, run_script
@@ -61,15 +62,12 @@ def test_plan_id_rejected_per_subcommand(subcommand, axis, bad_value):
     The validator runs at parse time, before any handshake-store I/O,
     so we don't need to set up plan directories.
     """
-    args = [subcommand, '--plan-id', bad_value]
-    if subcommand in _PHASE_SUBCOMMANDS:
-        # ``capture``, ``verify``, ``clear`` all require --phase too.
-        # Use a canonical phase value so the failure is unambiguously
-        # attributed to --plan-id (and not to a missing required arg).
-        args += ['--phase', HAPPY_VALUES['phase']]
+    # ``capture``, ``verify``, ``clear`` all require --phase too. Use a
+    # canonical phase value so the failure is unambiguously attributed to
+    # --plan-id (and not to a missing required arg).
+    extra_args = ('--phase', HAPPY_VALUES['phase']) if subcommand in _PHASE_SUBCOMMANDS else ()
 
-    result = run_script(SCRIPT_PATH, *args)
-    assert_invalid_field(result, 'invalid_plan_id')
+    assert_plan_id_axis_rejected(SCRIPT_PATH, subcommand, bad_value, extra_args=extra_args)
 
 
 # =============================================================================

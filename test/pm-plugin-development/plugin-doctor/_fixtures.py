@@ -50,13 +50,18 @@ verified LLM claim. They are covered by ``test_analyze_crossfile.py`` (a
 verifier-echo test) which feeds its emitted finding types into ``record_fired``
 so the suite-coverage meta-test counts them. ``fired_rule_ids()`` below unions
 that recorded set in via the ``_EXTRA_FIRED`` registry.
+
+Alongside the corpus this module also hosts ``assert_analyzer_findings`` — the
+shared run-analyzer-then-assert-rule-codes scaffold the per-rule
+``test_analyze_*.py`` modules consume so each one asserts WHICH rules fired,
+not merely how many findings came back.
 """
 
 from __future__ import annotations
 
 import re
 import tempfile
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -1391,6 +1396,64 @@ def fired_rule_ids() -> set[str]:
     # crafted-claim builder so the meta-test never depends on test ordering.
     fired |= _finding_rule_ids(crossfile_verified_findings())
     return fired
+
+
+# ---------------------------------------------------------------------------
+# Shared analyzer-assertion scaffold (used by the test_analyze_*.py suite)
+# ---------------------------------------------------------------------------
+
+
+def finding_code(finding: dict) -> str:
+    """Return the rule code a finding carries — ``rule_id`` if set, else ``type``.
+
+    Analyzers emit ``rule_id`` as the audit-tracked lint-rule identifier and
+    ``type`` as the finding-shape discriminator; the two often differ (e.g.
+    ``rule_id='no-lesson-id-in-skill-prose'`` alongside
+    ``type='lesson_id_in_skill_prose'``). Rule-code assertions key off the
+    ``rule_id`` when present so a payload rename cannot silently weaken them.
+    """
+    for key in ('rule_id', 'type'):
+        value = finding.get(key)
+        if isinstance(value, str):
+            return value
+    raise AssertionError(f'finding carries neither rule_id nor type: {finding!r}')
+
+
+def assert_analyzer_findings(
+    analyzer: Callable[[Path], list[dict]],
+    fixture: Path,
+    expected_codes: Sequence[str],
+) -> list[dict]:
+    """Run ``analyzer`` over ``fixture`` and assert the exact multiset of codes.
+
+    This is the shared replacement for the ``run-analyzer-then-assert`` scaffold
+    the ``test_analyze_*.py`` modules each re-implement as a count assertion
+    followed by a rule-code assertion::
+
+        findings = analyze_x(tmp_path)
+        assert len(findings) == 1
+        assert findings[0]['rule_id'] == RULE_ID
+
+    Collapsing the pair into one call also makes the count assertion
+    **code-aware**: a bare ``len(findings) == 1`` passes when the WRONG rule
+    fires exactly once, whereas the multiset comparison here pins both how many
+    findings were emitted and which rules emitted them. The empty case
+    (``assert analyze_x(tmp_path) == []``) is the same call with
+    ``expected_codes=[]``.
+
+    ``fixture`` is the single argument the analyzer is called with — for the
+    marketplace-wide scanners that is the scratch root they walk.
+
+    Returns the findings list so callers can layer rule-specific payload
+    assertions (line numbers, severities, ``details`` sub-fields) on top.
+    """
+    findings = analyzer(fixture)
+    actual = sorted(finding_code(f) for f in findings)
+    expected = sorted(expected_codes)
+    assert actual == expected, (
+        f'analyzer emitted rule codes {actual}, expected {expected}'
+    )
+    return findings
 
 
 # ---------------------------------------------------------------------------

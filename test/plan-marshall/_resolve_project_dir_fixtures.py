@@ -3,13 +3,13 @@
 """Shared fixtures and helpers for the two-state ``--plan-id`` /
 ``--project-dir`` contract.
 
-Re-used by the test modules that cover every Bucket B script consumer
-(build-maven, build-gradle, build-npm, build-pyproject, tools-integration-ci,
-extension-api, ext-self-review-plan-marshall, workflow-integration-{github,gitlab},
-workflow-integration-sonar, workflow-pr-doctor, manage-references,
-manage-architecture, script-shared, execute-task).
+Re-used by the three test modules that exercise the contract:
 
-The four contract states tested across all 21 files are:
+* ``build-pyproject/test_pyproject_build.py``
+* ``manage-references/test_manage_references_compute_footprint.py``
+* ``script-shared/test_build_cli.py``
+
+The five contract states tested across those files are:
 
 * ``--plan-id X`` only, ``use_worktree=true`` → resolves to the
   persisted worktree path.

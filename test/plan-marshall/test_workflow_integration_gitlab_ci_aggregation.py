@@ -26,10 +26,9 @@ invocations.
 """
 
 import argparse
-import time
 
-import ci_base
 import gitlab_ops
+from _ci_wait_contract import _noop_sleep, _ok_auth
 
 # =============================================================================
 # Helpers
@@ -47,15 +46,6 @@ def _job(status: str, name: str = 'job', stage: str = '', web_url: str = '') -> 
         'finished_at': '',
         'created_at': '',
     }
-
-
-def _ok_auth():
-    return True, ''
-
-
-def _noop_sleep(monkeypatch):
-    monkeypatch.setattr(ci_base.time, 'sleep', lambda *_a, **_kw: None)
-    monkeypatch.setattr(time, 'sleep', lambda *_a, **_kw: None)
 
 
 # =============================================================================

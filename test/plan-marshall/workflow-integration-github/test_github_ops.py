@@ -9,10 +9,7 @@ the --pr-number/--head dual-flag validation works as expected.
 import argparse
 
 import github_ops
-
-
-def _ok_auth():
-    return True, ''
+from _ci_wait_contract import _ok_auth
 
 
 def _capture_run_gh():
