@@ -134,10 +134,11 @@ class Runtime(ABC):
         """Install the full terminal-title hook wiring into a named settings file.
 
         Reads (or creates) *target* and idempotently installs the SessionStart
-        capture entry, render entries across all five render-trigger hook events
-        (SessionStart matcher-less + matcher:"clear", UserPromptSubmit,
-        Notification, Stop, PostToolUse:AskUserQuestion), the ``statusLine``
-        command, and ``env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE = "1"``.
+        capture entry, render entries across all seven render-trigger hook
+        events (SessionStart, UserPromptSubmit, Notification, Stop,
+        PreToolUse:AskUserQuestion, PreToolUse:Bash, PostToolUse), the
+        ``statusLine`` command, and
+        ``env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE = "1"``.
 
         Unlike ``project_initial_setup``, this operation does not create
         ``.plan/`` or seed ``marshal.json`` — it only mutates the named file.
@@ -298,8 +299,14 @@ class Runtime(ABC):
         so the push is a plain repaint of the current composed title — the shape
         every persisted-title-state change fires.
 
-        On Claude: best-effort — silent no-op when ``/dev/tty`` is not openable
-        (CI / background / no controlling terminal); never raises.
+        On Claude: best-effort — ``/dev/tty`` is the FALLBACK delivery channel
+        (the primary one is the hook-mode ``terminalSequence`` envelope). When
+        ``/dev/tty`` is not openable (CI / background / dispatched agent / no
+        controlling terminal) the non-delivery is REPORTED, not swallowed: the
+        return TOON carries ``pushed: false`` with
+        ``reason: no_controlling_tty``, and every ``/dev/tty`` attempt names its
+        channel via ``delivery: dev_tty_fallback``. Never raises, and never
+        changes the caller's status or exit code.
 
         On OpenCode: returns ``no-op`` (no plugin-driven terminal-title channel).
 

@@ -468,37 +468,80 @@ def _drive_bind(plan_id: str) -> None:
     _run_executor(_PLATFORM_RUNTIME_NOTATION, 'session', 'bind', '--plan-id', plan_id)
 
 
-def _repaint_non_delivery_reason(completed: 'subprocess.CompletedProcess[str] | None') -> str | None:
-    """Return the reportable non-delivery ``reason`` from a repaint reply, else None.
+def _parse_drive_reply(
+    completed: 'subprocess.CompletedProcess[str] | None',
+) -> dict[Any, Any] | None:
+    """Parse a drive-seam delegate's TOON stdout into a dict, else None.
 
-    Parses the delegate's TOON stdout via the shared ``toon_parser`` (never a
-    hand-rolled scan) and returns ``reason`` only when the delegate reported
-    ``pushed: false`` with a reason OTHER than ``no_title_state``. A plan with no
-    persisted title state is the ordinary "nothing to paint" case and stays at
-    DEBUG; ``no_controlling_tty`` — the push channel genuinely failing to reach a
-    terminal — is what the caller surfaces.
+    The shared parse half of the observable-non-delivery pattern: both
+    :func:`_repaint_non_delivery_reason` and
+    :func:`_teardown_non_delivery_reason` read their delegate's reply through
+    this one helper, so the parse discipline (the shared ``toon_parser``, never
+    a hand-rolled scan) is stated once.
 
-    Returns ``None`` whenever there is nothing to report: no completed process,
-    an unusable reply, a successful push, or the ``no_title_state`` case.
+    Returns ``None`` whenever the reply is unusable: no completed process, empty
+    stdout, an unavailable parser, a parse failure, or a non-dict payload.
     """
     if completed is None or not completed.stdout:
         return None
     try:
         from toon_parser import parse_toon
     except ImportError as exc:
-        logger.debug('drive-seam repaint reply unparsed (toon_parser unavailable): %s', exc)
+        logger.debug('drive-seam reply unparsed (toon_parser unavailable): %s', exc)
         return None
     try:
         reply = parse_toon(completed.stdout)
     except Exception as exc:  # noqa: BLE001 — drive seam is best-effort
-        logger.debug('drive-seam repaint reply unparsed: %s', exc)
+        logger.debug('drive-seam reply unparsed: %s', exc)
         return None
-    if not isinstance(reply, dict) or reply.get('pushed') is not False:
+    return reply if isinstance(reply, dict) else None
+
+
+def _repaint_non_delivery_reason(completed: 'subprocess.CompletedProcess[str] | None') -> str | None:
+    """Return the reportable non-delivery ``reason`` from a repaint reply, else None.
+
+    Reads the delegate's reply via :func:`_parse_drive_reply` and returns
+    ``reason`` only when the delegate reported ``pushed: false`` with a reason
+    OTHER than ``no_title_state``. A plan with no persisted title state is the
+    ordinary "nothing to paint" case and stays at DEBUG; ``no_controlling_tty`` —
+    the push channel genuinely failing to reach a terminal — is what the caller
+    surfaces.
+
+    Returns ``None`` whenever there is nothing to report: an unusable reply, a
+    successful push, or the ``no_title_state`` case.
+    """
+    reply = _parse_drive_reply(completed)
+    if reply is None or reply.get('pushed') is not False:
         return None
     reason = reply.get('reason')
     if not isinstance(reason, str) or reason in ('', 'no_title_state'):
         return None
     return reason
+
+
+def _teardown_non_delivery_reason(completed: 'subprocess.CompletedProcess[str] | None') -> str | None:
+    """Return the reportable non-delivery reason from a teardown reply, else None.
+
+    The teardown counterpart of :func:`_repaint_non_delivery_reason`, sharing its
+    parse half via :func:`_parse_drive_reply` and its filter shape. The teardown
+    delegate reports its two halves INDEPENDENTLY (``reset`` for the title reset,
+    ``unbound`` for the session-binding release), so either half failing is a
+    reportable non-delivery and both are named when both failed.
+
+    An inactive delegate (``active: false`` — a project that never wired up
+    terminal titles, reported as ``reason: feature_inactive``) is the ordinary
+    nothing-to-do case and returns ``None``, mirroring how the repaint side
+    treats ``no_title_state``.
+    """
+    reply = _parse_drive_reply(completed)
+    if reply is None or reply.get('active') is not True:
+        return None
+    failures = []
+    if reply.get('reset') is False:
+        failures.append('title_reset_failed')
+    if reply.get('unbound') is False:
+        failures.append('binding_release_failed')
+    return ', '.join(failures) or None
 
 
 def _drive_teardown(plan_id: str) -> None:
@@ -515,12 +558,22 @@ def _drive_teardown(plan_id: str) -> None:
     operates on the CALLER SESSION's own binding, not on a plan-scoped slot, so
     it takes no plan argument.
 
+    A non-delivery is OBSERVABLE rather than DEBUG-swallowed, exactly as in
+    :func:`_drive_repaint`: when the activated delegate reports a failed title
+    reset and/or a failed binding release (in practice off a controlling
+    terminal), one ``logger.warning`` names the plan and the reason. An inactive
+    delegate and every other failure path keep their DEBUG level.
+
     Fully exception-swallowing, mirroring :func:`_surface_drive`: a delegation
-    failure never changes the archive command's status or exit code.
+    failure never changes the archive command's status or exit code — only the
+    observability of a non-delivery changes.
     """
     try:
         logger.debug('drive-seam teardown fired after archiving %s', plan_id)
-        _run_executor(_PLATFORM_RUNTIME_NOTATION, 'session', 'teardown')
+        completed = _run_executor(_PLATFORM_RUNTIME_NOTATION, 'session', 'teardown')
+        reason = _teardown_non_delivery_reason(completed)
+        if reason is not None:
+            logger.warning('title teardown not delivered for %s: %s', plan_id, reason)
     except Exception as exc:  # noqa: BLE001 — drive seam is best-effort
         logger.debug('drive-seam teardown for %s failed: %s', plan_id, exc)
 

@@ -166,6 +166,15 @@ stale title nor a stale binding behind. It is activation-gated inside the
 delegate and fully exception-swallowing — a delegation failure never changes the
 archive command's status or exit code.
 
+The teardown carries the same **observable-non-delivery** contract as the repaint
+seam: when an *activated* delegate reports a failed title reset (`reset: false`)
+and/or a failed binding release (`unbound: false`), the seam emits one
+`logger.warning` naming the plan and the failed half (both halves are named when
+both failed, matching the delegate's independent reporting). An inactive delegate
+(`active: false` / `reason: feature_inactive`) is the ordinary nothing-to-do case
+and stays at DEBUG, as does every other failure path. Only the observability of a
+non-delivery changes — never the archive command's status or exit code.
+
 ## Composer — `manage-terminal-title`
 
 The composer lives in
