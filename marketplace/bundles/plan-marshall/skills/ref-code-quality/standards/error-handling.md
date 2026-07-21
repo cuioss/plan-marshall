@@ -259,3 +259,29 @@ function checkConsistency(planDir) {
 ```
 
 This is the inverse of the redundant runtime type guard documented in `code-organization.md` (§ "Do Not Guard Contract-Typed Values"): the fail-closed rule adds a *missing* guard at an I/O boundary, while that rule removes a *superfluous* guard on a value the type signature already pins.
+
+## Symmetric Diagnostic Fields Across Sibling Branches
+
+When one runtime condition drives two sibling branches — one that fails loud with a named reason and one that silently falls back to a degraded path — the fallback branch MUST record the SAME reason literal into the audit/diagnostic field. Omitting it leaves the field at its default (e.g. `None`), so the audit line logs a value-less placeholder and the actual cause of the degradation is lost.
+
+```text
+// BAD — the fallback branch under the SAME condition never names the reason
+reason = null
+if (mode == "strict" && incompatible) {
+    failLoud("env_or_working_dir_set")  // reason named explicitly
+}
+if (mode == "auto" && incompatible) {
+    // falls back silently — reason stays null, audit trail is corrupted
+}
+
+// GOOD — the sibling branch mirrors the same literal into the audit field
+reason = null
+if (mode == "strict" && incompatible) {
+    failLoud("env_or_working_dir_set")
+}
+if (mode == "auto" && incompatible) {
+    reason = "env_or_working_dir_set"  // symmetric with the fail-loud branch above
+}
+```
+
+A per-branch diagnostic/audit field defaulted to a sentinel (`None`/`null`/empty) must be set on EVERY branch that reaches the audited outcome. A newly-added early-skip or fallback branch that omits it does not fail a test (the sentinel is a valid value) and does not change control flow — it only corrupts the audit trail, invisible until someone reads the log and finds the sentinel where a real reason should be. When adding a branch that reaches an audited outcome, check whether a sibling branch under the same triggering condition already names a reason and mirror it: this is a symmetric-pair authoring obligation, not merely a style preference. (extends lesson 2026-07-21-08-001)
