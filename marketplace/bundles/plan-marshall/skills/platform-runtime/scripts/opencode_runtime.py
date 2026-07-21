@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """
-OpenCode implementation of all 23 platform-runtime operations.
+OpenCode implementation of all 24 platform-runtime operations.
 
 OpenCode-specific behaviour:
 - Operations requiring a platform session id (session capture, session
@@ -19,6 +19,8 @@ OpenCode-specific behaviour:
 - subagent dispatch succeeds, mapping the ``Task`` tool to OpenCode's ``task``.
 - health-check succeeds; the ``display`` check always reports unhealthy on
   OpenCode because no hook file is present.
+- wait for returns ``no-op``: OpenCode's runtime holds no wait channel, so the
+  caller runs the observable's own bounded-wait verb in-turn instead.
 
 All methods return a serialized TOON string via the helpers in runtime_base.
 """
@@ -521,6 +523,37 @@ class OpenCodeRuntime(Runtime):
                     "subagent_type": "execution-context-level-3",
                 },
             },
+        )
+
+    # ------------------------------------------------------------------
+    # Waiting
+    # ------------------------------------------------------------------
+
+    def wait_for(self, observable: str, reference: str, bound_seconds: int) -> str:
+        """No-op: OpenCode's runtime holds no wait channel.
+
+        The decline is not hollow. Every liveness surface a runtime-held wait
+        would need is already absent on this target — no platform-provided
+        session id (issue #9292), no hook channel (issue anomalyco/opencode#8619)
+        — and the OpenCode runtime bootstraps none of the shared build layer the
+        observables are inspected through. A wait held here would be an
+        unobservable block with no re-attach path.
+
+        The alternative is real, shipped behaviour on this target, not a
+        weaker stand-in for a capability OpenCode lacks entirely: the
+        observable's own bounded-wait verb runs in-turn, and
+        checkpoint-and-re-dispatch remains available when the bound is large.
+        """
+        return toon_noop(
+            "wait for",
+            "OpenCode's runtime holds no wait channel — it has no platform-provided"
+            " session id (issue #9292), no hook channel"
+            " (issue anomalyco/opencode#8619), and no shared build layer to inspect"
+            " an observable through, so a wait held here would be unobservable and"
+            " could not be re-attached",
+            "Invoke the observable's own bounded-wait verb synchronously in-turn"
+            " (build-server-client wait, ci checks wait), or checkpoint and"
+            " re-dispatch to re-establish the wait from persisted state",
         )
 
     # ------------------------------------------------------------------

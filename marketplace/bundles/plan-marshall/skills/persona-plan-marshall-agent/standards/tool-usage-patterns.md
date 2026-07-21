@@ -262,9 +262,9 @@ Bash(command="python3 .plan/execute-script.py plan-marshall:tools-integration-ci
 `sleep N` and `until <check>; do sleep ...; done` are forbidden for blocking on
 external conditions (CI status changes, PR bot comments, issue state
 transitions, label propagation, etc.). A bare `sleep` in an agent/skill blocks
-the turn for the full duration, defeats the Monitor-driven notification model,
-and is what the Bash safety harness already blocks via its "long leading sleep"
-heuristic.
+the turn for the full duration, defeats the background-completion notification
+model, and is what the Bash safety harness already blocks via its "long leading
+sleep" heuristic.
 
 Instead, dispatch to the CI abstraction's `wait-for-*` subcommands — they
 implement bounded polling with proper exit codes, timeout handling, and
@@ -294,6 +294,13 @@ Bash(command="sleep 180")
 # GOOD — bounded wait with TOON result, parseable exit code
 Bash(command="python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr wait-for-comments --pr-number N --timeout 180")
 ```
+
+The canonical waiting standard is
+[`plan-marshall:plan-marshall/standards/waiting.md`](../../plan-marshall/standards/waiting.md)
+— when to wait, which component may hold a wait, the terminal-state coverage
+rule, the tiered realization, and the budget-is-a-bound rule all live there.
+Consult it for any wait-class decision; it is not restated on this
+always-loaded floor.
 
 See [blocking-wait-pattern.md](../../tools-integration-ci/standards/blocking-wait-pattern.md)
 in the `tools-integration-ci` standards for the full pattern (polling cadence,

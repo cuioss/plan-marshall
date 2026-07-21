@@ -399,8 +399,9 @@ def emit_bundles(
 
     Raises:
         UnmappedFrontmatterError: A required frontmatter field is missing.
-        UnmappedToolError: An agent declares a tool with no
-            ``tool_permissions`` entry.
+        UnmappedToolError: An agent declares a tool with no key in
+            ``tool_permissions``; a key present with ``null`` is the
+            target-absent sentinel and does not raise.
     """
     mapping = load_mapping(config_dir)
     rules = load_rules(config_dir)

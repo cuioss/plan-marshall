@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """
-Platform router for plan-marshall — dispatches 23 operations to the correct
+Platform router for plan-marshall — dispatches 24 operations to the correct
 target implementation based on ``runtime.target`` in ``.plan/marshal.json``.
 
 Usage:
@@ -31,6 +31,7 @@ Operations:
     metrics capture         --plan-id <id>  --phase <phase>  [--total-tokens <n>]
     metrics normalized-tokens  --session-id <id>  --windows-file <path>  --output-file <path>
     subagent dispatch       --agent <name>  [--prompt-file <path>]  [--context <json>]
+    wait for                --observable <kind>  --reference <id>  --bound-seconds <n>
     health-check            --checks all|permissions|display|mcp-diagnostics
 
 The router resolves ``PLAN_DIR_NAME`` (default ``.plan``) from the environment,
@@ -541,6 +542,24 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
         return runtime.subagent_dispatch(ns.agent, ns.prompt_file, context)
 
     # ------------------------------------------------------------------
+    # wait for
+    # ------------------------------------------------------------------
+    if operation == "wait for":
+        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime wait for")
+        p.add_argument("--observable", required=True,
+                       help="Observable KIND to inspect (closed set; e.g. build-job). "
+                            "An opaque condition descriptor is NOT accepted — a runtime "
+                            "subprocess cannot evaluate one")
+        p.add_argument("--reference", required=True,
+                       help="Concrete instance identifier within the observable kind "
+                            "(e.g. the build-server job_id)")
+        p.add_argument("--bound-seconds", type=int, required=True,
+                       help="Maximum wall-clock seconds to hold the wait. A BOUND, not a "
+                            "verdict: exhausting it yields outcome: pending, never a pass")
+        ns = p.parse_args(remaining)
+        return runtime.wait_for(ns.observable, ns.reference, ns.bound_seconds)
+
+    # ------------------------------------------------------------------
     # health-check
     # ------------------------------------------------------------------
     if operation == "health-check":
@@ -563,7 +582,8 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
         "permission configure, permission analyze, permission fix, "
         "permission ensure-wildcards, permission ensure-steps, "
         "permission web-analyze, permission web-apply, "
-        "metrics capture, metrics normalized-tokens, subagent dispatch, health-check",
+        "metrics capture, metrics normalized-tokens, subagent dispatch, "
+        "wait for, health-check",
     )
 
 
@@ -578,7 +598,7 @@ def _build_operation(argv: list[str]) -> tuple[str, list[str]]:
     Operations are two-word identifiers (e.g. ``project initial-setup``).
     Some are single-hyphenated second words (``health-check``).
 
-    Supported prefix tokens: project, layout, session, permission, metrics, subagent, health-check.
+    Supported prefix tokens: project, layout, session, permission, metrics, subagent, wait, health-check.
     """
     if not argv:
         return ("", [])

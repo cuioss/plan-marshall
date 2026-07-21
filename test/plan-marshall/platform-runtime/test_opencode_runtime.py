@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for opencode_runtime.py — OpenCode implementation of all 23 operations.
+"""Tests for opencode_runtime.py — OpenCode implementation of all 24 operations.
 
 Asserts the no-op contract for session/display operations that OpenCode does not
 support, the honest no-op contract for the permission operations (OpenCode has no
-validated permission backend), the success/no-op paths for metrics operations, and
-error paths for invalid arguments across all 23 operations defined in the Runtime
-ABC.
+validated permission backend) and for the ``wait for`` waiting op (OpenCode holds
+no wait channel), the success/no-op paths for metrics operations, and error paths
+for invalid arguments across all 24 operations defined in the Runtime ABC.
 """
 
 import json  # noqa: I001
@@ -495,7 +495,90 @@ def test_subagent_dispatch_missing_prompt_file_returns_error(
 
 
 # =============================================================================
-# 14. health_check
+# 14. wait_for — declined no-op (OpenCode holds no wait channel)
+# =============================================================================
+
+
+def test_wait_for_returns_honest_noop(runtime: OpenCodeRuntime) -> None:
+    """wait_for declines with a no-op rather than a stub success or an error."""
+    result = _parse(runtime.wait_for("build-job", "job-1", 60))
+    assert result["status"] == "no-op"
+    assert result["operation"] == "wait for"
+    assert result["reason"]
+    assert result["alternative"]
+
+
+def test_wait_for_noop_is_not_an_error(runtime: OpenCodeRuntime) -> None:
+    """A declined capability is a no-op, so no error/message keys are present."""
+    result = _parse(runtime.wait_for("build-job", "job-1", 60))
+    assert "error" not in result
+    assert "message" not in result
+
+
+def test_wait_for_noop_reports_no_outcome(runtime: OpenCodeRuntime) -> None:
+    """Declining is not a verdict — the payload carries no outcome at all, so a
+    caller cannot mistake the decline for a pass or for continued waiting."""
+    result = _parse(runtime.wait_for("build-job", "job-1", 60))
+    assert "outcome" not in result
+    assert "terminal" not in result
+
+
+def test_wait_for_reason_names_the_absent_session_id(runtime: OpenCodeRuntime) -> None:
+    """The decline is grounded in a verified fact: OpenCode provides no platform
+    session id (issue #9292), so a held wait could not be re-attached."""
+    reason = _parse(runtime.wait_for("build-job", "job-1", 60))["reason"]
+    assert "session id" in reason
+    assert "#9292" in reason
+
+
+def test_wait_for_reason_names_the_absent_hook_channel(runtime: OpenCodeRuntime) -> None:
+    """The decline names the missing hook channel with its upstream issue."""
+    reason = _parse(runtime.wait_for("build-job", "job-1", 60))["reason"]
+    assert "hook channel" in reason
+    assert "anomalyco/opencode#8619" in reason
+
+
+def test_wait_for_reason_names_the_absent_shared_build_layer(runtime: OpenCodeRuntime) -> None:
+    """The decline names the third verified gap: the OpenCode runtime bootstraps
+    no shared build layer, so there is nothing to inspect an observable through."""
+    reason = _parse(runtime.wait_for("build-job", "job-1", 60))["reason"]
+    assert "shared build layer" in reason
+
+
+def test_wait_for_alternative_names_the_in_turn_bounded_wait(runtime: OpenCodeRuntime) -> None:
+    """The alternative is real shipped behaviour on this target — the observable's
+    own bounded-wait verb run synchronously in-turn."""
+    alternative = _parse(runtime.wait_for("build-job", "job-1", 60))["alternative"]
+    assert "bounded-wait verb" in alternative
+    assert "in-turn" in alternative
+
+
+def test_wait_for_alternative_names_checkpoint_and_re_dispatch(runtime: OpenCodeRuntime) -> None:
+    """The alternative also names the large-bound path: checkpoint, re-dispatch."""
+    alternative = _parse(runtime.wait_for("build-job", "job-1", 60))["alternative"]
+    assert "re-dispatch" in alternative
+
+
+@pytest.mark.parametrize(
+    ("observable", "reference", "bound"),
+    [
+        ("build-job", "job-1", 60),
+        ("ci-run", "run-9", 1),
+        ("build-job", "", 100000),
+    ],
+)
+def test_wait_for_declines_uniformly_for_any_input(
+    runtime: OpenCodeRuntime, observable: str, reference: str, bound: int
+) -> None:
+    """The capability is absent on this target, so the decline does not depend on
+    the observable kind, the reference, or the bound — no input validation path
+    can turn the decline into an outcome."""
+    result = _parse(runtime.wait_for(observable, reference, bound))
+    assert result["status"] == "no-op"
+
+
+# =============================================================================
+# 15. health_check
 # =============================================================================
 
 

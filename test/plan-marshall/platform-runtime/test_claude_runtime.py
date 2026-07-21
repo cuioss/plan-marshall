@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for claude_runtime.py — ClaudeRuntime implementation of all 23 operations.
+"""Tests for claude_runtime.py — ClaudeRuntime implementation of all 24 operations.
 
 Covers every method defined by the Runtime ABC:
   1.  project_initial_setup       — creates dirs, writes marshal.json, installs hook
@@ -18,7 +18,8 @@ Covers every method defined by the Runtime ABC:
   11. permission_web_apply         — adds / removes WebFetch domain permissions
   12. metrics_capture             — records token consumption
   13. subagent_dispatch           — returns Task: invocation parameters
-  14. health_check               — verifies platform integration
+  14. wait_for                    — bounded poll of a concrete observable
+  15. health_check               — verifies platform integration
 
 All filesystem writes are redirected to tmp_path via monkeypatching so no
 real settings files are mutated.
@@ -38,6 +39,7 @@ import pytest
 
 # conftest.py sets up PYTHONPATH so cross-skill imports resolve without manual
 # sys.path manipulation.
+import claude_runtime
 import session_binding
 from claude_runtime import (
     _BUILD_WRAPPER_NOTATIONS,
@@ -3003,3 +3005,404 @@ def test_session_reload_directive_carries_monitor_caveat():
     assert "monitors require a full session restart" in caveat
     assert "plan-marshall registers no monitors" in caveat
     assert "/reload-plugins picks up the regenerated executor / agent set live" in caveat
+
+
+# =============================================================================
+# wait_for — bounded poll over a concrete observable
+#
+# The op is deliberately narrowed to a CONCRETE observable kind rather than an
+# opaque condition descriptor. These tests pin the two fail-closed rules the
+# contract names: silence is not success (every failure signature maps to its
+# own negative outcome) and a bound is not a verdict (exhaustion yields a
+# non-terminal ``pending``, never an implicit pass).
+# =============================================================================
+
+
+def _fake_clock(*values: float):
+    """Return a deterministic ``time.monotonic`` stand-in.
+
+    Successive calls yield *values* in order; the final value is repeated for
+    any further call, so a test states only as many ticks as it cares about.
+    """
+    seq = list(values)
+
+    def _clock() -> float:
+        return seq.pop(0) if len(seq) > 1 else seq[0]
+
+    return _clock
+
+
+class _PollRecorder:
+    """Stand-in for ``claude_runtime.build_job_poll`` recording its call args."""
+
+    def __init__(self, *payloads: dict[str, Any]) -> None:
+        self._payloads = list(payloads)
+        self.calls: list[tuple[str, int]] = []
+
+    def __call__(self, reference: str, bound_seconds: int) -> dict[str, Any]:
+        self.calls.append((reference, bound_seconds))
+        if len(self._payloads) > 1:
+            return self._payloads.pop(0)
+        return self._payloads[0]
+
+
+def _wait_for(
+    poll: _PollRecorder,
+    *,
+    observable: str = "build-job",
+    reference: str = "job-42",
+    bound_seconds: int = 10,
+    clock=None,
+    channel_reason: str | None = None,
+) -> dict[str, Any]:
+    """Run ``wait_for`` with the observable channel fully stubbed out."""
+    clock = clock or _fake_clock(0.0, 0.0, 2.0)
+    with (
+        patch("claude_runtime.build_job_verify_channel", lambda: channel_reason),
+        patch("claude_runtime.build_job_poll", poll),
+        patch("time.monotonic", clock),
+    ):
+        return parse_toon(ClaudeRuntime().wait_for(observable, reference, bound_seconds))
+
+
+class TestWaitForVocabulary:
+    """The observable kind set and the normalized outcome vocabulary."""
+
+    def test_observable_kinds_are_a_closed_single_element_set(self):
+        """Exactly one observable kind ships — the marshalld build job."""
+        assert claude_runtime.WAIT_OBSERVABLES == (claude_runtime.OBSERVABLE_BUILD_JOB,)
+        assert claude_runtime.OBSERVABLE_BUILD_JOB == "build-job"
+
+    def test_terminal_outcomes_exclude_pending(self):
+        """``pending`` is deliberately absent — a bound is not a verdict."""
+        assert claude_runtime.OUTCOME_PENDING not in claude_runtime.TERMINAL_OUTCOMES
+
+    def test_terminal_outcomes_are_the_four_documented_values(self):
+        """The terminal set is exactly succeeded / failed / timed_out / killed."""
+        assert claude_runtime.TERMINAL_OUTCOMES == frozenset(
+            {"succeeded", "failed", "timed_out", "killed"}
+        )
+
+    def test_every_failure_signature_maps_to_its_own_negative_outcome(self):
+        """Silence is not success: each daemon failure status has a distinct
+        negative outcome, so a failure can never read as continued waiting."""
+        mapping = claude_runtime._BUILD_JOB_STATUS_TO_OUTCOME
+        assert mapping["failure"] == "failed"
+        assert mapping["timeout"] == "timed_out"
+        assert mapping["killed"] == "killed"
+        assert mapping["success"] == "succeeded"
+
+    def test_killed_does_not_fold_into_failed(self):
+        """An externally reaped job keeps its own outcome — it is not a flaky
+        build and must not be blind-retried."""
+        mapping = claude_runtime._BUILD_JOB_STATUS_TO_OUTCOME
+        assert mapping["killed"] != mapping["failure"]
+
+    def test_non_terminal_statuses_are_disjoint_from_the_outcome_map(self):
+        """No wire status is both "keep waiting" and a terminal verdict."""
+        assert not (
+            claude_runtime._BUILD_JOB_NON_TERMINAL_STATUSES
+            & set(claude_runtime._BUILD_JOB_STATUS_TO_OUTCOME)
+        )
+
+
+class TestWaitForGuards:
+    """Input and channel guards — each returns a distinct error, never a pass."""
+
+    def test_unknown_observable_kind_is_rejected(self):
+        """An unrecognised kind errors rather than being silently awaited."""
+        poll = _PollRecorder({"status": "success"})
+        result = _wait_for(poll, observable="ci-run")
+
+        assert result["status"] == "error"
+        assert result["error"] == "unsupported_observable"
+        assert "build-job" in result["message"]
+        assert poll.calls == []
+
+    def test_opaque_condition_descriptor_is_rejected_as_a_kind(self):
+        """A free-form condition string is not an observable kind — a subprocess
+        cannot evaluate an arbitrary predicate, so it is refused up front."""
+        poll = _PollRecorder({"status": "success"})
+        result = _wait_for(poll, observable="until the deploy looks healthy")
+
+        assert result["error"] == "unsupported_observable"
+        assert poll.calls == []
+
+    @pytest.mark.parametrize("bound", [0, -1, -3600])
+    def test_non_positive_bound_is_rejected(self, bound: int):
+        """A bound must be a positive number of seconds."""
+        poll = _PollRecorder({"status": "success"})
+        result = _wait_for(poll, bound_seconds=bound)
+
+        assert result["status"] == "error"
+        assert result["error"] == "invalid_bound"
+        assert poll.calls == []
+
+    def test_observable_kind_is_validated_before_the_bound(self):
+        """With both inputs invalid, the kind rejection wins — the caller is told
+        the observable is not inspectable at all before bound arithmetic."""
+        poll = _PollRecorder({"status": "success"})
+        result = _wait_for(poll, observable="ci-run", bound_seconds=0)
+
+        assert result["error"] == "unsupported_observable"
+
+    @pytest.mark.parametrize(
+        "reason", ["shared_build_layer_unavailable", "socket_absent", "version_mismatch"]
+    )
+    def test_unverifiable_channel_errors_without_polling(self, reason: str):
+        """An unreachable inspection channel is an explicit error — never a pass
+        and never an implicit pending."""
+        poll = _PollRecorder({"status": "success"})
+        result = _wait_for(poll, channel_reason=reason)
+
+        assert result["status"] == "error"
+        assert result["error"] == "observable_unreachable"
+        assert reason in result["message"]
+        assert "no outcome is implied" in result["message"]
+        assert poll.calls == []
+
+
+class TestWaitForOutcomes:
+    """Normalized outcomes returned for each daemon wire status."""
+
+    @pytest.mark.parametrize(
+        ("wire_status", "outcome"),
+        [
+            ("success", "succeeded"),
+            ("failure", "failed"),
+            ("timeout", "timed_out"),
+            ("killed", "killed"),
+        ],
+    )
+    def test_terminal_status_maps_to_its_outcome(self, wire_status: str, outcome: str):
+        """Each terminal wire status normalizes to its outcome, flagged terminal."""
+        poll = _PollRecorder({"status": wire_status})
+        result = _wait_for(poll)
+
+        assert result["status"] == "success"
+        assert result["operation"] == "wait for"
+        assert result["outcome"] == outcome
+        assert result["terminal"] is True
+
+    def test_success_payload_echoes_the_intent_and_the_bounds(self):
+        """The payload carries the kind, the reference, and both bound figures —
+        and nothing observable-shaped."""
+        poll = _PollRecorder({"status": "success"})
+        result = _wait_for(poll, reference="job-99", bound_seconds=10)
+
+        assert result["observable"] == "build-job"
+        assert result["reference"] == "job-99"
+        assert result["bound_seconds"] == 10
+        assert result["elapsed_seconds"] == 2
+
+    def test_no_daemon_shaped_field_crosses_the_boundary(self):
+        """Daemon-internal keys are not leaked into the normalized payload."""
+        poll = _PollRecorder(
+            {"status": "failure", "log_file": "/tmp/x.log", "errors": [], "exit_code": 1}
+        )
+        result = _wait_for(poll)
+
+        for leaked in ("log_file", "errors", "exit_code"):
+            assert leaked not in result
+
+    def test_unknown_reference_is_reported_as_such(self):
+        """A ``not_found`` job is an error naming the reference, not a verdict."""
+        poll = _PollRecorder({"status": "not_found"})
+        result = _wait_for(poll, reference="job-nope")
+
+        assert result["status"] == "error"
+        assert result["error"] == "unknown_reference"
+        assert "job-nope" in result["message"]
+
+    def test_channel_lost_mid_wait_is_an_error(self):
+        """A channel that drops after verification errors rather than passing."""
+        poll = _PollRecorder({"status": "unreachable", "reason": "connection reset"})
+        result = _wait_for(poll)
+
+        assert result["status"] == "error"
+        assert result["error"] == "observable_unreachable"
+        assert "connection reset" in result["message"]
+
+    def test_out_of_vocabulary_status_refuses_to_infer(self):
+        """An undocumented status is an explicit error — no outcome is guessed."""
+        poll = _PollRecorder({"status": "quantum-superposition"})
+        result = _wait_for(poll)
+
+        assert result["status"] == "error"
+        assert result["error"] == "unexpected_observable_status"
+        assert "quantum-superposition" in result["message"]
+
+    @pytest.mark.parametrize("non_terminal", ["queued", "running"])
+    def test_bound_exhaustion_yields_non_terminal_pending(self, non_terminal: str):
+        """A bound is not a verdict: exhausting it returns pending / terminal
+        false, an explicit unknown the caller must act on."""
+        poll = _PollRecorder({"status": non_terminal})
+        result = _wait_for(poll, clock=_fake_clock(0.0, 0.0, 11.0), bound_seconds=10)
+
+        assert result["status"] == "success"
+        assert result["outcome"] == "pending"
+        assert result["terminal"] is False
+        assert result["bound_seconds"] == 10
+        assert result["elapsed_seconds"] == 11
+
+    def test_non_terminal_status_is_re_polled_until_terminal(self):
+        """A live job is re-polled; the first terminal status ends the wait."""
+        poll = _PollRecorder(
+            {"status": "queued"}, {"status": "running"}, {"status": "success"}
+        )
+        result = _wait_for(poll, clock=_fake_clock(0.0, 0.0, 1.0, 2.0, 3.0))
+
+        assert result["outcome"] == "succeeded"
+        assert len(poll.calls) == 3
+
+
+class TestWaitForPollBound:
+    """The per-poll long-poll bound handed to the daemon."""
+
+    def test_poll_bound_is_capped_at_the_daemon_ceiling(self):
+        """A caller bound larger than the ceiling is clamped per poll."""
+        poll = _PollRecorder({"status": "success"})
+        _wait_for(poll, bound_seconds=100_000)
+
+        assert poll.calls[0][1] == claude_runtime._BUILD_JOB_POLL_BOUND_SECONDS
+
+    def test_poll_bound_follows_the_caller_bound_when_smaller(self):
+        """Below the ceiling the caller's bound is used verbatim."""
+        poll = _PollRecorder({"status": "success"})
+        _wait_for(poll, bound_seconds=10)
+
+        assert poll.calls[0][1] == 10
+
+    def test_poll_bound_floors_at_one_second(self):
+        """A sub-second remainder still issues a one-second poll rather than a
+        zero-second one that would return instantly and spin."""
+        poll = _PollRecorder({"status": "success"})
+        _wait_for(poll, bound_seconds=10, clock=_fake_clock(0.0, 9.5, 9.6))
+
+        assert poll.calls[0][1] == 1
+
+    def test_reference_is_forwarded_to_the_poll_verbatim(self):
+        """The caller's reference reaches the daemon unmodified."""
+        poll = _PollRecorder({"status": "success"})
+        _wait_for(poll, reference="job-abc-123")
+
+        assert poll.calls[0][0] == "job-abc-123"
+
+
+class TestBuildJobVerifyChannel:
+    """Fail-closed verification of the build-job inspection channel."""
+
+    def test_missing_shared_build_layer_is_named(self):
+        """An un-importable shared build layer is reported, not swallowed."""
+        with patch("claude_runtime._build_job_modules", lambda: None):
+            assert claude_runtime.build_job_verify_channel() == "shared_build_layer_unavailable"
+
+    def test_absent_socket_is_named(self, tmp_path):
+        """A registry with no socket file yields ``socket_absent``."""
+        with (
+            patch("claude_runtime._build_job_modules", lambda: (object(), object())),
+            patch("claude_runtime._build_job_socket_path", lambda: tmp_path / "socket"),
+        ):
+            assert claude_runtime.build_job_verify_channel() == "socket_absent"
+
+    def test_unanswered_ping_is_named(self, tmp_path):
+        """A present socket that does not answer yields ``unreachable``."""
+        sock = tmp_path / "socket"
+        sock.write_text("", encoding="utf-8")
+        with (
+            patch("claude_runtime._build_job_modules", lambda: (object(), object())),
+            patch("claude_runtime._build_job_socket_path", lambda: sock),
+            patch("claude_runtime._build_job_call", lambda request, timeout: None),
+        ):
+            assert claude_runtime.build_job_verify_channel() == "unreachable"
+
+    def test_non_ok_handshake_is_named(self, tmp_path):
+        """A daemon answering with a non-ok status yields ``handshake_failed``."""
+        sock = tmp_path / "socket"
+        sock.write_text("", encoding="utf-8")
+        with (
+            patch("claude_runtime._build_job_modules", lambda: (object(), object())),
+            patch("claude_runtime._build_job_socket_path", lambda: sock),
+            patch(
+                "claude_runtime._build_job_call",
+                lambda request, timeout: {"status": "refused"},
+            ),
+        ):
+            assert claude_runtime.build_job_verify_channel() == "handshake_failed"
+
+    def test_protocol_version_mismatch_is_named(self, tmp_path):
+        """A daemon speaking another protocol version is not trusted."""
+        protocol = type("P", (), {"PROTOCOL_VERSION": "1"})
+        sock = tmp_path / "socket"
+        sock.write_text("", encoding="utf-8")
+        with (
+            patch("claude_runtime._build_job_modules", lambda: (protocol, object())),
+            patch("claude_runtime._build_job_socket_path", lambda: sock),
+            patch(
+                "claude_runtime._build_job_call",
+                lambda request, timeout: {"status": "ok", "version": "99"},
+            ),
+        ):
+            assert claude_runtime.build_job_verify_channel() == "version_mismatch"
+
+    def test_verified_channel_returns_none(self, tmp_path):
+        """A reachable daemon on the matching version verifies clean."""
+        protocol = type("P", (), {"PROTOCOL_VERSION": "1"})
+        sock = tmp_path / "socket"
+        sock.write_text("", encoding="utf-8")
+        with (
+            patch("claude_runtime._build_job_modules", lambda: (protocol, object())),
+            patch("claude_runtime._build_job_socket_path", lambda: sock),
+            patch(
+                "claude_runtime._build_job_call",
+                lambda request, timeout: {"status": "ok", "version": "1"},
+            ),
+        ):
+            assert claude_runtime.build_job_verify_channel() is None
+
+
+class TestBuildJobPoll:
+    """The single bounded long-poll issued against the daemon."""
+
+    def test_request_carries_the_wait_op_job_id_and_bound(self):
+        """The wire request is the daemon's ``wait`` op for this job and bound."""
+        captured: dict[str, Any] = {}
+
+        def _call(request, timeout):
+            captured["request"] = request
+            captured["timeout"] = timeout
+            return {"status": "success"}
+
+        with patch("claude_runtime._build_job_call", _call):
+            claude_runtime.build_job_poll("job-7", 42)
+
+        assert captured["request"] == {"op": "wait", "job_id": "job-7", "bound": 42}
+
+    def test_read_timeout_exceeds_the_long_poll_bound(self):
+        """The socket read window outlasts the server-side hold, so a daemon that
+        answers exactly at the bound is not misread as unreachable."""
+        captured: dict[str, Any] = {}
+
+        def _call(request, timeout):
+            captured["timeout"] = timeout
+            return {"status": "success"}
+
+        with patch("claude_runtime._build_job_call", _call):
+            claude_runtime.build_job_poll("job-7", 42)
+
+        assert captured["timeout"] > 42
+
+    def test_unreachable_channel_yields_the_synthetic_payload(self):
+        """A failed call surfaces as an explicit unreachable status — never as a
+        terminal daemon status and never as an exception."""
+        with patch("claude_runtime._build_job_call", lambda request, timeout: None):
+            payload = claude_runtime.build_job_poll("job-7", 42)
+
+        assert payload["status"] == claude_runtime._BUILD_JOB_UNREACHABLE_STATUS
+        assert payload["reason"] == "unreachable"
+
+    def test_daemon_payload_passes_through_unmodified(self):
+        """A real daemon response is returned as-is for the caller to normalize."""
+        payload = {"status": "failure", "duration_seconds": 12}
+        with patch("claude_runtime._build_job_call", lambda request, timeout: payload):
+            assert claude_runtime.build_job_poll("job-7", 42) == payload

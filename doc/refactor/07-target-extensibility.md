@@ -124,6 +124,64 @@ it extends the cost-to-add contract: a new target MAY also bring its own `target
 skills. The admission test (whole workflow, genuinely N/A elsewhere, no-format-dumping) lives in
 [01](01-finish-portability.md)'s placement model.
 
+*Reconciliation with ADR-011.* The waiting capability was evaluated against this admission test
+and **rejected** it on two of three conditions, so item 6 remains an open general mechanism with
+**no consumer** from that decision — waiting landed as a target-neutral policy over a `Runtime`
+op (item 7 below), not as a `targets:`-scoped skill. One cost datum surfaced while grounding
+that evaluation and is recorded here for whoever does implement item 6: the Claude target is a
+**byte-for-byte verbatim mirror gated by `run_equality_check`** and carries no `mapping.json`, so
+a `targets:` filter needs handling in *both* emitters and must be reconciled with that equality
+invariant — it is not a data-only change on the verbatim side.
+
+**7. A waiting primitive with no target-neutral home. [landed]** Waiting for an
+external event had no placement: the shipped orchestration seam named a target-specific
+background primitive directly in workflow body text, which [principles §5](principles.md)
+forbids, and there was nowhere target-neutral to point the prose at. **Resolved** per ADR-011 as
+a hybrid — the *policy* is a target-neutral standard (`plan-marshall`
+`standards/waiting.md`), and the *primitive* is the 24th `Runtime` abstract method `wait_for`,
+routed as the two-word operation `wait for`.
+
+The op's semantics are **narrowed to a concrete observable**, and that narrowing is the
+load-bearing design fact. The first specification took an *opaque caller-supplied condition
+descriptor* and implemented it over Claude's background-watch / completion-notification
+mechanism. Grounding that against live source falsified it: those affordances are **agent-level,
+with no Python API a runtime subprocess can register against** — an exhaustive read of
+`_claude_runtime_impl.py` and `claude_runtime.py` finds `Notification` only as a terminal-title
+render trigger. An opaque descriptor is unevaluable from a subprocess for the same reason, so
+the pairing could only ever have produced a hollow always-`unknown` stub. The op therefore takes
+an **observable *kind* from a closed enumerated set** plus a concrete `reference` within that
+kind, and is realised as a bounded, re-issuable poll of that observable's own status surface.
+
+- **ABC placement** — `wait_for(observable, reference, bound_seconds)` on `Runtime`, under a
+  `# Waiting` section, written to the item-2 ABC-docstring rule: target-neutral intent plus the
+  no-op fallback, with no per-target narration.
+- **Observable kind shipped** — exactly one: `build-job`, the marshalld build-server job,
+  referenced by its `job_id`. It is the only subprocess-reachable candidate whose status surface
+  already carries an explicit terminal-**failure** vocabulary (`success` / `failure` / `timeout`
+  / `killed`, with `killed` deliberately not folded into `failure`), which is precisely what the
+  silence-is-not-success coverage rule needs. The CI abstraction's `wait-for-*` verbs were
+  considered and not re-exported: they are already target-neutral, so routing them through the
+  `Runtime` would duplicate a shipped surface. A second kind is additive.
+- **Claude implementation** — bounded long-polls of the daemon's status surface via the shared
+  wire protocol, normalised into the observable-independent outcome set `succeeded` / `failed` /
+  `timed_out` / `killed` (terminal) and `pending` (not terminal). No observable-shaped or
+  target-shaped value crosses the boundary.
+- **OpenCode decline** — `no-op` with a `reason` and an `alternative`. It is not hollow: every
+  liveness surface a runtime-held wait needs is already absent there (no session id, no hook
+  channel, no shared build layer), and the stated alternative — run the observable's own
+  bounded-wait verb in-turn, or checkpoint and re-dispatch — is real shipped behaviour.
+- **Fail-closed** — bound exhaustion returns `outcome: pending` with `terminal: false`, never an
+  implicit pass; an unreachable inspection channel and an out-of-vocabulary status are each an
+  explicit `error`. Same posture as ADR-009.
+- **Router + contract** — `wait for` is dispatched by `platform_runtime.py` and named in its
+  `unknown_operation` message; the per-op TOON schema (success, error, and no-op variants) lives
+  in `platform-runtime` `standards/contract.md`.
+
+**No existing waiting call site is migrated onto the op.** The detach-and-notify
+orchestration seam, the CI abstraction's bounded wait verbs, the finalize CI wait, and the
+build-server long poll are unchanged; migrating them is deliberate follow-up work, not an
+oversight.
+
 ## Settled decision — source vocabulary
 
 Source stays **Claude-native**; cross-target rewriting is **data + a shared engine**, not a
