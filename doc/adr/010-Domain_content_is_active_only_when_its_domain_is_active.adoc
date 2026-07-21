@@ -1,0 +1,302 @@
+= ADR-010: Domain content is active only when its domain is active
+:toc: left
+:toclevels: 2
+:sectnums:
+
+// adr-metadata
+// Progressive-disclosure metadata block (see manage-adr SKILL.md → "ADR Template
+// Structure"). Read by `manage-adr.py scan` so a caller can assess an ADR's
+// relevance without reading the full file. List fields are comma-separated.
+// summary: Domain-specific content is in play only when its domain is active — capability-provision layers gate invisibly (null-on-absent), status-bearing gate layers refuse diagnosably (ADR-009), and the executor notation layer stays deliberately domain-blind.
+// tags: extension-point, domain-gating, fail-closed
+// affects: plan-marshall
+// supersedes:
+// end-adr-metadata
+
+// Authoring discipline (see manage-adr SKILL.md → "Authoring Discipline"):
+// ADRs are durable architectural statements, not incident write-ups. No PR numbers,
+// commit SHAs, dates, or lesson IDs anywhere in the body. CLAUDE.md's "current state
+// only" rule applies — describe the architecture, not the chronology.
+
+== Status
+
+Accepted
+
+== Context
+
+The architecture splits into a domain-agnostic core bundle (`plan-marshall`) and a
+set of domain bundles (java, python, javascript, oci, documentation, requirements,
+plan-marshall-plugin-dev). Domain bundles contribute knowledge (skills organised by
+profile) and executable capabilities (triage, outline, recipe, credential, and
+architectural-constraint hooks) that the core discovers and wires into the planning
+lifecycle. A given project activates only a subset of domains, and a given plan
+touches an even smaller subset of the project's active domains.
+
+"Active domain" is not a single fact evaluated in one place. It is evaluated at
+several architectural layers, and each layer answers a slightly different question:
+
+* The *skill-loading* layer asks "which domain's knowledge should load for this
+  task?" — a per-plan, per-task question.
+* The *hook-resolution* layer asks "which domain's executable capability backs this
+  workflow seam?" — a per-project capability question.
+* The *verify-step* layer asks "should this domain-contributed gate run for this
+  plan's footprint?" — a per-project seed whose runnability is a per-plan property.
+* The *executor-notation* layer asks "which script notations exist at all?" — a
+  build-time, project-wide question.
+
+The failure modes the architecture has to handle come from conflating these layers,
+or from choosing the wrong absence semantics for a layer. Two shapes recur. First, a
+*capability that no active domain provides*: if the core hard-codes a domain-specific
+behaviour, an inactive-domain project carries dead machinery it cannot use; if the
+core resolves the capability but has no principled absence value, the workflow
+crashes or silently misbehaves. Second, a *gate that was promised but cannot run*: a
+project-wide configure-time signal ("a configured domain declares an
+architectural-constraint tool") seeds a verify-step, but whether any in-scope module
+can actually resolve that tool's command is a per-plan/per-footprint property the
+configure-time seed cannot express — so the seeded gate silently fails to resolve,
+and its silent absence reads downstream as "the gate passed."
+
+The structural choice point is therefore twofold: *on which axis* (per-plan vs
+per-project) is each layer's active-domain question evaluated, and *what does absence
+mean* at each layer — an inactive domain's component being silently invisible, versus
+present-but-diagnosably-refusing. The second half of that choice is where this ADR
+must reconcile against ADR-009 (status surfaces fail closed), which argues that a
+status-bearing surface must never fold "cannot substantiate the positive" into a
+vacuous positive.
+
+== Decision
+
+Domain-specific content is in play only when its domain is active, and the *meaning
+of absence* is chosen per layer by the nature of the surface: a layer that merely
+*provides a capability* gates invisibly (the component is not loaded / resolves to a
+first-class null), while a layer that *reports or enforces a gate* refuses
+diagnosably (a skip-with-warning, never a silent absence). This split is what keeps
+invisible gating consistent with ADR-009's fail-closed posture rather than
+contradicting it.
+
+=== Gating axis per layer
+
+Two axes carry "active domain":
+
+* *Per-plan axis* — `references.domains` in a plan's `references.json`: the domains a
+  specific plan declares it touches, refined per task via each task's `skills[]` and
+  `profile`. This is the selection axis: of the capabilities the project makes
+  available, which ones this plan actually exercises.
+* *Per-project axis* — `skill_domains.{key}` in `marshal.json` (written by
+  `/marshall-steward` from each discovered extension's `get_skill_domains()`), plus
+  the live extension set from `discover_all_extensions()` and per-module
+  applicability via `applies_to_module()`. This is the availability axis: which
+  domains are registered and which extensions are installed for the whole project.
+
+Each layer is governed by one or both axes:
+
+[cols="2,3", options="header"]
+|===
+| Layer | Governing axis
+
+| Skill loading (which domain knowledge loads for a task)
+| *Both.* The per-project `skill_domains` registration bounds what *can* load; the
+  per-plan `references.domains` (and the task's `profile`) selects what *does* load.
+  The intersection governs: a domain absent from `skill_domains` contributes nothing
+  even if a plan names it, and a registered domain a plan does not name contributes
+  nothing to that plan.
+
+| Hook resolution (`provides_triage` / `provides_outline_skill` / `provides_recipes`
+  / `provides_arch_gate` / `config_defaults`)
+| *Per-project.* A hook is available iff some *registered* domain's extension
+  declares it, discovered uniformly through `discover_all_extensions()`. Hooks are
+  project capabilities, not per-plan selections, so they are resolved on the
+  availability axis and default to null/None when no active domain provides them.
+
+| Domain-contributed verify-step seeding (`default:verify:arch-gate`)
+| *Per-project at seed time, per-plan at run time.* `skill-domains configure` seeds
+  the step when any configured domain's `provides_arch_gate()` returns a descriptor
+  (the availability axis). Whether the step actually runs is a per-plan/per-footprint
+  property — does any in-scope module resolve the command — evaluated at manifest
+  compose time (the selection axis).
+
+| Executor notation (`generate_executor.py`)
+| *Deliberately neither* — see "Deliberately not gated" below.
+|===
+
+=== Visibility semantics: invisible vs present-but-refusing
+
+The choice is made by the nature of the surface, not globally:
+
+* *Capability-provision surfaces* (skill loading, hook resolution) gate *invisibly*.
+  An inactive domain's skill is simply not loaded; an unimplemented hook resolves to
+  a first-class `None`. This is ADR-009-consistent, not a violation of it: a hook
+  that no domain provides asserts *no positive property*. The null-on-absent resolve
+  returns an explicit "no implementor" value that the calling workflow's documented
+  null-branch consumes — it is the first-class evidence-absent value ADR-009
+  demands, not a vacuous "everything is fine" positive. Silent absence is only a
+  fault when it *stands in for* a positive claim; here it stands in for nothing.
+
+* *Status-bearing and gate surfaces* refuse *diagnosably*. A verify-step that was
+  seeded because a domain is active, but whose command cannot resolve for the plan's
+  footprint, must not silently vanish — its silent absence would launder into a false
+  "the gate ran and passed." Such a step is dropped from the plan's verification set
+  *with a diagnosable `[STATUS]` decision-log warning* naming the dropped step and
+  the reason (domain active but no in-scope module wires the command). This is the
+  direct application of ADR-009: the gate models "cannot substantiate that this gate
+  ran" as an explicit, legible skip rather than folding it into the positive.
+
+The reconciliation with ADR-009 is therefore that invisible gating and diagnosable
+refusal are not in tension — they are the same principle applied to two kinds of
+surface. Absence is allowed to be silent exactly when it claims nothing (capability
+provision), and must be diagnosable exactly when its silence would otherwise read as
+a positive verdict (a gate).
+
+=== Degrade path when no implementor exists
+
+The degrade path is the existing null-on-absent / zero-generator fallback the
+extension points already use, promoted here to the governing rule:
+
+* An optional hook returns its safe default (`None` / `[]`) when no active domain
+  implements it — `provides_arch_gate()` returning `None` appends no verify-step
+  (the silent-skip default); `provides_triage()` returning `None` leaves the core
+  default triage in place.
+* A `manage-config resolve-*` verb resolves the domain-owned surface to `null` when
+  no active domain provides it — the `resolve-workflow-skill-extension --domain
+  --type` verb is the precedent: it returns a first-class null the workflow's
+  null-branch continues from, using the core default.
+
+The contract is uniform: resolution never raises and never fabricates a positive; it
+returns an explicit absence value, and every consuming seam carries a documented
+branch that degrades to the core default. A needed surface with no implementor
+degrades to "core default behaviour," never to a crash and never to a silent wrong
+answer.
+
+=== Deliberately not gated
+
+Some layers stay domain-blind by design:
+
+* *The executor notation layer* (`generate_executor.py`). Notation registration is a
+  static build-time artifact regenerated per project from the whole bundle inventory;
+  it is domain-blind today, and it is recommended to stay so. Inactive-domain
+  enforcement, if wanted, belongs at resolve/dispatch time (per the visibility
+  decision above), not at notation-registration time. The full analysis — migration
+  path, backward-compatibility, and the inactive-domain-notation failure mode — is
+  specified separately, and its recommendation is to decline executor-layer gating.
+* *The domain-agnostic extension-discovery machinery* itself
+  (`discover_all_extensions()`, the `find_extension_path()` scanner, the
+  `applies_to_module()` aggregation). This machinery *is* the mechanism that
+  evaluates domain-activeness; it cannot itself be domain-gated without circularity.
+* *The null-on-absent `resolve-*` verbs*. They are correctly domain-neutral because
+  they *are* the gate — they resolve to null precisely when the domain is inactive,
+  so gating them would be gating the gate.
+
+== Consequences
+
+// Phrase consequences as PROPERTIES OF THE RESULTING ARCHITECTURE, not as "what
+// changed in PR #N". Positive / Negative / Risks describe the steady-state behaviour
+// the decision produces, including residual failure modes deliberately accepted.
+
+=== Positive
+
+* An inactive-domain project carries no dead domain-specific machinery: capability
+  layers resolve to null and load nothing, so the core stays domain-agnostic and each
+  domain owns its own activation.
+* A promised-but-unrunnable gate is legible rather than silently absent: the
+  diagnosable skip-with-warning surfaces exactly the case a silent drop would have
+  hidden, keeping the fail-closed guarantee ADR-009 established for status surfaces.
+* The invisible-vs-refusing rule gives authors a single, principled test for new
+  surfaces ("does this surface claim a positive when absent?"), so the correct
+  absence semantics are chosen by construction rather than rediscovered per feature.
+* Adding a domain capability is uniformly a matter of implementing the hook and
+  registering the domain; the core requires no change, because discovery and
+  null-on-absent resolution are already domain-neutral.
+
+=== Negative
+
+* Absence semantics are no longer uniform across the codebase: an author must
+  classify each new surface as capability-provision (invisible) or gate
+  (diagnosable) rather than applying one rule everywhere.
+* The per-project-seed / per-plan-resolvability split for domain-contributed gates
+  means a seeded step can legitimately not run for a given plan; readers must
+  understand that a seeded step is a capability, not a promise that it runs on every
+  plan.
+
+=== Risks
+
+* A future gate surface authored as "silently skip when the domain is inactive"
+  would reintroduce the vacuous-positive failure ADR-009 guards against. The
+  mitigation is the explicit rule here plus the diagnosable-skip mechanism at the
+  manifest compose layer, but the discipline must be preserved as new gate surfaces
+  are added.
+* Mis-classifying a capability-provision surface as a gate would produce noisy
+  warnings for a legitimately-absent capability; the invisible-vs-refusing test
+  ("does absence claim a positive?") is the guard, but it requires the author to
+  apply it.
+
+== Alternatives Considered
+
+* *One global absence semantic — everything invisible.* Gate every layer the same
+  way: an inactive or unresolvable domain component simply disappears. This is the
+  simplest rule and correct for capability provision, but it is wrong for gates: a
+  seeded verify-step that silently vanishes reads downstream as "the gate ran and
+  passed," which is exactly the vacuous-positive failure ADR-009 rejects. Rejected:
+  it launders an evidence-absent gate into a false positive.
+
+* *One global absence semantic — everything present-but-refusing.* Make every
+  inactive domain component present but resolve to a diagnosable refusal. This never
+  hides a gate, but it drowns the common case (a capability simply not provided) in
+  refusal noise and forces every consuming workflow to handle a refusal where a plain
+  null would do. Rejected: it treats capability absence as an anomaly when it is the
+  normal, information-free state.
+
+* *Gate the executor notation layer too.* Make `generate_executor.py` domain-aware so
+  notations for inactive domains are absent from the generated proxy. This pushes
+  enforcement to build time, but notation registration is a static per-project
+  artifact regenerated from the whole inventory, and gating it couples a build-time
+  generator to per-plan domain state it cannot see; the blast radius on that file is
+  high. Rejected: enforcement belongs at resolve/dispatch time where the active-domain
+  question is actually answerable, not at notation-registration time.
+
+* *Hard-code domain behaviour in the core with feature flags.* Keep domain-specific
+  branches in the core, guarded by configuration flags. This avoids the extension
+  machinery, but it re-couples the core to every domain and reintroduces the dead-code
+  and centralisation problems the extension model exists to remove. Rejected: it
+  inverts the ownership the domain-bundle architecture is built on.
+
+The alternatives fall in one class: each either applies a single absence semantic
+uniformly (ignoring that provision and gating are different kinds of surface), or
+gates at the wrong layer / in the wrong place (build-time notation, or a
+core-resident flag). The unifying principle is that the *nature of the surface*, not
+a global rule, dictates both the axis on which active-domain is evaluated and what
+its absence means.
+
+== References
+
+// Link to OTHER ADRs, durable architecture docs, and canonical skill / standards
+// files the decision affects.
+//
+// Do NOT link to:
+// - PR numbers or commit SHAs (git-history artefacts; reference the artefact the
+//   change produced — the skill, script, rule — instead)
+// - Lesson IDs (.plan/local/lessons-learned/...) (ephemeral recurrence-detectors;
+//   may be pruned or superseded, creating dangling references)
+//
+* ADR-009 (`Status reporting fails closed with an explicit unknown state`) — the
+  fail-closed posture this ADR reconciles the visibility decision against.
+* `extension-api` `standards/extension-contract.md` — the extension hook contract
+  (`provides_triage` / `provides_outline_skill` / `provides_recipes` /
+  `provides_arch_gate` / `config_defaults`) whose null-on-absent default is the
+  degrade-path precedent.
+* `extension-api` `standards/ext-point-domain-verb.md` — the sibling ext-point
+  contract for a domain-owned executable verb, which realises the hook-resolution and
+  degrade-path decisions above for executable capabilities.
+* `extension-api` `standards/ext-point-build-verify-step.md` — the domain-appended
+  verify-step contract (`default:verify:arch-gate`) whose per-project seed / per-plan
+  resolvability split this ADR governs.
+* `tools-script-executor` `standards/domain-aware-notation-spec.md` — the
+  specification that analyses and declines executor-notation-layer gating, realising
+  the "deliberately not gated" decision for that layer.
+* `manage-config` `standards/domain-residency-audit.md` — the enumeration of core
+  domain-specific residue, each mapped to the gating/visibility/degrade mechanism
+  this ADR defines.
+* `manage-config` `_cmd_skill_domains.py` — the `provides_arch_gate` verify-step seed
+  (availability axis) whose runnability is corrected at the compose layer.
+* `manage-execution-manifest` — the manifest composer that applies the diagnosable
+  skip-with-warning for an unresolvable domain-seeded verify-step (the run-time,
+  per-plan resolvability gate).
