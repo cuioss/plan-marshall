@@ -173,7 +173,7 @@ A unit test whose pass/fail depends on the liveness or registration state of a m
 * Mock/stub the liveness-check seam directly (e.g. patch the module-level routing function) so the test deterministically exercises the path it intends to assert.
 * Prefer, where the production API offers it, an **explicit per-call mode parameter** injected by the test (e.g. `execution_mode=in_process`) over probing ambient state — the explicit mode is auditable in production too, not just in tests, and closes the hermeticity gap at the API boundary rather than only at the test boundary.
 
-Either way, add a companion test that explicitly asserts the real-service submission path with a *mocked* service, never a live one. (extends lesson 2026-07-19-22-001)
+Either way, add a companion test that explicitly asserts the real-service submission path with a *mocked* service, never a live one.
 
 ### Test Isolation
 
