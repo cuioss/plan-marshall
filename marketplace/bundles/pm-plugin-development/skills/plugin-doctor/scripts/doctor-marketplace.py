@@ -729,6 +729,14 @@ def cmd_quality_gate(args) -> dict:
                                     its fully-qualified manifest step_id, else the
                                     recorded phase_steps key drifts and the
                                     phase_steps_complete handshake loops forever)
+      - analyze_mutates_source_order (mutates-source-step-post-merge-order: a
+                                    finalize step declaring ``mutates_source: true``
+                                    must be ordered before the merge gate
+                                    (``default:branch-cleanup``, whose order is
+                                    resolved dynamically), else its source edits
+                                    land after the feature branch is merged and are
+                                    unpushable; see
+                                    phase-6-finalize/standards/source-edit-pushability.md)
       - scan_step_configurable_contract (step-configurable-contract: a finalize-step
                                     body doc whose ``configurable:`` frontmatter
                                     block is present but malformed — missing a

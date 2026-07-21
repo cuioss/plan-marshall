@@ -101,6 +101,7 @@ _alis = _load('_analyze_lesson_id_in_skill_prose.py', '_alis_fixtures')
 _aatd = _load('_analyze_allowed_tools_drift.py', '_aatd_fixtures')
 _asdrc = _load('_analyze_self_declared_rule_compliance.py', '_asdrc_fixtures')
 _afst = _load('_analyze_finalize_step_token.py', '_afst_fixtures')
+_amso = _load('_analyze_mutates_source_order.py', '_amso_fixtures')
 _ascc = _load('_analyze_step_configurable_contract.py', '_ascc_fixtures')
 _aroe = _load('_analyze_role_field.py', '_aroe_fixtures')
 _advd = _load('_analyze_declared_vs_disk.py', '_advd_fixtures')
@@ -607,6 +608,34 @@ def build_fixture_corpus() -> dict[str, FixtureSpec]:
                 '  class: core\n'
                 '---\n\n# F\n'
             )
+        },
+    )
+
+    # --- Pre-merge source-edit pushability ----------------------------------
+    # A finalize step declaring ``mutates_source: true`` at an order past the
+    # discovered merge gate (``default:branch-cleanup``, materialized alongside
+    # so the threshold resolves) fires mutates-source-step-post-merge-order.
+    _EXT_POINT_FS = 'plan-marshall:extension-api/standards/ext-point-finalize-step'
+    corpus['mutates-source-step-post-merge-order'] = FixtureSpec(
+        analyzer=_amso.analyze_mutates_source_order,
+        files={
+            'plan-marshall/skills/phase-6-finalize/standards/branch-cleanup.md': (
+                '---\n'
+                'name: default:branch-cleanup\n'
+                'order: 70\n'
+                'description: Merge gate\n'
+                f'implements: {_EXT_POINT_FS}\n'
+                '---\n\n# Branch cleanup\n'
+            ),
+            'b/skills/mutating-step/SKILL.md': (
+                '---\n'
+                'name: b:mutating-step\n'
+                'order: 996\n'
+                'mutates_source: true\n'
+                'description: Post-merge source mutator\n'
+                f'implements: {_EXT_POINT_FS}\n'
+                '---\n\n# Mutating step\n'
+            ),
         },
     )
 

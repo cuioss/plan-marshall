@@ -54,6 +54,7 @@ from _analyze_lane_frontmatter import analyze_lane_frontmatter
 from _analyze_lesson_id_in_skill_prose import analyze_lesson_id_in_skill_prose
 from _analyze_literal_count import analyze_literal_count
 from _analyze_manage_invocation import scan_manage_invocation
+from _analyze_mutates_source_order import analyze_mutates_source_order
 from _analyze_persona_binding_resolves import analyze_persona_binding_resolves
 from _analyze_persona_profile_uniqueness import analyze_persona_profile_uniqueness
 from _analyze_plugin_json import analyze_plugin_json_orphans
@@ -187,6 +188,10 @@ class RuleRunner:
             suppressed(analyze_historical_prose_in_skills(root)),
         )
         emit('scan_finalize_step_token', scoped(scan_finalize_step_token(root)))
+        emit(
+            'analyze_mutates_source_order',
+            scoped(analyze_mutates_source_order(root)),
+        )
         emit(
             'scan_step_configurable_contract',
             scoped(scan_step_configurable_contract(root)),

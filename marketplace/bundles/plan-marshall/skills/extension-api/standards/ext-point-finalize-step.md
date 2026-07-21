@@ -1,6 +1,6 @@
 # Extension Point: Finalize Step
 
-> **Type**: Phase-6 Step Doc Extension | **Hook Method**: `implements:` frontmatter on each step doc | **Implementations**: 24 | **Status**: Active
+> **Type**: Phase-6 Step Doc Extension | **Hook Method**: `implements:` frontmatter on each step doc | **Implementations**: 25 | **Status**: Active
 
 ## Overview
 
@@ -30,7 +30,7 @@ implements:
 
 **Frontmatter is the sole source of truth for finalize-step discovery.** The `find_implementors()` scanner reads the `implements:` declaration from each candidate step doc and selects every doc whose declaration includes the canonical value above. The scanner does **not** read the markdown body for a discovery signal, and it does **not** identify a step by a directory-name or filename heuristic. A step doc whose frontmatter omits the declaration is not discovered.
 
-Beyond the `implements:` declaration, each finalize-step doc carries the following five-field frontmatter contract. These fields replace the removed `BUILT_IN_FINALIZE_STEPS` / `OPTIONAL_BUNDLE_FINALIZE_STEPS` lists and the `*_DESCRIPTIONS` maps as the per-step source of truth:
+Beyond the `implements:` declaration, each finalize-step doc carries the following frontmatter contract — five required fields plus one optional field. These fields replace the removed `BUILT_IN_FINALIZE_STEPS` / `OPTIONAL_BUNDLE_FINALIZE_STEPS` lists and the `*_DESCRIPTIONS` maps as the per-step source of truth:
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -39,6 +39,7 @@ Beyond the `implements:` declaration, each finalize-step doc carries the followi
 | `default_on` | bool | Yes | `true` ⇒ the step is included in the default seed (`_seed_finalize_steps()` filters to `default_on == true`). `false` ⇒ the step is discoverable but opt-in (it is added to a project's `phase-6-finalize.steps` only by an explicit preset or hand-registration). |
 | `presets` | list[str] | Yes | The named presets this step belongs to — a (possibly empty) subset of `[local, standard, full]`. The preset builder derives "step S belongs to preset P" as `P ∈ S.presets`. An empty list `[]` means the step is in no named preset. |
 | `description` | str | Yes | The human-readable discovery description (shown by `list-finalize-steps` and the wizard). This is the single source of the per-step description, replacing the removed `*_DESCRIPTIONS` maps. |
+| `mutates_source` | bool | No | `true` means the step edits tracked source at runtime; such a step MUST be ordered before `default:branch-cleanup`, per [phase-6-finalize/standards/source-edit-pushability.md](../../phase-6-finalize/standards/source-edit-pushability.md). |
 
 ### Addressing Surface
 
@@ -123,11 +124,13 @@ Every step doc that declares the finalize-step interface. Built-in steps live un
 | Name | Source | Order | default_on | presets |
 |------|--------|-------|:----------:|---------|
 | `default:finalize-step-sync-baseline` | built-in | 3 | true | `[full]` |
+| `project:finalize-step-lessons-housekeeping` | project | 4 | false | `[]` |
 | `default:pre-push-quality-gate` | built-in | 5 | true | `[full]` |
 | `default:finalize-step-simplify` | built-in | 8 | true | `[full]` |
 | `default:finalize-step-security-audit` | built-in | 9 | true | `[]` |
 | `default:push` | built-in | 10 | true | `[local, standard, full]` |
 | `default:create-pr` | built-in | 20 | true | `[standard, full]` |
+| `project:finalize-step-era-stamp-fill` | project | 21 | false | `[]` |
 | `default:ci-verify` | built-in | 22 | true | `[standard, full]` |
 | `default:architecture-refresh` | built-in | 25 | false | `[]` |
 | `default:sonar-roundtrip` | built-in | 40 | true | `[full]` |
@@ -145,7 +148,6 @@ Every step doc that declares the finalize-step interface. Built-in steps live un
 | `project:finalize-step-review-retrospective` | project | 50 | false | `[]` |
 | `project:finalize-step-deploy-target` | project | 81 | false | `[]` |
 | `project:finalize-step-sync-plugin-cache` | project | 85 | false | `[]` |
-| `project:finalize-step-lessons-housekeeping` | project | 996 | false | `[]` |
 
 Project steps carry `default_on: false` and `presets: []` because they are hand-registered in the meta-project's `phase-6-finalize.steps` array (presets ship to consumer projects, which do not have the meta-project's project-local finalize-step skills). The `plan-marshall:automatic-review` step is a default-on bundle step (`default_on: true`, member of the `standard` and `full` presets). The bundle-optional `plan-marshall:plan-retrospective` step is opt-in (`default_on: false`) and a member of the `full` preset only.
 

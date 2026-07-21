@@ -75,6 +75,7 @@ GOLDEN_QG_LABELS = [
     'analyze_self_declared_rule_compliance',
     'analyze_historical_prose_in_skills',
     'scan_finalize_step_token',
+    'analyze_mutates_source_order',
     'scan_step_configurable_contract',
     'analyze_role_field',
     'analyze_lane_frontmatter',
