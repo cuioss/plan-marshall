@@ -326,7 +326,7 @@ class TestInstallTerminalTitleHooks:
     # ------------------------------------------------------------------
 
     def test_fresh_install_creates_all_render_events(self, rt, tmp_path):
-        """Fresh install populates SessionStart (matcher-less + clear), UserPromptSubmit,
+        """Fresh install populates SessionStart (ONE matcher-less entry), UserPromptSubmit,
         Notification, Stop, PreToolUse:AskUserQuestion, PreToolUse:Bash, and a
         matcher-less PostToolUse entry with the renderer command."""
         target = tmp_path / ".claude" / "settings.local.json"
@@ -337,20 +337,19 @@ class TestInstallTerminalTitleHooks:
         settings = json.loads(target.read_text())
         hooks_block = settings["hooks"]
 
-        # SessionStart has BOTH the existing capture entry AND two render entries
-        # (matcher-less + matcher:"clear").
+        # SessionStart has BOTH the existing capture entry AND exactly ONE
+        # matcher-less render entry. The matcher-less entry already fires for
+        # every source (including "clear", which the renderer turns into a
+        # session teardown), so no matcher:"clear" variant is installed.
         session_start = hooks_block["SessionStart"]
-        # Render command appears exactly twice (one per matcher variant).
-        assert _count_command(session_start, _RENDER_HOOK_COMMAND) == 2
-        # And one matcher-less render entry, one matcher:"clear" render entry.
+        assert _count_command(session_start, _RENDER_HOOK_COMMAND) == 1
         matchers_with_render = [
             entry.get("matcher", "")
             for entry in session_start
             if isinstance(entry, dict)
             and any(h.get("command") == _RENDER_HOOK_COMMAND for h in entry.get("hooks", []))
         ]
-        assert "" in matchers_with_render
-        assert "clear" in matchers_with_render
+        assert matchers_with_render == [""]
 
         # UserPromptSubmit, Notification, Stop — each one matcher-less render entry.
         for event_name in ("UserPromptSubmit", "Notification", "Stop"):
@@ -439,14 +438,14 @@ class TestInstallTerminalTitleHooks:
 
     def test_idempotent_render_commands_not_duplicated(self, rt, tmp_path):
         """Across two installs, each render-hook event still contains exactly one render command
-        (SessionStart still has exactly two — matcher-less + clear)."""
+        (SessionStart included — it carries a single matcher-less entry)."""
         target = tmp_path / ".claude" / "settings.local.json"
         rt.project_install_hook(str(target))
         rt.project_install_hook(str(target))
 
         settings = json.loads(target.read_text())
         hooks_block = settings["hooks"]
-        assert _count_command(hooks_block["SessionStart"], _RENDER_HOOK_COMMAND) == 2
+        assert _count_command(hooks_block["SessionStart"], _RENDER_HOOK_COMMAND) == 1
         for event_name in ("UserPromptSubmit", "Notification", "Stop"):
             assert _count_command(hooks_block[event_name], _RENDER_HOOK_COMMAND) == 1
         # PreToolUse carries two render entries (AskUserQuestion + Bash).
@@ -737,8 +736,8 @@ class TestInstallTerminalTitleHooks:
         session_start = settings["hooks"]["SessionStart"]
         # Capture entry still present.
         assert _count_command(session_start, _HOOK_COMMAND) == 1
-        # Render entries (matcher-less + clear) added without disturbing the capture entry.
-        assert _count_command(session_start, _RENDER_HOOK_COMMAND) == 2
+        # The matcher-less render entry was added without disturbing the capture entry.
+        assert _count_command(session_start, _RENDER_HOOK_COMMAND) == 1
 
     def test_preserves_unrelated_existing_hooks_block(self, rt, tmp_path):
         """Existing unrelated hooks (e.g. UserPromptSubmit with a foreign command) are preserved
@@ -918,7 +917,7 @@ class TestInstallEnforcementHook:
 
         hooks = after["hooks"]
         # Existing render entries intact.
-        assert _count_command(hooks["SessionStart"], _RENDER_HOOK_COMMAND) == 2
+        assert _count_command(hooks["SessionStart"], _RENDER_HOOK_COMMAND) == 1
         assert _count_command(hooks["PreToolUse"], _RENDER_HOOK_COMMAND) == 2
         assert _count_command(hooks["PostToolUse"], _RENDER_HOOK_COMMAND) == 1
         # statusLine + env preserved verbatim.
@@ -2655,7 +2654,6 @@ class TestHealthCheck:
     # _DISPLAY_RENDER_ENTRIES plus statusLine + env in claude_runtime.
     _DISPLAY_LABELS = (
         "SessionStart:matcher-less",
-        "SessionStart:clear",
         "UserPromptSubmit",
         "Notification",
         "Stop",
@@ -2735,7 +2733,6 @@ class TestHealthCheck:
         assert "SessionStart:matcher-less: present" in detail
         # Every other required entry is named MISSING.
         for label in (
-            "SessionStart:clear",
             "UserPromptSubmit",
             "Notification",
             "Stop",

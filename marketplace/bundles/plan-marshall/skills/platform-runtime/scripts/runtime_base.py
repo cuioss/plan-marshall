@@ -3,7 +3,7 @@
 """
 Abstract base class and shared TOON helpers for platform-runtime.
 
-Defines the Runtime ABC with all 22 platform operations. Concrete subclasses
+Defines the Runtime ABC with all 23 platform operations. Concrete subclasses
 (ClaudeRuntime, OpenCodeRuntime) implement each operation for their target.
 
 TOON helpers delegate to the canonical toon_parser from ref-toon-format — no
@@ -393,6 +393,36 @@ class Runtime(ABC):
         Returns:
             Serialized TOON string carrying the conflict / stale report, or
             ``no-op``.
+        """
+
+    @abstractmethod
+    def session_teardown(self) -> str:
+        """Reset the terminal title and release the session's plan binding.
+
+        The end-of-session counterpart to :meth:`session_bind` /
+        :meth:`session_render_title`: it returns the tab title to the terminal's
+        own default and drops the caller session's ``active-plan`` slot, so a
+        finished or archived plan leaves no stale title and no stale binding
+        behind.
+
+        **Activation-gated.** The activation signal is read FIRST: when the
+        terminal-title feature is not wired up on this target, the op writes NO
+        title escape, opens NO ``/dev/tty``, mutates NO binding, and returns
+        ``active: false`` with ``reason: feature_inactive``. A project that never
+        opted into terminal titles is never touched by the teardown.
+
+        On Claude: when active, resolves the session id from
+        ``$CLAUDE_CODE_SESSION_ID``, writes the neutral-default reset escape
+        (``\\x1b]0;\\x07`` — a bare OSC-0 with an empty payload) to ``/dev/tty``
+        best-effort, then unbinds the session slot. ``reset`` and ``unbound`` are
+        reported independently, so a title reset that landed while the unbind
+        failed (or vice versa) is visible. Never raises.
+
+        On OpenCode: returns ``no-op`` (no terminal-title channel).
+
+        Returns:
+            Serialized TOON string (success or no-op) carrying ``active``,
+            ``reset``, and ``unbound``, plus ``reason`` when inactive.
         """
 
     @abstractmethod

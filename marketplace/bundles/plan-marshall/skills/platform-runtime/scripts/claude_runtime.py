@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """
-ClaudeRuntime — Claude Code implementation of all 22 platform-runtime operations.
+ClaudeRuntime — Claude Code implementation of all 23 platform-runtime operations.
 
 Implements every abstract method from Runtime (runtime_base.py) for the Claude Code
 target.  All responses are serialized TOON strings built via the toon_success,
@@ -137,8 +137,11 @@ _HOOK_COMMAND = (
 )
 
 # Render-title hook command installed across all seven render-trigger events
-# plus statusLine. Invoked by Claude Code on SessionStart (matcher-less + matcher
-# "clear"), UserPromptSubmit, Notification, Stop, PreToolUse:AskUserQuestion,
+# plus statusLine. Invoked by Claude Code on SessionStart (ONE matcher-less
+# entry, which already fires for every source including "clear"; the renderer
+# branches on ``source == "clear"`` and performs a session TEARDOWN instead of a
+# render, so a second ``matcher: "clear"`` entry would be redundant),
+# UserPromptSubmit, Notification, Stop, PreToolUse:AskUserQuestion,
 # PreToolUse:Bash, and PostToolUse (matcher-less — every tool call); the
 # statusLine variant appends ``--statusline`` for plain-text emission. The
 # PreToolUse:Bash entry surfaces the ⚙ busy icon BEFORE a long-running shell
@@ -176,8 +179,9 @@ _ENFORCEMENT_HOOK_COMMAND = (
 )
 
 # Render-trigger hook events that each receive a single matcher-less entry
-# invoking the renderer. SessionStart receives BOTH a matcher-less entry AND a
-# ``matcher: "clear"`` entry, so it is handled separately below.
+# invoking the renderer. SessionStart also receives a single matcher-less entry
+# but must coexist with the session-capture entry, so it is handled separately
+# below.
 _RENDER_TRIGGER_EVENTS: tuple[str, ...] = (
     "UserPromptSubmit",
     "Notification",
@@ -263,11 +267,11 @@ def _command_is_build(command: str | None) -> bool:
 # Required render-trigger entries inspected by the ``display`` health check, in
 # report order. Each tuple is (label, hooks_block_key, matcher). The label is the
 # token the menu doc tells the user to read; it matches the ``installed_events``
-# naming from ``_install_terminal_title_hooks`` exactly, except SessionStart is
-# split into its two matcher variants so a partial install is named per-line.
+# naming from ``_install_terminal_title_hooks`` exactly, except SessionStart
+# carries the ``:matcher-less`` qualifier naming the one variant that is
+# installed.
 _DISPLAY_RENDER_ENTRIES: tuple[tuple[str, str, str], ...] = (
     ("SessionStart:matcher-less", "SessionStart", ""),
-    ("SessionStart:clear", "SessionStart", "clear"),
     ("UserPromptSubmit", "UserPromptSubmit", ""),
     ("Notification", "Notification", ""),
     ("Stop", "Stop", ""),
@@ -333,6 +337,39 @@ def _diagnose_display_entries(settings_data: dict[str, Any]) -> tuple[list[str],
         healthy = False
 
     return lines, healthy
+
+
+def _terminal_title_active() -> bool:
+    """Return True when the terminal-title feature is wired up for this project.
+
+    The activation signal read by ``session teardown`` BEFORE it touches
+    anything: a project that never opted into terminal titles must not have its
+    tab title reset or its session binding dropped by the teardown.
+
+    Reads the same two settings files the ``display`` health check merges
+    (``.claude/settings.json`` and ``.claude/settings.local.json``, via
+    :func:`_merge_display_settings`) and reports active iff EITHER a render-hook
+    entry is installed on any render-trigger event (:data:`_DISPLAY_RENDER_ENTRIES`,
+    detected with :func:`_has_render_entry`) OR a ``statusLine`` command is
+    configured. Either channel alone means the feature is live.
+
+    Best-effort: any read/parse failure yields False (inactive), so an
+    unreadable settings file makes the teardown a no-op rather than a guess.
+    """
+    project_dir = Path(".")
+    shared = _read_json(project_dir / ".claude" / "settings.json") or {}
+    local = _read_json(project_dir / ".claude" / "settings.local.json") or {}
+    merged = _merge_display_settings(shared, local)
+
+    hooks_block = merged.get("hooks", {})
+    if isinstance(hooks_block, dict):
+        for _label, block_key, matcher in _DISPLAY_RENDER_ENTRIES:
+            entries = hooks_block.get(block_key, [])
+            if isinstance(entries, list) and _has_render_entry(entries, matcher=matcher):
+                return True
+
+    statusline = merged.get("statusLine")
+    return isinstance(statusline, dict) and bool(statusline.get("command"))
 
 
 def _merge_display_settings(*sources: dict[str, Any]) -> dict[str, Any]:
@@ -565,8 +602,10 @@ def _install_terminal_title_hooks(
     Installs (each block dedup-idempotent on the canonical command string):
 
     - ``hooks.SessionStart`` — the existing ``claude_hook`` session-capture
-      entry (preserved when present, inserted when absent) **and** two render
-      entries (matcher-less + ``matcher: "clear"``).
+      entry (preserved when present, inserted when absent) **and** ONE
+      matcher-less render entry. The matcher-less entry already fires for every
+      source, and the renderer performs a session teardown when
+      ``source == "clear"``, so no separate ``matcher: "clear"`` entry is wired.
     - ``hooks.UserPromptSubmit``, ``hooks.Notification``, ``hooks.Stop`` —
       single matcher-less render entries each.
     - ``hooks.PreToolUse`` — two render entries: one with
@@ -597,8 +636,7 @@ def _install_terminal_title_hooks(
 
         - ``io_ok`` (bool): True iff the file was read AND written successfully.
         - ``installed_events`` (list[str]): event labels whose render entry was
-          freshly added on this call. SessionStart appears at most once even
-          though it gets two render entries. The tool-scoped PreToolUse entries
+          freshly added on this call. The tool-scoped PreToolUse entries
           use matcher-qualified labels (``PreToolUse:AskUserQuestion``,
           ``PreToolUse:Bash``) so each can be reported individually; the
           matcher-less PostToolUse entry is reported under the single label
@@ -632,7 +670,7 @@ def _install_terminal_title_hooks(
         installed_events: list[str] = []
         already_present_events: list[str] = []
 
-        # --- SessionStart: capture entry + two render entries. ---
+        # --- SessionStart: capture entry + ONE matcher-less render entry. ---
         session_start = hooks_block.setdefault("SessionStart", [])
         if not isinstance(session_start, list):
             session_start = []
@@ -647,9 +685,6 @@ def _install_terminal_title_hooks(
         session_start_changed = False
         if not _has_render_entry(session_start, matcher=""):
             session_start.append(_render_entry(matcher=""))
-            session_start_changed = True
-        if not _has_render_entry(session_start, matcher="clear"):
-            session_start.append(_render_entry(matcher="clear"))
             session_start_changed = True
 
         if session_start_changed:

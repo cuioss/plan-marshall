@@ -119,6 +119,168 @@ def _redirect_render_env(tmp_path: Path, monkeypatch, session_id: str) -> None:
     monkeypatch.chdir(tmp_path)
 
 
+def _activate_terminal_title(tmp_path: Path) -> None:
+    """Write a settings file that makes ``_terminal_title_active()`` report True.
+
+    A configured ``statusLine`` command alone is enough — the predicate reports
+    active when EITHER a render-hook entry or a statusLine command is present.
+    """
+    settings = tmp_path / ".claude" / "settings.local.json"
+    settings.parent.mkdir(parents=True, exist_ok=True)
+    settings.write_text(
+        json.dumps({"statusLine": {"type": "command", "command": "render"}}),
+        encoding="utf-8",
+    )
+
+
+def _patch_dev_tty(monkeypatch, *, openable: bool) -> list[str]:
+    """Redirect ``open('/dev/tty', ...)``; return the list of captured writes.
+
+    With ``openable=False`` the open raises ``OSError`` (no controlling
+    terminal). With ``openable=True`` it yields an in-memory writer whose
+    payload is appended to the returned list. Every other path falls through to
+    the real builtin, so ordinary file I/O in the code under test is unaffected.
+    """
+    import builtins
+    import io
+
+    writes: list[str] = []
+    real_open = builtins.open
+
+    class _CapturingTty(io.StringIO):
+        def close(self) -> None:
+            writes.append(self.getvalue())
+            super().close()
+
+    def _fake_open(file, *args, **kwargs):
+        if file == "/dev/tty":
+            if not openable:
+                raise OSError(6, "Device not configured")
+            return _CapturingTty()
+        return real_open(file, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "open", _fake_open)
+    return writes
+
+
+def _stub_hook_stdin(monkeypatch, payload: dict[str, Any]) -> None:
+    """Feed *payload* to the renderer's hook-mode ``sys.stdin.read()``."""
+    import io
+
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(payload)))
+
+
+class TestSessionTeardown:
+    """Tests for the activation-gated ``session teardown`` operation.
+
+    Order is load-bearing: the activation signal is read FIRST, so an inactive
+    project is never touched — no title escape, no /dev/tty open, no binding
+    mutation. When active, the neutral-default reset escape is written and the
+    session's own slot is dropped, with ``reset`` and ``unbound`` reported
+    independently.
+    """
+
+    def test_inactive_feature_touches_nothing(self, rt, tmp_path, monkeypatch):
+        """With the feature inactive: no tty write, no unbind, reason feature_inactive."""
+        _redirect_render_env(tmp_path, monkeypatch, "sess-teardown-inactive")
+        session_binding.bind("sess-teardown-inactive", "some-plan")
+        writes = _patch_dev_tty(monkeypatch, openable=True)
+
+        unbind_calls: list[str] = []
+        real_unbind = session_binding.unbind
+        monkeypatch.setattr(
+            session_binding,
+            "unbind",
+            lambda sid: (unbind_calls.append(sid), real_unbind(sid))[1],
+        )
+
+        result = parse_toon(rt.session_teardown())
+
+        assert result["status"] == "success"
+        assert result["active"] is False
+        assert result["reset"] is False
+        assert result["unbound"] is False
+        assert result["reason"] == "feature_inactive"
+        # Nothing was written and no binding was mutated.
+        assert writes == []
+        assert unbind_calls == []
+        assert session_binding.resolve_plan("sess-teardown-inactive") == "some-plan"
+
+    def test_active_feature_writes_neutral_reset_and_unbinds(self, rt, tmp_path, monkeypatch):
+        """With the feature active: the bare OSC-0 reset lands and the slot is dropped."""
+        _redirect_render_env(tmp_path, monkeypatch, "sess-teardown-active")
+        _activate_terminal_title(tmp_path)
+        session_binding.bind("sess-teardown-active", "some-plan")
+        writes = _patch_dev_tty(monkeypatch, openable=True)
+
+        result = parse_toon(rt.session_teardown())
+
+        assert result["active"] is True
+        assert result["reset"] is True
+        assert result["unbound"] is True
+        # EXACTLY the neutral-default reset escape — an empty OSC-0 payload,
+        # which returns the tab to the terminal's own default title.
+        assert writes == ["\x1b]0;\x07"]
+        assert session_binding.resolve_plan("sess-teardown-active") is None
+
+    def test_active_without_controlling_tty_still_unbinds(self, rt, tmp_path, monkeypatch):
+        """reset and unbound are independent: no tty still drops the binding."""
+        _redirect_render_env(tmp_path, monkeypatch, "sess-teardown-notty")
+        _activate_terminal_title(tmp_path)
+        session_binding.bind("sess-teardown-notty", "some-plan")
+        _patch_dev_tty(monkeypatch, openable=False)
+
+        result = parse_toon(rt.session_teardown())
+
+        assert result["active"] is True
+        assert result["reset"] is False
+        assert result["unbound"] is True
+        assert session_binding.resolve_plan("sess-teardown-notty") is None
+
+
+class TestSessionStartClearTeardown:
+    """SessionStart:clear is a teardown, not a render.
+
+    The matcher-less SessionStart render hook fires for every source, so the
+    renderer itself branches on ``source``: ``"clear"`` performs the teardown and
+    writes nothing to stdout, while ``"startup"`` renders normally.
+    """
+
+    def test_source_clear_tears_down_and_writes_nothing(
+        self, rt, tmp_path, monkeypatch, capsys
+    ):
+        """A SessionStart payload with source: clear emits no stdout and unbinds."""
+        session_id = "sess-clear-teardown"
+        _write_status_json(tmp_path, session_id=session_id, plan_id="active-plan")
+        _redirect_render_env(tmp_path, monkeypatch, session_id)
+        _activate_terminal_title(tmp_path)
+        _patch_dev_tty(monkeypatch, openable=True)
+        _stub_hook_stdin(monkeypatch, {"hook_event_name": "SessionStart", "source": "clear"})
+
+        capsys.readouterr()
+        assert rt.session_render_title() == ""
+
+        assert capsys.readouterr().out == ""
+        assert session_binding.resolve_plan(session_id) is None
+
+    def test_source_startup_still_renders(self, rt, tmp_path, monkeypatch, capsys):
+        """A SessionStart payload with source: startup renders with sessionTitle intact."""
+        session_id = "sess-startup-render"
+        _write_status_json(tmp_path, session_id=session_id, plan_id="active-plan")
+        _redirect_render_env(tmp_path, monkeypatch, session_id)
+        _activate_terminal_title(tmp_path)
+        _stub_hook_stdin(monkeypatch, {"hook_event_name": "SessionStart", "source": "startup"})
+
+        capsys.readouterr()
+        assert rt.session_render_title() == ""
+
+        envelope = json.loads(capsys.readouterr().out)
+        assert "terminalSequence" in envelope
+        assert envelope["hookSpecificOutput"]["sessionTitle"] == "pm:5-execute:my-task"
+        # The binding survives — a startup render is not a teardown.
+        assert session_binding.resolve_plan(session_id) == "active-plan"
+
+
 class TestSessionPushTitleTokenDelivery:
     """Tests for the observable delivery outcome of session_push_title_token.
 
@@ -129,42 +291,12 @@ class TestSessionPushTitleTokenDelivery:
     state is a different outcome entirely and keeps ``reason: no_title_state``.
     """
 
-    @staticmethod
-    def _patch_dev_tty(monkeypatch, *, openable: bool) -> list[str]:
-        """Redirect ``open('/dev/tty', ...)``; return the list of captured writes.
-
-        With ``openable=False`` the open raises ``OSError`` (no controlling
-        terminal). With ``openable=True`` it yields an in-memory writer whose
-        payload is appended to the returned list. Every other path falls through
-        to the real builtin.
-        """
-        import builtins
-        import io
-
-        writes: list[str] = []
-        real_open = builtins.open
-
-        class _CapturingTty(io.StringIO):
-            def close(self) -> None:
-                writes.append(self.getvalue())
-                super().close()
-
-        def _fake_open(file, *args, **kwargs):  # type: ignore[no-untyped-def]
-            if file == "/dev/tty":
-                if not openable:
-                    raise OSError(6, "Device not configured")
-                return _CapturingTty()
-            return real_open(file, *args, **kwargs)
-
-        monkeypatch.setattr(builtins, "open", _fake_open)
-        return writes
-
     def test_unopenable_dev_tty_reports_no_controlling_tty(self, rt, tmp_path, monkeypatch):
         """An unopenable /dev/tty yields pushed: false, reason: no_controlling_tty."""
         plan_id = "push-no-tty"
         _write_status_json(tmp_path, session_id="sess-push-no-tty", plan_id=plan_id)
         _redirect_render_env(tmp_path, monkeypatch, "sess-push-no-tty")
-        self._patch_dev_tty(monkeypatch, openable=False)
+        _patch_dev_tty(monkeypatch, openable=False)
 
         result = parse_toon(rt.session_push_title_token(plan_id))
         assert result["status"] == "success"
@@ -177,7 +309,7 @@ class TestSessionPushTitleTokenDelivery:
         plan_id = "push-ok"
         _write_status_json(tmp_path, session_id="sess-push-ok", plan_id=plan_id)
         _redirect_render_env(tmp_path, monkeypatch, "sess-push-ok")
-        writes = self._patch_dev_tty(monkeypatch, openable=True)
+        writes = _patch_dev_tty(monkeypatch, openable=True)
 
         result = parse_toon(rt.session_push_title_token(plan_id))
         assert result["status"] == "success"
@@ -194,7 +326,7 @@ class TestSessionPushTitleTokenDelivery:
         be conflated with the delivery-channel failure above.
         """
         _redirect_render_env(tmp_path, monkeypatch, "sess-push-absent")
-        self._patch_dev_tty(monkeypatch, openable=False)
+        _patch_dev_tty(monkeypatch, openable=False)
 
         result = parse_toon(rt.session_push_title_token("no-such-plan"))
         assert result["status"] == "success"
@@ -880,17 +1012,21 @@ class TestSessionRenderTitleSessionTitleEmit:
         assert envelope["hookSpecificOutput"]["sessionTitle"] == title_body
         assert envelope["hookSpecificOutput"]["hookEventName"] == "SessionStart"
 
-    @pytest.mark.parametrize("source", ["clear", "compact"])
-    def test_session_start_clear_or_compact_omits_session_title(
-        self, source, rt, tmp_path, monkeypatch, capsys
+    def test_session_start_compact_omits_session_title(
+        self, rt, tmp_path, monkeypatch, capsys
     ):
-        """(c) SessionStart with source clear/compact emits ONLY terminalSequence."""
+        """(c) SessionStart with source compact emits ONLY terminalSequence.
+
+        ``clear`` is deliberately NOT covered here: that source is a session
+        teardown, not a render, and emits nothing at all — see
+        ``TestSessionStartClearTeardown``.
+        """
         from io import StringIO
 
         title_body = self._arrange(tmp_path, monkeypatch)
         monkeypatch.setattr(
             "sys.stdin",
-            StringIO(json.dumps({"hook_event_name": "SessionStart", "source": source})),
+            StringIO(json.dumps({"hook_event_name": "SessionStart", "source": "compact"})),
         )
 
         capsys.readouterr()

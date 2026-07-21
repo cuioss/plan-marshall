@@ -415,6 +415,13 @@ def cmd_orchestrator_metadata(args: argparse.Namespace) -> dict[str, Any] | None
 # failure, so a delegation error NEVER alters the status-write outcome or exit
 # code. The single shared ``_surface_drive`` helper is the ONE home both phase
 # writers (``cmd_create`` / ``cmd_transition`` / ``cmd_set_phase``) share.
+#
+# A third delegation rides the same channel at the OTHER end of the lifecycle:
+# ``_drive_teardown``, fired by ``cmd_archive`` once the plan directory has
+# moved. Where the repaint keeps a LIVE plan's title current, the teardown
+# retires a finished one — resetting the tab to the terminal's own default and
+# releasing the session's plan binding. It is activation-gated inside the
+# delegate, so a project without terminal-title wiring is never touched.
 
 _PLATFORM_RUNTIME_NOTATION = 'plan-marshall:platform-runtime:platform_runtime'
 
@@ -492,6 +499,30 @@ def _repaint_non_delivery_reason(completed: 'subprocess.CompletedProcess[str] | 
     if not isinstance(reason, str) or reason in ('', 'no_title_state'):
         return None
     return reason
+
+
+def _drive_teardown(plan_id: str) -> None:
+    """Best-effort ``session teardown`` — the live-surface counterpart of archive.
+
+    Fired by ``cmd_archive`` after the plan directory has moved: the archived
+    plan has no live session driving its terminal title, so the title is reset to
+    the terminal's own default and the session's plan binding is released. Runs
+    through the SAME best-effort executor channel :func:`_drive_bind` /
+    :func:`_drive_repaint` use, and the delegate is itself activation-gated — a
+    project that never wired up terminal titles is left untouched.
+
+    ``plan_id`` names the archived plan for the audit trail only — the teardown
+    operates on the CALLER SESSION's own binding, not on a plan-scoped slot, so
+    it takes no plan argument.
+
+    Fully exception-swallowing, mirroring :func:`_surface_drive`: a delegation
+    failure never changes the archive command's status or exit code.
+    """
+    try:
+        logger.debug('drive-seam teardown fired after archiving %s', plan_id)
+        _run_executor(_PLATFORM_RUNTIME_NOTATION, 'session', 'teardown')
+    except Exception as exc:  # noqa: BLE001 — drive seam is best-effort
+        logger.debug('drive-seam teardown for %s failed: %s', plan_id, exc)
 
 
 def _drive_repaint(plan_id: str) -> None:

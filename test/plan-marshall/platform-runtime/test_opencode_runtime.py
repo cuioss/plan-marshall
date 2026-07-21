@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for opencode_runtime.py — OpenCode implementation of all 22 operations.
+"""Tests for opencode_runtime.py — OpenCode implementation of all 23 operations.
 
 Asserts the no-op contract for session/display operations that OpenCode does not
 support, the honest no-op contract for the permission operations (OpenCode has no
 validated permission backend), the success/no-op paths for metrics operations, and
-error paths for invalid arguments across all 22 operations defined in the Runtime
+error paths for invalid arguments across all 23 operations defined in the Runtime
 ABC.
 """
 
@@ -40,6 +40,20 @@ def _parse(toon_str: str) -> dict:
     result = parse_toon(toon_str)
     assert isinstance(result, dict), f"parse_toon returned non-dict: {toon_str!r}"
     return result
+
+
+# =============================================================================
+# session_teardown — honest no-op (no terminal-title channel on OpenCode)
+# =============================================================================
+
+
+def test_session_teardown_returns_honest_noop(runtime: OpenCodeRuntime) -> None:
+    """session_teardown is an honest no-op naming the missing channel."""
+    result = _parse(runtime.session_teardown())
+    assert result["status"] == "no-op"
+    assert result["operation"] == "session teardown"
+    assert "terminal-title channel" in result["reason"]
+    assert result["alternative"]
 
 
 # =============================================================================

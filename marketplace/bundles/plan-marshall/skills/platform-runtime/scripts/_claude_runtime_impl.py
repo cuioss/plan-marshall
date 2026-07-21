@@ -33,7 +33,7 @@ from runtime_base import Runtime, toon_error, toon_noop, toon_success
 
 
 class ClaudeRuntime(Runtime):
-    """Claude Code implementation of all 21 platform-runtime operations."""
+    """Claude Code implementation of all 23 platform-runtime operations."""
 
     # ------------------------------------------------------------------
     # Project lifecycle
@@ -368,6 +368,15 @@ class ClaudeRuntime(Runtime):
                 tool_name = None
                 tool_command = None
 
+        # SessionStart:clear is a session TEARDOWN, not a render. The cleared
+        # session keeps no plan binding and its tab must return to the
+        # terminal's own default, so this event performs the teardown and writes
+        # NOTHING to stdout — a render here would repaint a title for a session
+        # that no longer drives a plan.
+        if not statusline and hook_event_name == "SessionStart" and source == "clear":
+            self.session_teardown()
+            return ""
+
         # Build-busy hook assist (D5): when a PreToolUse:Bash event carries a
         # build-wrapper command, force the persistent 🔨 build-busy title-token
         # for this render — set it in the in-memory state dict BEFORE compose so
@@ -606,6 +615,57 @@ class ClaudeRuntime(Runtime):
                 "stale": stale,
                 "gc_removed": report["gc_removed"],
             },
+        )
+
+    def session_teardown(self) -> str:
+        """Reset the terminal title and release this session's plan binding.
+
+        Order is load-bearing: the ACTIVATION signal is read FIRST. When the
+        terminal-title feature is not wired up (no render-hook entry on any
+        render-trigger event and no ``statusLine`` command — see
+        :func:`claude_runtime._terminal_title_active`), the op returns
+        ``active: false`` / ``reason: feature_inactive`` having written NO title
+        escape, opened NO ``/dev/tty``, mutated NO binding, and raised nothing.
+        A project that never opted into terminal titles is never touched.
+
+        When active: resolve the session id from ``$CLAUDE_CODE_SESSION_ID``,
+        write the neutral-default reset escape ``\\x1b]0;\\x07`` (a bare OSC-0
+        with an EMPTY payload, which returns the tab to the terminal's own
+        default rather than painting some other string) to ``/dev/tty``
+        best-effort, then drop the session's own ``active-plan`` slot via
+        :func:`session_binding.unbind`.
+
+        ``reset`` and ``unbound`` are reported INDEPENDENTLY: the title reset can
+        land while the unbind fails (or the reverse — e.g. off a controlling
+        terminal), and collapsing them into one flag would hide which half
+        happened. Best-effort throughout: never raises.
+        """
+        if not claude_runtime._terminal_title_active():
+            return toon_success(
+                "session teardown",
+                {
+                    "active": False,
+                    "reset": False,
+                    "unbound": False,
+                    "reason": "feature_inactive",
+                },
+            )
+
+        reset = False
+        try:
+            with open("/dev/tty", "w", encoding="utf-8") as tty:
+                tty.write("\x1b]0;\x07")
+                tty.flush()
+            reset = True
+        except OSError:
+            reset = False
+
+        session_id = os.environ.get("CLAUDE_CODE_SESSION_ID")
+        unbound = session_binding.unbind(session_id) if session_id else False
+
+        return toon_success(
+            "session teardown",
+            {"active": True, "reset": reset, "unbound": unbound},
         )
 
     def session_reload_directive(self) -> str:

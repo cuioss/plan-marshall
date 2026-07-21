@@ -440,6 +440,47 @@ def _repaint_reply(**fields):
     )
 
 
+def test_archive_fires_teardown_exactly_once_after_the_move(plan_context, monkeypatch):
+    """``cmd_archive`` fires the live-surface teardown delegation exactly once.
+
+    The persisted-token pop and the live teardown are counterparts: the pop
+    clears ``status.title_token`` in the archived snapshot, the teardown retires
+    the live terminal title and the session's plan binding.
+    """
+    calls: list[tuple[str, ...]] = []
+    monkeypatch.setitem(
+        _lifecycle._drive_teardown.__globals__,
+        '_run_executor',
+        lambda notation, *cli_args: calls.append((notation, *cli_args)),
+    )
+
+    plan_id = 'tt-archive-teardown'
+    cmd_create(Namespace(plan_id=plan_id, title='Test', phases='1-init', force=False))
+    result = cmd_archive(Namespace(plan_id=plan_id, dry_run=False))
+
+    assert result['status'] == 'success'
+    teardown_calls = [c for c in calls if c[1:] == ('session', 'teardown')]
+    assert len(teardown_calls) == 1
+    # The plan directory really moved before the delegation fired.
+    assert Path(result['archived_to']).is_dir()
+
+
+def test_archive_succeeds_when_teardown_delegation_fails(plan_context, monkeypatch):
+    """A crashing teardown delegation leaves the archive result status: success."""
+
+    def _boom(*_args):
+        raise RuntimeError('teardown delegate exploded')
+
+    monkeypatch.setitem(_lifecycle._drive_teardown.__globals__, '_run_executor', _boom)
+
+    plan_id = 'tt-archive-teardown-fails'
+    cmd_create(Namespace(plan_id=plan_id, title='Test', phases='1-init', force=False))
+    result = cmd_archive(Namespace(plan_id=plan_id, dry_run=False))
+
+    assert result['status'] == 'success'
+    assert Path(result['archived_to']).is_dir()
+
+
 def test_repaint_warns_when_delegate_reports_no_controlling_tty(monkeypatch, caplog):
     """A ``no_controlling_tty`` reply emits exactly one WARNING naming plan + reason."""
     monkeypatch.setattr(
