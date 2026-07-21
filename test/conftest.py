@@ -361,6 +361,33 @@ def get_scripts_dir(bundle: str, skill: str) -> Path:
     return scripts_dir
 
 
+def add_skill_scripts_to_path(bundle: str, skill: str) -> Path:
+    """Put a skill's ``scripts/`` directory on ``sys.path`` (idempotent).
+
+    The narrow escape hatch for helper modules that :func:`load_script_module`
+    cannot serve: a cluster of sibling scripts that reference **each other by
+    bare name at import time**. Loading such a module by file location leaves
+    its siblings unresolvable, so the directory itself must be importable.
+
+    Prefer :func:`load_script_module` everywhere else — it needs no path
+    mutation and keeps resolution keyed to ``(bundle, skill, script_file)``.
+
+    Args:
+        bundle: Bundle name (e.g., ``'plan-marshall'``).
+        skill: Skill name (e.g., ``'plan-marshall'``).
+
+    Returns:
+        The scripts directory that is now on ``sys.path``.
+
+    Raises:
+        FileNotFoundError: when the resolved scripts directory does not exist.
+    """
+    scripts_dir = get_scripts_dir(bundle, skill)
+    if str(scripts_dir) not in sys.path:
+        sys.path.insert(0, str(scripts_dir))
+    return scripts_dir
+
+
 def load_script_module(bundle: str, skill: str, script_file: str, module_name: str | None = None):
     """Load a marketplace script as a module via ``spec_from_file_location``.
 
