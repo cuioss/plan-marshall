@@ -17,6 +17,8 @@ These tests cover:
 """
 
 import json
+import logging
+import subprocess
 from argparse import Namespace
 from pathlib import Path
 
@@ -413,3 +415,113 @@ def test_killed_detached_build_busy_token_does_not_stay_armed(plan_context):
         f"A killed detached build left build-busy armed and the transition "
         f"failed to clear it — found {stored.get('title_token')!r}."
     )
+
+
+# =============================================================================
+# drive seam: a non-delivered title repaint is observable, not DEBUG-swallowed
+# =============================================================================
+#
+# ``_drive_repaint`` delegates the push to platform-runtime through the executor.
+# When the delegate reports ``pushed: false`` with a reason OTHER than
+# ``no_title_state`` — in practice ``no_controlling_tty``, the /dev/tty fallback
+# channel failing to reach a terminal — the seam emits ONE WARNING naming the
+# plan and the reason. Every other path stays at DEBUG, and the seam never alters
+# the command's status or exit code.
+
+_LOGGER_NAME = _core.logger.name
+
+
+def _repaint_reply(**fields):
+    """Build a CompletedProcess carrying a push-title-token TOON reply."""
+    lines = ['status: success', 'operation: session push-title-token']
+    lines += [f'{key}: {value}' for key, value in fields.items()]
+    return subprocess.CompletedProcess(
+        args=[], returncode=0, stdout='\n'.join(lines) + '\n', stderr=''
+    )
+
+
+def test_repaint_warns_when_delegate_reports_no_controlling_tty(monkeypatch, caplog):
+    """A ``no_controlling_tty`` reply emits exactly one WARNING naming plan + reason."""
+    monkeypatch.setattr(
+        _core,
+        '_run_executor',
+        lambda *_args: _repaint_reply(
+            plan_id='tt-repaint-warn',
+            pushed='false',
+            reason='no_controlling_tty',
+            delivery='dev_tty_fallback',
+        ),
+    )
+
+    with caplog.at_level(logging.WARNING, logger=_LOGGER_NAME):
+        _core._drive_repaint('tt-repaint-warn')
+
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    message = warnings[0].getMessage()
+    assert 'tt-repaint-warn' in message
+    assert 'no_controlling_tty' in message
+
+
+def test_repaint_does_not_warn_when_delegate_reports_no_title_state(monkeypatch, caplog):
+    """``no_title_state`` is the ordinary nothing-to-paint case — no WARNING."""
+    monkeypatch.setattr(
+        _core,
+        '_run_executor',
+        lambda *_args: _repaint_reply(plan_id='tt-repaint-nostate', pushed='false', reason='no_title_state'),
+    )
+
+    with caplog.at_level(logging.WARNING, logger=_LOGGER_NAME):
+        _core._drive_repaint('tt-repaint-nostate')
+
+    assert [r for r in caplog.records if r.levelno == logging.WARNING] == []
+
+
+def test_repaint_does_not_warn_on_successful_push(monkeypatch, caplog):
+    """A landed push (``pushed: true``) emits no WARNING."""
+    monkeypatch.setattr(
+        _core,
+        '_run_executor',
+        lambda *_args: _repaint_reply(
+            plan_id='tt-repaint-ok', pushed='true', delivery='dev_tty_fallback'
+        ),
+    )
+
+    with caplog.at_level(logging.WARNING, logger=_LOGGER_NAME):
+        _core._drive_repaint('tt-repaint-ok')
+
+    assert [r for r in caplog.records if r.levelno == logging.WARNING] == []
+
+
+def test_repaint_does_not_warn_when_delegate_was_skipped(monkeypatch, caplog):
+    """A skipped spawn (``_run_executor`` returned None) emits no WARNING."""
+    monkeypatch.setattr(_core, '_run_executor', lambda *_args: None)
+
+    with caplog.at_level(logging.WARNING, logger=_LOGGER_NAME):
+        _core._drive_repaint('tt-repaint-skipped')
+
+    assert [r for r in caplog.records if r.levelno == logging.WARNING] == []
+
+
+def test_crashing_delegate_leaves_transition_outcome_unchanged(plan_context, monkeypatch):
+    """A delegate that crashes outright never changes the status-write outcome.
+
+    ``_surface_drive`` is fully exception-swallowing, so a raising delegate must
+    leave ``cmd_transition`` returning ``status: success`` with the phase advanced
+    exactly as it would with a healthy seam.
+    """
+
+    def _boom(*_args):
+        raise RuntimeError('delegate exploded')
+
+    # Patch the seam's own module globals so the substitution reaches the
+    # _status_core instance cmd_transition actually calls into.
+    monkeypatch.setitem(_lifecycle._surface_drive.__globals__, '_run_executor', _boom)
+
+    plan_id = 'tt-repaint-crash'
+    cmd_create(Namespace(plan_id=plan_id, title='Test', phases=_PHASES, force=False))
+    result = cmd_transition(Namespace(plan_id=plan_id, completed='1-init'))
+
+    assert result['status'] == 'success'
+    stored = _read_status(plan_context, plan_id)
+    assert stored['current_phase'] == '2-refine'

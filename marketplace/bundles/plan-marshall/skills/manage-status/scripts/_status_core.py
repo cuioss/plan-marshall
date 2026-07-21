@@ -419,7 +419,7 @@ def cmd_orchestrator_metadata(args: argparse.Namespace) -> dict[str, Any] | None
 _PLATFORM_RUNTIME_NOTATION = 'plan-marshall:platform-runtime:platform_runtime'
 
 
-def _run_executor(notation: str, *cli_args: str) -> None:
+def _run_executor(notation: str, *cli_args: str) -> 'subprocess.CompletedProcess[str] | None':
     """Best-effort: invoke ``{notation}`` through the executor as a subprocess.
 
     Fire-and-forget — any failure (executor missing, non-zero exit, OSError) is
@@ -433,25 +433,65 @@ def _run_executor(notation: str, *cli_args: str) -> None:
     to, so the call returns without launching a subprocess. Skipping the spawn
     keeps the seam a true no-op wherever the executor is absent instead of
     launching a Python process that would only fail to find the script.
+
+    Returns the :class:`subprocess.CompletedProcess` when the delegate actually
+    ran, or ``None`` when the spawn was skipped or failed. The completed process
+    lets a caller inspect the delegate's own TOON reply (see
+    :func:`_drive_repaint`); callers that need nothing from the reply simply
+    ignore the return value.
     """
     try:
         executor = get_executor_path()
     except RuntimeError as exc:
         logger.debug('drive-seam %s skipped (no plan root): %s', notation, exc)
-        return
+        return None
     if not executor.is_file():
         logger.debug('drive-seam %s skipped (executor absent at %s)', notation, executor)
-        return
+        return None
     cmd = [sys.executable, str(executor), notation, *cli_args]
     try:
-        subprocess.run(cmd, capture_output=True, text=True, check=False)
+        return subprocess.run(cmd, capture_output=True, text=True, check=False)
     except OSError as exc:
         logger.debug('drive-seam %s failed: %s', notation, exc)
+        return None
 
 
 def _drive_bind(plan_id: str) -> None:
     """Best-effort ``session bind --plan-id {id}`` (last-driven-wins; Defect 2)."""
     _run_executor(_PLATFORM_RUNTIME_NOTATION, 'session', 'bind', '--plan-id', plan_id)
+
+
+def _repaint_non_delivery_reason(completed: 'subprocess.CompletedProcess[str] | None') -> str | None:
+    """Return the reportable non-delivery ``reason`` from a repaint reply, else None.
+
+    Parses the delegate's TOON stdout via the shared ``toon_parser`` (never a
+    hand-rolled scan) and returns ``reason`` only when the delegate reported
+    ``pushed: false`` with a reason OTHER than ``no_title_state``. A plan with no
+    persisted title state is the ordinary "nothing to paint" case and stays at
+    DEBUG; ``no_controlling_tty`` — the push channel genuinely failing to reach a
+    terminal — is what the caller surfaces.
+
+    Returns ``None`` whenever there is nothing to report: no completed process,
+    an unusable reply, a successful push, or the ``no_title_state`` case.
+    """
+    if completed is None or not completed.stdout:
+        return None
+    try:
+        from toon_parser import parse_toon
+    except ImportError as exc:
+        logger.debug('drive-seam repaint reply unparsed (toon_parser unavailable): %s', exc)
+        return None
+    try:
+        reply = parse_toon(completed.stdout)
+    except Exception as exc:  # noqa: BLE001 — drive seam is best-effort
+        logger.debug('drive-seam repaint reply unparsed: %s', exc)
+        return None
+    if not isinstance(reply, dict) or reply.get('pushed') is not False:
+        return None
+    reason = reply.get('reason')
+    if not isinstance(reason, str) or reason in ('', 'no_title_state'):
+        return None
+    return reason
 
 
 def _drive_repaint(plan_id: str) -> None:
@@ -460,8 +500,20 @@ def _drive_repaint(plan_id: str) -> None:
     The push runs with no ``--icon`` — a plain repaint of the freshly composed
     title with the default active icon, so the title bar reflects the new phase
     immediately instead of freezing at the last-rendered phase.
+
+    A non-delivery is OBSERVABLE rather than DEBUG-swallowed: when the delegate
+    replies ``pushed: false`` with a reason other than ``no_title_state`` (in
+    practice ``no_controlling_tty`` — the ``/dev/tty`` fallback channel could not
+    reach a terminal), one ``logger.warning`` names the plan and the reason. Every
+    other failure path keeps its DEBUG level, and the seam still never alters the
+    command's status or exit code.
     """
-    _run_executor(_PLATFORM_RUNTIME_NOTATION, 'session', 'push-title-token', '--plan-id', plan_id)
+    completed = _run_executor(
+        _PLATFORM_RUNTIME_NOTATION, 'session', 'push-title-token', '--plan-id', plan_id
+    )
+    reason = _repaint_non_delivery_reason(completed)
+    if reason is not None:
+        logger.warning('title repaint not delivered for %s: %s', plan_id, reason)
 
 
 def _surface_drive(plan_id: str) -> None:

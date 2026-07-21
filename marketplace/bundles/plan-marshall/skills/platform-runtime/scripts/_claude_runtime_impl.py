@@ -438,6 +438,18 @@ class ClaudeRuntime(Runtime):
     ) -> str:
         """Push a live terminal title for *plan_id* directly to ``/dev/tty``.
 
+        ``/dev/tty`` is the **FALLBACK** delivery channel, not the primary one.
+        The primary channel is the hook-mode ``terminalSequence`` envelope that
+        Claude Code itself writes on every render-trigger event (see
+        :meth:`session_render_title`); this push exists for the blocking windows
+        no hook event spans (a long build, a CI wait, a lock hold). Off a
+        controlling terminal — inside a dispatched agent, a CI runner, or a
+        backgrounded process — ``/dev/tty`` is not openable and the push cannot
+        land. That non-delivery is now **reported**, not swallowed: the return
+        TOON carries ``pushed: false`` with ``reason: no_controlling_tty``, and
+        every outcome names its channel via ``delivery: dev_tty_fallback`` so a
+        caller can tell the fallback path from the hook-delivered one.
+
         Reads the plan's title state from ``status.json`` via
         :func:`_read_title_state`, composes the title string via
         :func:`manage_terminal_title.compose` (with *icon* as the push-mode icon
@@ -461,11 +473,15 @@ class ClaudeRuntime(Runtime):
         ``manage-status`` phase-write drive seam fires on every persisted
         title-state change.
 
-        Best-effort: a silent no-op (``pushed: false``) when the state is
-        absent / unrenderable or when ``/dev/tty`` is not openable (CI,
-        background, no controlling terminal). Never raises.
+        Best-effort: a no-op (``pushed: false``) when the state is absent /
+        unrenderable (``reason: no_title_state``) or when ``/dev/tty`` is not
+        openable (``reason: no_controlling_tty``). Never raises, and never
+        changes the caller's status or exit code — only the observability of a
+        non-delivery differs between the two reasons.
 
-        Returns a success TOON noting whether the push reached a TTY.
+        Returns a success TOON noting whether the push reached a TTY, the
+        ``reason`` when it did not, and the ``delivery`` channel on every
+        ``/dev/tty`` attempt.
         """
         if store == "orchestrator":
             state = claude_runtime._read_orchestrator_title_state(slug or "")
@@ -486,18 +502,24 @@ class ClaudeRuntime(Runtime):
                 {**entry_fields, "pushed": False, "reason": "no_title_state"},
             )
 
-        pushed = False
         try:
             with open("/dev/tty", "w", encoding="utf-8") as tty:
                 tty.write(f"\x1b]0;{composed}\x07")
                 tty.flush()
-            pushed = True
         except OSError:
-            pushed = False
+            return toon_success(
+                "session push-title-token",
+                {
+                    **entry_fields,
+                    "pushed": False,
+                    "reason": "no_controlling_tty",
+                    "delivery": "dev_tty_fallback",
+                },
+            )
 
         return toon_success(
             "session push-title-token",
-            {**entry_fields, "pushed": pushed},
+            {**entry_fields, "pushed": True, "delivery": "dev_tty_fallback"},
         )
 
     def session_bind(self, plan_id: str, session_id: str | None = None) -> str:

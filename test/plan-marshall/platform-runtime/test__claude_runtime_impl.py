@@ -32,6 +32,7 @@ import pytest
 # unchanged from ``test_claude_runtime.py``.
 import session_binding
 from claude_runtime import ClaudeRuntime
+from toon_parser import parse_toon
 
 
 # =============================================================================
@@ -116,6 +117,90 @@ def _redirect_render_env(tmp_path: Path, monkeypatch, session_id: str) -> None:
     monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", session_id)
     monkeypatch.chdir(tmp_path)
+
+
+class TestSessionPushTitleTokenDelivery:
+    """Tests for the observable delivery outcome of session_push_title_token.
+
+    The ``/dev/tty`` write is the FALLBACK delivery channel; off a controlling
+    terminal it cannot land. That non-delivery is reported rather than swallowed:
+    ``pushed: false`` with ``reason: no_controlling_tty``, and every ``/dev/tty``
+    attempt names its channel via ``delivery: dev_tty_fallback``. An absent title
+    state is a different outcome entirely and keeps ``reason: no_title_state``.
+    """
+
+    @staticmethod
+    def _patch_dev_tty(monkeypatch, *, openable: bool) -> list[str]:
+        """Redirect ``open('/dev/tty', ...)``; return the list of captured writes.
+
+        With ``openable=False`` the open raises ``OSError`` (no controlling
+        terminal). With ``openable=True`` it yields an in-memory writer whose
+        payload is appended to the returned list. Every other path falls through
+        to the real builtin.
+        """
+        import builtins
+        import io
+
+        writes: list[str] = []
+        real_open = builtins.open
+
+        class _CapturingTty(io.StringIO):
+            def close(self) -> None:
+                writes.append(self.getvalue())
+                super().close()
+
+        def _fake_open(file, *args, **kwargs):  # type: ignore[no-untyped-def]
+            if file == "/dev/tty":
+                if not openable:
+                    raise OSError(6, "Device not configured")
+                return _CapturingTty()
+            return real_open(file, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "open", _fake_open)
+        return writes
+
+    def test_unopenable_dev_tty_reports_no_controlling_tty(self, rt, tmp_path, monkeypatch):
+        """An unopenable /dev/tty yields pushed: false, reason: no_controlling_tty."""
+        plan_id = "push-no-tty"
+        _write_status_json(tmp_path, session_id="sess-push-no-tty", plan_id=plan_id)
+        _redirect_render_env(tmp_path, monkeypatch, "sess-push-no-tty")
+        self._patch_dev_tty(monkeypatch, openable=False)
+
+        result = parse_toon(rt.session_push_title_token(plan_id))
+        assert result["status"] == "success"
+        assert result["pushed"] is False
+        assert result["reason"] == "no_controlling_tty"
+        assert result["delivery"] == "dev_tty_fallback"
+
+    def test_successful_push_reports_dev_tty_fallback_channel(self, rt, tmp_path, monkeypatch):
+        """A landed push yields pushed: true, delivery: dev_tty_fallback, no reason."""
+        plan_id = "push-ok"
+        _write_status_json(tmp_path, session_id="sess-push-ok", plan_id=plan_id)
+        _redirect_render_env(tmp_path, monkeypatch, "sess-push-ok")
+        writes = self._patch_dev_tty(monkeypatch, openable=True)
+
+        result = parse_toon(rt.session_push_title_token(plan_id))
+        assert result["status"] == "success"
+        assert result["pushed"] is True
+        assert result["delivery"] == "dev_tty_fallback"
+        assert "reason" not in result
+        # The OSC escape actually reached the (captured) terminal.
+        assert writes and writes[0].startswith("\x1b]0;")
+
+    def test_absent_title_state_keeps_no_title_state_reason(self, rt, tmp_path, monkeypatch):
+        """A plan with no status.json keeps reason: no_title_state and names no channel.
+
+        The state read fails BEFORE any /dev/tty attempt, so the outcome must not
+        be conflated with the delivery-channel failure above.
+        """
+        _redirect_render_env(tmp_path, monkeypatch, "sess-push-absent")
+        self._patch_dev_tty(monkeypatch, openable=False)
+
+        result = parse_toon(rt.session_push_title_token("no-such-plan"))
+        assert result["status"] == "success"
+        assert result["pushed"] is False
+        assert result["reason"] == "no_title_state"
+        assert "delivery" not in result
 
 
 class TestSessionRenderTitleStatusline:
