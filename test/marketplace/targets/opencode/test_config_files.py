@@ -30,12 +30,32 @@ class TestMappingJsonSchema:
         assert 'tool_permissions' in data
         assert 'model_map' in data
 
-    def test_tool_permissions_string_to_string(self, opencode_config_dir: Path):
+    def test_tool_permissions_string_to_optional_string(self, opencode_config_dir: Path):
+        """`tool_permissions` is `dict[str, str | None]`.
+
+        A `None` value is the documented **target-absent** sentinel: the Claude
+        tool exists but has no OpenCode analog, so mapping it to any real
+        permission category would be a lie. Every non-`None` value is a real
+        OpenCode permission category and keeps both guards (str, non-empty), so
+        the schema is widened to the true type rather than eroded.
+        """
         data = load_mapping(opencode_config_dir)
         for key, value in data['tool_permissions'].items():
             assert isinstance(key, str), f'tool_permissions key must be str: {key!r}'
-            assert isinstance(value, str), f'tool_permissions[{key!r}] must be str'
-            assert value, 'tool_permissions values must be non-empty'
+            if value is None:
+                continue  # target-absent sentinel — no OpenCode analog
+            assert isinstance(value, str), (
+                f'tool_permissions[{key!r}] must be str or None (target-absent marker)'
+            )
+            assert value, 'non-null tool_permissions values must be non-empty'
+
+    def test_monitor_is_target_absent_sentinel(self, opencode_config_dir: Path):
+        """`Monitor` is present-with-null: a defined disposition, not a missing key."""
+        data = load_mapping(opencode_config_dir)
+        assert 'Monitor' in data['tool_permissions'], (
+            'Monitor must be present so the build has a defined disposition'
+        )
+        assert data['tool_permissions']['Monitor'] is None
 
     def test_model_map_object_shape(self, opencode_config_dir: Path):
         """Each model_map entry is `{id: str, supports_effort: list[str]}`."""
@@ -85,11 +105,16 @@ class TestBodyIdiomRewritesSchema:
         assert 'body_idiom_rewrites' in data
         assert isinstance(data['body_idiom_rewrites'], dict)
 
-    def test_three_registered_idioms_present(self, opencode_config_dir: Path):
+    def test_registered_idioms_present(self, opencode_config_dir: Path):
         data = load_mapping(opencode_config_dir)
         registry = data['body_idiom_rewrites']
-        for idiom in ('AskUserQuestion', 'Task:', 'Skill: <entry>'):
+        for idiom in ('AskUserQuestion', 'Task:', 'Skill: <entry>', 'Monitor'):
             assert idiom in registry, f'unmapped registered idiom: {idiom}'
+
+    def test_monitor_is_source_fix(self, opencode_config_dir: Path):
+        """`Monitor` prose is reworded target-neutrally in source, not rewritten at emit time."""
+        data = load_mapping(opencode_config_dir)
+        assert data['body_idiom_rewrites']['Monitor']['disposition'] == 'source_fix'
 
     def test_every_disposition_is_known(self, opencode_config_dir: Path):
         """Fail-closed schema: every registered disposition is one of the known set."""

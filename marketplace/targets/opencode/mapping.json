@@ -14,7 +14,8 @@
     "NotebookEdit": "edit",
     "TaskCreate": "todowrite",
     "TaskGet": "todoread",
-    "TaskList": "todoread"
+    "TaskList": "todoread",
+    "Monitor": null
   },
   "directive_rewrites": {
     "skill_directive": {
@@ -41,6 +42,10 @@
     "Skill: <entry>": {
       "disposition": "source_fix",
       "note": "The `<entry>` runtime placeholder is reworded target-neutrally in the source (the step-3 skill-load loop in agents/execution-context.md) rather than rewritten at emit time, so no emit-time rewrite is needed."
+    },
+    "Monitor": {
+      "disposition": "source_fix",
+      "note": "The background-completion watch has no OpenCode analog, so there is no tool name to rewrite to. The occurrences are body prose naming the concept, which `rewrite_inline_code` deliberately does not touch — they are reworded to target-neutral vocabulary in the source instead. Paired with the `tool_permissions` target-absent (`null`) entry."
     }
   },
   "model_map": {

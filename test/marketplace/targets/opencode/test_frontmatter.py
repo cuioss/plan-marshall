@@ -119,6 +119,48 @@ class TestToolPermissionMapping:
         assert 'permission:' not in result
 
 
+class TestTargetAbsentToolDisposition:
+    """A `tool_permissions` key present with `null` is the target-absent sentinel.
+
+    The Claude tool exists but has no OpenCode analog, so the transform emits no
+    permission entry for it and does NOT raise. The fail-closed guard is narrowed
+    to a *missing key*, not removed.
+    """
+
+    def test_target_absent_tool_transforms_without_raising(
+        self, mapping: dict[str, dict], rules: dict[str, list[str]]
+    ):
+        fm = {'description': 'agent', 'tools': 'Monitor'}
+        result = transform_agent_frontmatter(fm, mapping, rules, source_label='agents/x.md')
+        assert 'description: agent' in result
+
+    def test_target_absent_tool_emits_no_permission_line(
+        self, mapping: dict[str, dict], rules: dict[str, list[str]]
+    ):
+        fm = {'description': 'agent', 'tools': 'Monitor'}
+        result = transform_agent_frontmatter(fm, mapping, rules, source_label='agents/x.md')
+        assert 'permission:' not in result
+        assert 'Monitor' not in result
+
+    def test_target_absent_tool_alongside_mapped_tools_emits_only_mapped(
+        self, mapping: dict[str, dict], rules: dict[str, list[str]]
+    ):
+        fm = {'description': 'agent', 'tools': 'Read, Monitor, Bash'}
+        result = transform_agent_frontmatter(fm, mapping, rules, source_label='agents/x.md')
+        assert 'read: allow' in result
+        assert 'bash: allow' in result
+        # Exactly the two mapped permissions — the sentinel contributes none.
+        assert result.count(': allow') == 2
+
+    def test_genuinely_unknown_tool_still_raises(
+        self, mapping: dict[str, dict], rules: dict[str, list[str]]
+    ):
+        """The fail-closed guard survives: a MISSING key still raises."""
+        fm = {'description': 'agent', 'tools': 'Monitor, TotallyUnknownTool'}
+        with pytest.raises(UnmappedToolError, match='TotallyUnknownTool'):
+            transform_agent_frontmatter(fm, mapping, rules, source_label='agents/x.md')
+
+
 # ---------------------------------------------------------------------------
 # model alias resolution
 # ---------------------------------------------------------------------------

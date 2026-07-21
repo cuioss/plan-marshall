@@ -262,9 +262,9 @@ Bash(command="python3 .plan/execute-script.py plan-marshall:tools-integration-ci
 `sleep N` and `until <check>; do sleep ...; done` are forbidden for blocking on
 external conditions (CI status changes, PR bot comments, issue state
 transitions, label propagation, etc.). A bare `sleep` in an agent/skill blocks
-the turn for the full duration, defeats the Monitor-driven notification model,
-and is what the Bash safety harness already blocks via its "long leading sleep"
-heuristic.
+the turn for the full duration, defeats the background-completion notification
+model, and is what the Bash safety harness already blocks via its "long leading
+sleep" heuristic.
 
 Instead, dispatch to the CI abstraction's `wait-for-*` subcommands — they
 implement bounded polling with proper exit codes, timeout handling, and
