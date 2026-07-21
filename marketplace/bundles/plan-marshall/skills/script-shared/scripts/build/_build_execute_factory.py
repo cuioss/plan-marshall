@@ -585,7 +585,15 @@ def create_execute_handlers(
         # single machine-global slot), so a build takes exactly one limiter
         # path, never stacked. ``fallback_reason`` carries the degradation
         # reason (or None) into the single resolved=in_process audit line.
+        #
+        # ``in_daemon_child`` marks the daemon-child re-entrancy path: this
+        # process IS the daemon job re-running the build, and the routing PARENT
+        # already recorded ``resolved=routed`` for the same logical client
+        # request. Recording again here would put two contradictory
+        # ``[BUILD-SERVER] resolved build`` lines in the same plan's work log for
+        # ONE request, so the child suppresses its own audit line.
         fallback_reason: str | None = None
+        in_daemon_child = False
         if execution_mode == 'daemon' and daemon_incompatible:
             # Requested daemon, but the build carries env / working-dir the
             # daemon cannot honour — fail loud instead of falling back.
@@ -625,12 +633,17 @@ def create_execute_handlers(
             # auto (or the daemon child): record the degradation reason so the
             # in-process fallback is never silent (a bare re-entrancy /
             # unroutable-tool skip is not a degradation and is not recorded).
-            if reason not in ('in_daemon_job', 'no_notation'):
+            if reason == 'in_daemon_job':
+                in_daemon_child = True
+            elif reason != 'no_notation':
                 fallback_reason = reason
 
         # Resolved to an in-process build (explicit in_process, auto fallback,
-        # or the daemon child). Record the requested-vs-resolved audit line.
-        _record_resolution(execution_mode, 'in_process', fallback_reason, notation, plan_id)
+        # or the daemon child). Record the requested-vs-resolved audit line —
+        # except on the daemon-child re-entrancy path, whose routing parent
+        # already owns the audit record for this logical request.
+        if not in_daemon_child:
+            _record_resolution(execution_mode, 'in_process', fallback_reason, notation, plan_id)
 
         # In-process fallback: acquire a build-queue slot on the single
         # machine-global queue file when a plan_id is set; NO-OP passthrough

@@ -182,6 +182,52 @@ def test_daemon_fail_loud_resolution_is_captured_at_warning(monkeypatch, capsys,
     assert message in capsys.readouterr().err
 
 
+@pytest.mark.parametrize('child_execution_mode', ['auto', 'daemon'])
+def test_daemon_child_reentrancy_records_no_second_resolution(
+    monkeypatch, capsys, captured, child_execution_mode
+):
+    # Arrange: the daemon child re-runs the SAME executor command in-process,
+    # with MARSHALLD_JOB set so _route_to_daemon short-circuits to in_daemon_job.
+    monkeypatch.setenv('MARSHALLD_JOB', 'JOB-1')
+    _install_in_process_stubs(monkeypatch)
+    _, cmd_run = factory.create_execute_handlers(_config(), parse_log_fn=lambda *a: None)
+
+    # Act
+    rc = cmd_run(_run_args(execution_mode=child_execution_mode))
+
+    # Assert: the routing parent owns the audit record — the child emits none,
+    # to neither the captured work log nor the stderr parity sink.
+    assert rc == 0
+    assert captured == []
+    assert '[BUILD-SERVER] resolved build' not in capsys.readouterr().err
+
+
+def test_one_routed_request_produces_exactly_one_resolution_record(monkeypatch, capsys, captured):
+    # Arrange: the routing parent sees a ready daemon and routes the build.
+    monkeypatch.setattr(
+        factory, '_load_build_server',
+        lambda: _FakeClient(preflight={'status': 'success', 'preflight': 'ready'}),
+    )
+    monkeypatch.setattr(factory, 'cmd_run_common', lambda **kw: 0)
+    _, parent_cmd_run = factory.create_execute_handlers(_config(), parse_log_fn=lambda *a: None)
+
+    # Act: the parent routes, then the daemon child re-runs the same request
+    # in-process against the SAME plan_id.
+    parent_rc = parent_cmd_run(_run_args(execution_mode='auto'))
+    monkeypatch.setenv('MARSHALLD_JOB', 'JOB-1')
+    _install_in_process_stubs(monkeypatch)
+    _, child_cmd_run = factory.create_execute_handlers(_config(), parse_log_fn=lambda *a: None)
+    child_rc = child_cmd_run(_run_args(execution_mode='auto'))
+
+    # Assert: ONE logical client request ⇒ exactly ONE resolution record for the
+    # plan — the parent's resolved=routed line, with no contradicting
+    # resolved=in_process line from the child.
+    assert (parent_rc, child_rc) == (0, 0)
+    assert len(captured) == 1
+    assert 'requested=auto, resolved=routed' in captured[0][3]
+    assert 'resolved=in_process' not in capsys.readouterr().err
+
+
 def test_plan_less_build_still_writes_stderr_and_captures_nothing(monkeypatch, capsys, captured):
     # Arrange: a plan-less build has no per-plan work log to write to.
     _install_in_process_stubs(monkeypatch)
