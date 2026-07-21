@@ -133,7 +133,7 @@ that evaluation and is recorded here for whoever does implement item 6: the Clau
 a `targets:` filter needs handling in *both* emitters and must be reconciled with that equality
 invariant — it is not a data-only change on the verbatim side.
 
-**7. A waiting primitive with no target-neutral home. [shipped by PLAN-29]** Waiting for an
+**7. A waiting primitive with no target-neutral home. [landed]** Waiting for an
 external event had no placement: the shipped orchestration seam named a target-specific
 background primitive directly in workflow body text, which [principles §5](principles.md)
 forbids, and there was nowhere target-neutral to point the prose at. **Resolved** per ADR-011 as
@@ -177,7 +177,7 @@ kind, and is realised as a bounded, re-issuable poll of that observable's own st
   `unknown_operation` message; the per-op TOON schema (success, error, and no-op variants) lives
   in `platform-runtime` `standards/contract.md`.
 
-**No existing waiting call site is migrated onto the op by PLAN-29.** The detach-and-notify
+**No existing waiting call site is migrated onto the op.** The detach-and-notify
 orchestration seam, the CI abstraction's bounded wait verbs, the finalize CI wait, and the
 build-server long poll are unchanged; migrating them is deliberate follow-up work, not an
 oversight.
