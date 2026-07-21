@@ -538,6 +538,13 @@ def create_execute_handlers(
                 config.tool_name, command_args, getattr(args, 'format', 'toon'),
                 'env_or_working_dir_set', notation, plan_id,
             )
+        if execution_mode == 'auto' and daemon_incompatible:
+            # auto mode carrying env / working-dir the daemon cannot honour:
+            # never attempt to route (the routing guard below is False), and
+            # record the degradation reason so the in-process fallback is not
+            # silent. The literal matches the daemon-required fail-loud path's
+            # own reason for the identical condition.
+            fallback_reason = 'env_or_working_dir_set'
         if execution_mode != 'in_process' and not daemon_incompatible:
             routed, reason = _route_to_daemon(config, project_dir, plan_id)
             if routed is not None:
