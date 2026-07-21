@@ -192,6 +192,7 @@ import run_config as _run_config  # noqa: F401, E402
 _TEST_HELPER_DIRS = [
     str(TEST_ROOT / 'plan-marshall'),
     str(TEST_ROOT / 'pm-plugin-development'),
+    str(TEST_ROOT / '_shared'),
 ]
 for _helper_dir in _TEST_HELPER_DIRS:
     if _helper_dir not in sys.path:

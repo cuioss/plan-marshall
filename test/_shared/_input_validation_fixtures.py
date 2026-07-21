@@ -2,10 +2,10 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Shared fixtures for 6-axis identifier-validation rejection-path tests.
 
-Used by every plan-marshall manage-* script test module that exercises
-canonical identifier flags (--plan-id, --lesson-id, --session-id,
---task-number, --task-id, --component, --hash-id, --phase,
---field, --module, --package, --domain, --name).
+Used by every manage-* script test module that exercises canonical
+identifier flags (--plan-id, --lesson-id, --session-id, --task-number,
+--task-id, --component, --hash-id, --phase, --field, --module,
+--package, --domain, --name).
 
 The 6 axes mirror the canonical fixture set from
 ``test/plan-marshall/tools-input-validation/test_input_validation.py``:
@@ -17,17 +17,16 @@ The 6 axes mirror the canonical fixture set from
     * overlong         — > 256 chars
     * happy-path       — canonical valid value
 
-This file is intentionally a sibling helper (``_fixtures.py`` style) and
-is NOT a ``conftest.py`` — placing a ``conftest.py`` under
-``test/plan-marshall/`` would silently shadow the top-level
-``test/conftest.py`` and disable shared fixtures. The basename is
-prefixed (``_pm_input_validation_fixtures.py`` rather than a bare
-``_input_validation_fixtures.py``) to avoid a basename collision in the
-plan-marshall test-collection namespace.
+This module lives in the bundle-neutral ``test/_shared/`` directory, which
+``test/conftest.py`` puts on ``sys.path`` so every bundle's tests can
+bare-import it. It is intentionally a sibling helper (``_fixtures.py``
+style) and is NOT a ``conftest.py`` — a second ``conftest.py`` would
+shadow the top-level ``test/conftest.py`` and disable the shared autouse
+isolation fixtures.
 
 Usage::
 
-    from _pm_input_validation_fixtures import (
+    from _input_validation_fixtures import (
         REJECTION_AXES,
         assert_invalid_field,
     )
@@ -40,6 +39,7 @@ Usage::
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 # =============================================================================
@@ -148,6 +148,36 @@ def assert_invalid_field(result: Any, expected_error: str) -> None:
     assert data.get('error') == expected_error, (
         f'expected error={expected_error!r}, got {data.get("error")!r}\nstdout={result.stdout!r}'
     )
+
+
+def assert_plan_id_axis_rejected(
+    script_path: Any,
+    read_verb: str | Sequence[str],
+    bad_value: str,
+    extra_args: Sequence[str] = (),
+) -> None:
+    """Assert ``<script> <read_verb> [extra_args] --plan-id <bad>`` is rejected.
+
+    Collapses the body that every per-script ``--plan-id`` rejection test
+    otherwise copy-pastes. The per-script call itself is retained (one per
+    script CLI), because proving that *each* script actually wires the
+    canonical validator is real coverage — only the replicated body is
+    shared.
+
+    Args:
+        script_path: Path to the script under test.
+        read_verb: The subcommand, or a sequence of positional subcommand
+            segments for scripts with a nested CLI (e.g. ``('request',
+            'read')``).
+        bad_value: The malformed ``--plan-id`` value for this axis.
+        extra_args: Additional argv the subcommand requires so the failure
+            is unambiguously attributed to ``--plan-id``.
+    """
+    from conftest import run_script
+
+    verbs = (read_verb,) if isinstance(read_verb, str) else tuple(read_verb)
+    result = run_script(script_path, *verbs, *extra_args, '--plan-id', bad_value)
+    assert_invalid_field(result, 'invalid_plan_id')
 
 
 def assert_not_invalid_field(result: Any, error_code: str) -> None:

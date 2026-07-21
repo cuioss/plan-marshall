@@ -24,13 +24,9 @@ import argparse
 import io
 import sys
 from contextlib import redirect_stdout
-from pathlib import Path
 
 import pytest
-
-sys.path.insert(0, str(Path(__file__).parent))
-
-from _manage_interface_input_validation_fixtures import (  # noqa: E402
+from _input_validation_fixtures import (
     HAPPY_VALUES,
     MALFORMED_AXES,
     parse_toon_output,
@@ -39,12 +35,12 @@ from _manage_interface_input_validation_fixtures import (  # noqa: E402
 # input_validation lives on the conftest-managed PYTHONPATH (every skill's
 # scripts/ dir is added). The validator + TOON-error wrapper are the in-process
 # surface under test.
-from input_validation import (  # noqa: E402
+from input_validation import (
     add_field_arg,
     parse_args_with_toon_errors,
 )
 
-from conftest import get_script_path, run_script  # noqa: E402
+from conftest import get_script_path, run_script
 
 SCRIPT_PATH = get_script_path('pm-documents', 'manage-interface', 'manage-interface.py')
 

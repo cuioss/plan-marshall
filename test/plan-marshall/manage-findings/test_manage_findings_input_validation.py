@@ -9,10 +9,11 @@ In-scope flags from TASK-1: ``--plan-id``, ``--component``, ``--module``,
 from __future__ import annotations
 
 import pytest
-from _pm_input_validation_fixtures import (
+from _input_validation_fixtures import (
     HAPPY_VALUES,
     MALFORMED_AXES,
     assert_invalid_field,
+    assert_plan_id_axis_rejected,
 )
 
 from conftest import get_script_path, run_script
@@ -28,8 +29,7 @@ SCRIPT_PATH = get_script_path('plan-marshall', 'manage-findings', 'manage-findin
 @pytest.mark.parametrize('axis,bad_value', MALFORMED_AXES['plan_id'])
 def test_list_rejects_invalid_plan_id(axis, bad_value):
     """``manage-findings list --plan-id <bad>`` → invalid_plan_id TOON."""
-    result = run_script(SCRIPT_PATH, 'list', '--plan-id', bad_value)
-    assert_invalid_field(result, 'invalid_plan_id')
+    assert_plan_id_axis_rejected(SCRIPT_PATH, 'list', bad_value)
 
 
 # =============================================================================
