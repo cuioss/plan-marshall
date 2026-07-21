@@ -33,7 +33,7 @@ from runtime_base import Runtime, toon_error, toon_noop, toon_success
 
 
 class ClaudeRuntime(Runtime):
-    """Claude Code implementation of all 23 platform-runtime operations."""
+    """Claude Code implementation of all 24 platform-runtime operations."""
 
     # ------------------------------------------------------------------
     # Project lifecycle
@@ -1423,6 +1423,128 @@ class ClaudeRuntime(Runtime):
                 },
             },
         )
+
+    # ------------------------------------------------------------------
+    # Waiting
+    # ------------------------------------------------------------------
+
+    def _wait_for_outcome(
+        self,
+        observable: str,
+        reference: str,
+        outcome: str,
+        bound_seconds: int,
+        elapsed_seconds: float,
+    ) -> str:
+        """Build the normalised ``wait for`` success payload.
+
+        No observable-shaped field crosses the boundary: the caller sees the
+        kind token, its reference, the normalised outcome, whether that outcome
+        is terminal, and the two bound figures.
+        """
+        return toon_success(
+            "wait for",
+            {
+                "observable": observable,
+                "reference": reference,
+                "outcome": outcome,
+                "terminal": outcome in claude_runtime.TERMINAL_OUTCOMES,
+                "elapsed_seconds": int(elapsed_seconds),
+                "bound_seconds": bound_seconds,
+            },
+        )
+
+    def wait_for(self, observable: str, reference: str, bound_seconds: int) -> str:
+        """Hold a bounded wait until a concrete observable reaches a terminal state.
+
+        Realised as a bounded, re-issuable poll of the observable's own status
+        surface. Claude Code exposes no Python API a runtime subprocess can
+        register a background watch against, so there is no out-of-band channel
+        to hold the wait on — the poll is the implementation, and it is a real
+        one rather than a stub.
+
+        Every non-success path is explicit: an unrecognised observable kind, a
+        non-positive bound, an unreachable inspection channel, an unknown
+        reference, and an out-of-vocabulary status each return a distinct
+        ``error``. Bound exhaustion returns ``outcome: pending`` with
+        ``terminal: false``. None of these is ever reported as a pass.
+        """
+        import time
+
+        operation = "wait for"
+
+        if observable not in claude_runtime.WAIT_OBSERVABLES:
+            return toon_error(
+                operation,
+                "unsupported_observable",
+                f"--observable {observable!r} is not an inspectable observable kind; "
+                f"valid kinds: {', '.join(claude_runtime.WAIT_OBSERVABLES)}",
+            )
+        if bound_seconds < 1:
+            return toon_error(
+                operation,
+                "invalid_bound",
+                f"--bound-seconds must be a positive number of seconds; got {bound_seconds}",
+            )
+
+        channel_reason = claude_runtime.build_job_verify_channel()
+        if channel_reason is not None:
+            return toon_error(
+                operation,
+                "observable_unreachable",
+                f"the {observable} inspection channel could not be reached "
+                f"({channel_reason}); the wait is not held and no outcome is implied",
+            )
+
+        started = time.monotonic()
+        while True:
+            elapsed = time.monotonic() - started
+            remaining = bound_seconds - elapsed
+            if remaining <= 0:
+                return self._wait_for_outcome(
+                    observable,
+                    reference,
+                    claude_runtime.OUTCOME_PENDING,
+                    bound_seconds,
+                    elapsed,
+                )
+
+            poll_bound = max(1, int(min(remaining, claude_runtime._BUILD_JOB_POLL_BOUND_SECONDS)))
+            payload = claude_runtime.build_job_poll(reference, poll_bound)
+            wire_status = str(payload.get("status", ""))
+
+            if wire_status == claude_runtime._BUILD_JOB_UNREACHABLE_STATUS:
+                return toon_error(
+                    operation,
+                    "observable_unreachable",
+                    f"the {observable} inspection channel became unreachable mid-wait "
+                    f"({payload.get('reason', 'unreachable')}); no outcome is implied",
+                )
+            if wire_status == claude_runtime._BUILD_JOB_NOT_FOUND_STATUS:
+                return toon_error(
+                    operation,
+                    "unknown_reference",
+                    f"no {observable} is known for reference {reference!r}",
+                )
+
+            outcome = claude_runtime._BUILD_JOB_STATUS_TO_OUTCOME.get(wire_status)
+            if outcome is not None:
+                return self._wait_for_outcome(
+                    observable,
+                    reference,
+                    outcome,
+                    bound_seconds,
+                    time.monotonic() - started,
+                )
+            if wire_status in claude_runtime._BUILD_JOB_NON_TERMINAL_STATUSES:
+                continue
+
+            return toon_error(
+                operation,
+                "unexpected_observable_status",
+                f"the {observable} surface reported status {wire_status!r}, which is "
+                "outside its documented vocabulary; refusing to infer an outcome",
+            )
 
     # ------------------------------------------------------------------
     # Health check

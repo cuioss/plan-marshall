@@ -17,8 +17,12 @@ Validation contract:
   * If a frontmatter block is missing any field listed in
     ``required_fields``, raise ``UnmappedFrontmatterError`` so the CLI
     exits with code 2 (silent exclusion is prohibited).
-  * If an agent declares a ``tools`` value that has no entry in
+  * If an agent declares a ``tools`` value that has no key in
     ``tool_permissions``, raise ``UnmappedToolError`` so the CLI exits 2.
+  * If an agent declares a tool whose ``tool_permissions`` key is present
+    with a ``null`` value, that is the **target-absent** sentinel: the
+    Claude tool has no OpenCode analog. No permission entry is emitted for
+    it and no error is raised.
 
 The body of the source markdown is returned untouched — body-text
 transforms are owned by the target-shared ``body_transform_engine``.
@@ -42,6 +46,13 @@ OPENCODE_MODEL_PREFIX = 'anthropic/'
 # single-permission grant. Currently every Claude tool maps to a single
 # OpenCode permission category, so this stays empty by default.
 LIST_PERMISSION_TOOLS: frozenset[str] = frozenset()
+
+# Lookup sentinel distinguishing "key absent from tool_permissions" from
+# "key present with a null value". A ``.get(tool)`` alone collapses both
+# onto ``None``; passing this sentinel as the default keeps the two cases
+# separable, so a missing key still fails closed while the documented
+# target-absent marker (an explicit ``null``) does not.
+_TOOL_KEY_MISSING = object()
 
 
 class UnmappedFrontmatterError(RuntimeError):
@@ -236,8 +247,10 @@ def transform_agent_frontmatter(
     """Transform Claude agent frontmatter into OpenCode form.
 
     Maps Claude ``tools`` declarations into an OpenCode ``permission``
-    block via ``mapping['tool_permissions']``. Unmapped tools raise
-    ``UnmappedToolError`` so the CLI exits with code 2.
+    block via ``mapping['tool_permissions']``. A tool with no key there
+    raises ``UnmappedToolError`` so the CLI exits with code 2; a key
+    present with ``null`` is the target-absent sentinel (the Claude tool
+    has no OpenCode analog) and contributes no permission entry.
     """
     _ensure_required(fm, rules, source_label)
 
@@ -256,9 +269,12 @@ def transform_agent_frontmatter(
         unknown: list[str] = []
         seen: set[str] = set()
         for tool in _split_tools(tools_raw):
-            mapped = mapping['tool_permissions'].get(tool)
-            if mapped is None:
+            mapped = mapping['tool_permissions'].get(tool, _TOOL_KEY_MISSING)
+            if mapped is _TOOL_KEY_MISSING:
                 unknown.append(tool)
+                continue
+            if mapped is None:
+                # Target-absent sentinel: no OpenCode analog, no permission.
                 continue
             if mapped in seen:
                 continue

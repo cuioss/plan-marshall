@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """
-ClaudeRuntime — Claude Code implementation of all 23 platform-runtime operations.
+ClaudeRuntime — Claude Code implementation of all 24 platform-runtime operations.
 
 Implements every abstract method from Runtime (runtime_base.py) for the Claude Code
 target.  All responses are serialized TOON strings built via the toon_success,
@@ -35,6 +35,12 @@ for _ancestor in Path(__file__).resolve().parents:
             _lib_path = str(_ancestor / _lib / "scripts")
             if _lib_path not in sys.path:
                 sys.path.append(_lib_path)
+        # script-shared organises its modules into subdirectories; the
+        # build-server wire protocol the ``wait for`` observable is inspected
+        # through lives one level down.
+        _build_lib_path = str(_ancestor / "script-shared" / "scripts" / "build")
+        if _build_lib_path not in sys.path:
+            sys.path.append(_build_lib_path)
         break
 
 import session_binding  # noqa: E402
@@ -1853,6 +1859,178 @@ _MAPPED_TOOLS: frozenset[str] = frozenset(
 
 # Tools that have no platform equivalent — cause no-op for subagent dispatch.
 _UNMAPPED_TOOLS: frozenset[str] = frozenset({"SendMessage", "TaskCreate"})
+
+
+# ---------------------------------------------------------------------------
+# Waiting — concrete-observable inspection
+#
+# ``wait for`` holds a bounded wait over a CONCRETE, pollable observable rather
+# than an opaque caller-supplied condition. Claude Code exposes no Python API a
+# runtime subprocess can register a background watch against — the harness's
+# background-watch and completion-notification affordances are agent-level — so
+# the wait is realised as a bounded, re-issuable poll of the observable's own
+# status surface, normalised into the observable-independent outcome vocabulary
+# below.
+#
+# Exactly ONE observable kind is implemented: the marshalld build-server job.
+# Its status surface is the only one reachable from a subprocess that already
+# carries an explicit terminal-FAILURE vocabulary, which is what the
+# silence-is-not-success coverage rule needs. Adding a second kind is additive.
+# ---------------------------------------------------------------------------
+
+OBSERVABLE_BUILD_JOB = "build-job"
+"""Observable kind: a marshalld build-server job, referenced by its ``job_id``."""
+
+WAIT_OBSERVABLES: tuple[str, ...] = (OBSERVABLE_BUILD_JOB,)
+"""The closed set of observable kinds ``wait for`` accepts."""
+
+OUTCOME_SUCCEEDED = "succeeded"
+OUTCOME_FAILED = "failed"
+OUTCOME_TIMED_OUT = "timed_out"
+OUTCOME_KILLED = "killed"
+OUTCOME_PENDING = "pending"
+
+TERMINAL_OUTCOMES: frozenset[str] = frozenset(
+    {OUTCOME_SUCCEEDED, OUTCOME_FAILED, OUTCOME_TIMED_OUT, OUTCOME_KILLED}
+)
+"""The terminal outcomes. ``OUTCOME_PENDING`` is deliberately absent — bound
+exhaustion is an explicit unknown, never a terminal verdict."""
+
+_BUILD_JOB_STATUS_TO_OUTCOME: dict[str, str] = {
+    "success": OUTCOME_SUCCEEDED,
+    "failure": OUTCOME_FAILED,
+    "timeout": OUTCOME_TIMED_OUT,
+    "killed": OUTCOME_KILLED,
+}
+"""Daemon wire status -> normalised outcome. ``killed`` keeps its own outcome
+rather than folding into ``failed``: an externally reaped job is not a flaky
+build and must not be blind-retried."""
+
+_BUILD_JOB_NON_TERMINAL_STATUSES: frozenset[str] = frozenset({"queued", "running"})
+"""Wire statuses that mean "keep waiting" — never a verdict either way."""
+
+_BUILD_JOB_NOT_FOUND_STATUS = "not_found"
+
+_BUILD_JOB_UNREACHABLE_STATUS = "unreachable"
+"""Synthetic status :func:`build_job_poll` returns when the channel is down."""
+
+_BUILD_JOB_POLL_BOUND_SECONDS = 300
+"""Per-poll long-poll ceiling (matches the daemon's own default wait bound)."""
+
+_BUILD_JOB_CONNECT_TIMEOUT_SECONDS = 5.0
+_BUILD_JOB_READ_MARGIN_SECONDS = 30
+
+
+def _build_job_modules() -> tuple[Any, Any] | None:
+    """Import the shared build-server wire protocol and registry modules.
+
+    Returns:
+        The ``(protocol, registry)`` module pair, or ``None`` when the shared
+        build layer is not importable in this process.
+    """
+    try:
+        import _build_server_protocol
+        import _build_server_registry
+    except ImportError:
+        return None
+    return (_build_server_protocol, _build_server_registry)
+
+
+def _build_job_socket_path() -> Any | None:
+    """Resolve the machine-global marshalld socket path, or ``None``."""
+    modules = _build_job_modules()
+    if modules is None:
+        return None
+    _protocol, registry = modules
+    return registry.registry_dir() / "socket"
+
+
+def _build_job_call(request: dict[str, Any], timeout: float) -> dict[str, Any] | None:
+    """Send one framed request to the marshalld socket and return the response.
+
+    The daemon answers exactly one op per connection, so every call opens and
+    closes its own socket.
+
+    Args:
+        request: The request payload carrying the ``op`` discriminator.
+        timeout: Socket connect / I/O timeout in seconds.
+
+    Returns:
+        The decoded response payload, or ``None`` on any connect, I/O, or
+        framing failure.
+    """
+    import socket as _socket
+
+    modules = _build_job_modules()
+    sock_path = _build_job_socket_path()
+    if modules is None or sock_path is None:
+        return None
+    protocol, _registry = modules
+
+    sock = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
+    sock.settimeout(timeout)
+    try:
+        sock.connect(str(sock_path))
+        protocol.send_frame(sock, request)
+        response = protocol.recv_frame(sock)
+    except (OSError, protocol.FrameError):
+        return None
+    finally:
+        sock.close()
+    return response if isinstance(response, dict) else None
+
+
+def build_job_verify_channel() -> str | None:
+    """Verify the build-job inspection channel is reachable and speaks our wire.
+
+    Fail-closed: an unverifiable channel is reported so the caller raises an
+    explicit error rather than treating an unreachable observable as pending
+    (let alone as a pass).
+
+    Returns:
+        ``None`` when the channel is verified, otherwise a named reason string.
+    """
+    modules = _build_job_modules()
+    if modules is None:
+        return "shared_build_layer_unavailable"
+    protocol, _registry = modules
+
+    sock_path = _build_job_socket_path()
+    if sock_path is None or not sock_path.exists():
+        return "socket_absent"
+
+    response = _build_job_call({"op": "ping"}, _BUILD_JOB_CONNECT_TIMEOUT_SECONDS)
+    if response is None:
+        return "unreachable"
+    if response.get("status") != "ok":
+        return "handshake_failed"
+    if str(response.get("version", "")) != protocol.PROTOCOL_VERSION:
+        return "version_mismatch"
+    return None
+
+
+def build_job_poll(reference: str, bound_seconds: int) -> dict[str, Any]:
+    """Issue ONE bounded long-poll for a build job's status.
+
+    The daemon holds the poll server-side for up to *bound_seconds* and answers
+    with a terminal status, or with a live non-terminal status on bound expiry.
+
+    Args:
+        reference: The daemon-assigned ``job_id``.
+        bound_seconds: Long-poll bound handed to the daemon.
+
+    Returns:
+        The decoded daemon status payload, or a synthetic
+        ``{"status": "unreachable", "reason": ...}`` payload when the channel
+        could not be reached. Never raises.
+    """
+    response = _build_job_call(
+        {"op": "wait", "job_id": reference, "bound": int(bound_seconds)},
+        float(bound_seconds) + _BUILD_JOB_READ_MARGIN_SECONDS,
+    )
+    if response is None:
+        return {"status": _BUILD_JOB_UNREACHABLE_STATUS, "reason": "unreachable"}
+    return response
 
 
 

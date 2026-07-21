@@ -470,6 +470,34 @@ def test_integration_source_fix_contract_no_skill_entry_placeholder_in_bundles()
     )
 
 
+def test_monitor_registry_entry_accepted_by_fail_closed_load():
+    """The real mapping.json's `Monitor` entry passes the fail-closed registry load.
+
+    `source_fix` is already in the known-disposition set, so registering `Monitor`
+    is pure data — it must not trip `UnmappedIdiomError` at load time.
+    """
+    rules = _opencode_rules()
+    assert rules.body_idiom_rewrites['Monitor']['disposition'] == 'source_fix'
+
+
+def test_source_fix_disposition_leaves_monitor_prose_untouched():
+    """Under `source_fix` the emit-time engine leaves `Monitor` prose alone.
+
+    Both shapes are covered: bare prose and a backtick-wrapped reference. The
+    divergence is fixed in the source, never rewritten at emit time.
+    """
+    registry = _registry(Monitor={'disposition': 'source_fix'})
+    body = 'A `Monitor` tool call, and a bare Monitor mention.\n'
+    assert rewrite_registered_idioms(body, registry) == body
+
+
+def test_make_body_transformer_leaves_monitor_untouched_from_real_mapping():
+    """The composed transformer over the real mapping.json does not rewrite `Monitor`."""
+    transform = make_body_transformer({}, _opencode_rules())
+    body = 'Poll conditions belong in a `Monitor` tool call.\n'
+    assert transform(body, 'demo', 'skill') == body
+
+
 def test_assert_dispositions_known_accepts_valid_registry():
     """A registry with only known dispositions passes the fail-closed guard."""
     assert_dispositions_known(_registry())  # does not raise

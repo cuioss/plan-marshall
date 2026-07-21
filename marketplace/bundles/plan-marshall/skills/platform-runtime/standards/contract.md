@@ -1,6 +1,6 @@
 # Platform Runtime TOON Contract
 
-Per-operation TOON schemas for all 23 `platform-runtime` operations. Every operation returns one of three status variants: `success`, `error`, or `no-op`. Parser: `from toon_parser import parse_toon, serialize_toon` from `plan-marshall:ref-toon-format`.
+Per-operation TOON schemas for all 24 `platform-runtime` operations. Every operation returns one of three status variants: `success`, `error`, or `no-op`. Parser: `from toon_parser import parse_toon, serialize_toon` from `plan-marshall:ref-toon-format`.
 
 **Invocation pattern**:
 ```bash
@@ -49,6 +49,11 @@ alternative: <what the caller can do instead>
 | `hook_not_configured` | SessionStart hook not installed; `$CLAUDE_CODE_SESSION_ID` unset |
 | `invalid_settings` | Settings file is malformed (JSON parse error); fail-closed before any write so a malformed file is never clobbered — returned by `permission configure`, `permission fix`, `permission ensure-wildcards`, `permission ensure-steps`, `permission web-apply` |
 | `invalid_marshal` | `.plan/marshal.json` is malformed (parse error); fail-closed instead of degrading to a zero-step audit — returned by `permission analyze`, `permission ensure-steps` |
+| `unsupported_observable` | `wait for --observable` names a kind outside the closed enumerated set |
+| `invalid_bound` | `wait for --bound-seconds` is not a positive number of seconds |
+| `unknown_reference` | `wait for --reference` names no instance of the requested observable kind |
+| `observable_unreachable` | The observable's inspection channel could not be reached; the wait was not held and **no outcome is implied** |
+| `unexpected_observable_status` | The observable reported a status outside its documented vocabulary; the runtime refuses to infer an outcome from it |
 
 ---
 
@@ -917,6 +922,88 @@ status: error
 operation: subagent dispatch
 error: prompt_not_found
 message: prompt file not found: prompts/my-prompt.md
+```
+
+---
+
+### `wait for`
+
+Hold a bounded wait until a **concrete, pollable observable** reaches a terminal state, and return a normalized, observable-independent outcome.
+
+The `--observable` argument names a *kind* drawn from a closed enumerated set — it is deliberately **not** an opaque caller-supplied condition descriptor, because a runtime subprocess has no way to evaluate an arbitrary predicate and could only ever answer one with an unsubstantiated `unknown`. An unrecognised kind is rejected with `unsupported_observable` rather than silently awaited.
+
+**Observable kinds**:
+
+| Kind | `--reference` | Inspected surface |
+|------|---------------|-------------------|
+| `build-job` | The daemon-assigned `job_id` | The marshalld build-server job status surface, whose terminal vocabulary already distinguishes an externally killed job from a failed one |
+
+**Arguments**: `--observable <kind>` (required), `--reference <id>` (required), `--bound-seconds <n>` (required, positive)
+
+**Outcomes**: `succeeded`, `failed`, `timed_out`, `killed` (all `terminal: true`), and `pending` (`terminal: false`).
+
+Two fail-closed rules are part of the contract. **Silence is not success**: the terminal-state set covers the failure signatures, so a negative outcome is reported as the negative outcome and never mistaken for continued waiting. **A bound is not a verdict**: exhausting `--bound-seconds` yields `outcome: pending` with `terminal: false` — an explicit unknown the caller must act on — never an implicit pass. An unreachable inspection channel is an `error`, likewise never a pass.
+
+The governing policy — when to wait, who may hold a wait, and the tiered realisation — lives in `plan-marshall` `standards/waiting.md`; the placement decision is ADR-011.
+
+**Success (terminal outcome)**:
+```toon
+status: success
+operation: wait for
+observable: build-job
+reference: job-7f3a91
+outcome: succeeded
+terminal: true
+elapsed_seconds: 47
+bound_seconds: 600
+```
+
+**Success (bound exhausted — explicit unknown, NOT a pass)**:
+```toon
+status: success
+operation: wait for
+observable: build-job
+reference: job-7f3a91
+outcome: pending
+terminal: false
+elapsed_seconds: 600
+bound_seconds: 600
+```
+
+**Success (terminal failure signature)**:
+```toon
+status: success
+operation: wait for
+observable: build-job
+reference: job-7f3a91
+outcome: killed
+terminal: true
+elapsed_seconds: 112
+bound_seconds: 600
+```
+
+**Error (unrecognised observable kind)**:
+```toon
+status: error
+operation: wait for
+error: unsupported_observable
+message: --observable 'ci-run' is not an inspectable observable kind; valid kinds: build-job
+```
+
+**Error (inspection channel unreachable)**:
+```toon
+status: error
+operation: wait for
+error: observable_unreachable
+message: the build-job inspection channel could not be reached (socket_absent); the wait is not held and no outcome is implied
+```
+
+**No-op (OpenCode — no runtime-held wait channel)**:
+```toon
+status: no-op
+operation: wait for
+reason: OpenCode's runtime holds no wait channel — it has no platform-provided session id (issue #9292), no hook channel (issue anomalyco/opencode#8619), and no shared build layer to inspect an observable through, so a wait held here would be unobservable and could not be re-attached
+alternative: Invoke the observable's own bounded-wait verb synchronously in-turn (build-server-client wait, ci checks wait), or checkpoint and re-dispatch to re-establish the wait from persisted state
 ```
 
 ---
