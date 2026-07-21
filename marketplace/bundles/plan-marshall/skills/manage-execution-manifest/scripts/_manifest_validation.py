@@ -11,6 +11,7 @@ in the entry). The entry re-exports every name the test suite references.
 """
 
 import argparse
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -500,19 +501,75 @@ def _discovered_implementor_names(phase: str) -> set[str]:
     return names
 
 
+@lru_cache(maxsize=1)
+def _domain_appended_canonicals() -> set[str]:
+    """Return the canonical command names domain hooks append to verification_steps.
+
+    A *domain-appended* canonical is one that ``skill-domains configure`` seeds
+    into ``phase-5-execute.verification_steps`` for a project whose configured
+    domains contribute it via a domain hook — NOT one declared by an
+    ``ext-point-build-verify-step`` implementor's ``canonicals`` list. Currently
+    the only such hook is ``provides_arch_gate()``: any active domain whose
+    extension returns a non-None arch-gate descriptor contributes the ``arch-gate``
+    canonical. The set generalizes to future domain-owned-verb canonicals — this
+    helper is the single place the composer learns which canonicals are legitimate
+    *because a domain provides them*, as opposed to unknown/typo'd canonicals.
+
+    Discovery is best-effort and fail-soft: any import or extension error yields
+    the empty set (the common case — a project whose domains contribute no verb
+    canonical, and the default in unit tests that do not stub a domain hook), so a
+    discovery failure never turns a legitimate canonical into a hard compose
+    error nor vice versa.
+    """
+    canonicals: set[str] = set()
+    try:
+        from extension_discovery import discover_all_extensions
+    except Exception:
+        return canonicals
+    try:
+        extensions = discover_all_extensions()
+    except Exception:
+        return canonicals
+    for ext in extensions:
+        module = ext.get('module') if isinstance(ext, dict) else None
+        if module is None:
+            continue
+        hook = getattr(module, 'provides_arch_gate', None)
+        if not callable(hook):
+            continue
+        try:
+            if hook() is not None:
+                # The provides_arch_gate hook's canonical command IS ``arch-gate``
+                # (the command name that resolves via ``architecture resolve
+                # --command arch-gate`` and backs ``default:verify:arch-gate``).
+                canonicals.add('arch-gate')
+        except Exception:
+            continue
+    return canonicals
+
+
 def _verify_canonicals_universe() -> set[str]:
     """Return the canonical command names a ``verify:{canonical}`` step may name.
 
-    The union of the composer's authoritative ``_CANONICAL_TO_ROLE`` keys (the
-    canonical→role table the composer already recognizes — ``quality-gate`` /
-    ``verify`` / ``module-tests`` / ``coverage`` / ``integration-tests`` /
-    ``e2e``) and every ``ext-point-build-verify-step`` implementor's declared
-    ``canonicals`` list (the built-in ``canonical_verify.md`` declares
-    ``quality-gate`` / ``module-tests`` / ``coverage``). A ``verify:{canonical}``
-    step resolves iff its trailing canonical segment is in this union. Seeding the
-    universe from ``_CANONICAL_TO_ROLE`` keeps the gate robust even when discovery
-    returns nothing (an exotic test/consumer layout without the phase-5 standards
-    docs).
+    The union of three sources:
+
+    - the composer's authoritative ``_CANONICAL_TO_ROLE`` keys (the canonical→role
+      table the composer already recognizes — ``quality-gate`` / ``verify`` /
+      ``module-tests`` / ``coverage`` / ``integration-tests`` / ``e2e``);
+    - every ``ext-point-build-verify-step`` implementor's declared ``canonicals``
+      list (the built-in ``canonical_verify.md`` declares ``quality-gate`` /
+      ``module-tests`` / ``coverage``);
+    - the domain-appended canonicals (:func:`_domain_appended_canonicals` —
+      ``arch-gate`` when an active domain declares a ``provides_arch_gate()`` tool).
+      A domain-appended canonical is a LEGITIMATE verify canonical (a domain seeds
+      it deliberately), so it belongs in the universe — its per-footprint
+      runnability is a separate question the composer's domain-seeded resolvability
+      filter answers, NOT a reason to reject it as an unknown canonical.
+
+    A ``verify:{canonical}`` step resolves iff its trailing canonical segment is in
+    this union. Seeding the universe from ``_CANONICAL_TO_ROLE`` keeps the gate
+    robust even when discovery returns nothing (an exotic test/consumer layout
+    without the phase-5 standards docs).
     """
     from _config_defaults import BUILD_VERIFY_STEP_EXT_POINT
     from extension_discovery import find_implementors
@@ -529,6 +586,7 @@ def _verify_canonicals_universe() -> set[str]:
             for canonical in canonicals:
                 if isinstance(canonical, str) and canonical:
                     universe.add(canonical)
+    universe |= _domain_appended_canonicals()
     return universe
 
 

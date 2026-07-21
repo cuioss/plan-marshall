@@ -25,6 +25,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+# Imported as a MODULE (not `from … import`) so the domain-seeded resolvability
+# filter and the resolution gate's `_verify_canonicals_universe` both resolve
+# `_domain_appended_canonicals` through the SAME module attribute at call time —
+# a single test patch of `_manifest_validation._domain_appended_canonicals` keeps
+# the filter's domain-seeded membership check and the resolution gate's universe
+# in lock-step.
+import _manifest_validation
 from _manifest_core import (
     _CANONICAL_TO_ROLE,  # noqa: F401
     _CANONICAL_VERIFY_PREFIX,  # noqa: F401
@@ -618,6 +625,65 @@ def _apply_canonical_verify_inactive(
         if gating_markers is not None and not _footprint_has_role(footprint, gating_markers):
             dropped.append(step)
             continue
+        kept.append(step)
+    return kept, dropped
+
+
+def _apply_domain_seeded_step_resolvability(
+    phase_5_steps: list[str],
+    plan_id: str,
+) -> tuple[list[str], list[str]]:
+    """Resolvability filter for domain-seeded canonical-verify steps.
+
+    A *domain-seeded* verify-step is a ``default:verify:{canonical}`` (bare
+    ``verify:{canonical}``) step whose canonical is a LEGITIMATE domain-appended
+    canonical — one in :func:`_manifest_validation._domain_appended_canonicals`
+    (``arch-gate`` when an active domain declares a ``provides_arch_gate()`` tool).
+    The canonical example is ``default:verify:arch-gate`` — appended by
+    ``skill-domains configure`` for any project whose configured domains declare a
+    ``provides_arch_gate()`` tool (the availability axis), independent of whether
+    the plan's own footprint wires any in-scope module that resolves the
+    ``arch-gate`` command. Gating on the domain-appended set is what separates a
+    legitimate-but-unrunnable domain canonical (soft-skip here) from a genuinely
+    unknown/typo'd canonical (``verify:bogus``), which is NOT domain-appended, is
+    left untouched, and is hard-failed by the downstream compose-time resolution
+    gate (``check_emitted_steps_resolvable``) — the two behaviours must not be
+    conflated. The domain-appended set also seeds
+    :func:`_manifest_validation._verify_canonicals_universe`, so a KEPT (resolvable)
+    domain-seeded step passes that same resolution gate.
+
+    For each domain-seeded step, probe ``architecture resolve --command
+    {canonical}`` (reusing :func:`_invoke_architecture_resolve`, the same seam
+    :func:`_resolve_step_execution_tier` uses). When it resolves (a status-success
+    TOON) the step is KEPT; when it is unresolvable for the whole project footprint
+    (``None``) the step is DROPPED. The caller emits a diagnosable ``[STATUS]``
+    decision-log warning naming each dropped step — the ADR-010
+    status-bearing-gate visibility semantic (a diagnosable skip, never a silent
+    drop and never a hard compose block).
+
+    Built-in always-resolvable gates (``quality-gate`` / ``module-tests`` / …) are
+    never probed and never dropped; non-canonical-verify step IDs (``project:`` /
+    ``bundle:skill`` external steps) and unknown canonicals pass through untouched.
+    The filter is generalized over the domain-seeded step CLASS — the ``arch-gate``
+    literal is never special-cased; any future domain-appended ``verify:{canonical}``
+    the domain-appended set recognizes is filtered the same way.
+
+    Returns ``(kept_steps, dropped_steps)``.
+    """
+    domain_appended = _manifest_validation._domain_appended_canonicals()
+    kept: list[str] = []
+    dropped: list[str] = []
+    for step in phase_5_steps:
+        bare = canonicalize_step_key(step)
+        if bare.startswith(_CANONICAL_VERIFY_PREFIX):
+            canonical = bare[len(_CANONICAL_VERIFY_PREFIX) :]
+            # Domain-seeded == a domain-appended canonical (never a core built-in
+            # in _CANONICAL_TO_ROLE). An unknown canonical is not domain-appended
+            # and is left for the resolution gate to hard-fail.
+            if canonical in domain_appended and canonical not in _CANONICAL_TO_ROLE:
+                if _invoke_architecture_resolve(['--command', canonical], plan_id) is None:
+                    dropped.append(step)
+                    continue
         kept.append(step)
     return kept, dropped
 
@@ -1491,6 +1557,34 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
             '(plan-marshall:manage-execution-manifest:compose) aspect_step_dropping — '
             f'aspect={aspect}, dropped {aspect_dropped} from phase_5.verification_steps '
             '(analysis/planning request has no build/test footprint)',
+        )
+
+    # Domain-seeded verify-step resolvability filter. Runs AFTER the canonical-verify
+    # footprint pre-filter and aspect dropping, and BEFORE per-step tier stamping, over
+    # the FINAL phase-5 verification list. A domain-seeded canonical-verify step (a
+    # verify:{canonical} whose canonical is NOT a core built-in in _CANONICAL_TO_ROLE —
+    # e.g. default:verify:arch-gate, appended by skill-domains configure on the
+    # availability axis when a configured domain declares a provides_arch_gate() tool)
+    # is DROPPED with a diagnosable [STATUS] warning when architecture resolve --command
+    # {canonical} is unresolvable for the whole project footprint (the domain is active
+    # but no in-scope module wires the command). This is the ADR-010 status-bearing-gate
+    # visibility semantic — a diagnosable skip, never a silent drop and never a hard
+    # compose block. Built-in always-resolvable gates (quality-gate / module-tests) are
+    # never probed and never dropped; the filter is generalized over the domain-seeded
+    # step class, not special-cased to the arch-gate id. The paired seed helper in
+    # manage-config (_configured_domains_provide_arch_gate) is left intact — it correctly
+    # records the availability-axis signal; the per-footprint resolvability is knowable
+    # only here at compose.
+    body['phase_5']['verification_steps'], domain_seeded_dropped = _apply_domain_seeded_step_resolvability(
+        list(body['phase_5'].get('verification_steps', [])),
+        plan_id,
+    )
+    if domain_seeded_dropped:
+        _emit_decision_log(
+            plan_id,
+            '(plan-marshall:manage-execution-manifest:compose) [STATUS] domain_seeded_step_unresolvable — '
+            f'dropped {domain_seeded_dropped} from phase_5.verification_steps '
+            '(domain active but no in-scope module wires the command)',
         )
 
     # Per-step execution_tier stamping. Runs AFTER the final phase-5 verification
