@@ -60,10 +60,19 @@ It exposes three actions:
     unremovable file) stays ``status: error``.
   * ``check`` — a non-blocking holder read: ``status: free`` when no lock file
     exists, ``status: held`` + ``holder_plan_id`` when one does. Never attempts
-    to create or mutate the lock, and never touches the FIFO queue.
+    to create or mutate the lock, and never touches the FIFO queue. On the
+    ``held`` branch it also surfaces the authoritative main-anchored ``staleness``
+    verdict (``fresh`` / ``stale`` / ``unknown``) so the manual-release recovery
+    recipe consults a cwd-independent signal instead of a cwd-scoped enumeration.
   * ``release`` — remove the lock file (only when this caller holds it), then
     dequeue ``--plan-id`` from ``merge-queue.json`` so the next FIFO entry becomes
-    the front and is admitted on its next re-poll.
+    the front and is admitted on its next re-poll. With ``--require-stale`` it
+    becomes a fail-closed recovery release: the removal is CONDITIONAL on the
+    recorded holder's main-anchored ``holder_staleness`` verdict — evicting only a
+    provably ``stale`` holder (through the observed-file eviction arbitration, never
+    a blind unlink) and REFUSING (``status: refused``,
+    ``reason: holder_not_provably_dead``) on a ``fresh`` or ``unknown`` verdict, so
+    a holder live in a sibling worktree (the #948 shape) is never force-released.
 
 **Reconciliation (the unified design).** This primitive KEEPS the file
 ``O_EXCL`` lock's proven correctness core — atomic ``O_EXCL`` create,
@@ -195,7 +204,13 @@ from argparse import Namespace
 from pathlib import Path
 from typing import Any
 
-from _locks_core import holder_has_live_worktree, holder_is_dead, log_lock_event, rmw_json
+from _locks_core import (
+    holder_has_live_worktree,
+    holder_is_dead,
+    holder_staleness,
+    log_lock_event,
+    rmw_json,
+)
 from file_ops import get_executor_path
 from manage_terminal_title import TITLE_TOKEN_GLYPHS
 from marketplace_paths import (
@@ -500,6 +515,69 @@ def _reclaim_stale_lock(lock_path: Path, observed_holder: str, new_holder: str) 
     except OSError:
         pass
     return _try_atomic_create(lock_path, new_holder)
+
+
+def _evict_stale_lock(lock_path: Path, observed_holder: str) -> bool:
+    """Atomically EVICT (remove) a provably-stale lock via observed-file arbitration.
+
+    The conditional ``release --require-stale`` recovery path is a check-then-act on
+    a cooperative cross-process lock: the ``holder_staleness`` verdict could go live
+    between the decision and the removal (the same TOCTOU / check-then-act window the
+    auto-reclaim path faces). This helper closes that window with the SAME
+    per-reclaimer sidecar arbitration :func:`_reclaim_stale_lock` uses — it differs
+    ONLY in the terminal step: it REMOVES the lock (recovery release) instead of
+    recreating it for a new holder, so a blind ``os.unlink(path)`` never force-releases
+    a holder that another session made live in the window:
+
+    1. ``os.rename`` the lock file aside to a per-reclaimer unique sidecar
+       (``{lock_path}.reclaim.{pid}.{uuid}``) — a target only this caller names —
+       atomically claiming the specific file currently at the path.
+       ``FileNotFoundError`` (a racing reclaimer swapped/removed it first) → False.
+    2. Re-confirm the renamed-away content is exactly ``observed_holder`` AND that the
+       holder is STILL provably stale (``holder_staleness(...) == 'stale'``). If the
+       file had changed to a live / different / no-longer-provably-dead holder before
+       our rename claimed it, ``os.replace`` the sidecar back to restore it intact and
+       return False (lose cleanly, the live holder keeps its lock).
+    3. On a confirmed stale-holder match, unlink the sidecar — the lock is now
+       removed. Return True.
+
+    Returns True only when this caller atomically claimed the observed stale holder
+    and removed its lock; False on every loss path. Restoring the sidecar (step 2) is
+    best-effort-correct: a failure to restore never grants a spurious removal.
+    """
+    sidecar = lock_path.with_name(f'{lock_path.name}.reclaim.{os.getpid()}.{uuid.uuid4().hex}')
+    try:
+        os.rename(str(lock_path), str(sidecar))
+    except FileNotFoundError:
+        # The path was already swapped or removed by a racing reclaimer — this
+        # caller did not claim the observed file. Lose cleanly.
+        return False
+
+    # The observed file is now ours (at the sidecar). Confirm it is exactly the
+    # holder we judged stale, and that the verdict still holds (fail-closed on any
+    # drift to fresh/unknown).
+    renamed_holder = _read_holder(sidecar)
+    if renamed_holder != observed_holder or holder_staleness(renamed_holder) != 'stale':
+        # The file at the path had changed to a different / now-live / unresolvable
+        # holder before our rename claimed it. Restore it intact so the holder keeps
+        # its lock, then lose cleanly.
+        try:
+            os.replace(str(sidecar), str(lock_path))
+        except OSError:
+            # Best-effort restore: a concurrent reclaimer already recreated the
+            # path, so the sidecar is now stale. Drop it and lose either way.
+            try:
+                os.unlink(str(sidecar))
+            except OSError:
+                pass
+        return False
+
+    # Confirmed stale-holder match — drop the sidecar; the lock is now removed.
+    try:
+        os.unlink(str(sidecar))
+    except OSError:
+        pass
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -825,13 +903,17 @@ def run_acquire(args: Namespace) -> dict[str, Any]:
 
 
 def run_check(args: Namespace) -> dict[str, Any]:
-    """Non-blocking read of the current merge-lock holder.
+    """Non-blocking read of the current merge-lock holder, with a staleness verdict.
 
     Reads the lock file without attempting to create or mutate it, and never
     touches the FIFO queue. Returns ``status: free`` when no lock file exists, or
     ``status: held`` + ``holder_plan_id`` when one does (including a self-held
-    lock). This serves the Pre-Merge Gate's ``check`` consumer directly from the
-    file primitive.
+    lock). On the ``held`` branch it also surfaces the authoritative main-anchored
+    ``staleness`` verdict (``fresh`` / ``stale`` / ``unknown``, from
+    :func:`_locks_core.holder_staleness`) so the manual-release recovery recipe
+    consults an authoritative, cwd-independent signal instead of a cwd-scoped
+    ``manage-status list`` / ``worktree-list`` enumeration. This serves the
+    Pre-Merge Gate's ``check`` consumer directly from the file primitive.
     """
     plan_id: str = args.plan_id
 
@@ -852,6 +934,94 @@ def run_check(args: Namespace) -> dict[str, Any]:
         'status': 'held',
         'plan_id': plan_id,
         'holder_plan_id': holder or None,
+        'staleness': holder_staleness(holder),
+        'lock_path': str(lock_path),
+    }
+
+
+def _run_conditional_release(
+    plan_id: str, lock_path: Path, set_title_token: bool
+) -> dict[str, Any]:
+    """Fail-closed ``release --require-stale`` — remove the lock ONLY when provably stale.
+
+    The manual-release recovery path (release a foreign holder's lock under its
+    ``plan_id``). Unlike the unconditional holder-scoped release, the removal is
+    CONDITIONAL on the authoritative main-anchored verdict
+    :func:`_locks_core.holder_staleness` for the RECORDED holder:
+
+      * no lock file → nothing to release (idempotent ``noop`` success);
+      * verdict ``fresh`` or ``unknown`` → REFUSE (``status: refused``,
+        ``reason: holder_not_provably_dead``) with NO ``os.unlink`` — a live holder
+        (or an unresolvable base, ADR-009) is never force-released;
+      * verdict ``stale`` → evict via the observed-file eviction arbitration
+        (:func:`_evict_stale_lock` — per-reclaimer sidecar rename + re-confirm
+        still-stale), NOT a blind ``unlink``, so a holder that goes live in the
+        TOCTOU window is not force-released.
+
+    The evicted stale holder is also dequeued from the FIFO queue (best-effort) so
+    its entry never wedges the front. The unconditional self-holder ``release`` path
+    (finalize's ``release --plan-id {plan_id}``) is unaffected — this branch runs
+    only under ``--require-stale``.
+    """
+    if not lock_path.exists():
+        # Nothing to release — idempotent success (mirrors the plain-release noop).
+        _surface_lock_cleared(plan_id, set_title_token)
+        return {
+            'status': 'success',
+            'plan_id': plan_id,
+            'action': 'noop',
+            'lock_path': str(lock_path),
+            'message': 'lock not held (already free)',
+        }
+
+    holder = _read_holder(lock_path)
+    verdict = holder_staleness(holder)
+    if verdict != 'stale':
+        # Fail closed — the recorded holder is not PROVABLY dead (it is live,
+        # mid-recovery, or its base is unresolvable). Refuse without any unlink.
+        return {
+            'status': 'refused',
+            'plan_id': plan_id,
+            'reason': 'holder_not_provably_dead',
+            'holder': holder or None,
+            'staleness': verdict,
+            'lock_path': str(lock_path),
+        }
+
+    # Provably stale — evict the SPECIFIC observed file (no blind unlink).
+    if _evict_stale_lock(lock_path, holder):
+        # Dequeue the evicted stale holder so it never wedges the FIFO front
+        # (best-effort — the lock is already removed, so a dequeue hiccup must not
+        # turn a successful eviction into an error).
+        waiting_count = 0
+        try:
+            waiting_count = _dequeue_fifo(holder)
+        except (RuntimeError, TimeoutError):
+            waiting_count = 0
+        _surface_lock_cleared(plan_id, set_title_token)
+        log_lock_event(
+            'merge', 'released', lock_id=plan_id, lock_file=_LOCK_FILENAME,
+            reclaimed_from=holder or None, waiting_count=waiting_count,
+        )
+        return {
+            'status': 'success',
+            'plan_id': plan_id,
+            'action': 'released',
+            'staleness': 'stale',
+            'reclaimed_from': holder or None,
+            'lock_path': str(lock_path),
+            'waiting_count': waiting_count,
+        }
+
+    # Lost the eviction arbitration — the holder went live / a racer claimed the
+    # file in the window. Fail closed on the freshly-observed holder.
+    holder_now = _read_holder(lock_path) if lock_path.exists() else ''
+    return {
+        'status': 'refused',
+        'plan_id': plan_id,
+        'reason': 'holder_not_provably_dead',
+        'holder': holder_now or None,
+        'staleness': holder_staleness(holder_now) if holder_now else 'unknown',
         'lock_path': str(lock_path),
     }
 
@@ -867,17 +1037,34 @@ def run_release(args: Namespace) -> dict[str, Any]:
     must be idempotent so a finalize that crashed mid-merge and retried does not
     error on the second release, and a plan that gave up waiting must not leave a
     stale FIFO entry blocking the front.
+
+    **``--require-stale`` (fail-closed recovery release).** When ``--require-stale``
+    is set, the removal is CONDITIONAL on the authoritative main-anchored staleness
+    verdict for the RECORDED holder (see :func:`_run_conditional_release`): the lock
+    is removed only when the holder is provably ``stale`` (via the observed-file
+    eviction arbitration, never a blind unlink), and the release REFUSES fail-closed
+    (``status: refused``, ``reason: holder_not_provably_dead``) on a ``fresh`` or
+    ``unknown`` verdict. This is the manual-release recovery path — releasing a
+    foreign holder's lock under its ``plan_id`` — hardened against the #948
+    sibling-worktree misjudgement. The default (no ``--require-stale``) unconditional
+    self-holder release below is unchanged.
     """
     plan_id: str = args.plan_id
     # Default True preserves the title-token clear; callers (the move-back merge
     # lock) pass set_title_token=False — they never set a token, so there is
     # nothing to clear.
     set_title_token: bool = getattr(args, 'set_title_token', True)
+    require_stale: bool = getattr(args, 'require_stale', False)
 
     try:
         lock_path = _resolve_main_lock_path()
     except RuntimeError as exc:
         return make_error(str(exc), code=ErrorCode.NOT_FOUND, plan_id=plan_id)
+
+    # Fail-closed recovery release — remove a foreign holder's lock ONLY when it is
+    # provably stale (main-anchored verdict), via observed-file eviction arbitration.
+    if require_stale:
+        return _run_conditional_release(plan_id, lock_path, set_title_token)
 
     # Always dequeue this plan from the FIFO queue — whether it held the lock, was
     # still waiting, or gave up — so the next FIFO entry can advance to the front.
@@ -1007,6 +1194,12 @@ Examples:
                         'dest': 'plan_id',
                         'required': True,
                         'help': 'Holder source — the plan_id releasing the lock (mandatory)',
+                    },
+                    {
+                        'flags': ['--require-stale'],
+                        'dest': 'require_stale',
+                        'action': 'store_true',
+                        'help': 'Fail-closed recovery release: remove the lock ONLY when the recorded holder is provably stale (main-anchored verdict); refuse on fresh/unknown',
                     },
                     {
                         'flags': ['--no-title-token'],

@@ -59,7 +59,7 @@ import time
 from collections.abc import Callable
 from datetime import date
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from input_validation import is_valid_plan_id
 from marketplace_paths import (
@@ -220,6 +220,58 @@ def holder_has_live_worktree(holder: str) -> bool:
     # Live plan dir moved into the worktree (executing / mid-finalize).
     live_plan_dir = worktree_dir / PLAN_DIR_NAME / 'local' / 'plans' / holder
     return git_marker.exists() or live_plan_dir.exists()
+
+
+def holder_staleness(
+    holder: str, project_root: str | Path | None = None
+) -> Literal['fresh', 'stale', 'unknown']:
+    """Return a main-anchored three-valued staleness verdict for ``holder``.
+
+    The authoritative, cwd-independent answer to "is this recorded holder safe to
+    force-release?" — composed ENTIRELY from the two main-anchored liveness
+    predicates above (:func:`holder_is_dead` / :func:`holder_has_live_worktree`),
+    so it consults ONLY main-anchored paths and NEVER a cwd-scoped plan/worktree
+    enumeration. This is the guard the manual-release recovery path lacked: the
+    operator/agent previously inferred death from a cwd-scoped ``manage-status
+    list`` / ``worktree-list`` view that, from a pinned worktree, structurally
+    cannot observe a holder living in a SIBLING worktree — the #948 incident shape,
+    where a live holder read as absent and its lock was stolen. The three verdicts:
+
+      * ``'fresh'`` — the holder is alive (its plan dir is on main OR in its own
+        worktree) OR it is mid-recovery (a live worktree marker is present). A
+        fresh holder MUST NOT be force-released.
+      * ``'stale'`` — the holder is main-anchored-dead (plan dir in NEITHER the main
+        checkout NOR its worktree) AND has no live worktree. Only a ``'stale'``
+        holder is provably safe to reclaim/evict.
+      * ``'unknown'`` — the main-anchored ``.plan/local`` resolution itself could not
+        be established (a real resolution failure, surfaced explicitly). Per
+        ADR-009 the absence of evidence is NEVER collapsed into ``'stale'`` — an
+        ``'unknown'`` verdict fails closed at every authority-bearing consumer.
+
+    ``project_root`` mirrors :func:`holder_is_dead`: ``None`` (default) anchors both
+    liveness paths at the caller's main checkout; a supplied root anchors the
+    plan-dir liveness under that project (the machine-global cross-repo case). The
+    live-worktree probe stays caller-anchored, matching
+    :func:`holder_has_live_worktree`.
+
+    The ``'unknown'`` path is realized by catching the ``RuntimeError`` the shared
+    main-anchored resolver raises on an unestablished base (the same failure
+    :func:`holder_is_dead` / :func:`holder_has_live_worktree` let propagate loudly)
+    and converting it to the explicit ``'unknown'`` verdict — the ONE place that
+    conversion is sanctioned, precisely because the verdict's contract is to
+    surface the resolution failure rather than swallow it as death.
+    """
+    try:
+        dead = holder_is_dead(holder, project_root)
+        live_worktree = holder_has_live_worktree(holder)
+    except RuntimeError:
+        # Main-anchored .plan/local resolution could not be established — surface
+        # the failure explicitly as 'unknown'. NEVER swallow it as 'stale'
+        # (ADR-009: evidence-absent fails closed, it is not proof of death).
+        return 'unknown'
+    if not dead or live_worktree:
+        return 'fresh'
+    return 'stale'
 
 
 # ---------------------------------------------------------------------------
