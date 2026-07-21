@@ -63,9 +63,11 @@ The operator runs `manage-build-server register` (user-invocable only). It upser
 
 At phase-1-init the session makes one deterministic `build_server preflight` call. The client reads the registry for the project root: an unregistered project returns `disabled` with NO daemon round-trip (an unregistered project never touches the socket). A registered project completes the S3 identity handshake and returns `ready` (the daemon answered with the expected version) or `down` + a named reason. The init step branches on the one TOON — `disabled`/`ready` proceed silently, `down` asks the operator — and the daemon is never auto-started.
 
+Preflight readiness is only ONE of the two inputs to the build-execute routing decision (see xref:execution-modes[Execution modes]). The other is the caller's explicit `--execution-mode` (`auto` | `in_process` | `daemon`). Preflight answers *can this build be routed*; the requested execution_mode answers *should it be — and what happens when it cannot*. The routing is therefore no longer "route whenever registered-and-ready"; readiness is necessary but not sufficient, and a not-ready preflight resolves differently per requested mode.
+
 === F3 — Submit
 
-The routing seam (`_build_execute_factory`) — or any build-dispatching context — calls `build_server submit`. The client first runs the S3 handshake (the socket must be owned by the caller's own uid and answer the expected protocol version; an impostor socket is treated as unreachable, never trusted), then sends the job spec over a fresh short-lived connection. The daemon's verifier applies S1/S2 (below); on acceptance the scheduler enqueues the job (or attaches an identical in-flight one by fingerprint) and the journal records the spec. The daemon returns `queued` + a `job_id`, and the client persists that `job_id` to the change-ledger (`kind=job`) so a reaped or rebuilt session can re-attach from plan state alone.
+A submit happens only when the routing decision resolves to *routed*: the requested execution_mode is `auto` or `daemon` (never `in_process`), the build carries no client env / working-dir override the daemon cannot honour, and preflight is `ready`. Under those conditions the routing seam (`_build_execute_factory`) — or any build-dispatching context — calls `build_server submit`. The client first runs the S3 handshake (the socket must be owned by the caller's own uid and answer the expected protocol version; an impostor socket is treated as unreachable, never trusted), then sends the job spec over a fresh short-lived connection. The daemon's verifier applies S1/S2 (below); on acceptance the scheduler enqueues the job (or attaches an identical in-flight one by fingerprint) and the journal records the spec. The daemon returns `queued` + a `job_id`, and the client persists that `job_id` to the change-ledger (`kind=job`) so a reaped or rebuilt session can re-attach from plan state alone. The seam records the resolved outcome as `resolved=routed`, alongside the requested mode, for the requested-vs-resolved audit trail.
 
 === F4 — Schedule and execute
 
@@ -75,9 +77,15 @@ Admission is bounded by `max_slots` (`build.queue.max_slots`, default 5). When a
 
 The session calls `build_server wait` (re-attaching via the ledger `job_id` when none is passed). The daemon holds the connection up to the wait bound: it returns a terminal status-TOON as soon as the job settles, or on bound expiry a *live* running status carrying `elapsed` / `eta` / `last_progress` — never a timeout-shaped empty body. The client re-issues `wait` on a running return; it MUST NOT `run_in_background` or `sleep` the wait, because a harness-reaped wait costs exactly one re-poll while the build keeps running in the daemon.
 
-=== F6 — Fallback (unregistered or daemon-down)
+=== F6 — The non-routed outcomes (in-process fallback and fail-loud)
 
-When preflight is not `ready` — the project is unregistered, or registered but the daemon is `down` — the routing seam does NOT submit. It runs the build in-process under a single machine-global build-queue slot (`build_queue`, the same `build-queue.json` the daemon coordinates on) and records the degradation reason. A build therefore takes exactly one limiter path, never both, so slots are never double-counted; an unregistered build is byte-identical to the pre-build-server behaviour.
+When the routing decision does NOT resolve to *routed* — preflight is not `ready` (unregistered, or registered but `down`), the build carries an env / working-dir override, or the caller requested `in_process` — the resolved outcome depends on the requested execution_mode:
+
+* **`auto`** — the seam runs the build in-process under a single machine-global build-queue slot (`build_queue`, the same `build-queue.json` the daemon coordinates on) and records the degradation reason. Resolved outcome: `resolved=in_process`. This is the historical fallback behaviour, now the `auto`-mode branch.
+* **`in_process`** — the seam never attempts to route at all (no preflight, no submit) and runs in-process under the same slot. Resolved outcome: `resolved=in_process`.
+* **`daemon`** — a genuine unavailability is a HARD failure, not a silent fallback: the seam emits a loud error envelope (`error=daemon_required`, `ERROR_DAEMON_REQUIRED`, exit 1) and the build does NOT run in-process. Resolved outcome: `resolved=fail-loud`. The sole exception is an `in_daemon_job` re-entrant build — this process IS the daemon's own child re-running the executor, so it MUST proceed in-process (`resolved=in_process`) rather than recurse.
+
+Whichever branch fires, a build takes exactly one limiter path, never both, so slots are never double-counted; an unregistered `auto`/`in_process` build is byte-identical to the pre-build-server behaviour. Every resolved outcome records BOTH the requested mode and the resolved outcome (`routed` | `in_process` | `fail-loud`) so the routing decision is auditable after the fact.
 
 === F7 — Kill detection and restart replay
 
@@ -86,6 +94,31 @@ A child the supervisor did not itself terminate — a `SIGKILL`, a harness reap,
 === F8 — Daemon lifecycle
 
 `manage-build-server start` double-forks the daemon (first fork + `setsid`, second fork, cwd → `/`, stdio → `/dev/null`) so it re-parents to PID 1 and holds no controlling terminal. On bind it takes over a stale socket only after liveness-probing the previous pidfile (a live owner refuses the takeover), `chmod`s the socket `0600` inside the `0700` state dir, and writes its pidfile. `drain` stops accepting new submits while finishing running jobs and answering waits; `stop` force-terminates; `install` / `upgrade` are the version-pinned (re)starts.
+
+[#execution-modes]
+== Execution modes and the routing decision
+
+Every build carries an explicit `--execution-mode` — `auto` (the default), `in_process`, or `daemon` — declared once on the shared `run` subparser so all four build tools (maven, gradle, npm, pyproject) inherit it. The mode is the *requested* routing intent; the `cmd_run` routing decision maps it, together with preflight readiness and any env / working-dir override, to a *resolved* outcome. This requested-vs-resolved distinction supersedes the older "route whenever registered-and-ready" description: readiness alone no longer decides the path.
+
+image::../resources/diagrams/build-execution-mode-routing.svg["Build-execute routing by execution mode — the three requested modes resolve at the cmd_run routing decision to a daemon-served, in-process, or fail-loud outcome", align=center]
+
+The three modes differ only in what happens when the daemon cannot serve the build:
+
+[cols="1,3", options="header"]
+|===
+| Requested mode | Resolved outcome
+
+| `auto`
+| Route to the daemon when preflight is `ready` and no env / working-dir override is present (`resolved=routed`, F3); otherwise fall back in-process under the machine-global slot, recording the degradation reason (`resolved=in_process`, F6). The historical default behaviour.
+
+| `in_process`
+| Never attempt to route — no preflight, no submit. Always build in-process under the slot (`resolved=in_process`). Deterministic regardless of live daemon state.
+
+| `daemon`
+| Require the daemon. Route when ready (`resolved=routed`); on any genuine unavailability — daemon down, unregistered, an unroutable tool, or an env / working-dir override the daemon cannot honour — fail loud with `ERROR_DAEMON_REQUIRED` (exit 1), NEVER a silent in-process fallback (`resolved=fail-loud`, F6). The sole in-process exception is an `in_daemon_job` re-entrant build (the daemon's own child re-running the executor).
+|===
+
+Every resolved outcome is logged with BOTH the requested mode and the resolved outcome (`routed` | `in_process` | `fail-loud`), so the routing decision for any build is reconstructable from the log alone.
 
 == Job state machine
 

@@ -58,6 +58,12 @@ from toon_parser import serialize_toon  # noqa: E402
 # Error type emitted when the build queue is saturated past max_retries.
 ERROR_QUEUE_SATURATED = 'queue_saturated'
 
+# Error type emitted when execution_mode=daemon is requested but the build
+# cannot be routed to the marshalld daemon (a genuine unavailability, an
+# unroutable tool, or an env/working-dir override the daemon cannot honour).
+# In daemon mode this is a hard failure, NOT a silent in-process fallback.
+ERROR_DAEMON_REQUIRED = 'daemon_required'
+
 # ---------------------------------------------------------------------------
 # marshalld build-execute routing seam (D5)
 # ---------------------------------------------------------------------------
@@ -240,15 +246,27 @@ def _route_to_daemon(
         return _daemon_result_to_direct(waited, command_str), ''
 
 
+def _emit_error_envelope(output_format: str, output: dict) -> int:
+    """Serialize and print a pre-built error envelope; always returns exit 1.
+
+    Shared print/serialize tail for the build-execute error emitters below —
+    the generic TOON/JSON serializer, not the build-result formatter (which
+    filters to known build fields and would drop emitter-specific keys like
+    ``max_retries`` or ``reason``).
+    """
+    if output_format == 'json':
+        print(json.dumps(output, indent=2))
+    else:
+        print(serialize_toon(output))
+    return 1
+
+
 def _emit_queue_timeout(tool_name: str, command_args: str, output_format: str, exc: BuildQueueTimeout) -> int:
     """Render a structured 'try again later' error when no slot was admitted.
 
     The build never ran — the queue stayed saturated past ``max_retries`` — so
     this returns an exit code of 1 (the build did not complete) and prints an
-    error envelope the orchestrator can branch on without a log file. The
-    envelope is serialized with the generic TOON/JSON serializer (not the
-    build-result formatter, which filters to known build fields and would drop
-    the queue-specific ``message`` / ``plan_id`` / ``max_retries`` keys).
+    error envelope the orchestrator can branch on without a log file.
     """
     output = {
         'status': 'error',
@@ -259,11 +277,44 @@ def _emit_queue_timeout(tool_name: str, command_args: str, output_format: str, e
         'max_retries': exc.max_retries,
         'plan_id': exc.plan_id,
     }
-    if output_format == 'json':
-        print(json.dumps(output, indent=2))
-    else:
-        print(serialize_toon(output))
-    return 1
+    return _emit_error_envelope(output_format, output)
+
+
+def _emit_daemon_required(
+    tool_name: str,
+    command_args: str,
+    output_format: str,
+    reason: str,
+    notation: str,
+    plan_id: str | None,
+) -> int:
+    """Render a loud error envelope when ``execution_mode=daemon`` cannot route.
+
+    In ``daemon`` mode the caller demands that the marshalld daemon run the
+    build; a genuine unavailability (daemon down, unregistered, an unroutable
+    tool, or a build carrying an env / working-dir override the daemon's clean
+    baseline cannot honour) is a HARD failure, never a silent in-process
+    fallback. The build was not run, so this returns exit 1 and prints an error
+    envelope the orchestrator can branch on. Records the requested-vs-resolved
+    audit line (resolved=fail-loud) before emitting.
+    """
+    logger.info(
+        '[BUILD-SERVER] resolved build (requested=daemon, resolved=fail-loud, reason=%s, notation=%s, plan=%s)',
+        reason, notation, plan_id,
+    )
+    output = {
+        'status': 'error',
+        'error': ERROR_DAEMON_REQUIRED,
+        'message': (
+            f'execution_mode=daemon requires the marshalld daemon to run this build, '
+            f'but routing was unavailable (reason={reason}). The build was not run in-process.'
+        ),
+        'tool': tool_name,
+        'command': command_args,
+        'reason': reason,
+        'plan_id': plan_id or '',
+    }
+    return _emit_error_envelope(output_format, output)
 
 
 def default_command_key_fn(command_args: str) -> str:
@@ -455,20 +506,51 @@ def create_execute_handlers(
         working_dir = getattr(args, 'working_dir', None) if config.supports_working_dir else None
 
         plan_id = getattr(args, 'plan_id', None)
+        execution_mode = getattr(args, 'execution_mode', 'auto')
+        notation = _resolve_notation(config)
 
-        # D5 routing seam: when the project is registered AND the daemon is ready,
-        # route the build to marshalld (submit + bounded long-poll, ledger-recorded
-        # by the client at submit). A routed build takes NO fallback slot — the
-        # daemon child holds the single machine-global slot — so a build takes
-        # exactly one limiter path, never stacked. A build carrying a
-        # client-forwarded env or a working-dir override is NEVER routed: the
-        # daemon's S2 clean baseline env cannot honour it, so it stays in-process.
-        if env_vars is None and working_dir is None:
+        # A build carrying a client-forwarded env or a working-dir override can
+        # NEVER be routed: the daemon's S2 clean-baseline env cannot honour it.
+        daemon_incompatible = env_vars is not None or working_dir is not None
+
+        # D5 routing seam, gated by the explicit ``execution_mode``:
+        #   auto        — route to marshalld when registered AND the daemon
+        #                 answers a verified handshake; otherwise fall back
+        #                 in-process (recording the degradation reason). This is
+        #                 the exact historical behaviour.
+        #   in_process  — never attempt to route; always build in-process (no
+        #                 preflight / submit attempt).
+        #   daemon      — require the daemon; a genuine unavailability is a hard
+        #                 fail-loud (ERROR_DAEMON_REQUIRED, exit 1), never a
+        #                 silent in-process fallback. The sole exception is
+        #                 ``in_daemon_job`` — this process IS the daemon child
+        #                 re-running the build and MUST proceed in-process.
+        #
+        # A routed build takes NO fallback slot (the daemon child holds the
+        # single machine-global slot), so a build takes exactly one limiter
+        # path, never stacked. ``fallback_reason`` carries the degradation
+        # reason (or None) into the single resolved=in_process audit line.
+        fallback_reason: str | None = None
+        if execution_mode == 'daemon' and daemon_incompatible:
+            # Requested daemon, but the build carries env / working-dir the
+            # daemon cannot honour — fail loud instead of falling back.
+            return _emit_daemon_required(
+                config.tool_name, command_args, getattr(args, 'format', 'toon'),
+                'env_or_working_dir_set', notation, plan_id,
+            )
+        if execution_mode == 'auto' and daemon_incompatible:
+            # auto mode carrying env / working-dir the daemon cannot honour:
+            # never attempt to route (the routing guard below is False), and
+            # record the degradation reason so the in-process fallback is not
+            # silent. The literal matches the daemon-required fail-loud path's
+            # own reason for the identical condition.
+            fallback_reason = 'env_or_working_dir_set'
+        if execution_mode != 'in_process' and not daemon_incompatible:
             routed, reason = _route_to_daemon(config, project_dir, plan_id)
             if routed is not None:
                 logger.info(
-                    '[BUILD-SERVER] routed build to marshalld (notation=%s, plan=%s)',
-                    _resolve_notation(config), plan_id,
+                    '[BUILD-SERVER] resolved build (requested=%s, resolved=routed, notation=%s, plan=%s)',
+                    execution_mode, notation, plan_id,
                 )
                 return cmd_run_common(
                     result=routed,
@@ -480,14 +562,26 @@ def create_execute_handlers(
                     parser_needs_command=config.parser_needs_command,
                     plan_id=plan_id,
                 )
-            # Record the degradation reason so the in-process fallback is never
-            # silent (a bare re-entrancy / unroutable-tool skip is not a
-            # degradation and is not logged as one).
-            if reason not in ('in_daemon_job', 'no_notation'):
-                logger.info(
-                    '[BUILD-SERVER] fallback to in-process build (reason=%s, plan=%s)',
-                    reason, plan_id,
+            # Routing did not happen; ``reason`` names why. In daemon mode a
+            # genuine unavailability is fatal — the sole in-process exception is
+            # ``in_daemon_job`` (this process IS the daemon child).
+            if execution_mode == 'daemon' and reason != 'in_daemon_job':
+                return _emit_daemon_required(
+                    config.tool_name, command_args, getattr(args, 'format', 'toon'),
+                    reason, notation, plan_id,
                 )
+            # auto (or the daemon child): record the degradation reason so the
+            # in-process fallback is never silent (a bare re-entrancy /
+            # unroutable-tool skip is not a degradation and is not recorded).
+            if reason not in ('in_daemon_job', 'no_notation'):
+                fallback_reason = reason
+
+        # Resolved to an in-process build (explicit in_process, auto fallback,
+        # or the daemon child). Record the requested-vs-resolved audit line.
+        logger.info(
+            '[BUILD-SERVER] resolved build (requested=%s, resolved=in_process, reason=%s, notation=%s, plan=%s)',
+            execution_mode, fallback_reason, notation, plan_id,
+        )
 
         # In-process fallback: acquire a build-queue slot on the single
         # machine-global queue file when a plan_id is set; NO-OP passthrough

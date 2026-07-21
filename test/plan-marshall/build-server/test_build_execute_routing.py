@@ -398,9 +398,26 @@ def test_registered_and_unregistered_contend_on_one_file(isolated_queue, monkeyp
 
 def _run_args(**overrides) -> Namespace:
     base = {'command_args': 'verify core', 'project_dir': '/tree', 'plan_id': 'plan-x',
-            'format': 'toon', 'mode': 'actionable', 'timeout': None}
+            'format': 'toon', 'mode': 'actionable', 'timeout': None, 'execution_mode': 'auto'}
     base.update(overrides)
     return Namespace(**base)
+
+
+def _recording_slot_stub(entered: dict):
+    """A ``build_queue_slot`` stub that only records whether it was entered.
+
+    Shared by the "routed, no fallback slot" assertions below — those tests
+    care solely about whether the slot context manager was entered, not the
+    ``plan_id`` it was called with (contrast ``_install_in_process_stubs``,
+    whose in-process variant also records ``plan_id``).
+    """
+
+    @contextmanager
+    def _recording_slot(plan_id, *, routed=False):
+        entered['slot'] = True
+        yield
+
+    return _recording_slot
 
 
 def test_cmd_run_routes_and_takes_no_fallback_slot(monkeypatch):
@@ -408,13 +425,7 @@ def test_cmd_run_routes_and_takes_no_fallback_slot(monkeypatch):
     monkeypatch.setattr(factory, '_route_to_daemon', lambda *a, **k: (canned, ''))
 
     entered = {'slot': False}
-
-    @contextmanager
-    def _recording_slot(plan_id, *, routed=False):
-        entered['slot'] = True
-        yield
-
-    monkeypatch.setattr(factory, 'build_queue_slot', _recording_slot)
+    monkeypatch.setattr(factory, 'build_queue_slot', _recording_slot_stub(entered))
 
     seen = {}
     monkeypatch.setattr(factory, 'cmd_run_common', lambda **kw: (seen.update(kw), 0)[1])
@@ -452,3 +463,156 @@ def test_cmd_run_falls_back_under_a_slot_when_not_routed(monkeypatch):
     assert rc == 0
     assert entered['slot'] is True  # not routed ⇒ in-process under a fallback slot
     assert entered['plan_id'] == 'plan-x'
+
+
+# =============================================================================
+# cmd_run integration — explicit execution_mode branches
+# =============================================================================
+
+
+def _install_in_process_stubs(monkeypatch, entered):
+    """Stub execute_direct_base + build_queue_slot + cmd_run_common for the in-process path."""
+    monkeypatch.setattr(
+        factory, 'execute_direct_base',
+        lambda **kw: {'status': 'success', 'exit_code': 0, 'duration_seconds': 1,
+                      'log_file': 'l', 'command': 'c'},
+    )
+
+    @contextmanager
+    def _recording_slot(plan_id, *, routed=False):
+        entered['slot'] = True
+        entered['plan_id'] = plan_id
+        yield
+
+    monkeypatch.setattr(factory, 'build_queue_slot', _recording_slot)
+    monkeypatch.setattr(factory, 'cmd_run_common', lambda **kw: 0)
+
+
+def test_cmd_run_in_process_never_touches_the_client(monkeypatch):
+    # execution_mode=in_process never attempts to route — _route_to_daemon is
+    # never called, so the run is deterministic regardless of live daemon state.
+    def _must_not_route(*a, **k):
+        raise AssertionError('in_process mode must never attempt to route')
+
+    monkeypatch.setattr(factory, '_route_to_daemon', _must_not_route)
+
+    entered: dict = {'slot': False, 'plan_id': None}
+    _install_in_process_stubs(monkeypatch, entered)
+
+    _, cmd_run = factory.create_execute_handlers(_config(), parse_log_fn=lambda *a: None)
+    rc = cmd_run(_run_args(execution_mode='in_process'))
+
+    assert rc == 0
+    assert entered['slot'] is True  # ran in-process under a fallback slot
+    assert entered['plan_id'] == 'plan-x'
+
+
+def test_cmd_run_daemon_fail_loud_on_unavailable(monkeypatch, capsys):
+    # execution_mode=daemon requires the daemon: a genuine unavailability is a
+    # hard fail-loud (ERROR_DAEMON_REQUIRED, exit 1), never an in-process fallback.
+    monkeypatch.setattr(factory, '_route_to_daemon', lambda *a, **k: (None, 'disabled'))
+
+    def _must_not_slot(*a, **k):
+        raise AssertionError('daemon fail-loud must not acquire a fallback slot')
+
+    monkeypatch.setattr(factory, 'build_queue_slot', _must_not_slot)
+
+    _, cmd_run = factory.create_execute_handlers(_config(), parse_log_fn=lambda *a: None)
+    rc = cmd_run(_run_args(execution_mode='daemon'))
+
+    assert rc == 1
+    out = capsys.readouterr().out
+    assert factory.ERROR_DAEMON_REQUIRED == 'daemon_required'
+    assert 'error: daemon_required' in out
+    assert 'reason: disabled' in out
+
+
+def test_cmd_run_daemon_fail_loud_on_env_or_working_dir(monkeypatch, capsys):
+    # A build carrying an env override the daemon cannot honour fails loud in
+    # daemon mode — WITHOUT ever attempting to route.
+    def _must_not_route(*a, **k):
+        raise AssertionError('daemon-incompatible build must not attempt to route')
+
+    monkeypatch.setattr(factory, '_route_to_daemon', _must_not_route)
+
+    _, cmd_run = factory.create_execute_handlers(
+        _config(supports_env_vars=True), parse_log_fn=lambda *a: None
+    )
+    rc = cmd_run(_run_args(execution_mode='daemon', env='KEY=VALUE'))
+
+    assert rc == 1
+    out = capsys.readouterr().out
+    assert 'error: daemon_required' in out
+    assert 'reason: env_or_working_dir_set' in out
+
+
+def test_cmd_run_daemon_proceeds_in_process_under_in_daemon_job(monkeypatch):
+    # The sole in-process exception in daemon mode: this process IS the daemon
+    # child (in_daemon_job) and MUST proceed in-process, not fail loud.
+    monkeypatch.setattr(factory, '_route_to_daemon', lambda *a, **k: (None, 'in_daemon_job'))
+
+    entered: dict = {'slot': False, 'plan_id': None}
+    _install_in_process_stubs(monkeypatch, entered)
+
+    _, cmd_run = factory.create_execute_handlers(_config(), parse_log_fn=lambda *a: None)
+    rc = cmd_run(_run_args(execution_mode='daemon'))
+
+    assert rc == 0
+    assert entered['slot'] is True  # daemon child ran in-process under a slot
+
+
+def test_cmd_run_daemon_routes_successfully(monkeypatch):
+    # execution_mode=daemon routes exactly like auto when the daemon is ready.
+    canned = {'status': 'success', 'exit_code': 0, 'duration_seconds': 1, 'log_file': 'l', 'command': 'c'}
+    monkeypatch.setattr(factory, '_route_to_daemon', lambda *a, **k: (canned, ''))
+
+    entered = {'slot': False}
+    monkeypatch.setattr(factory, 'build_queue_slot', _recording_slot_stub(entered))
+
+    seen: dict = {}
+    monkeypatch.setattr(factory, 'cmd_run_common', lambda **kw: (seen.update(kw), 0)[1])
+
+    _, cmd_run = factory.create_execute_handlers(_config(), parse_log_fn=lambda *a: None)
+    rc = cmd_run(_run_args(execution_mode='daemon'))
+
+    assert rc == 0
+    assert entered['slot'] is False  # routed ⇒ no fallback slot
+    assert seen['result'] is canned
+
+
+def test_cmd_run_records_requested_and_resolved_mode(monkeypatch, caplog):
+    # Every resolved outcome records BOTH the requested and the resolved mode
+    # (the F2/F6 requested-vs-resolved audit requirement).
+    import logging as _logging
+
+    # (a) auto + route ⇒ resolved=routed
+    canned = {'status': 'success', 'exit_code': 0, 'duration_seconds': 1, 'log_file': 'l', 'command': 'c'}
+    monkeypatch.setattr(factory, '_route_to_daemon', lambda *a, **k: (canned, ''))
+    monkeypatch.setattr(factory, 'cmd_run_common', lambda **kw: 0)
+    _, cmd_run = factory.create_execute_handlers(_config(), parse_log_fn=lambda *a: None)
+    with caplog.at_level(_logging.INFO, logger='_build_execute_factory'):
+        cmd_run(_run_args(execution_mode='auto'))
+    assert any('requested=auto, resolved=routed' in r.message for r in caplog.records)
+
+    # (b) in_process ⇒ resolved=in_process
+    caplog.clear()
+
+    def _must_not_route(*a, **k):
+        raise AssertionError('in_process must not route')
+
+    monkeypatch.setattr(factory, '_route_to_daemon', _must_not_route)
+    entered: dict = {'slot': False, 'plan_id': None}
+    _install_in_process_stubs(monkeypatch, entered)
+    _, cmd_run = factory.create_execute_handlers(_config(), parse_log_fn=lambda *a: None)
+    with caplog.at_level(_logging.INFO, logger='_build_execute_factory'):
+        cmd_run(_run_args(execution_mode='in_process'))
+    assert any('requested=in_process, resolved=in_process' in r.message for r in caplog.records)
+
+    # (c) daemon + unavailable ⇒ resolved=fail-loud
+    caplog.clear()
+    monkeypatch.setattr(factory, '_route_to_daemon', lambda *a, **k: (None, 'disabled'))
+    monkeypatch.setattr(factory, 'build_queue_slot', lambda *a, **k: None)
+    _, cmd_run = factory.create_execute_handlers(_config(), parse_log_fn=lambda *a: None)
+    with caplog.at_level(_logging.INFO, logger='_build_execute_factory'):
+        cmd_run(_run_args(execution_mode='daemon'))
+    assert any('requested=daemon, resolved=fail-loud' in r.message for r in caplog.records)
