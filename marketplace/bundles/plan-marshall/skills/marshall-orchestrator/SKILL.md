@@ -46,6 +46,7 @@ Skill: plan-marshall:persona-marshall-orchestrator
 
 **Constraints:**
 - Inline work is limited to the small-ops carve-out: git commands, read-side `plan-marshall:tools-integration-ci:ci` calls (never `gh`/`glab` directly), and read-only analysis. Anything larger is staged as a `plans/PLAN-NN-{slug}.md` spec and handed off via an emitted command.
+- Verb sub-steps may be dispatched to an `execution-context-{level}` leaf only under the [Dispatch Decision Rule](../persona-marshall-orchestrator/standards/orchestration-model.md#dispatch-decision-rule), and no dispatched leaf writes the ledger.
 - `status.json` is the machine authority; the `epic.md` START-HERE block is GENERATED from it (via `orchestrator.py resume-summary`), never hand-written. Reconciliation always flows status.json → epic.md.
 - Keep `resume_anchor` current — before stopping and whenever the next action changes.
 - Strictly comply with all rules from `persona-marshall-orchestrator` and its central standard `standards/orchestration-model.md`; when a workflow doc and the standard disagree, the standard wins.
