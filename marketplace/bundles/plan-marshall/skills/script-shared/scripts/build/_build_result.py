@@ -364,11 +364,12 @@ def assert_truthful_status(result: dict) -> None:
 
     Pure invariant check on a constructed result dict — it inspects, never
     mutates. Raises :class:`TruthfulStatusError` when ``result['status']`` is
-    ``'success'`` while ``result.get('exit_code', 0)`` is non-zero, so any caller
-    that assembles an untruthful success result fails loudly at the emit choke
-    point rather than reporting green. A non-success result, or a success result
-    with ``exit_code == 0``, passes silently. Mirrors the PLAN-13 #950 D4
-    fail-closed provisioning-write pattern.
+    ``'success'`` while ``result['exit_code']`` is a non-zero integer, so any
+    caller that assembles an untruthful success result fails loudly at the emit
+    choke point rather than reporting green. A non-success result, a success
+    result with ``exit_code == 0``, an absent ``exit_code`` key, or an explicit
+    ``exit_code`` of ``None`` (an indeterminate value, treated safely) all pass
+    silently. Mirrors the PLAN-13 #950 D4 fail-closed provisioning-write pattern.
 
     Args:
         result: The constructed result dict about to be emitted.
@@ -376,7 +377,8 @@ def assert_truthful_status(result: dict) -> None:
     Raises:
         TruthfulStatusError: When status is success but exit_code != 0.
     """
-    if result.get('status') == STATUS_SUCCESS and result.get('exit_code', 0) != 0:
+    exit_code = result.get('exit_code')
+    if result.get('status') == STATUS_SUCCESS and exit_code is not None and exit_code != 0:
         raise TruthfulStatusError(
             f"truthful-status violation: result reports status='success' with "
             f"exit_code={result.get('exit_code')!r} (expected 0); "

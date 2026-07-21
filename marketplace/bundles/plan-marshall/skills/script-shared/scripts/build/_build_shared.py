@@ -583,6 +583,7 @@ def cmd_run_common(
                 duration_seconds=result['duration_seconds'],
                 log_file=log_file,
                 command=command_str,
+                exit_code=result['exit_code'],
             )
             # Fail-closed guard: never emit an untruthful success (success over a
             # non-zero exit code) from the run choke point.
