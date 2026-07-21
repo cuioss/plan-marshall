@@ -342,6 +342,13 @@ def cmd_fetch_findings(args):
     when GitHub is not authenticated. ``count_fetched`` vs ``count_stored``
     mismatches are recorded as a ``qgate`` finding with title prefix
     ``(producer-mismatch)`` so the LLM sees them in ``manage-findings qgate list``.
+
+    ``responded_bots``: the sorted, de-duplicated list of non-None ``bot_kind``
+    values derived (via ``bot_kind_for_author``) from EVERY raw fetched comment —
+    computed BEFORE any noise / duplicate / disabled / resolved filtering. A bot
+    whose comments were entirely filtered as noise (so ``count_stored`` is 0 for
+    it) or entirely already-resolved still appears here, so the completeness guard
+    can treat it as a *settled* (heard-from) bot rather than an ``unfetched`` one.
     """
     from _findings_core import (
         add_finding,
@@ -376,6 +383,18 @@ def cmd_fetch_findings(args):
 
     raw_comments: list[dict] = fetch_result.get('comments') or []
     count_fetched = len(raw_comments)
+
+    # Responded-bots signal for the completeness guard: the distinct non-None
+    # bot_kinds present across EVERY raw fetched comment, derived BEFORE any
+    # noise / duplicate / disabled / resolved filtering. A bot whose comments
+    # were all noise-filtered (count_stored 0) or all already-resolved still
+    # appears here, so the guard can treat it as heard-from (settled) rather than
+    # unfetched. Human comments (bot_kind None) are excluded.
+    responded_set: set[str] = set()
+    for _comment in raw_comments:
+        _bot_kind = bot_kind_for_author(_comment.get('author') or 'unknown')
+        if _bot_kind:
+            responded_set.add(_bot_kind)
 
     # Cross-iteration phantom-loop guard: a resolution from a prior finalize
     # iteration cannot always be matched back to the comment on the next fetch
@@ -537,6 +556,7 @@ def cmd_fetch_findings(args):
         'count_skipped_duplicate': skipped_duplicate,
         'count_skipped_disabled': skipped_disabled,
         'count_stored': count_stored,
+        'responded_bots': sorted(responded_set),
         'stored_hash_ids': stored_hashes,
         'producer_mismatch_hash_id': qgate_hash,
     }

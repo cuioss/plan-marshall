@@ -518,6 +518,62 @@ def _stored_comment_id(finding):
     return ''
 
 
+def test_fetch_findings_reports_responded_bots_including_all_noise_bot(plan_context, monkeypatch):
+    """D4: ``responded_bots`` names every bot that posted, even one filed all-noise.
+
+    Over a set where CodeRabbit posts ONLY a rate-limit notice (dropped as noise,
+    so it stores zero findings), Sourcery posts a genuine comment (stored), and a
+    human posts a comment (``bot_kind`` None, excluded), ``fetch_findings`` returns
+    ``responded_bots == ['coderabbit', 'sourcery']`` — the distinct non-None
+    bot_kinds present in the RAW fetched comments, computed before noise filtering,
+    so the completeness guard can treat the all-noise bot as settled rather than
+    unfetched. CodeRabbit stores nothing yet still appears.
+    """
+    plan_id = 'gh-pr-responded-bots'
+    comments = [
+        # CodeRabbit posts ONLY a rate-limit notice — dropped as noise (stores 0).
+        {
+            'id': 'cr-notice',
+            'author': 'coderabbitai',
+            'thread_id': '',
+            'kind': 'review_body',
+            'body': _RATE_LIMIT_NOTICES['coderabbit'],
+            'resolved': False,
+        },
+        # Sourcery posts a genuine substantive comment — stored.
+        {
+            'id': 'sr-genuine',
+            'author': 'sourcery-ai',
+            'thread_id': 'PRRT_S',
+            'kind': 'inline',
+            'body': 'Extract this duplicated branch into a helper for clarity.',
+            'path': 'src/s.py',
+            'line': 12,
+            'resolved': False,
+        },
+        # Human comment — bot_kind None, excluded from responded_bots.
+        {
+            'id': 'human-1',
+            'author': 'alice',
+            'thread_id': '',
+            'kind': 'issue_comment',
+            'body': 'Please add a regression test for this path.',
+            'resolved': False,
+        },
+    ]
+    _patch_provider(monkeypatch, comments)
+
+    result = _run_fetch(106, plan_id)
+    assert result['status'] == 'success'
+    # Sourcery's genuine comment and the human comment are stored; CodeRabbit's
+    # notice is dropped as noise (it stores zero).
+    assert result['count_stored'] == 2
+    assert result['count_skipped_noise'] == 1
+    # Both bots posted, so both are responded — CodeRabbit despite storing zero;
+    # the human author (bot_kind None) is excluded from responded_bots.
+    assert result['responded_bots'] == ['coderabbit', 'sourcery']
+
+
 # =============================================================================
 # bot_completion — per-bot check-run completion read
 # =============================================================================

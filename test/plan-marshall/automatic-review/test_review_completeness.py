@@ -306,6 +306,103 @@ def test_cmd_check_load_failure_nonzero_exit(plan_context, monkeypatch, capsys):
     assert 'detail:' in captured.out
 
 
+def test_settled_bot_with_no_finding_not_unfetched(plan_context):
+    """D4: a bot with 0 findings that IS settled is accounted-for → complete.
+
+    A settled bot (posted an all-noise comment so it stored nothing, OR its review
+    window closed) with no stored finding must NOT be reported as ``unfetched``,
+    so the FIND-only store is ``complete: true`` — no infinite loop-back is
+    manufactured on unchanged code.
+    """
+    plan_id = 'rc-settled-no-finding'
+    plan_context.plan_dir_for(plan_id)
+    # sourcery is enabled but filed no finding; it is settled (declined / all-noise).
+
+    result = rc.check_completeness(plan_id, ['sourcery'], settled_bots=['sourcery'])
+
+    assert result['status'] == 'success'
+    assert result['complete'] is True
+    assert result['pending_bots'] == []
+    assert result['unfetched_bots'] == []
+
+
+def test_unsettled_bot_with_no_finding_still_unfetched(plan_context):
+    """D4: a bot with 0 findings that is NOT settled still blocks as unfetched.
+
+    Without a settled signal the guard's fail-closed behavior is unchanged — a
+    genuinely-awaited bot (nothing posted, review window open) with no finding
+    reports ``unfetched`` and ``complete: false``.
+    """
+    plan_id = 'rc-unsettled-no-finding'
+    plan_context.plan_dir_for(plan_id)
+    # coderabbit is settled but sourcery is neither settled nor fetched.
+    _seed(plan_id, 'coderabbit', resolution='fixed')
+
+    result = rc.check_completeness(
+        plan_id, ['coderabbit', 'sourcery'], settled_bots=['coderabbit']
+    )
+
+    assert result['status'] == 'success'
+    assert result['complete'] is False
+    assert result['pending_bots'] == []
+    assert result['unfetched_bots'] == ['sourcery']
+
+
+def test_settled_does_not_override_pending_under_triage_ran(plan_context):
+    """D4: settled_bots does NOT mask a genuinely-pending finding once triage ran.
+
+    A bot with a still-``pending`` finding is a real incompleteness under
+    ``triage_ran=True`` regardless of whether it is also listed as settled — the
+    settled signal only rescues a bot with ZERO stored findings, never one whose
+    stored finding is still pending after triage. D2's post-triage semantics must
+    not regress.
+    """
+    plan_id = 'rc-settled-pending-triage'
+    plan_context.plan_dir_for(plan_id)
+    _seed(plan_id, 'coderabbit', resolution='pending')
+
+    result = rc.check_completeness(
+        plan_id, ['coderabbit'], triage_ran=True, settled_bots=['coderabbit']
+    )
+
+    assert result['status'] == 'success'
+    assert result['complete'] is False
+    assert result['pending_bots'] == ['coderabbit']
+    assert result['unfetched_bots'] == []
+
+
+def test_cli_settled_bots_flag_marks_bot_complete(plan_context):
+    """D4: the ``--settled-bots`` CLI flag stops a fetch-less bot reporting unfetched.
+
+    Without ``--settled-bots`` the empty store reports both enabled bots as
+    unfetched (``complete: false``). Passing ``--settled-bots coderabbit,sourcery``
+    accounts for both, so the check emits ``complete: true`` with no bot lists.
+    """
+    plan_id = 'rc-cli-settled'
+    plan_context.plan_dir_for(plan_id)
+
+    without = run_script(
+        SCRIPT_PATH, 'check', '--plan-id', plan_id, '--enabled-bots', 'coderabbit,sourcery'
+    )
+    assert without.success, without.stderr
+    assert 'complete: false' in without.stdout
+    assert 'unfetched_bots[2]' in without.stdout
+
+    with_settled = run_script(
+        SCRIPT_PATH,
+        'check',
+        '--plan-id',
+        plan_id,
+        '--enabled-bots',
+        'coderabbit,sourcery',
+        '--settled-bots',
+        'coderabbit,sourcery',
+    )
+    assert with_settled.success, with_settled.stderr
+    assert 'complete: true' in with_settled.stdout
+    assert 'unfetched_bots' not in with_settled.stdout
+
+
 def test_cli_whitespace_in_enabled_bots_tolerated(plan_context):
     """Whitespace around comma-separated bot tokens is stripped."""
     plan_id = 'rc-cli-ws'
