@@ -1497,7 +1497,9 @@ def cmd_worktree_list(_args):
     # or scope-less output fails closed to 'unknown' rather than a false 'main'.
     try:
         parsed = parse_toon(stdout)
-        scope = parsed.get('scope', 'unknown') if isinstance(parsed, dict) else 'unknown'
+        # `or 'unknown'` normalizes an explicit None value (key present but null)
+        # to the fail-closed scope, not just an absent key.
+        scope = (parsed.get('scope') or 'unknown') if isinstance(parsed, dict) else 'unknown'
     except Exception:  # noqa: BLE001 — a parse failure degrades to the fail-closed scope
         scope = 'unknown'
 

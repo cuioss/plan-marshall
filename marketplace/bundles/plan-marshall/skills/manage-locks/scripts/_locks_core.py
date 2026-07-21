@@ -264,10 +264,13 @@ def holder_staleness(
     try:
         dead = holder_is_dead(holder, project_root)
         live_worktree = holder_has_live_worktree(holder)
-    except RuntimeError:
-        # Main-anchored .plan/local resolution could not be established — surface
-        # the failure explicitly as 'unknown'. NEVER swallow it as 'stale'
-        # (ADR-009: evidence-absent fails closed, it is not proof of death).
+    except (RuntimeError, OSError):
+        # Main-anchored .plan/local resolution could not be established, or a
+        # filesystem probe failed (OSError: permission / unresolvable path) —
+        # surface the failure explicitly as 'unknown'. NEVER swallow it as
+        # 'stale' (ADR-009: evidence-absent fails closed, it is not proof of
+        # death). Catching OSError as well as RuntimeError keeps the fail-closed
+        # contract consistent with _status_query.py's _resolution_scope.
         return 'unknown'
     if not dead or live_worktree:
         return 'fresh'
