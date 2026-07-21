@@ -307,6 +307,67 @@ class TestDoctor:
 
 
 # =============================================================================
+# Main-anchored-caller invariant — cwd decides what counts as a live plan
+# =============================================================================
+
+
+class TestMainAnchoredSweep:
+    """The GC sweep MUST run with cwd at the main checkout.
+
+    ``_plan_is_live`` resolves plan directories relative to the process cwd, so
+    the same cache yields a completely different stale set depending on where the
+    sweep is fired from. The ``default:archive-plan`` caller satisfies the
+    invariant structurally (it runs at ``order: 1000``, after
+    ``default:branch-cleanup`` removed the worktree, so cwd is main). These two
+    tests pin both halves so a future caller relocated to a worktree-cwd site
+    fails loudly here instead of silently GC'ing live bindings.
+    """
+
+    @staticmethod
+    def _make_worktree_plan(project_root, plan_id: str):
+        """Create a phase-5+ worktree-resident live plan and return the worktree root."""
+        worktree_root = project_root / ".plan" / "local" / "worktrees" / plan_id
+        (worktree_root / ".plan" / "local" / "plans" / plan_id).mkdir(parents=True)
+        return worktree_root
+
+    def test_main_anchored_sweep_preserves_both_residencies(self, cache, project):
+        """From the project root, a main-resident and a worktree-resident plan are both live."""
+        _make_live_plan(project, "main-plan")
+        self._make_worktree_plan(project, "wt-plan")
+        session_binding.bind(SID_A, "main-plan")
+        session_binding.bind(SID_B, "wt-plan")
+
+        report = session_binding.doctor(fix=True)
+
+        assert report["stale"] == []
+        assert report["gc_removed"] == 0
+        assert session_binding.resolve_plan(SID_A) == "main-plan"
+        assert session_binding.resolve_plan(SID_B) == "wt-plan"
+
+    def test_worktree_anchored_sweep_misjudges_the_main_resident_plan(
+        self, cache, project, monkeypatch
+    ):
+        """DOCUMENTED HAZARD: from inside a worktree the main-resident plan reads as stale.
+
+        This is the failure mode the main-anchored-caller invariant exists to
+        prevent — asserted here as a pinned property, NOT as desirable behaviour.
+        A caller that runs the sweep from a worktree cwd would GC a binding whose
+        plan is very much alive.
+        """
+        _make_live_plan(project, "main-plan")
+        worktree_root = self._make_worktree_plan(project, "wt-plan")
+        session_binding.bind(SID_A, "main-plan")
+        session_binding.bind(SID_B, "wt-plan")
+
+        monkeypatch.chdir(worktree_root)
+
+        report = session_binding.doctor()
+
+        stale_plans = {s["plan_id"] for s in report["stale"]}
+        assert stale_plans == {"main-plan"}
+
+
+# =============================================================================
 # Benign coexistence — a plan bound by two live sessions needs no guard
 # =============================================================================
 

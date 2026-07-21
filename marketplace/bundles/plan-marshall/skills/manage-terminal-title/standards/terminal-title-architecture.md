@@ -441,6 +441,28 @@ idempotent, so it introduces no new shared-file TOCTOU hazard. Stale GC delivers
 release-on-exit implicitly: an archived plan's slot becomes GC-eligible, so no
 separate `session release` verb is needed.
 
+##### Automatic caller and the main-anchored-caller invariant
+
+The GC has an **automatic caller**: the `default:archive-plan` finalize step runs
+`session doctor --fix` immediately after its `manage-status archive` call (see
+[`phase-6-finalize/standards/archive-plan.md`](../../phase-6-finalize/standards/archive-plan.md)
+§ "Sweep the session-binding store"). Sweeping *after* the archive is what lets the
+finishing plan's own now-stale slot be collected in the same pass. Without this
+caller the sweep has no scheduled invocation and the cache grows unboundedly.
+
+The sweep's **reporting sink is the global work log** — `manage-logging work`
+invoked without `--plan-id`. The record is machine-global housekeeping spanning
+every plan's session slots, and the plan that triggered it has just been archived,
+so a plan-scoped entry would be buried in an archived plan's own log.
+
+**Main-anchored-caller invariant**: any caller of `session doctor --fix` MUST run
+with cwd at the **main checkout**. `_plan_is_live` resolves plan directories
+relative to the process cwd, so a sweep fired from inside a worktree would resolve
+none of the main checkout's live plan dirs and would classify **every other live
+plan's binding as archived**, GC'ing bindings that are still in use. The
+`archive-plan` caller satisfies this structurally: it runs at `order: 1000`, after
+`default:branch-cleanup` has removed the worktree, so cwd is already main.
+
 ### Output Channels
 
 `session_render_title` serves both Claude Code title channels from one composed
