@@ -71,17 +71,26 @@ _resolve_step_execution_tier = _mem._resolve_step_execution_tier
 
 @pytest.fixture(autouse=True)
 def _clear_arch_resolve_cache():
-    """Reset the compose-scoped architecture-resolve memo before/after each test.
+    """Reset the compose-scoped memos before/after each test.
 
-    ``_invoke_architecture_resolve`` is lru-cached (keyed by ``(argv tuple, plan_id)``)
-    and the memo lives on the once-loaded module instance, so without a per-test
-    reset a prior test's cached resolve would leak into a later test reusing the same
-    ``(canonical, plan_id)`` key. ``cmd_compose`` clears it in production; these
-    direct-seam tests clear it here so each exercises its own subprocess stub.
+    Two module-level memos live on the once-loaded module instances, so without a
+    per-test reset a prior test's cached value would leak into a later test:
+
+    - ``_invoke_architecture_resolve`` is lru-cached (keyed by ``(argv tuple, plan_id)``)
+      and the memo lives on ``_mem``; a prior test's cached resolve would leak into a
+      later test reusing the same ``(canonical, plan_id)`` key.
+    - ``_manifest_validation._domain_appended_canonicals`` is ``@lru_cache(maxsize=1)``
+      over ``discover_all_extensions()``; a prior test's cached domain-seeded canonical
+      set would leak into a later test that re-mocks the extension discovery.
+
+    ``cmd_compose`` clears BOTH in production; these direct-seam tests clear them here so
+    each exercises its own stub.
     """
     _mem._invoke_architecture_resolve_cached.cache_clear()
+    _mem._manifest_validation._domain_appended_canonicals.cache_clear()
     yield
     _mem._invoke_architecture_resolve_cached.cache_clear()
+    _mem._manifest_validation._domain_appended_canonicals.cache_clear()
 
 
 # A fake resolver keyed by canonical — a ceiling-exceeding module verify /
@@ -537,3 +546,43 @@ class TestInvokeArchitectureResolveCaching:
 
         # cache_clear (as cmd_compose runs per compose) drops the memo → a re-spawn.
         assert len(calls) == 2
+
+
+class TestCmdComposeClearsDomainAppendedCanonicalsMemo:
+    """``cmd_compose`` clears the domain-appended-canonicals ``@lru_cache(maxsize=1)`` at entry.
+
+    ``_manifest_validation._domain_appended_canonicals`` memoizes over
+    ``discover_all_extensions()``. In a long-lived process (the marshalld build
+    daemon) ``cmd_compose`` runs repeatedly; if the active domains/extensions change
+    between composes, a stale memo would keep the wrong domain-seeded canonical set
+    and mis-filter D5 domain-seeded verify steps. ``cmd_compose`` must therefore clear
+    that memo at entry, alongside the architecture-resolve memo.
+    """
+
+    def test_cmd_compose_clears_domain_canonicals_memo_at_entry(self, monkeypatch):
+        """The domain memo's ``cache_clear`` fires at ``cmd_compose`` entry.
+
+        An invalid ``change_type`` short-circuits ``cmd_compose`` immediately after the
+        two entry-time cache clears, so the assertion needs no plan / marshal.json
+        fixture — it observes only the entry-time clear via a spy standing in for the
+        memo on the ``_manifest_validation`` module.
+        """
+        cleared: list[str] = []
+        spy = SimpleNamespace(cache_clear=lambda: cleared.append('cleared'))
+        monkeypatch.setattr(_mem._manifest_validation, '_domain_appended_canonicals', spy)
+
+        result = _mem.cmd_compose(
+            Namespace(
+                plan_id='domain-canon-clear',
+                change_type='__not_a_valid_change_type__',
+                scope_estimate='surgical',
+                track='simple',
+                commit_and_push=None,
+            )
+        )
+
+        # Short-circuited on the invalid change_type — but only AFTER the entry-time
+        # clear fired.
+        assert result is not None
+        assert result['error'] == 'invalid_change_type'
+        assert cleared == ['cleared']

@@ -1324,6 +1324,12 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # same process (and each unit test) re-derives from the live architecture state
     # rather than a stale prior-compose result.
     _invoke_architecture_resolve_cached.cache_clear()
+    # Same single-compose bound for the domain-appended-canonicals memo: it is an
+    # @lru_cache(maxsize=1) over discover_all_extensions(), so a re-compose in a
+    # long-lived process (the marshalld build daemon) whose active domains/extensions
+    # changed between composes would otherwise keep a stale domain-seeded canonical
+    # set and mis-filter D5 domain-seeded verify steps.
+    _manifest_validation._domain_appended_canonicals.cache_clear()
 
     if args.change_type not in VALID_CHANGE_TYPES:
         return {

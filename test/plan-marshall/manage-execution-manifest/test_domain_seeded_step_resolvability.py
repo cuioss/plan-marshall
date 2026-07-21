@@ -22,6 +22,7 @@ the assertions do not depend on real domain wiring.
 import contextlib
 import importlib.util
 from argparse import Namespace
+from functools import lru_cache
 from pathlib import Path
 
 _SCRIPTS_DIR = (
@@ -116,8 +117,13 @@ def test_domain_active_but_no_arch_gate_command_drops_step_with_warning(plan_con
     a hard block).
     """
     plan_id = 'domain-seeded-arch-gate-unresolvable'
+    # Wrap the stub in an lru_cache so it carries the ``cache_clear`` attribute the
+    # real ``@lru_cache(maxsize=1)`` memo exposes — ``cmd_compose`` clears this memo
+    # at entry, and a plain-function stub would raise ``AttributeError`` on that clear.
     monkeypatch.setattr(
-        _mem._manifest_validation, '_domain_appended_canonicals', lambda: {'arch-gate'}
+        _mem._manifest_validation,
+        '_domain_appended_canonicals',
+        lru_cache(maxsize=1)(lambda: {'arch-gate'}),
     )
     # quality-gate resolves (a real gate); arch-gate does NOT (no module wires it).
     monkeypatch.setattr(
@@ -162,8 +168,13 @@ def test_module_that_wires_arch_gate_keeps_step(plan_context, monkeypatch):
     gate and compose succeeds with the step present.
     """
     plan_id = 'domain-seeded-arch-gate-resolvable'
+    # Wrap the stub in an lru_cache so it carries the ``cache_clear`` attribute the
+    # real ``@lru_cache(maxsize=1)`` memo exposes — ``cmd_compose`` clears this memo
+    # at entry, and a plain-function stub would raise ``AttributeError`` on that clear.
     monkeypatch.setattr(
-        _mem._manifest_validation, '_domain_appended_canonicals', lambda: {'arch-gate'}
+        _mem._manifest_validation,
+        '_domain_appended_canonicals',
+        lru_cache(maxsize=1)(lambda: {'arch-gate'}),
     )
     # arch-gate resolves this time (a module wires the command).
     monkeypatch.setattr(
