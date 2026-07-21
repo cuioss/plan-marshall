@@ -164,6 +164,17 @@ Each test must exercise exactly one deterministic path through the code:
 * No loops that may execute 0 times
 * No reliance on external state (time, network, filesystem)
 
+### Hermetic Against Machine-Global Out-of-Process Services
+
+A unit test whose pass/fail depends on the liveness or registration state of a machine-global, out-of-process service (a daemon, a shared build queue, a system-wide cache) is not hermetic — its verdict is a function of ambient developer-machine state rather than of controlled, mocked inputs. The same commit can pass on a machine with the service absent and fail on a machine where it happens to be live, so the in-house gate result stops being reproducible.
+
+**Durable rule**: gate the real-service branch behind an **injected dependency the test controls**, not a global liveness probe. Two equivalent techniques:
+
+* Mock/stub the liveness-check seam directly (e.g. patch the module-level routing function) so the test deterministically exercises the path it intends to assert.
+* Prefer, where the production API offers it, an **explicit per-call mode parameter** injected by the test (e.g. `execution_mode=in_process`) over probing ambient state — the explicit mode is auditable in production too, not just in tests, and closes the hermeticity gap at the API boundary rather than only at the test boundary.
+
+Either way, add a companion test that explicitly asserts the real-service submission path with a *mocked* service, never a live one.
+
 ### Test Isolation
 
 Each test must be independent:
