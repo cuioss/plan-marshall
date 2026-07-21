@@ -18,6 +18,8 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 
+import pytest
+
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 from conftest import _MARKETPLACE_SCRIPT_DIRS, MARKETPLACE_ROOT
 
@@ -50,8 +52,7 @@ class ExecutorTestEnvironment:
         self.plan_dir = None
         self.executor_path = None
         self.logs_dir = None
-        self._original_cwd = None
-        self._original_plan_base_dir = None
+        self._monkeypatch = None
 
     def setup(self):
         """Create temp environment and generate executor."""
@@ -62,16 +63,15 @@ class ExecutorTestEnvironment:
         self.logs_dir = self.plan_dir / 'logs'
         self.logs_dir.mkdir()
 
-        # Set PLAN_BASE_DIR for test isolation (execution_log.py reads this)
-        self._original_plan_base_dir = os.environ.get('PLAN_BASE_DIR')
-        os.environ['PLAN_BASE_DIR'] = str(self.plan_dir)
+        # Set PLAN_BASE_DIR for test isolation (execution_log.py reads this).
+        # A manually instantiated MonkeyPatch is used because the built-in
+        # monkeypatch fixture is function-scoped and cannot be requested from
+        # the module-scoped fixture that owns this environment (ScopeMismatch).
+        self._monkeypatch = pytest.MonkeyPatch()
+        self._monkeypatch.setenv('PLAN_BASE_DIR', str(self.plan_dir))
 
         # Generate executor with test mappings
         self._generate_test_executor()
-
-        # Save original cwd and change to temp dir
-        self._original_cwd = os.getcwd()
-        os.chdir(self.temp_dir)
 
         return self
 
@@ -148,14 +148,9 @@ class ExecutorTestEnvironment:
 
     def teardown(self):
         """Clean up temp environment."""
-        if self._original_cwd:
-            os.chdir(self._original_cwd)
-
-        # Restore original PLAN_BASE_DIR
-        if self._original_plan_base_dir is not None:
-            os.environ['PLAN_BASE_DIR'] = self._original_plan_base_dir
-        elif 'PLAN_BASE_DIR' in os.environ:
-            del os.environ['PLAN_BASE_DIR']
+        if self._monkeypatch is not None:
+            self._monkeypatch.undo()
+            self._monkeypatch = None
 
         if self.temp_dir and self.temp_dir.exists():
             shutil.rmtree(self.temp_dir)
@@ -194,31 +189,19 @@ class ExecutorTestEnvironment:
             log_file.unlink()
 
 
-# Global test environment (created once per test run)
-_test_env = None
+@pytest.fixture(scope='module')
+def env():
+    """One executor test environment per module, torn down after the module."""
+    test_env = ExecutorTestEnvironment()
+    test_env.setup()
+    try:
+        yield test_env
+    finally:
+        test_env.teardown()
 
 
-def get_test_env() -> ExecutorTestEnvironment:
-    """Get or create the test environment."""
-    global _test_env
-    if _test_env is None:
-        _test_env = ExecutorTestEnvironment()
-        _test_env.setup()
-    return _test_env
-
-
-def cleanup_test_env():
-    """Clean up test environment at end of test run."""
-    global _test_env
-    if _test_env is not None:
-        _test_env.teardown()
-        _test_env = None
-
-
-def test_executor_generated_successfully():
+def test_executor_generated_successfully(env):
     """Executor is generated and is valid Python."""
-    env = get_test_env()
-
     assert env.executor_path.exists(), f'Executor not found at {env.executor_path}'
 
     # Verify it's valid Python
@@ -228,10 +211,8 @@ def test_executor_generated_successfully():
     assert result.returncode == 0, f'Executor syntax error: {result.stderr}'
 
 
-def test_executor_contains_mappings():
+def test_executor_contains_mappings(env):
     """Executor contains expected script mappings."""
-    env = get_test_env()
-
     content = env.executor_path.read_text()
 
     # Check for expected notations
@@ -239,10 +220,8 @@ def test_executor_contains_mappings():
     assert 'SCRIPTS = {' in content, 'Missing SCRIPTS dict'
 
 
-def test_executor_list_command():
+def test_executor_list_command(env):
     """Executor --list shows all registered scripts."""
-    env = get_test_env()
-
     result = env.run_executor('--list')
 
     assert result.returncode == 0, f'--list failed: {result.stderr}'
@@ -252,9 +231,8 @@ def test_executor_list_command():
     assert 'plan-marshall:manage-references' in output, f'Missing plan-marshall:manage-references in list: {output}'
 
 
-def test_execute_script_help():
+def test_execute_script_help(env):
     """Execute a script with --help (should succeed)."""
-    env = get_test_env()
     env.clear_logs()
 
     result = env.run_executor('plan-marshall:manage-references', '--help')
@@ -266,9 +244,8 @@ def test_execute_script_help():
     )
 
 
-def test_execute_script_with_subcommand():
+def test_execute_script_with_subcommand(env):
     """Execute a script with a valid subcommand."""
-    env = get_test_env()
     env.clear_logs()
 
     # manage-references has a --help that works without a real plan
@@ -277,9 +254,8 @@ def test_execute_script_with_subcommand():
     assert result.returncode == 0, f'Script failed: {result.stderr}'
 
 
-def test_successful_execution_logged():
+def test_successful_execution_logged(env):
     """Successful execution creates a log entry."""
-    env = get_test_env()
     env.clear_logs()
 
     # Execute something that succeeds
@@ -292,9 +268,8 @@ def test_successful_execution_logged():
     assert '[INFO]' in log_content, f'Expected INFO marker in log: {log_content}'
 
 
-def test_log_format_success_compact():
+def test_log_format_success_compact(env):
     """Success log entries are compact (single line)."""
-    env = get_test_env()
     env.clear_logs()
 
     env.run_executor('plan-marshall:manage-references', '--help')
@@ -315,10 +290,8 @@ def test_log_format_success_compact():
     assert '[ERROR]' not in entry, f'Success entry should not contain [ERROR]: {entry}'
 
 
-def test_execute_nonexistent_script():
+def test_execute_nonexistent_script(env):
     """Executing nonexistent script returns error."""
-    env = get_test_env()
-
     result = env.run_executor('test:nonexistent', 'subcommand')
 
     assert result.returncode != 0, 'Expected non-zero exit for nonexistent script'
@@ -327,10 +300,8 @@ def test_execute_nonexistent_script():
     )
 
 
-def test_execute_unknown_notation():
+def test_execute_unknown_notation(env):
     """Executing unknown notation returns error."""
-    env = get_test_env()
-
     result = env.run_executor('unknown:notation', 'subcommand')
 
     assert result.returncode != 0, 'Expected non-zero exit for unknown notation'
@@ -339,9 +310,8 @@ def test_execute_unknown_notation():
     )
 
 
-def test_execute_script_that_fails():
+def test_execute_script_that_fails(env):
     """Execute a script that exits with non-zero code."""
-    env = get_test_env()
     env.clear_logs()
 
     # manage-references 'get' without required --plan-id should fail
@@ -357,9 +327,8 @@ def test_execute_script_that_fails():
     assert '[ERROR]' in log_content, f'Expected [ERROR] marker in log: {log_content}'
 
 
-def test_error_execution_logged_with_details():
+def test_error_execution_logged_with_details(env):
     """Error execution creates detailed log entry with args."""
-    env = get_test_env()
     env.clear_logs()
 
     # Execute something that fails - use a command that definitely fails
@@ -377,9 +346,8 @@ def test_error_execution_logged_with_details():
     assert 'nonexistent-plan-xyz' in log_content, f'Args should include plan-id: {log_content}'
 
 
-def test_log_format_error_multi_line():
+def test_log_format_error_multi_line(env):
     """Error log entries are multi-line with detailed info."""
-    env = get_test_env()
     env.clear_logs()
 
     # Execute with invalid arguments to force error
@@ -403,10 +371,8 @@ def test_log_format_error_multi_line():
     assert len(indented_lines) >= 1, f'Expected indented detail lines: {error_lines}'
 
 
-def test_arguments_forwarded_correctly():
+def test_arguments_forwarded_correctly(env):
     """Arguments are correctly forwarded to the script."""
-    env = get_test_env()
-
     # Use --help which should be forwarded
     result = env.run_executor('plan-marshall:manage-references', '--help')
 
@@ -414,10 +380,8 @@ def test_arguments_forwarded_correctly():
     assert '--help' not in result.stderr, 'Help flag should be consumed by target script'
 
 
-def test_subcommand_forwarded():
+def test_subcommand_forwarded(env):
     """Subcommand is correctly forwarded."""
-    env = get_test_env()
-
     # The subcommand 'get' should be forwarded to manage-references
     result = env.run_executor('plan-marshall:manage-references', 'get', '--help')
 
@@ -425,9 +389,8 @@ def test_subcommand_forwarded():
     assert result.returncode == 0
 
 
-def test_complex_arguments_forwarded():
+def test_complex_arguments_forwarded(env):
     """Complex arguments with values are forwarded to script."""
-    env = get_test_env()
     env.clear_logs()
 
     # Test with multiple argument types (use correct arg name --field)
@@ -445,20 +408,16 @@ def test_complex_arguments_forwarded():
     assert 'plan-marshall:manage-references' in log_content, f'Script notation not logged: {log_content}'
 
 
-def test_no_arguments_shows_usage():
+def test_no_arguments_shows_usage(env):
     """Running executor without arguments shows usage."""
-    env = get_test_env()
-
     result = env.run_executor()
 
     assert result.returncode != 0, 'Should fail without arguments'
     assert 'Usage' in result.stderr or 'usage' in result.stderr, f'Expected usage message, got: {result.stderr}'
 
 
-def test_partial_notation_resolution():
+def test_partial_notation_resolution(env):
     """Partial notation resolves to first matching script."""
-    env = get_test_env()
-
     # The executor has fuzzy matching - 'plan-marshall' should match 'planning:*'
     result = env.run_executor('plan-marshall', '--help')
 
@@ -471,10 +430,8 @@ def test_partial_notation_resolution():
     )
 
 
-def test_partial_notation_matches_substring():
+def test_partial_notation_matches_substring(env):
     """Partial notation matches substring in script notation."""
-    env = get_test_env()
-
     # 'manage-references' should match 'plan-marshall:manage-references'
     result = env.run_executor('manage-references', '--help')
 
@@ -482,9 +439,8 @@ def test_partial_notation_matches_substring():
     assert result.returncode == 0, f'Substring notation resolution failed: {result.stderr}'
 
 
-def test_multiple_executions_append_to_log():
+def test_multiple_executions_append_to_log(env):
     """Multiple executions append to the same log file."""
-    env = get_test_env()
     env.clear_logs()
 
     # Execute multiple times
@@ -499,9 +455,8 @@ def test_multiple_executions_append_to_log():
     assert count >= 3, f'Expected at least 3 log entries, found {count}'
 
 
-def test_global_log_used_without_plan_id():
+def test_global_log_used_without_plan_id(env):
     """Global log is used when no --plan-id provided."""
-    env = get_test_env()
     env.clear_logs()
 
     result = env.run_executor('plan-marshall:manage-references', '--help')
@@ -513,10 +468,8 @@ def test_global_log_used_without_plan_id():
     assert global_log.exists(), f'Global log not created at {global_log}'
 
 
-def test_plan_scoped_log_when_plan_exists():
+def test_plan_scoped_log_when_plan_exists(env):
     """Plan-scoped log is used when --plan-id provided and plan exists."""
-    env = get_test_env()
-
     # Create a fake plan directory with status.json sentinel so
     # get_log_path() treats it as an initialized plan (not a bare orphan).
     plan_id = 'test-integration-plan'
