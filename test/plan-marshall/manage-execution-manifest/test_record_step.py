@@ -293,6 +293,73 @@ def test_record_same_step_twice_appends_two_rows(plan_context):
 
 
 # =============================================================================
+# Canonical step-key: --step-id is canonicalized before the row is appended
+# =============================================================================
+
+
+def test_record_default_prefixed_step_id_stored_canonicalized(plan_context):
+    """A ``default:``-prefixed --step-id is stored under the bare canonical key.
+
+    The record-step handler routes --step-id through the shared
+    canonicalize_step_key so execution-log keys reconcile with the manifest's
+    phase-step keys.
+    """
+    _compose('rec-canon-default')
+
+    result = cmd_record_step(
+        _record_ns(
+            plan_id='rec-canon-default',
+            step_id='default:push',
+            phase='6-finalize',
+            outcome='executed',
+        )
+    )
+
+    assert result is not None and result['status'] == 'success'
+    assert result['step_id'] == 'push'
+    entry = read_manifest('rec-canon-default')[EXECUTION_LOG_KEY][0]
+    assert entry['step_id'] == 'push'
+
+
+def test_record_promoted_alias_step_id_stored_bare(plan_context):
+    """A promoted ``plan-marshall:automatic-review`` --step-id stores as bare ``automatic-review``."""
+    _compose('rec-canon-promoted')
+
+    result = cmd_record_step(
+        _record_ns(
+            plan_id='rec-canon-promoted',
+            step_id='plan-marshall:automatic-review',
+            phase='6-finalize',
+            outcome='executed',
+        )
+    )
+
+    assert result is not None and result['status'] == 'success'
+    assert result['step_id'] == 'automatic-review'
+    entry = read_manifest('rec-canon-promoted')[EXECUTION_LOG_KEY][0]
+    assert entry['step_id'] == 'automatic-review'
+
+
+def test_record_project_prefixed_step_id_preserved(plan_context):
+    """A ``project:``-prefixed --step-id is preserved verbatim (not stripped to bare)."""
+    _compose('rec-canon-project')
+
+    result = cmd_record_step(
+        _record_ns(
+            plan_id='rec-canon-project',
+            step_id='project:finalize-step-plugin-doctor',
+            phase='6-finalize',
+            outcome='executed',
+        )
+    )
+
+    assert result is not None and result['status'] == 'success'
+    assert result['step_id'] == 'project:finalize-step-plugin-doctor'
+    entry = read_manifest('rec-canon-project')[EXECUTION_LOG_KEY][0]
+    assert entry['step_id'] == 'project:finalize-step-plugin-doctor'
+
+
+# =============================================================================
 # Error / validation paths
 # =============================================================================
 

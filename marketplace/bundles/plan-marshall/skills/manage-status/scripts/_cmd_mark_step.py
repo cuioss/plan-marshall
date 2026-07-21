@@ -37,31 +37,10 @@ import argparse
 from typing import Any
 
 from _status_core import require_status, write_status
+from _step_key_canonical import canonicalize_step_key
 
 VALID_OUTCOMES = ('done', 'skipped', 'loop_back', 'failed')
 VALID_LOOP_BACK_TARGETS = ('5-execute', '6-finalize')
-
-_DEFAULT_PREFIX = 'default:'
-
-
-def _canonicalize_step_key(step: str) -> str:
-    """Return the canonical (bare) manifest key for a ``--step`` value.
-
-    Strips a leading ``default:`` prefix so the recorded key always equals the
-    bare manifest key the dispatcher reads back. The finalize dispatcher reads
-    step-done state under the bare manifest key (``push``), while callers may
-    pass the optional ``default:``-prefixed form (``default:push``); recording
-    under whichever spelling the caller happened to use produced the
-    ``step_record_mismatched_key`` orphans (a
-    ``default:``-prefixed record the bare-keyed reader never finds). Canonicalizing
-    here — the write-side complement of the read-side key-normalization the
-    manage-execution-manifest id-keyed accessor family applies — guarantees both
-    spellings reconcile to the same bare key. ``project:`` / ``bundle:skill``
-    external step keys carry no ``default:`` prefix and pass through unchanged.
-    """
-    if step.startswith(_DEFAULT_PREFIX):
-        return step[len(_DEFAULT_PREFIX) :]
-    return step
 
 
 def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
@@ -80,10 +59,10 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
         }
 
     phase = args.phase
-    # Canonicalize the step key at the mark-step-done boundary: strip a leading
-    # ``default:`` prefix so the recorded key always equals the bare manifest key
-    # the dispatcher reads back — no more step_record_mismatched_key orphans.
-    step = _canonicalize_step_key(args.step) if args.step else args.step
+    # Canonicalize the step key at the mark-step-done boundary via the shared
+    # resolver so the recorded key always equals the bare manifest key the
+    # dispatcher reads back — no more step_record_mismatched_key orphans.
+    step = canonicalize_step_key(args.step) if args.step else args.step
     if not phase or not step:
         return {
             'status': 'error',
@@ -145,7 +124,20 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
     phase_steps: dict[str, Any] = metadata.setdefault('phase_steps', {})
     phase_entry: dict[str, Any] = phase_steps.setdefault(phase, {})
 
+    # Prefer an exact match under the canonical key. When it misses, fall back to
+    # a canonicalized-match scan so a stale legacy (pre-migration) key such as
+    # ``default:push`` is still located when the caller writes the canonical
+    # ``push``. Tracking ``existing_key`` lets the conflict check fire against the
+    # true existing outcome AND lets the write below pop the stale key so a
+    # duplicate legacy-vs-canonical pair never survives a re-run.
     existing = phase_entry.get(step)
+    existing_key: str | None = step if existing is not None else None
+    if existing is None:
+        for stored_key, stored_entry in phase_entry.items():
+            if canonicalize_step_key(stored_key) == step:
+                existing = stored_entry
+                existing_key = stored_key
+                break
 
     if isinstance(existing, str) and not args.force:
         return {
@@ -192,6 +184,8 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
             or existing_head != head_at_completion
             or existing_loop_back_target != loop_back_target
         ):
+            if existing_key is not None and existing_key != step:
+                phase_entry.pop(existing_key, None)
             phase_entry[step] = new_entry
             write_status(args.plan_id, status)
             return {
@@ -234,6 +228,8 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
         previous_head = existing.get('head_at_completion')
         previous_loop_back_target = existing.get('loop_back_target')
 
+    if existing_key is not None and existing_key != step:
+        phase_entry.pop(existing_key, None)
     phase_entry[step] = new_entry
     write_status(args.plan_id, status)
 

@@ -442,6 +442,12 @@ orphan_outcome: done
 message: No terminal record for step 'plan-marshall:plan-retrospective' in phase '6-finalize', but a terminal record exists under the near-miss key 'plan-retrospective' (outcome 'done'). The dispatched step recorded its mark-step-done outcome under the wrong key — expected the queried step name 'plan-marshall:plan-retrospective'.
 ```
 
+#### Canonical step-key contract (shared resolver)
+
+`mark-step-done` (write) and `assert-step-recorded` (read) both route the `--step` value through the single shared resolver `canonicalize_step_key` (`script-shared/scripts/_step_key_canonical.py`) BEFORE touching `status.metadata.phase_steps`. The resolver reconciles a step id to the same canonical (bare) manifest key: it maps a promoted built-in-equivalent bundle id via `PROMOTED_BUILTIN_STEP_IDS` (`plan-marshall:automatic-review` → `automatic-review`), strips a leading `default:` prefix (`default:push` → `push`), and preserves `project:` / other `bundle:skill` ids verbatim; it is idempotent on already-canonical input.
+
+Because the write key and read key are computed identically, the record/assert keys reconcile to the manifest `step_id` regardless of which spelling each caller used: a step recorded via `mark-step-done` with one variant (`default:push`) is resolved as a canonical MATCH by `assert-step-recorded` queried with the other variant (`push`) — `recorded: true`, no `step_record_mismatched_key`. The same resolver is consumed by `manage-execution-manifest`'s `record-step` handler and every manifest-bundle boundary-normalization call site, so execution-log keys, phase-step keys, and the manifest `step_id` all agree. The `step_record_mismatched_key` verdict is now reserved for a genuine mismatch — a typographic near-miss orphan (edit-distance) that is not a canonical variant — which stays the fail-loud verdict.
+
 ### get-context
 
 Get combined status context (phase, progress, metadata) in one call.

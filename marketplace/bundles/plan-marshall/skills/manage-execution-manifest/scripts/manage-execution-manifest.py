@@ -44,7 +44,6 @@ from _manifest_core import (
     _is_documentation_path,  # noqa: F401
     _normalize_step_params_block,  # noqa: F401
     _role_of,  # noqa: F401
-    _strip_default_prefix,  # noqa: F401
     get_manifest_path,  # noqa: F401
     read_manifest,  # noqa: F401
     write_manifest,  # noqa: F401
@@ -123,6 +122,7 @@ from _manifest_validation import (
     _resolve_standards_path,  # noqa: F401
     _resolve_step_order,  # noqa: F401
     _sort_steps_by_frontmatter_order,  # noqa: F401
+    check_emitted_steps_canonical,
     check_emitted_steps_resolvable,  # noqa: F401
     cmd_step_params_get,  # noqa: F401
     cmd_step_params_set,  # noqa: F401
@@ -132,6 +132,7 @@ from _references_core import (
     compute_plan_branch_diff,
     resolve_base_ref,
 )
+from _step_key_canonical import canonicalize_step_key
 from constants import FILE_REFERENCES, FILE_STATUS
 from file_ops import (
     get_executor_path,
@@ -660,12 +661,12 @@ def _log_scope_gated_finalize_subtraction(plan_id: str, scope_estimate: str, dro
 #
 # Step IDs are matched against both the bare form and every prefixed form a
 # candidate list may carry. Candidate lists are `default:`-namespace-normalized
-# at intake (`_strip_default_prefix`), but `project:` / `bundle:skill` prefixes
+# at intake (`canonicalize_step_key`), but `project:` / `bundle:skill` prefixes
 # are preserved verbatim, so the match-sets below list every form. The `always`
-# re-insertion uses the canonical `default:`-prefixed form for
-# pre-submission-self-review (matching the workflow frontmatter `name:`) and the
-# bare form for `pre-push-quality-gate` (a built-in `default:` step, normalized
-# bare).
+# re-insertion uses the canonical BARE form for every gate (including
+# pre-submission-self-review), matching the bare id the normal intake path emits,
+# so a force-add never re-introduces a non-canonical `default:`-prefixed id that
+# the compose-time canonical-step-key gate would reject.
 
 
 def _log_ceremony_finalize_selection(
@@ -1028,7 +1029,7 @@ def _stamp_phase_5_step_execution_tier(plan_id: str, verification_steps: list[st
     """
     records: list[dict[str, str]] = []
     for step in verification_steps:
-        bare = _strip_default_prefix(step)
+        bare = canonicalize_step_key(step)
         if bare.startswith(_CANONICAL_VERIFY_PREFIX):
             canonical = bare[len(_CANONICAL_VERIFY_PREFIX) :]
             tier = _resolve_step_execution_tier(canonical, plan_id)
@@ -1202,7 +1203,7 @@ def cmd_lanes_preview(args: argparse.Namespace) -> dict[str, Any] | None:
         candidates = list(marshal_phase_6)
     else:
         candidates = _split_csv(getattr(args, 'phase_6_steps', None), DEFAULT_PHASE_6_STEPS)
-    candidates = [_strip_default_prefix(s) for s in candidates]
+    candidates = [canonicalize_step_key(s) for s in candidates]
     marshal_phase_6_map = _read_marshal_phase_step_map('phase-6-finalize')
     table = _read_cost_size_token_table()
 
@@ -1293,12 +1294,12 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # helpers, and the bundle-self-modification matcher all compare against bare
     # names. Normalize once at the boundary so
     # every downstream site can use plain `s in {...}` / `s == 'foo'` checks
-    # without per-site `_strip_default_prefix` calls. Normalizing at the
+    # without per-site `canonicalize_step_key` calls. Normalizing at the
     # boundary covers every comparison site, not just the cascade-rule sites.
     # External step prefixes (``project:``, ``bundle:skill``) are preserved
     # verbatim so the dispatcher can route them as PROJECT / SKILL steps.
-    phase_5_candidates = [_strip_default_prefix(s) for s in phase_5_candidates]
-    phase_6_candidates = [_strip_default_prefix(s) for s in phase_6_candidates]
+    phase_5_candidates = [canonicalize_step_key(s) for s in phase_5_candidates]
+    phase_6_candidates = [canonicalize_step_key(s) for s in phase_6_candidates]
 
     # Pre-filters run before the seven-row matrix. They are orthogonal to the
     # row matrix's change-type / scope / recipe inputs and operate on the
@@ -1621,6 +1622,37 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
             'marshal_key': resolution_error['marshal_key'],
         }
 
+    # Canonical-step-key structural gate (fail-loud): a sibling of the resolution
+    # gate above, run on the SAME FINAL emitted step lists. Every emitted phase-5/6
+    # step id MUST be in canonical form (``canonicalize_step_key(step_id) ==
+    # step_id`` — no leading ``default:`` prefix, no promoted-alias bundle
+    # spelling). A non-canonical emitted id is a structural defect (a mis-keyed
+    # prefixed step that slipped past the intake boundary normalization); the gate
+    # fails the compose loud, naming the offending id and phase, and — like the
+    # resolution gate — never writes a partial manifest (returns before the
+    # step-params snapshot and ``write_manifest``). See
+    # _manifest_validation.check_emitted_steps_canonical and SKILL.md §
+    # "Compose-time step-resolution gate".
+    canonical_error = check_emitted_steps_canonical(
+        list(body['phase_5'].get('verification_steps', [])),
+        list(body['phase_6'].get('steps', [])),
+    )
+    if canonical_error is not None:
+        _emit_decision_log(
+            plan_id,
+            '(plan-marshall:manage-execution-manifest:compose) non_canonical_step — '
+            f'{canonical_error["message"]}',
+        )
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'non_canonical_step',
+            'message': canonical_error['message'],
+            'phase': canonical_error['phase'],
+            'step_id': canonical_error['step_id'],
+            'canonical': canonical_error['canonical'],
+        }
+
     # Resolution gate passed — NOW commit the staged task-file rewrites from the
     # execution_tier routing pass. Persisting here (rather than inside the routing
     # walk) guarantees that a compose which fails ``unresolvable_step`` above never
@@ -1802,8 +1834,12 @@ def cmd_record_step(args: argparse.Namespace) -> dict[str, Any] | None:
         )
         return None
 
+    # Canonicalize the step id via the shared resolver before appending the
+    # execution_log[] row so execution-log keys reconcile with the manifest's
+    # phase_steps keys (a bare↔``default:`` / promoted-alias variant records
+    # under the same canonical key the phase step list carries).
     entry = {
-        'step_id': args.step_id,
+        'step_id': canonicalize_step_key(args.step_id),
         'phase': args.phase,
         'outcome': args.outcome,
         'total_tokens': max(0, int(args.total_tokens or 0)),

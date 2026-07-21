@@ -13,6 +13,10 @@ re-exports every name it and the test suite reference.
 from pathlib import Path
 from typing import Any
 
+from _step_key_canonical import (
+    PROMOTED_BUILTIN_STEP_IDS,  # noqa: F401  — re-exported for existing `from _manifest_core import PROMOTED_BUILTIN_STEP_IDS` consumers
+    canonicalize_step_key,
+)
 from file_ops import atomic_write_file, get_plan_dir
 from toon_parser import parse_toon, serialize_toon
 
@@ -111,31 +115,11 @@ DEFAULT_PHASE_6_STEPS = (
 )
 
 
-# Promoted built-in-equivalent bundle finalize steps: their ``{bundle}:{skill}``
-# id boundary-normalizes to a bare name exactly like a ``default:`` step. These
-# skills were promoted out of a former ``phase-6-finalize`` built-in doc into a
-# top-level bundle skill (``default_on: true``, seeded into the default finalize
-# set), so the composer, snapshot, lane, owner, and step-params machinery must
-# treat the bundle-prefixed id and its bare form identically. Genuinely opt-in
-# ``{bundle}:{skill}`` steps (e.g. ``plan-marshall:plan-retrospective``) are NOT
-# listed here and keep their prefix verbatim so the dispatcher routes them as
-# typed SKILL steps.
-PROMOTED_BUILTIN_STEP_IDS: dict[str, str] = {
-    'plan-marshall:automatic-review': 'automatic-review',
-}
-
-
-def _strip_default_prefix(step: str) -> str:
-    """Return the bare step name for a ``default:``-prefixed or promoted step id.
-
-    Boundary-normalizer for finalize/verify step ids: strips a leading
-    ``default:`` prefix, and maps a promoted built-in-equivalent bundle step id
-    (:data:`PROMOTED_BUILTIN_STEP_IDS`) to its bare name. Every other prefix
-    (``project:``, other ``{bundle}:{skill}``) is preserved verbatim.
-    """
-    if step in PROMOTED_BUILTIN_STEP_IDS:
-        return PROMOTED_BUILTIN_STEP_IDS[step]
-    return step[len('default:') :] if step.startswith('default:') else step
+# The ``PROMOTED_BUILTIN_STEP_IDS`` alias map and the step-key canonicalizer now
+# live in the shared ``_step_key_canonical`` module (their single home) and are
+# imported + re-exported above. ``canonicalize_step_key`` subsumes the former
+# local ``_strip_default_prefix`` semantics (promoted-alias map + ``default:``
+# strip), so every internal call site routes through it.
 
 
 # Canonical-verify step prefix. A step ID of the shape
@@ -187,7 +171,7 @@ def _role_of(step_id: str, cache: dict[str, str | None]) -> str | None:
     if step_id in cache:
         return cache[step_id]
 
-    bare = _strip_default_prefix(step_id)
+    bare = canonicalize_step_key(step_id)
 
     # Canonical-verify steps: ``default:verify:{canonical}`` (bare:
     # ``verify:{canonical}``). The role is derived from the trailing canonical
@@ -247,12 +231,12 @@ ORCHESTRATOR_OWNED_STEPS: frozenset[str] = frozenset(
 def _owner_classification_key(step_id: str) -> str:
     """Return the bare-most name used to classify a step's owner.
 
-    Strips a leading ``default:`` prefix (via :func:`_strip_default_prefix`) and
+    Strips a leading ``default:`` prefix (via :func:`canonicalize_step_key`) and
     then a leading ``project:`` prefix, so a built-in ``default:``-prefixed step
     and its bare form — and a ``project:``-prefixed project-local step and its
     bare form — all reduce to the same key for the ownership membership test.
     """
-    bare = _strip_default_prefix(step_id)
+    bare = canonicalize_step_key(step_id)
     if bare.startswith('project:'):
         bare = bare[len('project:') :]
     return bare

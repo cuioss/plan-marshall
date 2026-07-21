@@ -5,7 +5,7 @@
 Folded into this plan per operator decision. Two regressions are pinned here:
 
 (a) **Prefix-agnostic validation**: ``compose`` boundary-normalizes manifest
-    step IDs to BARE names (``_strip_default_prefix`` at intake), while a
+    step IDs to BARE names (``canonicalize_step_key`` at intake), while a
     caller's ``--phase-{5,6}-steps`` allow-list CSV may still carry the optional
     ``default:`` prefix (e.g. ``default:verify:module-tests`` straight out of a
     project ``marshal.json`` step registry). ``cmd_validate`` strips the prefix
@@ -57,6 +57,11 @@ cmd_compose = _mem.cmd_compose
 cmd_validate = _mem.cmd_validate
 read_manifest = _mem.read_manifest
 DEFAULT_PHASE_6_STEPS = _mem.DEFAULT_PHASE_6_STEPS
+
+# Loaded fresh so cmd_validate resolves ``read_manifest`` / ``MANIFEST_VERSION``
+# from this module's own globals — lets a test monkeypatch ``read_manifest`` to
+# hand cmd_validate a synthetic manifest without a disk round-trip.
+_val = _load_module('_mem_validation_direct', '_manifest_validation.py')
 
 # Quiet down the best-effort decision-log subprocess.
 _mem._log_decision = lambda *a, **kw: None
@@ -207,6 +212,43 @@ def test_compose_then_validate_succeeds_with_prefixed_marshal_steps(plan_context
     assert result is not None and result['status'] == 'success'
     assert result['valid'] is True
     assert result['phase_5_unknown_steps_count'] == 0
+    assert result['phase_6_unknown_steps_count'] == 0
+
+
+# =============================================================================
+# (c) Non-string step element: clean invalid_manifest, never an AttributeError
+# =============================================================================
+
+
+def test_validate_non_string_step_element_reports_error_not_crash(plan_context, monkeypatch):
+    """A hand-edited manifest with a non-string step element yields a clean
+    ``invalid_manifest`` verdict, not an ``AttributeError`` crash.
+
+    Regression for PR #961: ``canonicalize_step_key`` calls ``.startswith()`` on
+    its argument, which raised ``AttributeError`` on a non-string element parsed
+    from the externally-editable ``execution.toon``. The ``isinstance`` guard now
+    treats a non-string element as an unknown/invalid ID so ``validate`` reports
+    it rather than crashing. Loaded via the fresh ``_val`` module so the patched
+    ``read_manifest`` is the one ``cmd_validate`` resolves.
+    """
+    plan_id = 'validate-non-string'
+    fake_manifest = {
+        'manifest_version': _val.MANIFEST_VERSION,
+        'plan_id': plan_id,
+        'phase_5': {'early_terminate': False, 'verification_steps': ['verify:quality-gate', 123]},
+        'phase_6': {'steps': ['push']},
+    }
+    monkeypatch.setattr(_val, 'read_manifest', lambda _pid: fake_manifest)
+
+    result = _val.cmd_validate(
+        _validate_ns(plan_id=plan_id, phase_5_steps='verify:quality-gate', phase_6_steps='push')
+    )
+
+    assert result is not None
+    assert result['status'] == 'error'
+    assert result['error'] == 'invalid_manifest'
+    assert result['phase_5_unknown_steps_count'] == 1
+    assert 123 in result['phase_5_unknown_steps']
     assert result['phase_6_unknown_steps_count'] == 0
 
 

@@ -487,3 +487,122 @@ def test_resolve_project_dir_neither_flag_uses_main_checkout():
     with patch_main_checkout_root('/tmp/main-checkout-stub'):
         resolved = resolve_project_dir(None, '.', default='.')
     assert resolved == '/tmp/main-checkout-stub'
+
+
+# ``resolve-test-scope --changed-paths`` task-scoped footprint contract.
+#
+# The ``--changed-paths`` input supplies a task-scoped footprint directly (the
+# files a single task's change touched), superseding the whole-plan live
+# footprint. ``cmd_resolve_test_scope`` splits the comma-separated list and
+# delegates to the unchanged pure ``resolve_test_scope`` helper. The build.map
+# globs are patched to controlled values so the cases are deterministic and
+# independent of the repo's live ``marshal.json``.
+
+import argparse  # noqa: E402
+
+from toon_parser import parse_toon  # noqa: E402
+
+# Controlled build.map globs mirroring the real repo behaviour: everything
+# under ``marketplace/bundles/`` and ``test/`` is build-relevant.
+_SCOPE_BUILD_MAP_GLOBS = ['marketplace/bundles/**', 'test/**']
+
+
+def _resolve_scope_args(*, changed_paths=None, plan_id=None, project_dir=None):
+    """Build the ``resolve-test-scope`` args Namespace (``project_dir`` None so
+    ``whole_tree_available`` short-circuits to False without a filesystem walk)."""
+    return argparse.Namespace(changed_paths=changed_paths, plan_id=plan_id, project_dir=project_dir)
+
+
+def _run_resolve_scope(capsys, *, changed_paths):
+    """Invoke ``cmd_resolve_test_scope`` with a task-scoped footprint and return
+    the parsed TOON output, with the build.map globs patched to a controlled set."""
+    args = _resolve_scope_args(changed_paths=changed_paths)
+    with patch('extension_base._read_build_map_globs', return_value=_SCOPE_BUILD_MAP_GLOBS):
+        rc = pyproject_build.cmd_resolve_test_scope(args)
+    assert rc == 0
+    return parse_toon(capsys.readouterr().out)
+
+
+def test_resolve_test_scope_changed_paths_docs_only_yields_no_target(capsys):
+    """A docs-only task-scoped footprint (no build-relevant path) resolves to an
+    empty ``scoped_modules`` set and ``recommended_target: None`` — no pytest target."""
+    out = _run_resolve_scope(
+        capsys,
+        changed_paths='doc/developer/build.adoc,README.md',
+    )
+    assert out['status'] == 'success'
+    assert out['scoped_modules'] == []
+    assert out['recommended_target'] is None
+    assert out['divergence_possible'] is False
+
+
+def test_resolve_test_scope_changed_paths_single_module_resolves_target(capsys):
+    """A single-module task-scoped footprint resolves that module as the
+    ``recommended_target`` with no divergence (scoped-equals-whole-tree)."""
+    out = _run_resolve_scope(
+        capsys,
+        changed_paths='marketplace/bundles/plan-marshall/skills/build-pyproject/scripts/pyproject_build.py',
+    )
+    assert out['status'] == 'success'
+    assert out['scoped_modules'] == ['plan-marshall']
+    assert out['recommended_target'] == 'plan-marshall'
+    assert out['divergence_possible'] is False
+
+
+def test_resolve_test_scope_changed_paths_multi_module_sets_divergence(capsys):
+    """A task-scoped footprint spanning more than one module sets
+    ``divergence_possible: true`` and no single ``recommended_target``."""
+    out = _run_resolve_scope(
+        capsys,
+        changed_paths=(
+            'marketplace/bundles/plan-marshall/skills/build-pyproject/scripts/pyproject_build.py,'
+            'marketplace/bundles/pm-dev-python/skills/pytest-testing/SKILL.md'
+        ),
+    )
+    assert out['status'] == 'success'
+    assert out['divergence_possible'] is True
+    assert out['recommended_target'] is None
+
+
+def test_resolve_test_scope_changed_paths_shared_infra_sets_divergence(capsys):
+    """A task-scoped footprint touching shared cross-module build infrastructure
+    forces ``divergence_possible: true`` even when it resolves to one module."""
+    out = _run_resolve_scope(
+        capsys,
+        changed_paths=(
+            'marketplace/bundles/plan-marshall/skills/script-shared/scripts/build/_test_scope_divergence.py'
+        ),
+    )
+    assert out['status'] == 'success'
+    assert out['divergence_possible'] is True
+    assert out['recommended_target'] is None
+
+
+def test_resolve_test_scope_changed_paths_supersedes_plan_footprint(capsys):
+    """When ``--changed-paths`` is supplied the whole-plan footprint resolver is
+    never consulted — the task-scoped list IS the footprint."""
+    args = _resolve_scope_args(
+        changed_paths='marketplace/bundles/plan-marshall/skills/build-pyproject/scripts/pyproject_build.py',
+        plan_id='some-plan',
+    )
+    with (
+        patch('extension_base._read_build_map_globs', return_value=_SCOPE_BUILD_MAP_GLOBS),
+        patch('extension_base._resolve_plan_footprint') as mock_plan_footprint,
+    ):
+        rc = pyproject_build.cmd_resolve_test_scope(args)
+    assert rc == 0
+    mock_plan_footprint.assert_not_called()
+    out = parse_toon(capsys.readouterr().out)
+    assert out['recommended_target'] == 'plan-marshall'
+
+
+def test_resolve_test_scope_requires_a_footprint_source(capsys):
+    """Neither ``--changed-paths`` nor ``--plan-id`` → fail loud with
+    ``footprint_source_required`` (exit 2)."""
+    args = _resolve_scope_args()
+    with patch('extension_base._read_build_map_globs', return_value=_SCOPE_BUILD_MAP_GLOBS):
+        rc = pyproject_build.cmd_resolve_test_scope(args)
+    assert rc == 2
+    out = parse_toon(capsys.readouterr().out)
+    assert out['status'] == 'error'
+    assert out['error'] == 'footprint_source_required'

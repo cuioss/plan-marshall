@@ -38,6 +38,7 @@ from typing import Any
 
 from _cmd_mark_step import VALID_OUTCOMES
 from _status_core import require_status
+from _step_key_canonical import canonicalize_step_key
 
 
 def _terminal_outcome(entry: Any) -> str | None:
@@ -98,7 +99,10 @@ def cmd_assert_step_recorded(args: argparse.Namespace) -> dict | None:
         return None
 
     phase = args.phase
-    step = args.step
+    # Canonicalize the queried step via the shared resolver so a bare↔``default:``
+    # variant reconciles to the same key the write side (mark-step-done) recorded
+    # under — the read-side complement of the write-side canonicalization.
+    step = canonicalize_step_key(args.step) if args.step else args.step
     if not phase or not step:
         return {
             'status': 'error',
@@ -111,12 +115,26 @@ def cmd_assert_step_recorded(args: argparse.Namespace) -> dict | None:
     phase_steps: dict[str, Any] = metadata.get('phase_steps') or {}
     phase_entry: dict[str, Any] = phase_steps.get(phase) or {}
 
-    outcome = _terminal_outcome(phase_entry.get(step))
+    # Prefer an exact match under the canonical key first so a fresher canonical
+    # write always wins over a stale legacy (e.g. ``default:``-prefixed) entry that
+    # a pre-migration run may have inserted earlier in the insertion-ordered dict.
+    # Only when the exact key is absent do we fall back to the canonicalized scan,
+    # which reconciles a ``default:``-prefixed stored key with a bare query (and
+    # vice versa) as a canonical MATCH rather than a tolerated near-miss.
+    matched_entry: Any = phase_entry.get(step)
+    if matched_entry is None:
+        for stored_key, stored_entry in phase_entry.items():
+            if canonicalize_step_key(stored_key) == step:
+                matched_entry = stored_entry
+                break
+    outcome = _terminal_outcome(matched_entry)
     recorded = outcome is not None
 
     if args.require_terminal and not recorded:
         # Near-miss detection: scan the same phase for an orphan terminal record
         # under a *genuine* near-miss key before declaring the record truly absent.
+        # Bare↔``default:`` variants already reconciled to a canonical MATCH above,
+        # so this branch retains only genuine typographic edit-distance orphans.
         # Only keys that are bare/qualified variants of each other or within a
         # small edit distance of the queried step name qualify — scanning every
         # other terminal record regardless of name was overly permissive and
@@ -124,9 +142,10 @@ def cmd_assert_step_recorded(args: argparse.Namespace) -> dict | None:
         # steps: completing one step and querying a wholly different absent step
         # would trigger step_record_mismatched_key instead of step_record_missing).
         for other_key, other_entry in phase_entry.items():
-            if other_key == step:
+            canonical_other = canonicalize_step_key(other_key)
+            if canonical_other == step:
                 continue
-            if not _is_near_miss(step, other_key):
+            if not _is_near_miss(step, canonical_other):
                 continue
             orphan_outcome = _terminal_outcome(other_entry)
             if orphan_outcome is not None:

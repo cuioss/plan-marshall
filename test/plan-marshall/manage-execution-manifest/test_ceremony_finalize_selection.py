@@ -414,7 +414,9 @@ class TestCeremonyFinalizeAlways:
         bare = _bare(_manifest_phase_6_steps(result))
         assert 'pre-submission-self-review' in bare
         forced_in = set(result['ceremony_finalize_forced_in'])
-        assert 'default:pre-submission-self-review' in forced_in
+        # The canonical insertion form is BARE (aligned with the compose-time
+        # canonical-step-key gate) — no `default:`-prefixed id is re-inserted.
+        assert 'pre-submission-self-review' in forced_in
 
     def test_always_readds_qgate_dropped_by_inactive_prefilter(self, plan_context):
         # Empty footprint → pre_push_quality_gate_inactive drops the qgate step.
@@ -470,7 +472,7 @@ class TestCeremonyFinalizeAlways:
 class TestCeremonyFinalizeGenericSelfReviewForm:
     """A consuming project lists the GENERIC ``default:pre-submission-self-review``
     step (not the meta-project ``project:``-prefixed wrapper). The composer
-    `_strip_default_prefix`-normalizes it to bare ``pre-submission-self-review``
+    `canonicalize_step_key`-normalizes it to bare ``pre-submission-self-review``
     at intake, so the ``self_review`` gate's match-set MUST recognize that bare
     form — otherwise ``never`` cannot drop it and ``always`` re-inserts a
     duplicate. Regression for the match-set that omitted the normalized form
@@ -526,7 +528,7 @@ class TestCeremonyFinalizeGenericSelfReviewForm:
             if next(iter(_bare([s]))) == 'pre-submission-self-review'
         )
         assert occurrences == 1
-        assert 'default:pre-submission-self-review' not in result['ceremony_finalize_forced_in']
+        assert 'pre-submission-self-review' not in result['ceremony_finalize_forced_in']
 
 
 # =============================================================================

@@ -20,11 +20,11 @@ from _manifest_core import (
     MANIFEST_VERSION,
     PROMOTED_BUILTIN_STEP_IDS,
     VALID_RECORD_PHASES,
-    _strip_default_prefix,
     read_manifest,
     write_manifest,
 )
 from _manifest_decide import _split_csv
+from _step_key_canonical import canonicalize_step_key
 from file_ops import output_toon_error
 from input_validation import require_valid_plan_id
 from marketplace_bundles import resolve_bundles_root, resolve_skills_root
@@ -92,7 +92,7 @@ def cmd_step_params_get(args: argparse.Namespace) -> dict[str, Any] | None:
         )
         return None
 
-    bare_step_id = _strip_default_prefix(args.step_id)
+    bare_step_id = canonicalize_step_key(args.step_id)
     section = manifest.get(_PHASE_TO_BODY_SECTION[args.phase], {})
     step_params = section.get('step_params', {}) if isinstance(section, dict) else {}
     if not isinstance(step_params, dict) or bare_step_id not in step_params:
@@ -146,7 +146,7 @@ def cmd_step_params_set(args: argparse.Namespace) -> dict[str, Any] | None:
         )
         return None
 
-    bare_step_id = _strip_default_prefix(args.step_id)
+    bare_step_id = canonicalize_step_key(args.step_id)
     section = manifest.get(_PHASE_TO_BODY_SECTION[args.phase])
     if not isinstance(section, dict):
         return {
@@ -246,7 +246,7 @@ def _resolve_standards_path(step_id: str) -> Path:
     neither exists, returns the ``workflow/`` path (so the caller's missing-
     file error message reports the preferred location).
     """
-    bare = _strip_default_prefix(step_id)
+    bare = canonicalize_step_key(step_id)
     # The promoted ``automatic-review`` step lives in its bundle SKILL.md, not a
     # phase-6 body doc (which was deleted at promotion).
     if bare == 'automatic-review':
@@ -425,7 +425,7 @@ def _check_step_loadable(step_id: str) -> dict[str, Any]:
             'standards_path': '',
             'loadable': True,
         }
-    bare = _strip_default_prefix(step_id)
+    bare = canonicalize_step_key(step_id)
     absolute_path = _resolve_standards_path(step_id)
     rel_path = _render_standards_rel_path(absolute_path)
     if absolute_path.is_file():
@@ -480,7 +480,7 @@ def _discovered_implementor_names(phase: str) -> set[str]:
     ``extension_discovery.find_implementors`` query — the SOLE discovery path the
     finalize/verify seed and discovery surfaces already use — and returns each
     record's ``name`` in BOTH its declared and boundary-normalized
-    (``_strip_default_prefix``) forms, so a promoted ``{bundle}:{skill}`` id and
+    (``canonicalize_step_key``) forms, so a promoted ``{bundle}:{skill}`` id and
     its bare alias both match. The :data:`PROMOTED_BUILTIN_STEP_IDS` map is folded
     in defensively (both key and value forms) so a promoted-step id resolves
     regardless of which form the emitted list carries.
@@ -493,7 +493,7 @@ def _discovered_implementor_names(phase: str) -> set[str]:
         if not name:
             continue
         names.add(name)
-        names.add(_strip_default_prefix(name))
+        names.add(canonicalize_step_key(name))
     for full, bare in PROMOTED_BUILTIN_STEP_IDS.items():
         names.add(full)
         names.add(bare)
@@ -555,7 +555,7 @@ def _check_step_resolvable(step_id: str, phase: str) -> dict[str, Any]:
     Returns a dict with ``step_id``, ``resolvable`` and — on failure — an
     actionable ``message``.
     """
-    bare = _strip_default_prefix(step_id)
+    bare = canonicalize_step_key(step_id)
 
     # project: external step (either phase) — resolves via its project-local
     # SKILL.md. Checked first so a project verify step never falls into the
@@ -636,7 +636,7 @@ def _build_step_marshal_key_map(marshal_map: dict[str, Any] | None) -> dict[str,
         return {}
     result: dict[str, str] = {}
     for key in marshal_map:
-        result.setdefault(_strip_default_prefix(key), key)
+        result.setdefault(canonicalize_step_key(key), key)
         result.setdefault(key, key)
     return result
 
@@ -675,6 +675,46 @@ def check_emitted_steps_resolvable(
                     'message': (
                         f'{phase} step `{marshal_key}` in marshal.json is unresolvable: '
                         f'{verdict.get("message", "no resolvable source")}'
+                    ),
+                }
+    return None
+
+
+def check_emitted_steps_canonical(
+    phase_5_steps: list[Any],
+    phase_6_steps: list[Any],
+) -> dict[str, Any] | None:
+    """Assert every FINAL emitted step id is in canonical form; return the first offender.
+
+    Structural compose-time guard (sibling of :func:`check_emitted_steps_resolvable`
+    and the ascending-order / frontmatter-order guards): an emitted phase-5/6 step
+    id is canonical iff ``canonicalize_step_key(step_id) == step_id`` — i.e. it
+    carries no leading ``default:`` prefix and no promoted-alias
+    (:data:`PROMOTED_BUILTIN_STEP_IDS`) bundle spelling. Every id in the composed
+    manifest is boundary-normalized at intake, so a non-canonical emitted id is a
+    structural defect (a newly-introduced mis-keyed prefixed step that slipped past
+    the intake normalization), which this gate catches loud rather than tolerating.
+
+    Iterates ``phase_5.verification_steps`` then ``phase_6.steps`` in order and
+    returns ``None`` when every step is canonical. On the first non-canonical step
+    returns a dict carrying ``phase`` (``phase_5`` / ``phase_6``), the offending
+    ``step_id``, its ``canonical`` form, and an actionable ``message``.
+    """
+    for phase, steps in (('phase_5', phase_5_steps), ('phase_6', phase_6_steps)):
+        for step in steps:
+            if not isinstance(step, str):
+                continue
+            canonical = canonicalize_step_key(step)
+            if canonical != step:
+                return {
+                    'phase': phase,
+                    'step_id': step,
+                    'canonical': canonical,
+                    'message': (
+                        f'{phase} emitted step id `{step}` is not in canonical form '
+                        f'(canonicalizes to `{canonical}`) — the id carries a '
+                        '`default:` prefix or a promoted-alias bundle spelling that '
+                        'the compose boundary normalization should have stripped'
                     ),
                 }
     return None
@@ -726,24 +766,28 @@ def cmd_validate(args: argparse.Namespace) -> dict[str, Any] | None:
     # Step-ID checks (only when caller passes candidate sets).
     #
     # The comparison is PREFIX-AGNOSTIC: the composer normalizes manifest step
-    # IDs to bare names at the compose boundary (``_strip_default_prefix``),
+    # IDs to bare names at the compose boundary (``canonicalize_step_key``),
     # while the caller's ``--phase-{5,6}-steps`` CSV may still carry the
     # optional ``default:`` prefix (e.g. ``default:verify:module-tests``). Stripping
     # the prefix from BOTH the allowed set and the manifest step IDs before the
     # set-membership test lets a bare manifest ID validate against a
     # ``default:``-prefixed allowed-list (and vice versa). ``project:`` /
     # ``bundle:skill`` prefixes are preserved verbatim by
-    # ``_strip_default_prefix`` so external steps still compare exactly.
+    # ``canonicalize_step_key`` so external steps still compare exactly.
     p5_unknown: list[str] = []
     p6_unknown: list[str] = []
     if args.phase_5_steps is not None:
-        allowed_5 = {_strip_default_prefix(s) for s in _split_csv(args.phase_5_steps, ())}
-        p5_unknown = [s for s in p5_steps if _strip_default_prefix(s) not in allowed_5]
+        allowed_5 = {canonicalize_step_key(s) for s in _split_csv(args.phase_5_steps, ())}
+        p5_unknown = [
+            s for s in p5_steps if not isinstance(s, str) or canonicalize_step_key(s) not in allowed_5
+        ]
         if p5_unknown:
             errors.append(f'phase_5.verification_steps contains unknown IDs: {p5_unknown}')
     if args.phase_6_steps is not None:
-        allowed_6 = {_strip_default_prefix(s) for s in _split_csv(args.phase_6_steps, ())}
-        p6_unknown = [s for s in p6_steps if _strip_default_prefix(s) not in allowed_6]
+        allowed_6 = {canonicalize_step_key(s) for s in _split_csv(args.phase_6_steps, ())}
+        p6_unknown = [
+            s for s in p6_steps if not isinstance(s, str) or canonicalize_step_key(s) not in allowed_6
+        ]
         if p6_unknown:
             errors.append(f'phase_6.steps contains unknown IDs: {p6_unknown}')
 

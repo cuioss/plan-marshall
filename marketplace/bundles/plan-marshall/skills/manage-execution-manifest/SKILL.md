@@ -177,6 +177,18 @@ step_id: "plan-marshall:ghost-review"
 marshal_key: "plan-marshall:ghost-review"
 ```
 
+**Canonical-step-key assertion.** A sibling structural gate runs on the SAME FINAL emitted step lists, immediately after the resolution gate passes: every emitted `phase_5.verification_steps` and `phase_6.steps` id MUST be in **canonical form** — `canonicalize_step_key(step_id) == step_id`, i.e. no leading `default:` prefix and no promoted-alias (`PROMOTED_BUILTIN_STEP_IDS`) bundle spelling. Because the composer boundary-normalizes every candidate at intake, a non-canonical emitted id is a structural defect (a newly-introduced mis-keyed prefixed step that slipped past that normalization), so `compose` fails it loud rather than persisting a manifest whose keys would not reconcile with the record/assert step keys. On the first non-canonical id, `compose` returns `status: error`, `error: non_canonical_step`, naming the offending `step_id`, its `canonical` form, and the `phase`, and emits one `decision.log` line — and, like the `unresolvable_step` gate, never writes a partial manifest (it returns before the step-params snapshot and `write_manifest`). The assertion reuses D2's shared `canonicalize_step_key` resolver (`script-shared/scripts/_step_key_canonical.py`).
+
+```toon
+status: error
+plan_id: EXAMPLE-PLAN
+error: non_canonical_step
+message: "phase_6 emitted step id `default:push` is not in canonical form (canonicalizes to `push`) — the id carries a `default:` prefix or a promoted-alias bundle spelling that the compose boundary normalization should have stripped"
+phase: phase_6
+step_id: "default:push"
+canonical: push
+```
+
 ### read
 
 Read the manifest as TOON.
@@ -244,6 +256,8 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
 - `--duration-ms` (optional, default `0`): Wall-clock duration in milliseconds
 
 Each call appends exactly one row to `execution_log[]` (an ordered append log, not a keyed map) and emits one `decision.log` line via the in-process `_emit_decision_log` helper. Re-invocation appends another row deterministically, so every dispatch of a step is recorded. This makes per-step execution metadata loggable per-plan deterministically rather than relying on the fragile orchestrator `<usage>`-forwarding boundary call.
+
+**Canonical step-key contract.** `--step-id` is routed through the single shared resolver `canonicalize_step_key` (`script-shared/scripts/_step_key_canonical.py`) before the `execution_log[]` row is appended — the same resolver `manage-status`'s `mark-step-done` / `assert-step-recorded` and every manifest-bundle boundary-normalization call site consume. It maps a promoted built-in-equivalent bundle id via `PROMOTED_BUILTIN_STEP_IDS` (`plan-marshall:automatic-review` → `automatic-review`), strips a leading `default:` prefix, and preserves `project:` / other `bundle:skill` ids verbatim (idempotent on already-canonical input). Recording under the canonical key guarantees execution-log keys reconcile with the manifest `phase_steps` / phase-step-list keys: the record, assert, and manifest `step_id` all agree, so a bare↔`default:` / promoted-alias variant is a canonical MATCH rather than a tolerated `step_record_mismatched_key` near-miss, and a genuine mismatch still fails loud.
 
 **Output** (TOON):
 ```toon
@@ -424,6 +438,7 @@ The bulk form requires the manifest to exist on disk; if it does not, the script
 | `invalid_outcome` | `record-step` --outcome not `executed`, `skipped`, or `error` |
 | `invalid_manifest` | Manifest schema invalid or step IDs unknown; or `step-params set` target section malformed |
 | `unresolvable_step` | `compose` — a FINAL emitted phase-5/6 step id resolves to no built-in doc, project-local skill, or bundle discovery-registry entry (fail-loud; names the offending `marshal.json` key and phase) |
+| `non_canonical_step` | `compose` — a FINAL emitted phase-5/6 step id is not in canonical form (`canonicalize_step_key(step_id) != step_id`; a `default:` prefix or promoted-alias bundle spelling slipped past intake normalization). Fail-loud; names the offending `step_id`, its `canonical` form, and phase; writes no partial manifest |
 | `invalid_arguments` | `validate-loadable` invoked without exactly one of `--step-id` / `--all` |
 | `step_not_found` | `step-params get`/`set` `--step-id` has no snapshotted params in the manifest for the given phase |
 
