@@ -40,6 +40,8 @@ the core `plan-marshall` bundle where domain-specific residue lives by construct
   (`extension-api/standards/extension-contract.md`,
   `ext-point-build-verify-step.md`, `ext-point-domain-verb.md`) and the
   `extension_base.py` optional-hook surface;
+- the executor notation layer
+  (`tools-script-executor/scripts/generate_executor.py`);
 - the domain-neutral resolve verbs (`manage-config` `resolve-*`).
 
 The core bundle is domain-agnostic by design, so domain residue does not appear
