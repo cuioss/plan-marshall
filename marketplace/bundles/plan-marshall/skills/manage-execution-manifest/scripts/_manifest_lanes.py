@@ -12,7 +12,7 @@ patched :func:`_resolve_element_lane` and its callers and re-exports these.
 import json
 from pathlib import Path
 
-from _manifest_core import _strip_default_prefix
+from _step_key_canonical import canonicalize_step_key
 from constants import FILE_STATUS
 from file_ops import get_marshal_path, get_plan_dir, read_json
 
@@ -99,7 +99,7 @@ def _lane_override_for(step_id: str, overrides: dict[str, dict] | None) -> str |
     for key, params in overrides.items():
         if not isinstance(params, dict):
             continue
-        if _strip_default_prefix(key) == step_id:
+        if canonicalize_step_key(key) == step_id:
             value = params.get('lane')
             if isinstance(value, str) and value in LANE_OVERRIDES:
                 return value

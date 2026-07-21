@@ -490,6 +490,63 @@ def test_non_terminal_near_miss_does_not_escalate_to_mismatched_key(plan_context
 
 
 # =============================================================================
+# Canonical step-key round-trip: a bare↔default: / promoted-alias variant
+# recorded with one spelling resolves as a canonical MATCH when queried with the
+# variant spelling (shared canonicalize_step_key on both write and read).
+# =============================================================================
+
+
+def test_default_prefixed_record_matches_bare_query(plan_context):
+    """Record via ``default:push`` then assert via ``push`` → recorded (no mismatch).
+
+    Both the write (mark-step-done) and the read (assert-step-recorded) route the
+    step through the shared canonicalizer, so a ``default:``-prefixed record
+    reconciles to a canonical MATCH under the bare query.
+    """
+    plan_id = 'assert-canon-default-to-bare'
+    _make_plan(plan_id)
+    _seed_step(plan_id, '6-finalize', 'default:push', 'done')
+
+    result = cmd_assert_step_recorded(_assert_args(plan_id, '6-finalize', 'push', require_terminal=True))
+
+    assert result['status'] == 'success'
+    assert result['recorded'] is True
+    assert result['outcome'] == 'done'
+    assert result['step'] == 'push'
+
+
+def test_bare_record_matches_default_prefixed_query(plan_context):
+    """Record via ``push`` then assert via ``default:push`` → recorded (no mismatch)."""
+    plan_id = 'assert-canon-bare-to-default'
+    _make_plan(plan_id)
+    _seed_step(plan_id, '6-finalize', 'push', 'done')
+
+    result = cmd_assert_step_recorded(
+        _assert_args(plan_id, '6-finalize', 'default:push', require_terminal=True)
+    )
+
+    assert result['status'] == 'success'
+    assert result['recorded'] is True
+    assert result['outcome'] == 'done'
+
+
+def test_promoted_alias_record_matches_bare_query(plan_context):
+    """Record via ``plan-marshall:automatic-review`` then assert via bare
+    ``automatic-review`` → recorded (the promoted-alias map reconciles both)."""
+    plan_id = 'assert-canon-promoted-alias'
+    _make_plan(plan_id)
+    _seed_step(plan_id, '6-finalize', 'plan-marshall:automatic-review', 'done')
+
+    result = cmd_assert_step_recorded(
+        _assert_args(plan_id, '6-finalize', 'automatic-review', require_terminal=True)
+    )
+
+    assert result['status'] == 'success'
+    assert result['recorded'] is True
+    assert result['outcome'] == 'done'
+
+
+# =============================================================================
 # Error paths
 # =============================================================================
 

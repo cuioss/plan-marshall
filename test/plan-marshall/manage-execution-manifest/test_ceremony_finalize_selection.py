@@ -470,7 +470,7 @@ class TestCeremonyFinalizeAlways:
 class TestCeremonyFinalizeGenericSelfReviewForm:
     """A consuming project lists the GENERIC ``default:pre-submission-self-review``
     step (not the meta-project ``project:``-prefixed wrapper). The composer
-    `_strip_default_prefix`-normalizes it to bare ``pre-submission-self-review``
+    `canonicalize_step_key`-normalizes it to bare ``pre-submission-self-review``
     at intake, so the ``self_review`` gate's match-set MUST recognize that bare
     form — otherwise ``never`` cannot drop it and ``always`` re-inserts a
     duplicate. Regression for the match-set that omitted the normalized form

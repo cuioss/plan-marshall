@@ -245,6 +245,8 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
 
 Each call appends exactly one row to `execution_log[]` (an ordered append log, not a keyed map) and emits one `decision.log` line via the in-process `_emit_decision_log` helper. Re-invocation appends another row deterministically, so every dispatch of a step is recorded. This makes per-step execution metadata loggable per-plan deterministically rather than relying on the fragile orchestrator `<usage>`-forwarding boundary call.
 
+**Canonical step-key contract.** `--step-id` is routed through the single shared resolver `canonicalize_step_key` (`script-shared/scripts/_step_key_canonical.py`) before the `execution_log[]` row is appended — the same resolver `manage-status`'s `mark-step-done` / `assert-step-recorded` and every manifest-bundle boundary-normalization call site consume. It maps a promoted built-in-equivalent bundle id via `PROMOTED_BUILTIN_STEP_IDS` (`plan-marshall:automatic-review` → `automatic-review`), strips a leading `default:` prefix, and preserves `project:` / other `bundle:skill` ids verbatim (idempotent on already-canonical input). Recording under the canonical key guarantees execution-log keys reconcile with the manifest `phase_steps` / phase-step-list keys: the record, assert, and manifest `step_id` all agree, so a bare↔`default:` / promoted-alias variant is a canonical MATCH rather than a tolerated `step_record_mismatched_key` near-miss, and a genuine mismatch still fails loud.
+
 **Output** (TOON):
 ```toon
 status: success

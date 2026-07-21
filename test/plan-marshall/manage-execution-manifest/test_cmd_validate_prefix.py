@@ -5,7 +5,7 @@
 Folded into this plan per operator decision. Two regressions are pinned here:
 
 (a) **Prefix-agnostic validation**: ``compose`` boundary-normalizes manifest
-    step IDs to BARE names (``_strip_default_prefix`` at intake), while a
+    step IDs to BARE names (``canonicalize_step_key`` at intake), while a
     caller's ``--phase-{5,6}-steps`` allow-list CSV may still carry the optional
     ``default:`` prefix (e.g. ``default:verify:module-tests`` straight out of a
     project ``marshal.json`` step registry). ``cmd_validate`` strips the prefix

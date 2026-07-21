@@ -14,7 +14,6 @@ _status_core = load_script_module('plan-marshall', 'manage-status', '_status_cor
 
 cmd_create = _lifecycle.cmd_create
 cmd_mark_step_done = _mark_step.cmd_mark_step_done
-_canonicalize_step_key = _mark_step._canonicalize_step_key
 read_status = _status_core.read_status
 write_status = _status_core.write_status
 
@@ -582,24 +581,12 @@ def test_mark_step_omits_head_at_completion_key_when_flag_absent(plan_context):
 
 # =============================================================================
 # Step-key canonicalization (lesson 2026-06-21-00-002)
+#
+# The canonicalizer's own unit coverage (default strip, project/bundle preserve,
+# idempotence) lives in test_step_key_canonical.py — the shared resolver's home.
+# These cases assert the mark-step-done BOUNDARY behaviour: a prefixed --step is
+# recorded under the canonical key computed by the shared resolver.
 # =============================================================================
-
-
-def test_canonicalize_step_key_strips_default_prefix():
-    """The helper strips a leading ``default:`` prefix to the bare manifest key."""
-    assert _canonicalize_step_key('default:push') == 'push'
-    assert _canonicalize_step_key('default:branch-cleanup') == 'branch-cleanup'
-
-
-def test_canonicalize_step_key_passthrough_bare_and_external():
-    """Bare names and external (``project:`` / ``bundle:skill``) keys pass through unchanged."""
-    assert _canonicalize_step_key('push') == 'push'
-    assert _canonicalize_step_key('project:finalize-step-plugin-doctor') == (
-        'project:finalize-step-plugin-doctor'
-    )
-    assert _canonicalize_step_key('plan-marshall:plan-retrospective') == (
-        'plan-marshall:plan-retrospective'
-    )
 
 
 def test_mark_step_default_prefixed_records_under_bare_key(plan_context):
@@ -645,3 +632,25 @@ def test_mark_step_bare_and_default_prefixed_reconcile_to_same_key(plan_context)
     phase_steps = persisted['metadata']['phase_steps']['6-finalize']
     # Exactly one entry under the bare key — no divergent default:-prefixed orphan.
     assert list(phase_steps.keys()) == ['push']
+
+
+def test_mark_step_project_prefixed_records_under_verbatim_key(plan_context):
+    """A ``project:``-prefixed --step records under its verbatim key.
+
+    The shared canonicalizer preserves ``project:`` / ``bundle:skill`` ids, so a
+    project-local finalize step keeps its prefix (it is NOT stripped to bare).
+    """
+    plan_id = 'mark-step-canon-project'
+    _make_plan(plan_id)
+    result = cmd_mark_step_done(
+        _args(plan_id, '6-finalize', 'project:finalize-step-plugin-doctor', 'done')
+    )
+
+    assert result['status'] == 'success'
+    assert result['step'] == 'project:finalize-step-plugin-doctor'
+
+    persisted = read_status(plan_id)
+    phase_steps = persisted['metadata']['phase_steps']['6-finalize']
+    assert phase_steps == {
+        'project:finalize-step-plugin-doctor': {'outcome': 'done', 'display_detail': None}
+    }

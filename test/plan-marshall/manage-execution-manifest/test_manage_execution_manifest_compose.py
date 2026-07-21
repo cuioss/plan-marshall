@@ -593,11 +593,11 @@ def test_boundary_normalization_strips_prefix_for_all_downstream_consumers(plan_
     Pins the boundary-normalization invariant introduced by lesson
     ``2026-04-27-23-004``: ``cmd_compose`` strips a single leading ``default:``
     from each ``phase_5_candidates`` and ``phase_6_candidates`` entry once at
-    intake (via ``_strip_default_prefix``), and every downstream site — the
+    intake (via ``canonicalize_step_key``), and every downstream site — the
     seven-row matrix, ``_apply_commit_push_disabled``,
     ``_apply_pre_push_quality_gate_inactive``, and
     ``_apply_pre_submission_self_review_inactive`` — consumes those already-bare
-    strings without any per-site ``_strip_default_prefix`` call.
+    strings without any per-site ``canonicalize_step_key`` call.
 
     The test feeds a deliberately MIXED candidate list (some entries
     prefixed, some bare, plus a project-prefixed entry to demonstrate the
@@ -605,11 +605,11 @@ def test_boundary_normalization_strips_prefix_for_all_downstream_consumers(plan_
     asserts that every default-domain entry in the resulting
     ``phase_6.steps`` is bare. The only entry that retains its leading
     prefix is the ``project:`` step — its prefix is the canonical
-    typed-step notation and is NOT stripped by ``_strip_default_prefix``
+    typed-step notation and is NOT stripped by ``canonicalize_step_key``
     (which only normalizes the ``default:`` namespace).
 
     This invariant guards against regressions where a future contributor
-    re-introduces a per-site ``_strip_default_prefix`` call that masks a
+    re-introduces a per-site ``canonicalize_step_key`` call that masks a
     boundary leak: with the prefix stripped at intake, a per-site strip
     becomes dead code, and a missing intake strip becomes a visible test
     failure here rather than a silent functional drift.
@@ -3089,7 +3089,7 @@ class TestRoleBasedIntersection:
         """Row 5 + ``default:``-prefixed canonical-verify IDs → boundary normalized + roles match.
 
         Exercises the joint contract of boundary normalization (the existing
-        `_strip_default_prefix` pass at intake) and role derivation: prefixed
+        `canonicalize_step_key` pass at intake) and role derivation: prefixed
         candidates lose the prefix at cmd_compose intake, then role lookup
         derives the role from each bare ``verify:{canonical}`` segment.
         """
@@ -4584,7 +4584,7 @@ class TestUnresolvedAskProviderDropCompose:
         result = cmd_compose(_compose_ns(plan_id='d6-ar-drop', phase_6_steps=None))
         assert result is not None and result['status'] == 'success'
         # The compose pipeline boundary-normalizes every candidate to its bare
-        # form before the pre-filters run (``_strip_default_prefix``), so the
+        # form before the pre-filters run (``canonicalize_step_key``), so the
         # promoted ``plan-marshall:automatic-review`` candidate is carried — and
         # dropped/reported — as bare ``automatic-review`` (the same bare form the
         # manifest stores, per the keep-case assertion below).

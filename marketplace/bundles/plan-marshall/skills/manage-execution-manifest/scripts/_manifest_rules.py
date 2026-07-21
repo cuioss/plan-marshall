@@ -13,8 +13,8 @@ them and keeps the patched callers.
 import json
 import shlex
 
-from _manifest_core import _strip_default_prefix
 from _manifest_lanes import _effective_lane_tier, _lane_override_for
+from _step_key_canonical import canonicalize_step_key
 from file_ops import get_marshal_path, read_json
 
 
@@ -89,7 +89,7 @@ def _snapshot_step_params(
     # Index the marshal map by its prefix-stripped key so a bare in-manifest id
     # matches a ``default:``-prefixed marshal key.
     bare_to_params: dict[str, dict] = {
-        _strip_default_prefix(key): params for key, params in marshal_step_map.items()
+        canonicalize_step_key(key): params for key, params in marshal_step_map.items()
     }
     # A param-owning step snapshots its nested object; an ownerless step (no
     # marshal entry or an empty param object) snapshots as ``None`` so the
@@ -285,7 +285,7 @@ def _apply_security_audit_inactive(
 # Scope-gated phase-6 subtraction sets. Each entry lists the step references the
 # scope_gated_finalize pre-filter drops, expressed as match-sets that cover both
 # the bare and prefixed forms a candidate list may carry. The candidate list is
-# boundary-normalized by ``_strip_default_prefix`` before pre-filters run, so the
+# boundary-normalized by ``canonicalize_step_key`` before pre-filters run, so the
 # optional ``default:`` prefix is already gone; ``project:`` and ``bundle:skill``
 # prefixes are preserved verbatim, so the surgical set lists both forms. See
 # standards/decision-rules.md § Pre-Filter: scope_gated_finalize.
@@ -716,7 +716,7 @@ def _apply_unresolved_ask_provider_drop(
                 # must be boundary-normalized to the same bare shape before the
                 # lookup — otherwise the prefixed key strips to bare and never
                 # matches the prefixed step_id (the drop silently never fires).
-                override = _lane_override_for(_strip_default_prefix(step), marshal_phase_6_map)
+                override = _lane_override_for(canonicalize_step_key(step), marshal_phase_6_map)
                 effective, _is_off = _effective_lane_tier({}, override)
                 if effective == 'ask' and provider_for[element_key] is None:
                     drop = True
@@ -737,7 +737,7 @@ def _apply_unresolved_ask_provider_drop(
 #
 # The step IDs are BARE (no ``default:`` prefix) per the boundary-
 # normalization contract: the candidate lists are stripped to bare names at
-# the compose boundary (``_strip_default_prefix``), and ``phase_5.verification
+# the compose boundary (``canonicalize_step_key``), and ``phase_5.verification
 # _steps`` is built from those bare names. Each routed step ID is the bare
 # canonical-verify form ``verify:{canonical}`` (the post-strip shape of
 # ``default:verify:{canonical}``); both ``verify`` and ``module-tests`` route to
