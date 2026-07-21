@@ -292,6 +292,33 @@ class TestNoMutatesSourceClaim:
 
         assert findings == []
 
+    def test_commented_out_ext_point_declaration_is_not_scanned(
+        self, tmp_path: Path
+    ) -> None:
+        """A commented-out ``implements:`` line does not pull the doc into scope.
+
+        The membership test joins the frontmatter block before searching for the
+        ext-point token; comment lines must be excluded from that join, matching
+        the key-parsing loop that already skips them. The paired assertion on the
+        uncommented form keeps this non-vacuous — the same doc with a live
+        ``implements:`` line IS flagged.
+        """
+        _write_merge_gate(tmp_path)
+        skill_dir = tmp_path / 'test-bundle' / 'skills' / 'commented-step'
+        skill_dir.mkdir(parents=True)
+        target = skill_dir / 'SKILL.md'
+        live = _step_doc_text('test-bundle:commented-step', 996, mutates_source=True)
+        commented = live.replace(
+            f'implements: {_EXT_POINT}', f'# implements: {_EXT_POINT}'
+        )
+        target.write_text(commented, encoding='utf-8')
+
+        assert analyze_mutates_source_order(tmp_path) == []
+
+        target.write_text(live, encoding='utf-8')
+
+        assert len(analyze_mutates_source_order(tmp_path)) == 1
+
 
 # ===========================================================================
 # (d) Undiscoverable merge gate — skip cleanly

@@ -159,7 +159,9 @@ def _parse_step_doc(path: Path) -> _StepDoc | None:
     that does not declare the finalize-step ext-point. The ext-point check is a
     membership test over the raw block text so both the scalar
     (``implements: <value>``) and the block-sequence (``implements:`` then
-    ``  - <value>``) declaration forms are recognised.
+    ``  - <value>``) declaration forms are recognised. Comment lines are excluded
+    from that membership test — matching the key-parsing loop below — so a doc
+    that comments out its ``implements:`` declaration stays out of scope.
     """
     try:
         text = path.read_text(encoding='utf-8')
@@ -169,7 +171,10 @@ def _parse_step_doc(path: Path) -> _StepDoc | None:
     block = _frontmatter_lines(text)
     if block is None:
         return None
-    if _FINALIZE_STEP_EXT_POINT not in '\n'.join(line for _, line in block):
+    uncommented = '\n'.join(
+        line for _, line in block if not line.strip().startswith('#')
+    )
+    if _FINALIZE_STEP_EXT_POINT not in uncommented:
         return None
 
     name = ''
