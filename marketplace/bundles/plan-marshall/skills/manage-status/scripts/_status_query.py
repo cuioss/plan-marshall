@@ -23,8 +23,8 @@ from constants import (
     PHASE_STATUS_DONE,
     PHASE_STATUS_IN_PROGRESS,
 )
-from file_ops import get_worktree_root, now_utc_iso
-from marketplace_paths import PLAN_DIR_NAME
+from file_ops import get_base_dir, get_worktree_root, now_utc_iso
+from marketplace_paths import PLAN_DIR_NAME, resolve_main_anchored_path
 
 # Metadata fields that are semantically boolean. The ``metadata --set`` CLI
 # receives every value as a raw string; for these keys the raw string is
@@ -394,6 +394,44 @@ def _passes_phase_filter(current_phase: str, filter_arg: str | None) -> bool:
     return current_phase in filter_phases
 
 
+def _resolution_scope() -> str:
+    """Classify ``cmd_list``'s enumeration scope: ``main`` vs ``worktree_local``.
+
+    ``cmd_list`` resolves ``get_plans_dir()`` / ``get_worktree_root()``
+    cwd-relatively under the uniform resolver (ADR-002). The resolved scope is NOT
+    the same in every checkout, and a consumer that reads the enumeration as an
+    authoritative census MUST know which:
+
+      * ``main`` — the current base IS the main-anchored ``.plan/local``. The scan
+        observes main's plans AND every sibling worktree
+        (``get_worktree_root()`` == ``<main>/.plan/local/worktrees``), so an absent
+        plan is authoritative absence.
+      * ``worktree_local`` — the current base is a pinned worktree's own
+        ``.plan/local``. ``get_plans_dir()`` / ``get_worktree_root()`` anchor THERE,
+        so the scan observes only this worktree's own moved-in plan and is
+        structurally BLIND to sibling worktrees. An absent plan under this scope is
+        ``unknown`` (not-observed-from-this-scope), NOT authoritative absence — the
+        #948 sibling-worktree shape. A destructive/authority-bearing consumer MUST
+        NOT treat a ``worktree_local`` empty as proof of absence; route the decision
+        through a main-anchored verdict (e.g. ``merge_lock check`` staleness). See
+        ``manage-locks/standards/cwd-keyed-store-resolution-audit.md``.
+      * ``unknown`` — the base (or the main-anchored base) could not be resolved
+        (outside a git repo, no override). Fail-closed: neither authoritative.
+
+    The verdict is surfaced on the ``cmd_list`` output as a first-class ``scope``
+    field so consumers cannot silently mistake a cwd-scoped census for a global one.
+    """
+    try:
+        main_base = resolve_main_anchored_path('')
+        current_base = get_base_dir()
+    except (RuntimeError, OSError):
+        return 'unknown'
+    try:
+        return 'main' if current_base.resolve() == main_base.resolve() else 'worktree_local'
+    except OSError:
+        return 'main' if str(current_base) == str(main_base) else 'worktree_local'
+
+
 def cmd_list(args: argparse.Namespace) -> dict[str, Any]:
     """Discover all plans across the main checkout AND its worktrees.
 
@@ -417,6 +455,13 @@ def cmd_list(args: argparse.Namespace) -> dict[str, Any]:
     window) and sorted by id for stable ordering regardless of checkout. The
     worktree scan is guarded against the outside-git-repo ``RuntimeError`` from
     ``get_worktree_root()`` — on that error the main-only result is returned.
+
+    The output also carries a ``scope`` field (``main`` / ``worktree_local`` /
+    ``unknown``, from :func:`_resolution_scope`) naming the enumeration's
+    authoritativeness: a ``worktree_local`` census is cwd-scoped and BLIND to
+    sibling worktrees, so a consumer MUST NOT read an absent plan under it as
+    authoritative absence (the #948 shape). See
+    ``manage-locks/standards/cwd-keyed-store-resolution-audit.md``.
     """
     plans: list[dict[str, Any]] = []
     seen_ids: set[str] = set()
@@ -499,7 +544,15 @@ def cmd_list(args: argparse.Namespace) -> dict[str, Any]:
 
     plans.sort(key=lambda p: p['id'])
 
-    return {'status': 'success', 'total': len(plans), 'plans': plans}
+    # Surface the resolution scope as a first-class field: a `worktree_local` census
+    # is structurally blind to sibling worktrees, so an absent plan under it is
+    # `unknown`, NOT authoritative absence (the #948 shape). See _resolution_scope.
+    return {
+        'status': 'success',
+        'total': len(plans),
+        'scope': _resolution_scope(),
+        'plans': plans,
+    }
 
 
 def cmd_list_orphans(args: argparse.Namespace) -> dict[str, Any]:  # noqa: ARG001

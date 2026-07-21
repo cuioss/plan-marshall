@@ -1472,6 +1472,14 @@ def cmd_worktree_list(_args):
     ``metadata.use_worktree == true`` by calling
     ``manage-status get-worktree-path`` per plan. Plans without a
     configured worktree are silently skipped.
+
+    Propagates the ``scope`` field (``main`` / ``worktree_local`` / ``unknown``)
+    from the underlying ``manage-status list`` census onto its own output: this
+    verb inherits the enumeration's cwd-scoped blindness, so a ``worktree_local``
+    listing is BLIND to sibling worktrees and an absent plan under it is
+    ``unknown``, NOT authoritative absence (the #948 shape). A consumer MUST NOT
+    read an empty ``worktree_local`` listing as proof that no other worktree exists.
+    See ``manage-locks/standards/cwd-keyed-store-resolution-audit.md``.
     """
     rc, stdout, stderr = _manage_status_call('list')
     if rc != 0:
@@ -1483,6 +1491,15 @@ def cmd_worktree_list(_args):
 
     rows = parse_toon_table(stdout, 'plans')
     plan_ids = [str(row.get('id')) for row in rows if row.get('id')]
+
+    # Propagate the census scope from the underlying list output — single-sourced in
+    # manage-status cmd_list (_resolution_scope), never re-derived here. A malformed
+    # or scope-less output fails closed to 'unknown' rather than a false 'main'.
+    try:
+        parsed = parse_toon(stdout)
+        scope = parsed.get('scope', 'unknown') if isinstance(parsed, dict) else 'unknown'
+    except Exception:  # noqa: BLE001 — a parse failure degrades to the fail-closed scope
+        scope = 'unknown'
 
     worktrees: list[dict[str, str]] = []
     for plan_id in plan_ids:
@@ -1505,6 +1522,7 @@ def cmd_worktree_list(_args):
     return {
         'status': 'success',
         'worktrees_root': worktrees_root,
+        'scope': scope,
         'count': len(worktrees),
         'worktrees': worktrees,
     }
