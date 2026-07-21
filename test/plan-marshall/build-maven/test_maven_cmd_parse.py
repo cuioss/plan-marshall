@@ -12,11 +12,15 @@ from pathlib import Path
 import pytest
 from _build_parse import SEVERITY_ERROR, SEVERITY_WARNING, Issue, UnitTestSummary
 
-from conftest import load_script_module
+from conftest import get_script_path, load_script_module, run_script
 
 _maven_cmd_parse_mod = load_script_module('plan-marshall', 'build-maven', '_maven_cmd_parse.py', '_maven_cmd_parse')
 
 parse_log = _maven_cmd_parse_mod.parse_log
+
+# CLI entry point for the parse subcommand (routes through cmd_parse_common,
+# where the seam-(b) truthful-status derivation lives).
+SCRIPT_PATH = get_script_path('plan-marshall', 'build-maven', 'maven.py')
 
 # Test data location (fixtures in test directory)
 TEST_DATA_DIR = Path(__file__).parent / 'fixtures' / 'log-test-data'
@@ -178,6 +182,39 @@ def test_test_summary_to_dict():
     assert d['failed'] == 0
     assert d['skipped'] == 0
     assert d['total'] == 4892
+
+
+# =============================================================================
+# Truthful-status regression (seam b): cmd_parse_common status derivation
+# =============================================================================
+
+
+def test_parse_log_testfailureignore_raw_build_status_and_failures():
+    """The raw parse of the testFailureIgnore fixture yields BUILD SUCCESS with
+    failed > 0 — the exact untruthful-green window cmd_parse_common must resolve
+    to error. detect_build_status only checks failure markers, so a log with no
+    [ERROR]/BUILD FAILURE marker keeps build_status == 'SUCCESS'.
+    """
+    log_file = TEST_DATA_DIR / 'maven-testfailureignore-green.log'
+    issues, test_summary, build_status = parse_log(log_file)
+
+    assert build_status == 'SUCCESS'
+    assert test_summary is not None
+    assert test_summary.failed == 2  # Maven: Failures(0) + Errors(2)
+
+
+def test_parse_cli_testfailureignore_reports_error_status():
+    """Seam (b): the parse CLI (cmd_parse_common) resolves status=error when
+    test_summary.failed > 0 despite a BUILD SUCCESS marker — a BUILD SUCCESS
+    string alone must never report success over erroring tests.
+    """
+    log_file = TEST_DATA_DIR / 'maven-testfailureignore-green.log'
+    result = run_script(SCRIPT_PATH, 'parse', '--log', str(log_file))
+
+    data = result.toon()
+    assert data.get('status') == 'error', (
+        f'BUILD SUCCESS with errored tests must report error, not success: {data}'
+    )
 
 
 # =============================================================================
