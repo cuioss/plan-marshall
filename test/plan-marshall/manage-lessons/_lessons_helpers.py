@@ -9,14 +9,13 @@ test files share. Naming the file ``_lessons_helpers.py`` rather than
 modules that other test directories may introduce.
 
 The hyphenated production script ``manage-lessons.py`` is loaded once via
-``importlib.util.spec_from_file_location`` and re-exported as ``_mod`` plus
-the individual ``cmd_*`` callables and ``get_next_id``. The test files
-import from this module to avoid each suite re-paying the importlib cost.
+``conftest.load_script_module`` — the single loading convention for the suite —
+and re-exported as ``_mod`` plus the individual ``cmd_*`` callables and
+``get_next_id``. The test files import from this module to avoid each suite
+re-paying the module-load cost.
 """
 
-import importlib.util
-
-from conftest import MARKETPLACE_ROOT
+from conftest import MARKETPLACE_ROOT, load_script_module
 
 # Script path used by both direct-import and subprocess (CLI plumbing) tests.
 SCRIPT_PATH = (
@@ -28,12 +27,9 @@ SCRIPT_PATH = (
     / 'manage-lessons.py'
 )
 
-# Tier 2 direct imports — load hyphenated module via importlib.
-_MANAGE_LESSONS_SCRIPT = str(SCRIPT_PATH)
-_spec = importlib.util.spec_from_file_location('manage_lessons', _MANAGE_LESSONS_SCRIPT)
-assert _spec is not None and _spec.loader is not None
-_mod = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(_mod)
+# Tier 2 direct imports — the hyphenated filename is not importable by name, so
+# the module is registered under the underscored ``manage_lessons`` alias.
+_mod = load_script_module('plan-marshall', 'manage-lessons', 'manage-lessons.py', 'manage_lessons')
 
 # Re-exports — the per-subcommand test files import these names.
 cmd_add = _mod.cmd_add

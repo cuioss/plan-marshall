@@ -8,10 +8,11 @@ In-scope flags from TASK-1: ``--plan-id``, ``--phase``.
 from __future__ import annotations
 
 import pytest
-from _pm_input_validation_fixtures import (
+from _input_validation_fixtures import (
     HAPPY_VALUES,
     MALFORMED_AXES,
     assert_invalid_field,
+    assert_plan_id_axis_rejected,
 )
 
 from conftest import get_script_path, run_script
@@ -27,24 +28,15 @@ SCRIPT_PATH = get_script_path('plan-marshall', 'manage-logging', 'manage-logging
 @pytest.mark.parametrize('axis,bad_value', MALFORMED_AXES['plan_id'])
 def test_work_rejects_invalid_plan_id(axis, bad_value):
     """``manage-logging work --plan-id <bad> --level INFO --message m`` → invalid_plan_id TOON."""
-    result = run_script(
-        SCRIPT_PATH,
-        'work',
-        '--plan-id',
-        bad_value,
-        '--level',
-        'INFO',
-        '--message',
-        'msg',
+    assert_plan_id_axis_rejected(
+        SCRIPT_PATH, 'work', bad_value, extra_args=('--level', 'INFO', '--message', 'msg')
     )
-    assert_invalid_field(result, 'invalid_plan_id')
 
 
 @pytest.mark.parametrize('axis,bad_value', MALFORMED_AXES['plan_id'])
 def test_read_rejects_invalid_plan_id(axis, bad_value):
     """``manage-logging read --plan-id <bad> --type work`` → invalid_plan_id TOON."""
-    result = run_script(SCRIPT_PATH, 'read', '--plan-id', bad_value, '--type', 'work')
-    assert_invalid_field(result, 'invalid_plan_id')
+    assert_plan_id_axis_rejected(SCRIPT_PATH, 'read', bad_value, extra_args=('--type', 'work'))
 
 
 # =============================================================================

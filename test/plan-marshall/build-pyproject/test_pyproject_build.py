@@ -11,6 +11,14 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
+from _resolve_project_dir_fixtures import (
+    CANONICAL_PLAN_ID,
+    CANONICAL_PROJECT_DIR,
+    CANONICAL_WORKTREE,
+    patch_main_checkout_root,
+    patch_query_worktree_path,
+)
+
 from conftest import BuildContext, load_script_module
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
@@ -376,14 +384,6 @@ def test_quality_gate_module_scoped_skips_plugin_doctor():
 # assert the parser surface and pin the resolver behaviour at the unit
 # level. End-to-end coverage of the resolver internals lives in
 # ``test/plan-marshall/script-shared/test_build_cli.py``.
-
-from _resolve_project_dir_fixtures import (  # noqa: E402
-    CANONICAL_PLAN_ID,
-    CANONICAL_PROJECT_DIR,
-    CANONICAL_WORKTREE,
-    patch_main_checkout_root,
-    patch_query_worktree_path,
-)
 
 
 def _python_run_args(*extra: str) -> list[str]:

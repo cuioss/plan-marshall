@@ -405,14 +405,15 @@ test/
 
 Import helpers directly by module name (`from _fixtures import ...` or `from test._fixtures import ...` depending on PYTHONPATH), bypassing the conftest resolution chain entirely.
 
-### Allow-List: When a Nested `conftest.py` Is Acceptable
+### Allow-List: The Single Permitted `conftest.py`
 
-A `conftest.py` at `test/` root, or a narrowly-scoped nested `conftest.py` that does **not** re-export shared helpers, is acceptable. Examples:
+The allow-list holds a single entry:
 
-- `test/conftest.py` — the canonical location for shared pytest fixtures and plugins.
-- `test/adapters/conftest.py` — narrowly scoped for `sys.path` setup or directory-specific fixtures, without re-exporting shared helpers used by sibling modules.
+- `test/conftest.py` — the root module, and the canonical location for shared pytest fixtures and plugins.
 
-The invariant: a nested `conftest.py` must not define or re-export symbols that sibling test files import by bare module name.
+Every other `conftest.py` anywhere under `test/**/` is a defect. Name the helper `_fixtures.py` (or another descriptive `_*.py` name that is clearly not a pytest collection file) and import it explicitly.
+
+The invariant: no nested `conftest.py` exists, so nothing can define or re-export symbols that shadow what sibling test files import by bare module name.
 
 ### Cross-Reference
 

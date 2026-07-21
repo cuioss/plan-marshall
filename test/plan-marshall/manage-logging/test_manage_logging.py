@@ -393,7 +393,7 @@ def test_cli_write_with_invalid_plan_id_still_rejected(plan_context):
     failure exits with code 0 and emits ``status: error / error: invalid_plan_id``
     on stdout (the ``parse_args_with_toon_errors`` helper deliberately does not
     surface argparse's exit-code-2 contract). See ``assert_invalid_field`` in
-    ``test/plan-marshall/_pm_input_validation_fixtures.py``.
+    ``test/_shared/_input_validation_fixtures.py``.
     """
     # a malformed plan-id value (uppercase + space) is supplied explicitly
     result = run_script(

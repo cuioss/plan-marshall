@@ -21,14 +21,11 @@ import json
 
 import github_ops  # noqa: E402
 import pytest
+from _ci_wait_contract import _ok_auth
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-def _ok_auth():
-    return True, ''
 
 
 def _install_common(monkeypatch):

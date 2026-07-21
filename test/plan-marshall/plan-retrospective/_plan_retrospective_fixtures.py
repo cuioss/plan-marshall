@@ -15,19 +15,16 @@ plan-marshall test-collection namespace.
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 
 # The summarize-invariants script now reads ``<plan_dir>/handshakes.toon``
 # (canonical phase_handshake storage) instead of ``status.metadata.phase_handshake``.
 # Fixtures must materialize that file with the same TOON serialization the
-# production code path uses (file_ops.serialize_toon).
-_PROJECT_ROOT = Path(__file__).resolve().parents[3]
-_TOON_DIR = _PROJECT_ROOT / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'manage-files' / 'scripts'
-if str(_TOON_DIR) not in sys.path:
-    sys.path.insert(0, str(_TOON_DIR))
-
-from toon_parser import serialize_toon  # noqa: E402
+# production code path uses (file_ops.serialize_toon). ``toon_parser`` resolves
+# by bare name because ``test/conftest.py``'s marketplace-PYTHONPATH setup
+# already puts every skill's ``scripts/`` directory — including
+# ``manage-files/scripts`` — on ``sys.path`` at collection time.
+from toon_parser import serialize_toon
 
 # Mirrors HANDSHAKE_FIELDS in
 # marketplace/bundles/plan-marshall/skills/plan-marshall/scripts/_handshake_store.py.

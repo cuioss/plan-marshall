@@ -12,7 +12,7 @@ All scripts wrap their parser via ``parse_args_with_toon_errors`` so the
 canonical TOON contract applies: malformed input emits
 ``status: error / error: invalid_<field>`` on stdout with exit 0.
 
-Re-uses ``test/plan-marshall/_pm_input_validation_fixtures.py`` for the
+Re-uses ``test/_shared/_input_validation_fixtures.py`` for the
 canonical 6-axis matrix (TASK-2 foundation).
 """
 
@@ -21,11 +21,12 @@ from __future__ import annotations
 import pytest
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from _pm_input_validation_fixtures import (
+from _input_validation_fixtures import (
     HAPPY_VALUES,
     MALFORMED_AXES,
     assert_invalid_field,
     assert_not_invalid_field,
+    assert_plan_id_axis_rejected,
 )
 
 from conftest import get_script_path, run_script
@@ -65,16 +66,13 @@ def test_plan_id_rejected(script, subcommand, axis, bad_value):
     where the script's argparse declares it as required; otherwise the
     bare ``--plan-id`` is enough to trigger the type-validator path.
     """
-    args = [subcommand, '--plan-id', bad_value]
     # Subcommands taking --mode need it set so the failure is
     # unambiguously attributed to --plan-id (and not to a missing
     # required arg). collect-fragments uses ``init`` with required
     # ``--mode``; the seven ``run`` scripts also accept ``--mode``.
-    if subcommand in ('run', 'init'):
-        args += ['--mode', 'live']
+    extra_args = ('--mode', 'live') if subcommand in ('run', 'init') else ()
 
-    result = run_script(_resolve(script), *args)
-    assert_invalid_field(result, 'invalid_plan_id')
+    assert_plan_id_axis_rejected(_resolve(script), subcommand, bad_value, extra_args=extra_args)
 
 
 # =============================================================================

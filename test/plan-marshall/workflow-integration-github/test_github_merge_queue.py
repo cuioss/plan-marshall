@@ -25,10 +25,7 @@ import argparse
 
 import ci_base  # noqa: E402
 import github_ops  # noqa: E402
-
-
-def _ok_auth():
-    return True, ''
+from _ci_wait_contract import _ok_auth
 
 
 def _capture_run_gh(*, merge_ok: bool = True):

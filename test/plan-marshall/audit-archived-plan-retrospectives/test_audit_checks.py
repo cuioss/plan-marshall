@@ -23,6 +23,13 @@ Coverage:
 - D4 — ``dormate_plans`` path-traversal hardening: ``../``, absolute, and embedded
   path-separator ``plan_id`` values are refused before any move.
 - D8 — retrospective-token exclusion across the three metrics-related checks.
+
+Relocated from the root-level ``test/plan-marshall/`` straggler into the audit
+skill's own package. One consequence is deliberate and recorded here: this
+directory is on ``pyproject.toml``'s mypy ``exclude`` list (a hyphenated dir name
+is not a valid Python package name under ``explicit_package_bases``), so the
+module is no longer type-checked. Every assertion was preserved verbatim across
+the move; only the file's location changed.
 """
 
 import importlib.util

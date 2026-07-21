@@ -2,23 +2,34 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for npm coverage-report subcommand.
 
-Uses shared build_test_helpers for common patterns.
-npm-specific: tests JSON and LCOV format support.
+npm is the odd backend out: its fixtures live in ``coverage/`` (not
+``fixtures/coverage/``) and its reports are Istanbul JSON and LCOV rather than
+XML. Only the two format-agnostic cases (``missing_file``, ``high``) route
+through ``build_test_helpers.run_coverage_report_case``; the JSON-summary,
+LCOV, and low-coverage-file assertions are npm-specific and stay here.
 """
 
 from pathlib import Path
 
-from build_test_helpers import (
-    assert_coverage_has_low_items,
-    assert_coverage_high,
-    assert_coverage_missing_file,
-)
+import pytest
+from build_test_helpers import assert_coverage_has_low_items, run_coverage_report_case
 from toon_parser import parse_toon
 
 from conftest import get_script_path, run_script
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'build-npm', 'npm.py')
 FIXTURES_DIR = Path(__file__).parent / 'coverage'
+
+#: The subset of the shared contract npm's report formats support. The `low`
+#: and `custom_threshold` cases are excluded: npm has no below-threshold XML
+#: twin, and its below-threshold case is the JSON-summary test below.
+NPM_COVERAGE_REPORT_CASES = ('missing_file', 'high')
+
+
+@pytest.mark.parametrize('case', NPM_COVERAGE_REPORT_CASES)
+def test_coverage_report_contract(case):
+    """npm satisfies the format-agnostic coverage-report cases."""
+    run_coverage_report_case(case, SCRIPT_PATH, FIXTURES_DIR, high_report='high-coverage.json')
 
 
 def test_coverage_report_json_format():
@@ -37,11 +48,6 @@ def test_coverage_report_json_format():
     assert data['status'] == 'success'
     assert data['passed'] is False
     assert 'below threshold' in data['message']
-
-
-def test_coverage_report_high_coverage():
-    """Test coverage-report with high coverage JSON."""
-    assert_coverage_high(SCRIPT_PATH, FIXTURES_DIR / 'high-coverage.json')
 
 
 def test_coverage_report_low_coverage_files():
@@ -64,8 +70,3 @@ def test_coverage_report_lcov_format():
     data = parse_toon(result.stdout)
     assert data['status'] == 'success'
     assert 'overall' in data
-
-
-def test_coverage_report_missing_file():
-    """Test coverage-report with non-existent report."""
-    assert_coverage_missing_file(SCRIPT_PATH)

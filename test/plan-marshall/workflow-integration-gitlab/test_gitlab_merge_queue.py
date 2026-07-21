@@ -18,6 +18,7 @@ Three handlers are covered, all with API-shape-faithful fixtures (no live glab):
 import argparse
 
 import gitlab_ops
+from _ci_wait_contract import _ok_auth
 
 
 def _mq_ns(*, pr_number=42, head=None, strategy='merge', delete_branch=False):
@@ -27,7 +28,7 @@ def _mq_ns(*, pr_number=42, head=None, strategy='merge', delete_branch=False):
 
 
 def _install_common(monkeypatch):
-    monkeypatch.setattr(gitlab_ops, 'check_auth', lambda: (True, ''))
+    monkeypatch.setattr(gitlab_ops, 'check_auth', _ok_auth)
     monkeypatch.setattr(gitlab_ops, 'get_project_path', lambda: 'group/repo')
 
 

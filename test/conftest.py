@@ -192,6 +192,7 @@ import run_config as _run_config  # noqa: F401, E402
 _TEST_HELPER_DIRS = [
     str(TEST_ROOT / 'plan-marshall'),
     str(TEST_ROOT / 'pm-plugin-development'),
+    str(TEST_ROOT / '_shared'),
 ]
 for _helper_dir in _TEST_HELPER_DIRS:
     if _helper_dir not in sys.path:
@@ -357,6 +358,33 @@ def get_scripts_dir(bundle: str, skill: str) -> Path:
     scripts_dir = MARKETPLACE_ROOT / bundle / 'skills' / skill / 'scripts'
     if not scripts_dir.is_dir():
         raise FileNotFoundError(f'Scripts dir not found: {scripts_dir}')
+    return scripts_dir
+
+
+def add_skill_scripts_to_path(bundle: str, skill: str) -> Path:
+    """Put a skill's ``scripts/`` directory on ``sys.path`` (idempotent).
+
+    The narrow escape hatch for helper modules that :func:`load_script_module`
+    cannot serve: a cluster of sibling scripts that reference **each other by
+    bare name at import time**. Loading such a module by file location leaves
+    its siblings unresolvable, so the directory itself must be importable.
+
+    Prefer :func:`load_script_module` everywhere else — it needs no path
+    mutation and keeps resolution keyed to ``(bundle, skill, script_file)``.
+
+    Args:
+        bundle: Bundle name (e.g., ``'plan-marshall'``).
+        skill: Skill name (e.g., ``'plan-marshall'``).
+
+    Returns:
+        The scripts directory that is now on ``sys.path``.
+
+    Raises:
+        FileNotFoundError: when the resolved scripts directory does not exist.
+    """
+    scripts_dir = get_scripts_dir(bundle, skill)
+    if str(scripts_dir) not in sys.path:
+        sys.path.insert(0, str(scripts_dir))
     return scripts_dir
 
 
@@ -609,22 +637,6 @@ def _pollution_guard(request):
             'mark with @pytest.mark.allow_pollution if the real-tree write is '
             'intentional.'
         )
-
-
-def pytest_configure(config):
-    """Register markers used by the isolation fixtures and pollution guard."""
-    config.addinivalue_line(
-        'markers',
-        'allow_pollution: test may legitimately mutate the real '
-        '~/.plan-marshall/credentials/ directory or the tracked .plan/ tree '
-        '(opts out of the autouse PLAN_BASE_DIR and CREDENTIALS_DIR sandboxes '
-        'and the pollution guard).',
-    )
-    config.addinivalue_line(
-        'markers',
-        'xdist_group(name): pin all tests sharing the same group name to a '
-        'single xdist worker (requires --dist=loadgroup).',
-    )
 
 
 @pytest.fixture(autouse=True)

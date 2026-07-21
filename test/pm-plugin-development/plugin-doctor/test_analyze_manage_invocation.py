@@ -52,6 +52,8 @@ import pytest
 
 from conftest import load_script_module
 
+from _fixtures import assert_analyzer_findings
+
 # ---------------------------------------------------------------------------
 # Module loader — load the analyzer directly from the marketplace scripts dir.
 # Underscore-prefixed analyzers are not importable through the executor, so we
@@ -1198,7 +1200,13 @@ class TestMissingCanonicalBlock:
         self, tmp_path: Path
     ) -> None:
         marketplace_root = _build_synthetic_marketplace(tmp_path)
-        findings = check_missing_canonical_blocks(marketplace_root)
+        # Exactly two findings, and both carry the canonical-block rule code —
+        # the shared scaffold pins the rule identity alongside the count.
+        findings = assert_analyzer_findings(
+            check_missing_canonical_blocks,
+            marketplace_root,
+            [RULE_MISSING_CANONICAL_BLOCK] * 2,
+        )
         flagged = {f['details']['notation'] for f in findings}
         # manage-config and plan-doctor lack the section; the rest of the
         # in-scope set carries it.
@@ -1207,7 +1215,6 @@ class TestMissingCanonicalBlock:
             'plan-marshall:plan-doctor:plan_doctor',
         }
         for f in findings:
-            assert f['rule_id'] == RULE_MISSING_CANONICAL_BLOCK
             assert f['severity'] == 'warning'
             assert f['details']['reason'] == 'missing_canonical_block'
             assert 'canonical_hint' in f['details']
@@ -1220,8 +1227,7 @@ class TestMissingCanonicalBlock:
             bundles_dir, 'plan-marshall', 'manage-status', 'manage-status.py',
             source=_minimal_argparse_source(), canonical_block=True,
         )
-        findings = check_missing_canonical_blocks(marketplace_root)
-        assert findings == []
+        assert_analyzer_findings(check_missing_canonical_blocks, marketplace_root, [])
 
     def test_block_heading_is_case_insensitive(self, tmp_path: Path) -> None:
         marketplace_root = tmp_path / 'mp'
@@ -1235,8 +1241,7 @@ class TestMissingCanonicalBlock:
             '# Skill\n\n## canonical INVOCATIONS\n\n### run\n',
             encoding='utf-8',
         )
-        findings = check_missing_canonical_blocks(marketplace_root)
-        assert findings == []
+        assert_analyzer_findings(check_missing_canonical_blocks, marketplace_root, [])
 
     def test_excluded_skill_not_flagged_for_missing_block(
         self, tmp_path: Path
@@ -1249,8 +1254,7 @@ class TestMissingCanonicalBlock:
             bundles_dir, 'plan-marshall', 'script-shared', 'helpers.py',
             source=_minimal_argparse_source(), canonical_block=False,
         )
-        findings = check_missing_canonical_blocks(marketplace_root)
-        assert findings == []
+        assert_analyzer_findings(check_missing_canonical_blocks, marketplace_root, [])
 
 
 # ---------------------------------------------------------------------------
@@ -1449,8 +1453,7 @@ class TestMarketplaceAggregator:
             source=_minimal_argparse_source(), canonical_block=True,
         )
         _attach_executor_to_synthetic_marketplace(marketplace_root)
-        findings = scan_manage_invocation(marketplace_root)
-        assert findings == []
+        assert_analyzer_findings(scan_manage_invocation, marketplace_root, [])
 
 
 # ---------------------------------------------------------------------------
