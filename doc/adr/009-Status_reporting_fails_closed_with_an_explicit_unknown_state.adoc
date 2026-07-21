@@ -8,8 +8,8 @@
 // Structure"). Read by `manage-adr.py scan` so a caller can assess an ADR's
 // relevance without reading the full file. List fields are comma-separated.
 // summary: A version-based staleness report fails closed — an unresolvable installed manifest yields a distinct unknown verdict plus a legible warning, never a vacuously-fresh positive it cannot substantiate.
-// tags: marshal-status, staleness, fail-closed, preflight, provisioning, contract
-// affects: plan-marshall, tools-script-executor, marshall-steward, manage-config
+// tags: marshal-status, staleness, fail-closed, preflight, provisioning, contract, scope-limited-enumeration
+// affects: plan-marshall, tools-script-executor, marshall-steward, manage-config, manage-locks, manage-status
 // supersedes:
 // end-adr-metadata
 
@@ -138,3 +138,11 @@ as a first-class value — never fold it into the positive.
   of every provisioning write + status site across the steward / manage-config /
   executor-provisioning surface, each with a fix-or-justify disposition against
   the two failure shapes (silent-success write, vacuous-safe verdict).
+* `manage-locks` `standards/scope-limited-negative-is-unknown.md` — the
+  scope-limited-enumeration generalization of this ADR: an empty result from a
+  scope that could not have observed the subject is `unknown`, not `absent`.
+  Realized in code by `_locks_core.holder_staleness` and the fail-closed
+  `merge_lock release --require-stale`.
+* `manage-locks` `standards/cwd-keyed-store-resolution-audit.md` — the
+  fix-or-justify enumeration of every CWD-keyed store-resolution site against that
+  scope-limited-negative failure shape.

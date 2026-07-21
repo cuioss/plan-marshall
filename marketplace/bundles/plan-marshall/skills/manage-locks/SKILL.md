@@ -160,6 +160,16 @@ consumer. It exposes:
   an orphaned shell now permits auto-reclaim while a genuine mid-recovery worktree
   stays protected. Anchored at main (cwd-independent) exactly like
   `holder_is_dead`; an empty/malformed holder → False.
+- `holder_staleness(holder, project_root=None)` — the main-anchored three-valued
+  staleness verdict (`fresh` / `stale` / `unknown`) that the manual-release recovery
+  path consults instead of a cwd-scoped enumeration. It composes the two predicates
+  above, consulting ONLY main-anchored paths: `fresh` when the holder is alive or
+  mid-recovery (a live worktree present), `stale` only when main-anchored-dead AND
+  no live worktree, and `unknown` when the main-anchored `.plan/local` base cannot be
+  resolved — surfaced explicitly, NEVER swallowed as `stale` (ADR-009 fail-closed).
+  It is the guard against the sibling-worktree misjudgement: a holder live in a
+  DIFFERENT worktree reads `fresh` regardless of the querying cwd, so it is never
+  force-released. See [scope-limited-negative-is-unknown.md](standards/scope-limited-negative-is-unknown.md).
 - `rmw_json(path, mutate)` — the TOCTOU-safe read-modify-write helper for JSON
   state files. It is path-agnostic: the CALLER resolves the path (main-anchored
   for the merge queue, machine-global under `home_root()` for the build queue). It
@@ -242,12 +252,28 @@ python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock check \
   --plan-id PLAN_ID
 ```
 
+A non-mutating holder read: `status: free` when no lock file exists, or
+`status: held` + `holder_plan_id` when one does. On the `held` branch it also
+surfaces a `staleness` field (`fresh` / `stale` / `unknown`, from
+`holder_staleness`) — the authoritative main-anchored verdict the manual-release
+recovery recipe consults instead of a cwd-scoped `manage-status list` /
+`worktree-list` enumeration.
+
 ### merge_lock — release
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock release \
-  --plan-id PLAN_ID [--no-title-token]
+  --plan-id PLAN_ID [--require-stale] [--no-title-token]
 ```
+
+By default `release` is the unconditional self-holder release (removes the lock
+only when this caller is the recorded holder; idempotent no-op otherwise). With
+`--require-stale` it becomes a fail-closed recovery release: the removal is
+CONDITIONAL on the recorded holder's `holder_staleness` verdict — it evicts only a
+provably `stale` holder (through the observed-file eviction arbitration, never a
+blind unlink) and REFUSES (`status: refused`, `reason: holder_not_provably_dead`)
+on a `fresh` or `unknown` verdict, so a holder live in a sibling worktree (the #948
+shape) is never force-released.
 
 ### build_queue — acquire
 
@@ -272,6 +298,11 @@ python3 .plan/execute-script.py plan-marshall:manage-locks:build_queue release \
 | build wrappers (`_build_execute_factory`, `_pyproject_execute`) | consume | `build_queue acquire`/`release` around `execute_direct` — the in-process fallback path (unregistered / daemon-down) |
 | `manage-build-server:_marshalld_scheduler` (via the D5 routing seam) | consumes | the same machine-global `build-queue.json` — the registered path (daemon-served builds) |
 | `_locks_core.rmw_json` | consumed by | both `build_queue` (`build-queue.json`) and `merge_lock` (`merge-queue.json` FIFO layer) |
+
+## Standards
+
+- [scope-limited-negative-is-unknown.md](standards/scope-limited-negative-is-unknown.md) — the structural encoding of the invariant "an empty result from a scope that could not have observed the subject is `unknown`, not `absent`", the scope-limited-enumeration generalization of ADR-009 that `holder_staleness` + `release --require-stale` realize in code.
+- [cwd-keyed-store-resolution-audit.md](standards/cwd-keyed-store-resolution-audit.md) — the fix-or-justify enumeration of every CWD-keyed store-resolution site against that invariant.
 
 ## Related
 
