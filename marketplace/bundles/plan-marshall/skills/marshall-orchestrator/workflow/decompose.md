@@ -29,6 +29,11 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read \
 
 Read `epic.md` (Vision, any existing queue) via the Read tool. Decomposition is re-entrant: an existing queue is extended and reconciled, never blindly overwritten.
 
+The source-material read completes here and the judgement work begins, so this is where the [Dispatch Decision Rule](../../persona-marshall-orchestrator/standards/orchestration-model.md#dispatch-decision-rule) draws its seam.
+
+- **Dispatchable** — the **on-disk half** of the source-material corpus read, the candidate workstream/plan **mapping**, and the prior-art / collision search across the existing queue and the repo surfaces the epic touches, when the corpus is large enough to clear the depth test. The Inputs table above defines source material as pasted content, on-disk documents, or both; the dispatchable corpus is the on-disk documents ONLY. Dispatch as ONE envelope that iterates internally — never one per candidate plan. Vehicle is `execution-context-{level}` under the S1 read-only instruction. Return shape: `candidates[N]{workstream_slug,plan_slug,expected_surface,rationale}` and `collisions[M]{plan_a,plan_b,overlap}`. The return is a **proposal the orchestrator adjudicates**, never a decision it applies.
+- **Inline-only** — the operator's pasted source material (the rule's already-in-context clause); the Step 3 workstream cuts and the Step 4 scope-bloat split-guard verdicts, which fail **fork-freedom**; and the Step 5 queue writes and phase advance, the Step 6 `epic.md` reconciliation and START-HERE regeneration, and the Step 7 decision logging and resume-anchor write, which fail **write-freedom**. Any operator escalation is likewise inline.
+
 ### Step 3: Cut workstreams
 
 Partition the epic into workstreams — coherent slices with their own charter (a surface, a theme, a dependency chain). For each workstream, instantiate `workstreams/WS-NN-{ws_slug}.md` from [`templates/workstream.md`](../templates/workstream.md) via the Write tool. A single-plan workstream is legitimate; the tier exists for grouping and charter, not mandatory fan-out.
