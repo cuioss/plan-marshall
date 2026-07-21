@@ -31,6 +31,7 @@ from _build_result import (
     ERROR_EXECUTION_FAILED,
     ERROR_LOG_FILE_FAILED,
     DirectCommandResult,
+    assert_truthful_status,
     error_result,
     success_result,
     timeout_result,
@@ -161,8 +162,15 @@ def cmd_parse_common(
         issues = [i for i in issues if extra_filters[mode](i)]
 
     summary = generate_summary_from_issues(issues)
+    # Fail-closed truthful-status derivation (ADR-009): a BUILD SUCCESS marker is
+    # not sufficient on its own. Surefire can print `BUILD SUCCESS` alongside a
+    # `Tests run: N, Failures: 0, Errors: M>0` summary (testFailureIgnore /
+    # reactor --fail-never), and detect_build_status only flags failure markers.
+    # Resolve to error when the build did not succeed OR any test failed, so an
+    # indeterminate outcome never reports success.
+    tests_failed = test_summary is not None and test_summary.failed > 0
     result = {
-        'status': 'success' if build_status == 'SUCCESS' else 'error',
+        'status': 'success' if (build_status == 'SUCCESS' and not tests_failed) else 'error',
         'data': {
             'build_status': build_status,
             'issues': [i.to_dict() for i in issues],
@@ -173,6 +181,10 @@ def cmd_parse_common(
             'tests_failed': test_summary.failed if test_summary else 0,
         },
     }
+
+    # Fail-closed guard: never emit an untruthful success (success over a
+    # non-zero exit code) from the parse choke point.
+    assert_truthful_status(result)
 
     fmt = getattr(args, 'format', None) or output_format
     if fmt == 'toon':
@@ -541,22 +553,50 @@ def cmd_run_common(
 
     # Success case
     if result['status'] == 'success':
-        # Terminalize any pending build findings from a prior failing run:
-        # the build is now green, so build-error / test-failure / lint-issue
-        # findings are stale and must be bulk-resolved before returning.
-        if plan_id:
-            try:
-                _reconcile_pending_build_findings(plan_id=plan_id, command_str=command_str)
-            except Exception as e:
-                print(f"[WARNING] Failed to reconcile pending build findings: {e}", file=sys.stderr)
+        # Fail-closed truthful-status cross-check (ADR-009): a zero exit code is
+        # not sufficient to declare success. Surefire testFailureIgnore and a
+        # reactor --fail-never can exit 0 while tests errored, so parse the log
+        # and downgrade to the build-failure path when any test failed — an
+        # exit-0-with-test-errors run reports error, never success. A genuine
+        # BUILD FAILURE already carries a non-zero exit and never reaches here.
+        try:
+            if parser_needs_command:
+                _, test_summary, _ = parser_fn(log_file, command_str)
+            else:
+                _, test_summary, _ = parser_fn(log_file)
+        except Exception as parse_err:
+            print(f'[WARNING] Truthful-status cross-check parse failed: {parse_err}', file=sys.stderr)
+            test_summary = None
 
-        success_output = success_result(
-            duration_seconds=result['duration_seconds'],
-            log_file=log_file,
-            command=command_str,
+        if test_summary is None or test_summary.failed == 0:
+            # Genuine success — terminalize any pending build findings from a
+            # prior failing run: the build is now green, so build-error /
+            # test-failure / lint-issue findings are stale and must be
+            # bulk-resolved before returning.
+            if plan_id:
+                try:
+                    _reconcile_pending_build_findings(plan_id=plan_id, command_str=command_str)
+                except Exception as e:
+                    print(f"[WARNING] Failed to reconcile pending build findings: {e}", file=sys.stderr)
+
+            success_output = success_result(
+                duration_seconds=result['duration_seconds'],
+                log_file=log_file,
+                command=command_str,
+                exit_code=result['exit_code'],
+            )
+            # Fail-closed guard: never emit an untruthful success (success over a
+            # non-zero exit code) from the run choke point.
+            assert_truthful_status(success_output)
+            print(formatter(success_output))
+            return 0
+
+        # Erroring tests over a zero exit code — fall through to the
+        # build-failure path below so the emitted result reports error.
+        print(
+            f'[EXEC] truthful-status: {test_summary.failed} failed test(s) over exit 0 — reporting error',
+            file=sys.stderr,
         )
-        print(formatter(success_output))
-        return 0
 
     # Build failed - parse the log file for errors
     try:

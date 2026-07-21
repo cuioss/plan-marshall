@@ -347,3 +347,40 @@ def validate_result(result: dict) -> tuple[bool, list]:
 
     missing = sorted(field for field in REQUIRED_FIELDS if field not in result)
     return len(missing) == 0, missing
+
+
+class TruthfulStatusError(AssertionError):
+    """Raised when a result claims success while holding a non-zero exit code.
+
+    Fail-closed invariant (ADR-009): a build result must never advertise
+    ``status='success'`` while carrying a non-zero ``exit_code``. That
+    combination is the exact "reports success while holding a non-zero return
+    code" reintroduction the truthful-status guard exists to prevent.
+    """
+
+
+def assert_truthful_status(result: dict) -> None:
+    """Assert a result never claims success over a non-zero exit code.
+
+    Pure invariant check on a constructed result dict — it inspects, never
+    mutates. Raises :class:`TruthfulStatusError` when ``result['status']`` is
+    ``'success'`` while ``result['exit_code']`` is a non-zero integer, so any
+    caller that assembles an untruthful success result fails loudly at the emit
+    choke point rather than reporting green. A non-success result, a success
+    result with ``exit_code == 0``, an absent ``exit_code`` key, or an explicit
+    ``exit_code`` of ``None`` (an indeterminate value, treated safely) all pass
+    silently. Mirrors the PLAN-13 #950 D4 fail-closed provisioning-write pattern.
+
+    Args:
+        result: The constructed result dict about to be emitted.
+
+    Raises:
+        TruthfulStatusError: When status is success but exit_code != 0.
+    """
+    exit_code = result.get('exit_code')
+    if result.get('status') == STATUS_SUCCESS and exit_code is not None and exit_code != 0:
+        raise TruthfulStatusError(
+            f"truthful-status violation: result reports status='success' with "
+            f"exit_code={result.get('exit_code')!r} (expected 0); "
+            f"command={result.get('command')!r}"
+        )

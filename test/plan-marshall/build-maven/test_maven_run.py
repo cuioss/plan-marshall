@@ -108,6 +108,44 @@ def test_run_failure_with_compilation_errors():
 
 
 # =============================================================================
+# Truthful-status regression (seam a): status derived from the real outcome
+# =============================================================================
+
+
+def test_run_build_failure_reports_error_and_nonzero_exit_code():
+    """Seam (a): a genuine BUILD FAILURE (non-zero mvnw exit) reports
+    status=error with a non-zero exit_code — never an untruthful success.
+
+    The in-process foundation already derives error from the non-zero
+    returncode; this regression locks that path so the truthful-status fix
+    cannot inadvertently soften it.
+    """
+    with mock_maven_project('mvnw-failure.sh') as temp_dir:
+        result = run_script(SCRIPT_PATH, 'run', '--command-args', 'clean test', cwd=temp_dir)
+
+        data = result.toon()
+        assert data.get('status') == 'error', f'BUILD FAILURE must report error: {data}'
+        assert int(data.get('exit_code')) != 0, f'exit_code must be non-zero on BUILD FAILURE: {data}'
+
+
+def test_run_testfailureignore_exit0_reports_error():
+    """Seam (a): an exit-0 run whose log shows erroring tests (surefire
+    testFailureIgnore / reactor --fail-never) is downgraded to status=error.
+
+    Maven exits 0 and prints BUILD SUCCESS, but the test summary reports
+    Errors > 0. Trusting returncode==0 would emit an untruthful success; the
+    fail-closed cross-check must report error instead.
+    """
+    with mock_maven_project('mvnw-testfailureignore.sh') as temp_dir:
+        result = run_script(SCRIPT_PATH, 'run', '--command-args', 'clean test', cwd=temp_dir)
+
+        data = result.toon()
+        assert data.get('status') == 'error', (
+            f'exit-0-with-test-errors must report error, not untruthful success: {data}'
+        )
+
+
+# =============================================================================
 # Mode Parameter Tests
 # =============================================================================
 
