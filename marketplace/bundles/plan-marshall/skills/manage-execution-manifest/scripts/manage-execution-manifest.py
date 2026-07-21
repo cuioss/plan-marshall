@@ -122,7 +122,7 @@ from _manifest_validation import (
     _resolve_standards_path,  # noqa: F401
     _resolve_step_order,  # noqa: F401
     _sort_steps_by_frontmatter_order,  # noqa: F401
-    check_emitted_steps_canonical,  # noqa: F401
+    check_emitted_steps_canonical,
     check_emitted_steps_resolvable,  # noqa: F401
     cmd_step_params_get,  # noqa: F401
     cmd_step_params_set,  # noqa: F401

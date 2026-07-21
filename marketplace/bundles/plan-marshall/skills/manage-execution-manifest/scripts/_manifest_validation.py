@@ -778,12 +778,16 @@ def cmd_validate(args: argparse.Namespace) -> dict[str, Any] | None:
     p6_unknown: list[str] = []
     if args.phase_5_steps is not None:
         allowed_5 = {canonicalize_step_key(s) for s in _split_csv(args.phase_5_steps, ())}
-        p5_unknown = [s for s in p5_steps if canonicalize_step_key(s) not in allowed_5]
+        p5_unknown = [
+            s for s in p5_steps if not isinstance(s, str) or canonicalize_step_key(s) not in allowed_5
+        ]
         if p5_unknown:
             errors.append(f'phase_5.verification_steps contains unknown IDs: {p5_unknown}')
     if args.phase_6_steps is not None:
         allowed_6 = {canonicalize_step_key(s) for s in _split_csv(args.phase_6_steps, ())}
-        p6_unknown = [s for s in p6_steps if canonicalize_step_key(s) not in allowed_6]
+        p6_unknown = [
+            s for s in p6_steps if not isinstance(s, str) or canonicalize_step_key(s) not in allowed_6
+        ]
         if p6_unknown:
             errors.append(f'phase_6.steps contains unknown IDs: {p6_unknown}')
 

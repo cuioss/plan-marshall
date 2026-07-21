@@ -50,14 +50,28 @@ def test_promoted_alias_map_is_the_documented_pair():
     assert PROMOTED_BUILTIN_STEP_IDS == {'plan-marshall:automatic-review': 'automatic-review'}
 
 
-def test_promoted_alias_takes_precedence_over_default_strip():
-    """The promoted-alias map is consulted before the ``default:`` strip.
+def test_default_strip_precedes_promoted_alias_map():
+    """The ``default:`` strip is applied BEFORE the promoted-alias map lookup.
 
-    A promoted id has no ``default:`` prefix, so this pins the ORDER: the alias
-    map wins, and the result is the bare built-in name, not a default-stripped
-    variant of the bundle id.
+    This pins the ORDER: stripping first lets a doubly-prefixed
+    ``default:plan-marshall:automatic-review`` reduce to the bare bundle id, which
+    then hits the alias map and resolves to the bare built-in name — all in a
+    single call.
     """
-    assert canonicalize_step_key('plan-marshall:automatic-review') == 'automatic-review'
+    assert canonicalize_step_key('default:plan-marshall:automatic-review') == 'automatic-review'
+
+
+def test_doubly_prefixed_promoted_alias_resolves_in_one_call():
+    """A ``default:``-prefixed promoted-alias id fully resolves in a single call.
+
+    Regression for the non-idempotence flagged on PR #961: with the map checked
+    before the strip, ``default:plan-marshall:automatic-review`` only reduced to
+    ``plan-marshall:automatic-review`` and needed a second call. Stripping first
+    resolves it to ``automatic-review`` in one pass.
+    """
+    once = canonicalize_step_key('default:plan-marshall:automatic-review')
+    assert once == 'automatic-review'
+    assert canonicalize_step_key(once) == once
 
 
 def test_is_idempotent_fixed_point_on_canonical_input():
@@ -68,6 +82,7 @@ def test_is_idempotent_fixed_point_on_canonical_input():
         'project:finalize-step-plugin-doctor',
         'plan-marshall:plan-retrospective',
         'plan-marshall:automatic-review',
+        'default:plan-marshall:automatic-review',
         'verify:module-tests',
     ):
         once = canonicalize_step_key(step)

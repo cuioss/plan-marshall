@@ -115,14 +115,18 @@ def cmd_assert_step_recorded(args: argparse.Namespace) -> dict | None:
     phase_steps: dict[str, Any] = metadata.get('phase_steps') or {}
     phase_entry: dict[str, Any] = phase_steps.get(phase) or {}
 
-    # Match by canonical key: canonicalize each stored key when scanning so a
-    # ``default:``-prefixed stored key reconciles with a bare query (and vice
-    # versa) as a canonical MATCH rather than a tolerated near-miss.
-    matched_entry: Any = None
-    for stored_key, stored_entry in phase_entry.items():
-        if canonicalize_step_key(stored_key) == step:
-            matched_entry = stored_entry
-            break
+    # Prefer an exact match under the canonical key first so a fresher canonical
+    # write always wins over a stale legacy (e.g. ``default:``-prefixed) entry that
+    # a pre-migration run may have inserted earlier in the insertion-ordered dict.
+    # Only when the exact key is absent do we fall back to the canonicalized scan,
+    # which reconciles a ``default:``-prefixed stored key with a bare query (and
+    # vice versa) as a canonical MATCH rather than a tolerated near-miss.
+    matched_entry: Any = phase_entry.get(step)
+    if matched_entry is None:
+        for stored_key, stored_entry in phase_entry.items():
+            if canonicalize_step_key(stored_key) == step:
+                matched_entry = stored_entry
+                break
     outcome = _terminal_outcome(matched_entry)
     recorded = outcome is not None
 

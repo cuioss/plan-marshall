@@ -124,7 +124,20 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
     phase_steps: dict[str, Any] = metadata.setdefault('phase_steps', {})
     phase_entry: dict[str, Any] = phase_steps.setdefault(phase, {})
 
+    # Prefer an exact match under the canonical key. When it misses, fall back to
+    # a canonicalized-match scan so a stale legacy (pre-migration) key such as
+    # ``default:push`` is still located when the caller writes the canonical
+    # ``push``. Tracking ``existing_key`` lets the conflict check fire against the
+    # true existing outcome AND lets the write below pop the stale key so a
+    # duplicate legacy-vs-canonical pair never survives a re-run.
     existing = phase_entry.get(step)
+    existing_key: str | None = step if existing is not None else None
+    if existing is None:
+        for stored_key, stored_entry in phase_entry.items():
+            if canonicalize_step_key(stored_key) == step:
+                existing = stored_entry
+                existing_key = stored_key
+                break
 
     if isinstance(existing, str) and not args.force:
         return {
@@ -171,6 +184,8 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
             or existing_head != head_at_completion
             or existing_loop_back_target != loop_back_target
         ):
+            if existing_key is not None and existing_key != step:
+                phase_entry.pop(existing_key, None)
             phase_entry[step] = new_entry
             write_status(args.plan_id, status)
             return {
@@ -213,6 +228,8 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
         previous_head = existing.get('head_at_completion')
         previous_loop_back_target = existing.get('loop_back_target')
 
+    if existing_key is not None and existing_key != step:
+        phase_entry.pop(existing_key, None)
     phase_entry[step] = new_entry
     write_status(args.plan_id, status)
 

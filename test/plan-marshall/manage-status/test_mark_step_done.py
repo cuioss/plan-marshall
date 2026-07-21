@@ -654,3 +654,101 @@ def test_mark_step_project_prefixed_records_under_verbatim_key(plan_context):
     assert phase_steps == {
         'project:finalize-step-plugin-doctor': {'outcome': 'done', 'display_detail': None}
     }
+
+
+# =============================================================================
+# Stale legacy-key duplicate migration (PR #961 shadowing defect)
+#
+# A pre-migration run may have persisted a ``default:``-prefixed key directly.
+# A later canonical write must locate that stale key via the canonicalized
+# fallback scan (so the conflict check fires against the true existing outcome)
+# AND pop it on write, so a legacy-vs-canonical duplicate never survives.
+# =============================================================================
+
+
+def test_mark_step_migrates_stale_legacy_key_on_detail_refresh(plan_context):
+    """A detail-refresh write over a stale ``default:push`` key pops the legacy key.
+
+    Regression for PR #961: before the fix, ``get('push')`` missed the
+    pre-migration ``default:push`` key, so the write added a NEW ``push`` key
+    alongside the OLD ``default:push``, leaving a duplicate. The canonicalized
+    fallback scan now finds the stale key and the write pops it — exactly one
+    canonical entry survives.
+    """
+    plan_id = 'mark-step-legacy-migrate'
+    _make_plan(plan_id)
+    status = read_status(plan_id)
+    status.setdefault('metadata', {})['phase_steps'] = {
+        '6-finalize': {'default:push': {'outcome': 'done', 'display_detail': 'old'}}
+    }
+    write_status(plan_id, status)
+
+    result = cmd_mark_step_done(_args(plan_id, '6-finalize', 'push', 'done', display_detail='new'))
+
+    assert result['status'] == 'success'
+    assert result['changed'] is True
+    assert result['step'] == 'push'
+    assert result['previous_display_detail'] == 'old'
+
+    persisted = read_status(plan_id)
+    phase_steps = persisted['metadata']['phase_steps']['6-finalize']
+    # Exactly one entry under the bare key — the stale legacy key was popped.
+    assert phase_steps == {'push': {'outcome': 'done', 'display_detail': 'new'}}
+    assert 'default:push' not in phase_steps
+
+
+def test_mark_step_conflict_fires_against_stale_legacy_key(plan_context):
+    """A differing-outcome write over a stale ``default:push`` key raises conflict.
+
+    Before the fix the stale key was invisible to ``get('push')``, so the conflict
+    check was silently bypassed and a divergent duplicate was written. The fallback
+    scan now surfaces the true existing outcome so the conflict fires.
+    """
+    plan_id = 'mark-step-legacy-conflict'
+    _make_plan(plan_id)
+    status = read_status(plan_id)
+    status.setdefault('metadata', {})['phase_steps'] = {
+        '6-finalize': {'default:push': {'outcome': 'done', 'display_detail': 'kept'}}
+    }
+    write_status(plan_id, status)
+
+    result = cmd_mark_step_done(_args(plan_id, '6-finalize', 'push', 'skipped'))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'conflict'
+    assert result['existing_outcome'] == 'done'
+    assert result['requested_outcome'] == 'skipped'
+
+    # No divergent duplicate written — the stale legacy entry is untouched.
+    persisted = read_status(plan_id)
+    phase_steps = persisted['metadata']['phase_steps']['6-finalize']
+    assert phase_steps == {'default:push': {'outcome': 'done', 'display_detail': 'kept'}}
+    assert 'push' not in phase_steps
+
+
+def test_mark_step_force_overwrites_stale_legacy_key_without_duplicate(plan_context):
+    """A ``--force`` differing-outcome write over a stale ``default:push`` key pops it.
+
+    The final-write branch pops the located stale key before storing the new
+    canonical entry, so the force overwrite leaves exactly one canonical entry.
+    """
+    plan_id = 'mark-step-legacy-force'
+    _make_plan(plan_id)
+    status = read_status(plan_id)
+    status.setdefault('metadata', {})['phase_steps'] = {
+        '6-finalize': {'default:push': {'outcome': 'done', 'display_detail': 'old'}}
+    }
+    write_status(plan_id, status)
+
+    result = cmd_mark_step_done(
+        _args(plan_id, '6-finalize', 'push', 'skipped', force=True, display_detail='new')
+    )
+
+    assert result['status'] == 'success'
+    assert result['changed'] is True
+    assert result['previous_outcome'] == 'done'
+
+    persisted = read_status(plan_id)
+    phase_steps = persisted['metadata']['phase_steps']['6-finalize']
+    assert phase_steps == {'push': {'outcome': 'skipped', 'display_detail': 'new'}}
+    assert 'default:push' not in phase_steps

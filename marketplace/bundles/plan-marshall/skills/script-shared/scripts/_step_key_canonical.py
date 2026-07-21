@@ -11,12 +11,17 @@ variant reconciles to the same canonical key.
 
 Canonicalization has two composed operations, applied in order:
 
-1. **Promoted built-in alias map** — a ``{bundle}:{skill}`` id that was promoted
+1. **Default-prefix strip** — a leading ``default:`` prefix is stripped to the
+   bare manifest key (``default:push`` → ``push``).
+2. **Promoted built-in alias map** — a ``{bundle}:{skill}`` id that was promoted
    out of a former built-in finalize doc into a top-level bundle skill
    (:data:`PROMOTED_BUILTIN_STEP_IDS`) maps to its bare built-in name
    (``plan-marshall:automatic-review`` → ``automatic-review``).
-2. **Default-prefix strip** — a leading ``default:`` prefix is stripped to the
-   bare manifest key (``default:push`` → ``push``).
+
+Applying the strip before the map lookup makes the resolver idempotent in a
+single call even for a doubly-prefixed input such as
+``default:plan-marshall:automatic-review``, which strips to
+``plan-marshall:automatic-review`` and then maps to ``automatic-review``.
 
 Every other id — ``project:`` steps, genuinely opt-in ``{bundle}:{skill}`` steps
 (e.g. ``plan-marshall:plan-retrospective``) — is preserved verbatim so the
@@ -49,14 +54,16 @@ _DEFAULT_PREFIX = 'default:'
 def canonicalize_step_key(step: str) -> str:
     """Return the canonical (bare) manifest key for a step id.
 
-    First maps a promoted built-in-equivalent bundle step id
-    (:data:`PROMOTED_BUILTIN_STEP_IDS`) to its bare name, then strips a leading
-    ``default:`` prefix. ``project:`` and other ``{bundle}:{skill}`` ids are
-    preserved verbatim. The function is idempotent — a fixed point on an
+    First strips a leading ``default:`` prefix, then maps a promoted built-in-
+    equivalent bundle step id (:data:`PROMOTED_BUILTIN_STEP_IDS`) to its bare
+    name. ``project:`` and other ``{bundle}:{skill}`` ids are preserved
+    verbatim. Stripping before the map lookup makes the function idempotent in a
+    single call for a doubly-prefixed input (``default:plan-marshall:automatic-
+    review`` → ``automatic-review``) as well as a fixed point on an
     already-canonical input.
     """
+    if step.startswith(_DEFAULT_PREFIX):
+        step = step[len(_DEFAULT_PREFIX) :]
     if step in PROMOTED_BUILTIN_STEP_IDS:
         return PROMOTED_BUILTIN_STEP_IDS[step]
-    if step.startswith(_DEFAULT_PREFIX):
-        return step[len(_DEFAULT_PREFIX) :]
     return step

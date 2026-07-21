@@ -466,6 +466,41 @@ def test_near_miss_message_names_both_keys(plan_context):
     assert 'plan-retrospective' in result['message']
 
 
+# =============================================================================
+# Legacy-vs-canonical duplicate: the fresher canonical write must win over a
+# stale legacy (``default:``-prefixed) key inserted earlier in the dict.
+# =============================================================================
+
+
+def test_canonical_exact_match_wins_over_stale_legacy_prefixed_key(plan_context):
+    """When both a stale legacy ``default:push`` key and a fresh canonical ``push``
+    key are present (legacy inserted first, per dict insertion order), the read
+    side must prefer the exact canonical match and report the FRESH outcome, not
+    the stale legacy one the ordered scan would hit first.
+
+    Regression for the shadowing defect flagged on PR #961: the prior scan broke
+    on the first canonical match, so the earlier-inserted ``default:push`` entry
+    (a pre-migration write) shadowed the newer ``push`` write.
+    """
+    plan_id = 'assert-legacy-shadow'
+    _make_plan(plan_id)
+    status = read_status(plan_id)
+    # Insertion order: stale legacy key first, fresh canonical key second.
+    status.setdefault('metadata', {})['phase_steps'] = {
+        '6-finalize': {
+            'default:push': {'outcome': 'failed', 'display_detail': 'stale legacy'},
+            'push': {'outcome': 'done', 'display_detail': 'fresh canonical'},
+        }
+    }
+    write_status(plan_id, status)
+
+    result = cmd_assert_step_recorded(_assert_args(plan_id, '6-finalize', 'push', require_terminal=True))
+
+    assert result['status'] == 'success'
+    assert result['recorded'] is True
+    assert result['outcome'] == 'done'
+
+
 def test_non_terminal_near_miss_does_not_escalate_to_mismatched_key(plan_context):
     """A near-miss orphan whose outcome is NON-terminal must NOT trigger the
     mismatched-key branch — only a terminal orphan record counts as a near-miss.

@@ -254,7 +254,7 @@ Apply throughout all subsequent steps:
 
       ```bash
       python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build resolve-test-scope \
-        --changed-paths {changed_paths} --plan-id {plan_id}
+        --changed-paths "{changed_paths}" --plan-id "{plan_id}"
       ```
 
       Parse `scoped_modules[]`, `recommended_target`, and `divergence_possible` from the TOON.
