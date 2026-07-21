@@ -25,6 +25,8 @@ via the root conftest's marketplace PYTHONPATH setup.
 import argparse
 import json
 
+import pytest
+
 from conftest import load_script_module
 
 github_pr = load_script_module('plan-marshall', 'workflow-integration-github', 'github_pr.py', 'github_pr')
@@ -327,6 +329,249 @@ def test_pipeline_trigger_and_rate_limit_notice_dropped(plan_context, monkeypatc
     assert 'comment_id: genuine-1' in detail
     assert 'comment_id: trigger-1' not in detail
     assert 'comment_id: ratelimit-1' not in detail
+
+
+# =============================================================================
+# Bot-agnostic rate-limit / service-notice recognizer (github_pr._is_rate_limit_notice)
+# =============================================================================
+#
+# Both directions are covered per bot shape. The false-negative direction — a
+# genuine reviewer comment that merely MENTIONS a rate limit must NOT be dropped —
+# is the real hazard, so it is asserted per bot shape alongside the drop cases.
+
+# Rate-limit / service notices from three distinct bot shapes. Each carries a
+# LIMIT-EXCEEDED statement (notice-voiced "exceeded" / "reached" / "hit") paired
+# with a NOTICE shape (callout / limit-heading / service tail) — the two-part
+# structural signature, with no author-specific literal.
+_RATE_LIMIT_NOTICES = {
+    # CodeRabbit: ``## Rate limit exceeded`` callout + body sentence.
+    'coderabbit': (
+        '> [!WARNING]\n'
+        '> ## Rate limit exceeded\n'
+        '>\n'
+        '> @oliver has exceeded the limit for the number of files or commits '
+        'that can be reviewed per hour.'
+    ),
+    # Sourcery: a weekly-review-limit note in a callout, "reached your ... limit".
+    'sourcery': (
+        '> [!NOTE]\n'
+        '> Sourcery has reached your weekly review limit. '
+        'Reviews will resume next Monday.'
+    ),
+    # Arbitrary unknown/renamed bot: a limit heading + "hit the ... rate limit"
+    # + a "try again" service tail. No code names this bot.
+    'unknown': (
+        '> [!IMPORTANT]\n'
+        '> ## API request limit reached\n'
+        '>\n'
+        '> This bot has hit the hourly rate limit and will try again in 60 minutes.'
+    ),
+}
+
+# Genuine reviewer comments — per bot shape — that MENTION a rate limit in prose
+# but are actionable feedback, not a service notice. Every one uses review-voiced
+# phrasing ("exceeds" / "can exceed" / "does not exceed") rather than the
+# notice-voiced past tense the recognizer keys on, so none may be dropped.
+_GENUINE_RATE_LIMIT_MENTIONS = {
+    # Plain inline comment, no notice structure at all.
+    'coderabbit': (
+        'This off-by-one in the slice bound drops the last element; use len(items).'
+    ),
+    # Mentions a rate limit in prose, no notice structure.
+    'sourcery': (
+        'Consider adding a retry with backoff here in case the API rate limit is '
+        'exceeded under load — a bare call will fail hard.'
+    ),
+    # Has a markdown heading AND mentions the rate limit, but the heading is not
+    # the limit phrase and the verb is modal ("does not exceed") — review voice.
+    'unknown': (
+        '## Suggestion\n'
+        'Guard this call with a token bucket so it does not exceed the provider '
+        'rate limit; add exponential backoff on 429s.'
+    ),
+    # A genuine comment inside a callout that discusses the rate limit — the
+    # ungated recognizer must still not drop it (no limit-EXCEEDED statement).
+    'callout': (
+        '> [!WARNING]\n'
+        '> This endpoint can exceed the provider rate limit under sustained load; '
+        'add caching before the next release.'
+    ),
+}
+
+
+@pytest.mark.parametrize('shape', sorted(_RATE_LIMIT_NOTICES))
+def test_is_rate_limit_notice_recognizes_every_bot_shape(shape):
+    """A rate-limit / service notice from any bot shape is recognized as noise.
+
+    CodeRabbit, Sourcery, and an arbitrary unknown/renamed bot's notice are each
+    matched by the same structural signature — no author-specific literal, so
+    adding a future bot needs no recognizer edit.
+    """
+    assert github_pr._is_rate_limit_notice(_RATE_LIMIT_NOTICES[shape]) is True
+
+
+@pytest.mark.parametrize('shape', sorted(_GENUINE_RATE_LIMIT_MENTIONS))
+def test_is_rate_limit_notice_keeps_genuine_rate_limit_mentions(shape):
+    """A genuine reviewer comment that merely mentions a rate limit is NOT dropped.
+
+    The false-negative direction is the real hazard: review-voiced phrasing
+    ("exceeds" / "can exceed" / "does not exceed"), with or without a heading or
+    callout, must survive the recognizer's two-part precision (a limit-EXCEEDED
+    statement AND a notice shape are BOTH required).
+    """
+    assert github_pr._is_rate_limit_notice(_GENUINE_RATE_LIMIT_MENTIONS[shape]) is False
+
+
+def test_is_rate_limit_notice_empty_body_is_not_notice():
+    """An empty body is not a rate-limit notice (the recognizer returns False)."""
+    assert github_pr._is_rate_limit_notice('') is False
+
+
+def test_fetch_findings_drops_rate_limit_notices_bot_agnostically(plan_context, monkeypatch):
+    """fetch_findings drops rate-limit notices from every bot — including an unknown one.
+
+    Over a mixed set carrying a rate-limit notice AND a genuine comment from each
+    of CodeRabbit, Sourcery, and an unregistered ``randombot[bot]`` (bot_kind
+    resolves to None), only the three genuine comments are stored; all three
+    notices are dropped as noise. The unknown bot's notice being dropped proves
+    the pre-filter is author-ungated (no resolved bot_kind is required), and no
+    ``(producer-mismatch)`` Q-Gate fires on the legitimate noise skips.
+    """
+    plan_id = 'gh-pr-rate-limit-bot-agnostic'
+    comments = [
+        {
+            'id': 'cr-notice',
+            'author': 'coderabbitai',
+            'thread_id': '',
+            'kind': 'review_body',
+            'body': _RATE_LIMIT_NOTICES['coderabbit'],
+            'resolved': False,
+        },
+        {
+            'id': 'cr-genuine',
+            'author': 'coderabbitai',
+            'thread_id': 'PRRT_A',
+            'kind': 'inline',
+            'body': _GENUINE_RATE_LIMIT_MENTIONS['coderabbit'],
+            'path': 'src/a.py',
+            'line': 3,
+            'resolved': False,
+        },
+        {
+            'id': 'sr-notice',
+            'author': 'sourcery-ai',
+            'thread_id': '',
+            'kind': 'review_body',
+            'body': _RATE_LIMIT_NOTICES['sourcery'],
+            'resolved': False,
+        },
+        {
+            'id': 'sr-genuine',
+            'author': 'sourcery-ai',
+            'thread_id': 'PRRT_B',
+            'kind': 'inline',
+            'body': _GENUINE_RATE_LIMIT_MENTIONS['sourcery'],
+            'path': 'src/b.py',
+            'line': 7,
+            'resolved': False,
+        },
+        {
+            'id': 'unk-notice',
+            'author': 'randombot[bot]',
+            'thread_id': '',
+            'kind': 'review_body',
+            'body': _RATE_LIMIT_NOTICES['unknown'],
+            'resolved': False,
+        },
+        {
+            'id': 'unk-genuine',
+            'author': 'randombot[bot]',
+            'thread_id': 'PRRT_C',
+            'kind': 'inline',
+            'body': 'Rename this helper; the current name shadows the stdlib module.',
+            'path': 'src/c.py',
+            'line': 9,
+            'resolved': False,
+        },
+    ]
+    _patch_provider(monkeypatch, comments)
+
+    result = _run_fetch(105, plan_id)
+    assert result['status'] == 'success'
+    # Three genuine comments stored; three rate-limit notices dropped as noise.
+    assert result['count_stored'] == 3
+    assert result['count_skipped_noise'] == 3
+    assert result['producer_mismatch_hash_id'] is None
+
+    stored = query_findings(plan_id, finding_type='pr-comment')['findings']
+    stored_ids = {
+        _stored_comment_id(f) for f in stored
+    }
+    assert stored_ids == {'cr-genuine', 'sr-genuine', 'unk-genuine'}
+
+
+def _stored_comment_id(finding):
+    """Extract the ``comment_id`` value from a stored pr-comment finding's detail."""
+    for detail_line in (finding.get('detail') or '').splitlines():
+        if detail_line.startswith('comment_id:'):
+            return detail_line.split(':', 1)[1].strip()
+    return ''
+
+
+def test_fetch_findings_reports_responded_bots_including_all_noise_bot(plan_context, monkeypatch):
+    """D4: ``responded_bots`` names every bot that posted, even one filed all-noise.
+
+    Over a set where CodeRabbit posts ONLY a rate-limit notice (dropped as noise,
+    so it stores zero findings), Sourcery posts a genuine comment (stored), and a
+    human posts a comment (``bot_kind`` None, excluded), ``fetch_findings`` returns
+    ``responded_bots == ['coderabbit', 'sourcery']`` — the distinct non-None
+    bot_kinds present in the RAW fetched comments, computed before noise filtering,
+    so the completeness guard can treat the all-noise bot as settled rather than
+    unfetched. CodeRabbit stores nothing yet still appears.
+    """
+    plan_id = 'gh-pr-responded-bots'
+    comments = [
+        # CodeRabbit posts ONLY a rate-limit notice — dropped as noise (stores 0).
+        {
+            'id': 'cr-notice',
+            'author': 'coderabbitai',
+            'thread_id': '',
+            'kind': 'review_body',
+            'body': _RATE_LIMIT_NOTICES['coderabbit'],
+            'resolved': False,
+        },
+        # Sourcery posts a genuine substantive comment — stored.
+        {
+            'id': 'sr-genuine',
+            'author': 'sourcery-ai',
+            'thread_id': 'PRRT_S',
+            'kind': 'inline',
+            'body': 'Extract this duplicated branch into a helper for clarity.',
+            'path': 'src/s.py',
+            'line': 12,
+            'resolved': False,
+        },
+        # Human comment — bot_kind None, excluded from responded_bots.
+        {
+            'id': 'human-1',
+            'author': 'alice',
+            'thread_id': '',
+            'kind': 'issue_comment',
+            'body': 'Please add a regression test for this path.',
+            'resolved': False,
+        },
+    ]
+    _patch_provider(monkeypatch, comments)
+
+    result = _run_fetch(106, plan_id)
+    assert result['status'] == 'success'
+    # Sourcery's genuine comment and the human comment are stored; CodeRabbit's
+    # notice is dropped as noise (it stores zero).
+    assert result['count_stored'] == 2
+    assert result['count_skipped_noise'] == 1
+    # Both bots posted, so both are responded — CodeRabbit despite storing zero;
+    # the human author (bot_kind None) is excluded from responded_bots.
+    assert result['responded_bots'] == ['coderabbit', 'sourcery']
 
 
 # =============================================================================

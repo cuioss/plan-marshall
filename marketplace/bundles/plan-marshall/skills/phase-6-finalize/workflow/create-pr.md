@@ -146,14 +146,14 @@ Bind `{pr_title}` ← the returned `value`. An empty or missing `pr_title` here 
 
 #### Step 3.6: Resolve the `enabled_bots` skip-label
 
-Read the `enabled_bots` knob — the config gate that governs which reviewer bots participate on this plan's PR. It is a `configurable:` param owned by the `plan-marshall:automatic-review` finalize step (its single source-of-truth seed lives in that skill's frontmatter, `default: "coderabbit,sourcery,gemini"`), read here from the plan-local execution-manifest step-params snapshot:
+Read the `enabled_bots` knob — the config gate that governs which reviewer bots participate on this plan's PR. It is a `configurable:` param owned by the `plan-marshall:automatic-review` finalize step (its single source-of-truth seed lives in that skill's frontmatter, `default: "coderabbit,sourcery"`), read here from the plan-local execution-manifest step-params snapshot:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest \
   step-params get --plan-id {plan_id} --phase 6-finalize --step-id plan-marshall:automatic-review
 ```
 
-Read `enabled_bots` off the returned `params` object (default: `"coderabbit,sourcery,gemini"`). It is a comma-joined string split at read time — bind `{enabled_bots_set}` to the non-empty, whitespace-trimmed tokens. When the `plan-marshall:automatic-review` step is not present in the manifest (e.g. a plan whose preset excludes it), treat `enabled_bots` as its default (a non-empty set) — the skip-label is applied ONLY on an explicit empty set.
+Read `enabled_bots` off the returned `params` object (default: `"coderabbit,sourcery"`). It is a comma-joined string split at read time — bind `{enabled_bots_set}` to the non-empty, whitespace-trimmed tokens. When the `plan-marshall:automatic-review` step is not present in the manifest (e.g. a plan whose preset excludes it), treat `enabled_bots` as its default (a non-empty set) — the skip-label is applied ONLY on an explicit empty set.
 
 - **`{enabled_bots_set}` is non-empty** (the common case — at least one bot enabled): do NOT apply the skip-label. Bind `{label_args}` to the empty string.
 - **`{enabled_bots_set}` is empty** (all reviewer bots disabled for this plan/flow): bind `{label_args}` to `--label skip-bot-review`. This applies the shared `skip-bot-review` label on the created PR as a best-effort suppression signal.
