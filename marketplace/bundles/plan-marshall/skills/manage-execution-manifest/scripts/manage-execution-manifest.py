@@ -18,6 +18,7 @@ Usage:
 """
 
 import argparse
+import functools
 import json
 import subprocess
 import sys
@@ -787,23 +788,18 @@ def _log_ceremony_finalize_selection(
 # signal.
 
 
-def _invoke_architecture_resolve(argv_extra: list[str], plan_id: str) -> dict[str, Any] | None:
-    """Subprocess ``architecture resolve`` and return the parsed status-success TOON dict.
+@functools.cache
+def _invoke_architecture_resolve_cached(argv_extra: tuple[str, ...], plan_id: str) -> dict[str, Any] | None:
+    """Cached core of :func:`_invoke_architecture_resolve` — one subprocess per distinct key.
 
-    Shared by ``_resolve_command_tier`` (per-command, may add ``--module``) and
-    ``_resolve_step_execution_tier`` (whole-tree phase-5 steps, never adds
-    ``--module``). Calls the executor with ``--audit-plan-id`` so resolve runs
-    in the correct project_dir context. Returns ``None`` on any failure —
-    unresolvable executor, subprocess error, non-zero exit, empty stdout,
-    unparseable TOON, or a non-``success`` status; callers apply their own
-    safe default on ``None``.
-
-    The composer subprocesses ``architecture resolve`` rather than
-    importing its internals because the resolve flow is the canonical
-    cross-bundle entry point per the "Build commands: resolve via
-    architecture" hard rule, and the augmented TOON shape (the
-    ``execution_tier`` / ``bash_timeout_seconds`` fields) is exactly the
-    resolve script's contract — re-deriving them here would duplicate logic.
+    Keyed by ``(argv_extra, plan_id)`` where ``argv_extra`` is the hashable tuple
+    form of the resolve argv tail. ``functools.cache`` requires hashable arguments,
+    which is why the public wrapper passes a tuple rather than the caller's list. The
+    cache is reset per compose by :func:`cmd_compose` (``.cache_clear()``), so it is
+    effectively compose-scoped — a re-compose in the same process re-derives from
+    the live architecture state rather than a stale prior-compose result. The cached
+    dict is only ever read by callers (never mutated), so sharing one instance
+    across cache hits is safe.
     """
     executor = _resolve_executor()
     if executor is None:
@@ -836,6 +832,37 @@ def _invoke_architecture_resolve(argv_extra: list[str], plan_id: str) -> dict[st
     if not isinstance(parsed_toon, dict) or parsed_toon.get('status') != 'success':
         return None
     return parsed_toon
+
+
+def _invoke_architecture_resolve(argv_extra: list[str], plan_id: str) -> dict[str, Any] | None:
+    """Subprocess ``architecture resolve`` and return the parsed status-success TOON dict.
+
+    Shared by ``_resolve_command_tier`` (per-command, may add ``--module``),
+    ``_resolve_step_execution_tier`` (whole-tree phase-5 steps, never adds
+    ``--module``), and ``_apply_domain_seeded_step_resolvability`` (domain-seeded
+    verify-step probe). Calls the executor with ``--audit-plan-id`` so resolve runs
+    in the correct project_dir context. Returns ``None`` on any failure —
+    unresolvable executor, subprocess error, non-zero exit, empty stdout,
+    unparseable TOON, or a non-``success`` status; callers apply their own
+    safe default on ``None``.
+
+    The composer subprocesses ``architecture resolve`` rather than
+    importing its internals because the resolve flow is the canonical
+    cross-bundle entry point per the "Build commands: resolve via
+    architecture" hard rule, and the augmented TOON shape (the
+    ``execution_tier`` / ``bash_timeout_seconds`` fields) is exactly the
+    resolve script's contract — re-deriving them here would duplicate logic.
+
+    Compose-scoped memoization: the actual subprocess lives in
+    :func:`_invoke_architecture_resolve_cached`, keyed by ``(tuple(argv_extra),
+    plan_id)``. A repeated identical resolve within one compose — e.g. the same
+    ``default:verify:arch-gate`` canonical probed by
+    :func:`_apply_domain_seeded_step_resolvability` and again by
+    :func:`_resolve_step_execution_tier` when the step survives — reuses the first
+    result instead of re-spawning the subprocess. This wrapper adapts the caller's
+    list argument to the cache's hashable tuple key.
+    """
+    return _invoke_architecture_resolve_cached(tuple(argv_extra), plan_id)
 
 
 def _resolve_command_tier(cmd: str, plan_id: str) -> dict[str, Any] | None:
@@ -1292,6 +1319,11 @@ def cmd_lanes_preview(args: argparse.Namespace) -> dict[str, Any] | None:
 def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     """Compose and write the execution manifest."""
     plan_id = require_valid_plan_id(args)
+
+    # Bound the architecture-resolve memo to a single compose: a re-compose in the
+    # same process (and each unit test) re-derives from the live architecture state
+    # rather than a stale prior-compose result.
+    _invoke_architecture_resolve_cached.cache_clear()
 
     if args.change_type not in VALID_CHANGE_TYPES:
         return {
