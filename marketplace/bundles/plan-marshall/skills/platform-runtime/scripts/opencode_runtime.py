@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """
-OpenCode implementation of all 22 platform-runtime operations.
+OpenCode implementation of all 23 platform-runtime operations.
 
 OpenCode-specific behaviour:
 - Operations requiring a platform session id (session capture, session
@@ -241,6 +241,15 @@ class OpenCodeRuntime(Runtime):
             "OpenCode does not expose a platform-provided session id, so there is"
             " no per-session active-plan cache to scan (issue #9292)",
             "Use OpenCode's built-in session mechanism for plan visibility",
+        )
+
+    def session_teardown(self) -> str:
+        """No-op: OpenCode has no terminal-title channel to tear down."""
+        return toon_noop(
+            "session teardown",
+            "OpenCode has no terminal-title channel"
+            " (issue anomalyco/opencode#8619)",
+            "Use OpenCode's built-in TUI status surface for plan visibility",
         )
 
     def session_reload_directive(self) -> str:

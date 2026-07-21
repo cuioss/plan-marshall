@@ -1,6 +1,6 @@
 # Platform Runtime TOON Contract
 
-Per-operation TOON schemas for all 21 `platform-runtime` operations. Every operation returns one of three status variants: `success`, `error`, or `no-op`. Parser: `from toon_parser import parse_toon, serialize_toon` from `plan-marshall:ref-toon-format`.
+Per-operation TOON schemas for all 23 `platform-runtime` operations. Every operation returns one of three status variants: `success`, `error`, or `no-op`. Parser: `from toon_parser import parse_toon, serialize_toon` from `plan-marshall:ref-toon-format`.
 
 **Invocation pattern**:
 ```bash
@@ -555,15 +555,32 @@ Parse `--plan-id` and an optional `--icon`, emit the OSC escape sequence directl
 
 **Arguments**: `--plan-id <id>` (required), `--icon <icon>` (optional — omit for a plain repaint of the current title)
 
+`/dev/tty` is the **FALLBACK** delivery channel — the hook-written
+`terminalSequence` envelope from `session render-title` is the primary one and
+needs no tty ownership. A non-delivery is **reported**, not swallowed: `delivery`
+names the channel on every `/dev/tty` attempt, and `reason` distinguishes the two
+no-push outcomes.
+
 **Success (Claude — push reached TTY)**:
 ```toon
 status: success
 operation: session push-title-token
 plan_id: my-plan
 pushed: true
+delivery: dev_tty_fallback
 ```
 
-**Success (Claude — silent no-op, TTY not openable or no title state)**:
+**Success (Claude — no controlling terminal; the fallback channel could not land)**:
+```toon
+status: success
+operation: session push-title-token
+plan_id: my-plan
+pushed: false
+reason: no_controlling_tty
+delivery: dev_tty_fallback
+```
+
+**Success (Claude — nothing to paint; the state read failed before any `/dev/tty` attempt)**:
 ```toon
 status: success
 operation: session push-title-token
@@ -636,6 +653,62 @@ plan_id: ""
 status: no-op
 operation: session resolve-plan
 reason: OpenCode does not expose a platform-provided session id to the shell
+alternative: Use OpenCode's built-in TUI status surface for plan visibility
+```
+
+---
+
+### `session teardown`
+
+Reset the terminal title to the terminal's own default and release the caller
+session's plan binding — the end-of-session counterpart of `session bind` /
+`session render-title`. Fired by the `SessionStart:clear` render trigger and by
+`manage-status cmd_archive` after a plan directory is archived.
+
+**Activation-gated, order load-bearing**: the activation signal is read FIRST. When
+the terminal-title feature is not wired up (no render-hook entry on any
+render-trigger event AND no `statusLine` command in either `.claude/settings.json`
+or `.claude/settings.local.json`), the op writes NO title escape, opens NO
+`/dev/tty`, mutates NO binding, and raises nothing. `reset` and `unbound` are
+reported independently, so a landed title reset with a failed unbind (or the
+reverse) is visible. Best-effort throughout: never raises, never changes the
+caller's exit code. No-op on OpenCode.
+
+**Arguments**: _(none)_
+
+**Success (Claude — active, reset landed and slot dropped)**:
+```toon
+status: success
+operation: session teardown
+active: true
+reset: true
+unbound: true
+```
+
+**Success (Claude — active but no controlling terminal; the unbind still lands)**:
+```toon
+status: success
+operation: session teardown
+active: true
+reset: false
+unbound: true
+```
+
+**Success (Claude — feature not activated; nothing was touched)**:
+```toon
+status: success
+operation: session teardown
+active: false
+reset: false
+unbound: false
+reason: feature_inactive
+```
+
+**No-op (OpenCode)**:
+```toon
+status: no-op
+operation: session teardown
+reason: OpenCode has no terminal-title channel (issue anomalyco/opencode#8619)
 alternative: Use OpenCode's built-in TUI status surface for plan visibility
 ```
 

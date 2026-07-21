@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """
-Platform router for plan-marshall — dispatches 22 operations to the correct
+Platform router for plan-marshall — dispatches 23 operations to the correct
 target implementation based on ``runtime.target`` in ``.plan/marshal.json``.
 
 Usage:
@@ -19,6 +19,7 @@ Operations:
     session bind            --plan-id <id>  [--session-id <id>]
     session resolve-plan    [--session-id <id>]
     session doctor          [--fix]
+    session teardown        (no arguments)
     session reload-directive (no arguments)
     permission configure    --scope project|global  --permissions <p1> [<p2> ...]
     permission analyze      --scope global|project|both  --checks <c1>[,<c2>]  [--marshal <path>]
@@ -371,6 +372,14 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
         return runtime.session_doctor(ns.fix)
 
     # ------------------------------------------------------------------
+    # session teardown
+    # ------------------------------------------------------------------
+    if operation == "session teardown":
+        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime session teardown")
+        p.parse_args(remaining)
+        return runtime.session_teardown()
+
+    # ------------------------------------------------------------------
     # session reload-directive
     # ------------------------------------------------------------------
     if operation == "session reload-directive":
@@ -549,7 +558,8 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
         "valid operations: project initial-setup, project install-hook, "
         "layout skill-roots, layout bundle-cache-root, "
         "session capture, session render-title, session push-title-token, "
-        "session bind, session resolve-plan, session doctor, session reload-directive, "
+        "session bind, session resolve-plan, session doctor, session teardown, "
+        "session reload-directive, "
         "permission configure, permission analyze, permission fix, "
         "permission ensure-wildcards, permission ensure-steps, "
         "permission web-analyze, permission web-apply, "

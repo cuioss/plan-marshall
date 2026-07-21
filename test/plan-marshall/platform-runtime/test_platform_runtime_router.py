@@ -8,7 +8,7 @@ Covers:
   - _resolve_target: runtime.target extraction from marshal data
   - _make_runtime: registry lookup and unknown target handling
   - _parse_json_list / _parse_context: JSON helpers
-  - _dispatch: correct routing and argparse for all 22 operations
+  - _dispatch: correct routing and argparse for all 23 operations
   - main: full integration — no args, missing marshal, unknown target, dispatch
 """
 from __future__ import annotations  # noqa: I001
@@ -66,6 +66,7 @@ def _mock_runtime() -> MagicMock:
     rt.session_bind.return_value = toon_success("session bind")
     rt.session_resolve_plan.return_value = toon_success("session resolve-plan")
     rt.session_doctor.return_value = toon_success("session doctor")
+    rt.session_teardown.return_value = toon_success("session teardown")
     rt.session_reload_directive.return_value = toon_success("session reload-directive")
     rt.permission_configure.return_value = toon_success("permission configure")
     rt.permission_analyze.return_value = toon_success("permission analyze")
@@ -78,6 +79,42 @@ def _mock_runtime() -> MagicMock:
     rt.subagent_dispatch.return_value = toon_success("subagent dispatch")
     rt.health_check.return_value = toon_success("health-check")
     return rt
+
+
+# =============================================================================
+# Test: session teardown routing
+# =============================================================================
+
+
+class TestSessionTeardownDispatch:
+    """The ``session teardown`` operation is registered in the dispatch chain."""
+
+    def test_teardown_parses_as_a_two_token_operation(self):
+        """``session teardown`` parses to the two-word operation with no args."""
+        op, remaining = _build_operation(["session", "teardown"])
+        assert op == "session teardown"
+        assert remaining == []
+
+    def test_dispatch_routes_to_session_teardown(self):
+        """The router calls ``session_teardown()`` and returns its TOON verbatim."""
+        rt = _mock_runtime()
+        result = _dispatch(rt, "session teardown", [])
+        rt.session_teardown.assert_called_once_with()
+        assert _parsed(result)["operation"] == "session teardown"
+
+    def test_dispatch_rejects_unexpected_arguments(self):
+        """The op takes no arguments — a stray flag is an argparse rejection."""
+        rt = _mock_runtime()
+        with pytest.raises(SystemExit):
+            _dispatch(rt, "session teardown", ["--plan-id", "p1"])
+
+    def test_unknown_operation_error_names_session_teardown(self):
+        """The unknown-operation error string enumerates ``session teardown``."""
+        rt = _mock_runtime()
+        result = _parsed(_dispatch(rt, "session not-a-verb", []))
+        assert result["status"] == "error"
+        assert result["error"] == "unknown_operation"
+        assert "session teardown" in result["message"]
 
 
 # =============================================================================

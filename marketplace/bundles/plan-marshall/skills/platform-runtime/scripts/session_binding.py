@@ -8,11 +8,13 @@ side (relocated from the executor template's ``_write_active_plan``), and a
 conflict/stale-slot scan. Kept as a pure, dependency-free module so it is
 unit-testable against a tmp cache without going through the generated executor.
 
-Three entry points:
+Four entry points:
 
 - :func:`resolve_plan` — read the caller session's bound plan_id.
 - :func:`bind` — last-driven-wins unconditional write of the caller's OWN slot.
   NO protect-active, NO stale-slot reclaim, NO plan-dir-exists check.
+- :func:`unbind` — remove the caller's OWN slot (the teardown counterpart of
+  :func:`bind`), pruning the now-empty session directory.
 - :func:`doctor` — scan every ``~/.cache/plan-marshall/sessions/*/active-plan``
   file, build a plan->sessions reverse index in memory, flag any plan bound by
   more than one live session, and (when ``fix``) GC slots whose plan is
@@ -141,6 +143,35 @@ def bind(session_id: str, plan_id: str) -> bool:
         return False
 
 
+def unbind(session_id: str) -> bool:
+    """Remove ``session_id``'s own ``active-plan`` slot — the teardown of :func:`bind`.
+
+    Deletes ``~/.cache/plan-marshall/sessions/{session_id}/active-plan`` and
+    prunes the now-empty session directory. Same validation, same per-session
+    scope, and the same best-effort / no-raise contract as :func:`bind`: because
+    the cache is keyed by ``session_id`` this touches only the caller's own slot,
+    so there is no cross-session check-then-act window.
+
+    Returns True when the slot was removed (or was already absent), False on
+    validation failure or any I/O error. Never raises.
+    """
+    if not _valid_session_id(session_id):
+        return False
+    try:
+        path = _active_plan_path(session_id)
+        path.unlink(missing_ok=True)
+        # Best-effort: prune the now-empty session directory so teardown/GC does
+        # not leak empty dirs over time. Non-empty / already-gone → OSError,
+        # ignored.
+        try:
+            path.parent.rmdir()
+        except OSError:
+            pass
+        return True
+    except OSError:
+        return False
+
+
 # ---------------------------------------------------------------------------
 # Doctor — reverse-index conflict scan + stale-slot GC
 # ---------------------------------------------------------------------------
@@ -201,21 +232,13 @@ def _iter_slots() -> list[tuple[str, str]]:
 
 
 def _gc_slot(session_id: str) -> bool:
-    """Remove a stale session's ``active-plan`` file. Best-effort; returns success."""
-    if not _valid_session_id(session_id):
-        return False
-    try:
-        path = _active_plan_path(session_id)
-        path.unlink(missing_ok=True)
-        # Best-effort: prune the now-empty session directory so GC does not
-        # leak empty dirs over time. Non-empty / already-gone → OSError, ignored.
-        try:
-            path.parent.rmdir()
-        except OSError:
-            pass
-        return True
-    except OSError:
-        return False
+    """Remove a stale session's ``active-plan`` file. Best-effort; returns success.
+
+    Slot removal is one behaviour with two callers — the doctor's stale-slot GC
+    here and the public :func:`unbind` teardown — so this delegates to
+    :func:`unbind` rather than carrying a second copy of the unlink+prune body.
+    """
+    return unbind(session_id)
 
 
 def doctor(fix: bool = False) -> dict[str, Any]:
