@@ -430,7 +430,11 @@ def _apply_scope_gated_finalize(
 
 # Gate → (match-set, canonical insertion form). The match-set covers every
 # prefixed/bare form a candidate list may carry; the insertion form is the
-# canonical identifier `always` re-adds when the step is absent.
+# canonical (bare) identifier `always` re-adds when the step is absent. The
+# insertion form is BARE for every gate — matching both the other three gates and
+# the bare form the normal intake path emits (candidates are canonicalized at
+# intake), so an ``always`` re-insertion never re-introduces a non-canonical
+# ``default:``-prefixed id that the compose-time canonical-step-key gate rejects.
 _CEREMONY_FINALIZE_STEP_MAP: dict[str, tuple[frozenset[str], str]] = {
     'self_review': (
         frozenset(
@@ -439,7 +443,7 @@ _CEREMONY_FINALIZE_STEP_MAP: dict[str, tuple[frozenset[str], str]] = {
                 'default:pre-submission-self-review',
             }
         ),
-        'default:pre-submission-self-review',
+        'pre-submission-self-review',
     ),
     'qgate': (
         frozenset({'pre-push-quality-gate'}),

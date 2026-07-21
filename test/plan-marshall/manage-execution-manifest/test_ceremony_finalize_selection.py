@@ -414,7 +414,9 @@ class TestCeremonyFinalizeAlways:
         bare = _bare(_manifest_phase_6_steps(result))
         assert 'pre-submission-self-review' in bare
         forced_in = set(result['ceremony_finalize_forced_in'])
-        assert 'default:pre-submission-self-review' in forced_in
+        # The canonical insertion form is BARE (aligned with the compose-time
+        # canonical-step-key gate) — no `default:`-prefixed id is re-inserted.
+        assert 'pre-submission-self-review' in forced_in
 
     def test_always_readds_qgate_dropped_by_inactive_prefilter(self, plan_context):
         # Empty footprint → pre_push_quality_gate_inactive drops the qgate step.
@@ -526,7 +528,7 @@ class TestCeremonyFinalizeGenericSelfReviewForm:
             if next(iter(_bare([s]))) == 'pre-submission-self-review'
         )
         assert occurrences == 1
-        assert 'default:pre-submission-self-review' not in result['ceremony_finalize_forced_in']
+        assert 'pre-submission-self-review' not in result['ceremony_finalize_forced_in']
 
 
 # =============================================================================

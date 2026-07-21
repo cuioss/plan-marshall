@@ -680,6 +680,46 @@ def check_emitted_steps_resolvable(
     return None
 
 
+def check_emitted_steps_canonical(
+    phase_5_steps: list[Any],
+    phase_6_steps: list[Any],
+) -> dict[str, Any] | None:
+    """Assert every FINAL emitted step id is in canonical form; return the first offender.
+
+    Structural compose-time guard (sibling of :func:`check_emitted_steps_resolvable`
+    and the ascending-order / frontmatter-order guards): an emitted phase-5/6 step
+    id is canonical iff ``canonicalize_step_key(step_id) == step_id`` — i.e. it
+    carries no leading ``default:`` prefix and no promoted-alias
+    (:data:`PROMOTED_BUILTIN_STEP_IDS`) bundle spelling. Every id in the composed
+    manifest is boundary-normalized at intake, so a non-canonical emitted id is a
+    structural defect (a newly-introduced mis-keyed prefixed step that slipped past
+    the intake normalization), which this gate catches loud rather than tolerating.
+
+    Iterates ``phase_5.verification_steps`` then ``phase_6.steps`` in order and
+    returns ``None`` when every step is canonical. On the first non-canonical step
+    returns a dict carrying ``phase`` (``phase_5`` / ``phase_6``), the offending
+    ``step_id``, its ``canonical`` form, and an actionable ``message``.
+    """
+    for phase, steps in (('phase_5', phase_5_steps), ('phase_6', phase_6_steps)):
+        for step in steps:
+            if not isinstance(step, str):
+                continue
+            canonical = canonicalize_step_key(step)
+            if canonical != step:
+                return {
+                    'phase': phase,
+                    'step_id': step,
+                    'canonical': canonical,
+                    'message': (
+                        f'{phase} emitted step id `{step}` is not in canonical form '
+                        f'(canonicalizes to `{canonical}`) — the id carries a '
+                        '`default:` prefix or a promoted-alias bundle spelling that '
+                        'the compose boundary normalization should have stripped'
+                    ),
+                }
+    return None
+
+
 def cmd_validate(args: argparse.Namespace) -> dict[str, Any] | None:
     """Validate manifest schema and (optionally) step IDs against candidate sets."""
     plan_id = require_valid_plan_id(args)

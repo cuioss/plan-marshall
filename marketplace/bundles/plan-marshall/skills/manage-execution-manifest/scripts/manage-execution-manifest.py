@@ -122,6 +122,7 @@ from _manifest_validation import (
     _resolve_standards_path,  # noqa: F401
     _resolve_step_order,  # noqa: F401
     _sort_steps_by_frontmatter_order,  # noqa: F401
+    check_emitted_steps_canonical,  # noqa: F401
     check_emitted_steps_resolvable,  # noqa: F401
     cmd_step_params_get,  # noqa: F401
     cmd_step_params_set,  # noqa: F401
@@ -662,10 +663,10 @@ def _log_scope_gated_finalize_subtraction(plan_id: str, scope_estimate: str, dro
 # candidate list may carry. Candidate lists are `default:`-namespace-normalized
 # at intake (`canonicalize_step_key`), but `project:` / `bundle:skill` prefixes
 # are preserved verbatim, so the match-sets below list every form. The `always`
-# re-insertion uses the canonical `default:`-prefixed form for
-# pre-submission-self-review (matching the workflow frontmatter `name:`) and the
-# bare form for `pre-push-quality-gate` (a built-in `default:` step, normalized
-# bare).
+# re-insertion uses the canonical BARE form for every gate (including
+# pre-submission-self-review), matching the bare id the normal intake path emits,
+# so a force-add never re-introduces a non-canonical `default:`-prefixed id that
+# the compose-time canonical-step-key gate would reject.
 
 
 def _log_ceremony_finalize_selection(
@@ -1619,6 +1620,37 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
             'phase': resolution_error['phase'],
             'step_id': resolution_error['step_id'],
             'marshal_key': resolution_error['marshal_key'],
+        }
+
+    # Canonical-step-key structural gate (fail-loud): a sibling of the resolution
+    # gate above, run on the SAME FINAL emitted step lists. Every emitted phase-5/6
+    # step id MUST be in canonical form (``canonicalize_step_key(step_id) ==
+    # step_id`` — no leading ``default:`` prefix, no promoted-alias bundle
+    # spelling). A non-canonical emitted id is a structural defect (a mis-keyed
+    # prefixed step that slipped past the intake boundary normalization); the gate
+    # fails the compose loud, naming the offending id and phase, and — like the
+    # resolution gate — never writes a partial manifest (returns before the
+    # step-params snapshot and ``write_manifest``). See
+    # _manifest_validation.check_emitted_steps_canonical and SKILL.md §
+    # "Compose-time step-resolution gate".
+    canonical_error = check_emitted_steps_canonical(
+        list(body['phase_5'].get('verification_steps', [])),
+        list(body['phase_6'].get('steps', [])),
+    )
+    if canonical_error is not None:
+        _emit_decision_log(
+            plan_id,
+            '(plan-marshall:manage-execution-manifest:compose) non_canonical_step — '
+            f'{canonical_error["message"]}',
+        )
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'non_canonical_step',
+            'message': canonical_error['message'],
+            'phase': canonical_error['phase'],
+            'step_id': canonical_error['step_id'],
+            'canonical': canonical_error['canonical'],
         }
 
     # Resolution gate passed — NOW commit the staged task-file rewrites from the
