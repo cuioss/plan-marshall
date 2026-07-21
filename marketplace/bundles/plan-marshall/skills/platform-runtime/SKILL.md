@@ -7,7 +7,7 @@ mode: script-executor
 
 # Platform Runtime Skill
 
-Script-based platform abstraction that routes 22 goal-based operations to the correct target implementation. Follows the `tools-integration-ci` pattern: one router script, target-specific provider classes, static routing via `marshal.json`.
+Script-based platform abstraction that routes 23 goal-based operations to the correct target implementation. Follows the `tools-integration-ci` pattern: one router script, target-specific provider classes, static routing via `marshal.json`.
 
 ## Enforcement
 
@@ -27,7 +27,7 @@ Script-based platform abstraction that routes 22 goal-based operations to the co
 
 ## What This Skill Provides
 
-Twenty-two operations covering the full platform lifecycle:
+Twenty-three operations covering the full platform lifecycle:
 
 | Operation | Purpose |
 |-----------|---------|
@@ -44,10 +44,11 @@ Twenty-two operations covering the full platform lifecycle:
 | `permission web-analyze` | Read-only analysis of WebFetch/webfetch domain permissions |
 | `permission web-apply` | Add or remove web domain permissions |
 | `session render-title` | Emit OSC title sequence from writer artifact; no-op on OpenCode |
-| `session push-title-token` | Parse `--plan-id` and optional `--icon`, emit OSC escape to `/dev/tty` (Claude); no-op on OpenCode. This is the single repaint seam for blocking callers and the `manage-status` phase-state-write drive seam; `--icon` omitted composes a plain repaint of the current title |
+| `session push-title-token` | Parse `--plan-id` and optional `--icon`, emit OSC escape to `/dev/tty` (Claude); no-op on OpenCode. This is the single repaint seam for blocking callers and the `manage-status` phase-state-write drive seam; `--icon` omitted composes a plain repaint of the current title. `/dev/tty` is the FALLBACK channel (the hook-written `terminalSequence` is primary), and a non-delivery is reported as `pushed: false` with `reason: no_controlling_tty` and `delivery: dev_tty_fallback` |
 | `session bind` | Bind the running session to `--plan-id` (last-driven-wins) so `render-title` / `resolve-plan` resolve it; no-op on OpenCode |
 | `session resolve-plan` | Read the running session's bound plan id (the read side of `session bind`); no-op on OpenCode |
 | `session doctor` | Scan every per-session active-plan slot, report plan-bound-by-multiple-sessions conflicts, and (with `--fix`) GC stale slots; no-op on OpenCode |
+| `session teardown` | Activation-gated end-of-session retire: reset the tab to the terminal's own default (bare OSC-0) and drop the session's plan binding; a project with no terminal-title wiring reports `active: false` / `reason: feature_inactive` and is left untouched. No arguments; no-op on OpenCode |
 | `session reload-directive` | Resolve + surface the harness-appropriate post-upgrade reload directive (Claude: `/reload-plugins` plus the monitor caveat); no-op (full-restart alternative) on OpenCode. RESOLVES + SURFACES only — a script cannot type a harness slash command |
 | `metrics capture` | Record token consumption for a planning phase |
 | `metrics normalized-tokens` | Resolve normalized transcript token totals for the active target |
