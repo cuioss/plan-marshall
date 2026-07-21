@@ -551,9 +551,11 @@ alternative: Use OpenCode's built-in TUI status surface for plan visibility
 
 ### `session push-title-token`
 
-Parse `--plan-id` and an optional `--icon`, emit the OSC escape sequence directly to `/dev/tty` to repaint the current title in the terminal (Claude). No-op on OpenCode. This is the single repaint seam for blocking callers (lock/build acquire waits) and for the `manage-status` phase-state-write drive seam. When `--icon` is supplied it overrides the event-resolved icon for non-terminal phases; when omitted the composer applies its default active icon, so the push is a plain repaint of the current composed title. Router-dispatched in `platform_runtime.py`, abstract in `runtime_base.py`, concrete in `claude_runtime.py` (writes OSC sequence to `/dev/tty`) and `opencode_runtime.py` (returns no-op).
+Parse a store selector and an optional `--icon`, emit the OSC escape sequence directly to `/dev/tty` to repaint the current title in the terminal (Claude). No-op on OpenCode. This is the single repaint seam for blocking callers (lock/build acquire waits), for the `manage-status` phase-state-write drive seam, and for the `marshall-orchestrator` per-verb title repaint. When `--icon` is supplied it overrides the event-resolved icon for non-terminal phases; when omitted the composer applies its default active icon, so the push is a plain repaint of the current composed title. Router-dispatched in `platform_runtime.py`, abstract in `runtime_base.py`, concrete in `claude_runtime.py` (writes OSC sequence to `/dev/tty`) and `opencode_runtime.py` (returns no-op).
 
-**Arguments**: `--plan-id <id>` (required), `--icon <icon>` (optional — omit for a plain repaint of the current title)
+**Arguments**: `--store plans|orchestrator` (optional, default `plans`), `--plan-id <id>` (required with the default `plans` store), `--slug <slug>` (required with `--store orchestrator`), `--icon <icon>` (optional — omit for a plain repaint of the current title)
+
+The two stores are mutually exclusive selectors for where the title state is read from: the default `plans` store resolves the plan's `status.json` by `--plan-id`, while `--store orchestrator` resolves the epic's `status.json` via `get_store_dir('orchestrator', slug)` by `--slug`. Supplying `--store orchestrator` without `--slug`, or the default store without `--plan-id`, returns `error: invalid_argument`.
 
 `/dev/tty` is the **FALLBACK** delivery channel — the hook-written
 `terminalSequence` envelope from `session render-title` is the primary one and
@@ -561,13 +563,30 @@ needs no tty ownership. A non-delivery is **reported**, not swallowed: `delivery
 names the channel on every `/dev/tty` attempt, and `reason` distinguishes the two
 no-push outcomes.
 
-**Success (Claude — push reached TTY)**:
+**Success (Claude — push reached TTY, plans store)**:
 ```toon
 status: success
 operation: session push-title-token
 plan_id: my-plan
 pushed: true
 delivery: dev_tty_fallback
+```
+
+**Success (Claude — push reached TTY, orchestrator store)**:
+```toon
+status: success
+operation: session push-title-token
+slug: my-epic
+pushed: true
+delivery: dev_tty_fallback
+```
+
+**Error (store selector missing its required identifier)**:
+```toon
+status: error
+operation: session push-title-token
+error: invalid_argument
+message: --slug is required with --store orchestrator
 ```
 
 **Success (Claude — no controlling terminal; the fallback channel could not land)**:
