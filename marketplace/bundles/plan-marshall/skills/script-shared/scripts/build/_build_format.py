@@ -38,13 +38,25 @@ CORE_FIELDS = ['status', 'exit_code', 'duration_seconds', 'log_file', 'command']
 """Core fields that appear in every result, in display order."""
 
 # Additional fields that may appear after core fields
-EXTRA_FIELDS = ['error', 'timeout_used_seconds', 'wrapper', 'command_type', 'truncated']
+EXTRA_FIELDS = [
+    'error',
+    'timeout_used_seconds',
+    'tool_duration_seconds',
+    'wrapper',
+    'command_type',
+    'truncated',
+]
 """Additional scalar fields that appear after core fields.
 
 ``truncated`` is the count reconciling the capped/deduped ``errors`` array against
 the true total (see ``_build_shared._cap_errors_with_truncation``); it must be in
 this whitelist or ``format_toon`` silently drops it and ``errors`` count-vs-shown
-can disagree in TOON output (the JSON path already passes it through)."""
+can disagree in TOON output (the JSON path already passes it through).
+
+``tool_duration_seconds`` is the test tool's own reported run duration, surfaced
+next to ``duration_seconds`` (wall clock) so a timeout-killed run shows how long
+the suite actually took before the kill. Like ``truncated`` it must be listed
+here or ``format_toon`` drops it silently."""
 
 # Structured fields handled specially
 STRUCTURED_FIELDS = {'errors', 'warnings', 'tests'}
@@ -136,16 +148,22 @@ def format_toon(result: dict) -> str:
                 for w in warnings
             ]
 
-    # Tests section — normalize UnitTestSummary to dict
+    # Tests section — normalize UnitTestSummary to dict.
+    # `duration_seconds` is projected only when the tool reported one, so the
+    # historical three-field block stays bit-for-bit identical for tools whose
+    # parsers do not populate it (Maven/Gradle/npm). `total` stays unprojected.
     if 'tests' in result and result['tests']:
         tests = _normalize_dict(result['tests'])
-        ordered['tests'] = OrderedDict(
+        tests_section: OrderedDict[str, Any] = OrderedDict(
             [
                 ('passed', tests.get('passed', 0)),
                 ('failed', tests.get('failed', 0)),
                 ('skipped', tests.get('skipped', 0)),
             ]
         )
+        if tests.get('duration_seconds') is not None:
+            tests_section['duration_seconds'] = tests['duration_seconds']
+        ordered['tests'] = tests_section
 
     return serialize_toon(dict(ordered))
 

@@ -8,7 +8,9 @@ Standards shared across all build systems (Maven, Gradle, npm, Python). Tool-spe
 
 See [build-execution.md](build-execution.md) § R3 for the complete timeout learning algorithm and Python API.
 
-**Quick reference**: Default 300s, minimum 60s, maximum 1800s, discovery 120s. All timeouts in seconds. Adaptive learning uses `last_duration × 1.25` with weighted averaging.
+**Quick reference**: Default 300s, minimum 60s (the tool-agnostic default floor — overridable per tool), maximum 1800s, discovery 120s. All timeouts in seconds. Adaptive learning uses `last_duration × 1.25` with weighted averaging.
+
+A tool that runs its own inner timeout backstop overrides the default floor via `ExecuteConfig.min_timeout` (threaded into `execute_direct_base`), and MUST set it strictly greater than that inner backstop — otherwise the outer timeout can fire first and reduce a diagnosable inner timeout report to an opaque outer kill.
 
 ---
 

@@ -67,15 +67,17 @@ Present when `status` is `error` or `timeout`.
 |-------|------|-------------|
 | `error` | string | Error type identifier (e.g., `build_failed`, `timeout`, `execution_failed`) |
 
-#### Parsed Issues (On Build Failure)
+#### Parsed Issues and Test Evidence
 
 When a build fails, implementations **should** parse the log file and include structured issue data. The content varies based on `--mode` parameter.
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `errors` | list | Compilation/build errors extracted from log |
-| `warnings` | list | Build warnings (filtered by mode) |
-| `tests` | object | Test execution summary |
+`tests` is **not** failure-only: implementations also parse the log on `timeout`. A suite that finished green and then hung in teardown reports `status: timeout` carrying a zero-failure `tests` block, which is what makes the timeout diagnosable instead of opaque. Only a **zero-failure** summary is attached — a summary carrying failures may be the partial output of a run the kill interrupted mid-flight, so it is not evidence the suite completed. A missing or unparseable log degrades to the bare result without `tests` — never to a crash.
+
+| Field | Type | Present on | Description |
+|-------|------|------------|-------------|
+| `errors` | list | error | Compilation/build errors extracted from log |
+| `warnings` | list | error | Build warnings (filtered by mode) |
+| `tests` | object | error, timeout | Test execution summary |
 
 **Error entry structure**:
 ```text
@@ -90,8 +92,11 @@ When a build fails, implementations **should** parse the log file and include st
 
 **Test summary structure**:
 ```text
-{passed, failed, skipped}
+{passed, failed, skipped}                    # tools that report no run duration
+{passed, failed, skipped, duration_seconds}  # tools that report one (e.g. pytest)
 ```
+
+`duration_seconds` inside `tests` is the **test tool's own** reported run duration, not wall clock — it is present only when the tool emits one.
 
 #### Output Modes
 
@@ -112,6 +117,7 @@ Build systems may include additional context for diagnostics.
 | Field | Type | Scope | Description |
 |-------|------|-------|-------------|
 | `timeout_used_seconds` | int | All | Timeout that was applied |
+| `tool_duration_seconds` | float | Tools reporting a run duration | Test tool's own reported run duration, mirroring `tests.duration_seconds`. Distinct from the top-level `duration_seconds` (wall clock): on a timeout the wall clock equals the timeout while this shows how long the suite itself took. |
 | `wrapper` | string | Maven, Python | Wrapper path used (e.g., `./mvnw`, `./pw`) |
 | `command_type` | string | npm | Execution type: `npm` or `npx` |
 
@@ -448,6 +454,26 @@ tests:
   skipped: 1
 ```
 
+Timeout case carrying the test evidence the run produced before the kill:
+```text
+status	timeout
+exit_code	-1
+duration_seconds	600
+log_file	.plan/temp/build-output/default/python-2026-01-03-141540.log
+command	./pw module-tests
+error	timeout
+timeout_used_seconds	600
+tool_duration_seconds	412.87
+
+tests:
+  passed: 10308
+  failed: 0
+  skipped: 4
+  duration_seconds: 412.87
+```
+
+The whole suite passed in 412.87 s and the process was then killed at the 600 s wall-clock bound — the hang is after the tests, not in them. Without the `tests` block the same result would be indistinguishable from a suite that never finished.
+
 Error case with `--mode structured` (shows accepted flag):
 ```text
 status	error
@@ -490,6 +516,27 @@ Error case with parsed issues:
     "passed": 10,
     "failed": 2,
     "skipped": 1
+  }
+}
+```
+
+Timeout case carrying the test evidence the run produced before the kill:
+```json
+{
+  "status": "timeout",
+  "exit_code": -1,
+  "duration_seconds": 600,
+  "log_file": ".plan/temp/build-output/default/python-2026-01-03-141540.log",
+  "command": "./pw module-tests",
+  "error": "timeout",
+  "timeout_used_seconds": 600,
+  "tool_duration_seconds": 412.87,
+  "tests": {
+    "passed": 10308,
+    "failed": 0,
+    "skipped": 4,
+    "total": 10312,
+    "duration_seconds": 412.87
   }
 }
 ```
@@ -597,7 +644,7 @@ Extensions providing build commands must:
 - Use `command` (not `command_executed`)
 - Include `error` field when status is not `success`
 - Use TOON tab-separated format: `key\tvalue` (not colon-separated)
-- Parse and return structured `errors`, `warnings`, `tests` on build failure
+- Parse and return structured `errors` and `warnings` on build failure, and `tests` on build failure **and on timeout** (a timeout-killed run reports its parsed zero-failure test evidence)
 - Filter warnings based on mode and acceptable patterns
 - Have tests for both output formats and all modes
 

@@ -489,6 +489,11 @@ _PYTEST_SUMMARY_LINE_PATTERN = re.compile(
     re.MULTILINE,
 )
 
+# Captures the run duration out of the `in Ns` marker the line pattern above
+# already anchors on. Applied only to the resolved summary line, so it adds no
+# line-location logic of its own.
+_PYTEST_SUMMARY_DURATION_PATTERN = re.compile(r'\bin\s+(\d+(?:\.\d+)?)s')
+
 
 def _extract_pytest_summary(content: str) -> UnitTestSummary | None:
     """Extract the pytest summary independent of count ordering.
@@ -506,7 +511,8 @@ def _extract_pytest_summary(content: str) -> UnitTestSummary | None:
 
     Returns:
         UnitTestSummary if a summary line with any of passed/failed/skipped is
-        found, else None.
+        found, else None. ``duration_seconds`` carries the `in Ns` figure from
+        the same resolved summary line when present.
     """
     summary_lines = _PYTEST_SUMMARY_LINE_PATTERN.findall(content)
     if not summary_lines:
@@ -525,11 +531,13 @@ def _extract_pytest_summary(content: str) -> UnitTestSummary | None:
     passed = counts.get('passed', 0)
     failed = counts.get('failed', 0)
     skipped = counts.get('skipped', 0)
+    duration_match = _PYTEST_SUMMARY_DURATION_PATTERN.search(summary_line)
     return UnitTestSummary(
         passed=passed,
         failed=failed,
         skipped=skipped,
         total=passed + failed + skipped,
+        duration_seconds=float(duration_match.group(1)) if duration_match else None,
     )
 
 
