@@ -12,16 +12,25 @@ while holding a non-zero ``exit_code``. These tests lock two things:
    (``cmd_run_common`` / ``cmd_parse_common``) so a future caller that
    assembles an untruthful success fails loudly at emit time rather than
    printing green.
+3. The sibling truthfulness obligation on the timeout branch: a run killed by
+   the outer timeout reports the zero-failure test evidence its log proves
+   (``tests`` + ``tool_duration_seconds``), attaches nothing when the parsed
+   summary carries failures, and degrades to the historical bare timeout
+   result — with a stderr warning, never an exception — when the log cannot
+   be parsed.
 """
 
+import json
 import types
 
 # _build_shared / _build_result live under script-shared/scripts/build/ and are
 # importable directly via the conftest cross-skill PYTHONPATH.
 import _build_shared
 import pytest
+from _build_parse import UnitTestSummary
 from _build_result import (
     STATUS_SUCCESS,
+    DirectCommandResult,
     TruthfulStatusError,
     assert_truthful_status,
     error_result,
@@ -112,3 +121,97 @@ def test_cmd_parse_common_invokes_guard(monkeypatch, tmp_path):
     _build_shared.cmd_parse_common(args, _fake_parser)
 
     assert calls, 'cmd_parse_common must call assert_truthful_status before emitting'
+
+
+# =============================================================================
+# Timeout evidence (a killed run still reports what its log proves)
+# =============================================================================
+
+
+def _timeout_result_input() -> DirectCommandResult:
+    """The DirectCommandResult shape cmd_run_common receives for a killed run."""
+    result: DirectCommandResult = {
+        'status': 'timeout',
+        'exit_code': -1,
+        'duration_seconds': 600,
+        'timeout_used_seconds': 600,
+        'log_file': '/tmp/does-not-matter.log',
+        'command': './pw module-tests',
+    }
+    return result
+
+
+def _emit_timeout(capsys, parser) -> dict:
+    """Run cmd_run_common over a timeout result and return the emitted JSON."""
+    exit_code = _build_shared.cmd_run_common(
+        _timeout_result_input(), parser, 'python', output_format='json'
+    )
+    assert exit_code == 0, 'a timeout is modeled in the output, not the exit code'
+    emitted: dict = json.loads(capsys.readouterr().out)
+    return emitted
+
+
+def test_timeout_attaches_zero_failure_evidence(capsys):
+    """A killed run whose log parses green reports its test evidence."""
+
+    def _green_parser(log_file, *args):
+        return ([], UnitTestSummary(passed=42, failed=0, skipped=1, total=43, duration_seconds=412.87), 'SUCCESS')
+
+    emitted = _emit_timeout(capsys, _green_parser)
+
+    assert emitted['status'] == 'timeout'
+    assert emitted['tests'] == {
+        'passed': 42,
+        'failed': 0,
+        'skipped': 1,
+        'total': 43,
+        'duration_seconds': 412.87,
+    }
+    assert emitted['tool_duration_seconds'] == 412.87
+
+
+def test_timeout_omits_tool_duration_when_parser_reports_none(capsys):
+    """A parser with no duration still attaches tests, without tool_duration_seconds."""
+
+    def _no_duration_parser(log_file, *args):
+        return ([], UnitTestSummary(passed=5, failed=0, skipped=0, total=5), 'SUCCESS')
+
+    emitted = _emit_timeout(capsys, _no_duration_parser)
+
+    assert emitted['status'] == 'timeout'
+    assert emitted['tests']['passed'] == 5
+    assert 'duration_seconds' not in emitted['tests']
+    assert 'tool_duration_seconds' not in emitted
+
+
+def test_timeout_attaches_no_evidence_when_tests_failed(capsys):
+    """A summary carrying failures is not proof the suite completed — not attached."""
+
+    def _failing_parser(log_file, *args):
+        return ([], UnitTestSummary(passed=10, failed=2, skipped=0, total=12, duration_seconds=9.5), 'FAILURE')
+
+    emitted = _emit_timeout(capsys, _failing_parser)
+
+    assert emitted['status'] == 'timeout'
+    assert 'tests' not in emitted
+    assert 'tool_duration_seconds' not in emitted
+
+
+def test_timeout_degrades_to_bare_result_when_parser_raises(capsys):
+    """An unparseable log warns on stderr and emits the historical bare result."""
+
+    def _raising_parser(log_file, *args):
+        raise OSError('log file vanished')
+
+    exit_code = _build_shared.cmd_run_common(
+        _timeout_result_input(), _raising_parser, 'python', output_format='json'
+    )
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    emitted = json.loads(captured.out)
+    assert emitted['status'] == 'timeout'
+    assert emitted['timeout_used_seconds'] == 600
+    assert 'tests' not in emitted
+    assert 'tool_duration_seconds' not in emitted
+    assert '[WARNING] Timeout evidence parse failed' in captured.err

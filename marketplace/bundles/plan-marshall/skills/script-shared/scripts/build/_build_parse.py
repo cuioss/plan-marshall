@@ -179,25 +179,37 @@ class UnitTestSummary:
         failed: Number of tests that failed.
         skipped: Number of tests that were skipped.
         total: Total number of tests (should equal passed + failed + skipped).
+        duration_seconds: Test-tool-internal run duration as the tool itself
+            reported it (e.g. pytest's `in 12.34s`), or None when the tool's
+            output carries no duration. This is NOT wall-clock time for the
+            build process — the two diverge precisely in the case that matters:
+            a run killed by the outer timeout has a wall clock equal to the
+            timeout while the tool's own duration shows how long the suite
+            actually took before whatever hung afterwards.
     """
 
     passed: int
     failed: int
     skipped: int
     total: int
+    duration_seconds: float | None = None
 
     def to_dict(self) -> dict:
         """Convert to dict for JSON serialization.
 
         Returns:
-            Dict with passed, failed, skipped, and total fields.
+            Dict with passed, failed, skipped, and total fields, plus
+            duration_seconds when the tool reported one.
         """
-        return {
+        result: dict = {
             'passed': self.passed,
             'failed': self.failed,
             'skipped': self.skipped,
             'total': self.total,
         }
+        if self.duration_seconds is not None:
+            result['duration_seconds'] = self.duration_seconds
+        return result
 
 
 # =============================================================================

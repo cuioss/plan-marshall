@@ -542,11 +542,40 @@ def cmd_run_common(
 
     # Handle timeout
     if result['status'] == 'timeout':
+        # Truthful timeout evidence: a run killed by the outer timeout may have
+        # already completed its whole test suite before the kill (a hang in
+        # teardown, coverage aggregation, or process shutdown). The success
+        # branch below parses the log; the timeout branch historically did not,
+        # so that evidence was discarded and every timeout looked equally
+        # uninformative. Parse the log the same way and attach the resulting
+        # summary — a missing or unparseable log degrades to the historical
+        # bare timeout result with a [WARNING] on stderr, never a crash.
+        try:
+            if parser_needs_command:
+                _, test_summary, _ = parser_fn(log_file, command_str)
+            else:
+                _, test_summary, _ = parser_fn(log_file)
+        except Exception as parse_err:
+            print(f'[WARNING] Timeout evidence parse failed: {parse_err}', file=sys.stderr)
+            test_summary = None
+
+        # Only a zero-failure summary is attached. A summary carrying failures
+        # is not evidence that the suite completed — the failures may be the
+        # partial output of a run the kill interrupted mid-flight, so surfacing
+        # them on a timeout result would assert more than the log proves.
+        timeout_extra: dict = {}
+        if test_summary is not None and test_summary.failed == 0:
+            timeout_extra['tests'] = test_summary
+            tool_duration = getattr(test_summary, 'duration_seconds', None)
+            if tool_duration is not None:
+                timeout_extra['tool_duration_seconds'] = tool_duration
+
         timeout_output = timeout_result(
             timeout_used_seconds=result['timeout_used_seconds'],
             duration_seconds=result['duration_seconds'],
             log_file=log_file,
             command=command_str,
+            **timeout_extra,
         )
         print(formatter(timeout_output))
         return 0  # Status modeled in output, not exit code

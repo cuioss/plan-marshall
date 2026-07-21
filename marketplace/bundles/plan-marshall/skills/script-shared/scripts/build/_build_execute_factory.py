@@ -41,7 +41,13 @@ from argparse import Namespace  # noqa: E402
 from pathlib import Path  # noqa: E402
 from typing import Any  # noqa: E402
 
-from _build_execute import BuildCommandFn, CaptureStrategy, ScopeFn, execute_direct_base  # noqa: E402
+from _build_execute import (  # noqa: E402
+    MIN_TIMEOUT,
+    BuildCommandFn,
+    CaptureStrategy,
+    ScopeFn,
+    execute_direct_base,
+)
 from _build_execute import detect_wrapper as _detect_wrapper  # noqa: E402
 from _build_queue_slot import BuildQueueTimeout, build_queue_slot  # noqa: E402
 from _build_result import (  # noqa: E402
@@ -378,6 +384,14 @@ class ExecuteConfig:
     default_timeout: int = 300
     """Default timeout in seconds if no learned value exists."""
 
+    min_timeout: int = MIN_TIMEOUT
+    """Floor (seconds) applied to the learned/default timeout for this tool.
+
+    Defaults to the tool-agnostic :data:`MIN_TIMEOUT`. A tool that runs its own
+    inner timeout backstop MUST set a floor strictly greater than that backstop,
+    so the outer timeout can never fire first and reduce a diagnosable inner
+    timeout report to an opaque outer kill."""
+
     notation: str = ''
     """Executor notation the marshalld daemon re-runs for this build (D5 routing).
 
@@ -481,6 +495,7 @@ def create_execute_handlers(
             env_vars=env_vars,
             working_dir=working_dir,
             extra_result_fields=extras or None,
+            min_timeout=config.min_timeout,
         )
 
     def cmd_run(args) -> int:

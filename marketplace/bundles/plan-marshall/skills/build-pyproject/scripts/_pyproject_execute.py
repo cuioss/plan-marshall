@@ -38,6 +38,16 @@ from _pyproject_cmd_parse import parse_log
 logger = logging.getLogger(__name__)
 
 
+# Outer timeout floor (seconds) for pyprojectx builds. pytest runs its own
+# per-test timeout backstop, configured under [tool.pytest.ini_options] in
+# pyproject.toml. This outer floor MUST stay strictly greater than that inner
+# backstop: if the outer wrapper timeout can expire first, it kills the run
+# before pytest can report WHICH test hung, turning a diagnosable inner timeout
+# into an opaque outer kill. See build-pyproject/standards/pyproject-impl.md
+# § "Timeout bound ordering".
+PYTEST_OUTER_FLOOR_SECONDS = 600
+
+
 def _python_scope_fn(args: str) -> str:
     """Extract scope from pyprojectx args (second token is the module name)."""
     parts = args.split()
@@ -59,6 +69,7 @@ _CONFIG = ExecuteConfig(
     scope_fn=_python_scope_fn,
     command_key_fn=default_command_key_fn,
     default_timeout=DEFAULT_BUILD_TIMEOUT,
+    min_timeout=PYTEST_OUTER_FLOOR_SECONDS,
     extra_result_fn=_python_extra_result_fn,
 )
 
