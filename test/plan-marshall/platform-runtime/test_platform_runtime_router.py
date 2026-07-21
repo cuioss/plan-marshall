@@ -8,7 +8,7 @@ Covers:
   - _resolve_target: runtime.target extraction from marshal data
   - _make_runtime: registry lookup and unknown target handling
   - _parse_json_list / _parse_context: JSON helpers
-  - _dispatch: correct routing and argparse for all 23 operations
+  - _dispatch: correct routing and argparse for all 24 operations
   - main: full integration — no args, missing marshal, unknown target, dispatch
 """
 from __future__ import annotations  # noqa: I001
@@ -77,6 +77,7 @@ def _mock_runtime() -> MagicMock:
     rt.permission_web_apply.return_value = toon_success("permission web-apply")
     rt.metrics_capture.return_value = toon_success("metrics capture")
     rt.subagent_dispatch.return_value = toon_success("subagent dispatch")
+    rt.wait_for.return_value = toon_success("wait for")
     rt.health_check.return_value = toon_success("health-check")
     return rt
 
@@ -115,6 +116,88 @@ class TestSessionTeardownDispatch:
         assert result["status"] == "error"
         assert result["error"] == "unknown_operation"
         assert "session teardown" in result["message"]
+
+
+# =============================================================================
+# Test: wait for routing
+# =============================================================================
+
+
+class TestWaitForDispatch:
+    """The ``wait for`` operation is registered in the dispatch chain."""
+
+    _ARGS = [
+        "--observable", "build-job",
+        "--reference", "job-42",
+        "--bound-seconds", "300",
+    ]
+
+    def test_wait_for_parses_as_a_two_token_operation(self):
+        """``wait for`` parses to the two-word operation, flags left as remaining."""
+        op, remaining = _build_operation(["wait", "for", *self._ARGS])
+        assert op == "wait for"
+        assert remaining == self._ARGS
+
+    def test_dispatch_routes_to_wait_for_with_typed_arguments(self):
+        """The router forwards the three arguments, with the bound typed as int."""
+        rt = _mock_runtime()
+        result = _dispatch(rt, "wait for", list(self._ARGS))
+        rt.wait_for.assert_called_once_with("build-job", "job-42", 300)
+        assert _parsed(result)["operation"] == "wait for"
+
+    def test_dispatch_returns_the_runtime_toon_verbatim(self):
+        """The router is a pass-through — it does not re-wrap the runtime payload."""
+        rt = _mock_runtime()
+        rt.wait_for.return_value = toon_success("wait for", {"outcome": "succeeded"})
+        result = _parsed(_dispatch(rt, "wait for", list(self._ARGS)))
+        assert result["outcome"] == "succeeded"
+
+    def test_dispatch_passes_an_unknown_observable_through_to_the_runtime(self):
+        """The router does not police the observable vocabulary — the runtime owns
+        the closed set, so an unknown kind reaches it and is rejected there."""
+        rt = _mock_runtime()
+        _dispatch(
+            rt,
+            "wait for",
+            ["--observable", "ci-run", "--reference", "r", "--bound-seconds", "1"],
+        )
+        rt.wait_for.assert_called_once_with("ci-run", "r", 1)
+
+    @pytest.mark.parametrize(
+        "missing", ["--observable", "--reference", "--bound-seconds"]
+    )
+    def test_each_argument_is_required(self, missing: str):
+        """Omitting any of the three arguments is an argparse rejection."""
+        args = list(self._ARGS)
+        index = args.index(missing)
+        del args[index:index + 2]
+        rt = _mock_runtime()
+        with pytest.raises(SystemExit):
+            _dispatch(rt, "wait for", args)
+
+    def test_non_integer_bound_is_rejected(self):
+        """``--bound-seconds`` is typed — a non-integer never reaches the runtime."""
+        rt = _mock_runtime()
+        with pytest.raises(SystemExit):
+            _dispatch(
+                rt,
+                "wait for",
+                ["--observable", "build-job", "--reference", "j", "--bound-seconds", "soon"],
+            )
+        rt.wait_for.assert_not_called()
+
+    def test_unexpected_argument_is_rejected(self):
+        """A stray flag is an argparse rejection rather than a silent ignore."""
+        rt = _mock_runtime()
+        with pytest.raises(SystemExit):
+            _dispatch(rt, "wait for", [*self._ARGS, "--condition", "looks-done"])
+
+    def test_unknown_operation_error_names_wait_for(self):
+        """The unknown-operation error string enumerates ``wait for``."""
+        rt = _mock_runtime()
+        result = _parsed(_dispatch(rt, "wait until", []))
+        assert result["error"] == "unknown_operation"
+        assert "wait for" in result["message"]
 
 
 # =============================================================================
@@ -825,6 +908,25 @@ class TestMain:
             code = main(["health-check", "--checks", "all"])
         assert code == 0
         mock_make.assert_called_once_with("claude")
+
+    def test_main_dispatches_wait_for(self, tmp_path, monkeypatch, capsys):
+        """``wait for`` is reachable end-to-end through main()."""
+        monkeypatch.chdir(tmp_path)
+        _make_marshal_file(tmp_path, "claude")
+        with patch("platform_runtime._make_runtime") as mock_make:
+            rt = _mock_runtime()
+            mock_make.return_value = rt
+            code = main(
+                [
+                    "wait", "for",
+                    "--observable", "build-job",
+                    "--reference", "job-1",
+                    "--bound-seconds", "60",
+                ]
+            )
+        assert code == 0
+        assert _parsed(capsys.readouterr().out)["status"] == "success"
+        rt.wait_for.assert_called_once_with("build-job", "job-1", 60)
 
     def test_main_uses_plan_dir_name_env_var(self, tmp_path, monkeypatch, capsys):
         """main() respects PLAN_DIR_NAME env var when locating marshal.json."""

@@ -124,7 +124,7 @@ def test_toon_noop_distinct_from_error():
 
 
 class _ConcreteRuntime(Runtime):
-    """Minimal concrete subclass that implements all 22 abstract methods."""
+    """Minimal concrete subclass that implements all 24 abstract methods."""
 
     def project_initial_setup(self, project_dir: str, target: str) -> str:
         return toon_success("project initial-setup")
@@ -204,6 +204,9 @@ class _ConcreteRuntime(Runtime):
     def subagent_dispatch(self, agent: str, prompt_file, context) -> str:
         return toon_success("subagent dispatch")
 
+    def wait_for(self, observable: str, reference: str, bound_seconds: int) -> str:
+        return toon_success("wait for")
+
     def health_check(self, checks: str) -> str:
         return toon_success("health-check")
 
@@ -231,20 +234,21 @@ ALL_ABSTRACT_METHODS = [
     "metrics_capture",
     "metrics_normalized_tokens",
     "subagent_dispatch",
+    "wait_for",
     "health_check",
 ]
 
 
-def test_runtime_has_23_abstract_methods():
-    """Runtime ABC exposes exactly 23 abstract methods."""
+def test_runtime_has_24_abstract_methods():
+    """Runtime ABC exposes exactly 24 abstract methods."""
     abstract_methods = getattr(Runtime, "__abstractmethods__", frozenset())
-    assert len(abstract_methods) == 23, (
-        f"Expected 23 abstract methods, found {len(abstract_methods)}: {sorted(abstract_methods)}"
+    assert len(abstract_methods) == 24, (
+        f"Expected 24 abstract methods, found {len(abstract_methods)}: {sorted(abstract_methods)}"
     )
 
 
 def test_all_expected_methods_are_abstract():
-    """Each of the 23 documented operations is abstract on Runtime."""
+    """Each of the 24 documented operations is abstract on Runtime."""
     abstract_methods = getattr(Runtime, "__abstractmethods__", frozenset())
     for method in ALL_ABSTRACT_METHODS:
         assert method in abstract_methods, (
@@ -270,7 +274,7 @@ def test_subclass_missing_one_method_raises(missing_method: str):
 
 
 def test_concrete_subclass_can_be_instantiated():
-    """A subclass implementing all 23 methods can be instantiated without error."""
+    """A subclass implementing all 24 methods can be instantiated without error."""
     runtime = _ConcreteRuntime()
     assert isinstance(runtime, Runtime)
 
@@ -307,10 +311,11 @@ def test_concrete_returns_valid_toon_for_each_method():
         runtime.metrics_capture("my-plan", "phase-1-init", None),
         runtime.metrics_normalized_tokens("sid", [], "/tmp/out.json"),
         runtime.subagent_dispatch("execution-context", None, None),
+        runtime.wait_for("build-job", "job-1", 60),
         runtime.health_check("all"),
     ]
 
-    assert len(outputs) == 23, "Expected output for each of the 23 methods"
+    assert len(outputs) == 24, "Expected output for each of the 24 methods"
     for output in outputs:
         result = parse_toon(output)
         assert result.get("status") == "success", (

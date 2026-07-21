@@ -2,7 +2,7 @@
 
 The target-neutral standard for the wait class: work that cannot proceed until something outside this process reaches a terminal state. It states **when** to wait, **who** may hold a wait, **what a waiter must be able to observe**, and **how** the wait is realised on a target that has no background-watch mechanism.
 
-This is the policy half of the waiting capability. The mechanism half — the primitive that actually blocks until a condition holds — is a `Runtime` operation that a target may decline; see [`platform-runtime`](../../platform-runtime/SKILL.md) and its [`standards/no-op-policy.md`](../../platform-runtime/standards/no-op-policy.md). The split, and the reasoning that produced it, is recorded in **ADR-011** (`doc/adr/011-The_waiting_capability_is_a_hybrid_target-neutral_policy_over_a_declinable_runtime_primitive.adoc`).
+This is the policy half of the waiting capability. The mechanism half — the primitive that actually holds a bounded wait over a concrete, inspectable observable — is a `Runtime` operation that a target may decline; see [`platform-runtime`](../../platform-runtime/SKILL.md) and its [`standards/no-op-policy.md`](../../platform-runtime/standards/no-op-policy.md). The split, and the reasoning that produced it, is recorded in **ADR-011** (`doc/adr/011-The_waiting_capability_is_a_hybrid_target-neutral_policy_over_a_declinable_runtime_primitive.adoc`).
 
 Every realisation below is expressed as **"wait until condition C holds, or one of its terminal-failure states."** This document deliberately names no target-specific primitive and uses no event-stream vocabulary: a reader on any target can follow it end to end.
 
@@ -48,13 +48,17 @@ The corollary is the reading rule: **an absent signal is `unknown`, never `passe
 
 Three tiers, in descending order of what the target supports. Every tier satisfies the policy above; they differ only in mechanics and in what a reap costs.
 
-**Tier 1 — a background-watch primitive, where the target has one.** The wait is held out-of-band while the main loop stays responsive, and the terminal state arrives as a completion signal. This is the `Runtime` waiting operation's implementing path. It covers the single-completion case (one condition, one terminal state) as well as the several-conditions case, in which each condition is tracked independently and each terminal arrival is handled once — a repeat notification for an already-handled condition is a no-op, while a first notification for a not-yet-handled condition is real work. Tier 1 is a **known-lossy** mechanism: the loss is *detected* by the terminal-state coverage rule above, not prevented by the primitive.
+**Tier 1 — a background-watch primitive, where the target has one.** The wait is held out-of-band while the main loop stays responsive, and the terminal state arrives as a completion signal. It covers the single-completion case (one condition, one terminal state) as well as the several-conditions case, in which each condition is tracked independently and each terminal arrival is handled once — a repeat notification for an already-handled condition is a no-op, while a first notification for a not-yet-handled condition is real work. Tier 1 is a **known-lossy** mechanism: the loss is *detected* by the terminal-state coverage rule above, not prevented by the primitive.
 
-**Tier 2 — a bounded synchronous wait.** The caller blocks inline until the condition reaches a terminal state or the bound expires. Available on every target, since it needs nothing but the ability to query the signal's terminal state. It costs responsiveness — the main loop is blocked for the duration — but it is fully correct, and it is the decline path's first alternative.
+Tier 1 is **agent-level**. Where a target offers it, it is driven by the execution loop itself, not by a call into the runtime: the affordance has no programmatic surface a runtime operation could register against. That is why the `Runtime` waiting operation does **not** implement this tier — see tier 2.
+
+**Tier 2 — a bounded wait over a concrete observable.** The caller blocks until the observed thing reaches a terminal state or the bound expires. Available on every target, since it needs nothing but the ability to query the observed thing's terminal state. It costs responsiveness — the caller is blocked for the duration — but it is fully correct.
+
+**This is the `Runtime` waiting operation's implementing path.** The operation names *what* is being awaited as a concrete, inspectable observable drawn from a closed set — never an opaque condition, which nothing running outside the execution loop could evaluate — and returns a normalised terminal outcome, or an explicit non-terminal pending when the bound expires. A target whose runtime cannot hold such a wait declines it, and the decline's first alternative is this same tier reached directly: the observed thing's own bounded-wait surface, invoked in-turn.
 
 **Tier 3 — checkpoint and re-dispatch.** The caller records enough state to resume, returns, and is re-entered later to re-issue the wait. **This tier is correct even under worst-case reaping**, because no wait is held across the reap boundary at all: the wait is re-established on re-entry from persisted state. It is the fallback of last resort and the one tier that assumes nothing about the target or the harness.
 
-A target whose `Runtime` waiting operation declines returns `status: no-op` with a `reason` and an `alternative`, and the alternative names tier 2 or tier 3. Per the No-Op Policy, the caller logs the reason, applies the alternative, and **continues** — a declined wait never fails a workflow.
+A target whose `Runtime` waiting operation declines returns `status: no-op` with a `reason` and an `alternative`, and the alternative names tier 2 reached directly, or tier 3. Per the No-Op Policy, the caller logs the reason, applies the alternative, and **continues** — a declined wait never fails a workflow.
 
 ## Bounded polling and the build-server relationship
 
@@ -81,7 +85,7 @@ No existing waiting call site is migrated onto the `Runtime` waiting operation b
 ## Related
 
 - **ADR-011** — the decision this standard realises: waiting is a target-neutral policy over a declinable runtime primitive, and the target-specific-skill route is rejected.
-- [`workflow/await-long-running.md`](../workflow/await-long-running.md) — the shipped detach-and-notify orchestration seam, a tier-1 realisation with a tier-2 fallback.
+- [`workflow/await-long-running.md`](../workflow/await-long-running.md) — the shipped detach-and-notify orchestration seam, the tier-1 realisation (agent-level, with a tier-2 fallback).
 - [`platform-runtime/standards/no-op-policy.md`](../../platform-runtime/standards/no-op-policy.md) — the decline contract (`reason` plus `alternative`) and the caller's obligation to continue.
 - [`tools-integration-ci/standards/blocking-wait-pattern.md`](../../tools-integration-ci/standards/blocking-wait-pattern.md) — the bounded wait verbs, the tier-2 realisation available on every target.
 - [`build-server-client/SKILL.md`](../../build-server-client/SKILL.md) — the submit/wait split behind the bounded-poll relationship above.

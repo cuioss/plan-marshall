@@ -7,7 +7,7 @@
 // Progressive-disclosure metadata block (see manage-adr SKILL.md → "ADR Template
 // Structure"). Read by `manage-adr.py scan` so a caller can assess an ADR's
 // relevance without reading the full file. List fields are comma-separated.
-// summary: Waiting for an external event splits into a target-neutral policy that renders identically on every target and a declinable Runtime primitive that a target without a background-watch mechanism answers with no-op plus an alternative; the target-specific-skill route is rejected by the admission test.
+// summary: Waiting for an external event splits into a target-neutral policy that renders identically on every target and a declinable Runtime primitive — a bounded poll over a concrete, subprocess-inspectable observable, never an opaque condition descriptor — that a target with no runtime-held wait channel answers with no-op plus an alternative; the target-specific-skill route is rejected by the admission test.
 // tags: waiting, platform-runtime, target-extensibility, no-op
 // affects: platform-runtime, plan-marshall, marketplace/targets
 // supersedes:
@@ -40,9 +40,16 @@ halves:
   cover, and what a caller must do when its budget runs out. This half is reasoning, and
   it is identical no matter which target the work runs on.
 * A *primitive* half — the mechanical act of blocking until a condition holds while
-  something else makes progress. This half is not identical across targets: a target may
-  expose a background-watch or completion-notification mechanism, or it may expose
-  nothing of the kind and offer only a synchronous call.
+  something else makes progress. This half is not identical across targets: a target's
+  runtime may be able to hold a wait and inspect the awaited thing, or it may be wired
+  into nothing that would let it do so.
+
+A third constraint shapes the primitive and is easy to miss until it is tested against
+source. A `Runtime` operation executes in a *subprocess*. A subprocess can inspect a
+concrete, pollable thing — a job on a socket, a run behind an API — but it cannot evaluate
+an arbitrary caller-supplied predicate, and it cannot register a callback with an
+affordance that only exists at the agent level. Whatever the primitive awaits must
+therefore be nameable as something the runtime can actually look at.
 
 `principles.md` §6 draws a sharp line for exactly this situation, and the waiting
 capability lands on the seam of it. The line distinguishes a capability that *differs per
@@ -70,8 +77,40 @@ does the seam between them fall?
 
 The waiting capability is a *hybrid*. The policy is target-neutral and lives as a shared
 standard that renders identically on every target; the primitive is a `Runtime` operation
-with a uniform, intent-shaped contract that a target lacking a background-watch mechanism
+with a uniform, intent-shaped contract that a target with no runtime-held wait channel
 *declines* through the No-Op Policy. Neither half is a target-specific skill.
+
+=== The primitive awaits a concrete observable, not an opaque condition
+
+The operation's "what am I waiting for" argument is an *observable kind* drawn from a
+closed enumerated set, plus a concrete `reference` naming an instance of that kind. It is
+deliberately **not** an opaque caller-supplied condition descriptor. The operation is then
+realised as a bounded, re-issuable poll of that observable's own status surface,
+normalised into an observable-independent outcome.
+
+This narrowing replaced an earlier formulation, and the reason it had to is worth keeping
+visible rather than quietly rewriting. The first formulation paired an *opaque condition
+descriptor* with an implementation "over the target's background-watch mechanism". Tested
+against source, both halves of that pairing fail, and they fail for the same underlying
+reason:
+
+* *The background-watch affordance is agent-level.* A target may well surface background
+  execution and completion notifications to the agent driving it, but that is not the same
+  as exposing a **Python API a runtime subprocess can register against**. No such API
+  exists on the implementing target: its notification surface is reachable only as a
+  turn-boundary trigger, with nothing a blocked subprocess can subscribe to.
+* *An opaque descriptor is unevaluable from a subprocess.* Even granting a watch mechanism,
+  a subprocess handed an arbitrary predicate has no way to decide whether it holds.
+
+Paired, the two produce an operation that can only ever answer "unknown" — a hollow stub
+wearing a real contract. That is the failure mode this ADR's own fail-closed posture
+exists to prevent, so the contract is narrowed rather than the stub shipped. Naming a
+concrete observable makes the primitive genuinely implementable, and it makes an
+unimplementable request an explicit, immediate error (an unrecognised kind is rejected)
+instead of an indefinite silence.
+
+The closed set is the extension point: adding an observable kind is additive, and a kind
+the runtime cannot reach is simply never admitted to the set.
 
 === The gated-fourth-home admission test is applied and fails
 
@@ -95,13 +134,21 @@ three are evaluated here, and the result is recorded rather than assumed:
 | (2) Is it genuinely N/A on other targets, rather than merely hard to abstract?
 | *No.* Every target must wait for CI, and a bounded synchronous wait already exists
   everywhere — the CI abstraction's `wait-for-*` verbs are target-neutral today. The
-  capability is not absent anywhere; only its *background-watch primitive* differs.
+  capability is not absent anywhere; only the ability to hold that wait *inside the
+  runtime*, with the liveness and re-attach surfaces a held wait needs, differs.
 
 | (3) Would normalising it force a hollow no-op onto every other target?
-| *No.* A target without a background-watch mechanism still has real behaviour available:
-  a bounded synchronous wait, or a checkpoint followed by re-dispatch. The decline is a
-  genuine `no-op` carrying a usable `alternative`, not a hollow stub standing in for a
-  capability the target cannot deliver at all.
+| *No.* A target whose runtime cannot hold a wait still has real behaviour available: it
+  invokes the observable's own bounded-wait verb in-turn, or checkpoints and re-dispatches.
+  The decline is a genuine `no-op` carrying a usable `alternative`, not a hollow stub
+  standing in for a capability the target cannot deliver at all.
+
+  This condition is also the reason the *implementing* side must not be a stub either. A
+  contract answered with a hollow no-op on **every** target would retroactively invert this
+  answer: the fallback would no longer be "real behaviour instead of the primitive", it
+  would be the only behaviour, and the capability would in fact be forcing a hollow no-op
+  everywhere. Narrowing the primitive to a concrete observable is what keeps this row's
+  answer true.
 |===
 
 Two of the three conditions fail, so *the `targets:` frontmatter-filter route is rejected*
@@ -111,12 +158,15 @@ consumer from this decision.
 === Grounding in the cross-cutting principles
 
 *`principles.md` §1 (goal-based API — semantic in, normalized out).* The operation takes
-*intent*: the condition to await, its terminal-failure states, and a wall-clock bound. It
-returns a *normalized outcome*: which terminal state was reached, plus the elapsed bound.
-No event-stream object, notification payload, watcher handle, or other target-shaped value
-crosses the boundary in either direction. This is the switch-targets test applied to the
-waiting contract: if a caller could tell which target served the wait by looking at what
-came back, the format would be leaking.
+*intent*: which observable kind to inspect, which instance of it, and a wall-clock bound.
+It returns a *normalized outcome*: which terminal state was reached — or an explicit
+non-terminal pending — plus the elapsed bound. No event-stream object, notification
+payload, watcher handle, job-status wire value, or other observable- or target-shaped
+value crosses the boundary in either direction. This is the switch-targets test applied to
+the waiting contract: if a caller could tell which target served the wait, or which
+observable's native vocabulary answered it, by looking at what came back, the format would
+be leaking. The observable *kind* token is the one deliberate exception — it is the
+caller's own input, echoed back, and it names a capability class rather than a mechanism.
 
 *`principles.md` §5 (no platform-specific behaviour in body text).* The
 `await-long-running` seam's step (c) names a target-specific background primitive directly
@@ -135,18 +185,24 @@ bar §6 sets.
 
 === Per-target realisation
 
-* *claude* — implements the primitive over its background-watch / completion-notification
-  mechanism. Every target-shaped detail — the mechanism's invocation, its notification
-  shape, the idempotency gate that makes a repeated notification a no-op — is confined to
-  the concrete Claude runtime implementation modules. The operation returns the normalized
-  terminal outcome and the elapsed bound; bound exhaustion returns an explicit
-  unknown / pending outcome, never a success.
-* *opencode* — declines: `status: no-op` with a `reason` (no plugin-driven background-watch
-  or completion-notification channel is exposed) and an `alternative` (run the bounded wait
-  synchronously, or checkpoint and re-dispatch). This follows the caller obligations in
-  `platform-runtime` `standards/no-op-policy.md`: the caller handles the decline and
-  continues along the stated alternative, and the workflow never fails because the
-  primitive is absent.
+* *claude* — implements the primitive as a bounded, re-issuable poll of the observable's
+  own status surface, with every observable- and target-shaped detail — the channel, its
+  wire vocabulary, the mapping from that vocabulary into the normalized outcome set —
+  confined to the concrete Claude runtime implementation modules. The observable kind
+  shipped is the build-server job: it is the one subprocess-reachable surface whose status
+  vocabulary already distinguishes an externally killed job from a failed one, which is
+  exactly the distinction the coverage rule below turns on. The operation returns the
+  normalized terminal outcome and the elapsed bound; bound exhaustion returns an explicit
+  pending outcome, never a success, and an unreachable channel is an explicit error rather
+  than either.
+* *opencode* — declines: `status: no-op` with a `reason` (its runtime is wired into none of
+  the surfaces a held wait needs — no platform-provided session id, no hook channel, and no
+  access to the shared layer the observables are inspected through, so a wait held there
+  would be unobservable and could not be re-attached) and an `alternative` (invoke the
+  observable's own bounded-wait verb in-turn, or checkpoint and re-dispatch). This follows
+  the caller obligations in `platform-runtime` `standards/no-op-policy.md`: the caller
+  handles the decline and continues along the stated alternative, and the workflow never
+  fails because the primitive is absent.
 
 === The seam between the halves
 
@@ -156,9 +212,15 @@ failure signatures so silence is never read as success, the tiered realisation t
 degrades from a background-watch primitive to a bounded synchronous wait to
 checkpoint-and-re-dispatch, and the rule that a wall-clock budget is a *bound* rather than
 a *verdict* — its exhaustion yields an explicit unknown the caller must act on. The
-primitive half owns only the mechanical block-until-condition act. A reader on any target
-can follow the policy end to end; only the tier-1 realisation is target-dependent, and
-that dependency is expressed as an operation that may decline.
+primitive half owns only the mechanical hold-until-terminal act over a named observable. A
+reader on any target can follow the policy end to end.
+
+The narrowing places the `Runtime` operation precisely within that tiered realisation: it
+is the **tier-2** bounded wait, made uniform and re-usable across observables, not the
+tier-1 background watch. Tier 1 remains a real realisation — it is what the shipped
+detach-and-notify orchestration seam does — but it is *agent-level*, driven by the loop
+itself rather than by a runtime call, and no runtime operation can reach it. Only tier 2 is
+target-dependent, and that dependency is expressed as an operation that may decline.
 
 == Consequences
 
@@ -172,6 +234,32 @@ docs; it is deliberately not inlined into the always-loaded agent floor, which c
 only a pointer to it. The *mechanism* is owned by the `platform-runtime` operation, its
 per-target implementations, its router wiring, and its per-operation contract schema.
 
+=== The mechanism is built here, ahead of its first consumer
+
+The mechanism half is *built* alongside this decision rather than deferred: the abstract
+operation, its implementing and declining realisations, the router wiring, and the contract
+schema all land together with the policy standard. This is a recorded choice, not an
+accident of sequencing, and it was made over a live objection.
+
+The objection is Principle 7 — *implement the minimum, not the maximum*. No call site is
+migrated onto the operation here: the detach-and-notify orchestration seam, the CI
+abstraction's bounded wait verbs, the finalize CI wait, and the build-server long poll all
+continue to behave exactly as they did. Building a mechanism ahead of its first consumer is
+speculative structure by that principle's plain reading, and it was raised as such.
+
+**The objection was explicitly overridden, and shipping the operation ahead of its first
+consumer was explicitly accepted.** The acceptance is the justification, and it is recorded
+here so a future reader does not read the unmigrated call sites as an oversight. Consumer
+migration is deliberate follow-up work.
+
+The narrowing to a concrete observable is what makes that acceptance defensible rather than
+merely authorised. An operation built ahead of its consumers earns its keep only if it is
+substantiated on at least one target; a contract shipped with no working implementation
+anywhere would be speculative structure *and* a hollow surface. Building against a concrete
+observable forced the design through a real implementation before the first consumer
+arrived — which is how the agent-level nature of the background-watch affordance was
+discovered rather than assumed.
+
 === Positive
 
 * Waiting has one reasoning home and one mechanism home, so a reader never has to
@@ -179,13 +267,17 @@ per-target implementations, its router wiring, and its per-operation contract sc
   re-derive the policy to add a target.
 * A general workflow body no longer needs to name a target-specific primitive to describe
   a wait, removing the class of §5 violation that the shipped waiting seam exhibits.
-* A target without a background-watch mechanism is neither blocked nor lied to: it
-  receives an explicit decline carrying a real alternative, so every workflow that waits
-  remains runnable everywhere.
+* A target whose runtime cannot hold a wait is neither blocked nor lied to: it receives an
+  explicit decline carrying a real alternative, so every workflow that waits remains
+  runnable everywhere.
 * The silence-is-not-success rule is stated once as policy and is therefore inherited by
   every realisation tier, rather than being re-argued per waiting call site.
 * Adding a target costs an implementation of one more operation — or one decline — and no
   edit to any general skill body, preserving the §6 cost contract.
+* A request the runtime cannot serve fails *immediately and by name*. Because the awaited
+  thing is a kind from a closed set rather than an opaque descriptor, an unreachable or
+  unrecognised request is rejected at the boundary instead of being absorbed into a wait
+  that can only expire into "unknown".
 
 === Negative
 
@@ -196,6 +288,16 @@ per-target implementations, its router wiring, and its per-operation contract sc
   bounded synchronous wait or a checkpoint-and-re-dispatch is correct but coarser, so
   identical policy yields different latency and different re-entry characteristics per
   target.
+* The operation serves only what its closed observable set admits. A caller waiting on
+  something outside that set gets an explicit rejection and must fall back to the
+  observable's own wait surface, so the operation is not yet the single home for every
+  wait — it is the single home for every wait it admits. Widening the set is the intended
+  path, and each widening is a deliberate act rather than an automatic consequence of a
+  caller inventing a new descriptor.
+* Naming concrete observables couples the runtime abstraction to the subsystems that own
+  them. The coupling is confined to the implementing runtime's modules and reaches only
+  shared wire-protocol layers, but it is real: the runtime is no longer purely about the
+  harness.
 
 === Risks
 
@@ -207,12 +309,17 @@ per-target implementations, its router wiring, and its per-operation contract sc
   reintroduce the vacuous-positive failure ADR-009 rejects for status surfaces. The guard
   is that both outcomes are explicit values a caller must branch on, never an absent
   signal.
+* An observable kind could be admitted to the set on the strength of a plausible-sounding
+  mechanism that no runtime can actually reach, reintroducing the hollow stub the narrowing
+  removed. The guard is the admission bar this decision was itself forced through:
+  a kind is admitted only after its inspection surface has been verified reachable from a
+  subprocess, not merely described.
 
 == Alternatives Considered
 
 * *Target-specific skill behind a `targets:` frontmatter filter (the gated fourth home).*
-  Ship the whole waiting capability as a skill present only on targets that have a
-  background-watch mechanism, and absent elsewhere. This would keep every artefact
+  Ship the whole waiting capability as a skill present only on targets whose runtime can
+  hold a wait, and absent elsewhere. This would keep every artefact
   internally consistent with one target's mechanics. Rejected because it fails the
   admission test on two of three conditions: the capability is not genuinely N/A elsewhere
   (every target waits for CI, and a bounded synchronous wait exists everywhere), and
@@ -222,11 +329,20 @@ per-target implementations, its router wiring, and its per-operation contract sc
 
 * *A single universal primitive implemented identically on every target.* Define waiting as
   one portable mechanism every target must provide, with no decline path. This yields the
-  simplest contract, but it either forces a target that has no background-watch mechanism
-  to fake one, or collapses every target onto the weakest common realisation and discards
-  the stronger mechanism where it exists. Rejected: faking violates the No-Op Policy, and
+  simplest contract, but it either forces a target whose runtime cannot hold a wait to fake
+  one, or collapses every target onto the weakest common realisation and discards the
+  stronger mechanism where it exists. Rejected: faking violates the No-Op Policy, and
   levelling down discards real capability to buy uniformity the tiered realisation already
   provides without the loss.
+
+* *Keep the opaque condition descriptor and answer it with an always-unknown stub.* Preserve
+  the maximally general "await whatever the caller describes" contract and let every target
+  report that it could not substantiate a terminal state. Rejected on two grounds. It is the
+  vacuous-positive failure inverted rather than avoided — a surface that is always honest
+  because it is never useful — and it retroactively falsifies the admission test above:
+  a hollow answer on *every* target is exactly the "normalising forces a hollow no-op"
+  condition that this decision relied on failing in order to reject the fourth home. A
+  contract that cannot be met on any target is not a portable contract.
 
 * *Leave the primitive named in workflow body text and document the fallback in prose.*
   Keep the status quo and simply describe, in the body, what a target without the primitive
@@ -242,11 +358,13 @@ per-target implementations, its router wiring, and its per-operation contract sc
   nothing — the build target is the right home for *vocabulary* divergence, and the runtime
   is the right home for *behavioural* divergence.
 
-The alternatives fall in one class: each collapses the policy/primitive distinction in one
+The alternatives fall in two classes. Most collapse the policy/primitive distinction in one
 direction or the other — either binding target-invariant reasoning to one target's
 mechanics, or treating a behavioural difference as though it were a naming difference. The
-unifying principle is that a capability whose *reasoning* is uniform but whose
-*realisation* differs belongs in two homes, joined by an intent-shaped contract a target
+last one collapses a different axis: it keeps the two homes but empties the primitive of
+content. The unifying principle across both classes is that a capability whose *reasoning*
+is uniform but whose *realisation* differs belongs in two homes, joined by an intent-shaped
+contract that is concrete enough to be implemented on at least one target and that a target
 may decline.
 
 == References

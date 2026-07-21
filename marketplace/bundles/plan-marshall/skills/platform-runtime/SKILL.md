@@ -7,7 +7,7 @@ mode: script-executor
 
 # Platform Runtime Skill
 
-Script-based platform abstraction that routes 23 goal-based operations to the correct target implementation. Follows the `tools-integration-ci` pattern: one router script, target-specific provider classes, static routing via `marshal.json`.
+Script-based platform abstraction that routes 24 goal-based operations to the correct target implementation. Follows the `tools-integration-ci` pattern: one router script, target-specific provider classes, static routing via `marshal.json`.
 
 ## Enforcement
 
@@ -27,7 +27,7 @@ Script-based platform abstraction that routes 23 goal-based operations to the co
 
 ## What This Skill Provides
 
-Twenty-three operations covering the full platform lifecycle:
+Twenty-four operations covering the full platform lifecycle:
 
 | Operation | Purpose |
 |-----------|---------|
@@ -53,6 +53,7 @@ Twenty-three operations covering the full platform lifecycle:
 | `metrics capture` | Record token consumption for a planning phase |
 | `metrics normalized-tokens` | Resolve normalized transcript token totals for the active target |
 | `subagent dispatch` | Return platform-specific subagent invocation parameters |
+| `wait for` | Hold a bounded wait until a concrete, pollable observable (`--observable` names a kind from a closed set; `build-job` today) reaches a terminal state, and return a normalized `succeeded`/`failed`/`timed_out`/`killed`/`pending` outcome. The observable is never an opaque condition descriptor — a runtime subprocess cannot evaluate one. Bound exhaustion yields `outcome: pending` with `terminal: false`, never an implicit pass; no-op on OpenCode, whose runtime holds no wait channel |
 | `health-check` | Verify platform integration |
 
 See `standards/contract.md` for per-operation TOON schemas (success, error, no-op paths).
@@ -111,6 +112,11 @@ No-op policy and caller obligations: `standards/no-op-policy.md`
 | `hook_not_configured` | SessionStart hook missing; `$CLAUDE_CODE_SESSION_ID` unset |
 | `invalid_settings` | Settings file malformed (JSON parse error); fail-closed before write — `permission configure/fix/ensure-wildcards/ensure-steps/web-apply` |
 | `invalid_marshal` | `.plan/marshal.json` malformed (parse error); fail-closed instead of zero-step audit — `permission analyze/ensure-steps` |
+| `unsupported_observable` | `wait for --observable` names a kind outside the closed set |
+| `invalid_bound` | `wait for --bound-seconds` is not positive |
+| `unknown_reference` | `wait for --reference` names no instance of the observable kind |
+| `observable_unreachable` | The observable's inspection channel could not be reached; no outcome is implied |
+| `unexpected_observable_status` | The observable reported an out-of-vocabulary status; no outcome is inferred |
 
 ## No-Op Behavior
 

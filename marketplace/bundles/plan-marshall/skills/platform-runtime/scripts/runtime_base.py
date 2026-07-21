@@ -3,7 +3,7 @@
 """
 Abstract base class and shared TOON helpers for platform-runtime.
 
-Defines the Runtime ABC with all 23 platform operations. Concrete subclasses
+Defines the Runtime ABC with all 24 platform operations. Concrete subclasses
 (ClaudeRuntime, OpenCodeRuntime) implement each operation for their target.
 
 TOON helpers delegate to the canonical toon_parser from ref-toon-format — no
@@ -669,6 +669,60 @@ class Runtime(ABC):
             prompt_file: Optional path to a prompt markdown file; when omitted
                 the agent's own body is used.
             context: Optional key-value pairs to inject into the prompt.
+
+        Returns:
+            Serialized TOON string (success, error, or no-op).
+        """
+
+    # ------------------------------------------------------------------
+    # Waiting
+    # ------------------------------------------------------------------
+
+    @abstractmethod
+    def wait_for(self, observable: str, reference: str, bound_seconds: int) -> str:
+        """Hold a bounded wait until a concrete observable reaches a terminal state.
+
+        The operation takes intent — WHICH kind of observable to inspect, WHICH
+        instance of it (*reference*), and how long the caller is willing to hold
+        the wait (*bound_seconds*) — and returns a normalized outcome.
+
+        The observable is a **concrete, pollable thing a runtime subprocess can
+        inspect**, named by a kind token drawn from a closed enumerated set. It
+        is deliberately NOT an opaque caller-supplied condition descriptor: a
+        subprocess has no way to evaluate an arbitrary predicate, so an opaque
+        descriptor could only ever be answered with an unsubstantiated
+        ``unknown``. An unrecognised kind is rejected with an explicit error
+        rather than silently awaited.
+
+        The returned ``outcome`` is normalized and observable-independent —
+        ``succeeded``, ``failed``, ``timed_out``, ``killed`` (all terminal), or
+        ``pending`` (not terminal). No observable-shaped or target-shaped value
+        crosses the boundary in either direction.
+
+        Two fail-closed rules are part of the contract:
+
+        * **Silence is not success.** The terminal-state set MUST cover the
+          failure signatures, so a negative outcome is reported as the negative
+          outcome and is never mistaken for continued waiting.
+        * **A bound is not a verdict.** Exhausting *bound_seconds* yields
+          ``outcome: pending`` with ``terminal: false`` — an explicit unknown the
+          caller must act on — never an implicit pass. An observable whose
+          inspection channel cannot be reached is an ``error``, likewise never a
+          pass.
+
+        A target that exposes no runtime-held wait channel returns ``no-op``
+        with a ``reason`` and an ``alternative``; the caller applies the
+        alternative — invoke the observable's own bounded-wait verb in-turn, or
+        checkpoint and re-dispatch — and continues.
+
+        The governing policy (when to wait, who may hold a wait, the tiered
+        realisation) lives in the target-neutral waiting standard; see
+        ``plan-marshall`` ``standards/waiting.md`` and ADR-011.
+
+        Args:
+            observable: Observable KIND token from the closed enumerated set.
+            reference: The concrete instance identifier within that kind.
+            bound_seconds: Maximum wall-clock seconds to hold the wait.
 
         Returns:
             Serialized TOON string (success, error, or no-op).
