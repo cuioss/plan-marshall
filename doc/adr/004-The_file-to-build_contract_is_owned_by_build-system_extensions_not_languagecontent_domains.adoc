@@ -69,6 +69,32 @@ The original decision settled *ownership* of the file→build contract but left 
 
 The relocation is a *breaking* schema change: every reader switches to the new `build.map` / `build.queue` key paths in one plan with no fallback read of the old `skill_domains.build_map` / top-level `build_queue` paths. The meta-project's own tracked `.plan/marshal.json` is re-seeded to the new layout as part of the same migration.
 
+== Amendment: `build-decision` is the sole build/no-build authority
+
+The original decision named `should_execute_build` as the centralized entry point but did not rule on what happens to the sites that never called it. Several did not: two satellite oracles decided build necessity from the request narrative and from the composed manifest's step-list shape, a compose-time matrix row decided it from scope and file-role shape, and the one pre-filter that did delegate mis-consumed the verdict. This amendment records the operator ruling that closes that gap.
+
+`build-decision` — the `build.map` glob verdict over the *live* plan footprint, computed by `should_execute_build` and exposed through the `manage-config build-decision` verb — is *the* build/no-build authority. This is a *collapse to one authority, not a reconciliation of peers*: every other site is either a consumer of the verdict or is deleted. No site may re-derive build necessity from any other input signal — not from request wording, not from a `scope_estimate`, not from the shape of a composed step list.
+
+=== The surviving classifier boundary
+
+The six-bucket file-type classifier (`_classify_paths_via_extensions`) is *not* deleted. It retains its `profiles[]`-assignment role, which answers a different question — "which profiles does this deliverable need?" — from the build decision's "does this footprint need a build?". Its `documentation_only` bucket value is a *file-role name*, not a build verdict, and must never be read as one. The two concerns share a word, not a meaning.
+
+=== The fail-closed constraint
+
+The consolidation removes an impossible demand and never weakens a gate where build evidence is genuinely obtainable. Where a build genuinely is necessary, the pre-commit freshness gate still fails closed on a missing `kind=build` ledger entry exactly as ADR-009 requires; only the case where no build could ever legally be stamped is resolved.
+
+=== The empty-footprint constraint
+
+`build-decision` returns `not_necessary` for an empty footprint. Because the worktree is materialized only at phase-5, any *compose-time* consultation — at `phase-4-plan`, before materialization — sees an empty footprint and is therefore structurally unsafe: it cannot distinguish "nothing to build" from "nothing to look at yet". The verdict is authoritative only where the footprint is live. Every consumer must either run after materialization or guard explicitly on a non-empty footprint.
+
+=== The command-free verdict seam (input contract)
+
+`should_execute_build(canonical_command, plan_id)` computes its verdict purely from the `build.map` globs intersected with the live footprint. `canonical_command` never participates in the predicate; it is echoed back on the verdict dict as a convenience label so a `build` verdict carries the command the caller should resolve and run. The verdict is therefore already command-invariant — for a fixed plan footprint every canonical command yields the identical `decision`/`reason` pair.
+
+The contract this fixes: *`canonical_command` is an optional label on the build-necessity question, not an input to it.* A command-agnostic consumer asks the question with no command and receives the one verdict (`{decision, reason}`, with no `canonical_command` key); a command-bound consumer passes its command and receives the same verdict with the label echoed. Both `manage-config build-decision` (whose `--command` is optional) and `should_execute_build` (whose first parameter is `str | None`) expose this single entry point.
+
+No consumer may synthesize a plan-wide answer by picking an arbitrary representative command. The hardcoded `'quality-gate'` argument at the former `_apply_pre_push_quality_gate_inactive` call site is exactly that anti-pattern, and is retired. An any-command or union quantifier over the composed canonicals is equally forbidden — it would be degenerate, since the verdict does not vary by command.
+
 == References
 
 * `marketplace/bundles/plan-marshall/skills/extension-api/standards/extension-contract.md` — the `ExtensionBase` / `BuildExtensionBase` contract.

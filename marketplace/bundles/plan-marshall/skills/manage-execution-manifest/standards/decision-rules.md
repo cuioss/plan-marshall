@@ -118,15 +118,11 @@ When `commit_and_push == true` (or absent — the default is `true`), the pre-fi
 
 ### Pre-Filter: `pre_push_quality_gate_inactive`
 
-**Condition**: At least one of:
-
-- `marshal.json::build.map` is absent or carries no `glob` entries, OR
-- the live plan footprint is empty, OR
-- No entry in the live footprint matches any glob in `build_map_globs` (using the shared two-regime matcher `extension_base.route_matches`: a bare-basename glob — no `/` — matches the path's basename anywhere in the tree; a path-bearing glob matches the full repo-relative path with a single `*` spanning `/`).
+**Condition**: the `build-decision` verdict is not `build`. The pre-filter is a **verdict consumer** — it does not compute build necessity. It asks the command-free build-necessity question through the single authority (`extension_base.should_execute_build`, exposed as the `manage-config build-decision` verb) and branches on the returned `decision`. The predicate behind that verdict, its `not_necessary` reasons, and the matcher it uses are owned by the authority, not restated here; see [ADR-004](../../../../../../doc/adr/004-The_file-to-build_contract_is_owned_by_build-system_extensions_not_languagecontent_domains.adoc) § "Amendment: `build-decision` is the sole build/no-build authority".
 
 **Effect**: `pre-push-quality-gate` is removed from `phase_6_candidates` before the rows are evaluated. When `pre-push-quality-gate` was already removed by `commit_push_disabled`, this pre-filter is a no-op and emits no log entry.
 
-**Why a pre-filter (not an eighth row)**: Activation is derived from `build.map` (the single source of truth for buildable file types) paired with a glob match against the live footprint, both orthogonal to the change-type / scope / recipe inputs that the seven-row matrix consumes. A row would either have to short-circuit and re-implement Phase 5 logic, or duplicate the filter into every row. Keeping it as a pre-filter preserves the seven-row matrix verbatim and adds exactly one independent decision-log line.
+**Why a pre-filter (not an eighth row)**: The verdict it consumes is orthogonal to the change-type / scope / recipe inputs that the seven-row matrix consumes. A row would either have to short-circuit and re-implement Phase 5 logic, or duplicate the filter into every row. Keeping it as a pre-filter preserves the seven-row matrix verbatim and adds exactly one independent decision-log line.
 
 **Decision log line** (in addition to the row's own log line and any other pre-filter log line):
 
@@ -134,7 +130,7 @@ When `commit_and_push == true` (or absent — the default is `true`), the pre-fi
 (plan-marshall:manage-execution-manifest:compose) pre-push-quality-gate omitted — no build_map globs or no footprint match
 ```
 
-When all three activation conditions are satisfied (non-empty build_map globs, non-empty footprint, at least one glob match), the pre-filter is a no-op and emits no log entry; `pre-push-quality-gate` survives into the seven-row matrix.
+When the verdict is `build`, the pre-filter is a no-op and emits no log entry; `pre-push-quality-gate` survives into the seven-row matrix.
 
 **Evaluation order vs. the seven-row matrix**: This pre-filter runs *after* `commit_push_disabled` and *before* every row of the seven-row matrix. The pre-filter is therefore observable independently — Row 7 (default), Row 5 (surgical_bug_fix / surgical_tech_debt), and Row 2 (recipe) all see a Phase 6 candidate list that already has `pre-push-quality-gate` removed if either pre-filter fired.
 
@@ -277,6 +273,17 @@ A **non-documentation** path no build extension claims is tagged `unknown` by th
 ```
 
 The never-silently-drop policy is load-bearing: an unclassified path indicates either a missing domain extension OR a brand-new file type the project has not yet declared, and silently routing it to `documentation_only` would suppress the holistic Python verification that the path may actually need. Surfacing `unknown` forces the user (or the future Q-Gate finding) to declare the path's role explicitly.
+
+## The classifier / build-decision boundary
+
+The six-bucket classifier above (`_classify_paths_via_extensions`) and the `build-decision` verdict answer **two different questions**, and the six-bucket vocabulary must never be used to re-derive the first:
+
+| | Question answered | Consumed by |
+|---|---|---|
+| Six-bucket classifier | "which profiles does this deliverable need?" | `profiles[]` assignment at outline / plan time |
+| `build-decision` verdict | "does this footprint need a build?" | every build-necessity gate, without exception |
+
+`documentation_only` is a **file-role bucket name**, not a build verdict; a `documentation_only` bucket does not authorize any consumer to conclude that no build is required, and no consumer may substitute a bucket value for the verdict. The single build/no-build authority is settled in [ADR-004](../../../../../../doc/adr/004-The_file-to-build_contract_is_owned_by_build-system_extensions_not_languagecontent_domains.adoc) § "Amendment: `build-decision` is the sole build/no-build authority", which also records the empty-footprint constraint that makes a compose-time consultation of the verdict structurally unsafe.
 
 ## plan.phase-6-finalize Selection
 
