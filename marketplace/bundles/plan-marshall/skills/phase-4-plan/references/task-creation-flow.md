@@ -44,7 +44,7 @@ phase-4-plan
    │              │  writes: .plan/local/plans/{plan_id}/      │
    │              │            execution.toon                  │
    │              │  logs:   one decision.log entry per fired  │
-   │              │          rule (seven-row matrix)           │
+   │              │          rule (six-row matrix)             │
    │              └────────────────────────────────────────────┘
    │                                │
    │                                ▼
@@ -65,8 +65,8 @@ phase-4-plan
               steps[]; both dispatch verbatim.
 ```
 
-The seven-row decision matrix (early_terminate, recipe, docs_only,
-tests_only, surgical_bug_fix / surgical_tech_debt, verification_no_files,
+The six-row decision matrix (early_terminate, recipe, tests_only,
+surgical_bug_fix / surgical_tech_debt, verification_no_files,
 default) is documented in
 `marketplace/bundles/plan-marshall/skills/manage-execution-manifest/standards/decision-rules.md`.
 

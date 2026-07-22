@@ -101,7 +101,8 @@ def test_main_aspect_classify_analysis(plan_context, monkeypatch, capsys):
     data = parse_toon(out)
     assert data['status'] == 'success'
     assert data['aspect'] == 'analysis'
-    assert data['drops_build_steps'] is True
+    # The verb reports intent only — no build-facing field crosses the CLI boundary.
+    assert 'drops_build_steps' not in data
 
 
 def test_main_recipe_match_routes(plan_context, monkeypatch, capsys):

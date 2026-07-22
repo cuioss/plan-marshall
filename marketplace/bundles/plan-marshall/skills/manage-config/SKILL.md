@@ -502,25 +502,31 @@ domain_count: 1
 
 ### Decide Whether a Build Must Run
 
-`build-decision` is the centralized build-necessity decision API. It returns a structured `build` / `not_necessary` verdict for a canonical command (e.g. `quality-gate` / `verify` / `coverage`) against a plan's live footprint, so the consumer sites no longer each re-derive the decision inline. The verdict is a pure function of the `build.map` globs and the live plan footprint — no LLM judgement:
+`build-decision` is the CLI surface of the **sole build/no-build authority**. It returns a structured `build` / `not_necessary` verdict for a plan's live footprint, and every consumer site consults it instead of deciding build necessity from any other signal. The verdict is a pure function of the `build.map` globs and the live plan footprint — no LLM judgement:
 
 - `decision: build` when the footprint touches at least one registered build_map glob.
 - `decision: not_necessary` (always carrying a non-empty, log-friendly `reason`) when the build_map registers no globs, the footprint is empty, or the footprint intersects no build glob.
 
+`--command` is **optional** and is an echo-only label: it takes no part in the predicate above, so for a fixed footprint every command yields the identical `decision` / `reason` pair. Omit it to ask the command-free plan-wide question; supply it when the caller wants the label echoed back alongside the verdict. Synthesizing a plan-wide answer by picking an arbitrary representative command is a retired anti-pattern — see [`doc/adr/004`](../../../../../doc/adr/004-The_file-to-build_contract_is_owned_by_build-system_extensions_not_languagecontent_domains.adoc) § "Amendment: `build-decision` is the sole build/no-build authority", which also records the empty-footprint constraint that makes a compose-time consultation unsafe.
+
 ```bash
+# Command-free (plan-wide) verdict
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config build-decision \
+  --plan-id my-plan
+
+# Same verdict, with the caller's command echoed back as a label
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config build-decision \
   --command quality-gate --plan-id my-plan
 ```
 
-**Output — `build` verdict** (TOON):
+**Output — `build` verdict, command-free** (TOON):
 
 ```toon
 status: success
 decision: build
-canonical_command: quality-gate
 ```
 
-**Output — `not_necessary` verdict** (TOON):
+**Output — `not_necessary` verdict, with the `--command` label echoed** (TOON):
 
 ```toon
 status: success
@@ -574,13 +580,13 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci issue view
 | `effort` | `read` (role/phase/`--default` resolver), `resolve-target` (`execution-context-{level}` variant name), `apply-preset --preset` (whole-tree writer), `set --scope {phase}.{role}\|plan --level` (surgical per-scope writer) |
 | `ci` | get, get-provider, get-tools, get-command, set-provider, set-tools, persist |
 | `build-map` | `seed` (re-seed `build.map` from applicable extensions, write-once; `--force` clears + re-derives), `read` (effective map from `build.map`, fail-closed when absent), `drift` (read-only diff of persisted vs derived map: `in_sync` + per-domain added/removed globs) |
-| `build-decision` | `--command --plan-id` (centralized build-necessity verdict: `build` / `not_necessary`; `not_necessary` carries a log-friendly `reason`) |
+| `build-decision` | `[--command] --plan-id` (the sole build/no-build authority's verdict: `build` / `not_necessary`; `not_necessary` carries a log-friendly `reason`. `--command` is an optional echo-only label that never enters the predicate — omit it for the command-free plan-wide verdict) |
 | `init` | Initialize marshal.json (with optional `--force`) |
 | `normalize-keys` | Re-write `marshal.json` with the canonical top-level key order (silent, idempotent; reuses the `save_config` key-order writer) |
 | `steps-sort` | Re-sort `plan.phase-6-finalize.steps` into ascending frontmatter `order` (silent, idempotent, values byte-identical; reuses the manifest composer's `_sort_steps_by_frontmatter_order` choke-point; `phase-5-execute.verification_steps` is out of scope; unresolvable-order steps pinned at their original index) |
 | `domain-detect` | `--plan-id [--domain-override] [--affected-files CSV]` (deterministic detector for phase-1-init Step 7 and phase-2-refine; walks `request.md` clarified narrative for explicit mentions of configured `skill_domains` and their bundle aliases; returns the multi-valued `domains` SET — the unconditional union `{detector/prompt} ∪ always_on ∪ glob_matched` — plus `candidates` (narrative matches, offered first in the multiSelect prompt), `additional_candidates` (the remaining configured non-system domains — neither a narrative match nor already supplied by the `always_on` / `file_globs` legs — offered as the prompt's second group so a configured-but-unmatched domain stays selectable), `always_on`, `glob_matched`, `ambiguous`, `source`, `reason`. `ambiguous` is `true` only on a detector multi-match, or a zero-match with an empty always_on/glob union; a zero-match resolved by the always_on/glob legs is silent (`reason=inclusion_only_resolve`). The optional `--affected-files` CSV is the file signal for the `file_globs` leg (refine passes the real affected files; init falls back to narrative path tokens). No LLM dispatch fallback applies.) |
 | `recipe-match` | `--request-text [--threshold 0.6]` (Tier 1 recipe-match for phase-1-init; scores free-form request text against the live recipe registry via the shared `recipe_scoring` core; returns ranked `matches[]` + `top_match` + `meets_auto_route_threshold`. Heuristic-first, zero LLM call inside the script — the bounded LLM fallback is orchestrator-driven.) |
-| `aspect-classify` | `--request-text [--threshold 0.7]` (request-aspect classifier for phase-1-init; scores free-form request text against fixed analysis/planning/implementation keyword tables via `recipe_scoring.tokenize`; returns `aspect` + `confidence` + `drops_build_steps` + per-aspect `breakdown`. A winning analysis/planning aspect is accepted only when its `_overlap_score` confidence clears `>= --threshold` (default `0.7`, NO `0.6` cap) AND beats the implementation overlap; below threshold the safe `implementation` fallback keeps build/quality-gate/test gates — EXCEPT when an explicit negative build constraint (fixed negation-phrase table, e.g. `no build` / `docs only`, matched case-insensitively against the RAW request text BEFORE tokenization) fires: then the higher-scored non-implementation candidate wins with `drops_build_steps: true` and the matched phrase is reported via the `negative_constraint_matched` output field. Heuristic-first, zero LLM call inside the script — the bounded LLM fallback is orchestrator-driven.) |
+| `aspect-classify` | `--request-text [--threshold 0.7]` (request-aspect classifier for phase-1-init; scores free-form request text against fixed analysis/planning/implementation keyword tables via `recipe_scoring.tokenize`; returns `aspect` + `confidence` + per-aspect `breakdown`. A winning analysis/planning aspect is accepted only when its `_overlap_score` confidence clears `>= --threshold` (default `0.7`, NO `0.6` cap) AND beats the implementation overlap; below threshold the conservative `implementation` fallback applies. The verb classifies request INTENT only and has no say in build necessity — that is the `build-decision` verdict's exclusive province. Heuristic-first, zero LLM call inside the script — the bounded LLM fallback is orchestrator-driven.) |
 
 ---
 
@@ -1257,15 +1263,13 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config aspect
   --request-text REQUEST_TEXT [--threshold 0.7]
 ```
 
-Request-aspect classifier: tokenizes free-form `--request-text` via the shared `recipe_scoring.tokenize` and scores the token overlap against three fixed keyword tables — `analysis`, `planning`, and `implementation`. The higher of analysis/planning is the candidate aspect; it is accepted only when its `_overlap_score` confidence clears `>= --threshold` (default `0.7`) AND beats the implementation overlap. Otherwise the verb returns the safe `implementation` fallback, which keeps every build / quality-gate / test gate in the composed manifest. The caller (phase-1-init) persists the resolved `aspect`; the execution-manifest composer drops build / quality-gate / test steps when the aspect is `analysis` or `planning` (`drops_build_steps: true`).
+Request-aspect classifier: tokenizes free-form `--request-text` via the shared `recipe_scoring.tokenize` and scores the token overlap against three fixed keyword tables — `analysis`, `planning`, and `implementation`. The higher of analysis/planning is the candidate aspect; it is accepted only when its `_overlap_score` confidence clears `>= --threshold` (default `0.7`) AND beats the implementation overlap. Otherwise the verb returns the conservative `implementation` fallback. The caller (phase-1-init) persists the resolved `aspect`.
 
-**Negation override**: an explicit negative build constraint in the request text overrides the sub-threshold `implementation` fallback. A fixed negation-phrase table (`no build`, `no builds`, `without build`, `do not build`, `no verify`, `docs only`, `docs-only`, `documentation only`, `documentation-only`) is matched case-insensitively against the RAW request text BEFORE tokenization — `recipe_scoring.tokenize` drops `no` (length filter) and `build` is itself an implementation keyword, so a token-set approach structurally cannot see the negation. When a phrase matches, the verb returns the higher-scored non-implementation candidate aspect (analysis/planning) with `drops_build_steps: true` and reports the matched phrase via the `negative_constraint_matched` output field (present only on a match; longest phrase wins). When no phrase matches, behavior is byte-identical to the threshold contract above.
+**Scope**: the verb classifies request INTENT and nothing else. It has no say in whether a change needs a build — build necessity is decided exclusively by the `build-decision` verdict over the `build.map` globs and the live footprint (see [`doc/adr/004`](../../../../../doc/adr/004-The_file-to-build_contract_is_owned_by_build-system_extensions_not_languagecontent_domains.adoc) § "Amendment: `build-decision` is the sole build/no-build authority").
 
 The `--threshold` here is **independent of** the `recipe-match` verb's `--threshold` and of the `auto_route_recipe_threshold` config knob. Those caps at `0.6` because plan-domain/scope blending is unavailable; `aspect-classify` uses a pure request-token overlap fraction (`_overlap_score`, range `0.0–1.0`) with NO `0.6` ceiling, so its `0.7` default is reachable and intentional. Do not conflate the two thresholds.
 
 The verb is **heuristic-first**: it performs no LLM call and no plan-scoped read — only the free-form request text drives scoring. The bounded LLM fallback for genuinely ambiguous requests is **orchestrator-driven** (phase-1-init), not part of this script — mirroring `change-type-heuristic`'s heuristic-first / conservative-default contract.
-
-**No plan-scoped read is a deliberate contract, and footprint-consistency lives at the run-time consumer.** aspect-classify is the **compose-time narrative-only** signal — it runs at phase-1-init and end-of-phase-4-plan, both BEFORE phase-5 materialises the worktree, so the live footprint is always empty at classification time; a footprint read here would resolve `[]` and mis-drop. Run-time footprint-consistency is instead delivered by the `build-decision` verb (below), which phase-5 execution consults as the authoritative footprint-necessity authority (Step 11b Final Quality Sweep + the `default:verify:{canonical}` loop). The two signals are complementary and non-contradictory: the narrative aspect-drop clears the phase-5 verification list at compose for a confident `analysis` / `planning` request, while `build-decision` is the run-time backstop that skips the whole-tree build when an `implementation`-classified plan's live footprint turns out to be pure-doc.
 
 Output TOON shape:
 
@@ -1275,7 +1279,6 @@ request_tokens[N]: [token, ...]
 threshold: 0.7
 aspect: analysis | planning | implementation
 confidence: 0.0-1.0
-drops_build_steps: true | false
 scores:
   analysis: 0.0-1.0
   planning: 0.0-1.0
@@ -1290,7 +1293,6 @@ breakdown:
   implementation:
     score: 0.0-1.0
     matched_keywords[N]: [keyword, ...]
-negative_constraint_matched: "no build"   # present only when a negation phrase matched
 ```
 
 ### resolve-outline-skill
@@ -1364,12 +1366,14 @@ Re-sorts `plan.phase-6-finalize.steps` into ascending frontmatter `order`, reusi
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config build-decision \
-  --command COMMAND --plan-id PLAN_ID
+  [--command COMMAND] --plan-id PLAN_ID
 ```
 
-Returns a `build` / `not_necessary` verdict for `COMMAND` against `PLAN_ID`'s live footprint. `--audit-plan-id` is accepted as an alias for `--plan-id`. Thin wrapper over `extension_base.should_execute_build` — a pure function of the `build.map` globs ∩ the live plan footprint (the same authority phase-6 uses); on `not_necessary` it carries a populated `reason`, on `build` no `reason`.
+Returns a `build` / `not_necessary` verdict for `PLAN_ID`'s live footprint. `--audit-plan-id` is accepted as an alias for `--plan-id`. Thin wrapper over `extension_base.should_execute_build` — a pure function of the `build.map` globs ∩ the live plan footprint; on `not_necessary` it carries a populated `reason`, on `build` no `reason`.
 
-This is the **run-time footprint-necessity authority** the phase-5 execution loop consults to gate its one footprint-blind whole-tree build surface — Step 11b (Final Quality Sweep) and the end-of-phase `default:verify:{canonical}` loop skip the whole-tree build when the verdict is `not_necessary` (a docs-only footprint). It is the run-time complement to the compose-time narrative `aspect-classify` signal (above): the two are non-contradictory. It is NOT a new when-to-build mechanism — the four former consumer sites (pre-push-quality-gate activation, phase-4-plan per-task verification derivation, per-bundle classify) share this one entry point.
+`--command` is **optional** and is an echo-only label: it never enters the predicate, so the verdict is identical with and without it for a given footprint. Omit it for the command-free plan-wide verdict (`{decision, reason}` with no `canonical_command` key); supply it to have the label echoed back. Picking an arbitrary representative command to stand in for a plan-wide answer is a retired anti-pattern.
+
+This is the **sole build/no-build authority**: every consumer site — the `pre_push_quality_gate_inactive` compose pre-filter, the `pre-commit-verify-freshness` gate, the phase-5 whole-tree verify surfaces (Step 11b Final Quality Sweep and the end-of-phase `default:verify:{canonical}` loop) — consults this verdict instead of deciding build necessity from any other signal. The ruling and the empty-footprint constraint that bounds where the verdict may be consulted are recorded in [`doc/adr/004`](../../../../../doc/adr/004-The_file-to-build_contract_is_owned_by_build-system_extensions_not_languagecontent_domains.adoc) § "Amendment: `build-decision` is the sole build/no-build authority".
 
 ---
 

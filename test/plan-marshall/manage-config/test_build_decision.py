@@ -301,3 +301,117 @@ def test_phase5_gate_buildable_footprint_resolves_build(monkeypatch):
     assert result['status'] == 'success'
     assert result['decision'] == 'build'
     assert result['canonical_command'] == 'quality-gate'
+
+
+# =============================================================================
+# Command-free form — the sole build/no-build authority's plan-wide question
+#
+# ADR-004 § "Amendment: build-decision is the sole build/no-build authority"
+# makes ``--command`` an optional ECHO-ONLY LABEL. A consumer whose question is
+# plan-wide ("does anything in this footprint need a build?") consults the verb
+# with no command at all; nominating a representative command to stand in for a
+# plan-wide answer is the retired anti-pattern. These cases pin that the
+# command-free call reaches the identical verdict and simply omits the label.
+# =============================================================================
+
+
+def test_handler_command_free_build_verdict_omits_label(monkeypatch):
+    """--command omitted on a buildable footprint -> build, no canonical_command key."""
+    # Arrange — footprint touches a registered build glob.
+    monkeypatch.setattr(extension_base, '_read_build_map_globs', lambda _root=None: ['scripts/*.py'])
+    monkeypatch.setattr(extension_base, '_resolve_plan_footprint', lambda _plan: ['scripts/foo.py'])
+
+    # Act — argparse supplies command=None when the optional flag is omitted.
+    result = _cmd_build_map_mod.cmd_build_decision(
+        Namespace(command=None, plan_id='my-plan', audit_plan_id=None)
+    )
+
+    # Assert
+    assert result['status'] == 'success'
+    assert result['decision'] == 'build'
+    assert 'canonical_command' not in result
+
+
+def test_handler_command_free_not_necessary_verdict_omits_label(monkeypatch):
+    """--command omitted on a docs-only footprint -> not_necessary + reason, no label."""
+    # Arrange — build globs registered, footprint intersects none of them.
+    monkeypatch.setattr(extension_base, '_read_build_map_globs', lambda _root=None: ['scripts/*.py'])
+    monkeypatch.setattr(
+        extension_base,
+        '_resolve_plan_footprint',
+        lambda _plan: ['marketplace/bundles/x/skills/y/SKILL.md'],
+    )
+
+    # Act
+    result = _cmd_build_map_mod.cmd_build_decision(
+        Namespace(command=None, plan_id='my-plan', audit_plan_id=None)
+    )
+
+    # Assert
+    assert result['status'] == 'success'
+    assert result['decision'] == 'not_necessary'
+    assert result['reason']
+    assert 'canonical_command' not in result
+
+
+def test_handler_command_free_and_command_bearing_agree(monkeypatch):
+    """For one footprint the verdict is identical with and without a command.
+
+    The command never enters the predicate, so the two calls may differ ONLY by
+    the echoed label. A drift here would mean some command had acquired a say in
+    build necessity — reintroducing the second oracle the amendment retired.
+    """
+    # Arrange — a not_necessary footprint so both decision AND reason are compared.
+    monkeypatch.setattr(extension_base, '_read_build_map_globs', lambda _root=None: ['scripts/*.py'])
+    monkeypatch.setattr(extension_base, '_resolve_plan_footprint', lambda _plan: ['uv.lock'])
+
+    # Act
+    command_free = _cmd_build_map_mod.cmd_build_decision(
+        Namespace(command=None, plan_id='my-plan', audit_plan_id=None)
+    )
+    with_command = _cmd_build_map_mod.cmd_build_decision(
+        Namespace(command='quality-gate', plan_id='my-plan', audit_plan_id=None)
+    )
+
+    # Assert — same decision and same reason; the label is the only difference.
+    assert command_free['decision'] == with_command['decision']
+    assert command_free['reason'] == with_command['reason']
+    assert with_command['canonical_command'] == 'quality-gate'
+    assert {k: v for k, v in with_command.items() if k != 'canonical_command'} == command_free
+
+
+def test_handler_command_free_still_requires_a_plan_id():
+    """Dropping --command does not relax the --plan-id requirement.
+
+    The footprint is the whole input to the verdict, and the footprint is
+    plan-scoped, so a command-free call without a plan identifier is unanswerable
+    and must surface a structured error rather than a permissive default.
+    """
+    result = _cmd_build_map_mod.cmd_build_decision(
+        Namespace(command=None, plan_id=None, audit_plan_id=None)
+    )
+
+    assert result['status'] == 'error'
+    assert 'plan-id' in result['error']
+
+
+def test_handler_command_free_works_without_a_command_attribute(monkeypatch):
+    """A Namespace carrying no ``command`` attribute at all degrades to command-free.
+
+    The handler reads the label with ``getattr(..., None)``, so a caller
+    constructing the Namespace by hand (as project-local wrappers and tests do)
+    need not synthesize a ``command=None`` field to ask the plan-wide question.
+    """
+    # Arrange
+    monkeypatch.setattr(extension_base, '_read_build_map_globs', lambda _root=None: ['scripts/*.py'])
+    monkeypatch.setattr(extension_base, '_resolve_plan_footprint', lambda _plan: ['scripts/foo.py'])
+
+    # Act — note: no ``command`` attribute on the Namespace.
+    result = _cmd_build_map_mod.cmd_build_decision(
+        Namespace(plan_id='my-plan', audit_plan_id=None)
+    )
+
+    # Assert
+    assert result['status'] == 'success'
+    assert result['decision'] == 'build'
+    assert 'canonical_command' not in result

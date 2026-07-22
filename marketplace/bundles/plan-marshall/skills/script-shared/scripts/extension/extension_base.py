@@ -527,18 +527,18 @@ def _resolve_plan_footprint(plan_id: str) -> list[str]:
 
 
 def should_execute_build(
-    canonical_command: str,
+    canonical_command: str | None,
     plan_id: str,
     project_root: str | None = None,
 ) -> dict:
-    """Decide whether ``canonical_command`` must run for ``plan_id``'s footprint.
+    """Return the build-necessity verdict for ``plan_id``'s live footprint.
 
-    The single, build-system-owned home for the build-necessity decision that
-    four consumer sites previously each re-derived (the pre-push-quality-gate
-    activation in ``manage-execution-manifest``, the phase-4-plan per-task
-    verification derivation, and the per-bundle Axis-B classify logic). The
-    decision is a pure function of the ``build.map`` globs and the
-    live plan footprint — no LLM judgement:
+    The single, build-system-owned home for the build-necessity decision — the
+    sole build/no-build authority (see ADR-004 § "Amendment: ``build-decision``
+    is the sole build/no-build authority"). Every consumer calls this instead of
+    re-deriving the decision from any other input signal. The decision is a pure
+    function of the ``build.map`` globs and the live plan footprint — no LLM
+    judgement:
 
     1. Collect the build_map globs via :func:`_read_build_map_globs`.
     2. Resolve the live footprint via :func:`_resolve_plan_footprint`.
@@ -546,10 +546,20 @@ def should_execute_build(
        build_map registers no globs, OR the footprint is empty, OR the footprint
        intersects no build glob. Otherwise return ``build``.
 
+    ``canonical_command`` is an OPTIONAL LABEL on the question, never an input to
+    it: it takes no part in the three-step predicate above, so for a fixed plan
+    footprint every command yields the identical ``decision``/``reason`` pair.
+    A command-agnostic consumer passes ``None`` and receives the one verdict with
+    no ``canonical_command`` key; a command-bound consumer passes its command and
+    receives the same verdict with the label echoed back, so it can resolve and
+    run that command without re-deriving anything. Picking an arbitrary
+    representative command to stand in for a plan-wide answer is the retired
+    anti-pattern the ADR names.
+
     Args:
-        canonical_command: The canonical command under decision (e.g.
-            ``quality-gate`` / ``verify`` / ``coverage``). Echoed back on the
-            ``build`` verdict so callers can resolve+run it without re-deriving.
+        canonical_command: The canonical command the caller intends to run (e.g.
+            ``quality-gate`` / ``verify`` / ``coverage``), or ``None`` to ask the
+            command-free question. Echoed back on the verdict when supplied.
         plan_id: Plan identifier whose footprint gates the decision.
         project_root: Accepted for signature parity; the marshal path resolves
             from the current execution context regardless of this value.
@@ -563,13 +573,18 @@ def should_execute_build(
 
             {'decision': 'not_necessary', 'reason': <log-friendly text>,
              'canonical_command': <command>}
+
+        The ``canonical_command`` key is OMITTED from both shapes when
+        ``canonical_command`` is ``None``.
     """
+    label = {} if canonical_command is None else {'canonical_command': canonical_command}
+
     globs = _read_build_map_globs(project_root)
     if not globs:
         return {
             'decision': 'not_necessary',
             'reason': 'build_map registers no globs — project has no buildable file types',
-            'canonical_command': canonical_command,
+            **label,
         }
 
     footprint = _resolve_plan_footprint(plan_id)
@@ -577,18 +592,18 @@ def should_execute_build(
         return {
             'decision': 'not_necessary',
             'reason': 'plan footprint is empty — no changed files to build',
-            'canonical_command': canonical_command,
+            **label,
         }
 
     for path in footprint:
         for glob in globs:
             if route_matches(path, glob):
-                return {'decision': 'build', 'canonical_command': canonical_command}
+                return {'decision': 'build', **label}
 
     return {
         'decision': 'not_necessary',
         'reason': 'plan footprint touches no build_map glob — only non-buildable files changed',
-        'canonical_command': canonical_command,
+        **label,
     }
 
 

@@ -565,9 +565,10 @@ class TestCIPreconditionContract:
             'recipe row MUST defensively drop legacy ci-wait step ID'
         )
 
-    def test_docs_only_retains_review_gates(self, plan_context):
-        """Row 3 (docs_only) — review gates RETAINED. Same retention contract
-        as Rules 2 and 5: review bots run even on docs-only plans.
+    def test_surgical_tech_debt_retains_review_gates(self, plan_context):
+        """Row 5 (surgical_tech_debt variant) — review gates RETAINED. Same
+        retention contract as Rules 2 and the surgical_bug_fix variant below:
+        review bots run even on surgical tech-debt plans.
         """
         plan_context.plan_dir_for('p6-precond-docs')
         candidates = list(DEFAULT_PHASE_6_STEPS) + ['ci-wait']
@@ -585,13 +586,13 @@ class TestCIPreconditionContract:
         assert manifest is not None
         steps = manifest['phase_6']['steps']
         assert 'automatic-review' in steps, (
-            'docs_only row MUST retain automatic-review'
+            'surgical_tech_debt row MUST retain automatic-review'
         )
         assert 'sonar-roundtrip' in steps, (
-            'docs_only row MUST retain sonar-roundtrip'
+            'surgical_tech_debt row MUST retain sonar-roundtrip'
         )
         assert 'ci-wait' not in steps, (
-            'docs_only row MUST defensively drop legacy ci-wait step ID'
+            'surgical_tech_debt row MUST defensively drop legacy ci-wait step ID'
         )
 
     def test_surgical_bug_fix_retains_review_gates(self, plan_context):
