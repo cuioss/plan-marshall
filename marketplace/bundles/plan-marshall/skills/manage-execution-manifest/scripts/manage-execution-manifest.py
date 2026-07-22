@@ -1672,7 +1672,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     body['phase_5']['step_execution_tier'] = step_execution_tier
     _log_step_execution_tier_stamping(plan_id, step_execution_tier)
 
-    # plan.phase-6-finalize ceremony-gate selection runs AFTER the seven-row
+    # plan.phase-6-finalize ceremony-gate selection runs AFTER the six-row
     # matrix (and execution_tier routing). It forces each of the four finalize
     # ceremony gates' steps in (`always`) or out (`never`) on the matrix-produced
     # `phase_6.steps`, deferring to the existing machinery on `auto` (the

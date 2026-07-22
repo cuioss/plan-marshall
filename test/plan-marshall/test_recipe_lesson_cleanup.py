@@ -527,7 +527,8 @@ class TestRecipePathEndToEnd:
         the review gates.
 
         Uses ``verify:module-tests`` in the phase-5 candidate set so its derived
-        ``role: module-tests`` keeps Row 3 (docs_only) from firing first
+        ``role: module-tests`` is picked up by Row 5's role intersection
+        (``{quality-gate, module-tests}``) alongside ``verify:quality-gate``
         — see manage-execution-manifest decision-rules.md § Role-Field
         Intersection.
         """

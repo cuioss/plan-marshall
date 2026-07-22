@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Seven-row decision-matrix core for the execution manifest.
+"""Six-row decision-matrix core for the execution manifest.
 
 Extracted verbatim from ``manage-execution-manifest.py``: the pure candidate
 CSV splitter, the :func:`_decide` matrix, and the status-metadata

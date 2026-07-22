@@ -355,11 +355,11 @@ def test_surgical_tech_debt_retains_review_gates(plan_context):
 # ``2026-04-27-23-004`` closed the prefix-handling gap by normalizing both
 # ``phase_5_candidates`` and ``phase_6_candidates`` once at the
 # ``cmd_compose`` boundary — every leading ``default:`` is stripped a single
-# time at intake, so the seven-row matrix and the pre-filter helpers all see
+# time at intake, so the six-row matrix and the pre-filter helpers all see
 # bare names. Manifest output and result fields are bare strings throughout.
 #
 # These tests feed prefixed candidates and assert the resulting manifest
-# carries bare-name entries, with each cascade rule (Rule 1, 2, 3, 5, 6)
+# carries bare-name entries, with each cascade rule (Rule 1, 2, 4, 5, 6)
 # dropping or including the right steps. They previously asserted that the
 # prefix survived verbatim into the manifest output — that contract has been
 # retired in favor of the boundary-normalization contract pinned by
@@ -599,7 +599,7 @@ def test_boundary_normalization_strips_prefix_for_all_downstream_consumers(plan_
     ``2026-04-27-23-004``: ``cmd_compose`` strips a single leading ``default:``
     from each ``phase_5_candidates`` and ``phase_6_candidates`` entry once at
     intake (via ``canonicalize_step_key``), and every downstream site — the
-    seven-row matrix, ``_apply_commit_push_disabled``,
+    six-row matrix, ``_apply_commit_push_disabled``,
     ``_apply_pre_push_quality_gate_inactive``, and
     ``_apply_pre_submission_self_review_inactive`` — consumes those already-bare
     strings without any per-site ``canonicalize_step_key`` call.
@@ -2020,7 +2020,7 @@ class TestPrePushQualityGatePreFilter:
         # filter handled the removal).
         assert self._omit_entries(captured) == []
 
-    def test_pre_filter_order_independent_of_seven_row_matrix(self, plan_context):
+    def test_pre_filter_order_independent_of_six_row_matrix(self, plan_context):
         """Pre-filter runs before Row 1/Row 2/Row 7 — observable via decision-log ordering.
 
         The composer calls (in order):
@@ -2298,8 +2298,8 @@ def test_simplify_inactive_gate(
     """finalize-step-simplify lands only when change_type ∈ {feature, bug_fix, tech_debt, enhancement} AND files > 0."""
     slug = f'{change_type}-{affected_files_count}'.replace('_', '-')
     plan_id = f'matrix-simplify-{slug}'
-    # Use a non-surgical, code-shaped scope so the surgical Row 5 / docs Row 3
-    # paths don't intersect-narrow phase_6.steps and confuse the assertion.
+    # Use a non-surgical, code-shaped scope so the surgical Row 5 path
+    # doesn't intersect-narrow phase_6.steps and confuse the assertion.
     result = cmd_compose(
         _compose_ns(
             plan_id=plan_id,
@@ -2436,8 +2436,8 @@ def test_security_audit_inactive_gate(
     """finalize-step-security-audit lands only when change_type ∈ {feature, bug_fix, tech_debt, enhancement} AND files > 0."""
     slug = f'{change_type}-{affected_files_count}'.replace('_', '-')
     plan_id = f'matrix-secaudit-{slug}'
-    # Use a non-surgical, code-shaped scope so the surgical Row 5 / docs Row 3
-    # paths don't intersect-narrow phase_6.steps and confuse the assertion.
+    # Use a non-surgical, code-shaped scope so the surgical Row 5 path
+    # doesn't intersect-narrow phase_6.steps and confuse the assertion.
     result = cmd_compose(
         _compose_ns(
             plan_id=plan_id,
