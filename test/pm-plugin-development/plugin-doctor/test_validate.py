@@ -12,8 +12,6 @@ import tempfile
 from argparse import Namespace
 from pathlib import Path
 
-import pytest
-
 # Import shared infrastructure
 from conftest import get_script_path, load_script_module, run_script
 
@@ -98,8 +96,7 @@ def test_inventory_nonexistent_path():
 def test_inventory_real_skill():
     """Test inventory on a real skill directory."""
     skill_dir = PROJECT_ROOT / 'marketplace' / 'bundles' / 'pm-plugin-development' / 'skills' / 'plugin-doctor'
-    if not skill_dir.exists():
-        pytest.skip('skill directory not found')
+    assert skill_dir.exists(), f'tracked fixture missing: {skill_dir}'
 
     args = Namespace(skill_path=str(skill_dir), include_hidden=False)
     data = cmd_inventory(args)

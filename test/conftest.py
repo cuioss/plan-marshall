@@ -480,18 +480,122 @@ def create_temp_dir() -> Path:
 import pytest  # noqa: E402
 
 
-@pytest.fixture(autouse=True)
-def _restore_cwd():
-    """Safety net fixture to restore cwd after each test.
+def pytest_collection_modifyitems(items):
+    """Fail the whole session if any collected test opts out via ``allow_pollution``.
 
-    This ensures test isolation even if a test changes cwd without
-    restoring it. Scripts should use script-relative paths, but this
-    provides defense-in-depth against test pollution.
+    The ``allow_pollution`` marker stays registered in ``pyproject.toml`` and is
+    still honoured by ``_pollution_guard``, ``_plan_base_dir_sandbox`` and
+    ``_credentials_dir_sandbox`` — but no test in this suite is permitted to
+    carry it. Locking the escape hatch shut at collection time means a new
+    opt-out is rejected as a session-level error with the offending nodeids,
+    instead of silently disarming the isolation guards for that test.
     """
-    original_cwd = os.getcwd()
-    yield
-    if os.getcwd() != original_cwd:
+    opted_out = [item.nodeid for item in items if item.get_closest_marker('allow_pollution')]
+    if opted_out:
+        raise pytest.UsageError(
+            'Pollution escape hatch is locked: @pytest.mark.allow_pollution is not '
+            'permitted in this suite, but the following tests carry it:\n  '
+            + '\n  '.join(sorted(opted_out))
+            + '\n\nIsolate the test via the autouse sandboxes (plan_context / '
+            'PlanContext / monkeypatch) instead of opting out of them.'
+        )
+
+
+#: Opt-in flag for the reference-platform ``skipped == 0`` gate. The gate is
+#: off by default so a developer's ``-k``-filtered or otherwise partial run is
+#: never failed by it; CI on the reference platform sets it to ``1``.
+_STRICT_NO_SKIP_ENV = 'PLAN_MARSHALL_STRICT_NO_SKIP'
+
+
+#: Nodeids of every test the session reported as skipped. Under xdist the
+#: workers stream their reports back to the controller, so the controller's
+#: copy of this set is complete and is the one the gate reads.
+_SKIPPED_NODEIDS: set = set()
+
+
+def pytest_runtest_logreport(report):
+    """Accumulate skipped nodeids for the session-level zero-skip gate."""
+    if report.skipped:
+        _SKIPPED_NODEIDS.add(report.nodeid)
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """Fail a reference-platform full run that skipped any test.
+
+    Every skip in this suite is meant to be either a tracked-artifact guard
+    (which is now a hard assertion) or a genuine environment guard that does
+    not trigger on the reference platform. A non-zero skip count there means a
+    guard silently disarmed a test, so the run fails rather than reporting a
+    green suite that quietly covered less than it claims.
+
+    The gate is deliberately narrow. It is active only when the opt-in flag is
+    set, and it exempts a ``-k`` / ``-m`` filtered run, which legitimately
+    skips tests. A developer's partial run is therefore never failed by it.
+    """
+    if os.environ.get(_STRICT_NO_SKIP_ENV) != '1':
+        return
+    config = session.config
+    if hasattr(config, 'workerinput'):
+        return  # xdist worker — the controller owns the session-level verdict
+    if getattr(config.option, 'keyword', '') or getattr(config.option, 'markexpr', ''):
+        return
+    if not _SKIPPED_NODEIDS:
+        return
+    session.exitstatus = 1
+    reporter = config.pluginmanager.get_plugin('terminalreporter')
+    if reporter is not None:
+        reporter.write_line('')
+        reporter.write_line(
+            f'ERROR: reference-platform run skipped {len(_SKIPPED_NODEIDS)} test(s), '
+            f'but the suite must report zero skips when {_STRICT_NO_SKIP_ENV}=1:',
+            red=True,
+        )
+        for nodeid in sorted(_SKIPPED_NODEIDS):
+            reporter.write_line(f'  {nodeid}', red=True)
+
+
+_ENTRY_CWD_KEY = pytest.StashKey[str]()
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_runtest_setup(item):
+    """Record the cwd the test started from, for the leak check at teardown."""
+    item.stash[_ENTRY_CWD_KEY] = os.getcwd()
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_teardown(item, nextitem):
+    """Fail loudly when a test leaks the process-wide cwd.
+
+    Restoring silently hid the leak: the offending test passed while every
+    later test inherited a cwd it never asked for. The original cwd is
+    restored FIRST so the following test is not poisoned, then the leak is
+    reported with the offending nodeid and the before -> after pair —
+    symmetric with ``_pollution_guard``'s fail-loud message shape.
+
+    This is a hook wrapper rather than an autouse fixture because
+    ``monkeypatch.undo()`` — which reverts ``monkeypatch.chdir()`` — runs
+    AFTER every fixture finalizer, including an autouse one declared here.
+    A fixture-based check therefore observes the cwd before pytest has had
+    the chance to restore it, and reports every correct ``monkeypatch.chdir``
+    as a leak. Checking post-yield in the teardown hook runs after all
+    fixture finalization, so only a genuinely unrestored cwd trips the guard.
+    """
+    result = yield
+    original_cwd = item.stash.get(_ENTRY_CWD_KEY, None)
+    if original_cwd is None:
+        return result
+    leaked_cwd = os.getcwd()
+    if leaked_cwd != original_cwd:
         os.chdir(original_cwd)
+        raise RuntimeError(
+            f'cwd guard: test {item.nodeid} leaked the process-wide cwd:\n  '
+            f'{original_cwd} -> {leaked_cwd}'
+            '\n\nRestore the cwd in the test (use the monkeypatch.chdir fixture, '
+            'or pass an explicit cwd= to the subprocess/API call) instead of '
+            'relying on the safety net.'
+        )
+    return result
 
 
 _REAL_CREDENTIALS_DIR = Path.home() / '.plan-marshall' / 'credentials'

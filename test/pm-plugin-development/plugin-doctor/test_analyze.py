@@ -12,8 +12,6 @@ Tests plugin component analysis capabilities.
 from argparse import Namespace
 from pathlib import Path
 
-import pytest
-
 # Import shared infrastructure
 from conftest import create_temp_file, get_script_path, load_script_module, run_script
 
@@ -75,8 +73,7 @@ def test_crossfile_missing_argument():
 def test_structure_table_refs_no_unreferenced():
     """Test that table-referenced files are detected (no unreferenced files)."""
     test_dir = SKILL_STRUCTURE_FIXTURES / 'table-references'
-    if not test_dir.exists():
-        pytest.skip('fixture not available')
+    assert test_dir.exists(), f'tracked fixture missing: {test_dir}'
 
     args = Namespace(directory=str(test_dir))
     data = cmd_structure(args)
@@ -87,8 +84,7 @@ def test_structure_table_refs_no_unreferenced():
 def test_structure_table_refs_no_missing():
     """Test that all referenced files exist (no missing files)."""
     test_dir = SKILL_STRUCTURE_FIXTURES / 'table-references'
-    if not test_dir.exists():
-        pytest.skip('fixture not available')
+    assert test_dir.exists(), f'tracked fixture missing: {test_dir}'
 
     args = Namespace(directory=str(test_dir))
     data = cmd_structure(args)
@@ -99,8 +95,7 @@ def test_structure_table_refs_no_missing():
 def test_structure_table_refs_perfect_score():
     """Test perfect score for table-referenced files."""
     test_dir = SKILL_STRUCTURE_FIXTURES / 'table-references'
-    if not test_dir.exists():
-        pytest.skip('fixture not available')
+    assert test_dir.exists(), f'tracked fixture missing: {test_dir}'
 
     args = Namespace(directory=str(test_dir))
     data = cmd_structure(args)
@@ -111,8 +106,7 @@ def test_structure_table_refs_perfect_score():
 def test_structure_code_block_no_false_positive():
     """Test that example paths in code blocks are NOT detected as missing."""
     test_dir = SKILL_STRUCTURE_FIXTURES / 'code-block-examples'
-    if not test_dir.exists():
-        pytest.skip('fixture not available')
+    assert test_dir.exists(), f'tracked fixture missing: {test_dir}'
 
     args = Namespace(directory=str(test_dir))
     data = cmd_structure(args)
@@ -123,8 +117,7 @@ def test_structure_code_block_no_false_positive():
 def test_structure_cross_skill_no_false_positive():
     """Test that cross-skill references are NOT flagged as missing."""
     test_dir = SKILL_STRUCTURE_FIXTURES / 'cross-skill-references'
-    if not test_dir.exists():
-        pytest.skip('fixture not available')
+    assert test_dir.exists(), f'tracked fixture missing: {test_dir}'
 
     args = Namespace(directory=str(test_dir))
     data = cmd_structure(args)
@@ -135,8 +128,7 @@ def test_structure_cross_skill_no_false_positive():
 def test_structure_real_plugin_doctor():
     """Test plugin-doctor skill (has table-format refs and cross-skill refs)."""
     skill_dir = PROJECT_ROOT / 'marketplace' / 'bundles' / 'pm-plugin-development' / 'skills' / 'plugin-doctor'
-    if not skill_dir.exists():
-        pytest.skip('skill directory not found')
+    assert skill_dir.exists(), f'tracked fixture missing: {skill_dir}'
 
     args = Namespace(directory=str(skill_dir))
     data = cmd_structure(args)
@@ -186,8 +178,7 @@ def test_structure_cross_skill_xref_not_flagged_missing(tmp_path):
 def test_structure_noun_suffix_flags_executor(tmp_path):
     """Skill directory names ending in reserved -executor are flagged."""
     fixture_src = SKILL_STRUCTURE_FIXTURES / 'skill-with-noun-suffix'
-    if not fixture_src.exists():
-        pytest.skip('fixture not available')
+    assert fixture_src.exists(), f'tracked fixture missing: {fixture_src}'
 
     # Rename the fixture into a reserved-suffix directory name for this test.
     target = tmp_path / 'sample-executor'
@@ -208,8 +199,7 @@ def test_structure_noun_suffix_flags_executor(tmp_path):
 def test_structure_noun_suffix_flags_plurals(tmp_path):
     """Plural reserved suffixes (-managers) are also flagged."""
     fixture_src = SKILL_STRUCTURE_FIXTURES / 'skill-with-noun-suffix'
-    if not fixture_src.exists():
-        pytest.skip('fixture not available')
+    assert fixture_src.exists(), f'tracked fixture missing: {fixture_src}'
 
     target = tmp_path / 'resource-managers'
     target.mkdir()
@@ -226,8 +216,7 @@ def test_structure_noun_suffix_flags_plurals(tmp_path):
 def test_structure_noun_suffix_passes_verb_first_name():
     """Verb-first skill directory names are not flagged."""
     skill_dir = PROJECT_ROOT / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'execute-task'
-    if not skill_dir.exists():
-        pytest.skip('skill directory not found (depends on rename tasks completing earlier)')
+    assert skill_dir.exists(), f'tracked fixture missing: {skill_dir}'
 
     args = Namespace(directory=str(skill_dir))
     data = cmd_structure(args)
@@ -254,8 +243,7 @@ def test_crossfile_invalid_path():
 def test_crossfile_duplicates_valid_json():
     """Test returns valid dict for skill with duplicates."""
     skill_path = CROSS_FILE_FIXTURES / 'skill-with-duplicates'
-    if not skill_path.exists():
-        pytest.skip('fixture not available')
+    assert skill_path.exists(), f'tracked fixture missing: {skill_path}'
 
     args = Namespace(skill_path=str(skill_path), similarity_threshold=0.6)
     data = cmd_crossfile_analyze(args)
@@ -265,8 +253,7 @@ def test_crossfile_duplicates_valid_json():
 def test_crossfile_detect_exact_duplicates():
     """Test detection of exact duplicates."""
     skill_path = CROSS_FILE_FIXTURES / 'skill-with-duplicates'
-    if not skill_path.exists():
-        pytest.skip('fixture not available')
+    assert skill_path.exists(), f'tracked fixture missing: {skill_path}'
 
     args = Namespace(skill_path=str(skill_path), similarity_threshold=0.6)
     data = cmd_crossfile_analyze(args)
@@ -277,8 +264,7 @@ def test_crossfile_detect_exact_duplicates():
 def test_crossfile_extraction_candidates():
     """Test extraction_candidates field exists."""
     skill_path = CROSS_FILE_FIXTURES / 'skill-with-duplicates'
-    if not skill_path.exists():
-        pytest.skip('fixture not available')
+    assert skill_path.exists(), f'tracked fixture missing: {skill_path}'
 
     args = Namespace(skill_path=str(skill_path), similarity_threshold=0.6)
     data = cmd_crossfile_analyze(args)
@@ -288,8 +274,7 @@ def test_crossfile_extraction_candidates():
 def test_crossfile_llm_review_flag():
     """Test contains llm_review_required flag in summary."""
     skill_path = CROSS_FILE_FIXTURES / 'skill-with-duplicates'
-    if not skill_path.exists():
-        pytest.skip('fixture not available')
+    assert skill_path.exists(), f'tracked fixture missing: {skill_path}'
 
     args = Namespace(skill_path=str(skill_path), similarity_threshold=0.6)
     data = cmd_crossfile_analyze(args)
@@ -300,8 +285,7 @@ def test_crossfile_llm_review_flag():
 def test_crossfile_clean_skill():
     """Test returns valid dict for clean skill."""
     skill_path = CROSS_FILE_FIXTURES / 'skill-clean'
-    if not skill_path.exists():
-        pytest.skip('fixture not available')
+    assert skill_path.exists(), f'tracked fixture missing: {skill_path}'
 
     args = Namespace(skill_path=str(skill_path), similarity_threshold=0.6)
     data = cmd_crossfile_analyze(args)
@@ -311,8 +295,7 @@ def test_crossfile_clean_skill():
 def test_crossfile_custom_threshold():
     """Test accepts custom similarity threshold."""
     skill_path = CROSS_FILE_FIXTURES / 'skill-clean'
-    if not skill_path.exists():
-        pytest.skip('fixture not available')
+    assert skill_path.exists(), f'tracked fixture missing: {skill_path}'
 
     args = Namespace(skill_path=str(skill_path), similarity_threshold=0.3)
     data = cmd_crossfile_analyze(args)
@@ -630,8 +613,7 @@ def test_checklist_template_exempt():
         / 'templates'
         / 'pr-template.md'
     )
-    if not template_path.exists():
-        pytest.skip('fixture not available')
+    assert template_path.exists(), f'tracked fixture missing: {template_path}'
 
     args = Namespace(file=str(template_path), type='skill')
     data = cmd_markdown(args)

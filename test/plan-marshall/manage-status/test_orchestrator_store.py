@@ -421,11 +421,18 @@ class TestOrchestratorConcurrentWrites:
     read), and the guard is released on the error path.
     """
 
+    @pytest.mark.xdist_group(name='manage_locks_contention')
     def test_should_not_lose_interleaved_metadata_writes(self, plan_context):
         cmd_orchestrator_create(_create_args('race-epic'))
 
         rounds = 20
-        start = threading.Barrier(2)
+        # Every wait in this test is explicitly bounded, so a lock regression
+        # surfaces as a diagnosable timeout instead of hanging the suite: the
+        # barrier times out if the sibling thread never arrives, and each join
+        # times out if a thread never finishes.
+        barrier_timeout_seconds = 30
+        join_timeout_seconds = 60
+        start = threading.Barrier(2, timeout=barrier_timeout_seconds)
         errors: list[Exception] = []
 
         def _setter(field: str) -> None:
@@ -444,9 +451,17 @@ class TestOrchestratorConcurrentWrites:
         thread_b = threading.Thread(target=_setter, args=('beta',))
         thread_a.start()
         thread_b.start()
-        thread_a.join()
-        thread_b.join()
+        thread_a.join(timeout=join_timeout_seconds)
+        thread_b.join(timeout=join_timeout_seconds)
 
+        assert not thread_a.is_alive(), (
+            f'writer thread alpha still running after {join_timeout_seconds}s — '
+            'the serialized read-modify-write guard is likely wedged'
+        )
+        assert not thread_b.is_alive(), (
+            f'writer thread beta still running after {join_timeout_seconds}s — '
+            'the serialized read-modify-write guard is likely wedged'
+        )
         assert not errors
         content = json.loads(_orchestrator_status_file(plan_context, 'race-epic').read_text(encoding='utf-8'))
         # No lost update: BOTH concurrently-written fields survived. Each set

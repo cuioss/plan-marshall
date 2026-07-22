@@ -462,7 +462,14 @@ class Daemon:
         ensure_daemon_dir()
         rotate_log(log_path())
         stale_socket_takeover(socket_path(), pidfile_path())
-        self._journal.replay_on_restart()
+        try:
+            self._journal.replay_on_restart()
+        except OSError:
+            # Journal replay is best-effort — it reads and rewrites the on-disk
+            # journal, either of which can raise OSError. A replay failure must
+            # never abort daemon startup; the unreplayed records are simply
+            # carried to the next start's replay.
+            pass
         try:
             self._interaction_audit.gc()
         except OSError:

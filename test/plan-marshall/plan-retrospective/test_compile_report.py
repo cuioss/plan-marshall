@@ -4,10 +4,11 @@
 from __future__ import annotations
 
 import importlib.util
+import itertools
 import shutil
 import sys
-import time
 from argparse import Namespace
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -206,35 +207,33 @@ class TestArchivedMode:
         assert output_path.name.startswith('quality-verification-report-audit-')
         assert output_path.name.endswith('.md')
 
-    def test_archived_mode_does_not_overwrite(self, tmp_path):
+    def test_archived_mode_does_not_overwrite(self, tmp_path, monkeypatch):
         archived = setup_archived_plan(tmp_path)
+
+        # The archived-report filename stamp has 1-second resolution, so this
+        # test used to sleep 1.1 s to force two distinct names. Inject a
+        # monotonically advancing clock instead: every now() call returns a
+        # timestamp one second later than the last, so consecutive runs are
+        # deterministically distinct with no wall-clock wait. Run in-process so
+        # the seam reaches the production module.
+        ticks = itertools.count()
+
+        class _AdvancingClock:
+            """Stand-in for ``datetime`` whose ``now()`` advances one second per call."""
+
+            @staticmethod
+            def now(tz=None):
+                return datetime(2026, 1, 15, 12, 0, 0, tzinfo=tz or UTC) + timedelta(seconds=next(ticks))
+
+        monkeypatch.setattr(_compile_report, 'datetime', _AdvancingClock)
+
         # compile-report auto-deletes the fragments bundle on success, so
         # each invocation needs its own freshly-written bundle.
         fragments_a = _write_fragments(tmp_path)
-        result_a = run_script(
-            SCRIPT_PATH,
-            'run',
-            '--archived-plan-path',
-            str(archived),
-            '--mode',
-            'archived',
-            '--fragments-file',
-            str(fragments_a),
-        )
-        data_a = result_a.toon()
-        time.sleep(1.1)
+        data_a = cmd_run(_run_args('archived', fragments_a, archived_plan_path=archived))
         fragments_b = _write_fragments(tmp_path)
-        result_b = run_script(
-            SCRIPT_PATH,
-            'run',
-            '--archived-plan-path',
-            str(archived),
-            '--mode',
-            'archived',
-            '--fragments-file',
-            str(fragments_b),
-        )
-        data_b = result_b.toon()
+        data_b = cmd_run(_run_args('archived', fragments_b, archived_plan_path=archived))
+
         assert data_a['output_path'] != data_b['output_path']
         assert Path(data_a['output_path']).exists()
         assert Path(data_b['output_path']).exists()

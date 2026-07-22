@@ -271,7 +271,24 @@ def test_handle_request_writes_one_record_per_ping_and_wait(home, tmp_path):
     assert records[1]['job_id'] == 'J'
 
 
-def test_handle_request_submit_records_project_attribution(home, tmp_path):
+def test_submit_dispatch_records_project_attribution(home, tmp_path):
+    """Drive the two submit-dispatch seams synchronously — no event loop.
+
+    Deliberately does NOT go through ``asyncio.run(daemon.handle_request(...))``.
+    ``handle_request`` also ADMITS the job and spawns a fire-and-forget
+    ``run_job`` subprocess task: the scheduler clamps ``max_slots`` to
+    ``max(1, n)`` so no slot setting keeps the job queued, and ``asyncio.run``
+    then hangs at loop-close cancelling that in-flight subprocess transport on
+    some asyncio versions (the 283f6dcec hang shape — reproduced on CI's Python
+    3.12, invisible on 3.14). Every sibling in this file drains via
+    ``await asyncio.gather(*daemon._tasks.values())``; this one did not.
+
+    The unit under test is the audit ATTRIBUTION record, not the subprocess, so
+    drive the two seams it needs directly: the scheduler assigns a real job_id
+    (enqueue only — no ``admit_next``, no ``_execute``) and ``_audit_interaction``
+    writes the record. Mirrors ``test_interaction_audit_correlation.py``'s
+    ``_daemon_submit``; see lesson 2026-07-20-20-001.
+    """
     audit = audit_mod.InteractionAudit()
     daemon = _daemon(tmp_path, audit)
     spec = JobSpec(
@@ -282,10 +299,10 @@ def test_handle_request_submit_records_project_attribution(home, tmp_path):
         fingerprint='fp',
     )
 
-    async def _drive():
-        return await daemon.handle_request({'op': 'submit', 'job': spec.to_dict()})
-
-    response = asyncio.run(_drive())
+    request = {'op': 'submit', 'job': spec.to_dict()}
+    submitted = daemon._scheduler.submit(spec, 'root')
+    response = {'status': 'queued', 'job_id': submitted.job_id, 'attached': submitted.attached}
+    daemon._audit_interaction('submit', request, response)
 
     records = audit.read_all()
     assert len(records) == 1
@@ -317,6 +334,40 @@ def test_handle_request_unknown_op_is_still_audited(home, tmp_path):
     # audit reason-capture falls back to `error`, so the record keeps the detail
     # instead of dropping it to None.
     assert records[0].get('reason')
+
+
+class _StartupReached(Exception):
+    """Sentinel raised from a stubbed ``start_unix_server`` to mark bind-time."""
+
+
+def test_serve_survives_journal_replay_oserror(home, tmp_path, monkeypatch):
+    """A ``replay_on_restart()`` disk failure must never abort daemon startup.
+
+    ``Journal.replay_on_restart`` reads and rewrites the on-disk journal, either
+    of which can raise ``OSError``. Unguarded, that raise escapes ``serve()``
+    before the socket is ever bound — the daemon dies at startup and every
+    client silently falls back to in-process builds. The guard degrades it to
+    "the unreplayed records are carried to the next start's replay" instead.
+
+    The stubbed ``start_unix_server`` raises a sentinel at the bind step, so the
+    assertion is positive: startup reached the bind, i.e. it got PAST replay.
+    """
+    audit = audit_mod.InteractionAudit()
+    daemon = _daemon(tmp_path, audit)
+
+    def _boom() -> None:
+        raise OSError('journal read/rewrite failure')
+
+    monkeypatch.setattr(daemon._journal, 'replay_on_restart', _boom)
+
+    async def _sentinel(*_args, **_kwargs):
+        raise _StartupReached
+
+    monkeypatch.setattr(marshalld.asyncio, 'start_unix_server', _sentinel)
+
+    # The sentinel — NOT the OSError — must escape.
+    with pytest.raises(_StartupReached):
+        asyncio.run(daemon.serve())
 
 
 def test_audit_interaction_swallows_attribution_failure(home, tmp_path, monkeypatch):
