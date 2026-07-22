@@ -55,14 +55,23 @@ Extract `build_map` (the domain-keyed `{glob, role, build_class}` map) from the 
 
 ### Derive unique bundle set
 
-For each entry `path` in `files`:
+The derivation rule lives in exactly one place — the deterministic `derive_gate_bundles` seam. Do NOT restate it here. Pass the live footprint `files`, the collected build_map `globs`, and the worktree root; the seam returns the sorted, de-duplicated `bundles` set plus an `unresolved` list of footprint paths that matched a build_map glob but resolved to no real bundle (e.g. a `test/marketplace/**` path, which is never a bundle and never a silent drop):
 
-1. Skip the entry if it matches none of the build_map globs (using `fnmatch.fnmatch`).
-2. If the entry begins with `marketplace/bundles/`, take path segment 2 as the bundle (e.g., `marketplace/bundles/plan-marshall/skills/.../foo.py` → `plan-marshall`).
-3. Otherwise, if the entry begins with `test/`, take path segment 1 as the bundle (e.g., `test/plan-marshall/.../test_foo.py` → `plan-marshall`).
-4. Otherwise, the entry contributes no bundle (drop silently).
+```bash
+python3 .plan/execute-script.py plan-marshall:phase-6-finalize:derive_gate_bundles \
+  derive --files "{comma_separated_files}" --globs "{comma_separated_globs}" \
+  --marketplace-root {worktree_path}
+```
 
-Collect the resulting bundle names into a sorted, de-duplicated list `bundles`. Let `N = len(bundles)`.
+Parse `bundles` and `unresolved` from the TOON output. Let `N = len(bundles)`.
+
+**Diagnosable-WARNING branch** — when `unresolved` is non-empty, emit exactly one `[WARNING]` naming the unresolved paths and continue. An unresolvable derivation is never a silent drop and never a hard fail; the gate hard-fails only on a real `quality-gate` red (ADR-009 fail-closed, unchanged):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level WARNING \
+  --message "[WARNING] (plan-marshall:pre-push-quality-gate) Footprint paths matched a build_map glob but resolved to no bundle: {unresolved} — proceeding; these are not gated as a bundle."
+```
 
 ### Run quality-gate per bundle
 

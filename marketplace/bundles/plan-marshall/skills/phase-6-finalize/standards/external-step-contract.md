@@ -36,10 +36,18 @@ MANDATORY annotations for every argument:
 
 - `--phase` — MANDATORY. Always the literal string `6-finalize` for steps dispatched under this operation. This anchors the step record to the finalize phase; any other value routes the record into the wrong phase bucket and breaks the Step 4 renderer grouping.
 - `--outcome` — MANDATORY. Must be exactly one of `done`, `skipped`, or `failed`. Any other value (including misspellings or capitalized variants) is rejected by `manage-status`. The choice determines the headline classification and CANNOT be inferred from `display_detail` alone.
-- `--step` — MANDATORY. Must match the fully-qualified step name as listed in `marshal.json` (e.g. `default:push`, `project:foo`, or `plan-marshall:some-skill:some-script`). Mismatches here create orphan status records that the renderer cannot pair with the dispatched step.
+- `--step` — MANDATORY. Pass the step's **composed manifest catalog key** — the key exactly as `manifest.phase_6.steps` catalogs it, NOT a name read off `marshal.json`. The `default:` prefix is normalised on write by the canonical step-key seam, so a built-in step lands on the same record whether authored bare (`push`) or prefixed (`default:push`). A `bundle:skill` id (e.g. `plan-marshall:automatic-review`) is **preserved verbatim** by that seam and therefore MUST be authored exactly as the manifest catalogs it — the normalisation cannot rescue a mis-authored bundle-prefixed key. A key the seam cannot reconcile creates an orphan status record that the renderer cannot pair with the dispatched step, which the dispatcher-side guard surfaces as `step_record_mismatched_key`.
 - `--display-detail` — MANDATORY. Single-line summary of what the step actually did, authored by the step itself. Subject to the constraints listed below. A missing, empty, or whitespace-only value triggers the `<missing display_detail>` placeholder and contributes a `[FAILED]` headline regardless of the `--outcome` value.
 
 **Notation:** the canonical 3-part notation is `plan-marshall:manage-status:manage-status` — every segment is kebab-case.
+
+### Ordering invariant — record before returning
+
+The terminal `mark-step-done` call MUST land **before** the step composes its return TOON, never as a trailing action after it. Landing the record is the step's LAST side effect and its FIRST obligation on the way out: do the work, write the terminal record, *then* compose and emit the return.
+
+A `status: success` return with no terminal record is a **contract violation**, not a benign omission. The step has already returned by the time the gap is observable, so the leaf can no longer repair it — the dispatcher attributes the violation to the leaf, records `failed` against it, and halts the pipeline, costing a full envelope re-dispatch to redo work that actually succeeded. Treating the record as a closing prose step "after the return is written" is exactly how this happens: the return is emitted, the step body ends, and the call never runs.
+
+The dispatcher-side guard (`SKILL.md` Step 3 item 5d, "Post-dispatch completion guard") calls `manage-status assert-step-recorded --require-terminal` after every dispatched-step return and distinguishes `step_record_missing` (no record at all — this invariant was violated) from `step_record_mismatched_key` (a record exists under a key the seam could not reconcile — the `--step` contract above was violated). That guard is a **backstop detector, not the fix**: it converts a silent handshake deadlock into an attributed per-step failure, but it cannot make the omitted write happen. The fix is authoring the call in the right place, here.
 
 **`display_detail` constraints:**
 
