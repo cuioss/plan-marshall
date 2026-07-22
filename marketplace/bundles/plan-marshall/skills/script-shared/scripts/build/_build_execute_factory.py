@@ -192,9 +192,15 @@ def _record_resolution(
         plan_id: Submitting plan id; falsy for a plan-less build (the work-log
             emission is skipped, the stderr emission is not).
     """
+    # The wait mechanism this build-arm record names, drawn from the same closed
+    # vocabulary the CI arm uses so one ``mechanism=`` log query matches both
+    # arms. It is a pure rendering of the already-decided ``resolved`` value —
+    # no new branch, no new call site: ``routed`` ran on the daemon long-poll,
+    # ``in_process`` / ``fail-loud`` are the in-process fallback realisation.
+    mechanism = 'daemon_longpoll' if resolved == 'routed' else 'in_process_fallback'
     message = (
         f'[BUILD-SERVER] resolved build (requested={requested}, resolved={resolved}, '
-        f'reason={reason}, notation={notation}, plan={plan_id})'
+        f'reason={reason}, notation={notation}, plan={plan_id}, mechanism={mechanism})'
     )
     print(message, file=sys.stderr)
     if plan_id:
