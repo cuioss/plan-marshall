@@ -748,11 +748,11 @@ The script reads `request.md` (clarified_request → original_input fallback; le
   AskUserQuestion (multiSelect):
     question: "The domain for this plan is ambiguous. Which domain(s) apply? (select all that apply)"
     options:
-      - label: "{candidate_1}" description: "Detected candidate domain"
-      - label: "{candidate_2}" description: "Detected candidate domain"
-      # ... one option per candidates entry
+      - label: "{candidate_1.domain}" description: "Detected candidate domain"
+      - label: "{candidate_2.domain}" description: "Detected candidate domain"
+      # ... one option per candidates entry (each is an object — use its `domain` field)
       - label: "{additional_1}" description: "Configured for this project, not detected in the request"
-      # ... one option per additional_candidates entry
+      # ... one option per additional_candidates entry (each is a bare domain-key string)
   ```
 
   Union the operator's selections with the returned `always_on` and `glob_matched` sets, then persist ALL of them in-context via Step 9's `manage-references set-list --field domains --values {comma_separated}`. Carry the resulting union forward as `{domains}` for the rest of the phase. On this branch the resolved domains come from the operator's multiSelect selections plus the always_on / glob legs, never a single detector winner.
