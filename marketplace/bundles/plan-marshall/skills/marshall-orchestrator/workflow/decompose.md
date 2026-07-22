@@ -40,7 +40,9 @@ Partition the epic into workstreams — coherent slices with their own charter (
 
 ### Step 4: Stage plan specs
 
-For each shippable unit inside a workstream, instantiate `plans/PLAN-NN-{plan_slug}.md` from [`templates/plan-spec.md`](../templates/plan-spec.md) via the Write tool, recording the plan's **expected surface** (files/modules touched) — the disjointness input `next` consumes. Apply the scope-bloat split guard: a spec approaching six or more deliverables is presumptively split along deliverable-group boundaries; proceeding unsplit requires a recorded decision (Step 7 logging shape).
+For each shippable unit inside a workstream, instantiate `plans/PLAN-NN-{plan_slug}.md` from [`templates/plan-spec.md`](../templates/plan-spec.md) via the Write tool, recording the plan's **expected surface** (files/modules touched) — the disjointness input `next` consumes. Apply the scope-bloat split guard: a spec approaching six or more deliverables is presumptively split along deliverable-group boundaries; proceeding unsplit requires a recorded decision (Step 7 logging shape). Every staged spec carries the template's `## Write-Boundary` note through to the executing plan, per the standard's [Ledger Write-Boundary](../../persona-marshall-orchestrator/standards/orchestration-model.md#ledger-write-boundary) section.
+
+Author every per-plan carry — claim labels, expected surface, re-grounding instruction, adjacency and overlap notes, verify-first clauses — **into the spec file itself**, never into a hand-off block. The spec MUST be self-sufficient: the emitted command is a one-line pointer to the spec path and carries no brief, so anything absent from the spec is lost to the executing plan.
 
 ### Step 5: Populate the status.json queue
 
