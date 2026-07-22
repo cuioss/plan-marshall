@@ -45,13 +45,25 @@ python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator
 
 Skip Steps 4–6 and return.
 
-### Step 4 (verb = `next`): Select the next launchable plan
+### Step 4 (verb = `next`): Select up to `N − R` launchable plans
 
-Pick the first `staged` plan in queue order whose dependencies (sequencing notes in its `plans/PLAN-NN-{plan_slug}.md` spec) are satisfied. Check **surface disjointness** against every currently-launched plan: the candidate may be emitted while another plan is in flight ONLY when their expected surfaces do not overlap. Overlapping candidates are sequenced — report the overlap and the plan being waited on instead of emitting.
+Read the epic's `parallelization_scope` knob — `N`, the maximum number of concurrently-launched plans, defaulting to `1` (strictly sequential) when unset:
 
-### Step 5 (verb = `next`): Emit the command
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
+  --plan-id {slug} --get --field parallelization_scope --store orchestrator
+```
 
-EMIT the ready-to-run command for the operator as a **one-line pointer** to the staged spec. The spec is the single source of the brief, so no request text is transcribed into the command:
+Count `R`, the plans currently in `launched` status, and select up to `N − R` candidates — never exactly one by construction. Walk `staged` plans in queue order whose dependencies (sequencing notes in their `plans/PLAN-NN-{plan_slug}.md` spec) are satisfied, and admit a candidate ONLY when both admission tests pass:
+
+- **Disjoint** — its expected surface overlaps neither any currently-launched plan nor any candidate already selected this round.
+- **Prep-ready** — its spec owes no re-grounding and carries no unresolved verify-first clause (see the spec template's `## Claim Labels`).
+
+A candidate failing either test is sequenced, not emitted. **Never emit a colliding or unprepared plan merely to fill a slot** — when fewer than `N − R` candidates qualify, report the shortfall with the blocking reason per candidate (the overlapping surface, or the unsettled claim) instead.
+
+### Step 5 (verb = `next`): Emit the commands
+
+EMIT one ready-to-run command per selected candidate — the whole `N − R` block in one copy-paste surface — each a **one-line pointer** to its staged spec. The spec is the single source of the brief, so no request text is transcribed into the command:
 
 ```text
 /plan-marshall Execute the staged plan spec at .plan/local/orchestrator/{slug}/plans/PLAN-NN-{plan_slug}.md
@@ -59,7 +71,7 @@ EMIT the ready-to-run command for the operator as a **one-line pointer** to the 
 
 **Lifecycle prerequisite.** The one-line form is lossless only once the plan lifecycle ingests a referenced spec file's *contents*. It does not do so today: `phase-1-init` uses the description verbatim and reads no path named inside it, and `phase-2-refine` existence-checks file-path claims rather than ingesting them. PLAN-41 owns that lifecycle change. Until it lands, the emit inlines the spec body beneath the pointer line — the pointer is the target emit contract, not yet the sufficient one.
 
-The verb NEVER launches the plan inline — the operator runs the emitted command; implementation happens exclusively inside the plan lifecycle. When the operator confirms the launch, record the transition:
+The verb NEVER launches the plan inline — the operator runs the emitted command; implementation happens exclusively inside the plan lifecycle. This holds for every command in the block: the orchestrator emits `N − R` ready commands and launches none of them. When the operator confirms a launch, record the transition (once per launched plan):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator queue \
@@ -96,12 +108,16 @@ resume_anchor: "{anchor}"
 
 ```toon
 status: success | error
-display_detail: "emitted {PLAN-NN} for epic {slug}"
+display_detail: "epic {slug}: emitted {E} of {N-R} slots"
 slug: {slug}
 verb: next
-emitted_plan: PLAN-NN
-emitted_command: "/plan-marshall Execute the staged plan spec at {spec_path}"
-disjointness: clear | sequenced-behind-{PLAN-MM}
+parallelization_scope: {N}
+launched_count: {R}
+emitted[E]{plan,command}:
+  PLAN-NN,"/plan-marshall Execute the staged plan spec at {spec_path}"
+shortfall[S]{plan,reason}:
+  PLAN-MM,"overlaps {surface} with PLAN-KK"
+  PLAN-PP,"unresolved verify-first clause"
 ```
 
-`display_detail` is ≤80 chars, ASCII, no trailing period. When disjointness sequences the candidate, `emitted_plan`/`emitted_command` are absent and `display_detail` names the blocking plan.
+`display_detail` is ≤80 chars, ASCII, no trailing period. `emitted[]` is empty when no candidate qualifies; `shortfall[]` is empty when the block fills every slot, and otherwise names one blocking reason per unemittable candidate.

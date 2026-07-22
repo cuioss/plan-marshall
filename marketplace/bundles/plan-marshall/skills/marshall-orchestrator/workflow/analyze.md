@@ -64,11 +64,14 @@ Decide which output contract applies:
      --slug {slug}
    ```
 
+6. **Conclude with the proactive emit.** Run the [`orchestrate.md` `next` selection](orchestrate.md) — its `parallelization_scope` read, `N − R` slot count, and disjoint-plus-prep-ready admission tests govern; do not restate them — and emit the resulting queue-filling copy-paste block. When nothing qualifies, state "nothing emittable, blocked on {X}" instead, enumerating each unemittable candidate and its blocking reason. The emit-only rule holds: the block is handed to the operator, never launched.
+
 ### Step 5: Mid-flight observation — minimal reconciliation
 
 1. Record the observation as a Watch or Open Defect entry in `epic.md` — NO ship semantics, no landing report, no queue-status transition for the observed plan.
 2. When the observation warrants new work, either **fold** it into an existing staged `plans/PLAN-NN-{plan_slug}.md` spec or **spawn** a new spec (and queue entry via the `decompose.md` Step 5 queue-write shape) — anything larger than the small-ops carve-out becomes a plan, never inline work.
 3. Regenerate the START-HERE block only when the queue was touched (the Step 4 item 5 invocation).
+4. **Conclude with the proactive emit** — the same standing output as Step 4 item 6, under the same `orchestrate.md` selection rules: emit the queue-filling block, or the explicit "nothing emittable, blocked on {X}" statement with a reason per unemittable candidate.
 
 ### Step 6: Log and set the resume anchor
 
@@ -96,7 +99,10 @@ landing_report: landings/PLAN-NN.md | -
 queue_items_retired: {N}
 defects_added: {N}
 watches_added: {N}
+emitted[E]{plan,command}:
+  PLAN-NN,"/plan-marshall Execute the staged plan spec at {spec_path}"
+emit_blocked_reason: "{why nothing is emittable}" | -
 resume_anchor: "{next action}"
 ```
 
-`display_detail` is ≤80 chars, ASCII, no trailing period. `plan` and `landing_report` carry `-` for the observation granularity.
+`display_detail` is ≤80 chars, ASCII, no trailing period. `plan` and `landing_report` carry `-` for the observation granularity. `emitted[]` carries the proactive queue-filling block for both granularities; when it is empty, `emit_blocked_reason` names what is not yet emittable and why.

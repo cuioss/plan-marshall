@@ -47,11 +47,34 @@ python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime 
   --store orchestrator --slug {slug}
 ```
 
-### Step 4: Write the epic skeleton
+### Step 4: Ask the parallelization scope (once per epic)
+
+Read the knob first — the ask is idempotent and MUST be skipped when the field is already set (an `init` re-entry never re-prompts):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
+  --plan-id {slug} --get --field parallelization_scope --store orchestrator
+```
+
+When the field is unset, fire exactly ONE `AskUserQuestion` for the operator's **parallelization scope** — the maximum number of plans the orchestrator may have launched concurrently, `1` meaning strictly sequential and `N` meaning up to `N` concurrent plans. `init` runs in main context, so the prompt is fired natively here. Persist the answer as the epic-level knob:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
+  --plan-id {slug} --set --field parallelization_scope --value {N} --store orchestrator
+```
+
+The knob bounds the `next` queue-fill selection — see [Parallelization by Surface Disjointness](../../persona-marshall-orchestrator/standards/orchestration-model.md#parallelization-by-surface-disjointness) for the consuming contract. Log the operator interaction:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging decision \
+  --plan-id {slug} --level INFO --message "{parallelization_scope set to N by operator}" --store orchestrator
+```
+
+### Step 5: Write the epic skeleton
 
 Instantiate `epic.md` from [`templates/epic.md`](../templates/epic.md) via the Write tool — direct file access inside the epic's own tree is the direct-file-access carve-out. Fill the Vision section from the operator's framing; leave the Ordered Queue empty (populated by `decompose`) and the START-HERE generated-block markers in place. Optionally seed `references.json` (external repos, PRs, source documents) the same way.
 
-### Step 5: Set the resume anchor and log
+### Step 6: Set the resume anchor and log
 
 Set the resume anchor to the exact next action (typically "run /marshall-orchestrator decompose slug={slug}"):
 
