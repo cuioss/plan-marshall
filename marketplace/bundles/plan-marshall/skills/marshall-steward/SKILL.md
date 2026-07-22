@@ -63,6 +63,8 @@ configure · verify · maintain
 |--------|----------|---------|
 | determine_mode | `plan-marshall:marshall-steward:determine_mode` | Determine wizard vs menu mode; also exposes `check-working-prefixes` (project.working_prefixes presence/drift) and `check-staleness` (health-menu executor/config staleness preflight) |
 | gitignore_setup | `plan-marshall:marshall-steward:gitignore_setup` | Configure .gitignore for .plan/ |
+| upgrade | `plan-marshall:marshall-steward:upgrade` | Emit the four-stage `upgrade` verb plan (pure function of `(integrate, project_kind)`) |
+| cache_freshness | `plan-marshall:marshall-steward:cache_freshness` | Fail-closed three-valued plugin-cache freshness verdict (`fresh\|stale\|unknown`) driving the consumer Stage-1 `cache-freshness-check` sub-step |
 | bootstrap_plugin | _(direct Python call)_ | Detect plugin root, cache in `.plan/local/marshall-state.toon` |
 
 ### Delegated Scripts (require executor)
@@ -743,7 +745,7 @@ Apply the recovery guidance for the specific error type.
 
 ## Canonical invocations
 
-The canonical argparse surface for the four entry-point scripts this skill registers: `determine_mode.py`, `bootstrap_plugin.py`, `gitignore_setup.py`, and `upgrade.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
+The canonical argparse surface for the five entry-point scripts this skill registers: `determine_mode.py`, `bootstrap_plugin.py`, `gitignore_setup.py`, `upgrade.py`, and `cache_freshness.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
 
 ### determine_mode — mode
 
@@ -803,5 +805,11 @@ python3 .plan/execute-script.py plan-marshall:marshall-steward:gitignore_setup [
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:marshall-steward:upgrade plan [--integrate {true|false}] [--project-kind {auto|meta|consumer}]
+```
+
+### cache_freshness — check
+
+```bash
+python3 .plan/execute-script.py plan-marshall:marshall-steward:cache_freshness check [--cache-root CACHE_ROOT]
 ```
 

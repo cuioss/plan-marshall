@@ -25,10 +25,13 @@ Project kinds:
   the root). It regenerates the ``target/claude`` tree AND the executor, and
   verifies with executor preflight AND a content-drift report.
 * ``consumer`` — a downstream project that consumes plan-marshall (the
-  meta-only marketplace surface is absent). It regenerates ONLY the executor
-  and verifies with executor preflight ONLY. The meta-only sub-steps
-  (``regenerate-target-tree`` in Stage 1, ``content-drift-report`` in Stage 3)
-  are absent from a consumer plan and MUST NOT be attempted.
+  meta-only marketplace surface is absent). It gates on plugin-cache freshness
+  (``cache-freshness-check``), regenerates ONLY the executor, and verifies with
+  executor preflight ONLY. The meta-only sub-steps (``regenerate-target-tree``
+  in Stage 1, ``content-drift-report`` in Stage 3) are absent from a consumer
+  plan and MUST NOT be attempted. The freshness gate is consumer-only: the meta
+  project refreshes its own cache through
+  ``project:finalize-step-sync-plugin-cache``, a surface consumers do not have.
 
 The four stages are fixed and ordered:
 
@@ -40,7 +43,7 @@ The four stages are fixed and ordered:
 Per-stage ``sub_steps`` (the meta/consumer matrix):
 
     Stage 1 regenerate-targets  meta:     [regenerate-target-tree, regenerate-executor]
-                                consumer: [regenerate-executor]
+                                consumer: [cache-freshness-check, regenerate-executor]
     Stage 2 reconcile-config    both:     [reconcile-marshal-json]
     Stage 3 verify              meta:     [executor-preflight, content-drift-report]
                                 consumer: [executor-preflight]
@@ -98,7 +101,7 @@ _STAGE_SPECS: list[dict] = [
         'nested_gates': [],
         'sub_steps': {
             'meta': ['regenerate-target-tree', 'regenerate-executor'],
-            'consumer': ['regenerate-executor'],
+            'consumer': ['cache-freshness-check', 'regenerate-executor'],
         },
     },
     {
