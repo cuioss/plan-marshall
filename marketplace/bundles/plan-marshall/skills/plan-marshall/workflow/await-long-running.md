@@ -83,6 +83,8 @@ Bash(command="{command}", run_in_background: true)
 
 `run_in_background` is a **known-lossy primitive**: the harness kills backgrounded jobs with zero output, and the loss is **detected on the wake path (steps d/e), not prevented**.
 
+Because THIS is the detached path, the orchestrator MUST declare it to the wait handler by passing `--dispatch detached` on the `ci-wait` invocation. The wait handler cannot self-observe whether it was launched detached or inline — `--dispatch` is the one field the caller alone knows, and it is recorded on the handler's `[WAIT]` mechanism-selection record (see § Output). Omitting it records `dispatch=undeclared`, which makes a caller that skipped the declaration visible in the log rather than laundering it into a plausible default.
+
 Do NOT poll for completion and do NOT `sleep`/`wait` on the backgrounded job — the completion notification is the wake signal (step d).
 
 ### (d) On the completion notification, check the state gate FIRST
@@ -122,7 +124,7 @@ All four title-surface operations (set / clear / both pushes) are **best-effort*
 
 ### (g) Fallback — synchronous blocking call
 
-When the Claude background primitive is unavailable (a non-Claude runtime, or the `run_in_background` parameter is not honoured), the seam degrades to **today's synchronous blocking call**: run `{command}` **inline** at `timeout: bash_timeout_seconds * 1000` (the architecture-resolved envelope's `bash_timeout_seconds`), still bracketed by the build-busy set (step b) and the clear (step e). On the synchronous path the completion is the Bash call's own return, so the clear is unconditional (there is no reminder to gate against) — but keeping the state-read gate is harmless and preserves one code path.
+When the Claude background primitive is unavailable (a non-Claude runtime, or the `run_in_background` parameter is not honoured), the seam degrades to **today's synchronous blocking call**: run `{command}` **inline** at `timeout: bash_timeout_seconds * 1000` (the architecture-resolved envelope's `bash_timeout_seconds`), still bracketed by the build-busy set (step b) and the clear (step e). On this inline path the orchestrator MUST pass `--dispatch inline` on the `ci-wait` invocation — the mirror of step (c)'s `--dispatch detached` — so the handler's `[WAIT]` record names the synchronous realisation rather than recording `dispatch=undeclared`. On the synchronous path the completion is the Bash call's own return, so the clear is unconditional (there is no reminder to gate against) — but keeping the state-read gate is harmless and preserves one code path.
 
 The synchronous fallback is behaviourally identical to the pre-detach model; it exists so the Claude-specific wake primitive stays contained behind this seam rather than leaking a runtime branch into either consumer.
 
@@ -140,6 +142,9 @@ Orchestration-guidance seam followed by the main-context orchestrator. Conforman
 ```toon
 status: success | error
 display_detail: "<detached {consumer} completed: {short outcome}>"
+mechanism: seed_only | watch_tail | poll_fallback
 ```
 
-The orchestrator emits this shape when the seam is wrapped in a `Task: execution-context-{level}` dispatch. When followed inline in the main context, the detach/wake/clear transitions are surfaced via `manage-logging` records and the live `/dev/tty` title repaints.
+The orchestrator emits this shape when the seam is wrapped in a `Task: execution-context-{level}` dispatch; it carries the `ci-wait` arm's `mechanism` stamp back on the return so the orchestrator can reconcile which mechanism the detached wait actually ran on.
+
+The mechanism-selection evidence is the `[WAIT]` work-log record written by the `ci-wait` handler itself — on **every resolved wait**, on both the inline (step g) and the detached (step c) path — NOT by this seam's own prose transitions. The record names `consumer`, the resolved `mechanism` (`seed_only` / `watch_tail` / `poll_fallback`), the caller-declared `dispatch` (`detached` / `inline` / `undeclared`), the `target`, and the `outcome`; a degrade to `poll_fallback` is recorded at `WARNING` so a silent fallback from the terminal-state watch tail is greppable. The seam's detach/wake/clear steps are NOT themselves a log source — the wait handler's record is the single mechanism-selection evidence, and the live `/dev/tty` title repaints remain the visual signal only.
