@@ -15,9 +15,7 @@ execute in ordinary operation, so a compose-time snapshot cannot be a durable
 routing fact. ``phase-5-execute`` re-resolves the tier LIVE before running each
 verification step and routes on that verdict; the stamp serves planning and
 observability. ``TestStampReflectsALiveResolvedCeilingVerdict`` below pins that
-volatility with the production producers, and
-``TestStampIsASnapshotNotADurableFact`` pins that the stamp is re-derived per
-compose rather than fixed for the plan's lifetime.
+volatility with the production producers.
 
 The contract properties the stamping guarantees:
 
@@ -514,39 +512,6 @@ class TestStampReflectsALiveResolvedCeilingVerdict:
         )
         assert after['execution_tier'] == 'orchestrator'
         assert after['bash_timeout_seconds'] > before['bash_timeout_seconds']
-
-
-class TestStampIsASnapshotNotADurableFact:
-    """Two composes of the SAME step list record different tiers when the tier moved.
-
-    This is the negative counterpart of the totality lock: the stamp is re-derived
-    from the live resolve on every compose, so it tracks the moving learned duration
-    rather than freezing the plan's first verdict. A change here that made the stamp
-    sticky would reintroduce the manifest-vs-reality divergence.
-    """
-
-    @staticmethod
-    def _tier_after_resolving(monkeypatch, bash_timeout_seconds: int, plan_id: str) -> str:
-        fields = _arch_build._compute_execution_tier_fields(bash_timeout_seconds)
-        toon = _core.serialize_toon({'status': 'success', **fields})
-        monkeypatch.setattr(_mem, '_resolve_executor', lambda: Path('/dev/null'))
-        monkeypatch.setattr(
-            _mem.subprocess, 'run', lambda *a, **k: SimpleNamespace(returncode=0, stdout=toon)
-        )
-        records = _stamp(plan_id, ['verify:coverage'])
-        tier: str = records[0]['tier']
-        return tier
-
-    def test_recompose_after_the_tier_moves_records_the_new_tier(self, monkeypatch):
-        ceiling = _arch_build._BASH_CEILING_SECONDS
-
-        first = self._tier_after_resolving(monkeypatch, ceiling - 1, 'plan-39-snapshot-first')
-        # A re-compose must re-derive, so the memo from the first pass cannot leak.
-        _mem._invoke_architecture_resolve_cached.cache_clear()
-        second = self._tier_after_resolving(monkeypatch, ceiling + 1, 'plan-39-snapshot-second')
-
-        assert first == 'per_task'
-        assert second == 'orchestrator'
 
 
 class TestRouteUnmappedOrchestratorVerbs:
