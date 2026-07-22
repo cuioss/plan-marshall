@@ -34,7 +34,6 @@ All build skills share these subcommands. Availability per tool:
 | `coverage-report` | Yes | Yes | Yes | Yes | Parse coverage report |
 | `check-warnings` | Yes | Yes | Yes | Yes | Categorize build warnings against acceptable patterns |
 | `discover` | Yes | Yes | Yes | Yes | Discover modules with metadata |
-| `search-markers` | Yes | Yes | No | No | Search OpenRewrite TODO markers in source files |
 | `find-project` | No | Yes | No | No | Find Gradle subproject path from name |
 
 ---
@@ -244,29 +243,11 @@ npm commands are conditional on scripts present in `package.json`.
 
 ---
 
-### search-markers (Maven, Gradle only)
+### OpenRewrite marker detection (not a build-tool verb)
 
-Search for OpenRewrite TODO markers in source files. Used in conjunction with `parse --mode no-openrewrite` for OpenRewrite workflow: search markers to inventory → decide action → optionally re-parse with the `no-openrewrite` filter.
+Marker detection is **not** a build-tool subcommand. It is a domain-owned executable verb: the `marker-detect` verb, resolved null-on-absent from the active domain's `workflow_skill_extensions` and dispatched through its notation (`pm-dev-java-cui:search-markers` for the java-cui domain). See [`ext-point-domain-verb.md`](ext-point-domain-verb.md) for the declaration / discovery / dispatch / resolution contract, and the owning skill's SKILL.md for its argument surface and exit-code gate contract.
 
-```bash
-python3 .plan/execute-script.py {notation} search-markers \
-    --source-dir <dir> [--extensions <ext>]
-```
-
-**Parameters**:
-- `--source-dir` — Directory to search (default: `src`)
-- `--extensions` — Comma-separated file extensions (default: `.java` for Maven, `.java,.kt` for Gradle)
-
-**Exit-code contract** — `search-markers` is a gate, so its exit status is the machine-readable verdict:
-
-| Exit code | Condition |
-|-----------|-----------|
-| `0` | The scan succeeded and the source is marker-free (`total_markers == 0`) |
-| `1` | Any marker was detected (`total_markers > 0`), **or** the scan itself failed (`status: error`, e.g. an unreadable `--source-dir`) |
-
-A detected marker fails the gate regardless of its category. `auto_suppress` is a *categorization* that tells a caller a marker has a known, mechanical suppression (surfaced as `by_category.auto_suppress`, `auto_suppress_count`, and the per-marker `suppression_comment`) — it is **not** an exemption from the non-zero exit. Callers that want to act only on markers needing a human decision read `ask_user_count` from the payload; they do not read it from the exit code.
-
-Because both the failure and the markers-found paths return `1`, distinguish them by the payload's `status` field rather than by exit code alone.
+The `parse --mode no-openrewrite` filter remains a build-tool concern and is documented under `parse` above.
 
 ---
 

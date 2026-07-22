@@ -15,7 +15,7 @@ This skill has no user-facing workflow. It provides build utilities, extension f
 
 ```text
 scripts/
-  build/        # Build system utilities (_build_*.py, _coverage_parse.py, _markers_search.py)
+  build/        # Build system utilities (_build_*.py, _coverage_parse.py)
   extension/    # Extension framework (extension_base.py, extension_discovery.py, ...)
   workflow/     # Workflow helpers (triage_helpers.py)
   query/        # Query utilities (query-config.py, query-architecture.py)

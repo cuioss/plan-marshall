@@ -128,6 +128,8 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   resolve-workflow-skill-extension --domain {domain} --type triage
 ```
 
+`--type` accepts the full extension-type set `{outline, triage, marker-detect}`; `triage` is this contract's value. See [ext-point-domain-verb.md](ext-point-domain-verb.md) § Resolution for the `marker-detect` domain-verb value that shares this resolver.
+
 ## Current Implementations
 
 | Bundle | Skill | Domain |

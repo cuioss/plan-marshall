@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """
-Gradle build operations - run, parse, find projects, search markers, check warnings, coverage report.
+Gradle build operations - run, parse, find projects, check warnings, coverage report.
 
 Usage:
     gradle.py run --command-args <args> [--format toon|json] [--mode actionable|structured|errors] [options]
     gradle.py parse --log <path> [--mode <mode>]
     gradle.py find-project --project-name <name> | --project-path <path>
-    gradle.py search-markers --source-dir <dir>
     gradle.py check-warnings --warnings <json> [--acceptable-warnings <json>]
     gradle.py coverage-report [--project-path <path>] [--threshold <percent>]
     gradle.py --help
@@ -16,14 +15,12 @@ Subcommands:
     run             Execute build and auto-parse on failure (primary API)
     parse           Parse Gradle build output and categorize issues
     find-project    Find Gradle project path from project name
-    search-markers  Search for OpenRewrite TODO markers in source files
     check-warnings  Categorize build warnings against acceptable patterns
     coverage-report Parse JaCoCo coverage report
 """
 
 from _build_check_warnings import create_check_warnings_handler
 from _build_cli import (
-    add_search_markers_subparser,
     build_main,
     register_standard_subparsers,
     safe_main,
@@ -33,7 +30,6 @@ from _gradle_cmd_discover import discover_gradle_modules
 from _gradle_cmd_find_project import cmd_find_project
 from _gradle_cmd_parse import parse_log
 from _gradle_execute import _CONFIG, cmd_run
-from _markers_search import cmd_search_markers
 
 # --- Tool-specific configuration inlined from former wrapper files ---
 
@@ -81,7 +77,6 @@ def main() -> int:
             run_config_key_config=_CONFIG,
             extra_register_fns=[
                 _register_find_project,
-                lambda sp: add_search_markers_subparser(sp, cmd_search_markers, default_extensions='.java,.kt'),
             ],
         ),
     )

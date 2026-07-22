@@ -127,6 +127,7 @@ Domain-specific extensions that augment workflow skills. Only in technical domai
 |------|-------|---------|
 | `outline` | outline | Domain detection, deliverable patterns |
 | `triage` | execute (verification), finalize | Finding decision-making (fix/suppress/accept) |
+| `marker-detect` | marker-gate callers | Domain-owned executable verb — the resolvable notation of the domain's marker detector (see [`ext-point-domain-verb.md`](../../extension-api/standards/ext-point-domain-verb.md)) |
 
 ### Profiles
 

@@ -52,6 +52,18 @@ from _resolve_project_dir_fixtures import (
 )
 
 
+def test_build_cli_no_longer_exposes_search_markers_subparser():
+    """The retired ``add_search_markers_subparser`` helper is gone from _build_cli.
+
+    Marker detection is no longer a build-tool subcommand — it relocated to the
+    java-cui domain bundle as the ``marker-detect`` domain verb, so the shared
+    build CLI must not offer a registration seam for it.
+    """
+    import _build_cli
+
+    assert not hasattr(_build_cli, 'add_search_markers_subparser')
+
+
 def test_add_project_dir_arg_registers_both_flags():
     """The helper attaches BOTH --project-dir and --plan-id to a parser."""
     parser = argparse.ArgumentParser()

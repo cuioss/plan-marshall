@@ -66,7 +66,7 @@ Used by `get-extensions` and `set-extensions`:
 
 | Command | Parameters | Description |
 |---------|-----------|-------------|
-| `resolve-workflow-skill-extension` | `--domain`, `--type` | Resolve domain-specific workflow skill extension (returns `null` if not found) |
+| `resolve-workflow-skill-extension` | `--domain`, `--type` (`outline`, `triage`, `marker-detect`) | Resolve domain-specific workflow skill extension (returns `null` if not found) |
 | `resolve-domain-skills` | `--domain`, `--profile` | Resolve all skills for domain + profile (core + profile skills) |
 | `get-skills-by-profile` | `--domain` | Get skills organized by profile for a domain |
 
@@ -86,6 +86,8 @@ Returns `defaults` and `optionals` arrays with skill references and descriptions
 ### resolve-workflow-skill-extension Notes
 
 Returns `extension: null` (not error) when no extension exists for the domain/type combination.
+
+`--type` accepts `outline`, `triage`, and `marker-detect`. The handler is type-agnostic — it reads `skill_domains.{domain}.workflow_skill_extensions.{type}` — so `marker-detect` resolves a domain-owned executable verb through the same null-on-absent path the knowledge extensions use (see [`extension-api/standards/ext-point-domain-verb.md`](../../extension-api/standards/ext-point-domain-verb.md)).
 
 ---
 

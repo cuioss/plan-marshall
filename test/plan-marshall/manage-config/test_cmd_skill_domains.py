@@ -1724,5 +1724,62 @@ def test_cli_set_inclusion_no_always_on_flag(plan_context):
 
 
 # =============================================================================
+# convert_extension_to_domain_config — provides_domain_verb seeding
+# =============================================================================
+
+
+class _StubExtension:
+    """Minimal extension stub exposing only the hooks under test."""
+
+    def __init__(self, *, triage=None, outline_skill=None, domain_verb=None):
+        self._triage = triage
+        self._outline_skill = outline_skill
+        self._domain_verb = domain_verb
+
+    def provides_triage(self):
+        return self._triage
+
+    def provides_outline_skill(self):
+        return self._outline_skill
+
+    def provides_domain_verb(self):
+        return self._domain_verb
+
+
+def test_convert_extension_seeds_domain_verb_into_workflow_skill_extensions():
+    """A non-None provides_domain_verb() descriptor seeds extensions[verb] = notation."""
+    module = _StubExtension(domain_verb={'verb': 'marker-detect', 'notation': 'pm-dev-java-cui:search-markers'})
+
+    config = _cmd_skill_domains.convert_extension_to_domain_config(module, {}, 'pm-dev-java-cui')
+
+    assert config['workflow_skill_extensions'] == {'marker-detect': 'pm-dev-java-cui:search-markers'}
+
+
+def test_convert_extension_seeds_domain_verb_alongside_triage():
+    """The domain-verb entry is seeded alongside the triage entry, not instead of it."""
+    module = _StubExtension(
+        triage='pm-dev-java:ext-triage-java',
+        domain_verb={'verb': 'marker-detect', 'notation': 'pm-dev-java-cui:search-markers'},
+    )
+
+    config = _cmd_skill_domains.convert_extension_to_domain_config(module, {}, 'pm-dev-java-cui')
+
+    assert config['workflow_skill_extensions'] == {
+        'triage': 'pm-dev-java:ext-triage-java',
+        'marker-detect': 'pm-dev-java-cui:search-markers',
+    }
+
+
+def test_convert_extension_omits_workflow_skill_extensions_when_domain_verb_is_none():
+    """A None domain verb contributes nothing — the silent-skip default."""
+    module = _StubExtension()
+
+    config = _cmd_skill_domains.convert_extension_to_domain_config(module, {}, 'pm-dev-java-cui')
+
+    assert 'workflow_skill_extensions' not in config
+    assert config == {'bundle': 'pm-dev-java-cui'}
+
+
+# =============================================================================
 # Main
 # =============================================================================

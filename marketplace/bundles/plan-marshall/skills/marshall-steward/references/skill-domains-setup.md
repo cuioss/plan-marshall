@@ -30,7 +30,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   skill-domains configure --domains "{comma,separated,keys}"
 ```
 
-This populates `skill_domains` in marshal.json with: the `system` domain (always) and each selected domain with bundle reference and workflow_skill_extensions (outline, triage). It also seeds `plan.phase-5-execute.verification_steps` with the built-in verify steps.
+This populates `skill_domains` in marshal.json with: the `system` domain (always) and each selected domain with bundle reference and workflow_skill_extensions (outline, triage, marker-detect). It also seeds `plan.phase-5-execute.verification_steps` with the built-in verify steps.
 
 ## Configure Active Profiles
 
@@ -160,7 +160,7 @@ See [`references/menu-recipes.md`](menu-recipes.md) for the full catalog and the
 
 ## Verify Skill Domain Configuration
 
-Skill domains configure which implementation skills are loaded during plan execution. The `system` domain holds the base `defaults`/`optionals`; technical domains hold bundle reference and workflow_skill_extensions (outline, triage).
+Skill domains configure which implementation skills are loaded during plan execution. The `system` domain holds the base `defaults`/`optionals`; technical domains hold bundle reference and workflow_skill_extensions (outline, triage, marker-detect).
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config skill-domains list

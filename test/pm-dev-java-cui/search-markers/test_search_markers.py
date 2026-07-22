@@ -107,9 +107,14 @@ class TestProvenanceFixture:
         assert '081e18b86378ca1603cbe532f641ecd98f943bc9' in provenance
         assert 'CuiLogRecordPatternRecipe' in provenance
 
-    def test_fixture_matches_the_core_relocation_source(self):
-        """The relocated fixture is byte-identical to the one it was copied from."""
-        origin = (
+    def test_this_fixture_is_the_single_home_for_the_provenance_sample(self):
+        """The retired core copy is gone — this fixture is the sole provenance sample.
+
+        The detector relocated out of the core bundle into this domain bundle, so
+        a surviving core-side copy would be a second, drift-prone home for the
+        same upstream marker.
+        """
+        retired_core_copy = (
             Path(__file__).resolve().parents[2]
             / 'plan-marshall'
             / 'script-shared'
@@ -117,8 +122,9 @@ class TestProvenanceFixture:
             / 'cui-rewrite'
             / 'MarkedSample.java'
         )
-        assert origin.is_file(), f'Expected the relocation source at {origin}'
-        assert FIXTURE_SAMPLE.read_bytes() == origin.read_bytes()
+
+        assert not retired_core_copy.exists(), f'Retired core fixture still present at {retired_core_copy}'
+        assert FIXTURE_SAMPLE.is_file()
 
 
 class TestMarkerPattern:

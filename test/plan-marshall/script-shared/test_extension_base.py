@@ -182,6 +182,29 @@ def test_extension_base_default_outline_skill():
     assert ext.provides_outline_skill() is None
 
 
+def test_extension_base_default_domain_verb():
+    """Default provides_domain_verb returns None — the silent-skip contract."""
+    ext = ConcreteExtension()
+    assert ext.provides_domain_verb() is None
+
+
+class DomainVerbExtension(ExtensionBase):
+    """Extension declaring a domain-owned executable verb."""
+
+    def get_skill_domains(self) -> list[dict]:
+        return [{'domain': {'key': 'test'}, 'profiles': {}}]
+
+    def provides_domain_verb(self) -> dict | None:
+        return {'verb': 'marker-detect', 'notation': 'pm-dev-java-cui:search-markers'}
+
+
+def test_extension_base_domain_verb_descriptor_shape():
+    """An overriding extension returns the {'verb', 'notation'} descriptor verbatim."""
+    descriptor = DomainVerbExtension().provides_domain_verb()
+
+    assert descriptor == {'verb': 'marker-detect', 'notation': 'pm-dev-java-cui:search-markers'}
+
+
 def test_extension_base_no_longer_exposes_verify_and_finalize_steps_hooks():
     """The dead provides_verify_steps and provides_finalize_steps hooks are removed from ExtensionBase."""
     ext = ConcreteExtension()

@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """
-Maven build operations - run, parse, search markers, check warnings, coverage report.
+Maven build operations - run, parse, check warnings, coverage report.
 
 Usage:
     maven.py run --command-args <args> [options]
     maven.py parse --log <path> [--mode <mode>]
-    maven.py search-markers --source-dir <dir>
     maven.py check-warnings --warnings <json> [--acceptable-warnings <json>]
     maven.py coverage-report [--project-path <path>] [--threshold <percent>]
     maven.py --help
@@ -14,20 +13,17 @@ Usage:
 Subcommands:
     run             Execute build and auto-parse on failure (primary API)
     parse           Parse Maven build output and categorize issues
-    search-markers  Search for OpenRewrite TODO markers in source files
     check-warnings  Categorize build warnings against acceptable patterns
     coverage-report Parse JaCoCo coverage report
 """
 
 from _build_check_warnings import create_check_warnings_handler
 from _build_cli import (
-    add_search_markers_subparser,
     build_main,
     register_standard_subparsers,
     safe_main,
 )
 from _build_coverage_report import create_coverage_report_handler
-from _markers_search import cmd_search_markers
 from _maven_cmd_discover import discover_maven_modules
 from _maven_cmd_parse import parse_log
 from _maven_execute import _CONFIG, cmd_run
@@ -66,9 +62,6 @@ def main() -> int:
             discover_handler=discover_maven_modules,
             discover_help='Discover Maven modules',
             run_config_key_config=_CONFIG,
-            extra_register_fns=[
-                lambda sp: add_search_markers_subparser(sp, cmd_search_markers, default_extensions='.java'),
-            ],
         ),
     )
 
