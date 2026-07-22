@@ -100,9 +100,10 @@ queue_items_retired: {N}
 defects_added: {N}
 watches_added: {N}
 emitted[E]{plan,command}:
-  PLAN-NN,"/plan-marshall Execute the staged plan spec at {spec_path}"
-emit_blocked_reason: "{why nothing is emittable}" | -
+  PLAN-NN,/plan-marshall task="implement .plan/local/orchestrator/{slug}/plans/PLAN-NN-{plan_slug}.md"
+shortfall[S]{plan,reason}:
+  PLAN-MM,"overlaps {surface} with PLAN-KK"
 resume_anchor: "{next action}"
 ```
 
-`display_detail` is ≤80 chars, ASCII, no trailing period. `plan` and `landing_report` carry `-` for the observation granularity. `emitted[]` carries the proactive queue-filling block for both granularities; when it is empty, `emit_blocked_reason` names what is not yet emittable and why.
+`display_detail` is ≤80 chars, ASCII, no trailing period. `plan` and `landing_report` carry `-` for the observation granularity. `emitted[]`/`shortfall[]` mirror the `orchestrate.md` `next` verb output shape (see there) for both granularities — one blocking reason per unemittable candidate.

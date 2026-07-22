@@ -114,7 +114,7 @@ verb: next
 parallelization_scope: {N}
 launched_count: {R}
 emitted[E]{plan,command}:
-  PLAN-NN,"/plan-marshall Execute the staged plan spec at {spec_path}"
+  PLAN-NN,/plan-marshall task="implement .plan/local/orchestrator/{slug}/plans/PLAN-NN-{plan_slug}.md"
 shortfall[S]{plan,reason}:
   PLAN-MM,"overlaps {surface} with PLAN-KK"
   PLAN-PP,"unresolved verify-first clause"
