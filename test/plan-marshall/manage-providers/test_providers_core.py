@@ -6,6 +6,7 @@
 Covers path resolution, credential file I/O, RestClient, and provider discovery.
 """
 
+import errno
 import json
 from unittest.mock import patch
 
@@ -19,10 +20,12 @@ from _providers_core import (
     get_project_name,
     load_credential,
     load_declared_providers,
+    read_provider_config,
     remove_credential,
     resolve_credential_path,
     save_credential,
     verify_system_auth,
+    write_provider_config,
 )
 from _providers_fixtures import stage_marshal
 
@@ -840,3 +843,289 @@ class TestGetProjectNameCwdFallbackDisambiguation:
             {'providers': [{'category': 'version-control', 'url': 'https://github.com/org/myrepo.git'}]},
         )
         assert get_project_name() == 'myrepo'
+
+
+# =============================================================================
+# credentials_config key normalization
+# =============================================================================
+
+_PREFIXED_SKILL = 'plan-marshall:workflow-integration-sonar'
+_CANONICAL_SKILL = 'workflow-integration-sonar'
+_SONAR_URL = 'https://sonarcloud.io'
+
+
+class TestCredentialsConfigKeyNormalization:
+    """Tests for the ``credentials_config`` key normalization.
+
+    ``providers[].skill_name`` is bundle-prefixed while the credential filename is
+    prefix-stripped, so a block written under the prefixed spelling used to be
+    invisible to a lookup by the stripped one: ``get_authenticated_client`` then
+    resolved an empty URL and ``RestClient`` rejected it with "HTTPS required when
+    authentication is configured". Writes now canonicalize the storage key and
+    reads accept either spelling.
+    """
+
+    def test_prefixed_block_resolves_by_canonical_name(self, tmp_path, monkeypatch):
+        """The field failure: a block stored prefixed is found by the stripped name."""
+        stage_marshal(
+            tmp_path,
+            monkeypatch,
+            {'credentials_config': {_PREFIXED_SKILL: {'url': _SONAR_URL, 'organization': 'cuioss'}}},
+        )
+
+        config = read_provider_config(_CANONICAL_SKILL)
+
+        assert config == {'url': _SONAR_URL, 'organization': 'cuioss'}
+        assert config['url'] == _SONAR_URL
+
+    def test_authenticated_client_resolves_url_from_prefixed_block(self, tmp_path, monkeypatch):
+        """End-to-end: a token credential plus a prefixed config block yields an HTTPS client.
+
+        The credential file deliberately carries no ``url`` key, so the merged URL
+        can only come from ``credentials_config``. Without the normalization the
+        lookup misses, the URL is empty, and ``RestClient`` raises "HTTPS required".
+        """
+        creds_dir = tmp_path / 'creds'
+        monkeypatch.setattr('_providers_core.CREDENTIALS_DIR', creds_dir)
+        stage_marshal(
+            tmp_path,
+            monkeypatch,
+            {'credentials_config': {_PREFIXED_SKILL: {'url': _SONAR_URL}}},
+        )
+        save_credential(
+            _CANONICAL_SKILL,
+            {'skill': _CANONICAL_SKILL, 'auth_type': 'token', 'token': 'real-token-value'},
+            'global',
+        )
+
+        client = get_authenticated_client(_CANONICAL_SKILL)
+
+        try:
+            assert client.url == _SONAR_URL
+            assert client.scheme == 'https'
+            assert 'Authorization' in client._headers
+        finally:
+            client.close()
+
+    def test_canonical_block_resolves_by_prefixed_name(self, tmp_path, monkeypatch):
+        """Reverse direction: a block stored stripped is found by the prefixed name."""
+        stage_marshal(
+            tmp_path,
+            monkeypatch,
+            {'credentials_config': {_CANONICAL_SKILL: {'url': _SONAR_URL}}},
+        )
+
+        assert read_provider_config(_PREFIXED_SKILL) == {'url': _SONAR_URL}
+
+    def test_exact_match_wins_over_canonical_candidate(self, tmp_path, monkeypatch):
+        """An exactly-matching key is preferred over a canonical-equality candidate.
+
+        The stripped key is inserted FIRST so a scan-only lookup would return it;
+        the exact-match attempt must still win.
+        """
+        stage_marshal(
+            tmp_path,
+            monkeypatch,
+            {
+                'credentials_config': {
+                    _CANONICAL_SKILL: {'url': 'https://scan-candidate.example'},
+                    _PREFIXED_SKILL: {'url': 'https://exact-match.example'},
+                }
+            },
+        )
+
+        assert read_provider_config(_PREFIXED_SKILL) == {'url': 'https://exact-match.example'}
+        assert read_provider_config(_CANONICAL_SKILL) == {'url': 'https://scan-candidate.example'}
+
+    def test_write_canonicalizes_key_and_leaves_no_shadow_block(self, tmp_path, monkeypatch):
+        """A prefixed write stores the stripped key; a re-write never leaves two blocks."""
+        marshal = stage_marshal(tmp_path, monkeypatch, {})
+
+        write_provider_config(_PREFIXED_SKILL, {'url': _SONAR_URL})
+
+        credentials_config = json.loads(marshal.read_text())['credentials_config']
+        assert list(credentials_config) == [_CANONICAL_SKILL]
+
+        # A re-configure under the other spelling updates the single block in place.
+        write_provider_config(_CANONICAL_SKILL, {'url': 'https://sonar.example/updated'})
+
+        credentials_config = json.loads(marshal.read_text())['credentials_config']
+        assert list(credentials_config) == [_CANONICAL_SKILL]
+        assert credentials_config[_CANONICAL_SKILL] == {'url': 'https://sonar.example/updated'}
+
+    def test_write_collapses_a_pre_existing_shadow_block(self, tmp_path, monkeypatch):
+        """A marshal.json already carrying both spellings collapses to one on write."""
+        marshal = stage_marshal(
+            tmp_path,
+            monkeypatch,
+            {
+                'credentials_config': {
+                    _PREFIXED_SKILL: {'url': 'https://stale-prefixed.example'},
+                    _CANONICAL_SKILL: {'url': 'https://stale-canonical.example'},
+                }
+            },
+        )
+
+        write_provider_config(_PREFIXED_SKILL, {'url': _SONAR_URL})
+
+        credentials_config = json.loads(marshal.read_text())['credentials_config']
+        assert list(credentials_config) == [_CANONICAL_SKILL]
+        assert credentials_config[_CANONICAL_SKILL] == {'url': _SONAR_URL}
+
+    def test_unconfigured_skill_still_returns_empty(self, tmp_path, monkeypatch):
+        """An unrelated skill name resolves to {} — the scan never matches a foreign key."""
+        stage_marshal(
+            tmp_path,
+            monkeypatch,
+            {'credentials_config': {_PREFIXED_SKILL: {'url': _SONAR_URL}}},
+        )
+
+        assert read_provider_config('workflow-integration-github') == {}
+        assert read_provider_config('plan-marshall:workflow-integration-github') == {}
+
+
+class TestCredentialsConfigKeyLazyMigration:
+    """Tests for the lazy ``credentials_config`` key migration.
+
+    Stale prefixed keys are canonicalized transparently on the next
+    ``credentials_config`` access. The pass is idempotent, never writes when it
+    has nothing to change, and refuses to merge two source keys that collapse
+    onto one canonical key with differing bodies.
+    """
+
+    @staticmethod
+    def _count_saves(monkeypatch) -> list[int]:
+        """Spy on ``_save_marshal`` and return a list that grows per persist.
+
+        Byte-comparing marshal.json cannot distinguish "no write" from "wrote
+        identical bytes", so the no-write assertions count persists directly.
+        """
+        saves: list[int] = []
+        real_save = _providers_core._save_marshal
+
+        def _spy(config):
+            saves.append(1)
+            real_save(config)
+
+        monkeypatch.setattr('_providers_core._save_marshal', _spy)
+        return saves
+
+    def test_stale_prefixed_key_is_canonicalized_in_the_persisted_config(self, tmp_path, monkeypatch):
+        """A read through the access path re-keys the stale block on disk."""
+        marshal = stage_marshal(
+            tmp_path,
+            monkeypatch,
+            {'credentials_config': {_PREFIXED_SKILL: {'url': _SONAR_URL, 'organization': 'cuioss'}}},
+        )
+
+        read_provider_config(_CANONICAL_SKILL)
+
+        credentials_config = json.loads(marshal.read_text())['credentials_config']
+        assert list(credentials_config) == [_CANONICAL_SKILL]
+        assert credentials_config[_CANONICAL_SKILL] == {'url': _SONAR_URL, 'organization': 'cuioss'}
+
+    def test_second_pass_is_idempotent_and_performs_no_write(self, tmp_path, monkeypatch):
+        """Re-running the migration over an already-migrated config writes nothing."""
+        marshal = stage_marshal(
+            tmp_path,
+            monkeypatch,
+            {'credentials_config': {_PREFIXED_SKILL: {'url': _SONAR_URL}}},
+        )
+        read_provider_config(_CANONICAL_SKILL)  # first pass migrates
+        saves = self._count_saves(monkeypatch)
+
+        read_provider_config(_CANONICAL_SKILL)  # second pass
+
+        assert saves == []
+        assert list(json.loads(marshal.read_text())['credentials_config']) == [_CANONICAL_SKILL]
+
+    def test_already_canonical_config_performs_no_write(self, tmp_path, monkeypatch):
+        """A config whose keys are already canonical is never rewritten."""
+        stage_marshal(
+            tmp_path,
+            monkeypatch,
+            {'credentials_config': {_CANONICAL_SKILL: {'url': _SONAR_URL}}},
+        )
+        saves = self._count_saves(monkeypatch)
+
+        assert read_provider_config(_CANONICAL_SKILL) == {'url': _SONAR_URL}
+        assert saves == []
+
+    def test_differing_bodies_conflict_leaves_both_keys_and_writes_nothing(self, tmp_path, monkeypatch):
+        """Two keys collapsing onto one canonical key with differing bodies are left alone."""
+        marshal = stage_marshal(
+            tmp_path,
+            monkeypatch,
+            {
+                'credentials_config': {
+                    _PREFIXED_SKILL: {'url': 'https://prefixed.example'},
+                    _CANONICAL_SKILL: {'url': 'https://canonical.example'},
+                }
+            },
+        )
+        saves = self._count_saves(monkeypatch)
+
+        assert read_provider_config(_PREFIXED_SKILL) == {'url': 'https://prefixed.example'}
+        assert saves == []
+
+        # Neither block was dropped or merged.
+        credentials_config = json.loads(marshal.read_text())['credentials_config']
+        assert credentials_config == {
+            _PREFIXED_SKILL: {'url': 'https://prefixed.example'},
+            _CANONICAL_SKILL: {'url': 'https://canonical.example'},
+        }
+
+    def test_persist_oserror_keeps_the_read_resilient(self, tmp_path, monkeypatch, capsys):
+        """A failed migration persist never crashes an otherwise-resilient read.
+
+        ``read_provider_config`` only catches ``(json.JSONDecodeError, KeyError)``,
+        so an unguarded ``OSError`` from the migration's opportunistic write (full
+        or read-only filesystem, permission denied) would propagate out of a
+        documented graceful-fallback read. The persist is best-effort: the error is
+        reported on stderr, the in-memory config stays canonicalized, and the
+        caller still gets its block.
+        """
+        stage_marshal(
+            tmp_path,
+            monkeypatch,
+            {'credentials_config': {_PREFIXED_SKILL: {'url': _SONAR_URL}}},
+        )
+
+        def _raise_oserror(config):
+            raise OSError(errno.EROFS, 'Read-only file system')
+
+        monkeypatch.setattr('_providers_core._save_marshal', _raise_oserror)
+
+        assert read_provider_config(_CANONICAL_SKILL) == {'url': _SONAR_URL}
+        assert 'WARNING' in capsys.readouterr().err
+
+    def test_persist_oserror_still_reports_migrated(self, tmp_path, monkeypatch):
+        """The status literal stays ``migrated`` — the in-memory config IS canonicalized."""
+        stage_marshal(tmp_path, monkeypatch, config=None)
+
+        def _raise_oserror(config):
+            raise OSError(errno.ENOSPC, 'No space left on device')
+
+        monkeypatch.setattr('_providers_core._save_marshal', _raise_oserror)
+        config = {'credentials_config': {_PREFIXED_SKILL: {'url': _SONAR_URL}}}
+
+        assert _providers_core._migrate_credentials_config_keys_if_needed(config) == 'migrated'
+        assert list(config['credentials_config']) == [_CANONICAL_SKILL]
+
+    def test_identical_bodies_collapse_without_conflict(self, tmp_path, monkeypatch):
+        """Two spellings carrying the same body collapse — nothing is lost."""
+        marshal = stage_marshal(
+            tmp_path,
+            monkeypatch,
+            {
+                'credentials_config': {
+                    _PREFIXED_SKILL: {'url': _SONAR_URL},
+                    _CANONICAL_SKILL: {'url': _SONAR_URL},
+                }
+            },
+        )
+
+        read_provider_config(_CANONICAL_SKILL)
+
+        credentials_config = json.loads(marshal.read_text())['credentials_config']
+        assert credentials_config == {_CANONICAL_SKILL: {'url': _SONAR_URL}}
