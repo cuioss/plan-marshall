@@ -527,14 +527,6 @@ def _flatten_inventory(files_block: dict[str, Any]) -> list[tuple[str, str]]:
     return pairs
 
 
-# Process-lifetime memo for successful reader-boundary self-scans, keyed by
-# (resolved project_dir, module_name). A multi-module ``find`` that trips an
-# elided category pays for each module's uncapped walk at most once per process.
-# Only successful self-scans are cached; the truthful-truncation fallback is
-# never memoized (it does no disk work worth caching).
-_SELF_SCAN_MEMO: dict[tuple[str, str], list[tuple[str, str]]] = {}
-
-
 def _self_scan_inventory(derived: dict[str, Any], project_dir: str) -> list[tuple[str, str]] | None:
     """Uncapped self-scan of a module's real worktree roots, or ``None`` if impossible.
 
@@ -592,9 +584,8 @@ def _resolve_module_inventory(
       ``(_flatten_inventory(files_block), [])`` — the byte-identical fast path
       with zero extra filesystem work.
     * When an in-scope category IS elided, attempt an uncapped SELF-SCAN of the
-      module's real worktree roots, memoized per ``(project_dir, module_name)``
-      for the process lifetime. On success return the full ``(category, path)``
-      pairs with an empty truncation list.
+      module's real worktree roots. On success return the full ``(category,
+      path)`` pairs with an empty truncation list.
     * When the self-scan is impossible (module root absent — the disk-derived /
       fixture path) or raises ``OSError``, fall back to the sample pairs and
       record one TRUTHFUL-TRUNCATION entry per elided in-scope category:
@@ -615,15 +606,9 @@ def _resolve_module_inventory(
         # Fast path — no in-scope category elided, no extra filesystem work.
         return _flatten_inventory(files_block), []
 
-    memo_key = (str(Path(project_dir).resolve()), module_name)
-    cached = _SELF_SCAN_MEMO.get(memo_key)
-    if cached is not None:
-        return list(cached), []
-
     self_scanned = _self_scan_inventory(derived, project_dir)
     if self_scanned is not None:
-        _SELF_SCAN_MEMO[memo_key] = self_scanned
-        return list(self_scanned), []
+        return self_scanned, []
 
     # Self-scan impossible — degrade to a truthful truncation signal, still
     # contributing the sample pairs so a match inside the sample is not lost.
