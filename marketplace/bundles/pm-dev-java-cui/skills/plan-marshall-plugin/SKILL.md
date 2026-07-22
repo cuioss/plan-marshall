@@ -33,8 +33,16 @@ Declares the CUI Java domain including:
 
 ## Configuration
 
-All configuration is in `extension.py` which implements the Extension API:
-- `get_skill_domains()` - Domain metadata with profiles
+All configuration is in `extension.py` which implements the Extension API. Every
+hook this bundle overrides:
+
+| Hook | Purpose |
+|------|---------|
+| `get_skill_domains()` | Domain metadata with profiles |
+| `applies_to_module()` | Applicability check — additive to the `java` domain, keyed on Maven/Gradle build systems plus `de.cuioss:*` dependency signals |
+| `provides_recipes()` | Contributes the `cui-logging-enforce` recipe |
+| `provides_domain_verb()` | Declares the `marker-detect` verb, resolving to `pm-dev-java-cui:search-markers` — the domain-owned OpenRewrite marker detector. Core resolves it null-on-absent, so a project without java-cui active runs no marker gate. See `plan-marshall:extension-api/standards/ext-point-domain-verb.md`. |
+| `config_defaults()` | Seeds CUI-standard Maven profile mappings and the internal-profile skip list (write-once) |
 
 ## Integration
 
