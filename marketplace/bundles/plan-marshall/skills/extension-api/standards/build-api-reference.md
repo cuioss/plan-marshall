@@ -65,9 +65,11 @@ python3 .plan/execute-script.py {notation} run \
 - `--plan-id` — Plan identifier — auto-resolves the worktree path via `manage-status get-worktree-path`. Mutually exclusive with `--project-dir`.
 - `--project-dir` — Project root directory (default: `.`). Escape hatch / explicit override; mutually exclusive with `--plan-id`.
 
-**npm-specific additional parameters**:
+**Additional parameters (npm and Python)**:
 - `--working-dir` — Working directory for command execution (for nested frontend projects)
 - `--env` — Environment variables (e.g., `"NODE_ENV=test CI=true"`)
+
+A build carrying either flag is never daemon-routable: the daemon runs its child under a clean server-side baseline environment that cannot honour a client-supplied env or working-directory override. Such a build falls back in-process under `--execution-mode auto` and fails loud under `--execution-mode daemon`.
 
 **Output Format (TOON)**:
 

@@ -3,7 +3,7 @@
 """Pyproject build operations - run, parse, check warnings, coverage report.
 
 Usage:
-    pyproject_build.py run --command-args <args> [options]
+    pyproject_build.py run --command-args <args> [--working-dir <path>] [--env <vars>] [options]
     pyproject_build.py parse --log <path> [--mode <mode>]
     pyproject_build.py check-warnings --warnings <json> [--acceptable-warnings <json>]
     pyproject_build.py coverage-report [--project-path <path>] [--threshold <percent>]
@@ -61,6 +61,11 @@ cmd_coverage_report = create_coverage_report_handler(
 cmd_check_warnings = create_check_warnings_handler(
     matcher='substring',
 )
+
+
+def _pyproject_extra_args(run_parser):
+    run_parser.add_argument('--working-dir', dest='working_dir', help='Working directory for command execution')
+    run_parser.add_argument('--env', help="Environment variables (e.g., 'PYTHONPATH=src CI=true')")
 
 
 def cmd_parse(args) -> int:
@@ -210,6 +215,7 @@ def main() -> int:
         register_standard_subparsers(
             run_handler=cmd_run,
             run_args_help="Canonical command to execute (e.g., 'compile', 'verify', 'module-tests', 'quality-gate', 'coverage')",
+            run_extra_args_fn=_pyproject_extra_args,
             parse_handler=None,
             coverage_handler=cmd_coverage_report,
             coverage_help='Parse coverage.py XML report',

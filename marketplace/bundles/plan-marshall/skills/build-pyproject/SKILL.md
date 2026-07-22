@@ -31,7 +31,7 @@ See `build-api-reference.md` for the full subcommand API and availability matrix
 
 ### Pyproject-Specific Behavior
 
-- **run**: `--command-args` takes pyprojectx commands, e.g., `"verify"`, `"module-tests core"`, `"quality-gate"`. Result includes `wrapper` field showing resolved executable path
+- **run**: `--command-args` takes pyprojectx commands, e.g., `"verify"`, `"module-tests core"`, `"quality-gate"`. Result includes `wrapper` field showing resolved executable path. Also accepts `--env` and `--working-dir` (see [`build-api-reference.md`](../extension-api/standards/build-api-reference.md) § run for the parameter definitions). A build carrying either flag is never daemon-routable — it falls back in-process under `--execution-mode auto` and fails loud under `--execution-mode daemon`
 - **coverage-report**: Searches `coverage.xml`, `htmlcov/coverage.xml`. Generate with `pytest --cov --cov-report=xml`
 - **discover**: Modules are directories containing `test/` or `tests/` subdirectories. Metadata from `pyproject.toml` via `tomllib`. Excludes `.venv`, `venv`, `.tox`, cache directories
 - **resolve-test-scope**: Resolves the scoped module set a footprint would cover and whether a scoped run could diverge from a whole-tree run. The footprint source is either the whole-plan live footprint (default, resolved from `--plan-id`) or a **task-scoped footprint** supplied directly via `--changed-paths` (comma-separated; the files a single task's change touched) — the latter supersedes the former when present. Both feed the same pure `_test_scope_divergence.resolve_test_scope` helper unchanged; only the footprint list differs. The derivation mirrors the bundle-derivation in [`phase-6-finalize/standards/pre-push-quality-gate.md`](../phase-6-finalize/standards/pre-push-quality-gate.md) (fnmatch each footprint entry against the `build.map` globs; `marketplace/bundles/{bundle}/…` → segment 2, `test/{bundle}/…` → segment 1). `divergence_possible` is true when the footprint spans more than one module or touches shared cross-module test infrastructure (`script-shared/scripts/build/…`, `test/**/conftest.py`); a single isolated module yields `recommended_target` = that module (scoped-equals-whole-tree by equivalence); a footprint that resolves to no module yields empty `scoped_modules` / `recommended_target: None` (a docs-only change ⇒ no pytest target). The whole-plan mode is consumed by the phase-6-finalize whole-tree module-tests divergence gate (mirroring the escalate-only-on-trigger discipline of the `finalize-step-plugin-doctor` reference behavior, PLAN-02); the task-scoped `--changed-paths` mode is consumed by the `execute-task` implementation profile per-task breakable-test gate
@@ -68,6 +68,7 @@ The canonical argparse surface for `pyproject_build.py`. The plugin-doctor analy
 python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run \
   --command-args COMMAND_ARGS \
   [--timeout SECONDS] [--mode {actionable,structured,errors}] [--format {toon,json}] \
+  [--env ENV] [--working-dir WORKING_DIR] \
   (--project-dir PROJECT_DIR | --plan-id PLAN_ID)
 ```
 
