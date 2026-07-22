@@ -391,19 +391,21 @@ When the posture is `full` (or no lane-participating element is above the cutoff
 
 **Type**: Composition-time per-step stamping pass. Runs *after* the final `phase_5.verification_steps` list is settled — the seven-row matrix, `execution_tier` COMMAND routing, the `canonical_verify_inactive` footprint pre-filter, and the request-aspect step-dropping pass — so it stamps a tier for every step that will actually be persisted. It is the per-STEP peer of the per-COMMAND `execution_tier` routing above.
 
+**The stamp is ADVISORY, not the routing authority.** The `execution_tier` a resolve returns is derived from `bash_timeout_seconds`, which `manage-architecture`'s `_lookup_bash_timeout` computes from `timeout_get(command_key, ...)` — the **adaptive learned build duration** persisted in run-config, which moves every time the command runs. A step whose learned duration sits near the 600s Bash ceiling therefore crosses the ceiling between compose and execute in ordinary operation: the same compose, over the same plan, with no code change, has stamped `verify:coverage=per_task` and then `verify:coverage=orchestrator` after a single intervening whole-tree build. A compose-time snapshot of a moving quantity cannot be a durable routing fact, so **the routing authority is the live `architecture resolve` the leaf performs when it runs the step** — see [`phase-5-execute/standards/canonical_verify.md`](../../phase-5-execute/standards/canonical_verify.md) § Workflow steps 1-2. The stamp's job is planning and observability: it tells the orchestrator how many orchestrator-tier steps to expect and records what the tier looked like at compose.
+
 **Rule**: every selected phase-5 verification step carries a resolved `execution_tier`; the composer NEVER emits an unresolved tier. The composer writes a `phase_5.step_execution_tier` record list — one `{step_id, tier}` object per verification step, in list order — where each `tier` is resolved as follows:
 
 - **built-in canonical-verify step** (`verify:{canonical}`): resolved via a whole-tree `architecture resolve --command {canonical}` (no `--module`), reading the `execution_tier` field of the resolve TOON (`per_task` | `orchestrator`).
 - **every other step id** — an external `project:` / `bundle:skill` step, or a `verify:{canonical}` whose canonical is unresolvable, or any resolve failure (non-zero exit, unparseable TOON, absent tier): defaults to **`per_task`**.
 
-`per_task` is the safe floor — it keeps the step in the leaf's inline slice, matching the pre-stamp behaviour where every step ran inline. The record-list form (rather than a TOON object map keyed by step id) is dictated by the storage format: a step id (`verify:quality-gate`) contains a colon, which does not round-trip as a TOON object key, whereas a quoted string value inside a uniform array round-trips exactly.
+`per_task` is the **permissive default, not a safe floor** — it is the value that would put a long build inline, where the host platform auto-backgrounds it past the Bash ceiling and a leaf cannot reap it. It is acceptable only because the stamp is advisory: the leaf re-resolves the tier live and routes on that verdict, so a wrong compose-time default cannot by itself send a long build inline. The record-list form (rather than a TOON object map keyed by step id) is dictated by the storage format: a step id (`verify:quality-gate`) contains a colon, which does not round-trip as a TOON object key, whereas a quoted string value inside a uniform array round-trips exactly.
 
-**Structural leaf-no-background-build guard**: this stamping is the compose-time structural enforcement that supersedes the prose-only leaf-no-background-build invariant. Because the tier is a manifest fact, `phase-5-execute` runs only `per_task` steps inline and routes every `orchestrator`-tier step to the main-context orchestrator's `await-long-running` detach-and-notify seam (the only component permitted to background a build). A dispatched leaf therefore structurally never receives a long build it would background-and-lose. See [`ref-workflow-architecture/standards/agents.md`](../../ref-workflow-architecture/standards/agents.md) § "Leaf cannot reap a backgrounded build".
+**Leaf-no-background-build guard**: the invariant itself is unchanged — `phase-5-execute` runs only `per_task`-tier steps inline and routes every `orchestrator`-tier step to the main-context orchestrator's `await-long-running` detach-and-notify seam (the only component permitted to background a build). What enforces it is the **live tier the leaf resolves as it runs the step**, not the manifest stamp. See [`ref-workflow-architecture/standards/agents.md`](../../ref-workflow-architecture/standards/agents.md) § "Leaf cannot reap a backgrounded build".
 
-**Decision log line** (emitted on every compose, naming each step's resolved tier):
+**Decision log line** (emitted on every compose, naming each step's compose-time tier):
 
 ```text
-(plan-marshall:manage-execution-manifest:compose) step_execution_tier stamping — verify:quality-gate=per_task, verify:module-tests=orchestrator, verify:coverage=orchestrator
+(plan-marshall:manage-execution-manifest:compose) step_execution_tier stamping (advisory snapshot — leaf re-resolves live at execute time) — verify:quality-gate=per_task, verify:module-tests=orchestrator, verify:coverage=orchestrator
 ```
 
 ## Role-Field Intersection
@@ -537,4 +539,6 @@ The component prefix `(plan-marshall:manage-execution-manifest:compose)` is mand
 
 ## Determinism
 
-The decision matrix is deterministic given its inputs — re-running `compose` with the same arguments produces an identical manifest and identical decision-log entry. The composer truncates / overwrites previous manifests on re-invocation; callers (currently only `phase-4-plan` Step 8b) are responsible for re-entry semantics.
+The decision matrix is deterministic given its inputs — re-running `compose` with the same arguments selects the same `phase_5.verification_steps` / `phase_6.steps` and emits the same rule decision-log entry. The composer truncates / overwrites previous manifests on re-invocation; callers (currently only `phase-4-plan` Step 8b) are responsible for re-entry semantics.
+
+The **advisory `step_execution_tier` stamp is deliberately outside that guarantee**: its input is the adaptive learned build duration, which every intervening build updates, so two composes with identical arguments legitimately record different tiers for a ceiling-adjacent step. That is a property of the measured quantity, not a determinism defect — and it is precisely why the stamp is advisory and the leaf re-resolves the tier live (see [execution_tier Stamping](#execution_tier-stamping)).
