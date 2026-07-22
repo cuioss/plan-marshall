@@ -15,6 +15,7 @@ import importlib
 import sys
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 
 # Add script path for imports
 _SCRIPT_DIR = (
@@ -32,6 +33,7 @@ sys.path.insert(0, str(_SCRIPT_DIR))
 _markers_search = importlib.import_module('_markers_search')
 
 search_openrewrite_markers = _markers_search.search_openrewrite_markers
+cmd_search_markers = _markers_search.cmd_search_markers
 extract_recipe_name = _markers_search.extract_recipe_name
 MARKER_PATTERN = _markers_search.MARKER_PATTERN
 DEFAULT_SKIP_PATTERNS = _markers_search.DEFAULT_SKIP_PATTERNS
@@ -409,6 +411,54 @@ class TestRecipeSummary:
         with tempfile.TemporaryDirectory() as tmp:
             result = search_openrewrite_markers(tmp)
             assert result['data']['recipe_summary'] == {}
+
+
+class TestSearchMarkersExitCode:
+    """Tests for the cmd_search_markers gate exit-code contract.
+
+    The gate exits non-zero on ANY detected marker. `auto_suppress` is a
+    categorization, not an exemption — a source carrying only auto-suppressible
+    markers still fails the gate, because the markers are still in the source.
+    """
+
+    @staticmethod
+    def _run(source_dir: str) -> int:
+        args = SimpleNamespace(source_dir=source_dir, extensions='.java', format='json')
+        return int(cmd_search_markers(args))
+
+    def test_marker_free_source_exits_zero(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / 'Clean.java').write_text('public class Clean {}\n')
+            assert self._run(tmp) == 0
+
+    def test_auto_suppressible_only_marker_exits_non_zero(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / 'Log.java').write_text(build_marker('CuiLogRecordPatternRecipe check logging'))
+            # Guard the premise: this source has no ask_user marker at all.
+            data = search_openrewrite_markers(tmp)['data']
+            assert data['auto_suppress_count'] == 1
+            assert data['ask_user_count'] == 0
+
+            assert self._run(tmp) == 1
+
+    def test_ask_user_marker_exits_non_zero(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / 'Unk.java').write_text(build_marker('SomeUnknownRecipe needs review'))
+            assert self._run(tmp) == 1
+
+    def test_mixed_marker_set_exits_non_zero(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / 'Mix.java').write_text(
+                f'{build_marker("CuiLogRecordPatternRecipe log")}\n{build_marker("CustomThing check")}\n'
+            )
+            assert self._run(tmp) == 1
+
+    def test_unreadable_source_dir_exits_non_zero(self):
+        assert self._run('/nonexistent/path/that/does/not/exist') == 1
+
+    def test_provenance_fixture_fails_the_gate(self):
+        # End-to-end: the real upstream marker must fail the gate.
+        assert self._run(str(FIXTURE_DIR)) == 1
 
 
 class TestSuppressionComment:

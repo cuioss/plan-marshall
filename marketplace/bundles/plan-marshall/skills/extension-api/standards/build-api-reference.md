@@ -257,6 +257,17 @@ python3 .plan/execute-script.py {notation} search-markers \
 - `--source-dir` — Directory to search (default: `src`)
 - `--extensions` — Comma-separated file extensions (default: `.java` for Maven, `.java,.kt` for Gradle)
 
+**Exit-code contract** — `search-markers` is a gate, so its exit status is the machine-readable verdict:
+
+| Exit code | Condition |
+|-----------|-----------|
+| `0` | The scan succeeded and the source is marker-free (`total_markers == 0`) |
+| `1` | Any marker was detected (`total_markers > 0`), **or** the scan itself failed (`status: error`, e.g. an unreadable `--source-dir`) |
+
+A detected marker fails the gate regardless of its category. `auto_suppress` is a *categorization* that tells a caller a marker has a known, mechanical suppression (surfaced as `by_category.auto_suppress`, `auto_suppress_count`, and the per-marker `suppression_comment`) — it is **not** an exemption from the non-zero exit. Callers that want to act only on markers needing a human decision read `ask_user_count` from the payload; they do not read it from the exit code.
+
+Because both the failure and the markers-found paths return `1`, distinguish them by the payload's `status` field rather than by exit code alone.
+
 ---
 
 ### find-project (Gradle only)

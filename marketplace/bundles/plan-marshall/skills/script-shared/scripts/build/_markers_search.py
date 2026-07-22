@@ -144,6 +144,14 @@ def cmd_search_markers(args):
 
     Standard argparse handler — reads source_dir and extensions from args,
     delegates to search_openrewrite_markers(), prints JSON result.
+
+    Exit-code contract: `1` when the search itself failed, or when ANY marker
+    was detected; `0` only when the scan succeeded and the source is
+    marker-free. Auto-suppressible recipes are a *categorization* — they still
+    populate `by_category.auto_suppress`, `auto_suppress_count`, and the
+    per-marker `suppression_comment` — but they are not an exemption from the
+    non-zero exit. A gate that exits `0` on auto-suppressible markers reports
+    clean while leaving the markers in the source.
     """
     skip = tuple(getattr(args, 'skip_patterns', DEFAULT_SKIP_PATTERNS))
     result = search_openrewrite_markers(args.source_dir, args.extensions, skip)
@@ -154,4 +162,4 @@ def cmd_search_markers(args):
         print(serialize_toon(result))
     if result['status'] == 'error':
         return 1
-    return 1 if result['data']['ask_user_count'] > 0 else 0
+    return 1 if result['data']['total_markers'] > 0 else 0
