@@ -49,33 +49,37 @@ python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime 
 
 ### Step 4: Ask the parallelization scope (once per epic)
 
-Read the knob first — the ask is idempotent and MUST be skipped when the field is already set (an `init` re-entry never re-prompts):
+Read the knob first — the ask is idempotent and MUST be skipped when the field is already set **and that stored value survives the reduction below** (an `init` re-entry never re-prompts a valid value):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
   --plan-id {slug} --get --field parallelization_scope --store orchestrator
 ```
 
-When the field is unset, fire exactly ONE `AskUserQuestion` for the operator's **parallelization scope** — the maximum number of plans the orchestrator may have launched concurrently, `1` meaning strictly sequential and `N` meaning up to `N` concurrent plans. `init` runs in main context, so the prompt is fired natively here.
+The read has two branches, and BOTH are gated on the same reduction: a fresh operator answer and a pre-existing stored value are equally untrusted, because a legacy or hand-edited `status.json` can carry a `0`, a negative number, or non-numeric text that no prompt ever validated.
 
-**Validate the answer before persisting it.** The operator's raw answer is untrusted input and MUST be reduced to a positive integer `N ≥ 1` before it reaches the `metadata --set` call — `orchestrate.md`'s `next` verb Step 4 computes `N - R` from the persisted value, so a zero, a negative number, or non-numeric text yields a nonsensical slot count or an unusable comparison downstream. Apply this reduction:
+**Positive-integer reduction** (the shared gate). `orchestrate.md`'s `next` verb Step 4 computes `N - R` from the persisted value, so a zero, a negative number, or non-numeric text yields a nonsensical slot count or an unusable comparison downstream. Reduce the candidate value to a positive integer `N ≥ 1`:
 
-- The answer parses as an integer `≥ 1` → that integer is `N`; proceed to the persist call.
-- The answer parses as an integer `≤ 0`, or does not parse as an integer at all → re-fire the `AskUserQuestion` exactly ONCE, stating that the scope must be a whole number of concurrent plans, `1` or greater.
+- The value parses as an integer `≥ 1` → that integer is `N`.
+- The value parses as an integer `≤ 0`, or does not parse as an integer at all → fire the `AskUserQuestion` exactly ONCE, stating that the scope must be a whole number of concurrent plans, `1` or greater, and reduce that answer instead.
 - The re-prompted answer still fails the same test → fall back to the documented default `N = 1` (strictly sequential) and record the fallback in the decision log below.
 
-Only a value that survived this reduction is persisted, so every reader of `parallelization_scope` — `next` included — is guaranteed a positive integer:
+**Branch A — the field is unset**: fire exactly ONE `AskUserQuestion` for the operator's **parallelization scope** — the maximum number of plans the orchestrator may have launched concurrently, `1` meaning strictly sequential and `N` meaning up to `N` concurrent plans. `init` runs in main context, so the prompt is fired natively here. Run the operator's raw answer through the reduction, then persist the surviving `N`.
+
+**Branch B — the field is already set**: run the STORED value through the same reduction BEFORE treating its presence as sufficient to skip the prompt. A stored value that survives is authoritative — skip the prompt and persist nothing. A stored value that fails is corrected by the reduction (one re-prompt, else the default `1`) and the corrected `N` is persisted through the same call below, so an invalid stored value never reaches `next`.
+
+Only a value that survived the reduction is persisted, so every reader of `parallelization_scope` — `next` included — is guaranteed a positive integer:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
   --plan-id {slug} --set --field parallelization_scope --value {N} --store orchestrator
 ```
 
-The knob bounds the `next` queue-fill selection — see [Parallelization by Surface Disjointness](../../persona-marshall-orchestrator/standards/orchestration-model.md#parallelization-by-surface-disjointness) for the consuming contract. Log the operator interaction:
+The knob bounds the `next` queue-fill selection — see [Parallelization by Surface Disjointness](../../persona-marshall-orchestrator/standards/orchestration-model.md#parallelization-by-surface-disjointness) for the consuming contract. Log the outcome, naming WHICH branch triggered so a reader can tell a fresh operator answer from a corrected stored value — skip the log entirely when Branch B's stored value survived the reduction untouched, since nothing was asked and nothing was written:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging decision \
-  --plan-id {slug} --level INFO --message "{parallelization_scope set to N by operator, or defaulted to 1 after an invalid answer}" --store orchestrator
+  --plan-id {slug} --level INFO --message "{parallelization_scope set to N by operator on first init, or corrected on init re-entry from an invalid stored value to N, or defaulted to 1 after an invalid answer}" --store orchestrator
 ```
 
 ### Step 5: Write the epic skeleton
