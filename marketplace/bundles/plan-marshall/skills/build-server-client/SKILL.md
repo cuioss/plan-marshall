@@ -104,6 +104,13 @@ it surfaced only below the captured threshold.
   `refused` branch returns without a captured entry naming the `reason`.
 - **Plan-less builds are silent by design.** When no `--plan-id` is supplied
   there is no per-plan work log to write to, so the logging is a no-op.
+- **The build-execute routing seam's own resolution line lands here too.** The
+  routing decision (`[BUILD-SERVER] resolved build (requested=…, resolved=routed|in_process|fail-loud, reason=…)`)
+  is written to the same plan work log through the same substrate, at the same
+  INFO-normal / WARNING-on-fallback levels, and is additionally mirrored to
+  stderr beside `[EXEC]` so a plan-less build stays observable. The emitting
+  module is `script-shared/scripts/build/_build_execute_factory.py` — see it for
+  the format string and the level rule (not restated here).
 - **Secrets discipline.** A logged entry carries ONLY non-secret correlation
   fields — `job_id` / `job_status` / `reason` / `notation` / `attached` /
   `elapsed` / `eta`. It NEVER contains the raw `--command` argv, `exec_path` /
