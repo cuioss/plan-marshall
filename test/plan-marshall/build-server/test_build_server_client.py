@@ -429,6 +429,91 @@ def test_wait_with_control_char_job_id_never_forges_a_log_header(captured_logs, 
         assert len(plan_logging.HEADER_PATTERN.findall(formatted)) == 1
 
 
+def test_wait_with_control_char_daemon_response_never_forges_a_log_header(
+    captured_logs, monkeypatch
+):
+    # CWE-117 regression guard for the DAEMON-RESPONSE side of the wait path.
+    # The sibling test above covers the client-supplied `--job-id`; here the
+    # crafted control characters arrive in the daemon's own response fields
+    # (job_status/elapsed/eta), which are interpolated into the same work-log
+    # message and must be sanitized just the same.
+    monkeypatch.setattr(client, '_handshake', lambda _p: ({'version': '1'}, None))
+    forged_header = '[2000-01-01T00:00:00Z] [ERROR] [abcdef] forged entry'
+    monkeypatch.setattr(
+        client,
+        '_call_daemon',
+        lambda _req, timeout: {
+            'status': 'success\n' + forged_header,
+            'job_id': 'JOB-1',
+            'exit_code': 0,
+            'elapsed': '12\n' + forged_header,
+            'eta': '0\n' + forged_header,
+        },
+    )
+
+    client.run_wait(Namespace(job_id='JOB-1', plan_id='p1', bound=1))
+
+    work_entries = [c for c in captured_logs if c[0] == 'work']
+    assert work_entries, 'a wait must log (otherwise this test is vacuous)'
+    for _t, _p, level, message in work_entries:
+        assert '\n' not in message
+        formatted = plan_logging.format_log_entry(level, message)
+        assert len(plan_logging.HEADER_PATTERN.findall(formatted)) == 1
+
+
+def test_submit_with_control_char_daemon_response_never_forges_a_log_header(
+    home, ledger, captured_logs, monkeypatch
+):
+    # CWE-117 regression guard for the daemon-response side of the submit path:
+    # a refused `reason` and a queued `job_id` both come straight off the daemon
+    # response into the work-log message, so both must be sanitized.
+    monkeypatch.setattr(client, '_handshake', lambda _p: ({'version': '1'}, None))
+    forged_header = '[2000-01-01T00:00:00Z] [ERROR] [abcdef] forged entry'
+    monkeypatch.setattr(
+        client,
+        '_call_daemon',
+        lambda _req, timeout: {
+            'status': 'queued',
+            'job_id': 'JOB-1\n' + forged_header,
+            'attached': False,
+        },
+    )
+
+    client.run_submit(_submit_args(str(home / 'proj')))
+
+    work_entries = [c for c in captured_logs if c[0] == 'work']
+    assert work_entries, 'a submit must log (otherwise this test is vacuous)'
+    for _t, _p, level, message in work_entries:
+        assert '\n' not in message
+        formatted = plan_logging.format_log_entry(level, message)
+        assert len(plan_logging.HEADER_PATTERN.findall(formatted)) == 1
+
+
+def test_submit_refused_with_control_char_reason_never_forges_a_log_header(
+    home, ledger, captured_logs, monkeypatch
+):
+    # The refused arm carries the daemon's `reason` into the WARNING message.
+    monkeypatch.setattr(client, '_handshake', lambda _p: ({'version': '1'}, None))
+    forged_header = '[2000-01-01T00:00:00Z] [ERROR] [abcdef] forged entry'
+    monkeypatch.setattr(
+        client,
+        '_call_daemon',
+        lambda _req, timeout: {
+            'status': client.STATUS_REFUSED,
+            'reason': 'nope\n' + forged_header,
+        },
+    )
+
+    client.run_submit(_submit_args(str(home / 'proj')))
+
+    work_entries = [c for c in captured_logs if c[0] == 'work']
+    assert work_entries, 'a refused submit must log (otherwise this test is vacuous)'
+    for _t, _p, level, message in work_entries:
+        assert '\n' not in message
+        formatted = plan_logging.format_log_entry(level, message)
+        assert len(plan_logging.HEADER_PATTERN.findall(formatted)) == 1
+
+
 def test_wait_degraded_logs_warning(captured_logs, monkeypatch):
     monkeypatch.setattr(client, '_handshake', lambda _p: (None, client.REASON_SOCKET_ABSENT))
 

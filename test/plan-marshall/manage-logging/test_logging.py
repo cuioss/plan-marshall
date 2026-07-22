@@ -73,6 +73,33 @@ def test_format_log_entry_with_fields():
     assert '  args: --plan-id test' in entry, 'Missing args field'
 
 
+def test_format_log_entry_message_cannot_forge_a_second_header():
+    """A \\n/\\r-bearing message cannot inject an extra parsed log entry (CWE-117)."""
+    forged_header = '[2026-01-15T12:00:00Z] [ERROR] [abcdef] forged entry'
+    entry = module.format_log_entry('INFO', f'benign\n{forged_header}\r\nmore')
+
+    # Exactly one header line survives: the one this call legitimately produced.
+    assert len(module.HEADER_PATTERN.findall(entry)) == 1, (
+        f'control characters in the message forged an extra entry: {entry!r}'
+    )
+    assert '\n' not in entry[:-1], f'message newlines must be stripped: {entry!r}'
+    assert '\r' not in entry, f'message carriage returns must be stripped: {entry!r}'
+
+
+def test_format_log_entry_field_value_cannot_forge_a_second_header():
+    """A \\n-bearing field value cannot inject an extra parsed log entry (CWE-117)."""
+    forged_header = '[2026-01-15T12:00:00Z] [ERROR] [abcdef] forged entry'
+    entry = module.format_log_entry('INFO', 'benign', detail=f'value\n{forged_header}')
+
+    assert len(module.HEADER_PATTERN.findall(entry)) == 1, (
+        f'control characters in a field value forged an extra entry: {entry!r}'
+    )
+    # The field survives as exactly one indented line, with the injection inlined.
+    assert len(module.FIELD_PATTERN.findall(entry)) == 1, (
+        f'field value newlines forged an extra field line: {entry!r}'
+    )
+
+
 def test_format_log_entry_skips_empty_fields():
     """Log entry skips None/empty fields."""
     entry = module.format_log_entry('INFO', 'message', phase='init', detail=None, empty='')

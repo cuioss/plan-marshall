@@ -93,9 +93,33 @@ def compute_entry_hash(message: str) -> str:
     return hashlib.sha256(message.encode()).hexdigest()[:HASH_ID_LENGTH]
 
 
+#: C0 control characters plus DEL. A newline or carriage return embedded in a
+#: log value would let attacker-controlled text forge an entry that
+#: ``HEADER_PATTERN`` / ``FIELD_PATTERN`` parse back as a genuine record
+#: (CWE-117 log injection), so these are stripped before assembly.
+_CONTROL_CHAR_PATTERN = re.compile(r'[\x00-\x1f\x7f]')
+
+
+def _sanitize_for_log(value: str) -> str:
+    """Strip control characters so a value cannot forge a log line.
+
+    Mirrors the build-server client's sanitizer: the same character class is
+    removed so a single convention covers every entry-assembling sink.
+    """
+    return _CONTROL_CHAR_PATTERN.sub('', value)
+
+
 def format_log_entry(level: str, message: str, **fields: Any) -> str:
     """
     Format a standard log entry with auto-generated hash.
+
+    The message and every field value are sanitized before assembly, never
+    after: the entry's own multi-line structure (the header line plus one
+    indented line per field) is generated here and must survive, while any
+    control characters carried IN the values are stripped. This is the central
+    CWE-117 chokepoint — ``log_work``, ``log_decision`` and
+    ``log_script_execution`` all route through it, so none of them needs its
+    own ad-hoc newline scrubbing.
 
     Args:
         level: Log level (INFO, WARNING, ERROR)
@@ -106,12 +130,14 @@ def format_log_entry(level: str, message: str, **fields: Any) -> str:
         Formatted log entry: [{timestamp}] [{level}] [{hash}] {message}
     """
     timestamp = format_timestamp()
+    # Hash the caller's message as supplied, so the identity of an entry does
+    # not shift depending on whether it carried control characters.
     hash_id = compute_entry_hash(message)
-    lines = [f'[{timestamp}] [{level}] [{hash_id}] {message}']
+    lines = [f'[{timestamp}] [{level}] [{hash_id}] {_sanitize_for_log(message)}']
 
     for key, value in fields.items():
         if value is not None and value != '':
-            lines.append(f'  {key}: {value}')
+            lines.append(f'  {_sanitize_for_log(str(key))}: {_sanitize_for_log(str(value))}')
 
     return '\n'.join(lines) + '\n'
 
@@ -293,8 +319,11 @@ def log_script_execution(
                 message,
                 exit_code=exit_code,
                 args=' '.join(args),
-                stdout=stdout[:max_output].replace('\n', ' ')[:500] if stdout else None,
-                stderr=stderr[:max_output].replace('\n', ' ')[:500] if stderr else None,
+                # No ad-hoc newline scrubbing here: format_log_entry sanitizes
+                # every field value centrally, which also covers args, notation
+                # and subcommand.
+                stdout=stdout[:max_output][:500] if stdout else None,
+                stderr=stderr[:max_output][:500] if stderr else None,
             )
 
         log_file.parent.mkdir(parents=True, exist_ok=True)

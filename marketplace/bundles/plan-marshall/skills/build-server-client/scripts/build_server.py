@@ -421,7 +421,11 @@ def run_submit(args: Namespace) -> dict[str, Any]:
     status = str(response.get('status', ''))
     if status == STATUS_REFUSED:
         refused_reason = str(response.get('reason', ''))
-        _audit_log(plan_id, 'WARNING', f'build-server submit refused: reason={refused_reason} notation={notation}')
+        _audit_log(
+            plan_id,
+            'WARNING',
+            f'build-server submit refused: reason={_sanitize_for_log(refused_reason)} notation={notation}',
+        )
         return {
             'status': 'refused',
             'reason': refused_reason,
@@ -437,7 +441,7 @@ def run_submit(args: Namespace) -> dict[str, Any]:
     _audit_log(
         plan_id,
         'INFO',
-        f'build-server submit queued: job_id={job_id} job_status={STATUS_QUEUED} '
+        f'build-server submit queued: job_id={_sanitize_for_log(job_id)} job_status={STATUS_QUEUED} '
         f'attached={attached} notation={notation}',
     )
     return {
@@ -475,14 +479,16 @@ def run_wait(args: Namespace) -> dict[str, Any]:
         return _degraded(REASON_UNREACHABLE)
 
     result = _render_job_status(response)
-    # job_id may be a client-supplied `--job-id`; sanitize before interpolating it
+    # job_id may be a client-supplied `--job-id`, and job_status/elapsed/eta come
+    # back from the daemon response; sanitize every one before interpolating it
     # into the line-oriented work log (CWE-117), exactly as notation is sanitized.
     _audit_log(
         plan_id,
         'INFO',
         f'build-server wait result: job_id={_sanitize_for_log(job_id)} '
-        f'job_status={result.get("job_status", "")} '
-        f'elapsed={result.get("elapsed", "")} eta={result.get("eta", "")}',
+        f'job_status={_sanitize_for_log(str(result.get("job_status", "")))} '
+        f'elapsed={_sanitize_for_log(str(result.get("elapsed", "")))} '
+        f'eta={_sanitize_for_log(str(result.get("eta", "")))}',
     )
     return result
 
