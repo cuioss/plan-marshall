@@ -39,26 +39,27 @@ from toon_parser import parse_toon  # noqa: E402
 _EXPECTED_STAGE_KEYS = ['regenerate-targets', 'reconcile-config', 'verify', 'land']
 _EXPECTED_STAGE_ORDERS = [1, 2, 3, 4]
 _EXPECTED_NESTED_GATES = {
-    'regenerate-targets': set(),
+    'regenerate-targets': {'cache-retention-prune'},
     'reconcile-config': {'build-map-reseed'},
     'verify': set(),
     'land': {'land-leave', 'branch-reuse'},
 }
 _STAGE_ROW_KEYS = {'order', 'key', 'name', 'mutating', 'top_level_gate', 'nested_gates', 'sub_steps'}
 
-# The meta/consumer sub-step matrix (keyed by stage key). Consumer drops the
-# meta-only sub-steps (regenerate-target-tree in Stage 1, content-drift-report
-# in Stage 3) and gains the consumer-only cache-freshness gate as Stage 1's
-# FIRST sub-step; Stages 2 and 4 are kind-invariant.
+# The meta/consumer sub-step matrix (keyed by stage key) — the authoritative
+# per-kind end state. Consumer drops the meta-only sub-steps
+# (regenerate-target-tree in Stage 1, content-drift-report in Stage 3) and gains
+# the consumer-only cache-freshness gate as Stage 1's FIRST sub-step; BOTH kinds
+# end Stage 1 with the cache-retention sweep. Stages 2 and 4 are kind-invariant.
 _EXPECTED_SUB_STEPS = {
     'meta': {
-        'regenerate-targets': ['regenerate-target-tree', 'regenerate-executor'],
+        'regenerate-targets': ['regenerate-target-tree', 'regenerate-executor', 'cache-retention-sweep'],
         'reconcile-config': ['reconcile-marshal-json'],
         'verify': ['executor-preflight', 'content-drift-report'],
         'land': ['run-landing-cycle'],
     },
     'consumer': {
-        'regenerate-targets': ['cache-freshness-check', 'regenerate-executor'],
+        'regenerate-targets': ['cache-freshness-check', 'regenerate-executor', 'cache-retention-sweep'],
         'reconcile-config': ['reconcile-marshal-json'],
         'verify': ['executor-preflight'],
         'land': ['run-landing-cycle'],
@@ -176,6 +177,41 @@ def test_consumer_stage_1_leads_with_cache_freshness_check():
     stage_1 = by_key['regenerate-targets']
     assert stage_1[0] == 'cache-freshness-check'
     assert stage_1.index('cache-freshness-check') < stage_1.index('regenerate-executor')
+
+
+def test_meta_stage_1_final_list_includes_cache_retention_sweep():
+    """The meta kind's Stage 1 sub_steps reach their final value — the retention
+    sweep applies to BOTH kinds because both accumulate version dirs in the same
+    cache tree."""
+    by_key = {s['key']: s['sub_steps'] for s in upgrade.build_plan(False, 'meta')['stages']}
+
+    assert by_key['regenerate-targets'] == [
+        'regenerate-target-tree',
+        'regenerate-executor',
+        'cache-retention-sweep',
+    ]
+
+
+def test_consumer_stage_1_final_list_includes_cache_retention_sweep():
+    """The consumer kind's Stage 1 sub_steps reach their final value."""
+    by_key = {s['key']: s['sub_steps'] for s in upgrade.build_plan(False, 'consumer')['stages']}
+
+    assert by_key['regenerate-targets'] == [
+        'cache-freshness-check',
+        'regenerate-executor',
+        'cache-retention-sweep',
+    ]
+
+
+@pytest.mark.parametrize('project_kind', ['meta', 'consumer'])
+@pytest.mark.parametrize('integrate', [True, False])
+def test_cache_retention_prune_gate_is_integrate_invariant_on_both_kinds(project_kind: str, integrate: bool):
+    """Stage 1 carries the cache-retention-prune nested gate for both kinds, and
+    the gate is integrate-invariant — the destructive apply still prompts under
+    integrate=true."""
+    by_key = {s['key']: set(s['nested_gates']) for s in upgrade.build_plan(integrate, project_kind)['stages']}
+
+    assert 'cache-retention-prune' in by_key['regenerate-targets']
 
 
 def test_meta_kind_does_not_gain_cache_freshness_check():

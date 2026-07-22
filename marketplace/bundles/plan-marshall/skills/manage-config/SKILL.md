@@ -614,7 +614,10 @@ The defaults template contains only `system` domain. Technical domains (java, ja
     "retention": {
       "logs_days": 1,
       "archived_plans_days": 5,
-      "temp_on_maintenance": true
+      "lessons_superseded_days": 0,
+      "temp_on_maintenance": true,
+      "plugin_cache_keep_versions": 5,
+      "plugin_cache_keep_days": 3
     }
   },
   "build": {
