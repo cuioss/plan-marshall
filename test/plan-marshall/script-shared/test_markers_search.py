@@ -1,5 +1,15 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for _markers_search shared module."""
+"""Tests for _markers_search shared module.
+
+Every marker literal used by these tests is DERIVED from the checked-in
+provenance fixture (``fixtures/cui-rewrite/MarkedSample.java``), never
+hand-written. The fixture carries an unmodified marker emitted by the upstream
+``cui-open-rewrite`` recipes — see ``fixtures/cui-rewrite/PROVENANCE.md``.
+
+The derivation deliberately does NOT reuse ``MARKER_PATTERN`` (the module under
+test): it scans the fixture with an independent, trivial delimiter walk, so a
+regression in ``MARKER_PATTERN`` cannot silently rewrite the expectations.
+"""
 
 import importlib
 import sys
@@ -27,18 +37,101 @@ MARKER_PATTERN = _markers_search.MARKER_PATTERN
 DEFAULT_SKIP_PATTERNS = _markers_search.DEFAULT_SKIP_PATTERNS
 AUTO_SUPPRESS_RECIPES = _markers_search.AUTO_SUPPRESS_RECIPES
 
+FIXTURE_DIR = Path(__file__).resolve().parent / 'fixtures' / 'cui-rewrite'
+FIXTURE_SAMPLE = FIXTURE_DIR / 'MarkedSample.java'
+FIXTURE_PROVENANCE = FIXTURE_DIR / 'PROVENANCE.md'
+
+
+def _read_fixture_marker() -> str:
+    """Return the raw marker literal carried by the provenance fixture.
+
+    Scans with a plain delimiter walk (first ``/*`` comment opener that starts a
+    marker, up to the first following ``*/``) rather than with MARKER_PATTERN,
+    so the expectations stay independent of the module under test.
+    """
+    text = FIXTURE_SAMPLE.read_text(encoding='utf-8')
+    start = text.index('/*~~(')
+    end = text.index('*/', start) + len('*/')
+    return text[start:end]
+
+
+#: The verbatim upstream marker, e.g. ``/*~~(TODO: ...)~~>*/``.
+FIXTURE_MARKER = _read_fixture_marker()
+
+#: Opening delimiter up to and including the message-opening paren.
+MARKER_OPEN = FIXTURE_MARKER[: FIXTURE_MARKER.index('(') + 1]
+
+#: Closing delimiter from the message-closing paren onwards.
+MARKER_CLOSE = FIXTURE_MARKER[FIXTURE_MARKER.rindex(')') :]
+
+#: The pre-fix delimiter this plan retired — the real one with its tildes dropped.
+LEGACY_MARKER_CLOSE = MARKER_CLOSE.replace('~~', '')
+
+
+def build_marker(message: str) -> str:
+    """Build a marker carrying `message`, using the fixture-derived delimiters."""
+    return f'{MARKER_OPEN}TODO: {message}{MARKER_CLOSE}'
+
+
+class TestFixtureDerivation:
+    """Guards on the fixture-derived constants the rest of this module builds on."""
+
+    def test_fixture_marker_is_a_complete_comment(self):
+        assert FIXTURE_MARKER.startswith('/*')
+        assert FIXTURE_MARKER.endswith('*/')
+
+    def test_open_and_close_delimiters_are_distinct_and_non_empty(self):
+        assert MARKER_OPEN
+        assert MARKER_CLOSE
+        assert MARKER_OPEN != MARKER_CLOSE
+
+    def test_close_delimiter_carries_tildes(self):
+        # The retired form dropped them; the real one must not.
+        assert '~~' in MARKER_CLOSE
+        assert LEGACY_MARKER_CLOSE != MARKER_CLOSE
+
+    def test_build_marker_round_trips_through_the_pattern(self):
+        matches = list(MARKER_PATTERN.finditer(build_marker('SomeRecipe fix this')))
+        assert len(matches) == 1
+        assert matches[0].group(1).strip() == 'SomeRecipe fix this'
+
+
+class TestProvenanceFixture:
+    """Regression tests pinning the detector against the checked-in upstream marker."""
+
+    def test_detector_finds_the_fixture_marker(self):
+        result = search_openrewrite_markers(str(FIXTURE_DIR))
+        assert result['status'] == 'success'
+        assert result['data']['total_markers'] > 0
+
+    def test_detected_raw_marker_is_the_verbatim_fixture_marker(self):
+        result = search_openrewrite_markers(str(FIXTURE_DIR))
+        raw_markers = [m['raw_marker'] for m in result['data']['markers']]
+        assert FIXTURE_MARKER in raw_markers
+
+    def test_legacy_delimiter_no_longer_matches(self):
+        legacy = f'{MARKER_OPEN}TODO: SomeRecipe fix this{LEGACY_MARKER_CLOSE}'
+        assert list(MARKER_PATTERN.finditer(legacy)) == []
+
+    def test_provenance_document_records_every_required_field(self):
+        provenance = FIXTURE_PROVENANCE.read_text(encoding='utf-8')
+        assert 'cuioss/cui-open-rewrite' in provenance
+        assert 'CuiLogRecordPatternRecipeTest.java' in provenance
+        assert '081e18b86378ca1603cbe532f641ecd98f943bc9' in provenance
+        assert 'CuiLogRecordPatternRecipe' in provenance
+
 
 class TestMarkerPattern:
     """Tests for the MARKER_PATTERN regex."""
 
     def test_matches_standard_marker(self):
-        line = 'some code /*~~(TODO: SomeRecipe fix this)>*/ more code'
+        line = f'some code {build_marker("SomeRecipe fix this")} more code'
         matches = list(MARKER_PATTERN.finditer(line))
         assert len(matches) == 1
         assert matches[0].group(1).strip() == 'SomeRecipe fix this'
 
     def test_matches_multiple_markers_on_same_line(self):
-        line = '/*~~(TODO: RecipeA)>*/ gap /*~~(TODO: RecipeB)>*/'
+        line = f'{build_marker("RecipeA")} gap {build_marker("RecipeB")}'
         matches = list(MARKER_PATTERN.finditer(line))
         assert len(matches) == 2
 
@@ -127,7 +220,7 @@ class TestSearchJavaFiles:
     def test_finds_marker_in_java_file(self):
         with tempfile.TemporaryDirectory() as tmp:
             java_file = Path(tmp) / 'Example.java'
-            java_file.write_text('public class Example {\n    /*~~(TODO: SomeRecipe fix this)>*/ int x;\n}\n')
+            java_file.write_text(f'public class Example {{\n    {build_marker("SomeRecipe fix this")} int x;\n}}\n')
             result = search_openrewrite_markers(tmp)
             assert result['status'] == 'success'
             assert result['data']['total_markers'] == 1
@@ -136,7 +229,8 @@ class TestSearchJavaFiles:
     def test_marker_details_are_correct(self):
         with tempfile.TemporaryDirectory() as tmp:
             java_file = Path(tmp) / 'Foo.java'
-            java_file.write_text('package com.example;\n/*~~(TODO: MyRecipe refactor needed)>*/\n')
+            raw = build_marker('MyRecipe refactor needed')
+            java_file.write_text(f'package com.example;\n{raw}\n')
             result = search_openrewrite_markers(tmp)
             markers = result['data']['markers']
             assert len(markers) == 1
@@ -144,19 +238,19 @@ class TestSearchJavaFiles:
             assert marker['line'] == 2
             assert marker['recipe'] == 'MyRecipe'
             assert 'refactor needed' in marker['message']
-            assert marker['raw_marker'] == '/*~~(TODO: MyRecipe refactor needed)>*/'
+            assert marker['raw_marker'] == raw
 
     def test_finds_multiple_markers_across_files(self):
         with tempfile.TemporaryDirectory() as tmp:
-            (Path(tmp) / 'A.java').write_text('/*~~(TODO: RecipeA)>*/')
-            (Path(tmp) / 'B.java').write_text('/*~~(TODO: RecipeB)>*/')
+            (Path(tmp) / 'A.java').write_text(build_marker('RecipeA'))
+            (Path(tmp) / 'B.java').write_text(build_marker('RecipeB'))
             result = search_openrewrite_markers(tmp)
             assert result['data']['total_markers'] == 2
             assert result['data']['files_affected'] == 2
 
     def test_finds_multiple_markers_in_single_file(self):
         with tempfile.TemporaryDirectory() as tmp:
-            content = '/*~~(TODO: RecipeA)>*/\nsome code\n/*~~(TODO: RecipeB)>*/\n'
+            content = f'{build_marker("RecipeA")}\nsome code\n{build_marker("RecipeB")}\n'
             (Path(tmp) / 'Multi.java').write_text(content)
             result = search_openrewrite_markers(tmp)
             assert result['data']['total_markers'] == 2
@@ -164,8 +258,8 @@ class TestSearchJavaFiles:
 
     def test_ignores_non_java_files_by_default(self):
         with tempfile.TemporaryDirectory() as tmp:
-            (Path(tmp) / 'file.txt').write_text('/*~~(TODO: SomeRecipe)>*/')
-            (Path(tmp) / 'file.java').write_text('/*~~(TODO: SomeRecipe)>*/')
+            (Path(tmp) / 'file.txt').write_text(build_marker('SomeRecipe'))
+            (Path(tmp) / 'file.java').write_text(build_marker('SomeRecipe'))
             result = search_openrewrite_markers(tmp)
             assert result['data']['total_markers'] == 1
 
@@ -175,20 +269,20 @@ class TestSearchMultipleExtensions:
 
     def test_kotlin_files_with_kt_extension(self):
         with tempfile.TemporaryDirectory() as tmp:
-            (Path(tmp) / 'Main.kt').write_text('/*~~(TODO: KotlinRecipe)>*/')
+            (Path(tmp) / 'Main.kt').write_text(build_marker('KotlinRecipe'))
             result = search_openrewrite_markers(tmp, extensions='.kt')
             assert result['data']['total_markers'] == 1
 
     def test_java_and_kotlin_combined(self):
         with tempfile.TemporaryDirectory() as tmp:
-            (Path(tmp) / 'Foo.java').write_text('/*~~(TODO: JavaRecipe)>*/')
-            (Path(tmp) / 'Bar.kt').write_text('/*~~(TODO: KotlinRecipe)>*/')
+            (Path(tmp) / 'Foo.java').write_text(build_marker('JavaRecipe'))
+            (Path(tmp) / 'Bar.kt').write_text(build_marker('KotlinRecipe'))
             result = search_openrewrite_markers(tmp, extensions='.java,.kt')
             assert result['data']['total_markers'] == 2
 
     def test_extension_without_dot_prefix(self):
         with tempfile.TemporaryDirectory() as tmp:
-            (Path(tmp) / 'Test.java').write_text('/*~~(TODO: SomeRecipe)>*/')
+            (Path(tmp) / 'Test.java').write_text(build_marker('SomeRecipe'))
             result = search_openrewrite_markers(tmp, extensions='java')
             assert result['data']['total_markers'] == 1
 
@@ -200,7 +294,7 @@ class TestSearchSkipPatterns:
         with tempfile.TemporaryDirectory() as tmp:
             build_dir = Path(tmp) / 'build'
             build_dir.mkdir()
-            (build_dir / 'Generated.java').write_text('/*~~(TODO: SomeRecipe)>*/')
+            (build_dir / 'Generated.java').write_text(build_marker('SomeRecipe'))
             result = search_openrewrite_markers(tmp)
             assert result['data']['total_markers'] == 0
 
@@ -208,7 +302,7 @@ class TestSearchSkipPatterns:
         with tempfile.TemporaryDirectory() as tmp:
             target_dir = Path(tmp) / 'target'
             target_dir.mkdir()
-            (target_dir / 'Compiled.java').write_text('/*~~(TODO: SomeRecipe)>*/')
+            (target_dir / 'Compiled.java').write_text(build_marker('SomeRecipe'))
             result = search_openrewrite_markers(tmp)
             assert result['data']['total_markers'] == 0
 
@@ -216,7 +310,7 @@ class TestSearchSkipPatterns:
         with tempfile.TemporaryDirectory() as tmp:
             gradle_dir = Path(tmp) / '.gradle'
             gradle_dir.mkdir()
-            (gradle_dir / 'Cache.java').write_text('/*~~(TODO: SomeRecipe)>*/')
+            (gradle_dir / 'Cache.java').write_text(build_marker('SomeRecipe'))
             result = search_openrewrite_markers(tmp)
             assert result['data']['total_markers'] == 0
 
@@ -224,7 +318,7 @@ class TestSearchSkipPatterns:
         with tempfile.TemporaryDirectory() as tmp:
             nm_dir = Path(tmp) / 'node_modules'
             nm_dir.mkdir()
-            (nm_dir / 'Dep.java').write_text('/*~~(TODO: SomeRecipe)>*/')
+            (nm_dir / 'Dep.java').write_text(build_marker('SomeRecipe'))
             result = search_openrewrite_markers(tmp)
             assert result['data']['total_markers'] == 0
 
@@ -232,7 +326,7 @@ class TestSearchSkipPatterns:
         with tempfile.TemporaryDirectory() as tmp:
             nested = Path(tmp) / 'module' / 'target'
             nested.mkdir(parents=True)
-            (nested / 'Output.java').write_text('/*~~(TODO: SomeRecipe)>*/')
+            (nested / 'Output.java').write_text(build_marker('SomeRecipe'))
             result = search_openrewrite_markers(tmp)
             assert result['data']['total_markers'] == 0
 
@@ -240,7 +334,7 @@ class TestSearchSkipPatterns:
         with tempfile.TemporaryDirectory() as tmp:
             gen_dir = Path(tmp) / 'generated'
             gen_dir.mkdir()
-            (gen_dir / 'Gen.java').write_text('/*~~(TODO: SomeRecipe)>*/')
+            (gen_dir / 'Gen.java').write_text(build_marker('SomeRecipe'))
             # Default patterns do not skip 'generated'
             result = search_openrewrite_markers(tmp)
             assert result['data']['total_markers'] == 1
@@ -252,7 +346,7 @@ class TestSearchSkipPatterns:
         with tempfile.TemporaryDirectory() as tmp:
             src_dir = Path(tmp) / 'src' / 'main' / 'java'
             src_dir.mkdir(parents=True)
-            (src_dir / 'App.java').write_text('/*~~(TODO: SomeRecipe)>*/')
+            (src_dir / 'App.java').write_text(build_marker('SomeRecipe'))
             result = search_openrewrite_markers(tmp)
             assert result['data']['total_markers'] == 1
 
@@ -262,7 +356,7 @@ class TestRecipeCategorization:
 
     def test_auto_suppress_recipe_categorized(self):
         with tempfile.TemporaryDirectory() as tmp:
-            (Path(tmp) / 'Log.java').write_text('/*~~(TODO: CuiLogRecordPatternRecipe check logging)>*/')
+            (Path(tmp) / 'Log.java').write_text(build_marker('CuiLogRecordPatternRecipe check logging'))
             result = search_openrewrite_markers(tmp)
             marker = result['data']['markers'][0]
             assert marker['action'] == 'auto_suppress'
@@ -271,7 +365,7 @@ class TestRecipeCategorization:
 
     def test_invalid_exception_recipe_auto_suppressed(self):
         with tempfile.TemporaryDirectory() as tmp:
-            (Path(tmp) / 'Ex.java').write_text('/*~~(TODO: InvalidExceptionUsageRecipe check pattern)>*/')
+            (Path(tmp) / 'Ex.java').write_text(build_marker('InvalidExceptionUsageRecipe check pattern'))
             result = search_openrewrite_markers(tmp)
             marker = result['data']['markers'][0]
             assert marker['action'] == 'auto_suppress'
@@ -279,7 +373,7 @@ class TestRecipeCategorization:
 
     def test_unknown_recipe_requires_user_decision(self):
         with tempfile.TemporaryDirectory() as tmp:
-            (Path(tmp) / 'Unk.java').write_text('/*~~(TODO: SomeUnknownRecipe needs review)>*/')
+            (Path(tmp) / 'Unk.java').write_text(build_marker('SomeUnknownRecipe needs review'))
             result = search_openrewrite_markers(tmp)
             marker = result['data']['markers'][0]
             assert marker['action'] == 'ask_user'
@@ -288,7 +382,7 @@ class TestRecipeCategorization:
     def test_by_category_structure(self):
         with tempfile.TemporaryDirectory() as tmp:
             (Path(tmp) / 'Mix.java').write_text(
-                '/*~~(TODO: CuiLogRecordPatternRecipe log)>*/\n/*~~(TODO: CustomThing check)>*/\n'
+                f'{build_marker("CuiLogRecordPatternRecipe log")}\n{build_marker("CustomThing check")}\n'
             )
             result = search_openrewrite_markers(tmp)
             data = result['data']
@@ -304,7 +398,7 @@ class TestRecipeSummary:
     def test_recipe_summary_counts(self):
         with tempfile.TemporaryDirectory() as tmp:
             (Path(tmp) / 'A.java').write_text(
-                '/*~~(TODO: RecipeAlpha)>*/\n/*~~(TODO: RecipeAlpha)>*/\n/*~~(TODO: RecipeBeta)>*/\n'
+                f'{build_marker("RecipeAlpha")}\n{build_marker("RecipeAlpha")}\n{build_marker("RecipeBeta")}\n'
             )
             result = search_openrewrite_markers(tmp)
             summary = result['data']['recipe_summary']
@@ -322,7 +416,7 @@ class TestSuppressionComment:
 
     def test_suppression_comment_format(self):
         with tempfile.TemporaryDirectory() as tmp:
-            (Path(tmp) / 'S.java').write_text('/*~~(TODO: CuiLogRecordPatternRecipe)>*/')
+            (Path(tmp) / 'S.java').write_text(build_marker('CuiLogRecordPatternRecipe'))
             result = search_openrewrite_markers(tmp)
             marker = result['data']['markers'][0]
             assert marker['suppression_comment'] == '// cui-rewrite:disable CuiLogRecordPatternRecipe'

@@ -5,7 +5,7 @@ package com.example;
  */
 public class HandlerWithMarker {
 
-    /*~~(TODO: SomeOtherRecipe: Consider refactoring this method)>*/
+    /*~~(TODO: SomeOtherRecipe: Consider refactoring this method)~~>*/
     public void handle() {
         // Some implementation
     }

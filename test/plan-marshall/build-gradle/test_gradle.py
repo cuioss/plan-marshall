@@ -21,6 +21,21 @@ SCRIPT_PATH = get_script_path('plan-marshall', 'build-gradle', 'gradle.py')
 FIXTURES_DIR = Path(__file__).parent / 'fixtures'
 MOCKS_DIR = Path(__file__).parent / 'mocks'
 
+# The provenance-bearing fixture that pins the real OpenRewrite marker syntax.
+# See test/plan-marshall/script-shared/fixtures/cui-rewrite/PROVENANCE.md.
+PROVENANCE_SAMPLE = (
+    Path(__file__).resolve().parents[1] / 'script-shared' / 'fixtures' / 'cui-rewrite' / 'MarkedSample.java'
+)
+
+
+def marker_close_delimiter() -> str:
+    """Return the marker closing delimiter, derived from the provenance fixture."""
+    text = PROVENANCE_SAMPLE.read_text(encoding='utf-8')
+    start = text.index('/*~~(')
+    end = text.index('*/', start) + len('*/')
+    raw = text[start:end]
+    return raw[raw.rindex(')') :]
+
 
 def test_parse_successful_build():
     """Test parsing successful Gradle build output."""
@@ -147,13 +162,35 @@ def test_check_warnings_with_real_patterns():
 
 
 def test_search_markers_with_content():
-    """Test searching when markers exist in source files (H49)."""
+    """Test searching when markers exist in source files (H49).
+
+    The fixtures carry the real closing delimiter (see PROVENANCE.md), so the
+    exact counts below are only reachable when the detector's pattern agrees
+    with the upstream marker syntax — a `> 0` assertion would also pass on a
+    detector that found a single marker by accident.
+    """
     markers_dir = FIXTURES_DIR / 'source-with-markers'
     result = run_script(SCRIPT_PATH, 'search-markers', '--format', 'json', '--source-dir', str(markers_dir / 'src'))
     data = result.json()
 
     assert data['status'] == 'success', 'Should succeed'
-    assert data['data']['total_markers'] > 0, 'Should find markers in fixture files'
+    assert data['data']['total_markers'] == 3, f'Should find every fixture marker, got: {data["data"]}'
+    assert data['data']['files_affected'] == 2, f'Both marked fixture files should report, got: {data["data"]}'
+    assert data['data']['auto_suppress_count'] == 2, f'CuiLogRecordPatternRecipe is auto-suppressible, got: {data["data"]}'
+    assert data['data']['ask_user_count'] == 1, f'SomeOtherRecipe needs a decision, got: {data["data"]}'
+
+
+def test_search_markers_detected_markers_carry_the_provenance_delimiter():
+    """Every detected marker must terminate with the fixture-derived delimiter."""
+    markers_dir = FIXTURES_DIR / 'source-with-markers'
+    result = run_script(SCRIPT_PATH, 'search-markers', '--format', 'json', '--source-dir', str(markers_dir / 'src'))
+    data = result.json()
+
+    close = marker_close_delimiter()
+    raw_markers = [m['raw_marker'] for m in data['data']['markers']]
+    assert raw_markers, 'Expected the fixture markers to be detected'
+    for raw in raw_markers:
+        assert raw.endswith(close), f'Marker {raw!r} does not end with the provenance delimiter {close!r}'
 
 
 def test_help_main():

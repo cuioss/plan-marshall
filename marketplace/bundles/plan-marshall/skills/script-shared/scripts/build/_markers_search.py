@@ -19,8 +19,11 @@ logger = logging.getLogger(__name__)
 
 from toon_parser import serialize_toon  # noqa: E402
 
-# Pattern for OpenRewrite TODO markers
-MARKER_PATTERN = re.compile(r'/\*~~\(TODO:\s*(.+?)\)>\*/')
+# Pattern for OpenRewrite TODO markers.
+# The closing delimiter is `)~~>*/` — OpenRewrite's SearchResult printer emits
+# `/*~~(<message>)~~>*/`. Pinned by the provenance-bearing fixture under
+# test/plan-marshall/script-shared/fixtures/cui-rewrite/ (see its PROVENANCE.md).
+MARKER_PATTERN = re.compile(r'/\*~~\(TODO:\s*(.+?)\)~~>\*/')
 
 # Default directories to skip during search
 DEFAULT_SKIP_PATTERNS = ('build', 'target', '.gradle', 'node_modules')
