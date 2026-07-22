@@ -4,8 +4,17 @@
 
 Tests the Python execution config and factory-generated functions.
 
-Also covers the D6 build-queue integration at the pyproject ``cmd_run`` wrap
-site: ``cmd_run`` runs ``execute_direct`` (the self-heal wrapper) inside
+pyproject no longer defines its own ``cmd_run``: it supplies the one-shot
+self-heal to ``create_execute_handlers(..., wrap_execute_fn=...)`` and uses the
+SHARED factory ``cmd_run`` — the same daemon-routing seam Maven, Gradle, and npm
+use. Both the self-heal wrapper and the factory's routing ``cmd_run`` reach the
+build through closure variables (``inner_execute`` / ``in_process_execute``),
+which are not patchable as module attributes, so every test below patches the
+factory-level seams the closures actually call: ``_factory.execute_direct_base``
+(the build body) and ``_factory.cmd_run_common`` (the rendering tail).
+
+Also covers the D6 build-queue integration on the in-process leg of that shared
+``cmd_run``: it runs the self-heal-wrapped executor inside
 ``build_queue_slot(plan_id)`` and turns a ``BuildQueueTimeout`` into the
 structured ``queue_saturated`` error via ``_emit_queue_timeout``. The
 integration tests drive ``cmd_run`` end-to-end through the REAL
@@ -13,7 +22,10 @@ integration tests drive ``cmd_run`` end-to-end through the REAL
 title-token seams mocked on the ``_build_queue_slot`` module) and assert the
 four admission paths: admitted-once, blocked-then-admitted, max-retries-exhausted
 (structured ``queue_saturated`` error, build NOT run), and plan_id-absent
-(pure passthrough, zero queue/token interaction).
+(pure passthrough, zero queue/token interaction). Each drives the in-process leg
+explicitly via ``execution_mode='in_process'`` so no test ever probes a real
+daemon; the routing / fallback / daemon-mode fail-loud branches are covered
+separately.
 """
 
 # Mock runtime-only modules before importing
@@ -158,7 +170,13 @@ def _make_log(tmp_path: Path, text: str) -> str:
 
 
 def _patched_execute_direct(call_results):
-    """Patch the inner execute_direct to return a sequence of results."""
+    """Build a fake ``execute_direct_base`` returning a sequence of results.
+
+    The self-heal wrapper closes over the factory's inner ``execute_direct``, so
+    the patchable seam is the factory-level ``execute_direct_base`` that inner
+    callable delegates to. Results are returned verbatim, so identity assertions
+    (``result is failure``) still hold through the wrapper.
+    """
     iterator = iter(call_results)
     calls = []
 
@@ -177,7 +195,7 @@ def test_self_heal_retries_on_uv_missing(tmp_path):
     failure = {'status': 'error', 'exit_code': 127, 'log_file': log_file, 'command': './pw verify', 'error': ''}
     success = {'status': 'success', 'exit_code': 0, 'log_file': log_file, 'command': './pw verify'}
     fake, calls = _patched_execute_direct([failure, success])
-    with patch.object(_pyproject_execute_mod, '_inner_execute_direct', side_effect=fake):
+    with patch.object(_factory, 'execute_direct_base', side_effect=fake):
         result = execute_direct(args='verify', command_key='python:verify', project_dir=str(tmp_path))
     assert result['status'] == 'success'
     assert len(calls) == 2
@@ -196,7 +214,7 @@ def test_self_heal_retries_on_directory_not_empty(tmp_path):
     failure = {'status': 'error', 'exit_code': 1, 'log_file': log_file, 'command': './pw verify', 'error': ''}
     success = {'status': 'success', 'exit_code': 0, 'log_file': log_file, 'command': './pw verify'}
     fake, calls = _patched_execute_direct([failure, success])
-    with patch.object(_pyproject_execute_mod, '_inner_execute_direct', side_effect=fake):
+    with patch.object(_factory, 'execute_direct_base', side_effect=fake):
         result = execute_direct(args='verify', command_key='python:verify', project_dir=str(tmp_path))
     assert result['status'] == 'success'
     assert len(calls) == 2
@@ -209,7 +227,7 @@ def test_self_heal_skipped_for_unrelated_failure(tmp_path):
     log_file = _make_log(tmp_path, 'FAILED tests/test_foo.py::test_bar - AssertionError')
     failure = {'status': 'error', 'exit_code': 1, 'log_file': log_file, 'command': './pw verify', 'error': ''}
     fake, calls = _patched_execute_direct([failure])
-    with patch.object(_pyproject_execute_mod, '_inner_execute_direct', side_effect=fake):
+    with patch.object(_factory, 'execute_direct_base', side_effect=fake):
         result = execute_direct(args='verify', command_key='python:verify', project_dir=str(tmp_path))
     assert result is failure
     assert len(calls) == 1
@@ -224,7 +242,7 @@ def test_self_heal_skipped_when_broken_dir_already_exists(tmp_path):
     log_file = _make_log(tmp_path, '/bin/sh: uv: command not found')
     failure = {'status': 'error', 'exit_code': 127, 'log_file': log_file, 'command': './pw verify', 'error': ''}
     fake, calls = _patched_execute_direct([failure])
-    with patch.object(_pyproject_execute_mod, '_inner_execute_direct', side_effect=fake):
+    with patch.object(_factory, 'execute_direct_base', side_effect=fake):
         result = execute_direct(args='verify', command_key='python:verify', project_dir=str(tmp_path))
     assert result is failure
     assert len(calls) == 1
@@ -236,23 +254,26 @@ def test_self_heal_passthrough_on_success(tmp_path):
     (tmp_path / '.pyprojectx').mkdir()
     success = {'status': 'success', 'exit_code': 0, 'log_file': '', 'command': './pw verify'}
     fake, calls = _patched_execute_direct([success])
-    with patch.object(_pyproject_execute_mod, '_inner_execute_direct', side_effect=fake):
+    with patch.object(_factory, 'execute_direct_base', side_effect=fake):
         result = execute_direct(args='verify', command_key='python:verify', project_dir=str(tmp_path))
     assert result is success
     assert len(calls) == 1
     assert not (tmp_path / '.pyprojectx.broken').exists()
 
 
-# D6: Build-queue integration at the pyproject cmd_run wrap site.
+# D6: Build-queue integration on the in-process leg of the shared factory
+# cmd_run that pyproject now uses.
 #
-# These tests drive the pyproject ``cmd_run`` end-to-end through the REAL
+# These tests drive that ``cmd_run`` end-to-end through the REAL
 # ``build_queue_slot`` context manager. The queue acquire/release seam
 # (``_acquire`` / ``_release_raw``) is mocked on the ``_build_queue_slot``
 # module, so the slot's admit / wait / release behaviour is exercised exactly as
-# in production while the build itself (the module-level ``execute_direct``
-# self-heal wrapper) is replaced by a recorder and ``cmd_run_common`` (downstream
-# of the slot) is stubbed to a no-op. ``time.sleep`` is patched to a no-op so the
-# 60s blocked-poll wait is never actually slept.
+# in production while the build itself is replaced by a recorder installed at
+# ``_factory.execute_direct_base`` and ``cmd_run_common`` (downstream of the
+# slot) is stubbed to a no-op on the factory module. ``time.sleep`` is patched
+# to a no-op so the 60s blocked-poll wait is never actually slept. Every
+# ``cmd_run`` call passes ``execution_mode='in_process'`` so the routing branch
+# is skipped outright and no daemon is ever probed.
 
 
 class _QueueDouble:
@@ -283,11 +304,13 @@ class _QueueDouble:
 class _ExecRecorder:
     """Records whether (and with what args) the pyproject build body ran.
 
-    ``cmd_run`` calls the module-level ``execute_direct`` (the self-heal
-    wrapper). Patching ``_pyproject_execute_mod.execute_direct`` with this
-    recorder lets the integration tests assert the build ran exactly once
-    (admitted paths) or never (saturation path) without spawning a real
-    subprocess."""
+    ``cmd_run`` invokes the self-heal-wrapped executor through a closure
+    variable, so the recorder is installed one level deeper at
+    ``_factory.execute_direct_base`` — the seam that closure ultimately calls.
+    It returns a success result, so the self-heal never triggers a retry and one
+    ``cmd_run`` maps to exactly one recorded call. That lets the integration
+    tests assert the build ran exactly once (admitted paths) or never
+    (saturation path) without spawning a real subprocess."""
 
     def __init__(self):
         self.calls: list[dict] = []
@@ -315,13 +338,22 @@ def _no_sleep_queue(monkeypatch: pytest.MonkeyPatch):
 
 def _install_queue(monkeypatch: pytest.MonkeyPatch, double: _QueueDouble):
     """Install the queue double + exec recorder, and stub ``cmd_run_common`` to a
-    no-op. Returns the exec_recorder."""
+    no-op. Returns the exec_recorder.
+
+    The recorder and the ``cmd_run_common`` stub go on ``_factory`` — the shared
+    factory module that owns the routing ``cmd_run`` pyproject now uses — not on
+    ``_pyproject_execute_mod``, which no longer defines either. The routing
+    audit's work-log sink (``log_entry``) is also stubbed so an in-process
+    resolution never writes to a real plan log; its stderr half is left intact
+    and does not reach the ``capsys`` stdout the saturation test reads.
+    """
     monkeypatch.setattr(bqs, '_acquire', double.acquire)
     monkeypatch.setattr(bqs, '_release_raw', double.release)
 
     exec_recorder = _ExecRecorder()
-    monkeypatch.setattr(_pyproject_execute_mod, 'execute_direct', exec_recorder)
-    monkeypatch.setattr(_pyproject_execute_mod, 'cmd_run_common', lambda **_kwargs: 0)
+    monkeypatch.setattr(_factory, 'execute_direct_base', exec_recorder)
+    monkeypatch.setattr(_factory, 'cmd_run_common', lambda **_kwargs: 0)
+    monkeypatch.setattr(_factory, 'log_entry', lambda *_args, **_kwargs: None)
     return exec_recorder
 
 
@@ -333,7 +365,11 @@ class TestPyprojectCmdRunQueueAdmitted:
         double = _QueueDouble([{'status': 'success', 'admission': 'admitted', 'id': 'P:uuid-1'}])
         exec_recorder = _install_queue(monkeypatch, double)
 
-        rc = cmd_run(argparse.Namespace(command_args='verify', plan_id='P', format='toon'))
+        rc = cmd_run(
+            argparse.Namespace(
+                command_args='verify', plan_id='P', format='toon', execution_mode='in_process'
+            )
+        )
 
         assert rc == 0
         assert exec_recorder.ran is True
@@ -354,7 +390,11 @@ class TestPyprojectCmdRunQueueBlockedThenAdmitted:
         )
         exec_recorder = _install_queue(monkeypatch, double)
 
-        rc = cmd_run(argparse.Namespace(command_args='verify', plan_id='P', format='toon'))
+        rc = cmd_run(
+            argparse.Namespace(
+                command_args='verify', plan_id='P', format='toon', execution_mode='in_process'
+            )
+        )
 
         assert rc == 0
         assert len(exec_recorder.calls) == 1
@@ -376,7 +416,11 @@ class TestPyprojectCmdRunQueueBlockedThenAdmitted:
         )
         exec_recorder = _install_queue(monkeypatch, double)
 
-        cmd_run(argparse.Namespace(command_args='verify', plan_id='P', format='toon'))
+        cmd_run(
+            argparse.Namespace(
+                command_args='verify', plan_id='P', format='toon', execution_mode='in_process'
+            )
+        )
 
         assert sleeps == [bqs._WAIT_SECONDS, bqs._WAIT_SECONDS]
         assert len(exec_recorder.calls) == 1
@@ -392,7 +436,11 @@ class TestPyprojectCmdRunQueueSaturated:
         double = _QueueDouble([{'status': 'success', 'admission': 'blocked', 'id': 'P:uuid-X'}])
         exec_recorder = _install_queue(monkeypatch, double)
 
-        rc = cmd_run(argparse.Namespace(command_args='verify', plan_id='P', format='toon'))
+        rc = cmd_run(
+            argparse.Namespace(
+                command_args='verify', plan_id='P', format='toon', execution_mode='in_process'
+            )
+        )
 
         assert rc == 1
         assert exec_recorder.ran is False
@@ -413,7 +461,11 @@ class TestPyprojectCmdRunPlanIdAbsentPassthrough:
         double = _QueueDouble([])
         exec_recorder = _install_queue(monkeypatch, double)
 
-        rc = cmd_run(argparse.Namespace(command_args='verify', plan_id=plan_id, format='toon'))
+        rc = cmd_run(
+            argparse.Namespace(
+                command_args='verify', plan_id=plan_id, format='toon', execution_mode='in_process'
+            )
+        )
 
         assert rc == 0
         assert len(exec_recorder.calls) == 1
@@ -426,7 +478,9 @@ class TestPyprojectCmdRunPlanIdAbsentPassthrough:
         double = _QueueDouble([])
         exec_recorder = _install_queue(monkeypatch, double)
 
-        rc = cmd_run(argparse.Namespace(command_args='verify', format='toon'))
+        rc = cmd_run(
+            argparse.Namespace(command_args='verify', format='toon', execution_mode='in_process')
+        )
 
         assert rc == 0
         assert len(exec_recorder.calls) == 1

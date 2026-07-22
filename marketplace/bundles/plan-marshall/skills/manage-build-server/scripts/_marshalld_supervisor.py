@@ -21,6 +21,19 @@ responsibilities:
   supervisor did NOT send) is its own terminal state — "externally killed — not
   flaky, do not blind-retry" — and is NEVER folded into ``failure``.
 
+**Exit 0 is necessary but not sufficient for ``success``.** The daemon's child is
+normally a build wrapper, and the wrapper exits 0 even when the build failed — it
+reports its real verdict in the build-result TOON it emits (``status:`` /
+``exit_code:``), not in its process exit code. Classifying purely on
+``returncode == 0`` therefore renders a false ``success`` for every failing routed
+build. :func:`read_log_verdict` reads that emitted verdict back from the job log,
+and :func:`run_job` downgrades a ``success`` classification to ``failure``
+(carrying the TOON's ``exit_code``) whenever the verdict does not affirmatively
+agree. The ``timeout`` and ``killed`` legs are NOT subject to this narrowing — a
+supervisor timeout and an external kill always outrank log content — and a job log
+carrying no parseable TOON status keeps today's exit-code verdict, so a
+non-wrapper command run through the daemon is unaffected.
+
 The classification and env helpers are pure and unit-testable without spawning a
 process; :func:`run_job` drives a real ``asyncio`` subprocess and is exercised
 against trivial commands.
@@ -46,6 +59,7 @@ from _build_result import (
     success_result,
     timeout_result,
 )
+from _build_result import STATUS_SUCCESS as RESULT_STATUS_SUCCESS
 from _build_server_protocol import (
     MARSHALLD_JOB_ENV,
     STATUS_KILLED,
@@ -106,6 +120,66 @@ def classify_terminal(returncode: int | None, *, timed_out: bool) -> str:
     if returncode < 0:
         return STATUS_KILLED
     return 'success' if returncode == 0 else 'failure'
+
+
+@dataclass(frozen=True)
+class LogVerdict:
+    """The build wrapper's own verdict, read back from a job log.
+
+    Attributes:
+        status: The ``status:`` value the emitted build TOON carried
+            (``success`` / ``error`` / ``timeout`` — the :mod:`_build_result`
+            vocabulary, NOT the daemon's wire vocabulary).
+        exit_code: The ``exit_code:`` value, or ``None`` when the log carried no
+            parseable one.
+    """
+
+    status: str
+    exit_code: int | None
+
+
+def _toon_scalar(line: str) -> str:
+    """Return the unquoted scalar value of a ``key: value`` TOON line."""
+    value = line.split(':', 1)[1].strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
+        return value[1:-1]
+    return value
+
+
+def read_log_verdict(log_file: str) -> LogVerdict | None:
+    """Read the build wrapper's emitted TOON verdict back from a job log.
+
+    Pure with respect to the daemon's state — it only reads the log the
+    supervisor already streamed. Only the two top-level (column-0) ``status:``
+    and ``exit_code:`` keys are parsed; indented TOON rows (e.g. ``errors[]``
+    table lines) and every other key are ignored. The LAST occurrence of each key
+    wins, because the wrapper emits its result TOON after any progress output it
+    already wrote to the same log.
+
+    Args:
+        log_file: Path to the job log the supervisor streamed the child into.
+
+    Returns:
+        The parsed :class:`LogVerdict`, or ``None`` when the log is missing,
+        unreadable, or carries no top-level ``status:`` line at all.
+    """
+    status: str | None = None
+    exit_code: int | None = None
+    try:
+        with open(log_file, encoding='utf-8', errors='replace') as handle:
+            for line in handle:
+                if line.startswith('status:'):
+                    status = _toon_scalar(line)
+                elif line.startswith('exit_code:'):
+                    try:
+                        exit_code = int(_toon_scalar(line))
+                    except ValueError:
+                        exit_code = None
+    except OSError:
+        return None
+    if status is None:
+        return None
+    return LogVerdict(status=status, exit_code=exit_code)
 
 
 @dataclass
@@ -233,9 +307,19 @@ async def run_job(
 
     duration = int(progress.elapsed())
     status = classify_terminal(proc.returncode, timed_out=timed_out)
+    returncode = proc.returncode
+    # Exit 0 is necessary but not sufficient: the build wrapper exits 0 even when
+    # the build failed, so a `success` classification only stands when the
+    # emitted build TOON affirmatively agrees. The timeout / killed legs are
+    # untouched — they always outrank log content.
+    if status == 'success':
+        verdict = read_log_verdict(log_file)
+        if verdict is not None and verdict.status != RESULT_STATUS_SUCCESS:
+            status = 'failure'
+            returncode = verdict.exit_code
     return _terminal_payload(
         status,
-        returncode=proc.returncode,
+        returncode=returncode,
         duration=duration,
         log_file=log_file,
         command_str=command_str,

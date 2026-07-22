@@ -120,6 +120,8 @@ The three modes differ only in what happens when the daemon cannot serve the bui
 
 Every resolved outcome is logged with BOTH the requested mode and the resolved outcome (`routed` | `in_process` | `fail-loud`), so the routing decision for any build is reconstructable from the log alone.
 
+All four build tools reach this routing decision through the SINGLE shared `cmd_run` built by `create_execute_handlers` in `_build_execute_factory` — none of them defines its own. A tool that needs extra behaviour on the in-process leg supplies that executor through the factory's in-process-executor seam instead of forking a `cmd_run`: pyproject passes its one-shot `.pyprojectx` self-heal retry that way, so the self-heal wraps only the in-process leg and can never bypass the routing decision. A routed build runs inside the daemon child, which re-enters the same factory and applies the wrapper there, so the self-heal is available on both paths without either path duplicating the routing logic. The non-routed outcomes this seam produces are the ones enumerated in F6.
+
 == Job state machine
 
 A job moves through the journal's status field. `queued` and `running` are non-terminal; the four terminal statuses end the job; `not_found` is what a wait sees once a terminal result ages out of the retention window. A bound-expiry `wait` reports a `running` snapshot but does not change the state.

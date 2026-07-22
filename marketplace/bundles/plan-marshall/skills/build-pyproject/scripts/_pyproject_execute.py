@@ -6,10 +6,18 @@ Provides:
 - execute_direct(): Foundation API for pyprojectx command execution
 - cmd_run(): Run subcommand handler (execute + auto-parse on failure)
 
-Includes a one-shot self-heal layer that mitigates known worktree
-``.pyprojectx`` cache-corruption symptoms: ``uv: command not found`` (exit
-127) and ``Failed to create virtual environment ... Directory not empty``.
-On a matching failure, the cache directory is renamed aside to
+pyproject routes through the SHARED factory ``cmd_run`` — the same
+daemon-routing seam Maven, Gradle, and npm use — with the one-shot self-heal
+applied to the in-process leg only (a routed build runs inside the daemon
+child, which re-enters the factory and applies the self-heal there). A build
+carrying ``--env`` or ``--working-dir`` is never routable: the daemon's clean
+baseline environment cannot honour those overrides, so such a build falls back
+in-process under ``auto`` and fails loud under ``execution_mode=daemon``.
+
+The self-heal layer mitigates known worktree ``.pyprojectx``
+cache-corruption symptoms: ``uv: command not found`` (exit 127) and
+``Failed to create virtual environment ... Directory not empty``. On a
+matching failure, the cache directory is renamed aside to
 ``.pyprojectx.broken`` and the command is re-run exactly once. The
 self-heal is skipped when ``.pyprojectx.broken`` already exists so a prior
 broken cache is never clobbered.
@@ -19,20 +27,18 @@ Usage:
 """
 
 import logging
+from collections.abc import Callable
 from pathlib import Path
 
 from _build_execute import CaptureStrategy
 from _build_execute_factory import (
     ExecuteConfig,
-    _emit_queue_timeout,
-    compute_command_key,
     create_execute_handlers,
     default_build_command_fn,
     default_command_key_fn,
 )
-from _build_queue_slot import BuildQueueTimeout, build_queue_slot
 from _build_result import DirectCommandResult
-from _build_shared import DEFAULT_BUILD_TIMEOUT, cmd_run_common
+from _build_shared import DEFAULT_BUILD_TIMEOUT
 from _pyproject_cmd_parse import parse_log
 
 logger = logging.getLogger(__name__)
@@ -70,10 +76,10 @@ _CONFIG = ExecuteConfig(
     command_key_fn=default_command_key_fn,
     default_timeout=DEFAULT_BUILD_TIMEOUT,
     min_timeout=PYTEST_OUTER_FLOOR_SECONDS,
+    supports_env_vars=True,
+    supports_working_dir=True,
     extra_result_fn=_python_extra_result_fn,
 )
-
-_inner_execute_direct, _ = create_execute_handlers(_CONFIG, parse_log)
 
 _UV_MISSING_PATTERN = 'uv: command not found'
 _VENV_PATTERN = 'Failed to create virtual environment'
@@ -113,77 +119,56 @@ def _should_self_heal(result: DirectCommandResult, project_dir: str) -> bool:
     return True
 
 
-def execute_direct(
-    args: str,
-    command_key: str,
-    default_timeout: int = DEFAULT_BUILD_TIMEOUT,
-    project_dir: str = '.',
-    env_vars: dict[str, str] | None = None,
-    working_dir: str | None = None,
-):
-    """pyprojectx execute_direct with the one-shot self-heal retry (see module docstring)."""
-    result = _inner_execute_direct(
-        args=args,
-        command_key=command_key,
-        default_timeout=default_timeout,
-        project_dir=project_dir,
-        env_vars=env_vars,
-        working_dir=working_dir,
-    )
-    if not _should_self_heal(result, project_dir):
-        return result
+def _wrap_with_self_heal(
+    inner_execute: Callable[..., DirectCommandResult],
+) -> Callable[..., DirectCommandResult]:
+    """Wrap the factory's inner executor with the one-shot self-heal retry.
 
-    cache_dir = Path(project_dir) / '.pyprojectx'
-    broken_dir = Path(project_dir) / '.pyprojectx.broken'
-    try:
-        cache_dir.rename(broken_dir)
-    except OSError as exc:
-        logger.warning('pyprojectx self-heal rename failed: %s', exc)
-        return result
-    logger.info('pyprojectx self-heal: renamed %s -> %s, retrying once', cache_dir, broken_dir)
-    return _inner_execute_direct(
-        args=args,
-        command_key=command_key,
-        default_timeout=default_timeout,
-        project_dir=project_dir,
-        env_vars=env_vars,
-        working_dir=working_dir,
-    )
+    Applied via ``create_execute_handlers(..., wrap_execute_fn=...)`` so the
+    self-heal rides the in-process leg of the shared routing ``cmd_run`` without
+    pyproject forking a local ``cmd_run``. See the module docstring for the
+    symptoms matched and the one-shot semantics.
+    """
 
+    def execute_direct(
+        args: str,
+        command_key: str,
+        default_timeout: int = DEFAULT_BUILD_TIMEOUT,
+        project_dir: str = '.',
+        env_vars: dict[str, str] | None = None,
+        working_dir: str | None = None,
+    ) -> DirectCommandResult:
+        result = inner_execute(
+            args=args,
+            command_key=command_key,
+            default_timeout=default_timeout,
+            project_dir=project_dir,
+            env_vars=env_vars,
+            working_dir=working_dir,
+        )
+        if not _should_self_heal(result, project_dir):
+            return result
 
-def cmd_run(args) -> int:
-    project_dir = getattr(args, 'project_dir', '.')
-    command_args = args.command_args
-    command_key = compute_command_key(_CONFIG, command_args)
-    timeout_seconds = getattr(args, 'timeout', None) or _CONFIG.default_timeout
+        cache_dir = Path(project_dir) / '.pyprojectx'
+        broken_dir = Path(project_dir) / '.pyprojectx.broken'
+        try:
+            cache_dir.rename(broken_dir)
+        except OSError as exc:
+            logger.warning('pyprojectx self-heal rename failed: %s', exc)
+            return result
+        logger.info('pyprojectx self-heal: renamed %s -> %s, retrying once', cache_dir, broken_dir)
+        return inner_execute(
+            args=args,
+            command_key=command_key,
+            default_timeout=default_timeout,
+            project_dir=project_dir,
+            env_vars=env_vars,
+            working_dir=working_dir,
+        )
 
-    # Acquire a build-queue slot when a plan_id is set; NO-OP passthrough
-    # otherwise (plan-less builds run unchanged). The slot wraps the full
-    # self-heal sequence — one build, including its one-shot retry, holds one
-    # slot — and is released + the title-token cleared in the manager's finally.
-    plan_id = getattr(args, 'plan_id', None)
-    try:
-        with build_queue_slot(plan_id):
-            result = execute_direct(
-                args=command_args,
-                command_key=command_key,
-                default_timeout=timeout_seconds,
-                project_dir=project_dir,
-            )
-    except BuildQueueTimeout as exc:
-        return _emit_queue_timeout(_CONFIG.tool_name, command_args, getattr(args, 'format', 'toon'), exc)
-
-    return cmd_run_common(
-        result=result,
-        parser_fn=parse_log,
-        tool_name=_CONFIG.tool_name,
-        output_format=getattr(args, 'format', 'toon'),
-        mode=getattr(args, 'mode', 'actionable'),
-        project_dir=project_dir,
-        parser_needs_command=_CONFIG.parser_needs_command,
-        plan_id=getattr(args, 'plan_id', None),
-    )
+    return execute_direct
 
 
-execute_direct.__qualname__ = 'python_execute_direct'
-cmd_run.__qualname__ = 'python_cmd_run'
+execute_direct, cmd_run = create_execute_handlers(
+    _CONFIG, parse_log, wrap_execute_fn=_wrap_with_self_heal
+)
