@@ -25,9 +25,13 @@ from _config_defaults import (
     DEFAULT_PROJECT,
     DEFAULT_SYSTEM_RETENTION,
     pr_compact_rides_existing_pr,
+    validate_plugin_cache_retention,
     validate_pr_compact_max_changed_files,
     validate_pr_strategy,
 )
+
+# Retention fields carrying a numeric contract beyond the whitelist check.
+_PLUGIN_CACHE_RETENTION_FIELDS = ('plugin_cache_keep_versions', 'plugin_cache_keep_days')
 
 # Project fields whose value is a list serialized as JSON on the
 # `manage-config project set` command line. _coerce_value only handles scalar
@@ -76,6 +80,14 @@ def cmd_system(args) -> dict:
             rejection = reject_unknown_provisioning_field(field, DEFAULT_SYSTEM_RETENTION, 'system.retention')
             if rejection is not None:
                 return rejection
+            # Validate the numeric plugin-cache knobs at this system boundary so
+            # an out-of-contract value returns status: error rather than
+            # persisting a keep-set the sweep cannot honour.
+            if field in _PLUGIN_CACHE_RETENTION_FIELDS:
+                try:
+                    validate_plugin_cache_retention(value, f'system.retention.{field}')
+                except ValueError as e:
+                    return error_exit(str(e), error_type='invalid_value')
             retention[field] = value
             system_config['retention'] = retention
             config['system'] = system_config

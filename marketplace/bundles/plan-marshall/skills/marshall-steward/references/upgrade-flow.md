@@ -11,12 +11,15 @@ machinery honoring those dispositions.
 The plan is **project-kind aware**. A `meta` project (the plan-marshall
 meta-project itself) regenerates the `target/claude` tree AND the executor and
 verifies with executor preflight AND a content-drift report; a `consumer`
-project (a downstream project that consumes plan-marshall) regenerates ONLY the
-executor and verifies with executor preflight ONLY — the meta-only sub-steps
-(`marketplace/targets/generate.py` in Stage 1, `content_drift_cli.py` in Stage 3)
-are absent from a consumer plan and MUST NOT be attempted. The planner detects
-the kind or is told it explicitly; this flow runs exactly the `sub_steps` the
-plan emitted for the resolved kind.
+project (a downstream project that consumes plan-marshall) gates on plugin-cache
+freshness, regenerates ONLY the executor, and verifies with executor preflight
+ONLY — the meta-only sub-steps (`marketplace/targets/generate.py` in Stage 1,
+`content_drift_cli.py` in Stage 3) are absent from a consumer plan and MUST NOT
+be attempted. Both kinds end Stage 1 with the plugin-cache retention sweep. The
+planner detects the kind or is told it explicitly; this flow runs exactly the
+`sub_steps` the plan emitted for the resolved kind. The single entry that is
+consumer-only — `cache-freshness-check` — and the reason for that asymmetry are
+documented in § "Meta/consumer cache-freshness asymmetry" below.
 
 This reference is loaded from two entry points (see [`../SKILL.md`](../SKILL.md)):
 Main Menu option 5 ("Upgrade"), and the `upgrade` early verb check (which passes
@@ -37,7 +40,10 @@ sub-steps on a consumer).
 
 ```text
   Stage 1  regenerate-targets   meta:     regenerate-target-tree + regenerate-executor  [mutating]
-                                consumer: regenerate-executor
+                                          + cache-retention-sweep
+                                consumer: cache-freshness-check + regenerate-executor
+                                          + cache-retention-sweep
+                                └─ nested gate: cache-retention-prune (still prompts)
   Stage 2  reconcile-config     both:     reconcile-marshal-json                        [mutating]
                                 └─ nested gate: build-map re-seed (still prompts)
   Stage 3  verify               meta:     executor-preflight + content-drift-report     [read-only]
@@ -77,8 +83,9 @@ emitted list (a `consumer` plan omits the meta-only sub-steps).
   WITHOUT the top-level prompts.
 - **`integrate=true` suppresses ONLY the four top-level stage gates.** The
   **nested** gates are `integrate`-invariant and STILL prompt under
-  `integrate=true`: the Stage 2 `build-map` re-seed gate and the Stage 4 landing
-  land/leave + branch-reuse gates. `integrate=true` is therefore **not** a
+  `integrate=true`: the Stage 1 `cache-retention-prune` gate, the Stage 2
+  `build-map` re-seed gate, and the Stage 4 landing land/leave + branch-reuse
+  gates. `integrate=true` is therefore **not** a
   globally-unattended mode — it collapses the four stage-boundary prompts, not
   the safety gates that guard destructive or hand-editable state.
 - **Do NOT modify the reused sub-flows to add suppression.** The reused
@@ -117,6 +124,42 @@ For each stage, before running its machinery:
 Honor the Stage 1 top-level gate, then run exactly the Stage 1 `sub_steps` the
 plan emitted for the resolved kind:
 
+- **`cache-freshness-check`** (consumer only — absent from a meta plan) — the
+  fail-closed gate that establishes the precondition `regenerate-executor`
+  depends on: that the plugin cache the generator reads is current with the
+  marketplace clone. It is Stage 1's FIRST sub-step because it is
+  `regenerate-executor` that reads the (possibly unrefreshed) cache. The verb is
+  read-only and mutates nothing:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:marshall-steward:cache_freshness check
+  ```
+
+  See the [`../SKILL.md`](../SKILL.md) Canonical invocations
+  (`cache_freshness — check`) for the verb shape. Parse `freshness`,
+  `refuses_upgrade`, and `remediation`. The verdict set is exactly three-valued
+  and there is **no** age-based, mtime-based, or otherwise-inferred fallback that
+  downgrades an unsubstantiable verdict to a guess:
+
+  | `freshness` | Meaning | `refuses_upgrade` | Action |
+  |-------------|---------|-------------------|--------|
+  | `fresh` | The cache is at or ahead of the marketplace-clone manifest version | `false` | Continue to `regenerate-executor` |
+  | `stale` | The cache is BEHIND the clone manifest — the consumer never refreshed | `true` | STOP the upgrade; surface `remediation` verbatim |
+  | `unknown` | No cache root or clone manifest resolvable — the verdict cannot be substantiated | `true` | STOP the upgrade; surface `remediation` verbatim |
+
+  `unknown` is terminal and refusing, never a vacuous `fresh` (ADR-009). On
+  either refusing verdict, follow "Partial-failure and abort handling" below and
+  report the emitted `remediation`, which names the operator commands verbatim:
+  run `/plugin marketplace update` to refresh the marketplace clone, then
+  reinstall the plugin (`/plugin uninstall plan-marshall` followed by
+  `/plugin install plan-marshall`). Re-run `/marshall-steward upgrade` afterwards.
+
+  Note the division of labour with Stage 3's `executor-preflight`: preflight
+  compares the executor's stamp against a LOCAL manifest and answers "is my
+  executor consistent with my cache?"; it is structurally incapable of seeing
+  cache-versus-upstream skew. This sub-step owns that question, and preflight is
+  unchanged.
+
 - **`regenerate-target-tree`** (meta only — absent from a consumer plan) —
   regenerate the Claude target tree:
 
@@ -130,8 +173,10 @@ plan emitted for the resolved kind:
   even when the currently-installed executor is broken and cannot proxy at all.
   Resolve the script path per kind: meta uses the marketplace-source generator
   (`marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/generate_executor.py`);
-  consumer uses the freshly-synced cache-version generator under the plugin
-  cache. Run its `generate` verb directly:
+  consumer uses the newest cache-version generator under the plugin cache, whose
+  currency is established by the `cache-freshness-check` sub-step above — this
+  sub-step establishes nothing itself and asserts no precondition of its own. Run
+  its `generate` verb directly:
 
   ```bash
   python3 {resolved_generate_executor_path} generate
@@ -145,9 +190,61 @@ plan emitted for the resolved kind:
   refused with `status: error` and the pre-existing working executor is left
   byte-identical, so a regeneration can never leave a corrupt executor in place.
 
-A `consumer` plan runs only `regenerate-executor`; the meta-only
-`marketplace/targets/generate.py` sub-step is absent from its `sub_steps` and
-MUST NOT be attempted (a consumer has no marketplace source tree).
+- **`cache-retention-sweep`** (both kinds) — prune the superseded plugin-cache
+  version dirs the executor regeneration leaves behind. Run the DRY RUN first; it
+  mutates nothing and reports the full keep/remove partition:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:marshall-steward:cache_retention sweep
+  ```
+
+  See the [`../SKILL.md`](../SKILL.md) Canonical invocations
+  (`cache_retention — sweep`) for the verb shape. Parse `kept`, `removed`,
+  `removed_count`, and `summary_message`. The keep-set is a strict UNION: a
+  version dir is removed only when NO rule keeps it, so every `kept` row names
+  the first keep-rule that fired and a run that removed nothing still explains
+  itself. The two operator knobs are
+  `system.retention.plugin_cache_keep_versions` (`N`, default `5`) and
+  `system.retention.plugin_cache_keep_days` (`D`, default `3`) — see
+  [`manage-config` data-model.md](../../manage-config/standards/data-model.md)
+  § Retention Fields for their types, defaults, and the union semantics. The
+  report echoes the resolved pair plus its `knob_source`, so a surprising
+  keep-set is diagnosable without reading the config.
+
+  **Nested gate — `cache-retention-prune` (STILL prompts under
+  `integrate=true`).** The destructive apply is never automatic. When
+  `removed_count > 0`, show the `removed` rows, then prompt:
+
+  ```text
+  AskUserQuestion:
+    question: "Remove {removed_count} superseded plugin-cache version dir(s)?"
+    header: "cache-retention-prune"
+    options:
+      - label: "Yes, prune"
+        description: "Unlink the version dirs no keep-rule retained"
+      - label: "No, keep everything"
+        description: "Leave the cache untouched (the dry-run report stands)"
+    multiSelect: false
+  ```
+
+  - **Yes** → apply the sweep:
+
+    ```bash
+    python3 .plan/execute-script.py plan-marshall:marshall-steward:cache_retention sweep --apply
+    ```
+
+  - **No** → leave the cache untouched.
+
+  When `removed_count == 0` there is nothing to prune; report
+  `summary_message` and continue without prompting. This nested gate prompts even
+  when `integrate=true` suppressed the Stage 1 top-level gate.
+
+A `consumer` plan runs `cache-freshness-check`, `regenerate-executor`, and
+`cache-retention-sweep`; the meta-only `marketplace/targets/generate.py`
+sub-step is absent from its `sub_steps` and MUST NOT be attempted (a consumer has
+no marketplace source tree). A `meta` plan runs `regenerate-target-tree`,
+`regenerate-executor`, and `cache-retention-sweep`; `cache-freshness-check` is
+absent from its `sub_steps`.
 
 > **Reload directive after executor regeneration.** Regenerating the executor may
 > change the emitted agent set, and the registry is session-pinned at session
@@ -165,6 +262,34 @@ MUST NOT be attempted (a consumer has no marketplace source tree).
 > whose alternative is a full session restart. See [`../SKILL.md`](../SKILL.md) §
 > "Session Reload Directive After Executor / Agent Changes" for the WHY the
 > registry is session-pinned.
+
+## Meta/consumer cache-freshness asymmetry
+
+The Stage 1 asymmetry is exactly one entry wide, and it is deliberate:
+
+| Kind | Gains `cache-freshness-check` | Gains `cache-retention-sweep` + `cache-retention-prune` |
+|------|-------------------------------|----------------------------------------------------------|
+| `meta` | **No** | Yes |
+| `consumer` | **Yes** | Yes |
+
+**Why the freshness gate is consumer-only.** The meta project keeps its own
+plugin cache current through `project:finalize-step-sync-plugin-cache`, which
+runs at the end of every plan's finalize phase and mirrors the freshly-generated
+`target/claude/` tree into the cache. That step is **meta-project-only** (see the
+repository `CLAUDE.md` § "Plugin Cache Sync"): it is a project-local skill under
+`.claude/skills/`, registered in the meta project's own `marshal.json`, and
+consumer projects neither ship it nor have it seeded. So the mechanism that keeps
+the meta cache fresh is invisible to — and does not cover — a consumer, whose
+cache is refreshed only when the operator explicitly runs
+`/plugin marketplace update` and reinstalls. A consumer therefore has a real
+"my cache silently fell behind" failure mode that meta does not, which is exactly
+the failure the freshness gate refuses on. Adding the gate to the meta kind would
+gate on a condition meta's own finalize pipeline already guarantees.
+
+**Why the retention sweep applies to both.** Cache-version accumulation is not
+asymmetric: both kinds regenerate the executor against the same versioned cache
+tree and both leave superseded version dirs behind. The sweep and its
+`cache-retention-prune` gate therefore run for both kinds.
 
 ## Stage 2: reconcile-config (mutating)
 

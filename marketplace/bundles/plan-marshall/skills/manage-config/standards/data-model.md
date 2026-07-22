@@ -148,7 +148,9 @@ JSON structure and field definitions for project configuration.
       "logs_days": 1,
       "archived_plans_days": 5,
       "lessons_superseded_days": 0,
-      "temp_on_maintenance": true
+      "temp_on_maintenance": true,
+      "plugin_cache_keep_versions": 5,
+      "plugin_cache_keep_days": 3
     }
   }
 }
@@ -299,7 +301,9 @@ System-level infrastructure settings.
       "logs_days": 1,
       "archived_plans_days": 5,
       "lessons_superseded_days": 0,
-      "temp_on_maintenance": true
+      "temp_on_maintenance": true,
+      "plugin_cache_keep_versions": 5,
+      "plugin_cache_keep_days": 3
     },
     "provisioned_version": "0.1.42",
     "config_seed_fingerprint": "a1b2c3…"
@@ -315,6 +319,10 @@ System-level infrastructure settings.
 | `archived_plans_days` | int | 5 | Days to keep archived plans |
 | `lessons_superseded_days` | int | 0 | Days to keep superseded lessons before removal (`0` = remove immediately on the next maintenance pass) |
 | `temp_on_maintenance` | bool | true | Clean temp on maintenance |
+| `plugin_cache_keep_versions` | int (`>= 1`) | 5 | Number (`N`) of numerically-newest plugin-cache version dirs kept per bundle by the `marshall-steward` `cache_retention sweep` |
+| `plugin_cache_keep_days` | int (`>= 0`) | 3 | Age (`D`, in days) below which a plugin-cache version dir is kept by the same sweep (`0` disables this arm of the union, not the union) |
+
+**Plugin-cache retention semantics (the canonical home).** `plugin_cache_keep_versions` (`N`) and `plugin_cache_keep_days` (`D`) are two arms of a **union** keep-set, not a conjunction: the sweep keeps a version directory when **any** keep-rule holds — the newest `N`, younger than `D` days, the newest-on-disk dir, the `system.provisioned_version` dir, the cache-root `dist-manifest.json` dir, or the version dir the sweep itself is executing from. A version is removed only when **no** rule keeps it. The knobs therefore only ever **widen** the keep-set; raising either value keeps strictly more, and neither value can force a delete. The `.orphaned_at` marker is advisory and is never consulted as a keep-or-delete oracle. Every other surface that enumerates these keys (`api-reference.md`, `manage-config/SKILL.md`, `marshall-steward/references/menu-maintenance.md`) xrefs this section rather than restating the semantics.
 
 ### Provisioning Fields
 

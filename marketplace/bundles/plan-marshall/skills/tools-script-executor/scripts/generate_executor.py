@@ -1541,8 +1541,8 @@ def _live_version_dirs(bundle_dir: Path) -> list[Path]:
     """Return the LIVE (non-orphaned) version dirs directly under ``bundle_dir``.
 
     A version dir qualifies when it is a directory, not dot-prefixed, carries a
-    ``skills/`` tree, and does NOT carry the orphan-GC ``.orphaned_at`` deferral
-    marker. Shared by ``_detect_multi_version_pollution`` (which counts them) and
+    ``skills/`` tree, and does NOT carry the ``.orphaned_at`` deferral marker.
+    Shared by ``_detect_multi_version_pollution`` (which counts them) and
     ``_mark_superseded_version_dirs`` (which marks every non-newest one) so the
     "what counts as live" predicate is encoded once. Raises ``OSError`` on an
     unreadable ``bundle_dir`` — callers catch it.
@@ -1557,6 +1557,61 @@ def _live_version_dirs(bundle_dir: Path) -> list[Path]:
     ]
 
 
+def _all_version_dirs(bundle_dir: Path) -> list[Path]:
+    """Return EVERY version dir under ``bundle_dir``, marked or not.
+
+    The marker-blind counterpart of :func:`_live_version_dirs`. The retention
+    pin-set is computed over this list on purpose: the newest dir ON DISK is what
+    the highest-version-wins resolver actually selects, whether or not a previous
+    run marked it. Raises ``OSError`` on an unreadable ``bundle_dir``.
+    """
+    return [
+        d
+        for d in bundle_dir.iterdir()
+        if d.is_dir() and not d.name.startswith('.') and (d / 'skills').is_dir()
+    ]
+
+
+def _retention_pinned_versions(base_path: Path | None, bundle_dir: Path) -> set[str]:
+    """Return the version names the retention policy pins for ``bundle_dir``.
+
+    A pinned version MUST NEVER be marked ``.orphaned_at``. The pins mirror the
+    non-count arms of the ``marshall-steward`` ``cache_retention sweep``
+    keep-union: the newest dir on disk (what the resolver selects), the version
+    named by ``marshal.json``'s ``system.provisioned_version``, and the version
+    named by the installed ``dist-manifest.json``.
+
+    Pinning these is what makes marker saturation structurally impossible: the
+    newest-on-disk dir is pinned unconditionally, so at least one live (unmarked)
+    version dir always survives per bundle. Without the pin, a run whose newest
+    dir was already marked promotes an OLDER dir to "newest live" and marks the
+    rest, and the cascade converges on zero live dirs — which renders
+    :func:`_detect_multi_version_pollution` vacuous and forces
+    ``marketplace_bundles.find_bundles`` into its degraded all-orphaned fallback.
+
+    Args:
+        base_path: The resolved bundles/cache root, or ``None``.
+        bundle_dir: The bundle whose version dirs are being partitioned.
+
+    Returns:
+        The set of pinned version-directory names (possibly empty).
+    """
+    pinned: set[str] = set()
+    try:
+        version_dirs = _all_version_dirs(bundle_dir)
+    except OSError:
+        version_dirs = []
+    if version_dirs:
+        pinned.add(max(version_dirs, key=lambda d: _version_sort_key(d.name)).name)
+    provisioned = read_marshal_provisioned_version()
+    if provisioned and provisioned != 'unknown':
+        pinned.add(provisioned)
+    manifest_version = str(read_installed_manifest(base_path).get('version', '') or '')
+    if manifest_version:
+        pinned.add(manifest_version)
+    return pinned
+
+
 def _detect_multi_version_pollution(base_path: Path | None) -> list[str]:
     """Return the bundle names exposing more than one LIVE version dir on disk.
 
@@ -1569,13 +1624,19 @@ def _detect_multi_version_pollution(base_path: Path | None) -> list[str]:
     embeds only the newest version's paths). Returns the sorted list of polluted
     bundle names (empty when the tree is clean or ``base_path`` is unresolved).
 
-    A version dir carrying the orphan-GC ``.orphaned_at`` deferral marker is
-    EXCLUDED from the count: it is a superseded dir already scheduled for
-    removal by the 7-day orphan GC, so it is not live pollution. This is what
+    A version dir carrying the ``.orphaned_at`` deferral marker is EXCLUDED from
+    the count: it is a superseded dir already offered to the ``marshall-steward``
+    ``cache-retention-sweep`` sub-step, so it is not live pollution. This is what
     makes the pollution signal CLEAR after a prior preflight marked the
     superseded dirs — the second consecutive preflight sees exactly one live
     (unmarked) version dir per bundle and reports ``executor_action: fresh``
     instead of regenerating on every run.
+
+    The count cannot be rendered vacuous by marker saturation:
+    :func:`_mark_superseded_version_dirs` never marks a retention-pinned version
+    (see :func:`_retention_pinned_versions`), so the newest-on-disk dir always
+    stays live and every bundle with a version dir on disk contributes at least
+    one.
     """
     if base_path is None or not base_path.is_dir():
         return []
@@ -1600,18 +1661,30 @@ def _mark_superseded_version_dirs(base_path: Path | None, polluted_bundles: list
 
     For every polluted bundle, keep the numerically-newest live version dir (the
     one ``collect_script_dirs`` embeds after a regen) and stamp every OTHER live
-    version dir with the orphan-GC ``.orphaned_at`` deferral marker. This does
-    NOT delete anything: the actual removal defers to the existing 7-day orphan
-    GC, sidestepping the check-then-``rmtree`` TOCTOU / delete-live-dir hazard
-    (a superseded dir may still be on a running process's PYTHONPATH). Marking is
-    what clears the pollution signal for the NEXT preflight — a marked dir is
-    excluded by ``_detect_multi_version_pollution``, so the following run sees
-    one live version dir per bundle and no longer regenerates.
+    version dir with the ``.orphaned_at`` deferral marker — EXCEPT any version
+    the retention policy pins (see :func:`_retention_pinned_versions`: the
+    newest-on-disk, the ``marshal.json``-provisioned, and the manifest-named
+    versions). Pinning is what makes marker saturation structurally impossible;
+    without it the marker converges on "every dir marked, none live", which
+    renders the pollution detector vacuous and forces
+    ``marketplace_bundles.find_bundles`` permanently into its degraded
+    all-orphaned fallback.
 
-    The marker content is a fresh ISO-8601 UTC timestamp (the orphan-GC clock
-    origin). The write is idempotent by construction — an already-marked dir is
-    never re-selected (the newest-live scan excludes marked dirs), so the 7-day
-    clock is never reset on a dir that was already marked.
+    This does NOT delete anything: the actual removal defers to the
+    ``marshall-steward`` ``cache-retention-sweep`` sub-step (the union-keep
+    ``cache_retention sweep`` verb), sidestepping the check-then-``rmtree``
+    TOCTOU / delete-live-dir hazard (a superseded dir may still be on a running
+    process's PYTHONPATH). That sweep applies the same pins independently, so a
+    marked dir is never removed merely because it carries the marker — the marker
+    is advisory there, never a keep-or-delete oracle. Marking is what clears the
+    pollution signal for the NEXT preflight — a marked dir is excluded by
+    ``_detect_multi_version_pollution``, so the following run sees one live
+    version dir per bundle and no longer regenerates.
+
+    The marker content is a fresh ISO-8601 UTC timestamp. The write is idempotent
+    by construction — an already-marked dir is never re-selected (the newest-live
+    scan excludes marked dirs), so the clock is never reset on a dir that was
+    already marked.
     """
     if base_path is None:
         return
@@ -1626,9 +1699,10 @@ def _mark_superseded_version_dirs(base_path: Path | None, polluted_bundles: list
             continue
         if len(live_version_dirs) <= 1:
             continue
+        pinned = _retention_pinned_versions(base_path, bundle_dir)
         newest = max(live_version_dirs, key=lambda d: _version_sort_key(d.name))
         for version_dir in live_version_dirs:
-            if version_dir == newest:
+            if version_dir == newest or version_dir.name in pinned:
                 continue
             try:
                 (version_dir / '.orphaned_at').write_text(marker_ts, encoding='utf-8')
@@ -1671,11 +1745,12 @@ def cmd_preflight(args: argparse.Namespace) -> dict:
       newest-only selection), so a stale version dir left on disk can no longer
       shadow the current scripts. The regen is skipped when version-staleness
       already regenerated in the same run. It then marks the superseded
-      (non-newest) version dirs with the orphan-GC ``.orphaned_at`` deferral
-      marker so the NEXT preflight sees exactly one live version dir per bundle
-      and reports ``fresh`` (no regenerated-every-run loop); the actual removal
-      defers to the existing 7-day orphan GC rather than an immediate
-      ``rmtree`` (which would race a live process's PYTHONPATH).
+      (non-newest, non-retention-pinned) version dirs with the ``.orphaned_at``
+      deferral marker so the NEXT preflight sees exactly one live version dir per
+      bundle and reports ``fresh`` (no regenerated-every-run loop); the actual
+      removal defers to the ``marshall-steward`` ``cache-retention-sweep``
+      sub-step rather than an immediate ``rmtree`` (which would race a live
+      process's PYTHONPATH).
 
     A fresh install with no manifest resolves ``installed_version`` to the
     ``unknown`` sentinel, so the verb fails closed and reports
@@ -1742,12 +1817,13 @@ def cmd_preflight(args: argparse.Namespace) -> dict:
             executor_action = 'regenerated'
             # Re-read the freshly stamped version so the report reflects the regen.
             executor_version = read_executor_version()
-        # Mark the superseded (non-newest) version dirs with the orphan-GC
-        # deferral marker so the NEXT preflight sees one live version dir per
+        # Mark the superseded (non-newest, non-retention-pinned) version dirs with
+        # the deferral marker so the NEXT preflight sees one live version dir per
         # bundle and does not regenerate again. This fires whenever pollution is
         # detected — including when version-staleness already regenerated above —
         # so the pollution signal always clears rather than re-triggering a regen
-        # on every run. Removal defers to the existing 7-day orphan GC.
+        # on every run. Removal defers to the marshall-steward
+        # cache-retention-sweep sub-step.
         _mark_superseded_version_dirs(base_path, polluted_bundles)
 
     # Config-seed staleness → advisory only (marshal.json is never auto-mutated).
