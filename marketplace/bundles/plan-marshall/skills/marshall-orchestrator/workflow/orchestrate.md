@@ -51,13 +51,15 @@ Pick the first `staged` plan in queue order whose dependencies (sequencing notes
 
 ### Step 5 (verb = `next`): Emit the command
 
-EMIT the ready-to-run command for the operator, composed from the staged spec:
+EMIT the ready-to-run command for the operator as a **one-line pointer** to the staged spec. The spec is the single source of the brief, so no request text is transcribed into the command:
 
 ```text
-/plan-marshall plan={proposed_plan_id}
+/plan-marshall Execute the staged plan spec at .plan/local/orchestrator/{slug}/plans/PLAN-NN-{plan_slug}.md
 ```
 
-together with the spec's request payload (the spec body is the request source). The verb NEVER launches the plan inline — the operator runs the emitted command; implementation happens exclusively inside the plan lifecycle. When the operator confirms the launch, record the transition:
+**Lifecycle prerequisite.** The one-line form is lossless only once the plan lifecycle ingests a referenced spec file's *contents*. It does not do so today: `phase-1-init` uses the description verbatim and reads no path named inside it, and `phase-2-refine` existence-checks file-path claims rather than ingesting them. PLAN-41 owns that lifecycle change. Until it lands, the emit inlines the spec body beneath the pointer line — the pointer is the target emit contract, not yet the sufficient one.
+
+The verb NEVER launches the plan inline — the operator runs the emitted command; implementation happens exclusively inside the plan lifecycle. When the operator confirms the launch, record the transition:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator queue \
@@ -98,7 +100,7 @@ display_detail: "emitted {PLAN-NN} for epic {slug}"
 slug: {slug}
 verb: next
 emitted_plan: PLAN-NN
-emitted_command: "/plan-marshall plan={proposed_plan_id}"
+emitted_command: "/plan-marshall Execute the staged plan spec at {spec_path}"
 disjointness: clear | sequenced-behind-{PLAN-MM}
 ```
 
