@@ -782,8 +782,39 @@ def test_cmd_find_no_matches_returns_empty_results():
         assert result['results'] == []
 
 
+def _seed_self_scan_module(tmpdir: str) -> None:
+    """Seed a module with an elided ``source`` bucket AND a real on-disk worktree.
+
+    The derived block signals ``{elided, sample}`` (so the reader seam takes the
+    self-scan path), and the real ``big/`` directory carries a source file that
+    sorts PAST the sample horizon (``zzz_past_horizon.py``). The sample
+    deliberately omits it, so only an uncapped self-scan of the real directory
+    can surface it — the reader must NOT trust the sample.
+    """
+    module_dir = Path(tmpdir) / 'big' / 'src'
+    module_dir.mkdir(parents=True)
+    (module_dir / 'aaa_early.py').write_text('x = 1\n', encoding='utf-8')
+    (module_dir / 'zzz_past_horizon.py').write_text('y = 2\n', encoding='utf-8')
+    modules = {
+        'big': {
+            'name': 'big',
+            'paths': {'module': 'big'},
+            'files': {'source': {'elided': 9999, 'sample': ['big/src/aaa_early.py']}},
+        },
+    }
+    _seed_project(tmpdir, modules)
+
+
 def test_cmd_find_searches_elided_sample_paths():
-    """Elided buckets contribute their ``sample`` paths to find results."""
+    """An elided bucket with NO real worktree degrades to a TRUTHFUL truncation.
+
+    The synthetic ``big`` module has no on-disk directory, so the reader seam
+    cannot self-scan. It still contributes the sample paths (so a match inside
+    the sample is not lost), but the answer is no longer confident: ``truncated``
+    is ``True`` and the elided category's true count is surfaced. This is the
+    fail-closed contract (ADR-009) — a negative past the sample horizon can never
+    masquerade as a confident ``count: 0``.
+    """
     with tempfile.TemporaryDirectory() as tmpdir:
         modules = {
             'big': {
@@ -800,8 +831,114 @@ def test_cmd_find_searches_elided_sample_paths():
         result = cmd_find(args)
 
         assert result['status'] == 'success'
+        # The sample still contributes, so a match inside it is preserved.
         assert result['count'] == 1
         assert result['results'][0]['path'] == 'big/a.py'
+        # ...but the answer is truthfully qualified as truncated.
+        assert result['truncated'] is True
+        assert result['elided'][0]['elided_count'] == 9999
+        assert result['elided'][0]['module'] == 'big'
+        assert result['elided'][0]['category'] == 'source'
+
+
+def test_cmd_find_self_scans_past_horizon_hit_with_truncated_false():
+    """A real on-disk elided module is self-scanned uncapped — the past-horizon hit surfaces.
+
+    This is the actual confident-false-negative fix: the target file sorts past
+    the sample horizon and is absent from the derived ``sample``, so only a real
+    self-scan of the module's worktree can find it. The hit is returned and,
+    because the self-scan succeeded, ``truncated`` is ``False`` with an empty
+    ``elided`` list.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_self_scan_module(tmpdir)
+
+        args = Namespace(project_dir=tmpdir, pattern='big/src/zzz_past_horizon.py', category=None)
+        result = cmd_find(args)
+
+        assert result['status'] == 'success'
+        assert result['count'] == 1
+        assert result['results'][0]['path'] == 'big/src/zzz_past_horizon.py'
+        assert result['truncated'] is False
+        assert result['elided'] == []
+
+
+def test_cmd_find_non_elided_project_is_not_truncated():
+    """A project with no elided in-scope category reports a trustworthy negative.
+
+    The hand-crafted inventory fixture has only list-shaped (non-elided)
+    categories, so the reader takes the fast path — ``truncated`` is ``False``
+    and ``elided`` is empty even when the search matches.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_inventory_project(tmpdir)
+
+        args = Namespace(project_dir=tmpdir, pattern='*SKILL.md', category=None)
+        result = cmd_find(args)
+
+        assert result['status'] == 'success'
+        assert result['count'] >= 1
+        assert result['truncated'] is False
+        assert result['elided'] == []
+
+
+def test_cmd_which_module_reports_truncated_when_self_scan_impossible():
+    """which-module past an elided sample horizon carries ``truncated: true``.
+
+    The synthetic elided module has no worktree, so the exact-inventory step
+    cannot self-scan. The result is a truthful ``truncated: true`` with the
+    elided category surfaced — never a bare unqualified ``module: null``.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        modules = {
+            'big': {
+                'name': 'big',
+                'paths': {'module': 'big'},
+                'files': {'source': {'elided': 9999, 'sample': ['big/a.py']}},
+            },
+        }
+        _seed_project(tmpdir, modules)
+
+        args = Namespace(project_dir=tmpdir, path='big/src/zzz_past_horizon.py')
+        result = cmd_which_module(args)
+
+        assert result['status'] == 'success'
+        assert result['truncated'] is True
+        assert result['elided'][0]['module'] == 'big'
+        assert result['elided'][0]['elided_count'] == 9999
+
+
+def test_cmd_which_module_self_scans_past_horizon_and_resolves_owner():
+    """which-module self-scans a real elided module and resolves the owning module.
+
+    The past-horizon file is absent from the sample; the seam self-scans the
+    real worktree, finds the exact-inventory hit, and resolves ``big`` with
+    ``truncated: false``.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_self_scan_module(tmpdir)
+
+        args = Namespace(project_dir=tmpdir, path='big/src/zzz_past_horizon.py')
+        result = cmd_which_module(args)
+
+        assert result['status'] == 'success'
+        assert result['module'] == 'big'
+        assert result['truncated'] is False
+        assert result['elided'] == []
+
+
+def test_cmd_which_module_non_elided_is_not_truncated():
+    """which-module on a non-elided project reports a trustworthy negative."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_inventory_project(tmpdir)
+
+        args = Namespace(project_dir=tmpdir, path='nope/missing.md')
+        result = cmd_which_module(args)
+
+        assert result['status'] == 'success'
+        assert result['module'] is None
+        assert result['truncated'] is False
+        assert result['elided'] == []
 
 
 # =============================================================================
