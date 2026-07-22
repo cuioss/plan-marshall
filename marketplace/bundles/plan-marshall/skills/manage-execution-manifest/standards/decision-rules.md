@@ -2,6 +2,8 @@
 
 This standard codifies the decision matrix used by `manage-execution-manifest compose` to derive the per-plan execution manifest. The composer evaluates the rows in order; the **first matching row wins** and a single `decision.log` entry is emitted with the rule key, naming exactly which row fired.
 
+**Scope boundary.** The matrix decides WHICH verification steps a plan composes. It never decides whether the plan's footprint needs a build — that has exactly one home, the `build-decision` verdict over the `build.map` globs and the live footprint. No row, pre-filter, or transform documented below may infer build necessity from `scope_estimate`, `change_type`, the request narrative, or the shape of the candidate step list. See [The classifier / build-decision boundary](#the-classifier--build-decision-boundary) and [ADR-004](../../../../../../doc/adr/004-The_file-to-build_contract_is_owned_by_build-system_extensions_not_languagecontent_domains.adoc) § "Amendment: `build-decision` is the sole build/no-build authority".
+
 ## Inputs
 
 | Input | Source | Type |
@@ -80,7 +82,7 @@ execution_log[K]{step_id,phase,outcome,total_tokens,tool_uses,duration_ms,timest
 
 ## Pre-Filters
 
-Before evaluating the seven-row matrix below, the composer applies a fixed sequence of pre-filters to the `phase_6_candidates` list. Each pre-filter is independent of the row matrix's change-type / scope / recipe inputs, so modeling them as pre-filters keeps the seven-row matrix orthogonal and lets the composer emit one dedicated `decision.log` entry per fired pre-filter.
+Before evaluating the six-row matrix below, the composer applies a fixed sequence of pre-filters to the `phase_6_candidates` list. Each pre-filter is independent of the row matrix's change-type / scope / recipe inputs, so modeling them as pre-filters keeps the six-row matrix orthogonal and lets the composer emit one dedicated `decision.log` entry per fired pre-filter.
 
 The pre-filters run in this order:
 
@@ -94,7 +96,7 @@ The pre-filters run in this order:
 
 Each row that emits a Phase 6 list (whether by intersection, subtraction, or pass-through) operates on the already-filtered candidate list, so the resulting `phase_6.steps` will never contain a step removed by any pre-filter that ran before the row matrix.
 
-After the seven-row matrix runs, three post-matrix transforms inspect the matrix output before the manifest is persisted, in this order:
+After the six-row matrix runs, three post-matrix transforms inspect the matrix output before the manifest is persisted, in this order:
 
 1. **`ceremony_finalize_selection`** — applies the four `plan.phase-6-finalize` ceremony gates (`self_review` / `qgate` / `simplify` / `security_audit`), each derived from its owning step's per-element `lane` override (`off→never`, `minimal→always`, `auto/absent→auto`), to the final `phase_6.steps`, forcing each gate's step in (`always`), out (`never`), or deferring (`auto`). It NEVER touches `plan-marshall:automatic-review`. Documented in its own subsection below.
 2. **Execution-profile lane resolution** — applies the `minimal ⊏ auto ⊏ full` posture cutoff from `status.metadata.execution_profile` to the lane-participating steps, dropping every element whose effective tier exceeds the posture. `plan-marshall:automatic-review` participates in this pass like any other lane element — its keep/drop is governed purely by its configured `lane` and lane tier, with no separate downstream force-add guard. Documented in its own subsection below.
@@ -106,7 +108,7 @@ After the seven-row matrix runs, three post-matrix transforms inspect the matrix
 
 **Effect**: `push`, `pre-push-quality-gate`, AND `pre-submission-self-review` are all removed from `phase_6_candidates` before the rows are evaluated. The pre-filter removes the two pre-push gating steps because they are meaningless without a downstream push — they exist solely to gate code that will be sent to remote CI.
 
-**Why a pre-filter (not an eighth row)**: `commit_and_push` is configuration known at outline time and is orthogonal to the row matrix's change-type / scope / recipe inputs. A row would have to either short-circuit (and re-implement the seven rows' Phase 5 logic) or duplicate the filter into every row. Modeling it as a pre-filter keeps the seven-row matrix unchanged and lets the composer emit one extra `decision.log` entry naming the omission.
+**Why a pre-filter (not an eighth row)**: `commit_and_push` is configuration known at outline time and is orthogonal to the row matrix's change-type / scope / recipe inputs. A row would have to either short-circuit (and re-implement the six rows' Phase 5 logic) or duplicate the filter into every row. Modeling it as a pre-filter keeps the six-row matrix unchanged and lets the composer emit one extra `decision.log` entry naming the omission.
 
 **Decision log line** (in addition to the row's own log line):
 
@@ -118,15 +120,11 @@ When `commit_and_push == true` (or absent — the default is `true`), the pre-fi
 
 ### Pre-Filter: `pre_push_quality_gate_inactive`
 
-**Condition**: At least one of:
-
-- `marshal.json::build.map` is absent or carries no `glob` entries, OR
-- the live plan footprint is empty, OR
-- No entry in the live footprint matches any glob in `build_map_globs` (using the shared two-regime matcher `extension_base.route_matches`: a bare-basename glob — no `/` — matches the path's basename anywhere in the tree; a path-bearing glob matches the full repo-relative path with a single `*` spanning `/`).
+**Condition**: the `build-decision` verdict is not `build`. The pre-filter is a **verdict consumer** — it does not compute build necessity. It asks the command-free build-necessity question through the single authority (`extension_base.should_execute_build`, exposed as the `manage-config build-decision` verb) and branches on the returned `decision`. The predicate behind that verdict, its `not_necessary` reasons, and the matcher it uses are owned by the authority, not restated here; see [ADR-004](../../../../../../doc/adr/004-The_file-to-build_contract_is_owned_by_build-system_extensions_not_languagecontent_domains.adoc) § "Amendment: `build-decision` is the sole build/no-build authority".
 
 **Effect**: `pre-push-quality-gate` is removed from `phase_6_candidates` before the rows are evaluated. When `pre-push-quality-gate` was already removed by `commit_push_disabled`, this pre-filter is a no-op and emits no log entry.
 
-**Why a pre-filter (not an eighth row)**: Activation is derived from `build.map` (the single source of truth for buildable file types) paired with a glob match against the live footprint, both orthogonal to the change-type / scope / recipe inputs that the seven-row matrix consumes. A row would either have to short-circuit and re-implement Phase 5 logic, or duplicate the filter into every row. Keeping it as a pre-filter preserves the seven-row matrix verbatim and adds exactly one independent decision-log line.
+**Why a pre-filter (not an eighth row)**: The verdict it consumes is orthogonal to the change-type / scope / recipe inputs that the six-row matrix consumes. A row would either have to short-circuit and re-implement Phase 5 logic, or duplicate the filter into every row. Keeping it as a pre-filter preserves the six-row matrix verbatim and adds exactly one independent decision-log line.
 
 **Decision log line** (in addition to the row's own log line and any other pre-filter log line):
 
@@ -134,9 +132,9 @@ When `commit_and_push == true` (or absent — the default is `true`), the pre-fi
 (plan-marshall:manage-execution-manifest:compose) pre-push-quality-gate omitted — no build_map globs or no footprint match
 ```
 
-When all three activation conditions are satisfied (non-empty build_map globs, non-empty footprint, at least one glob match), the pre-filter is a no-op and emits no log entry; `pre-push-quality-gate` survives into the seven-row matrix.
+When the verdict is `build`, the pre-filter is a no-op and emits no log entry; `pre-push-quality-gate` survives into the six-row matrix.
 
-**Evaluation order vs. the seven-row matrix**: This pre-filter runs *after* `commit_push_disabled` and *before* every row of the seven-row matrix. The pre-filter is therefore observable independently — Row 7 (default), Row 5 (surgical_bug_fix / surgical_tech_debt), and Row 2 (recipe) all see a Phase 6 candidate list that already has `pre-push-quality-gate` removed if either pre-filter fired.
+**Evaluation order vs. the six-row matrix**: This pre-filter runs *after* `commit_push_disabled` and *before* every row of the six-row matrix. The pre-filter is therefore observable independently — Row 7 (default), Row 5 (surgical_bug_fix / surgical_tech_debt), and Row 2 (recipe) all see a Phase 6 candidate list that already has `pre-push-quality-gate` removed if either pre-filter fired.
 
 ### Pre-Filter: `pre_submission_self_review_inactive`
 
@@ -144,7 +142,7 @@ When all three activation conditions are satisfied (non-empty build_map globs, n
 
 **Effect**: `pre-submission-self-review` is removed from `phase_6_candidates` before the rows are evaluated. When `pre-submission-self-review` was already removed by `commit_push_disabled`, this pre-filter is a no-op and emits no log entry.
 
-**Why a pre-filter (not an eighth row)**: Activation depends only on the live footprint being non-empty (the four cognitive checks have no diff to inspect when the plan touched zero files). The condition is orthogonal to the change-type / scope / recipe inputs the seven-row matrix consumes. Unlike `pre-push-quality-gate` (which gates on the `build.map` globs), this step has no glob gate — the four structural-defect classes it targets (symmetric pairs, regex over-fit, wording, duplication) apply to any code or doc change, and gating by file extension would mean missing the very wording/duplication defects the lesson cites for `.md` files.
+**Why a pre-filter (not an eighth row)**: Activation depends only on the live footprint being non-empty (the four cognitive checks have no diff to inspect when the plan touched zero files). The condition is orthogonal to the change-type / scope / recipe inputs the six-row matrix consumes. Unlike `pre-push-quality-gate` (which gates on the `build.map` globs), this step has no glob gate — the four structural-defect classes it targets (symmetric pairs, regex over-fit, wording, duplication) apply to any code or doc change, and gating by file extension would mean missing the very wording/duplication defects the lesson cites for `.md` files.
 
 **Decision log line** (in addition to the row's own log line and any other pre-filter log line):
 
@@ -152,9 +150,9 @@ When all three activation conditions are satisfied (non-empty build_map globs, n
 (plan-marshall:manage-execution-manifest:compose) pre-submission-self-review omitted — empty footprint
 ```
 
-When the footprint is non-empty, the pre-filter is a no-op and emits no log entry; `pre-submission-self-review` survives into the seven-row matrix.
+When the footprint is non-empty, the pre-filter is a no-op and emits no log entry; `pre-submission-self-review` survives into the six-row matrix.
 
-**Evaluation order vs. the seven-row matrix**: This pre-filter runs *after* `pre_push_quality_gate_inactive` and *before* every row of the seven-row matrix. The pre-filter is observable independently of the row matrix — every row sees a Phase 6 candidate list that has `pre-submission-self-review` removed if any of the prior pre-filters fired.
+**Evaluation order vs. the six-row matrix**: This pre-filter runs *after* `pre_push_quality_gate_inactive` and *before* every row of the six-row matrix. The pre-filter is observable independently of the row matrix — every row sees a Phase 6 candidate list that has `pre-submission-self-review` removed if any of the prior pre-filters fired.
 
 ### Pre-Filter: `simplify_inactive`
 
@@ -164,7 +162,7 @@ When the footprint is non-empty, the pre-filter is a no-op and emits no log entr
 
 **Enum reconciliation**: the source plan phrased the gate in branch-prefix terms `{feature, fix, chore}`. The manifest's `change_type` vocabulary (see Inputs table) uses `feature` / `bug_fix` / `tech_debt` / `enhancement`. The mapping is explicit: branch-prefix `fix` → `change_type: bug_fix`, branch-prefix `chore` → `change_type: tech_debt`, `feature` → `feature` unchanged. `enhancement` has no branch prefix of its own but is code-touching by definition — it names a change to existing production behaviour, so there is always a change surface to simplify or audit. The gate is therefore `change_type ∈ {feature, bug_fix, tech_debt, enhancement}` — the four code-touching change types — excluding `analysis` and `verification`, which produce no code.
 
-**Why a pre-filter (not an eighth row)**: Activation depends only on `change_type` and `affected_files_count` and uses no language detection — it is domain-agnostic by construction (the cognitive simplification pass applies to any code or doc change in scope). The gate is orthogonal to the scope / recipe inputs the seven-row matrix consumes, and expressing it as a pre-filter keeps the seven-row matrix unchanged.
+**Why a pre-filter (not an eighth row)**: Activation depends only on `change_type` and `affected_files_count` and uses no language detection — it is domain-agnostic by construction (the cognitive simplification pass applies to any code or doc change in scope). The gate is orthogonal to the scope / recipe inputs the six-row matrix consumes, and expressing it as a pre-filter keeps the six-row matrix unchanged.
 
 **Decision log line** (in addition to the row's own log line and any other pre-filter log line):
 
@@ -172,11 +170,11 @@ When the footprint is non-empty, the pre-filter is a no-op and emits no log entr
 (plan-marshall:manage-execution-manifest:compose) finalize-step-simplify omitted — change_type={value} affected_files_count={N}
 ```
 
-When the gate passes (`change_type ∈ {feature, bug_fix, tech_debt, enhancement}` AND `affected_files_count > 0`), the pre-filter is a no-op and emits no log entry; `finalize-step-simplify` survives into the seven-row matrix.
+When the gate passes (`change_type ∈ {feature, bug_fix, tech_debt, enhancement}` AND `affected_files_count > 0`), the pre-filter is a no-op and emits no log entry; `finalize-step-simplify` survives into the six-row matrix.
 
 **Operator-selected drop surfaces as a lane warning**: when this pre-filter fires over a step the operator's selected posture/lane would have included (and the ceremony `always` gate did not force it back in), the composer additionally appends a `{step, warning}` entry to the `lane_warnings[]` compose result naming the ceremony pre-filter — not the lane — as the remover, so the drop is never silent. The `simplify_omitted` boolean in the compose result remains unchanged.
 
-**Evaluation order vs. the seven-row matrix**: This pre-filter runs *after* `pre_submission_self_review_inactive` and *before* every row of the seven-row matrix.
+**Evaluation order vs. the six-row matrix**: This pre-filter runs *after* `pre_submission_self_review_inactive` and *before* every row of the six-row matrix.
 
 ### Pre-Filter: `security_audit_inactive`
 
@@ -184,7 +182,7 @@ When the gate passes (`change_type ∈ {feature, bug_fix, tech_debt, enhancement
 
 **Effect**: `finalize-step-security-audit` is removed from `phase_6_candidates` before the rows are evaluated. Equivalently — phrased as the activation gate — `default:finalize-step-security-audit` lands in `phase_6.steps` **whenever `change_type ∈ {feature, bug_fix, tech_debt, enhancement}` AND `affected_files_count > 0`** (and the step is present in the candidate set). The proactive security sweep has no change surface to audit on a pure-analysis / verification plan or a zero-files plan, so the gate is identical to `simplify_inactive` — a subtraction-only expression matching the manifest architecture where rows and pre-filters only ever narrow the candidate list.
 
-**Why a pre-filter (not an eighth row)**: Activation depends only on `change_type` and `affected_files_count`, orthogonal to the scope / recipe inputs the seven-row matrix consumes. The branch-prefix enum reconciliation (`fix → bug_fix`, `chore → tech_debt`) documented for `simplify_inactive` applies verbatim. Expressing it as a pre-filter keeps the seven-row matrix unchanged.
+**Why a pre-filter (not an eighth row)**: Activation depends only on `change_type` and `affected_files_count`, orthogonal to the scope / recipe inputs the six-row matrix consumes. The branch-prefix enum reconciliation (`fix → bug_fix`, `chore → tech_debt`) documented for `simplify_inactive` applies verbatim. Expressing it as a pre-filter keeps the six-row matrix unchanged.
 
 **Decision log line** (in addition to the row's own log line and any other pre-filter log line):
 
@@ -192,11 +190,11 @@ When the gate passes (`change_type ∈ {feature, bug_fix, tech_debt, enhancement
 (plan-marshall:manage-execution-manifest:compose) finalize-step-security-audit omitted — change_type={value} affected_files_count={N}
 ```
 
-When the gate passes (`change_type ∈ {feature, bug_fix, tech_debt, enhancement}` AND `affected_files_count > 0`), the pre-filter is a no-op and emits no log entry; `finalize-step-security-audit` survives into the seven-row matrix.
+When the gate passes (`change_type ∈ {feature, bug_fix, tech_debt, enhancement}` AND `affected_files_count > 0`), the pre-filter is a no-op and emits no log entry; `finalize-step-security-audit` survives into the six-row matrix.
 
 **Operator-selected drop surfaces as a lane warning**: when this pre-filter fires over a step the operator's selected posture/lane would have included (and the ceremony `always` gate did not force it back in), the composer additionally appends a `{step, warning}` entry to the `lane_warnings[]` compose result naming the ceremony pre-filter — not the lane — as the remover, so the drop is never silent. The `security_audit_omitted` boolean in the compose result remains unchanged.
 
-**Evaluation order vs. the seven-row matrix**: This pre-filter runs immediately *after* `simplify_inactive` (its symmetric peer) and *before* `scope_gated_finalize` and every row of the seven-row matrix.
+**Evaluation order vs. the six-row matrix**: This pre-filter runs immediately *after* `simplify_inactive` (its symmetric peer) and *before* `scope_gated_finalize` and every row of the six-row matrix.
 
 ### Pre-Filter: `scope_gated_finalize`
 
@@ -210,7 +208,7 @@ When the gate passes (`change_type ∈ {feature, bug_fix, tech_debt, enhancement
 
 **The deliberate `plan-marshall:automatic-review` carve-out**: the implicit scope gate NEVER drops `plan-marshall:automatic-review`. Its presence is governed purely by its configured `lane` (seeded `ask` → resolved by marshall-steward) and its lane tier — there is no separate force-add guard, so the implicit scope gate must not drop it. The only path that suppresses `plan-marshall:automatic-review` at the scope gate is the explicit `drop_review_on_scope_gate` opt-in — a step-owned param of `default:pre-submission-self-review`, read from `marshal.json` at `plan.phase-6-finalize.steps['default:pre-submission-self-review'].drop_review_on_scope_gate` (its former flat-sibling location is gone): when that value is `true` **and** the plan is itself scope-gated (`scope_estimate ∈ {surgical, single_module}`), the scope gate additionally drops `plan-marshall:automatic-review`. The override is scoped, not global — on `multi_module` / `broad` / `none` plans it is inert, so flipping the project-wide knob can never silently disable bot review on a large plan. The default (`false`) keeps `plan-marshall:automatic-review` governed by its `lane` alone.
 
-**Why a pre-filter (not an eighth row)**: the subtraction depends only on `scope_estimate` (and the `drop_review_on_scope_gate` config knob), both orthogonal to the change-type / recipe inputs the seven-row matrix consumes. Modeling it as a pre-filter keeps the seven-row matrix unchanged and is consistent with the composer's "rows and pre-filters only ever narrow the candidate list" architecture. It runs after `simplify_inactive` and before the matrix, so every row sees a candidate list already narrowed by the scope gate.
+**Why a pre-filter (not an eighth row)**: the subtraction depends only on `scope_estimate` (and the `drop_review_on_scope_gate` config knob), both orthogonal to the change-type / recipe inputs the six-row matrix consumes. Modeling it as a pre-filter keeps the six-row matrix unchanged and is consistent with the composer's "rows and pre-filters only ever narrow the candidate list" architecture. It runs after `simplify_inactive` and before the matrix, so every row sees a candidate list already narrowed by the scope gate.
 
 **Decision log line** (one per subtraction, in addition to the row's own log line and any other pre-filter log line):
 
@@ -218,13 +216,13 @@ When the gate passes (`change_type ∈ {feature, bug_fix, tech_debt, enhancement
 (plan-marshall:manage-execution-manifest:compose) scope_gated_finalize subtraction — scope_estimate={value}, dropped {step} from phase_6.steps
 ```
 
-When `scope_estimate ∈ {none, multi_module, broad}` and `drop_review_on_scope_gate == false`, the pre-filter is a no-op and emits no log entry; the full candidate set survives into the seven-row matrix.
+When `scope_estimate ∈ {none, multi_module, broad}` and `drop_review_on_scope_gate == false`, the pre-filter is a no-op and emits no log entry; the full candidate set survives into the six-row matrix.
 
-**Evaluation order vs. the seven-row matrix**: This pre-filter runs *after* `simplify_inactive`, followed by the `unresolved_ask_provider_drop` pre-filter, and *before* every row of the seven-row matrix.
+**Evaluation order vs. the six-row matrix**: This pre-filter runs *after* `simplify_inactive`, followed by the `unresolved_ask_provider_drop` pre-filter, and *before* every row of the six-row matrix.
 
 ### Pre-Filter: `unresolved_ask_provider_drop`
 
-**Type**: Composition-time candidate-narrowing pre-filter (deliverable 6). Runs *after* `scope_gated_finalize` and *before* every row of the seven-row matrix, so it only ever narrows the candidate list.
+**Type**: Composition-time candidate-narrowing pre-filter (deliverable 6). Runs *after* `scope_gated_finalize` and *before* every row of the six-row matrix, so it only ever narrows the candidate list.
 
 **Condition**: For each of the two infra-dependent adversarial elements (`plan-marshall:automatic-review`, `default:sonar-roundtrip`), the element's EFFECTIVE lane tier is still literally `ask` (the UNRESOLVED case — the seed value is `ask`, and a steward-persisted answer overwrites it to `off`/`auto`/`full`, so an effective tier still equal to `ask` at compose means the operator never answered) AND the corresponding provider is genuinely absent (`_read_ci_provider() is None` for `automatic-review`; `_read_sonar_provider() is None` for `sonar-roundtrip`).
 
@@ -234,7 +232,7 @@ When `scope_estimate ∈ {none, multi_module, broad}` and `drop_review_on_scope_
 - MUST NOT drop when the provider IS configured — an `ask` whose provider exists is kept (the operator merely has not answered yet, but the infra is present).
 - MUST NOT alter the `off`-override-on-floor-step immunity semantic (a weakening `off` on a `core` / `derived-state` floor element is ignored, not dropped) — that path is owned by the lane-resolution pass and is untouched.
 
-**Why a pre-filter (not a row / post-matrix transform)**: the drop depends only on the per-element lane override and the configured providers, both orthogonal to the change-type / scope / recipe inputs the seven-row matrix consumes. Modeling it as a candidate-narrowing pre-filter keeps the seven-row matrix unchanged and matches the composer's "rows and pre-filters only ever narrow" architecture.
+**Why a pre-filter (not a row / post-matrix transform)**: the drop depends only on the per-element lane override and the configured providers, both orthogonal to the change-type / scope / recipe inputs the six-row matrix consumes. Modeling it as a candidate-narrowing pre-filter keeps the six-row matrix unchanged and matches the composer's "rows and pre-filters only ever narrow" architecture.
 
 **Decision log line** (one per drop, in addition to the row's own log line):
 
@@ -278,9 +276,20 @@ A **non-documentation** path no build extension claims is tagged `unknown` by th
 
 The never-silently-drop policy is load-bearing: an unclassified path indicates either a missing domain extension OR a brand-new file type the project has not yet declared, and silently routing it to `documentation_only` would suppress the holistic Python verification that the path may actually need. Surfacing `unknown` forces the user (or the future Q-Gate finding) to declare the path's role explicitly.
 
+## The classifier / build-decision boundary
+
+The six-bucket classifier above (`_classify_paths_via_extensions`) and the `build-decision` verdict answer **two different questions**, and the six-bucket vocabulary must never be used to re-derive the first:
+
+| | Question answered | Consumed by |
+|---|---|---|
+| Six-bucket classifier | "which profiles does this deliverable need?" | `profiles[]` assignment at outline / plan time |
+| `build-decision` verdict | "does this footprint need a build?" | every build-necessity gate, without exception |
+
+`documentation_only` is a **file-role bucket name**, not a build verdict; a `documentation_only` bucket does not authorize any consumer to conclude that no build is required, and no consumer may substitute a bucket value for the verdict. The single build/no-build authority is settled in [ADR-004](../../../../../../doc/adr/004-The_file-to-build_contract_is_owned_by_build-system_extensions_not_languagecontent_domains.adoc) § "Amendment: `build-decision` is the sole build/no-build authority", which also records the empty-footprint constraint that makes a compose-time consultation of the verdict structurally unsafe.
+
 ## plan.phase-6-finalize Selection
 
-**Type**: Composition-time post-matrix transform (NOT a pre-filter). Runs *after* the seven-row matrix has produced the final `phase_6.steps` list and *after* `execution_tier` routing, *before* the execution-profile lane resolution.
+**Type**: Composition-time post-matrix transform (NOT a pre-filter). Runs *after* the six-row matrix has produced the final `phase_6.steps` list and *after* `execution_tier` routing, *before* the execution-profile lane resolution.
 
 **Inputs**: the four `plan.phase-6-finalize` ceremony gates, each derived from its owning finalize step's per-element `lane` override in `marshal.json::plan.phase-6-finalize.steps`:
 
@@ -297,7 +306,7 @@ The never-silently-drop policy is load-bearing: an unclassified path indicates e
 
 - **`never`** — every match-set form of the gate's step (bare and `project:`-prefixed) is removed from `phase_6.steps`. A no-op when already absent. The composer applies the resolved value directly.
 - **`always`** — the gate's canonical step is ensured present, inserted before the plan-mutating tail (`archive-plan` / `record-metrics` / `branch-cleanup` / `plan-marshall:plan-retrospective`) when absent. A no-op when any match-set form is already present. `always` is the **only** path that can re-add a step the relevant pre-filter dropped — that is the point: an operator-set `always` overrides the implicit gate. For `self_review` / `qgate` the overridden pre-filter is `scope_gated_finalize`; for `simplify` it is `simplify_inactive`; for `security_audit` it is `security_audit_inactive`.
-- **`auto`** (the default) — defer to the existing decision machinery already applied before this transform. For `self_review` / `qgate` that is the `scope_gated_finalize` pre-filter and the seven-row matrix; for `simplify` it is the `simplify_inactive` pre-filter and for `security_audit` the `security_audit_inactive` pre-filter (both drop the step when `change_type ∉ {feature, bug_fix, tech_debt, enhancement}` OR `affected_files_count == 0`). No-op in every case.
+- **`auto`** (the default) — defer to the existing decision machinery already applied before this transform. For `self_review` / `qgate` that is the `scope_gated_finalize` pre-filter and the six-row matrix; for `simplify` it is the `simplify_inactive` pre-filter and for `security_audit` the `security_audit_inactive` pre-filter (both drop the step when `change_type ∉ {feature, bug_fix, tech_debt, enhancement}` OR `affected_files_count == 0`). No-op in every case.
 
 **The deliberate `plan-marshall:automatic-review` carve-out**: this transform's gate map contains only the four finalize steps (`default:pre-submission-self-review`, `pre-push-quality-gate`, `finalize-step-simplify`, `finalize-step-security-audit`). It NEVER adds or drops `plan-marshall:automatic-review`, whose presence is governed purely by its configured `lane` and lane tier through the execution-profile lane-resolution pass — there is no separate force-add guard. Keeping the ceremony transform's gate map to exactly the four ceremony steps structurally guarantees `plan-marshall:automatic-review` is never force-added or force-dropped by this transform.
 
@@ -315,7 +324,7 @@ When all four gates resolve to `auto` (the default), the transform is a no-op an
 
 ## Execution-profile lane resolution
 
-**Type**: Composition-time post-matrix transform (NOT a pre-filter). Runs *after* the seven-row matrix, the change-type / scope pre-filters, and `ceremony_finalize_selection` have produced the final `phase_6.steps`, and *before* the frontmatter-order sort.
+**Type**: Composition-time post-matrix transform (NOT a pre-filter). Runs *after* the six-row matrix, the change-type / scope pre-filters, and `ceremony_finalize_selection` have produced the final `phase_6.steps`, and *before* the frontmatter-order sort.
 
 **Posture source**: `status.metadata.execution_profile`, one of `minimal` / `auto` / `full`. An absent or invalid value resolves to `full`, which is a no-op — every plan that never chose a posture composes exactly as it did before the lane mechanism existed (the back-compat default).
 
@@ -362,7 +371,7 @@ When the posture is `full` (or no lane-participating element is above the cutoff
 
 ## execution_tier Routing
 
-**Type**: Composition-time per-task routing pass. Runs *after* the seven-row matrix has produced the body's `phase_5.verification_steps` and `phase_6.steps`, *before* the post-matrix transforms (ceremony selection, lane resolution, frontmatter-order sort). Mutates both the manifest body and the plan's `TASK-*.json` files.
+**Type**: Composition-time per-task routing pass. Runs *after* the six-row matrix has produced the body's `phase_5.verification_steps` and `phase_6.steps`, *before* the post-matrix transforms (ceremony selection, lane resolution, frontmatter-order sort). Mutates both the manifest body and the plan's `TASK-*.json` files.
 
 **Inputs** (per task):
 
@@ -389,7 +398,7 @@ When the posture is `full` (or no lane-participating element is above the cutoff
 
 ## execution_tier Stamping
 
-**Type**: Composition-time per-step stamping pass. Runs *after* the final `phase_5.verification_steps` list is settled — the seven-row matrix, `execution_tier` COMMAND routing, the `canonical_verify_inactive` footprint pre-filter, and the request-aspect step-dropping pass — so it stamps a tier for every step that will actually be persisted. It is the per-STEP peer of the per-COMMAND `execution_tier` routing above.
+**Type**: Composition-time per-step stamping pass. Runs *after* the final `phase_5.verification_steps` list is settled — the six-row matrix, `execution_tier` COMMAND routing, and the `canonical_verify_inactive` footprint pre-filter — so it stamps a tier for every step that will actually be persisted. It is the per-STEP peer of the per-COMMAND `execution_tier` routing above.
 
 **The stamp is ADVISORY, not the routing authority.** The `execution_tier` a resolve returns is derived from `bash_timeout_seconds`, which `manage-architecture`'s `_lookup_bash_timeout` computes from `timeout_get(command_key, ...)` — the **adaptive learned build duration** persisted in run-config, which moves every time the command runs. A step whose learned duration sits near the 600s Bash ceiling therefore crosses the ceiling between compose and execute in ordinary operation: the same compose, over the same plan, with no code change, has stamped `verify:coverage=per_task` and then `verify:coverage=orchestrator` after a single intervening whole-tree build. A compose-time snapshot of a moving quantity cannot be a durable routing fact, so **the routing authority is the live `architecture resolve` the leaf performs when it runs the step** — see [`phase-5-execute/standards/canonical_verify.md`](../../phase-5-execute/standards/canonical_verify.md) § Workflow steps 1-2. The stamp's job is planning and observability: it tells the orchestrator how many orchestrator-tier steps to expect and records what the tier looked like at compose.
 
@@ -410,11 +419,11 @@ When the posture is `full` (or no lane-participating element is above the cutoff
 
 ## Role-Field Intersection
 
-Rows 2, 3, 5, and 6 intersect the `phase_5_candidates` list against a set of canonical roles (`{quality-gate}`, `{module-tests}`, `{quality-gate, module-tests}`) rather than against literal step IDs. The mechanism is structural: each phase-5 step standards file under `marketplace/bundles/plan-marshall/skills/phase-5-execute/standards/` declares its role in YAML frontmatter (e.g., `role: quality-gate` on `quality_check.md`, `role: module-tests` on `build_verify.md`, `role: coverage` on `coverage_check.md`). At compose time the composer resolves each candidate step ID to its source file and reads the `role:` value; intersection is `candidate_role ∈ {target_role, ...}` rather than `candidate_id ∈ {literal_id, ...}`.
+Rows 2, 4, and 5 intersect the `phase_5_candidates` list against a set of canonical roles (`{quality-gate}`, `{module-tests}`, `{quality-gate, module-tests}`) rather than against literal step IDs. The mechanism is structural: each phase-5 step standards file under `marketplace/bundles/plan-marshall/skills/phase-5-execute/standards/` declares its role in YAML frontmatter (e.g., `role: quality-gate` on `quality_check.md`, `role: module-tests` on `build_verify.md`, `role: coverage` on `coverage_check.md`). At compose time the composer resolves each candidate step ID to its source file and reads the `role:` value; intersection is `candidate_role ∈ {target_role, ...}` rather than `candidate_id ∈ {literal_id, ...}`.
 
 This decouples canonical names from intersection logic. The composer never compares candidate step IDs directly against literal strings like `'quality-gate'` — those names are role values, not step IDs. Step IDs are arbitrary handles (e.g., `default:verify:quality-gate`, `default:verify:module-tests`) whose intersection-meaningful attribute is the role derived from their canonical segment.
 
-**External steps** (`project:` and `bundle:skill` prefixes) have no role file and resolve to `role = None`; they are therefore never selected by any role-based intersection. This is the correct behavior: Rows 2/3/5/6 select built-in verify steps only.
+**External steps** (`project:` and `bundle:skill` prefixes) have no role file and resolve to `role = None`; they are therefore never selected by any role-based intersection. This is the correct behavior: Rows 2/4/5 select built-in verify steps only.
 
 **Drift enforcement**: A `MISSING_ROLE_FIELD` analyzer in `pm-plugin-development:plugin-doctor` flags any phase-5 step standards file missing the `role:` frontmatter field at edit time, preventing future name-drift defects.
 
@@ -430,11 +439,11 @@ The single parameterized canonical-verify step (`default:verify:{canonical}`; se
 | `integration-tests` | `integration` |
 | `e2e` | `e2e` |
 
-A `default:verify:{canonical}` (or its bare `verify:{canonical}`) ID is recognized before the role-file read path; an unrecognized canonical resolves to `role = None` (and is therefore never role-selected), preserving the "missing data → step is never role-selected" convention. This is the generalization that lets the role intersection (Rows 2/3/5/6) and the docs-only heuristic operate on the parameterized canonical-verify vocabulary without a per-canonical role-file for each command.
+A `default:verify:{canonical}` (or its bare `verify:{canonical}`) ID is recognized before the role-file read path; an unrecognized canonical resolves to `role = None` (and is therefore never role-selected), preserving the "missing data → step is never role-selected" convention. This is the generalization that lets the role intersection (Rows 2/4/5) operate on the parameterized canonical-verify vocabulary without a per-canonical role-file for each command.
 
 ## Generic footprint pre-filter (`canonical_verify_inactive`)
 
-**Type**: Composition-time phase-5 pre-filter. Runs *after* the seven-row matrix and `execution_tier` routing have produced the final `phase_5.verification_steps` list — so it sees every canonical-verify step that will be persisted, including any appended by orchestrator-tier routing.
+**Type**: Composition-time phase-5 pre-filter. Runs *after* the six-row matrix and `execution_tier` routing have produced the final `phase_5.verification_steps` list — so it sees every canonical-verify step that will be persisted, including any appended by orchestrator-tier routing.
 
 **Condition**: a `default:verify:{canonical}` step whose derived role is a **footprint-gated whole-tree role** (`integration` / `e2e`) is dropped when the live footprint is **non-empty** AND carries **no path** of that role. The gate is canonical-agnostic — it is driven entirely by the `_CANONICAL_TO_ROLE` derivation plus the `_FOOTPRINT_GATED_CANONICAL_ROLES` membership table, with no per-canonical branch in the code path. The core roles (`quality-gate` / `module-tests` / `coverage`) are NEVER footprint-gated; they always run when present.
 
@@ -446,9 +455,9 @@ A `default:verify:{canonical}` (or its bare `verify:{canonical}`) ID is recogniz
 (plan-marshall:manage-execution-manifest:compose) canonical_verify_inactive — dropped {steps} from phase_5.verification_steps (no matching footprint role)
 ```
 
-## The Seven-Row Matrix
+## The Six-Row Matrix
 
-The seven rows below are evaluated top-down; the first match wins. They operate on the (possibly pre-filtered) `phase_6_candidates` list described above. Rows 2, 3, 5, and 6 use the structural role intersection described above for their `phase_5.verification_steps` outputs; Rows 1, 4, and 7 do not consult roles (Row 1 produces an empty list, Row 4 still matches a single literal role, Row 7 passes the candidate list through unchanged).
+The six rows below are evaluated top-down; the first match wins. They operate on the (possibly pre-filtered) `phase_6_candidates` list described above. Rows 2, 4, and 5 use the structural role intersection described above for their `phase_5.verification_steps` outputs; Rows 1, 6, and 7 do not consult roles (Row 1 produces an empty list, Rows 6 and 7 pass the candidate list through unchanged). Row numbering is stable: the rule keys are the contract, and the retired `docs_only` row's number is not reused.
 
 ### Row 1 — `early_terminate_analysis`
 
@@ -471,17 +480,6 @@ The seven rows below are evaluated top-down; the first match wins. They operate 
 - `phase_6.steps = phase_6_candidates − {ci-wait}`
 
 **Why**: Recipe-driven plans (currently `recipe-refactor-to-profile-standards` and the upcoming `recipe-lesson-cleanup` from deliverable 7) follow deterministic, surgical-style patterns. The only subtraction here is the legacy `ci-wait` step ID — kept as a defensive narrowing against project marshal.json files that still list it as a candidate. Review gates a project opted into (`plan-marshall:automatic-review`, `sonar-roundtrip`) are NEVER silently suppressed by the planner: the recipe label is exactly the case where the bots' job is to catch what humans miss. CI completion is now a dispatcher-resolved precondition (declared via `requires: [ci-complete]` on consumer step frontmatters), not a sibling step.
-
-### Row 3 — `docs_only`
-
-**Condition**: `scope_estimate ∈ {surgical, single_module}` AND `change_type ∈ {tech_debt, enhancement}` AND `affected_files_count > 0` AND no candidate in `phase_5_candidates` declares `role: module-tests` or `role: coverage` (see [Role-Field Intersection](#role-field-intersection)).
-
-**Outcome**:
-- `phase_5.early_terminate = false`
-- `phase_5.verification_steps = []`
-- `phase_6.steps = phase_6_candidates − {ci-wait}`
-
-**Why**: A docs-shaped plan never needs to run tests or coverage. The candidate set already reflects this (no `module-tests`/`coverage`), so the manifest empties Phase 5's verification list. The only subtraction here is the legacy `ci-wait` step ID — kept as a defensive narrowing against project marshal.json files that still list it as a candidate. Review gates a project opted into (`plan-marshall:automatic-review`, `sonar-roundtrip`) are NEVER silently suppressed by the planner: a docs-only label is exactly the case where the bots' job is to catch what humans miss. We keep `push`, `create-pr`, `lessons-capture`, `branch-cleanup`, `archive-plan`, AND the review gates so the doc change is reviewed, committed, surfaced, and recorded.
 
 ### Row 4 — `tests_only`
 
@@ -526,6 +524,31 @@ The seven rows below are evaluated top-down; the first match wins. They operate 
 - `phase_6.steps = phase_6_candidates` (full)
 
 **Why**: This is the safe baseline for code-shaped features and broader changes. The full canonical Phase 5 verification fires; Phase 6 dispatches every step `marshal.json` lists.
+
+## Post-Matrix Assertion: `build_verdict_contradiction`
+
+An **assertion**, not a pre-filter. The distinction is load-bearing: every pre-filter above NARROWS a candidate list (it removes steps and lets compose proceed), whereas this check REJECTS — it selects nothing, drops nothing, and fails the compose loud when the composed manifest contradicts the sole build/no-build authority.
+
+**Where it runs**: on the FINAL emitted step lists, alongside the `unresolvable_step` and `non_canonical_step` structural gates, after the matrix and every pre-filter have settled. Like its siblings it returns before `write_manifest`, so a contradicting compose never persists a partial manifest.
+
+**What it rejects**: the composed manifest carries a step that can only pass by producing build evidence, while `build-decision` has ruled a build `not_necessary` for the plan's live footprint. Concretely:
+
+* a `phase_5.verification_steps` entry whose derived role is `module-tests`, `coverage`, `integration`, or `e2e`; or
+* a `phase_6.steps` entry that gates on `kind=build` evidence (`pre-push-quality-gate`).
+
+`quality-gate` is deliberately NOT in the rejected set — structural lint runs no build and stamps no `kind=build` ledger entry, so composing it beside a `not_necessary` verdict is consistent, not contradictory.
+
+**Why it is worth an assertion**: such a step cannot succeed. The verdict says nothing in this footprint can be built, so the build evidence the step needs can never exist and the step is a guaranteed false-red. Its presence means some consumer decided build necessity from a signal other than the authority — the exact regression [ADR-004](../../../../../../doc/adr/004-The_file-to-build_contract_is_owned_by_build-system_extensions_not_languagecontent_domains.adoc) § "Amendment: `build-decision` is the sole build/no-build authority" retires. A pre-filter would silently paper over that drift by removing the step; the assertion surfaces it.
+
+**Non-empty-footprint precondition (the empty-footprint trap)**: the assertion is DISABLED whenever the live footprint is empty, and this guard is not an optimization — it is what keeps the gate from inverting into a permanent false alarm. `should_execute_build` returns `not_necessary` for an empty footprint ("plan footprint is empty — no changed files to build"), and at early compose the footprint is ALWAYS empty: `phase-4-plan` composes before `phase-5-execute` Step 2.5 materializes the worktree, so no file has been changed yet. An unguarded assertion would therefore see `not_necessary` on essentially every plan's first compose and reject every build step in it. The guard restricts the assertion to composes that can actually observe a real footprint. An unobtainable verdict likewise disables it — absence of a verdict is not evidence of a contradiction.
+
+**On failure** the composer emits one decision-log line and returns `status: error` with `error: build_verdict_contradiction`, plus `phase`, `step_id`, and the verdict's own `reason`:
+
+```text
+(plan-marshall:manage-execution-manifest:compose) build_verdict_contradiction — {message}
+```
+
+Implementation: `_manifest_validation.check_build_verdict_consistent`.
 
 ## Decision Log Format
 

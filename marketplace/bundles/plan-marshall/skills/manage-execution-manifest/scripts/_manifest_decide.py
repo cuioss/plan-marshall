@@ -1,11 +1,18 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Seven-row decision-matrix core for the execution manifest.
+"""Six-row decision-matrix core for the execution manifest.
 
 Extracted verbatim from ``manage-execution-manifest.py``: the pure candidate
-CSV splitter, the seven-row :func:`_decide` matrix, and the status-metadata
-reads (:func:`_read_task_queue_active`, :func:`_read_recipe_source`) plus the
-docs-only heuristic. None of these functions log or call a test-patched name.
+CSV splitter, the :func:`_decide` matrix, and the status-metadata
+reads (:func:`_read_task_queue_active`, :func:`_read_recipe_source`). None of
+these functions log or call a test-patched name.
+
+The matrix decides WHICH verification steps a plan composes; it never decides
+whether the plan's footprint needs a build. That decision has one home — the
+``build-decision`` verdict over the ``build.map`` globs and the live footprint
+(ADR-004 § "Amendment: ``build-decision`` is the sole build/no-build
+authority") — so no row here may infer build necessity from scope, change type,
+or the shape of the candidate step list.
 """
 
 import json
@@ -32,13 +39,13 @@ def _decide(
     phase_6_candidates: list[str],
     task_queue_active: bool = False,
 ) -> tuple[dict[str, Any], str]:
-    """Apply the seven-row decision matrix.
+    """Apply the six-row decision matrix.
 
     Returns the manifest body (under ``phase_5`` / ``phase_6`` keys) plus the
-    name of the rule that fired (one of the seven rule keys defined in
+    name of the rule that fired (one of the six rule keys defined in
     standards/decision-rules.md).
 
-    Rows 2, 3, 5, 6 intersect phase-5 candidates by each candidate's matrix
+    Rows 2, 4, 5 intersect phase-5 candidates by each candidate's matrix
     ``role:`` rather than by literal step ID. The intersection mechanism is
     structural: each candidate's role is resolved in-code by ``_role_of`` (via
     the ``_CANONICAL_TO_ROLE`` table, keyed on the trailing canonical segment)
@@ -95,28 +102,6 @@ def _decide(
             'phase_6': {'steps': phase_6_steps},
         }
         return body, 'recipe'
-
-    # Rule 3: docs-only — surgical scope plus no test/code expectations. Skip
-    # build verification entirely; keep capture + commit + PR + branch cleanup.
-    # Only the legacy ``ci-wait`` step ID is subtracted (defensively, against
-    # project marshal.json files that still list it). Review gates a project
-    # opted into are NEVER silently suppressed by the planner.
-    if (
-        scope_estimate in ('surgical', 'single_module')
-        and change_type in ('tech_debt', 'enhancement')
-        and affected_files_count > 0
-        and _looks_docs_only(phase_5_candidates, role_cache)
-    ):
-        body = {
-            'phase_5': {
-                'early_terminate': False,
-                'verification_steps': [],
-            },
-            'phase_6': {
-                'steps': [s for s in phase_6_candidates if s not in {'ci-wait'}],
-            },
-        }
-        return body, 'docs_only'
 
     # Rule 4: tests-only — verification change_type with affected files. Run
     # the module-tests step but skip quality-gate; full Phase 6.
@@ -254,54 +239,3 @@ def _read_recipe_source(plan_id: str) -> str | None:
     return None
 
 
-def _read_request_aspect(plan_id: str) -> str | None:
-    """Resolve the request-aspect classification from status metadata.
-
-    ``phase-1-init`` seeds ``status.metadata.request_aspect`` with the aspect
-    the ``manage-config aspect-classify`` verb assigned to the request
-    (``analysis`` / ``planning`` / ``implementation``). The composer reads this
-    surrogate directly so aspect-driven step dropping no longer depends on the
-    ``phase-4-plan`` agent remembering to forward ``--aspect`` from
-    ``manage-status read`` — the gap that let an ``analysis`` / ``planning``
-    request compose the full build/test verification list because the flag was
-    omitted. An explicit ``--aspect`` argument still takes precedence at the
-    call site in :func:`cmd_compose`, exactly mirroring how ``--recipe-key``
-    wins over :func:`_read_recipe_source`.
-
-    Returns the trimmed aspect string, or ``None`` when ``status.json`` is
-    absent or its metadata carries no ``request_aspect``.
-    """
-    status_path = get_plan_dir(plan_id) / FILE_STATUS
-    if not status_path.exists():
-        return None
-    # Best-effort: a malformed status.json must degrade to "no aspect" rather
-    # than crash compose. read_json returns its default only for a missing
-    # file, so a corrupt-but-present file raises here — mirror the OSError /
-    # JSONDecodeError guard used by _read_recipe_source in this module.
-    try:
-        status = read_json(status_path, default={})
-    except (OSError, json.JSONDecodeError):
-        return None
-    if not isinstance(status, dict):
-        return None
-    metadata = status.get('metadata', {})
-    if not isinstance(metadata, dict):
-        return None
-    value = metadata.get('request_aspect')
-    if isinstance(value, str) and value.strip():
-        return value.strip()
-    return None
-
-
-def _looks_docs_only(phase_5_candidates: list[str], role_cache: dict[str, str | None]) -> bool:
-    """Heuristic: docs-only plans don't request module-tests or coverage.
-
-    The composer treats any candidate set whose declared roles include
-    neither ``module-tests`` nor ``coverage`` as a docs-only signal. Real
-    code-shaped plans always include at least one candidate whose derived role
-    is ``module-tests`` (typically ``default:verify:module-tests``).
-
-    Uses the per-compose role cache to avoid re-resolving the same step.
-    """
-    roles = {_role_of(s, role_cache) for s in phase_5_candidates}
-    return 'module-tests' not in roles and 'coverage' not in roles

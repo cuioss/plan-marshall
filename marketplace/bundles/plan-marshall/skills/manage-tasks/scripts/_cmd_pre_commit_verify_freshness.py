@@ -10,6 +10,17 @@ proof). The command answers a single deterministic question:
     ``status == 'success'`` whose ``worktree_sha`` equals the CURRENT
     working-tree currency hash?
 
+That question is only worth asking when a build was necessary in the first
+place. Build necessity is NOT re-derived here: the gate consults the single
+build/no-build authority (``extension_base.should_execute_build``, the
+``manage-config build-decision`` verb) with NO canonical command — it asks the
+plan-wide "does anything in this footprint need a build?" question and MUST NOT
+pick a representative command. A ``not_necessary`` verdict returns ``fresh``
+carrying the verdict's own ``reason`` verbatim, so the gate never invents a
+reason vocabulary of its own; a ``build`` verdict falls through to the ledger
+scan below unchanged. See ADR-004 § "Amendment: ``build-decision`` is the sole
+build/no-build authority".
+
 A ``kind=build`` entry is stamped by the executor dispatch boundary after every
 build-class invocation, carrying the truthful build ``status`` (``success`` /
 ``error`` / ``timeout`` / ``killed``) and the working-tree ``worktree_sha``
@@ -35,34 +46,11 @@ correctly reports ``stale``.
 
 Outcomes:
 
-- ``fresh`` / ``documentation_only`` — a documentation-only plan composes an
-                     empty ``phase_5.verification_steps`` in its
-                     ``execution.toon`` manifest, so it legitimately runs no
-                     build and therefore stamps no ``kind=build`` ledger entry.
-                     The gate short-circuits to ``status: fresh`` with
-                     ``reason: documentation_only`` BEFORE the ledger scan: a
-                     plan with no build step needs no freshness proof. This
-                     branch fires only when the manifest is present AND its
-                     ``phase_5.verification_steps`` list is empty; an absent
-                     manifest or a non-empty step list falls through to the
-                     ledger scan below.
-- ``fresh`` / ``lint_only`` — a lint-only plan composes a non-empty
-                     ``phase_5.verification_steps`` whose every entry is a
-                     structural-lint (``quality-gate``) step and none is a
-                     build/test step. Structural lint never stamps a
-                     ``kind=build`` ledger entry, so — exactly like a
-                     documentation-only plan — the plan legitimately runs no
-                     build and needs no freshness proof. The gate short-circuits
-                     to ``status: fresh`` with ``reason: lint_only`` BEFORE the
-                     ledger scan. The predicate classifies each step by the
-                     trailing ``:``-segment of its ID (so ``verify:quality-gate``
-                     and ``default:verify:quality-gate`` both resolve to
-                     ``quality-gate``) and fires only when the list is non-empty,
-                     every step resolves to ``quality-gate``, and NO step
-                     resolves to a build/test role (``module-tests``,
-                     ``coverage``, or the bare ``verify`` alias). Any build/test
-                     step in the list disables the exemption and the plan falls
-                     through to the ledger scan below.
+- ``fresh`` (+ the verdict's ``reason``) — the build-decision verdict is
+                     ``not_necessary``: no build was ever required for this
+                     footprint, so no ``kind=build`` entry could legally exist
+                     and none is demanded. The short-circuit fires BEFORE the
+                     ledger scan and forwards the authority's own reason text.
 - ``fresh``        — a ``kind=build`` entry with ``status == 'success'`` and a
                      matching ``worktree_sha`` exists; a successful build has
                      been observed against the current on-disk state, so the
@@ -84,7 +72,6 @@ phase-6-finalize ``push`` — is documented in
 "Pre-Commit Verify Freshness".
 """
 
-from functools import lru_cache
 from pathlib import Path
 
 from _ledger_core import (
@@ -95,22 +82,7 @@ from _ledger_core import (
 from _tasks_core import get_plan_dir
 from constants import FILE_STATUS
 from file_ops import read_json
-from toon_parser import parse_toon
 from worktree_sha import compute_worktree_sha
-
-# The per-plan execution manifest lives alongside status.json at
-# .plan/local/plans/{plan_id}/execution.toon. Its name is owned by
-# manage-execution-manifest (MANIFEST_FILENAME); duplicated here as a literal
-# to keep this command inside the manage-tasks sys.path island.
-_MANIFEST_FILENAME = 'execution.toon'
-
-# Structural-lint role(s) — the phase-5 verification roles that run static
-# analysis only and never stamp a kind=build ledger entry. Classified by the
-# trailing ':'-segment of a step ID, so 'verify:quality-gate' and
-# 'default:verify:quality-gate' both resolve to 'quality-gate'. A step whose
-# role is NOT in this set (e.g. 'module-tests', 'coverage', or the bare
-# 'verify' alias) is a build/test step and disables the lint-only exemption.
-_LINT_ONLY_ROLES = frozenset({'quality-gate'})
 
 
 def _read_status_metadata(plan_id: str) -> dict:
@@ -153,90 +125,31 @@ def _resolve_worktree_root(plan_id: str) -> Path:
     return Path.cwd()
 
 
-def _is_documentation_only(plan_id: str) -> bool:
-    """Return True when the plan's execution manifest declares no phase-5 build.
+def _build_necessity_verdict(plan_id: str) -> dict:
+    """Return the COMMAND-FREE build-necessity verdict for ``plan_id``.
 
-    A documentation-only plan composes an empty ``phase_5.verification_steps``
-    list in its ``execution.toon`` manifest and therefore never stamps a
-    ``kind=build`` ledger entry. The freshness gate must exempt such plans
-    rather than fail closed on the missing build proof.
+    Delegates to the single authority with ``canonical_command=None``: this gate
+    asks whether ANY build was needed for the plan's live footprint, which is a
+    plan-wide question, so it passes no command and MUST NOT choose a
+    representative one. The returned dict carries ``decision`` and — on
+    ``not_necessary`` — the authority's own ``reason``, which the caller forwards
+    verbatim rather than inventing an exemption vocabulary.
 
-    Reads ``execution.toon`` via ``_read_verification_steps`` (the shared
-    plan-dir resolution + TOON parse inside the manage-tasks sys.path island).
-    Returns ``False`` (no exemption — fall through to the ledger scan) when the
-    manifest is absent, unreadable, or when ``phase_5.verification_steps`` is
-    present and non-empty. Returns ``True`` only when the manifest parses AND
-    its ``phase_5.verification_steps`` is an empty list.
+    The import is in-function so this command module keeps no hard top-level
+    dependency on another skill's scripts dir (the same discipline the
+    ``manage-config`` build-decision wrapper uses). A verdict that cannot be
+    obtained degrades to ``build``, which routes the caller into the ledger scan
+    — the fail-closed direction.
     """
-    verification_steps = _read_verification_steps(plan_id)
-    return verification_steps is not None and len(verification_steps) == 0
-
-
-@lru_cache(maxsize=1)
-def _read_verification_steps(plan_id: str) -> list | None:
-    """Return the plan's ``phase_5.verification_steps`` list, or ``None``.
-
-    Memoized with ``@lru_cache(maxsize=1)``: the freshness check calls this twice
-    with the same ``plan_id`` within one short-lived CLI process (once from
-    ``_is_documentation_only`` and once from ``_is_lint_only``), so the second
-    call is a cache hit that skips the redundant ``execution.toon`` read+parse.
-    Each CLI invocation is a fresh process, so the cache never spans plans in
-    production; tests clear it between cases via ``cache_clear()``.
-
-    Reads ``execution.toon`` directly via the same plan-dir resolution
-    ``_is_documentation_only`` uses, parsing TOON to stay inside the
-    manage-tasks sys.path island. Returns ``None`` (signalling no usable
-    manifest) when the manifest is absent, unreadable, malformed, or when
-    ``phase_5.verification_steps`` is not a list. Returns the list verbatim
-    otherwise (which MAY be empty).
-    """
-    manifest_path = get_plan_dir(plan_id) / _MANIFEST_FILENAME
-    if not manifest_path.is_file():
-        return None
     try:
-        manifest = parse_toon(manifest_path.read_text(encoding='utf-8'))
-    except Exception:  # noqa: BLE001 — degrade to no-manifest on any parse error
-        return None
-    if not isinstance(manifest, dict):
-        return None
-    phase_5 = manifest.get('phase_5', {})
-    if not isinstance(phase_5, dict):
-        return None
-    verification_steps = phase_5.get('verification_steps', None)
-    if not isinstance(verification_steps, list):
-        return None
-    return verification_steps
+        from extension_base import should_execute_build
 
-
-def _is_lint_only(plan_id: str) -> bool:
-    """Return True when every phase-5 step is structural lint and none builds.
-
-    A lint-only plan composes a non-empty ``phase_5.verification_steps`` whose
-    every entry resolves to a structural-lint role (``quality-gate``) and none
-    resolves to a build/test role. Structural lint never stamps a
-    ``kind=build`` ledger entry, so — like a documentation-only plan — such a
-    plan legitimately runs no build and needs no freshness proof.
-
-    Step IDs are role-suffixed and optionally ``default:``-prefixed, e.g.
-    ``verify:quality-gate`` and ``default:verify:quality-gate`` both resolve to
-    ``quality-gate`` via the trailing ``:``-segment. A bare step ID with no
-    ``:`` resolves to itself.
-
-    Mirrors ``_is_documentation_only``'s manifest-read discipline: reads
-    ``execution.toon`` inside the manage-tasks sys.path island and degrades to
-    ``False`` (no exemption — fall through to the ledger scan) on any
-    parse/shape error. Returns ``True`` only when the step list is non-empty,
-    every step's role is in ``_LINT_ONLY_ROLES``, and no step carries a
-    build/test role. Any non-lint step (``module-tests``, ``coverage``, the
-    bare ``verify`` alias) disables the exemption.
-    """
-    verification_steps = _read_verification_steps(plan_id)
-    if not verification_steps:
-        return False
-    return all(
-        isinstance(step, str) and step.rsplit(':', 1)[-1] in _LINT_ONLY_ROLES
-        for step in verification_steps
-    )
+        verdict = should_execute_build(None, plan_id)
+    except Exception:  # noqa: BLE001 — an unobtainable verdict must fail closed
+        return {'decision': 'build'}
+    if not isinstance(verdict, dict):
+        return {'decision': 'build'}
+    return verdict
 
 
 def cmd_pre_commit_verify_freshness(args) -> dict:
@@ -247,40 +160,20 @@ def cmd_pre_commit_verify_freshness(args) -> dict:
     """
     plan_id: str = args.plan_id
 
-    # Documentation-only short-circuit: a docs-only plan composes an empty
-    # phase_5.verification_steps and therefore never stamps a kind=build ledger
-    # entry. It needs no freshness proof, so exempt it BEFORE the ledger scan
-    # rather than fail closed on the missing build. Fires only when the manifest
-    # is present AND phase_5.verification_steps is empty; an absent manifest or a
-    # non-empty step list falls through to the ledger scan unchanged.
-    if _is_documentation_only(plan_id):
+    # Build-necessity short-circuit: when the single authority rules that this
+    # footprint needs no build, no kind=build ledger entry could ever legally be
+    # stamped for it, so demanding one is an impossible demand rather than a
+    # gate. Exempt BEFORE the ledger scan and forward the verdict's own reason.
+    verdict = _build_necessity_verdict(plan_id)
+    if verdict.get('decision') == 'not_necessary':
         return {
             'status': 'fresh',
             'plan_id': plan_id,
-            'reason': 'documentation_only',
+            'reason': verdict.get('reason', ''),
             'message': (
-                'Plan composes an empty phase_5.verification_steps '
-                '(documentation-only); no build step runs, so no freshness '
-                'proof is required. Gate permitted without a ledger scan.'
-            ),
-        }
-
-    # Lint-only short-circuit: a plan whose phase_5.verification_steps are all
-    # structural-lint (quality-gate) steps runs no build and therefore stamps no
-    # kind=build ledger entry — exactly like a documentation-only plan. Exempt it
-    # BEFORE the ledger scan with reason: lint_only. Fires only when the list is
-    # non-empty and every step is a quality-gate step; any build/test step
-    # (module-tests, coverage, the bare verify alias) disables the exemption and
-    # falls through to the ledger scan below.
-    if _is_lint_only(plan_id):
-        return {
-            'status': 'fresh',
-            'plan_id': plan_id,
-            'reason': 'lint_only',
-            'message': (
-                'Plan composes a phase_5.verification_steps of structural lint '
-                '(quality-gate) only; no build step runs, so no freshness proof '
-                'is required. Gate permitted without a ledger scan.'
+                'build-decision ruled a build not_necessary for this footprint, so no '
+                'kind=build entry can exist and none is required. Gate permitted without '
+                'a ledger scan.'
             ),
         }
 

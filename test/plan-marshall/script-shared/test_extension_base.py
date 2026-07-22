@@ -4,8 +4,10 @@
 
 import importlib.util
 import subprocess
+import typing
 from pathlib import Path
 
+import extension_base
 from extension_base import (
     ROLE_CONFIG,
     ROLE_PRODUCTION,
@@ -16,6 +18,7 @@ from extension_base import (
     _tracked_basenames,
     derive_globs_from_tree,
     route_matches,
+    should_execute_build,
 )
 
 _SCRIPTS_DIR = (
@@ -813,3 +816,136 @@ def test_tracked_basenames_cache_identity():
     first = _tracked_basenames(tracked)
     second = _tracked_basenames(tracked)
     assert first is second, 'expected lru_cache hit to return the same object'
+
+
+# =============================================================================
+# should_execute_build() — the sole build/no-build authority
+#
+# ADR-004 § "Amendment: build-decision is the sole build/no-build authority":
+# ``canonical_command`` is an OPTIONAL LABEL on the question, never an input to
+# it. The verdict predicate is a pure function of the build_map globs and the
+# live footprint, so for a fixed footprint every command — and the command-free
+# form — must yield the identical ``decision``/``reason`` pair. The command-free
+# form additionally omits the ``canonical_command`` key entirely, which is what
+# lets a plan-wide consumer ask "does anything here need a build?" without
+# picking an arbitrary representative command (the retired anti-pattern).
+# =============================================================================
+
+
+def _pin_footprint(monkeypatch, globs, footprint):
+    """Redirect the two cross-skill readers so the predicate alone is exercised."""
+    monkeypatch.setattr(extension_base, '_read_build_map_globs', lambda _root=None: globs)
+    monkeypatch.setattr(extension_base, '_resolve_plan_footprint', lambda _plan: footprint)
+
+
+def test_should_execute_build_accepts_none_command():
+    """The signature is widened to ``str | None`` — the command-free form is declared.
+
+    A ``str``-only annotation would make the command-free call a type error even
+    though the runtime accepts it, so the annotation is the contract surface a
+    consumer reads before passing ``None``.
+    """
+    hints = typing.get_type_hints(should_execute_build)
+    assert hints['canonical_command'] == (str | None)
+
+
+def test_command_free_build_verdict_omits_canonical_command_key(monkeypatch):
+    """A buildable footprint asked command-free returns ``build`` with no label key."""
+    # Arrange — footprint touches a registered build glob.
+    _pin_footprint(monkeypatch, ['scripts/*.py'], ['scripts/foo.py'])
+
+    # Act
+    verdict = should_execute_build(None, 'my-plan')
+
+    # Assert
+    assert verdict['decision'] == 'build'
+    assert 'canonical_command' not in verdict
+
+
+def test_command_free_not_necessary_verdict_omits_canonical_command_key(monkeypatch):
+    """A non-buildable footprint asked command-free returns ``not_necessary`` with no label key."""
+    # Arrange — docs-only footprint intersecting no registered glob.
+    _pin_footprint(monkeypatch, ['scripts/*.py'], ['doc/user/configuration.adoc'])
+
+    # Act
+    verdict = should_execute_build(None, 'my-plan')
+
+    # Assert
+    assert verdict['decision'] == 'not_necessary'
+    assert verdict['reason']
+    assert 'canonical_command' not in verdict
+
+
+def test_command_is_a_label_not_an_input_to_the_verdict(monkeypatch):
+    """Every command — and no command — yields the identical decision/reason.
+
+    This is the load-bearing property behind the amendment: because the command
+    takes no part in the predicate, a consumer that needs a plan-wide answer must
+    pass ``None`` rather than nominate a representative command, and a consumer
+    that already knows its command gets the same verdict with the label echoed.
+    """
+    # Arrange — a footprint that resolves not_necessary (so a reason is present
+    # to compare, not just the decision).
+    _pin_footprint(monkeypatch, ['scripts/*.py'], ['README.md'])
+
+    # Act
+    command_free = should_execute_build(None, 'my-plan')
+    per_command = {
+        cmd: should_execute_build(cmd, 'my-plan')
+        for cmd in ('quality-gate', 'verify', 'coverage', 'module-tests')
+    }
+
+    # Assert — decision/reason identical everywhere; only the label differs.
+    for cmd, verdict in per_command.items():
+        assert verdict['decision'] == command_free['decision']
+        assert verdict['reason'] == command_free['reason']
+        assert verdict['canonical_command'] == cmd
+        assert {k: v for k, v in verdict.items() if k != 'canonical_command'} == command_free
+
+
+def test_command_is_a_label_not_an_input_on_the_build_verdict(monkeypatch):
+    """The label-not-input property holds on the ``build`` verdict too."""
+    # Arrange — buildable footprint.
+    _pin_footprint(monkeypatch, ['scripts/*.py'], ['scripts/foo.py'])
+
+    # Act
+    command_free = should_execute_build(None, 'my-plan')
+    labelled = should_execute_build('coverage', 'my-plan')
+
+    # Assert
+    assert command_free == {'decision': 'build'}
+    assert labelled == {'decision': 'build', 'canonical_command': 'coverage'}
+
+
+def test_command_free_empty_build_map_is_not_necessary(monkeypatch):
+    """The no-globs branch is reachable command-free and carries its own reason."""
+    # Arrange — project registers no build globs at all.
+    _pin_footprint(monkeypatch, [], ['scripts/foo.py'])
+
+    # Act
+    verdict = should_execute_build(None, 'my-plan')
+
+    # Assert
+    assert verdict['decision'] == 'not_necessary'
+    assert 'no globs' in verdict['reason']
+    assert 'canonical_command' not in verdict
+
+
+def test_command_free_empty_footprint_is_not_necessary(monkeypatch):
+    """The empty-footprint branch is reachable command-free and carries its own reason.
+
+    This branch is the one that makes a COMPOSE-TIME consultation structurally
+    unsafe (the footprint is empty before the worktree materialises), so it must
+    stay distinguishable by its reason text rather than collapsing into the
+    generic no-match reason.
+    """
+    # Arrange — globs registered, nothing changed yet.
+    _pin_footprint(monkeypatch, ['scripts/*.py'], [])
+
+    # Act
+    verdict = should_execute_build(None, 'my-plan')
+
+    # Assert
+    assert verdict['decision'] == 'not_necessary'
+    assert 'footprint is empty' in verdict['reason']
+    assert 'canonical_command' not in verdict

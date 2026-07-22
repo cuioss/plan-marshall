@@ -221,13 +221,18 @@ def test_recipe_path_retains_review_gates_drops_only_legacy_ci_wait(plan_context
     assert 'push' in manifest['phase_6']['steps']
 
 
-def test_docs_only_skips_phase_5_verification_retains_review_gates(plan_context):
-    """Row 3 — docs-only signal: no module-tests/coverage in candidates → empty Phase 5 list.
+def test_docs_shaped_candidates_keep_phase_5_and_retain_review_gates(plan_context):
+    """A docs-shaped candidate set no longer empties Phase 5 by inference.
 
-    Review gates (automatic-review, sonar-roundtrip) are RETAINED — a
-    docs-only label is exactly the case where the bots' job is to catch
-    what humans miss. Only the legacy 'ci-wait' step ID is defensively
-    narrowed out (against project marshal.json files that still list it).
+    The retired ``docs_only`` row read "no module-tests / coverage role among the
+    candidates" as proof the plan was docs-only and cleared Phase 5 on that
+    inference. Build necessity is settled by the footprint authority, never by the
+    shape of a candidate list, so this input now falls through to the scope row
+    and KEEPS its ``quality-gate`` candidate.
+
+    Review gates (automatic-review, sonar-roundtrip) are RETAINED either way, and
+    only the legacy 'ci-wait' step ID is defensively narrowed out (against project
+    marshal.json files that still list it).
     """
     # Inject legacy ci-wait into candidates to assert defensive narrowing.
     candidates_with_legacy = list(DEFAULT_PHASE_6_STEPS) + ['ci-wait']
@@ -237,13 +242,13 @@ def test_docs_only_skips_phase_5_verification_retains_review_gates(plan_context)
             change_type='tech_debt',
             scope_estimate='surgical',
             affected_files_count=3,
-            # docs-only candidate set: only quality-gate, no module-tests/coverage.
-            phase_5_steps='quality-gate',
+            # docs-shaped candidate set: only quality-gate, no module-tests/coverage.
+            phase_5_steps='verify:quality-gate',
             phase_6_steps=','.join(candidates_with_legacy),
         )
     )
-    assert result is not None and result['rule_fired'] == 'docs_only'
-    assert result['phase_5']['verification_steps_count'] == 0
+    assert result is not None and result['rule_fired'] == 'surgical_tech_debt'
+    assert result['phase_5']['verification_steps_count'] == 1
     manifest = read_manifest('matrix-docs')
     assert manifest is not None
     # Review gates RETAINED.
@@ -350,11 +355,11 @@ def test_surgical_tech_debt_retains_review_gates(plan_context):
 # ``2026-04-27-23-004`` closed the prefix-handling gap by normalizing both
 # ``phase_5_candidates`` and ``phase_6_candidates`` once at the
 # ``cmd_compose`` boundary — every leading ``default:`` is stripped a single
-# time at intake, so the seven-row matrix and the pre-filter helpers all see
+# time at intake, so the six-row matrix and the pre-filter helpers all see
 # bare names. Manifest output and result fields are bare strings throughout.
 #
 # These tests feed prefixed candidates and assert the resulting manifest
-# carries bare-name entries, with each cascade rule (Rule 1, 2, 3, 5, 6)
+# carries bare-name entries, with each cascade rule (Rule 1, 2, 4, 5, 6)
 # dropping or including the right steps. They previously asserted that the
 # prefix survived verbatim into the manifest output — that contract has been
 # retired in favor of the boundary-normalization contract pinned by
@@ -430,8 +435,8 @@ def test_rule_2_recipe_with_prefixed_candidates(plan_context):
     assert 'lessons-capture' in steps
 
 
-def test_rule_3_docs_only_with_prefixed_candidates(plan_context):
-    """Rule 3 (docs_only) — prefixed candidates: review gates RETAINED, legacy ci-wait dropped (bare output)."""
+def test_surgical_tech_debt_with_prefixed_candidates(plan_context):
+    """Scope row — prefixed candidates: review gates RETAINED, legacy ci-wait dropped (bare output)."""
     prefixed_with_review_and_legacy = _PREFIXED_PHASE_6 + (
         'default:sonar-roundtrip',
         'default:ci-wait',
@@ -442,12 +447,12 @@ def test_rule_3_docs_only_with_prefixed_candidates(plan_context):
             change_type='tech_debt',
             scope_estimate='surgical',
             affected_files_count=3,
-            # docs-only candidate set: only quality-gate, no module-tests/coverage.
+            # docs-shaped candidate set: only quality-gate, no module-tests/coverage.
             phase_5_steps='quality-gate',
             phase_6_steps=','.join(prefixed_with_review_and_legacy),
         )
     )
-    assert result is not None and result['rule_fired'] == 'docs_only'
+    assert result is not None and result['rule_fired'] == 'surgical_tech_debt'
     manifest = read_manifest('prefix-rule-3')
     assert manifest is not None
     steps = manifest['phase_6']['steps']
@@ -594,7 +599,7 @@ def test_boundary_normalization_strips_prefix_for_all_downstream_consumers(plan_
     ``2026-04-27-23-004``: ``cmd_compose`` strips a single leading ``default:``
     from each ``phase_5_candidates`` and ``phase_6_candidates`` entry once at
     intake (via ``canonicalize_step_key``), and every downstream site — the
-    seven-row matrix, ``_apply_commit_push_disabled``,
+    six-row matrix, ``_apply_commit_push_disabled``,
     ``_apply_pre_push_quality_gate_inactive``, and
     ``_apply_pre_submission_self_review_inactive`` — consumes those already-bare
     strings without any per-site ``canonicalize_step_key`` call.
@@ -784,22 +789,20 @@ def test_adr_propose_present_in_default_feature_phase_6(plan_context):
     assert 'adr-propose' in manifest['phase_6']['steps']
 
 
-def test_adr_propose_kept_in_docs_only_phase_6(plan_context):
-    """Row 3 (docs_only) passes phase_6_candidates through unchanged except
-    the simplify/whole-tree gates, so adr-propose survives. docs-only is
-    detected from the phase_5 candidate signal (no module-tests/coverage),
-    not a change_type."""
+def test_adr_propose_kept_in_surgical_tech_debt_phase_6(plan_context):
+    """The scope row passes phase_6_candidates through unchanged except
+    the simplify/whole-tree gates, so adr-propose survives."""
     result = cmd_compose(
         _compose_ns(
             plan_id='adr-docs-only',
             change_type='tech_debt',
             scope_estimate='surgical',
             affected_files_count=3,
-            # docs-only candidate set: only quality-gate, no module-tests/coverage.
+            # docs-shaped candidate set: only quality-gate, no module-tests/coverage.
             phase_5_steps='quality-gate',
         )
     )
-    assert result is not None and result['rule_fired'] == 'docs_only'
+    assert result is not None and result['rule_fired'] == 'surgical_tech_debt'
     manifest = read_manifest('adr-docs-only')
     assert manifest is not None
     assert 'adr-propose' in manifest['phase_6']['steps']
@@ -876,8 +879,8 @@ def test_early_terminate_wins_over_recipe_when_both_match(plan_context):
     assert result is not None and result['rule_fired'] == 'early_terminate_analysis'
 
 
-def test_recipe_wins_over_docs_only_when_both_match(plan_context):
-    """Rule 2 evaluates before Rule 3 — recipe_key short-circuits the docs-only branch."""
+def test_recipe_wins_over_the_scope_row_when_both_match(plan_context):
+    """The recipe row evaluates first — recipe_key short-circuits the scope row."""
     result = cmd_compose(
         _compose_ns(
             plan_id='matrix-precedence-rd',
@@ -1076,19 +1079,13 @@ def test_emit_decision_log_writes_in_process(plan_context):
 
 
 def test_surgical_enhancement_with_code_candidates_falls_to_default(plan_context):
-    """Row 5 only matches bug_fix/tech_debt; surgical+enhancement+code → default.
-
-    Candidate set declares ``role: module-tests`` (via ``verify:module-tests``)
-    so docs_only does NOT match (see decision-rules.md § Role-Field Intersection).
-    """
+    """The scope row only matches bug_fix/tech_debt; surgical+enhancement → default."""
     result = cmd_compose(
         _compose_ns(
             plan_id='matrix-surgical-enh',
             change_type='enhancement',
             scope_estimate='surgical',
             affected_files_count=2,
-            # Candidate set has verify:module-tests (role: module-tests) so
-            # docs_only does NOT match.
             phase_5_steps='verify:quality-gate,verify:module-tests',
         )
     )
@@ -1102,8 +1099,15 @@ def test_surgical_enhancement_with_code_candidates_falls_to_default(plan_context
     assert manifest['phase_6']['steps'] == list(DEFAULT_PHASE_6_STEPS)
 
 
-def test_surgical_enhancement_with_docs_candidates_hits_docs_only(plan_context):
-    """surgical+enhancement falls into docs_only when candidates lack module-tests/coverage."""
+def test_surgical_enhancement_with_docs_candidates_falls_to_default(plan_context):
+    """surgical+enhancement with a docs-shaped candidate set now reaches the default row.
+
+    This input used to be intercepted by the retired ``docs_only`` row purely
+    because the candidate list lacked a module-tests / coverage role. The
+    candidate list's shape says nothing about whether the change needs a build,
+    so the row is gone and the ordinary matrix path applies: the scope row does
+    not match ``enhancement``, so the default row fires and KEEPS the candidate.
+    """
     result = cmd_compose(
         _compose_ns(
             plan_id='matrix-surgical-enh-docs',
@@ -1113,11 +1117,16 @@ def test_surgical_enhancement_with_docs_candidates_hits_docs_only(plan_context):
             phase_5_steps='verify:quality-gate',
         )
     )
-    assert result is not None and result['rule_fired'] == 'docs_only'
+    assert result is not None and result['rule_fired'] == 'default'
+    assert result['phase_5']['verification_steps_count'] == 1
 
 
-def test_single_module_tech_debt_with_docs_candidates_hits_docs_only(plan_context):
-    """Row 3 also fires for single_module scope (not just surgical)."""
+def test_single_module_tech_debt_with_docs_candidates_falls_to_default(plan_context):
+    """The retired row also covered ``single_module`` scope; that path is gone too.
+
+    ``single_module`` + ``tech_debt`` misses the scope row (which requires
+    ``surgical``), so with no docs_only row to catch it the default row fires.
+    """
     result = cmd_compose(
         _compose_ns(
             plan_id='matrix-single-mod-docs',
@@ -1127,7 +1136,8 @@ def test_single_module_tech_debt_with_docs_candidates_hits_docs_only(plan_contex
             phase_5_steps='verify:quality-gate',
         )
     )
-    assert result is not None and result['rule_fired'] == 'docs_only'
+    assert result is not None and result['rule_fired'] == 'default'
+    assert result['phase_5']['verification_steps_count'] == 1
 
 
 def test_recipe_with_partial_phase_5_candidates_filters_to_known_steps(plan_context):
@@ -1713,9 +1723,14 @@ class TestPrePushQualityGatePreFilter:
         _mem._resolve_footprint = original
         extension_base._resolve_plan_footprint = original_plan_footprint
 
-    _OMIT_LINE = (
+    # The emitter no longer composes a reason of its own — it forwards the
+    # build-decision verdict's OWN reason text, which varies by which
+    # not_necessary branch fired. Tests therefore match the stable prefix and
+    # assert the forwarded tail separately (see
+    # ``test_omit_line_forwards_the_verdict_reason``). A hardcoded full line here
+    # would re-pin the retired invented reason.
+    _OMIT_PREFIX = (
         '(plan-marshall:manage-execution-manifest:compose) pre-push-quality-gate omitted — '
-        'no build_map globs or no footprint match'
     )
 
     @staticmethod
@@ -1736,7 +1751,7 @@ class TestPrePushQualityGatePreFilter:
 
     @classmethod
     def _omit_entries(cls, captured: list[tuple[str, str]]) -> list[tuple[str, str]]:
-        return [entry for entry in captured if entry[1] == cls._OMIT_LINE]
+        return [entry for entry in captured if entry[1].startswith(cls._OMIT_PREFIX)]
 
     def test_omit_when_activation_globs_absent(self, plan_context):
         """Config key missing → step removed and omission line emitted."""
@@ -1770,6 +1785,85 @@ class TestPrePushQualityGatePreFilter:
         omit_entries = self._omit_entries(captured)
         assert len(omit_entries) == 1
         assert omit_entries[0][0] == plan_id
+
+    def test_omit_line_forwards_the_verdict_reason(self, plan_context):
+        """The omission line states the reason the VERDICT gave, not an invented one.
+
+        The emitter used to hardcode 'no build_map globs or no footprint match' —
+        a disjunction that names both branches at once and so is wrong about
+        which one actually fired. Forwarding the verdict's own text keeps the log
+        truthful and keeps the reason vocabulary owned by the single authority.
+        """
+        plan_id = 'pp-reason-forwarded'
+        _write_marshal(plan_context.fixture_dir, activation_globs=['**/*.py'])
+        # A non-empty footprint that intersects no build_map glob — this selects a
+        # SPECIFIC not_necessary branch with its own distinct reason text.
+        _stub_footprint(['doc/user/configuration.adoc'])
+
+        captured, original = self._capture_decision_log()
+        try:
+            result = cmd_compose(
+                _compose_ns(
+                    plan_id=plan_id,
+                    change_type='feature',
+                    scope_estimate='multi_module',
+                    affected_files_count=1,
+                    phase_6_steps=_candidate_phase_6_with_pre_push(),
+                )
+            )
+        finally:
+            _mem._emit_decision_log = original
+
+        assert result is not None and result['pre_push_quality_gate_omitted'] is True
+        omit_entries = self._omit_entries(captured)
+        assert len(omit_entries) == 1
+        reason = omit_entries[0][1][len(self._OMIT_PREFIX):]
+        # The verdict's own wording for the footprint-touches-no-glob branch.
+        assert 'touches no build_map glob' in reason
+        # And emphatically NOT the retired invented disjunction.
+        assert reason != 'no build_map globs or no footprint match'
+
+    def test_pre_filter_consults_the_authority_command_free(self, plan_context):
+        """The pre-filter asks the plan-wide question — it nominates no command.
+
+        "Does this plan need pre-push-quality-gate at all?" is plan-wide. The
+        verdict does not vary by command, so passing one (the retired
+        ``'quality-gate'`` representative) implies a command-sensitivity that does
+        not exist and invites a future reader to pick a different one. This pins
+        the actual argument at the authority boundary.
+        """
+        plan_id = 'pp-command-free'
+        _write_marshal(plan_context.fixture_dir, activation_globs=['**/*.py'])
+        _stub_footprint(['doc/user/configuration.adoc'])
+
+        import extension_base
+
+        calls: list[tuple] = []
+        original_should = extension_base.should_execute_build
+
+        def _record(canonical_command, plan_id_, *args, **kwargs):
+            calls.append((canonical_command, plan_id_))
+            return original_should(canonical_command, plan_id_, *args, **kwargs)
+
+        extension_base.should_execute_build = _record
+        _captured, original = self._capture_decision_log()
+        try:
+            result = cmd_compose(
+                _compose_ns(
+                    plan_id=plan_id,
+                    change_type='feature',
+                    scope_estimate='multi_module',
+                    affected_files_count=1,
+                    phase_6_steps=_candidate_phase_6_with_pre_push(),
+                )
+            )
+        finally:
+            _mem._emit_decision_log = original
+            extension_base.should_execute_build = original_should
+
+        assert result is not None and result['pre_push_quality_gate_omitted'] is True
+        assert calls, 'the pre-filter never consulted the build-decision authority'
+        assert all(command is None for command, _ in calls), calls
 
     def test_omit_when_activation_globs_empty(self, plan_context):
         """activation_globs: [] → same behavior as missing config."""
@@ -1926,7 +2020,7 @@ class TestPrePushQualityGatePreFilter:
         # filter handled the removal).
         assert self._omit_entries(captured) == []
 
-    def test_pre_filter_order_independent_of_seven_row_matrix(self, plan_context):
+    def test_pre_filter_order_independent_of_six_row_matrix(self, plan_context):
         """Pre-filter runs before Row 1/Row 2/Row 7 — observable via decision-log ordering.
 
         The composer calls (in order):
@@ -1997,7 +2091,7 @@ class TestPrePushQualityGatePreFilter:
         # Ordering: omission line precedes rule-fired line.
         messages = [msg for _, msg in captured]
         omit_idx = next(
-            (i for i, m in enumerate(messages) if m == self._OMIT_LINE),
+            (i for i, m in enumerate(messages) if m.startswith(self._OMIT_PREFIX)),
             None,
         )
         rule_idx = next(
@@ -2204,8 +2298,8 @@ def test_simplify_inactive_gate(
     """finalize-step-simplify lands only when change_type ∈ {feature, bug_fix, tech_debt, enhancement} AND files > 0."""
     slug = f'{change_type}-{affected_files_count}'.replace('_', '-')
     plan_id = f'matrix-simplify-{slug}'
-    # Use a non-surgical, code-shaped scope so the surgical Row 5 / docs Row 3
-    # paths don't intersect-narrow phase_6.steps and confuse the assertion.
+    # Use a non-surgical, code-shaped scope so the surgical Row 5 path
+    # doesn't intersect-narrow phase_6.steps and confuse the assertion.
     result = cmd_compose(
         _compose_ns(
             plan_id=plan_id,
@@ -2342,8 +2436,8 @@ def test_security_audit_inactive_gate(
     """finalize-step-security-audit lands only when change_type ∈ {feature, bug_fix, tech_debt, enhancement} AND files > 0."""
     slug = f'{change_type}-{affected_files_count}'.replace('_', '-')
     plan_id = f'matrix-secaudit-{slug}'
-    # Use a non-surgical, code-shaped scope so the surgical Row 5 / docs Row 3
-    # paths don't intersect-narrow phase_6.steps and confuse the assertion.
+    # Use a non-surgical, code-shaped scope so the surgical Row 5 path
+    # doesn't intersect-narrow phase_6.steps and confuse the assertion.
     result = cmd_compose(
         _compose_ns(
             plan_id=plan_id,
@@ -3159,8 +3253,15 @@ class TestRoleBasedIntersection:
         assert manifest is not None
         assert manifest['phase_5']['verification_steps'] == ['verify:module-tests']
 
-    def test_row_3_docs_only_fires_when_candidate_set_has_no_module_tests_or_coverage_role(self, plan_context):
-        """Row 3 (docs_only) fires when no candidate declares role: module-tests / coverage."""
+    def test_absent_module_tests_role_no_longer_diverts_the_matrix(self, plan_context):
+        """A candidate set without a module-tests / coverage role takes the ordinary path.
+
+        The retired ``docs_only`` row treated the ABSENCE of those roles as proof
+        the plan was docs-only and emptied phase 5. The role intersection is a
+        mechanism for selecting steps, never evidence about the footprint, so the
+        row is gone: the same input now reaches the scope row and keeps its
+        ``quality-gate`` candidate.
+        """
         result = cmd_compose(
             _compose_ns(
                 plan_id='role-row-3-docs',
@@ -3171,24 +3272,34 @@ class TestRoleBasedIntersection:
                 phase_5_steps='verify:quality-gate',
             )
         )
-        assert result is not None and result['rule_fired'] == 'docs_only'
+        assert result is not None and result['rule_fired'] == 'surgical_tech_debt'
         manifest = read_manifest('role-row-3-docs')
         assert manifest is not None
-        assert manifest['phase_5']['verification_steps'] == []
+        assert manifest['phase_5']['verification_steps'] == ['verify:quality-gate']
 
-    def test_row_3_skipped_when_module_tests_role_is_present(self, plan_context):
-        """Row 3 does NOT fire when at least one candidate declares role: module-tests."""
+    def test_same_row_fires_whether_or_not_a_module_tests_role_is_present(self, plan_context):
+        """Presence or absence of a module-tests role selects the SAME row now.
+
+        Under the retired row these two inputs diverged (``docs_only`` vs the
+        scope row) on nothing but the candidate list's composition. The rule key
+        must now be identical — only the selected step list differs.
+        """
         result = cmd_compose(
             _compose_ns(
                 plan_id='role-row-3-skip',
                 change_type='tech_debt',
                 scope_estimate='surgical',
                 affected_files_count=3,
-                # verify:module-tests derives role: module-tests → Row 3 skipped, Row 5 fires.
                 phase_5_steps='verify:quality-gate,verify:module-tests',
             )
         )
         assert result is not None and result['rule_fired'] == 'surgical_tech_debt'
+        manifest = read_manifest('role-row-3-skip')
+        assert manifest is not None
+        assert manifest['phase_5']['verification_steps'] == [
+            'verify:quality-gate',
+            'verify:module-tests',
+        ]
 
 
 class TestDecisionLogShapePreserved:
@@ -4670,3 +4781,156 @@ class TestUnresolvedAskProviderDropCompose:
         assert result['unresolved_ask_provider_dropped'] == []
         steps = read_manifest('d6-resolved-auto')['phase_6']['steps']
         assert 'automatic-review' in steps and 'sonar-roundtrip' in steps
+
+
+# =============================================================================
+# build_verdict_contradiction — the post-matrix assertion's wiring into compose
+#
+# The assertion itself is unit-tested in
+# ``test_build_verdict_contradiction_guard.py``; these cases pin that the
+# composer actually CONSULTS it on the final step lists and converts a finding
+# into a fail-loud compose that writes no manifest — the same shape the
+# ``unresolvable_step`` / ``non_canonical_step`` siblings use.
+# =============================================================================
+
+
+class TestBuildVerdictContradictionWiring:
+    """``cmd_compose`` rejects a manifest that contradicts the build verdict."""
+
+    @staticmethod
+    def _stub_verdict_inputs(footprint: list[str], verdict: dict | None) -> tuple:
+        """Pin both assertion inputs; returns the originals for restoration."""
+        original_footprint = _mem._resolve_footprint
+        original_verdict = _mem._command_free_build_verdict
+        _mem._resolve_footprint = lambda plan_id: list(footprint)
+        _mem._command_free_build_verdict = lambda plan_id: verdict
+        return original_footprint, original_verdict
+
+    @staticmethod
+    def _restore(originals: tuple) -> None:
+        _mem._resolve_footprint, _mem._command_free_build_verdict = originals
+
+    def test_compose_fails_loud_on_a_contradiction(self, plan_context):
+        """A not_necessary verdict over a real footprint + a composed build step → error."""
+        plan_id = 'verdict-contradiction'
+        originals = self._stub_verdict_inputs(
+            ['marketplace/bundles/plan-marshall/skills/foo/scripts/foo.py'],
+            {'decision': 'not_necessary', 'reason': 'plan footprint touches no build_map glob'},
+        )
+        try:
+            result = cmd_compose(
+                _compose_ns(
+                    plan_id=plan_id,
+                    change_type='feature',
+                    scope_estimate='multi_module',
+                    affected_files_count=3,
+                    phase_5_steps='verify:quality-gate,verify:module-tests',
+                )
+            )
+        finally:
+            self._restore(originals)
+
+        assert result is not None
+        assert result['status'] == 'error'
+        assert result['error'] == 'build_verdict_contradiction'
+        assert result['phase'] == 'phase_5'
+        assert result['step_id'] == 'verify:module-tests'
+        # The verdict's own reason is forwarded, not an invented one.
+        assert result['reason'] == 'plan footprint touches no build_map glob'
+
+    def test_failed_assertion_writes_no_manifest(self, plan_context):
+        """Like its sibling gates, the assertion returns BEFORE write_manifest.
+
+        A partial manifest persisted by a rejected compose would be read as
+        authoritative by phase-5, so the fail-loud path must leave no artifact.
+        """
+        plan_id = 'verdict-contradiction-no-write'
+        originals = self._stub_verdict_inputs(
+            ['scripts/foo.py'],
+            {'decision': 'not_necessary', 'reason': 'plan footprint touches no build_map glob'},
+        )
+        try:
+            result = cmd_compose(
+                _compose_ns(
+                    plan_id=plan_id,
+                    change_type='feature',
+                    scope_estimate='multi_module',
+                    affected_files_count=3,
+                    phase_5_steps='verify:quality-gate,verify:module-tests',
+                )
+            )
+        finally:
+            self._restore(originals)
+
+        assert result is not None and result['status'] == 'error'
+        assert read_manifest(plan_id) is None
+
+    def test_compose_succeeds_when_the_verdict_agrees(self, plan_context):
+        """A ``build`` verdict over the same inputs composes normally."""
+        plan_id = 'verdict-consistent'
+        originals = self._stub_verdict_inputs(['scripts/foo.py'], {'decision': 'build'})
+        try:
+            result = cmd_compose(
+                _compose_ns(
+                    plan_id=plan_id,
+                    change_type='feature',
+                    scope_estimate='multi_module',
+                    affected_files_count=3,
+                    phase_5_steps='verify:quality-gate,verify:module-tests',
+                )
+            )
+        finally:
+            self._restore(originals)
+
+        assert result is not None and result['status'] == 'success'
+        assert read_manifest(plan_id) is not None
+
+    def test_early_compose_with_an_empty_footprint_composes_normally(self, plan_context):
+        """Anti-vacuity at the WIRING level: the ordinary first compose must succeed.
+
+        This is the case that would break every plan if the composer consulted
+        the assertion without its non-empty-footprint precondition: at
+        phase-4-plan time the footprint is empty, the verdict is therefore
+        ``not_necessary``, and the composed list is the full build/verify set.
+        """
+        plan_id = 'verdict-early-compose'
+        originals = self._stub_verdict_inputs(
+            [],  # early compose — worktree not yet materialized
+            {'decision': 'not_necessary', 'reason': 'plan footprint is empty — no changed files to build'},
+        )
+        try:
+            result = cmd_compose(
+                _compose_ns(
+                    plan_id=plan_id,
+                    change_type='feature',
+                    scope_estimate='multi_module',
+                    affected_files_count=3,
+                    phase_5_steps='verify:quality-gate,verify:module-tests,verify:coverage',
+                )
+            )
+        finally:
+            self._restore(originals)
+
+        assert result is not None and result['status'] == 'success'
+        manifest = read_manifest(plan_id)
+        assert manifest is not None
+        assert 'verify:module-tests' in manifest['phase_5']['verification_steps']
+
+    def test_unobtainable_verdict_composes_normally(self, plan_context):
+        """A ``None`` verdict cannot prove a contradiction, so compose proceeds."""
+        plan_id = 'verdict-unobtainable'
+        originals = self._stub_verdict_inputs(['scripts/foo.py'], None)
+        try:
+            result = cmd_compose(
+                _compose_ns(
+                    plan_id=plan_id,
+                    change_type='feature',
+                    scope_estimate='multi_module',
+                    affected_files_count=3,
+                    phase_5_steps='verify:quality-gate,verify:module-tests',
+                )
+            )
+        finally:
+            self._restore(originals)
+
+        assert result is not None and result['status'] == 'success'

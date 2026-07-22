@@ -3,7 +3,7 @@
 """Pre-filter, ceremony-finalize, and verification-command rule helpers.
 
 Extracted verbatim from ``manage-execution-manifest.py``: the marshal.json step
-map reads, the candidate-narrowing pre-filters (commit/push, aspect, simplify,
+map reads, the candidate-narrowing pre-filters (commit/push, simplify,
 security-audit, scope-gated finalize), the ceremony-finalize lane-driven
 selection, the CI-provider read, and the build verification-command parser. Every
 function here is log-free and calls no test-patched name; the entry re-exports
@@ -150,78 +150,6 @@ def _footprint_has_role(footprint: list[str], suffix_markers: tuple[str, ...]) -
         if any(marker in low for marker in suffix_markers):
             return True
     return False
-
-
-# Request aspects (from the ``manage-config aspect-classify`` verb) that drop
-# build / quality-gate / test steps from the composed phase-5 manifest. An
-# ``analysis`` or ``planning`` request produces no production / test footprint,
-# so the build/verify gates have nothing to gate; dropping them keeps phase-5
-# from running (and failing) build/quality-gate/test commands against a
-# code-free change. ``implementation`` (the safe classifier fallback below the
-# ``>= 0.7`` threshold) is NOT in this set — it retains every gate. See the
-# aspect-classify threshold contract in
-# ``manage-config/scripts/_cmd_aspect_classify.py`` and the outline's
-# request-aspect classification deliverable.
-#
-# This aspect-step-drop is the COMPOSE-TIME NARRATIVE half of a two-part
-# division of labour; D1's run-time ``manage-config build-decision`` consult
-# (wired into phase-5 Step 11b + the ``default:verify:{canonical}`` loop) is the
-# RUN-TIME FOOTPRINT half. The two are complementary and non-contradictory:
-#   - This narrative drop fires at compose (footprint always empty then, so it
-#     reads only the request narrative) and clears the FULL phase-5 verification
-#     list for a confident ``analysis`` / ``planning`` request — nothing is left
-#     for D1 to gate.
-#   - For an ``implementation``-classified request whose live footprint turns
-#     out to be pure-doc (the classifier kept every gate), D1's run-time
-#     ``build-decision`` consult is the authoritative footprint backstop that
-#     returns ``not_necessary`` and skips the whole-tree build.
-# Neither signal contradicts the other: aspect-drop governs the compose-time
-# list membership for confident code-free requests; build-decision governs the
-# run-time whole-tree build for everything an ``implementation`` classification
-# retained.
-_BUILD_DROPPING_ASPECTS = frozenset({'analysis', 'planning'})
-
-def _apply_aspect_step_dropping(
-    phase_5_steps: list[str],
-    aspect: str | None,
-    role_cache: dict[str, str | None],
-) -> tuple[list[str], list[str]]:
-    """Clear the phase-5 verification list when the request aspect is analysis / planning.
-
-    When ``aspect ∈ {analysis, planning}`` (the build-dropping aspects), the
-    ENTIRE phase-5 verification list is dropped — not just the canonical
-    build/verify steps (``quality-gate`` / ``module-tests`` / ``coverage``) but
-    also every external (``project:`` / ``bundle:skill``) step whose derived
-    matrix role is ``None``. Analysis / planning requests carry no production /
-    test footprint, so the build/verify gates have nothing to gate.
-
-    Dropping the full list (rather than only the role-matched build steps) is
-    load-bearing for the phase-5-execute Step 11b contract: Step 11b fires a
-    ``quality-gate`` sweep whenever ``phase_5.verification_steps`` is non-empty.
-    A role-only filter that left any external ``None``-role step in the list
-    would keep it non-empty and re-trigger ``quality-gate`` via Step 11b for an
-    analysis / planning request — exactly the build the aspect drop exists to
-    prevent. Clearing the full list keeps the enforcement at the manifest layer
-    where it belongs, so Step 11b's non-empty check naturally short-circuits.
-
-    An ``implementation`` aspect (the classifier's safe sub-threshold fallback)
-    and an absent aspect are no-ops: every gate is retained.
-
-    See the module-level comment above ``_BUILD_DROPPING_ASPECTS`` for this
-    drop's division of labour with D1, the run-time ``manage-config
-    build-decision`` footprint gate.
-
-    Returns ``(kept_steps, dropped_steps)``. ``role_cache`` is retained in the
-    signature for call-site symmetry with the other role-driven filters; the
-    full-clear path does not consult it.
-    """
-    if aspect not in _BUILD_DROPPING_ASPECTS:
-        return phase_5_steps, []
-
-    # Build-dropping aspect: drop the FULL list (every step, build and external
-    # alike). See docstring — a partial role-only drop would leave external
-    # None-role steps in place and re-trigger Step 11b's quality-gate sweep.
-    return [], list(phase_5_steps)
 
 
 # Code-touching change types that gate ``finalize-step-simplify`` activation.
@@ -399,7 +327,7 @@ def _apply_scope_gated_finalize(
     silently disable bot review on a large plan.
 
     Consistent with the composer's "rows and pre-filters only ever narrow the
-    candidate list" architecture, this pre-filter runs before the seven-row
+    candidate list" architecture, this pre-filter runs before the six-row
     matrix. Returns the filtered candidate list
     plus the list of step references that were dropped (for per-subtraction
     decision-log emission). The dropped list preserves the candidate's verbatim

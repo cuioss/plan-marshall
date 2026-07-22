@@ -291,7 +291,7 @@ For localized changes where targets are already known from module_mapping.
 
 **Normative source of truth for per-deliverable profile assignment.** Phase-3-outline (both Simple Track Step 7 and Complex Track Step 10) MUST classify each deliverable's `**Affected files:**` list against the six-bucket table below BEFORE assigning `profiles[]`. The vocabulary is produced by the per-domain extension aggregator (`manage-execution-manifest._classify_paths_via_extensions`) which dispatches each path to every registered `ExtensionBase.classify_paths()` and resolves overlaps via longest-glob-wins; see `marketplace/bundles/plan-marshall/skills/manage-execution-manifest/standards/decision-rules.md` § "Overlap resolution policy" and § "Unclaimed paths" for the aggregation contract, and `extension-api/standards/extension-contract.md` § classify_paths() for the per-extension predicates.
 
-The same vocabulary is consumed downstream by `manage-execution-manifest.compose()`, which skips holistic `quality-gate` + `module-tests` verification steps when the plan-wide union of `affected_files` resolves to `documentation_only`.
+The bucket names a **file role**, never a build verdict. It governs `profiles[]` assignment and nothing else: no consumer may read a `documentation_only` bucket as "this plan needs no build". Build necessity has one home — the `build-decision` verdict over the `build.map` globs and the live footprint (see [ADR-004](../../../../../../doc/adr/004-The_file-to-build_contract_is_owned_by_build-system_extensions_not_languagecontent_domains.adoc) § "Amendment: `build-decision` is the sole build/no-build authority"). The two concerns share a word, not a meaning.
 
 | Bucket | Predicate (resolved by per-domain extension aggregation) | Profile assignment |
 |--------|----------------------------------------------------------|--------------------|
@@ -333,7 +333,7 @@ The same vocabulary is consumed downstream by `manage-execution-manifest.compose
 
 - Simple Track [Step 7: Create Deliverables](#step-7-create-deliverables) consumes this classifier when mapping module_mapping entries to deliverables.
 - Complex Track [Step 10: Execute Change-Type Workflow and Write Solution](#step-10-execute-change-type-workflow-and-write-solution) consumes this classifier when composing deliverables from domain skill discovery.
-- `manage-execution-manifest.compose()` applies the same classifier at plan-composer scope (union of all `affected_files`) to decide whether to emit holistic Python verification steps (see `marketplace/bundles/plan-marshall/skills/manage-execution-manifest/standards/decision-rules.md`).
+- `manage-execution-manifest`'s per-domain extension aggregator (`_classify_paths_via_extensions`) reuses the same six-bucket vocabulary to answer a different question — `profiles[]` assignment, never build necessity. `compose()` never infers build necessity from the bucket; the sole build/no-build authority is the `build-decision` verdict (see `marketplace/bundles/plan-marshall/skills/manage-execution-manifest/standards/decision-rules.md` § "The classifier / build-decision boundary").
 
 ### Step 6: Validate Targets
 
