@@ -97,14 +97,40 @@ KEEP_MANIFEST = 'manifest_version'
 KEEP_SELF = 'executing_version'
 
 
+def _find_nearest_marshal_json(project_root: Path | None) -> Path | None:
+    """Walk up from ``project_root`` (default: cwd) to the nearest
+    ``.plan/marshal.json``, returning its path or ``None`` when no ancestor
+    carries one.
+
+    Shared by :func:`resolve_knobs` and :func:`read_provisioned_version` so the
+    upward-walk locate step is encoded once.
+    """
+    start = (project_root or Path.cwd()).resolve()
+    for parent in (start, *start.parents):
+        candidate = parent / '.plan' / 'marshal.json'
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _load_marshal_json(candidate: Path) -> dict | None:
+    """Parse ``candidate`` as JSON, returning ``None`` on any read/decode
+    failure or a non-dict payload (never raises)."""
+    try:
+        data = json.loads(candidate.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
 def resolve_knobs(project_root: Path | None = None) -> tuple[int, int, str]:
     """Resolve ``(keep_versions, keep_days, source)`` from ``marshal.json``.
 
-    Walks up from ``project_root`` (default: cwd) to the nearest
-    ``.plan/marshal.json`` and reads ``system.retention``. Falls back to the
-    ``5``/``3`` defaults — with a ``defaults`` source annotation — when the file
-    is absent, unreadable, or the block carries no usable value, so a surprising
-    keep-set is always diagnosable from the report.
+    Reads ``system.retention`` from the nearest ``.plan/marshal.json`` above
+    ``project_root``. Falls back to the ``5``/``3`` defaults — with a
+    ``defaults`` source annotation — when the file is absent, unreadable, or the
+    block carries no usable value, so a surprising keep-set is always
+    diagnosable from the report.
 
     Args:
         project_root: Directory to start the upward walk from.
@@ -113,32 +139,23 @@ def resolve_knobs(project_root: Path | None = None) -> tuple[int, int, str]:
         ``(keep_versions, keep_days, source)`` where ``source`` is
         ``marshal.json`` or ``defaults``.
     """
-    start = (project_root or Path.cwd()).resolve()
-    for parent in (start, *start.parents):
-        candidate = parent / '.plan' / 'marshal.json'
-        if not candidate.is_file():
-            continue
-        try:
-            data = json.loads(candidate.read_text(encoding='utf-8'))
-        except (OSError, ValueError):
-            return DEFAULT_KEEP_VERSIONS, DEFAULT_KEEP_DAYS, 'defaults'
-        retention = {}
-        if isinstance(data, dict):
-            system = data.get('system')
-            if isinstance(system, dict) and isinstance(system.get('retention'), dict):
-                retention = system['retention']
-        keep_versions = retention.get('plugin_cache_keep_versions')
-        keep_days = retention.get('plugin_cache_keep_days')
-        resolved_versions = (
-            keep_versions
-            if isinstance(keep_versions, int) and not isinstance(keep_versions, bool)
-            else DEFAULT_KEEP_VERSIONS
-        )
-        resolved_days = (
-            keep_days if isinstance(keep_days, int) and not isinstance(keep_days, bool) else DEFAULT_KEEP_DAYS
-        )
-        return resolved_versions, resolved_days, str(candidate)
-    return DEFAULT_KEEP_VERSIONS, DEFAULT_KEEP_DAYS, 'defaults'
+    candidate = _find_nearest_marshal_json(project_root)
+    data = _load_marshal_json(candidate) if candidate is not None else None
+    if data is None:
+        return DEFAULT_KEEP_VERSIONS, DEFAULT_KEEP_DAYS, 'defaults'
+    retention = {}
+    system = data.get('system')
+    if isinstance(system, dict) and isinstance(system.get('retention'), dict):
+        retention = system['retention']
+    keep_versions = retention.get('plugin_cache_keep_versions')
+    keep_days = retention.get('plugin_cache_keep_days')
+    resolved_versions = (
+        keep_versions if isinstance(keep_versions, int) and not isinstance(keep_versions, bool) else DEFAULT_KEEP_VERSIONS
+    )
+    resolved_days = (
+        keep_days if isinstance(keep_days, int) and not isinstance(keep_days, bool) else DEFAULT_KEEP_DAYS
+    )
+    return resolved_versions, resolved_days, str(candidate)
 
 
 def read_provisioned_version(project_root: Path | None = None) -> str:
@@ -146,22 +163,15 @@ def read_provisioned_version(project_root: Path | None = None) -> str:
 
     Returns ``''`` when the file, the ``system`` block, or the field is absent.
     """
-    start = (project_root or Path.cwd()).resolve()
-    for parent in (start, *start.parents):
-        candidate = parent / '.plan' / 'marshal.json'
-        if not candidate.is_file():
-            continue
-        try:
-            data = json.loads(candidate.read_text(encoding='utf-8'))
-        except (OSError, ValueError):
-            return ''
-        if isinstance(data, dict):
-            system = data.get('system')
-            if isinstance(system, dict):
-                value = system.get('provisioned_version')
-                if isinstance(value, str):
-                    return value
+    candidate = _find_nearest_marshal_json(project_root)
+    data = _load_marshal_json(candidate) if candidate is not None else None
+    if data is None:
         return ''
+    system = data.get('system')
+    if isinstance(system, dict):
+        value = system.get('provisioned_version')
+        if isinstance(value, str):
+            return value
     return ''
 
 
