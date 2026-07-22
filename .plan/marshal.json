@@ -297,9 +297,11 @@
       "logs_days": 1,
       "archived_plans_days": 5,
       "lessons_superseded_days": 0,
-      "temp_on_maintenance": true
+      "temp_on_maintenance": true,
+      "plugin_cache_keep_versions": 5,
+      "plugin_cache_keep_days": 3
     },
-    "provisioned_version": "0.1.1180",
-    "config_seed_fingerprint": "daa4978b"
+    "provisioned_version": "0.1.1192",
+    "config_seed_fingerprint": "9a1bd104"
   }
 }
