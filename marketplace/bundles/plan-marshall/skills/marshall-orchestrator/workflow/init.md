@@ -56,7 +56,15 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metada
   --plan-id {slug} --get --field parallelization_scope --store orchestrator
 ```
 
-When the field is unset, fire exactly ONE `AskUserQuestion` for the operator's **parallelization scope** — the maximum number of plans the orchestrator may have launched concurrently, `1` meaning strictly sequential and `N` meaning up to `N` concurrent plans. `init` runs in main context, so the prompt is fired natively here. Persist the answer as the epic-level knob:
+When the field is unset, fire exactly ONE `AskUserQuestion` for the operator's **parallelization scope** — the maximum number of plans the orchestrator may have launched concurrently, `1` meaning strictly sequential and `N` meaning up to `N` concurrent plans. `init` runs in main context, so the prompt is fired natively here.
+
+**Validate the answer before persisting it.** The operator's raw answer is untrusted input and MUST be reduced to a positive integer `N ≥ 1` before it reaches the `metadata --set` call — `orchestrate.md`'s `next` verb Step 4 computes `N - R` from the persisted value, so a zero, a negative number, or non-numeric text yields a nonsensical slot count or an unusable comparison downstream. Apply this reduction:
+
+- The answer parses as an integer `≥ 1` → that integer is `N`; proceed to the persist call.
+- The answer parses as an integer `≤ 0`, or does not parse as an integer at all → re-fire the `AskUserQuestion` exactly ONCE, stating that the scope must be a whole number of concurrent plans, `1` or greater.
+- The re-prompted answer still fails the same test → fall back to the documented default `N = 1` (strictly sequential) and record the fallback in the decision log below.
+
+Only a value that survived this reduction is persisted, so every reader of `parallelization_scope` — `next` included — is guaranteed a positive integer:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
@@ -67,7 +75,7 @@ The knob bounds the `next` queue-fill selection — see [Parallelization by Surf
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging decision \
-  --plan-id {slug} --level INFO --message "{parallelization_scope set to N by operator}" --store orchestrator
+  --plan-id {slug} --level INFO --message "{parallelization_scope set to N by operator, or defaulted to 1 after an invalid answer}" --store orchestrator
 ```
 
 ### Step 5: Write the epic skeleton
