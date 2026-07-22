@@ -67,11 +67,124 @@ def _marshal_path() -> Path:
     return get_marshal_path()
 
 
+def canonical_credentials_key(skill_name: str) -> str:
+    """Return the canonical ``credentials_config`` storage key for a skill name.
+
+    The canonical form is the bundle-prefix-stripped spelling — the same form
+    ``resolve_credential_path`` uses for the credential filename — so the
+    git-tracked ``credentials_config`` key and the credential file agree.
+
+    Args:
+        skill_name: Skill name, either bundle-prefixed
+            (``plan-marshall:workflow-integration-sonar``) or bare
+            (``workflow-integration-sonar``).
+
+    Returns:
+        The segment after the first ``':'`` when one is present, otherwise the
+        supplied name verbatim.
+    """
+    if ':' in skill_name:
+        return skill_name.split(':', 1)[1]
+    return skill_name
+
+
+def _save_marshal(config: dict[str, Any]) -> None:
+    """Persist ``config`` to marshal.json in the canonical top-level key order.
+
+    Routes the top-level key order through the single authority in
+    ``_config_core`` so a freshly created ``credentials_config`` block lands in
+    its canonical slot rather than appended at end-of-object — otherwise the
+    committed marshal.json drifts out of the order ``save_config`` enforces and
+    the next save produces a spurious reorder diff. Imported lazily (the
+    executor sets the cross-skill PYTHONPATH); no import cycle — ``_config_core``
+    never imports this module.
+    """
+    from _config_core import order_config_keys
+
+    ordered = order_config_keys(config)
+
+    marshal_path = _marshal_path()
+    marshal_path.parent.mkdir(parents=True, exist_ok=True)
+    marshal_path.write_text(
+        json.dumps(ordered, indent=2, ensure_ascii=False) + '\n',
+        encoding='utf-8',
+    )
+
+
+def _migrate_credentials_config_keys_if_needed(config: dict[str, Any]) -> str:
+    """Lazily canonicalize stale ``credentials_config`` keys in ``config``.
+
+    Mirrors the ``_migrate_credentials_home_if_needed`` precedent in this
+    module: guarded, self-triggering on the ``credentials_config`` access path,
+    idempotent, and best-effort. Every key is re-keyed through
+    :func:`canonical_credentials_key` — the single normalizer, never a second
+    one. Returns a status literal ``'migrated' | 'already_canonical' |
+    'conflict'`` (no secrets):
+
+    - **Already canonical** — every key is already its canonical form (or there
+      is no ``credentials_config`` block). Nothing is mutated and NO write is
+      performed, so the no-op case never touches marshal.json. A second pass
+      over a migrated config lands here, which is what makes the migration
+      idempotent.
+    - **Conflict** — two source keys collapse onto one canonical key with
+      DIFFERING bodies. No write is performed and both keys are left in place,
+      so no block is ever lost silently; an operator reconciles them (an
+      explicit ``write_provider_config`` for that provider also resolves it).
+      Two source keys carrying identical bodies are not a conflict — collapsing
+      them loses nothing.
+    - **Migrated** — at least one key changed. ``config`` is updated in place
+      and persisted. The persist is best-effort: an ``OSError`` (read-only or
+      full filesystem, permission denied) is logged to stderr and swallowed so
+      an opportunistic migration on a read path never turns a resilient read
+      into a hard crash. The status literal stays ``'migrated'`` because the
+      in-memory ``config`` IS canonicalized either way.
+
+    Args:
+        config: The loaded marshal.json mapping. Mutated in place on the
+            ``migrated`` path only.
+
+    Returns:
+        The status literal describing what happened.
+    """
+    credentials_config = config.get('credentials_config')
+    if not isinstance(credentials_config, dict) or not credentials_config:
+        return 'already_canonical'
+
+    canonicalized: dict[str, Any] = {}
+    for key, value in credentials_config.items():
+        canonical = canonical_credentials_key(key)
+        if canonical in canonicalized and canonicalized[canonical] != value:
+            print(
+                f'WARNING: credentials_config key conflict — {key!r} and another key '
+                f'both canonicalize to {canonical!r} with differing bodies; leaving both '
+                'in place (no merge performed).',
+                file=sys.stderr,
+            )
+            return 'conflict'
+        canonicalized[canonical] = value
+
+    if canonicalized == credentials_config:
+        return 'already_canonical'
+
+    config['credentials_config'] = canonicalized
+    try:
+        _save_marshal(config)
+    except OSError as exc:
+        print(
+            f'WARNING: credentials_config key migration could not be persisted: {exc}; '
+            'continuing with the in-memory canonicalized config.',
+            file=sys.stderr,
+        )
+    return 'migrated'
+
+
 def read_provider_config(skill_name: str) -> dict[str, Any]:
     """Read provider configuration from marshal.json.
 
-    Provider config is stored under `credentials_config.{skill_name}`.
-    Contains non-secret fields like url, organization, project_key.
+    Provider config is stored under ``credentials_config.{canonical_key}``, but
+    reads accept either spelling: an exact ``skill_name`` match is tried first,
+    then a canonical-equality scan matches a key stored under the other
+    spelling. Stale keys are canonicalized transparently on this access path.
 
     Returns:
         Dict with provider config fields, or empty dict if not found.
@@ -81,8 +194,17 @@ def read_provider_config(skill_name: str) -> dict[str, Any]:
         return {}
     try:
         config = json.loads(marshal_path.read_text(encoding='utf-8'))
-        result: dict[str, Any] = config.get('credentials_config', {}).get(skill_name, {})
-        return result
+        _migrate_credentials_config_keys_if_needed(config)
+        credentials_config: dict[str, Any] = config.get('credentials_config', {})
+        if skill_name in credentials_config:
+            exact: dict[str, Any] = credentials_config[skill_name]
+            return exact
+        canonical = canonical_credentials_key(skill_name)
+        for key, value in credentials_config.items():
+            if canonical_credentials_key(key) == canonical:
+                matched: dict[str, Any] = value
+                return matched
+        return {}
     except (json.JSONDecodeError, KeyError):
         return {}
 
@@ -90,8 +212,11 @@ def read_provider_config(skill_name: str) -> dict[str, Any]:
 def write_provider_config(skill_name: str, provider_config: dict[str, Any]) -> None:
     """Write provider configuration to marshal.json.
 
-    Stores non-secret fields under `credentials_config.{skill_name}`.
-    Creates or updates the marshal.json file, preserving existing content.
+    Stores non-secret fields under ``credentials_config.{canonical_key}`` — the
+    prefix-stripped spelling. Any pre-existing key whose canonical form equals
+    the same value is removed first, so a re-configure never leaves two shadow
+    blocks for one provider. Creates or updates the marshal.json file,
+    preserving existing content.
     """
     marshal_path = _marshal_path()
     config: dict[str, Any] = {}
@@ -101,26 +226,17 @@ def write_provider_config(skill_name: str, provider_config: dict[str, Any]) -> N
         except json.JSONDecodeError:
             config = {}
 
+    _migrate_credentials_config_keys_if_needed(config)
+
     if 'credentials_config' not in config:
         config['credentials_config'] = {}
-    config['credentials_config'][skill_name] = provider_config
+    credentials_config: dict[str, Any] = config['credentials_config']
+    canonical = canonical_credentials_key(skill_name)
+    for existing_key in [k for k in credentials_config if canonical_credentials_key(k) == canonical]:
+        del credentials_config[existing_key]
+    credentials_config[canonical] = provider_config
 
-    # Route the top-level key order through the single authority in _config_core
-    # so a freshly created ``credentials_config`` block lands in its canonical
-    # slot rather than appended at end-of-object — otherwise the committed
-    # marshal.json drifts out of the order ``save_config`` enforces and the next
-    # save produces a spurious reorder diff. Imported lazily (executor sets the
-    # cross-skill PYTHONPATH); no import cycle — _config_core never imports this
-    # module.
-    from _config_core import order_config_keys
-
-    config = order_config_keys(config)
-
-    marshal_path.parent.mkdir(parents=True, exist_ok=True)
-    marshal_path.write_text(
-        json.dumps(config, indent=2, ensure_ascii=False) + '\n',
-        encoding='utf-8',
-    )
+    _save_marshal(config)
 
 
 def apply_extra_passthrough(provider_config: dict[str, Any], extra_pairs: list[str]) -> list[str]:
@@ -226,8 +342,7 @@ def resolve_credential_path(skill: str, scope: str = 'global', project_name: str
         ValueError: If resolved path escapes CREDENTIALS_DIR
     """
     # Strip bundle prefix for filesystem path (skill_name may be "plan-marshall:workflow-integration-sonar")
-    if ':' in skill:
-        skill = skill.split(':', 1)[1]
+    skill = canonical_credentials_key(skill)
 
     if scope == 'project':
         if not project_name:
