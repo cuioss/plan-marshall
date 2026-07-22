@@ -428,6 +428,53 @@ def test_main_resolve_workflow_skill_extension(plan_context, monkeypatch, capsys
     assert data['extension'] == 'pm-dev-java:ext-triage-java'
 
 
+def test_main_resolve_workflow_skill_extension_accepts_marker_detect_type(plan_context, monkeypatch, capsys):
+    """The widened `--type` enum accepts `marker-detect` at the CLI boundary (no argparse rejection)."""
+    create_nested_marshal_json(plan_context.fixture_dir)
+
+    code, out, _ = _drive(
+        monkeypatch, capsys, 'resolve-workflow-skill-extension', '--domain', 'java', '--type', 'marker-detect'
+    )
+
+    assert code == 0, 'marker-detect must be an accepted --type value, not an argparse rejection'
+    data = parse_toon(out)
+    assert data['status'] == 'success'
+    assert data['type'] == 'marker-detect'
+
+
+def test_main_resolve_workflow_skill_extension_rejects_unknown_type(plan_context, monkeypatch, capsys):
+    """The `--type` enum stays closed — an unregistered value is still an argparse rejection."""
+    create_nested_marshal_json(plan_context.fixture_dir)
+
+    code, _, _ = _drive(
+        monkeypatch, capsys, 'resolve-workflow-skill-extension', '--domain', 'java', '--type', 'not-a-verb'
+    )
+
+    assert code == 2
+
+
+def test_main_skill_domains_set_extensions_accepts_marker_detect_type(plan_context, monkeypatch, capsys):
+    """`skill-domains set-extensions --type marker-detect` is accepted by the widened enum."""
+    create_nested_marshal_json(plan_context.fixture_dir)
+
+    code, out, _ = _drive(
+        monkeypatch,
+        capsys,
+        'skill-domains',
+        'set-extensions',
+        '--domain',
+        'java',
+        '--type',
+        'marker-detect',
+        '--skill',
+        'pm-dev-java-cui:search-markers',
+    )
+
+    assert code == 0, 'marker-detect must be an accepted --type value, not an argparse rejection'
+    data = parse_toon(out)
+    assert data['status'] == 'success'
+
+
 def test_main_get_skills_by_profile(plan_context, monkeypatch, capsys):
     """`get-skills-by-profile` returns the per-profile skill grouping for a bundle-backed domain."""
     create_nested_marshal_json(plan_context.fixture_dir)

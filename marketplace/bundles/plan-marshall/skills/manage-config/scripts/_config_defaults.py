@@ -18,7 +18,7 @@ from constants import (
 
 # Reserved keys in nested domain config (not profile names)
 # bundle: Reference to bundle providing this domain (e.g., 'pm-dev-java')
-# workflow_skill_extensions: Domain extensions (outline, triage)
+# workflow_skill_extensions: Domain extensions (outline, triage, marker-detect)
 # defaults/optionals: System domain top-level skills
 # always_on/file_globs: per-domain inclusion keys (bool / list[str]) — reserved so
 #   profile iteration never treats them as profile names.

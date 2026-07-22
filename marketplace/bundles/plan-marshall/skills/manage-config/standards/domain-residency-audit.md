@@ -86,7 +86,7 @@ enumerated above.
 | `extension-contract.md` `provides_arch_gate` example tool names (`archunit` / `import-linter` / `dependency-cruiser`) | (L) | **JUSTIFY.** Illustrative examples inside a domain-neutral optional-hook contract — the hook itself hardcodes no tool; each domain declares its own via the descriptor. |
 | `extension-contract.md` `get_skill_domains` examples + "Bundles Implementing This Convention" table (names all 10 bundles / domains) | (L) | **JUSTIFY.** Documentation of the domain-neutral registry surface; it enumerates the installed domains for the reader but gates no behaviour on any of them. |
 | `extension_base.py` optional hooks (`provides_triage` / `provides_outline_skill` / `provides_recipes` / `provides_arch_gate` / `config_defaults`) | (D) | **JUSTIFY.** Domain-neutral optional hooks with safe `None`/`[]` defaults — each domain declares its own capability; the core hardcodes none. This is the null-on-absent degrade machinery `ADR-010` builds on. |
-| Absence of a general domain-owned *executable verb* declaration surface | (D) | **FIX (D2).** Before this design package, a domain that owns an executable verb (e.g. a relocated marker detector) had no first-class core-side contract to declare/discover/dispatch it beyond the arch-gate special case. D2 (`ext-point-domain-verb.md`) homes this as a sibling ext-point with null-on-absent resolution. |
+| Absence of a general domain-owned *executable verb* declaration surface | (D) | **CLOSED (D2).** Before this design package, a domain that owns an executable verb (e.g. a relocated marker detector) had no first-class core-side contract to declare/discover/dispatch it beyond the arch-gate special case. D2 (`ext-point-domain-verb.md`) homes this as a sibling ext-point with null-on-absent resolution. The fix has landed: `provides_domain_verb()` is wired on `ExtensionBase`, `convert_extension_to_domain_config()` seeds the descriptor into `workflow_skill_extensions`, and `resolve-workflow-skill-extension --type marker-detect` resolves it null-on-absent. |
 | `ext-point-build-verify-step.md` § Domain-Appended Verify Steps (`default:verify:arch-gate`) | (D) | **JUSTIFY.** Correctly domain-conditional: the step is appended only for a project whose configured domains declare an arch-gate tool, and resolves through the same parameterized `canonical_verify.md`. The runnability gap is corrected by D5; the contract description itself is accurate and domain-neutral in mechanism. |
 
 ### tools-script-executor (executor notation layer)
@@ -99,7 +99,7 @@ enumerated above.
 
 | Site | Shape | Disposition |
 |------|-------|-------------|
-| `resolve-workflow-skill-extension --domain --type {outline,triage}` / `resolve-domain-skills` / `resolve-outline-skill` / `resolve-recipe` | (D) | **JUSTIFY.** The null-on-absent resolve verbs are correctly domain-neutral: they ARE the gate — they resolve to null precisely when the domain is inactive — so they are legitimately core-owned and must NOT themselves be domain-gated (gating the gate). They are the degrade-path precedent D2's `resolve-domain-verb` mirrors. |
+| `resolve-workflow-skill-extension --domain --type {outline,triage,marker-detect}` / `resolve-domain-skills` / `resolve-outline-skill` / `resolve-recipe` | (D) | **JUSTIFY.** The null-on-absent resolve verbs are correctly domain-neutral: they ARE the gate — they resolve to null precisely when the domain is inactive — so they are legitimately core-owned and must NOT themselves be domain-gated (gating the gate). D2's domain verb reuses this exact verb rather than adding a `resolve-domain-verb` sibling: `--type marker-detect` is the realization, and the type-agnostic handler needed no change. |
 
 ## Shared anchor
 
@@ -124,9 +124,10 @@ composer, added by D5).
 ## Summary
 
 - **Total domain-specific core-resident items enumerated:** 17.
-- **FIX sites: 3.**
+- **Open FIX sites: 2.**
   - Arch-gate seed append (`_cmd_skill_domains.py`) — **D5** (availability-axis half; seed left intact).
   - Domain-seeded verify-step resolvability filter (`manage-execution-manifest.py`) — **D5** (compose-layer diagnosable skip).
-  - Absence of a domain-owned executable-verb declaration surface (extension-api) — **D2** (sibling ext-point contract).
+- **CLOSED FIX sites: 1.**
+  - Absence of a domain-owned executable-verb declaration surface (extension-api) — **D2** (sibling ext-point contract), realized as `provides_domain_verb()` plus the widened `resolve-workflow-skill-extension --type marker-detect`.
 - **JUSTIFY sites: 14** — the domain-neutral extension-discovery / resolve / seed machinery, the illustrative domain literals inside domain-neutral contracts, the correctly domain-conditional arch-gate verify-step description, and the deliberately domain-blind executor (D3, declined).
-- **Mechanism mapping:** the two concrete code FIXes both route to **D5** (the arch-gate seed/resolve fix); the one contract-gap FIX routes to **D2**; the executor-layer decision is homed by **D3** (specify-then-decline); the overarching gating/visibility model that classifies every site is **D1** (`ADR-010`).
+- **Mechanism mapping:** the two open concrete code FIXes both route to **D5** (the arch-gate seed/resolve fix); the closed contract-gap FIX routed to **D2**; the executor-layer decision is homed by **D3** (specify-then-decline); the overarching gating/visibility model that classifies every site is **D1** (`ADR-010`).

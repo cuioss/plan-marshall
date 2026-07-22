@@ -564,7 +564,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci issue view
 | `skill-domains` | list, get, get-defaults, get-optionals, set, set-inclusion, add, validate, detect, configure, get-extensions, set-extensions, get-available |
 | `resolve-domain-skills` | `--domain --profile` (aggregates core + profile skills) |
 | `resolve-workflow-skill` | `--phase` (resolve system workflow skill) |
-| `resolve-workflow-skill-extension` | `--domain --type` (outline, triage) |
+| `resolve-workflow-skill-extension` | `--domain --type` (outline, triage, marker-detect) |
 | `get-workflow-skills` | Get all workflow skills from system domain |
 | `get-skills-by-profile` | `--domain` (skills organized by profile) |
 | `ext-defaults` | get, set, set-default, list, remove |
@@ -895,7 +895,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config skill-
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config skill-domains set-extensions \
-  --domain DOMAIN --type {outline|triage} --skill SKILL_REF
+  --domain DOMAIN --type {outline|triage|marker-detect} --skill SKILL_REF
 ```
 
 ### skill-domains add
@@ -1200,7 +1200,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config resolv
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config resolve-workflow-skill-extension \
-  --domain DOMAIN --type {outline|triage}
+  --domain DOMAIN --type {outline|triage|marker-detect}
 ```
 
 ### get-skills-by-profile

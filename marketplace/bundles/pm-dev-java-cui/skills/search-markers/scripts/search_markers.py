@@ -1,26 +1,38 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Shared marker search logic for OpenRewrite TODO markers.
+"""Domain-owned OpenRewrite marker detector for the java-cui domain.
 
-Provides unified search functionality used by build-maven and build-gradle
-marker search commands. Each build tool provides a thin wrapper that calls
-search_openrewrite_markers() with tool-specific defaults.
+The cui-rewrite marker format and the recipe table below describe recipes this
+bundle itself defines (see ``pm-dev-java-cui:recipe-cui-logging-enforce``), so
+the detector lives here rather than in the core build layer. Core dispatches it
+through the ``marker-detect`` domain verb declared by this bundle's
+``provides_domain_verb()`` hook, and resolves it to null when the java-cui
+domain is not active.
+
+Marker syntax is pinned by a provenance-bearing fixture taken verbatim from the
+upstream recipe project's own test resources — see the fixture's PROVENANCE.md.
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import logging
 import re
+import sys
 from collections import defaultdict
 from pathlib import Path
 
+# Direct imports - executor sets up PYTHONPATH for cross-skill imports
+from toon_parser import serialize_toon
+
 logger = logging.getLogger(__name__)
 
-from toon_parser import serialize_toon  # noqa: E402
-
-# Pattern for OpenRewrite TODO markers
-MARKER_PATTERN = re.compile(r'/\*~~\(TODO:\s*(.+?)\)>\*/')
+# Pattern for OpenRewrite TODO markers.
+# The closing delimiter is `)~~>*/` — OpenRewrite's SearchResult printer emits
+# `/*~~(<message>)~~>*/`. Never re-derive it from memory; it is pinned by the
+# checked-in provenance fixture.
+MARKER_PATTERN = re.compile(r'/\*~~\(TODO:\s*(.+?)\)~~>\*/')
 
 # Default directories to skip during search
 DEFAULT_SKIP_PATTERNS = ('build', 'target', '.gradle', 'node_modules')
@@ -136,19 +148,61 @@ def search_openrewrite_markers(
     }
 
 
-def cmd_search_markers(args):
-    """Handle search-markers subcommand.
+def cmd_search(args: argparse.Namespace) -> int:
+    """Handle the search subcommand.
 
-    Standard argparse handler — reads source_dir and extensions from args,
-    delegates to search_openrewrite_markers(), prints JSON result.
+    Exit-code contract: `1` when the search itself failed, or when ANY marker
+    was detected; `0` only when the scan succeeded and the source is
+    marker-free. Auto-suppressible recipes are a *categorization* — they still
+    populate `by_category.auto_suppress`, `auto_suppress_count`, and the
+    per-marker `suppression_comment` — but they are not an exemption from the
+    non-zero exit. A gate that exits `0` on auto-suppressible markers reports
+    clean while leaving the markers in the source.
     """
-    skip = tuple(getattr(args, 'skip_patterns', DEFAULT_SKIP_PATTERNS))
+    skip = tuple(getattr(args, 'skip_patterns', None) or DEFAULT_SKIP_PATTERNS)
     result = search_openrewrite_markers(args.source_dir, args.extensions, skip)
-    fmt = getattr(args, 'format', 'toon')
-    if fmt == 'json':
+    if args.format == 'json':
         print(json.dumps(result, indent=2))
     else:
         print(serialize_toon(result))
     if result['status'] == 'error':
         return 1
-    return 1 if result['data']['ask_user_count'] > 0 else 0
+    return 1 if result['data']['total_markers'] > 0 else 0
+
+
+def main() -> int:
+    """Parse arguments and dispatch the subcommand."""
+    parser = argparse.ArgumentParser(
+        description='Domain-owned OpenRewrite marker detection for the java-cui domain',
+        allow_abbrev=False,
+    )
+    subparsers = parser.add_subparsers(dest='command', required=True)
+
+    search_parser = subparsers.add_parser(
+        'search', help='Search OpenRewrite TODO markers in source files', allow_abbrev=False
+    )
+    search_parser.add_argument('--source-dir', default='src', help='Directory to search (default: src)')
+    search_parser.add_argument(
+        '--extensions', default='.java', help='Comma-separated file extensions (default: .java)'
+    )
+    search_parser.add_argument(
+        '--skip-patterns',
+        default=None,
+        help=f'Comma-separated directory names to skip (default: {",".join(DEFAULT_SKIP_PATTERNS)})',
+    )
+    search_parser.add_argument('--format', choices=['toon', 'json'], default='toon', help='Output format')
+
+    args = parser.parse_args()
+
+    if getattr(args, 'skip_patterns', None):
+        args.skip_patterns = tuple(p.strip() for p in args.skip_patterns.split(',') if p.strip())
+
+    if args.command == 'search':
+        return cmd_search(args)
+
+    print(serialize_toon({'status': 'error', 'error': f'Unknown command: {args.command}'}))
+    return 2
+
+
+if __name__ == '__main__':
+    sys.exit(main() or 0)

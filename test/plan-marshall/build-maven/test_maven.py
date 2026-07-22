@@ -5,12 +5,10 @@
 Tests all Maven build operations:
 - run: Execute build and auto-parse on failure (see test_maven_run.py)
 - parse: Parse Maven build output
-- search-markers: Search OpenRewrite markers
 - check-warnings: Categorize build warnings
 """
 
 import json
-import tempfile
 from pathlib import Path
 
 from conftest import get_script_path, run_script
@@ -72,27 +70,6 @@ def test_parse_missing_file():
 
 
 # =============================================================================
-# Search-Markers Subcommand Tests
-# =============================================================================
-
-
-def test_search_markers_no_markers():
-    """Test searching when no markers exist."""
-    with tempfile.TemporaryDirectory() as td:
-        temp_dir = Path(td)
-        src_dir = temp_dir / 'src' / 'main' / 'java'
-        src_dir.mkdir(parents=True)
-        java_file = src_dir / 'Test.java'
-        java_file.write_text('public class Test {}')
-
-        result = run_script(SCRIPT_PATH, 'search-markers', '--format', 'json', '--source-dir', str(temp_dir / 'src'))
-        data = result.json()
-
-        assert data['status'] == 'success', 'Should succeed with no markers'
-        assert data['data']['total_markers'] == 0, 'Should find no markers'
-
-
-# =============================================================================
 # Check-Warnings Subcommand Tests
 # =============================================================================
 
@@ -136,16 +113,6 @@ def test_check_warnings_with_real_patterns():
     assert data['acceptable'] >= 2, f'Should accept deprecation and unchecked, got: {data}'
 
 
-def test_search_markers_with_content():
-    """Test searching when markers exist in source files (H49)."""
-    markers_dir = FIXTURES_DIR / 'source-with-markers'
-    result = run_script(SCRIPT_PATH, 'search-markers', '--format', 'json', '--source-dir', str(markers_dir / 'src'))
-    data = result.json()
-
-    assert data['status'] == 'success', 'Should succeed'
-    assert data['data']['total_markers'] > 0, 'Should find markers in fixture files'
-
-
 # =============================================================================
 # Help Tests
 # =============================================================================
@@ -156,7 +123,12 @@ def test_help_main():
     result = run_script(SCRIPT_PATH, '--help')
     assert 'run' in result.stdout, 'Should show run subcommand'
     assert 'parse' in result.stdout, 'Should show parse subcommand'
-    assert 'search-markers' in result.stdout, 'Should show search-markers subcommand'
+
+
+def test_help_main_no_longer_offers_search_markers():
+    """The retired search-markers subcommand is gone from the Maven CLI surface."""
+    result = run_script(SCRIPT_PATH, '--help')
+    assert 'search-markers' not in result.stdout, 'search-markers must not be a Maven subcommand'
 
 
 # =============================================================================
