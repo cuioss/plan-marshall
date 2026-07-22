@@ -9,7 +9,7 @@ How Plan Marshall is built and tested locally.
 
 == Overview
 
-This project uses https://pyprojectx.github.io/[Pyprojectx] for Python development tooling, following the Maven/Gradle wrapper pattern. Only Python 3 is required on the host system.
+This project uses https://pyprojectx.github.io/[Pyprojectx] for Python development tooling, following the Maven/Gradle wrapper pattern. Only Python 3 is required on the host system to bootstrap the wrapper; the interpreter the build actually runs on is pinned independently of it, by `uv`. See <<Which Interpreter Runs the Build>>.
 
 == Rationale
 
@@ -86,7 +86,8 @@ Module-scoped quality-gate runs (`./pw quality-gate <module>`) skip the marketpl
 plan-marshall/
 ├── pw                 # Unix wrapper (committed)
 ├── pw.bat             # Windows wrapper (committed)
-├── pw.lock            # Tool version lock (committed)
+├── pw.lock            # Pyprojectx bootstrap lock — pins uv only (committed)
+├── uv.lock            # Dev-toolchain lock — the authority for the tool set (committed)
 ├── build.py           # Build script with module filtering (committed)
 ├── .pyprojectx/       # Tool installations (gitignored)
 ├── pyproject.toml     # Configuration
@@ -98,12 +99,57 @@ plan-marshall/
 
 Tool configuration is in `pyproject.toml`:
 
-* `[tool.pyprojectx.main]` — dev tool requirements (uv, pytest, ruff, mypy)
+* `[dependency-groups].dev` — the dev toolchain (pytest, pytest-cov, pytest-xdist, pytest-timeout, ruff, mypy), resolved by uv into `uv.lock`
+* `[tool.uv].default-groups` — declares `dev` as the group uv installs by default
+* `[tool.pyprojectx.env]` — environment exported to every alias; carries `UV_PYTHON`, the build's interpreter pin
+* `[tool.pyprojectx.main]` — Pyprojectx bootstrap requirements: `uv` and nothing else
 * `[tool.pyprojectx.aliases]` — command shortcuts
 * `[tool.pytest.ini_options]` — pytest configuration
 * `[tool.coverage.run]` / `[tool.coverage.report]` — coverage data-collection + reporting settings. The HTML output directory (`.plan/temp/htmlcov/`) is wired in `build.py` via `--cov-report=html:…`, not in `pyproject.toml`.
 * `[tool.ruff]` — linter/formatter configuration
 * `[tool.mypy]` — type checker configuration
+
+=== Which Interpreter Runs the Build
+
+**`uv` pins the build interpreter, and `[tool.pyprojectx.env].UV_PYTHON` is the single declaration that sets it.** Local and CI resolve the same interpreter because they resolve it through the same tool from the same declaration.
+
+==== Which tool owns what
+
+Pyprojectx is the *entry point*; it is no longer the *tool environment*. `[tool.pyprojectx.main].requirements` lists `uv` and nothing else, so the venv Pyprojectx creates for itself contains no package that touches project code. `uv` owns everything downstream: it resolves `[dependency-groups].dev` into `uv.lock`, installs it into the project `.venv`, and selects that venv's interpreter.
+
+This split matters because Pyprojectx *cannot* select an interpreter. Reading the installed Pyprojectx 3.3.2 sources: `pyprojectx/env.py::IsolatedVirtualEnv.install()` creates its venv with `uv venv --python {sys.version_info.major}.{minor}` — the version of the Pyprojectx process, i.e. whichever `python3` invoked `./pw` — and `pyprojectx/config.py` exposes no key that overrides it. That uncontrolled interpreter is now harmless: it runs only `uv`, which is a self-contained binary.
+
+==== How the pin reaches every tool invocation
+
+`[tool.pyprojectx.env]` is a map of environment variables that `pyprojectx/cli.py::_run_alias` merges into the environment of every alias, which `pyprojectx/env.py::IsolatedVirtualEnv.run()` layers over `os.environ`. Setting `UV_PYTHON = "3.12"` there means:
+
+. Every `[tool.pyprojectx.aliases]` entry — all of which invoke `uv run` — resolves a 3.12 project `.venv`, downloading a uv-managed CPython 3.12 when the host has none.
+. `build.py`'s own nested `uv run mypy` / `uv run ruff` / `uv run pytest` subprocesses inherit the variable, so they resolve the same `.venv`.
+
+The observable check is the pytest header, which names both the version and the interpreter path:
+
+[source]
+----
+platform darwin -- Python 3.12.3, pytest-9.1.1, pluggy-1.6.0 -- .../.venv/bin/python3
+----
+
+A `…/.venv/bin/python3` path reporting 3.12 means the pin held. A `.pyprojectx/venvs/main-<hash>-py<X.Y>` path would mean a tool escaped to the Pyprojectx venv — which is why every alias routes through `uv run` rather than calling a bare `ruff` or `pytest` from `PATH`.
+
+==== CI
+
+`.github/workflows/python-verify.yml` delegates to the SHA-pinned reusable workflow `cuioss/cuioss-organization/.github/workflows/reusable-pyprojectx-verify.yml@6278bbd7280a6e94b4914aa9e8c61cf23ea1abbe`, whose `actions/setup-python` step is conditional: it runs only when a Python version is supplied, through either the reusable workflow's `python-version` input or the `pyprojectx.python-version` key of `.github/project.yml`. This repository sets neither, so `setup-python` is skipped and `./pw` bootstraps on the runner's default `python3`.
+
+That is deliberate and sufficient. `setup-python` would pin only the *bootstrap* interpreter — the one that runs Pyprojectx, which now installs nothing but `uv` — while `UV_PYTHON` pins the interpreter the tools actually run on. Adding a `pyprojectx.python-version` key would therefore introduce a second interpreter declaration that governs a layer whose version no longer matters, inviting exactly the misreading this section previously documented: that the Pyprojectx venv is where the build happens. The single pin is the honest one.
+
+==== The related declarations
+
+* `[tool.pyprojectx.env].UV_PYTHON` — **the build interpreter.** The only declaration that selects it.
+* `[project].requires-python` — the *minimum* interpreter the project supports; a consumer-facing support claim and a resolution floor, not a pin.
+* `[tool.mypy].python_version` — the language level mypy type-checks against, independent of the interpreter mypy itself runs on.
+
+`[tool.pyprojectx].lock-python-version` was removed. It reached only `pyprojectx/lock.py::_freeze()` as `uv pip compile --python-version` when rewriting `pw.lock`, so it governed the resolution of the Pyprojectx bootstrap requirements and nothing else; with `uv` as the sole bootstrap requirement it selected nothing at all, while its name implied it pinned the build.
+
+A `.python-version` or `.tool-versions` file is deliberately absent — either would be a second, competing interpreter declaration alongside `UV_PYTHON`.
 
 == Related
 
