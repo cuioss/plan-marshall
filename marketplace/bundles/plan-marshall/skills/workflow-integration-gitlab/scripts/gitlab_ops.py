@@ -1468,6 +1468,7 @@ def cmd_ci_wait(args: argparse.Namespace) -> dict:
             'failing_checks': wait_entries,
             'run_id': _run_id,
             'head_sha': head_sha,
+            'mechanism': mechanism,
         }
         if check_dicts:
             error_data['elapsed_sec'] = total_elapsed
@@ -1520,6 +1521,7 @@ def cmd_ci_wait(args: argparse.Namespace) -> dict:
         'wait_outcome': 'completed',
         'run_id': _run_id,
         'head_sha': head_sha,
+        'mechanism': mechanism,
     }
 
 

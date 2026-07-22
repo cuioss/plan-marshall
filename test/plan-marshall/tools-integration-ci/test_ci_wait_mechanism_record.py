@@ -127,6 +127,7 @@ def test_watch_tail_records_mechanism_and_success_outcome(monkeypatch, wait_reco
 
     assert result['status'] == 'success', result
     assert result['final_status'] == 'success'
+    assert result['mechanism'] == 'watch_tail', 'the returned dict must carry the mechanism, not only the [WAIT] log'
     assert watch_calls == ['999']
 
     assert len(wait_records) == 1, wait_records
@@ -140,6 +141,40 @@ def test_watch_tail_records_mechanism_and_success_outcome(monkeypatch, wait_reco
         'target': f'pr#{_PR_NUMBER}',
         'outcome': 'success',
     }
+
+
+# =============================================================================
+# (a2) seed_only — the post-seed snapshot is already terminal, so neither the
+#      watch tail nor the poll fallback runs.
+# =============================================================================
+
+
+def test_seed_only_records_mechanism_and_success_outcome(monkeypatch, wait_records):
+    """First post-seed snapshot is already terminal/successful → mechanism=seed_only.
+
+    The third supported CI-wait mechanism: the seed sleep alone resolves the wait
+    because the very first checks snapshot after it is terminal. No run is ever in
+    a wait state, so the ``gh run watch`` tail never fires and the ``poll_until``
+    fallback is never entered — the wait is stamped ``seed_only`` at ``INFO``.
+    """
+    watch_calls = _stub_github(
+        monkeypatch,
+        fetch_results=[[_check_row('SUCCESS')]],
+    )
+
+    result = _github_ci.cmd_ci_wait(_ci_wait_args(dispatch='detached'))
+
+    assert result['status'] == 'success', result
+    assert result['final_status'] == 'success'
+    assert result['mechanism'] == 'seed_only', 'a wait resolved by the seed alone must stamp seed_only'
+    assert watch_calls == [], 'neither the watch tail nor the poll fallback runs when the seed snapshot is terminal'
+
+    assert len(wait_records) == 1, wait_records
+    _plan_id, level, message = wait_records[0]
+    assert level == 'INFO', 'a clean seed_only resolution is not a degrade'
+    fields = _parse_wait_record(message)
+    assert fields['mechanism'] == 'seed_only'
+    assert fields['outcome'] == 'success'
 
 
 # =============================================================================
@@ -161,6 +196,7 @@ def test_poll_fallback_degrade_is_recorded_at_warning(monkeypatch, wait_records)
     result = _github_ci.cmd_ci_wait(_ci_wait_args(dispatch='inline'))
 
     assert result['status'] == 'success', result
+    assert result['mechanism'] == 'poll_fallback', 'the returned dict must carry the mechanism, not only the [WAIT] log'
     assert watch_calls == [], 'the watch tail must not run when no run is watchable'
 
     assert len(wait_records) == 1, wait_records
@@ -186,6 +222,7 @@ def test_deadline_exceeded_envelope_still_records(monkeypatch, wait_records):
     result = _github_ci.cmd_ci_wait(_ci_wait_args(dispatch='detached'))
 
     assert result['wait_outcome'] == 'deadline_exceeded', result
+    assert result['mechanism'] == 'watch_tail', 'the deadline_exceeded envelope must also carry the mechanism'
 
     assert len(wait_records) == 1, wait_records
     _plan_id, level, message = wait_records[0]
@@ -291,6 +328,7 @@ def test_gitlab_wait_records_the_shared_vocabulary(monkeypatch, wait_records):
     result = gitlab_ops.cmd_ci_wait(_ci_wait_args(dispatch='detached'))
 
     assert result['status'] == 'success', result
+    assert result['mechanism'] == 'watch_tail', 'the GitLab returned dict must carry the mechanism too'
     assert len(wait_records) == 1, wait_records
     fields = _parse_wait_record(wait_records[0][2])
     assert fields['consumer'] == 'ci-wait'
