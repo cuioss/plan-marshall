@@ -331,7 +331,8 @@ class TestSkillMdManifestNarrative:
     """The phase-5-execute SKILL.md must inline the manifest-driven contract."""
 
     @pytest.fixture(scope='class')
-    def skill_md_text(self) -> str:
+    @classmethod
+    def skill_md_text(cls) -> str:
         return str(_PHASE_5_SKILL_MD.read_text(encoding='utf-8'))
 
     def test_step_2_reads_execution_manifest(self, skill_md_text: str):
