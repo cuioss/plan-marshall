@@ -320,6 +320,115 @@ CI_WAIT_TIMEOUT_KEY = 'ci:wait'
 
 
 # ---------------------------------------------------------------------------
+# Wait-mechanism observability (shared across every wait arm)
+# ---------------------------------------------------------------------------
+
+#: Closed vocabulary naming the mechanism a long-running wait actually ran on.
+#: The CI arm selects between ``seed_only`` / ``watch_tail`` / ``poll_fallback``;
+#: the build arm between ``daemon_longpoll`` / ``in_process_fallback``. One
+#: shared vocabulary means a single ``mechanism=`` log query covers both arms.
+WAIT_MECHANISMS = frozenset(
+    {
+        'seed_only',
+        'watch_tail',
+        'poll_fallback',
+        'daemon_longpoll',
+        'in_process_fallback',
+    }
+)
+
+#: Closed vocabulary naming how the CALLER launched the wait. A script cannot
+#: observe whether it was launched detached or inline, so the value is supplied
+#: explicitly and recorded as ``undeclared`` when the caller did not declare it —
+#: a caller that skips the declaration is itself visible in the log rather than
+#: being laundered into a plausible-looking default.
+WAIT_DISPATCH_MODES = frozenset({'detached', 'inline', 'undeclared'})
+
+#: The mechanisms that are a degrade from their arm's primary realisation. A
+#: record naming one of these is emitted at ``WARNING`` so a silent degrade is
+#: greppable at a level distinct from a clean resolution.
+_WAIT_FALLBACK_MECHANISMS = frozenset({'poll_fallback', 'in_process_fallback'})
+
+_WAIT_CONTROL_CHAR_PATTERN = re.compile(r'[\x00-\x1f\x7f]')
+"""C0 control characters (incl. ``\\n`` / ``\\r``) plus DEL, stripped from every
+value interpolated into a ``[WAIT]`` message. The plan-scoped work log is a
+line-oriented plain-text format parsed back by a per-line header regex, and
+``wait_target`` derives from a caller-supplied PR/MR identifier, so an
+unsanitized embedded newline could forge a fake header line (CWE-117)."""
+
+
+def _sanitize_wait_value(value: Any) -> str:
+    """Strip control characters so *value* is safe to interpolate into a message."""
+    return _WAIT_CONTROL_CHAR_PATTERN.sub('', str(value))
+
+
+def record_wait_mechanism(
+    *,
+    plan_id: str | None,
+    consumer: str,
+    wait_mechanism: str,
+    dispatch: str,
+    wait_target: str,
+    outcome: str,
+) -> None:
+    """Write one ``[WAIT]`` work-log record naming the mechanism a wait ran on.
+
+    Emits a single line of the form::
+
+        [WAIT] consumer=ci-wait mechanism=watch_tail dispatch=undeclared target=pr#123 outcome=success
+
+    through ``plan_logging.log_entry('work', plan_id, level, message)`` — the same
+    captured work-log substrate ``manage-logging``'s work verb and the build
+    server's ``_audit_log`` write through, so the record is never emitted only at
+    an uncaptured Python log level. The level is ``WARNING`` when the mechanism is
+    a fallback (see :data:`_WAIT_FALLBACK_MECHANISMS`) or the outcome is
+    ``deadline_exceeded``, and ``INFO`` otherwise.
+
+    Contract: **best-effort**. A falsy ``plan_id`` is a no-op (a plan-less CI call
+    has no work log), an out-of-vocabulary ``wait_mechanism`` / ``dispatch`` is a
+    no-op, and any ``plan_logging`` import or write failure is swallowed. Nothing
+    inside this helper can abort or alter the wait it records.
+
+    Args:
+        plan_id: Plan whose work log receives the record; falsy is a no-op.
+        consumer: The wait arm emitting the record (e.g. ``ci-wait``).
+        wait_mechanism: A member of :data:`WAIT_MECHANISMS` — what the script
+            actually did, always deterministically observable.
+        dispatch: A member of :data:`WAIT_DISPATCH_MODES` — how the caller
+            launched the wait, ``undeclared`` when the caller did not say.
+        wait_target: The wait's subject (e.g. ``pr#123``).
+        outcome: The wait's resolution (e.g. ``success`` / ``failure`` /
+            ``deadline_exceeded``).
+    """
+    if not plan_id:
+        return
+    if wait_mechanism not in WAIT_MECHANISMS or dispatch not in WAIT_DISPATCH_MODES:
+        return
+
+    level = (
+        'WARNING'
+        if wait_mechanism in _WAIT_FALLBACK_MECHANISMS or outcome == 'deadline_exceeded'
+        else 'INFO'
+    )
+    message = (
+        f'[WAIT] consumer={_sanitize_wait_value(consumer)} '
+        f'mechanism={wait_mechanism} '
+        f'dispatch={dispatch} '
+        f'target={_sanitize_wait_value(wait_target)} '
+        f'outcome={_sanitize_wait_value(outcome)}'
+    )
+    try:
+        from plan_logging import log_entry
+
+        log_entry('work', plan_id, level, message)
+    except Exception:
+        # Best-effort: a missing plan_logging module or a write failure must
+        # never abort the wrapped wait. Mirrors the lazy-import degrade
+        # convention already used for resolve_project_dir / manage_ci_artifacts.
+        return
+
+
+# ---------------------------------------------------------------------------
 # CLI execution
 # ---------------------------------------------------------------------------
 
@@ -896,6 +1005,14 @@ def build_parser(
         'record the observed wait duration back into that budget so it converges on real CI '
         'durations. Opt-in: ci_complete_precondition manages its own read+record around a '
         'non-adaptive wait and MUST NOT pass --adaptive (double-record guard).',
+    )
+    ci_wait.add_argument(
+        '--dispatch',
+        choices=['detached', 'inline'],
+        default='undeclared',
+        help='How the caller launched this wait — the one field the script cannot self-observe. '
+        'Recorded on the [WAIT] mechanism-selection record; defaults to "undeclared" so a caller '
+        'that skips the declaration is visible in the log rather than laundered into a default.',
     )
 
     # checks rerun

@@ -99,6 +99,7 @@ from ci_base import (
     poll_until,
     prepare_body,
     read_and_consume_body,
+    record_wait_mechanism,
     run_cli,
     safe_main,
     serialize_toon,
@@ -1376,6 +1377,12 @@ def cmd_ci_wait(args: argparse.Namespace) -> dict:
 
     start = _monotonic()
     deadline = start + args.timeout
+    # Which of the three internal paths actually resolved the wait. Starts at
+    # ``seed_only`` — the post-seed snapshot being already terminal is the case
+    # where neither the watch tail nor the poll fallback runs. The provider's own
+    # path vocabulary maps onto the shared ``WAIT_MECHANISMS`` members, so one
+    # log query covers both providers.
+    mechanism = 'seed_only'
 
     # 1. p50-seeded first sleep (once, bounded by --timeout, skipped when empty).
     seed = _read_ci_wait_p50_seed()
@@ -1398,6 +1405,7 @@ def cmd_ci_wait(args: argparse.Namespace) -> dict:
         remaining = int(deadline - _monotonic())
         if remaining > 0:
             _watch_pipeline(str(pipeline_id), remaining)
+            mechanism = 'watch_tail'
         ok, data = _fetch_mr_jobs(args.pr_number)
         if not ok:
             return make_error('ci_wait', data['error'], data.get('context', ''))
@@ -1406,6 +1414,8 @@ def cmd_ci_wait(args: argparse.Namespace) -> dict:
     elif not jobs or wait_rows:
         # No watchable jobs yet (empty jobs, or no resolvable pipeline id).
         # Preserve the pre-change wait-for-jobs behaviour via poll_until.
+        mechanism = 'poll_fallback'
+
         def _check_fn() -> tuple[bool, dict]:
             return _fetch_mr_jobs(args.pr_number)
 
@@ -1462,6 +1472,14 @@ def cmd_ci_wait(args: argparse.Namespace) -> dict:
         if check_dicts:
             error_data['elapsed_sec'] = total_elapsed
             error_data['checks'] = check_dicts
+        record_wait_mechanism(
+            plan_id=getattr(args, 'router_plan_id', None),
+            consumer='ci-wait',
+            wait_mechanism=mechanism,
+            dispatch=getattr(args, 'dispatch', 'undeclared'),
+            wait_target=f'pr#{args.pr_number}',
+            outcome='deadline_exceeded',
+        )
         return error_data
 
     # Natural completion — every job reached a terminal status. Partition and
@@ -1482,6 +1500,14 @@ def cmd_ci_wait(args: argparse.Namespace) -> dict:
     if final_status == 'success' and duration_sec > 0:
         _record_ci_wait_duration(duration_sec)
 
+    record_wait_mechanism(
+        plan_id=getattr(args, 'router_plan_id', None),
+        consumer='ci-wait',
+        wait_mechanism=mechanism,
+        dispatch=getattr(args, 'dispatch', 'undeclared'),
+        wait_target=f'pr#{args.pr_number}',
+        outcome=final_status,
+    )
     return {
         'status': 'success',
         'operation': 'ci_wait',

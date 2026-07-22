@@ -30,6 +30,7 @@ from ci_base import (
     enrich_failing_checks_with_logs,
     make_error,
     make_simple_handler,
+    record_wait_mechanism,
 )
 
 
@@ -271,6 +272,10 @@ def cmd_ci_wait(args: argparse.Namespace) -> dict:
 
     start = _monotonic()
     deadline = start + args.timeout
+    # Which of the three internal paths actually resolved the wait. Starts at
+    # ``seed_only`` — the post-seed snapshot being already terminal is the case
+    # where neither the watch tail nor the poll fallback runs.
+    mechanism = 'seed_only'
 
     # 1. p50-seeded first sleep (once, bounded by --timeout, skipped when empty).
     seed = _read_ci_wait_p50_seed()
@@ -301,6 +306,7 @@ def cmd_ci_wait(args: argparse.Namespace) -> dict:
             if remaining <= 0:
                 break
             _watch_run(run_id, remaining)
+            mechanism = 'watch_tail'
         ok, data = _fetch_pr_checks(args.pr_number)
         if not ok:
             return make_error('ci_wait', data['error'], data.get('context', ''))
@@ -309,6 +315,8 @@ def cmd_ci_wait(args: argparse.Namespace) -> dict:
         # No watchable run yet (checks empty, or wait-state checks with no
         # resolvable run id). Preserve the pre-change wait-for-checks behaviour
         # via the sanctioned poll_until framework, bounded by the remaining time.
+        mechanism = 'poll_fallback'
+
         def _check_fn() -> tuple[bool, dict]:
             return _fetch_pr_checks(args.pr_number)
 
@@ -362,6 +370,14 @@ def cmd_ci_wait(args: argparse.Namespace) -> dict:
         if check_dicts:
             error_data['elapsed_sec'] = total_elapsed
             error_data['checks'] = check_dicts
+        record_wait_mechanism(
+            plan_id=getattr(args, 'router_plan_id', None),
+            consumer='ci-wait',
+            wait_mechanism=mechanism,
+            dispatch=getattr(args, 'dispatch', 'undeclared'),
+            wait_target=f'pr#{args.pr_number}',
+            outcome='deadline_exceeded',
+        )
         return error_data
 
     # Natural completion — every check reached a terminal conclusion. Partition
@@ -389,6 +405,14 @@ def cmd_ci_wait(args: argparse.Namespace) -> dict:
     if final_status == 'success' and duration_sec > 0:
         _record_ci_wait_duration(duration_sec)
 
+    record_wait_mechanism(
+        plan_id=getattr(args, 'router_plan_id', None),
+        consumer='ci-wait',
+        wait_mechanism=mechanism,
+        dispatch=getattr(args, 'dispatch', 'undeclared'),
+        wait_target=f'pr#{args.pr_number}',
+        outcome=final_status,
+    )
     return {
         'status': 'success',
         'operation': 'ci_wait',
