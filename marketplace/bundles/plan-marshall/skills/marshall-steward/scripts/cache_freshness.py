@@ -62,31 +62,10 @@ import re
 import sys
 from pathlib import Path
 
-# Bootstrap sys.path — this script may run before the executor sets up
-# PYTHONPATH. Step 1: locate script-shared/scripts via an identity walk so the
-# shared anchor helper is importable. Step 2: derive the skills root from it.
-for _ancestor in Path(__file__).resolve().parents:
-    if _ancestor.name == 'skills' and (_ancestor.parent / '.claude-plugin' / 'plugin.json').is_file():
-        _shared_scripts = str(_ancestor / 'script-shared' / 'scripts')
-        if _shared_scripts not in sys.path:
-            sys.path.insert(0, _shared_scripts)
-        break
-
-from marketplace_bundles import _version_sort_key, resolve_skills_root  # noqa: E402
-from marketplace_paths import get_plugin_cache_path  # noqa: E402
-
-_SKILLS_DIR = resolve_skills_root(Path(__file__))
-for _lib in ('ref-toon-format', 'tools-file-ops', 'tools-script-executor'):
-    _lib_path = str(_SKILLS_DIR / _lib / 'scripts')
-    if _lib_path not in sys.path:
-        sys.path.insert(0, _lib_path)
-
 # The PLAN-08 manifest-resolution order, imported rather than re-implemented.
-from generate_executor import (  # noqa: E402
-    _version_tuple,
-    find_installed_manifest_path,
-    read_installed_manifest,
-)
+from generate_executor import _version_tuple, find_installed_manifest_path, read_installed_manifest
+from marketplace_bundles import _version_sort_key
+from marketplace_paths import get_plugin_cache_path
 
 # A cache version directory (``.../plan-marshall/0.1.1180/``).
 _VERSION_DIR_RE = re.compile(r'^\d+\.\d+')
