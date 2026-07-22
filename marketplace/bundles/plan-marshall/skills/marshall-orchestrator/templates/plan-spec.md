@@ -45,7 +45,7 @@ verified exactly like an asserted presence.}
 check before this plan may run concurrently with another. Label each entry per Claim Labels
 above, and re-verify the whole surface against HEAD at outline before scoping on it.}
 
-- {path or module}
+- {OBSERVED|HYPOTHESIS}: `{path}`:{line} — `{symbol}` (verify-at-outline when HYPOTHESIS)
 
 ## Dependencies and Sequencing
 
