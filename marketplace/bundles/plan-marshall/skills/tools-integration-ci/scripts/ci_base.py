@@ -325,8 +325,11 @@ CI_WAIT_TIMEOUT_KEY = 'ci:wait'
 
 #: Closed vocabulary naming the mechanism a long-running wait actually ran on.
 #: The CI arm selects between ``seed_only`` / ``watch_tail`` / ``poll_fallback``;
-#: the build arm between ``daemon_longpoll`` / ``in_process_fallback``. One
-#: shared vocabulary means a single ``mechanism=`` log query covers both arms.
+#: the build arm between ``daemon_longpoll`` (routed), ``in_process_fallback``
+#: (ran in-process), and ``no_build`` (the ``execution_mode=daemon`` hard refusal
+#: — routing was unavailable, so the build was refused and NOTHING ran, in-process
+#: or otherwise). One shared vocabulary means a single ``mechanism=`` log query
+#: covers both arms.
 WAIT_MECHANISMS = frozenset(
     {
         'seed_only',
@@ -334,6 +337,7 @@ WAIT_MECHANISMS = frozenset(
         'poll_fallback',
         'daemon_longpoll',
         'in_process_fallback',
+        'no_build',
     }
 )
 

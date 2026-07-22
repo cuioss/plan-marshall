@@ -194,10 +194,18 @@ def _record_resolution(
     """
     # The wait mechanism this build-arm record names, drawn from the same closed
     # vocabulary the CI arm uses so one ``mechanism=`` log query matches both
-    # arms. It is a pure rendering of the already-decided ``resolved`` value —
-    # no new branch, no new call site: ``routed`` ran on the daemon long-poll,
-    # ``in_process`` / ``fail-loud`` are the in-process fallback realisation.
-    mechanism = 'daemon_longpoll' if resolved == 'routed' else 'in_process_fallback'
+    # arms. It is a pure rendering of the already-decided ``resolved`` value:
+    # ``routed`` ran on the daemon long-poll; ``in_process`` is the in-process
+    # fallback realisation; ``fail-loud`` is the ``execution_mode=daemon`` hard
+    # refusal where routing was unavailable and NO build ran at all (in-process
+    # or otherwise), so it MUST NOT claim ``in_process_fallback`` — that would
+    # log an in-process realisation that never happened.
+    _RESOLVED_TO_MECHANISM = {
+        'routed': 'daemon_longpoll',
+        'in_process': 'in_process_fallback',
+        'fail-loud': 'no_build',
+    }
+    mechanism = _RESOLVED_TO_MECHANISM.get(resolved, 'in_process_fallback')
     message = (
         f'[BUILD-SERVER] resolved build (requested={requested}, resolved={resolved}, '
         f'reason={reason}, notation={notation}, plan={plan_id}, mechanism={mechanism})'

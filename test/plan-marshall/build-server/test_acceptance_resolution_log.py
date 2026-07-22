@@ -136,6 +136,7 @@ def test_routed_resolution_reaches_the_captured_sink(monkeypatch, capsys, captur
     assert (log_type, plan_id, level) == ('work', 'plan-x', 'INFO')
     assert 'requested=auto, resolved=routed' in message
     assert f'notation={_MAVEN_NOTATION}' in message
+    assert 'mechanism=daemon_longpoll' in message
     assert message in capsys.readouterr().err
 
 
@@ -158,6 +159,7 @@ def test_in_process_fallback_reason_is_captured_at_warning(monkeypatch, capsys, 
     assert (log_type, plan_id, level) == ('work', 'plan-x', 'WARNING')
     assert 'requested=auto, resolved=in_process' in message
     assert 'reason=socket_absent' in message
+    assert 'mechanism=in_process_fallback' in message
     assert message in capsys.readouterr().err
 
 
@@ -179,6 +181,11 @@ def test_daemon_fail_loud_resolution_is_captured_at_warning(monkeypatch, capsys,
     assert (log_type, plan_id, level) == ('work', 'plan-x', 'WARNING')
     assert 'requested=daemon, resolved=fail-loud' in message
     assert 'reason=socket_absent' in message
+    # The fail-loud refusal runs NO build (in-process or otherwise), so the
+    # mechanism must name that honestly — never in_process_fallback, which would
+    # log an in-process realisation that never happened.
+    assert 'mechanism=no_build' in message
+    assert 'mechanism=in_process_fallback' not in message
     assert message in capsys.readouterr().err
 
 
