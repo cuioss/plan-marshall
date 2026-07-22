@@ -275,7 +275,7 @@ class TestArrayAuthorityContract:
         manifest = _mem.read_manifest('vl-order-ok')
         assert manifest is not None
         # Built-in steps in ascending order (push=10, create-pr=20)
-        # followed by project steps in ascending order (80, 85).
+        # followed by project steps in ascending order (81, 85).
         manifest['phase_6']['steps'] = [
             'push',
             'create-pr',
@@ -302,7 +302,7 @@ class TestArrayAuthorityContract:
         manifest = _mem.read_manifest('vl-order-disagree')
         assert manifest is not None
         # Frontmatter order would call this an inversion: sync-plugin-cache (85)
-        # precedes deploy-target (80). The array says this is the intended order.
+        # precedes deploy-target (81). The array says this is the intended order.
         manifest['phase_6']['steps'] = [
             'push',
             'project:finalize-step-sync-plugin-cache',
@@ -324,10 +324,12 @@ class TestArrayAuthorityContract:
     def test_project_step_order_resolves_from_project_local_skill_md(self):
         """project: step order is read from .claude/skills/{name}/SKILL.md frontmatter.
 
-        deploy-target sits at order 81 (bumped from 80 to deconflict with the
-        consumer-shipped built-in default:finalize-step-preference-emitter, which
-        occupies order 80), giving the intended preference-emitter (80) ->
-        deploy-target (81) -> sync-plugin-cache (85) finalize ordering."""
+        deploy-target sits at order 81 and sync-plugin-cache at 85. The
+        consumer-shipped built-in default:finalize-step-preference-emitter now
+        sits pre-merge at order 61 (the settle band), so the former
+        deploy-target-vs-preference-emitter deconfliction that once explained the
+        81 value no longer applies — the two steps no longer share a
+        neighbourhood in the order space."""
         assert _mem._resolve_step_order('project:finalize-step-deploy-target') == 81
         assert _mem._resolve_step_order('project:finalize-step-sync-plugin-cache') == 85
 

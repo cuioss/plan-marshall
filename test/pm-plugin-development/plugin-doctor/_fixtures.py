@@ -628,6 +628,7 @@ def build_fixture_corpus() -> dict[str, FixtureSpec]:
                 '---\n'
                 'name: default:branch-cleanup\n'
                 'order: 70\n'
+                'mutates_source: false\n'
                 'description: Merge gate\n'
                 f'implements: {_EXT_POINT_FS}\n'
                 '---\n\n# Branch cleanup\n'

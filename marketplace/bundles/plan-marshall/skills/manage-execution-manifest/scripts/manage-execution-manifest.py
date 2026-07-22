@@ -1735,7 +1735,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # frontmatter order, so ``manage-config sync-defaults`` back-filling a
     # missing default-on step by APPENDING it landed the new step after
     # ``archive-plan`` (order 1000) regardless of its own order (e.g.
-    # ``finalize-step-preference-emitter``, order 80). Sorting here makes
+    # ``finalize-step-preference-emitter``, order 61). Sorting here makes
     # ``archive-plan`` sort last among order-resolvable steps automatically —
     # every finalize step's order is below 1000 (nearest tail: record-metrics
     # 998, finalize-step-print-phase-breakdown 999). Steps whose order resolves

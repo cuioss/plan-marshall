@@ -5,6 +5,7 @@ lane:
 name: default:record-metrics
 description: Record final plan metrics before archive
 order: 998
+mutates_source: false
 default_on: true
 presets:
   - local
