@@ -37,6 +37,8 @@ Each provider module exports `get_provider_declarations()` returning a list of d
 
 `providers[].skill_name` stays bundle-prefixed, but the `credentials_config` storage key is canonicalized to the prefix-stripped form (e.g. `workflow-integration-sonar`), matching the credential filename under `~/.plan-marshall/credentials/`. Writes always key the block by that canonical form and drop any pre-existing key whose canonical form is the same, so a re-configure never leaves two shadow blocks for one provider; reads accept either spelling — an exact `skill_name` match first, then a canonical-equality scan.
 
+Stale prefixed `credentials_config` keys written before this normalization are canonicalized transparently by `_providers_core` on the next `credentials_config` access — no operator action, no migration subcommand. The pass is idempotent: once every key is canonical it performs no write. When two source keys collapse onto one canonical key with differing bodies, the pass leaves both keys untouched rather than merging them, so no block is ever lost silently.
+
 ## Subcommands
 
 | Subcommand | Description |

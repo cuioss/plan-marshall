@@ -981,3 +981,113 @@ class TestCredentialsConfigKeyNormalization:
 
         assert read_provider_config('workflow-integration-github') == {}
         assert read_provider_config('plan-marshall:workflow-integration-github') == {}
+
+
+class TestCredentialsConfigKeyLazyMigration:
+    """Tests for the lazy ``credentials_config`` key migration.
+
+    Stale prefixed keys are canonicalized transparently on the next
+    ``credentials_config`` access. The pass is idempotent, never writes when it
+    has nothing to change, and refuses to merge two source keys that collapse
+    onto one canonical key with differing bodies.
+    """
+
+    @staticmethod
+    def _count_saves(monkeypatch) -> list[int]:
+        """Spy on ``_save_marshal`` and return a list that grows per persist.
+
+        Byte-comparing marshal.json cannot distinguish "no write" from "wrote
+        identical bytes", so the no-write assertions count persists directly.
+        """
+        saves: list[int] = []
+        real_save = _providers_core._save_marshal
+
+        def _spy(config):
+            saves.append(1)
+            real_save(config)
+
+        monkeypatch.setattr('_providers_core._save_marshal', _spy)
+        return saves
+
+    def test_stale_prefixed_key_is_canonicalized_in_the_persisted_config(self, tmp_path, monkeypatch):
+        """A read through the access path re-keys the stale block on disk."""
+        marshal = stage_marshal(
+            tmp_path,
+            monkeypatch,
+            {'credentials_config': {_PREFIXED_SKILL: {'url': _SONAR_URL, 'organization': 'cuioss'}}},
+        )
+
+        read_provider_config(_CANONICAL_SKILL)
+
+        credentials_config = json.loads(marshal.read_text())['credentials_config']
+        assert list(credentials_config) == [_CANONICAL_SKILL]
+        assert credentials_config[_CANONICAL_SKILL] == {'url': _SONAR_URL, 'organization': 'cuioss'}
+
+    def test_second_pass_is_idempotent_and_performs_no_write(self, tmp_path, monkeypatch):
+        """Re-running the migration over an already-migrated config writes nothing."""
+        marshal = stage_marshal(
+            tmp_path,
+            monkeypatch,
+            {'credentials_config': {_PREFIXED_SKILL: {'url': _SONAR_URL}}},
+        )
+        read_provider_config(_CANONICAL_SKILL)  # first pass migrates
+        saves = self._count_saves(monkeypatch)
+
+        read_provider_config(_CANONICAL_SKILL)  # second pass
+
+        assert saves == []
+        assert list(json.loads(marshal.read_text())['credentials_config']) == [_CANONICAL_SKILL]
+
+    def test_already_canonical_config_performs_no_write(self, tmp_path, monkeypatch):
+        """A config whose keys are already canonical is never rewritten."""
+        stage_marshal(
+            tmp_path,
+            monkeypatch,
+            {'credentials_config': {_CANONICAL_SKILL: {'url': _SONAR_URL}}},
+        )
+        saves = self._count_saves(monkeypatch)
+
+        assert read_provider_config(_CANONICAL_SKILL) == {'url': _SONAR_URL}
+        assert saves == []
+
+    def test_differing_bodies_conflict_leaves_both_keys_and_writes_nothing(self, tmp_path, monkeypatch):
+        """Two keys collapsing onto one canonical key with differing bodies are left alone."""
+        marshal = stage_marshal(
+            tmp_path,
+            monkeypatch,
+            {
+                'credentials_config': {
+                    _PREFIXED_SKILL: {'url': 'https://prefixed.example'},
+                    _CANONICAL_SKILL: {'url': 'https://canonical.example'},
+                }
+            },
+        )
+        saves = self._count_saves(monkeypatch)
+
+        assert read_provider_config(_PREFIXED_SKILL) == {'url': 'https://prefixed.example'}
+        assert saves == []
+
+        # Neither block was dropped or merged.
+        credentials_config = json.loads(marshal.read_text())['credentials_config']
+        assert credentials_config == {
+            _PREFIXED_SKILL: {'url': 'https://prefixed.example'},
+            _CANONICAL_SKILL: {'url': 'https://canonical.example'},
+        }
+
+    def test_identical_bodies_collapse_without_conflict(self, tmp_path, monkeypatch):
+        """Two spellings carrying the same body collapse — nothing is lost."""
+        marshal = stage_marshal(
+            tmp_path,
+            monkeypatch,
+            {
+                'credentials_config': {
+                    _PREFIXED_SKILL: {'url': _SONAR_URL},
+                    _CANONICAL_SKILL: {'url': _SONAR_URL},
+                }
+            },
+        )
+
+        read_provider_config(_CANONICAL_SKILL)
+
+        credentials_config = json.loads(marshal.read_text())['credentials_config']
+        assert credentials_config == {_CANONICAL_SKILL: {'url': _SONAR_URL}}
