@@ -74,6 +74,24 @@ def test_creates_output_file(tmp_path):
     assert output.exists()
 ```
 
+## Event-Loop and Wall-Clock CI Liabilities
+
+A test suite that passes on the developer's local Python interpreter is not proof it passes on CI's pinned interpreter — the two classes below hang the whole job for its full timeout budget rather than failing fast, and both are invisible on a newer local interpreter while reproducing reliably on an older pinned one.
+
+### `asyncio.run(...)` at loop-close is a version-specific subprocess-cancel hang
+
+Driving a component through `asyncio.run(subject.some_async_entry_point(...))` looks safe when the component "should" have no real subprocess in flight — but a scheduler/executor that clamps its concurrency floor to at least one (e.g. `max_slots = max(1, n)`) can silently admit a job and spawn a real subprocess as a fire-and-forget task. `asyncio.run` then hangs at loop-close cancelling that in-flight subprocess transport. The hang reproduces on some CPython versions and not others, so a green local run proves nothing about CI.
+
+**Rule**: when the unit under test is a synchronous side effect (a record write, a state mutation) reached through an async entry point, drive the actual seams the assertion needs directly and synchronously — enqueue, dispatch, whatever the two or three calls are — never round-trip through `asyncio.run(...)` unless the event loop itself, or genuine concurrent async behavior, is the thing under test. To reproduce a suspected version-specific hang locally, run the suite under CI's exact interpreter explicitly (e.g. the bundled `uv run --python <ci-version> -m pytest <path>`) rather than trusting a green run on the dev interpreter.
+
+### Wall-clock-derived poll deadlines are calendar time-bombs
+
+A polling loop whose deadline is computed from the real wall clock, or that otherwise measures elapsed time via a calendar-derived value, can turn into a CPU busy-loop that never terminates once real time passes the point the loop was authored against. Compute every poll deadline from a monotonic clock (`time.monotonic()` in Python), never from `date.today()` / `datetime.now()` / similar. Route bounded waits for an out-of-process side effect through a single shared helper (see `test/_shared/_poll_until.py`'s `poll_until` in this repo) instead of each test hand-rolling its own deadline loop — a single implementation is one place to get the monotonic-clock discipline right instead of many.
+
+### Keep a `pytest-timeout` backstop
+
+Any test with a real event loop or a real subprocess should run under a `pytest-timeout` backstop (the `signal` method — `thread` does not fire correctly under `pytest-xdist`'s main-thread test execution) so a future regression of either liability above fails fast with a diagnosable traceback instead of wedging the whole CI job.
+
 ## Script Path Discovery
 
 Scripts using `Path.cwd()` break when tests run from different directories. Use dual-path discovery:
