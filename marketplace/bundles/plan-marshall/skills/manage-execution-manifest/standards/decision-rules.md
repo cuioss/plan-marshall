@@ -525,6 +525,31 @@ The six rows below are evaluated top-down; the first match wins. They operate on
 
 **Why**: This is the safe baseline for code-shaped features and broader changes. The full canonical Phase 5 verification fires; Phase 6 dispatches every step `marshal.json` lists.
 
+## Post-Matrix Assertion: `build_verdict_contradiction`
+
+An **assertion**, not a pre-filter. The distinction is load-bearing: every pre-filter above NARROWS a candidate list (it removes steps and lets compose proceed), whereas this check REJECTS — it selects nothing, drops nothing, and fails the compose loud when the composed manifest contradicts the sole build/no-build authority.
+
+**Where it runs**: on the FINAL emitted step lists, alongside the `unresolvable_step` and `non_canonical_step` structural gates, after the matrix and every pre-filter have settled. Like its siblings it returns before `write_manifest`, so a contradicting compose never persists a partial manifest.
+
+**What it rejects**: the composed manifest carries a step that can only pass by producing build evidence, while `build-decision` has ruled a build `not_necessary` for the plan's live footprint. Concretely:
+
+* a `phase_5.verification_steps` entry whose derived role is `module-tests`, `coverage`, `integration`, or `e2e`; or
+* a `phase_6.steps` entry that gates on `kind=build` evidence (`pre-push-quality-gate`).
+
+`quality-gate` is deliberately NOT in the rejected set — structural lint runs no build and stamps no `kind=build` ledger entry, so composing it beside a `not_necessary` verdict is consistent, not contradictory.
+
+**Why it is worth an assertion**: such a step cannot succeed. The verdict says nothing in this footprint can be built, so the build evidence the step needs can never exist and the step is a guaranteed false-red. Its presence means some consumer decided build necessity from a signal other than the authority — the exact regression [ADR-004](../../../../../doc/adr/004-The_file-to-build_contract_is_owned_by_build-system_extensions_not_languagecontent_domains.adoc) § "Amendment: `build-decision` is the sole build/no-build authority" retires. A pre-filter would silently paper over that drift by removing the step; the assertion surfaces it.
+
+**Non-empty-footprint precondition (the empty-footprint trap)**: the assertion is DISABLED whenever the live footprint is empty, and this guard is not an optimization — it is what keeps the gate from inverting into a permanent false alarm. `should_execute_build` returns `not_necessary` for an empty footprint ("plan footprint is empty — no changed files to build"), and at early compose the footprint is ALWAYS empty: `phase-4-plan` composes before `phase-5-execute` Step 2.5 materializes the worktree, so no file has been changed yet. An unguarded assertion would therefore see `not_necessary` on essentially every plan's first compose and reject every build step in it. The guard restricts the assertion to composes that can actually observe a real footprint. An unobtainable verdict likewise disables it — absence of a verdict is not evidence of a contradiction.
+
+**On failure** the composer emits one decision-log line and returns `status: error` with `error: build_verdict_contradiction`, plus `phase`, `step_id`, and the verdict's own `reason`:
+
+```text
+(plan-marshall:manage-execution-manifest:compose) build_verdict_contradiction — {message}
+```
+
+Implementation: `_manifest_validation.check_build_verdict_consistent`.
+
 ## Decision Log Format
 
 For each rule fired, the composer emits one line via `manage-logging decision`:

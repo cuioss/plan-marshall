@@ -126,6 +126,7 @@ from _manifest_validation import (
     _resolve_standards_path,  # noqa: F401
     _resolve_step_order,  # noqa: F401
     _sort_steps_by_frontmatter_order,  # noqa: F401
+    check_build_verdict_consistent,
     check_emitted_steps_canonical,
     check_emitted_steps_resolvable,  # noqa: F401
     cmd_step_params_get,  # noqa: F401
@@ -531,6 +532,28 @@ def _resolve_footprint(plan_id: str) -> list[str]:
     except subprocess.CalledProcessError:
         return []
     return sorted(footprint)
+
+
+def _command_free_build_verdict(plan_id: str) -> dict | None:
+    """Return the COMMAND-FREE build-necessity verdict, or ``None`` when unobtainable.
+
+    Thin read of the sole build/no-build authority for the compose-time
+    consistency assertion. The question is plan-wide, so no canonical command is
+    passed and none may be invented.
+
+    ``None`` (rather than a synthesized verdict) is returned when the authority
+    cannot be reached: the assertion's job is to prove a CONTRADICTION, and an
+    absent verdict is no evidence of one. Degrading to a fabricated verdict in
+    either direction would either fail composes spuriously or assert consistency
+    that was never checked.
+    """
+    try:
+        from extension_base import should_execute_build
+
+        verdict = should_execute_build(None, plan_id)
+    except Exception:  # noqa: BLE001 — an unobtainable verdict proves no contradiction
+        return None
+    return verdict if isinstance(verdict, dict) else None
 
 
 def _apply_pre_push_quality_gate_inactive(
@@ -1787,6 +1810,41 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
             'phase': canonical_error['phase'],
             'step_id': canonical_error['step_id'],
             'canonical': canonical_error['canonical'],
+        }
+
+    # Build-verdict consistency assertion (fail-loud): the third sibling of the
+    # two structural gates above, run on the SAME FINAL emitted step lists. It
+    # rejects a manifest that CONTRADICTS the sole build/no-build authority —
+    # a composed step that can only pass by producing build evidence while
+    # build-decision has ruled a build not_necessary for this footprint. Unlike
+    # the pre-filters, this narrows nothing; it is an assertion that some
+    # consumer decided build necessity from a signal other than the authority.
+    #
+    # The assertion is deliberately fed the live footprint so it can enforce its
+    # non-empty-footprint precondition: at early compose the footprint is always
+    # empty and the verdict is therefore always not_necessary, so an unguarded
+    # assertion would fire on every plan (see check_build_verdict_consistent's
+    # docstring — the empty-footprint trap).
+    verdict_error = check_build_verdict_consistent(
+        list(body['phase_5'].get('verification_steps', [])),
+        list(body['phase_6'].get('steps', [])),
+        _resolve_footprint(plan_id),
+        _command_free_build_verdict(plan_id),
+    )
+    if verdict_error is not None:
+        _emit_decision_log(
+            plan_id,
+            '(plan-marshall:manage-execution-manifest:compose) build_verdict_contradiction — '
+            f'{verdict_error["message"]}',
+        )
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'build_verdict_contradiction',
+            'message': verdict_error['message'],
+            'phase': verdict_error['phase'],
+            'step_id': verdict_error['step_id'],
+            'reason': verdict_error['reason'],
         }
 
     # Resolution gate passed — NOW commit the staged task-file rewrites from the

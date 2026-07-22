@@ -21,6 +21,7 @@ from _manifest_core import (
     MANIFEST_VERSION,
     PROMOTED_BUILTIN_STEP_IDS,
     VALID_RECORD_PHASES,
+    _role_of,
     read_manifest,
     write_manifest,
 )
@@ -775,6 +776,114 @@ def check_emitted_steps_canonical(
                         'the compose boundary normalization should have stripped'
                     ),
                 }
+    return None
+
+
+# Matrix roles whose steps actually run a build and therefore stamp a
+# ``kind=build`` change-ledger entry. ``quality-gate`` is deliberately EXCLUDED:
+# structural lint runs no build and stamps no ledger entry, so composing it
+# alongside a ``not_necessary`` verdict is not a contradiction. Composing any of
+# the roles below IS: the verdict says nothing here can be built, while the step
+# demands build evidence that can never exist.
+_BUILD_EVIDENCE_ROLES = frozenset({'module-tests', 'coverage', 'integration', 'e2e'})
+
+# Phase-6 steps that gate on ``kind=build`` evidence. ``pre-push-quality-gate``
+# is the one such gate today; it is already dropped by its own pre-filter on a
+# ``not_necessary`` verdict, so its presence here after the fact means the
+# pre-filter and this assertion disagree — exactly the drift worth failing on.
+_BUILD_EVIDENCE_PHASE_6_STEPS = frozenset({'pre-push-quality-gate'})
+
+
+def check_build_verdict_consistent(
+    phase_5_steps: list[Any],
+    phase_6_steps: list[Any],
+    footprint: list[Any],
+    verdict: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """Assert the composed manifest does not contradict the build/no-build verdict.
+
+    Post-matrix ASSERTION, not a pre-filter: it narrows nothing and selects
+    nothing — it rejects a manifest that is internally inconsistent. Sibling of
+    :func:`check_emitted_steps_canonical` in shape (pure function, no logging,
+    returns the first offender or ``None``).
+
+    The contradiction it rejects: the sole build/no-build authority has ruled a
+    build ``not_necessary`` for this footprint, yet the composed manifest still
+    carries a step that can only pass by producing build evidence. Such a step
+    cannot succeed — nothing it could build exists — so it is a guaranteed
+    false-red, and its presence means some consumer decided build necessity from
+    a signal other than the authority.
+
+    **Non-empty-footprint precondition (load-bearing — the empty-footprint
+    trap).** ``should_execute_build`` returns ``not_necessary`` for an EMPTY
+    footprint ("plan footprint is empty — no changed files to build"), and at
+    early compose the footprint is ALWAYS empty: ``phase-4-plan`` composes before
+    ``phase-5-execute`` Step 2.5 materializes the worktree, so nothing has been
+    changed yet. Without the explicit guard clause below, the assertion would
+    therefore fire on essentially every plan at its first compose — a gate that
+    is not merely vacuous but inverted into a permanent false alarm. The guard
+    restricts the assertion to composes that can actually observe a real
+    footprint; an empty footprint yields ``None`` (no finding) unconditionally.
+
+    Args:
+        phase_5_steps: FINAL composed ``phase_5.verification_steps``.
+        phase_6_steps: FINAL composed ``phase_6.steps``.
+        footprint: the live plan footprint the verdict was computed over. An
+            empty list disables the assertion (see the precondition above).
+        verdict: the command-free ``should_execute_build`` result, or ``None``
+            when no verdict could be obtained (also disables the assertion —
+            an unobtainable verdict is not evidence of a contradiction).
+
+    Returns:
+        ``None`` when consistent, otherwise a dict carrying ``phase``,
+        ``step_id``, the verdict ``reason``, and an actionable ``message``.
+    """
+    # Precondition 1 — the empty-footprint trap. See the docstring: at early
+    # compose the footprint is structurally empty and the verdict is therefore
+    # ALWAYS not_necessary, so an unguarded assertion fires on every plan.
+    if not footprint:
+        return None
+
+    # Precondition 2 — no verdict is not a contradiction.
+    if not isinstance(verdict, dict) or verdict.get('decision') != 'not_necessary':
+        return None
+
+    reason = verdict.get('reason', '')
+    role_cache: dict[str, str | None] = {}
+
+    for step in phase_5_steps:
+        if not isinstance(step, str):
+            continue
+        if _role_of(step, role_cache) in _BUILD_EVIDENCE_ROLES:
+            return {
+                'phase': 'phase_5',
+                'step_id': step,
+                'reason': reason,
+                'message': (
+                    f'phase_5 composes build step `{step}` while build-decision ruled a '
+                    f'build not_necessary for this footprint ({reason}). The step can only '
+                    'pass by producing build evidence the verdict says cannot exist, so it '
+                    'is a guaranteed false-red — build necessity was decided from a signal '
+                    'other than the build-decision authority'
+                ),
+            }
+
+    for step in phase_6_steps:
+        if not isinstance(step, str):
+            continue
+        if canonicalize_step_key(step) in _BUILD_EVIDENCE_PHASE_6_STEPS:
+            return {
+                'phase': 'phase_6',
+                'step_id': step,
+                'reason': reason,
+                'message': (
+                    f'phase_6 composes build-evidence gate `{step}` while build-decision '
+                    f'ruled a build not_necessary for this footprint ({reason}). The gate '
+                    'demands a kind=build ledger entry that can never be stamped — its own '
+                    'pre-filter should already have dropped it, so this is pre-filter drift'
+                ),
+            }
+
     return None
 
 
