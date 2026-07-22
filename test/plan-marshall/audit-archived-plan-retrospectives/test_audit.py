@@ -546,10 +546,7 @@ def test_manifest_check_surfaces_owner_drift_column(tmp_path):
 
 def _routing_or_skip():
     routing = audit._load_routing_logic(PROJECT_ROOT)
-    if routing is None:  # pragma: no cover - router import guard
-        import pytest
-
-        pytest.skip("planning-lane router unavailable")
+    assert routing is not None, 'planning-lane router unavailable'
     return routing
 
 

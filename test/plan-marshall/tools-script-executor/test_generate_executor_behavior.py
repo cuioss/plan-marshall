@@ -16,8 +16,6 @@ import sys
 import types
 from pathlib import Path
 
-import pytest
-
 from conftest import _MARKETPLACE_SCRIPT_DIRS, load_script_module
 
 # Unique module_name so the in-process load is distinct from the existing
@@ -429,12 +427,12 @@ def test_notation_drift_zero_against_clean_marketplace_source():
     """
     try:
         base = _gen.get_base_path(use_marketplace=True)
-    except FileNotFoundError:
-        pytest.skip(
+    except FileNotFoundError as exc:  # pragma: no cover - tracked source tree
+        raise AssertionError(
             'marketplace source tree (marketplace/bundles) is not present in '
             'this checkout — caller-notation drift detection requires the '
             'marketplace source and cannot run against a deployed plugin cache'
-        )
+        ) from exc
     registered = _gen.discover_scripts_fallback(base)
 
     drift = _gen._detect_notation_drift(registered, base)

@@ -501,6 +501,59 @@ def pytest_collection_modifyitems(items):
         )
 
 
+#: Opt-in flag for the reference-platform ``skipped == 0`` gate. The gate is
+#: off by default so a developer's ``-k``-filtered or otherwise partial run is
+#: never failed by it; CI on the reference platform sets it to ``1``.
+_STRICT_NO_SKIP_ENV = 'PLAN_MARSHALL_STRICT_NO_SKIP'
+
+
+#: Nodeids of every test the session reported as skipped. Under xdist the
+#: workers stream their reports back to the controller, so the controller's
+#: copy of this set is complete and is the one the gate reads.
+_SKIPPED_NODEIDS: set = set()
+
+
+def pytest_runtest_logreport(report):
+    """Accumulate skipped nodeids for the session-level zero-skip gate."""
+    if report.skipped:
+        _SKIPPED_NODEIDS.add(report.nodeid)
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """Fail a reference-platform full run that skipped any test.
+
+    Every skip in this suite is meant to be either a tracked-artifact guard
+    (which is now a hard assertion) or a genuine environment guard that does
+    not trigger on the reference platform. A non-zero skip count there means a
+    guard silently disarmed a test, so the run fails rather than reporting a
+    green suite that quietly covered less than it claims.
+
+    The gate is deliberately narrow. It is active only when the opt-in flag is
+    set, and it exempts a ``-k`` / ``-m`` filtered run, which legitimately
+    skips tests. A developer's partial run is therefore never failed by it.
+    """
+    if os.environ.get(_STRICT_NO_SKIP_ENV) != '1':
+        return
+    config = session.config
+    if hasattr(config, 'workerinput'):
+        return  # xdist worker — the controller owns the session-level verdict
+    if getattr(config.option, 'keyword', '') or getattr(config.option, 'markexpr', ''):
+        return
+    if not _SKIPPED_NODEIDS:
+        return
+    session.exitstatus = 1
+    reporter = config.pluginmanager.get_plugin('terminalreporter')
+    if reporter is not None:
+        reporter.write_line('')
+        reporter.write_line(
+            f'ERROR: reference-platform run skipped {len(_SKIPPED_NODEIDS)} test(s), '
+            f'but the suite must report zero skips when {_STRICT_NO_SKIP_ENV}=1:',
+            red=True,
+        )
+        for nodeid in sorted(_SKIPPED_NODEIDS):
+            reporter.write_line(f'  {nodeid}', red=True)
+
+
 _ENTRY_CWD_KEY = pytest.StashKey[str]()
 
 
