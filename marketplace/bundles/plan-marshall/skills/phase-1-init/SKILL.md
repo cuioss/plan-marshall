@@ -739,18 +739,20 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   domain-detect --plan-id {plan_id} [--domain-override {domain}]
 ```
 
-The script reads `request.md` (clarified_request → original_input fallback; lesson-{id}.md takes precedence when present), scans every configured non-system domain in `marshal.json` plus its bundle / skill aliases, computes the three merge legs, and returns `domains` (the SET), `candidates` (the detector's narrative matches, offered as the multiSelect options), `always_on`, `glob_matched`, `ambiguous`, `source`, and `reason`. Two branches:
+The script reads `request.md` (clarified_request → original_input fallback; lesson-{id}.md takes precedence when present), scans every configured non-system domain in `marshal.json` plus its bundle / skill aliases, computes the three merge legs, and returns `domains` (the SET), `candidates` (the detector's narrative matches, offered first in the multiSelect), `additional_candidates` (the remaining configured non-system domains — neither a narrative match nor already supplied by the `always_on` / `file_globs` legs — offered as a second prompt group), `always_on`, `glob_matched`, `ambiguous`, `source`, and `reason`. Two branches:
 
 - **Non-ambiguous** (`ambiguous: false`): the returned `domains` SET is authoritative — persist it directly via Step 9. This covers single-domain auto-select (`source=single_domain_configured`), unambiguous narrative match, explicit override (`source=cli_override`), and the zero-narrative-match case that the `always_on` / `file_globs` legs resolved silently (`reason=inclusion_only_resolve`).
-- **Ambiguous** (`ambiguous: true`): a detector multi-match, OR a zero-match with an empty always_on / glob union. Do NOT auto-select. Fire a native **multiSelect** `AskUserQuestion` at this site, offering the `candidates` list as the selectable options (allowing several selections). When the detector zero-matched, `candidates` carries the configured non-system domains:
+- **Ambiguous** (`ambiguous: true`): a detector multi-match, OR a zero-match with an empty always_on / glob union. Do NOT auto-select. Fire a native **multiSelect** `AskUserQuestion` at this site (allowing several selections). The option set is the same on both ambiguous sub-branches: offer every entry of `candidates` first, then every entry of `additional_candidates`. Offering the second group is what keeps a domain the project configured but the narrative never mentioned reachable through the prompt — without it the operator has to notice the omission and inject the domain by hand. Distinguish the two groups by the per-option `description`:
 
   ```text
   AskUserQuestion (multiSelect):
     question: "The domain for this plan is ambiguous. Which domain(s) apply? (select all that apply)"
     options:
-      - label: "{candidate_1}" description: "Detected candidate domain"
-      - label: "{candidate_2}" description: "Detected candidate domain"
-      # ... one option per candidate; when zero-match, offer the configured non-system domains
+      - label: "{candidate_1.domain}" description: "Detected candidate domain"
+      - label: "{candidate_2.domain}" description: "Detected candidate domain"
+      # ... one option per candidates entry (each is an object — use its `domain` field)
+      - label: "{additional_1}" description: "Configured for this project, not detected in the request"
+      # ... one option per additional_candidates entry (each is a bare domain-key string)
   ```
 
   Union the operator's selections with the returned `always_on` and `glob_matched` sets, then persist ALL of them in-context via Step 9's `manage-references set-list --field domains --values {comma_separated}`. Carry the resulting union forward as `{domains}` for the rest of the phase. On this branch the resolved domains come from the operator's multiSelect selections plus the always_on / glob legs, never a single detector winner.
