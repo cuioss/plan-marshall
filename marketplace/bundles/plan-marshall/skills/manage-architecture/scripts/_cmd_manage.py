@@ -48,9 +48,16 @@ from constants import (
 # =============================================================================
 
 # Per-category cap. Above this number, a category list is replaced by the
-# elision shape ``{"elided": <count>, "sample": [first 100 paths]}`` so
-# callers know they must fall back to Glob/find.
-_FILES_CATEGORY_CAP = 500
+# elision shape ``{"elided": <count>, "sample": [<stride-sampled paths>]}``.
+# The cap is 2000 (raised from 500 — this repo's ``test`` category alone
+# exceeds 500, which is what put the elision horizon inside everyday queries).
+# The ``sample`` is a DISTRIBUTED STRIDE over the sorted list, never a
+# contiguous alphabetical prefix, so it spans the full sorted range and carries
+# no contiguous blind spot. The AUTHORITATIVE protection against a confident
+# false negative is the reader-side self-scan in
+# ``_cmd_client_handlers._resolve_module_inventory`` (deliverable 1); this cap
+# and its strided sample are defense-in-depth only, never the guarantee.
+_FILES_CATEGORY_CAP = 2000
 _FILES_ELISION_SAMPLE_SIZE = 100
 
 # Universal ignore set — directory names that are never useful in an
@@ -346,87 +353,122 @@ def _walk_module_root(
 
 
 def _apply_category_cap(paths: list[str]) -> list[str] | dict[str, Any]:
-    """Apply the per-category cap. Below the cap return ``paths`` verbatim."""
+    """Apply the per-category cap. Below the cap return ``paths`` verbatim.
+
+    Above the cap, return the elision shape whose ``sample`` is a DISTRIBUTED
+    STRIDE over the sorted list — ``paths[::stride][:size]`` — rather than the
+    contiguous alphabetical prefix. The stride preserves sorted order and the
+    ``_FILES_ELISION_SAMPLE_SIZE`` length while spanning the full range, so the
+    sample's first and last entries bracket the category and no contiguous
+    horizon is created. This is defense-in-depth; the reader-side self-scan
+    (``_cmd_client_handlers._resolve_module_inventory``) is the authoritative
+    false-negative guard.
+    """
     if len(paths) <= _FILES_CATEGORY_CAP:
         return paths
+    stride = max(1, len(paths) // _FILES_ELISION_SAMPLE_SIZE)
     return {
         'elided': len(paths),
-        'sample': paths[:_FILES_ELISION_SAMPLE_SIZE],
+        'sample': paths[::stride][:_FILES_ELISION_SAMPLE_SIZE],
     }
+
+
+def build_module_files_inventory(
+    module_data: dict[str, Any],
+    project_path: Path,
+    project_root_rules: list[tuple[re.Pattern[str], bool, bool]],
+) -> dict[str, list[str]]:
+    """Return one module's UNCAPPED ``category -> sorted paths`` inventory.
+
+    The per-module categorisation body of :func:`_post_process_files`, extracted
+    so a reader that finds an elided category can re-run the SAME
+    git-ignore-aware walk uncapped instead of trusting the writer's capped
+    sample. Walks ``paths.module`` (and any ``paths.tests`` outside the module
+    root for marketplace bundles), classifies every non-ignored file with the
+    same marketplace-vs-generic decision, and returns the deterministically
+    byte-wise-sorted map WITHOUT applying :func:`_apply_category_cap`.
+
+    :func:`_post_process_files` applies the cap per category on top of this map;
+    the reader seam ``_cmd_client_handlers._resolve_module_inventory`` consumes
+    it uncapped for a self-scan. A module with no ``paths.module`` yields an
+    empty dict. ``project_path`` and ``project_root_rules`` are resolved once by
+    the caller and threaded through.
+    """
+    paths = module_data.get('paths') or {}
+    module_rel = paths.get('module') or ''
+    if not module_rel:
+        return {}
+
+    is_marketplace = _is_marketplace_bundle_module(module_data, project_path)
+
+    # Resolve the module root and (if outside the root) any extra test dirs.
+    module_root = (project_path / module_rel).resolve()
+    roots: list[tuple[Path, bool]] = [(module_root, False)]
+    seen_roots: set[Path] = {module_root}
+    for tests_rel in paths.get('tests') or []:
+        tests_path = (project_path / tests_rel).resolve()
+        if tests_path in seen_roots:
+            continue
+        try:
+            tests_path.relative_to(module_root)
+            continue  # Already covered by walking module_root.
+        except ValueError:
+            pass
+        roots.append((tests_path, True))
+        seen_roots.add(tests_path)
+
+    categorised: dict[str, list[str]] = {}
+    for root, is_tests_root in roots:
+        entries = _walk_module_root(root, project_path, project_root_rules)
+        for rel_from_module, basename in entries:
+            category: str
+            inventory_path: str
+            if is_tests_root:
+                # Files reached via paths.tests outside the module root
+                # are unconditionally tests, regardless of mode.
+                category = 'test'
+                # Use the project-relative path so callers can locate the
+                # file unambiguously when it sits outside paths.module.
+                inventory_path = root.relative_to(project_path).as_posix() + '/' + rel_from_module
+            else:
+                classified = (
+                    _classify_marketplace(rel_from_module, basename)
+                    if is_marketplace
+                    else _classify_generic(rel_from_module, basename)
+                )
+                if classified is None:
+                    continue
+                category = classified
+                inventory_path = (
+                    Path(module_rel).as_posix().rstrip('/') + '/' + rel_from_module
+                    if module_rel not in {'', '.'}
+                    else rel_from_module
+                )
+            categorised.setdefault(category, []).append(inventory_path)
+
+    # Sort each list deterministically; the caller (or the reader seam) decides
+    # whether to cap. Byte-wise sort so output is byte-identical across OSes.
+    return {category: sorted(categorised[category]) for category in sorted(categorised.keys())}
 
 
 def _post_process_files(modules: dict[str, Any], project_dir: str = '.') -> None:
     """Populate ``module['files']`` for every module in-place.
 
-    Walks each module's ``paths.module`` (and any additional ``paths.tests``
-    that fall outside the module root for marketplace bundles), classifies
-    every non-ignored file, and writes the categorised inventory back into
-    the module dict. The project-wide marketplace-vs-generic decision is
-    made per-module: a module under ``marketplace/bundles/`` uses the
-    marketplace classification table, every other module uses the generic
-    set. Sorting is byte-wise so output is byte-identical across OSes.
+    A thin per-module loop over :func:`build_module_files_inventory`: build the
+    uncapped ``category -> sorted paths`` map, then apply
+    :func:`_apply_category_cap` per category exactly as before. The writer's
+    elision-shape output for every module is byte-identical to the
+    pre-extraction behaviour — the extraction only exposes the uncapped walk so
+    the reader-boundary self-scan seam can reuse it.
     """
     project_path = Path(project_dir).resolve()
     project_root_rules = _load_gitignore(project_path / '.gitignore')
 
     for _module_name, module_data in modules.items():
-        paths = module_data.get('paths') or {}
-        module_rel = paths.get('module') or ''
-        if not module_rel:
-            module_data['files'] = {}
-            continue
-
-        is_marketplace = _is_marketplace_bundle_module(module_data, project_path)
-
-        # Resolve the module root and (if outside the root) any extra test dirs.
-        module_root = (project_path / module_rel).resolve()
-        roots: list[tuple[Path, bool]] = [(module_root, False)]
-        seen_roots: set[Path] = {module_root}
-        for tests_rel in paths.get('tests') or []:
-            tests_path = (project_path / tests_rel).resolve()
-            if tests_path in seen_roots:
-                continue
-            try:
-                tests_path.relative_to(module_root)
-                continue  # Already covered by walking module_root.
-            except ValueError:
-                pass
-            roots.append((tests_path, True))
-            seen_roots.add(tests_path)
-
-        categorised: dict[str, list[str]] = {}
-        for root, is_tests_root in roots:
-            entries = _walk_module_root(root, project_path, project_root_rules)
-            for rel_from_module, basename in entries:
-                category: str
-                inventory_path: str
-                if is_tests_root:
-                    # Files reached via paths.tests outside the module root
-                    # are unconditionally tests, regardless of mode.
-                    category = 'test'
-                    # Use the project-relative path so callers can locate the
-                    # file unambiguously when it sits outside paths.module.
-                    inventory_path = root.relative_to(project_path).as_posix() + '/' + rel_from_module
-                else:
-                    classified = (
-                        _classify_marketplace(rel_from_module, basename)
-                        if is_marketplace
-                        else _classify_generic(rel_from_module, basename)
-                    )
-                    if classified is None:
-                        continue
-                    category = classified
-                    inventory_path = (
-                        Path(module_rel).as_posix().rstrip('/') + '/' + rel_from_module
-                        if module_rel not in {'', '.'}
-                        else rel_from_module
-                    )
-                categorised.setdefault(category, []).append(inventory_path)
-
-        # Sort each list deterministically and apply the per-category cap.
+        inventory = build_module_files_inventory(module_data, project_path, project_root_rules)
         files_block: dict[str, list[str] | dict[str, Any]] = {}
-        for category in sorted(categorised.keys()):
-            files_block[category] = _apply_category_cap(sorted(categorised[category]))
+        for category in sorted(inventory.keys()):
+            files_block[category] = _apply_category_cap(inventory[category])
         module_data['files'] = files_block
 
 
@@ -794,6 +836,7 @@ __all__ = [
     'cmd_derived',
     'cmd_derived_module',
     '_post_process_files',
+    'build_module_files_inventory',
 ]
 
 

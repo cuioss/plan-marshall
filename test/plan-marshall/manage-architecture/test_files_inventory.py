@@ -333,24 +333,47 @@ def test_category_lists_are_sorted():
 
 
 def test_category_cap_replaces_list_with_elision_shape():
-    """Above 500 paths, the list collapses to ``{elided, sample}``."""
+    """Above the cap, the list collapses to ``{elided, sample}`` with a distributed sample.
+
+    The fixture size derives from the imported ``_FILES_CATEGORY_CAP`` constant
+    (``cap + 1``), not a hard-coded literal, so a future cap change does not
+    silently re-break — or vacuously pass — this test. Beyond the sorted-order
+    and sample-length assertions, the sample is asserted to be a **distributed
+    stride** (its last entry drawn from the tail of the sorted list), not the
+    contiguous alphabetical prefix that created the confident-false-negative
+    blind spot.
+    """
+    cap = _cmd_manage._FILES_CATEGORY_CAP
+    sample_size = _cmd_manage._FILES_ELISION_SAMPLE_SIZE
+    count = cap + 1
     with tempfile.TemporaryDirectory() as tmp:
         project = Path(tmp)
         bundle = project / 'marketplace' / 'bundles' / 'pm-x'
         _write(bundle / 'plugin.json', '{}')
-        # Make 501 skills so the cap kicks in.
-        for i in range(501):
-            _write(bundle / 'skills' / f's{i:04d}' / 'SKILL.md', f'# s{i}')
+        # One skill more than the cap so the elision kicks in. Zero-padded to a
+        # fixed width so lexicographic order equals numeric order.
+        for i in range(count):
+            _write(bundle / 'skills' / f's{i:05d}' / 'SKILL.md', f'# s{i}')
 
         modules = {'pm-x': {'paths': {'module': 'marketplace/bundles/pm-x'}}}
         _post_process_files(modules, str(project))
 
         skills = modules['pm-x']['files']['skill']
         assert isinstance(skills, dict)
-        assert skills['elided'] == 501
-        assert len(skills['sample']) == 100
-        # Sample is the first 100 paths in sorted order.
+        assert skills['elided'] == count
+        assert len(skills['sample']) == sample_size
+        # Sample preserves sorted order.
         assert skills['sample'] == sorted(skills['sample'])
+
+        # Distributed, not contiguous: the sample spans the full sorted range.
+        expected_sorted = sorted(
+            f'marketplace/bundles/pm-x/skills/s{i:05d}/SKILL.md' for i in range(count)
+        )
+        # First sample entry is the head of the sorted list...
+        assert skills['sample'][0] == expected_sorted[0]
+        # ...and the last is drawn from the TAIL, never the first sample_size
+        # (contiguous-prefix) entries — this is the de-clustering guarantee.
+        assert skills['sample'][-1] not in expected_sorted[:sample_size]
 
 
 def test_module_with_no_paths_module_gets_empty_files_block():

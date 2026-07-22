@@ -172,10 +172,11 @@ content excerpts — and is refreshed on every `discover --force`.
     "build_file": ["marketplace/bundles/pm-dev-java/plugin.json"],
     "doc": ["marketplace/bundles/pm-dev-java/README.md"],
     "source": {
-      "elided": 1234,
+      "elided": 3456,
       "sample": [
-        "src/main/java/com/example/A.java",
-        "src/main/java/com/example/B.java"
+        "src/main/java/com/example/Aardvark.java",
+        "src/main/java/com/example/Middle.java",
+        "src/main/java/com/example/Zebra.java"
       ]
     }
   }
@@ -229,19 +230,30 @@ the output is byte-identical across operating systems. Two consecutive
 
 #### Per-category cap
 
-Categories above 500 entries are replaced with the elision shape:
+Categories above 2000 entries are replaced with the elision shape:
 
 ```json
 {
-  "elided": 1234,
-  "sample": ["first/100/paths/in/sorted/order"]
+  "elided": 3456,
+  "sample": ["a/distributed/stride/across/the/sorted/range"]
 }
 ```
 
-`elided` is the **total** count, not the count beyond 500. `sample`
-always carries the first 100 paths in sorted order. Callers detect the
-shape by checking `isinstance(value, dict) and "elided" in value` and
-fall back to `Glob`/filesystem search to get the full list.
+`elided` is the **total** count, not the count beyond 2000. `sample`
+carries 100 paths selected as a **distributed stride** over the sorted
+list (`paths[::stride][:100]`), so it spans the full sorted range — its
+first and last entries bracket the category — and is a *representative*
+sample, never a contiguous prefix a reader may treat as complete. Callers
+detect the shape by checking `isinstance(value, dict) and "elided" in value`.
+
+This cap and its strided sample are **defense-in-depth only**. The
+authoritative protection against a confident false negative is the
+reader-side self-scan in `find` / `which-module`
+(`_cmd_client_handlers._resolve_module_inventory`), which walks the module's
+real worktree uncapped when an in-scope category is elided and reports
+`truncated: true` when it cannot — see [client-api.md](client-api.md). The
+`architecture files` verb still returns this elision shape verbatim, so a
+`files` consumer must treat the sample as a sample, never the whole list.
 
 ### Virtual Modules
 
