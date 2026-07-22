@@ -125,7 +125,10 @@ def test_run_job_timeout(tmp_path):
 
     payload = asyncio.run(
         supervisor.run_job(
-            [sys.executable, '-c', 'import time; time.sleep(10)'],
+            # Block indefinitely on signal.pause() rather than sleeping a fixed
+            # 10 s: the child is killed by the supervisor's timeout=1, so the
+            # test never depends on a wall-clock duration outrunning the timeout.
+            [sys.executable, '-c', 'import signal; signal.pause()'],
             str(tmp_path),
             timeout=1,
             log_file=log_file,

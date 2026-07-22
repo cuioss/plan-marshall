@@ -20,6 +20,11 @@ SCRIPTS_DIR = (
 )
 GENERATE_SCRIPT = SCRIPTS_DIR / 'generate_executor.py'
 
+#: Fixed date used to name a "recent" global log fixture. Cleanup selects by
+#: mtime, so the filename date is cosmetic — pinning it keeps the assertion
+#: from recomputing ``date.today()`` and disagreeing across a midnight rollover.
+_FROZEN_LOG_DATE = date(2026, 1, 15)
+
 
 def _subprocess_env() -> dict[str, str]:
     """Build environment with PYTHONPATH for subprocess calls."""
@@ -147,7 +152,7 @@ def test_cleanup_preserves_recent_logs(monkeypatch):
         logs_dir = Path(tmp) / 'logs'
         logs_dir.mkdir()
 
-        recent_log = logs_dir / f'script-execution-{date.today()}.log'
+        recent_log = logs_dir / f'script-execution-{_FROZEN_LOG_DATE}.log'
         recent_log.write_text('recent')
 
         monkeypatch.setenv('PLAN_BASE_DIR', str(tmp))

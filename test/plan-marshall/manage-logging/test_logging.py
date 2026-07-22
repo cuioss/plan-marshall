@@ -11,6 +11,29 @@ from pathlib import Path
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 # Import the module under test (PYTHONPATH set by conftest)
 import plan_logging as module
+import pytest
+
+#: Fixed date the global-log filename seam is pinned to. The production code
+#: builds ``work-{date.today()}.log`` and the assertions used to recompute
+#: ``date.today()`` independently, so a run crossing midnight compared two
+#: different days and failed. Freezing the seam removes the rollover race.
+_FROZEN_DATE = date(2026, 1, 15)
+
+
+class _FrozenDate:
+    """Stand-in for ``datetime.date`` whose ``today()`` is pinned."""
+
+    @staticmethod
+    def today():
+        return _FROZEN_DATE
+
+
+@pytest.fixture
+def frozen_log_date(monkeypatch):
+    """Pin the global-log filename date seam in the module under test."""
+    monkeypatch.setattr(module, 'date', _FrozenDate)
+    return _FROZEN_DATE
+
 
 # =============================================================================
 # TESTS: format_timestamp
@@ -158,7 +181,7 @@ def test_get_log_path_plan_scoped_decision():
             del os.environ['PLAN_BASE_DIR']
 
 
-def test_get_log_path_global_fallback():
+def test_get_log_path_global_fallback(frozen_log_date):
     """Script log falls back to global when no plan."""
     with tempfile.TemporaryDirectory() as tmp:
         plan_base = Path(tmp)
@@ -168,7 +191,7 @@ def test_get_log_path_global_fallback():
             path = module.get_log_path(None, 'script')
             assert path.parent == plan_base / 'logs'
             assert path.name.startswith('script-execution-')
-            assert str(date.today()) in path.name
+            assert str(frozen_log_date) in path.name
         finally:
             del os.environ['PLAN_BASE_DIR']
 
@@ -328,7 +351,7 @@ def test_log_script_execution_error_with_details():
 _PYPROJECT_NOTATION = 'plan-marshall:build-pyproject:pyproject_build'
 
 
-def test_log_script_execution_plan_id_routes_plan_scoped():
+def test_log_script_execution_plan_id_routes_plan_scoped(frozen_log_date):
     """FIXED orchestrator-context build shape (--plan-id present) -> plan-scoped tier.
 
     Mirrors the post-fix call: pyproject_build run with the quality-gate command-args
@@ -358,7 +381,7 @@ def test_log_script_execution_plan_id_routes_plan_scoped():
                 'Plan-scoped log must carry the pyproject_build run line'
             )
 
-            global_log = plan_base / 'logs' / f'script-execution-{date.today()}.log'
+            global_log = plan_base / 'logs' / f'script-execution-{frozen_log_date}.log'
             if global_log.exists():
                 assert _PYPROJECT_NOTATION not in global_log.read_text(encoding='utf-8'), (
                     'Build line must NOT leak into the global tier when --plan-id is present'
@@ -367,7 +390,7 @@ def test_log_script_execution_plan_id_routes_plan_scoped():
             del os.environ['PLAN_BASE_DIR']
 
 
-def test_log_script_execution_no_plan_id_routes_global():
+def test_log_script_execution_no_plan_id_routes_global(frozen_log_date):
     """Legacy --project-dir-only build shape (NO --plan-id) -> global tier (the bug).
 
     Companion proving the bug the fix closes: the same pyproject_build run call WITHOUT
@@ -389,7 +412,7 @@ def test_log_script_execution_no_plan_id_routes_global():
                 duration=12.5,
             )
 
-            global_log = plan_base / 'logs' / f'script-execution-{date.today()}.log'
+            global_log = plan_base / 'logs' / f'script-execution-{frozen_log_date}.log'
             assert global_log.exists(), 'No-plan-id build line should land in the global tier'
             assert f'{_PYPROJECT_NOTATION} run' in global_log.read_text(encoding='utf-8'), (
                 'Global tier must carry the build line for the --project-dir/no---plan-id shape'
@@ -429,14 +452,14 @@ def test_cleanup_deletes_old_logs():
             del os.environ['PLAN_BASE_DIR']
 
 
-def test_cleanup_preserves_recent_logs():
+def test_cleanup_preserves_recent_logs(frozen_log_date):
     """Cleanup preserves logs newer than max_age_days."""
     with tempfile.TemporaryDirectory() as tmp:
         plan_base = Path(tmp)
         log_dir = plan_base / 'logs'
         log_dir.mkdir()
 
-        recent_log = log_dir / f'script-execution-{date.today()}.log'
+        recent_log = log_dir / f'script-execution-{frozen_log_date}.log'
         recent_log.write_text('recent log')
 
         os.environ['PLAN_BASE_DIR'] = str(plan_base)
@@ -609,7 +632,7 @@ def test_list_recent_work_with_limit():
 # =============================================================================
 
 
-def test_log_work_orphan_dir_writes_global_not_plan_scoped():
+def test_log_work_orphan_dir_writes_global_not_plan_scoped(frozen_log_date):
     """log_work against a status.json-less orphan dir writes to the global log.
 
     The orphan plan dir (logs/work materialized while the authoritative dir is
@@ -626,7 +649,7 @@ def test_log_work_orphan_dir_writes_global_not_plan_scoped():
             result = module.log_work('orphan-plan', 'PROGRESS', 'orphan entry', 'execute')
             assert result['status'] == 'success'
 
-            global_work_log = plan_base / 'logs' / f'work-{date.today()}.log'
+            global_work_log = plan_base / 'logs' / f'work-{frozen_log_date}.log'
             assert global_work_log.exists(), 'Entry should land in the global work log'
             assert 'orphan entry' in global_work_log.read_text(encoding='utf-8')
 
@@ -635,7 +658,7 @@ def test_log_work_orphan_dir_writes_global_not_plan_scoped():
             del os.environ['PLAN_BASE_DIR']
 
 
-def test_log_decision_orphan_dir_writes_global_not_plan_scoped():
+def test_log_decision_orphan_dir_writes_global_not_plan_scoped(frozen_log_date):
     """log_decision against a status.json-less orphan dir writes to the global log."""
     with tempfile.TemporaryDirectory() as tmp:
         plan_base = Path(tmp)
@@ -647,7 +670,7 @@ def test_log_decision_orphan_dir_writes_global_not_plan_scoped():
             result = module.log_decision('orphan-plan', 'orphan decision', 'execute')
             assert result['status'] == 'success'
 
-            global_decision_log = plan_base / 'logs' / f'decision-{date.today()}.log'
+            global_decision_log = plan_base / 'logs' / f'decision-{frozen_log_date}.log'
             assert global_decision_log.exists(), 'Entry should land in the global decision log'
             assert 'orphan decision' in global_decision_log.read_text(encoding='utf-8')
 
@@ -656,7 +679,7 @@ def test_log_decision_orphan_dir_writes_global_not_plan_scoped():
             del os.environ['PLAN_BASE_DIR']
 
 
-def test_log_entry_orphan_dir_writes_global_not_plan_scoped():
+def test_log_entry_orphan_dir_writes_global_not_plan_scoped(frozen_log_date):
     """log_entry against a status.json-less orphan dir writes to the global log."""
     with tempfile.TemporaryDirectory() as tmp:
         plan_base = Path(tmp)
@@ -667,7 +690,7 @@ def test_log_entry_orphan_dir_writes_global_not_plan_scoped():
         try:
             module.log_entry('work', 'orphan-plan', 'INFO', 'orphan log_entry message')
 
-            global_work_log = plan_base / 'logs' / f'work-{date.today()}.log'
+            global_work_log = plan_base / 'logs' / f'work-{frozen_log_date}.log'
             assert global_work_log.exists(), 'Entry should land in the global work log'
             assert 'orphan log_entry message' in global_work_log.read_text(encoding='utf-8')
 
@@ -676,7 +699,7 @@ def test_log_entry_orphan_dir_writes_global_not_plan_scoped():
             del os.environ['PLAN_BASE_DIR']
 
 
-def test_log_work_sentinel_present_writes_plan_scoped():
+def test_log_work_sentinel_present_writes_plan_scoped(frozen_log_date):
     """log_work against an initialized (status.json) plan dir writes plan-scoped."""
     with tempfile.TemporaryDirectory() as tmp:
         plan_base = Path(tmp)
@@ -691,7 +714,7 @@ def test_log_work_sentinel_present_writes_plan_scoped():
             assert plan_work_log.exists(), 'Entry should land in the plan-scoped work log'
             assert 'init entry' in plan_work_log.read_text(encoding='utf-8')
 
-            global_work_log = plan_base / 'logs' / f'work-{date.today()}.log'
+            global_work_log = plan_base / 'logs' / f'work-{frozen_log_date}.log'
             assert not global_work_log.exists(), 'Initialized plan must not fall back to global'
         finally:
             del os.environ['PLAN_BASE_DIR']

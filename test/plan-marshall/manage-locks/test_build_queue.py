@@ -1236,7 +1236,7 @@ class TestStaleReap:
         assert state['waiting'] == []
         # The promoted waiter has a fresh active_since (it is only now active).
         assert 'active_since' in active[0]
-        assert active[0]['active_since'] >= time.time() - 60
+        assert active[0]['active_since'] >= time.time() - _FRESH_AGE_SECONDS
 
     def test_active_since_stamped_on_first_acquire(self, isolated_base: dict) -> None:
         """active_since is stamped on a first-acquire admit."""
@@ -1247,7 +1247,7 @@ class TestStaleReap:
         state = _read_queue(isolated_base['queue_path'])
         entry = state['active'][0]
         assert 'active_since' in entry
-        assert entry['active_since'] >= time.time() - 60
+        assert entry['active_since'] >= time.time() - _FRESH_AGE_SECONDS
 
     def test_active_since_stamped_on_idempotent_waiting_promotion(self, isolated_base: dict) -> None:
         """active_since is stamped when a blocked plan re-polls and is promoted."""
@@ -1269,7 +1269,7 @@ class TestStaleReap:
         state = _read_queue(isolated_base['queue_path'])
         promoted = next(e for e in state['active'] if e['id'] == w1['id'])
         assert 'active_since' in promoted
-        assert promoted['active_since'] >= time.time() - 60
+        assert promoted['active_since'] >= time.time() - _FRESH_AGE_SECONDS
 
     def test_active_since_stamped_on_release_fifo_promote(self, isolated_base: dict) -> None:
         """active_since is stamped on a release FIFO-promote."""
@@ -1289,7 +1289,7 @@ class TestStaleReap:
         state = _read_queue(isolated_base['queue_path'])
         promoted = next(e for e in state['active'] if e['id'] == w1['id'])
         assert 'active_since' in promoted
-        assert promoted['active_since'] >= time.time() - 60
+        assert promoted['active_since'] >= time.time() - _FRESH_AGE_SECONDS
 
 
 class TestAdaptiveUpperLimit:
