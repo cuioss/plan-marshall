@@ -63,7 +63,7 @@ command is a ONE-LINE POINTER to this spec path — the spec body is the brief, 
 transcribed into the command.}
 
 ```text
-/plan-marshall Execute the staged plan spec at .plan/local/orchestrator/{slug}/plans/PLAN-NN-{plan_slug}.md
+/plan-marshall task="implement .plan/local/orchestrator/{slug}/plans/PLAN-NN-{plan_slug}.md"
 ```
 
 ## Write-Boundary
