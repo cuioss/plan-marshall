@@ -593,7 +593,8 @@ class TestNarrativeContract:
     """The standard's prose surfaces every observable branch and template."""
 
     @pytest.fixture(scope='class')
-    def standard_text(self) -> str:
+    @classmethod
+    def standard_text(cls) -> str:
         return str(_ARCHITECTURE_REFRESH_MD.read_text(encoding='utf-8'))
 
     # ----- Inputs and tiers -------------------------------------------------
@@ -784,15 +785,18 @@ class TestNarrativeContract:
 
 class TestCrossReferences:
     @pytest.fixture(scope='class')
-    def skill_md_text(self) -> str:
+    @classmethod
+    def skill_md_text(cls) -> str:
         return str(_PHASE_6_SKILL_MD.read_text(encoding='utf-8'))
 
     @pytest.fixture(scope='class')
-    def standard_text(self) -> str:
+    @classmethod
+    def standard_text(cls) -> str:
         return str(_ARCHITECTURE_REFRESH_MD.read_text(encoding='utf-8'))
 
     @pytest.fixture(scope='class')
-    def phase_1_text(self) -> str:
+    @classmethod
+    def phase_1_text(cls) -> str:
         return str(_PHASE_1_INIT_SKILL_MD.read_text(encoding='utf-8'))
 
     def test_skill_md_dispatch_table_routes_default_architecture_refresh(

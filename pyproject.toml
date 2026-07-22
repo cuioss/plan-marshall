@@ -1,41 +1,63 @@
 [project]
 name = "plan-marshall"
 version = "0.1.0"
+# Consumer-facing support claim: the minimum interpreter this project supports.
+# It is deliberately a floor, not a pin — the build's interpreter is pinned by
+# UV_PYTHON below.
 requires-python = ">=3.12"
+
+# =============================================================================
+# Dev Toolchain
+# =============================================================================
+#
+# The dev tools live in a PEP 735 dependency group, NOT in
+# [tool.pyprojectx.main].requirements, so that *uv* owns the environment they
+# run in. uv resolves this group into uv.lock and installs it into the project
+# .venv, whose interpreter is pinned deterministically by UV_PYTHON. Pyprojectx
+# installs no tool that touches project code any more — it only bootstraps uv —
+# so its own venv interpreter (which it derives from whichever python3 invoked
+# ./pw, and which no pyproject.toml key can select) no longer influences what
+# runs the tests or the type checker. See doc/developer/build.adoc §
+# "Which Interpreter Runs the Build".
+[dependency-groups]
+dev = [
+    "pytest>=9.0",
+    "pytest-cov>=4.0",
+    "pytest-xdist>=3.8",
+    "pytest-timeout>=2.3",
+    "ruff>=0.4",
+    "mypy>=1.10",
+]
+
+[tool.uv]
+# `dev` is uv's implicit default group. Stated explicitly so the tool
+# environment does not silently depend on that implicit default.
+default-groups = ["dev"]
 
 # =============================================================================
 # Pyprojectx Configuration
 # =============================================================================
 
 [tool.pyprojectx]
-# Lock to specific Python version for consistency
-lock-python-version = "3.12"
+
+[tool.pyprojectx.env]
+# THE interpreter pin for the entire build, local and CI alike.
+#
+# pyprojectx exports this map into the environment of every alias it runs
+# (cli.py::_run_alias -> env.py::IsolatedVirtualEnv.run merges it over
+# os.environ), and build.py's nested `uv run` subprocesses inherit it. uv
+# therefore resolves 3.12 for the project .venv on every path — and downloads a
+# managed CPython 3.12 when the host has none — regardless of which python3
+# happened to invoke ./pw. This replaces the former lock-python-version = "3.12"
+# declaration, which reached only `uv pip compile --python-version` when
+# rewriting pw.lock and was provably inert for the runtime environment.
+UV_PYTHON = "3.12"
 
 [tool.pyprojectx.main]
-# Dev tools to install
+# Bootstrap only. uv is the sole tool pyprojectx installs; everything that
+# touches project code is resolved by uv from [dependency-groups].dev above.
 requirements = [
     "uv",
-    # Pinned below the 9.x major for the same reason as mypy below: adding an
-    # unrelated dev tool re-resolves this env, and pytest 9 + xdist 3.8 on the CI
-    # Python crashes xdist workers ("node down: Not properly terminated") on
-    # pre-existing tests. Adopting pytest 9 is a deliberate migration, not a
-    # transitive consequence of a plugin bump.
-    "pytest>=8.0,<9",
-    "pytest-cov>=4.0",
-    # Capped below 3.8: the floated 3.8.0 crashes workers ("node down: Not
-    # properly terminated") and then its loadscope scheduler internal-errors
-    # (KeyError <WorkerController>) aborting the whole session. Same major-cap
-    # rationale as mypy/pytest above.
-    "pytest-xdist>=3.0,<3.8",
-    "pytest-timeout>=2.3",
-    "ruff>=0.4",
-    # Pinned below the 2.x major: the quality gate must not float the type-checker
-    # across a major version as a side effect of adding an unrelated dev tool
-    # (adding pytest-timeout re-resolves this env). mypy 2.x is stricter and
-    # surfaces pre-existing latent findings across the tree; adopting it is a
-    # deliberate project-level decision, not a transitive consequence of a plugin
-    # bump. Raise this ceiling in a dedicated mypy-2.x migration.
-    "mypy>=1.10,<2",
 ]
 
 [tool.pyprojectx.aliases]
@@ -59,11 +81,13 @@ coverage = "uv run python build.py coverage"
 verify = "uv run python build.py verify"
 clean = "uv run python build.py clean"
 
-# Shortcuts for common operations (no module filtering)
-lint = "ruff check marketplace/bundles/ test/ .claude/"
-lint-fix = "ruff check marketplace/bundles/ test/ .claude/ --fix"
-fmt = "ruff format marketplace/bundles/ test/ .claude/"
-format = "ruff format marketplace/bundles/ test/ .claude/"
+# Shortcuts for common operations (no module filtering).
+# Routed through `uv run` like every other tool invocation: a bare `ruff` would
+# resolve from PATH, i.e. from the pyprojectx venv, which no longer carries it.
+lint = "uv run ruff check marketplace/bundles/ test/ .claude/"
+lint-fix = "uv run ruff check marketplace/bundles/ test/ .claude/ --fix"
+fmt = "uv run ruff format marketplace/bundles/ test/ .claude/"
+format = "uv run ruff format marketplace/bundles/ test/ .claude/"
 
 # Multi-target generator (Claude Code, OpenCode, …) — see marketplace/targets/.
 generate = "uv run python marketplace/targets/generate.py"
