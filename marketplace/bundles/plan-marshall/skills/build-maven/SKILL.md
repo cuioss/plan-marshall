@@ -1,6 +1,6 @@
 ---
 name: build-maven
-description: Maven build operations — compile, test, verify with JaCoCo coverage, OpenRewrite markers, and multi-module profile management
+description: Maven build operations — compile, test, verify with JaCoCo coverage and multi-module profile management
 user-invocable: false
 mode: script-executor
 implements: plan-marshall:extension-api/standards/ext-point-build
@@ -26,7 +26,7 @@ All commands use `python3 .plan/execute-script.py plan-marshall:build-maven:mave
 
 ## Subcommands
 
-Supports: **run**, **parse**, **coverage-report**, **check-warnings**, **discover**, **search-markers**.
+Supports: **run**, **parse**, **coverage-report**, **check-warnings**, **discover**.
 See `build-api-reference.md` for the full subcommand API and availability matrix.
 
 ### Maven-Specific Behavior
@@ -35,7 +35,6 @@ See `build-api-reference.md` for the full subcommand API and availability matrix
 - **parse**: Additional `no-openrewrite` mode filters OpenRewrite markers
 - **coverage-report**: Searches `target/site/jacoco/jacoco.xml`, `target/jacoco/report.xml`, `target/site/jacoco-aggregate/jacoco.xml`
 - **discover**: Subprocess-free — parses each `pom.xml` with stdlib XML for coordinates, packaging, and declared profile ids, and walks the filesystem for sources/tests. Resolved coordinates, inherited profiles, and the resolved dependency tree are filled lazily, one module at a time, by `enrich_maven_module` (which runs `dependency:tree`, `help:all-profiles`) only when a consumer — the dependency graph or the resolver's profile-canonical path — needs them.
-- **search-markers**: Default extensions: `.java`
 
 ### Producer-Side Finding Storage (`run --plan-id`)
 
@@ -89,13 +88,6 @@ python3 .plan/execute-script.py plan-marshall:build-maven:maven parse \
   --log LOG \
   [--mode {default,errors,structured,no-openrewrite}] [--format {toon,json}] \
   (--project-dir PROJECT_DIR | --plan-id PLAN_ID)
-```
-
-### search-markers
-
-```bash
-python3 .plan/execute-script.py plan-marshall:build-maven:maven search-markers \
-  [--source-dir SOURCE_DIR] [--extensions EXTENSIONS] [--format {toon,json}]
 ```
 
 ### coverage-report

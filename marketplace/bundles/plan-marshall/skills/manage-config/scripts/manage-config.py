@@ -222,7 +222,10 @@ def main() -> int:
     sd_set_ext = sd_sub.add_parser('set-extensions', help='Set workflow skill extension', allow_abbrev=False)
     add_domain_arg(sd_set_ext)
     sd_set_ext.add_argument(
-        '--type', required=True, choices=['outline', 'triage'], help='Extension type'
+        '--type',
+        required=True,
+        choices=['outline', 'triage', 'marker-detect'],
+        help='Extension type (outline, triage, marker-detect)',
     )
     sd_set_ext.add_argument('--skill', required=True, help='Extension skill reference (bundle:skill)')
 
@@ -683,7 +686,12 @@ def main() -> int:
         allow_abbrev=False,
     )
     add_domain_arg(p_rwse)
-    p_rwse.add_argument('--type', required=True, choices=['outline', 'triage'], help='Extension type (outline, triage)')
+    p_rwse.add_argument(
+        '--type',
+        required=True,
+        choices=['outline', 'triage', 'marker-detect'],
+        help='Extension type (outline, triage, marker-detect)',
+    )
 
     # --- get-skills-by-profile ---
     p_gsbp = subparsers.add_parser(

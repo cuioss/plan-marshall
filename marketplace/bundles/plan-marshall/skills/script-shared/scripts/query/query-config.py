@@ -9,6 +9,7 @@ These commands consume configuration but never modify it.
 Usage:
     query-config.py resolve-domain-skills --domain java --profile implementation
     query-config.py resolve-workflow-skill-extension --domain java --type outline
+    query-config.py resolve-workflow-skill-extension --domain java-cui --type marker-detect
     query-config.py get-skills-by-profile --domain java
     query-config.py list-recipes
     query-config.py resolve-recipe --recipe refactor-to-standards
@@ -58,7 +59,12 @@ def main() -> int:
         allow_abbrev=False,
     )
     p_rwse.add_argument('--domain', required=True, help='Domain name (java, javascript, etc.)')
-    p_rwse.add_argument('--type', required=True, choices=['outline', 'triage'], help='Extension type (outline, triage)')
+    p_rwse.add_argument(
+        '--type',
+        required=True,
+        choices=['outline', 'triage', 'marker-detect'],
+        help='Extension type (outline, triage, marker-detect)',
+    )
 
     # --- get-skills-by-profile ---
     p_gsbp = subparsers.add_parser(

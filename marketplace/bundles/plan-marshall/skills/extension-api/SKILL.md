@@ -59,7 +59,6 @@ extension-api/
 │   ├── _build_jvm_patterns.py      # Shared JVM error patterns (co-located build utility)
 │   ├── _build_parser_registry.py   # Multi-parser registry (co-located build utility)
 │   ├── _coverage_parse.py          # Format-agnostic coverage parsing (co-located build utility)
-│   ├── _markers_search.py          # OpenRewrite TODO marker search (co-located build utility)
 │   ├── _warnings_classify.py       # Warning categorization with matchers (co-located build utility)
 │   └── _module_aggregation.py      # Virtual module splitting
 └── standards/
@@ -120,13 +119,14 @@ All extensions **must** inherit from `ExtensionBase` and implement required meth
 
 ## Extension Points
 
-Each extension point has a dedicated contract document with formal parameters, pre-conditions, and post-conditions. All 14 contracts:
+Each extension point has a dedicated contract document with formal parameters, pre-conditions, and post-conditions. All 15 contracts:
 
 | Extension Point | Declared Via | Contract |
 |-----------------|--------------|----------|
 | Build System | `discover_modules()` + `ExecuteConfig` | [ext-point-build.md](standards/ext-point-build.md) |
 | Build Verify Step | frontmatter `implements:` on step documents | [ext-point-build-verify-step.md](standards/ext-point-build-verify-step.md) |
 | Domain Bundle | `skills/plan-marshall-plugin/` marker skill + `extension.py` | [ext-point-domain-bundle.md](standards/ext-point-domain-bundle.md) |
+| Domain Verb | `provides_domain_verb()` | [ext-point-domain-verb.md](standards/ext-point-domain-verb.md) |
 | Dynamic Level Executor | frontmatter `implements:` on agent files | [ext-point-dynamic-level-executor.md](standards/ext-point-dynamic-level-executor.md) |
 | Execution Context Workflow | frontmatter `implements:` on workflow documents | [ext-point-execution-context-workflow.md](standards/ext-point-execution-context-workflow.md) |
 | Finalize Step | frontmatter `implements:` on finalize-step skills | [ext-point-finalize-step.md](standards/ext-point-finalize-step.md) |
@@ -236,7 +236,6 @@ These are co-located here for PYTHONPATH convenience but are NOT part of the ext
 | `_build_jvm_patterns.py` | Library | Shared JVM error/warning category patterns |
 | `_build_parser_registry.py` | Library | Registry-based multi-parser for build output |
 | `_coverage_parse.py` | Library | Format-agnostic coverage report parsing (JaCoCo, Cobertura, LCOV, Jest) |
-| `_markers_search.py` | Library | OpenRewrite TODO marker search |
 | `_warnings_classify.py` | Library | Warning categorization with pluggable matchers |
 
 ### CLI Commands

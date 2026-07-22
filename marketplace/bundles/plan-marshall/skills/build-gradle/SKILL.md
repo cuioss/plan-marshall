@@ -1,6 +1,6 @@
 ---
 name: build-gradle
-description: Gradle build operations — Java/Kotlin builds with JaCoCo coverage, quality task detection, multi-project discovery, and OpenRewrite markers
+description: Gradle build operations — Java/Kotlin builds with JaCoCo coverage, quality task detection, and multi-project discovery
 user-invocable: false
 mode: script-executor
 implements: plan-marshall:extension-api/standards/ext-point-build
@@ -27,7 +27,7 @@ All commands use `python3 .plan/execute-script.py plan-marshall:build-gradle:gra
 
 ## Subcommands
 
-Supports: **run**, **parse**, **coverage-report**, **check-warnings**, **discover**, **search-markers**, **find-project**.
+Supports: **run**, **parse**, **coverage-report**, **check-warnings**, **discover**, **find-project**.
 See `build-api-reference.md` for the full subcommand API and availability matrix.
 
 ### Gradle-Specific Behavior
@@ -37,7 +37,6 @@ See `build-api-reference.md` for the full subcommand API and availability matrix
 - **coverage-report**: Searches `build/reports/jacoco/test/jacocoTestReport.xml`, `build/reports/jacoco/jacocoTestReport.xml`, `build/jacoco/test.xml`
 - **discover**: Reads `settings.gradle(.kts)` `include()` declarations (Groovy + Kotlin DSL); detects quality tasks (`spotlessCheck`, `checkstyleMain`, `pmdMain`, `detekt`, `ktlintCheck`)
 - **find-project**: Resolves module names to Gradle notation (e.g., `auth` → `:services:auth`)
-- **search-markers**: Default extensions: `.java,.kt`
 
 ### Producer-Side Finding Storage (`run --plan-id`)
 
@@ -89,13 +88,6 @@ python3 .plan/execute-script.py plan-marshall:build-gradle:gradle find-project \
 ```
 
 `--project-name` and `--project-path` are mutually exclusive; exactly one must be supplied.
-
-### search-markers
-
-```bash
-python3 .plan/execute-script.py plan-marshall:build-gradle:gradle search-markers \
-  [--source-dir SOURCE_DIR] [--extensions EXTENSIONS] [--format {toon,json}]
-```
 
 ### coverage-report
 

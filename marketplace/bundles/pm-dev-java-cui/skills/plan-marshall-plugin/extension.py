@@ -82,6 +82,16 @@ class Extension(ExtensionBase):
             },
         ]
 
+    def provides_domain_verb(self) -> dict | None:
+        """Return the java-cui domain's executable-verb descriptor.
+
+        The cui-rewrite marker format and its auto-suppressible recipe table
+        describe recipes this bundle defines, so the marker detector is owned
+        here. Core resolves this verb to null when java-cui is inactive, and the
+        marker gate then simply does not run.
+        """
+        return {'verb': 'marker-detect', 'notation': 'pm-dev-java-cui:search-markers'}
+
     def config_defaults(self, project_root: str) -> None:
         """Configure CUI-specific Maven defaults.
 

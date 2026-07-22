@@ -1,6 +1,6 @@
 # Extension Point: Domain-Owned Executable Verb
 
-> **Type**: Workflow Skill Extension | **Hook Method**: `provides_domain_verb()` | **Implementations**: 0 (candidate contract) | **Status**: Specified — contract only, no `extension_base.py` hook wired in this plan
+> **Type**: Workflow Skill Extension | **Hook Method**: `provides_domain_verb()` | **Implementations**: 1 | **Status**: Shipped — the `extension_base.py` hook is wired and `java-cui` implements it
 
 ## Overview
 
@@ -77,38 +77,36 @@ Dispatch introduces no new execution mechanism — it reuses the executor proxy 
 
 ### 4. Core-side null-on-absent resolution
 
-A `manage-config resolve-*` verb — a **sibling of the registered `resolve-workflow-skill-extension --domain --type {outline,triage}`** — resolves the domain-owned verb, returning `null` when no active domain implements it. The proposed verb shape (NOT yet registered — this is a contract-only spec) is:
+The registered `resolve-workflow-skill-extension --domain {domain} --type {outline,triage,marker-detect}` verb resolves the domain-owned verb, returning `null` when no active domain implements it:
 
 ```text
-manage-config resolve-domain-verb --domain {domain} --type {verb_type}
+manage-config resolve-workflow-skill-extension --domain {domain} --type {verb_type}
 ```
 
-The follow-up implementation MAY realise this either as a new sibling verb (`resolve-domain-verb`) or as a new `--type` value on the existing `resolve-workflow-skill-extension` verb — both express the same null-on-absent resolution; the choice is left to the implementing plan. The resolver never raises and never fabricates a positive: it returns the resolved notation when the active domain declares the verb, and a first-class `null` when it does not. The consuming workflow carries a documented null-branch that degrades to the core default per `ADR-010` § "Degrade path when no implementor exists" — the same degrade path `resolve-workflow-skill-extension` establishes for `outline` / `triage`.
-
-> **Scope of this plan.** This document specifies the contract; it wires no `extension_base.py` hook and no `manage-config resolve-domain-verb` verb. The Python implementation is a follow-up gated on this contract and ADR-010. The registration in [extension-contract.md](extension-contract.md) is documentation-only.
+The resolver never raises and never fabricates a positive: it returns the resolved notation when the active domain declares the verb, and a first-class `null` when it does not. The consuming workflow carries a documented null-branch that degrades to the core default per `ADR-010` § "Degrade path when no implementor exists" — the same degrade path `resolve-workflow-skill-extension` establishes for `outline` / `triage`.
 
 ## Resolution
 
-The proposed resolution surface (contract-only — not yet registered) resolves the domain-owned verb notation for a domain + verb type, returning `null` on absent:
+The resolution surface is the **existing** `resolve-workflow-skill-extension` verb widened with a per-verb-type `--type` value — NOT a new `resolve-domain-verb` sibling. Both shapes express the same null-on-absent resolution; the widened `--type` was chosen because `cmd_resolve_workflow_skill_extension` is already type-agnostic and already null-on-absent, so a domain verb needs no new handler, no new registry, and no new dispatch path:
 
 ```text
-manage-config resolve-domain-verb --domain {domain} --type {verb_type}
+manage-config resolve-workflow-skill-extension --domain {domain} --type {verb_type}
 ```
 
-The already-registered precedent this mirrors is `resolve-workflow-skill-extension --domain {domain} --type {outline,triage}` (see [ext-point-triage.md](ext-point-triage.md) § Resolution).
+The same widened `--type` is available read-only through `query-config resolve-workflow-skill-extension`. The precedent this reuses is the `outline` / `triage` resolution (see [ext-point-triage.md](ext-point-triage.md) § Resolution).
 
 **Path**: `skill_domains.{domain_key}.workflow_skill_extensions.{verb_type}`
 
-## Current + candidate implementations
+## Current implementations
 
-There are no shipped `provides_domain_verb()` implementors yet — the hook is contract-only in this plan. The contract is validated as sufficient against two concrete cases:
+There is one shipped `provides_domain_verb()` implementor. It is listed alongside the arch-gate precedent that validated the mechanism:
 
-| Case | Domain | Verb | Role in validation |
-|------|--------|------|--------------------|
-| Relocated marker detector | `java-cui` (pm-dev-java-cui) | `marker-detect` (e.g. `pm-dev-java-cui:search-markers`) | The **contributed candidate**. A domain-owned OpenRewrite/TODO marker detector that must run only when the java-cui domain is active — its relocation out of the core bundle into a domain bundle is exactly the "domain content is active only when its domain is active" case `ADR-010` governs. It declares `provides_domain_verb()` / a `workflow_skill_extensions.marker-detect` entry, core resolves it null-on-absent, and a project without java-cui active resolves the verb to null (the marker gate simply does not run — a capability-provision invisibility, not a silent gate). |
-| Arch-gate command | java / python / javascript | `arch-gate` | The **already-shipped precedent**. `provides_arch_gate()` returns a descriptor, `skill-domains configure` seeds `default:verify:arch-gate`, and the step resolves through `architecture resolve --command arch-gate` and dispatches the domain's tool. This proves the declaration→discovery→dispatch→null-on-absent pattern already resolves and dispatches in production, so a generalized `provides_domain_verb()` inherits a validated mechanism rather than an untested one. |
+| Case | Domain | Verb | Role |
+|------|--------|------|------|
+| Relocated marker detector | `java-cui` (pm-dev-java-cui) | `marker-detect` (`pm-dev-java-cui:search-markers`) | The **shipped implementor**. A domain-owned OpenRewrite/TODO marker detector that runs only when the java-cui domain is active — its relocation out of the core bundle into a domain bundle is exactly the "domain content is active only when its domain is active" case `ADR-010` governs. It declares `provides_domain_verb()`, which seeds a `workflow_skill_extensions.marker-detect` entry; core resolves it null-on-absent, and a project without java-cui active resolves the verb to null (the marker gate simply does not run — a capability-provision invisibility, not a silent gate). |
+| Arch-gate command | java / python / javascript | `arch-gate` | The **precedent this contract generalises**. `provides_arch_gate()` returns a descriptor, `skill-domains configure` seeds `default:verify:arch-gate`, and the step resolves through `architecture resolve --command arch-gate` and dispatches the domain's tool. It proves the declaration→discovery→dispatch→null-on-absent pattern in production for a build-canonical verb, so `provides_domain_verb()` inherits a validated mechanism rather than an untested one. |
 
-The two cases bracket the contract: the arch-gate precedent proves the pattern is production-real for a build-canonical verb resolved through `architecture resolve`, and the marker detector proves the same shape covers a plain script-notation verb dispatched through the executor proxy — with the same null-on-absent degrade when the domain is inactive.
+The two cases bracket the contract: the arch-gate precedent proves the pattern for a build-canonical verb resolved through `architecture resolve`, and the marker detector proves the same shape covers a plain script-notation verb dispatched through the executor proxy — with the same null-on-absent degrade when the domain is inactive.
 
 ## Related Specifications
 

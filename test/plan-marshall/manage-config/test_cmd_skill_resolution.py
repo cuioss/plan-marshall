@@ -9,6 +9,7 @@ Tier 2 (direct import) tests with 1 subprocess test for CLI plumbing.
 """
 
 import importlib.util
+import json
 import sys
 from argparse import Namespace
 from pathlib import Path
@@ -183,6 +184,41 @@ def test_resolve_workflow_skill_extension_unknown_domain(plan_context, monkeypat
     create_nested_marshal_json(plan_context.fixture_dir)
 
     result = cmd_resolve_workflow_skill_extension(Namespace(domain='unknown', type='outline'))
+
+    assert result['status'] == 'success'
+    assert result['extension'] is None
+
+
+def _add_marker_detect_domain(fixture_dir: Path) -> None:
+    """Seed a java-cui domain declaring the marker-detect domain verb."""
+    marshal_path = fixture_dir / 'marshal.json'
+    config = json.loads(marshal_path.read_text())
+    config['skill_domains']['java-cui'] = {
+        'bundle': 'pm-dev-java-cui',
+        'workflow_skill_extensions': {'marker-detect': 'pm-dev-java-cui:search-markers'},
+    }
+    marshal_path.write_text(json.dumps(config, indent=2))
+
+
+def test_resolve_workflow_skill_extension_marker_detect(plan_context, monkeypatch):
+    """The type-agnostic resolver returns the notation for --type marker-detect."""
+    create_nested_marshal_json(plan_context.fixture_dir)
+    _add_marker_detect_domain(plan_context.fixture_dir)
+
+    result = cmd_resolve_workflow_skill_extension(Namespace(domain='java-cui', type='marker-detect'))
+
+    assert result['status'] == 'success'
+    assert result['extension'] == 'pm-dev-java-cui:search-markers'
+    assert result['domain'] == 'java-cui'
+    assert result['type'] == 'marker-detect'
+
+
+def test_resolve_workflow_skill_extension_marker_detect_null_when_domain_omits_it(plan_context, monkeypatch):
+    """A domain that declares no marker-detect verb resolves to a first-class null, not an error."""
+    create_nested_marshal_json(plan_context.fixture_dir)
+    _add_marker_detect_domain(plan_context.fixture_dir)
+
+    result = cmd_resolve_workflow_skill_extension(Namespace(domain='java', type='marker-detect'))
 
     assert result['status'] == 'success'
     assert result['extension'] is None

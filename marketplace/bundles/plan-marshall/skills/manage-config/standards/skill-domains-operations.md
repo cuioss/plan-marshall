@@ -20,7 +20,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `--domain` | string | Yes | Domain name (java, javascript, etc.) |
-| `--type` | string | Yes | Extension type (outline, triage) |
+| `--type` | string | Yes | Extension type (outline, triage, marker-detect) |
 
 **Output**:
 ```toon

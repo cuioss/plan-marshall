@@ -6,7 +6,6 @@ Tests all Gradle build operations:
 - run: Execute Gradle builds (primary API)
 - parse: Parse Gradle build output
 - find-project: Find Gradle project paths
-- search-markers: Search OpenRewrite markers
 - check-warnings: Categorize build warnings
 """
 
@@ -91,22 +90,6 @@ def test_find_project_not_found():
         assert data['status'] == 'error', 'Should return error for non-existent project'
 
 
-def test_search_markers_no_markers():
-    """Test searching when no markers exist."""
-    with tempfile.TemporaryDirectory() as td:
-        temp_dir = Path(td)
-        src_dir = temp_dir / 'src' / 'main' / 'java'
-        src_dir.mkdir(parents=True)
-        java_file = src_dir / 'Test.java'
-        java_file.write_text('public class Test {}')
-
-        result = run_script(SCRIPT_PATH, 'search-markers', '--format', 'json', '--source-dir', str(temp_dir / 'src'))
-        data = result.json()
-
-        assert data['status'] == 'success', 'Should succeed with no markers'
-        assert data['data']['total_markers'] == 0, 'Should find no markers'
-
-
 def test_check_warnings_empty():
     """Test with no warnings."""
     warnings = json.dumps([])
@@ -146,14 +129,10 @@ def test_check_warnings_with_real_patterns():
     assert data['acceptable'] >= 2, f'Should accept deprecation and unchecked, got: {data}'
 
 
-def test_search_markers_with_content():
-    """Test searching when markers exist in source files (H49)."""
-    markers_dir = FIXTURES_DIR / 'source-with-markers'
-    result = run_script(SCRIPT_PATH, 'search-markers', '--format', 'json', '--source-dir', str(markers_dir / 'src'))
-    data = result.json()
-
-    assert data['status'] == 'success', 'Should succeed'
-    assert data['data']['total_markers'] > 0, 'Should find markers in fixture files'
+def test_help_main_no_longer_offers_search_markers():
+    """The retired search-markers subcommand is gone from the Gradle CLI surface."""
+    result = run_script(SCRIPT_PATH, '--help')
+    assert 'search-markers' not in result.stdout, 'search-markers must not be a Gradle subcommand'
 
 
 def test_help_main():

@@ -25,6 +25,7 @@
     "./skills/cui-logging",
     "./skills/cui-testing",
     "./skills/plan-marshall-plugin",
-    "./skills/recipe-cui-logging-enforce"
+    "./skills/recipe-cui-logging-enforce",
+    "./skills/search-markers"
   ]
 }

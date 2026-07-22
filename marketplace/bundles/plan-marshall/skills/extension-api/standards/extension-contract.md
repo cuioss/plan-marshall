@@ -320,7 +320,7 @@ def provides_arch_gate(self) -> dict | None:
 
 Declares a domain-owned executable verb — a domain-contributed *command* (a script or resolvable notation) that core dispatches through the resolved notation when the domain is active, and resolves null-on-absent when it is not. Optional additive hook mirroring `provides_arch_gate()`'s descriptor-or-None shape; it is the executable-capability sibling of the knowledge-contribution hooks (`provides_triage()` returns a *skill* to load; a domain verb returns a *command* to run).
 
-**Lifecycle**: Discovered uniformly through `discover_all_extensions()` and the `skill_domains.{key}.workflow_skill_extensions` map (keyed by verb type), and resolved null-on-absent by a `manage-config resolve-*` verb — the same discovery + resolution path `provides_triage()` / `provides_outline_skill()` use. A domain returning `None` contributes no verb — the silent-skip default.
+**Lifecycle**: Discovered uniformly through `discover_all_extensions()` and the `skill_domains.{key}.workflow_skill_extensions` map (keyed by verb type), and resolved null-on-absent by `manage-config resolve-workflow-skill-extension --domain {domain} --type {verb_type}` — the same discovery + resolution path `provides_triage()` / `provides_outline_skill()` use. A domain returning `None` contributes no verb — the silent-skip default.
 
 ```python
 def provides_domain_verb(self) -> dict | None:
@@ -335,7 +335,7 @@ def provides_domain_verb(self) -> dict | None:
     """
 ```
 
-**Contract only (this plan)**: The full four-face contract (declaration, discovery, dispatch, null-on-absent resolution), the sibling-ext-point mechanism rationale (NOT an extension of `ext-point-build`, NOT a `find_implementors` domain-filter generalization), and the current-plus-candidate validation live in [`ext-point-domain-verb.md`](ext-point-domain-verb.md). This registration is documentation-only — no `extension_base.py` hook and no `manage-config resolve-domain-verb` verb are wired in this plan; the Python implementation is a follow-up gated on this contract and `ADR-010`.
+The full four-face contract (declaration, discovery, dispatch, null-on-absent resolution), the sibling-ext-point mechanism rationale (NOT an extension of `ext-point-build`, NOT a `find_implementors` domain-filter generalization), and the current implementations live in [`ext-point-domain-verb.md`](ext-point-domain-verb.md).
 
 ---
 
@@ -351,7 +351,7 @@ Each extension point has its own contract document with formal parameters, pre-c
 | Outline | `provides_outline_skill()` | [ext-point-outline.md](ext-point-outline.md) | 1 |
 | Recipe | `provides_recipes()` | [ext-point-recipe.md](ext-point-recipe.md) | 4 |
 | Provider | `*_provider.py` | [ext-point-provider.md](ext-point-provider.md) | 4 |
-| Domain Verb | `provides_domain_verb()` | [ext-point-domain-verb.md](ext-point-domain-verb.md) | 0 (contract only) |
+| Domain Verb | `provides_domain_verb()` | [ext-point-domain-verb.md](ext-point-domain-verb.md) | 1 |
 
 See each document for the complete contract, implementation template, and current implementations.
 

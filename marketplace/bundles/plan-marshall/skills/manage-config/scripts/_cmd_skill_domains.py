@@ -10,6 +10,7 @@ Extension API functions:
 - provides_triage() -> triage skill reference or None
 - provides_outline_skill() -> outline skill reference or None
 - provides_recipes() -> list of recipe definition dicts
+- provides_domain_verb() -> {'verb': str, 'notation': str} descriptor or None
 """
 
 import copy
@@ -341,7 +342,11 @@ def convert_extension_to_domain_config(module, domain_info: dict, bundle_name: s
     config: dict[str, Any] = {'bundle': bundle_name}
 
     # Extract extensions from dedicated functions
-    if hasattr(module, 'provides_triage') or hasattr(module, 'provides_outline_skill'):
+    if (
+        hasattr(module, 'provides_triage')
+        or hasattr(module, 'provides_outline_skill')
+        or hasattr(module, 'provides_domain_verb')
+    ):
         extensions: dict[str, Any] = {}
         if hasattr(module, 'provides_outline_skill'):
             outline_skill = module.provides_outline_skill()
@@ -351,6 +356,10 @@ def convert_extension_to_domain_config(module, domain_info: dict, bundle_name: s
             triage = module.provides_triage()
             if triage:
                 extensions['triage'] = triage
+        if hasattr(module, 'provides_domain_verb'):
+            domain_verb = module.provides_domain_verb()
+            if domain_verb:
+                extensions[domain_verb['verb']] = domain_verb['notation']
         if extensions:
             config['workflow_skill_extensions'] = extensions
 
