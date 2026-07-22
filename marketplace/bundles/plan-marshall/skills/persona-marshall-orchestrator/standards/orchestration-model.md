@@ -1,6 +1,6 @@
 # Orchestration Model
 
-The canonical standard for epic orchestration in plan-marshall. It defines the granularity model, the persisted ledger layout, the persist/stop-resume contract, the terminal-title repaint contract, the two operational carve-outs, the prime directive, the verify-first contract for inferred claims, the dispatch decision rule, and the lessons-handling mode contract. The `marshall-orchestrator` skill's verb workflows and the `persona-marshall-orchestrator` identity both bind to this document — when a workflow doc and this standard disagree, this standard wins.
+The canonical standard for epic orchestration in plan-marshall. It defines the granularity model, the persisted ledger layout, the persist/stop-resume contract, the terminal-title repaint contract, the two operational carve-outs, the ledger write-boundary, the prime directive, the verify-first contract for inferred claims, the dispatch decision rule, and the lessons-handling mode contract. The `marshall-orchestrator` skill's verb workflows and the `persona-marshall-orchestrator` identity both bind to this document — when a workflow doc and this standard disagree, this standard wins.
 
 ## Granularity Model: Epic → Workstream → Plan
 
@@ -95,6 +95,12 @@ The orchestrator MAY perform small operations inline, without spawning a plan:
 - **Read-only analysis** — reading code, artifacts, PRs, logs, and pasted content to verify claims and reconcile the ledger.
 
 **Anything larger becomes a plan.** The threshold is not a line count but a category boundary: any production-code change, any test change, any build/verify run against repository source, any multi-file repository mutation — these are plan work. When an inline operation starts growing past "small and bounded", stop, stage it as a `plans/PLAN-NN-{slug}.md` spec, and emit the `/plan-marshall` command.
+
+## Ledger Write-Boundary
+
+**The executing plan MUST NOT create or edit any file under `.plan/local/orchestrator/{epic}/`** — not `status.json`, not `epic.md`, not `workstreams/`, not `plans/`, not `landings/`. The orchestrator owns every ledger write and reconciles the epic from the landed PR through the `analyze` verb. A plan's only channel back to the epic is its PR.
+
+The boundary is the outward-facing complement of the inward-facing [direct-file-access carve-out](#carve-outs): that carve-out bounds what the orchestrator may write inside its own tree; this one bounds what a plan may write into it — nothing.
 
 ## Dispatch Decision Rule
 

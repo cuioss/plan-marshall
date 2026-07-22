@@ -46,10 +46,9 @@ Fill the request text from the Objective and Deliverables above.}
 /plan-marshall {request text}
 ```
 
-## Status Trail
+## Write-Boundary
 
-{Filled as the plan advances — mirror of status.json `plans[]` entry.}
-
-- plan_marshall_plan_id: {set at launch}
-- pr: {set when the PR opens}
-- landing: {set when the landing analysis is recorded at landings/PLAN-NN.md}
+The plan implementing this spec touches only its own repository source and tests. It creates
+and edits NO file under `.plan/local/orchestrator/` — the orchestrator owns every ledger write
+— and reports its outcome through its PR alone. See
+`persona-marshall-orchestrator/standards/orchestration-model.md` § Ledger Write-Boundary.
