@@ -57,9 +57,11 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metada
 Count `R`, the plans currently in `launched` status, and select up to `N − R` candidates — a block sized by the scope knob rather than a hardcoded single (at the default `N = 1` that block is exactly one). Walk `staged` plans in queue order whose dependencies (sequencing notes in their `plans/PLAN-NN-{plan_slug}.md` spec) are satisfied, and admit a candidate ONLY when both admission tests pass:
 
 - **Disjoint** — its expected surface overlaps neither any currently-launched plan nor any candidate already selected this round.
-- **Prep-ready** — its spec owes no re-grounding and carries no unresolved verify-first clause (see the spec template's `## Claim Labels`).
+- **Prep-ready** — its spec owes no re-grounding, and carries no verify-first clause that a prior orchestrator corroboration has REFUTED without the spec being re-scoped to reflect the refutation (see the spec template's `## Claim Labels`).
 
-A candidate failing either test is sequenced, not emitted. **Never emit a colliding or unprepared plan merely to fill a slot** — when fewer than `N − R` candidates qualify, report the shortfall with the blocking reason per candidate (the overlapping surface, or the unsettled claim) instead.
+An OPEN verify-first clause — one authored by `decompose.md` Step 4 and not yet checked by anyone — does NOT fail the Prep-ready test. Per [orchestration-model.md § Verify-First Contract for Inferred Claims](../../persona-marshall-orchestrator/standards/orchestration-model.md#verify-first-contract-for-inferred-claims), settling such a clause is the LAUNCHED plan's own job (refine owns the verification; outline owns it when refine did not run), so blocking emission on an unchecked clause would make the verifying phase unreachable and the spec permanently unemittable. Only a clause a fresh orchestrator check has already contradicted — typically the [`analyze.md` Step 2](analyze.md) dispatchable ground-truth corroboration returning `verdict: contradicted` — blocks emission, and only until the spec is re-scoped against that refutation.
+
+A candidate failing either test is sequenced, not emitted. **Never emit a colliding or unprepared plan merely to fill a slot** — when fewer than `N − R` candidates qualify, report the shortfall with the blocking reason per candidate (the overlapping surface, or the refuted-and-unaddressed claim) instead.
 
 ### Step 5 (verb = `next`): Emit the commands
 
@@ -117,7 +119,7 @@ emitted[E]{plan,command}:
   PLAN-NN,/plan-marshall task="implement .plan/local/orchestrator/{slug}/plans/PLAN-NN-{plan_slug}.md"
 shortfall[S]{plan,reason}:
   PLAN-MM,"overlaps {surface} with PLAN-KK"
-  PLAN-PP,"unresolved verify-first clause"
+  PLAN-PP,"refuted verify-first clause not yet re-scoped"
 ```
 
 `display_detail` is ≤80 chars, ASCII, no trailing period. `emitted[]` is empty when no candidate qualifies; `shortfall[]` is empty when the block fills every slot, and otherwise names one blocking reason per unemittable candidate.
