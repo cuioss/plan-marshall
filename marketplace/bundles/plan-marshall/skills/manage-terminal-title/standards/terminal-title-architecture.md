@@ -327,7 +327,7 @@ prevent path traversal and glob injection.
 |------|-----------|------|
 | `session bind --plan-id {id} [--session-id {id}]` | `session_binding.bind` | **Last-driven-wins** unconditional write of the caller's OWN slot — NO protect-active, NO stale-slot reclaim, NO plan-dir-exists check. |
 | `session resolve-plan [--session-id {id}]` | `session_binding.resolve_plan` | Read side — returns the bound `plan_id` (or empty). `session render-title` resolves session→plan through it. |
-| `session doctor [--fix]` | `session_binding.doctor` | Reverse-index conflict scan + stale-slot GC (see below). |
+| `session doctor [--fix]` | `session_binding.doctor` | Reverse-index conflict scan + stale-slot GC + orphan-directory prune (see below). |
 | `session teardown` | `session_binding.unbind` | **Activation-gated** end-of-session retire: resets the tab to the terminal's own default and drops the caller's OWN slot (see below). |
 
 #### `session teardown` — activation-gated title reset + unbind
@@ -376,21 +376,92 @@ switched to drive a second live plan stayed pinned to the first (the sticky-bind
 pollution, Defect 2); last-driven-wins fixes it by making the most recent driver
 authoritative.
 
-#### `session doctor` — reverse-index conflict scan + stale GC
+#### Why a multi-session conflict is benign — no guard is needed
 
-`session doctor` walks every `~/.cache/plan-marshall/sessions/*/active-plan` slot,
-builds an **in-memory plan→sessions reverse index**, and reports:
+A plan bound by several live sessions is a **reportable observation, not a fault**.
+Last-driven-wins needs no conflict guard because the binding surface is
+**correct by construction** — three structural properties, each of which
+independently removes the failure mode a guard would defend against:
+
+- **(a) The lookup is forward-only.** `resolve_plan(session_id)` maps a session to
+  a plan. There is no plan→session direction anywhere in the surface, so "which
+  session owns this plan?" is a question no consumer can ask and no consumer does
+  ask: the two callers of `session resolve-plan` —
+  `marshall-orchestrator/workflow/close.md` and
+  `marshall-orchestrator/workflow/archive.md` — both invoke it with **no
+  `--session-id`**, resolving only their own caller session. A second session
+  bound to the same plan is therefore invisible to every read path.
+- **(b) `unbind` is self-scoped.** `unbind` and `session teardown` remove only the
+  **calling** session's own slot. One session tearing down can never drop a
+  sibling session's binding, so coexistence cannot produce a cross-session
+  release.
+- **(c) There is no `session close` verb.** The operations set is `capture` /
+  `render-title` / `push-title-token` / `bind` / `resolve-plan` / `doctor` /
+  `teardown` / `reload-directive`. No verb takes a plan id and acts on *whichever*
+  session holds it, so no operation can be misdirected by a shared binding.
+
+Consequently the `doctor` **conflict list is diagnostic-only by design** — it
+surfaces "two tabs are driving this plan" for a human reading the report, and
+nothing in the system branches on it. Fail-closing `resolve_plan` on a detected
+conflict would add a guard for a consumer that does not exist, which is precisely
+the speculative structure
+[`persona-plan-marshall-agent`](../../persona-plan-marshall-agent/SKILL.md)
+Principle 7 forbids. `bind` stays unconditional.
+
+#### `session doctor` — reverse-index conflict scan + stale GC + orphan prune
+
+`session doctor` visits **every directory** under
+`~/.cache/plan-marshall/sessions/` — not only the ones that yield a readable
+slot — builds an **in-memory plan→sessions reverse index** from the live slots,
+and reports a **three-way** health picture:
 
 - **conflicts** — any plan bound by more than one session (two sessions driving
-  the same plan); and
+  the same plan);
 - **stale** slots — a slot whose bound plan is archived or deleted (its live plan
-  dir, on main OR in its phase-5+ worktree, is gone).
+  dir, on main OR in its phase-5+ worktree, is gone); and
+- **orphans** — a session directory that carries no binding at all, because its
+  `active-plan` file is absent, empty, or unreadable. These are the residue the
+  `unbind` prune could not remove, and the all-directories scan is what makes
+  them visible: a slot-only walk skips them by construction, so the cache root
+  accumulates empty directories no verb ever reports.
 
-With `--fix` it GCs each stale slot (removes its `active-plan` file). The scan
-keeps **NO shared mutable index** (no `index.json`) — it is per-file and
+The three categories are disjoint at scan time: a stale slot resolves to a
+`plan_id` while an orphan directory resolves to nothing, so the report never
+double-counts a directory.
+
+With `--fix` it GCs each stale slot (removes its `active-plan` file) and prunes
+each orphan directory. Both prunes share one `_remove_slot_and_prune` body — the
+same unlink-then-rmdir the public `unbind` teardown uses — so slot removal has a
+single home. The `scanned` count keeps its original meaning (live slots scanned)
+and does not include orphan directories; `orphans_removed` is reported separately
+from `gc_removed`.
+
+The scan keeps **NO shared mutable index** (no `index.json`) — it is per-file and
 idempotent, so it introduces no new shared-file TOCTOU hazard. Stale GC delivers
 release-on-exit implicitly: an archived plan's slot becomes GC-eligible, so no
 separate `session release` verb is needed.
+
+##### Automatic caller and the main-anchored-caller invariant
+
+The GC has an **automatic caller**: the `default:archive-plan` finalize step runs
+`session doctor --fix` immediately after its `manage-status archive` call (see
+[`phase-6-finalize/standards/archive-plan.md`](../../phase-6-finalize/standards/archive-plan.md)
+§ "Sweep the session-binding store"). Sweeping *after* the archive is what lets the
+finishing plan's own now-stale slot be collected in the same pass. Without this
+caller the sweep has no scheduled invocation and the cache grows unboundedly.
+
+The sweep's **reporting sink is the global work log** — `manage-logging work`
+invoked without `--plan-id`. The record is machine-global housekeeping spanning
+every plan's session slots, and the plan that triggered it has just been archived,
+so a plan-scoped entry would be buried in an archived plan's own log.
+
+**Main-anchored-caller invariant**: any caller of `session doctor --fix` MUST run
+with cwd at the **main checkout**. `_plan_is_live` resolves plan directories
+relative to the process cwd, so a sweep fired from inside a worktree would resolve
+none of the main checkout's live plan dirs and would classify **every other live
+plan's binding as archived**, GC'ing bindings that are still in use. The
+`archive-plan` caller satisfies this structurally: it runs at `order: 1000`, after
+`default:branch-cleanup` has removed the worktree, so cwd is already main.
 
 ### Output Channels
 

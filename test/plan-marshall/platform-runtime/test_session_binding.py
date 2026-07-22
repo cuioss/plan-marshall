@@ -9,8 +9,8 @@ Covers:
     live binding) and validation rejection
   - unbind: caller-scoped slot removal + empty-session-dir prune, idempotence,
     validation rejection, and the no-raise contract on I/O failure
-  - doctor: reverse-index conflict scan, stale-slot detection, --fix GC, and
-    the no-index.json invariant
+  - doctor: reverse-index conflict scan, stale-slot detection, --fix GC, the
+    all-directories orphan sweep and prune, and the no-index.json invariant
 """
 from __future__ import annotations
 
@@ -302,3 +302,215 @@ class TestDoctor:
         assert report["scanned"] == 0
         assert report["conflicts"] == []
         assert report["stale"] == []
+        assert report["orphans"] == []
+        assert report["orphans_removed"] == 0
+
+
+# =============================================================================
+# Main-anchored-caller invariant — cwd decides what counts as a live plan
+# =============================================================================
+
+
+class TestMainAnchoredSweep:
+    """The GC sweep MUST run with cwd at the main checkout.
+
+    ``_plan_is_live`` resolves plan directories relative to the process cwd, so
+    the same cache yields a completely different stale set depending on where the
+    sweep is fired from. The ``default:archive-plan`` caller satisfies the
+    invariant structurally (it runs at ``order: 1000``, after
+    ``default:branch-cleanup`` removed the worktree, so cwd is main). These two
+    tests pin both halves so a future caller relocated to a worktree-cwd site
+    fails loudly here instead of silently GC'ing live bindings.
+    """
+
+    @staticmethod
+    def _make_worktree_plan(project_root, plan_id: str):
+        """Create a phase-5+ worktree-resident live plan and return the worktree root."""
+        worktree_root = project_root / ".plan" / "local" / "worktrees" / plan_id
+        (worktree_root / ".plan" / "local" / "plans" / plan_id).mkdir(parents=True)
+        return worktree_root
+
+    def test_main_anchored_sweep_preserves_both_residencies(self, cache, project):
+        """From the project root, a main-resident and a worktree-resident plan are both live."""
+        _make_live_plan(project, "main-plan")
+        self._make_worktree_plan(project, "wt-plan")
+        session_binding.bind(SID_A, "main-plan")
+        session_binding.bind(SID_B, "wt-plan")
+
+        report = session_binding.doctor(fix=True)
+
+        assert report["stale"] == []
+        assert report["gc_removed"] == 0
+        assert session_binding.resolve_plan(SID_A) == "main-plan"
+        assert session_binding.resolve_plan(SID_B) == "wt-plan"
+
+    def test_worktree_anchored_sweep_misjudges_the_main_resident_plan(
+        self, cache, project, monkeypatch
+    ):
+        """DOCUMENTED HAZARD: from inside a worktree the main-resident plan reads as stale.
+
+        This is the failure mode the main-anchored-caller invariant exists to
+        prevent — asserted here as a pinned property, NOT as desirable behaviour.
+        A caller that runs the sweep from a worktree cwd would GC a binding whose
+        plan is very much alive.
+        """
+        _make_live_plan(project, "main-plan")
+        worktree_root = self._make_worktree_plan(project, "wt-plan")
+        session_binding.bind(SID_A, "main-plan")
+        session_binding.bind(SID_B, "wt-plan")
+
+        monkeypatch.chdir(worktree_root)
+
+        report = session_binding.doctor()
+
+        stale_plans = {s["plan_id"] for s in report["stale"]}
+        assert stale_plans == {"main-plan"}
+
+
+# =============================================================================
+# Benign coexistence — a plan bound by two live sessions needs no guard
+# =============================================================================
+
+
+class TestBenignCoexistence:
+    """A plan bound by more than one live session is diagnostic-only, not a fault.
+
+    Last-driven-wins carries no conflict guard because the surface is correct by
+    construction: the lookup is forward-only (session→plan, never the reverse),
+    ``unbind`` is self-scoped, and no verb acts on "whichever session holds this
+    plan". This pins that coexistence stays benign — the conflict is reported and
+    nothing is destroyed.
+    """
+
+    def test_two_sessions_one_plan_coexist_benignly(self, cache, project):
+        """Both forward lookups stay exact, the conflict is reported, and --fix destroys nothing."""
+        _make_live_plan(project, "shared-plan")
+        assert session_binding.bind(SID_A, "shared-plan") is True
+        assert session_binding.bind(SID_B, "shared-plan") is True
+
+        # (a) The forward lookup is exact for each session independently.
+        assert session_binding.resolve_plan(SID_A) == "shared-plan"
+        assert session_binding.resolve_plan(SID_B) == "shared-plan"
+
+        # (b) The plan is reported as a conflict naming both sessions.
+        report = session_binding.doctor()
+        assert len(report["conflicts"]) == 1
+        assert report["conflicts"][0]["plan_id"] == "shared-plan"
+        assert report["conflicts"][0]["sessions"] == sorted([SID_A, SID_B])
+        assert report["stale"] == []
+
+        # (c) --fix removes neither slot: a conflict is not a GC trigger.
+        fixed = session_binding.doctor(fix=True)
+        assert fixed["gc_removed"] == 0
+        assert fixed["orphans_removed"] == 0
+        assert session_binding.resolve_plan(SID_A) == "shared-plan"
+        assert session_binding.resolve_plan(SID_B) == "shared-plan"
+
+    def test_unbind_of_one_session_leaves_the_coexisting_binding_intact(self, cache, project):
+        """The self-scoped-teardown half: one session's unbind never drops the sibling's slot."""
+        _make_live_plan(project, "shared-plan")
+        session_binding.bind(SID_A, "shared-plan")
+        session_binding.bind(SID_B, "shared-plan")
+
+        assert session_binding.unbind(SID_A) is True
+
+        assert session_binding.resolve_plan(SID_A) is None
+        assert session_binding.resolve_plan(SID_B) == "shared-plan"
+
+
+# =============================================================================
+# doctor — orphan-directory sweep and prune
+# =============================================================================
+
+
+class TestDoctorOrphans:
+    """Tests for the all-directories sweep that reports and prunes orphan dirs.
+
+    An orphan directory is one that yields no live slot via ``resolve_plan`` —
+    its ``active-plan`` file is absent, empty, or unreadable. The pre-fix scan
+    walked slots only, so these directories were invisible by construction and
+    accumulated in the cache root forever.
+    """
+
+    def test_empty_slot_dir_is_reported_and_pruned(self, cache, project):
+        """A zero-byte active-plan file makes its directory an orphan."""
+        slot = cache / SID_A / "active-plan"
+        slot.parent.mkdir(parents=True)
+        slot.write_text("", encoding="utf-8")
+
+        report = session_binding.doctor()
+        assert report["orphans"] == [SID_A]
+        assert report["orphans_removed"] == 0
+        assert (cache / SID_A).is_dir()  # a plain scan never mutates
+
+        report = session_binding.doctor(fix=True)
+        assert report["orphans"] == [SID_A]
+        assert report["orphans_removed"] == 1
+        assert not (cache / SID_A).exists()
+
+    def test_absent_slot_dir_is_reported_and_pruned(self, cache, project):
+        """A session directory with no active-plan file at all is an orphan."""
+        (cache / SID_A).mkdir(parents=True)
+
+        report = session_binding.doctor()
+        assert report["orphans"] == [SID_A]
+        assert report["orphans_removed"] == 0
+        assert (cache / SID_A).is_dir()
+
+        report = session_binding.doctor(fix=True)
+        assert report["orphans"] == [SID_A]
+        assert report["orphans_removed"] == 1
+        assert not (cache / SID_A).exists()
+
+    def test_unreadable_slot_dir_is_reported_and_pruned(self, cache, project, monkeypatch):
+        """A slot whose read raises OSError makes its directory an orphan."""
+        session_binding.bind(SID_A, "plan-1")
+
+        def _raise(*_args, **_kwargs):
+            raise OSError(13, "Permission denied")
+
+        monkeypatch.setattr(session_binding.Path, "read_text", _raise)
+
+        report = session_binding.doctor()
+        assert report["orphans"] == [SID_A]
+        assert report["orphans_removed"] == 0
+
+        report = session_binding.doctor(fix=True)
+        assert report["orphans_removed"] == 1
+        assert not (cache / SID_A).exists()
+
+    def test_live_slot_dir_is_never_an_orphan(self, cache, project):
+        """A directory holding a live readable slot is not reported and survives --fix."""
+        _make_live_plan(project, "plan-1")
+        session_binding.bind(SID_A, "plan-1")
+
+        report = session_binding.doctor(fix=True)
+
+        assert report["orphans"] == []
+        assert report["orphans_removed"] == 0
+        assert report["scanned"] == 1
+        assert session_binding.resolve_plan(SID_A) == "plan-1"
+
+    def test_orphan_dir_holding_other_files_survives_the_prune(self, cache, project):
+        """The prune is best-effort: a reported orphan holding other files stays."""
+        (cache / SID_A).mkdir(parents=True)
+        (cache / SID_A / "other-file").write_text("keep me", encoding="utf-8")
+
+        report = session_binding.doctor(fix=True)
+
+        assert report["orphans"] == [SID_A]
+        # _remove_slot_and_prune reports success (the absent slot file is not an
+        # error) while the rmdir of the non-empty dir is silently skipped.
+        assert report["orphans_removed"] == 1
+        assert (cache / SID_A / "other-file").is_file()
+
+    def test_stale_slot_is_not_double_counted_as_an_orphan(self, cache, project):
+        """A stale slot resolves to a plan_id, so it is never also an orphan."""
+        session_binding.bind(SID_B, "gone-plan")
+
+        report = session_binding.doctor(fix=True)
+
+        assert [s["plan_id"] for s in report["stale"]] == ["gone-plan"]
+        assert report["gc_removed"] == 1
+        assert report["orphans"] == []
+        assert report["orphans_removed"] == 0
