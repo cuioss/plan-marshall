@@ -288,6 +288,114 @@ def test_multi_match_still_merges_inclusion(plan_context):
 
 
 # =============================================================================
+# additional_candidates — the configured-but-unmatched offer group
+# =============================================================================
+
+
+def test_multi_match_offers_configured_but_unmatched_domain(plan_context):
+    """The API-Sheriff shape: a configured-but-unmatched domain stays offerable.
+
+    Two domains are named in the narrative and a third is configured but never
+    mentioned. The third must reach the operator through the ambiguous-branch
+    prompt — i.e. it appears in the offered union candidates + additional_candidates —
+    rather than requiring the operator to notice its absence and inject it by hand.
+    """
+    plan_dir = _make_plan_dir(plan_context, 'dd-unmatched-offer')
+    config = {
+        'skill_domains': {
+            'system': {'defaults': []},
+            'java': {'bundle': 'pm-dev-java'},
+            'documentation': {'bundle': 'pm-documents'},
+            # Configured and project-mandated, but absent from the narrative.
+            'java-cui': {'bundle': 'pm-cui'},
+        }
+    }
+    create_marshal_json(plan_context.fixture_dir, config)
+    _write_request(plan_dir, 'Add java logging and update the documentation.')
+
+    result = cmd_domain_detect(_ns('dd-unmatched-offer'))
+    assert result['ambiguous'] is True
+    assert result['reason'] == 'multiple_narrative_matches'
+
+    candidates = {c['domain'] for c in result['candidates']}
+    assert {'java', 'documentation'}.issubset(candidates)
+    assert 'java-cui' not in candidates  # the detector did not match it...
+
+    assert 'java-cui' in result['additional_candidates']  # ...but it is offerable
+    offered = candidates | set(result['additional_candidates'])
+    assert 'java-cui' in offered
+
+
+def test_zero_match_leaves_additional_candidates_empty(plan_context):
+    """Zero-match invariance: candidates already carries the full configured set.
+
+    The zero-match branch widens ``candidates`` itself, so the additive
+    ``additional_candidates`` computes to empty — both ambiguous branches present
+    the identical offerable union.
+    """
+    plan_dir = _make_plan_dir(plan_context, 'dd-zero-additional')
+    create_nested_marshal_json(plan_context.fixture_dir)
+    _write_request(
+        plan_dir,
+        'Update the deployment configuration to fix the release pipeline.',
+    )
+    result = cmd_domain_detect(_ns('dd-zero-additional'))
+    assert result['reason'] == 'no_narrative_match'
+    candidate_domains = {c['domain'] for c in result['candidates']}
+    assert {'java', 'javascript', 'plan-marshall-plugin-dev'}.issubset(candidate_domains)
+    assert result['additional_candidates'] == []
+
+
+def test_inclusion_leg_domains_excluded_from_additional_candidates(plan_context):
+    """A domain already supplied by the always_on leg is not re-offered.
+
+    It is unioned into ``domains`` unconditionally, so surfacing it as a
+    selectable option would be noise.
+    """
+    plan_dir = _make_plan_dir(plan_context, 'dd-incl-excluded')
+    config = {
+        'skill_domains': {
+            'system': {'defaults': []},
+            'java': {'bundle': 'pm-dev-java'},
+            'javascript': {'bundle': 'pm-dev-frontend'},
+            'python': {'bundle': 'pm-dev-python', 'always_on': True},
+        }
+    }
+    create_marshal_json(plan_context.fixture_dir, config)
+    _write_request(plan_dir, 'Refactor the java CDI and the javascript frontend hooks.')
+
+    result = cmd_domain_detect(_ns('dd-incl-excluded'))
+    assert result['ambiguous'] is True
+    assert 'python' in result['domains']  # merged via always_on
+    assert 'python' not in result['additional_candidates']  # but never re-offered
+
+
+def test_non_dict_skill_domains_sibling_is_never_offered(plan_context):
+    """``skill_domains`` bookkeeping siblings are not domains and stay unoffered.
+
+    ``active_profiles`` is a list stored alongside the domain entries; offering it
+    would put a non-selectable key in front of the operator.
+    """
+    plan_dir = _make_plan_dir(plan_context, 'dd-bookkeeping')
+    config = {
+        'skill_domains': {
+            'system': {'defaults': []},
+            'java': {'bundle': 'pm-dev-java'},
+            'javascript': {'bundle': 'pm-dev-frontend'},
+            'general-dev': {'bundle': 'pm-general'},
+            'active_profiles': ['implementation', 'module_testing'],
+        }
+    }
+    create_marshal_json(plan_context.fixture_dir, config)
+    _write_request(plan_dir, 'Refactor the java CDI and the javascript frontend hooks.')
+
+    result = cmd_domain_detect(_ns('dd-bookkeeping'))
+    assert result['ambiguous'] is True
+    assert 'active_profiles' not in result['additional_candidates']
+    assert 'general-dev' in result['additional_candidates']  # a real domain still is
+
+
+# =============================================================================
 # Glob matcher / narrative-path helper units
 # =============================================================================
 

@@ -22,6 +22,13 @@ surfaced as the multiSelect candidate set). A zero narrative match resolved by
 the always_on / glob legs is silent (``ambiguous=false``). There is no LLM
 dispatch on this path.
 
+The offerable set the caller prompts over is split across two sibling fields:
+``candidates`` is the detector's narrative matches, and ``additional_candidates``
+is the remaining configured non-system domains that are neither a narrative match
+nor already supplied by the ``always_on`` / ``file_globs`` legs. On the ambiguous
+branch the caller offers the union of the two groups, detected first — so a
+domain that is configured but absent from the narrative stays selectable.
+
 Single-domain projects auto-select regardless of narrative content (the
 manage-config ``configure`` step only allowed that one domain in the first
 place, so the answer is fixed).
@@ -217,11 +224,40 @@ def _glob_matched_domains(user_domains: dict[str, Any], file_signal: set[str]) -
     return matched
 
 
+def _offerable_domains(user_domains: dict[str, Any]) -> set[str]:
+    """Return the keys of ``user_domains`` that are real, offerable domains.
+
+    ``skill_domains`` also carries non-domain bookkeeping siblings (e.g.
+    ``active_profiles``, a list). Only dict-valued entries are domains — the same
+    guard the narrative scan applies — so a bookkeeping key is never surfaced to
+    the operator as a selectable option.
+    """
+    return {domain for domain, cfg in user_domains.items() if isinstance(cfg, dict)}
+
+
+def _additional_candidates(
+    user_domains: dict[str, Any],
+    candidates: list[dict[str, Any]],
+    inclusion_union: set[str],
+) -> list[str]:
+    """Return the configured non-system domains not already offered or included.
+
+    These are the domains the operator can still select on the ambiguous branch
+    even though the narrative never mentioned them. Domains already supplied by
+    the ``always_on`` / ``file_globs`` legs are excluded — they are unioned into
+    ``domains`` unconditionally, so offering them would be noise.
+    """
+    return sorted(
+        _offerable_domains(user_domains) - {c['domain'] for c in candidates} - inclusion_union
+    )
+
+
 def _result(
     plan_id: str,
     *,
     domains: set[str],
     candidates: list[dict[str, Any]],
+    additional_candidates: list[str],
     always_on: set[str],
     glob_matched: set[str],
     ambiguous: bool,
@@ -234,6 +270,7 @@ def _result(
         'plan_id': plan_id,
         'domains': sorted(domains),
         'candidates': candidates,
+        'additional_candidates': additional_candidates,
         'always_on': sorted(always_on),
         'glob_matched': sorted(glob_matched),
         'ambiguous': ambiguous,
@@ -245,11 +282,15 @@ def _result(
 def cmd_domain_detect(args) -> dict[str, Any]:
     """Run the deterministic domain detector for a plan.
 
-    Returns the SET contract ``{domains, candidates, always_on, glob_matched,
-    ambiguous, source, reason}``. The caller (phase-1-init Step 7 /
-    phase-2-refine) unions ``domains`` into ``references.domains`` and uses
-    ``ambiguous`` to decide whether to raise a multiSelect ``AskUserQuestion``
-    over ``candidates``; no LLM dispatch fallback applies on this code path.
+    Returns the SET contract ``{domains, candidates, additional_candidates,
+    always_on, glob_matched, ambiguous, source, reason}``. The caller
+    (phase-1-init Step 7 / phase-2-refine) unions ``domains`` into
+    ``references.domains`` and uses ``ambiguous`` to decide whether to raise a
+    multiSelect ``AskUserQuestion``. That prompt offers ``candidates`` (the
+    detector's narrative matches) first, then ``additional_candidates`` (the
+    remaining configured non-system domains not already supplied by the
+    ``always_on`` / ``file_globs`` legs), so a configured-but-unmatched domain
+    is selectable. No LLM dispatch fallback applies on this code path.
     """
     plan_id: str = args.plan_id
     override: str | None = getattr(args, 'domain_override', None)
@@ -270,6 +311,7 @@ def cmd_domain_detect(args) -> dict[str, Any]:
             plan_id,
             domains=set(),
             candidates=[],
+            additional_candidates=[],
             always_on=set(),
             glob_matched=set(),
             ambiguous=True,
@@ -283,6 +325,7 @@ def cmd_domain_detect(args) -> dict[str, Any]:
             plan_id,
             domains=set(),
             candidates=[],
+            additional_candidates=[],
             always_on=set(),
             glob_matched=set(),
             ambiguous=True,
@@ -298,6 +341,7 @@ def cmd_domain_detect(args) -> dict[str, Any]:
             plan_id,
             domains=set(),
             candidates=[],
+            additional_candidates=[],
             always_on=set(),
             glob_matched=set(),
             ambiguous=True,
@@ -321,10 +365,14 @@ def cmd_domain_detect(args) -> dict[str, Any]:
 
     # Explicit override resolves the detector leg immediately.
     if override and override in user_domains:
+        override_candidates = [{'domain': override, 'matched_aliases': []}]
         return _result(
             plan_id,
             domains={override} | inclusion_union,
-            candidates=[{'domain': override, 'matched_aliases': []}],
+            candidates=override_candidates,
+            additional_candidates=_additional_candidates(
+                user_domains, override_candidates, inclusion_union
+            ),
             always_on=always_on_set,
             glob_matched=glob_matched_set,
             ambiguous=False,
@@ -335,10 +383,14 @@ def cmd_domain_detect(args) -> dict[str, Any]:
     # Single-domain auto-select (Step 7 rule 1).
     if len(user_domains) == 1:
         only = next(iter(user_domains))
+        only_candidates = [{'domain': only, 'matched_aliases': []}]
         return _result(
             plan_id,
             domains={only} | inclusion_union,
-            candidates=[{'domain': only, 'matched_aliases': []}],
+            candidates=only_candidates,
+            additional_candidates=_additional_candidates(
+                user_domains, only_candidates, inclusion_union
+            ),
             always_on=always_on_set,
             glob_matched=glob_matched_set,
             ambiguous=False,
@@ -364,6 +416,9 @@ def cmd_domain_detect(args) -> dict[str, Any]:
             plan_id,
             domains=detector_set | inclusion_union,
             candidates=candidates,
+            additional_candidates=_additional_candidates(
+                user_domains, candidates, inclusion_union
+            ),
             always_on=always_on_set,
             glob_matched=glob_matched_set,
             ambiguous=False,
@@ -376,6 +431,9 @@ def cmd_domain_detect(args) -> dict[str, Any]:
             plan_id,
             domains=detector_set | inclusion_union,
             candidates=candidates,
+            additional_candidates=_additional_candidates(
+                user_domains, candidates, inclusion_union
+            ),
             always_on=always_on_set,
             glob_matched=glob_matched_set,
             ambiguous=True,
@@ -391,6 +449,7 @@ def cmd_domain_detect(args) -> dict[str, Any]:
             plan_id,
             domains=inclusion_union,
             candidates=[],
+            additional_candidates=_additional_candidates(user_domains, [], inclusion_union),
             always_on=always_on_set,
             glob_matched=glob_matched_set,
             ambiguous=False,
@@ -398,11 +457,16 @@ def cmd_domain_detect(args) -> dict[str, Any]:
             reason='inclusion_only_resolve',
         )
 
-    prompt_candidates = [{'domain': d, 'matched_aliases': []} for d in sorted(user_domains)]
+    prompt_candidates = [
+        {'domain': d, 'matched_aliases': []} for d in sorted(_offerable_domains(user_domains))
+    ]
     return _result(
         plan_id,
         domains=set(),
         candidates=prompt_candidates,
+        additional_candidates=_additional_candidates(
+            user_domains, prompt_candidates, inclusion_union
+        ),
         always_on=always_on_set,
         glob_matched=glob_matched_set,
         ambiguous=True,
