@@ -1846,7 +1846,7 @@ class TestPrePushQualityGatePreFilter:
             return original_should(canonical_command, plan_id_, *args, **kwargs)
 
         extension_base.should_execute_build = _record
-        captured, original = self._capture_decision_log()
+        _captured, original = self._capture_decision_log()
         try:
             result = cmd_compose(
                 _compose_ns(

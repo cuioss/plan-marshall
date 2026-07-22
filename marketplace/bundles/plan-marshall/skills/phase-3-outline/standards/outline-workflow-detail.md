@@ -333,7 +333,7 @@ The bucket names a **file role**, never a build verdict. It governs `profiles[]`
 
 - Simple Track [Step 7: Create Deliverables](#step-7-create-deliverables) consumes this classifier when mapping module_mapping entries to deliverables.
 - Complex Track [Step 10: Execute Change-Type Workflow and Write Solution](#step-10-execute-change-type-workflow-and-write-solution) consumes this classifier when composing deliverables from domain skill discovery.
-- `manage-execution-manifest.compose()` applies the same classifier at plan-composer scope (union of all `affected_files`) to decide whether to emit holistic Python verification steps (see `marketplace/bundles/plan-marshall/skills/manage-execution-manifest/standards/decision-rules.md`).
+- `manage-execution-manifest`'s per-domain extension aggregator (`_classify_paths_via_extensions`) reuses the same six-bucket vocabulary to answer a different question — `profiles[]` assignment, never build necessity. `compose()` never infers build necessity from the bucket; the sole build/no-build authority is the `build-decision` verdict (see `marketplace/bundles/plan-marshall/skills/manage-execution-manifest/standards/decision-rules.md` § "The classifier / build-decision boundary").
 
 ### Step 6: Validate Targets
 

@@ -580,7 +580,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config aspect
   --request-text "{request_narrative}"
 ```
 
-Parse `aspect` (`analysis` | `planning` | `implementation`) from the returned TOON. Persist the resolved aspect into status metadata:
+Parse `aspect` (`analysis` | `planning` | `implementation`) and `confidence` (float) from the returned TOON. Persist the resolved aspect into status metadata:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
