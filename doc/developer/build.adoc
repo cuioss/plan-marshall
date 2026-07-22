@@ -9,7 +9,7 @@ How Plan Marshall is built and tested locally.
 
 == Overview
 
-This project uses https://pyprojectx.github.io/[Pyprojectx] for Python development tooling, following the Maven/Gradle wrapper pattern. Only Python 3 is required on the host system: the host interpreter bootstraps the wrapper, and the build itself runs on the interpreter Pyprojectx provisions — see <<Python Interpreter Parity (Local vs CI)>>.
+This project uses https://pyprojectx.github.io/[Pyprojectx] for Python development tooling, following the Maven/Gradle wrapper pattern. Only Python 3 is required on the host system — and that host interpreter *is* the build interpreter: Pyprojectx creates its tool venv on the same interpreter that invoked `./pw`. See <<Which Interpreter Runs the Build>>.
 
 == Rationale
 
@@ -105,19 +105,29 @@ Tool configuration is in `pyproject.toml`:
 * `[tool.ruff]` — linter/formatter configuration
 * `[tool.mypy]` — type checker configuration
 
-=== Python Interpreter Parity (Local vs CI)
+=== Which Interpreter Runs the Build
 
-The build interpreter is declared once, in `pyproject.toml`, and Pyprojectx provisions it identically in both environments. The host `python3` is never the build interpreter, so the host version is irrelevant to the build — a host running a newer Python than the declared build interpreter is expected and is not a divergence.
+**The build interpreter is whichever `python3` invokes `./pw`.** No entry in `pyproject.toml` selects it, and no `[tool.pyprojectx]` key can.
 
-CI's interpreter is not declared in this repository. `.github/workflows/python-verify.yml` delegates to the SHA-pinned reusable workflow `cuioss/cuioss-organization/.github/workflows/reusable-pyprojectx-verify.yml@6278bbd7280a6e94b4914aa9e8c61cf23ea1abbe`, whose `actions/setup-python` step is conditional: it runs only when a Python version is supplied, either through the reusable workflow's `python-version` input (declared `required: false` with an empty default meaning "let uv manage") or through the `pyprojectx.python-version` key of `.github/project.yml`, which the pinned `read-project-config` action reads. This repository passes no `python-version` and its `.github/project.yml` carries no `pyprojectx` block, so both values are empty and the `setup-python` step is skipped entirely — CI installs no explicit Python.
+The chain, established by reading the installed Pyprojectx 3.3.2 sources:
 
-`[tool.pyprojectx].lock-python-version` is therefore the single repo-level interpreter declaration, and Pyprojectx/uv provisions that same interpreter in CI and locally. Three declarations must stay mutually consistent:
+. `pw` bootstraps its own Pyprojectx venv from `sys.executable` — the interpreter that ran `pw`.
+. `pyprojectx/env.py::IsolatedVirtualEnv.install()` then creates the tool venv with `uv venv --python {sys.version_info.major}.{minor}` — the version of the *Pyprojectx process*, i.e. still the invoking interpreter. The venv directory is named accordingly (`.pyprojectx/venvs/main-<hash>-py<X.Y>`), which is the observable check for which interpreter a checkout is actually building on.
+. `pytest`, `mypy`, and `ruff` are console scripts inside that venv and are reached through `PATH`, so they run on that same interpreter. The `uv run` prefix in the `[tool.pyprojectx.aliases]` commands does *not* redirect them: `uv run` creates a project `.venv` from `[project].requires-python`, but the dev tools are not installed there, so `uv run pytest` falls through to the `PATH` entry in the Pyprojectx venv.
 
-* `[project].requires-python` — the minimum interpreter version the project supports
-* `[tool.pyprojectx].lock-python-version` — the interpreter Pyprojectx provisions and the build actually runs on
-* `[tool.mypy].python_version` — the language level mypy type-checks against
+`[tool.pyprojectx].lock-python-version` does **not** select the build interpreter. `pyprojectx/config.py` reads it into `Config.lock_python_version`, and `pyprojectx/lock.py::_freeze()` passes it to `uv pip compile --python-version` — it governs *requirement resolution* when writing `pw.lock`, nothing else. Setting it to `3.12` on a host whose `python3` is 3.14 yields a `…-py3.14` tool venv; the value is inert with respect to the runtime.
 
-The source for this finding is workflow-declared rather than run-observed: it was established by reading the pinned reusable workflow and its `read-project-config` action at SHA `6278bbd7280a6e94b4914aa9e8c61cf23ea1abbe`, together with this repository's `.github/project.yml`. A `.python-version` or `.tool-versions` file is deliberately absent — adding one would introduce a second, competing interpreter declaration that no part of this build consults.
+CI's interpreter is likewise not declared in this repository. `.github/workflows/python-verify.yml` delegates to the SHA-pinned reusable workflow `cuioss/cuioss-organization/.github/workflows/reusable-pyprojectx-verify.yml@6278bbd7280a6e94b4914aa9e8c61cf23ea1abbe`, whose `actions/setup-python` step is conditional: it runs only when a Python version is supplied, either through the reusable workflow's `python-version` input or through the `pyprojectx.python-version` key of `.github/project.yml`, which the pinned `read-project-config` action reads. This repository sets neither, so `setup-python` is skipped and `./pw` runs on the runner's default `python3`.
+
+Consequently the local and CI build interpreters are independent of each other and of `pyproject.toml`, and they can and do differ. Adding a `pyprojectx.python-version` entry to `.github/project.yml` is the sanctioned mechanism for pinning the CI side.
+
+Three declarations exist and are related but distinct — none of them is the build interpreter:
+
+* `[project].requires-python` — the minimum interpreter version the project supports, and the version `uv run` uses for the (tool-less) project `.venv`
+* `[tool.pyprojectx].lock-python-version` — the `--python-version` passed to `uv pip compile` when regenerating `pw.lock`
+* `[tool.mypy].python_version` — the language level mypy type-checks against, independent of the interpreter mypy itself runs on
+
+A `.python-version` or `.tool-versions` file is deliberately absent — adding one would introduce a second, competing interpreter declaration that no part of this build consults.
 
 == Related
 
