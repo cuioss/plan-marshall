@@ -2,15 +2,24 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the compose-time per-step ``execution_tier`` stamping pass.
 
-``_stamp_phase_5_step_execution_tier`` resolves every FINAL
-``phase_5.verification_steps`` entry to a deterministic ``execution_tier``
-(``per_task`` | ``orchestrator``) and records it as a uniform-array record list
-(``{step_id, tier}`` per step). This is the compose-time structural enforcement of
-the leaf-no-background-build invariant — a leaf runs only ``per_task``-tier
-verification steps inline; ``orchestrator``-tier steps are yielded to the
-main-context orchestrator's ``await-long-running`` seam.
+``_stamp_phase_5_step_execution_tier`` records every FINAL
+``phase_5.verification_steps`` entry's ``execution_tier`` (``per_task`` |
+``orchestrator``) as a uniform-array record list (``{step_id, tier}`` per step).
 
-The two contract properties the stamping guarantees:
+**The stamp is ADVISORY, not the routing authority.** The tier derives from
+``bash_timeout_seconds``, which ``manage-architecture``'s ``_lookup_bash_timeout``
+computes from ``timeout_get(command_key, ...)`` — the adaptive learned build
+duration, which every intervening build updates. A step whose learned duration
+sits near the 600s Bash ceiling therefore crosses the ceiling between compose and
+execute in ordinary operation, so a compose-time snapshot cannot be a durable
+routing fact. ``phase-5-execute`` re-resolves the tier LIVE before running each
+verification step and routes on that verdict; the stamp serves planning and
+observability. ``TestStampReflectsALiveResolvedCeilingVerdict`` below pins that
+volatility with the production producers, and
+``TestStampIsASnapshotNotADurableFact`` pins that the stamp is re-derived per
+compose rather than fixed for the plan's lifetime.
+
+The contract properties the stamping guarantees:
 
 1. **Totality** — the record list is total over ``verification_steps``: one
    ``{step_id, tier}`` record per input step, in list order, every record carrying
@@ -18,8 +27,12 @@ The two contract properties the stamping guarantees:
 2. **Default per_task** — a built-in canonical-verify step (``verify:{canonical}``)
    resolves its tier via ``architecture resolve``; every OTHER step id (external
    ``project:`` / ``bundle:skill`` step, or a ``verify:{canonical}`` whose canonical
-   is unresolvable) AND every resolve failure defaults to ``per_task`` — the
-   composer never emits an unresolved tier.
+   is unresolvable) AND every resolve failure defaults to ``per_task``. This is the
+   PERMISSIVE default, not a safe floor — ``per_task`` is the value that would put a
+   long build inline where the host platform auto-backgrounds it and a leaf cannot
+   reap it. It is acceptable only because the leaf re-resolves live before running.
+3. **Fidelity at the ceiling** — a resolve that reports ``orchestrator`` is stamped
+   ``orchestrator``; the stamping pass never downgrades it to ``per_task``.
 
 The record-list form (rather than a keyed map) is dictated by the TOON storage
 format: a step id (``verify:quality-gate``) contains a colon, which does NOT
@@ -29,8 +42,13 @@ round-trip regression test at the bottom of this file guards that design choice.
 
 These tests drive the transform functions directly via importlib (Tier 2),
 mirroring ``test_aspect_step_dropping.py``. No live worktree, git history, or
-architecture-resolve subprocess is involved — the resolver is monkeypatched so the
-tests assert the pure stamping logic and the fail-safe defaults.
+architecture-resolve subprocess is involved: the resolver is monkeypatched, and the
+ceiling-boundary tests obtain their resolve envelope from the REAL production
+producers (``_classify_build_executable`` / ``_lookup_bash_timeout`` /
+``_compute_execution_tier_fields`` in ``manage-architecture``'s
+``_cmd_client_build.py``) rather than a hand-authored resolve-shaped dict literal —
+a hand-built fixture is what let the four-field contract drift away from its
+consumer unnoticed.
 """
 
 import importlib.util
@@ -38,8 +56,12 @@ import json
 from argparse import Namespace
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
+import run_config
+
+from conftest import load_script_module
 
 # Tier 2 direct imports via importlib (scripts loaded via PYTHONPATH at runtime).
 _SCRIPTS_DIR = (
@@ -64,6 +86,16 @@ def _load_module(name: str, filename: str):
 
 _mem = _load_module('_mem_execution_tier', 'manage-execution-manifest.py')
 _core = _load_module('_core_execution_tier', '_manifest_core.py')
+
+# The PRODUCTION producers of the four-field execution-tier envelope. The
+# ceiling-boundary regressions below assert against the fields these emit, so the
+# assertions stay coupled to production rather than to a hand-authored literal.
+_arch_build = load_script_module(
+    'plan-marshall',
+    'manage-architecture',
+    '_cmd_client_build.py',
+    '_arch_client_build_execution_tier',
+)
 
 _stamp = _mem._stamp_phase_5_step_execution_tier
 _resolve_step_execution_tier = _mem._resolve_step_execution_tier
@@ -132,14 +164,19 @@ class TestStampTotalityAndOrdering:
 class TestStampTotalityInvariantLock:
     """Regression lock: the stamp is TOTAL over ``verification_steps``.
 
-    This is the parity / no-asymmetry invariant the retired ``initial-envelope
-    backgrounding`` marker referred to: because the stamp is composed ONCE over
-    the full step list, the SAME total ``{step_id, tier}`` record list is what
-    every later phase-5 dispatch reads — the initial dispatch and every
-    re-dispatch see an identical, fully-resolved tier for every step, so no
-    dispatch can encounter an un-stamped step to background-and-lose. The
-    guarantees locked here, over a list mixing canonical-verify steps and an
-    external ``project:`` / ``bundle:skill`` step:
+    Totality is a property of ONE compose: the stamp is composed over the full
+    step list in a single pass, so the persisted record list has no gaps — every
+    phase-5 dispatch that reads that manifest sees a resolved tier for every step,
+    never an un-stamped entry.
+
+    Totality is NOT a durability claim. It does not assert that the recorded tier
+    still describes execute-time reality: the tier derives from the adaptive
+    learned build duration, so a ceiling-adjacent step's true tier moves between
+    compose and execute (see ``TestStampReflectsALiveResolvedCeilingVerdict`` and
+    ``TestStampIsASnapshotNotADurableFact``). What keeps a long build off a leaf
+    is the leaf's LIVE re-resolve before running each step, not the completeness of
+    this record list. The guarantees locked here, over a list mixing
+    canonical-verify steps and an external ``project:`` / ``bundle:skill`` step:
 
     * exactly one record per input step, in input order (totality + ordering);
     * every record carries a resolved, non-empty tier (``per_task`` |
@@ -180,10 +217,12 @@ class TestStampTotalityInvariantLock:
         assert tier_by_id['my-bundle:my-verify-step'] == 'per_task'
 
     def test_stamp_is_dispatch_invariant_composed_once_over_full_list(self, monkeypatch):
-        """The stamp is a pure function of the full step list — re-reading it (as a
-        re-dispatch would) yields a byte-identical total record list. There is no
-        per-dispatch asymmetry: the initial envelope and every re-dispatch resolve
-        the same tier for every step."""
+        """The stamp is a pure function of (step list, resolver) — re-running it with
+        the SAME resolver yields a byte-identical total record list, so nothing in the
+        stamping pass itself introduces per-dispatch asymmetry. Purity over a fixed
+        resolver is all this pins; when the underlying resolve verdict changes the
+        stamp changes with it, which is exactly what
+        ``TestStampIsASnapshotNotADurableFact`` asserts."""
         monkeypatch.setattr(_mem, '_resolve_step_execution_tier', _fake_resolver)
 
         first = _stamp('mixed-plan', self._MIXED_STEPS)
@@ -258,7 +297,19 @@ class TestNonCanonicalStepsDefaultPerTask:
 
 
 class TestResolveStepExecutionTierDefaultsPerTask:
-    """``_resolve_step_execution_tier`` fails safe to per_task on every failure path."""
+    """``_resolve_step_execution_tier`` falls back to per_task on every failure path.
+
+    ``per_task`` is the PERMISSIVE default, NOT a safe floor: it is the value that
+    would put a long build inline, where the host platform auto-backgrounds it past
+    the Bash ceiling and a dispatched leaf cannot reap it. The fallback is
+    acceptable only because the stamp is advisory — ``phase-5-execute`` re-resolves
+    the tier live before running each step and routes on that verdict, so a
+    permissive compose-time default cannot by itself send a long build inline.
+
+    The assertions below therefore pin the composer's obligation to emit SOME
+    resolved tier on every failure path (never an absent or unresolved value), not a
+    claim that ``per_task`` is the conservative choice.
+    """
 
     def test_unresolvable_executor_defaults_per_task(self, monkeypatch):
         monkeypatch.setattr(_mem, '_resolve_executor', lambda: None)
@@ -319,6 +370,183 @@ class TestResolveStepExecutionTierDefaultsPerTask:
             _mem.subprocess, 'run', lambda *a, **k: SimpleNamespace(returncode=0, stdout=toon)
         )
         assert _resolve_step_execution_tier('quality-gate', 'X') == 'per_task'
+
+
+class TestStampReflectsALiveResolvedCeilingVerdict:
+    """The ceiling boundary, driven end-to-end by the PRODUCTION resolve producers.
+
+    The regression this class exists for: a whole-tree step that resolves
+    ``orchestrator`` / ``exceeds_bash_ceiling`` MUST NOT be stamped ``per_task`` in a
+    form the leaf is instructed to trust inline. Every asserted field is produced by
+    ``manage-architecture``'s real ``_classify_build_executable`` /
+    ``_lookup_bash_timeout`` / ``_compute_execution_tier_fields``, and the resolve
+    TOON the composer parses is serialized from those fields with the production
+    ``serialize_toon`` — no hand-authored resolve-shaped dict literal appears
+    anywhere in this class, so the four-field contract cannot drift away from its
+    consumer without failing here.
+    """
+
+    # The literal shape ``architecture resolve --command coverage`` emits for this
+    # repo's whole-tree coverage canonical. Fed to the production classifier rather
+    # than being decomposed by hand.
+    _RESOLVED_EXECUTABLE = (
+        'python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build '
+        'run --command-args "coverage"'
+    )
+
+    # A learned duration far above the ceiling — the seed for the crossing test.
+    # Its exact value is never asserted; only which side of the ceiling the
+    # production arithmetic lands on.
+    _WELL_ABOVE_CEILING_SECONDS = 3600
+
+    @staticmethod
+    def _production_tier_fields() -> dict[str, Any]:
+        """Run the full production producer chain for the whole-tree coverage canonical."""
+        classified = _arch_build._classify_build_executable(
+            TestStampReflectsALiveResolvedCeilingVerdict._RESOLVED_EXECUTABLE
+        )
+        assert classified is not None, 'production classifier rejected a real resolved executable'
+        tool_name, command_args = classified
+        bash_timeout = _arch_build._lookup_bash_timeout(tool_name, command_args, '.')
+        assert isinstance(bash_timeout, int), 'production timeout lookup returned no int'
+        fields: dict[str, Any] = _arch_build._compute_execution_tier_fields(bash_timeout)
+        return fields
+
+    @staticmethod
+    def _resolve_toon_for(fields: dict[str, Any]) -> str:
+        """Serialize a status-success resolve TOON carrying the production fields."""
+        toon: str = _core.serialize_toon({'status': 'success', **fields})
+        return toon
+
+    @staticmethod
+    def _patch_resolve_with(monkeypatch, toon: str) -> None:
+        monkeypatch.setattr(_mem, '_resolve_executor', lambda: Path('/dev/null'))
+        monkeypatch.setattr(
+            _mem.subprocess, 'run', lambda *a, **k: SimpleNamespace(returncode=0, stdout=toon)
+        )
+
+    def test_production_producers_emit_the_four_field_envelope(self):
+        """The producer chain yields exactly the four fields the composer consumes."""
+        fields = self._production_tier_fields()
+
+        assert set(fields) == {
+            'bash_timeout_seconds',
+            'exceeds_bash_ceiling',
+            'execution_tier',
+            'hint',
+        }
+        assert isinstance(fields['bash_timeout_seconds'], int)
+        assert fields['execution_tier'] in ('per_task', 'orchestrator')
+        # The three derived fields agree with each other and with the ceiling.
+        expected_exceeds = fields['bash_timeout_seconds'] > _arch_build._BASH_CEILING_SECONDS
+        assert fields['exceeds_bash_ceiling'] is expected_exceeds
+        assert fields['execution_tier'] == ('orchestrator' if expected_exceeds else 'per_task')
+
+    def test_ceiling_boundary_is_strictly_above(self):
+        """At the ceiling → per_task; one second above it → orchestrator.
+
+        Both envelopes come from the production ``_compute_execution_tier_fields``
+        and the production ``_BASH_CEILING_SECONDS`` constant, so a threshold change
+        moves this assertion with it instead of silently invalidating it.
+        """
+        ceiling = _arch_build._BASH_CEILING_SECONDS
+
+        at_ceiling = _arch_build._compute_execution_tier_fields(ceiling)
+        above_ceiling = _arch_build._compute_execution_tier_fields(ceiling + 1)
+
+        assert at_ceiling['exceeds_bash_ceiling'] is False
+        assert at_ceiling['execution_tier'] == 'per_task'
+        assert above_ceiling['exceeds_bash_ceiling'] is True
+        assert above_ceiling['execution_tier'] == 'orchestrator'
+
+    def test_above_ceiling_resolve_is_never_stamped_per_task(self, monkeypatch):
+        """THE regression: an orchestrator-tier resolve stamps orchestrator, never per_task."""
+        fields = _arch_build._compute_execution_tier_fields(_arch_build._BASH_CEILING_SECONDS + 1)
+        assert fields['execution_tier'] == 'orchestrator'
+        self._patch_resolve_with(monkeypatch, self._resolve_toon_for(fields))
+
+        records = _stamp('plan-39-above-ceiling-stamp', ['verify:coverage'])
+
+        assert records == [{'step_id': 'verify:coverage', 'tier': 'orchestrator'}]
+
+    def test_at_ceiling_resolve_stamps_per_task(self, monkeypatch):
+        """The other side of the boundary, through the same production envelope."""
+        fields = _arch_build._compute_execution_tier_fields(_arch_build._BASH_CEILING_SECONDS)
+        assert fields['execution_tier'] == 'per_task'
+        self._patch_resolve_with(monkeypatch, self._resolve_toon_for(fields))
+
+        records = _stamp('plan-39-at-ceiling-stamp', ['verify:coverage'])
+
+        assert records == [{'step_id': 'verify:coverage', 'tier': 'per_task'}]
+
+    def test_learned_duration_crossing_the_ceiling_flips_the_resolved_tier(self):
+        """The volatility that makes the stamp advisory, pinned against production code.
+
+        Reads the production tier for the whole-tree coverage canonical, records an
+        observed duration far above the ceiling through the production
+        ``run_config.timeout_set`` writer, and reads the tier again. The verdict
+        flips ``per_task`` → ``orchestrator`` with no code change — exactly the
+        compose-vs-execute divergence this plan diagnosed. The autouse
+        ``_plan_base_dir_sandbox`` fixture redirects the run-config store into a
+        per-test tmp sandbox, so the seed never touches the real learned durations
+        and the pre-seed read starts from the unmeasured default.
+        """
+        classified = _arch_build._classify_build_executable(self._RESOLVED_EXECUTABLE)
+        assert classified is not None
+        tool_name, command_args = classified
+        config = _arch_build._load_build_config(tool_name)
+        assert config is not None, 'production build config did not load'
+        from _build_execute_factory import compute_command_key
+
+        command_key = compute_command_key(config, command_args)
+
+        before = _arch_build._compute_execution_tier_fields(
+            _arch_build._lookup_bash_timeout(tool_name, command_args, '.')
+        )
+        assert before['execution_tier'] == 'per_task', (
+            'unmeasured command should start inside the Bash ceiling'
+        )
+
+        run_config.timeout_set(command_key, self._WELL_ABOVE_CEILING_SECONDS)
+
+        after = _arch_build._compute_execution_tier_fields(
+            _arch_build._lookup_bash_timeout(tool_name, command_args, '.')
+        )
+        assert after['execution_tier'] == 'orchestrator'
+        assert after['bash_timeout_seconds'] > before['bash_timeout_seconds']
+
+
+class TestStampIsASnapshotNotADurableFact:
+    """Two composes of the SAME step list record different tiers when the tier moved.
+
+    This is the negative counterpart of the totality lock: the stamp is re-derived
+    from the live resolve on every compose, so it tracks the moving learned duration
+    rather than freezing the plan's first verdict. A change here that made the stamp
+    sticky would reintroduce the manifest-vs-reality divergence.
+    """
+
+    @staticmethod
+    def _tier_after_resolving(monkeypatch, bash_timeout_seconds: int, plan_id: str) -> str:
+        fields = _arch_build._compute_execution_tier_fields(bash_timeout_seconds)
+        toon = _core.serialize_toon({'status': 'success', **fields})
+        monkeypatch.setattr(_mem, '_resolve_executor', lambda: Path('/dev/null'))
+        monkeypatch.setattr(
+            _mem.subprocess, 'run', lambda *a, **k: SimpleNamespace(returncode=0, stdout=toon)
+        )
+        records = _stamp(plan_id, ['verify:coverage'])
+        tier: str = records[0]['tier']
+        return tier
+
+    def test_recompose_after_the_tier_moves_records_the_new_tier(self, monkeypatch):
+        ceiling = _arch_build._BASH_CEILING_SECONDS
+
+        first = self._tier_after_resolving(monkeypatch, ceiling - 1, 'plan-39-snapshot-first')
+        # A re-compose must re-derive, so the memo from the first pass cannot leak.
+        _mem._invoke_architecture_resolve_cached.cache_clear()
+        second = self._tier_after_resolving(monkeypatch, ceiling + 1, 'plan-39-snapshot-second')
+
+        assert first == 'per_task'
+        assert second == 'orchestrator'
 
 
 class TestRouteUnmappedOrchestratorVerbs:

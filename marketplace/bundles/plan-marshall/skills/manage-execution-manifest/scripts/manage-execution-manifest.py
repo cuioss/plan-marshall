@@ -1062,28 +1062,41 @@ def _log_execution_tier_routing(plan_id: str, mutated_tasks: int, phase_5_steps:
 
 
 # =============================================================================
-# Per-step execution_tier stamping (compose-time structural leaf-build guard)
+# Per-step execution_tier stamping (compose-time ADVISORY snapshot)
 # =============================================================================
 #
 # The command-level ``_route_task_verification_commands`` pass above routes each
 # TASK's verification COMMANDS by tier. The stamping pass below is the peer for
-# the whole-tree phase-5 verification STEPS: it resolves every entry of the FINAL
-# ``phase_5.verification_steps`` list to a deterministic ``execution_tier``
-# (``per_task`` | ``orchestrator``) and records it in the manifest.
+# the whole-tree phase-5 verification STEPS: it records every entry of the FINAL
+# ``phase_5.verification_steps`` list with the ``execution_tier``
+# (``per_task`` | ``orchestrator``) that ``architecture resolve`` reports AT
+# COMPOSE TIME.
 #
-# This turns the leaf-no-background-build invariant into a compose-time
-# structural fact rather than a prose rule the leaf must remember: phase-5-execute
-# runs only ``per_task`` steps inline, and every ``orchestrator``-tier step is
-# yielded to the main-context orchestrator's ``await-long-running`` seam (the only
-# component permitted to background a build). A dispatched leaf therefore
-# structurally never receives a long build to background-and-lose. See
-# ``ref-workflow-architecture/standards/agents.md`` § "Leaf cannot reap a
+# The stamp is ADVISORY, not authoritative. The tier is derived from
+# ``bash_timeout_seconds``, which ``_cmd_client_build._lookup_bash_timeout``
+# computes from ``timeout_get(command_key, ...)`` — the ADAPTIVE learned build
+# duration persisted in run-config. That quantity moves every time the command
+# runs, so a step whose learned duration sits near the 600s Bash ceiling can and
+# does cross the ceiling between compose and execute: the same compose, over the
+# same plan, with no code change, has stamped ``verify:coverage=per_task`` and
+# then ``verify:coverage=orchestrator`` after a single intervening build. A
+# compose-time snapshot of a moving quantity cannot be a durable routing fact.
+#
+# The ROUTING AUTHORITY is therefore the LIVE ``architecture resolve`` the leaf
+# performs when it runs the step — see
+# ``phase-5-execute/standards/canonical_verify.md`` § Workflow steps 1-2. The
+# leaf honours the tier that resolve returns AT EXECUTE TIME and never routes a
+# build on the stamp alone. The stamp's job is planning and observability: it
+# tells the orchestrator how many orchestrator-tier steps to expect and records
+# what the tier looked like when the plan was composed.
+#
+# See ``ref-workflow-architecture/standards/agents.md`` § "Leaf cannot reap a
 # backgrounded build" and ``standards/decision-rules.md`` § "execution_tier
-# stamping".
+# Stamping".
 
 
 def _resolve_step_execution_tier(canonical: str, plan_id: str) -> str:
-    """Resolve a phase-5 canonical-verify step's ``execution_tier`` via ``architecture resolve``.
+    """Resolve a phase-5 canonical-verify step's compose-time ``execution_tier``.
 
     Subprocesses the whole-tree ``architecture resolve --command {canonical}``
     (no ``--module`` — phase-5 verification steps are whole-tree gates; see
@@ -1091,10 +1104,15 @@ def _resolve_step_execution_tier(canonical: str, plan_id: str) -> str:
     contract) and reads the ``execution_tier`` field the resolve TOON emits.
     Returns ``'orchestrator'`` or ``'per_task'``. Any failure — unresolvable
     executor, non-zero exit, unparseable TOON, non-success status, or an
-    absent/unknown tier — defaults to ``'per_task'`` so the composer NEVER
-    emits an unresolved tier. ``per_task`` is the safe floor: it keeps the
-    step in the leaf's inline slice, matching the pre-stamp behaviour where
-    every step ran inline.
+    absent/unknown tier — defaults to ``'per_task'`` so the composer never
+    emits an unresolved tier into the advisory record list.
+
+    ``per_task`` is the PERMISSIVE default, NOT a safe floor: it is the value
+    that would put a long build inline, where the host platform auto-backgrounds
+    it past the Bash ceiling and a leaf cannot reap it. It is acceptable here
+    only because the stamp is advisory — the leaf re-resolves the tier live when
+    it runs the step and routes on THAT verdict, so a wrong compose-time default
+    cannot send a long build inline on its own.
     """
     parsed_toon = _invoke_architecture_resolve(['--command', canonical], plan_id)
     if parsed_toon is None:
@@ -1104,11 +1122,16 @@ def _resolve_step_execution_tier(canonical: str, plan_id: str) -> str:
 
 
 def _stamp_phase_5_step_execution_tier(plan_id: str, verification_steps: list[str]) -> list[dict[str, str]]:
-    """Resolve a per-step ``execution_tier`` record list for the final phase-5 verification steps.
+    """Record the ADVISORY per-step ``execution_tier`` list for the final phase-5 verification steps.
 
     Returns a uniform-array record list — one ``{'step_id': <in-manifest step id>,
     'tier': <execution_tier>}`` object per selected phase-5 verification step, in
-    list order. The record-list form (rather than a keyed map) is dictated by the
+    list order. Each tier is the value ``architecture resolve`` reported AT
+    COMPOSE TIME; because that value is derived from the adaptive learned build
+    duration, it is a snapshot, not a durable fact, and the leaf re-resolves it
+    live at execute time (see the module comment above and
+    ``phase-5-execute/standards/canonical_verify.md`` § Workflow).
+    The record-list form (rather than a keyed map) is dictated by the
     TOON storage format: a phase-5 step id (``verify:quality-gate``) contains a
     colon, and a colon-bearing TOON object KEY does not round-trip through
     ``parse_toon`` (it mis-splits on the first colon), whereas a QUOTED string
@@ -1135,13 +1158,17 @@ def _stamp_phase_5_step_execution_tier(plan_id: str, verification_steps: list[st
 def _log_step_execution_tier_stamping(plan_id: str, records: list[dict[str, str]]) -> None:
     """Emit one decision-log entry summarising the per-step execution_tier stamping.
 
-    Names each step id and its resolved tier so a retrospective can confirm the
-    orchestrator-tier routing from ``decision.log`` without re-parsing the
-    manifest.
+    Names each step id and the tier resolved at compose time so a retrospective
+    can read the snapshot from ``decision.log`` without re-parsing the manifest.
+    The line labels the record ``advisory`` because the stamped tier is derived
+    from the adaptive learned build duration and the leaf routes on its own live
+    re-resolve — a retrospective that finds the manifest disagreeing with an
+    execute-time tier is reading expected behaviour, not a defect.
     """
     rendered = ', '.join(f'{r["step_id"]}={r["tier"]}' for r in records)
     message = (
-        '(plan-marshall:manage-execution-manifest:compose) step_execution_tier stamping — '
+        '(plan-marshall:manage-execution-manifest:compose) step_execution_tier stamping '
+        '(advisory snapshot — leaf re-resolves live at execute time) — '
         f'{rendered}'
     )
     _emit_decision_log(plan_id, message)
@@ -1633,12 +1660,15 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # (``per_task`` | ``orchestrator``) via ``architecture resolve`` and recorded
     # in ``phase_5.step_execution_tier`` (a uniform-array record list keyed by
     # step id — see _stamp_phase_5_step_execution_tier for why a record list
-    # rather than a TOON map). This is the compose-time structural guard that
-    # supersedes the prose-only leaf-no-background-build invariant: phase-5-execute
-    # runs only ``per_task`` steps inline and yields every ``orchestrator``-tier
-    # step to the orchestrator's await-long-running seam. The list is total —
-    # every step carries a resolved tier, defaulting absent/unresolved entries to
-    # ``per_task``. See standards/decision-rules.md § "execution_tier stamping".
+    # rather than a TOON map). The record is ADVISORY: the tier derives from the
+    # adaptive learned build duration, so it drifts between compose and execute,
+    # and phase-5-execute re-resolves it live before running each step. The
+    # leaf-no-background-build invariant is unchanged (only ``per_task`` steps run
+    # inline; every ``orchestrator``-tier step yields to the orchestrator's
+    # await-long-running seam) — it is the LIVE tier that enforces it. The list is
+    # total — every step carries a resolved tier, defaulting absent/unresolved
+    # entries to ``per_task``. See standards/decision-rules.md § "execution_tier
+    # Stamping".
     step_execution_tier = _stamp_phase_5_step_execution_tier(
         plan_id, list(body['phase_5'].get('verification_steps', []))
     )
