@@ -15,10 +15,11 @@ Four entry points:
   NO protect-active, NO stale-slot reclaim, NO plan-dir-exists check.
 - :func:`unbind` — remove the caller's OWN slot (the teardown counterpart of
   :func:`bind`), pruning the now-empty session directory.
-- :func:`doctor` — scan every ``~/.cache/plan-marshall/sessions/*/active-plan``
-  file, build a plan->sessions reverse index in memory, flag any plan bound by
-  more than one live session, and (when ``fix``) GC slots whose plan is
-  archived/deleted.
+- :func:`doctor` — visit every directory under
+  ``~/.cache/plan-marshall/sessions/``, build a plan->sessions reverse index in
+  memory from the live slots, flag any plan bound by more than one live session,
+  and (when ``fix``) GC slots whose plan is archived/deleted plus orphan
+  directories that yield no live slot at all.
 
 Concurrency-correctness: the ``active-plan`` cache is per-session (keyed by
 ``session_id``), so :func:`bind` writes only the caller's own slot — there is no
@@ -143,6 +144,30 @@ def bind(session_id: str, plan_id: str) -> bool:
         return False
 
 
+def _remove_slot_and_prune(path: Path) -> bool:
+    """Remove an ``active-plan`` slot file and prune its now-empty session dir.
+
+    The single home of the unlink-then-rmdir body, shared by the public
+    :func:`unbind` teardown and the doctor's orphan-directory prune. ``path`` is
+    the ``active-plan`` file path; an already-absent file is not an error (the
+    orphan-directory case has no slot file at all, only the empty directory).
+
+    Returns True when the slot is gone, False on any I/O error. Never raises.
+    """
+    try:
+        path.unlink(missing_ok=True)
+        # Best-effort: prune the now-empty session directory so teardown/GC does
+        # not leak empty dirs over time. Non-empty / already-gone → OSError,
+        # ignored.
+        try:
+            path.parent.rmdir()
+        except OSError:
+            pass
+        return True
+    except OSError:
+        return False
+
+
 def unbind(session_id: str) -> bool:
     """Remove ``session_id``'s own ``active-plan`` slot — the teardown of :func:`bind`.
 
@@ -157,19 +182,7 @@ def unbind(session_id: str) -> bool:
     """
     if not _valid_session_id(session_id):
         return False
-    try:
-        path = _active_plan_path(session_id)
-        path.unlink(missing_ok=True)
-        # Best-effort: prune the now-empty session directory so teardown/GC does
-        # not leak empty dirs over time. Non-empty / already-gone → OSError,
-        # ignored.
-        try:
-            path.parent.rmdir()
-        except OSError:
-            pass
-        return True
-    except OSError:
-        return False
+    return _remove_slot_and_prune(_active_plan_path(session_id))
 
 
 # ---------------------------------------------------------------------------
@@ -204,18 +217,24 @@ def _plan_is_live(plan_id: str) -> bool:
         return False
 
 
-def _iter_slots() -> list[tuple[str, str]]:
-    """Return ``(session_id, plan_id)`` for every readable active-plan slot.
+def _scan_session_dirs() -> tuple[list[tuple[str, str]], list[str]]:
+    """Walk the cache root once, splitting live slots from orphan directories.
 
-    Scans ``_SESSION_CACHE_BASE/*/active-plan``. Slots with a malformed
-    session-dir name or an empty/unreadable value are skipped. Best-effort — a
-    scan error yields an empty list.
+    Visits every directory under ``_SESSION_CACHE_BASE``, resolving each valid
+    session-id exactly once. Returns ``(slots, orphans)``: ``slots`` is
+    ``(session_id, plan_id)`` for every readable active-plan slot, ``orphans`` is
+    the session-dir names whose ``active-plan`` file is absent, empty, or
+    unreadable (:func:`resolve_plan` returns ``None``) — the residue
+    :func:`unbind`'s prune could not remove (a non-empty dir at teardown, or a
+    slot written by a crashed writer). A directory with a malformed name is
+    skipped from both. Best-effort — a scan error yields two empty lists.
     """
     slots: list[tuple[str, str]] = []
+    orphans: list[str] = []
     try:
         session_dirs = sorted(_SESSION_CACHE_BASE.iterdir())
     except OSError:
-        return slots
+        return slots, orphans
     for session_dir in session_dirs:
         try:
             if not session_dir.is_dir():
@@ -228,7 +247,9 @@ def _iter_slots() -> list[tuple[str, str]]:
         plan_id = resolve_plan(session_id)
         if plan_id:
             slots.append((session_id, plan_id))
-    return slots
+        else:
+            orphans.append(session_id)
+    return slots, orphans
 
 
 def _gc_slot(session_id: str) -> bool:
@@ -242,22 +263,26 @@ def _gc_slot(session_id: str) -> bool:
 
 
 def doctor(fix: bool = False) -> dict[str, Any]:
-    """Scan every per-session active-plan slot and report binding health.
+    """Visit every session directory under the cache root and report binding health.
 
-    Walks ``~/.cache/plan-marshall/sessions/*/active-plan``, builds an in-memory
-    plan->sessions reverse index, and:
+    Walks EVERY directory under ``~/.cache/plan-marshall/sessions/`` — not just
+    the ones that yield a readable slot — builds an in-memory plan->sessions
+    reverse index from the live slots, and:
 
     - flags any plan bound by more than one session (a conflict — two live
-      sessions driving the same plan), and
-    - identifies slots whose bound plan is archived/deleted (stale slots).
+      sessions driving the same plan),
+    - identifies slots whose bound plan is archived/deleted (stale slots), and
+    - identifies orphan directories that carry no binding at all (absent, empty,
+      or unreadable ``active-plan`` file).
 
-    When ``fix`` is True, GCs each stale slot (removes its ``active-plan`` file).
-    The scan keeps NO shared mutable index — it is per-file and idempotent.
+    When ``fix`` is True, GCs each stale slot (removes its ``active-plan`` file)
+    and prunes each orphan directory. The scan keeps NO shared mutable index — it
+    is per-file and idempotent.
 
     Returns a dict::
 
         {
-          "scanned": int,                 # slots scanned
+          "scanned": int,                 # live slots scanned
           "conflicts": [                  # plans bound by >1 session
               {"plan_id": str, "sessions": [session_id, ...]}, ...
           ],
@@ -265,15 +290,26 @@ def doctor(fix: bool = False) -> dict[str, Any]:
               {"session_id": str, "plan_id": str}, ...
           ],
           "gc_removed": int,              # stale slots removed (0 unless fix)
+          "orphans": [session_id, ...],   # dirs yielding no live slot
+          "orphans_removed": int,         # orphan dirs pruned (0 unless fix)
           "fix": bool,
         }
+
+    ``scanned`` keeps its existing meaning — the count of live slots scanned —
+    and does NOT include orphan directories.
 
     Best-effort: an unreadable slot is skipped; never raises.
     """
     reverse: dict[str, list[str]] = {}
     stale: list[dict[str, str]] = []
 
-    for session_id, plan_id in _iter_slots():
+    # A single pass over the cache root splits live slots from orphan dirs, so
+    # a stale slot (resolves to a plan_id) and an orphan (resolves to None) are
+    # disjoint by construction — the two prune loops below never double-count
+    # the same directory.
+    slots, orphans = _scan_session_dirs()
+
+    for session_id, plan_id in slots:
         reverse.setdefault(plan_id, []).append(session_id)
         if not _plan_is_live(plan_id):
             stale.append({"session_id": session_id, "plan_id": plan_id})
@@ -285,15 +321,21 @@ def doctor(fix: bool = False) -> dict[str, Any]:
     ]
 
     gc_removed = 0
+    orphans_removed = 0
     if fix:
         for slot in stale:
             if _gc_slot(slot["session_id"]):
                 gc_removed += 1
+        for orphan_id in orphans:
+            if _remove_slot_and_prune(_active_plan_path(orphan_id)):
+                orphans_removed += 1
 
     return {
         "scanned": sum(len(sids) for sids in reverse.values()),
         "conflicts": conflicts,
         "stale": stale,
         "gc_removed": gc_removed,
+        "orphans": orphans,
+        "orphans_removed": orphans_removed,
         "fix": fix,
     }

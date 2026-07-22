@@ -588,22 +588,25 @@ class ClaudeRuntime(Runtime):
         )
 
     def session_doctor(self, fix: bool = False) -> str:
-        """Scan every per-session active-plan slot and report binding health.
+        """Visit every session directory under the cache root and report binding health.
 
         Delegates to the pure :func:`session_binding.doctor` policy — a
         reverse-index scan flagging any plan bound by more than one live session,
-        plus (when *fix*) GC of slots whose plan is archived/deleted. The scan
-        keeps no shared mutable index and is idempotent.
+        plus (when *fix*) GC of slots whose plan is archived/deleted AND a prune
+        of orphan directories that yield no live slot at all. The scan keeps no
+        shared mutable index and is idempotent.
 
-        Returns a success TOON carrying the conflict / stale report. Conflicts and
-        stale slots are rendered as flat string rows (``plan_id=sess1,sess2`` and
-        ``session_id=plan_id``) for a uniform TOON surface.
+        Returns a success TOON carrying the conflict / stale / orphan report.
+        Conflicts, stale slots, and orphan directories are all rendered as flat
+        string rows (``plan_id=sess1,sess2``, ``session_id=plan_id``, and the bare
+        ``session_id`` respectively) for a uniform TOON surface.
         """
         report = session_binding.doctor(fix)
         conflicts = [
             f"{c['plan_id']}={','.join(c['sessions'])}" for c in report["conflicts"]
         ]
         stale = [f"{s['session_id']}={s['plan_id']}" for s in report["stale"]]
+        orphans = list(report["orphans"])
         return toon_success(
             "session doctor",
             {
@@ -614,6 +617,9 @@ class ClaudeRuntime(Runtime):
                 "stale_count": len(stale),
                 "stale": stale,
                 "gc_removed": report["gc_removed"],
+                "orphan_count": len(orphans),
+                "orphans": orphans,
+                "orphans_removed": report["orphans_removed"],
             },
         )
 
