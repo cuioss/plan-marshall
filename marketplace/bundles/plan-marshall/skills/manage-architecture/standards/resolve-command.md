@@ -12,10 +12,12 @@ When the resolved `executable` matches the Bucket B build shape, the result carr
 |-------|------|-------------|
 | `bash_timeout_seconds` | int | Recommended Bash-tool timeout in seconds. Computed as `timeout_get(command_key, DEFAULT_BUILD_TIMEOUT) + OUTER_TIMEOUT_BUFFER` — identical arithmetic to `cmd_run`. |
 | `exceeds_bash_ceiling` | bool | `bash_timeout_seconds > 600`. The Bash tool's `timeout` parameter is capped at 600s (10 minutes) by the host platform; values above this ceiling cannot be invoked synchronously from a sub-agent. |
-| `execution_tier` | enum | `"per_task"` when `exceeds_bash_ceiling` is false; `"orchestrator"` when true. Drives the manifest composer's routing decision (per-task verification vs `phase_5.verification_steps`). |
+| `execution_tier` | enum | `"per_task"` when `exceeds_bash_ceiling` is false; `"orchestrator"` when true. Drives the manifest composer's per-command routing decision (per-task verification vs `phase_5.verification_steps`) and the caller's run-inline-vs-hand-back decision. |
 | `hint` | string | Short pinned recognition phrase. See [Hint Strings](#hint-strings) below. |
 
 The four fields are emitted **as a unit** — either all four are present (Bucket B build executable, resolvable timeout) or all four are omitted (non-build executable, or the build skill could not be loaded). Consumers detect their absence and fall back to today's behaviour.
+
+**All four fields are point-in-time measurements, not durable facts.** `bash_timeout_seconds` reads the adaptive learned duration (see [Threshold Rationale](#threshold-rationale--600)), which every run of the command updates, so `exceeds_bash_ceiling` / `execution_tier` / `hint` all move with it — a ceiling-adjacent command's tier flips in ordinary operation. A consumer that must ROUTE on the tier MUST resolve it at the moment it acts, never from a value persisted earlier. This is why `manage-execution-manifest`'s `phase_5.step_execution_tier` stamp is advisory and `phase-5-execute` re-resolves the tier live before running each verification step.
 
 ## Hint Strings
 

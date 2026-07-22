@@ -32,7 +32,9 @@ phase_6:
 
 The in-manifest `verification_steps` / `steps` arrays carry the ordered step-id list (a `list[str]`); the sibling `step_params` map carries each selected step's resolved per-step params alongside it, keyed by the same (bare) step id.
 
-`phase_5.step_execution_tier` is the compose-time-resolved per-step execution tier: a `{step_id, tier}` record list stamped by `compose()` for every `phase_5.verification_steps` entry, where `tier` is `per_task` (the leaf runs the step inline) or `orchestrator` (the step exceeds the Bash ceiling and is routed to the orchestrator's `await-long-running` seam, never to the leaf). An absent or unresolved tier defaults to `per_task`.
+`phase_5.step_execution_tier` is an **advisory** compose-time snapshot of the per-step execution tier: a `{step_id, tier}` record list stamped by `compose()` for every `phase_5.verification_steps` entry, where `tier` is `per_task` (the step fit inside the Bash ceiling when the plan was composed) or `orchestrator` (it exceeded the ceiling, so the orchestrator's `await-long-running` seam owns it, never the leaf). An absent or unresolved tier defaults to `per_task`.
+
+The stamp is **not the routing authority**. Its input — `bash_timeout_seconds` — is computed from the adaptive learned build duration, which every intervening build updates, so a ceiling-adjacent step's tier legitimately changes between compose and execute. The leaf re-resolves the tier live when it runs the step and routes on that verdict; the stamp serves planning and observability. See [decision-rules.md](decision-rules.md) § "execution_tier Stamping" and [`../../phase-5-execute/standards/canonical_verify.md`](../../phase-5-execute/standards/canonical_verify.md) § Workflow.
 
 `<step-id>` notation:
 
