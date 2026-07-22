@@ -1,6 +1,6 @@
 # Orchestration Model
 
-The canonical standard for epic orchestration in plan-marshall. It defines the granularity model, the persisted ledger layout, the persist/stop-resume contract, the terminal-title repaint contract, the two operational carve-outs, the prime directive, the dispatch decision rule, and the lessons-handling mode contract. The `marshall-orchestrator` skill's verb workflows and the `persona-marshall-orchestrator` identity both bind to this document — when a workflow doc and this standard disagree, this standard wins.
+The canonical standard for epic orchestration in plan-marshall. It defines the granularity model, the persisted ledger layout, the persist/stop-resume contract, the terminal-title repaint contract, the two operational carve-outs, the prime directive, the verify-first contract for inferred claims, the dispatch decision rule, and the lessons-handling mode contract. The `marshall-orchestrator` skill's verb workflows and the `persona-marshall-orchestrator` identity both bind to this document — when a workflow doc and this standard disagree, this standard wins.
 
 ## Granularity Model: Epic → Workstream → Plan
 
@@ -122,6 +122,15 @@ The orchestrator MAY perform small operations inline, without spawning a plan:
 ## Prime Directive: Orchestrate, Never Implement
 
 The orchestrator NEVER implements. It does not write production code, does not edit repository source, does not author or modify tests, and does not run implementation builds. Its outputs are exactly: ledger state (epic/workstream/plan-spec/landing documents), emitted `/plan-marshall` commands, decisions, and reconciliations. The `next` verb EMITS ready-to-run commands for the operator — it never launches a plan inline. Implementation happens exclusively inside the plan lifecycle; the orchestrator sits above it and only ever hands work down to it.
+
+## Verify-First Contract for Inferred Claims
+
+**Whenever the orchestrator serializes a scoping premise into a downstream artifact, every claim in that artifact is labelled `OBSERVED` or `HYPOTHESIS`.** The carriers are a staged plan spec, an ADR authored from one, and an escalation resolution written mid-run — the obligation attaches to the act of serializing an inference, not to any one document type. An unlabelled claim is a defect: a downstream reader cannot distinguish what the orchestrator read from what it inferred, so the inference ships as ground truth.
+
+- **The labelled claim classes are three, not one.** All three are labelled independently: the inferred failure **mechanism** (why the orchestrator believes the thing behaves as described); the **Expected Surface** — the file, line, and symbol lists the premise names; and any orchestrator **finding-sharpening** or derived **count / tally** (a reworded finding, a recurrence count, a totalled occurrence list). A premise whose mechanism is labelled while its Expected Surface or its derived counts ride along unlabelled is not compliant.
+- **A `HYPOTHESIS` carries a named confirm/refute artifact.** The artifact names a file plus the symbol within it that settles the claim — not a directory, not a document title. The claim is marked verify-at-outline so the consuming phase knows the verification is owed and where to aim it. A `HYPOTHESIS` with no named artifact is an unverifiable claim and MUST NOT be serialized.
+- **The obligation is symmetric.** An asserted *absence* — "X does not exist, build it" — is verified exactly as an asserted *presence*. Absence claims are the higher-risk half: an unverified absence produces duplicate work against a surface that already exists, and nothing downstream trips over it.
+- **The consuming phase verifies against the implementing source.** Refine owns the verification; outline owns it when refine did not run. Verification reads the **implementing source** — the code, script, or generated artifact that actually enacts the behaviour — never a standards doc, an ADR, or the brief's own prose, all of which merely restate the same inference. On refutation the phase loops back and re-scopes; it does not proceed on a refuted premise.
 
 ## Parallelization by Surface Disjointness
 
