@@ -482,15 +482,27 @@ def compute_command_key(config: ExecuteConfig, command_args: str) -> str:
 def create_execute_handlers(
     config: ExecuteConfig,
     parse_log_fn: Callable,
+    wrap_execute_fn: Callable[[Callable[..., DirectCommandResult]], Callable[..., DirectCommandResult]]
+    | None = None,
 ) -> tuple[Callable[..., DirectCommandResult], Callable]:
     """Create execute_direct() and cmd_run() functions from config.
 
     Args:
         config: Build system execution configuration.
         parse_log_fn: Parser function for build output logs.
+        wrap_execute_fn: Optional decorator applied to the factory's inner
+            ``execute_direct``. When supplied, the wrapped callable becomes BOTH
+            the first returned handler and the one the routing ``cmd_run`` calls
+            on its in-process leg — so a build system needing extra in-process
+            behaviour (e.g. the pyproject one-shot ``.pyprojectx`` self-heal
+            retry) keeps the single shared routing ``cmd_run`` instead of
+            forking a local one. The wrapper only applies to the in-process leg:
+            a routed build runs inside the daemon child, which re-enters this
+            factory and applies the wrapper there.
 
     Returns:
-        Tuple of (execute_direct, cmd_run) functions.
+        Tuple of (execute_direct, cmd_run) functions, where ``execute_direct``
+        is the ``wrap_execute_fn``-wrapped callable when one was supplied.
     """
 
     def _resolve_wrapper(project_dir: str = '.') -> str:
@@ -537,6 +549,10 @@ def create_execute_handlers(
             extra_result_fields=extras or None,
             min_timeout=config.min_timeout,
         )
+
+    # The callable the in-process leg of cmd_run invokes. Identical to
+    # execute_direct unless the build system supplied a wrapper.
+    in_process_execute = wrap_execute_fn(execute_direct) if wrap_execute_fn else execute_direct
 
     def cmd_run(args) -> int:
         project_dir = getattr(args, 'project_dir', '.')
@@ -651,7 +667,7 @@ def create_execute_handlers(
         # context manager's finally.
         try:
             with build_queue_slot(plan_id):
-                result = execute_direct(
+                result = in_process_execute(
                     args=command_args,
                     command_key=command_key,
                     default_timeout=timeout_seconds,
@@ -674,7 +690,7 @@ def create_execute_handlers(
         )
 
     # Preserve useful names for debugging
-    execute_direct.__qualname__ = f'{config.tool_name}_execute_direct'
+    in_process_execute.__qualname__ = f'{config.tool_name}_execute_direct'
     cmd_run.__qualname__ = f'{config.tool_name}_cmd_run'
 
-    return execute_direct, cmd_run
+    return in_process_execute, cmd_run
