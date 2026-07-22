@@ -106,7 +106,7 @@ _NOT_NECESSARY_VERDICT = {
 _WORKTREE_SHA = 'f' * 64
 
 
-def _seed_plan(plan_context, plan_id: str) -> Path:
+def _seed_plan(plan_context, plan_id: str) -> None:
     """Materialize the plan dir with PLAN-31's manifest shape on disk.
 
     The manifest is written even though the freshness gate no longer reads it —
@@ -128,7 +128,6 @@ def _seed_plan(plan_context, plan_id: str) -> Path:
         'phase_6': {'steps': ['push', 'create-pr', 'archive-plan']},
     }
     (plan_dir / 'execution.toon').write_text(serialize_toon(manifest), encoding='utf-8')
-    return plan_dir
 
 
 def _stub_authority(monkeypatch, verdict: dict, calls: list) -> None:
