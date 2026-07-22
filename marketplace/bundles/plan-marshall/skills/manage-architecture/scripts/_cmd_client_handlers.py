@@ -9,6 +9,12 @@ impact, files, which-module, find, diff-modules, descriptor-regression-check)
 and their private helpers, including the Bucket B execution-tier augmentation,
 the files-inventory readers, the snapshot diff, and the descriptor regression
 gate.
+
+The files-inventory readers (``find`` / ``which-module``) read through the
+``_resolve_module_inventory`` seam: an in-scope elided category is self-scanned
+uncapped against the module's real worktree, and any read path that cannot
+self-scan reports ``truncated: true`` (with the elided category names and true
+counts) instead of silently treating the writer's sample as the whole list.
 """
 
 import argparse
@@ -503,9 +509,12 @@ def cmd_impact(args: argparse.Namespace) -> dict[str, Any]:
 def _flatten_inventory(files_block: dict[str, Any]) -> list[tuple[str, str]]:
     """Flatten a ``files`` block into ``(category, path)`` pairs.
 
-    Elided categories contribute their ``sample`` paths only — callers that
-    need the full list must fall back to Glob, which is the documented
-    contract of the elision shape.
+    Elided categories contribute their ``sample`` paths only. This is the
+    sample-only flattener consumed *inside* ``_resolve_module_inventory``: the
+    reader seam self-scans an in-scope elided category and reports
+    ``truncated: true`` when it cannot, so ``find`` / ``which-module`` no longer
+    silently treat the sample as the whole list (the confident-false-negative
+    defect). Direct callers of this helper still see sample-only pairs.
     """
     pairs: list[tuple[str, str]] = []
     for category, value in files_block.items():
@@ -516,6 +525,103 @@ def _flatten_inventory(files_block: dict[str, Any]) -> list[tuple[str, str]]:
             for path in value['sample']:
                 pairs.append((category, path))
     return pairs
+
+
+def _self_scan_inventory(derived: dict[str, Any], project_dir: str) -> list[tuple[str, str]] | None:
+    """Uncapped self-scan of a module's real worktree roots, or ``None`` if impossible.
+
+    Deferred-import ``build_module_files_inventory`` from ``_cmd_manage`` — the
+    same circular-import-breaking idiom used in
+    ``_architecture_core._compute_all_modules`` — resolve the module root, and
+    when it exists on disk re-run the git-ignore-aware walk UNCAPPED. Returns the
+    flattened ``(category, path)`` pairs, or ``None`` when the module root is
+    absent (the disk-derived / fixture path) or the walk raises ``OSError``.
+    """
+    paths = derived.get('paths') or {}
+    module_rel = (paths.get('module') or '').strip()
+    if not module_rel:
+        return None
+
+    project_path = Path(project_dir).resolve()
+    module_root = (project_path / module_rel).resolve()
+    try:
+        if not module_root.is_dir():
+            # Disk-derived / fixture module with no real worktree directory.
+            return None
+
+        # Deferred import — ``_cmd_manage`` imports from this handlers module's
+        # sibling core at module level, so a top-level import here risks a cycle.
+        from _cmd_manage import _load_gitignore, build_module_files_inventory
+
+        project_root_rules = _load_gitignore(project_path / '.gitignore')
+        inventory = build_module_files_inventory(derived, project_path, project_root_rules)
+    except OSError:
+        return None
+
+    pairs: list[tuple[str, str]] = []
+    for category, path_list in inventory.items():
+        for path in path_list:
+            pairs.append((category, path))
+    return pairs
+
+
+def _resolve_module_inventory(
+    module_name: str,
+    derived: dict[str, Any],
+    project_dir: str,
+    category_filter: str | None = None,
+) -> tuple[list[tuple[str, str]], list[dict[str, Any]]]:
+    """Resolve a module's ``(category, path)`` inventory, self-scanning past elision.
+
+    The reader-boundary fix for the confident-false-negative defect
+    (ADR-009, *status reporting fails closed with an explicit unknown state*):
+    ``_flatten_inventory`` alone consumes an over-cap category's ``sample`` as if
+    it were the whole list, so a real file that sorts past the sample horizon
+    yields a confident ``count: 0``. This seam repairs that at the reader:
+
+    * When no in-scope category is elided (``category_filter`` restricts which
+      categories count; ``None`` counts every category), return
+      ``(_flatten_inventory(files_block), [])`` — the byte-identical fast path
+      with zero extra filesystem work.
+    * When an in-scope category IS elided, attempt an uncapped SELF-SCAN of the
+      module's real worktree roots. On success return the full ``(category,
+      path)`` pairs with an empty truncation list.
+    * When the self-scan is impossible (module root absent — the disk-derived /
+      fixture path) or raises ``OSError``, fall back to the sample pairs and
+      record one TRUTHFUL-TRUNCATION entry per elided in-scope category:
+      ``{module, category, elided_count, sample_size}``.
+
+    Returns ``(pairs, truncation_entries)``; ``truncation_entries`` is empty
+    whenever the answer is complete (fast path or successful self-scan).
+    """
+    files_block = derived.get('files') or {}
+
+    elided_categories: list[tuple[str, dict[str, Any]]] = [
+        (category, value)
+        for category, value in files_block.items()
+        if isinstance(value, dict) and 'elided' in value and category_filter in (None, category)
+    ]
+
+    if not elided_categories:
+        # Fast path — no in-scope category elided, no extra filesystem work.
+        return _flatten_inventory(files_block), []
+
+    self_scanned = _self_scan_inventory(derived, project_dir)
+    if self_scanned is not None:
+        return self_scanned, []
+
+    # Self-scan impossible — degrade to a truthful truncation signal, still
+    # contributing the sample pairs so a match inside the sample is not lost.
+    truncation_entries: list[dict[str, Any]] = [
+        {
+            'module': module_name,
+            'category': category,
+            'elided_count': value['elided'],
+            'sample_size': len(value.get('sample') or []),
+        }
+        for category, value in elided_categories
+    ]
+    return _flatten_inventory(files_block), truncation_entries
 
 
 def cmd_files(args: argparse.Namespace) -> dict[str, Any]:
@@ -587,6 +693,13 @@ def cmd_which_module(args: argparse.Namespace) -> dict[str, Any]:
            owning module instead of the root).
         3. Project-local prefix map (``.claude/skills/** → plan-marshall``).
         4. Root-inventory match (the length-0 ``default`` module), when present.
+
+    The exact-inventory step reads through ``_resolve_module_inventory`` (with
+    ``category_filter=None``), so an in-scope elided category is self-scanned
+    uncapped rather than trusting its sample. The result always carries
+    ``truncated: bool`` and ``elided: list[dict]`` (empty when clean) per ADR-009
+    fail-closed reporting — a truthful ``truncated: true`` can accompany a
+    resolved module as well as a ``module: null``.
     """
     target = args.path
     try:
@@ -598,6 +711,7 @@ def cmd_which_module(args: argparse.Namespace) -> dict[str, Any]:
 
     inventory_best: tuple[int, str] | None = None  # (paths.module length, name)
     containment_best: tuple[int, str] | None = None  # (sources∪tests prefix length, name)
+    truncation_entries: list[dict[str, Any]] = []
     for name in module_names:
         try:
             derived = load_module_derived(name, args.project_dir)
@@ -611,8 +725,9 @@ def cmd_which_module(args: argparse.Namespace) -> dict[str, Any]:
         # length 1, which would otherwise short-circuit the containment fallback).
         module_path_norm = '' if module_path in ('.', '') else module_path.rstrip('/')
 
-        files_block = derived.get('files') or {}
-        for _category, path in _flatten_inventory(files_block):
+        pairs, module_truncations = _resolve_module_inventory(name, derived, args.project_dir, None)
+        truncation_entries.extend(module_truncations)
+        for _category, path in pairs:
             if path == target:
                 candidate = (len(module_path_norm), name)
                 if inventory_best is None or candidate[0] > inventory_best[0] or (
@@ -648,6 +763,8 @@ def cmd_which_module(args: argparse.Namespace) -> dict[str, Any]:
         'status': 'success',
         'path': target,
         'module': resolved,
+        'truncated': bool(truncation_entries),
+        'elided': truncation_entries,
     }
 
 
@@ -656,9 +773,12 @@ def cmd_find(args: argparse.Namespace) -> dict[str, Any]:
 
     Cross-module pattern search across the inventory. ``--pattern`` is
     glob-style (``fnmatch``), case-sensitive, anchored to the full path.
-    ``--category`` narrows the search to one bucket. Elided buckets
-    contribute their ``sample`` only — the same fallback contract as
-    ``files``.
+    ``--category`` narrows the search to one bucket. An in-scope elided category
+    is self-scanned uncapped through ``_resolve_module_inventory`` rather than
+    contributing only its ``sample``; when the self-scan is impossible the result
+    reports ``truncated: true`` with the elided category names and true counts
+    instead of a bare negative. The result always carries ``truncated: bool`` and
+    ``elided: list[dict]`` (empty when clean) per ADR-009 fail-closed reporting.
     """
     pattern = args.pattern
     category_filter = getattr(args, 'category', None)
@@ -671,13 +791,17 @@ def cmd_find(args: argparse.Namespace) -> dict[str, Any]:
         return {'status': 'error', 'error': str(e)}
 
     results: list[dict[str, str]] = []
+    truncation_entries: list[dict[str, Any]] = []
     for name in module_names:
         try:
             derived = load_module_derived(name, args.project_dir)
         except DataNotFoundError:
             continue
-        files_block = derived.get('files') or {}
-        for category, path in _flatten_inventory(files_block):
+        pairs, module_truncations = _resolve_module_inventory(
+            name, derived, args.project_dir, category_filter
+        )
+        truncation_entries.extend(module_truncations)
+        for category, path in pairs:
             if category_filter and category != category_filter:
                 continue
             if fnmatch.fnmatchcase(path, pattern):
@@ -691,6 +815,8 @@ def cmd_find(args: argparse.Namespace) -> dict[str, Any]:
         'category': category_filter,
         'count': len(results),
         'results': results,
+        'truncated': bool(truncation_entries),
+        'elided': truncation_entries,
     }
 
 

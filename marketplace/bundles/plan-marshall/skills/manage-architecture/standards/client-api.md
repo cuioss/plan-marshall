@@ -570,19 +570,24 @@ files[2]:
   - marketplace/bundles/pm-dev-java/skills/lombok/SKILL.md
 ```
 
-**Output** (elision passthrough — bucket capped at 500):
+**Output** (elision passthrough — bucket capped at 2000):
 
 ```toon
 status: success
 module: big
 category: source
 files:
-  elided: 1234
+  elided: 3456
   sample[100]:
-    - src/a.py
-    - src/b.py
+    - src/aardvark.py
+    - src/middle.py
+    - src/zebra.py
     ...
 ```
+
+The `sample` is a distributed stride over the sorted list (a representative
+sample spanning the full range), not a contiguous prefix — see
+[architecture-persistence.md](architecture-persistence.md) § "Per-category cap".
 
 **Edge cases**:
 
@@ -590,6 +595,13 @@ files:
   capped bucket which returns the elision shape.
 - Unknown module: returns `error: Module not found` plus an `available`
   list of module names from `_project.json`.
+
+> **Elision passthrough is `files`-only.** This verb intentionally returns the
+> raw `{elided, sample}` shape verbatim — a reader consuming `files` must treat
+> the `sample` as a sample, never the whole list. The `find` and `which-module`
+> verbs do NOT inherit this caveat: they self-scan an in-scope elided category
+> uncapped and report `truncated: true` when they cannot, so their negatives are
+> trustworthy.
 
 ---
 
@@ -613,12 +625,21 @@ with the longest `paths.module` prefix wins. This ensures a path under
 `marketplace/bundles/pm-dev-java/...` resolves to `pm-dev-java`, not the
 project-root `default` module that nominally covers `.`.
 
+**Truthful truncation**: the exact-inventory step reads through the self-scan
+seam, so an in-scope elided category is walked uncapped rather than trusting
+its sample. The result always carries `truncated` (bool) and `elided`
+(list of `{module, category, elided_count, sample_size}`, empty when clean),
+so a truthful `truncated: true` can accompany a resolved module as well as a
+`module: null` — see the `find` verb for the shared self-scan contract.
+
 **Output** (TOON, match found):
 
 ```toon
 status: success
 path: marketplace/bundles/pm-dev-java/skills/junit-core/SKILL.md
 module: pm-dev-java
+truncated: false
+elided[0]:
 ```
 
 **Output** (TOON, no match):
@@ -627,14 +648,20 @@ module: pm-dev-java
 status: success
 path: nope/missing.md
 module: null
+truncated: false
+elided[0]:
 ```
 
 **Edge cases**:
 
-- Path matches a sample entry of an elided bucket: still resolves
-  (callers see the elision contract via `files`, not via this verb).
-- Path matches no module: `module: null` with `status: success` — the
-  command did not fail, the path is simply outside the inventory.
+- Path past an elided bucket's sample horizon: the reader self-scans the
+  module's real worktree uncapped and reports `truncated: true` when it
+  cannot, so a real file resolves to its owning module instead of a false
+  `module: null` — this verb no longer inherits the sample-only passthrough
+  caveat that still governs `files`.
+- Path matches no module: `module: null` with `status: success` — and, when no
+  in-scope category was elided, `truncated: false`, so the negative is
+  trustworthy rather than a bare unqualified miss.
 
 ---
 
@@ -658,7 +685,16 @@ matches one non-`/` character, `[seq]` matches one character from the
 sequence. Patterns are matched against the full inventory path with
 `fnmatch.fnmatchcase`, not the basename.
 
-**Output** (TOON):
+**Truthful truncation**: an in-scope elided category is self-scanned uncapped
+against the module's real worktree rather than contributing only its sample.
+When the self-scan is impossible (a disk-derived / fixture module with no
+worktree directory) the result reports `truncated: true` with the elided
+category names and true counts. Both `truncated` (bool) and `elided`
+(list of `{module, category, elided_count, sample_size}`, empty when clean)
+are ALWAYS present, so callers branch without a `KeyError` (ADR-009 fail-closed
+reporting).
+
+**Output** (TOON, self-scanned / clean):
 
 ```toon
 status: success
@@ -669,14 +705,34 @@ results[3]{module,category,path}:
   pm-dev-java,skill,marketplace/bundles/pm-dev-java/skills/junit-core/SKILL.md
   pm-dev-java,skill,marketplace/bundles/pm-dev-java/skills/lombok/SKILL.md
   plan-marshall,skill,marketplace/bundles/plan-marshall/skills/manage-architecture/SKILL.md
+truncated: false
+elided[0]:
+```
+
+**Output** (TOON, truthful truncation — self-scan impossible):
+
+```toon
+status: success
+pattern: "test/plan-marshall/manage-status/*"
+category: null
+count: 0
+results[0]:
+truncated: true
+elided[1]{module,category,elided_count,sample_size}:
+  plan-marshall,test,1234,100
 ```
 
 **Edge cases**:
 
-- Elided buckets contribute their `sample` paths to results — the
-  contract is the same as `files`. To search beyond the sample, fall
-  back to `Glob` against the working tree.
-- No matches: `count: 0`, `results: []`, `status: success`.
+- Path past an elided bucket's sample horizon: the reader self-scans the
+  module's real worktree uncapped, so a real hit is returned with
+  `truncated: false` — `find` no longer inherits the sample-only passthrough
+  caveat that still governs `files`. When the self-scan is impossible the
+  result carries `truncated: true` with the elided category names and their
+  true counts instead of a bare `count: 0`.
+- No matches: `count: 0`, `results: []`, `status: success`, and — when no
+  in-scope category was elided — `truncated: false`, so the negative is
+  trustworthy.
 
 ---
 
