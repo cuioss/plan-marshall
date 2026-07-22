@@ -6,6 +6,7 @@
 Covers path resolution, credential file I/O, RestClient, and provider discovery.
 """
 
+import errno
 import json
 from unittest.mock import patch
 
@@ -1073,6 +1074,43 @@ class TestCredentialsConfigKeyLazyMigration:
             _PREFIXED_SKILL: {'url': 'https://prefixed.example'},
             _CANONICAL_SKILL: {'url': 'https://canonical.example'},
         }
+
+    def test_persist_oserror_keeps_the_read_resilient(self, tmp_path, monkeypatch, capsys):
+        """A failed migration persist never crashes an otherwise-resilient read.
+
+        ``read_provider_config`` only catches ``(json.JSONDecodeError, KeyError)``,
+        so an unguarded ``OSError`` from the migration's opportunistic write (full
+        or read-only filesystem, permission denied) would propagate out of a
+        documented graceful-fallback read. The persist is best-effort: the error is
+        reported on stderr, the in-memory config stays canonicalized, and the
+        caller still gets its block.
+        """
+        stage_marshal(
+            tmp_path,
+            monkeypatch,
+            {'credentials_config': {_PREFIXED_SKILL: {'url': _SONAR_URL}}},
+        )
+
+        def _raise_oserror(config):
+            raise OSError(errno.EROFS, 'Read-only file system')
+
+        monkeypatch.setattr('_providers_core._save_marshal', _raise_oserror)
+
+        assert read_provider_config(_CANONICAL_SKILL) == {'url': _SONAR_URL}
+        assert 'WARNING' in capsys.readouterr().err
+
+    def test_persist_oserror_still_reports_migrated(self, tmp_path, monkeypatch):
+        """The status literal stays ``migrated`` — the in-memory config IS canonicalized."""
+        stage_marshal(tmp_path, monkeypatch, config=None)
+
+        def _raise_oserror(config):
+            raise OSError(errno.ENOSPC, 'No space left on device')
+
+        monkeypatch.setattr('_providers_core._save_marshal', _raise_oserror)
+        config = {'credentials_config': {_PREFIXED_SKILL: {'url': _SONAR_URL}}}
+
+        assert _providers_core._migrate_credentials_config_keys_if_needed(config) == 'migrated'
+        assert list(config['credentials_config']) == [_CANONICAL_SKILL]
 
     def test_identical_bodies_collapse_without_conflict(self, tmp_path, monkeypatch):
         """Two spellings carrying the same body collapse — nothing is lost."""

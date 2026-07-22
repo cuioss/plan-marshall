@@ -133,7 +133,11 @@ def _migrate_credentials_config_keys_if_needed(config: dict[str, Any]) -> str:
       Two source keys carrying identical bodies are not a conflict — collapsing
       them loses nothing.
     - **Migrated** — at least one key changed. ``config`` is updated in place
-      and persisted.
+      and persisted. The persist is best-effort: an ``OSError`` (read-only or
+      full filesystem, permission denied) is logged to stderr and swallowed so
+      an opportunistic migration on a read path never turns a resilient read
+      into a hard crash. The status literal stays ``'migrated'`` because the
+      in-memory ``config`` IS canonicalized either way.
 
     Args:
         config: The loaded marshal.json mapping. Mutated in place on the
@@ -163,7 +167,14 @@ def _migrate_credentials_config_keys_if_needed(config: dict[str, Any]) -> str:
         return 'already_canonical'
 
     config['credentials_config'] = canonicalized
-    _save_marshal(config)
+    try:
+        _save_marshal(config)
+    except OSError as exc:
+        print(
+            f'WARNING: credentials_config key migration could not be persisted: {exc}; '
+            'continuing with the in-memory canonicalized config.',
+            file=sys.stderr,
+        )
     return 'migrated'
 
 
