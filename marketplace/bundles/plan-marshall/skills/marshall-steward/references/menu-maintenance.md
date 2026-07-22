@@ -175,6 +175,8 @@ Configurable via marshal.json:
 | `archived_plans_days` | 5 | Delete archived plans older than N days |
 | `lessons_superseded_days` | 0 | Delete superseded lesson stubs older than N days; tombstones at `.tombstones/{id}.json` are preserved |
 | `temp_on_maintenance` | true | Clean temp directory on maintenance |
+| `plugin_cache_keep_versions` | 5 | Keep the N numerically-newest plugin-cache version dirs per bundle — one arm of the `cache_retention sweep` keep-union (see [`manage-config` data-model.md](../../manage-config/standards/data-model.md)) |
+| `plugin_cache_keep_days` | 3 | Keep plugin-cache version dirs younger than D days — the other knob-driven arm of the same keep-union (see [`manage-config` data-model.md](../../manage-config/standards/data-model.md)) |
 
 ### Configure Retention
 

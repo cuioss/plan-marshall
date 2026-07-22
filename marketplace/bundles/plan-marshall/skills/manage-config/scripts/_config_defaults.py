@@ -79,13 +79,53 @@ def validate_domain_inclusion(always_on: object, file_globs: object) -> None:
             raise ValueError(f'Invalid file_globs {file_globs!r}: expected a list of str.')
 
 
-# System retention defaults
+# System retention defaults.
+#
+# `plugin_cache_keep_versions` (N, default 5) and `plugin_cache_keep_days`
+# (D, default 3) are the operator knobs for the `marshall-steward`
+# `cache_retention sweep` keep-set. They join this block because it is the
+# project-wide, cross-plan retention home its four siblings already occupy, and
+# because DEFAULT_SYSTEM_RETENTION is ITSELF the fail-closed field whitelist
+# `reject_unknown_provisioning_field` enforces on `system retention set` — so
+# seeding them here grants the operator CLI surface, set-time rejection of typo'd
+# keys, and `sync-defaults` back-fill with no new mechanism. The keep-set is a
+# UNION: a version survives when ANY keep-rule holds, so the knobs only widen it
+# and never force a delete. See `manage-config/standards/data-model.md` for the
+# canonical field semantics.
 DEFAULT_SYSTEM_RETENTION = {
     'logs_days': 1,
     'archived_plans_days': 5,
     'lessons_superseded_days': 0,
     'temp_on_maintenance': True,
+    'plugin_cache_keep_versions': 5,
+    'plugin_cache_keep_days': 3,
 }
+
+
+def validate_plugin_cache_retention(value: object, field_name: str) -> None:
+    """Validate a `system.retention.plugin_cache_*` knob.
+
+    ``plugin_cache_keep_versions`` (N) must be an int ``>= 1`` — keeping zero
+    versions would empty the cache the sweep is pruning. ``plugin_cache_keep_days``
+    (D) must be an int ``>= 0`` — zero disables the age arm of the keep-union
+    without disabling the union itself. Booleans are rejected even though ``bool``
+    is an ``int`` subclass, mirroring the sibling numeric validator
+    :func:`validate_pr_compact_max_changed_files`.
+
+    Args:
+        value: The candidate knob value.
+        field_name: The ``system.retention.<knob>`` path, used in the error
+            message so a rejected value names the offending knob.
+
+    Raises:
+        ValueError: If ``value`` is a bool, is not an int, or is below the knob's
+            floor.
+    """
+    floor = 1 if field_name.endswith('plugin_cache_keep_versions') else 0
+    if isinstance(value, bool) or not isinstance(value, int) or value < floor:
+        raise ValueError(
+            f"Invalid {field_name} {value!r}: expected an int >= {floor}."
+        )
 
 # Project-level defaults (`project.*` in marshal.json).
 #
@@ -1049,6 +1089,15 @@ def get_default_config() -> dict:
     # fails loud at seed time rather than at first read.
     validate_pr_strategy(DEFAULT_PROJECT['pr_strategy'])
     validate_pr_compact_max_changed_files(DEFAULT_PROJECT['pr_compact_max_changed_files'])
+    # Self-validate the seeded plugin-cache retention knobs on the same footing.
+    validate_plugin_cache_retention(
+        DEFAULT_SYSTEM_RETENTION['plugin_cache_keep_versions'],
+        'system.retention.plugin_cache_keep_versions',
+    )
+    validate_plugin_cache_retention(
+        DEFAULT_SYSTEM_RETENTION['plugin_cache_keep_days'],
+        'system.retention.plugin_cache_keep_days',
+    )
     # Self-validate the seeded lane prune-threshold dict so a malformed default
     # fails loud at seed time rather than at first read. (`lane_selection` is an
     # enum string validated from the set path, mirroring validate_gate_mode /

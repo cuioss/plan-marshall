@@ -32,8 +32,10 @@ def find_bundles(base_path: Path) -> list[Path]:
          newest remaining live dir (an orphaned dir can never shadow a live one);
       3. when *every* version dir is orphaned, a degraded fallback selects the
          newest-on-disk dir regardless of the orphan marker and emits a stderr log
-         line naming the bundle. This guarantees a bundle with any version dir on
-         disk never contributes zero — the silent-break the fallback closes.
+         line naming the bundle, the saturation condition, and its remedy. This
+         guarantees a bundle with any version dir on disk never contributes zero —
+         the silent-break the fallback closes — while keeping the degraded state
+         diagnosable (ADR-009) rather than indistinguishable from routine noise.
 
       Tiers 1 and 2 both select ``max(live)``; the numeric ordering (via
       ``_version_sort_key``, the same helper ``resolve_bundle_path`` and
@@ -69,12 +71,21 @@ def find_bundles(base_path: Path) -> list[Path]:
         else:
             # Tier 3: every version dir is orphaned. Degraded fallback — select the
             # newest-on-disk dir regardless of the orphan marker so the bundle is
-            # never silently dropped, and log the degradation naming the bundle.
+            # never silently dropped, and log the degradation diagnosably (ADR-009):
+            # the line names the SATURATION CONDITION (all N dirs marked, zero live)
+            # and points at the remedy, so a permanently-degraded steady state reads
+            # as a defect rather than as routine noise.
             newest = max(version_dirs, key=lambda d: _version_sort_key(d.name))
             print(
-                f"marketplace_bundles.find_bundles: degraded fallback for bundle "
-                f"'{newest.parent.name}' — every version dir is orphaned; selecting "
-                f"newest-on-disk '{newest.name}' regardless of the orphan marker",
+                f"marketplace_bundles.find_bundles: DEGRADED (orphan-marker saturation) for bundle "
+                f"'{newest.parent.name}' — all {len(version_dirs)} version dir(s) carry .orphaned_at "
+                f"and 0 are live, so the marker carries no currency signal; falling back to "
+                f"newest-on-disk '{newest.name}'. Remedy: run the marshall-steward upgrade flow's "
+                f"cache-retention-sweep sub-step "
+                f"(plan-marshall:marshall-steward:cache_retention sweep) to prune the superseded "
+                f"version dirs; the executor preflight no longer marks the retention-pinned "
+                f"(newest-on-disk / provisioned / manifest-named) versions, so a re-run leaves at "
+                f"least one dir live.",
                 file=sys.stderr,
             )
             selected.append(newest)

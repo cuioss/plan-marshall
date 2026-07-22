@@ -25,10 +25,13 @@ Project kinds:
   the root). It regenerates the ``target/claude`` tree AND the executor, and
   verifies with executor preflight AND a content-drift report.
 * ``consumer`` — a downstream project that consumes plan-marshall (the
-  meta-only marketplace surface is absent). It regenerates ONLY the executor
-  and verifies with executor preflight ONLY. The meta-only sub-steps
-  (``regenerate-target-tree`` in Stage 1, ``content-drift-report`` in Stage 3)
-  are absent from a consumer plan and MUST NOT be attempted.
+  meta-only marketplace surface is absent). It gates on plugin-cache freshness
+  (``cache-freshness-check``), regenerates ONLY the executor, and verifies with
+  executor preflight ONLY. The meta-only sub-steps (``regenerate-target-tree``
+  in Stage 1, ``content-drift-report`` in Stage 3) are absent from a consumer
+  plan and MUST NOT be attempted. The freshness gate is consumer-only: the meta
+  project refreshes its own cache through
+  ``project:finalize-step-sync-plugin-cache``, a surface consumers do not have.
 
 The four stages are fixed and ordered:
 
@@ -39,8 +42,10 @@ The four stages are fixed and ordered:
 
 Per-stage ``sub_steps`` (the meta/consumer matrix):
 
-    Stage 1 regenerate-targets  meta:     [regenerate-target-tree, regenerate-executor]
-                                consumer: [regenerate-executor]
+    Stage 1 regenerate-targets  meta:     [regenerate-target-tree, regenerate-executor,
+                                           cache-retention-sweep]
+                                consumer: [cache-freshness-check, regenerate-executor,
+                                           cache-retention-sweep]
     Stage 2 reconcile-config    both:     [reconcile-marshal-json]
     Stage 3 verify              meta:     [executor-preflight, content-drift-report]
                                 consumer: [executor-preflight]
@@ -52,8 +57,10 @@ Gate model:
   and ``prompt`` otherwise. ``integrate=true`` suppresses ONLY the four
   top-level stage gates.
 * ``nested_gates`` are ``integrate``-invariant — they still prompt under
-  ``integrate=true``: ``build-map-reseed`` on ``reconcile-config``;
-  ``land-leave`` + ``branch-reuse`` on ``land``; none elsewhere.
+  ``integrate=true``: ``cache-retention-prune`` on ``regenerate-targets``
+  (the destructive apply of the retention sweep);
+  ``build-map-reseed`` on ``reconcile-config``; ``land-leave`` +
+  ``branch-reuse`` on ``land``; none elsewhere.
 
 Subcommand:
     plan  Emit the stage plan. ``--integrate {true|false}`` (default ``false``)
@@ -95,10 +102,10 @@ _STAGE_SPECS: list[dict] = [
         'key': 'regenerate-targets',
         'name': 'Regenerate targets',
         'mutating': True,
-        'nested_gates': [],
+        'nested_gates': ['cache-retention-prune'],
         'sub_steps': {
-            'meta': ['regenerate-target-tree', 'regenerate-executor'],
-            'consumer': ['regenerate-executor'],
+            'meta': ['regenerate-target-tree', 'regenerate-executor', 'cache-retention-sweep'],
+            'consumer': ['cache-freshness-check', 'regenerate-executor', 'cache-retention-sweep'],
         },
     },
     {

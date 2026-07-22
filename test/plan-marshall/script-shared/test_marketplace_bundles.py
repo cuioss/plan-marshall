@@ -78,8 +78,48 @@ class TestFindBundles:
         newest = _create_bundle(tmp_path, 'bundle-a', '1.0.10', orphaned=True)
         assert find_bundles(tmp_path) == [newest]
         stderr = capsys.readouterr().err
-        assert 'degraded fallback' in stderr
+        assert 'DEGRADED' in stderr
         assert 'bundle-a' in stderr
+
+    def test_degraded_fallback_log_names_the_saturation_condition(self, tmp_path, capsys):
+        # ADR-009: the degraded state must be diagnosable, not routine noise. The
+        # log names the saturation condition (how many dirs are marked, how many
+        # are live) and the selected fallback, so a permanently-degraded steady
+        # state reads as a defect.
+        _create_bundle(tmp_path, 'bundle-a', '1.0.0', orphaned=True)
+        _create_bundle(tmp_path, 'bundle-a', '1.0.10', orphaned=True)
+
+        find_bundles(tmp_path)
+        stderr = capsys.readouterr().err
+
+        assert 'saturation' in stderr
+        assert '.orphaned_at' in stderr
+        assert 'all 2 version dir(s)' in stderr
+        assert '0 are live' in stderr
+        assert '1.0.10' in stderr
+
+    def test_degraded_fallback_log_names_its_remedy(self, tmp_path, capsys):
+        # The log points at the retention verb that clears the saturation, so the
+        # operator is not left to infer the remedy.
+        _create_bundle(tmp_path, 'bundle-a', '1.0.0', orphaned=True)
+        _create_bundle(tmp_path, 'bundle-a', '1.0.10', orphaned=True)
+
+        find_bundles(tmp_path)
+        stderr = capsys.readouterr().err
+
+        assert 'cache-retention-sweep' in stderr
+        assert 'plan-marshall:marshall-steward:cache_retention sweep' in stderr
+
+    def test_three_tier_precedence_is_unchanged_by_the_diagnosable_log(self, tmp_path, capsys):
+        # PLAN-13's highest-version-wins resolution must be preserved exactly: a
+        # live dir still outranks a newer orphaned one (Tier 1/2), and only the
+        # all-orphaned case degrades (Tier 3). Making the Tier-3 log diagnosable
+        # changed the message, never the precedence.
+        live = _create_bundle(tmp_path, 'bundle-a', '1.0.0')
+        _create_bundle(tmp_path, 'bundle-a', '1.0.10', orphaned=True)
+
+        assert find_bundles(tmp_path) == [live]
+        assert capsys.readouterr().err == '', 'a resolvable live dir must not emit a degradation log'
 
     def test_non_versioned_bundle_starting_with_digits(self, tmp_path):
         # A non-versioned bundle whose name starts with digits (e.g. '1.0-my-bundle')

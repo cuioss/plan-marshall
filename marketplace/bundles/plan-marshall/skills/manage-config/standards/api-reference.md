@@ -106,7 +106,7 @@ manage-config system retention set \
   --value 7
 ```
 
-Retention fields: `logs_days`, `archived_plans_days`, `temp_on_maintenance`.
+Retention fields: `logs_days`, `archived_plans_days`, `lessons_superseded_days`, `temp_on_maintenance`, `plugin_cache_keep_versions`, `plugin_cache_keep_days`. See [`data-model.md`](data-model.md) § Retention Fields for each field's type, default, and — for the two `plugin_cache_*` knobs — the union keep-set semantics.
 
 ---
 
