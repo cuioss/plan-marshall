@@ -573,14 +573,14 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 **Step 5c-aspect — request-aspect classification (deterministic, heuristic-first)**:
 
-For any source other than `recipe`, classify the request aspect so the execution-manifest composer can drop build / quality-gate / test steps for analysis/planning requests. Pass the same request narrative verbatim. Do NOT inline-copy the aspect-classify threshold contract; it lives in the central verb contract — see [`../manage-config/SKILL.md`](../manage-config/SKILL.md) Canonical invocations → `aspect-classify` (its `0.7` threshold is independent of the recipe-match / auto-route thresholds — do not conflate them).
+For any source other than `recipe`, classify the request aspect and persist it as plan metadata. The aspect records request INTENT only — it has no bearing on whether the plan's footprint needs a build, which is decided solely by the `build-decision` verdict. Pass the same request narrative verbatim. Do NOT inline-copy the aspect-classify threshold contract; it lives in the central verb contract — see [`../manage-config/SKILL.md`](../manage-config/SKILL.md) Canonical invocations → `aspect-classify` (its `0.7` threshold is independent of the recipe-match / auto-route thresholds — do not conflate them).
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config aspect-classify \
   --request-text "{request_narrative}"
 ```
 
-Parse `aspect` (`analysis` | `planning` | `implementation`) and `drops_build_steps` from the returned TOON. Persist the resolved aspect into status metadata so the manifest composer (phase-4-plan) reads it when composing the phase-5 verification steps:
+Parse `aspect` (`analysis` | `planning` | `implementation`) from the returned TOON. Persist the resolved aspect into status metadata:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
@@ -594,10 +594,10 @@ Emit the aspect decision-log entry:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO \
-  --message "(plan-marshall:phase-1-init) Request aspect classified: {aspect} (drops_build_steps={drops_build_steps})"
+  --message "(plan-marshall:phase-1-init) Request aspect classified: {aspect} (confidence={confidence})"
 ```
 
-The classifier defaults to `implementation` below its threshold — the safe fallback that keeps build/verify gates — except when the request carries an explicit negative build constraint (e.g. "no build", "docs only"), which overrides the fallback with `drops_build_steps: true`; the full negation-override contract lives in `manage-config` SKILL.md § `aspect-classify`. No prompt is shown for the aspect; it is silent metadata.
+The classifier defaults to `implementation` below its threshold — the conservative fallback. No prompt is shown for the aspect; it is silent metadata.
 
 **Step 5c-lesson — doc-shaped predicate (lesson-source only)**:
 

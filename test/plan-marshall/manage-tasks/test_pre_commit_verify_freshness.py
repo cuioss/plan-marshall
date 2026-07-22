@@ -13,8 +13,17 @@ exit-code predicate would launder a build that never finished into a false
 ``marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md`` §
 "Pre-Commit Verify Freshness" for the contract.
 
+Before that question is asked at all, the gate consults the single build/no-build
+authority (``extension_base.should_execute_build``, the ``manage-config
+build-decision`` verb) COMMAND-FREE. A ``not_necessary`` verdict means no
+``kind=build`` entry could ever legally exist for this footprint, so the gate
+short-circuits to ``fresh`` carrying the verdict's OWN ``reason`` verbatim. The
+gate derives no build-necessity signal of its own — it neither reads the
+manifest's step shapes nor owns an exemption vocabulary. See ADR-004 §
+"Amendment: ``build-decision`` is the sole build/no-build authority".
+
 The freshness primitive is the change-ledger lookup, NOT a file-mtime heuristic.
-Tests stub the two module-level boundary functions the command imports:
+Tests stub the three module-level boundary functions the command uses:
 
 - ``compute_worktree_sha`` — the working-tree currency hash. Stubbed to a
   deterministic literal so the lookup match is exercised without standing up a
@@ -22,9 +31,13 @@ Tests stub the two module-level boundary functions the command imports:
   fail-closed path.
 - ``resolve_ledger_path`` — the tracked-config-dir ledger location. Stubbed to a
   temp JSONL file so the test controls the ledger entries directly.
+- ``_build_necessity_verdict`` — the command-free consult of the sole authority.
+  An autouse fixture pins it to ``build`` so every ledger-scan case reaches the
+  scan; the build-necessity cases override it explicitly.
 
 Together they make the gate's three-way decision (``fresh`` / ``stale`` /
-``undecidable``) deterministic and isolated from both git and the real ledger.
+``undecidable``) deterministic and isolated from git, the real ledger, and the
+live project footprint.
 """
 
 from __future__ import annotations
@@ -34,6 +47,7 @@ import json
 from argparse import Namespace
 from pathlib import Path
 
+import pytest
 from toon_parser import serialize_toon
 
 from conftest import PROJECT_ROOT
@@ -64,6 +78,11 @@ _freshness_mod = _load_module(
     '_cmd_pre_commit_verify_freshness.py',
 )
 cmd_pre_commit_verify_freshness = _freshness_mod.cmd_pre_commit_verify_freshness
+
+# Captured BEFORE the autouse stub fixture can replace it: the cases that
+# exercise the real consult (its call shape and its fail-closed except-branch)
+# restore this, not whatever the fixture currently holds.
+_REAL_BUILD_NECESSITY_VERDICT = _freshness_mod._build_necessity_verdict
 
 # The current-sha literal the stubbed ``compute_worktree_sha`` returns. A
 # ``kind=build`` entry whose ``worktree_sha`` matches this is a fresh build.
@@ -148,16 +167,12 @@ def _write_ledger(tmp_path: Path, entries: list[dict]) -> Path:
 def _write_manifest(plan_dir: Path, *, verification_steps: list[str]) -> Path:
     """Write an ``execution.toon`` manifest whose ``phase_5.verification_steps`` is set.
 
-    The ``documentation_only`` exemption (``_is_documentation_only``) reads
-    ``execution.toon`` from the plan dir and parses TOON, returning ``True`` only
-    when ``phase_5.verification_steps`` is an empty list. Serializing via
-    ``serialize_toon`` guarantees the on-disk format round-trips through the
-    ``parse_toon`` the helper-under-test uses to read it back — the same path the
-    production ``manage-execution-manifest`` composer writes.
-
-    An empty ``verification_steps`` list models a documentation-only plan (no
-    build step runs); a non-empty list models a code-only / mixed plan that must
-    still be gated by the ledger scan.
+    The manifest is NO LONGER an input to the freshness gate — it is written here
+    only as a decoy, so the tests can prove the gate ignores it. The retired
+    implementation read this file and inferred build necessity from the SHAPE of
+    the step list (empty -> ``documentation_only``, all-``quality-gate`` ->
+    ``lint_only``); the gate now consults the sole build/no-build authority
+    instead, so neither shape may change its outcome.
     """
     manifest = {
         'manifest_version': 1,
@@ -181,6 +196,28 @@ def _stub_worktree_sha(monkeypatch, sha: str | None) -> None:
 def _stub_ledger_path(monkeypatch, ledger_path: Path) -> None:
     """Patch ``resolve_ledger_path`` so the gate reads the test's temp ledger."""
     monkeypatch.setattr(_freshness_mod, 'resolve_ledger_path', lambda: ledger_path)
+
+
+def _stub_verdict(monkeypatch, verdict: dict) -> None:
+    """Patch the command-free build-necessity consult to a fixed verdict.
+
+    The real consult resolves the LIVE project footprint via git, which would make
+    every case here depend on the checkout's working state. Pinning the verdict
+    isolates the gate's own logic — the branch it takes on each verdict — from the
+    authority's internals, which are covered by the authority's own tests.
+    """
+    monkeypatch.setattr(_freshness_mod, '_build_necessity_verdict', lambda _plan_id: verdict)
+
+
+@pytest.fixture(autouse=True)
+def _build_is_necessary(monkeypatch):
+    """Default every case to a ``build`` verdict so the ledger scan is reached.
+
+    A ``build`` verdict is the pass-through: the gate falls straight to the ledger
+    scan, which is what the bulk of this file exercises. Cases that exercise the
+    short-circuit override this with an explicit ``_stub_verdict`` call.
+    """
+    _stub_verdict(monkeypatch, {'decision': 'build'})
 
 
 # =============================================================================
@@ -427,402 +464,318 @@ def test_malformed_ledger_lines_are_skipped(plan_context, monkeypatch, tmp_path)
 
 
 # =============================================================================
-# documentation_only exemption
+# Build-necessity short-circuit — the sole build/no-build authority
 # =============================================================================
 #
-# A documentation-only plan composes an empty ``phase_5.verification_steps`` in
-# its ``execution.toon`` manifest, runs no build, and therefore stamps no
-# ``kind=build`` ledger entry. The gate must EXEMPT such a plan (short-circuit to
-# ``fresh`` / ``documentation_only`` BEFORE the ledger scan) rather than fail
-# closed on the missing build proof. The exemption fires ONLY when the manifest
-# is present AND ``phase_5.verification_steps`` is empty; an absent manifest, a
-# malformed manifest, or a non-empty step list must fall through to the ledger
-# scan unchanged (regression coverage that code-only / mixed plans stay gated).
+# The gate no longer infers build necessity from the manifest's step SHAPE (the
+# retired ``documentation_only`` / ``lint_only`` exemptions). It consults the one
+# authority COMMAND-FREE — "does anything in this footprint need a build?" — and:
+#
+#   * ``not_necessary`` -> short-circuit to ``fresh`` BEFORE the ledger scan,
+#     forwarding the verdict's OWN ``reason`` verbatim. No ``kind=build`` entry
+#     could legally exist for a footprint that needs no build, so demanding one
+#     would be an impossible demand rather than a gate.
+#   * ``build``         -> fall through to the ledger scan unchanged.
+#
+# The manifest is written in several cases below purely as a DECOY: whatever its
+# step list looks like, it must not move the outcome.
 
 
-def test_documentation_only_exempts_when_verification_steps_empty(
+def test_not_necessary_verdict_short_circuits_to_fresh(
     plan_context, monkeypatch, tmp_path
 ) -> None:
-    """Empty ``phase_5.verification_steps`` -> fresh / documentation_only.
+    """A ``not_necessary`` verdict -> fresh, before the ledger is ever consulted.
 
-    The exemption short-circuits BEFORE the ledger scan, so the gate passes even
-    though no build proof exists. Both the sha stub and the ledger stub are set
-    to fail-closed values (``None`` sha, missing ledger file) to prove the
-    short-circuit fires ahead of them.
+    Fail-closed boundary values (``None`` sha, missing ledger file) prove the
+    short-circuit fires ahead of them: had the gate reached the scan, the ``None``
+    sha would have forced ``undecidable / head_unresolvable``.
     """
-    plan_dir = plan_context.plan_dir_for('freshness-docs-only')
+    plan_dir = plan_context.plan_dir_for('freshness-no-build-needed')
     _write_status(plan_dir)
-    _write_manifest(plan_dir, verification_steps=[])
-    # Fail-closed boundary values — if the exemption did NOT short-circuit first,
-    # the None sha would force ``undecidable / head_unresolvable``.
+    _stub_verdict(
+        monkeypatch,
+        {'decision': 'not_necessary', 'reason': 'plan footprint touches no build_map glob'},
+    )
     _stub_worktree_sha(monkeypatch, None)
     _stub_ledger_path(monkeypatch, tmp_path / 'never-written.jsonl')
 
-    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-docs-only'))
+    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-no-build-needed'))
 
     assert result['status'] == 'fresh', result
-    assert result['reason'] == 'documentation_only'
-    assert result['plan_id'] == 'freshness-docs-only'
+    assert result['plan_id'] == 'freshness-no-build-needed'
     # No ledger fields — the short-circuit returns before the scan.
     assert 'worktree_sha' not in result
     assert 'ledger_path' not in result
 
 
-def test_documentation_only_exemption_ignores_stale_ledger(
+def test_short_circuit_forwards_the_verdict_reason_verbatim(
     plan_context, monkeypatch, tmp_path
 ) -> None:
-    """Empty steps exempt even when the ledger would otherwise report stale.
+    """The gate reports the authority's reason, never one of its own.
+
+    Owning an exemption vocabulary is what made the gate a second oracle: a
+    hardcoded reason can state a cause the verdict never gave. Forwarding the
+    verdict's text verbatim is the structural guarantee that it cannot.
+    """
+    plan_dir = plan_context.plan_dir_for('freshness-reason-forwarded')
+    _write_status(plan_dir)
+    _stub_verdict(
+        monkeypatch,
+        {
+            'decision': 'not_necessary',
+            'reason': 'build_map registers no globs — project has no buildable file types',
+        },
+    )
+    _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
+    _stub_ledger_path(monkeypatch, tmp_path / 'never-written.jsonl')
+
+    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-reason-forwarded'))
+
+    assert result['status'] == 'fresh', result
+    assert result['reason'] == (
+        'build_map registers no globs — project has no buildable file types'
+    )
+    # The retired shape-derived vocabulary must not reappear.
+    assert result['reason'] not in ('documentation_only', 'lint_only')
+
+
+def test_short_circuit_beats_an_otherwise_stale_ledger(
+    plan_context, monkeypatch, tmp_path
+) -> None:
+    """``not_necessary`` wins over a ledger that would otherwise report stale.
 
     A real worktree sha plus a ledger holding only a build for a DIFFERENT sha is
-    the canonical ``stale`` setup. The exemption must still win because it
+    the canonical ``stale`` setup. The short-circuit must still win because it
     precedes the ledger scan.
     """
-    plan_dir = plan_context.plan_dir_for('freshness-docs-stale-ledger')
+    plan_dir = plan_context.plan_dir_for('freshness-nb-stale-ledger')
+    _write_status(plan_dir)
+    _stub_verdict(
+        monkeypatch, {'decision': 'not_necessary', 'reason': 'plan footprint is empty'}
+    )
+    _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
+    ledger_path = _write_ledger(tmp_path, [_build_entry(worktree_sha=_OTHER_SHA)])
+    _stub_ledger_path(monkeypatch, ledger_path)
+
+    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-nb-stale-ledger'))
+
+    assert result['status'] == 'fresh', result
+    assert result['reason'] == 'plan footprint is empty'
+
+
+def test_build_verdict_falls_through_to_the_ledger_scan(
+    plan_context, monkeypatch, tmp_path
+) -> None:
+    """A ``build`` verdict is a pure pass-through -> the scan governs the outcome."""
+    plan_dir = plan_context.plan_dir_for('freshness-build-needed')
+    _write_status(plan_dir)
+    _stub_verdict(monkeypatch, {'decision': 'build'})
+    _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
+    ledger_path = _write_ledger(tmp_path, [_build_entry(worktree_sha=_OTHER_SHA)])
+    _stub_ledger_path(monkeypatch, ledger_path)
+
+    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-build-needed'))
+
+    assert result['status'] == 'stale', result
+
+
+def test_consult_is_command_free(plan_context, monkeypatch, tmp_path) -> None:
+    """The gate asks the plan-wide question — it passes NO canonical command.
+
+    The question "does this plan need a freshness proof?" is plan-wide, and the
+    verdict does not vary by command, so nominating a representative command
+    would be meaningless ceremony that invites a future reader to believe the
+    command matters. This pins the actual call arguments at the lowest boundary:
+    ``should_execute_build(None, plan_id)``.
+    """
+    plan_dir = plan_context.plan_dir_for('freshness-command-free')
+    _write_status(plan_dir)
+    # Undo the autouse stub so the REAL _build_necessity_verdict runs and its
+    # delegation to the authority is observed.
+    monkeypatch.setattr(
+        _freshness_mod, '_build_necessity_verdict', _REAL_BUILD_NECESSITY_VERDICT
+    )
+    calls: list[tuple] = []
+
+    import extension_base
+
+    def _record(canonical_command, plan_id, *args, **kwargs):
+        calls.append((canonical_command, plan_id))
+        return {'decision': 'not_necessary', 'reason': 'stubbed'}
+
+    monkeypatch.setattr(extension_base, 'should_execute_build', _record)
+    _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
+    _stub_ledger_path(monkeypatch, tmp_path / 'never-written.jsonl')
+
+    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-command-free'))
+
+    assert calls == [(None, 'freshness-command-free')]
+    assert result['status'] == 'fresh', result
+    assert result['reason'] == 'stubbed'
+
+
+def test_unobtainable_verdict_fails_closed_into_the_ledger_scan(
+    plan_context, monkeypatch, tmp_path
+) -> None:
+    """A consult that raises degrades to ``build`` -> the scan still gates.
+
+    The fail-closed direction matters: an authority that cannot be reached must
+    never be read as "no build was needed", which would wave the plan through
+    without any freshness proof at all.
+    """
+    plan_dir = plan_context.plan_dir_for('freshness-verdict-error')
+    _write_status(plan_dir)
+    # Undo the autouse stub so the real helper's except-branch runs.
+    monkeypatch.setattr(
+        _freshness_mod, '_build_necessity_verdict', _REAL_BUILD_NECESSITY_VERDICT
+    )
+
+    import extension_base
+
+    def _boom(*_args, **_kwargs):
+        raise RuntimeError('marshal.json unreadable')
+
+    monkeypatch.setattr(extension_base, 'should_execute_build', _boom)
+    _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
+    ledger_path = _write_ledger(tmp_path, [_build_entry(worktree_sha=_OTHER_SHA)])
+    _stub_ledger_path(monkeypatch, ledger_path)
+
+    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-verdict-error'))
+
+    assert result['status'] == 'stale', result
+
+
+# =============================================================================
+# Anti-regression: the manifest's step SHAPE is no longer an oracle
+# =============================================================================
+#
+# These are the load-bearing cases for the consolidation. Each pairs a manifest
+# whose shape WOULD have driven the retired predicate with a verdict that
+# disagrees, and asserts the verdict wins. Without them the two mechanics could
+# silently be reintroduced side by side and every other test would still pass.
+
+
+def test_empty_step_list_does_not_exempt_when_a_build_is_necessary(
+    plan_context, monkeypatch, tmp_path
+) -> None:
+    """Empty ``verification_steps`` + ``build`` verdict -> still gated.
+
+    The retired ``documentation_only`` exemption keyed on exactly this manifest
+    shape and would have short-circuited to ``fresh``, waving through a code
+    footprint with no build proof.
+    """
+    plan_dir = plan_context.plan_dir_for('freshness-empty-steps-but-code')
     _write_status(plan_dir)
     _write_manifest(plan_dir, verification_steps=[])
+    _stub_verdict(monkeypatch, {'decision': 'build'})
     _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
     ledger_path = _write_ledger(tmp_path, [_build_entry(worktree_sha=_OTHER_SHA)])
     _stub_ledger_path(monkeypatch, ledger_path)
 
     result = cmd_pre_commit_verify_freshness(
-        Namespace(plan_id='freshness-docs-stale-ledger')
+        Namespace(plan_id='freshness-empty-steps-but-code')
     )
 
-    assert result['status'] == 'fresh', result
-    assert result['reason'] == 'documentation_only'
-
-
-def test_non_empty_verification_steps_still_gated_by_ledger(
-    plan_context, monkeypatch, tmp_path
-) -> None:
-    """A code-only / mixed plan (non-empty steps) is NOT exempted -> still gated.
-
-    Regression guard: the exemption must fire ONLY for empty steps. With a
-    non-empty step list and a ledger that holds no matching build, the gate falls
-    through to the ledger scan and reports ``stale``.
-    """
-    plan_dir = plan_context.plan_dir_for('freshness-code-only')
-    _write_status(plan_dir)
-    _write_manifest(plan_dir, verification_steps=['quality-gate', 'module-tests'])
-    _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
-    ledger_path = _write_ledger(tmp_path, [_build_entry(worktree_sha=_OTHER_SHA)])
-    _stub_ledger_path(monkeypatch, ledger_path)
-
-    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-code-only'))
-
     assert result['status'] == 'stale', result
-    assert 'reason' not in result or result.get('reason') != 'documentation_only'
 
 
-def test_non_empty_verification_steps_still_resolves_fresh_with_matching_build(
+def test_all_quality_gate_steps_do_not_exempt_when_a_build_is_necessary(
     plan_context, monkeypatch, tmp_path
 ) -> None:
-    """A non-exempt plan with a matching build still resolves fresh via the scan.
+    """All-``quality-gate`` steps + ``build`` verdict -> still gated.
 
-    Confirms the fall-through path is the ORDINARY ledger gate (not a degraded
-    branch): a code-only plan with a successful build for the current sha passes
-    on its own freshness proof, with no documentation_only reason attached. The
-    step list carries a build/test step (``module-tests``) so the lint-only
-    exemption does NOT fire — the gate must reach the ledger scan.
+    The retired ``lint_only`` exemption keyed on exactly this manifest shape.
     """
-    plan_dir = plan_context.plan_dir_for('freshness-code-fresh')
-    _write_status(plan_dir)
-    _write_manifest(plan_dir, verification_steps=['quality-gate', 'module-tests'])
-    _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
-    ledger_path = _write_ledger(tmp_path, [_build_entry(worktree_sha=_CURRENT_SHA)])
-    _stub_ledger_path(monkeypatch, ledger_path)
-
-    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-code-fresh'))
-
-    assert result['status'] == 'fresh', result
-    assert result.get('reason') not in ('documentation_only', 'lint_only')
-    assert result['worktree_sha'] == _CURRENT_SHA
-
-
-def test_absent_manifest_falls_through_to_ledger_scan(
-    plan_context, monkeypatch, tmp_path
-) -> None:
-    """No ``execution.toon`` -> no exemption -> ordinary ledger scan.
-
-    Regression guard: a missing manifest must NOT be treated as documentation_only.
-    With no matching build, the gate reports ``stale``.
-    """
-    plan_dir = plan_context.plan_dir_for('freshness-no-manifest')
-    _write_status(plan_dir)
-    # Deliberately do NOT write execution.toon.
-    _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
-    ledger_path = _write_ledger(tmp_path, [_build_entry(worktree_sha=_OTHER_SHA)])
-    _stub_ledger_path(monkeypatch, ledger_path)
-
-    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-no-manifest'))
-
-    assert result['status'] == 'stale', result
-    assert result.get('reason') != 'documentation_only'
-
-
-def test_malformed_manifest_falls_through_to_ledger_scan(
-    plan_context, monkeypatch, tmp_path
-) -> None:
-    """A manifest that does not parse -> no exemption -> ordinary ledger scan.
-
-    ``_is_documentation_only`` degrades to ``False`` (no exemption) on any parse
-    error, so the gate falls through to the ledger scan rather than failing on
-    the unreadable manifest.
-    """
-    plan_dir = plan_context.plan_dir_for('freshness-bad-manifest')
-    _write_status(plan_dir)
-    (plan_dir / 'execution.toon').write_text(
-        '{ this is not valid toon\n  : : :\n', encoding='utf-8'
-    )
-    _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
-    ledger_path = _write_ledger(tmp_path, [_build_entry(worktree_sha=_CURRENT_SHA)])
-    _stub_ledger_path(monkeypatch, ledger_path)
-
-    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-bad-manifest'))
-
-    # Fell through to the scan, which finds the matching build -> fresh, but via
-    # the ordinary path, NOT the documentation_only short-circuit.
-    assert result['status'] == 'fresh', result
-    assert result.get('reason') != 'documentation_only'
-    assert result['worktree_sha'] == _CURRENT_SHA
-
-
-def test_manifest_without_verification_steps_key_falls_through(
-    plan_context, monkeypatch, tmp_path
-) -> None:
-    """A ``phase_5`` block lacking ``verification_steps`` -> no exemption.
-
-    ``_is_documentation_only`` returns ``True`` only when ``verification_steps``
-    is present AND an empty list. An absent key (``None``) is not an empty list,
-    so the plan is not exempted and the ledger scan governs the outcome.
-    """
-    plan_dir = plan_context.plan_dir_for('freshness-no-steps-key')
-    _write_status(plan_dir)
-    manifest = {
-        'manifest_version': 1,
-        'plan_id': 'freshness-no-steps-key',
-        'phase_5': {'early_terminate': False},
-        'phase_6': {'steps': []},
-    }
-    (plan_dir / 'execution.toon').write_text(
-        serialize_toon(manifest), encoding='utf-8'
-    )
-    _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
-    ledger_path = _write_ledger(tmp_path, [_build_entry(worktree_sha=_OTHER_SHA)])
-    _stub_ledger_path(monkeypatch, ledger_path)
-
-    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-no-steps-key'))
-
-    assert result['status'] == 'stale', result
-    assert result.get('reason') != 'documentation_only'
-
-
-# =============================================================================
-# lint_only exemption
-# =============================================================================
-#
-# A lint-only plan composes a NON-empty ``phase_5.verification_steps`` whose every
-# entry resolves (by trailing ``:``-segment) to a structural-lint role
-# (``quality-gate``) and none resolves to a build/test role. Structural lint never
-# stamps a ``kind=build`` ledger entry, so — exactly like a documentation-only
-# plan — such a plan legitimately runs no build and needs no freshness proof. The
-# gate must EXEMPT it (short-circuit to ``fresh`` / ``lint_only`` BEFORE the ledger
-# scan) rather than fail closed. The exemption fires ONLY when the list is
-# non-empty AND every step is a quality-gate step; any build/test step
-# (``module-tests``, ``coverage``, the bare ``verify`` alias) disables it and the
-# plan falls through to the ledger scan (regression coverage that mixed plans stay
-# gated).
-
-
-def test_lint_only_exempts_when_all_steps_are_quality_gate(
-    plan_context, monkeypatch, tmp_path
-) -> None:
-    """All-``quality-gate`` steps -> fresh / lint_only.
-
-    The exemption short-circuits BEFORE the ledger scan, so the gate passes even
-    though no build proof exists. Fail-closed boundary values (``None`` sha,
-    missing ledger file) prove the short-circuit fires ahead of them.
-    """
-    plan_dir = plan_context.plan_dir_for('freshness-lint-only')
-    _write_status(plan_dir)
-    _write_manifest(plan_dir, verification_steps=['quality-gate'])
-    # Fail-closed boundary values — if the exemption did NOT short-circuit first,
-    # the None sha would force ``undecidable / head_unresolvable``.
-    _stub_worktree_sha(monkeypatch, None)
-    _stub_ledger_path(monkeypatch, tmp_path / 'never-written.jsonl')
-
-    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-lint-only'))
-
-    assert result['status'] == 'fresh', result
-    assert result['reason'] == 'lint_only'
-    assert result['plan_id'] == 'freshness-lint-only'
-    # No ledger fields — the short-circuit returns before the scan.
-    assert 'worktree_sha' not in result
-    assert 'ledger_path' not in result
-
-
-def test_lint_only_resolves_role_through_default_and_verify_prefixes(
-    plan_context, monkeypatch, tmp_path
-) -> None:
-    """Prefixed step IDs resolve to ``quality-gate`` -> still lint_only.
-
-    ``verify:quality-gate`` and ``default:verify:quality-gate`` both resolve to
-    the ``quality-gate`` role via the trailing ``:``-segment, so a list mixing the
-    prefixed forms is still all-lint and the exemption fires.
-    """
-    plan_dir = plan_context.plan_dir_for('freshness-lint-prefixed')
+    plan_dir = plan_context.plan_dir_for('freshness-lint-steps-but-code')
     _write_status(plan_dir)
     _write_manifest(
         plan_dir,
         verification_steps=['verify:quality-gate', 'default:verify:quality-gate'],
     )
-    _stub_worktree_sha(monkeypatch, None)
-    _stub_ledger_path(monkeypatch, tmp_path / 'never-written.jsonl')
-
-    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-lint-prefixed'))
-
-    assert result['status'] == 'fresh', result
-    assert result['reason'] == 'lint_only'
-
-
-def test_lint_only_exemption_ignores_stale_ledger(
-    plan_context, monkeypatch, tmp_path
-) -> None:
-    """All-lint steps exempt even when the ledger would otherwise report stale.
-
-    A real worktree sha plus a ledger holding only a build for a DIFFERENT sha is
-    the canonical ``stale`` setup. The exemption must still win because it
-    precedes the ledger scan.
-    """
-    plan_dir = plan_context.plan_dir_for('freshness-lint-stale-ledger')
-    _write_status(plan_dir)
-    _write_manifest(plan_dir, verification_steps=['quality-gate'])
+    _stub_verdict(monkeypatch, {'decision': 'build'})
     _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
     ledger_path = _write_ledger(tmp_path, [_build_entry(worktree_sha=_OTHER_SHA)])
     _stub_ledger_path(monkeypatch, ledger_path)
 
     result = cmd_pre_commit_verify_freshness(
-        Namespace(plan_id='freshness-lint-stale-ledger')
+        Namespace(plan_id='freshness-lint-steps-but-code')
     )
 
-    assert result['status'] == 'fresh', result
-    assert result['reason'] == 'lint_only'
+    assert result['status'] == 'stale', result
 
 
-def test_lint_only_disabled_by_module_tests_step(
+def test_build_shaped_steps_still_exempt_a_footprint_needing_no_build(
     plan_context, monkeypatch, tmp_path
 ) -> None:
-    """A ``module-tests`` step disables the lint-only exemption -> still gated.
+    """A markdown-only footprint is exempt even though the manifest composes builds.
 
-    Regression guard: a single build/test step among quality-gate steps means the
-    plan DOES run a build and must be gated by the ledger. With no matching build,
-    the gate falls through to the ledger scan and reports ``stale``.
+    The converse gap the consolidation closes: a plan whose manifest carries
+    ``module-tests`` / ``coverage`` steps was NEVER exempt under the retired
+    shape predicate, so a docs-only footprint that ran no build failed closed on
+    a build proof it could not possibly produce. The footprint decides now.
     """
-    plan_dir = plan_context.plan_dir_for('freshness-lint-plus-tests')
+    plan_dir = plan_context.plan_dir_for('freshness-docs-footprint-build-steps')
     _write_status(plan_dir)
     _write_manifest(
-        plan_dir, verification_steps=['quality-gate', 'verify:module-tests']
+        plan_dir,
+        verification_steps=['verify:quality-gate', 'verify:module-tests', 'verify:coverage'],
+    )
+    _stub_verdict(
+        monkeypatch,
+        {
+            'decision': 'not_necessary',
+            'reason': 'plan footprint touches no build_map glob — only non-buildable files changed',
+        },
     )
     _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
-    ledger_path = _write_ledger(tmp_path, [_build_entry(worktree_sha=_OTHER_SHA)])
-    _stub_ledger_path(monkeypatch, ledger_path)
-
-    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-lint-plus-tests'))
-
-    assert result['status'] == 'stale', result
-    assert result.get('reason') != 'lint_only'
-
-
-def test_lint_only_disabled_by_coverage_step(
-    plan_context, monkeypatch, tmp_path
-) -> None:
-    """A ``coverage`` step disables the lint-only exemption -> still gated.
-
-    Regression guard mirroring the ``module-tests`` case for the ``coverage``
-    build/test role.
-    """
-    plan_dir = plan_context.plan_dir_for('freshness-lint-plus-coverage')
-    _write_status(plan_dir)
-    _write_manifest(
-        plan_dir, verification_steps=['quality-gate', 'verify:coverage']
-    )
-    _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
-    ledger_path = _write_ledger(tmp_path, [_build_entry(worktree_sha=_OTHER_SHA)])
-    _stub_ledger_path(monkeypatch, ledger_path)
-
-    result = cmd_pre_commit_verify_freshness(
-        Namespace(plan_id='freshness-lint-plus-coverage')
-    )
-
-    assert result['status'] == 'stale', result
-    assert result.get('reason') != 'lint_only'
-
-
-def test_lint_only_disabled_by_bare_verify_alias(
-    plan_context, monkeypatch, tmp_path
-) -> None:
-    """A bare ``verify`` step disables the lint-only exemption -> still gated.
-
-    The bare ``verify`` alias is a build/test role (it runs the full pipeline), so
-    a list containing it is NOT all-lint and the exemption must not fire.
-    """
-    plan_dir = plan_context.plan_dir_for('freshness-lint-plus-verify')
-    _write_status(plan_dir)
-    _write_manifest(plan_dir, verification_steps=['quality-gate', 'verify'])
-    _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
-    ledger_path = _write_ledger(tmp_path, [_build_entry(worktree_sha=_OTHER_SHA)])
-    _stub_ledger_path(monkeypatch, ledger_path)
-
-    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-lint-plus-verify'))
-
-    assert result['status'] == 'stale', result
-    assert result.get('reason') != 'lint_only'
-
-
-def test_lint_only_not_triggered_by_empty_steps(
-    plan_context, monkeypatch, tmp_path
-) -> None:
-    """Empty steps are documentation_only, NOT lint_only.
-
-    The lint-only predicate requires a NON-empty list; an empty list is the
-    documentation-only case and must short-circuit with ``reason:
-    documentation_only`` (the documentation-only branch precedes the lint-only
-    branch in the handler).
-    """
-    plan_dir = plan_context.plan_dir_for('freshness-lint-empty')
-    _write_status(plan_dir)
-    _write_manifest(plan_dir, verification_steps=[])
-    _stub_worktree_sha(monkeypatch, None)
     _stub_ledger_path(monkeypatch, tmp_path / 'never-written.jsonl')
 
-    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-lint-empty'))
+    result = cmd_pre_commit_verify_freshness(
+        Namespace(plan_id='freshness-docs-footprint-build-steps')
+    )
 
     assert result['status'] == 'fresh', result
-    assert result['reason'] == 'documentation_only'
+    assert 'no build_map glob' in result['reason']
 
 
-def test_lint_only_falls_through_to_ledger_scan_for_matching_build(
+def test_absent_manifest_is_irrelevant_to_the_gate(
     plan_context, monkeypatch, tmp_path
 ) -> None:
-    """A mixed (lint + build) plan with a matching build still resolves fresh.
+    """No ``execution.toon`` at all changes nothing — the manifest is not read.
 
-    Confirms the disabled-exemption fall-through reaches the ORDINARY ledger gate:
-    a mixed plan with a successful build for the current sha passes on its own
-    freshness proof, with no lint_only reason attached.
+    The retired predicate degraded to "no exemption" on a missing manifest; the
+    gate now never opens the file, so its absence is simply not a signal.
     """
-    plan_dir = plan_context.plan_dir_for('freshness-lint-mixed-fresh')
+    plan_dir = plan_context.plan_dir_for('freshness-nb-no-manifest')
     _write_status(plan_dir)
-    _write_manifest(
-        plan_dir, verification_steps=['quality-gate', 'verify:module-tests']
+    # Deliberately do NOT write execution.toon.
+    _stub_verdict(
+        monkeypatch, {'decision': 'not_necessary', 'reason': 'plan footprint is empty'}
     )
+    _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
+    _stub_ledger_path(monkeypatch, tmp_path / 'never-written.jsonl')
+
+    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-nb-no-manifest'))
+
+    assert result['status'] == 'fresh', result
+    assert result['reason'] == 'plan footprint is empty'
+
+
+def test_malformed_manifest_is_irrelevant_to_the_gate(
+    plan_context, monkeypatch, tmp_path
+) -> None:
+    """An unparseable manifest cannot affect the gate — it is never parsed."""
+    plan_dir = plan_context.plan_dir_for('freshness-nb-bad-manifest')
+    _write_status(plan_dir)
+    (plan_dir / 'execution.toon').write_text(
+        '{ this is not valid toon\n  : : :\n', encoding='utf-8'
+    )
+    _stub_verdict(monkeypatch, {'decision': 'build'})
     _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
     ledger_path = _write_ledger(tmp_path, [_build_entry(worktree_sha=_CURRENT_SHA)])
     _stub_ledger_path(monkeypatch, ledger_path)
 
-    result = cmd_pre_commit_verify_freshness(
-        Namespace(plan_id='freshness-lint-mixed-fresh')
-    )
+    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-nb-bad-manifest'))
 
     assert result['status'] == 'fresh', result
-    assert result.get('reason') not in ('documentation_only', 'lint_only')
     assert result['worktree_sha'] == _CURRENT_SHA

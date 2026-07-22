@@ -58,9 +58,7 @@ from _manifest_core import (
 )
 from _manifest_decide import (
     _decide,  # noqa: F401
-    _looks_docs_only,  # noqa: F401
     _read_recipe_source,  # noqa: F401
-    _read_request_aspect,  # noqa: F401
     _read_task_queue_active,  # noqa: F401
     _split_csv,  # noqa: F401
 )
@@ -81,7 +79,6 @@ from _manifest_lanes import (
     _read_frontmatter_lane,  # noqa: F401
 )
 from _manifest_rules import (
-    _BUILD_DROPPING_ASPECTS,  # noqa: F401
     _CEREMONY_FINALIZE_DEFAULT,  # noqa: F401
     _CEREMONY_FINALIZE_GATES,  # noqa: F401
     _CEREMONY_FINALIZE_STEP_MAP,  # noqa: F401
@@ -94,7 +91,6 @@ from _manifest_rules import (
     _SIMPLIFY_CHANGE_TYPES,  # noqa: F401
     _SIMPLIFY_OWNER_STEP,  # noqa: F401
     _VERB_TO_PHASE_5_STEP,  # noqa: F401
-    _apply_aspect_step_dropping,  # noqa: F401
     _apply_ceremony_finalize_selection,  # noqa: F401
     _apply_code_step_inactive,  # noqa: F401
     _apply_commit_push_disabled,  # noqa: F401
@@ -162,7 +158,7 @@ from marketplace_paths import (
 from toon_parser import parse_toon
 
 # =============================================================================
-# Decision Engine (seven-row matrix from standards/decision-rules.md)
+# Decision Engine (six-row matrix from standards/decision-rules.md)
 # =============================================================================
 
 
@@ -438,11 +434,16 @@ def _log_candidate_source(plan_id: str, phase_key: str, source: str) -> None:
     _emit_decision_log(plan_id, message)
 
 
-def _log_pre_push_quality_gate_omitted(plan_id: str) -> None:
-    """Emit the decision-log entry for the ``pre_push_quality_gate_inactive`` pre-filter."""
+def _log_pre_push_quality_gate_omitted(plan_id: str, reason: str) -> None:
+    """Emit the decision-log entry for the ``pre_push_quality_gate_inactive`` pre-filter.
+
+    ``reason`` is the verdict's OWN ``reason`` text, threaded through from the
+    ``build-decision`` consult. The emitter never composes a reason of its own —
+    a hardcoded string can state a reason the verdict did not give.
+    """
     message = (
         '(plan-marshall:manage-execution-manifest:compose) pre-push-quality-gate omitted — '
-        'no build_map globs or no footprint match'
+        f'{reason}'
     )
     _emit_decision_log(plan_id, message)
 
@@ -532,36 +533,41 @@ def _resolve_footprint(plan_id: str) -> list[str]:
     return sorted(footprint)
 
 
-def _apply_pre_push_quality_gate_inactive(phase_6_candidates: list[str], plan_id: str) -> tuple[list[str], bool]:
+def _apply_pre_push_quality_gate_inactive(
+    phase_6_candidates: list[str], plan_id: str
+) -> tuple[list[str], bool, str]:
     """Pre-filter: drop ``pre-push-quality-gate`` when the build decision says so.
 
-    Activation is the centralized build-necessity decision owned by
-    ``extension_base.should_execute_build`` — the single home for the
-    "is a build necessary?" verdict the four former consumer sites each
-    re-derived. The decision is a pure function of the ``build.map``
-    globs and the live plan footprint: it returns ``decision: build`` when the
-    footprint touches a registered build glob, and ``decision: not_necessary``
-    (with a log-friendly ``reason``) when the build_map registers no globs, the
-    footprint is empty, or the footprint intersects no build glob.
+    Activation is a pure CONSUMPTION of the sole build/no-build authority
+    (``extension_base.should_execute_build``); this pre-filter derives nothing of
+    its own. The question it asks is plan-wide — "does anything in this footprint
+    need a build?" — so it consults the authority COMMAND-FREE and MUST NOT pick
+    a representative command; the verdict does not vary by command, and choosing
+    one is the retired anti-pattern ADR-004's amendment names.
 
     When the verdict is ``not_necessary``, ``pre-push-quality-gate`` is removed
     from ``phase_6_candidates``. The pre-filter is a no-op when
     ``pre-push-quality-gate`` is already absent (e.g., already filtered by
-    ``_apply_commit_push_disabled``). Returns the filtered list plus a flag
-    indicating whether the pre-filter fired (i.e., the step was active in the
-    input but inactive after the check).
+    ``_apply_commit_push_disabled``). Returns the filtered list, a flag
+    indicating whether the pre-filter fired, and the verdict's own ``reason``
+    (empty string when the pre-filter did not fire) so the caller's decision-log
+    entry states the reason the verdict actually gave.
     """
     if 'pre-push-quality-gate' not in phase_6_candidates:
-        return phase_6_candidates, False
+        return phase_6_candidates, False, ''
 
     from extension_base import should_execute_build
 
-    verdict = should_execute_build('quality-gate', plan_id)
+    verdict = should_execute_build(None, plan_id)
     if verdict.get('decision') != 'build':
-        return [s for s in phase_6_candidates if s != 'pre-push-quality-gate'], True
+        return (
+            [s for s in phase_6_candidates if s != 'pre-push-quality-gate'],
+            True,
+            verdict.get('reason', ''),
+        )
 
     # Build is necessary — keep the step.
-    return phase_6_candidates, False
+    return phase_6_candidates, False, ''
 
 
 def _apply_pre_submission_self_review_inactive(phase_6_candidates: list[str], plan_id: str) -> tuple[list[str], bool]:
@@ -1421,7 +1427,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         phase_6_candidates = _split_csv(args.phase_6_steps, DEFAULT_PHASE_6_STEPS)
 
     # Boundary normalization: callers (notably marshal.json) may pass step IDs
-    # with the optional ``default:`` prefix; the seven-row matrix, the pre-filter
+    # with the optional ``default:`` prefix; the six-row matrix, the pre-filter
     # helpers, and the bundle-self-modification matcher all compare against bare
     # names. Normalize once at the boundary so
     # every downstream site can use plain `s in {...}` / `s == 'foo'` checks
@@ -1432,7 +1438,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     phase_5_candidates = [canonicalize_step_key(s) for s in phase_5_candidates]
     phase_6_candidates = [canonicalize_step_key(s) for s in phase_6_candidates]
 
-    # Pre-filters run before the seven-row matrix. They are orthogonal to the
+    # Pre-filters run before the six-row matrix. They are orthogonal to the
     # row matrix's change-type / scope / recipe inputs and operate on the
     # candidate list. The order is fixed and documented in
     # standards/decision-rules.md:
@@ -1455,9 +1461,11 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # dedicated decision-log line per fired pre-filter in addition to the row
     # log line emitted by _log_decision below.
     phase_6_candidates, commit_push_omitted = _apply_commit_push_disabled(phase_6_candidates, commit_and_push)
-    phase_6_candidates, pre_push_quality_gate_omitted = _apply_pre_push_quality_gate_inactive(
-        phase_6_candidates, plan_id
-    )
+    (
+        phase_6_candidates,
+        pre_push_quality_gate_omitted,
+        pre_push_quality_gate_reason,
+    ) = _apply_pre_push_quality_gate_inactive(phase_6_candidates, plan_id)
     phase_6_candidates, pre_submission_self_review_omitted = _apply_pre_submission_self_review_inactive(
         phase_6_candidates, plan_id
     )
@@ -1472,7 +1480,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
 
     # Pre-filter 4 (simplify_inactive) consults change_type + affected_files_count,
     # both resolved above; it runs after the three candidate-narrowing pre-filters
-    # and before the seven-row matrix per standards/decision-rules.md.
+    # and before the six-row matrix per standards/decision-rules.md.
     phase_6_candidates, simplify_omitted = _apply_simplify_inactive(
         phase_6_candidates, args.change_type, affected_files_count
     )
@@ -1490,7 +1498,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # steps by scope: surgical drops the three review/audit steps, single_module
     # drops only plan-retrospective, and the drop_review_on_scope_gate escape
     # hatch additionally drops automatic-review. It runs after the other
-    # pre-filters and before the seven-row matrix, so it only ever narrows the
+    # pre-filters and before the six-row matrix, so it only ever narrows the
     # candidate list. automatic-review is dropped ONLY via the explicit override —
     # never by the implicit scope gate — so the bot-review invariant stays intact
     # by default. See standards/decision-rules.md § Pre-Filter: scope_gated_finalize.
@@ -1547,7 +1555,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         envelope_count = max(1, int(raw_envelope_count))
     body['phase_5']['envelope_count'] = envelope_count
 
-    # execution_tier routing runs AFTER the seven-row matrix and BEFORE
+    # execution_tier routing runs AFTER the six-row matrix and BEFORE
     # lane resolution. It walks plan tasks, classifies each
     # ``verification.commands`` entry via ``architecture resolve``, and
     # branches on ``execution_tier``:
@@ -1567,7 +1575,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     _log_execution_tier_routing(plan_id, mutated_tasks, list(body['phase_5'].get('verification_steps', [])))
 
     # Generic footprint pre-filter for canonical-verify steps. Runs AFTER the
-    # seven-row matrix and execution_tier routing have produced the final
+    # six-row matrix and execution_tier routing have produced the final
     # phase-5 verification list, so it sees every canonical-verify step that
     # will be persisted (including any appended by orchestrator-tier routing).
     # It drops a ``default:verify:{canonical}`` step whose derived role is a
@@ -1590,42 +1598,8 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
             f'dropped {canonical_verify_dropped} from phase_5.verification_steps (no matching footprint role)',
         )
 
-    # Request-aspect step dropping. Runs AFTER the seven-row matrix,
-    # execution_tier routing, and the canonical-verify footprint pre-filter have
-    # produced the final phase-5 verification list. When the request was
-    # classified ``analysis`` / ``planning`` by the ``manage-config
-    # aspect-classify`` verb, the ENTIRE phase-5 verification list is dropped —
-    # not just the canonical build/quality-gate/test steps but also every
-    # external (``project:`` / ``bundle:skill``) step, because a partial
-    # role-only drop would leave an external None-role step in place and
-    # re-trigger phase-5-execute Step 11b's quality-gate sweep (see
-    # ``_apply_aspect_step_dropping`` docstring). The aspect is resolved by
-    # precedence: an explicit ``--aspect`` argument wins; when it is absent the
-    # composer self-reads ``status.metadata.request_aspect`` via
-    # ``_read_request_aspect(plan_id)`` (mirroring the ``recipe_key`` /
-    # ``_read_recipe_source`` self-read precedent), because ``phase-4-plan``'s
-    # compose invocation does not forward ``--aspect``. Only an
-    # ``implementation`` aspect (the classifier's safe sub-threshold fallback)
-    # or an absent argument with unset/``implementation`` persisted metadata is
-    # a no-op: every gate is retained. ``role_cache`` is passed through for
-    # call-site symmetry with the other role-driven filters only — the
-    # full-clear path does not consult it.
-    aspect = getattr(args, 'aspect', None) or _read_request_aspect(plan_id)
-    body['phase_5']['verification_steps'], aspect_dropped = _apply_aspect_step_dropping(
-        list(body['phase_5'].get('verification_steps', [])),
-        aspect,
-        canonical_verify_role_cache,
-    )
-    if aspect_dropped:
-        _emit_decision_log(
-            plan_id,
-            '(plan-marshall:manage-execution-manifest:compose) aspect_step_dropping — '
-            f'aspect={aspect}, dropped {aspect_dropped} from phase_5.verification_steps '
-            '(analysis/planning request has no build/test footprint)',
-        )
-
     # Domain-seeded verify-step resolvability filter. Runs AFTER the canonical-verify
-    # footprint pre-filter and aspect dropping, and BEFORE per-step tier stamping, over
+    # footprint pre-filter, and BEFORE per-step tier stamping, over
     # the FINAL phase-5 verification list. A domain-seeded canonical-verify step (a
     # verify:{canonical} whose canonical is NOT a core built-in in _CANONICAL_TO_ROLE —
     # e.g. default:verify:arch-gate, appended by skill-domains configure on the
@@ -1653,8 +1627,8 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         )
 
     # Per-step execution_tier stamping. Runs AFTER the final phase-5 verification
-    # list is settled (seven-row matrix, execution_tier COMMAND routing,
-    # canonical-verify footprint pre-filter, and aspect dropping) so every step
+    # list is settled (six-row matrix, execution_tier COMMAND routing, and the
+    # canonical-verify footprint pre-filter) so every step
     # that will be persisted carries a resolved tier. Each selected phase-5
     # verification step is resolved to a deterministic ``execution_tier``
     # (``per_task`` | ``orchestrator``) via ``architecture resolve`` and recorded
@@ -1845,7 +1819,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     if commit_push_omitted:
         _log_commit_push_omitted(plan_id)
     if pre_push_quality_gate_omitted:
-        _log_pre_push_quality_gate_omitted(plan_id)
+        _log_pre_push_quality_gate_omitted(plan_id, pre_push_quality_gate_reason)
     if pre_submission_self_review_omitted:
         _log_pre_submission_self_review_omitted(plan_id)
     if simplify_omitted:
@@ -1907,8 +1881,6 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         'ceremony_finalize_gates': ceremony_finalize_gates,
         'ceremony_finalize_forced_in': [c['step'] for c in ceremony_forced_in],
         'ceremony_finalize_forced_out': [c['step'] for c in ceremony_forced_out],
-        'aspect': aspect,
-        'aspect_step_dropping_dropped': aspect_dropped,
         'execution_profile': execution_profile,
         'lane_dropped': lane_dropped,
         'lane_warnings': [{'step': s, 'warning': w} for s, w in lane_warnings],
@@ -2219,14 +2191,6 @@ def _build_parser() -> argparse.ArgumentParser:
         help='Resolved commit_and_push from phase-5-execute config (true|false). '
         'When omitted defaults to true. When false, push (and pre-push-quality-gate '
         'and pre-submission-self-review) is omitted from phase_6.steps.',
-    )
-    compose_parser.add_argument(
-        '--aspect',
-        default=None,
-        help='Resolved request aspect from the aspect-classify verb (analysis|planning|implementation). '
-        'When analysis or planning, build / quality-gate / test (module-tests) steps are dropped from '
-        'the composed phase_5 verification list (analysis/planning requests carry no production/test '
-        'footprint to gate). When omitted or implementation, every build/verify gate is retained.',
     )
 
     read_parser = subparsers.add_parser('read', help='Read execution.toon as TOON', allow_abbrev=False)

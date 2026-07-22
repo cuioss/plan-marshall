@@ -141,7 +141,7 @@ The set of Phase 5 verification steps that fire — and whether the entire execu
 4. **If `phase_5.verification_steps` is empty** (e.g., docs-only plans where the manifest composer dropped all verification steps) — Step 11b fires no quality sweep at all. The phase still completes normally; absence of a sweep is a valid manifest-driven outcome.
 5. **If `phase_5.verification_steps` is non-empty** — Step 11b appends exactly **one** canonical `quality-gate` invocation as the end-of-phase sweep, regardless of whether `quality-gate` already appears in the list. This is the single source of "did the phase end clean?" signal.
 
-**Per-doc skip logic is forbidden in this skill's standards.** The single parameterized built-in step doc (`canonical_verify.md`) carries no embedded skip rules — every "should this step run" decision is encoded in `manage-execution-manifest`'s seven-row decision matrix (plus the `_apply_canonical_verify_inactive` footprint pre-filter) and flows into the manifest's `verification_steps` list. If a step appears in the manifest, it runs; if it does not, it does not.
+**Per-doc skip logic is forbidden in this skill's standards.** The single parameterized built-in step doc (`canonical_verify.md`) carries no embedded skip rules — every "should this step run" decision is encoded in `manage-execution-manifest`'s six-row decision matrix (plus the `_apply_canonical_verify_inactive` footprint pre-filter) and flows into the manifest's `verification_steps` list. If a step appears in the manifest, it runs; if it does not, it does not.
 
 The `manage-execution-manifest` skill's [decision-rules.md](../../manage-execution-manifest/standards/decision-rules.md) is the authoritative table for which step combinations fire under which inputs.
 

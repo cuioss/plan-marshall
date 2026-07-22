@@ -16,12 +16,15 @@ default seed is write-once (an existing build_map is preserved); ``seed
 --force`` clears any existing build_map and re-derives a clean one from the
 current project state.
 
-The ``build-decision`` verb is the centralized build-necessity decision API: it
-returns a structured ``build`` / ``not_necessary`` verdict (the latter carrying a
-log-friendly ``reason``) by delegating to the build-system-owned
-``should_execute_build`` helper in ``script-shared``. The four former consumer
-sites share this one entry point instead of each re-deriving the decision from
-the build_map globs + live footprint.
+The ``build-decision`` verb is the sole build/no-build authority's CLI surface:
+it returns a structured ``build`` / ``not_necessary`` verdict (the latter
+carrying a log-friendly ``reason``) by delegating to the build-system-owned
+``should_execute_build`` helper in ``script-shared``. Every consumer site shares
+this one entry point instead of deciding build necessity from any other input
+signal. ``--command`` is an optional label on the question, not an input to it:
+omit it to ask the command-free plan-wide question and receive ``{decision,
+reason}`` with no ``canonical_command`` key. See ADR-004 § "Amendment:
+``build-decision`` is the sole build/no-build authority".
 """
 
 import argparse
@@ -122,7 +125,7 @@ def cmd_build_map_drift(args: argparse.Namespace) -> dict:
 
 
 def cmd_build_decision(args: argparse.Namespace) -> dict:
-    """Return the centralized build-necessity verdict for a canonical command.
+    """Return the build-necessity verdict for the plan's live footprint.
 
     Thin wrapper over the build-system-owned ``should_execute_build`` helper in
     ``script-shared`` (``extension_base``). The verdict is a pure function of the
@@ -133,9 +136,11 @@ def cmd_build_decision(args: argparse.Namespace) -> dict:
       registers no globs, the footprint is empty, or the footprint intersects no
       build glob.
 
-    All four former consumer sites (pre-push-quality-gate activation,
-    phase-4-plan per-task verification derivation, the per-bundle classify logic)
-    share this one entry point so the decision is never re-derived inline.
+    ``--command`` is optional and is passed straight through as the verdict's
+    echo-only label: omit it for the command-free plan-wide verdict (no
+    ``canonical_command`` key in the result), supply it to have the label echoed
+    back. Every consumer site shares this one entry point so build necessity is
+    never decided from another signal.
     """
     from extension_base import should_execute_build
 
@@ -143,7 +148,7 @@ def cmd_build_decision(args: argparse.Namespace) -> dict:
     if not plan_id:
         return {'status': 'error', 'error': 'build-decision requires --plan-id (or --audit-plan-id)'}
     try:
-        verdict = should_execute_build(args.command, plan_id)
+        verdict = should_execute_build(getattr(args, 'command', None), plan_id)
         return {'status': 'success', **verdict}
     except Exception as e:
         return {'status': 'error', 'error': str(e)}

@@ -8,9 +8,19 @@ and scores the overlap of the request tokens against three fixed keyword tables
 (analysis / planning / implementation). The higher of analysis/planning is the
 candidate aspect; it is accepted only when its confidence clears the
 ``>= --threshold`` bar (default ``0.7``) AND beats the implementation overlap.
-Below the threshold the verb returns ``aspect: implementation`` — the safe
-fallback that keeps the build / quality-gate / test gates in the composed
-manifest.
+Below the threshold the verb returns ``aspect: implementation`` — the
+conservative default.
+
+Scope: the verb classifies request INTENT and nothing else. It has NO say in
+whether a change needs a build — that is the exclusive province of the
+``build-decision`` verdict over the ``build.map`` globs and the live footprint
+(ADR-004 § "Amendment: ``build-decision`` is the sole build/no-build
+authority"). The classifier reads only the request narrative, which is
+structurally blind to the footprint, so it can neither decide nor influence
+build necessity. The regression section below pins that the retired
+build-facing output (``drops_build_steps``, ``negative_constraint_matched``, and
+the raw-text negation-phrase override that produced them) is gone and stays
+gone.
 
 Scoring note (load-bearing for the assertions below): unlike ``recipe-match``'s
 ``0.6 * keyword + 0.25 * domain + 0.15 * scope`` blend (capped at 0.6 from
@@ -25,17 +35,6 @@ The verb performs NO LLM call and NO plan-scoped read — only the free-form
 request text drives scoring. Tier 2 (direct import) tests with a Tier 3
 subprocess test for CLI plumbing / the constructed-argv assertion at the
 argparse boundary.
-
-Negation override (exception to the sub-threshold fallback): an explicit
-negative build constraint in the RAW request text — a fixed phrase table
-(``no build``, ``docs only``, …) matched case-insensitively BEFORE
-tokenization — overrides the implementation fallback. ``recipe_scoring.tokenize``
-drops ``no`` (length filter) and ``build`` is itself an implementation keyword,
-so the override must key on the phrase, not the tokens. On a match the verb
-returns the higher-scored non-implementation candidate with
-``drops_build_steps: true`` and reports the phrase via
-``negative_constraint_matched``; without a match, behavior is byte-identical
-to the threshold contract above (the field is absent).
 """
 
 from argparse import Namespace
@@ -48,20 +47,23 @@ from conftest import load_script_module, run_script
 _cmd_aspect_classify_mod = load_script_module('plan-marshall', 'manage-config', '_cmd_aspect_classify.py')
 cmd_aspect_classify = _cmd_aspect_classify_mod.cmd_aspect_classify
 
-# The build-decision handler + its extension_base seam — used by the
-# non-contradiction invariant test below. extension_base lives in script-shared
-# and is on sys.path (conftest wires every skill scripts dir, including the
-# extension/ subdir); the handler resolves should_execute_build from it at call
-# time, so monkeypatching helpers on this same module object is what the handler
-# actually observes (mirrors test_build_decision.py).
-import extension_base  # noqa: E402
-
-_cmd_build_map_mod = load_script_module('plan-marshall', 'manage-config', '_cmd_build_map.py')
-cmd_build_decision = _cmd_build_map_mod.cmd_build_decision
-
 
 def _ns(request_text: str, threshold: float = 0.7) -> Namespace:
     return Namespace(request_text=request_text, threshold=threshold)
+
+
+# The complete set of keys the verb's result may carry. Pinned as a set so a
+# future re-introduction of a build-facing field fails here rather than quietly
+# handing the classifier a second say in build necessity.
+_RESULT_KEYS = {
+    'status',
+    'request_tokens',
+    'threshold',
+    'aspect',
+    'confidence',
+    'scores',
+    'breakdown',
+}
 
 
 # =============================================================================
@@ -81,7 +83,6 @@ def test_pure_analysis_request_classifies_analysis():
     assert result['status'] == 'success'
     assert result['aspect'] == 'analysis'
     assert result['confidence'] == 1.0
-    assert result['drops_build_steps'] is True
 
 
 def test_pure_planning_request_classifies_planning():
@@ -96,7 +97,6 @@ def test_pure_planning_request_classifies_planning():
     assert result['status'] == 'success'
     assert result['aspect'] == 'planning'
     assert result['confidence'] == 1.0
-    assert result['drops_build_steps'] is True
 
 
 def test_pure_implementation_request_classifies_implementation():
@@ -106,7 +106,6 @@ def test_pure_implementation_request_classifies_implementation():
     assert result['status'] == 'success'
     assert result['aspect'] == 'implementation'
     assert result['confidence'] == 1.0
-    assert result['drops_build_steps'] is False
 
 
 def test_planning_outranks_analysis_when_both_present():
@@ -119,7 +118,6 @@ def test_planning_outranks_analysis_when_both_present():
     result = cmd_aspect_classify(_ns('design roadmap architecture analyze'))
 
     assert result['aspect'] == 'planning'
-    assert result['drops_build_steps'] is True
     assert result['scores']['planning'] > result['scores']['analysis']
 
 
@@ -132,14 +130,13 @@ def test_below_threshold_request_falls_back_to_implementation():
     """A request whose analysis overlap is below 0.7 falls back to implementation.
 
     Two analysis tokens out of five total → analysis overlap 0.4 < 0.7, so the
-    safe implementation fallback applies even though no implementation keyword is
-    present.
+    conservative implementation fallback applies even though no implementation
+    keyword is present.
     """
     # 2 analysis keywords (analyze, audit) + 3 non-keyword distinct tokens.
     result = cmd_aspect_classify(_ns('analyze audit xylophone marmalade obsidian'))
 
     assert result['aspect'] == 'implementation'
-    assert result['drops_build_steps'] is False
     assert result['scores']['analysis'] < 0.7
 
 
@@ -149,16 +146,14 @@ def test_no_keyword_request_falls_back_to_implementation():
 
     assert result['aspect'] == 'implementation'
     assert result['confidence'] == 0.0
-    assert result['drops_build_steps'] is False
 
 
 def test_empty_request_falls_back_to_implementation():
-    """An empty request classifies as implementation — the safe gate-keeping default."""
+    """An empty request classifies as implementation — the conservative default."""
     result = cmd_aspect_classify(_ns(''))
 
     assert result['aspect'] == 'implementation'
     assert result['confidence'] == 0.0
-    assert result['drops_build_steps'] is False
 
 
 def test_candidate_must_beat_implementation_overlap():
@@ -172,7 +167,6 @@ def test_candidate_must_beat_implementation_overlap():
 
     assert result['aspect'] == 'implementation'
     assert result['scores']['implementation'] > result['scores']['analysis']
-    assert result['drops_build_steps'] is False
 
 
 # =============================================================================
@@ -192,7 +186,6 @@ def test_threshold_boundary_exactly_at_default_accepts():
 
     assert result['scores']['analysis'] == 0.7
     assert result['aspect'] == 'analysis'
-    assert result['drops_build_steps'] is True
 
 
 def test_just_below_threshold_falls_back():
@@ -205,7 +198,6 @@ def test_just_below_threshold_falls_back():
 
     assert result['scores']['analysis'] == 0.6
     assert result['aspect'] == 'implementation'
-    assert result['drops_build_steps'] is False
 
 
 def test_custom_threshold_below_score_accepts_aspect():
@@ -219,7 +211,6 @@ def test_custom_threshold_below_score_accepts_aspect():
     assert result['threshold'] == 0.5
     assert result['scores']['analysis'] == 0.5
     assert result['aspect'] == 'analysis'
-    assert result['drops_build_steps'] is True
 
 
 def test_custom_threshold_above_score_falls_back():
@@ -229,7 +220,6 @@ def test_custom_threshold_above_score_falls_back():
     assert result['threshold'] == 1.5
     assert result['scores']['analysis'] == 1.0
     assert result['aspect'] == 'implementation'
-    assert result['drops_build_steps'] is False
 
 
 # =============================================================================
@@ -250,26 +240,31 @@ def test_result_carries_full_breakdown_and_scores():
     assert breakdown['implementation']['matched_keywords'] == []
 
 
-# =============================================================================
-# Negation override — explicit negative build constraint (Tier 2)
-# =============================================================================
+def test_result_carries_no_build_facing_field():
+    """The result surface is exactly the intent fields — nothing build-facing.
 
-
-def test_negation_override_576_shape_docs_review_with_no_build():
-    """The TokenSheriff #576 shape: sub-threshold docs review WITH 'no build'.
-
-    A docs-review request whose analysis overlap is far below 0.7 would fall
-    back to ``implementation`` — but the explicit 'no build' constraint
-    overrides the fallback: non-implementation aspect, ``drops_build_steps:
-    true``, and the matched phrase surfaced for observability.
+    ``drops_build_steps`` and ``negative_constraint_matched`` were this verb's
+    build-facing output: a downstream composer read them and dropped build steps
+    on the strength of a NARRATIVE read, which is a second build/no-build oracle
+    running beside the footprint authority. Pinning the key set as a whole (not
+    just the two retired names) means any newly-invented build-facing field also
+    fails here.
     """
-    request = 'Review the getting-started docs wording for accuracy, no build needed'
-    result = cmd_aspect_classify(_ns(request))
+    result = cmd_aspect_classify(_ns('analyze audit investigate evaluate'))
 
-    assert result['scores']['analysis'] < 0.7
-    assert result['aspect'] in ('analysis', 'planning')
-    assert result['drops_build_steps'] is True
-    assert result['negative_constraint_matched'] == 'no build'
+    assert set(result) == _RESULT_KEYS
+
+
+# =============================================================================
+# Regression — the narrative negation override is retired
+#
+# The verb used to scan the RAW request text for a fixed negation-phrase table
+# ('no build', 'docs only', …) and, on a match, flip the aspect away from
+# implementation and emit ``drops_build_steps: true``. That override let a
+# sentence in a request veto the build — a build/no-build claim derived from
+# prose rather than from the footprint. It is deleted; these cases pin that a
+# request SAYING it needs no build changes nothing about the classification.
+# =============================================================================
 
 
 @pytest.mark.parametrize(
@@ -286,93 +281,61 @@ def test_negation_override_576_shape_docs_review_with_no_build():
         'documentation-only',
     ],
 )
-def test_each_representative_negation_phrase_triggers_override(phrase):
-    """Every representative negation phrase fires the override and is reported.
+def test_negation_phrase_does_not_override_the_classification(phrase):
+    """No negation phrase promotes a sub-threshold request off the fallback.
 
-    The request embeds the phrase in otherwise non-keyword text, so all aspect
-    scores stay far below the threshold — only the negation override can flip
-    ``drops_build_steps`` to true.
+    The request embeds the phrase in otherwise non-keyword text, so every aspect
+    score stays far below the threshold. Under the retired override this returned
+    a non-implementation aspect; it must now take the ordinary fallback.
     """
     result = cmd_aspect_classify(_ns(f'xylophone marmalade {phrase} obsidian'))
 
-    assert result['aspect'] in ('analysis', 'planning')
-    assert result['drops_build_steps'] is True
-    assert result['negative_constraint_matched'] == phrase
-
-
-def test_negation_phrase_matches_case_insensitively():
-    """The phrase table matches against the lower-cased raw request text."""
-    result = cmd_aspect_classify(_ns('Docs ONLY change to the README'))
-
-    assert result['drops_build_steps'] is True
-    assert result['negative_constraint_matched'] == 'docs only'
-
-
-def test_negation_free_sub_threshold_request_unchanged():
-    """A negation-free sub-threshold request still falls back to implementation.
-
-    Byte-identical to the pre-override contract: implementation fallback,
-    ``drops_build_steps: false``, and NO ``negative_constraint_matched`` field
-    in the result.
-    """
-    result = cmd_aspect_classify(_ns('analyze audit xylophone marmalade obsidian'))
-
     assert result['aspect'] == 'implementation'
-    assert result['drops_build_steps'] is False
     assert 'negative_constraint_matched' not in result
+    assert 'drops_build_steps' not in result
 
 
-def test_longest_negation_phrase_wins_when_both_no_build_and_no_builds_present():
-    """When the request contains BOTH 'no build' and 'no builds', the longer wins.
+def test_negation_phrase_does_not_change_a_docs_review_request():
+    """The TokenSheriff #576 shape: sub-threshold docs review WITH 'no build'.
 
-    'no builds' is a superstring of 'no build'; the sort-by-length-descending
-    precedence must report 'no builds' (the more specific phrase), not its
-    'no build' prefix.
+    This request is what the override existed to catch. Its build implications
+    are now settled by the footprint at run time, not by the sentence, so the
+    classifier reports the same conservative fallback it reports for any other
+    sub-threshold request.
     """
-    result = cmd_aspect_classify(
-        _ns('Refactor the docs; no build now and no builds later either'),
-    )
+    request = 'Review the getting-started docs wording for accuracy, no build needed'
+    result = cmd_aspect_classify(_ns(request))
 
-    assert result['drops_build_steps'] is True
-    assert result['negative_constraint_matched'] == 'no builds'
-
-
-def test_no_build_substring_inside_larger_token_does_not_trigger_override():
-    """'mono build' must NOT match 'no build' — word boundaries block the substring hit.
-
-    Before the word-boundary fix, 'mono build' contained 'no build' as a
-    substring ('mo[no build]') and falsely triggered the negation override.
-    The request carries no genuine negation, so it must fall back to the
-    implementation gate-keeping default.
-    """
-    result = cmd_aspect_classify(_ns('Set up a mono build for the workspace'))
-
+    assert result['scores']['analysis'] < 0.7
     assert result['aspect'] == 'implementation'
-    assert result['drops_build_steps'] is False
-    assert 'negative_constraint_matched' not in result
+    assert set(result) == _RESULT_KEYS
 
 
-def test_no_verify_substring_inside_larger_token_does_not_trigger_override():
-    """'chrono verify' must NOT match 'no verify' — word boundaries block the substring hit."""
-    result = cmd_aspect_classify(_ns('Add a chrono verify step to the pipeline'))
+def test_negation_phrase_does_not_survive_tokenization_hostile_text():
+    """Raw-text phrase matching is gone — only the token set drives the verdict.
 
-    assert result['drops_build_steps'] is False
-    assert 'negative_constraint_matched' not in result
-
-
-def test_negation_override_survives_tokenization_hostile_text():
-    """The phrase match keys on the raw text, not the token set.
-
-    ``recipe_scoring.tokenize`` drops 'no' (length filter) and keeps 'build'
-    (an implementation keyword), so the token set of this request looks
-    implementation-shaped — yet the raw-text phrase match still sees the
-    negation.
+    ``recipe_scoring.tokenize`` drops 'no' (length filter) and keeps 'build' (an
+    implementation keyword). The retired override read the raw text and so could
+    see a negation the tokens cannot express; the verb now sees only the tokens,
+    which here are implementation-shaped.
     """
     result = cmd_aspect_classify(_ns('You need no build because the docs already explain it'))
 
-    assert result['aspect'] in ('analysis', 'planning')
-    assert result['drops_build_steps'] is True
-    assert result['negative_constraint_matched'] == 'no build'
+    assert result['aspect'] == 'implementation'
+    assert set(result) == _RESULT_KEYS
+
+
+def test_request_text_mentioning_a_build_is_scored_by_tokens_alone():
+    """Whether a request says 'build' or 'no build', only token overlap counts.
+
+    The two texts differ solely by the negation word that the retired override
+    keyed on, and ``tokenize`` drops it — so the classifier must return identical
+    results. A divergence would mean raw-text phrase inspection had returned.
+    """
+    affirmative = cmd_aspect_classify(_ns('You need a build for the docs'))
+    negated = cmd_aspect_classify(_ns('You need no build for the docs'))
+
+    assert affirmative == negated
 
 
 # =============================================================================
@@ -394,7 +357,7 @@ def test_cli_aspect_classify_argv_boundary(plan_context, tmp_path):
     data = result.toon()
     assert data['status'] == 'success'
     assert data['aspect'] == 'analysis'
-    assert data['drops_build_steps'] is True
+    assert 'drops_build_steps' not in data
 
 
 def test_cli_aspect_classify_custom_threshold_argv(plan_context, tmp_path):
@@ -425,14 +388,15 @@ def test_cli_aspect_classify_missing_request_text_rejected(plan_context, tmp_pat
 
 
 # =============================================================================
-# Purity regression — NO plan-scoped read surface (deliverable 2)
+# Purity regression — NO plan-scoped read surface
 #
-# aspect-classify is the compose-time narrative-only signal; it deliberately
-# performs no plan-scoped footprint read (the compose-time footprint is always
-# empty, so a read here would mis-drop). These tests guard against a future
-# re-introduction of a plan-scoped read: the CLI argument surface must expose
-# no --plan-id / footprint parameter, and classification is a pure function of
-# --request-text alone.
+# aspect-classify is a narrative-only signal and deliberately performs no
+# plan-scoped footprint read. Two independent reasons now: the compose-time
+# footprint is always empty (a read here would resolve [] and mislead), and
+# build necessity is not this verb's question at all. These tests guard against
+# a future re-introduction of a plan-scoped read: the CLI argument surface must
+# expose no --plan-id / footprint parameter, and classification is a pure
+# function of --request-text alone.
 # =============================================================================
 
 
@@ -485,59 +449,10 @@ def test_classification_is_pure_function_of_request_text():
     planning = cmd_aspect_classify(_ns('design roadmap architecture blueprint'))
     implementation = cmd_aspect_classify(_ns('implement build create refactor'))
 
-    assert (analysis['aspect'], analysis['drops_build_steps']) == ('analysis', True)
-    assert (planning['aspect'], planning['drops_build_steps']) == ('planning', True)
-    assert (implementation['aspect'], implementation['drops_build_steps']) == ('implementation', False)
+    assert analysis['aspect'] == 'analysis'
+    assert planning['aspect'] == 'planning'
+    assert implementation['aspect'] == 'implementation'
 
     # Determinism: a second identical call yields byte-identical output — there is
     # no plan-scoped / footprint state that could shift the result between calls.
     assert cmd_aspect_classify(_ns('analyze audit investigate evaluate')) == analysis
-
-
-# =============================================================================
-# Non-contradiction invariant (seam-level) — aspect-classify narrative vs the
-# run-time build-decision footprint gate (deliverable 2)
-#
-# The two signals are complementary and provably non-contradictory: for a
-# pure-doc footprint the RUN-TIME backstop (build-decision --command
-# quality-gate) returns not_necessary, while aspect-classify's COMPOSE-TIME
-# narrative output is unaffected (it reads no footprint). This test documents
-# and pins that division of labour at the seam.
-# =============================================================================
-
-
-def test_pure_doc_footprint_build_decision_not_necessary_while_aspect_unaffected(monkeypatch):
-    """Seam invariant: pure-doc footprint -> build-decision not_necessary; aspect narrative unchanged.
-
-    The run-time footprint backstop (D1) is the authority that skips the
-    whole-tree build for a docs-only footprint; aspect-classify's narrative
-    classification neither reads that footprint nor changes because of it.
-    """
-    # Arrange — a docs-only live footprint: production build globs registered,
-    # but the changed files intersect none of them.
-    monkeypatch.setattr(
-        extension_base, '_read_build_map_globs', lambda _root=None: ['scripts/*.py']
-    )
-    monkeypatch.setattr(
-        extension_base,
-        '_resolve_plan_footprint',
-        lambda _plan: ['doc/developer/build.adoc', 'marketplace/bundles/x/skills/y/SKILL.md'],
-    )
-
-    # Act — the run-time backstop over the same pure-doc footprint.
-    verdict = cmd_build_decision(
-        Namespace(command='quality-gate', plan_id='footprint-driven-build-gating', audit_plan_id=None)
-    )
-    # And the compose-time narrative signal over a representative docs-review request.
-    aspect = cmd_aspect_classify(_ns('Review the getting-started docs wording, no build needed'))
-
-    # Assert — the run-time backstop skips; the narrative signal is unaffected by
-    # the footprint (it drops on the negation phrase, not on any footprint read).
-    assert verdict['status'] == 'success'
-    assert verdict['decision'] == 'not_necessary'
-    assert verdict['reason']
-    assert aspect['drops_build_steps'] is True
-    assert aspect['negative_constraint_matched'] == 'no build'
-    # The two signals AGREE here (both point away from a build) and never contradict:
-    # narrative aspect-drop governs compose-time list membership, build-decision
-    # governs the run-time whole-tree build.

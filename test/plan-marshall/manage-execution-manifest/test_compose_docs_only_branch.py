@@ -193,16 +193,20 @@ def test_docs_only_pathed_plan_retains_matrix_verification_steps(plan_context):
     assert manifest['phase_5']['verification_steps'] == list(DEFAULT_PHASE_5_STEPS)
 
 
-def test_matrix_row_3_docs_only_still_empties_phase_5(plan_context):
-    """The seven-row matrix's Row 3 (``docs_only``) is unchanged and still empties phase 5.
+def test_matrix_docs_shaped_candidates_fall_through_to_the_scope_row(plan_context):
+    """The retired ``docs_only`` matrix row no longer intercepts a docs-shaped plan.
 
-    Removing the post-matrix advisory branch does NOT touch the matrix itself —
-    Row 3 keys on the candidate role heuristic (no module-tests/coverage roles)
-    and legitimately empties ``phase_5.verification_steps`` for a docs-shaped
-    candidate set. This test pins that the row-level docs-only handling survives
-    the post-matrix branch removal.
+    Row 3 used to key on a candidate-role HEURISTIC — "no module-tests and no
+    coverage role in the candidate list, so this must be docs" — and emptied
+    ``phase_5.verification_steps`` on that inference alone. That is a build/no-build
+    verdict derived from the shape of a step list rather than from the footprint,
+    which is exactly the second oracle ADR-004's amendment retires.
+
+    With the row gone, this input (``tech_debt`` + ``surgical``) falls through to
+    the scope row, which keeps the ``quality-gate`` candidate. Whether that gate
+    actually runs is settled later by the footprint authority, not here.
     """
-    plan_id = 'matrix-row-3-docs-only-survives'
+    plan_id = 'matrix-docs-shaped-falls-through'
     plan_dir = plan_context.plan_dir_for(plan_id)
     _seed_references(
         plan_dir,
@@ -215,10 +219,49 @@ def test_matrix_row_3_docs_only_still_empties_phase_5(plan_context):
             change_type='tech_debt',
             scope_estimate='surgical',
             affected_files_count=1,
-            phase_5_steps='quality-gate',
+            phase_5_steps='verify:quality-gate',
         )
     )
 
     assert result is not None and result['status'] == 'success'
-    assert result['rule_fired'] == 'docs_only'
-    assert result['phase_5']['verification_steps_count'] == 0
+    assert result['rule_fired'] == 'surgical_tech_debt'
+    assert result['phase_5']['verification_steps_count'] == 1
+
+
+def test_docs_only_rule_key_is_never_emitted(plan_context):
+    """No compose input can produce the retired ``docs_only`` rule key.
+
+    A rule key is the matrix's public contract, so its disappearance is the
+    observable proof the row is gone. Sweeping the representative change-type /
+    scope combinations — rather than the single input the old row fired on —
+    guards against the row being reintroduced under a different predicate.
+    """
+    plan_dir_seed = [
+        'marketplace/bundles/plan-marshall/skills/phase-3-outline/SKILL.md',
+    ]
+
+    for idx, (change_type, scope_estimate) in enumerate(
+        [
+            ('tech_debt', 'surgical'),
+            ('enhancement', 'surgical'),
+            ('enhancement', 'single_module'),
+            ('tech_debt', 'single_module'),
+            ('feature', 'multi_module'),
+        ]
+    ):
+        plan_id = f'docs-only-key-gone-{idx}'
+        plan_dir = plan_context.plan_dir_for(plan_id)
+        _seed_references(plan_dir, plan_dir_seed)
+
+        result = cmd_compose(
+            _compose_ns(
+                plan_id=plan_id,
+                change_type=change_type,
+                scope_estimate=scope_estimate,
+                affected_files_count=1,
+                phase_5_steps='quality-gate',
+            )
+        )
+
+        assert result is not None and result['status'] == 'success'
+        assert result['rule_fired'] != 'docs_only', (change_type, scope_estimate)

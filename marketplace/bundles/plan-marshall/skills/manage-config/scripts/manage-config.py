@@ -364,14 +364,18 @@ def main() -> int:
     # --- build-decision ---
     p_bd = subparsers.add_parser(
         'build-decision',
-        help='Decide whether a canonical command must run for a plan footprint '
+        help='Return the build-necessity verdict for a plan footprint '
         '(build / not_necessary verdict)',
         allow_abbrev=False,
     )
     p_bd.add_argument(
         '--command',
-        required=True,
-        help='Canonical command under decision (e.g. quality-gate / verify / coverage)',
+        required=False,
+        default=None,
+        help='Optional echo-only label naming the canonical command the caller intends to run '
+        '(e.g. quality-gate / verify / coverage). It never enters the verdict predicate — omit it '
+        'to ask the command-free plan-wide question and receive {decision, reason} with no '
+        'canonical_command key',
     )
     p_bd.add_argument(
         '--plan-id',

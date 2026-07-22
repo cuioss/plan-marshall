@@ -20,7 +20,7 @@ This skill is **script-only**: it has no user-invocable command and is not loade
 - The manifest file is the single source of truth for Phase 5/6 step selection — every decision MUST be reflected in the manifest, and every reasoning MUST be logged via `manage-logging decision`.
 - The manifest stays lean and diffable. Do not embed reasoning, timestamps, or free-text fields — push those to `decision.log`.
 - `compose` is idempotent: re-invocation overwrites the previous manifest. Callers responsible for re-entry semantics.
-- The seven-row decision matrix is authoritative. See [decision-rules.md](standards/decision-rules.md) for the canonical table.
+- The six-row decision matrix is authoritative. See [decision-rules.md](standards/decision-rules.md) for the canonical table.
 
 ## Storage Location
 
@@ -102,8 +102,7 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
   [--phase-5-steps {step1,step2,...}] \
   [--phase-6-steps {step1,step2,...}] \
   [--commit-and-push {true|false}] \
-  [--envelope-count {N}] \
-  [--aspect {analysis|planning|implementation}]
+  [--envelope-count {N}]
 ```
 
 **Parameters**:
@@ -117,7 +116,6 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
 - `--phase-6-steps` (optional): Comma-separated candidate Phase 6 finalize step IDs (e.g., `push,create-pr,automated-review,sonar-roundtrip,lessons-capture,adr-propose,branch-cleanup,archive-plan`). Same fallback-only contract as `--phase-5-steps`: the composer prefers `marshal.json::plan.phase-6-finalize.steps`, consulting this CSV only when no marshal.json is present — so in an inited project the CSV cannot inject a plan-scoped candidate. The decision matrix selects a subset. If both marshal.json and the CSV are absent, defaults to the full canonical set.
 - `--commit-and-push` (optional, default `true`): `true|false` — the resolved `commit_and_push` boolean from phase-5-execute config. When `false`, `push`, `pre-push-quality-gate`, and `pre-submission-self-review` are all removed from the candidate set by the `commit_push_disabled` pre-filter before the matrix runs (a local-only run).
 - `--envelope-count` (optional, default `1`): Number of phase-5 `execution-context` envelopes the orchestrator should plan for. Persisted into the manifest's `phase_5.envelope_count`. When omitted, defaults to `1` (a single budget-bounded envelope greedily drives the task loop until the queue is empty or a TASK-boundary re-dispatch point fires). A non-positive value is clamped to `1`. The field is written under every decision-matrix rule (including `early_terminate`), so the `phase_5` block always carries it.
-- `--aspect` (optional override): `analysis|planning|implementation` — the resolved request aspect from the `manage-config aspect-classify` verb (phase-1-init). When omitted, the composer reads the aspect itself from `status.json::metadata.request_aspect` (mirroring the `--recipe-key` self-read above), so a persisted `analysis` / `planning` aspect still drives the drop even when `phase-4-plan`'s compose invocation never forwards this flag. When the resolved aspect (explicit or self-read) is `analysis` or `planning`, the **request-aspect step-dropping** pass (§ "Request-aspect step dropping") clears the ENTIRE `phase_5.verification_steps` list — not only the canonical build / quality-gate / test steps but also every external (`project:` / `bundle:skill`) step, since a partial role-only drop would leave an external step in place and re-trigger phase-5-execute Step 11b's quality-gate sweep. `implementation` (the classifier's safe sub-threshold fallback) or an absent argument with unset/`implementation` persisted metadata is a no-op: every build/verify gate is retained.
 
 **Output** (TOON):
 ```toon
@@ -345,7 +343,7 @@ The execution manifest is a **write-time snapshot**, not a runtime view. Two hal
 1. **Baked at write time.** `compose` reads the **then-current** plugin cache state (decision-rules tables, candidate step lists from `marshal.json`, recipe-key mappings, default `Phase 5` / `Phase 6` step sets) and writes a fixed list of step IDs into `.plan/local/plans/{plan_id}/execution.toon`. The composer is `phase-4-plan` Step 8b at plan-write time; `phase-5-execute` MAY re-invoke `compose` to amend during its own loop, but every invocation is idempotent — the file is overwritten in full from the inputs supplied to that call.
 2. **Not re-resolved at read time.** `read` is a literal file load. `phase-5-execute` and `phase-6-finalize` consume `phase_5.verification_steps` and `phase_6.steps` verbatim from the persisted file — they do NOT re-derive the list from current decision rules, do NOT re-consult `marshal.json` for fresh candidate sets, and do NOT re-apply the decision matrix at consumption time. The manifest IS the contract for the running plan.
 
-**Consequence — `Phase 6` reads the pre-change snapshot**: a plan that modifies a decision rule, a `marshal.json` default, the seven-row decision matrix, or any other manifest-composer input still sees the **pre-change** manifest shape when `phase-6-finalize` reads it back, even after `/sync-plugin-cache` has run and the Claude Code session has been restarted. The cache sync and session restart fix the manifest's **future composition** (subsequent plans that invoke `compose`), not the current plan's already-written `execution.toon`.
+**Consequence — `Phase 6` reads the pre-change snapshot**: a plan that modifies a decision rule, a `marshal.json` default, the six-row decision matrix, or any other manifest-composer input still sees the **pre-change** manifest shape when `phase-6-finalize` reads it back, even after `/sync-plugin-cache` has run and the Claude Code session has been restarted. The cache sync and session restart fix the manifest's **future composition** (subsequent plans that invoke `compose`), not the current plan's already-written `execution.toon`.
 
 Meta-projects that author marketplace bundles maintain their own self-host fence to guard against this class of staleness in their own finalize phase; consumer projects of plan-marshall do not encounter the failure mode because their plans do not modify the manifest composer's own resolution roots. Plans that intend to use a newly-introduced step or a newly-changed decision rule in their own finalize phase MUST either (a) re-run `compose` after the cache sync and session restart (re-composition re-reads the now-current cache state) or (b) edit `execution.toon` directly with the intended step list. The `validate` and `validate-loadable` operations remain valid post-edit; both check the persisted file, not a re-derived view.
 
@@ -412,7 +410,7 @@ The bulk form requires the manifest to exist on disk; if it does not, the script
 
 | Command | Parameters | Description |
 |---------|------------|-------------|
-| `compose` | `--plan-id --change-type --track --scope-estimate [--recipe-key] [--affected-files-count] [--phase-5-steps] [--phase-6-steps] [--commit-and-push] [--envelope-count] [--aspect]` | Compose and write execution.toon (`--phase-5-steps`/`--phase-6-steps` are fallback-only — `marshal.json` is the authoritative candidate source) |
+| `compose` | `--plan-id --change-type --track --scope-estimate [--recipe-key] [--affected-files-count] [--phase-5-steps] [--phase-6-steps] [--commit-and-push] [--envelope-count]` | Compose and write execution.toon (`--phase-5-steps`/`--phase-6-steps` are fallback-only — `marshal.json` is the authoritative candidate source) |
 | `read` | `--plan-id` | Read manifest as TOON |
 | `lanes preview` | `--plan-id [--phase-6-steps]` | Resolve the minimal/auto/full phase-6 step sets + cost sums in one TOON (the posture-dialogue projection) |
 | `record-step` | `--plan-id --step-id --phase {5-execute\|6-finalize} --outcome {executed\|skipped\|error} [--total-tokens] [--tool-uses] [--duration-ms]` | Append a per-step execution-log row (outcome + token attribution) to execution.toon |
@@ -462,8 +460,7 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
   --scope-estimate {none|surgical|single_module|multi_module|broad} \
   [--recipe-key KEY] [--affected-files-count N] \
   [--phase-5-steps LIST] [--phase-6-steps LIST] \
-  [--commit-and-push {true|false}] [--envelope-count N] \
-  [--aspect {analysis|planning|implementation}]
+  [--commit-and-push {true|false}] [--envelope-count N]
 ```
 
 `--phase-5-steps` / `--phase-6-steps` on `compose` are **fallback-only** (tests / no-marshal contexts): with a readable `marshal.json` the composer sources its candidate lists authoritatively from `plan.phase-5-execute.verification_steps` / `plan.phase-6-finalize.steps` and ignores the CSVs, so in an inited project forwarding a CSV cannot inject a plan-scoped candidate. The same-named flags on `validate` are a different surface — see `validate` below.
@@ -531,7 +528,7 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
 
 ## Decision Rules
 
-The seven-row decision matrix is documented in [standards/decision-rules.md](standards/decision-rules.md). The matrix maps the inputs (`change_type`, `track`, `scope_estimate`, `recipe_key`, `affected_files_count`) to:
+The six-row decision matrix is documented in [standards/decision-rules.md](standards/decision-rules.md). The matrix maps the inputs (`change_type`, `track`, `scope_estimate`, `recipe_key`, `affected_files_count`) to:
 
 - `phase_5.early_terminate` (true/false)
 - The subset of `phase_5.verification_steps` chosen from the candidate set
@@ -541,7 +538,7 @@ For each rule fired, `compose` emits one `decision.log` entry — written in-pro
 
 ### Scope-gated phase-6 filtering (`scope_gated_finalize`)
 
-Before the seven-row matrix, the composer applies a scope-gated pre-filter that drops heavyweight phase-6 review/audit steps based on `scope_estimate`:
+Before the six-row matrix, the composer applies a scope-gated pre-filter that drops heavyweight phase-6 review/audit steps based on `scope_estimate`:
 
 - **`surgical`** — drops `plan-marshall:plan-retrospective`, pre-submission-self-review, and `project:finalize-step-plugin-doctor`. Every bare and prefixed form is matched: for pre-submission-self-review this covers the built-in `default:pre-submission-self-review` (normalized to bare `pre-submission-self-review` at intake). The candidate list is `default:`-namespace-normalized at intake, but `project:` / `bundle:skill` prefixes are preserved verbatim — so `plan-marshall:plan-retrospective` and `project:finalize-step-plugin-doctor` are matched by their full prefixed form, not a bare normalization.
 - **`single_module`** — drops only `plan-marshall:plan-retrospective`.
@@ -555,13 +552,7 @@ The composer emits one `decision.log` line per scope-gated subtraction (canonica
 
 ### Generic footprint pre-filter for canonical-verify steps (`canonical_verify_inactive`)
 
-After the seven-row matrix and `execution_tier` routing produce the final `phase_5.verification_steps` list, the composer applies a canonical-agnostic footprint pre-filter: a `default:verify:{canonical}` step whose derived role is a footprint-gated whole-tree role (`integration` / `e2e`) is dropped when the live footprint is non-empty AND carries no path of that role. The core roles (`quality-gate` / `module-tests` / `coverage`) are never footprint-gated. The pre-filter is a no-op when the footprint is empty (early compose, before the worktree is materialized), so every canonical survives until a re-compose can observe the real footprint. The composer emits one `decision.log` line when at least one step is dropped (canonical prefix `(plan-marshall:manage-execution-manifest:compose) canonical_verify_inactive`). The full rule and the safety-against-compose-time-emptiness rationale are documented in [standards/decision-rules.md](standards/decision-rules.md) § "Generic footprint pre-filter".
-
-### Request-aspect step dropping (`aspect_step_dropping`)
-
-After the canonical-verify footprint pre-filter produces the final `phase_5.verification_steps` list, the composer applies the **request-aspect step-dropping** pass driven by the optional `--aspect` input (the resolved aspect from the `manage-config aspect-classify` verb). When `aspect ∈ {analysis, planning}`, the composer clears the ENTIRE `phase_5.verification_steps` list — not just the canonical build / quality-gate / test steps (`quality-gate` / `module-tests` / `coverage`) but also every external (`project:` / `bundle:skill`) step, regardless of its derived matrix role. Dropping the full list (rather than only the role-matched build steps) is load-bearing for the phase-5-execute Step 11b contract: Step 11b fires a `quality-gate` sweep whenever `phase_5.verification_steps` is non-empty, so a role-only filter that left any external `None`-role step in the list would keep it non-empty and re-trigger `quality-gate` for an analysis / planning request — exactly the build the aspect drop exists to prevent. The rationale for dropping at all is the inverse of the footprint pre-filter: an `analysis` or `planning` request carries no production / test footprint to gate, so running (and failing) build / quality-gate / test commands against a code-free change is pure waste — the aspect signal lets the composer drop those gates up front rather than relying on a footprint that may not yet exist at compose time.
-
-An `implementation` aspect (the classifier's safe sub-threshold fallback — any request below the `>= 0.7` aspect-classify threshold defaults to `implementation`) is a no-op: every build/verify gate is retained. When `--aspect` is absent the composer does NOT treat that as an unconditional no-op — it self-reads `status.metadata.request_aspect` from the plan's `status.json` via `_read_request_aspect(plan_id)` (mirroring the `recipe_key` / `_read_recipe_source` self-read precedent documented in [standards/decision-rules.md](standards/decision-rules.md)), so a persisted `analysis` / `planning` aspect still drives the drop even though `phase-4-plan`'s compose invocation never forwards `--aspect`. An absent `--aspect` is therefore a no-op only when the persisted metadata is also unset (or resolves to `implementation`). `role_cache` is retained in the call signature only for symmetry with the other role-driven filters — the full-clear path does not consult it. The composer emits one `decision.log` line when at least one step is dropped (canonical prefix `(plan-marshall:manage-execution-manifest:compose) aspect_step_dropping`) and surfaces `aspect` and `aspect_step_dropping_dropped` in the `compose` result for observability.
+After the six-row matrix and `execution_tier` routing produce the final `phase_5.verification_steps` list, the composer applies a canonical-agnostic footprint pre-filter: a `default:verify:{canonical}` step whose derived role is a footprint-gated whole-tree role (`integration` / `e2e`) is dropped when the live footprint is non-empty AND carries no path of that role. The core roles (`quality-gate` / `module-tests` / `coverage`) are never footprint-gated. The pre-filter is a no-op when the footprint is empty (early compose, before the worktree is materialized), so every canonical survives until a re-compose can observe the real footprint. The composer emits one `decision.log` line when at least one step is dropped (canonical prefix `(plan-marshall:manage-execution-manifest:compose) canonical_verify_inactive`). The full rule and the safety-against-compose-time-emptiness rationale are documented in [standards/decision-rules.md](standards/decision-rules.md) § "Generic footprint pre-filter".
 
 ### Command-level execution_tier routing (`execution_tier_routing`)
 
@@ -573,7 +564,7 @@ Before the per-step stamping below, the composer walks every task's `verificatio
 
 ### Per-step execution_tier stamping (`step_execution_tier`)
 
-After the request-aspect step-dropping pass produces the FINAL `phase_5.verification_steps` list, the composer resolves each selected step's `execution_tier` and stamps a `phase_5.step_execution_tier` record list (one `{step_id, tier}` object per verification step). Each built-in canonical-verify step (`verify:{canonical}`) is resolved via a whole-tree `architecture resolve --command {canonical}`, reading the `execution_tier` field the resolve TOON emits; every other step id (an external `project:` / `bundle:skill` step, or a `verify:{canonical}` whose canonical is unresolvable) defaults to `per_task`. The list is total over `verification_steps` — the composer never emits an unresolved tier.
+After the canonical-verify footprint pre-filter produces the FINAL `phase_5.verification_steps` list, the composer resolves each selected step's `execution_tier` and stamps a `phase_5.step_execution_tier` record list (one `{step_id, tier}` object per verification step). Each built-in canonical-verify step (`verify:{canonical}`) is resolved via a whole-tree `architecture resolve --command {canonical}`, reading the `execution_tier` field the resolve TOON emits; every other step id (an external `project:` / `bundle:skill` step, or a `verify:{canonical}` whose canonical is unresolvable) defaults to `per_task`. The list is total over `verification_steps` — the composer never emits an unresolved tier.
 
 **The stamp is ADVISORY, not the routing authority.** The tier derives from `bash_timeout_seconds`, which `manage-architecture` computes from the **adaptive learned build duration** in run-config — a quantity every intervening build updates. A step whose learned duration sits near the 600s Bash ceiling therefore crosses the ceiling between compose and execute in ordinary operation, so a compose-time snapshot cannot be a durable routing fact. The routing authority is the **live `architecture resolve` the leaf performs when it runs the step** (see [`../phase-5-execute/standards/canonical_verify.md`](../phase-5-execute/standards/canonical_verify.md) § Workflow steps 1-2); the stamp serves planning and observability — it tells the orchestrator how many orchestrator-tier steps to expect. Consistent with that, `per_task` is the **permissive default, not a safe floor**: it is the value that would put a long build inline where the host platform auto-backgrounds it and a leaf cannot reap it, and it is acceptable only because the live re-resolve is what actually routes.
 
@@ -581,7 +572,7 @@ The leaf-no-background-build invariant itself is unchanged — `phase-5-execute`
 
 ### phase-6-finalize ceremony-gate selection (`ceremony_finalize_selection`)
 
-After the seven-row matrix produces the final `phase_6.steps` (and after `execution_tier` routing), and before the execution-profile lane resolution, the composer applies the four `plan.phase-6-finalize` ceremony gates to force their finalize steps in or out. Each gate's run decision is derived from its owning finalize step's per-element `lane` override (`off→never`, `minimal→always`, `auto`/absent→`auto`):
+After the six-row matrix produces the final `phase_6.steps` (and after `execution_tier` routing), and before the execution-profile lane resolution, the composer applies the four `plan.phase-6-finalize` ceremony gates to force their finalize steps in or out. Each gate's run decision is derived from its owning finalize step's per-element `lane` override (`off→never`, `minimal→always`, `auto`/absent→`auto`):
 
 | Gate | Owning step (its `lane` override) | `never` → drop · `always` → force-include · `auto` → defer |
 |------|-----------------------------------|------------------------------------------------------------|
