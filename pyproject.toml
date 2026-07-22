@@ -83,11 +83,29 @@ python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 norecursedirs = ["fixtures", "__pycache__", ".git"]
-addopts = ["-v", "--tb=short"]
+addopts = ["-v", "--tb=short", "--strict-markers", "--strict-config", "--durations=25"]
+# Every warning is an error. Armed on a measured census, not on optimism: a full
+# whole-tree run of all 14794 tests under the flags above emits ZERO warnings —
+# no warnings-summary section at all, in any category, from third-party or
+# project-owned code. With an empty census the gate costs nothing today and
+# turns the *next* warning introduced into an attributable failure at the commit
+# that introduces it, rather than letting it accumulate silently. No per-item
+# ignore entry is warranted, because there is no warning to ignore; if one
+# becomes necessary later it belongs here in the narrowly-scoped
+# ``ignore:{message-prefix}:{Category}:{module}`` form, never as a bare
+# ``ignore::SomeWarning``.
+filterwarnings = ["error"]
 # Fail (with a traceback at the hang point) instead of wedging a worker forever.
-# The whole suite runs in ~13 min across many xdist workers, so any single test
-# that runs longer than 300s is hung, not slow — surface it as an attributable
-# failure with a stack rather than an opaque job timeout. The default signal
+# The whole suite runs in ~2.5 min (measured 151.69s, warm cache) under ``-n
+# auto`` — 10 xdist workers on the measuring host — and the slowest single test
+# in the ``--durations=25`` table is ~13s. The rationale still holds, and by a
+# wider margin than when it was written: 300s is more than an order of magnitude
+# past the slowest observed test and more than the whole suite's wall-clock, so
+# any single test that runs longer than that is hung, not slow — surface it as
+# an attributable failure with a stack rather than an opaque job timeout. The
+# threshold is deliberately NOT retightened toward the measured maximum: it is a
+# hang detector, not a performance budget, and slack absorbs a slower CI host
+# without turning a slow-but-healthy test into a false failure. The default signal
 # method (SIGALRM on each worker's main thread, where xdist runs its tests) is
 # used deliberately: the thread method's watchdog leaves the worker in an
 # unclean state on teardown under xdist.
