@@ -45,19 +45,38 @@ python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator
 
 Skip Steps 4–6 and return.
 
-### Step 4 (verb = `next`): Select the next launchable plan
+### Step 4 (verb = `next`): Select up to `N − R` launchable plans
 
-Pick the first `staged` plan in queue order whose dependencies (sequencing notes in its `plans/PLAN-NN-{plan_slug}.md` spec) are satisfied. Check **surface disjointness** against every currently-launched plan: the candidate may be emitted while another plan is in flight ONLY when their expected surfaces do not overlap. Overlapping candidates are sequenced — report the overlap and the plan being waited on instead of emitting.
+Read the epic's `parallelization_scope` knob — `N`, the maximum number of concurrently-launched plans, defaulting to `1` (strictly sequential) when unset:
 
-### Step 5 (verb = `next`): Emit the command
-
-EMIT the ready-to-run command for the operator, composed from the staged spec:
-
-```text
-/plan-marshall plan={proposed_plan_id}
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
+  --plan-id {slug} --get --field parallelization_scope --store orchestrator
 ```
 
-together with the spec's request payload (the spec body is the request source). The verb NEVER launches the plan inline — the operator runs the emitted command; implementation happens exclusively inside the plan lifecycle. When the operator confirms the launch, record the transition:
+Count `R`, the plans currently in `launched` status, and select up to `N − R` candidates — a block sized by the scope knob rather than a hardcoded single (at the default `N = 1` that block is exactly one). Walk `staged` plans in queue order whose dependencies (sequencing notes in their `plans/PLAN-NN-{plan_slug}.md` spec) are satisfied, and admit a candidate ONLY when both admission tests pass:
+
+- **Disjoint** — its expected surface overlaps neither any currently-launched plan nor any candidate already selected this round.
+- **Prep-ready** — its spec owes no re-grounding, and carries no verify-first clause that a prior orchestrator corroboration has REFUTED without the spec being re-scoped to reflect the refutation (see the spec template's `## Claim Labels`).
+
+An OPEN verify-first clause — one authored by `decompose.md` Step 4 and not yet checked by anyone — does NOT fail the Prep-ready test. Per [orchestration-model.md § Verify-First Contract for Inferred Claims](../../persona-marshall-orchestrator/standards/orchestration-model.md#verify-first-contract-for-inferred-claims), settling such a clause is the LAUNCHED plan's own job (refine owns the verification; outline owns it when refine did not run), so blocking emission on an unchecked clause would make the verifying phase unreachable and the spec permanently unemittable. Only a clause a fresh orchestrator check has already contradicted — typically the [`analyze.md` Step 2](analyze.md) dispatchable ground-truth corroboration returning `verdict: contradicted` — blocks emission, and only until the spec is re-scoped against that refutation.
+
+A candidate failing either test is sequenced, not emitted. **Never emit a colliding or unprepared plan merely to fill a slot** — when fewer than `N − R` candidates qualify, report the shortfall with the blocking reason per candidate (the overlapping surface, or the refuted-and-unaddressed claim) instead.
+
+### Step 5 (verb = `next`): Emit the commands
+
+EMIT one ready-to-run command per selected candidate — the whole `N − R` block in one copy-paste surface — each a **one-line pointer** to its staged spec. The spec is the single source of the brief, so no request text is transcribed into the command:
+
+```text
+/plan-marshall task="implement .plan/local/orchestrator/{slug}/plans/PLAN-NN-{plan_slug}.md"
+
+--- spec body: plans/PLAN-NN-{plan_slug}.md ---
+{the full text of the staged spec, verbatim}
+```
+
+**Lifecycle prerequisite.** The one-line form is lossless only once the plan lifecycle ingests a referenced spec file's *contents*. It does not do so today: `phase-1-init` uses the description verbatim and reads no path named inside it, and `phase-2-refine` existence-checks file-path claims rather than ingesting them. PLAN-41 owns that lifecycle change. Until it lands, the emit inlines the spec body beneath the pointer line — as shown above, and carried in the `spec_body` field of the `emitted[]` output contract — so the operator hands the lifecycle a self-sufficient brief. The pointer is the target emit contract, not yet the sufficient one.
+
+The verb NEVER launches the plan inline — the operator runs the emitted command; implementation happens exclusively inside the plan lifecycle. This holds for every command in the block: the orchestrator emits `N − R` ready commands and launches none of them. When the operator confirms a launch, record the transition (once per launched plan):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator queue \
@@ -94,12 +113,16 @@ resume_anchor: "{anchor}"
 
 ```toon
 status: success | error
-display_detail: "emitted {PLAN-NN} for epic {slug}"
+display_detail: "epic {slug}: emitted {E} of {N-R} slots"
 slug: {slug}
 verb: next
-emitted_plan: PLAN-NN
-emitted_command: "/plan-marshall plan={proposed_plan_id}"
-disjointness: clear | sequenced-behind-{PLAN-MM}
+parallelization_scope: {N}
+launched_count: {R}
+emitted[E]{plan,command,spec_body}:
+  PLAN-NN,/plan-marshall task="implement .plan/local/orchestrator/{slug}/plans/PLAN-NN-{plan_slug}.md","{verbatim spec body inlined beneath the pointer line}"
+shortfall[S]{plan,reason}:
+  PLAN-MM,"overlaps {surface} with PLAN-KK"
+  PLAN-PP,"refuted verify-first clause not yet re-scoped"
 ```
 
-`display_detail` is ≤80 chars, ASCII, no trailing period. When disjointness sequences the candidate, `emitted_plan`/`emitted_command` are absent and `display_detail` names the blocking plan.
+`display_detail` is ≤80 chars, ASCII, no trailing period. `emitted[]` is empty when no candidate qualifies; `shortfall[]` is empty when the block fills every slot, and otherwise names one blocking reason per unemittable candidate. `spec_body` carries the verbatim spec text the Step 5 emit inlines beneath the pointer line, so the schema represents the hand-off the operator actually receives; it empties once the lifecycle ingests a referenced spec's contents and the pointer alone is sufficient.
