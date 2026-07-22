@@ -110,6 +110,10 @@ _PASSTHROUGH_STATUS_FIELDS = (
     'exit_code',
     'duration_seconds',
     'log_file',
+    # A daemon status_payload(STATUS_REFUSED, reason=...) carries its refusal
+    # detail in `reason`; without it here the wait path silently drops the only
+    # field saying WHY the job was refused.
+    'reason',
 )
 
 
@@ -325,9 +329,17 @@ def _latest_job_id_for_plan(plan_id: str) -> str | None:
     Returns:
         The latest recorded ``job_id`` for the plan, or ``None`` when none exists.
     """
+    try:
+        entries = read_entries()
+    except OSError:
+        # Reading the ledger is best-effort on this path: an unreadable ledger
+        # is indistinguishable, from the caller's point of view, from one that
+        # holds no matching row. Returning None falls through to run_wait's
+        # existing NOT_FOUND result instead of crashing the client.
+        return None
     matches = [
         entry.get('job_id')
-        for entry in read_entries()
+        for entry in entries
         if entry.get('kind') == KIND_JOB
         and entry.get('plan_id') == (plan_id or None)
         and entry.get('job_id')
@@ -437,7 +449,15 @@ def run_submit(args: Namespace) -> dict[str, Any]:
 
     job_id = str(response.get('job_id', ''))
     attached = bool(response.get('attached', False))
-    _record_job(job_id, plan_id, spec.fingerprint, notation, project_path)
+    try:
+        _record_job(job_id, plan_id, spec.fingerprint, notation, project_path)
+    except OSError:
+        # Ledger recording is best-effort — it appends an entry and computes the
+        # worktree sha, either of which can raise OSError. The job IS queued on
+        # the daemon, so a ledger failure must degrade re-attach (a later
+        # `wait` with no --job-id cannot find the row) rather than crash the
+        # client and lose the job_id we are about to return.
+        pass
     _audit_log(
         plan_id,
         'INFO',

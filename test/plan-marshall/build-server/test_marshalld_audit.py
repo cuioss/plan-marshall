@@ -319,6 +319,40 @@ def test_handle_request_unknown_op_is_still_audited(home, tmp_path):
     assert records[0].get('reason')
 
 
+class _StartupReached(Exception):
+    """Sentinel raised from a stubbed ``start_unix_server`` to mark bind-time."""
+
+
+def test_serve_survives_journal_replay_oserror(home, tmp_path, monkeypatch):
+    """A ``replay_on_restart()`` disk failure must never abort daemon startup.
+
+    ``Journal.replay_on_restart`` reads and rewrites the on-disk journal, either
+    of which can raise ``OSError``. Unguarded, that raise escapes ``serve()``
+    before the socket is ever bound — the daemon dies at startup and every
+    client silently falls back to in-process builds. The guard degrades it to
+    "the unreplayed records are carried to the next start's replay" instead.
+
+    The stubbed ``start_unix_server`` raises a sentinel at the bind step, so the
+    assertion is positive: startup reached the bind, i.e. it got PAST replay.
+    """
+    audit = audit_mod.InteractionAudit()
+    daemon = _daemon(tmp_path, audit)
+
+    def _boom() -> None:
+        raise OSError('journal read/rewrite failure')
+
+    monkeypatch.setattr(daemon._journal, 'replay_on_restart', _boom)
+
+    async def _sentinel(*_args, **_kwargs):
+        raise _StartupReached
+
+    monkeypatch.setattr(marshalld.asyncio, 'start_unix_server', _sentinel)
+
+    # The sentinel — NOT the OSError — must escape.
+    with pytest.raises(_StartupReached):
+        asyncio.run(daemon.serve())
+
+
 def test_audit_interaction_swallows_attribution_failure(home, tmp_path, monkeypatch):
     """Attribution DERIVATION failure must never abort request handling.
 

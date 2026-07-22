@@ -22,6 +22,7 @@ SCRIPTS_DIR = SCRIPT_PATH.parent
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
+import _marshalld_audit as audit_mod  # noqa: E402
 import _marshalld_journal as journal_mod  # noqa: E402
 
 
@@ -87,6 +88,28 @@ def test_gc_keeps_nonterminal_entries(home):
 
     assert removed == []
     assert journal.get('job1') is not None
+
+
+def test_created_at_round_trips_unmocked_through_disk_and_the_iso_parser(home):
+    """Guard the (convention-only) format contract on the journal's OWN write path.
+
+    Every other journal test either ignores ``created_at`` or drives retention
+    through the numeric ``updated_epoch``, so none proves the REAL, unmocked
+    ``file_ops.now_utc_iso()`` output survives the JSON write/read round-trip
+    AND parses back through the same ``_parse_iso_epoch`` the daemon's sibling
+    retention store uses. If that shared contract ever drifted, the parse would
+    silently yield ``None`` and every timestamp-driven retention decision would
+    degrade to "never prunes anything" — a silent failure this one unmocked
+    assertion catches. Mirrors the audit store's unmocked GC round-trip guard.
+    """
+    journal = journal_mod.Journal()
+    journal.record_spec('job1', {'command': []})
+
+    # Read back off disk — this is the write/parse path, not the in-memory dict.
+    created_at = journal.get('job1')['created_at']
+
+    assert created_at, 'the journal must stamp a non-empty created_at'
+    assert audit_mod._parse_iso_epoch(created_at) is not None
 
 
 def test_replay_on_restart_marks_inflight_killed(home):

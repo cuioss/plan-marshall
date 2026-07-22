@@ -177,6 +177,39 @@ def test_submit_refused_passes_through_reason(home, ledger, monkeypatch):
     assert _job_rows() == []
 
 
+@pytest.mark.parametrize('failing_seam', ['append_entry', 'compute_worktree_sha'])
+def test_submit_survives_ledger_recording_oserror(home, ledger, monkeypatch, failing_seam):
+    """A ledger-write / worktree-sha failure must not fail an ACCEPTED submit.
+
+    ``_record_job`` appends a ledger row and computes the worktree sha; either
+    can raise ``OSError``. By the time it runs the job is ALREADY queued on the
+    daemon, so an unguarded raise loses the ``job_id`` the client is about to
+    return — the build keeps running with nobody able to wait on it. Recording
+    is therefore best-effort: it degrades re-attach (a later plan-scoped
+    ``wait`` finds no row), never the submit itself.
+    """
+    root = str(home / 'proj')
+    monkeypatch.setattr(client, '_handshake', lambda _p: ({'version': '1'}, None))
+    monkeypatch.setattr(
+        client,
+        '_call_daemon',
+        lambda _req, timeout: {'status': 'queued', 'job_id': 'JOB-1', 'attached': False},
+    )
+
+    def _boom(*_args, **_kwargs):
+        raise OSError(f'{failing_seam} disk failure')
+
+    monkeypatch.setattr(client, failing_seam, _boom)
+
+    result = client.run_submit(_submit_args(root))
+
+    # The accepted submit still reports success and still hands back the job_id.
+    assert result['status'] == 'success'
+    assert result['job_id'] == 'JOB-1'
+    # The degradation is exactly the lost re-attach row — nothing else.
+    assert _job_rows() == []
+
+
 def test_submit_rejects_non_json_command(home, ledger):
     result = client.run_submit(
         Namespace(command='not-json', exec_path=None, project_path=str(home), plan_id='p1')
@@ -259,6 +292,61 @@ def test_wait_errors_when_no_job_id_and_no_ledger_row(home, ledger):
     result = client.run_wait(Namespace(job_id=None, plan_id='p1', bound=1))
 
     assert result['status'] == 'error'
+
+
+def test_wait_reattach_on_unreadable_ledger_degrades_to_not_found(home, ledger, monkeypatch):
+    """An unreadable ledger on the re-attach path must degrade, never raise.
+
+    ``_latest_job_id_for_plan`` is reached only when the caller gave no
+    ``--job-id``. An ``OSError`` out of the ledger read would crash the client
+    on a path whose whole purpose is RECOVERY from a lost job_id. From the
+    caller's point of view an unreadable ledger is indistinguishable from one
+    holding no matching row, so it falls through to the existing NOT_FOUND
+    result that the no-row case already returns.
+    """
+    def _boom(*_args, **_kwargs):
+        raise OSError('ledger unreadable')
+
+    monkeypatch.setattr(client, 'read_entries', _boom)
+    # A handshake here would mean the NOT_FOUND guard was skipped entirely.
+    monkeypatch.setattr(
+        client,
+        '_handshake',
+        lambda _p: pytest.fail('re-attach must fail closed before any daemon round-trip'),
+    )
+
+    result = client.run_wait(Namespace(job_id=None, plan_id='p1', bound=1))
+
+    assert result['status'] == 'error'
+    # The EXISTING no-row result, not a new unreadable-ledger error shape.
+    assert result['error_code'] == client.ErrorCode.NOT_FOUND
+    assert 'no --job-id given' in result['error']
+
+
+def test_wait_refused_response_preserves_reason(monkeypatch):
+    """``reason`` must survive ``_render_job_status`` to the client-facing TOON.
+
+    A daemon ``status_payload(STATUS_REFUSED, reason=...)`` carries its refusal
+    detail ONLY in ``reason``. Absent from the passthrough tuple, the wait path
+    renders ``job_status: refused`` with no field saying WHY — the caller sees a
+    detail-free refusal and cannot distinguish an unregistered project from a
+    disallowed notation.
+    """
+    monkeypatch.setattr(client, '_handshake', lambda _p: ({'version': '1'}, None))
+    monkeypatch.setattr(
+        client,
+        '_call_daemon',
+        lambda _req, timeout: {
+            'status': client.STATUS_REFUSED,
+            'job_id': 'JOB-1',
+            'reason': 'not_registered',
+        },
+    )
+
+    result = client.run_wait(Namespace(job_id='JOB-1', plan_id=None, bound=1))
+
+    assert result['job_status'] == client.STATUS_REFUSED
+    assert result['reason'] == 'not_registered'
 
 
 def test_wait_degraded_when_daemon_unreachable(monkeypatch):
