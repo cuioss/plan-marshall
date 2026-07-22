@@ -406,13 +406,10 @@ class TestAddAspectKeyValidation:
         plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
         module = _load_module()
         domain_keys = module._domain_aspect_keys()
-        # Skip cleanly when no domain aspect is registered in the test
-        # environment — the static-key acceptance test still covers the
-        # positive path, and this assertion would otherwise be vacuous.
-        import pytest
-
-        if not domain_keys:
-            pytest.skip('no domain-contributed retrospective aspects registered')
+        # The live extension discovery must report at least one domain-contributed
+        # aspect — without one this test's assertion would be vacuous, so the
+        # precondition is asserted rather than skipped.
+        assert domain_keys, 'no domain-contributed retrospective aspects registered'
         domain_aspect = sorted(domain_keys)[0]
         _init_bundle(plan_id)
         fragment_path = _write_fragment(tmp_path, 'frag.toon', _valid_fragment_body('domain'))

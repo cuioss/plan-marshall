@@ -204,14 +204,12 @@ class TestFetchFindings:
         assert stored['raw_input']['message'] == 'Possible null dereference'
 
     def test_fetch_findings_skips_suppressable(self, plan_context):
-        # First find a rule from the live SUPPRESSABLE_RULES dict to ensure
-        # the test exercises real configuration. If the dict is empty the
-        # test trivially passes; that is acceptable because the assertion
-        # is on observable counter behaviour, not config presence.
+        # Take a rule from the live SUPPRESSABLE_RULES dict so the test exercises
+        # real configuration. An empty dict would make the counter assertion
+        # vacuous, so the precondition is asserted rather than skipped.
         from sonar_mod import SUPPRESSABLE_RULES  # type: ignore[import-not-found]
 
-        if not SUPPRESSABLE_RULES:
-            pytest.skip('No suppressable rules configured in sonar-rules.json')
+        assert SUPPRESSABLE_RULES, 'No suppressable rules configured in sonar-rules.json'
         rule = next(iter(SUPPRESSABLE_RULES.keys()))
 
         issues_payload = [_issue(type_='CODE_SMELL', severity='MINOR', line=1, rule=rule, message='m')]

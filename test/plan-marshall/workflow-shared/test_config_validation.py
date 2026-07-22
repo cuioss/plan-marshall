@@ -74,8 +74,7 @@ def test_config_parses_as_valid_json(skill_name, config):
 def test_required_keys_present(skill_name, config):
     """F8: Validate config file contains expected top-level keys."""
     config_path = WORKFLOW_SKILLS_DIR / skill_name / 'standards' / config['file']
-    if not config_path.exists():
-        pytest.skip(f'Config file missing: {config_path}')
+    assert config_path.exists(), f'tracked fixture missing: {config_path}'
 
     data = json.loads(config_path.read_text())
 
@@ -87,8 +86,7 @@ def test_required_keys_present(skill_name, config):
 def test_non_empty_arrays(skill_name, config):
     """F8: Validate config arrays that should have data are not empty."""
     config_path = WORKFLOW_SKILLS_DIR / skill_name / 'standards' / config['file']
-    if not config_path.exists():
-        pytest.skip(f'Config file missing: {config_path}')
+    assert config_path.exists(), f'tracked fixture missing: {config_path}'
 
     data = json.loads(config_path.read_text())
 

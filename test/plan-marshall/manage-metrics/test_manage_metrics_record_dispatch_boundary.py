@@ -18,8 +18,9 @@ new subcommand. These six tests pin the contract:
 from __future__ import annotations
 
 import importlib.util
-import time
+import itertools
 from argparse import Namespace
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -143,20 +144,32 @@ def test_first_invocation_creates_file_with_one_row(plan_context):
 # =============================================================================
 
 
-def test_subsequent_invocations_append_rows_in_order_with_monotonic_timestamps(plan_context):
+def test_subsequent_invocations_append_rows_in_order_with_monotonic_timestamps(
+    plan_context, monkeypatch
+):
     """Successive invocations append rows in chronological order, header preserved."""
     plan_dir = plan_context.plan_dir_for('disp-append')
     _seed_status_json(plan_dir)
+
+    # The row timestamp has iso-second granularity, so this test used to sleep
+    # 1.05 s between invocations to make monotonicity observable. Inject a
+    # monotonically advancing clock at the module's timestamp seam instead:
+    # each call returns a timestamp one second later, which is deterministic
+    # and costs no wall-clock time.
+    ticks = itertools.count()
+
+    def _advancing_now_utc_iso():
+        moment = datetime(2026, 1, 15, 12, 0, 0, tzinfo=UTC) + timedelta(seconds=next(ticks))
+        return moment.strftime('%Y-%m-%dT%H:%M:%SZ')
+
+    monkeypatch.setattr(manage_metrics, 'now_utc_iso', _advancing_now_utc_iso)
+
     cmd_record_dispatch_boundary(
         _ns('disp-append', termination_cause='voluntary_checkpoint', total_tokens=100)
     )
-    # Force a measurable timestamp delta so monotonicity is observable even on
-    # platforms where the iso-second granularity is coarse.
-    time.sleep(1.05)
     cmd_record_dispatch_boundary(
         _ns('disp-append', termination_cause='task_complete_returned_verbatim', total_tokens=200)
     )
-    time.sleep(1.05)
     result = cmd_record_dispatch_boundary(
         _ns('disp-append', termination_cause='harness_cancellation', total_tokens=300)
     )

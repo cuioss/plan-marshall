@@ -14,7 +14,8 @@ import os
 import subprocess
 import sys
 import textwrap
-import time
+
+from _poll_until import poll_until
 
 from conftest import _MARKETPLACE_SCRIPT_DIRS, get_script_path
 
@@ -56,11 +57,11 @@ def test_double_fork_reparents_to_pid_1(tmp_path):
     subprocess.run([sys.executable, '-c', code], env=env, timeout=30, check=True)
 
     # The reparented grandchild writes the file asynchronously; poll for it.
-    deadline = time.monotonic() + 10
-    while time.monotonic() < deadline:
-        if out_file.exists() and out_file.read_text().strip():
-            break
-        time.sleep(0.1)
+    poll_until(
+        lambda: out_file.exists() and bool(out_file.read_text().strip()),
+        timeout_seconds=10,
+        description='double-forked grandchild to write its ppid',
+    )
 
     assert out_file.exists(), 'double-forked grandchild never wrote its ppid'
     recorded_ppid = int(out_file.read_text().strip())

@@ -56,6 +56,7 @@ Activate when:
 - Assertions (basic, exceptions, approximate)
 - Output capture (`capsys`, `capfd`)
 - Subprocess / script testing patterns (structured output, PYTHONPATH, error paths)
+- Event-loop and wall-clock CI liabilities (`asyncio.run` loop-close hangs, calendar time-bombs, `pytest-timeout` backstop)
 - Test organization (conftest, file structure)
 
 **Load Command**:

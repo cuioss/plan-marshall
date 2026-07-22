@@ -265,8 +265,7 @@ def test_real_marketplace_user_invocable_one_to_one_mapping(tmp_path: Path):
         pytest.skip('marketplace/bundles not available in this checkout')
 
     lookup = build_user_invocable_lookup(marketplace)
-    if not lookup:
-        pytest.skip('no user-invocable skills found in marketplace')
+    assert lookup, f'no user-invocable skills found in marketplace: {marketplace}'
 
     out = tmp_path / 'out'
     emit_bundles(marketplace, out, config_dir)

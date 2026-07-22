@@ -110,6 +110,10 @@ _PASSTHROUGH_STATUS_FIELDS = (
     'exit_code',
     'duration_seconds',
     'log_file',
+    # A daemon status_payload(STATUS_REFUSED, reason=...) carries its refusal
+    # detail in `reason`; without it here the wait path silently drops the only
+    # field saying WHY the job was refused.
+    'reason',
 )
 
 
@@ -325,9 +329,17 @@ def _latest_job_id_for_plan(plan_id: str) -> str | None:
     Returns:
         The latest recorded ``job_id`` for the plan, or ``None`` when none exists.
     """
+    try:
+        entries = read_entries()
+    except OSError:
+        # Reading the ledger is best-effort on this path: an unreadable ledger
+        # is indistinguishable, from the caller's point of view, from one that
+        # holds no matching row. Returning None falls through to run_wait's
+        # existing NOT_FOUND result instead of crashing the client.
+        return None
     matches = [
         entry.get('job_id')
-        for entry in read_entries()
+        for entry in entries
         if entry.get('kind') == KIND_JOB
         and entry.get('plan_id') == (plan_id or None)
         and entry.get('job_id')
@@ -421,7 +433,11 @@ def run_submit(args: Namespace) -> dict[str, Any]:
     status = str(response.get('status', ''))
     if status == STATUS_REFUSED:
         refused_reason = str(response.get('reason', ''))
-        _audit_log(plan_id, 'WARNING', f'build-server submit refused: reason={refused_reason} notation={notation}')
+        _audit_log(
+            plan_id,
+            'WARNING',
+            f'build-server submit refused: reason={_sanitize_for_log(refused_reason)} notation={notation}',
+        )
         return {
             'status': 'refused',
             'reason': refused_reason,
@@ -433,11 +449,19 @@ def run_submit(args: Namespace) -> dict[str, Any]:
 
     job_id = str(response.get('job_id', ''))
     attached = bool(response.get('attached', False))
-    _record_job(job_id, plan_id, spec.fingerprint, notation, project_path)
+    try:
+        _record_job(job_id, plan_id, spec.fingerprint, notation, project_path)
+    except OSError:
+        # Ledger recording is best-effort — it appends an entry and computes the
+        # worktree sha, either of which can raise OSError. The job IS queued on
+        # the daemon, so a ledger failure must degrade re-attach (a later
+        # `wait` with no --job-id cannot find the row) rather than crash the
+        # client and lose the job_id we are about to return.
+        pass
     _audit_log(
         plan_id,
         'INFO',
-        f'build-server submit queued: job_id={job_id} job_status={STATUS_QUEUED} '
+        f'build-server submit queued: job_id={_sanitize_for_log(job_id)} job_status={STATUS_QUEUED} '
         f'attached={attached} notation={notation}',
     )
     return {
@@ -475,14 +499,16 @@ def run_wait(args: Namespace) -> dict[str, Any]:
         return _degraded(REASON_UNREACHABLE)
 
     result = _render_job_status(response)
-    # job_id may be a client-supplied `--job-id`; sanitize before interpolating it
+    # job_id may be a client-supplied `--job-id`, and job_status/elapsed/eta come
+    # back from the daemon response; sanitize every one before interpolating it
     # into the line-oriented work log (CWE-117), exactly as notation is sanitized.
     _audit_log(
         plan_id,
         'INFO',
         f'build-server wait result: job_id={_sanitize_for_log(job_id)} '
-        f'job_status={result.get("job_status", "")} '
-        f'elapsed={result.get("elapsed", "")} eta={result.get("eta", "")}',
+        f'job_status={_sanitize_for_log(str(result.get("job_status", "")))} '
+        f'elapsed={_sanitize_for_log(str(result.get("elapsed", "")))} '
+        f'eta={_sanitize_for_log(str(result.get("eta", "")))}',
     )
     return result
 
