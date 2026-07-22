@@ -82,7 +82,8 @@ class _FakeClient:
     @property
     def submitted_command(self) -> list[str]:
         """The executor-form command list the daemon would re-run."""
-        return json.loads(self.submit_calls[0].command)
+        command: list[str] = json.loads(self.submit_calls[0].command)
+        return command
 
 
 class _ExecRecorder:
