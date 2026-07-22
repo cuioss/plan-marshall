@@ -99,11 +99,11 @@ landing_report: landings/PLAN-NN.md | -
 queue_items_retired: {N}
 defects_added: {N}
 watches_added: {N}
-emitted[E]{plan,command}:
-  PLAN-NN,/plan-marshall task="implement .plan/local/orchestrator/{slug}/plans/PLAN-NN-{plan_slug}.md"
+emitted[E]{plan,command,spec_body}:
+  PLAN-NN,/plan-marshall task="implement .plan/local/orchestrator/{slug}/plans/PLAN-NN-{plan_slug}.md","{verbatim spec body inlined beneath the pointer line}"
 shortfall[S]{plan,reason}:
   PLAN-MM,"overlaps {surface} with PLAN-KK"
 resume_anchor: "{next action}"
 ```
 
-`display_detail` is ≤80 chars, ASCII, no trailing period. `plan` and `landing_report` carry `-` for the observation granularity. `emitted[]`/`shortfall[]` mirror the `orchestrate.md` `next` verb output shape (see there) for both granularities — one blocking reason per unemittable candidate.
+`display_detail` is ≤80 chars, ASCII, no trailing period. `plan` and `landing_report` carry `-` for the observation granularity. `emitted[]`/`shortfall[]` mirror the `orchestrate.md` `next` verb output shape (see there) for both granularities — including the `spec_body` field carrying the spec text the emit inlines beneath the pointer line — with one blocking reason per unemittable candidate.
