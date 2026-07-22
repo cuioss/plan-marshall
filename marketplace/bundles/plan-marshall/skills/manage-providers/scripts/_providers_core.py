@@ -67,11 +67,34 @@ def _marshal_path() -> Path:
     return get_marshal_path()
 
 
+def canonical_credentials_key(skill_name: str) -> str:
+    """Return the canonical ``credentials_config`` storage key for a skill name.
+
+    The canonical form is the bundle-prefix-stripped spelling — the same form
+    ``resolve_credential_path`` uses for the credential filename — so the
+    git-tracked ``credentials_config`` key and the credential file agree.
+
+    Args:
+        skill_name: Skill name, either bundle-prefixed
+            (``plan-marshall:workflow-integration-sonar``) or bare
+            (``workflow-integration-sonar``).
+
+    Returns:
+        The segment after the first ``':'`` when one is present, otherwise the
+        supplied name verbatim.
+    """
+    if ':' in skill_name:
+        return skill_name.split(':', 1)[1]
+    return skill_name
+
+
 def read_provider_config(skill_name: str) -> dict[str, Any]:
     """Read provider configuration from marshal.json.
 
-    Provider config is stored under `credentials_config.{skill_name}`.
-    Contains non-secret fields like url, organization, project_key.
+    Provider config is stored under ``credentials_config.{canonical_key}``, but
+    reads accept either spelling: an exact ``skill_name`` match is tried first,
+    then a canonical-equality scan matches a key stored under the other
+    spelling.
 
     Returns:
         Dict with provider config fields, or empty dict if not found.
@@ -81,8 +104,16 @@ def read_provider_config(skill_name: str) -> dict[str, Any]:
         return {}
     try:
         config = json.loads(marshal_path.read_text(encoding='utf-8'))
-        result: dict[str, Any] = config.get('credentials_config', {}).get(skill_name, {})
-        return result
+        credentials_config: dict[str, Any] = config.get('credentials_config', {})
+        if skill_name in credentials_config:
+            exact: dict[str, Any] = credentials_config[skill_name]
+            return exact
+        canonical = canonical_credentials_key(skill_name)
+        for key, value in credentials_config.items():
+            if canonical_credentials_key(key) == canonical:
+                matched: dict[str, Any] = value
+                return matched
+        return {}
     except (json.JSONDecodeError, KeyError):
         return {}
 
@@ -90,8 +121,11 @@ def read_provider_config(skill_name: str) -> dict[str, Any]:
 def write_provider_config(skill_name: str, provider_config: dict[str, Any]) -> None:
     """Write provider configuration to marshal.json.
 
-    Stores non-secret fields under `credentials_config.{skill_name}`.
-    Creates or updates the marshal.json file, preserving existing content.
+    Stores non-secret fields under ``credentials_config.{canonical_key}`` — the
+    prefix-stripped spelling. Any pre-existing key whose canonical form equals
+    the same value is removed first, so a re-configure never leaves two shadow
+    blocks for one provider. Creates or updates the marshal.json file,
+    preserving existing content.
     """
     marshal_path = _marshal_path()
     config: dict[str, Any] = {}
@@ -103,7 +137,11 @@ def write_provider_config(skill_name: str, provider_config: dict[str, Any]) -> N
 
     if 'credentials_config' not in config:
         config['credentials_config'] = {}
-    config['credentials_config'][skill_name] = provider_config
+    credentials_config: dict[str, Any] = config['credentials_config']
+    canonical = canonical_credentials_key(skill_name)
+    for existing_key in [k for k in credentials_config if canonical_credentials_key(k) == canonical]:
+        del credentials_config[existing_key]
+    credentials_config[canonical] = provider_config
 
     # Route the top-level key order through the single authority in _config_core
     # so a freshly created ``credentials_config`` block lands in its canonical
@@ -226,8 +264,7 @@ def resolve_credential_path(skill: str, scope: str = 'global', project_name: str
         ValueError: If resolved path escapes CREDENTIALS_DIR
     """
     # Strip bundle prefix for filesystem path (skill_name may be "plan-marshall:workflow-integration-sonar")
-    if ':' in skill:
-        skill = skill.split(':', 1)[1]
+    skill = canonical_credentials_key(skill)
 
     if scope == 'project':
         if not project_name:
