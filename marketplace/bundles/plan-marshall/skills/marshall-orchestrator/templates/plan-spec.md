@@ -4,7 +4,7 @@ epic: {slug}
 workstream: WS-NN
 
 > Staged plan spec — one shippable unit of work, ready for `/plan-marshall` hand-off.
-> Lives at `plans/PLAN-NN-{slug}.md` and is queued in the epic `status.json` `plans[]`
+> Lives at `plans/PLAN-NN-{plan_slug}.md` and is queued in the epic `status.json` `plans[]`
 > field. The orchestrator EMITS the command below; it never launches the plan inline.
 > This spec is SELF-SUFFICIENT: the emitted command is a one-line pointer and carries no
 > brief, so every per-plan carry is authored here and nowhere else.
