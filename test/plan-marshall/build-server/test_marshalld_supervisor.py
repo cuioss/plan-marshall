@@ -193,66 +193,21 @@ def test_run_job_clean_env_excludes_secret(tmp_path):
 
 
 # =============================================================================
-# read_log_verdict — the pure helper
-# =============================================================================
-
-
-class TestReadLogVerdict:
-    """The pure job-log verdict reader."""
-
-    def test_parses_status_and_exit_code(self, tmp_path):
-        log = tmp_path / 'job.log'
-        log.write_text('[EXEC] ./pw verify\nstatus: error\nexit_code: 7\nduration_seconds: 3\n')
-
-        verdict = supervisor.read_log_verdict(str(log))
-
-        assert verdict is not None
-        assert verdict.status == 'error'
-        assert verdict.exit_code == 7
-
-    def test_ignores_indented_toon_rows(self, tmp_path):
-        # The errors[] table rows are indented; only the top-level keys count.
-        log = tmp_path / 'job.log'
-        log.write_text('status: success\nexit_code: 0\nerrors[1]{file,line}:\n  status: error\n')
-
-        verdict = supervisor.read_log_verdict(str(log))
-
-        assert verdict is not None
-        assert verdict.status == 'success'
-        assert verdict.exit_code == 0
-
-    def test_unquotes_a_quoted_scalar(self, tmp_path):
-        log = tmp_path / 'job.log'
-        log.write_text('status: "error"\nexit_code: 2\n')
-
-        verdict = supervisor.read_log_verdict(str(log))
-
-        assert verdict is not None
-        assert verdict.status == 'error'
-
-    def test_unparseable_exit_code_degrades_to_none(self, tmp_path):
-        log = tmp_path / 'job.log'
-        log.write_text('status: error\nexit_code: -\n')
-
-        verdict = supervisor.read_log_verdict(str(log))
-
-        assert verdict is not None
-        assert verdict.status == 'error'
-        assert verdict.exit_code is None
-
-    def test_log_without_status_line_returns_none(self, tmp_path):
-        log = tmp_path / 'job.log'
-        log.write_text('just some build chatter\n')
-
-        assert supervisor.read_log_verdict(str(log)) is None
-
-    def test_missing_log_returns_none(self, tmp_path):
-        assert supervisor.read_log_verdict(str(tmp_path / 'absent.log')) is None
-
-
-# =============================================================================
 # run_job — exit 0 is necessary but not sufficient
 # =============================================================================
+# The pure ``read_log_verdict`` reader is relocated to ``_build_server_protocol``
+# and its unit coverage lives in ``test_build_server_protocol.py``. The supervisor
+# still re-exports the reader (``supervisor.read_log_verdict``), and the
+# narrowing-behaviour tests below assert ``run_job`` consumes it unchanged.
+
+
+def test_supervisor_reexports_relocated_reader():
+    # The reader moved to the shared protocol module; the supervisor imports it
+    # from there, so both the module attribute and the shared source are one
+    # object — proving there is no duplicate reader left behind.
+    import _build_server_protocol as protocol
+
+    assert supervisor.read_log_verdict is protocol.read_log_verdict
 
 
 class TestRunJobTruthfulStatus:

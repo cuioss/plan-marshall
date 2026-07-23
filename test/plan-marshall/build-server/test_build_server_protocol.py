@@ -377,3 +377,89 @@ def test_terminal_statuses_membership():
     assert proto.STATUS_SUCCESS in proto.TERMINAL_STATUSES
     assert proto.STATUS_RUNNING not in proto.TERMINAL_STATUSES
     assert proto.STATUS_QUEUED not in proto.TERMINAL_STATUSES
+
+
+# =============================================================================
+# read_log_verdict — the relocated single shared verdict reader
+# =============================================================================
+# Relocated here from _marshalld_supervisor: this is now the ONE reader both the
+# daemon's run_job narrowing and the client's _daemon_result_to_direct cross-check
+# consume, so its unit coverage lives with the shared contract module.
+
+
+class TestReadLogVerdict:
+    """The pure job-log verdict reader, in its shared home."""
+
+    def test_parses_status_and_exit_code(self, tmp_path):
+        log = tmp_path / 'job.log'
+        log.write_text('[EXEC] ./pw verify\nstatus: error\nexit_code: 7\nduration_seconds: 3\n')
+
+        verdict = proto.read_log_verdict(str(log))
+
+        assert verdict is not None
+        assert verdict.status == 'error'
+        assert verdict.exit_code == 7
+
+    def test_ignores_indented_toon_rows(self, tmp_path):
+        # The errors[] table rows are indented; only the top-level keys count.
+        log = tmp_path / 'job.log'
+        log.write_text('status: success\nexit_code: 0\nerrors[1]{file,line}:\n  status: error\n')
+
+        verdict = proto.read_log_verdict(str(log))
+
+        assert verdict is not None
+        assert verdict.status == 'success'
+        assert verdict.exit_code == 0
+
+    def test_unquotes_a_quoted_scalar(self, tmp_path):
+        log = tmp_path / 'job.log'
+        log.write_text('status: "error"\nexit_code: 2\n')
+
+        verdict = proto.read_log_verdict(str(log))
+
+        assert verdict is not None
+        assert verdict.status == 'error'
+        assert verdict.exit_code == 2
+
+    def test_last_occurrence_wins_over_progress_output(self, tmp_path):
+        # The wrapper streams progress first, then emits its final result TOON to
+        # the SAME log; the last top-level status:/exit_code: must win.
+        log = tmp_path / 'job.log'
+        log.write_text(
+            'status: running\nexit_code: 0\n'
+            '... more build chatter ...\n'
+            'status: error\nexit_code: 5\n'
+        )
+
+        verdict = proto.read_log_verdict(str(log))
+
+        assert verdict is not None
+        assert verdict.status == 'error'
+        assert verdict.exit_code == 5
+
+    def test_unparseable_exit_code_degrades_to_none(self, tmp_path):
+        log = tmp_path / 'job.log'
+        log.write_text('status: error\nexit_code: -\n')
+
+        verdict = proto.read_log_verdict(str(log))
+
+        assert verdict is not None
+        assert verdict.status == 'error'
+        assert verdict.exit_code is None
+
+    def test_log_without_status_line_returns_none(self, tmp_path):
+        log = tmp_path / 'job.log'
+        log.write_text('just some build chatter\n')
+
+        assert proto.read_log_verdict(str(log)) is None
+
+    def test_missing_log_returns_none(self, tmp_path):
+        assert proto.read_log_verdict(str(tmp_path / 'absent.log')) is None
+
+    def test_unreadable_log_returns_none(self, tmp_path):
+        # A directory in place of a file raises OSError on open -> None (the
+        # "unreadable" leg of the missing/unreadable/no-status contract).
+        d = tmp_path / 'a_dir'
+        d.mkdir()
+
+        assert proto.read_log_verdict(str(d)) is None

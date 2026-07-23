@@ -34,6 +34,7 @@ Usage:
         JobSpec, compute_fingerprint, make_job_spec,
         encode_frame, read_frame, write_frame, recv_frame, send_frame,
         status_from_result, normalize_errors,
+        LogVerdict, read_log_verdict,
         FrameError, FrameTooLargeError, FrameTruncatedError, FrameDecodeError,
         PROTOCOL_VERSION, MARSHALLD_JOB_ENV,
         STATUS_RUNNING, STATUS_SUCCESS, STATUS_FAILURE, STATUS_TIMEOUT,
@@ -643,3 +644,75 @@ def status_from_result(
         errors=result.get('errors'),
         **extra,
     )
+
+
+# =============================================================================
+# Log-verdict reader — the single shared routed-build verdict authority
+# =============================================================================
+# The daemon's child is normally a build wrapper, and the wrapper exits 0 even
+# when the build failed — it reports its real verdict in the build-result TOON it
+# emits (``status:`` / ``exit_code:``), not in its process exit code. Both the
+# daemon (:mod:`_marshalld_supervisor`'s ``run_job`` exit-0-necessary-not-
+# sufficient narrowing) and the client (:mod:`_build_execute_factory`'s
+# ``_daemon_result_to_direct`` cross-check) read that emitted verdict back through
+# THIS one reader, so a routed false-green is caught the same way on both sides.
+
+
+@dataclass(frozen=True)
+class LogVerdict:
+    """The build wrapper's own verdict, read back from a job log.
+
+    Attributes:
+        status: The ``status:`` value the emitted build TOON carried
+            (``success`` / ``error`` / ``timeout`` — the :mod:`_build_result`
+            vocabulary, NOT the daemon's wire vocabulary).
+        exit_code: The ``exit_code:`` value, or ``None`` when the log carried no
+            parseable one.
+    """
+
+    status: str
+    exit_code: int | None
+
+
+def _toon_scalar(line: str) -> str:
+    """Return the unquoted scalar value of a ``key: value`` TOON line."""
+    value = line.split(':', 1)[1].strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
+        return value[1:-1]
+    return value
+
+
+def read_log_verdict(log_file: str) -> LogVerdict | None:
+    """Read the build wrapper's emitted TOON verdict back from a job log.
+
+    Pure with respect to any daemon/client state — it only reads the log the
+    supervisor already streamed. Only the two top-level (column-0) ``status:``
+    and ``exit_code:`` keys are parsed; indented TOON rows (e.g. ``errors[]``
+    table lines) and every other key are ignored. The LAST occurrence of each key
+    wins, because the wrapper emits its result TOON after any progress output it
+    already wrote to the same log.
+
+    Args:
+        log_file: Path to the job log the supervisor streamed the child into.
+
+    Returns:
+        The parsed :class:`LogVerdict`, or ``None`` when the log is missing,
+        unreadable, or carries no top-level ``status:`` line at all.
+    """
+    status: str | None = None
+    exit_code: int | None = None
+    try:
+        with open(log_file, encoding='utf-8', errors='replace') as handle:
+            for line in handle:
+                if line.startswith('status:'):
+                    status = _toon_scalar(line)
+                elif line.startswith('exit_code:'):
+                    try:
+                        exit_code = int(_toon_scalar(line))
+                    except ValueError:
+                        exit_code = None
+    except OSError:
+        return None
+    if status is None:
+        return None
+    return LogVerdict(status=status, exit_code=exit_code)

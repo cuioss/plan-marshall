@@ -646,3 +646,200 @@ class TestResolveWrapperAutoDetect:
         assert result['status'] == 'success'
         # wrapper_resolve_fn returns 'pw' unconditionally; no FileNotFoundError.
         assert recorder.calls[0]['wrapper'] == 'pw'
+
+
+# =============================================================================
+# D4 — client-side routed-verdict cross-check
+# =============================================================================
+# The daemon's child is a build wrapper that exits 0 even on a failed build and
+# reports its real verdict in the emitted build TOON. ``_daemon_result_to_direct``
+# no longer trusts a ``job_status: success`` blindly: it re-reads the job log's own
+# verdict through the shared ``read_log_verdict`` and FAILS CLOSED when the verdict
+# disagrees, so a lying / lagging daemon can never launder a failure into a green.
+
+
+class TestDaemonResultCrossCheck:
+    """Unit coverage of the ``_daemon_result_to_direct`` verdict cross-check."""
+
+    def test_lying_success_over_error_log_fails_closed(self, tmp_path):
+        # The regression anchor: the daemon reports success, but the job log's own
+        # build TOON says error — the client must render error, not success.
+        log = tmp_path / 'job.log'
+        log.write_text('[EXEC] ./pw verify\nstatus: error\nexit_code: 5\n')
+
+        result = factory._daemon_result_to_direct(
+            {'job_status': 'success', 'log_file': str(log), 'duration_seconds': 4}, 'pw verify'
+        )
+
+        assert result['status'] == 'error'
+        assert result['exit_code'] == 5
+
+    def test_error_verdict_without_exit_code_falls_back_to_one(self, tmp_path):
+        # A disagreeing verdict carrying no parseable exit_code fails closed with
+        # a synthetic exit_code of 1 (``verdict.exit_code or 1``).
+        log = tmp_path / 'job.log'
+        log.write_text('status: error\n')
+
+        result = factory._daemon_result_to_direct(
+            {'job_status': 'success', 'log_file': str(log)}, 'pw verify'
+        )
+
+        assert result['status'] == 'error'
+        assert result['exit_code'] == 1
+
+    def test_agreeing_success_verdict_stays_success(self, tmp_path):
+        log = tmp_path / 'job.log'
+        log.write_text('status: success\nexit_code: 0\n')
+
+        result = factory._daemon_result_to_direct(
+            {'job_status': 'success', 'log_file': str(log), 'duration_seconds': 3}, 'pw verify'
+        )
+
+        assert result['status'] == 'success'
+
+    def test_none_verdict_non_wrapper_log_stays_success(self, tmp_path):
+        # A non-wrapper command emits no build TOON; a None verdict keeps success,
+        # mirroring the daemon's own None-keeps-verdict rule.
+        log = tmp_path / 'job.log'
+        log.write_text('plain chatter with no build TOON at all\n')
+
+        result = factory._daemon_result_to_direct(
+            {'job_status': 'success', 'log_file': str(log)}, 'echo hi'
+        )
+
+        assert result['status'] == 'success'
+
+    def test_missing_log_stays_success(self, tmp_path):
+        result = factory._daemon_result_to_direct(
+            {'job_status': 'success', 'log_file': str(tmp_path / 'absent.log')}, 'echo hi'
+        )
+
+        assert result['status'] == 'success'
+
+    def test_timeout_leg_ignores_a_contradicting_log(self, tmp_path):
+        # The timeout leg never reads the log — a supervisor timeout outranks any
+        # log content, exactly as on the daemon side.
+        log = tmp_path / 'job.log'
+        log.write_text('status: success\nexit_code: 0\n')
+
+        result = factory._daemon_result_to_direct(
+            {'job_status': 'timeout', 'log_file': str(log), 'duration_seconds': 9}, 'pw verify'
+        )
+
+        assert result['status'] == 'timeout'
+
+    def test_killed_leg_ignores_a_contradicting_log(self, tmp_path):
+        log = tmp_path / 'job.log'
+        log.write_text('status: success\nexit_code: 0\n')
+
+        result = factory._daemon_result_to_direct(
+            {'job_status': 'killed', 'log_file': str(log), 'duration_seconds': 2}, 'pw verify'
+        )
+
+        assert result['error'] == 'killed'
+        assert 'do not blind-retry' in result['message']
+
+
+class _ResultCapture:
+    """Captures the ``result`` dict handed to the stubbed ``cmd_run_common`` so a
+    routed / in-process ``cmd_run`` can be asserted on the rendered verdict shape
+    without depending on the real formatter/parse path."""
+
+    def __init__(self):
+        self.result: dict | None = None
+
+    def __call__(self, **kwargs):
+        self.result = kwargs.get('result')
+        return 0
+
+
+class _FakeBuildServerClient:
+    """A faked build-server client: preflight ready, submit accepted, and a
+    scripted ``wait`` payload — so the routed path runs end-to-end through the
+    real ``_daemon_result_to_direct`` cross-check under ``execution_mode=daemon``."""
+
+    def __init__(self, wait_payload: dict):
+        self._wait_payload = wait_payload
+
+    def run_preflight(self, _ns):
+        return {'preflight': 'ready'}
+
+    def run_submit(self, _ns):
+        return {'status': 'success', 'job_id': 'J1'}
+
+    def run_wait(self, _ns):
+        return self._wait_payload
+
+
+class TestCmdRunExecutionModeVerdict:
+    """End-to-end ``cmd_run`` verdict truthfulness across execution modes: the
+    in-process control and the routed daemon-lying case both surface ``error``."""
+
+    def _handlers(self):
+        return factory.create_execute_handlers(_make_config(), lambda *_a, **_k: ([], None, 'SUCCESS'))
+
+    def test_in_process_failing_build_renders_error(self, monkeypatch):
+        # (a) A genuinely failing build under --execution-mode in_process surfaces
+        # error truthfully — the non-daemon control for the cross-check.
+        failing = {
+            'status': 'error',
+            'exit_code': 2,
+            'duration_seconds': 1,
+            'log_file': '',
+            'command': 'pw verify',
+        }
+        monkeypatch.setattr(factory, 'execute_direct_base', lambda **_k: failing)
+        capture = _ResultCapture()
+        monkeypatch.setattr(factory, 'cmd_run_common', capture)
+        _ed, cmd_run = self._handlers()
+
+        rc = cmd_run(
+            argparse.Namespace(command_args='verify', plan_id='', format='toon', execution_mode='in_process')
+        )
+
+        assert rc == 0
+        assert capture.result is not None
+        assert capture.result['status'] == 'error'
+
+    def test_daemon_mode_lying_success_is_failed_closed(self, monkeypatch, tmp_path):
+        # (b) The daemon reports job_status: success over a failure-log; the
+        # client cross-check catches the lying/lagging daemon and renders error.
+        monkeypatch.delenv(factory.MARSHALLD_JOB_ENV, raising=False)
+        log = tmp_path / 'job.log'
+        log.write_text('status: error\nexit_code: 5\n')
+        client = _FakeBuildServerClient(
+            {'job_status': 'success', 'log_file': str(log), 'duration_seconds': 4}
+        )
+        monkeypatch.setattr(factory, '_load_build_server', lambda: client)
+        capture = _ResultCapture()
+        monkeypatch.setattr(factory, 'cmd_run_common', capture)
+        _ed, cmd_run = self._handlers()
+
+        rc = cmd_run(
+            argparse.Namespace(command_args='verify', plan_id='', format='toon', execution_mode='daemon')
+        )
+
+        assert rc == 0
+        assert capture.result is not None
+        assert capture.result['status'] == 'error'
+        assert capture.result['exit_code'] == 5
+
+    def test_daemon_mode_genuine_success_stays_success(self, monkeypatch, tmp_path):
+        monkeypatch.delenv(factory.MARSHALLD_JOB_ENV, raising=False)
+        log = tmp_path / 'job.log'
+        log.write_text('status: success\nexit_code: 0\n')
+        client = _FakeBuildServerClient(
+            {'job_status': 'success', 'log_file': str(log), 'duration_seconds': 3}
+        )
+        monkeypatch.setattr(factory, '_load_build_server', lambda: client)
+        capture = _ResultCapture()
+        monkeypatch.setattr(factory, 'cmd_run_common', capture)
+        _ed, cmd_run = self._handlers()
+
+        rc = cmd_run(
+            argparse.Namespace(command_args='verify', plan_id='', format='toon', execution_mode='daemon')
+        )
+
+        assert rc == 0
+        assert capture.result is not None
+        assert capture.result['status'] == 'success'

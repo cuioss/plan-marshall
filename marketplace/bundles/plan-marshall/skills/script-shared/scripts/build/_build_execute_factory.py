@@ -57,7 +57,11 @@ from _build_result import (  # noqa: E402
     success_result,
     timeout_result,
 )
-from _build_server_protocol import MARSHALLD_JOB_ENV  # noqa: E402
+from _build_server_protocol import (  # noqa: E402
+    MARSHALLD_JOB_ENV,
+    STATUS_SUCCESS,
+    read_log_verdict,
+)
 from _build_shared import cmd_run_common  # noqa: E402
 from plan_logging import log_entry  # noqa: E402
 from toon_parser import serialize_toon  # noqa: E402
@@ -226,12 +230,31 @@ def _daemon_result_to_direct(waited: dict[str, Any], command_str: str) -> Direct
     the SAME ``cmd_run_common`` rendering/parse path as an in-process build. A
     ``killed`` job carries the no-blind-retry message so a harness reap on the
     daemon side is never mistaken for a flaky build.
+
+    On a ``success`` job status the client independently CROSS-CHECKS the routed
+    verdict: it re-reads the job log's own build TOON through the shared
+    :func:`read_log_verdict` and FAILS CLOSED when that verdict disagrees
+    (``status`` is not ``success``), rather than trusting the daemon's
+    ``job_status`` blindly. This is the client-side defense-in-depth backstop for
+    the window where a daemon could lag the server-side #979 narrowing. A ``None``
+    verdict (no parseable TOON — a non-wrapper command) keeps ``success``,
+    mirroring the daemon's own None-keeps-verdict rule so both sides stay
+    consistent. The ``timeout`` / ``killed`` legs are untouched.
     """
     job_status = str(waited.get('job_status', ''))
     log_file = str(waited.get('log_file', '') or '')
     duration = int(waited.get('duration_seconds', 0) or 0)
     exit_code = int(waited.get('exit_code', 0) or 0)
     if job_status == 'success':
+        verdict = read_log_verdict(log_file)
+        if verdict is not None and verdict.status != STATUS_SUCCESS:
+            return error_result(  # type: ignore[return-value]
+                ERROR_BUILD_FAILED,
+                verdict.exit_code or 1,
+                duration,
+                log_file,
+                command_str,
+            )
         return success_result(duration, log_file, command_str)  # type: ignore[return-value]
     if job_status == 'timeout':
         return timeout_result(duration, duration, log_file, command_str)  # type: ignore[return-value]
