@@ -1214,21 +1214,21 @@ def test_compose_sorts_phase_6_steps_by_frontmatter_order(plan_context):
     """Regression: a candidate list placing ``archive-plan`` BEFORE a lower-order
     step emits the lower-order step first in the composed manifest.
 
-    Reproduces the live bug: ``finalize-step-preference-emitter`` (order 80) was
+    Reproduces the live bug: ``finalize-step-preference-emitter`` (order 61) was
     appended AFTER ``archive-plan`` (order 1000) by ``manage-config
     sync-defaults``. cmd_compose now sorts ``phase_6.steps`` by resolved
-    frontmatter order, so the preference-emitter (80) is emitted strictly before
+    frontmatter order, so the preference-emitter (61) is emitted strictly before
     ``archive-plan`` (1000), which sorts last among order-resolvable steps.
     """
     # Bug-reproducing candidate order: archive-plan (order 1000) precedes the
-    # lower-order preference-emitter (order 80) — exactly the layout
+    # lower-order preference-emitter (order 61) — exactly the layout
     # sync-defaults produced by appending the back-filled default-on step.
     candidates = [
         'push',
         'create-pr',
         'lessons-capture',
         'archive-plan',  # order 1000
-        'finalize-step-preference-emitter',  # order 80 — appended AFTER archive-plan
+        'finalize-step-preference-emitter',  # order 61 — appended AFTER archive-plan
     ]
     result = cmd_compose(
         _compose_ns(

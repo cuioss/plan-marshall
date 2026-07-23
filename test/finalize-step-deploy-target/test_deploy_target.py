@@ -7,7 +7,7 @@ The skill is a markdown executor playbook backed by the multi-target
 generator at ``marketplace/targets/generate.py``. These tests pin the
 contract from three angles:
 
-1. **Frontmatter and ordering** — the skill declares ``order: 80`` so
+1. **Frontmatter and ordering** — the skill declares ``order: 81`` so
    the dispatcher places it post-merge after ``default:branch-cleanup``
    (70) and before ``project:finalize-step-sync-plugin-cache`` (85).
 2. **Project-local registration** — the skill lives at
@@ -72,8 +72,7 @@ def test_skill_frontmatter_has_canonical_fields():
     assert fm.get('description'), 'description must be non-empty'
     assert fm.get('order') == '81', (
         'deploy-target order must be 81 (post-merge: after branch-cleanup=70, '
-        'before sync-plugin-cache=85; bumped 80->81 to deconflict with the '
-        'consumer-shipped built-in default:finalize-step-preference-emitter at order 80)'
+        'before sync-plugin-cache=85)'
     )
 
 

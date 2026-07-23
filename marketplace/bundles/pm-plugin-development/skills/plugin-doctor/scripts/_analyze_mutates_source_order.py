@@ -44,22 +44,30 @@ Detection
 ---------
 The merge-gate order is resolved DYNAMICALLY from the discovered
 ``default:branch-cleanup`` record — never a hardcoded literal — so moving the
-merge gate moves the rule's threshold with it. A finding is emitted for each
-discovered step whose ``mutates_source`` is truthy AND whose ``order`` is
-greater than or equal to the merge-gate order, anchored at the step's
-``order:`` line.
+merge gate moves the rule's threshold with it. Two finding types share this
+rule, both anchored at the step's ``order:`` line:
 
-A step doc that declares no ``mutates_source`` key is silently skipped (it
-makes no source-mutation claim, so it is out of scope and produces no false
-positive). When the merge-gate step is not discoverable — a synthetic
-``tmp_path`` marketplace with no phase-6-finalize tree — the scan returns no
-findings rather than guessing a threshold.
+- ``mutates_source_step_post_merge_order`` — a step whose ``mutates_source`` is
+  truthy AND whose ``order`` is greater than or equal to the merge-gate order.
+  Its source edits are unpushable: the feature branch is already merged.
+- ``mutates_source_declaration_missing`` — a step at or after the merge gate
+  that declares NO ``mutates_source`` key at all. A step in the merge/post-merge
+  band MUST settle its pushability explicitly in frontmatter; the silent
+  omission is the defect (it is exactly how a source-mutating step slips past
+  the ordering check without ever declaring the claim).
+
+A step doc ordered BELOW the merge gate that declares no ``mutates_source`` key
+is out of scope (it makes no source-mutation claim and cannot evade the gate,
+so it produces no false positive). When the merge-gate step is not discoverable
+— a synthetic ``tmp_path`` marketplace with no phase-6-finalize tree — the scan
+returns no findings rather than guessing a threshold.
 
 Findings have the shape::
 
     {
         'rule_id': 'mutates-source-step-post-merge-order',
-        'type': 'mutates_source_step_post_merge_order',
+        'type': 'mutates_source_step_post_merge_order'
+                | 'mutates_source_declaration_missing',
         'rule': 'analyze_mutates_source_order',
         'file': '<absolute step-doc path>',
         'line': <int, 1-based line of the order: key>,
@@ -71,6 +79,10 @@ Findings have the shape::
             'merge_gate_order': <int>,
         },
     }
+
+Both finding types carry the same ``rule_id`` and ``details`` shape; ``type``
+discriminates the post-merge-ordered-mutator case from the
+missing-declaration case.
 
 Public API
 ----------
@@ -87,6 +99,7 @@ from _rule_registry import RuleDescriptor
 RULE_ID = 'mutates-source-step-post-merge-order'
 RULE_NAME = 'analyze_mutates_source_order'
 FINDING_TYPE = 'mutates_source_step_post_merge_order'
+FINDING_TYPE_DECLARATION_MISSING = 'mutates_source_declaration_missing'
 
 RULE_DESCRIPTOR = RuleDescriptor(
     rule_id=RULE_ID,
@@ -270,7 +283,42 @@ def analyze_mutates_source_order(marketplace_root: Path) -> list[dict]:
     findings: list[Finding] = []
     for step in steps:
         if step.mutates_source is None:
-            # No source-mutation claim — out of scope, never a false positive.
+            # No source-mutation claim. Below the merge gate this is out of
+            # scope (never a false positive); AT OR AFTER the gate the omission
+            # is itself the defect — a step in the merge/post-merge band MUST
+            # declare mutates_source explicitly so its pushability is settled by
+            # the frontmatter, not left implicit.
+            if step.order is not None and step.order >= merge_order:
+                findings.append(
+                    Finding(
+                        type=FINDING_TYPE_DECLARATION_MISSING,
+                        file=str(step.path),
+                        line=step.order_line,
+                        severity='error',
+                        fixable=False,
+                        rule_id=RULE_ID,
+                        details={
+                            'step_name': step.name,
+                            'step_order': step.order,
+                            'merge_gate_order': merge_order,
+                        },
+                        extra={
+                            'rule': RULE_NAME,
+                            'message': (
+                                f'Finalize step `{step.name}` is ordered '
+                                f'{step.order}, at or after the merge gate '
+                                f'`{_MERGE_GATE_STEP_NAME}` (order {merge_order}), '
+                                f'but declares no mutates_source key. A step at or '
+                                f'after the merge gate MUST declare mutates_source '
+                                f'explicitly: true if it edits tracked source (which '
+                                f'then requires moving it into the settle band before '
+                                f'the gate), or false to affirm it does not. See '
+                                f'phase-6-finalize/standards/'
+                                f'source-edit-pushability.md.'
+                            ),
+                        },
+                    )
+                )
             continue
         if step.mutates_source.lower() not in _TRUTHY:
             continue

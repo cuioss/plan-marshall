@@ -413,7 +413,7 @@ Iterate over `manifest.phase_6.steps` (read in Step 2). The list is the manifest
 
 In meta-projects that own marketplace bundles (notably the
 plan-marshall repo itself), the project-local Phase 6 ordering pairs
-`project:finalize-step-deploy-target` (order 80) with
+`project:finalize-step-deploy-target` (order 81) with
 `project:finalize-step-sync-plugin-cache` (order 85), placing both
 **after** `default:branch-cleanup`, against the main checkout
 post-merge. The cache mirrors the `target/claude/` content from the

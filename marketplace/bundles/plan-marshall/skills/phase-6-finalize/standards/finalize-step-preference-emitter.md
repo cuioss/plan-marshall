@@ -4,9 +4,10 @@ lane:
   cost_size: XS
 name: default:finalize-step-preference-emitter
 description: Per-plan preference-learning sweep — promotes recurring user gate-dispositions in the just-finished plan to durable architecture hints via the shared disposition-to-hint contract
-order: 80
+order: 61
 default_on: true
 presets: []
+mutates_source: true
 implements: plan-marshall:extension-api/standards/ext-point-finalize-step
 configurable:
   - key: preference_min_recurrence
@@ -56,11 +57,25 @@ dispatcher prepends `default:` when looking up the dispatch-table row).
 
 ## Ordering rationale
 
-`order: 80` places this step AFTER `branch-cleanup` (order 70), so the plan's
-finding dispositions are stable before they are read, and WELL BEFORE
-`record-metrics` (998) and `archive-plan` (1000) — the latter moves the plan
-directory out from under the `manage-findings` read. A learning step must run
-while the plan's findings are still readable in place.
+`order: 61` places this step in the **settle band**: AFTER `lessons-capture`
+(order 60), so the plan's finding dispositions are settled before they are read,
+and BEFORE the merge gate `branch-cleanup` (order 70). The placement is
+load-bearing: this step promotes recurring dispositions into `architecture enrich`
+hints, which mutate tracked source, so it MUST run while the feature branch is
+still open — before the branch is squash-merged, after which the edit can no
+longer ride the PR. The step declares `mutates_source: true` accordingly; the
+governing constraint is
+[source-edit-pushability.md](source-edit-pushability.md) (the pre-merge
+source-edit pushability contract), cross-referenced here rather than restated.
+
+An `order: < 10` slot is explicitly REJECTED: that early there is nothing to
+promote, because the finding dispositions this step reads and generalizes do not
+yet exist at the start of finalize — they are only settled once `lessons-capture`
+(60) has run. The step is therefore floored at the settle band, not hoisted to
+the front of the pipeline. It still runs WELL BEFORE `record-metrics` (998) and
+`archive-plan` (1000) — the latter moves the plan directory out from under the
+`manage-findings` read — so the plan's findings remain readable in place when it
+runs.
 
 ## Workflow
 
