@@ -290,8 +290,19 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics \
 ### Step 4: Get Task Content
 
 **From Description**:
-- Use description directly as original input
-- No additional context
+
+The description resolves along one of two branches. **Pointer detection**: the description is a *file pointer* when its text contains a single repo-relative path token that resolves to an existing regular file — the canonical emitted shape is `implement .plan/local/orchestrator/{slug}/plans/PLAN-NN-{plan_slug}.md`, so strip the leading verb (`implement`) and extract the path token as `{spec_path}`. A description with no such token — or with substantive prose around the path — takes the plain-text branch unchanged.
+
+- **Plain-text branch** (no file pointer): use the description directly as original input; no additional context extraction. The resolved `{request_narrative}` is the verbatim description text — behaviour unchanged.
+- **File-pointer branch**: the referenced spec at `{spec_path}` is INGESTED as the request body. Step 5.1 is invoked with `--source-id "{spec_path}"` and `--body-file "{spec_path}"` (see Step 5), and Step 5.2's `Write` is SKIPPED — the script performs the file read, so the LLM never retypes, paraphrases, or summarises the spec body. `--source-id` carries the pointer so provenance survives ingestion; this supersedes the plain-text "For `description`: Omit (no external reference)" rule, which becomes pointer-branch-conditional.
+
+  **Step 4 narrative rebind (load-bearing).** On the file-pointer branch the resolved `{request_narrative}` becomes the INGESTED FILE CONTENT — the spec body read from `{spec_path}` — NOT the pointer string. This rebind is required because two of the six pre-refine routing consumers do NOT re-read `request.md` from disk: Step 5c-recipe-match and Step 5c-aspect-classify are invoked with `--request-text "{request_narrative}"`, so without the rebind they would keep scoring the one-line pointer even after `--body-file` ingestion succeeds. Ingestion at Step 5 alone is insufficient for these two in-context consumers.
+
+  **Ordering constraint (load-bearing).** Ingestion completes at Step 5 — BEFORE Step 5c-recipe-match, Step 5c-aspect-classify, Step 7 `domain-detect`, Step 8a.5 `change-type-heuristic`, Step 8a.5 `scope-estimate-heuristic`, and Step 8b `planning-lane route` — so every routing consumer scores the ingested brief, not the pointer string. The six consumers split by fix path: FOUR (Step 7 `domain-detect`, both Step 8a.5 heuristics, Step 8b `planning-lane route`) re-read the persisted `request.md` body and are fixed by the Step 5 ingestion; the other TWO (Step 5c-recipe-match, Step 5c-aspect-classify) consume the in-context `{request_narrative}` and are fixed only by the Step 4 narrative rebind above. Naming all six keeps the constraint from being silently reordered away.
+
+  **Guard reaffirmation.** Ingesting the referenced spec is *recording request material*, never a licence to implement it — the § Enforcement prohibition ("Never write or edit source files outside `.plan/local/plans/{plan_id}/**`") holds unchanged on this branch. The more implementation-ready the ingested brief reads, the stronger and more wrong the pull to act on it.
+
+  **Fail-closed obligation (load-bearing).** The pointer-branch `request create --body-file` invocation (Step 5.1) MUST be checked by **branching on the returned TOON `status`, never on the process exit code**. `manage-plan-documents` follows the canonical output contract: an *operation* failure exits `0` and carries its verdict only in the stdout TOON, so inferring success from `exit_code == 0` is the exact "confident signal hides a caveat" shape this plan exists to close — the contract MUST inspect `status` / `error` and MUST NOT read the zero exit code as success. On `status: error` with `error: body_file_not_found` — the spec at `{spec_path}` is absent or is not a regular file — phase-1-init **aborts immediately**: it does NOT fall back to writing the pointer string as the body, does NOT emit an empty-brief `request.md`, and does NOT proceed to Step 5b / Step 5c / Step 6. The script writes nothing on this path, so no partial `request.md` is left behind — the plan directory created at Step 3 is the only residue. Return the structured refusal and emit the `[ERROR]` work-log line per § Error Handling → **Spec Pointer Unreadable**. The refusal aligns with ADR-009 (*Status reporting fails closed with an explicit unknown state*): an unresolvable brief yields a distinct, legible refusal, never a vacuously-successful plan it cannot substantiate.
 
 **From Lesson**:
 
@@ -415,7 +426,7 @@ Parse the TOON output and extract the `path` field — this is the absolute path
 **Step 5.2 — Write the verbatim body:**
 
 Use the `Write` tool to write the original input content directly to `{path}` from Step 5.1. The body is the verbatim content from Step 4:
-- **description**: The free-form description text
+- **description** (plain-text branch only): The free-form description text. On the Step 4 **file-pointer branch** Step 5.1 already ingested the body via `--body-file`, so Step 5.2 is SKIPPED entirely — exactly one body writer fires per branch, never both.
 - **lesson**: The lesson body (title + detail)
 - **issue**: The issue body
 - **recipe**: The recipe description
@@ -432,7 +443,7 @@ Write({path}, {verbatim_body_content})
   - For `issue`: The issue URL
   - For `recipe`: The recipe key (e.g., `refactor-to-standards`)
   - For `description`: Omit (no external reference)
-- `--body-file PATH`: (optional, automated flows only) Absolute path to an existing file whose contents should become the request body. When provided, the script copies the file contents into the allocated stub atomically, replacing the two-step Write follow-up. Interactive flows driven by this skill use Step 5.2 instead.
+- `--body-file PATH`: Path to an existing file whose contents become the request body. This is the REQUIRED mechanism for the Step 4 **file-pointer branch** — Step 5.1 is invoked with `--body-file "{spec_path}"`, the script reads the file (UTF-8) and splices its contents into the allocated stub atomically, and Step 5.2's `Write` is skipped. On the **plain-text branch** `--body-file` is omitted and the caller writes the body via Step 5.2 instead. Exactly one body writer fires per branch, never both.
 
 **Note**: The skill handles template rendering and timestamps automatically. The stub returned by Step 5.1 already contains the metadata frontmatter — Step 5.2's `Write` replaces the body section only when the caller opts for the two-step pattern.
 
@@ -1129,6 +1140,37 @@ recovery: Re-dispatch init with an explicit --plan-id (a kebab-case slug), or fi
 ```
 
 The orchestrator's post-init contract assertion (`plan-marshall:plan-marshall/workflow/planning.md` § Action: init → **Post-init contract assertion**) treats this `error: phantom_plan_id` return as a hard failure and refuses to advance to phase-2-refine, surfacing the violation to the lesson-conversion caller.
+
+### Spec Pointer Unreadable (Step 4 File-Pointer Branch)
+
+Raised by the **Step 4 "From Description" file-pointer branch** when Step 5.1's
+`request create --body-file "{spec_path}"` invocation returns `status: error`
+with `error: body_file_not_found` — the description named a spec file that does
+not exist or is not a regular file. The refusal is detected by **branching on the
+returned TOON `status`, not the process exit code**: `manage-plan-documents`
+follows the canonical output contract where an operation failure exits `0` and
+carries the verdict only in the stdout TOON, so a caller that inferred success
+from `exit_code == 0` would silently create a plan on an empty brief — the exact
+"confident signal hides a caveat" defect this refusal closes. On this path
+phase-1-init aborts immediately: it does not fall back to the pointer string, does
+not emit an empty-brief `request.md`, and does not proceed to Step 5b / Step 5c /
+Step 6. The branch fires after Step 3, so the plan directory already exists and
+the work-log emit above IS fired.
+
+```toon
+status: error
+error: spec_pointer_unreadable
+plan_id: {plan_id}
+spec_path: {spec_path}
+underlying_error: body_file_not_found
+message: Description names spec file '{spec_path}' but it does not exist or is not a regular file. Refusing to create a plan on an empty brief.
+recovery: Re-run init with a readable spec path, or pass the brief inline as a free-form description.
+```
+
+This refusal is the fail-closed application of ADR-009 (*Status reporting fails
+closed with an explicit unknown state*): an unresolvable brief yields a distinct,
+legible refusal rather than a vacuously-successful plan the lifecycle cannot
+substantiate.
 
 ---
 
