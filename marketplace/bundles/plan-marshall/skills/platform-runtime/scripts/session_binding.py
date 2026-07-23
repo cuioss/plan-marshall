@@ -2,30 +2,46 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Pure session->plan binding policy for platform-runtime.
 
-The single importable home of the per-session ``active-plan`` cache policy —
+The single importable home of the per-session session-binding cache policy —
 the read side (relocated from ``claude_runtime._read_active_plan``), the write
 side (relocated from the executor template's ``_write_active_plan``), and a
 conflict/stale-slot scan. Kept as a pure, dependency-free module so it is
 unit-testable against a tmp cache without going through the generated executor.
 
-Four entry points:
+Two KIND-DISJOINT slots live side by side under each session directory: the
+plan slot ``active-plan`` (a plan id) and the orchestrator slot
+``active-orchestrator`` (an epic slug). They are mutually exclusive by
+last-driven-wins — binding one kind clears the other — so a session drives
+EITHER a plan OR an epic, never both. The plan read path
+(``active-plan`` / :func:`resolve_plan` / :func:`bind`) is unchanged; the
+orchestrator slot is a parallel addition that leaves it byte-for-byte intact.
+
+Entry points:
 
 - :func:`resolve_plan` — read the caller session's bound plan_id.
-- :func:`bind` — last-driven-wins unconditional write of the caller's OWN slot.
-  NO protect-active, NO stale-slot reclaim, NO plan-dir-exists check.
-- :func:`unbind` — remove the caller's OWN slot (the teardown counterpart of
-  :func:`bind`), pruning the now-empty session directory.
+- :func:`resolve_orchestrator` — read the caller session's bound epic slug.
+- :func:`bind` — last-driven-wins unconditional write of the caller's OWN plan
+  slot, clearing the orchestrator slot for mutual exclusion. NO protect-active,
+  NO stale-slot reclaim, NO plan-dir-exists check.
+- :func:`bind_orchestrator` — last-driven-wins write of the caller's OWN
+  orchestrator slot, clearing the plan slot for mutual exclusion.
+- :func:`unbind` — remove BOTH of the caller's OWN slots (the teardown
+  counterpart of :func:`bind` / :func:`bind_orchestrator`), pruning the
+  now-empty session directory.
 - :func:`doctor` — visit every directory under
   ``~/.cache/plan-marshall/sessions/``, build a plan->sessions reverse index in
-  memory from the live slots, flag any plan bound by more than one live session,
-  and (when ``fix``) GC slots whose plan is archived/deleted plus orphan
-  directories that yield no live slot at all.
+  memory from the live plan slots, flag any plan bound by more than one live
+  session, and (when ``fix``) GC slots whose plan is archived/deleted plus
+  orphan directories that yield no live slot at all. A session dir carrying only
+  an orchestrator slot is a live binding, NOT an orphan, so it is never GC'd.
 
-Concurrency-correctness: the ``active-plan`` cache is per-session (keyed by
-``session_id``), so :func:`bind` writes only the caller's own slot — there is no
-cross-session check-then-act window. :func:`doctor` keeps NO shared mutable
-index (no ``index.json``), so the per-file scan-then-GC is idempotent. No new
-shared-file TOCTOU hazard is introduced. Every path is best-effort / no-raise.
+Concurrency-correctness: the session cache is per-session (keyed by
+``session_id``), so :func:`bind` / :func:`bind_orchestrator` write only the
+caller's own slots — there is no cross-session check-then-act window, and the
+mutual-exclusion clear touches only the caller's own sibling slot.
+:func:`doctor` keeps NO shared mutable index (no ``index.json``), so the
+per-file scan-then-GC is idempotent. No new shared-file TOCTOU hazard is
+introduced. Every path is best-effort / no-raise.
 """
 from __future__ import annotations
 
@@ -100,6 +116,32 @@ def _active_plan_path(session_id: str) -> Path:
     return _SESSION_CACHE_BASE / session_id / "active-plan"
 
 
+def _active_orchestrator_path(session_id: str) -> Path:
+    """Return the ``active-orchestrator`` cache file path for ``session_id``.
+
+    The kind-disjoint sibling of :func:`_active_plan_path` — the epic-binding
+    slot, holding an orchestrator epic slug rather than a plan id. Lives under
+    the same per-session directory so a single :func:`unbind` prunes the
+    directory once both slots are gone.
+    """
+    return _SESSION_CACHE_BASE / session_id / "active-orchestrator"
+
+
+def _clear_slot(path: Path) -> None:
+    """Best-effort remove a single cache slot file (no directory prune).
+
+    The mutual-exclusion primitive: :func:`bind` clears the orchestrator slot
+    and :func:`bind_orchestrator` clears the plan slot through this helper, so
+    binding one kind retires the other (last-driven-wins across kinds). An
+    already-absent file is not an error. Never raises — a clear failure must not
+    turn a successful bind into a reported failure.
+    """
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
 # ---------------------------------------------------------------------------
 # Read / write policy
 # ---------------------------------------------------------------------------
@@ -122,16 +164,35 @@ def resolve_plan(session_id: str) -> str | None:
         return None
 
 
+def resolve_orchestrator(session_id: str) -> str | None:
+    """Return the epic slug bound to ``session_id``, or ``None`` when unbound.
+
+    The orchestrator-slot counterpart of :func:`resolve_plan`, reading
+    ``~/.cache/plan-marshall/sessions/{session_id}/active-orchestrator``. A
+    malformed session_id, a missing/unreadable file, or an empty value yields
+    ``None``. Never raises.
+    """
+    if not _valid_session_id(session_id):
+        return None
+    try:
+        raw = _active_orchestrator_path(session_id).read_text(encoding="utf-8").strip()
+        return raw or None
+    except OSError:
+        return None
+
+
 def bind(session_id: str, plan_id: str) -> bool:
-    """Bind ``plan_id`` to ``session_id``'s slot, last-driven-wins.
+    """Bind ``plan_id`` to ``session_id``'s plan slot, last-driven-wins.
 
     Validates the session-UUID and plan-id shapes, then UNCONDITIONALLY writes
-    the caller's own slot — NO protect-active, NO stale-slot reclaim, NO
-    plan-dir-exists check. Because the cache is per-session this touches only the
-    caller's slot and has no cross-session check-then-act window.
+    the caller's own plan slot — NO protect-active, NO stale-slot reclaim, NO
+    plan-dir-exists check — and clears the sibling orchestrator slot for
+    kind-disjoint mutual exclusion (a session drives EITHER a plan OR an epic).
+    Because the cache is per-session this touches only the caller's own slots and
+    has no cross-session check-then-act window.
 
-    Returns True when the slot was written, False on validation failure or any
-    I/O error. Best-effort: never raises.
+    Returns True when the plan slot was written, False on validation failure or
+    any I/O error. Best-effort: never raises.
     """
     if not _valid_session_id(session_id) or not _valid_plan_id(plan_id):
         return False
@@ -139,9 +200,41 @@ def bind(session_id: str, plan_id: str) -> bool:
         target = _active_plan_path(session_id)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(plan_id, encoding="utf-8")
-        return True
     except OSError:
         return False
+    # Mutual exclusion: a plan binding retires any orchestrator binding on the
+    # same session (last-driven-wins across kinds). Best-effort — the clear never
+    # turns a successful plan write into a reported failure.
+    _clear_slot(_active_orchestrator_path(session_id))
+    return True
+
+
+def bind_orchestrator(session_id: str, slug: str) -> bool:
+    """Bind an epic ``slug`` to ``session_id``'s orchestrator slot, last-driven-wins.
+
+    The orchestrator-slot counterpart of :func:`bind`: validates the session-UUID
+    and slug shapes (the same generic :func:`_valid_segment`), UNCONDITIONALLY
+    writes the caller's own ``active-orchestrator`` slot, and clears the sibling
+    plan slot for kind-disjoint mutual exclusion. Because the cache is per-session
+    this touches only the caller's own slots and has no cross-session
+    check-then-act window.
+
+    Returns True when the orchestrator slot was written, False on validation
+    failure or any I/O error. Best-effort: never raises — a caller fires this as
+    a side effect of the per-verb repaint, so it must never break that call.
+    """
+    if not _valid_session_id(session_id) or not _valid_segment(slug):
+        return False
+    try:
+        target = _active_orchestrator_path(session_id)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(slug, encoding="utf-8")
+    except OSError:
+        return False
+    # Mutual exclusion: an orchestrator binding retires any plan binding on the
+    # same session, mirroring bind()'s symmetric clear.
+    _clear_slot(_active_plan_path(session_id))
+    return True
 
 
 def _remove_slot_and_prune(path: Path) -> bool:
@@ -169,20 +262,28 @@ def _remove_slot_and_prune(path: Path) -> bool:
 
 
 def unbind(session_id: str) -> bool:
-    """Remove ``session_id``'s own ``active-plan`` slot — the teardown of :func:`bind`.
+    """Remove BOTH of ``session_id``'s own slots — the teardown of :func:`bind`.
 
-    Deletes ``~/.cache/plan-marshall/sessions/{session_id}/active-plan`` and
-    prunes the now-empty session directory. Same validation, same per-session
-    scope, and the same best-effort / no-raise contract as :func:`bind`: because
-    the cache is keyed by ``session_id`` this touches only the caller's own slot,
-    so there is no cross-session check-then-act window.
+    Deletes both ``~/.cache/plan-marshall/sessions/{session_id}/active-plan`` and
+    ``.../active-orchestrator`` and prunes the now-empty session directory. Same
+    validation, same per-session scope, and the same best-effort / no-raise
+    contract as :func:`bind` / :func:`bind_orchestrator`: because the cache is
+    keyed by ``session_id`` this touches only the caller's own slots, so there is
+    no cross-session check-then-act window. Removing both slots is what makes the
+    teardown kind-agnostic — a session bound to either kind is fully released.
 
-    Returns True when the slot was removed (or was already absent), False on
+    The first :func:`_remove_slot_and_prune` call's ``rmdir`` is a no-op while the
+    sibling slot still exists (a non-empty dir), so the directory is pruned by the
+    second call once both slots are gone.
+
+    Returns True when both slots were removed (or were already absent), False on
     validation failure or any I/O error. Never raises.
     """
     if not _valid_session_id(session_id):
         return False
-    return _remove_slot_and_prune(_active_plan_path(session_id))
+    plan_removed = _remove_slot_and_prune(_active_plan_path(session_id))
+    orchestrator_removed = _remove_slot_and_prune(_active_orchestrator_path(session_id))
+    return plan_removed and orchestrator_removed
 
 
 # ---------------------------------------------------------------------------
@@ -226,8 +327,14 @@ def _scan_session_dirs() -> tuple[list[tuple[str, str]], list[str]]:
     the session-dir names whose ``active-plan`` file is absent, empty, or
     unreadable (:func:`resolve_plan` returns ``None``) — the residue
     :func:`unbind`'s prune could not remove (a non-empty dir at teardown, or a
-    slot written by a crashed writer). A directory with a malformed name is
-    skipped from both. Best-effort — a scan error yields two empty lists.
+    slot written by a crashed writer).
+
+    A session dir carrying only an ``active-orchestrator`` slot (no readable plan
+    slot but a live epic binding) is NEITHER a plan slot NOR an orphan: it is a
+    live orchestrator binding, kind-disjoint from the plan reverse-index, so it is
+    excluded from both lists and the GC never touches it. A directory with a
+    malformed name is skipped from both. Best-effort — a scan error yields two
+    empty lists.
     """
     slots: list[tuple[str, str]] = []
     orphans: list[str] = []
@@ -247,6 +354,10 @@ def _scan_session_dirs() -> tuple[list[tuple[str, str]], list[str]]:
         plan_id = resolve_plan(session_id)
         if plan_id:
             slots.append((session_id, plan_id))
+        elif resolve_orchestrator(session_id):
+            # Live orchestrator binding — kind-disjoint from the plan
+            # reverse-index and NOT an orphan, so leave it untouched by the GC.
+            continue
         else:
             orphans.append(session_id)
     return slots, orphans

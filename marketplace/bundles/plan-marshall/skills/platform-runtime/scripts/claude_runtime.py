@@ -898,6 +898,20 @@ def _read_active_plan(session_id: str) -> str | None:
     return session_binding.resolve_plan(session_id)
 
 
+def _read_active_orchestrator(session_id: str) -> str | None:
+    """Read the active epic slug for *session_id* from the per-session cache.
+
+    The orchestrator-slot counterpart of :func:`_read_active_plan`: a thin
+    delegation to the pure :func:`session_binding.resolve_orchestrator` policy.
+    ``session render-title`` resolves a session->epic binding through this
+    function when no plan binding is present, so an orchestrator epic reaches the
+    PRIMARY hook channel. ``session_id`` originates from an external hook payload;
+    ``resolve_orchestrator`` validates its shape before any filesystem use and
+    never raises.
+    """
+    return session_binding.resolve_orchestrator(session_id)
+
+
 def _resolve_archived_status_json(plan_id: str) -> Path | None:
     """Resolve the archived ``status.json`` for a plan, or ``None``.
 
