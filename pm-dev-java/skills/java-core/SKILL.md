@@ -1,0 +1,88 @@
+---
+name: java-core
+description: Core Java development standards for patterns, modern features, and performance optimization. Inbound input validation at trust boundaries is owned by pm-dev-java:java-security
+user-invocable: false
+mode: knowledge
+---
+
+# Java Core Skill
+
+**REFERENCE MODE**: This skill provides reference material. Load specific standards on-demand based on current task.
+
+Core Java development standards for general Java projects. This skill covers fundamental patterns, modern Java features, and performance optimization.
+
+## Prerequisites
+
+This skill applies to Java 21+ projects. For projects using CuiLogger, LogRecord, or other libraries from the `pm-dev-java-cui` bundle, load that bundle's skills additionally.
+
+## Workflow
+
+### Step 1: Load Core Patterns
+
+Load this standard for any Java implementation work.
+
+```text
+Read: standards/java-core-patterns.md
+```
+
+This provides foundational rules for:
+- Package and class structure
+- Method design and command-query separation
+- Parameter objects and method complexity
+- Code organization principles
+
+### Step 2: Load Additional Standards (As Needed)
+
+**Java 17 Features** (load for new code):
+```text
+Read: standards/java-17-features.md
+```
+
+Use when: Writing new code or modernizing existing code. Covers records, switch expressions, pattern matching for instanceof, sealed classes, text blocks, streams, and Optional usage.
+
+**Java 21 Features** (load for Java 21+ code):
+```text
+Read: standards/java-21-features.md
+```
+
+Use when: Using Java 21 features — pattern matching in switch, record patterns, sequenced collections, and virtual threads.
+
+**Java 25 Features** (load for Java 25+ code):
+```text
+Read: standards/java-25-features.md
+```
+
+Use when: Using Java 25 features — scoped values, flexible constructor bodies, module imports, compact source files, KDF API, and JVM performance flags (AOT cache, compact headers).
+
+**Concurrency Patterns** (load for multi-threaded code):
+```text
+Read: standards/java-concurrency.md
+```
+
+Use when: Writing concurrent or multi-threaded code. Covers why to avoid volatile/double-checked locking, lock selection (ReentrantLock, StampedLock, atomics), virtual thread rules, ScopedValue vs ThreadLocal, concurrent collections, and common pitfalls.
+
+**Performance Patterns** (load for optimization work):
+```text
+Read: standards/java-performance-patterns.md
+```
+
+Use when: Optimizing code or designing high-performance components. Covers string handling, autoboxing, collection sizing, thread safety, exception handling, and logging performance.
+
+**DSL-Style Nested Constants** (load for constant organization):
+```text
+Read: standards/dsl-constants.md
+```
+
+Use when: Organizing related constants hierarchically using nested static classes with `@UtilityClass`. Covers configuration keys, error codes, resource bundles, logging messages, and best practices.
+
+**Security** (input validation, secure logging, secrets, startup validation):
+
+The Java security surface — inbound input validation (`java-input-validation.md`) and outbound security patterns (`java-security-patterns.md`) — is owned by `Skill: pm-dev-java:java-security`, and both standards files now live under THAT skill's `standards/` directory (not this one). Load `pm-dev-java:java-security` for any security-sensitive review or hardening task; it resolves through the `security` profile. The cross-cutting OWASP/STRIDE/secrets/secure-logging/trust-boundary foundations live in `Skill: plan-marshall:persona-security-expert`.
+
+## Related Skills
+
+- `plan-marshall:ref-code-quality` - Language-agnostic code quality principles
+- `pm-dev-java:java-null-safety` - JSpecify null annotations
+- `pm-dev-java:java-lombok` - Lombok patterns
+- `pm-dev-java:junit-core` - JUnit 5 testing patterns
+- `pm-dev-java:javadoc` - JavaDoc documentation standards

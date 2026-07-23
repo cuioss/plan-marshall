@@ -1,0 +1,23 @@
+{
+  "name": "pm-dev-oci",
+  "version": "0.1.1205",
+  "description": "OCI container standards and security best practices",
+  "author": {
+    "name": "https://github.com/cuioss/plan-marshall",
+    "email": "contact@cuioss.de"
+  },
+  "license": "FSL-1.1-ALv2",
+  "homepage": "https://github.com/cuioss/plan-marshall",
+  "repository": "https://github.com/cuioss/plan-marshall.git",
+  "keywords": [
+    "oci",
+    "containers",
+    "docker",
+    "security",
+    "owasp",
+    "standards"
+  ],
+  "agents": [],
+  "commands": [],
+  "skills": []
+}

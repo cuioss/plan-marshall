@@ -1,0 +1,49 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
+"""Extension API for pm-requirements bundle.
+
+Provides skill-only domain detection for requirements engineering projects.
+"""
+
+from extension_base import ExtensionBase
+
+
+class Extension(ExtensionBase):
+    """Requirements extension for pm-requirements bundle.
+
+    This is a knowledge-only domain: it provides authoring standards but no
+    implementation, testing, or quality-gate skills.  The empty profiles
+    below are intentional — requirements engineering guides content creation,
+    it does not generate or verify code.
+    """
+
+    def provides_triage(self) -> str | None:
+        """Return triage skill reference."""
+        return 'pm-requirements:ext-triage-reqs'
+
+    def get_skill_domains(self) -> list[dict]:
+        """Domain metadata for skill loading."""
+        return [
+            {
+                'domain': {
+                    'key': 'requirements',
+                    'name': 'Requirements Engineering',
+                    'description': 'User stories, acceptance criteria, specifications',
+                },
+                'profiles': {
+                    'core': {
+                        'defaults': [
+                            {
+                                'skill': 'pm-requirements:requirements-authoring',
+                                'description': 'Requirements authoring standards for user stories and acceptance criteria',
+                            },
+                        ],
+                        'optionals': [],
+                    },
+                    # Knowledge-only domain: no implementation, testing, or quality skills
+                    'implementation': {'defaults': [], 'optionals': []},
+                    'module_testing': {'defaults': [], 'optionals': []},
+                    'quality': {'defaults': [], 'optionals': []},
+                },
+            }
+        ]

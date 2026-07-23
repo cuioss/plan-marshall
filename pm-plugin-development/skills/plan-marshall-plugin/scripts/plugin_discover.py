@@ -1,0 +1,508 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
+"""Plugin bundle discovery for marketplace bundles.
+
+Discovers marketplace bundles with complete metadata.
+Each bundle becomes one entry in the per-module architecture layout:
+``manage-architecture`` writes a top-level ``_project.json`` whose
+``modules`` index is the source of truth, plus one
+``{module}/derived.json`` per indexed module under
+``.plan/project-architecture/``. This script returns the list of
+module dicts that are persisted as those per-module ``derived.json``
+files (one entry per bundle).
+
+Packages are:
+- skills: Each skill directory (description from SKILL.md frontmatter)
+- agents: Each .md file in agents/ (description from frontmatter)
+- commands: Each .md file in commands/ (description from frontmatter)
+
+Note: This extension is specific to the plan-marshall marketplace.
+It only provides modules when marketplace.json name is 'plan-marshall'.
+Other Python projects are handled by pm-dev-python instead.
+
+Usage:
+    python3 plugin_discover.py discover --root /path/to/project
+
+Output:
+    JSON array of module objects conforming to module-discovery.md contract.
+"""
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+# Allow direct invocation and testing — executor sets PYTHONPATH for production.
+# Resolve extension-api scripts via the validated bundles-root helper, then the
+# version/worktree-aware bundle-path resolver (no bare concatenation).
+from marketplace_bundles import resolve_bundle_path, resolve_bundles_root  # noqa: E402
+
+_BUNDLES_DIR = resolve_bundles_root(Path(__file__))
+EXTENSION_API_DIR = resolve_bundle_path(_BUNDLES_DIR, 'plan-marshall', 'skills/extension-api/scripts')
+if str(EXTENSION_API_DIR) not in sys.path:
+    sys.path.insert(0, str(EXTENSION_API_DIR))
+
+from _build_discover import find_readme  # noqa: E402
+from _dep_detection import extract_frontmatter  # noqa: E402
+from file_ops import safe_main  # noqa: E402
+
+# =============================================================================
+# Constants
+# =============================================================================
+
+PLUGIN_JSON = '.claude-plugin/plugin.json'
+"""Descriptor file that identifies a bundle."""
+
+SKILL_MD = 'SKILL.md'
+"""Skill definition file containing frontmatter."""
+
+BUNDLES_DIR = 'marketplace/bundles'
+"""Directory containing marketplace bundles."""
+
+BUILD_SYSTEM = 'marshall-plugin'
+"""Build system identifier for plugin bundles."""
+
+PYPROJECT_BUILD_BASE = 'python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run'
+"""Base command for Python build execution via plan-marshall:build-pyproject."""
+
+# Marketplace identification
+MARKETPLACE_JSON = 'marketplace/.claude-plugin/marketplace.json'
+"""Path to marketplace configuration file."""
+
+PLAN_MARSHALL_NAME = 'plan-marshall'
+"""Expected name in marketplace.json for this extension."""
+
+
+def _is_plan_marshall_marketplace(project_root: str) -> bool:
+    """Check if this is the plan-marshall marketplace by name.
+
+    This extension is specific to plan-marshall marketplace.
+    Other Python projects are handled by pm-dev-python instead.
+
+    Args:
+        project_root: Path to project root directory
+
+    Returns:
+        True if this is the plan-marshall marketplace, False otherwise
+    """
+    marketplace_json = Path(project_root) / MARKETPLACE_JSON
+    if not marketplace_json.exists():
+        return False
+    try:
+        data = json.loads(marketplace_json.read_text(encoding='utf-8'))
+        name = data.get('name')
+        return isinstance(name, str) and name == PLAN_MARSHALL_NAME
+    except (OSError, json.JSONDecodeError):
+        return False
+
+
+# =============================================================================
+# Frontmatter Extraction
+# =============================================================================
+
+
+def extract_description_from_frontmatter(frontmatter: str) -> str | None:
+    """Extract description field from YAML frontmatter.
+
+    Handles both single-line and YAML multiline (|) descriptions.
+
+    Args:
+        frontmatter: YAML frontmatter content (without delimiters).
+
+    Returns:
+        Description string or None if not found.
+    """
+    lines = frontmatter.split('\n')
+    for i, line in enumerate(lines):
+        if line.startswith('description:'):
+            value = line[len('description:') :].strip()
+
+            # Single-line: description: Some text
+            if value and value not in ('|', '>'):
+                # Remove quotes if present
+                if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
+                    value = value[1:-1]
+                return value.strip()
+
+            # Multiline (| or >): collect indented lines
+            if value in ('|', '>'):
+                multiline_parts = []
+                for j in range(i + 1, len(lines)):
+                    next_line = lines[j]
+                    # Stop at non-indented line (next field)
+                    if next_line and not next_line.startswith(' '):
+                        break
+                    # Collect indented content
+                    if next_line.strip():
+                        multiline_parts.append(next_line.strip())
+                if multiline_parts:
+                    # Return first paragraph (up to blank line or Examples:)
+                    result = []
+                    for part in multiline_parts:
+                        if part.startswith('Examples:') or not part:
+                            break
+                        result.append(part)
+                    return ' '.join(result) if result else multiline_parts[0]
+
+    return None
+
+
+def get_component_description(file_path: Path) -> str | None:
+    """Get description from a component file's frontmatter.
+
+    Args:
+        file_path: Path to .md file with frontmatter.
+
+    Returns:
+        Description string or None if not found.
+    """
+    if not file_path.exists():
+        return None
+
+    try:
+        content = file_path.read_text(encoding='utf-8')
+        record = extract_frontmatter(content)
+        if record.present:
+            return extract_description_from_frontmatter(record.raw)
+    except OSError:
+        pass
+    return None
+
+
+# =============================================================================
+# Bundle Discovery
+# =============================================================================
+
+
+def discover_bundles(project_root: str) -> list[Path]:
+    """Discover all marketplace bundles in project.
+
+    A bundle is identified by the presence of .claude-plugin/plugin.json.
+
+    Args:
+        project_root: Absolute path to project root.
+
+    Returns:
+        List of absolute paths to plugin.json files, sorted by bundle name.
+    """
+    root = Path(project_root).resolve()
+    bundles_path = root / BUNDLES_DIR
+
+    if not bundles_path.is_dir():
+        return []
+
+    plugin_files = []
+    for bundle_dir in sorted(bundles_path.iterdir()):
+        if bundle_dir.is_dir():
+            plugin_json = bundle_dir / PLUGIN_JSON
+            if plugin_json.is_file():
+                plugin_files.append(plugin_json)
+
+    return plugin_files
+
+
+def load_plugin_json(plugin_path: Path) -> dict | None:
+    """Load and parse plugin.json file.
+
+    Args:
+        plugin_path: Absolute path to plugin.json.
+
+    Returns:
+        Parsed JSON as dict, or None on error.
+    """
+    try:
+        content = plugin_path.read_text(encoding='utf-8')
+        data: dict = json.loads(content)
+        return data
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+# =============================================================================
+# Package Discovery
+# =============================================================================
+
+
+def discover_skills(bundle_dir: Path, plugin_data: dict) -> dict:
+    """Discover skill packages in a bundle.
+
+    Each skill directory becomes a package. Description from SKILL.md frontmatter.
+
+    Args:
+        bundle_dir: Absolute path to bundle directory.
+        plugin_data: Parsed plugin.json data.
+
+    Returns:
+        Dict of skill packages keyed by skill name.
+    """
+    packages = {}
+    skills_list = plugin_data.get('skills', [])
+
+    for skill_ref in skills_list:
+        # skill_ref is like "./skills/plugin-doctor"
+        skill_path = bundle_dir / skill_ref.lstrip('./')
+        if skill_path.is_dir():
+            skill_name = skill_path.name
+            skill_md = skill_path / SKILL_MD
+            description = get_component_description(skill_md)
+
+            pkg_path = skill_ref.lstrip('./')
+
+            packages[f'skill:{skill_name}'] = {
+                'path': pkg_path,
+                'type': 'skill',
+            }
+            if description:
+                packages[f'skill:{skill_name}']['description'] = description
+
+    return packages
+
+
+def discover_agents(bundle_dir: Path, plugin_data: dict) -> dict:
+    """Discover agent packages in a bundle.
+
+    Each .md file in agents/ becomes a package. Description from frontmatter.
+
+    Args:
+        bundle_dir: Absolute path to bundle directory.
+        plugin_data: Parsed plugin.json data.
+
+    Returns:
+        Dict of agent packages keyed by agent name.
+    """
+    packages = {}
+    agents_list = plugin_data.get('agents', [])
+
+    for agent_ref in agents_list:
+        # agent_ref is like "./agents/execution-context.md"
+        agent_path = bundle_dir / agent_ref.lstrip('./')
+        if agent_path.is_file() and agent_path.suffix == '.md':
+            agent_name = agent_path.stem  # Remove .md extension
+            description = get_component_description(agent_path)
+
+            pkg_path = agent_ref.lstrip('./')
+
+            packages[f'agent:{agent_name}'] = {
+                'path': pkg_path,
+                'type': 'agent',
+            }
+            if description:
+                packages[f'agent:{agent_name}']['description'] = description
+
+    return packages
+
+
+def discover_commands(bundle_dir: Path, plugin_data: dict) -> dict:
+    """Discover command packages in a bundle.
+
+    Each .md file in commands/ becomes a package. Description from frontmatter.
+
+    Args:
+        bundle_dir: Absolute path to bundle directory.
+        plugin_data: Parsed plugin.json data.
+
+    Returns:
+        Dict of command packages keyed by command name.
+    """
+    packages = {}
+    commands_list = plugin_data.get('commands', [])
+
+    for cmd_ref in commands_list:
+        # cmd_ref is like "./commands/plugin-doctor.md"
+        cmd_path = bundle_dir / cmd_ref.lstrip('./')
+        if cmd_path.is_file() and cmd_path.suffix == '.md':
+            cmd_name = cmd_path.stem  # Remove .md extension
+            description = get_component_description(cmd_path)
+
+            pkg_path = cmd_ref.lstrip('./')
+
+            packages[f'command:{cmd_name}'] = {
+                'path': pkg_path,
+                'type': 'command',
+            }
+            if description:
+                packages[f'command:{cmd_name}']['description'] = description
+
+    return packages
+
+
+# =============================================================================
+# Command Building
+# =============================================================================
+
+
+def build_commands(bundle_name: str) -> dict:
+    """Build canonical commands for a bundle module.
+
+    Each bundle gets the full set of canonical Python build commands
+    that delegate to plan-marshall:build-pyproject's pyproject_build.py via execute-script.
+
+    Args:
+        bundle_name: Name of the bundle (e.g., 'pm-dev-java').
+
+    Returns:
+        Dict of canonical commands using pyproject_build execution.
+    """
+    base = PYPROJECT_BUILD_BASE
+    return {
+        'compile': f'{base} --command-args "compile {bundle_name}"',
+        'test-compile': f'{base} --command-args "test-compile {bundle_name}"',
+        'module-tests': f'{base} --command-args "module-tests {bundle_name}"',
+        'quality-gate': f'{base} --command-args "quality-gate {bundle_name}"',
+        'verify': f'{base} --command-args "verify {bundle_name}"',
+        'coverage': f'{base} --command-args "coverage {bundle_name}"',
+        'clean': f'{base} --command-args "clean {bundle_name}"',
+    }
+
+
+# =============================================================================
+# Module Building
+# =============================================================================
+
+
+def build_bundle_module(plugin_path: Path, project_root: Path, plugin_data: dict) -> dict:
+    """Build complete module dict from bundle.
+
+    Args:
+        plugin_path: Absolute path to plugin.json.
+        project_root: Project root path.
+        plugin_data: Parsed plugin.json data.
+
+    Returns:
+        Complete module dict conforming to module-discovery.md.
+    """
+    bundle_dir = plugin_path.parent.parent  # .claude-plugin/plugin.json -> bundle root
+    bundle_name = bundle_dir.name
+
+    # Calculate relative paths
+    try:
+        relative_path = str(bundle_dir.relative_to(project_root))
+        descriptor_path = str(plugin_path.relative_to(project_root))
+    except ValueError:
+        relative_path = bundle_name
+        descriptor_path = f'{bundle_name}/{PLUGIN_JSON}'
+
+    # Find README
+    readme_path = find_readme(str(bundle_dir))
+    if readme_path:
+        readme_full = f'{relative_path}/{readme_path}'
+    else:
+        readme_full = None
+
+    # Discover packages
+    packages = {}
+    packages.update(discover_skills(bundle_dir, plugin_data))
+    packages.update(discover_agents(bundle_dir, plugin_data))
+    packages.update(discover_commands(bundle_dir, plugin_data))
+
+    # Count stats
+    skill_count = len([k for k in packages if k.startswith('skill:')])
+    agent_count = len([k for k in packages if k.startswith('agent:')])
+    command_count = len([k for k in packages if k.startswith('command:')])
+
+    # Build source paths
+    sources = []
+    if (bundle_dir / 'skills').is_dir():
+        sources.append(f'{relative_path}/skills')
+    if (bundle_dir / 'agents').is_dir():
+        sources.append(f'{relative_path}/agents')
+    if (bundle_dir / 'commands').is_dir():
+        sources.append(f'{relative_path}/commands')
+
+    # Build commands
+    commands = build_commands(bundle_name)
+
+    return {
+        'name': bundle_name,
+        'build_systems': [BUILD_SYSTEM],
+        'paths': {
+            'module': relative_path,
+            'descriptor': descriptor_path,
+            'sources': sources,
+            'tests': [f'test/{bundle_name}'],
+            'readme': readme_full,
+        },
+        'metadata': {
+            'bundle_name': bundle_name,
+            'description': plugin_data.get('description'),
+        },
+        'packages': packages,
+        'dependencies': [],
+        'stats': {
+            'skill_count': skill_count,
+            'agent_count': agent_count,
+            'command_count': command_count,
+        },
+        'commands': commands,
+    }
+
+
+# =============================================================================
+# Main Discovery
+# =============================================================================
+
+
+def discover_plugin_modules(project_root: str) -> list:
+    """Discover all plugin bundle modules with complete metadata.
+
+    Implements the discover_modules() contract from ExtensionBase.
+    Each marketplace bundle becomes a module with build_systems=['marshall-plugin'].
+
+    The root Python module (build_systems=['python']) is discovered separately
+    by plan-marshall's _discover_python(), not by this extension.
+
+    Note: This extension is specific to plan-marshall marketplace.
+    Returns empty list for other Python projects (handled by pm-dev-python).
+
+    Args:
+        project_root: Absolute path to project root.
+
+    Returns:
+        List of module dicts conforming to module-discovery.md contract.
+        One module per bundle. Returns empty list if not the plan-marshall marketplace.
+    """
+    # Only handle plan-marshall marketplace (other Python projects use pm-dev-python)
+    if not _is_plan_marshall_marketplace(project_root):
+        return []
+
+    root = Path(project_root).resolve()
+    modules = []
+
+    # Discover bundles
+    plugin_files = discover_bundles(project_root)
+
+    for plugin_path in plugin_files:
+        plugin_data = load_plugin_json(plugin_path)
+        if plugin_data:
+            module = build_bundle_module(plugin_path, root, plugin_data)
+            modules.append(module)
+
+    return modules
+
+
+# =============================================================================
+# CLI
+# =============================================================================
+
+
+@safe_main
+def main() -> int:
+    """Main CLI entry point."""
+    parser = argparse.ArgumentParser(description='Plugin bundle discovery', allow_abbrev=False)
+    subparsers = parser.add_subparsers(dest='command', required=True)
+
+    # discover subcommand
+    discover_parser = subparsers.add_parser('discover', help='Discover plugin bundles', allow_abbrev=False)
+    discover_parser.add_argument('--root', required=True, help='Project root directory')
+
+    args = parser.parse_args()
+
+    if args.command == 'discover':
+        modules = discover_plugin_modules(args.root)
+        print(json.dumps(modules, indent=2))
+
+    return 0
+
+
+if __name__ == '__main__':
+    main()

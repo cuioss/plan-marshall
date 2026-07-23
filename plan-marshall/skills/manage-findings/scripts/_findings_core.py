@@ -1,0 +1,827 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
+"""
+Finding, Q-Gate, and assessment storage for plan-level artifacts.
+
+Provides JSONL-based storage for:
+- Plan-scoped findings (long-lived, promotable) — split per type into findings/{type}.jsonl
+- Phase-scoped Q-Gate findings (per-phase, not promotable) — findings/qgate-{phase}.jsonl
+- Plan-scoped assessments (component evaluations with certainty/confidence) — findings/assessments.jsonl
+
+Findings and Q-Gate share the same type taxonomy, resolution model, and severity values.
+Assessments use a separate certainty/confidence model.
+
+Storage:
+- Plan findings: .plan/local/plans/{plan_id}/artifacts/findings/{type}.jsonl (one file per type)
+- Q-Gate findings: .plan/local/plans/{plan_id}/artifacts/findings/qgate-{phase}.jsonl
+- Assessments: .plan/local/plans/{plan_id}/artifacts/findings/assessments.jsonl
+
+Stdlib-only - no external dependencies (except shared modules via PYTHONPATH).
+"""
+
+import hashlib
+import json
+from fnmatch import fnmatch
+from pathlib import Path
+from typing import Any
+
+from bot_registry import bot_kinds as _registry_bot_kinds
+from constants import (
+    FILE_FINDINGS_DIR,
+    FINDING_SEVERITIES,
+    FINDING_TYPES,
+    HASH_ID_LENGTH,
+    QGATE_PHASES,
+    QGATE_SOURCES,
+    VALID_CERTAINTIES,
+    VALID_RESOLUTIONS,
+)
+from input_validation import validate_plan_id
+from jsonl_store import (
+    append_jsonl,
+    ensure_parent_dir,
+    generate_hash_id,
+    get_artifact_path,
+    read_jsonl,
+    read_jsonl_merge,
+    timestamp,
+    update_jsonl,
+    update_jsonl_in_dir,
+)
+
+# --- Backward-compatible aliases (imported from constants) ---
+# These names are re-exported for manage-findings.py and tests
+SEVERITIES = FINDING_SEVERITIES
+RESOLUTIONS = VALID_RESOLUTIONS
+CERTAINTY_VALUES = VALID_CERTAINTIES
+
+# Valid kind discriminator values for pr-comment findings.
+PR_COMMENT_KINDS = ['inline', 'review_body', 'issue_comment']
+
+# Valid reviewer-bot identity values for pr-comment findings (derived from author).
+#
+# Data-not-code: the bot-kind set is DERIVED at import time from the per-bot
+# registry docs (``automatic-review/standards/{bot_kind}.md``) via
+# ``bot_registry.bot_kinds()`` rather than hard-coded here. ``BOT_KINDS`` stays a
+# stable importable module-level name — ``manage-findings.py`` uses it as an
+# argparse ``choices=`` list and ``add_finding`` validates ``bot_kind`` against
+# it — so adding a bot is a pure standards-doc edit with no change to this file.
+BOT_KINDS = _registry_bot_kinds()
+
+# Default per-field byte cap for quarantined raw_input free-text (64 KiB).
+# The `finding_raw_input_max_bytes` config knob (seeded by manage-config) overrides
+# this default; callers thread the resolved value in via `raw_input_max_bytes`.
+DEFAULT_RAW_INPUT_MAX_BYTES = 65536
+
+# Marker appended to a raw_input value that exceeded the per-field byte cap.
+RAW_INPUT_TRUNCATION_MARKER = '[truncated]'
+
+
+# --- Untrusted free-text quarantine ---
+
+
+def _quarantine_raw_input(
+    raw_input: dict[str, Any] | None,
+    max_bytes: int = DEFAULT_RAW_INPUT_MAX_BYTES,
+) -> dict[str, str] | None:
+    """Store untrusted free-text under a quarantined `raw_input.{field}` namespace.
+
+    Each field's value is stringified, UTF-8 encoded, and capped at ``max_bytes``.
+    A value that overflows the cap is truncated to the byte budget (decoding
+    defensively so a multi-byte character split at the boundary never raises) and
+    the ``RAW_INPUT_TRUNCATION_MARKER`` is appended so downstream readers can tell
+    the value was clipped. Returns ``None`` for an empty/absent mapping so callers
+    omit the key entirely.
+    """
+    if not raw_input:
+        return None
+
+    # Clamp the cap to a non-negative budget: a misconfigured non-positive
+    # `max_bytes` would otherwise make `encoded[:max_bytes]` slice from the end
+    # (Python negative-index semantics) and silently bypass the byte cap. A zero
+    # budget truncates the value to just the marker.
+    safe_max_bytes = max(max_bytes, 0)
+
+    quarantined: dict[str, str] = {}
+    for field, value in raw_input.items():
+        text = value if isinstance(value, str) else str(value)
+        encoded = text.encode('utf-8')
+        if len(encoded) > safe_max_bytes:
+            text = encoded[:safe_max_bytes].decode('utf-8', errors='ignore') + RAW_INPUT_TRUNCATION_MARKER
+        quarantined[field] = text
+    return quarantined
+
+
+def _content_discriminator(
+    detail: str | None,
+    file_path: str | None,
+    rule: str | None,
+) -> str:
+    """Stable content hash over (detail, file_path, rule) used as a dedup discriminator.
+
+    Folded into the Q-Gate dedup key so that a bare title collision alone can NEVER
+    reopen an unrelated resolved finding of the same class,
+    while an intended same-defect merge across iterations (same title AND same
+    discriminator) still collapses. The NUL separator prevents field-boundary
+    ambiguity (e.g. `detail='a', file='b'` vs `detail='a\\x00b', file=''`).
+    """
+    basis = f'{detail or ""}\x00{file_path or ""}\x00{rule or ""}'
+    return hashlib.sha256(basis.encode('utf-8')).hexdigest()[:HASH_ID_LENGTH]
+
+
+# --- Path Helpers ---
+
+
+def get_findings_dir(plan_id: str) -> Path:
+    """Returns .plan/local/plans/{plan_id}/artifacts/findings/"""
+    validate_plan_id(plan_id)
+    return get_artifact_path(plan_id, FILE_FINDINGS_DIR)
+
+
+def get_findings_path(plan_id: str, finding_type: str) -> Path:
+    """Returns .plan/local/plans/{plan_id}/artifacts/findings/{type}.jsonl
+
+    Per-type splitting: each finding type lives in its own JSONL file under the
+    findings/ subdirectory. Cross-type queries merge results across files via
+    `read_jsonl_merge` over `get_findings_dir(plan_id)`.
+    """
+    if finding_type not in FINDING_TYPES:
+        raise ValueError(f'Invalid finding type: {finding_type}. Must be one of {FINDING_TYPES}')
+    return get_findings_dir(plan_id) / f'{finding_type}.jsonl'
+
+
+def get_qgate_path(plan_id: str, phase: str) -> Path:
+    """Returns .plan/local/plans/{plan_id}/artifacts/findings/qgate-{phase}.jsonl"""
+    if phase not in QGATE_PHASES:
+        raise ValueError(f'Invalid Q-Gate phase: {phase}. Must be one of {QGATE_PHASES}')
+    return get_findings_dir(plan_id) / f'qgate-{phase}.jsonl'
+
+
+# --- Shared Query Helper ---
+
+
+def _filter_records(
+    records: list[dict[str, Any]],
+    exact_filters: dict[str, Any] | None = None,
+    type_filter: set[str] | None = None,
+    file_pattern: str | None = None,
+    min_confidence: int | None = None,
+    max_confidence: int | None = None,
+    promoted: bool | None = None,
+) -> list[dict[str, Any]]:
+    """Filter records by common criteria.
+
+    Args:
+        records: List of record dicts to filter
+        exact_filters: Dict of field_name → required_value for exact match
+        type_filter: Set of allowed type values (for comma-separated type filters)
+        file_pattern: Glob pattern for file_path field
+        min_confidence: Minimum confidence value (inclusive)
+        max_confidence: Maximum confidence value (inclusive)
+        promoted: If set, filter by promoted boolean
+
+    Returns:
+        Filtered list of records
+    """
+    filtered = []
+    for r in records:
+        if type_filter and r.get('type') not in type_filter:
+            continue
+        if exact_filters:
+            skip = False
+            for field, value in exact_filters.items():
+                if value is not None and r.get(field) != value:
+                    skip = True
+                    break
+            if skip:
+                continue
+        if promoted is not None and r.get('promoted', False) != promoted:
+            continue
+        if file_pattern and not fnmatch(r.get('file_path', ''), file_pattern):
+            continue
+        if min_confidence is not None and r.get('confidence', 0) < min_confidence:
+            continue
+        if max_confidence is not None and r.get('confidence', 100) > max_confidence:
+            continue
+        filtered.append(r)
+    return filtered
+
+
+# --- Plan Findings ---
+
+
+def add_finding(
+    plan_id: str,
+    finding_type: str,
+    title: str,
+    detail: str,
+    file_path: str | None = None,
+    line: int | None = None,
+    component: str | None = None,
+    module: str | None = None,
+    rule: str | None = None,
+    severity: str | None = None,
+    author: str | None = None,
+    kind: str | None = None,
+    reviewed_commit_sha: str | None = None,
+    bot_kind: str | None = None,
+    raw_input: dict[str, Any] | None = None,
+    raw_input_max_bytes: int = DEFAULT_RAW_INPUT_MAX_BYTES,
+) -> dict[str, Any]:
+    """Add a finding record.
+
+    Untrusted free-text supplied via ``raw_input`` is stored under a quarantined
+    ``raw_input.{field}`` sub-object (per-field byte cap ``raw_input_max_bytes``);
+    top-level fields stay clean-by-construction until the batched ingestion pass
+    promotes validated values.
+    """
+    if finding_type not in FINDING_TYPES:
+        return {'status': 'error', 'message': f'Invalid finding type: {finding_type}. Must be one of {FINDING_TYPES}'}
+
+    if severity and severity not in SEVERITIES:
+        return {'status': 'error', 'message': f'Invalid severity: {severity}. Must be one of {SEVERITIES}'}
+
+    if kind and kind not in PR_COMMENT_KINDS:
+        return {'status': 'error', 'message': f'Invalid kind: {kind}. Must be one of {PR_COMMENT_KINDS}'}
+
+    if bot_kind and bot_kind not in BOT_KINDS:
+        return {'status': 'error', 'message': f'Invalid bot_kind: {bot_kind}. Must be one of {BOT_KINDS}'}
+
+    hash_id = generate_hash_id()
+    record: dict[str, Any] = {
+        'hash_id': hash_id,
+        'timestamp': timestamp(),
+        'type': finding_type,
+        'title': title,
+        'detail': detail,
+        'resolution': 'pending',
+        'resolution_detail': None,
+        'promoted': False,
+        'promoted_to': None,
+    }
+
+    if file_path:
+        record['file_path'] = file_path
+    if line is not None:
+        record['line'] = line
+    if component:
+        record['component'] = component
+    if module:
+        record['module'] = module
+    if rule:
+        record['rule'] = rule
+    if severity:
+        record['severity'] = severity
+    if author:
+        record['author'] = author
+    if kind:
+        record['kind'] = kind
+    if reviewed_commit_sha:
+        record['reviewed_commit_sha'] = reviewed_commit_sha
+    if bot_kind:
+        record['bot_kind'] = bot_kind
+
+    quarantined = _quarantine_raw_input(raw_input, raw_input_max_bytes)
+    if quarantined:
+        record['raw_input'] = quarantined
+
+    append_jsonl(get_findings_path(plan_id, finding_type), record)
+
+    return {'status': 'success', 'hash_id': hash_id, 'type': finding_type}
+
+
+def _list_finding_files(plan_id: str) -> list['Path']:
+    """List all per-type finding JSONL files (excluding qgate-*, assessments)."""
+    findings_dir = get_findings_dir(plan_id)
+    if not findings_dir.exists():
+        return []
+    return [
+        findings_dir / f'{t}.jsonl'
+        for t in FINDING_TYPES
+        if (findings_dir / f'{t}.jsonl').exists()
+    ]
+
+
+def query_findings(
+    plan_id: str,
+    finding_type: str | None = None,
+    resolution: str | None = None,
+    promoted: bool | None = None,
+    file_pattern: str | None = None,
+    author: str | None = None,
+    kind: str | None = None,
+    bot_kind: str | None = None,
+) -> dict[str, Any]:
+    """Query findings across all per-type files, merging results.
+
+    Storage is split into findings/{type}.jsonl. The full record set across all
+    per-type files is always loaded (in canonical FINDING_TYPES order) so
+    `total_count` reflects the entire store; type/resolution/file_pattern/promoted
+    filters then narrow the result to `filtered_count`. This preserves the
+    CLI-surface semantics from the pre-split single-file layout.
+    """
+    paths = [get_findings_path(plan_id, t) for t in FINDING_TYPES]
+    records = read_jsonl_merge(paths)
+
+    type_filter = {t.strip() for t in finding_type.split(',')} if finding_type else None
+    filtered = _filter_records(
+        records,
+        exact_filters={'resolution': resolution, 'author': author, 'kind': kind, 'bot_kind': bot_kind},
+        type_filter=type_filter,
+        file_pattern=file_pattern,
+        promoted=promoted,
+    )
+
+    return {
+        'status': 'success',
+        'plan_id': plan_id,
+        'total_count': len(records),
+        'filtered_count': len(filtered),
+        'findings': filtered,
+        'file_paths': list({r.get('file_path') for r in filtered if r.get('file_path')}),
+    }
+
+
+def query_findings_unified(
+    plan_id: str,
+    finding_type: str | None = None,
+    resolution: str | None = None,
+    promoted: bool | None = None,
+    file_pattern: str | None = None,
+    author: str | None = None,
+    kind: str | None = None,
+    bot_kind: str | None = None,
+) -> dict[str, Any]:
+    """Query the per-plan findings store merged with pending per-phase Q-Gate findings.
+
+    Returns the union of:
+    - the per-PLAN findings (via `query_findings`, honouring the same
+      type/resolution/promoted/file_pattern/author/kind/bot_kind filters), and
+    - the PENDING Q-Gate findings across every phase in `QGATE_PHASES`, with the
+      same `finding_type` / `file_pattern` / `author` / `kind` / `bot_kind` filters applied for parity.
+
+    Only Q-Gate records whose `resolution == 'pending'` are merged — resolved
+    Q-Gate findings are never surfaced through this read. The per-plan slice keeps
+    its own `resolution` filter semantics (the caller's `resolution` arg passes
+    through to `query_findings`).
+
+    The result is TOON-friendly and shape-compatible with `query_findings` plus
+    provenance markers: `qgate_included: true`, `plan_count`, and `qgate_count`.
+    """
+    plan_result = query_findings(
+        plan_id,
+        finding_type=finding_type,
+        resolution=resolution,
+        promoted=promoted,
+        file_pattern=file_pattern,
+        author=author,
+        kind=kind,
+        bot_kind=bot_kind,
+    )
+    plan_findings = plan_result['findings']
+
+    type_filter = {t.strip() for t in finding_type.split(',')} if finding_type else None
+
+    qgate_findings: list[dict[str, Any]] = []
+    qgate_total = 0
+    for phase in QGATE_PHASES:
+        records = query_qgate_findings(plan_id, phase, resolution='pending')['findings']
+        qgate_total += len(records)
+        qgate_findings.extend(
+            _filter_records(
+                records,
+                exact_filters={'author': author, 'kind': kind, 'bot_kind': bot_kind},
+                type_filter=type_filter,
+                file_pattern=file_pattern,
+            )
+        )
+
+    merged = plan_findings + qgate_findings
+
+    # `total_count` spans the full universe of both slices symmetrically: the
+    # entire per-plan store (`plan_result['total_count']`, pre-narrowing) plus
+    # every pending Q-Gate record across phases (`qgate_total`, before the
+    # type/file_pattern narrowing). `filtered_count` is the post-narrowing union.
+    # Counting only the filtered Q-Gate slice into `total_count` would mix the
+    # plan slice's unfiltered total with the Q-Gate slice's filtered count.
+    return {
+        'status': 'success',
+        'plan_id': plan_id,
+        'qgate_included': True,
+        'plan_count': len(plan_findings),
+        'qgate_count': len(qgate_findings),
+        'total_count': plan_result['total_count'] + qgate_total,
+        'filtered_count': len(merged),
+        'findings': merged,
+        'file_paths': list({r.get('file_path') for r in merged if r.get('file_path')}),
+    }
+
+
+def get_finding(plan_id: str, hash_id: str) -> dict[str, Any]:
+    """Get a single finding by hash_id, scanning all per-type files."""
+    for path in _list_finding_files(plan_id):
+        for record in read_jsonl(path):
+            if record.get('hash_id') == hash_id:
+                return {'status': 'success', **record}
+    return {'status': 'error', 'message': f'Finding not found: {hash_id}'}
+
+
+def resolve_finding(
+    plan_id: str,
+    hash_id: str,
+    resolution: str,
+    detail: str | None = None,
+) -> dict[str, Any]:
+    """Resolve a finding (locates the per-type file by hash_id).
+
+    Relational integrity backstop: a ``resolution_detail``
+    is only ever written keyed to a ``hash_id`` that resolves to an existing parent
+    record. The parent's existence is asserted BEFORE any write, so a mis-keyed detail
+    can never be attached to — or silently create — a phantom record. The subsequent
+    ``update_jsonl_in_dir`` matches solely on ``hash_id``, so the resolution fields and
+    the detail land on the same first-class record together.
+    """
+    if resolution not in RESOLUTIONS:
+        return {'status': 'error', 'message': f'Invalid resolution: {resolution}. Must be one of {RESOLUTIONS}'}
+
+    parent = get_finding(plan_id, hash_id)
+    if not parent or parent.get('status') != 'success':
+        return {'status': 'error', 'message': f'Finding not found: {hash_id}'}
+
+    updates: dict[str, Any] = {'resolution': resolution}
+    if detail:
+        updates['resolution_detail'] = detail
+
+    if update_jsonl_in_dir(get_findings_dir(plan_id), hash_id, updates):
+        return {'status': 'success', 'hash_id': hash_id, 'resolution': resolution}
+    return {'status': 'error', 'message': f'Finding not found: {hash_id}'}
+
+
+def resolve_findings_by_type(
+    plan_id: str,
+    finding_types: tuple[str, ...] | list[str],
+    to_resolution: str,
+    detail: str | None = None,
+    from_resolution: str = 'pending',
+) -> dict[str, Any]:
+    """Bulk-resolve all findings of the given types in a single call.
+
+    Selects every plan-scoped finding whose ``type`` is in ``finding_types`` AND
+    whose current ``resolution`` equals ``from_resolution``, then resolves each to
+    ``to_resolution`` (optionally stamping ``resolution_detail`` with ``detail``).
+    This is the typed bulk counterpart of the hash-id-scoped ``resolve_finding``.
+
+    Returns ``{'status': 'success', 'resolved_count': N, 'hash_ids': [...]}`` on
+    success, or the canonical ``{'status': 'error', 'message': ...}`` shape when
+    ``to_resolution`` is not a valid resolution value.
+    """
+    if to_resolution not in RESOLUTIONS:
+        return {'status': 'error', 'message': f'Invalid resolution: {to_resolution}. Must be one of {RESOLUTIONS}'}
+
+    type_set = set(finding_types)
+    records = query_findings(plan_id)['findings']
+    matched = [
+        r for r in records
+        if r.get('type') in type_set and r.get('resolution') == from_resolution
+    ]
+
+    updates: dict[str, Any] = {'resolution': to_resolution, 'resolution_detail': detail}
+    resolved_hash_ids: list[str] = []
+    for record in matched:
+        hash_id = record['hash_id']
+        path = get_findings_path(plan_id, record['type'])
+        if update_jsonl(path, hash_id, updates):
+            resolved_hash_ids.append(hash_id)
+
+    return {'status': 'success', 'resolved_count': len(resolved_hash_ids), 'hash_ids': resolved_hash_ids}
+
+
+def promote_finding(
+    plan_id: str,
+    hash_id: str,
+    promoted_to: str,
+) -> dict[str, Any]:
+    """Mark a finding as promoted (locates the per-type file by hash_id)."""
+    updates = {'promoted': True, 'promoted_to': promoted_to}
+
+    if update_jsonl_in_dir(get_findings_dir(plan_id), hash_id, updates):
+        return {'status': 'success', 'hash_id': hash_id, 'promoted_to': promoted_to}
+    return {'status': 'error', 'message': f'Finding not found: {hash_id}'}
+
+
+def mark_finding_responded(
+    plan_id: str,
+    hash_id: str,
+) -> dict[str, Any]:
+    """Stamp a finding as having had its provider response transmitted.
+
+    Idempotency marker for the RESPOND verb (``sonar.py post_responses``): after a
+    successful ``/api/issues/do_transition`` POST, record ``responded=True`` plus a
+    ``responded_at`` UTC timestamp keyed to the finding's ``hash_id``. A subsequent
+    ``post_responses`` pass observes the marker and skips the finding instead of
+    re-POSTing the same dismissal. Locates the per-type file by ``hash_id``.
+    """
+    updates: dict[str, Any] = {'responded': True, 'responded_at': timestamp()}
+
+    if update_jsonl_in_dir(get_findings_dir(plan_id), hash_id, updates):
+        return {'status': 'success', 'hash_id': hash_id}
+    return {'status': 'error', 'message': f'Finding not found: {hash_id}'}
+
+
+# --- Q-Gate Findings ---
+
+
+def _find_by_title_and_discriminator(
+    path: Path,
+    title: str,
+    discriminator: str,
+) -> dict[str, Any] | None:
+    """Find a Q-Gate record matching BOTH title AND content discriminator.
+
+    The dedup key is the (title, discriminator) pair — never the title alone — so a
+    same-class-different-subject finding (same bare-``defect_class`` title, different
+    content) is treated as a distinct finding and can never reopen an unrelated
+    resolved record.
+    """
+    for record in read_jsonl(path):
+        if record.get('title') == title and record.get('content_discriminator') == discriminator:
+            return record
+    return None
+
+
+def add_qgate_finding(
+    plan_id: str,
+    phase: str,
+    source: str,
+    finding_type: str,
+    title: str,
+    detail: str,
+    file_path: str | None = None,
+    component: str | None = None,
+    severity: str | None = None,
+    iteration: int | None = None,
+    rule: str | None = None,
+    raw_input: dict[str, Any] | None = None,
+    raw_input_max_bytes: int = DEFAULT_RAW_INPUT_MAX_BYTES,
+) -> dict[str, Any]:
+    """Add a Q-Gate finding for a specific phase.
+
+    Dedup folds a content discriminator (a stable hash of ``detail`` + ``file_path`` +
+    ``rule``) into the key so a bare-``defect_class`` title collision alone can never
+    reopen an unrelated resolved finding, while an intended same-defect merge across
+    iterations (same title AND same discriminator) still collapses. Untrusted free-text
+    supplied via ``raw_input`` is quarantined under ``raw_input.{field}`` with a per-field
+    byte cap.
+    """
+    if phase not in QGATE_PHASES:
+        return {'status': 'error', 'message': f'Invalid Q-Gate phase: {phase}. Must be one of {QGATE_PHASES}'}
+
+    if source not in QGATE_SOURCES:
+        return {'status': 'error', 'message': f'Invalid Q-Gate source: {source}. Must be one of {QGATE_SOURCES}'}
+
+    if finding_type not in FINDING_TYPES:
+        return {'status': 'error', 'message': f'Invalid finding type: {finding_type}. Must be one of {FINDING_TYPES}'}
+
+    if severity and severity not in SEVERITIES:
+        return {'status': 'error', 'message': f'Invalid severity: {severity}. Must be one of {SEVERITIES}'}
+
+    # Semantic dedup by (title, content discriminator) within phase.
+    discriminator = _content_discriminator(detail, file_path, rule)
+    qgate_path = get_qgate_path(plan_id, phase)
+    existing = _find_by_title_and_discriminator(qgate_path, title, discriminator)
+    if existing:
+        if existing['resolution'] == 'pending':
+            return {'status': 'deduplicated', 'hash_id': existing['hash_id'], 'phase': phase}
+        else:
+            # Same title AND same content — a genuine re-detection of the resolved
+            # finding — reopen. A same-title-different-content finding never lands
+            # here (it fails the discriminator match above) and is filed fresh.
+            reopen_updates: dict[str, Any] = {
+                'resolution': 'pending',
+                'resolution_detail': None,
+                'resolution_timestamp': None,
+            }
+            if iteration is not None:
+                reopen_updates['iteration'] = iteration
+            update_jsonl(qgate_path, existing['hash_id'], reopen_updates)
+            return {'status': 'reopened', 'hash_id': existing['hash_id'], 'phase': phase}
+
+    hash_id = generate_hash_id()
+    record: dict[str, Any] = {
+        'hash_id': hash_id,
+        'timestamp': timestamp(),
+        'phase': phase,
+        'source': source,
+        'type': finding_type,
+        'title': title,
+        'detail': detail,
+        'content_discriminator': discriminator,
+        'resolution': 'pending',
+        'resolution_detail': None,
+        'resolution_timestamp': None,
+    }
+
+    if iteration is not None:
+        record['iteration'] = iteration
+    if file_path:
+        record['file_path'] = file_path
+    if component:
+        record['component'] = component
+    if severity:
+        record['severity'] = severity
+    if rule:
+        record['rule'] = rule
+
+    quarantined = _quarantine_raw_input(raw_input, raw_input_max_bytes)
+    if quarantined:
+        record['raw_input'] = quarantined
+
+    append_jsonl(qgate_path, record)
+
+    return {'status': 'success', 'hash_id': hash_id, 'phase': phase}
+
+
+def query_qgate_findings(
+    plan_id: str,
+    phase: str,
+    resolution: str | None = None,
+    source: str | None = None,
+    iteration: int | None = None,
+) -> dict[str, Any]:
+    """Query Q-Gate findings for a specific phase."""
+    if phase not in QGATE_PHASES:
+        return {'status': 'error', 'message': f'Invalid Q-Gate phase: {phase}. Must be one of {QGATE_PHASES}'}
+
+    path = get_qgate_path(plan_id, phase)
+    records = read_jsonl(path)
+
+    filtered = _filter_records(
+        records,
+        exact_filters={'resolution': resolution, 'source': source, 'iteration': iteration},
+    )
+
+    return {
+        'status': 'success',
+        'plan_id': plan_id,
+        'phase': phase,
+        'total_count': len(records),
+        'filtered_count': len(filtered),
+        'findings': filtered,
+    }
+
+
+def resolve_qgate_finding(
+    plan_id: str,
+    phase: str,
+    hash_id: str,
+    resolution: str,
+    detail: str | None = None,
+) -> dict[str, Any]:
+    """Resolve a Q-Gate finding."""
+    if phase not in QGATE_PHASES:
+        return {'status': 'error', 'message': f'Invalid Q-Gate phase: {phase}. Must be one of {QGATE_PHASES}'}
+
+    if resolution not in RESOLUTIONS:
+        return {'status': 'error', 'message': f'Invalid resolution: {resolution}. Must be one of {RESOLUTIONS}'}
+
+    path = get_qgate_path(plan_id, phase)
+    updates: dict[str, Any] = {
+        'resolution': resolution,
+        'resolution_timestamp': timestamp(),
+    }
+    if detail:
+        updates['resolution_detail'] = detail
+
+    if update_jsonl(path, hash_id, updates):
+        return {'status': 'success', 'hash_id': hash_id, 'phase': phase, 'resolution': resolution}
+    return {'status': 'error', 'message': f'Q-Gate finding not found: {hash_id}'}
+
+
+def clear_qgate_findings(
+    plan_id: str,
+    phase: str,
+) -> dict[str, Any]:
+    """Clear all Q-Gate findings for a specific phase."""
+    if phase not in QGATE_PHASES:
+        return {'status': 'error', 'message': f'Invalid Q-Gate phase: {phase}. Must be one of {QGATE_PHASES}'}
+
+    path = get_qgate_path(plan_id, phase)
+    if not path.exists():
+        return {'status': 'success', 'phase': phase, 'cleared': 0}
+
+    records = read_jsonl(path)
+    cleared = len(records)
+    path.unlink()
+
+    return {'status': 'success', 'phase': phase, 'cleared': cleared}
+
+
+# --- Assessment Path Helper ---
+
+
+def get_assessments_path(plan_id: str) -> Path:
+    """Returns .plan/local/plans/{plan_id}/artifacts/findings/assessments.jsonl"""
+    return get_findings_dir(plan_id) / 'assessments.jsonl'
+
+
+# --- Assessment Operations ---
+
+
+def add_assessment(
+    plan_id: str,
+    file_path: str,
+    certainty: str,
+    confidence: int,
+    agent: str | None = None,
+    detail: str | None = None,
+    evidence: str | None = None,
+) -> dict[str, Any]:
+    """Add an assessment record."""
+    if certainty not in CERTAINTY_VALUES:
+        return {'status': 'error', 'message': f'Invalid certainty: {certainty}. Must be one of {CERTAINTY_VALUES}'}
+
+    if not 0 <= confidence <= 100:
+        return {'status': 'error', 'message': f'Invalid confidence: {confidence}. Must be 0-100'}
+
+    hash_id = generate_hash_id()
+    record = {
+        'hash_id': hash_id,
+        'timestamp': timestamp(),
+        'file_path': file_path,
+        'certainty': certainty,
+        'confidence': confidence,
+    }
+    if agent:
+        record['agent'] = agent
+    if detail:
+        record['detail'] = detail
+    if evidence:
+        record['evidence'] = evidence
+
+    append_jsonl(get_assessments_path(plan_id), record)
+
+    return {'status': 'success', 'hash_id': hash_id, 'file_path': file_path}
+
+
+def query_assessments(
+    plan_id: str,
+    certainty: str | None = None,
+    min_confidence: int | None = None,
+    max_confidence: int | None = None,
+    file_pattern: str | None = None,
+) -> dict[str, Any]:
+    """Query assessments with filters."""
+    path = get_assessments_path(plan_id)
+    records = read_jsonl(path)
+
+    filtered = _filter_records(
+        records,
+        exact_filters={'certainty': certainty},
+        file_pattern=file_pattern,
+        min_confidence=min_confidence,
+        max_confidence=max_confidence,
+    )
+
+    return {
+        'status': 'success',
+        'plan_id': plan_id,
+        'total_count': len(records),
+        'filtered_count': len(filtered),
+        'assessments': filtered,
+        'file_paths': list({r.get('file_path') for r in filtered}),
+    }
+
+
+def get_assessment(plan_id: str, hash_id: str) -> dict[str, Any]:
+    """Get a single assessment by hash_id."""
+    path = get_assessments_path(plan_id)
+    for record in read_jsonl(path):
+        if record.get('hash_id') == hash_id:
+            return {'status': 'success', **record}
+    return {'status': 'error', 'message': f'Assessment not found: {hash_id}'}
+
+
+def clear_assessments(
+    plan_id: str,
+    agent: str | None = None,
+) -> dict[str, Any]:
+    """Clear assessment records, optionally filtered by agent."""
+    path = get_assessments_path(plan_id)
+    if not path.exists():
+        return {'status': 'success', 'cleared': 0}
+
+    records = read_jsonl(path)
+    original_count = len(records)
+
+    if agent:
+        remaining = [r for r in records if r.get('agent') != agent]
+        cleared = original_count - len(remaining)
+        ensure_parent_dir(path)
+        with path.open('w', encoding='utf-8') as f:
+            for record in remaining:
+                f.write(json.dumps(record, ensure_ascii=False) + '\n')
+    else:
+        cleared = original_count
+        path.unlink()
+
+    return {'status': 'success', 'cleared': cleared}

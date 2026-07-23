@@ -1,0 +1,933 @@
+# Phase 2: Refine — Detailed Workflow Steps
+
+Detailed step-by-step procedures for the phase-2-refine workflow. For overview and integration context, see [SKILL.md](../SKILL.md).
+
+---
+
+## Step 1: Check for Unresolved Q-Gate Findings
+
+**Purpose**: On re-entry (after Q-Gate or user review flagged issues), address unresolved findings before re-running analysis.
+
+### Query Unresolved Findings
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
+  qgate list --plan-id {plan_id} --phase 2-refine --resolution pending
+```
+
+### Address Each Finding
+
+If unresolved findings exist (filtered_count > 0):
+
+For each pending finding:
+1. Analyze the finding in context of current request and architecture
+2. Address it (revise analysis, re-evaluate scope, etc.)
+3. Resolve:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
+  qgate resolve --plan-id {plan_id} --hash-id {hash_id} --resolution taken_into_account --phase 2-refine \
+  --detail "{what was done to address this finding}"
+```
+4. Log resolution:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-2-refine:qgate) Finding {hash_id} [{source}]: taken_into_account — {resolution_detail}"
+```
+
+Then continue with normal Steps 4..14 (phase re-runs with corrections applied).
+
+If no unresolved findings: Continue with normal Steps 3b..14 (first entry).
+
+---
+
+## Step 2: Log Phase Start
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-2-refine) Starting refine phase"
+```
+
+---
+
+## Step 3: Recipe Shortcut
+
+**Purpose**: Recipe-sourced plans skip quality analysis and iterative refinement. They only need scope selection.
+
+### Check for Recipe Source
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
+  --plan-id {plan_id} \
+  --get \
+  --field plan_source
+```
+
+**If `plan_source == recipe`**:
+
+1. Force `track = complex` (recipes always need codebase discovery):
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
+  --plan-id {plan_id} \
+  --set \
+  --field track \
+  --value complex
+```
+
+2. Set confidence = 100 immediately:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
+  --plan-id {plan_id} \
+  --set \
+  --field confidence \
+  --value 100
+```
+
+3. Log decision:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-2-refine) Recipe plan — skipping quality analysis, setting confidence=100, track=complex"
+```
+
+4. **Skip Steps 4-14**. Transition phase and return.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status transition \
+  --plan-id {plan_id} \
+  --completed 2-refine
+```
+
+Log phase completion:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-2-refine) Recipe plan — refine phase complete (skipped quality analysis)"
+```
+
+Add visual separator:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  separator --plan-id {plan_id} --type work
+```
+
+Return success. Phase 3 will handle recipe-specific outline creation.
+
+**If `plan_source != recipe` or field not found**: Continue with normal Steps 3b..14.
+
+---
+
+## Step 3b: Source Premise Verification
+
+**Purpose**: Verify that code references in the request narrative are still valid against the current codebase. Catches stale or invalid premises before quality analysis begins.
+
+**Trigger**: This step activates when the request narrative (from Step 7, or from prior context on first entry) contains verifiable code references -- file paths, flag/option names, API references, or specific behavior descriptions tied to identifiable code. If no verifiable references are present, skip to Step 4.
+
+For the complete claim extraction rules, verification procedure, and result handling, see [source-premise-verification.md](source-premise-verification.md).
+
+### Execute Verification
+
+1. Scan the request `description` and `clarified_request` for verifiable claims (at most 5, prioritized by load-bearing impact)
+2. For each claim, probe the architecture inventory first (`architecture files --module X`, `architecture which-module --path P`, `architecture find --pattern P`) to confirm the claimed file/module/symbol exists. Only fall back to a targeted shell-tool call (`Glob`, `Grep`, or `Read`) when narrowing to sub-module components, scanning content inside an already-known file, or when the architecture verb returns elision.
+3. Classify each claim as Valid, Stale, Invalid, or Inconclusive
+
+### Handle Results
+
+**If all claims are valid**: Log and continue to Step 4.
+
+**If any claim is stale or invalid**: Emit a `CORRECTNESS: ISSUE` finding per invalid claim. These findings feed into Step 8 (Analyze Request Quality) under the Correctness dimension and impact the confidence score in Step 10.
+
+### Log Verification
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO --message "[REFINE:3b] (plan-marshall:phase-2-refine) Source premise verification: {N} claims checked, {M} valid, {K} invalid"
+```
+
+When claims are invalid, also log to decision.log:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level WARNING --message "(plan-marshall:phase-2-refine) Invalid premise: {claim_summary} — actual: {evidence_summary}"
+```
+
+---
+
+## Step 3c: Proposed-Fix Verification
+
+**Purpose**: Challenge whether a proposed fix actually solves the documented symptom. Source premise verification (Step 3b) confirms that claims about existing code are accurate; Step 3c confirms that the proposed change is **sufficient** to address the symptom. Runs after Step 3b and before confidence aggregation.
+
+**Trigger**: Activates via **semantic LLM judgment** when the request narrative proposes a specific code change — concrete command strings, regex substitutions, function bodies, patch snippets, or config keys with new values. Source-agnostic (lesson, issue, PR review, free-form). Do **not** gate activation on header tokens like `## Proposed fix` — judge on semantic content. If the narrative only describes a symptom without proposing a change, skip to Step 4.
+
+For the complete extraction rules, probe construction, and worked example, see [proposed-fix-verification.md](proposed-fix-verification.md).
+
+### Execute Verification
+
+1. Extract up to 3 proposed fixes from the request, prioritizing load-bearing changes (the plan's intent depends on them succeeding)
+2. For each fix, construct a synthetic probe:
+   - Re-read the symptom and enumerate triggering inputs
+   - Construct a concrete scenario that reflects those inputs
+   - Reason about the fix's command/code semantics against the scenario — do not execute code
+3. Classify each probe as Valid, Insufficient, or Inconclusive
+
+### Handle Results
+
+**If all probes are valid**: Log and continue to Step 4.
+
+**If any probe is insufficient**: Emit a `CORRECTNESS: ISSUE — Proposed fix incomplete` finding per insufficient fix. These findings feed into Step 8 (Analyze Request Quality) under the same Correctness dimension as Step 3b (20% weight, shared) and impact the confidence score in Step 10.
+
+**Finding format**:
+
+```text
+CORRECTNESS: ISSUE — Proposed fix incomplete
+  Fix: "{fix_description}"
+  Mechanism: {fix_mechanism}
+  Scenario: {concrete scenario from probe}
+  Gap: {what the probe showed is missing}
+  Impact: {how this affects the plan's intent}
+```
+
+### Example Probe
+
+Request proposes: *change `git diff --name-only {base}...HEAD` to `git diff --name-only {base}` to capture working-tree changes*.
+
+Probe: construct a working tree with one modified tracked file AND one untracked new file. Reason about `git diff --name-only {base}`: it reports only modifications to tracked files; untracked files are invisible. Phase-5-execute `Write` operations create untracked files — the fix misses them.
+
+Evaluation: **insufficient**. Emit finding, drop Correctness, route to Step 11 clarification.
+
+### Log Verification
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO --message "[REFINE:3c] (plan-marshall:phase-2-refine) Proposed-fix verification: {N} fixes probed, {M} valid, {K} insufficient"
+```
+
+When probes are insufficient, also log to decision.log at WARNING:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level WARNING --message "(plan-marshall:phase-2-refine) Insufficient proposed fix: {fix_summary} — gap: {gap_summary}"
+```
+
+---
+
+## Step 3d: Baseline Reconciliation
+
+**Purpose**: Pull/sync the target branch and surface overlapping diffs as Q-Gate findings BEFORE quality analysis runs (Step 8). Catches the recurring failure mode where request → outline → tasks were authored against an older snapshot of `main`, then upstream merges land between refine and execute on the same surface, forcing the plan to be re-authored mid-flight. Re-authoring at refine-time (Steps 8-12 loop iteration) is cheap; re-authoring at execute-time is not.
+
+### Activation Guard
+
+Skip Step 3d entirely when ANY of the following hold:
+
+- `metadata.use_worktree == false` (main-checkout flow — git pull is invasive on the user's working directory; skip and let the user reconcile manually).
+- No base branch is configured for the plan.
+- The repo has no remote (e.g., a brand-new clone for fixtures).
+
+The `baseline-reconcile` script invoked in Sub-step 3d.1 below enforces the guard itself and returns `status: skipped` with a `reason` field when any condition holds.
+
+### Sub-step 3d.1 — Run the mechanical predicate
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow \
+  baseline-reconcile --plan-id {plan_id}
+```
+
+The script resolves the worktree path (from `status.metadata.worktree_path`), reads `base_branch` from the plan's phase-2-refine config (falling back to `main`), runs `git fetch origin {base_branch}` (the only network round-trip), and computes:
+
+- `upstream_commits[]` — every commit that landed on `origin/{base_branch}` since the plan's captured `worktree_sha`, each entry with its touched files.
+- `conflicts[]` — files whose three-way merge against `origin/{base_branch}` fails (`git merge-tree --write-tree HEAD origin/{base_branch}`). The worktree is NOT modified by the predicate step itself.
+- `classification` — one of `no_overlap` / `overlap_no_content_conflict` / `overlap_with_content_conflict`, derived deterministically from `upstream_commit_count` and `conflict_count` plus a file-set intersection between the upstream commits' touched files and the worktree's in-flight changes.
+
+The three-way classification determines the next sub-step:
+
+| classification | meaning | next sub-step |
+|----------------|---------|---------------|
+| `no_overlap` | upstream commits touch disjoint files (or none landed) | fast-path — skip 3d.2 and 3d.3 |
+| `overlap_no_content_conflict` | upstream + in-flight touch overlapping files BUT `git merge-tree` reports zero conflicts | Sub-step 3d.1a (focused reconcile) |
+| `overlap_with_content_conflict` | `git merge-tree` reports content conflicts | Sub-step 3d.2 (LLM scope-classification) |
+
+When classification is `no_overlap` the script returns success and emits no findings.
+
+When classification is `overlap_with_content_conflict`, the script emits ONE Q-Gate finding per conflicted file under `--source qgate`. Findings are recorded against `phase 2-refine` and flow into the existing iterate-to-confidence loop via the standard Q-Gate finding-resolution path.
+
+### Sub-step 3d.1a — Focused reconcile (when `classification == overlap_no_content_conflict`)
+
+This is the new auto-resolvable branch. The script performs a focused `git merge origin/{base_branch}` against the resolved worktree (or main checkout when the plan runs against main). The merge is **only** attempted when `merge-tree` predicted zero conflicts; the prediction is the structural gate that distinguishes this branch from `overlap_with_content_conflict`.
+
+Outcomes:
+
+| merge result | script payload fields | next sub-step |
+|--------------|----------------------|---------------|
+| merge succeeds cleanly | `auto_reconciled: true`, `merge_commit_sha: {sha}`, `findings_emitted: 0` | skip 3d.2 and 3d.3 — drift is resolved in-place |
+| merge fails (rare; `merge-tree` predicted no conflict but the real merge surfaced one — e.g., overlapping renames the predicate cannot model) | `auto_reconciled: false`, `merge_error: {stderr}`, one `baseline_drift_reconcile_failed` finding per conflicting path | escalate to Sub-step 3d.2 |
+
+The script logs a `decision` entry naming the absorbed upstream commits when the merge succeeds. The auto-resolved branch does NOT re-enter the iterate-to-confidence loop — that loop is reserved for content-overlap cases where re-authoring is genuinely required.
+
+### Sub-step 3d.2 — LLM scope-classification (only when upstream commits landed)
+
+The script reports `upstream_commit_count` and `upstream_commits[].files`; the phase-2-refine dispatch consumes that data and decides whether each upstream commit overlaps the request's affected-files candidate set in a way that warrants additional re-authoring. This judgement stays bundled in the existing `phase-2-refine` dispatch envelope — the script is the mechanical predicate only. The classification step may add further findings beyond the merge-conflict set the script already emitted, log per-commit decisions, or proceed to Step 8 when none of the upstream commits overlap the request scope.
+
+### Sub-step 3d.3 — Feedback Loop
+
+Findings emitted by the script (only on `overlap_with_content_conflict` or on a failed focused reconcile) and by Sub-step 3d.2's classification step flow into the Step 8-12 iterate-to-confidence loop via the standard Q-Gate finding-resolution path. The loop reads pending findings at Step 1 (next iteration), surfaces them as clarifications in Step 11, and the user-supplied resolution feeds the request update in Step 12. The loop terminates when confidence reaches threshold AND no pending baseline findings remain. The `overlap_no_content_conflict` auto-resolved branch produces no findings and does NOT re-enter the loop.
+
+### Conflict Handling
+
+The fetch/compare path above is read-only — it never touches the working tree. Phase-2-refine runs on the main checkout; the worktree and feature branch are created at `phase-5-execute` Step 2.5, so phases 1-4 have no worktree branch ref to advance by construction. The actual `git rebase` against the new baseline happens later, in `phase-6-finalize` branch-cleanup's [Rebase Branch onto Base](../../phase-6-finalize/standards/branch-cleanup.md#rebase-branch-onto-base) sub-step, which unconditionally rebases the feature branch onto `origin/{base_branch}` before merging the PR. Phase-5-execute Step 3 is strictly a "still clean?" verification gate — it aborts on drift and does NOT merge/rebase; see [Sync Worktree With Main — Fast-Path Verification](../../phase-5-execute/standards/sync-with-main.md).
+
+### Skip Conditions Summary
+
+| Condition | Behavior |
+|-----------|----------|
+| `metadata.use_worktree == false` | Skip entirely |
+| No base branch configured | Skip entirely |
+| Repo has no remote | Skip entirely |
+| `git fetch` fails (network, auth) | Log warning, skip — do not block refine on transient infrastructure issues |
+| Zero upstream commits since phase-1-init | Fast-path log, no findings |
+| Upstream commits exist but none overlap request files | Log each commit, no findings |
+| Upstream commits overlap request files | Emit one blocking Q-Gate finding per overlapping commit |
+
+### Logging
+
+Log the step start and outcome:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-2-refine:baseline) Baseline reconciliation complete — {N} upstream commits, {M} overlapping, {K} findings emitted"
+```
+
+---
+
+## Step 4: Load Confidence Threshold
+
+Read the confidence threshold from project configuration.
+
+**EXECUTE**:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-2-refine get --field confidence_threshold --audit-plan-id {plan_id}
+```
+
+**Default**: If not configured or field not found, use `95` (95% confidence required).
+
+**Log**:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO --message "[REFINE:2] (plan-marshall:phase-2-refine) Using confidence threshold: {confidence_threshold}%"
+```
+
+Store as `confidence_threshold` for use in Step 10.
+
+---
+
+## Step 5: Load Compatibility Strategy
+
+Read the compatibility approach from project configuration and persist to references.json in Step 11.
+
+**EXECUTE**:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-2-refine get --field compatibility --audit-plan-id {plan_id}
+```
+
+**No fallback** — if not configured, fail with error: "compatibility not configured. Run /marshall-steward first".
+
+**Valid values with descriptions**:
+
+| Value | Description |
+|-------|-------------|
+| `breaking` | Clean-slate approach, no deprecation nor transitionary comments |
+| `deprecation` | Add deprecation markers to old code, provide migration path |
+| `smart_and_ask` | Assess impact and ask user when backward compatibility is uncertain |
+
+**Log** (to decision.log - config read is a decision):
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-2-refine) Config: compatibility={compatibility}"
+```
+
+Store as `compatibility` and `compatibility_description` (the long description from the table above) for use in Step 13 return output.
+
+---
+
+## Step 5b: Load Simplicity Strategy
+
+Read the simplicity knob from project configuration.
+
+**Read-only**: This step MUST only read configuration. The verbs `set`, `init`, `sync-defaults`, and `sync-plan-defaults` are forbidden here — they mutate project configuration that must remain stable across the confidence loop. Only `get` is permitted.
+
+**EXECUTE**:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-2-refine get --field simplicity --audit-plan-id {plan_id}
+```
+
+**Default `lean`** — unlike `compatibility`, the simplicity knob defaults when not configured, so existing plans without the key behave as `lean`.
+
+**Valid values with descriptions**:
+
+| Value | Description |
+|-------|-------------|
+| `lean` | Implement the strict minimum; remove or inline surplus structure. Default. |
+| `pragmatic` | Prefer minimal, but keep low-risk structure that aids readability. |
+| `defensive` | Retain belt-and-suspenders structure (guards, abstraction seams) where the outcome is uncertain. |
+
+**Log** (to decision.log - config read is a decision):
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-2-refine) Config: simplicity={simplicity}"
+```
+
+Store as `simplicity` and `simplicity_description` (the long description from the table above) for use in Step 13 return output.
+
+---
+
+## Step 6: Load Architecture Context
+
+Query project architecture BEFORE any analysis. Architecture data is pre-computed and compact (~500 tokens).
+
+**EXECUTE**:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture info \
+  --audit-plan-id {plan_id}
+```
+
+Output format: `plan-marshall:manage-architecture/standards/client-api.md`
+
+**If status=error or architecture not found**: Return error and abort:
+```toon
+status: error
+message: Run /marshall-steward first
+```
+
+### Extract Architecture Summary
+
+From the `architecture info` output, extract and store:
+
+| Field | Source | Use In |
+|-------|--------|--------|
+| `project_name` | `project.name` | Context for questions |
+| `project_description` | `project.description` | Scope validation |
+| `technologies` | `technologies[]` | Step 6 Correctness validation |
+| `module_names` | `modules[].name` | Step 7 Module Mapping |
+| `module_purposes` | `modules[].purpose` | Step 7 Feasibility Check |
+
+**Store as** `arch_context` for use in Steps 8-9.
+
+**Example extraction**:
+```text
+arch_context:
+  project_name: oauth-sheriff
+  project_description: JWT validation library for Quarkus
+  technologies: [maven]
+  modules:
+    - name: oauth-sheriff-core
+      purpose: library
+    - name: oauth-sheriff-quarkus
+      purpose: extension
+```
+
+### Log Completion
+
+**Log**:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO --message "[REFINE:4] (plan-marshall:phase-2-refine) Loaded architecture: {project_name} ({module_count} modules)"
+```
+
+---
+
+## Step 7: Load Request
+
+Load the request document.
+
+**EXECUTE**:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents request read \
+  --plan-id {plan_id}
+```
+
+Output format: `plan-marshall:manage-plan-documents/documents/request.toon`
+
+**Extract**:
+- `title`: Request title
+- `description`: Full request text
+- `clarifications`: Any existing clarifications (from prior iterations)
+- `clarified_request`: Synthesized request (if exists from prior iterations)
+
+**Log**:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO --message "[REFINE:5] (plan-marshall:phase-2-refine) Loaded request: {title}"
+```
+
+---
+
+## Step 8: Analyze Request Quality
+
+Evaluate the request against five quality dimensions, using `arch_context` from Step 6 wherever applicable.
+
+- **Correctness** — Are technology, module, API, and pattern references valid against `arch_context.technologies`, `arch_context.modules[].name`, and `arch_context.project_description`? Are stated constraints achievable (not mutually exclusive)? Flag as `CORRECTNESS: ISSUE` with the mismatched evidence and the architecture reference that was checked.
+- **Completeness** — Is scope clear (in and out), are acceptance criteria inferrable, are testing expectations stated, are prerequisite changes/dependencies mentioned? Flag gaps as `COMPLETENESS: MISSING`.
+- **Consistency** — Do requirements contradict each other or combine conflicting technology choices? Do all parts work toward the same goal? Flag conflicts as `CONSISTENCY: CONFLICT`.
+- **Non-duplication** — Is the same ask repeated or are requirements overlapping? Flag as `DUPLICATION: REDUNDANT` with a consolidation recommendation.
+- **Ambiguity** — Does each requirement have exactly one valid interpretation? Check terminology, quantifiers ("all X" vs "some X"), measurable criteria, boundary clarity, and — critically — the analysis intent when the request uses verbs like "analyze", "investigate", or "review" (report-only vs report-plus-fix). Flag as `AMBIGUITY: UNCLEAR` with each alternative interpretation enumerated.
+
+---
+
+## Step 9: Analyze Request in Architecture Context
+
+With `arch_context` from Step 6, analyze how the request maps to the codebase.
+
+### Module Mapping
+
+Identify candidate modules for each requirement using `arch_context.modules[].name` (direct name mentions) and `arch_context.modules[].purpose` (functionality matches); also capture implicit module dependencies. When confidence is below 70 %, query detailed module info:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture module \
+  --module {candidate_module} --audit-plan-id {plan_id}
+```
+
+The response exposes `responsibility`, `key_packages`, `key_dependencies`, and `internal_dependencies`. For cross-cutting changes, also run `architecture graph` to understand the dependency flow between candidate modules. Query detailed info only when the request is not already a direct module-name match.
+
+Emit a `MODULE_MAPPING: {CLEAR|NEEDS_CLARIFICATION}` finding containing the requirement text, candidate modules, confidence, the rationale, and whether a detailed query was required.
+
+### Feasibility Check
+
+Validate that the request respects module boundaries (`arch_context.modules[].purpose`), follows dependency direction (`architecture graph` output), aligns with existing extension points (`internal_dependencies`), and fits the project technologies (`arch_context.technologies`). Flag concerns such as runtime-context changes inside a library module, reverse dependency flows, or missing framework features as `FEASIBILITY: CONCERN` with the architectural constraint that was violated.
+
+### Scope Size Estimation
+
+Derive `scope_estimate` from the `module_mapping` produced earlier in this step. The value is a single enum drawn from `none | surgical | single_module | multi_module | broad`. The same enum is consumed by `manage-solution-outline` (see `manage-solution-outline:standards/solution-outline-standard.md` § Solution Metadata) and by the surgical Q-Gate bypass in `phase-3-outline`, so the derivation rules below must be applied verbatim — no synonyms, no intermediate vocabulary.
+
+#### Derivation Rules
+
+Apply the rules in order; the first match wins. The "files" referenced below are the union of every concrete file path captured in `module_mapping` (patterns and globs are NOT counted as files for the count comparisons — they trigger the `broad` branch directly).
+
+1. **`none`** — Pure analysis with no affected files. The request describes a report-only outcome (verbs like "analyze", "investigate", "review" with explicit report-only intent) AND `module_mapping` lists no concrete file paths.
+2. **`surgical`** — All affected files map to a single module AND the count is ≤3 AND no file is in a public API surface (e.g., a published package's `__init__.py`, exported header, `index.{ts,js}`, or any file documented as a stable interface). When the request is ambiguous about public surface, default to `single_module`.
+3. **`single_module`** — All affected files map to a single module AND the count is ≤10 (and the surgical rule did not match because count > 3 or a public API surface is touched).
+4. **`multi_module`** — Affected files map to more than one module.
+5. **`broad`** — Codebase-wide changes: `module_mapping` uses globs/patterns instead of explicit file paths, OR the affected file set is unbounded (e.g., "all *.py", sweeping refactor across the repo).
+
+Emit a `SCOPE_ESTIMATE: {value}` finding containing `value` (one of the five enum strings), the modules affected, the concrete-file count (or `glob_only`/`unbounded`), and the rationale identifying which rule fired.
+
+#### Persistence
+
+Persist the derived value to `references.json` immediately so phase-3-outline and the manifest composer read a single source of truth:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-references:manage-references \
+  set --plan-id {plan_id} --field scope_estimate --value {scope_estimate}
+```
+
+The same value MUST appear in the Step 13 return TOON under the key `scope_estimate`. `phase-3-outline` MAY refine the value after deliverables crystalize (e.g., a Simple Track plan whose final deliverable list collapses to ≤3 files in one module is downgraded to `surgical`); when it does, it overwrites the field via the same `manage-references set` call.
+
+### Track Derivation from Planning Lane
+
+`track` is **derived from the planning lane** (`status.metadata.planning_lane`, resolved by the phase-1-init lane router), not from a refine-time hard-gate classifier:
+
+- `planning_lane == deep` ⇒ `track = complex` — the deep lane runs the Complex-Track outline (discovery + analysis).
+- `planning_lane == light` ⇒ `track = simple` — the light lane reuses Simple-Track deliverable authoring by construction.
+
+**Log the derived track decision** (to decision.log):
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-2-refine) Track: {track} (derived from planning_lane={planning_lane})"
+```
+
+---
+
+## Step 10: Evaluate Confidence
+
+Aggregate findings from Steps 8-9 into confidence score.
+
+If confidence >= threshold → go to Step 13. Otherwise continue.
+
+### Confidence Calculation
+
+| Dimension | Weight | Score |
+|-----------|--------|-------|
+| Correctness | 20% | 100 if PASS, 0 if ISSUE |
+| Completeness | 20% | 100 if PASS, 50 if minor missing, 0 if major missing |
+| Consistency | 20% | 100 if PASS, 0 if CONFLICT |
+| Non-Duplication | 10% | 100 if PASS, 80 if REDUNDANT |
+| Ambiguity | 20% | 100 if PASS, 0 if UNCLEAR |
+| Module Mapping | 10% | Use confidence from Step 9 |
+
+**Confidence = weighted sum**
+
+### Decision
+
+The loop-exit check is governed solely by `confidence_threshold` — the deep refine lane runs the full clarification loop until confidence reaches threshold. (Light-lane plans never enter refine's clarification loop at all: the phase-1-init lane router routes them to the collapsed light-lane envelope, which authors deliverables in a single bounded-discovery dispatch.)
+
+```text
+IF confidence >= confidence_threshold:
+  Log: "[REFINE:8] Request refinement complete. Confidence: {confidence}%"
+  CONTINUE to Step 13 (Persist and Return Results)
+
+ELSE:
+  Log: "[REFINE:8] Request needs clarification. Confidence: {confidence}%"
+  CONTINUE to Step 11
+```
+
+**Log**:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO --message "[REFINE:8] (plan-marshall:phase-2-refine) Confidence: {confidence}%. Threshold: {confidence_threshold}%. Issues: {issue_summary}"
+```
+
+---
+
+## Step 11: Assemble the `refine_prompt` Clarification Envelope
+
+The dispatched refine leaf does **NOT** fire `AskUserQuestion` — operator input is unreachable inside a dispatched `execution-context` envelope (see [`ref-workflow-architecture/standards/agents.md`](../../ref-workflow-architecture/standards/agents.md#leaf-cannot-fire-askuserquestion--return-a-prompt-required-envelope)). When confidence is below threshold, the leaf completes its analysis pass with a best-judgment `clarified_request` and, for each issue found in Steps 8-9, formulates a clarification question mapped to its dimension:
+
+- **Correctness**: "Is {X} the correct {technology/API/pattern}?"
+- **Completeness**: "What should happen when {missing scenario}?"
+- **Consistency**: "You mentioned both {A} and {B} which conflict. Which takes priority?"
+- **Ambiguity**: "When you say {ambiguous term}, do you mean {interpretation A} or {interpretation B}?"
+- **Analysis intent**: "Your request uses 'analyze'. Is the expected outcome a findings-only report, or analysis plus implementation of fixes?"
+- **Module mapping**: "Should this change affect {module A}, {module B}, or both?"
+
+It batches these into ONE `refine_prompt` prompt-required envelope carried on the Step 13 return TOON — at most 4 questions, prioritized by Correctness > Consistency > Completeness > Ambiguity > Duplication, each option describing the implementation consequence of the branch it selects (the option label names the branch the orchestrator takes when it is chosen), with concrete codebase examples when possible.
+
+### `refine_prompt` envelope structure
+
+```toon
+refine_prompt:
+  questions[N]{id,question,header,options,recommended}:
+    q1,"When you say {ambiguous term}, do you mean {A} or {B}?",Ambiguity,"[interpretation A | interpretation B]",interpretation A
+    q2,"Should this change affect {module A}, {module B}, or both?",Module mapping,"[module A | module B | both]",both
+```
+
+- `id` — stable question id the orchestrator echoes back alongside the operator's answer.
+- `question` — the operator-facing prompt text.
+- `header` — the dimension label (Correctness / Consistency / Completeness / Ambiguity / Duplication / Module mapping).
+- `options` — the explicit choices; each label names the branch the orchestrator selects when it is chosen.
+- `recommended` — the leaf's best-judgment default, presented as the pre-selected option.
+
+**HARD constraint (one-context-per-phase)**: the envelope carries all questions at once. The main-context orchestrator (`plan-marshall/workflow/planning.md` § 2-Refine Phase) fires ONE batched `AskUserQuestion` and re-dispatches phase-2-refine **AT MOST ONCE** with every answer baked into the re-dispatch prompt. A still-below-threshold second pass returns the current confidence flagged for manual review (mirrors the max-iterations behaviour). The leaf performs no in-envelope operator interaction and no per-round loop — it assembles the envelope and returns via Step 13.
+
+---
+
+## Step 12: Update Request
+
+On a re-dispatch that carried operator answers baked in from the `refine_prompt`
+envelope (Step 11), record those answers into request.md using the three-step
+path-allocate pattern. The script allocates the canonical artifact path, the leaf
+edits the file directly with its native Edit/Write tools, and a second subcommand
+records the clarification transition. No multi-line content crosses the shell
+boundary. The answers come from the re-dispatch prompt (the orchestrator baked them
+in after firing the batched `AskUserQuestion`), **not** from an in-leaf prompt
+thread — the leaf never fires `AskUserQuestion` itself.
+
+**This step is mandatory whenever the re-dispatch carried baked-in answers** — all three sub-steps (12a path-allocate → 12b Edit/Write → 12c mark-clarified) MUST run before the workflow continues. There is no path where baked-in clarification answers reach the leaf without being persisted to `request.md`.
+
+### Step 12a: Allocate Canonical Path
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents \
+  request path --plan-id {plan_id}
+```
+
+The returned `path` field is the absolute location of `request.md`. Pass it to
+the Edit/Write tools in Step 12b — never hand-craft a path under `.plan/`.
+
+### Step 12b: Edit request.md Directly
+
+Use the Edit/Write tools to append a `## Clarifications` section and, if
+significant, a `## Clarified Request` section to the file returned by
+`request path`. Format:
+
+```text
+## Clarifications
+
+Q: {question asked}
+A: {user's answer}
+
+## Clarified Request
+
+{Original intent restated clearly}
+
+**Scope:**
+- {Specific inclusion from clarification}
+- {Specific inclusion from clarification}
+
+**Exclusions:**
+- {Specific exclusion from clarification}
+
+**Constraints:**
+- {Constraint from clarification}
+```
+
+No shell marshalling — the Edit tool writes the exact markdown you intend, free
+of shell-escape concerns.
+
+### Step 12c: Record the Clarification Transition
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents \
+  request mark-clarified --plan-id {plan_id}
+```
+
+This validates that the Clarified Request section is present and records the
+transition in the script's response. Returns `status: error, error: not_clarified`
+if Step 12b did not add the section.
+
+**`not_clarified` is a hard error that blocks loop continuation.** When
+`mark-clarified` returns `status: error, error: not_clarified`, the direct edit in
+Step 12b was skipped or incomplete — the clarification answers are NOT durably
+persisted. The workflow MUST NOT loop back to Step 8 and MUST NOT advance to Step
+13 on this signal. Re-run Step 12b to write the missing `## Clarifications` /
+`## Clarified Request` content, then re-run Step 12c, until `mark-clarified`
+returns `status: success`. Only a successful `mark-clarified` clears the round.
+
+**Synthesis pattern** (for the Clarified Request section you write in 12b):
+```text
+{Original intent restated clearly}
+
+**Scope:**
+- {Specific inclusion from clarification}
+- {Specific inclusion from clarification}
+
+**Exclusions:**
+- {Specific exclusion from clarification}
+
+**Constraints:**
+- {Constraint from clarification}
+```
+
+### Log and Re-analyze
+
+**Log**:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO --message "[REFINE:10] (plan-marshall:phase-2-refine) Recorded {N} baked-in clarifications. Re-analyzing."
+```
+
+Continue to Step 8 to re-analyze the updated request within this re-dispatched run. There is no cross-dispatch per-round loop — the orchestrator re-dispatches phase-2-refine at most once (Step 11 HARD constraint), so a re-dispatched run that is still below threshold after re-analysis returns the current confidence flagged for manual review rather than assembling a second `refine_prompt` envelope.
+
+---
+
+## Step 13: Persist and Return Results
+
+When confidence reaches threshold, persist results to sinks and return minimal status.
+
+### First-Pass Clarified-Request Guarantee
+
+`request.md` MUST always carry a `## Clarified Request` section before this step
+completes — including the path where confidence reached threshold on the first pass
+and no Step 11 clarification round ever fired. When no clarification round ran this
+phase, run the Step 12 three-step path-allocate persistence once here against the
+synthesized request: (12a) `request path`, (12b) Edit/Write a `## Clarified Request`
+section containing the synthesized request narrative (no `## Clarifications` Q/A block
+is required when no questions were asked), (12c) `request mark-clarified`. A
+`not_clarified` return is the same hard error documented in Step 12c — re-run 12b/12c
+until `mark-clarified` returns `status: success` before continuing. When at least one
+clarification round already ran (each having persisted under Step 12's mandatory
+per-round rule), `request.md` already carries the section and this guarantee is a
+no-op — do not re-write or duplicate it.
+
+### Persist Module Mapping to Work Directory
+
+**Persist module mapping** (intermediate analysis state, not a reference):
+
+1. Stage the rendered TOON payload via the `Write` tool to `.plan/temp/module_mapping.toon`. The payload is the multi-line block:
+
+   ```text
+   # Module Mapping
+
+   {module_mapping_toon_content}
+   ```
+
+2. Invoke `manage-files write` with `--content-file`:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-files:manage-files write \
+     --plan-id {plan_id} \
+     --file work/module_mapping.toon \
+     --content-file .plan/temp/module_mapping.toon
+   ```
+
+See `marketplace/bundles/plan-marshall/skills/manage-files/SKILL.md` § Enforcement and § write subsection for the binding rule.
+
+### Persist scope_estimate to references.json
+
+Persist the `scope_estimate` value derived in Step 9 so phase-3-outline, the manifest composer, and the surgical Q-Gate bypass read a single source of truth:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-references:manage-references \
+  set --plan-id {plan_id} --field scope_estimate --value {scope_estimate}
+```
+
+The accepted enum values are `none | surgical | single_module | multi_module | broad` — the same enum documented in `manage-solution-outline:standards/solution-outline-standard.md`. The value is also returned in the Step 13 TOON below.
+
+### Persist track to references.json
+
+Persist the `track` value derived from the planning lane in Step 9 (deep ⇒ complex, light ⇒ simple) so phase-4-plan and the manifest composer read a single source of truth — symmetric to the `scope_estimate` persist above:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-references:manage-references \
+  set --plan-id {plan_id} --field track --value {track}
+```
+
+The accepted enum values are `simple | complex`. `manage-execution-manifest compose --track` and phase-4-plan read this field as the single source of truth — `manage-references get --field track` returns the value without inference once refine writes it here. The value is also returned in the Step 13 TOON below.
+
+### Author and persist the PR title
+
+Author a commit-style PR title from the **clarified request** and persist it to `status.json` metadata so phase-6-finalize `create-pr.md` has a deterministic source to bind `--title` from — symmetric to the `scope_estimate` / `track` persists above:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
+  metadata --plan-id {plan_id} --set --field pr_title --value "{authored_title}"
+```
+
+**Title-authoring guidance:** Author a concise, conventional-commit-style PR title — ≤72 characters, imperative mood, `type(scope): summary` shape consistent with this repo's commit convention (e.g. `fix(create-pr): bind --title from persisted pr_title`). Derive it from the clarified request narrative, not from the raw original input.
+
+**Distinctness from the descriptive `title`:** `pr_title` is **distinct from the existing descriptive top-level `title` field** authored at phase-1-init. The top-level `title` is the plan's human-readable label; `pr_title` is the commit-style PR title consumed at finalize. Persisting `pr_title` under `status.metadata` never mutates the top-level `title`.
+
+The value is also surfaced in the Step 13 "Return Output with Decisions" TOON below.
+
+**Note**: Compatibility is NOT persisted to references.json (it is read directly from marshal.json by consumers).
+
+### Log Decisions (with duplicate guard)
+
+**Note**: Track decision was already logged in Step 9. Only log scope and domains here if this is the first successful completion (iteration_count == 1 or first time reaching Step 13).
+
+**Log to decision.log** (scope decision - only on first completion):
+```bash
+# Only log if not already logged (check iteration_count)
+IF iteration_count == 1:
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-2-refine) Scope: {scope_estimate} - Modules: {module_count}, Files: {file_estimate}"
+
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-2-refine) Domains: {domains}"
+```
+
+**Log to work.log** (completion status):
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO --message "[REFINE:11] (plan-marshall:phase-2-refine) Complete. Confidence: {confidence}%. Track: {track}. Iterations: {iteration_count}"
+```
+
+### Return Output with Decisions
+
+Return status with decision values - track, scope, and compatibility are included in output for consumers:
+
+```toon
+status: success
+plan_id: {plan_id}
+confidence: {achieved_confidence}
+track: {simple|complex}
+track_reasoning: {track_reasoning}
+scope_estimate: {scope_estimate}
+pr_title: {pr_title}
+compatibility: {compatibility}
+compatibility_description: {compatibility_description}
+domains: [{detected domains}]
+qgate_pending_count: {0 if no findings}
+refine_prompt:
+  questions[N]{id,question,header,options,recommended}:
+    ...
+```
+
+`refine_prompt` is the conditional batched-clarification envelope assembled at Step 11 — present only when confidence is below threshold, absent on the threshold-reached path. `SKILL.md` § "Step 13: Persist and Return Results" is the single source of truth for the full return TOON.
+
+**Data Location Reference**:
+- Track/scope decisions: `decision.log` filtered by `(plan-marshall:phase-2-refine)`
+- Module mapping: `work/module_mapping.toon`
+- Compatibility: marshal.json (phase-2-refine config)
+- Clarifications: `request.md` → `clarifications`, `clarified_request`
+
+This output feeds into the next phase (phase-3-outline).
+
+### Q-Gate Verification Checks
+
+**Purpose**: Verify refine output meets quality standards before transitioning.
+
+After persisting results, run lightweight verification:
+
+1. **Module Mapping Completeness**: Every requirement maps to >= 1 module? Every module exists in architecture?
+2. **Track Selection Consistency**: Track matches scope? (`codebase_wide` scope but `simple` track → flag)
+3. **Scope Realism**: `single_file` but multiple modules → flag; `codebase_wide` but only 1 module → flag
+4. **Confidence Justification**: All dimensions scored 100% → suspicious → flag
+
+For each issue found:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
+  qgate add --plan-id {plan_id} --phase 2-refine --source qgate \
+  --type triage --title "{check}: {issue_title}" \
+  --detail "{detailed_reason}"
+```
+
+**Log Q-Gate Result**:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-2-refine:qgate) Verification: {passed_count} passed, {flagged_count} flagged"
+```
+
+Add to return output:
+```toon
+qgate_pending_count: {count}
+```
+
+If `qgate_pending_count > 0`, the orchestrator (planning.md) decides whether to re-enter the phase or present findings to the user.
+
+---
+
+### Step 13.5: Dispatch q-gate-validation — lesson-derived plans only
+
+**Purpose**: Run the `narrative-vs-code-validator` (plan-marshall/workflow/q-gate-validation.md § 2.14) over the source lesson narrative so concrete code claims (file paths, profile→target mappings, function names, argument shapes, behavioral assertions) are reconciled against current code state at refine time. Catches silent baseline drift between lesson capture and plan execution before the outline locks intent.
+
+**Activation guard**: Runs whenever `status.json` reports a `plan_source` that is set and not equal to the literal string `recipe`. Lesson-derived plans encode the source lesson id directly in `plan_source` (e.g., `2026-05-11-08-004`), so the guard MUST treat any non-null, non-`recipe` value as lesson-derived. For recipe-derived plans, and for plans where `plan_source` is absent (free-form, issue-derived legacy data, etc.), skip this step entirely.
+
+**Read activation guard**:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
+  --plan-id {plan_id} --get --field plan_source
+```
+
+If `status: not_found`, or if `value` equals `recipe`, the phase sets `qgate_validation_required: false` in its return TOON and continues to Step 14 — log nothing. Any other non-empty value (notably a lesson id such as `2026-05-11-08-004`) activates the step.
+
+**Signal the validator requirement** (lesson-derived plans only):
+
+When the activation guard fires, the phase records its intent by setting `qgate_validation_required: true` in the return TOON (see `SKILL.md` § Return Results). The orchestrator (`plan-marshall:plan-marshall/workflow/planning.md`) reads that flag after the phase returns and dispatches `q-gate-validation` as a sibling top-level `Task: plan-marshall:{target}` invocation — the phase body does NOT spawn `q-gate-validation` itself because the `Task` tool is unavailable inside an `execution-context-{level}` subagent. Aggregation of the validator's `qgate_pending_count` into the phase aggregate also moves to the orchestrator; this step only signals intent.
+
+Log the intent so the run record shows the activation:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO \
+  --message "[STATUS] (plan-marshall:phase-2-refine) qgate_validation_required=true — orchestrator will dispatch q-gate-validation (narrative-vs-code-validator) after phase return"
+```
+
+This step runs AFTER the inline lightweight Q-Gate checks (above) and BEFORE Step 14 (Transition Phase). The placement is load-bearing: inline checks first means cheap structural findings are recorded before the phase return; the orchestrator-side validator dispatch ensures lesson-driven findings can re-enter refine alongside the inline ones via the existing auto-loop predicate.
+
+**Preserve STALE-flagged deliverables as outline-depth confirmation signals**: the narrative-vs-code-validator classifies each concrete code claim as `valid`, `stale`, or `invalid`. A `stale` finding is NOT an outright invalid finding — it is a low-confidence / outline-confirm-required signal that the lesson's intent likely still holds but the surface (path, symbol name, signature) has moved under refactor/rename. The verdict definition and the low-confidence rule body live in the central standard ONLY — see [`plan-marshall/workflow/q-gate-validation.md` § 2.14](../../plan-marshall/workflow/q-gate-validation.md#214-narrative-vs-code-validator) for the authoritative STALE-vs-INVALID distinction; do not restate it here. The refine phase MUST NOT treat a `stale` finding as a blocker or discard the deliverable that carries it: any deliverable touched by a `stale` finding is **preserved** and carried forward so the outline phase can confirm whether the moved surface or the lesson's original intent is the desired end state. `invalid` findings (high severity, outright wrong) flow through the normal blocking path; `stale` findings (low severity, outline-confirm-required) are retained as confirmation prompts rather than removed.
+
+---
+
+## Step 14: Transition Phase
+
+The phase transitions from refine → outline after confidence reaches the threshold:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status transition \
+  --plan-id {plan_id} \
+  --completed 2-refine
+```
+
+**After successful transition**, log phase completion:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-2-refine) Refine phase complete - confidence: {confidence}%, track: {track}"
+```
+
+**Add visual separator** after END log:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  separator --plan-id {plan_id} --type work
+```

@@ -1,0 +1,23 @@
+{
+  "name": "pm-dev-java",
+  "version": "0.1.1205",
+  "description": "Comprehensive Java development expertise bundle providing domain knowledge skills for standards-compliant implementation, testing, and verification via the plan-marshall extension API",
+  "author": {
+    "name": "https://github.com/cuioss/plan-marshall",
+    "email": "contact@cuioss.de"
+  },
+  "license": "FSL-1.1-ALv2",
+  "homepage": "https://github.com/cuioss/plan-marshall",
+  "repository": "https://github.com/cuioss/plan-marshall.git",
+  "keywords": [
+    "java",
+    "cdi",
+    "quarkus",
+    "testing",
+    "standards",
+    "patterns"
+  ],
+  "agents": [],
+  "commands": [],
+  "skills": []
+}

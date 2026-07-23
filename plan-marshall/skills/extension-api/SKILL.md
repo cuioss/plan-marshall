@@ -1,0 +1,505 @@
+---
+name: extension-api
+description: Extension API for domain bundle discovery, module detection, and canonical command generation
+user-invocable: false
+mode: knowledge
+---
+
+# Extension API Skill
+
+Unified API for domain bundle extensions providing module discovery, build system detection, and command generation. Provides the `ExtensionBase` abstract base class that all domain extensions must inherit from.
+
+## Enforcement
+
+**Execution mode**: Reference library; load on-demand when creating or modifying extensions.
+
+**Prohibited actions:**
+- Do not modify extension_base.py without updating the contract documentation
+- Do not create extensions that bypass ExtensionBase inheritance
+- Do not call extension scripts directly; use the executor notation
+
+**Constraints:**
+- All extensions must inherit from `ExtensionBase`
+- Canonical command constants must be used instead of string literals
+- CLI commands use `python3 .plan/execute-script.py plan-marshall:extension-api:extension_discovery {command} {args}`
+
+## Purpose
+
+- **ExtensionBase ABC** - Abstract base class with required/optional methods
+- **Canonical constants** - `CMD_*` constants for command names
+- **Profile patterns** - `PROFILE_PATTERNS` vocabulary for classification
+- **Discovery utilities** - Loading and discovering extensions
+- **Build utilities** - Module discovery, log file management, issue parsing
+
+## When to Reference This Skill
+
+Reference when:
+- Creating a new `extension.py` for a domain bundle
+- Implementing `discover_modules()` for a build system
+- Understanding canonical command names and resolution
+- Parsing build output and handling issues
+
+## Skill Structure
+
+```text
+extension-api/
+├── SKILL.md                        # This file
+├── scripts/
+│   ├── extension_base.py           # ExtensionBase ABC, canonical commands
+│   ├── extension_discovery.py      # Extension discovery, loading, aggregation
+│   ├── _build_discover.py          # Module discovery, path building
+│   ├── _build_result.py            # Log file creation, result construction, validation (co-located build utility)
+│   ├── _build_parse.py             # Issue structures, warning filtering (co-located build utility)
+│   ├── _build_format.py            # TOON and JSON output formatting (co-located build utility)
+│   ├── _build_execute.py           # Subprocess execution, timeout learning, wrapper detection (co-located build utility)
+│   ├── _build_execute_factory.py   # Factory for build-system-specific handlers (co-located build utility)
+│   ├── _build_shared.py            # Shared CLI helpers, cmd_run_common (co-located build utility)
+│   ├── _build_check_warnings.py    # Warning categorization factory (co-located build utility)
+│   ├── _build_coverage_report.py   # Coverage report parsing factory (co-located build utility)
+│   ├── _build_jvm_patterns.py      # Shared JVM error patterns (co-located build utility)
+│   ├── _build_parser_registry.py   # Multi-parser registry (co-located build utility)
+│   ├── _coverage_parse.py          # Format-agnostic coverage parsing (co-located build utility)
+│   ├── _warnings_classify.py       # Warning categorization with matchers (co-located build utility)
+│   └── _module_aggregation.py      # Virtual module splitting
+└── standards/
+    ├── extension-contract.md       # Extension API contract (core methods, overview, examples)
+    ├── ext-point-build.md          # Build system extension point contract
+    ├── ext-point-build-verify-step.md # Phase-5 build/verify command step contract
+    ├── ext-point-domain-bundle.md  # Domain bundle shape contract (plan-marshall-plugin marker)
+    ├── ext-point-dynamic-level-executor.md # Per-level agent variant emission contract
+    ├── ext-point-execution-context-workflow.md # Dispatchable workflow document contract
+    ├── ext-point-finalize-step.md  # Phase-6 finalize step contract
+    ├── ext-point-lane-element.md   # Lane-element frontmatter contract — lane.{class,tier,prunable_when,cost_size} (every phase/finalize-step element)
+    ├── ext-point-outline.md        # Outline extension point contract
+    ├── ext-point-provider.md       # Credential extension point contract
+    ├── ext-point-recipe.md         # Recipe extension point contract
+    ├── ext-point-retrospective.md  # Retrospective check contract
+    ├── ext-point-self-review-surfacing.md # Pre-submission self-review surfacing contract
+    ├── ext-point-triage.md         # Triage extension point contract — PR review comments + Sonar issues
+    ├── ext-point-verify.md         # Verify extension point contract — finding validity-verification before triage
+    ├── dispatch-granularity.md     # Dispatch granularity guidance
+    ├── marshal-json-reference.md   # Central marshal.json config path reference
+    ├── module-discovery.md         # Module discovery contract + output specification
+    ├── canonical-commands.md       # Command vocabulary and resolution
+    ├── build-execution.md          # Build execution API + return structure
+    ├── build-api-reference.md      # Build API internal reference
+    ├── build-systems-common.md     # Common patterns across build systems
+    ├── profiles.md                 # Profile override mechanism + profile contracts
+    └── workflow-overview.md        # Architecture overview + phase contracts + user review gate
+```
+
+---
+
+## Quick Reference
+
+All extensions **must** inherit from `ExtensionBase` and implement required methods.
+
+### Required Methods (Abstract)
+
+| Method | Purpose |
+|--------|---------|
+| `get_skill_domains() -> list[dict]` | Return domain metadata with profiles |
+
+### Primary Methods
+
+| Method | Default | Purpose |
+|--------|---------|---------|
+| `discover_modules(project_root: str) -> list` | `[]` | Discover modules with paths, metadata, stats, commands |
+
+### Optional Methods (With Defaults)
+
+| Method | Default | Purpose |
+|--------|---------|---------|
+| `config_defaults(project_root: str) -> None` | no-op | Configure project defaults (called during init) |
+| `provides_triage() -> str \| None` | `None` | Return triage skill reference (covers PR review comments and Sonar issues) |
+| `provides_outline_skill() -> str \| None` | `None` | Return domain-specific outline skill reference |
+| `provides_recipes() -> list[dict]` | `[]` | Return recipe definitions for predefined transformations |
+
+---
+
+## Extension Points
+
+Each extension point has a dedicated contract document with formal parameters, pre-conditions, and post-conditions. All 15 contracts:
+
+| Extension Point | Declared Via | Contract |
+|-----------------|--------------|----------|
+| Build System | `discover_modules()` + `ExecuteConfig` | [ext-point-build.md](standards/ext-point-build.md) |
+| Build Verify Step | frontmatter `implements:` on step documents | [ext-point-build-verify-step.md](standards/ext-point-build-verify-step.md) |
+| Domain Bundle | `skills/plan-marshall-plugin/` marker skill + `extension.py` | [ext-point-domain-bundle.md](standards/ext-point-domain-bundle.md) |
+| Domain Verb | `provides_domain_verb()` | [ext-point-domain-verb.md](standards/ext-point-domain-verb.md) |
+| Dynamic Level Executor | frontmatter `implements:` on agent files | [ext-point-dynamic-level-executor.md](standards/ext-point-dynamic-level-executor.md) |
+| Execution Context Workflow | frontmatter `implements:` on workflow documents | [ext-point-execution-context-workflow.md](standards/ext-point-execution-context-workflow.md) |
+| Finalize Step | frontmatter `implements:` on finalize-step skills | [ext-point-finalize-step.md](standards/ext-point-finalize-step.md) |
+| Lane Element | `lane:` frontmatter block (every phase / finalize-step element) | [ext-point-lane-element.md](standards/ext-point-lane-element.md) |
+| Outline | `provides_outline_skill()` | [ext-point-outline.md](standards/ext-point-outline.md) |
+| Provider | `*_provider.py` | [ext-point-provider.md](standards/ext-point-provider.md) |
+| Recipe | `provides_recipes()` / frontmatter `implements:` | [ext-point-recipe.md](standards/ext-point-recipe.md) |
+| Retrospective | frontmatter `implements:` on check skills | [ext-point-retrospective.md](standards/ext-point-retrospective.md) |
+| Self-Review Surfacing | frontmatter `implements:` | [ext-point-self-review-surfacing.md](standards/ext-point-self-review-surfacing.md) |
+| Triage (PR comments + Sonar issues) | `provides_triage()` | [ext-point-triage.md](standards/ext-point-triage.md) |
+| Verify (finding validity-verification) | producer `verification_profile` | [ext-point-verify.md](standards/ext-point-verify.md) |
+
+Implementation counts are deliberately not listed here — they drift. Enumerate live implementors with:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:extension-api:extension_discovery implementors --ext-point plan-marshall:extension-api/standards/ext-point-{name}
+```
+
+For all extension-related configuration paths, see [marshal-json-reference.md](standards/marshal-json-reference.md).
+
+---
+
+## 4-Layer Workflow Architecture
+
+```text
+┌─────────────────────────────────────────────────────────────────┐
+│                    WORKFLOW ARCHITECTURE                         │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  LAYER 1: PHASE SKILLS (System only - NO domain override)       │
+│  phase-1-init → phase-2-refine → phase-3-outline → phase-4-plan │
+│    → phase-5-execute → phase-6-finalize                          │
+│                            │                                     │
+│                            │ delegates to                        │
+│                            ▼                                     │
+│  LAYER 2: PROFILE SKILLS (System default, domain CAN override)  │
+│  execute-task (profiles: implementation, module_testing, etc.)   │
+│                            │                                     │
+│                            │ loads                               │
+│                            ▼                                     │
+│  LAYER 3: EXTENSIONS (Domain provides, loaded BY system skills) │
+│  outline-ext: Codebase analysis, deliverable patterns            │
+│  triage-ext: Suppression syntax, severity guidelines             │
+│                            │                                     │
+│                            │ loads                               │
+│                            ▼                                     │
+│  LAYER 4: DOMAIN SKILLS (Loaded from task.skills at execution)  │
+│  java-core, java-cdi, junit-core, javascript, etc.           │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+| Layer | Extension Point | Override Model | Contract Location |
+|-------|-----------------|----------------|-------------------|
+| **Phase Skills** | None | System only, no override | Phase SKILL.md files |
+| **Profile Skills** | workflow_skills / workflow_skill_extensions in marshal.json | Domain can replace default | [profiles/](standards/) |
+| **Extensions** | provides_*() in extension.py | Additive (domain provides) | [extensions](standards/) |
+| **Domain Skills** | skills_by_profile in module analysis | Selected per deliverable | Domain bundle SKILL.md |
+
+---
+
+## Architecture (Optional)
+
+For understanding the complete system architecture, reference these documents:
+
+| Document | Purpose | When to Read |
+|----------|---------|--------------|
+| [extension-contract.md](standards/extension-contract.md) | Core extension API contract (ExtensionBase, get_skill_domains, examples) | Creating or modifying an extension |
+| [ext-point-*.md](standards/) | Individual extension point contracts (14 documents) | Implementing a specific extension point |
+| [marshal-json-reference.md](standards/marshal-json-reference.md) | Central marshal.json config path reference | Understanding where extension config is stored |
+| [module-discovery.md](standards/module-discovery.md) | Module discovery + output specification | Implementing `discover_modules()` |
+| [canonical-commands.md](standards/canonical-commands.md) | Command vocabulary and resolution | Implementing `discover_modules()` commands |
+| [build-execution.md](standards/build-execution.md) | Build execution API + return structure | Running build commands, formatting output |
+| [build-api-reference.md](standards/build-api-reference.md) | Build API internal reference | Working with build script internals |
+| [build-systems-common.md](standards/build-systems-common.md) | Common patterns across build systems | Understanding shared build patterns |
+| [profiles.md](standards/profiles.md) | Profile override mechanism + contracts | Understanding/overriding profile skills |
+| [workflow-overview.md](standards/workflow-overview.md) | 6-phase workflow + user review gate | Understanding phase transitions and contracts |
+
+---
+
+## Scripts
+
+### Extension Framework (Public API)
+
+| Script | Type | Purpose |
+|--------|------|---------|
+| `extension_base.py` | Library | ExtensionBase ABC, canonical commands, profile patterns |
+| `extension_discovery.py` | Library + CLI | Extension discovery, loading, aggregation, config defaults |
+| `configurable_contract.py` | Library + CLI | Fail-loud parser for the step-owned `configurable` frontmatter contract (see [Configurable step-param contract](#configurable-step-param-contract)) |
+| `_build_discover.py` | Library | Module discovery, path building, README detection |
+| `_module_aggregation.py` | Library | Virtual module splitting (depends on plan_logging) |
+
+### Build Execution Utilities (Co-Located, Not Part of Extension API)
+
+These are co-located here for PYTHONPATH convenience but are NOT part of the extension API. They are imported directly by build scripts (`build-maven`, `build-npm`, etc.), not through `extension_base`.
+
+| Script | Type | Purpose |
+|--------|------|---------|
+| `_build_execute.py` | Library | Subprocess execution, timeout learning, capture strategies |
+| `_build_execute_factory.py` | Library | Factory for build-system-specific execute_direct/cmd_run |
+| `_build_result.py` | Library | Log file creation, result dict construction |
+| `_build_parse.py` | Library | Issue structures, warning filtering |
+| `_build_format.py` | Library | TOON and JSON output formatting |
+| `_build_shared.py` | Library | cmd_run_common(), bash timeout helpers, canonical command generation |
+| `_build_coverage_report.py` | Library | Coverage report parsing with factory |
+| `_build_check_warnings.py` | Library | Warning categorization with factory |
+| `_build_jvm_patterns.py` | Library | Shared JVM error/warning category patterns |
+| `_build_parser_registry.py` | Library | Registry-based multi-parser for build output |
+| `_coverage_parse.py` | Library | Format-agnostic coverage report parsing (JaCoCo, Cobertura, LCOV, Jest) |
+| `_warnings_classify.py` | Library | Warning categorization with pluggable matchers |
+
+### CLI Commands
+
+The `extension_discovery.py` script provides CLI commands for extension operations:
+
+```bash
+# Apply config_defaults() callback for all extensions
+python3 .plan/execute-script.py plan-marshall:extension-api:extension_discovery apply-config-defaults
+```
+
+**Output (TOON)**:
+```toon
+status: success
+extensions_called: 3
+extensions_skipped: 2
+errors_count: 0
+errors[0]:
+```
+
+### Python Import Usage
+
+The executor sets PYTHONPATH to include `extension-api/scripts/`, so imports work directly:
+
+```python
+# Extension framework (public API via extension_base re-exports)
+from extension_base import (
+    ExtensionBase,
+    discover_descriptors,    # Re-exported from _build_discover
+    build_module_base,       # Re-exported from _build_discover
+    find_readme,             # Re-exported from _build_discover
+    CMD_VERIFY,
+    CMD_MODULE_TESTS,
+)
+
+# Discovery functions
+from extension_discovery import (
+    discover_all_extensions,
+    discover_project_modules,
+    get_skill_domains_from_extensions,
+    apply_config_defaults,
+)
+
+# Build utilities (co-located, not part of extension API)
+from _build_result import (
+    create_log_file,
+    success_result,
+    error_result,
+)
+
+from _build_parse import (
+    Issue,
+    filter_warnings,
+    partition_issues,
+)
+```
+
+---
+
+## Configurable step-param contract
+
+A param-owning finalize step declares its step-owned params **self-describingly**
+in the `---`-fenced YAML frontmatter of its own body doc, under a `configurable:`
+block. `configurable_contract.py` is the single fail-loud reader of that
+declaration; `manage-config` and `manage-execution-manifest` consume it as the
+canonical default/description source for step-owned params.
+
+### Declaration shape
+
+```yaml
+---
+name: sonar-roundtrip
+order: 80
+configurable:
+  - key: touched_file_cleanup
+    default: new_code_only
+    description: Which surface the Sonar roundtrip success criterion covers.
+  - key: do_transition
+    default: false
+    description: Gate the server-side SonarCloud dismissal path.
+  - key: ce_wait_timeout_seconds
+    default: 600
+    description: Budget (seconds) for the synchronous CE-readiness wait.
+---
+```
+
+Each entry MUST carry exactly the three mandatory sub-fields:
+
+| Sub-field | Type | Rule |
+|-----------|------|------|
+| `key` | str | The param key (`snake_case`, scoped within the owning step) |
+| `default` | any JSON scalar | The seeded default value (string, int, float, bool, or null) |
+| `description` | non-empty str | Human-readable description of what the param controls |
+
+### Addressing scheme
+
+A param is addressed as `{step_id}.{param_key}` — e.g.
+`default:sonar-roundtrip.touched_file_cleanup`. The step id carries its prefix
+(`default:` for built-in steps, `project:` for project-local steps); param keys
+stay `snake_case` with no camelCase variant.
+
+### Declaration placement
+
+The body doc that declares a step's `configurable:` block is the step's
+canonical body doc, resolved by `resolve_step_doc_path(step_id)`:
+
+| Step kind | Body doc |
+|-----------|----------|
+| Built-in `default:` | `phase-6-finalize/workflow/{name}.md`, falling back to `phase-6-finalize/standards/{name}.md` |
+| `project:` | `.claude/skills/{name}/SKILL.md` |
+
+The placement contract and its enforcement (a param-owning step MUST declare a
+well-formed block; missing/malformed declarations fail loud) are owned centrally
+by the `plugin-doctor` `step-configurable-contract` rule — see that rule for the
+authoritative enforcement body. This skill does not restate the enforcement
+rules; it owns only the parser and the declaration shape above.
+
+### Public API
+
+```python
+from configurable_contract import parse_configurable, resolve_step_defaults
+
+# Parse a step body doc's configurable block to the full schema.
+schema = parse_configurable(step_doc_path)
+# -> {"touched_file_cleanup": {"default": "new_code_only", "description": "..."}, ...}
+
+# Resolve a step id to just its param defaults (resolves the body-doc path first).
+defaults = resolve_step_defaults('default:sonar-roundtrip')
+# -> {"touched_file_cleanup": "new_code_only", "do_transition": False, ...}
+```
+
+Both functions raise `ValueError` (fail loud, no silent fallback) on every
+malformed-declaration case: file not found, no frontmatter, no `configurable:`
+block, an empty block, an entry missing any of `key`/`default`/`description`, a
+non-string `key`/`description`, an empty `description`, or a duplicate `key`.
+
+---
+
+## Canonical Command Constants
+
+Import `CMD_*` constants from `extension_base` for type-safe command references:
+
+```python
+from extension_base import (
+    CMD_CLEAN,             # "clean"
+    CMD_COMPILE,           # "compile"
+    CMD_TEST_COMPILE,      # "test-compile"
+    CMD_MODULE_TESTS,      # "module-tests"
+    CMD_INTEGRATION_TESTS, # "integration-tests"
+    CMD_COVERAGE,          # "coverage"
+    CMD_BENCHMARK,         # "benchmark"
+    CMD_QUALITY_GATE,      # "quality-gate"
+    CMD_VERIFY,            # "verify"
+    CMD_INSTALL,           # "install"
+    CMD_CLEAN_INSTALL,     # "clean-install"
+    CMD_PACKAGE,           # "package"
+    ALL_CANONICAL_COMMANDS,
+    PROFILE_PATTERNS,      # Profile ID to canonical mapping (for internal use)
+)
+```
+
+Required commands: `quality-gate` (all modules), `verify` (non-pom), `module-tests` (if tests exist). `clean` is always separate — other commands do NOT include clean goal.
+
+See [canonical-commands.md](standards/canonical-commands.md) for the complete vocabulary, resolution logic, and requirements.
+
+---
+
+## Minimal Extension Template
+
+```python
+#!/usr/bin/env python3
+"""Extension API for {bundle-name} bundle."""
+
+from pathlib import Path
+from extension_base import ExtensionBase
+
+
+class Extension(ExtensionBase):
+    """Extension for {bundle-name} bundle."""
+
+    def get_skill_domains(self) -> list[dict]:
+        """Domain metadata for skill loading."""
+        return [{
+            "domain": {
+                "key": "domain-key",
+                "name": "Domain Name",
+                "description": "Domain description"
+            },
+            "profiles": {
+                "core": {"defaults": [], "optionals": []},
+                "implementation": {"defaults": [], "optionals": []},
+                "module_testing": {"defaults": [], "optionals": []},
+                "quality": {"defaults": [], "optionals": []}
+            }
+        }]
+
+    def discover_modules(self, project_root: str) -> list:
+        """Discover modules in the project.
+
+        Returns list of module dicts with:
+        - name, build_systems, paths, metadata, packages, dependencies, stats, commands
+        """
+        # Find descriptors
+        from _build_discover import discover_descriptors, build_module_base
+        descriptors = discover_descriptors(project_root, "descriptor-file")
+
+        modules = []
+        for desc_path in descriptors:
+            base = build_module_base(project_root, desc_path)
+            # Enrich with extension-specific metadata, stats, commands
+            modules.append({
+                "name": base.name,
+                "build_systems": ["my-build-system"],
+                "paths": base.paths.to_dict(),
+                "metadata": {},
+                "packages": {},
+                "dependencies": [],
+                "stats": {"source_files": 0, "test_files": 0},
+                "commands": self._resolve_commands(base)
+            })
+        return modules
+```
+
+---
+
+## Integration Points
+
+- **manage-architecture** - Orchestrates extensions, owns `.plan/project-architecture/*.json` files
+- **manage-config** - Uses `discover_all_extensions()` for domain configuration
+- **Domain bundles** - Implement `extension.py` inheriting from `ExtensionBase`
+
+## Canonical invocations
+
+The canonical argparse surface for the skill's CLI entry-points, `extension_discovery.py` and `configurable_contract.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
+
+### apply-config-defaults
+
+```bash
+python3 .plan/execute-script.py plan-marshall:extension-api:extension_discovery apply-config-defaults \
+  (--project-dir PROJECT_DIR | --plan-id PLAN_ID)
+```
+
+`--project-dir` and `--plan-id` are mutually exclusive.
+
+### implementors
+
+```bash
+python3 .plan/execute-script.py plan-marshall:extension-api:extension_discovery implementors \
+  --ext-point EXT_POINT
+```
+
+Enumerates every component declaring `implements: {EXT_POINT}` — scans every bundle's `skills/*/SKILL.md`, the phase-6-finalize `workflow/*.md` + `standards/*.md` step docs, and project-local `.claude/skills/finalize-step-*/SKILL.md`. Global discovery; takes no project-dir / plan-id routing.
+
+### configurable_contract — parse
+
+```bash
+python3 .plan/execute-script.py plan-marshall:extension-api:configurable_contract parse \
+  --path PATH
+```
+
+### configurable_contract — resolve
+
+```bash
+python3 .plan/execute-script.py plan-marshall:extension-api:configurable_contract resolve \
+  --step-id STEP_ID
+```
+
