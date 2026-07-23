@@ -82,15 +82,24 @@ class Extension(ExtensionBase):
             },
         ]
 
-    def provides_domain_verb(self) -> dict | None:
-        """Return the java-cui domain's executable-verb descriptor.
+    def provides_domain_verb(self) -> list[dict] | None:
+        """Return the java-cui domain's executable-verb descriptors.
 
-        The cui-rewrite marker format and its auto-suppressible recipe table
-        describe recipes this bundle defines, so the marker detector is owned
-        here. Core resolves this verb to null when java-cui is inactive, and the
-        marker gate then simply does not run.
+        The java-cui domain owns two OpenRewrite finding signals, each a
+        domain-owned executable whose format this bundle governs:
+
+        - ``marker-detect`` → ``search-markers`` (Signal A, tree-scan of
+          in-source markers).
+        - ``rewrite-log-parse`` → ``parse-rewrite-log`` (Signal B, log-parse of
+          the #118 WARN lines).
+
+        Core resolves each verb to null when java-cui is inactive, and the
+        corresponding signal then simply does not run.
         """
-        return {'verb': 'marker-detect', 'notation': 'pm-dev-java-cui:search-markers'}
+        return [
+            {'verb': 'marker-detect', 'notation': 'pm-dev-java-cui:search-markers'},
+            {'verb': 'rewrite-log-parse', 'notation': 'pm-dev-java-cui:parse-rewrite-log'},
+        ]
 
     def config_defaults(self, project_root: str) -> None:
         """Configure CUI-specific Maven defaults.

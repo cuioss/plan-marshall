@@ -1,6 +1,6 @@
 # Extension Point: Domain-Owned Executable Verb
 
-> **Type**: Workflow Skill Extension | **Hook Method**: `provides_domain_verb()` | **Implementations**: 1 | **Status**: Shipped — the `extension_base.py` hook is wired and `java-cui` implements it
+> **Type**: Workflow Skill Extension | **Hook Method**: `provides_domain_verb()` | **Implementations**: 1 domain (`java-cui`), 2 verbs | **Status**: Shipped — the `extension_base.py` hook is wired and `java-cui` implements it
 
 ## Overview
 
@@ -23,27 +23,30 @@ The contract therefore adds no new registry and no new discovery structure. It r
 
 ### 1. Declaration
 
-A domain extension declares the verb by **either** of two forms, mirroring the existing hooks:
+A domain extension declares its verbs by **either** of two forms, mirroring the existing hooks:
 
-- An **optional Python hook** on the domain's `Extension` subclass, returning a descriptor-or-`None` (the `provides_arch_gate()` descriptor-or-None shape):
+- An **optional Python hook** on the domain's `Extension` subclass, returning a descriptor **list**-or-`None`:
 
   ```python
-  def provides_domain_verb(self) -> dict | None:
-      """Return this domain's executable-verb descriptor, or None.
+  def provides_domain_verb(self) -> list[dict] | None:
+      """Return this domain's executable-verb descriptors, or None.
 
       Returns:
-          A descriptor dict ``{'verb': str, 'notation': str}`` naming the verb
-          type and the resolvable script notation the domain owns (e.g.
-          ``{'verb': 'marker-detect', 'notation': 'pm-dev-java-cui:search-markers'}``),
+          A LIST of descriptor dicts, each ``{'verb': str, 'notation': str}``
+          naming a verb type and the resolvable script notation the domain owns
+          (e.g. ``[{'verb': 'marker-detect',
+          'notation': 'pm-dev-java-cui:search-markers'},
+          {'verb': 'rewrite-log-parse',
+          'notation': 'pm-dev-java-cui:parse-rewrite-log'}]``),
           or None when the domain provides no such verb.
 
       Default: None
       """
   ```
 
-  The `None` default is the silent-skip contract every optional hook shares: a domain that provides no verb implements nothing and core resolves the verb to null for that domain.
+  The seeder iterates the list, registering one `workflow_skill_extensions` entry per descriptor. The `None` (or empty-list) default is the silent-skip contract every optional hook shares: a domain that provides no verb implements nothing and core resolves each verb to null for that domain.
 
-- A **`workflow_skill_extensions`-style entry** in `marshal.json`, keyed by verb type, under the domain's registration:
+- A **`workflow_skill_extensions`-style entry** in `marshal.json`, keyed by verb type, under the domain's registration — one entry per verb the domain owns:
 
   ```json
   {
@@ -51,7 +54,8 @@ A domain extension declares the verb by **either** of two forms, mirroring the e
       "java-cui": {
         "bundle": "pm-dev-java-cui",
         "workflow_skill_extensions": {
-          "marker-detect": "pm-dev-java-cui:search-markers"
+          "marker-detect": "pm-dev-java-cui:search-markers",
+          "rewrite-log-parse": "pm-dev-java-cui:parse-rewrite-log"
         }
       }
     }
@@ -60,7 +64,7 @@ A domain extension declares the verb by **either** of two forms, mirroring the e
 
   This is the same map `provides_triage()` / `provides_outline_skill()` persist through — keyed by verb type, value is the resolvable notation.
 
-The verb type is the addressing key: it is `snake_case`/`kebab-case`, scoped within the domain, and names the capability (`marker-detect`, `arch-gate`, …), not the implementing script.
+The verb type is the addressing key: it is `snake_case`/`kebab-case`, scoped within the domain, and names the capability (`marker-detect`, `rewrite-log-parse`, `arch-gate`, …), not the implementing script.
 
 ### 2. Discovery
 
@@ -99,14 +103,15 @@ The same widened `--type` is available read-only through `query-config resolve-w
 
 ## Current implementations
 
-There is one shipped `provides_domain_verb()` implementor. It is listed alongside the arch-gate precedent that validated the mechanism:
+The `java-cui` domain is the shipped `provides_domain_verb()` implementor; it declares **two** verbs, both domain-owned OpenRewrite finding signals. They are listed alongside the arch-gate precedent that validated the mechanism:
 
 | Case | Domain | Verb | Role |
 |------|--------|------|------|
-| Relocated marker detector | `java-cui` (pm-dev-java-cui) | `marker-detect` (`pm-dev-java-cui:search-markers`) | The **shipped implementor**. A domain-owned OpenRewrite/TODO marker detector that runs only when the java-cui domain is active — its relocation out of the core bundle into a domain bundle is exactly the "domain content is active only when its domain is active" case `ADR-010` governs. It declares `provides_domain_verb()`, which seeds a `workflow_skill_extensions.marker-detect` entry; core resolves it null-on-absent, and a project without java-cui active resolves the verb to null (the marker gate simply does not run — a capability-provision invisibility, not a silent gate). |
+| Marker detector (Signal A) | `java-cui` (pm-dev-java-cui) | `marker-detect` (`pm-dev-java-cui:search-markers`) | A domain-owned OpenRewrite/TODO marker detector (tree-scan) that runs only when the java-cui domain is active — its relocation out of the core bundle into a domain bundle is exactly the "domain content is active only when its domain is active" case `ADR-010` governs. Seeds a `workflow_skill_extensions.marker-detect` entry; core resolves it null-on-absent, and a project without java-cui active resolves the verb to null (the marker gate simply does not run — a capability-provision invisibility, not a silent gate). |
+| Log-line parser (Signal B) | `java-cui` (pm-dev-java-cui) | `rewrite-log-parse` (`pm-dev-java-cui:parse-rewrite-log`) | A domain-owned parser for the cui-open-rewrite #118 structured WARN lines in the Maven build log (log-parse). The complementary second finding signal — same domain, same null-on-absent degrade — declared in the SAME `provides_domain_verb()` list as `marker-detect`. It is the case that motivated widening the hook return from a single descriptor to a descriptor list, so a domain can own more than one verb. |
 | Arch-gate command | java / python / javascript | `arch-gate` | The **precedent this contract generalises**. `provides_arch_gate()` returns a descriptor, `skill-domains configure` seeds `default:verify:arch-gate`, and the step resolves through `architecture resolve --command arch-gate` and dispatches the domain's tool. It proves the declaration→discovery→dispatch→null-on-absent pattern in production for a build-canonical verb, so `provides_domain_verb()` inherits a validated mechanism rather than an untested one. |
 
-The two cases bracket the contract: the arch-gate precedent proves the pattern for a build-canonical verb resolved through `architecture resolve`, and the marker detector proves the same shape covers a plain script-notation verb dispatched through the executor proxy — with the same null-on-absent degrade when the domain is inactive.
+The cases bracket the contract: the arch-gate precedent proves the pattern for a build-canonical verb resolved through `architecture resolve`, the marker detector and log-line parser prove the same shape covers plain script-notation verbs dispatched through the executor proxy, and the two java-cui verbs together prove one domain can own several verbs via the list-shaped declaration — all with the same null-on-absent degrade when the domain is inactive.
 
 ## Related Specifications
 
