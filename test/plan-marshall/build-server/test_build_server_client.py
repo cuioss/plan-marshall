@@ -449,6 +449,9 @@ def test_submit_success_logs_captured_entry_with_job_id(home, ledger, captured_l
     assert plan_id == 'p1'
     assert level == 'INFO'
     assert 'JOB-1' in message
+    # The queued line carries the shared mechanism vocabulary so one log query
+    # over `mechanism=` matches this build arm alongside the CI arm.
+    assert 'mechanism=daemon_longpoll' in message
 
 
 def test_submit_degraded_fallback_logs_warning(home, ledger, captured_logs, monkeypatch):
@@ -457,9 +460,11 @@ def test_submit_degraded_fallback_logs_warning(home, ledger, captured_logs, monk
     client.run_submit(_submit_args(str(home / 'proj')))
 
     assert any(
-        level == 'WARNING' and client.REASON_IMPOSTOR_SOCKET in message
+        level == 'WARNING'
+        and client.REASON_IMPOSTOR_SOCKET in message
+        and 'mechanism=in_process_fallback' in message
         for _t, _p, level, message in captured_logs
-    ), 'a degraded fallback must produce a captured WARNING entry'
+    ), 'a degraded fallback must produce a captured WARNING entry naming the in-process fallback'
 
 
 def test_submit_refused_logs_warning(home, ledger, captured_logs, monkeypatch):
@@ -491,6 +496,9 @@ def test_wait_logs_result_entry_with_job_id(captured_logs, monkeypatch):
     info_entries = [c for c in captured_logs if c[0] == 'work' and c[2] == 'INFO']
     assert info_entries, 'a wait must log its result'
     assert any('JOB-1' in message for _t, _p, _l, message in info_entries)
+    # The wait-result line names the daemon long-poll mechanism from the shared
+    # vocabulary — the build arm and the CI arm answer one `mechanism=` query.
+    assert any('mechanism=daemon_longpoll' in message for _t, _p, _l, message in info_entries)
 
 
 def test_wait_with_control_char_job_id_never_forges_a_log_header(captured_logs, monkeypatch):
@@ -608,9 +616,11 @@ def test_wait_degraded_logs_warning(captured_logs, monkeypatch):
     client.run_wait(Namespace(job_id='JOB-1', plan_id='p1', bound=1))
 
     assert any(
-        level == 'WARNING' and client.REASON_SOCKET_ABSENT in message
+        level == 'WARNING'
+        and client.REASON_SOCKET_ABSENT in message
+        and 'mechanism=in_process_fallback' in message
         for _t, _p, level, message in captured_logs
-    ), 'a degraded wait must produce a captured WARNING entry'
+    ), 'a degraded wait must produce a captured WARNING entry naming the in-process fallback'
 
 
 def test_plan_less_submit_is_silent(home, ledger, captured_logs, monkeypatch):
