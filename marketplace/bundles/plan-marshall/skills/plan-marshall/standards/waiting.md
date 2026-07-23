@@ -60,6 +60,14 @@ Tier 1 is **agent-level**. Where a target offers it, it is driven by the executi
 
 A target whose `Runtime` waiting operation declines returns `status: no-op` with a `reason` and an `alternative`, and the alternative names tier 2 reached directly, or tier 3. Per the No-Op Policy, the caller logs the reason, applies the alternative, and **continues** — a declined wait never fails a workflow.
 
+## The selected tier must be recoverable from the log
+
+**Every wait-class realisation MUST make the mechanism it actually ran on recoverable from the log.** "Was the tiered realisation used consistently, and did a realisation silently degrade from one tier to a lower one?" must be answerable from a log query alone, not inferred from the code path.
+
+The shared field is the closed **`mechanism`** vocabulary: each wait arm names the mechanism it selected — the CI-wait arm's `seed_only` / `watch_tail` / `poll_fallback`, the build arm's `daemon_longpoll` / `in_process_fallback` / `no_build` (the `execution_mode=daemon` hard refusal, where routing was unavailable and no build ran at all) — so one `mechanism=` query spans every arm. A **degrade** from a tier-1 realisation to a tier-2 one (a watch-tail wait that fell through to the bounded poll, a routed build that fell back in-process) is a **recordable event, not a silent equivalence**: it is logged at `WARNING` so it is distinguishable from the tier-1 realisation it stood in for. A realisation that runs a lower tier without recording it violates this rule — silence about the degrade is the characteristic defect the coverage rule above forbids, applied to the mechanism selection itself.
+
+The concrete record shape (the `[WAIT]` work-log line, its field set, and which party declares the caller-only `dispatch` field) is owned by [`workflow/await-long-running.md`](../workflow/await-long-running.md) § Output — this clause states the requirement once and does not restate the record shape.
+
 ## Bounded polling and the build-server relationship
 
 The build-server client is the worked example of a wait whose cost under reaping is already minimal, and it shows why a bounded server-side poll is not backgrounded.

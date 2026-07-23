@@ -421,13 +421,22 @@ def run_submit(args: Namespace) -> dict[str, Any]:
 
     _, reason = _handshake(_socket_path())
     if reason is not None:
-        _audit_log(plan_id, 'WARNING', f'build-server submit degraded: reason={reason} notation={notation}')
+        _audit_log(
+            plan_id,
+            'WARNING',
+            f'build-server submit degraded: reason={reason} notation={notation} mechanism=in_process_fallback',
+        )
         return _degraded(reason)
 
     try:
         response = _call_daemon({'op': 'submit', 'job': spec.to_dict()}, timeout=_CONNECT_TIMEOUT_SECONDS)
     except (OSError, FrameError):
-        _audit_log(plan_id, 'WARNING', f'build-server submit degraded: reason={REASON_UNREACHABLE} notation={notation}')
+        _audit_log(
+            plan_id,
+            'WARNING',
+            f'build-server submit degraded: reason={REASON_UNREACHABLE} notation={notation} '
+            f'mechanism=in_process_fallback',
+        )
         return _degraded(REASON_UNREACHABLE)
 
     status = str(response.get('status', ''))
@@ -444,7 +453,12 @@ def run_submit(args: Namespace) -> dict[str, Any]:
             'message': f'submit refused by verifier: {refused_reason}',
         }
     if status != STATUS_QUEUED:
-        _audit_log(plan_id, 'WARNING', f'build-server submit degraded: reason={REASON_UNREACHABLE} notation={notation}')
+        _audit_log(
+            plan_id,
+            'WARNING',
+            f'build-server submit degraded: reason={REASON_UNREACHABLE} notation={notation} '
+            f'mechanism=in_process_fallback',
+        )
         return _degraded(REASON_UNREACHABLE)
 
     job_id = str(response.get('job_id', ''))
@@ -462,7 +476,7 @@ def run_submit(args: Namespace) -> dict[str, Any]:
         plan_id,
         'INFO',
         f'build-server submit queued: job_id={_sanitize_for_log(job_id)} job_status={STATUS_QUEUED} '
-        f'attached={attached} notation={notation}',
+        f'attached={attached} notation={notation} mechanism=daemon_longpoll',
     )
     return {
         'status': 'success',
@@ -486,7 +500,7 @@ def run_wait(args: Namespace) -> dict[str, Any]:
     bound = args.bound if args.bound is not None else _DEFAULT_WAIT_BOUND
     _, reason = _handshake(_socket_path())
     if reason is not None:
-        _audit_log(plan_id, 'WARNING', f'build-server wait degraded: reason={reason}')
+        _audit_log(plan_id, 'WARNING', f'build-server wait degraded: reason={reason} mechanism=in_process_fallback')
         return _degraded(reason)
 
     try:
@@ -495,7 +509,11 @@ def run_wait(args: Namespace) -> dict[str, Any]:
             timeout=float(bound) + _WAIT_TIMEOUT_MARGIN_SECONDS,
         )
     except (OSError, FrameError):
-        _audit_log(plan_id, 'WARNING', f'build-server wait degraded: reason={REASON_UNREACHABLE}')
+        _audit_log(
+            plan_id,
+            'WARNING',
+            f'build-server wait degraded: reason={REASON_UNREACHABLE} mechanism=in_process_fallback',
+        )
         return _degraded(REASON_UNREACHABLE)
 
     result = _render_job_status(response)
@@ -508,7 +526,7 @@ def run_wait(args: Namespace) -> dict[str, Any]:
         f'build-server wait result: job_id={_sanitize_for_log(job_id)} '
         f'job_status={_sanitize_for_log(str(result.get("job_status", "")))} '
         f'elapsed={_sanitize_for_log(str(result.get("elapsed", "")))} '
-        f'eta={_sanitize_for_log(str(result.get("eta", "")))}',
+        f'eta={_sanitize_for_log(str(result.get("eta", "")))} mechanism=daemon_longpoll',
     )
     return result
 
