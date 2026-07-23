@@ -14,6 +14,7 @@ Working on Plan Marshall itself: build, test, generate, distribute. If you are o
 * xref:marketplace-build.adoc[Marketplace Build] — how `marketplace/bundles/` is transformed into per-target deployable artifacts (`target/claude/`, `target/opencode/`), variant emission, dispatch-cost considerations, adapter system.
 * xref:distribution.adoc[Distribution] — publish triggers, versioning, source-vs-dist tag semantics, the `dist-claude` orphan branch, multi-target architecture, what is *not* shipped.
 * xref:testing.adoc[Testing] — pytest infrastructure, shared fixtures, the `ScriptTestCase` base class, test-isolation patterns.
+* xref:measurement-protocol.adoc[Measurement Protocol] — repeatable methodology for measuring test-suite duration and coverage, the CI-history-median and per-test `--durations` methods, and the stated detection limit.
 * link:../../marketplace/bundles/plan-marshall/skills/plan-retrospective/SKILL.md[Plan Retrospective] — the opt-in retrospective skill that audits plan artifacts, logs, metrics, and invariants.
 
 == Workflow discipline
