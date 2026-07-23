@@ -13,6 +13,7 @@ See solution_outline.md deliverable 2 for the contract this guards.
 """
 
 import importlib.util
+import os
 from pathlib import Path
 from unittest.mock import patch
 
@@ -143,4 +144,76 @@ def test_cmd_coverage_retains_existing_cov_and_html_report_flags() -> None:
     )
     assert '--cov-report=html:.plan/temp/htmlcov' in cmd, (
         f'cmd_coverage must retain --cov-report=html:.plan/temp/htmlcov; got cmd={cmd!r}'
+    )
+
+
+def _capture_coverage_cmd(build_module) -> list[str]:
+    """Invoke cmd_coverage with run/prune/mkdir/path collaborators stubbed, return the pytest cmd.
+
+    ``_prune_basetemp_roots`` is stubbed to a no-op so the capture never mutates
+    the real ``.plan/temp/pytest-basetemp/`` tree; the per-session path itself is
+    pure (pid + uuid) and needs no filesystem.
+    """
+    captured: dict[str, list[str]] = {}
+
+    def fake_run(cmd: list[str], description: str, env: dict[str, str] | None = None) -> int:
+        captured['cmd'] = cmd
+        return 0
+
+    with patch.object(build_module, 'run', side_effect=fake_run):
+        with patch.object(build_module, '_prune_basetemp_roots', return_value=None):
+            with patch.object(build_module.Path, 'mkdir', return_value=None):
+                with patch.object(build_module, 'get_test_path', return_value='test/plan-marshall'):
+                    with patch.object(
+                        build_module, 'get_bundle_path',
+                        return_value='marketplace/bundles/plan-marshall',
+                    ):
+                        build_module.cmd_coverage('plan-marshall')
+
+    return captured['cmd']
+
+
+def _extract_basetemp(cmd: list[str]) -> str:
+    """Return the value of the single --basetemp=<path> flag in ``cmd`` (asserts exactly one)."""
+    matches = [a for a in cmd if a.startswith('--basetemp=')]
+    assert len(matches) == 1, f'expected exactly one --basetemp flag; got {matches!r} in {cmd!r}'
+    return matches[0][len('--basetemp='):]
+
+
+def test_cmd_coverage_emits_per_session_basetemp_flag() -> None:
+    """cmd_coverage's pytest invocation carries --basetemp pointing under .plan/temp/pytest-basetemp/."""
+    build_module = _load_build_module()
+    basetemp = _extract_basetemp(_capture_coverage_cmd(build_module))
+    assert basetemp.startswith('.plan/temp/pytest-basetemp/'), (
+        f'cmd_coverage --basetemp must point under .plan/temp/pytest-basetemp/; got {basetemp!r}'
+    )
+
+
+def test_cmd_coverage_two_invocations_yield_distinct_basetemp() -> None:
+    """Two cmd_coverage invocations yield distinct per-session basetemp paths (no collision)."""
+    build_module = _load_build_module()
+    first = _extract_basetemp(_capture_coverage_cmd(build_module))
+    second = _extract_basetemp(_capture_coverage_cmd(build_module))
+    assert first != second, (
+        f'two cmd_coverage invocations must yield distinct basetemp roots; got {first!r} twice'
+    )
+
+
+def test_prune_basetemp_roots_bounds_retained_dir_count(tmp_path) -> None:
+    """_prune_basetemp_roots retains only the ``keep`` most-recent per-session dirs."""
+    build_module = _load_build_module()
+    root = tmp_path / 'pytest-basetemp'
+    root.mkdir()
+    for i in range(6):
+        session_dir = root / f'session-{i}'
+        session_dir.mkdir()
+        # Stagger mtimes so newest-first ordering is deterministic.
+        os.utime(session_dir, (i, i))
+
+    with patch.object(build_module, 'PYTEST_BASETEMP_ROOT', root):
+        build_module._prune_basetemp_roots(keep=3)
+
+    remaining = sorted(p.name for p in root.iterdir() if p.is_dir())
+    assert remaining == ['session-3', 'session-4', 'session-5'], (
+        f'prune must retain exactly the 3 most-recent dirs; got {remaining!r}'
     )

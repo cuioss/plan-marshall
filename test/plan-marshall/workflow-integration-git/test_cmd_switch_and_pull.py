@@ -80,9 +80,11 @@ class TestVerifyGitRepo:
 
         assert result is None
 
-    def test_returns_error_string_for_non_git_path(self, tmp_path: Path) -> None:
+    def test_returns_error_string_for_non_git_path(self, outside_repo_dir: Path) -> None:
         """Returns an error string when path is not a git repo."""
-        result = _verify_git_repo(tmp_path)
+        # Must be OUTSIDE the repo: pytest's tmp_path now roots under the
+        # repo-local --basetemp, which IS a valid git working tree.
+        result = _verify_git_repo(outside_repo_dir)
 
         assert result is not None
         assert 'working tree' in result
@@ -120,9 +122,12 @@ class TestResolveProjectDir:
 
 
 class TestCmdSwitchAndPullEscapeHatch:
-    def test_non_git_project_dir_returns_error(self, tmp_path: Path) -> None:
+    def test_non_git_project_dir_returns_error(self, outside_repo_dir: Path) -> None:
         """--project-dir that is not a git repo → project_dir_not_a_git_repo."""
-        args = Namespace(plan_id=None, project_dir=str(tmp_path), base='main')
+        # Must be OUTSIDE the repo: pytest's tmp_path now roots under the
+        # repo-local --basetemp, which IS a git repo (would surface a later
+        # pull_failed instead of project_dir_not_a_git_repo).
+        args = Namespace(plan_id=None, project_dir=str(outside_repo_dir), base='main')
 
         result = cmd_switch_and_pull(args)
 
@@ -402,11 +407,13 @@ class TestCmdSwitchAndPullCli:
 
         assert result.returncode != 0
 
-    def test_non_git_project_dir_returns_toon_error(self, tmp_path: Path) -> None:
+    def test_non_git_project_dir_returns_toon_error(self, outside_repo_dir: Path) -> None:
         """Non-git --project-dir + --base produces structured TOON error."""
+        # Must be OUTSIDE the repo: pytest's tmp_path now roots under the
+        # repo-local --basetemp, which IS a git repo.
         result = run_script(
             _SCRIPT_PATH, 'switch-and-pull',
-            '--project-dir', str(tmp_path),
+            '--project-dir', str(outside_repo_dir),
             '--base', 'main',
         )
 

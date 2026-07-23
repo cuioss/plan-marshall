@@ -193,24 +193,29 @@ class TestScanForProvidersCacheOnly:
         provider_file.write_text(body)
         return provider_file
 
-    def test_discovers_provider_from_cache_when_no_marketplace(self, tmp_path, monkeypatch):
+    def test_discovers_provider_from_cache_when_no_marketplace(self, outside_repo_dir, monkeypatch):
         """Cache-only discovery: no marketplace + populated cache yields the provider.
 
         Arrange a bare cwd with no ``marketplace/bundles`` ancestor, unset the
         explicit-anchor env var, and place a real provider in the versioned
         plugin cache. ``_scan_for_providers`` must resolve the base path to the
         cache and surface the declaration.
+
+        Uses ``outside_repo_dir`` (not ``tmp_path``): pytest's ``tmp_path`` now
+        roots under the repo-local ``--basetemp``, which DOES have a
+        ``marketplace/bundles`` ancestor, so the no-marketplace precondition can
+        only be met from a directory outside the repo.
         """
-        bare = tmp_path / 'bare'
+        bare = outside_repo_dir / 'bare'
         bare.mkdir()
         monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
         monkeypatch.chdir(bare)
         self._write_cache_provider(
-            tmp_path,
+            outside_repo_dir,
             'def get_provider_declarations():\n'
             '    return [{"skill_name": "plan-marshall:workflow-integration-git", "category": "version-control"}]\n',
         )
-        monkeypatch.setattr(Path, 'home', lambda: tmp_path)
+        monkeypatch.setattr(Path, 'home', lambda: outside_repo_dir)
 
         result = _scan_for_providers()
 
@@ -218,20 +223,25 @@ class TestScanForProvidersCacheOnly:
         assert result[0]['skill_name'] == 'plan-marshall:workflow-integration-git'
         assert result[0]['category'] == 'version-control'
 
-    def test_returns_empty_when_no_marketplace_and_empty_cache(self, tmp_path, monkeypatch):
+    def test_returns_empty_when_no_marketplace_and_empty_cache(self, outside_repo_dir, monkeypatch):
         """Cache resolves but holds no provider files -> empty result, no raise.
 
         The cache directory exists (so ``get_base_path`` resolves to it without
         raising) but contains no ``*_provider.py`` files, so discovery yields an
         empty list rather than an error.
+
+        Uses ``outside_repo_dir`` (not ``tmp_path``): pytest's ``tmp_path`` now
+        roots under the repo-local ``--basetemp``, which DOES have a
+        ``marketplace/bundles`` ancestor, so the no-marketplace precondition can
+        only be met from a directory outside the repo.
         """
-        bare = tmp_path / 'bare'
+        bare = outside_repo_dir / 'bare'
         bare.mkdir()
         monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
         monkeypatch.chdir(bare)
-        cache = tmp_path / CLAUDE_DIR / PLUGIN_CACHE_SUBPATH
+        cache = outside_repo_dir / CLAUDE_DIR / PLUGIN_CACHE_SUBPATH
         cache.mkdir(parents=True)
-        monkeypatch.setattr(Path, 'home', lambda: tmp_path)
+        monkeypatch.setattr(Path, 'home', lambda: outside_repo_dir)
 
         result = _scan_for_providers()
 

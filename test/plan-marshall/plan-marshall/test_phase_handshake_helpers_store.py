@@ -56,8 +56,10 @@ def test_git_dirty_count_with_untracked(repo: Path) -> None:
     assert git_helpers.git_dirty_count(repo) == 1
 
 
-def test_git_head_outside_repo(tmp_path: Path) -> None:
-    assert git_helpers.git_head(tmp_path) is None
+def test_git_head_outside_repo(outside_repo_dir: Path) -> None:
+    # Must be OUTSIDE the repo: pytest's tmp_path now roots under the repo-local
+    # --basetemp, where git_head would resolve HEAD instead of returning None.
+    assert git_helpers.git_head(outside_repo_dir) is None
 
 
 # =============================================================================

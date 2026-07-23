@@ -444,9 +444,12 @@ def test_hash_objects_matches_git_native_invocation(tmp_path: Path) -> None:
 
 
 @pytest.mark.skipif(shutil.which('git') is None, reason='git not on PATH')
-def test_fingerprint_raises_outside_git_repo(tmp_path: Path) -> None:
+def test_fingerprint_raises_outside_git_repo(outside_repo_dir: Path) -> None:
     """The helper refuses on non-git trees — no silent zero-hash fallback."""
-    cwd = tmp_path / 'project'
+    # ``cwd`` must be OUTSIDE the repo: pytest's tmp_path now roots under the
+    # repo-local --basetemp, where the dir IS inside a git worktree and
+    # git hash-object succeeds instead of raising FingerprintError.
+    cwd = outside_repo_dir / 'project'
     cwd.mkdir()
     _make_marketplace(cwd, {'demo': '0.1.0'})
     # NO git init — call must raise FingerprintError.

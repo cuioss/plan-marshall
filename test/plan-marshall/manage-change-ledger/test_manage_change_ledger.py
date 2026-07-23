@@ -431,13 +431,16 @@ def test_worktree_sha_honours_precomputed_value(env) -> None:
     assert _read_ledger(env.ledger_path)[0]['worktree_sha'] == 'precomputed-sha-value'
 
 
-def test_worktree_sha_non_git_directory_errors(tmp_path: Path) -> None:
+def test_worktree_sha_non_git_directory_errors(outside_repo_dir: Path) -> None:
     # run the verb in a plain non-git directory with an isolated base.
+    # The cwd must be OUTSIDE the repo: pytest's tmp_path now roots under the
+    # repo-local --basetemp, where the dir IS inside a git worktree and HEAD
+    # would resolve instead of failing.
     from conftest import run_script
 
-    plain = tmp_path / 'plain'
+    plain = outside_repo_dir / 'plain'
     plain.mkdir()
-    base = tmp_path / 'base'
+    base = outside_repo_dir / 'base'
     base.mkdir()
 
     result = run_script(

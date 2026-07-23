@@ -63,8 +63,18 @@ def _make_worktree_root(tmp_path: Path) -> Path:
     return root
 
 
-def _make_main_root(tmp_path: Path) -> Path:
-    root = tmp_path / 'main-checkout'
+def _make_main_root(base: Path) -> Path:
+    """Build a main-checkout path whose string does NOT carry the worktree
+    segment.
+
+    Callers MUST pass ``outside_repo_dir`` (not ``tmp_path``): pytest's
+    ``tmp_path`` now roots under ``.plan/local/worktrees/<plan>/…`` (the
+    repo-local ``--basetemp``), so a path built under it inherits the
+    ``.plan/local/worktrees/`` segment and the purely path-based worktree
+    detector misclassifies it as a worktree. A directory outside the repo has no
+    such ancestor.
+    """
+    root = base / 'main-checkout'
     root.mkdir(parents=True, exist_ok=True)
     return root
 
@@ -78,18 +88,18 @@ def test_is_worktree_repo_root_true_for_worktree_path(tmp_path: Path):
     assert is_worktree_repo_root(root) is True
 
 
-def test_is_worktree_repo_root_false_for_main_checkout(tmp_path: Path):
+def test_is_worktree_repo_root_false_for_main_checkout(outside_repo_dir: Path):
     """A path without the worktrees segment is the main checkout."""
-    root = _make_main_root(tmp_path)
+    root = _make_main_root(outside_repo_dir)
     assert is_worktree_repo_root(root) is False
 
 
 # --- check_worktree_plan_local: function-level -----------------------------
 
 
-def test_main_checkout_is_always_ok(tmp_path: Path):
+def test_main_checkout_is_always_ok(outside_repo_dir: Path):
     """The guard governs worktree generation only — main checkout is a no-op."""
-    root = _make_main_root(tmp_path)
+    root = _make_main_root(outside_repo_dir)
     # No .plan/local on the main checkout root; the guard must still return ok.
     status, plan_local = check_worktree_plan_local(root, scaffold=False)
     assert status == 'ok'
@@ -160,9 +170,9 @@ def test_cli_scaffold_creates_plan_local(tmp_path: Path):
     assert (root / '.plan' / 'local').is_dir()
 
 
-def test_cli_ok_on_main_checkout(tmp_path: Path):
+def test_cli_ok_on_main_checkout(outside_repo_dir: Path):
     """CLI is a no-op on the main checkout (status: ok, is_worktree: false)."""
-    root = _make_main_root(tmp_path)
+    root = _make_main_root(outside_repo_dir)
     out = _run_cli(root)
     assert 'status: ok' in out
     assert 'is_worktree: false' in out

@@ -1112,9 +1112,12 @@ class TestResolveFootprint:
         assert 'uncommitted.py' in footprint
         assert 'base.txt' not in footprint
 
-    def test_empty_on_git_error(self, tmp_path):
+    def test_empty_on_git_error(self, outside_repo_dir):
         """A non-git directory yields an empty footprint (do-not-filter)."""
-        not_a_repo = tmp_path / 'plain'
+        # ``not_a_repo`` must be OUTSIDE the repo: pytest's tmp_path now roots
+        # under the repo-local --basetemp, where the footprint resolves against
+        # the surrounding worktree instead of erroring into an empty result.
+        not_a_repo = outside_repo_dir / 'plain'
         not_a_repo.mkdir()
 
         footprint = _resolve_footprint(not_a_repo, 'main')

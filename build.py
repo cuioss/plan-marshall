@@ -16,8 +16,10 @@ Usage:
 import argparse
 import os
 import re
+import shutil
 import subprocess
 import sys
+import uuid
 from pathlib import Path
 
 # Base paths
@@ -35,6 +37,69 @@ _CODING_RE = re.compile(r'^[ \t\f]*#.*?coding[:=][ \t]*([-\w.]+)')
 # Sourcing this from marshal.json (rather than a static constant) is deliberately
 # deferred per the originating request constraint.
 COVERAGE_THRESHOLD = 80
+
+# Per-session pytest basetemp root. Each pytest invocation gets its own
+# per-session subdirectory here (see _prepare_session_basetemp) instead of the
+# shared pytest-of-{user} root, so concurrent worktrees and a killed-then-
+# restarted session never share a basetemp and never race each other's cleanup.
+PYTEST_BASETEMP_ROOT = Path('.plan/temp/pytest-basetemp')
+# Bounded-growth retention: keep at most this many recent per-session basetemp
+# dirs. An explicit --basetemp forgoes pytest's own keep-last-3 retention, so we
+# prune here to keep PYTEST_BASETEMP_ROOT from growing without bound.
+PYTEST_BASETEMP_KEEP = 3
+
+
+def _prune_basetemp_roots(keep: int = PYTEST_BASETEMP_KEEP) -> None:
+    """Drop all but the ``keep`` most-recent per-session basetemp dirs.
+
+    Best-effort: a prune failure (a dir vanishing mid-scan, a permission error)
+    never aborts the build — bounded growth is a housekeeping concern, not a
+    correctness gate. This is the retention step that replaces pytest's own
+    keep-last-3 behaviour, which an explicit ``--basetemp`` disables.
+
+    Concurrency-safe: an in-process test that invokes ``cmd_module_tests`` /
+    ``cmd_coverage`` while the outer suite runs under xdist produces concurrent
+    prunes over the shared root, so two callers can race to remove the same
+    stale dir. ``shutil.rmtree(..., ignore_errors=True)`` does NOT fully cover
+    that race — its fd-based safe walk raises ``FileNotFoundError`` directly from
+    the ``os.fstat`` samestat guard when the directory vanishes mid-walk — so the
+    per-dir removal is additionally wrapped to swallow ``OSError``.
+    """
+    try:
+        session_dirs = sorted(
+            (d for d in PYTEST_BASETEMP_ROOT.iterdir() if d.is_dir()),
+            key=lambda d: d.stat().st_mtime,
+            reverse=True,
+        )
+    except OSError:
+        return
+    for stale in session_dirs[keep:]:
+        try:
+            shutil.rmtree(stale, ignore_errors=True)
+        except OSError:
+            # A concurrent prune removed ``stale`` mid-walk (the samestat guard
+            # in shutil's fd-based rmtree can raise past ignore_errors). The dir
+            # is already gone, which is the desired end state — keep pruning.
+            continue
+
+
+def _prepare_session_basetemp() -> Path:
+    """Return a unique per-session pytest ``--basetemp`` path, bounding growth.
+
+    The session key combines the current pid with a uuid4, so concurrent
+    worktrees and a killed-then-restarted session that reuses a pid never share
+    a basetemp root. Sharing the default ``pytest-of-{user}`` root is what lets
+    pytest's keep-last-3 ``rm_rf`` cleanup race across concurrent/killed
+    sessions; under ``filterwarnings=["error"]`` that race promotes a cleanup
+    ``OSError`` into a session-killing exception on an otherwise-green suite.
+
+    The root is created if missing and pruned to ``PYTEST_BASETEMP_KEEP`` recent
+    per-session dirs before the new path is returned, so the directory cannot
+    grow without bound.
+    """
+    PYTEST_BASETEMP_ROOT.mkdir(parents=True, exist_ok=True)
+    _prune_basetemp_roots()
+    return PYTEST_BASETEMP_ROOT / f'{os.getpid()}-{uuid.uuid4().hex}'
 
 
 # Single source of truth: delegate to collect_script_dirs so mypy_path matches runtime PYTHONPATH.
@@ -113,7 +178,8 @@ def cmd_module_tests(module: str | None, parallel: bool = True) -> int:
     runs (CLI: ``--no-parallel``).
     """
     path = get_test_path(module)
-    cmd = ['uv', 'run', 'pytest', path]
+    basetemp = _prepare_session_basetemp()
+    cmd = ['uv', 'run', 'pytest', path, f'--basetemp={basetemp}']
     if parallel:
         cmd.extend(['-n', 'auto', '--dist=loadgroup'])
     return run(cmd, f'module-tests: pytest {path}')
@@ -232,8 +298,10 @@ def cmd_coverage(module: str | None) -> int:
     # Ensure output directory exists
     Path('.plan/temp').mkdir(parents=True, exist_ok=True)
 
+    basetemp = _prepare_session_basetemp()
     cmd = [
         'uv', 'run', 'pytest', test_path,
+        f'--basetemp={basetemp}',
         '-n', 'auto', '--dist=loadgroup',
         f'--cov={bundle_path}',
         '--cov-report=html:.plan/temp/htmlcov',
@@ -273,7 +341,6 @@ def cmd_clean() -> int:
         path = Path(d)
         if path.exists():
             print(f'Removing {d}')
-            import shutil
             shutil.rmtree(path)
     return 0
 

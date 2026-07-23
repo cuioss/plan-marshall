@@ -313,9 +313,12 @@ def test_refusal_dict_blocks_transition_for_cli_wrapper(
 # =============================================================================
 
 
-def test_git_status_failure_fails_closed(tmp_path: Path):
+def test_git_status_failure_fails_closed(outside_repo_dir: Path):
     """A path where ``git status`` fails (not a repo) refuses fail-closed."""
-    plain = tmp_path / 'not-a-repo'
+    # ``plain`` must be OUTSIDE the repo: pytest's tmp_path now roots under the
+    # repo-local --basetemp, where ``git status`` succeeds (the dir is inside a
+    # git worktree) instead of failing as this fail-closed test requires.
+    plain = outside_repo_dir / 'not-a-repo'
     plain.mkdir()
 
     refusal = _lifecycle._clean_tree_refusal(

@@ -313,9 +313,12 @@ def test_compute_footprint_references_not_found(tmp_path):
     assert 'references_not_found' in result.stdout
 
 
-def test_compute_footprint_not_a_git_worktree(tmp_path):
+def test_compute_footprint_not_a_git_worktree(tmp_path, outside_repo_dir):
     """A real directory that is not a git worktree yields not_a_git_worktree."""
-    non_repo = tmp_path / 'plain-dir'
+    # ``non_repo`` must be OUTSIDE the repo: pytest's tmp_path now roots under
+    # the repo-local --basetemp, where the dir IS inside a git worktree and the
+    # footprint would resolve successfully instead of failing.
+    non_repo = outside_repo_dir / 'plain-dir'
     non_repo.mkdir(parents=True, exist_ok=True)
     base_dir = tmp_path / 'plan-base'
     _write_references(base_dir, FOOTPRINT_PLAN_ID, {'base_branch': 'main'})

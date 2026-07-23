@@ -543,10 +543,14 @@ def test_get_worktree_root_honors_plan_base_dir(tmp_path, monkeypatch):
     assert result == tmp_path / 'worktrees'
 
 
-def test_get_worktree_root_without_plan_root_raises(tmp_path, monkeypatch):
+def test_get_worktree_root_without_plan_root_raises(outside_repo_dir, monkeypatch):
     """When no .plan/local ancestor of cwd resolves, get_worktree_root raises."""
+    # cwd must be OUTSIDE the repo AND outside any git repo: pytest's tmp_path
+    # now roots under the repo-local --basetemp, whose ancestry HAS a .plan/local
+    # (and a git toplevel), so neither the plan-root nor the git-toplevel
+    # fallback would raise.
     monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
-    bare = tmp_path / 'bare'
+    bare = outside_repo_dir / 'bare'
     bare.mkdir()
     monkeypatch.chdir(bare)
     with pytest.raises(RuntimeError, match='plan root'):
@@ -596,11 +600,14 @@ def test_get_executor_path_pinned_in_worktree_resolves_worktree_resident(tmp_pat
     assert result == worktree.resolve() / '.plan' / 'execute-script.py'
 
 
-def test_get_executor_path_without_plan_root_raises(tmp_path, monkeypatch):
+def test_get_executor_path_without_plan_root_raises(outside_repo_dir, monkeypatch):
     """When no .plan/local ancestor of cwd resolves AND cwd is not inside a git
     repository, get_executor_path raises."""
+    # cwd must be OUTSIDE the repo AND outside any git repo: pytest's tmp_path
+    # now roots under the repo-local --basetemp, whose ancestry HAS a .plan/local
+    # (and a git toplevel), so neither fallback would raise.
     monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
-    bare = tmp_path / 'bare'
+    bare = outside_repo_dir / 'bare'
     bare.mkdir()
     monkeypatch.chdir(bare)
     with pytest.raises(RuntimeError, match='plan root'):
@@ -619,25 +626,31 @@ def _git_toplevel(cwd):
     )
 
 
-def test_get_base_dir_git_toplevel_fallback(tmp_path, monkeypatch):
+def test_get_base_dir_git_toplevel_fallback(outside_repo_dir, monkeypatch):
     """In a clean git checkout with NO .plan/local ancestor (CI runners, fresh
     clones, consumer installs — .plan/ is gitignored), get_base_dir falls back
     to <git-toplevel>/.plan/local rather than raising. The git-toplevel fallback
     in _resolve_plan_root restores the clean-environment robustness the prior
     git_main_checkout_root resolver provided (regression guard for PR #556 CI)."""
+    # ``repo`` must be OUTSIDE the repo: pytest's tmp_path now roots under the
+    # repo-local --basetemp, so the walk-up would find the OUTER worktree's
+    # .plan/local before ever reaching the git-toplevel fallback under test.
     monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
-    repo = tmp_path / 'repo'
+    repo = outside_repo_dir / 'repo'
     repo.mkdir()
     subprocess.run(['git', 'init', '-q'], cwd=repo, check=True)
     monkeypatch.chdir(repo)
     assert get_base_dir() == _git_toplevel(repo) / '.plan' / 'local'
 
 
-def test_get_executor_path_git_toplevel_fallback(tmp_path, monkeypatch):
+def test_get_executor_path_git_toplevel_fallback(outside_repo_dir, monkeypatch):
     """In a clean git checkout with NO .plan/local ancestor, get_executor_path
     falls back to <git-toplevel>/.plan/execute-script.py instead of raising."""
+    # ``repo`` must be OUTSIDE the repo: pytest's tmp_path now roots under the
+    # repo-local --basetemp, so the walk-up would find the OUTER worktree's
+    # .plan/local before ever reaching the git-toplevel fallback under test.
     monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
-    repo = tmp_path / 'repo'
+    repo = outside_repo_dir / 'repo'
     repo.mkdir()
     subprocess.run(['git', 'init', '-q'], cwd=repo, check=True)
     monkeypatch.chdir(repo)
