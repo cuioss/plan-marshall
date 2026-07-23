@@ -57,7 +57,7 @@ description: "Add dark mode toggle to application settings"
 description: "implement .plan/local/orchestrator/{slug}/plans/PLAN-NN-{plan_slug}.md"
 ```
 
-- Detected when the description is a bare leading verb plus a single repo-relative path token that resolves to an existing regular file.
+- Detected by syntax alone: the description is a bare leading verb (`implement`) plus a single repo-relative path token — independent of filesystem existence, so a missing or mistyped spec path still classifies as a pointer and routes through `--body-file` to reach the fail-closed refusal (never the plain-text branch).
 - The spec file's contents are ingested as the request body via `--body-file` — a deterministic script-side UTF-8 read, never LLM retyping — and Step 5.2's `Write` is skipped.
 - The pointer path is retained as `source_id`, so provenance survives ingestion.
 - See SKILL.md Step 4 "From Description" and Step 5 for the two-branch contract.
