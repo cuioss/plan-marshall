@@ -197,15 +197,15 @@ class DomainVerbExtension(ExtensionBase):
     def get_skill_domains(self) -> list[dict]:
         return [{'domain': {'key': 'test'}, 'profiles': {}}]
 
-    def provides_domain_verb(self) -> dict | None:
-        return {'verb': 'marker-detect', 'notation': 'pm-dev-java-cui:search-markers'}
+    def provides_domain_verb(self) -> list[dict] | None:
+        return [{'verb': 'marker-detect', 'notation': 'pm-dev-java-cui:search-markers'}]
 
 
 def test_extension_base_domain_verb_descriptor_shape():
-    """An overriding extension returns the {'verb', 'notation'} descriptor verbatim."""
+    """An overriding extension returns a list of {'verb', 'notation'} descriptors verbatim."""
     descriptor = DomainVerbExtension().provides_domain_verb()
 
-    assert descriptor == {'verb': 'marker-detect', 'notation': 'pm-dev-java-cui:search-markers'}
+    assert descriptor == [{'verb': 'marker-detect', 'notation': 'pm-dev-java-cui:search-markers'}]
 
 
 def test_extension_base_no_longer_exposes_verify_and_finalize_steps_hooks():

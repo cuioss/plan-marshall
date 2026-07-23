@@ -63,7 +63,7 @@ def _real_dispatch(notation: str, log_file: str) -> dict:
     Avoids the executor subprocess while still exercising the genuine parser, so
     the observed-case assertions rest on real #118 parsing, not a canned payload.
     """
-    return _parser.parse_rewrite_log_file(log_file)
+    return dict(_parser.parse_rewrite_log_file(log_file))
 
 
 def _exploding_resolver():
