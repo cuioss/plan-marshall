@@ -7,10 +7,14 @@ Covers:
   - resolve_plan: read side (bound / unbound / malformed / empty)
   - bind: last-driven-wins unconditional write (never protects a differing
     live binding) and validation rejection
-  - unbind: caller-scoped slot removal + empty-session-dir prune, idempotence,
-    validation rejection, and the no-raise contract on I/O failure
+  - unbind: caller-scoped removal of BOTH slots + empty-session-dir prune,
+    idempotence, validation rejection, and the no-raise contract on I/O failure
   - doctor: reverse-index conflict scan, stale-slot detection, --fix GC, the
     all-directories orphan sweep and prune, and the no-index.json invariant
+  - orchestrator slot (bind_orchestrator / resolve_orchestrator): the parallel
+    kind-disjoint epic binding, its mutual exclusion with the plan slot, the
+    kind-agnostic unbind, and the doctor's recognition of an orchestrator-only
+    session dir as live (never an orphan, never GC'd)
 """
 from __future__ import annotations
 
@@ -514,3 +518,132 @@ class TestDoctorOrphans:
         assert report["gc_removed"] == 1
         assert report["orphans"] == []
         assert report["orphans_removed"] == 0
+
+
+# =============================================================================
+# orchestrator slot — the kind-disjoint parallel binding (active-orchestrator)
+# =============================================================================
+
+
+class TestOrchestratorSlot:
+    """Tests for the parallel ``active-orchestrator`` epic-binding slot.
+
+    The orchestrator slot mirrors the plan slot (bind_orchestrator /
+    resolve_orchestrator) but is kind-disjoint and mutually exclusive with it:
+    binding one kind clears the other (last-driven-wins across kinds). The plan
+    read path stays byte-for-byte unchanged.
+    """
+
+    def test_bind_orchestrator_writes_slot(self, cache):
+        """bind_orchestrator writes the active-orchestrator slot and returns True."""
+        assert session_binding.bind_orchestrator(SID_A, "my-epic") is True
+        assert (cache / SID_A / "active-orchestrator").read_text(encoding="utf-8") == "my-epic"
+
+    def test_resolve_orchestrator_reads_bound_slug(self, cache):
+        """resolve_orchestrator returns the bound epic slug."""
+        session_binding.bind_orchestrator(SID_A, "my-epic")
+        assert session_binding.resolve_orchestrator(SID_A) == "my-epic"
+
+    def test_resolve_orchestrator_unbound_returns_none(self, cache):
+        """An unbound session resolves to None on the orchestrator slot."""
+        assert session_binding.resolve_orchestrator(SID_A) is None
+
+    def test_resolve_orchestrator_rejects_malformed_session_id(self, cache):
+        """A malformed session id resolves to None without touching disk."""
+        assert session_binding.resolve_orchestrator("../evil") is None
+
+    def test_bind_orchestrator_last_driven_wins(self, cache):
+        """A second bind_orchestrator to a different slug overwrites the prior slug."""
+        session_binding.bind_orchestrator(SID_A, "epic-1")
+        session_binding.bind_orchestrator(SID_A, "epic-2")
+        assert session_binding.resolve_orchestrator(SID_A) == "epic-2"
+
+    @pytest.mark.parametrize("bad", ["", "a/b", "a\\b", "..", ".", "x" * 121, "a\x00b"])
+    def test_bind_orchestrator_rejects_invalid_slug(self, cache, bad):
+        """bind_orchestrator rejects a traversal/over-length slug and writes nothing."""
+        assert session_binding.bind_orchestrator(SID_A, bad) is False
+        assert session_binding.resolve_orchestrator(SID_A) is None
+
+    def test_bind_orchestrator_rejects_invalid_session_id(self, cache):
+        """bind_orchestrator rejects a malformed session id (returns False)."""
+        assert session_binding.bind_orchestrator("../evil", "my-epic") is False
+
+    # --- mutual exclusion (kind-disjoint, last-driven-wins across kinds) ---
+
+    def test_bind_orchestrator_clears_plan_slot(self, cache):
+        """Binding an epic clears a pre-existing plan binding on the same session."""
+        session_binding.bind(SID_A, "plan-1")
+        session_binding.bind_orchestrator(SID_A, "my-epic")
+        assert session_binding.resolve_plan(SID_A) is None
+        assert session_binding.resolve_orchestrator(SID_A) == "my-epic"
+
+    def test_bind_plan_clears_orchestrator_slot(self, cache):
+        """Binding a plan clears a pre-existing epic binding on the same session."""
+        session_binding.bind_orchestrator(SID_A, "my-epic")
+        session_binding.bind(SID_A, "plan-1")
+        assert session_binding.resolve_orchestrator(SID_A) is None
+        assert session_binding.resolve_plan(SID_A) == "plan-1"
+
+    def test_bind_orchestrator_touches_only_callers_own_session(self, cache):
+        """A sibling session's plan binding survives another session's epic bind."""
+        session_binding.bind(SID_B, "plan-b")
+        session_binding.bind_orchestrator(SID_A, "my-epic")
+        assert session_binding.resolve_plan(SID_B) == "plan-b"
+
+    # --- unbind removes BOTH slots (kind-agnostic teardown) ---
+
+    def test_unbind_removes_orchestrator_slot(self, cache):
+        """unbind removes an orchestrator-only binding and prunes the empty dir."""
+        session_binding.bind_orchestrator(SID_A, "my-epic")
+        assert session_binding.unbind(SID_A) is True
+        assert session_binding.resolve_orchestrator(SID_A) is None
+        assert not (cache / SID_A).exists()
+
+    def test_unbind_removes_both_slots_when_both_present(self, cache):
+        """unbind is kind-agnostic: with both slots written directly, both are removed.
+
+        The public binders enforce mutual exclusion so both slots never coexist
+        through them; this writes both files directly to prove unbind's teardown
+        clears each slot regardless of how it came to exist, then prunes the dir.
+        """
+        (cache / SID_A).mkdir(parents=True)
+        (cache / SID_A / "active-plan").write_text("plan-1", encoding="utf-8")
+        (cache / SID_A / "active-orchestrator").write_text("my-epic", encoding="utf-8")
+
+        assert session_binding.unbind(SID_A) is True
+
+        assert session_binding.resolve_plan(SID_A) is None
+        assert session_binding.resolve_orchestrator(SID_A) is None
+        assert not (cache / SID_A).exists()
+
+    # --- doctor recognizes an orchestrator-only session dir as live ---
+
+    def test_doctor_does_not_treat_orchestrator_dir_as_orphan(self, cache, project):
+        """An orchestrator-only session dir carries a live binding — not an orphan."""
+        session_binding.bind_orchestrator(SID_A, "my-epic")
+
+        report = session_binding.doctor()
+
+        assert report["orphans"] == []
+
+    def test_doctor_fix_never_gcs_an_orchestrator_binding(self, cache, project):
+        """--fix leaves a live orchestrator binding untouched (never wrongly GC'd)."""
+        session_binding.bind_orchestrator(SID_A, "my-epic")
+
+        report = session_binding.doctor(fix=True)
+
+        assert report["orphans_removed"] == 0
+        assert report["gc_removed"] == 0
+        assert session_binding.resolve_orchestrator(SID_A) == "my-epic"
+        assert (cache / SID_A / "active-orchestrator").is_file()
+
+    def test_doctor_orchestrator_dir_excluded_from_plan_scanned_count(self, cache, project):
+        """An orchestrator-only dir is kind-disjoint — not a scanned plan slot."""
+        session_binding.bind_orchestrator(SID_A, "my-epic")
+
+        report = session_binding.doctor()
+
+        # scanned counts live PLAN slots only; the orchestrator dir contributes none.
+        assert report["scanned"] == 0
+        assert report["conflicts"] == []
+        assert report["stale"] == []
