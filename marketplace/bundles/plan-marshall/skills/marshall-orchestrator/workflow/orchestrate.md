@@ -69,12 +69,9 @@ EMIT one ready-to-run command per selected candidate — the whole `N − R` blo
 
 ```text
 /plan-marshall task="implement .plan/local/orchestrator/{slug}/plans/PLAN-NN-{plan_slug}.md"
-
---- spec body: plans/PLAN-NN-{plan_slug}.md ---
-{the full text of the staged spec, verbatim}
 ```
 
-**Lifecycle prerequisite.** The one-line form is lossless only once the plan lifecycle ingests a referenced spec file's *contents*. It does not do so today: `phase-1-init` uses the description verbatim and reads no path named inside it, and `phase-2-refine` existence-checks file-path claims rather than ingesting them. PLAN-41 owns that lifecycle change. Until it lands, the emit inlines the spec body beneath the pointer line — as shown above, and carried in the `spec_body` field of the `emitted[]` output contract — so the operator hands the lifecycle a self-sufficient brief. The pointer is the target emit contract, not yet the sufficient one.
+The one-line pointer is the whole hand-off. The plan lifecycle ingests the referenced spec file's *contents* at `phase-1-init` — the file-pointer branch of Step 4 "From Description" reads the path through the deterministic `request create --body-file` seam, so the referenced spec becomes the request body and the pointer alone is a self-sufficient brief. The emit therefore surfaces NO inlined spec body and NO operator-facing spec preview: there is deliberately no surface at this step that reproduces the spec text. Should a future author ever need to show a spec body at an orchestrator surface, it MUST be obtained by a `Read` of the spec path — a deterministic file read — NEVER by LLM retyping, paraphrase, or reconstruction from context; a re-introduced "verbatim spec text" inline is exactly the retyping-drift this retirement removed.
 
 The verb NEVER launches the plan inline — the operator runs the emitted command; implementation happens exclusively inside the plan lifecycle. This holds for every command in the block: the orchestrator emits `N − R` ready commands and launches none of them. When the operator confirms a launch, record the transition (once per launched plan):
 
@@ -118,11 +115,11 @@ slug: {slug}
 verb: next
 parallelization_scope: {N}
 launched_count: {R}
-emitted[E]{plan,command,spec_body}:
-  PLAN-NN,/plan-marshall task="implement .plan/local/orchestrator/{slug}/plans/PLAN-NN-{plan_slug}.md","{verbatim spec body inlined beneath the pointer line}"
+emitted[E]{plan,command}:
+  PLAN-NN,/plan-marshall task="implement .plan/local/orchestrator/{slug}/plans/PLAN-NN-{plan_slug}.md"
 shortfall[S]{plan,reason}:
   PLAN-MM,"overlaps {surface} with PLAN-KK"
   PLAN-PP,"refuted verify-first clause not yet re-scoped"
 ```
 
-`display_detail` is ≤80 chars, ASCII, no trailing period. `emitted[]` is empty when no candidate qualifies; `shortfall[]` is empty when the block fills every slot, and otherwise names one blocking reason per unemittable candidate. `spec_body` carries the verbatim spec text the Step 5 emit inlines beneath the pointer line, so the schema represents the hand-off the operator actually receives; it empties once the lifecycle ingests a referenced spec's contents and the pointer alone is sufficient.
+`display_detail` is ≤80 chars, ASCII, no trailing period. `emitted[]` is empty when no candidate qualifies; `shortfall[]` is empty when the block fills every slot, and otherwise names one blocking reason per unemittable candidate.
