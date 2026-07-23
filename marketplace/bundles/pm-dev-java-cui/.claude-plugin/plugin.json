@@ -24,6 +24,7 @@
     "./skills/cui-http-testing",
     "./skills/cui-logging",
     "./skills/cui-testing",
+    "./skills/parse-rewrite-log",
     "./skills/plan-marshall-plugin",
     "./skills/recipe-cui-logging-enforce",
     "./skills/search-markers"
