@@ -1319,3 +1319,179 @@ class TestSessionPushTitleTokenOptionalIcon:
         monkeypatch.chdir(tmp_path)
         parsed = parse_toon(rt.session_push_title_token("no-such-plan"))
         assert parsed["pushed"] is False
+
+
+# =============================================================================
+# D3: session_render_title orchestrator fallback (PRIMARY hook channel)
+# =============================================================================
+
+
+class TestSessionRenderTitleOrchestratorFallback:
+    """D3: with no plan bound, session_render_title falls back to the ORCHESTRATOR
+    epic binding so the orchestrator title reaches the PRIMARY hook channel
+    (stdout) — which needs no controlling tty. The plan-bound render path is
+    unchanged (D5(c)): the orchestrator fallback is reached only when the plan
+    slot is empty.
+    """
+
+    def test_epic_bound_no_tty_renders_orchestrator_terminal_sequence(
+        self, rt, tmp_path, monkeypatch, capsys
+    ):
+        """An epic-bound session with NO plan renders a non-empty orchestrator
+        terminalSequence from the hook path (stdout) — no /dev/tty involved."""
+        import claude_runtime as _cr
+
+        session_id = "sess-orch-render"
+        slug = "my-epic"
+        _redirect_render_env(tmp_path, monkeypatch, session_id)
+        # Bind the session to the EPIC (orchestrator slot), not a plan.
+        session_binding.bind_orchestrator(session_id, slug)
+        # Isolate the render-fallback wiring from orchestrator-store resolution
+        # (the state read is exercised elsewhere): prove the slug resolved from
+        # the session binding flows into compose + emit.
+        monkeypatch.setattr(
+            _cr,
+            "_read_orchestrator_title_state",
+            lambda s: {"kind": "orchestrator", "slug": s} if s == slug else None,
+        )
+
+        capsys.readouterr()
+        returned = rt.session_render_title(statusline=False)
+        captured = capsys.readouterr().out
+
+        assert returned == ""
+        envelope = json.loads(captured)
+        # PRIMARY hook channel: a non-empty orchestrator terminalSequence.
+        assert envelope["terminalSequence"] == "\x1b]0;➤ Orchestrator-my-epic\x07"
+
+    def test_no_plan_and_no_epic_binding_renders_nothing(
+        self, rt, tmp_path, monkeypatch, capsys
+    ):
+        """With neither a plan nor an epic bound, render is a no-op (empty stdout)."""
+        session_id = "sess-neither"
+        _redirect_render_env(tmp_path, monkeypatch, session_id)
+
+        capsys.readouterr()
+        assert rt.session_render_title(statusline=False) == ""
+        assert capsys.readouterr().out == ""
+
+    def test_plan_binding_takes_precedence_over_epic(
+        self, rt, tmp_path, monkeypatch, capsys
+    ):
+        """A plan binding wins: the plan-bound render path is unchanged (D5(c)) —
+        the orchestrator fallback is never consulted when a plan is bound."""
+        import claude_runtime as _cr
+
+        session_id = "sess-plan-wins"
+        _write_status_json(
+            tmp_path, session_id=session_id, plan_id="the-plan",
+            current_phase="5-execute", short_description="plan-task",
+        )
+        _redirect_render_env(tmp_path, monkeypatch, session_id)
+        # Tripwire: if the orchestrator fallback is wrongly consulted it records
+        # the call; the plan-bound path must never reach it.
+        orch_calls: list[str] = []
+        monkeypatch.setattr(
+            _cr,
+            "_read_orchestrator_title_state",
+            lambda s: (orch_calls.append(s), {"kind": "orchestrator", "slug": s})[1],
+        )
+
+        capsys.readouterr()
+        returned = rt.session_render_title(statusline=False)
+        captured = capsys.readouterr().out
+
+        assert returned == ""
+        envelope = json.loads(captured)
+        assert envelope["terminalSequence"] == "\x1b]0;➤ pm:5-execute:plan-task\x07"
+        assert orch_calls == []
+
+
+# =============================================================================
+# D3: session_push_title_token store="orchestrator" (bind + feature_inactive)
+# =============================================================================
+
+
+class TestSessionPushTitleTokenOrchestrator:
+    """D3: the orchestrator-store push establishes the session→epic binding as a
+    best-effort side effect (so the PRIMARY hook channel takes over on the next
+    render) and distinguishes a configured-OFF feature (feature_inactive) from the
+    permanently-inert /dev/tty fallback (no_controlling_tty).
+    """
+
+    @staticmethod
+    def _stub_orch_state(monkeypatch):
+        import claude_runtime as _cr
+
+        monkeypatch.setattr(
+            _cr,
+            "_read_orchestrator_title_state",
+            lambda s: {"kind": "orchestrator", "slug": s},
+        )
+
+    def test_orchestrator_push_binds_the_epic(self, rt, tmp_path, monkeypatch):
+        """The orchestrator push establishes the session→epic binding so the
+        PRIMARY hook channel resolves the epic on the next render."""
+        monkeypatch.setattr(session_binding, "_SESSION_CACHE_BASE", tmp_path / "sessions")
+        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "sess-orch-push")
+        monkeypatch.chdir(tmp_path)
+        _activate_terminal_title(tmp_path)
+        self._stub_orch_state(monkeypatch)
+        _patch_dev_tty(monkeypatch, openable=True)
+
+        rt.session_push_title_token("", store="orchestrator", slug="my-epic")
+
+        assert session_binding.resolve_orchestrator("sess-orch-push") == "my-epic"
+
+    def test_orchestrator_push_reports_feature_inactive_when_off(self, rt, tmp_path, monkeypatch):
+        """With the terminal-title feature configured OFF, the orchestrator push
+        returns pushed: false / reason: feature_inactive — the gate fires BEFORE
+        the /dev/tty attempt, distinct from the no_controlling_tty fallback."""
+        from toon_parser import parse_toon
+
+        monkeypatch.setattr(session_binding, "_SESSION_CACHE_BASE", tmp_path / "sessions")
+        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "sess-orch-inactive")
+        monkeypatch.chdir(tmp_path)
+        # NO _activate_terminal_title → _terminal_title_active() is False.
+        self._stub_orch_state(monkeypatch)
+        # /dev/tty is openable, but the feature gate fires first.
+        _patch_dev_tty(monkeypatch, openable=True)
+
+        result = parse_toon(rt.session_push_title_token("", store="orchestrator", slug="my-epic"))
+
+        assert result["pushed"] is False
+        assert result["reason"] == "feature_inactive"
+
+    def test_orchestrator_push_reports_no_controlling_tty_when_active_but_no_tty(
+        self, rt, tmp_path, monkeypatch
+    ):
+        """With the feature ACTIVE but no controlling terminal, the orchestrator
+        push clears the feature gate and reports no_controlling_tty."""
+        from toon_parser import parse_toon
+
+        monkeypatch.setattr(session_binding, "_SESSION_CACHE_BASE", tmp_path / "sessions")
+        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "sess-orch-notty")
+        monkeypatch.chdir(tmp_path)
+        _activate_terminal_title(tmp_path)
+        self._stub_orch_state(monkeypatch)
+        _patch_dev_tty(monkeypatch, openable=False)
+
+        result = parse_toon(rt.session_push_title_token("", store="orchestrator", slug="my-epic"))
+
+        assert result["pushed"] is False
+        assert result["reason"] == "no_controlling_tty"
+        assert result["delivery"] == "dev_tty_fallback"
+
+    def test_orchestrator_push_binds_even_when_feature_inactive(self, rt, tmp_path, monkeypatch):
+        """The epic binding is established BEFORE the feature gate, so it lands
+        even when the push itself reports feature_inactive — the PRIMARY channel
+        can then deliver once the feature is turned on."""
+        monkeypatch.setattr(session_binding, "_SESSION_CACHE_BASE", tmp_path / "sessions")
+        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "sess-orch-bind-inactive")
+        monkeypatch.chdir(tmp_path)
+        self._stub_orch_state(monkeypatch)
+        _patch_dev_tty(monkeypatch, openable=True)
+
+        rt.session_push_title_token("", store="orchestrator", slug="my-epic")
+
+        assert session_binding.resolve_orchestrator("sess-orch-bind-inactive") == "my-epic"

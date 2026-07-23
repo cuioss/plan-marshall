@@ -319,15 +319,27 @@ class ClaudeRuntime(Runtime):
         if not session_id:
             return ""
 
-        # Step 2: Resolve session_id → plan_id via session cache.
+        # Step 2: Resolve session_id → plan_id via the session cache. A plan
+        # binding wins; when absent, an ORCHESTRATOR epic binding is the fallback
+        # (Step 3) so the orchestrator title reaches the PRIMARY hook channel —
+        # its /dev/tty push is only a blocking-window fallback, permanently inert
+        # in a tty-less runtime (which is every context here).
         plan_id = claude_runtime._read_active_plan(session_id)
-        if not plan_id:
-            return ""
 
-        # Step 3: Resolve plan_id → title state via status.json (live first,
-        # archived status.json glob fallback). status.json is the SINGLE source
-        # of persisted title state — title-body.txt is no longer read anywhere.
-        state = claude_runtime._read_title_state(plan_id)
+        # Step 3: Resolve the title state via status.json (the SINGLE source of
+        # persisted title state — title-body.txt is no longer read anywhere). A
+        # plan binding reads the plan status.json (live / worktree / archived
+        # fallback); when no plan is bound, an orchestrator epic slug is resolved
+        # and its state read via the existing orchestrator composer branch. The
+        # plan read path is byte-for-byte unchanged (D5(c)) — the orchestrator
+        # resolve is a parallel fallback reached only when the plan slot is empty.
+        if plan_id:
+            state = claude_runtime._read_title_state(plan_id)
+        else:
+            slug = claude_runtime._read_active_orchestrator(session_id)
+            if not slug:
+                return ""
+            state = claude_runtime._read_orchestrator_title_state(slug)
         if state is None:
             return ""
 
@@ -395,7 +407,12 @@ class ClaudeRuntime(Runtime):
             and claude_runtime._command_is_build(tool_command)
         ):
             state["title_token"] = "build-busy"
-            claude_runtime._manage_status_set_title_token(plan_id, "build-busy")
+            # Paint 🔨 for this render via the in-memory token above; persist it
+            # only for a plan-bound render. An orchestrator-bound render has no
+            # plan status.json to write (plan_id is empty), so the persist is
+            # skipped — the in-memory token still paints this render.
+            if plan_id:
+                claude_runtime._manage_status_set_title_token(plan_id, "build-busy")
 
         # Map the Claude hook event → the composer's target-neutral process
         # state, then compose. The composer no longer knows any Claude event
@@ -469,11 +486,19 @@ class ClaudeRuntime(Runtime):
         :func:`claude_runtime._read_orchestrator_title_state` instead — the
         epic's ``status.json`` resolved via ``get_store_dir('orchestrator',
         slug)`` — and the composer renders the ``Orchestrator-{SlugName}``
-        body. Everything downstream of the state read (compose, ``/dev/tty``
-        write, best-effort gating) is shared with the plans-store path, so the
-        inherited terminal-title gating applies unchanged: an absent /
-        unrenderable state or an unopenable ``/dev/tty`` stays the existing
-        no-op — no new config knob.
+        body. The orchestrator push additionally establishes the session→epic
+        binding via :func:`session_binding.bind_orchestrator` (best-effort, from
+        ``$CLAUDE_CODE_SESSION_ID``) BEFORE the ``/dev/tty`` attempt, so the
+        hook-driven PRIMARY channel (:meth:`session_render_title`) resolves the
+        epic and delivers its title on subsequent renders — the ``/dev/tty``
+        write is only the immediate blocking-window FALLBACK. The orchestrator
+        push also distinguishes a configured-OFF terminal-title feature
+        (``pushed: false`` with ``reason: feature_inactive``) from the
+        permanently-inert ``/dev/tty`` fallback (``reason: no_controlling_tty``),
+        so a dead channel cannot masquerade as a configured-off one — no new
+        config knob. Everything else downstream of the state read (compose,
+        ``/dev/tty`` write, best-effort gating) is shared with the plans-store
+        path: an absent / unrenderable state stays the existing no-op.
 
         ``icon`` is optional. When supplied it overrides the event-resolved icon
         for non-terminal phases (e.g. the lock ⏳/🔒 or build 🔨 glyph). When
@@ -493,6 +518,15 @@ class ClaudeRuntime(Runtime):
         ``/dev/tty`` attempt.
         """
         if store == "orchestrator":
+            # Establish the session→epic binding as a best-effort side effect so
+            # the hook-driven PRIMARY channel (session render-title) resolves the
+            # epic and delivers its title on subsequent renders. Fired BEFORE the
+            # /dev/tty attempt so the primary channel takes over on the next
+            # render even when this fallback cannot land (which it never does in a
+            # tty-less runtime).
+            session_id = os.environ.get("CLAUDE_CODE_SESSION_ID")
+            if session_id and slug:
+                session_binding.bind_orchestrator(session_id, slug)
             state = claude_runtime._read_orchestrator_title_state(slug or "")
             entry_fields: dict[str, Any] = {"store": store, "slug": slug or ""}
         else:
@@ -509,6 +543,19 @@ class ClaudeRuntime(Runtime):
             return toon_success(
                 "session push-title-token",
                 {**entry_fields, "pushed": False, "reason": "no_title_state"},
+            )
+
+        # For the orchestrator push, distinguish a configured-OFF terminal-title
+        # feature (reason: feature_inactive) from the permanently-inert /dev/tty
+        # fallback (reason: no_controlling_tty) reported below, so a caller can
+        # tell "not wired up" from "wired up but no controlling terminal". The
+        # epic binding was already established above, so the PRIMARY hook channel
+        # still delivers once the feature is active — this fallback outcome does
+        # not gate that.
+        if store == "orchestrator" and not claude_runtime._terminal_title_active():
+            return toon_success(
+                "session push-title-token",
+                {**entry_fields, "pushed": False, "reason": "feature_inactive"},
             )
 
         try:

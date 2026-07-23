@@ -99,6 +99,44 @@ def rt(tmp_path, monkeypatch):
 
 
 # =============================================================================
+# 3b. _read_active_orchestrator — session → epic slug read delegation
+# =============================================================================
+
+
+class TestReadActiveOrchestrator:
+    """Tests for the ``_read_active_orchestrator`` session-cache read helper.
+
+    A thin delegation to ``session_binding.resolve_orchestrator`` — the
+    orchestrator-slot counterpart of ``_read_active_plan``. ``session
+    render-title`` resolves a session→epic binding through it when no plan is
+    bound, so the orchestrator title reaches the PRIMARY hook channel.
+    """
+
+    def test_returns_bound_epic_slug(self, tmp_path, monkeypatch):
+        """After bind_orchestrator, the helper returns the bound epic slug."""
+        monkeypatch.setattr(session_binding, "_SESSION_CACHE_BASE", tmp_path / "sessions")
+        session_binding.bind_orchestrator("sess-orch-read", "my-epic")
+        assert claude_runtime._read_active_orchestrator("sess-orch-read") == "my-epic"
+
+    def test_unbound_session_returns_none(self, tmp_path, monkeypatch):
+        """An unbound session resolves to None."""
+        monkeypatch.setattr(session_binding, "_SESSION_CACHE_BASE", tmp_path / "sessions")
+        assert claude_runtime._read_active_orchestrator("sess-orch-none") is None
+
+    def test_malformed_session_id_returns_none(self, tmp_path, monkeypatch):
+        """A malformed session id resolves to None without touching disk."""
+        monkeypatch.setattr(session_binding, "_SESSION_CACHE_BASE", tmp_path / "sessions")
+        assert claude_runtime._read_active_orchestrator("../evil") is None
+
+    def test_plan_binding_does_not_leak_into_orchestrator_read(self, tmp_path, monkeypatch):
+        """A plan-bound session (no epic) resolves None on the orchestrator read —
+        the two kind-disjoint slots do not cross-read."""
+        monkeypatch.setattr(session_binding, "_SESSION_CACHE_BASE", tmp_path / "sessions")
+        session_binding.bind("sess-plan-only", "some-plan")
+        assert claude_runtime._read_active_orchestrator("sess-plan-only") is None
+
+
+# =============================================================================
 # 1. project_initial_setup
 # =============================================================================
 

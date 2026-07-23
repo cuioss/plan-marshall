@@ -22,11 +22,21 @@ owning exactly one concern:
 **Two delivery channels, one primary.** The hook-mode `terminalSequence` envelope
 is the **PRIMARY** delivery channel: Claude Code itself writes those bytes to the
 terminal, so it needs no tty ownership and works from any process the hook fires
-in. The direct `/dev/tty` push is a labelled **FALLBACK** for the blocking windows
-no hook event spans (a long build, a CI wait, a lock hold); off a controlling
-terminal it cannot land, and that non-delivery is now **reported**
-(`pushed: false`, `reason: no_controlling_tty`, `delivery: dev_tty_fallback`)
-rather than silently swallowed.
+in. **It is the only channel that reliably lands in this runtime.** No context here
+holds a controlling terminal, so the direct `/dev/tty` push is a
+**permanently-inert FALLBACK**, not an occasional edge — the hook channel is the
+one that delivers, and both plan titles and orchestrator-epic titles ride it (see
+Session-Plan Binding → the orchestrator epic slot below). The push is still fired
+for the blocking windows no hook event spans (a long build, a CI wait, a lock
+hold), but off a controlling terminal it cannot land, and that non-delivery is
+**reported** rather than silently swallowed. Two distinct no-delivery reasons are
+kept apart so a dead channel cannot masquerade as a switched-off feature:
+
+- `reason: no_controlling_tty` — the feature is wired up but the `/dev/tty`
+  fallback found no controlling terminal (the permanently-inert case here). Every
+  `/dev/tty` attempt also names its channel via `delivery: dev_tty_fallback`.
+- `reason: feature_inactive` — the terminal-title feature is configured off (no
+  render-hook entry and no `statusLine`), so nothing was attempted at all.
 
 `status.json` is the **only** persisted contract between the writer side and the
 read+emit side. There is no `title-body.txt` artifact — the title state lives
@@ -168,12 +178,15 @@ archive command's status or exit code.
 
 The teardown carries the same **observable-non-delivery** contract as the repaint
 seam: when an *activated* delegate reports a failed title reset (`reset: false`)
-and/or a failed binding release (`unbound: false`), the seam emits one
-`logger.warning` naming the plan and the failed half (both halves are named when
-both failed, matching the delegate's independent reporting). An inactive delegate
-(`active: false` / `reason: feature_inactive`) is the ordinary nothing-to-do case
-and stays at DEBUG, as does every other failure path. Only the observability of a
-non-delivery changes — never the archive command's status or exit code.
+and/or a failed binding release (`unbound: false`), the seam writes one persisted
+`log_entry` to the plan work log (via `manage-logging`) naming the plan and the
+failed half (both halves are named when both failed, matching the delegate's
+independent reporting), so the dead channel reaches the plan record instead of only
+subprocess stderr. An inactive delegate (`active: false` / `reason:
+feature_inactive`) is the ordinary nothing-to-do case and stays at DEBUG, as does
+every other failure path. `log_entry` is itself best-effort (it swallows every I/O
+error) and sits inside the seam's best-effort try/except, so only the observability
+of a non-delivery changes — never the archive command's status or exit code.
 
 ## Composer — `manage-terminal-title`
 
@@ -238,7 +251,14 @@ body format (both live in the composer it imports).
 1. **Read `$CLAUDE_CODE_SESSION_ID`** — the session identifier supplied by the
    Claude Code hook environment. Empty → no-op (write nothing, return `""`).
 2. **Resolve session → plan** via the session cache (see Session-Plan Binding
-   below). Empty → no-op.
+   below). When a plan is bound, its `status.json` supplies the title state
+   (Step 3). When **no** plan is bound, the reader falls back to the parallel
+   **orchestrator epic binding** (the `active-orchestrator` slot): it resolves the
+   bound epic slug and reads the epic's title state via the existing orchestrator
+   composer branch, so an orchestrator epic reaches the PRIMARY hook channel
+   exactly as a plan does — the orchestrator title needs no controlling terminal.
+   Neither a plan nor an epic bound → no-op. The plan read path is unchanged; the
+   orchestrator fallback is reached only when the plan slot is empty.
 3. **Read the title state from `status.json`** via `_read_title_state(plan_id)`,
    resolving three locations in order (first hit wins):
    a. Live path: `.plan/local/plans/{plan_id}/status.json`.
@@ -290,7 +310,19 @@ default active icon. Three consumers drive this one seam:
 
 This is the **FALLBACK** delivery channel — the primary one is the hook-written
 `terminalSequence` envelope (see Output Channels below), which needs no tty
-ownership. The push exists for the blocking windows no hook event spans.
+ownership. In this runtime no context holds a controlling terminal, so the
+`/dev/tty` push is **permanently inert** and the hook channel is the only one that
+lands; the push is still fired for the blocking windows no hook event spans, but
+its non-delivery is the expected case, not an exception.
+
+With `store="orchestrator"` (the orchestrator-epic variant driven by the
+orchestrator's per-verb repaint call) the push additionally **establishes the
+session→epic binding** (`bind_orchestrator`) BEFORE the `/dev/tty` attempt, so the
+next hook render resolves the epic and delivers its title on the PRIMARY channel —
+the `/dev/tty` write remains only the immediate blocking-window fallback. The
+orchestrator push also gates on the feature-activation signal, returning
+`reason: feature_inactive` when the terminal-title feature is configured off
+(distinct from the permanently-inert `no_controlling_tty` below).
 
 It is best-effort and never raises, but the outcome is **observable** rather than
 silently swallowed. The two no-push outcomes are distinguished on the return TOON:
@@ -298,13 +330,15 @@ silently swallowed. The two no-push outcomes are distinguished on the return TOO
 | Outcome | `pushed` | `reason` | `delivery` |
 |---------|----------|----------|------------|
 | State absent / unrenderable | `false` | `no_title_state` | _(absent — no channel was attempted)_ |
+| Feature configured off (`store="orchestrator"` push) | `false` | `feature_inactive` | _(absent — the gate fired before any tty attempt)_ |
 | `/dev/tty` not openable (CI, background, dispatched agent) | `false` | `no_controlling_tty` | `dev_tty_fallback` |
 | Push landed | `true` | _(absent)_ | `dev_tty_fallback` |
 
 The `manage-status` drive seam consumes that distinction: a repaint reported as
-non-delivered for any reason **other** than `no_title_state` emits one
-`logger.warning`, so a silently-dead title channel is visible instead of hidden at
-DEBUG. Every other failure path keeps its DEBUG level, and the seam still never
+non-delivered for any reason **other** than `no_title_state` writes one persisted
+`log_entry` to the plan work log (via `manage-logging`), so a silently-dead title
+channel is observable in the plan record instead of hidden at DEBUG on subprocess
+stderr. Every other failure path keeps its DEBUG level, and the seam still never
 alters the command's status or exit code.
 
 ### Session-Plan Binding
@@ -313,8 +347,22 @@ The session identifier is bound to a plan through a filesystem cache rooted at
 `_SESSION_CACHE_BASE` (`~/.cache/plan-marshall/sessions`):
 
 ```text
-~/.cache/plan-marshall/sessions/{session_id}/active-plan   →   plan_id
+~/.cache/plan-marshall/sessions/{session_id}/active-plan            →   plan_id
+~/.cache/plan-marshall/sessions/{session_id}/active-orchestrator    →   epic slug
 ```
+
+The parallel, **kind-disjoint** `active-orchestrator` slot binds the session to an
+orchestrator **epic slug** instead of a plan. The two slots are **mutually
+exclusive** — binding one kind clears the other (last-driven-wins across kinds), so
+a session drives EITHER a plan OR an epic, never both. `session render-title`
+resolves the plan slot first and falls back to the orchestrator slot (Step 2
+above), so the orchestrator title reaches the PRIMARY hook channel; the epic
+binding is established as a best-effort side effect of the orchestrator's per-verb
+`push-title-token --store orchestrator` call (`bind_orchestrator`). The plan
+read/write path (`active-plan` / `bind` / `resolve_plan`) is byte-for-byte
+unchanged. `session teardown` / `unbind` is **kind-agnostic** — it removes both
+slots — and `session doctor` treats an orchestrator-only session dir as a live
+binding, never an orphan.
 
 The binding policy lives in one pure, importable module,
 `platform-runtime/scripts/session_binding.py`, wrapped by four testable
