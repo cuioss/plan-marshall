@@ -14,8 +14,6 @@ pins that identity so the two never drift.
 
 from pathlib import Path
 
-import pytest
-
 from conftest import load_script_module
 
 _rewrite_log = load_script_module(

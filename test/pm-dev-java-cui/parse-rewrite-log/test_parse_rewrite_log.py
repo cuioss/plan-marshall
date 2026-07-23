@@ -107,7 +107,7 @@ class TestFieldExtraction:
         findings = parse_rewrite_log(_corpus_text())['data']['findings']
         expected = [_independent_fields(line) for line in _corpus_finding_lines()]
         assert len(findings) == len(expected)
-        for got, want in zip(findings, expected):
+        for got, want in zip(findings, expected, strict=True):
             assert got['path'] == want['path']
             assert got['line'] == want['line']
             assert got['column'] == want['column']
