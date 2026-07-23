@@ -25,7 +25,7 @@ from file_ops import (
     write_json,
 )
 from input_validation import require_valid_plan_id  # noqa: F401 - re-exported
-from plan_logging import log_entry  # noqa: F401 - re-exported
+from plan_logging import log_entry
 
 logger = logging.getLogger(__name__)
 
@@ -561,8 +561,10 @@ def _drive_teardown(plan_id: str) -> None:
     A non-delivery is OBSERVABLE rather than DEBUG-swallowed, exactly as in
     :func:`_drive_repaint`: when the activated delegate reports a failed title
     reset and/or a failed binding release (in practice off a controlling
-    terminal), one ``logger.warning`` names the plan and the reason. An inactive
-    delegate and every other failure path keep their DEBUG level.
+    terminal), one persisted ``log_entry`` (the manage-logging work log) names
+    the plan and the reason, so the dead channel reaches the plan record instead
+    of only subprocess stderr. An inactive delegate and every other failure path
+    keep their DEBUG level.
 
     Fully exception-swallowing, mirroring :func:`_surface_drive`: a delegation
     failure never changes the archive command's status or exit code — only the
@@ -573,7 +575,13 @@ def _drive_teardown(plan_id: str) -> None:
         completed = _run_executor(_PLATFORM_RUNTIME_NOTATION, 'session', 'teardown')
         reason = _teardown_non_delivery_reason(completed)
         if reason is not None:
-            logger.warning('title teardown not delivered for %s: %s', plan_id, reason)
+            # Persist the non-delivery to the plan work log via manage-logging
+            # (log_entry) instead of a stderr-only logger.warning, so a dead
+            # title channel is OBSERVABLE in the plan record. log_entry is itself
+            # best-effort (it swallows every I/O error internally), and this call
+            # sits inside the surrounding best-effort try/except, so a logging
+            # failure never changes the archive command's status or exit code.
+            log_entry('work', plan_id, 'WARNING', f'title teardown not delivered for {plan_id}: {reason}')
     except Exception as exc:  # noqa: BLE001 — drive seam is best-effort
         logger.debug('drive-seam teardown for %s failed: %s', plan_id, exc)
 
@@ -588,16 +596,23 @@ def _drive_repaint(plan_id: str) -> None:
     A non-delivery is OBSERVABLE rather than DEBUG-swallowed: when the delegate
     replies ``pushed: false`` with a reason other than ``no_title_state`` (in
     practice ``no_controlling_tty`` — the ``/dev/tty`` fallback channel could not
-    reach a terminal), one ``logger.warning`` names the plan and the reason. Every
-    other failure path keeps its DEBUG level, and the seam still never alters the
-    command's status or exit code.
+    reach a terminal), one persisted ``log_entry`` (the manage-logging work log)
+    names the plan and the reason, so the dead channel reaches the plan record
+    instead of only subprocess stderr. Every other failure path keeps its DEBUG
+    level, and the seam still never alters the command's status or exit code.
     """
     completed = _run_executor(
         _PLATFORM_RUNTIME_NOTATION, 'session', 'push-title-token', '--plan-id', plan_id
     )
     reason = _repaint_non_delivery_reason(completed)
     if reason is not None:
-        logger.warning('title repaint not delivered for %s: %s', plan_id, reason)
+        # Persist the non-delivery to the plan work log via manage-logging
+        # (log_entry) instead of a stderr-only logger.warning, so a dead title
+        # channel is OBSERVABLE in the plan record. log_entry is itself
+        # best-effort (it swallows every I/O error internally), and _drive_repaint
+        # already runs under _surface_drive's best-effort try/except, so a logging
+        # failure never changes the phase-write command's status or exit code.
+        log_entry('work', plan_id, 'WARNING', f'title repaint not delivered for {plan_id}: {reason}')
 
 
 def _surface_drive(plan_id: str) -> None:

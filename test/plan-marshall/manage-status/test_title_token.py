@@ -17,7 +17,6 @@ These tests cover:
 """
 
 import json
-import logging
 import subprocess
 from argparse import Namespace
 from pathlib import Path
@@ -424,11 +423,37 @@ def test_killed_detached_build_busy_token_does_not_stay_armed(plan_context):
 # ``_drive_repaint`` delegates the push to platform-runtime through the executor.
 # When the delegate reports ``pushed: false`` with a reason OTHER than
 # ``no_title_state`` — in practice ``no_controlling_tty``, the /dev/tty fallback
-# channel failing to reach a terminal — the seam emits ONE WARNING naming the
-# plan and the reason. Every other path stays at DEBUG, and the seam never alters
-# the command's status or exit code.
+# channel failing to reach a terminal — the seam PERSISTS ONE WARNING entry to
+# the plan work log via ``plan_logging.log_entry`` (manage-logging), naming the
+# plan and the reason, so a dead title channel is observable in the plan record
+# instead of only subprocess stderr. Every other path stays at DEBUG, and the
+# seam never alters the command's status or exit code.
 
-_LOGGER_NAME = _core.logger.name
+
+def _log_entry_spy():
+    """Build a ``log_entry`` spy plus the list it appends each call to.
+
+    Returns ``(calls, spy)`` where ``spy`` matches ``plan_logging.log_entry``'s
+    signature and records ``(log_type, plan_id, level, message)`` per call. The
+    caller installs the spy in the namespace the code under test resolves
+    ``log_entry`` from — ``_core`` for the direct drive-seam unit tests, or
+    ``_lifecycle._drive_*.__globals__`` for the cmd_archive integration test —
+    so the substitution reaches the instance actually called.
+    """
+    calls: list[tuple[str, str, str, str]] = []
+
+    def spy(log_type, plan_id, level, message, store='plans'):
+        calls.append((log_type, plan_id, level, message))
+
+    return calls, spy
+
+
+def _read_work_log(plan_context, plan_id):
+    """Return the plan's persisted work.log text (empty string when absent)."""
+    log_file = plan_context.plan_dir_for(plan_id) / 'logs' / 'work.log'
+    if not log_file.exists():
+        return ''
+    return log_file.read_text(encoding='utf-8')
 
 
 def _repaint_reply(**fields):
@@ -481,8 +506,9 @@ def test_archive_succeeds_when_teardown_delegation_fails(plan_context, monkeypat
     assert Path(result['archived_to']).is_dir()
 
 
-def test_repaint_warns_when_delegate_reports_no_controlling_tty(monkeypatch, caplog):
-    """A ``no_controlling_tty`` reply emits exactly one WARNING naming plan + reason."""
+def test_repaint_persists_non_delivery_when_delegate_reports_no_controlling_tty(monkeypatch):
+    """A ``no_controlling_tty`` reply persists exactly one WARNING work-log entry
+    naming the plan and the reason (not a swallowed stderr warning)."""
     monkeypatch.setattr(
         _core,
         '_run_executor',
@@ -493,33 +519,37 @@ def test_repaint_warns_when_delegate_reports_no_controlling_tty(monkeypatch, cap
             delivery='dev_tty_fallback',
         ),
     )
+    calls, spy = _log_entry_spy()
+    monkeypatch.setattr(_core, 'log_entry', spy)
 
-    with caplog.at_level(logging.WARNING, logger=_LOGGER_NAME):
-        _core._drive_repaint('tt-repaint-warn')
+    _core._drive_repaint('tt-repaint-warn')
 
-    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
-    assert len(warnings) == 1
-    message = warnings[0].getMessage()
+    assert len(calls) == 1
+    log_type, plan_id, level, message = calls[0]
+    assert log_type == 'work'
+    assert plan_id == 'tt-repaint-warn'
+    assert level == 'WARNING'
     assert 'tt-repaint-warn' in message
     assert 'no_controlling_tty' in message
 
 
-def test_repaint_does_not_warn_when_delegate_reports_no_title_state(monkeypatch, caplog):
-    """``no_title_state`` is the ordinary nothing-to-paint case — no WARNING."""
+def test_repaint_persists_nothing_when_delegate_reports_no_title_state(monkeypatch):
+    """``no_title_state`` is the ordinary nothing-to-paint case — no persisted entry."""
     monkeypatch.setattr(
         _core,
         '_run_executor',
         lambda *_args: _repaint_reply(plan_id='tt-repaint-nostate', pushed='false', reason='no_title_state'),
     )
+    calls, spy = _log_entry_spy()
+    monkeypatch.setattr(_core, 'log_entry', spy)
 
-    with caplog.at_level(logging.WARNING, logger=_LOGGER_NAME):
-        _core._drive_repaint('tt-repaint-nostate')
+    _core._drive_repaint('tt-repaint-nostate')
 
-    assert [r for r in caplog.records if r.levelno == logging.WARNING] == []
+    assert calls == []
 
 
-def test_repaint_does_not_warn_on_successful_push(monkeypatch, caplog):
-    """A landed push (``pushed: true``) emits no WARNING."""
+def test_repaint_persists_nothing_on_successful_push(monkeypatch):
+    """A landed push (``pushed: true``) persists no entry."""
     monkeypatch.setattr(
         _core,
         '_run_executor',
@@ -527,21 +557,57 @@ def test_repaint_does_not_warn_on_successful_push(monkeypatch, caplog):
             plan_id='tt-repaint-ok', pushed='true', delivery='dev_tty_fallback'
         ),
     )
+    calls, spy = _log_entry_spy()
+    monkeypatch.setattr(_core, 'log_entry', spy)
 
-    with caplog.at_level(logging.WARNING, logger=_LOGGER_NAME):
-        _core._drive_repaint('tt-repaint-ok')
+    _core._drive_repaint('tt-repaint-ok')
 
-    assert [r for r in caplog.records if r.levelno == logging.WARNING] == []
+    assert calls == []
 
 
-def test_repaint_does_not_warn_when_delegate_was_skipped(monkeypatch, caplog):
-    """A skipped spawn (``_run_executor`` returned None) emits no WARNING."""
+def test_repaint_persists_nothing_when_delegate_was_skipped(monkeypatch):
+    """A skipped spawn (``_run_executor`` returned None) persists no entry."""
     monkeypatch.setattr(_core, '_run_executor', lambda *_args: None)
+    calls, spy = _log_entry_spy()
+    monkeypatch.setattr(_core, 'log_entry', spy)
 
-    with caplog.at_level(logging.WARNING, logger=_LOGGER_NAME):
-        _core._drive_repaint('tt-repaint-skipped')
+    _core._drive_repaint('tt-repaint-skipped')
 
-    assert [r for r in caplog.records if r.levelno == logging.WARNING] == []
+    assert calls == []
+
+
+def test_transition_persists_repaint_non_delivery_to_work_log(plan_context, monkeypatch):
+    """D5(b): a real ``current_phase`` transition whose repaint delegate reports
+    ``no_controlling_tty`` writes a PERSISTED non-delivery entry to the plan work
+    log — the dead title channel is observable in the plan record, not swallowed
+    to stderr — while the transition itself still returns status: success.
+
+    This is the end-to-end counterpart of the unit tests above: it exercises the
+    real ``log_entry`` file write through ``cmd_transition`` -> ``_surface_drive``
+    -> ``_drive_repaint`` rather than a spy, so it proves the entry lands on disk.
+    """
+    plan_id = 'tt-transition-nondelivery'
+    cmd_create(Namespace(plan_id=plan_id, title='Test', phases=_PHASES, force=False))
+
+    # Both drive-seam delegates (bind, then repaint) route through this executor
+    # stub; the repaint half reports the /dev/tty fallback could not reach a
+    # terminal, which is the reportable non-delivery. Patched AFTER cmd_create so
+    # the creation-time drive seam does not write a spurious entry.
+    monkeypatch.setitem(
+        _lifecycle._surface_drive.__globals__,
+        '_run_executor',
+        lambda *_args: _repaint_reply(
+            plan_id=plan_id, pushed='false', reason='no_controlling_tty', delivery='dev_tty_fallback'
+        ),
+    )
+
+    result = cmd_transition(Namespace(plan_id=plan_id, completed='1-init'))
+
+    assert result['status'] == 'success'
+    work_log = _read_work_log(plan_context, plan_id)
+    assert 'title repaint not delivered' in work_log
+    assert plan_id in work_log
+    assert 'no_controlling_tty' in work_log
 
 
 # =============================================================================
@@ -552,9 +618,10 @@ def test_repaint_does_not_warn_when_delegate_was_skipped(monkeypatch, caplog):
 # carries the same observable-fallback contract. The teardown delegate reports
 # its two halves independently (``reset`` for the title reset, ``unbound`` for
 # the session-binding release), so either half failing on an ACTIVATED delegate
-# emits ONE WARNING naming the plan and the reason. An inactive delegate
-# (``active: false``) is the ordinary nothing-to-do case and stays at DEBUG, and
-# the seam never alters the archive command's status or exit code.
+# PERSISTS ONE WARNING work-log entry (via ``plan_logging.log_entry``) naming the
+# plan and the reason. An inactive delegate (``active: false``) is the ordinary
+# nothing-to-do case and stays at DEBUG, and the seam never alters the archive
+# command's status or exit code.
 
 
 def _teardown_reply(**fields):
@@ -566,45 +633,50 @@ def _teardown_reply(**fields):
     )
 
 
-def test_teardown_warns_when_delegate_reports_failed_reset(monkeypatch, caplog):
-    """An activated delegate whose title reset did not land emits one WARNING."""
+def test_teardown_persists_non_delivery_when_delegate_reports_failed_reset(monkeypatch):
+    """An activated delegate whose title reset did not land persists one WARNING
+    work-log entry naming the plan and the failed half."""
     monkeypatch.setattr(
         _core,
         '_run_executor',
         lambda *_args: _teardown_reply(active='true', reset='false', unbound='true'),
     )
+    calls, spy = _log_entry_spy()
+    monkeypatch.setattr(_core, 'log_entry', spy)
 
-    with caplog.at_level(logging.WARNING, logger=_LOGGER_NAME):
-        _core._drive_teardown('tt-teardown-warn')
+    _core._drive_teardown('tt-teardown-warn')
 
-    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
-    assert len(warnings) == 1
-    message = warnings[0].getMessage()
+    assert len(calls) == 1
+    log_type, plan_id, level, message = calls[0]
+    assert log_type == 'work'
+    assert plan_id == 'tt-teardown-warn'
+    assert level == 'WARNING'
     assert 'tt-teardown-warn' in message
     assert 'title_reset_failed' in message
 
 
-def test_teardown_warning_names_both_failed_halves(monkeypatch, caplog):
-    """Both halves failing are named in the single WARNING — reset and unbind are
-    reported independently, so collapsing them would hide which half happened."""
+def test_teardown_persisted_entry_names_both_failed_halves(monkeypatch):
+    """Both halves failing are named in the single persisted entry — reset and
+    unbind are reported independently, so collapsing them would hide which half
+    happened."""
     monkeypatch.setattr(
         _core,
         '_run_executor',
         lambda *_args: _teardown_reply(active='true', reset='false', unbound='false'),
     )
+    calls, spy = _log_entry_spy()
+    monkeypatch.setattr(_core, 'log_entry', spy)
 
-    with caplog.at_level(logging.WARNING, logger=_LOGGER_NAME):
-        _core._drive_teardown('tt-teardown-both')
+    _core._drive_teardown('tt-teardown-both')
 
-    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
-    assert len(warnings) == 1
-    message = warnings[0].getMessage()
+    assert len(calls) == 1
+    message = calls[0][3]
     assert 'title_reset_failed' in message
     assert 'binding_release_failed' in message
 
 
-def test_teardown_does_not_warn_when_feature_inactive(monkeypatch, caplog):
-    """``active: false`` is the ordinary nothing-to-do case — no WARNING."""
+def test_teardown_persists_nothing_when_feature_inactive(monkeypatch):
+    """``active: false`` is the ordinary nothing-to-do case — no persisted entry."""
     monkeypatch.setattr(
         _core,
         '_run_executor',
@@ -612,60 +684,66 @@ def test_teardown_does_not_warn_when_feature_inactive(monkeypatch, caplog):
             active='false', reset='false', unbound='false', reason='feature_inactive'
         ),
     )
+    calls, spy = _log_entry_spy()
+    monkeypatch.setattr(_core, 'log_entry', spy)
 
-    with caplog.at_level(logging.WARNING, logger=_LOGGER_NAME):
-        _core._drive_teardown('tt-teardown-inactive')
+    _core._drive_teardown('tt-teardown-inactive')
 
-    assert [r for r in caplog.records if r.levelno == logging.WARNING] == []
+    assert calls == []
 
 
-def test_teardown_does_not_warn_on_successful_teardown(monkeypatch, caplog):
-    """A landed teardown (reset and unbind both true) emits no WARNING."""
+def test_teardown_persists_nothing_on_successful_teardown(monkeypatch):
+    """A landed teardown (reset and unbind both true) persists no entry."""
     monkeypatch.setattr(
         _core,
         '_run_executor',
         lambda *_args: _teardown_reply(active='true', reset='true', unbound='true'),
     )
+    calls, spy = _log_entry_spy()
+    monkeypatch.setattr(_core, 'log_entry', spy)
 
-    with caplog.at_level(logging.WARNING, logger=_LOGGER_NAME):
-        _core._drive_teardown('tt-teardown-ok')
+    _core._drive_teardown('tt-teardown-ok')
 
-    assert [r for r in caplog.records if r.levelno == logging.WARNING] == []
+    assert calls == []
 
 
-def test_teardown_does_not_warn_when_delegate_was_skipped(monkeypatch, caplog):
-    """A skipped spawn (``_run_executor`` returned None) emits no WARNING."""
+def test_teardown_persists_nothing_when_delegate_was_skipped(monkeypatch):
+    """A skipped spawn (``_run_executor`` returned None) persists no entry."""
     monkeypatch.setattr(_core, '_run_executor', lambda *_args: None)
+    calls, spy = _log_entry_spy()
+    monkeypatch.setattr(_core, 'log_entry', spy)
 
-    with caplog.at_level(logging.WARNING, logger=_LOGGER_NAME):
-        _core._drive_teardown('tt-teardown-skipped')
+    _core._drive_teardown('tt-teardown-skipped')
 
-    assert [r for r in caplog.records if r.levelno == logging.WARNING] == []
+    assert calls == []
 
 
-def test_archive_succeeds_when_teardown_reports_non_delivery(plan_context, monkeypatch, caplog):
-    """A reported teardown non-delivery warns but leaves archive at status: success.
+def test_archive_succeeds_when_teardown_reports_non_delivery(plan_context, monkeypatch):
+    """A reported teardown non-delivery persists a WARNING work-log entry but
+    leaves archive at status: success.
 
     Only the observability changes — the archive command's status and the moved
-    plan directory are exactly what a landed teardown produces.
+    plan directory are exactly what a landed teardown produces. The ``log_entry``
+    spy is installed in ``_drive_teardown``'s own module globals so it reaches the
+    instance ``cmd_archive`` calls into.
     """
     monkeypatch.setitem(
         _lifecycle._drive_teardown.__globals__,
         '_run_executor',
         lambda *_args: _teardown_reply(active='true', reset='false', unbound='true'),
     )
+    calls, spy = _log_entry_spy()
+    monkeypatch.setitem(_lifecycle._drive_teardown.__globals__, 'log_entry', spy)
 
     plan_id = 'tt-archive-teardown-nondelivery'
     cmd_create(Namespace(plan_id=plan_id, title='Test', phases='1-init', force=False))
-
-    with caplog.at_level(logging.WARNING, logger=_LOGGER_NAME):
-        result = cmd_archive(Namespace(plan_id=plan_id, dry_run=False))
+    result = cmd_archive(Namespace(plan_id=plan_id, dry_run=False))
 
     assert result['status'] == 'success'
     assert Path(result['archived_to']).is_dir()
-    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
-    assert len(warnings) == 1
-    assert plan_id in warnings[0].getMessage()
+    assert len(calls) == 1
+    assert calls[0][1] == plan_id
+    assert plan_id in calls[0][3]
 
 
 def test_crashing_delegate_leaves_transition_outcome_unchanged(plan_context, monkeypatch):
