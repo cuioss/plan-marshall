@@ -564,9 +564,16 @@ The two stores are mutually exclusive selectors for where the title state is rea
 
 `/dev/tty` is the **FALLBACK** delivery channel — the hook-written
 `terminalSequence` envelope from `session render-title` is the primary one and
-needs no tty ownership. A non-delivery is **reported**, not swallowed: `delivery`
-names the channel on every `/dev/tty` attempt, and `reason` distinguishes the two
-no-push outcomes.
+needs no tty ownership. The `--store orchestrator` push additionally establishes
+the session→epic binding (best-effort, before any `/dev/tty` attempt) so the
+PRIMARY hook channel resolves the epic and delivers its title on subsequent
+renders, and it distinguishes a configured-OFF terminal-title feature
+(`pushed: false` with `reason: feature_inactive`) from the permanently-inert
+`/dev/tty` fallback (`reason: no_controlling_tty`), so a dead channel cannot
+masquerade as a configured-off one. A non-delivery is **reported**, not swallowed:
+`delivery` names the channel on every `/dev/tty` attempt, and `reason`
+distinguishes the three no-push outcomes (`no_title_state`, `feature_inactive`,
+`no_controlling_tty`).
 
 **Success (Claude — push reached TTY, plans store)**:
 ```toon
@@ -611,6 +618,16 @@ operation: session push-title-token
 plan_id: my-plan
 pushed: false
 reason: no_title_state
+```
+
+**Success (Claude — orchestrator store, feature not activated; the epic binding is set but no `/dev/tty` attempt is made)**:
+```toon
+status: success
+operation: session push-title-token
+store: orchestrator
+slug: my-epic
+pushed: false
+reason: feature_inactive
 ```
 
 **No-op (OpenCode)**:
