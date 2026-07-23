@@ -49,9 +49,18 @@ Plan-init accepts exactly ONE of these inputs:
 description: "Add dark mode toggle to application settings"
 ```
 
-- Stored verbatim in request.md
-- No additional context extraction
+- Two-branch handling (see SKILL.md Step 4 "From Description"): **plain text** → stored verbatim in request.md, no additional context extraction; **file pointer** → the referenced spec's contents are ingested as the request body via `manage-plan-documents request create --body-file {spec_path}`, with the pointer retained as `source_id`.
 - Simplest input type
+
+### Description (file pointer)
+```text
+description: "implement .plan/local/orchestrator/{slug}/plans/PLAN-NN-{plan_slug}.md"
+```
+
+- Detected by syntax alone: the description is a bare leading verb (`implement`) plus a single repo-relative path token — independent of filesystem existence, so a missing or mistyped spec path still classifies as a pointer and routes through `--body-file` to reach the fail-closed refusal (never the plain-text branch).
+- The spec file's contents are ingested as the request body via `--body-file` — a deterministic script-side UTF-8 read, never LLM retyping — and Step 5.2's `Write` is skipped.
+- The pointer path is retained as `source_id`, so provenance survives ingestion.
+- See SKILL.md Step 4 "From Description" and Step 5 for the two-branch contract.
 
 ### Lesson ID
 ```text
@@ -134,11 +143,11 @@ Rules:
 
 ## Existing Plan Handling
 
-When the plan directory already exists, phase-1-init runs as a dispatched `execution-context` leaf and **cannot** fire `AskUserQuestion` (see [`../../ref-workflow-architecture/standards/agents.md`](../../ref-workflow-architecture/standards/agents.md) § "Leaf cannot fire AskUserQuestion — return a prompt-required envelope"). It returns the early-return `plan_exists_prompt` envelope (`status: prompt_required`, carrying the three options) and stops — the main-context orchestrator (`plan-marshall/workflow/planning.md` § Action: init) owns the prompt and its resolution:
+When the plan directory already exists, phase-1-init runs **inline in the orchestrator context** (see SKILL.md § "Inline execution in the orchestrator context") and therefore fires `AskUserQuestion` **directly** at the Step 3 site — the existing-plan disposition is gathered by a native prompt in-context, not returned as a prompt-required envelope. The operator's choice is applied in-context:
 
 - **Resume** — continue with the existing plan as-is
-- **Replace** — delete the existing plan and re-dispatch a fresh init
-- **Rename** — re-dispatch init under a different plan_id
+- **Replace** — delete the existing plan and create a fresh one in-context
+- **Rename** — restart init under a different plan_id
 
 See SKILL.md Step 3 for the full contract.
 
