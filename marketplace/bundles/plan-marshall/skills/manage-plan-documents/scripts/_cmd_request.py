@@ -48,7 +48,10 @@ def cmd_create(doc_type: str, args) -> dict:
       * `--body-file PATH`:  read PATH (UTF-8) and splice the contents into
                              the rendered stub in place of the placeholder
                              paragraph. PATH must point to an existing regular
-                             file — otherwise returns `body_file_not_found`.
+                             file — otherwise returns `body_file_not_found`. An
+                             existing regular file that cannot be read as UTF-8
+                             text (UnicodeDecodeError / OSError) returns
+                             `body_file_unreadable` rather than propagating.
 
     The returned dict always includes `path` (absolute resolved path of the
     created file) so callers can pipe directly into the Write tool.
@@ -91,7 +94,19 @@ def cmd_create(doc_type: str, args) -> dict:
                 'body_file': str(body_file_path),
                 'message': f'body_file does not exist or is not a regular file: {body_file_path}',
             }
-        body = body_file_path.read_text(encoding='utf-8')
+        try:
+            body = body_file_path.read_text(encoding='utf-8')
+        except (UnicodeDecodeError, OSError) as exc:
+            return {
+                'status': 'error',
+                'error': 'body_file_unreadable',
+                'plan_id': args.plan_id,
+                'document': doc_type,
+                'file': file_name,
+                'body_file': str(body_file_path),
+                'underlying_error': type(exc).__name__,
+                'message': f'body_file exists but could not be read as UTF-8 text: {body_file_path} ({exc})',
+            }
 
     # Refuse to overwrite unless --force.
     if file_path.exists() and not getattr(args, 'force', False):
