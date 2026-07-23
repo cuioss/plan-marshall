@@ -32,8 +32,9 @@ All assertions run against the constructed-argv subprocess boundary
 
 from pathlib import Path
 
-from conftest import get_script_path, run_script
 from toon_parser import parse_toon
+
+from conftest import get_script_path, run_script
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-plan-documents', 'manage-plan-documents.py')
 
