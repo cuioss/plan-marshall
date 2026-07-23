@@ -1747,19 +1747,39 @@ class _StubExtension:
 
 
 def test_convert_extension_seeds_domain_verb_into_workflow_skill_extensions():
-    """A non-None provides_domain_verb() descriptor seeds extensions[verb] = notation."""
-    module = _StubExtension(domain_verb={'verb': 'marker-detect', 'notation': 'pm-dev-java-cui:search-markers'})
+    """A single-descriptor provides_domain_verb() list seeds extensions[verb] = notation."""
+    module = _StubExtension(domain_verb=[{'verb': 'marker-detect', 'notation': 'pm-dev-java-cui:search-markers'}])
 
     config = _cmd_skill_domains.convert_extension_to_domain_config(module, {}, 'pm-dev-java-cui')
 
     assert config['workflow_skill_extensions'] == {'marker-detect': 'pm-dev-java-cui:search-markers'}
 
 
+def test_convert_extension_seeds_every_verb_from_multi_descriptor_list():
+    """A multi-descriptor provides_domain_verb() list seeds every verb into the map."""
+    module = _StubExtension(
+        domain_verb=[
+            {'verb': 'marker-detect', 'notation': 'pm-dev-java-cui:search-markers'},
+            {'verb': 'rewrite-log-parse', 'notation': 'pm-dev-java-cui:parse-rewrite-log'},
+        ]
+    )
+
+    config = _cmd_skill_domains.convert_extension_to_domain_config(module, {}, 'pm-dev-java-cui')
+
+    assert config['workflow_skill_extensions'] == {
+        'marker-detect': 'pm-dev-java-cui:search-markers',
+        'rewrite-log-parse': 'pm-dev-java-cui:parse-rewrite-log',
+    }
+
+
 def test_convert_extension_seeds_domain_verb_alongside_triage():
-    """The domain-verb entry is seeded alongside the triage entry, not instead of it."""
+    """The domain-verb entries are seeded alongside the triage entry, not instead of it."""
     module = _StubExtension(
         triage='pm-dev-java:ext-triage-java',
-        domain_verb={'verb': 'marker-detect', 'notation': 'pm-dev-java-cui:search-markers'},
+        domain_verb=[
+            {'verb': 'marker-detect', 'notation': 'pm-dev-java-cui:search-markers'},
+            {'verb': 'rewrite-log-parse', 'notation': 'pm-dev-java-cui:parse-rewrite-log'},
+        ],
     )
 
     config = _cmd_skill_domains.convert_extension_to_domain_config(module, {}, 'pm-dev-java-cui')
@@ -1767,12 +1787,23 @@ def test_convert_extension_seeds_domain_verb_alongside_triage():
     assert config['workflow_skill_extensions'] == {
         'triage': 'pm-dev-java:ext-triage-java',
         'marker-detect': 'pm-dev-java-cui:search-markers',
+        'rewrite-log-parse': 'pm-dev-java-cui:parse-rewrite-log',
     }
 
 
 def test_convert_extension_omits_workflow_skill_extensions_when_domain_verb_is_none():
     """A None domain verb contributes nothing — the silent-skip default."""
     module = _StubExtension()
+
+    config = _cmd_skill_domains.convert_extension_to_domain_config(module, {}, 'pm-dev-java-cui')
+
+    assert 'workflow_skill_extensions' not in config
+    assert config == {'bundle': 'pm-dev-java-cui'}
+
+
+def test_convert_extension_omits_workflow_skill_extensions_when_domain_verb_is_empty_list():
+    """An empty-list domain verb also contributes nothing — the silent-skip default."""
+    module = _StubExtension(domain_verb=[])
 
     config = _cmd_skill_domains.convert_extension_to_domain_config(module, {}, 'pm-dev-java-cui')
 
