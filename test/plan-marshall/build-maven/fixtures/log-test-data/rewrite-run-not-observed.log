@@ -1,0 +1,17 @@
+[INFO] Scanning for projects...
+[INFO]
+[INFO] ------------------------< de.cuioss:example-app >------------------------
+[INFO] Building example-app 1.0.0-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO]
+[INFO] --- maven-compiler-plugin:3.11.0:compile (default-compile) @ example-app ---
+[INFO] Changes detected - recompiling the module!
+[INFO] Compiling 12 source files to target/classes
+[ERROR] COMPILATION ERROR :
+[ERROR] src/main/java/de/cuioss/example/PaymentService.java:[10,5] cannot find symbol
+[ERROR]   symbol:   variable amount
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD FAILURE
+[INFO] ------------------------------------------------------------------------
+[ERROR] Failed to execute goal maven-compiler-plugin:3.11.0:compile — the build terminated before the OpenRewrite run goal ever executed
