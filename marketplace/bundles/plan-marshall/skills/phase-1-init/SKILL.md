@@ -291,7 +291,7 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics \
 
 **From Description**:
 
-The description resolves along one of two branches. **Pointer detection**: the description is a *file pointer* when its text contains a single repo-relative path token that resolves to an existing regular file — the canonical emitted shape is `implement .plan/local/orchestrator/{slug}/plans/PLAN-NN-{plan_slug}.md`, so strip the leading verb (`implement`) and extract the path token as `{spec_path}`. A description with no such token — or with substantive prose around the path — takes the plain-text branch unchanged.
+The description resolves along one of two branches. **Pointer detection**: the description is a *file pointer* when its text is the canonical `implement {repo-relative-path}` shape — a bare leading verb (`implement`) followed by a single repo-relative path token and nothing else — the canonical emitted shape is `implement .plan/local/orchestrator/{slug}/plans/PLAN-NN-{plan_slug}.md`, so strip the leading verb (`implement`) and extract the path token as `{spec_path}`. **This classification is by syntax alone and is independent of filesystem existence**: a missing or mistyped `{spec_path}` still classifies as a file pointer, so it is routed through the `--body-file` ingestion call (Step 5.1) and reaches the fail-closed `spec_pointer_unreadable` refusal below — it MUST NOT fall through to the plain-text branch (that silent fall-through is the exact defect this contract closes). A description with no such token — or with substantive prose around the path — takes the plain-text branch unchanged.
 
 - **Plain-text branch** (no file pointer): use the description directly as original input; no additional context extraction. The resolved `{request_narrative}` is the verbatim description text — behaviour unchanged.
 - **File-pointer branch**: the referenced spec at `{spec_path}` is INGESTED as the request body. Step 5.1 is invoked with `--source-id "{spec_path}"` and `--body-file "{spec_path}"` (see Step 5), and Step 5.2's `Write` is SKIPPED — the script performs the file read, so the LLM never retypes, paraphrases, or summarises the spec body. `--source-id` carries the pointer so provenance survives ingestion; this supersedes the plain-text "For `description`: Omit (no external reference)" rule, which becomes pointer-branch-conditional.
@@ -302,7 +302,7 @@ The description resolves along one of two branches. **Pointer detection**: the d
 
   **Guard reaffirmation.** Ingesting the referenced spec is *recording request material*, never a licence to implement it — the § Enforcement prohibition ("Never write or edit source files outside `.plan/local/plans/{plan_id}/**`") holds unchanged on this branch. The more implementation-ready the ingested brief reads, the stronger and more wrong the pull to act on it.
 
-  **Fail-closed obligation (load-bearing).** The pointer-branch `request create --body-file` invocation (Step 5.1) MUST be checked by **branching on the returned TOON `status`, never on the process exit code**. `manage-plan-documents` follows the canonical output contract: an *operation* failure exits `0` and carries its verdict only in the stdout TOON, so inferring success from `exit_code == 0` is the exact "confident signal hides a caveat" shape this plan exists to close — the contract MUST inspect `status` / `error` and MUST NOT read the zero exit code as success. On `status: error` with `error: body_file_not_found` — the spec at `{spec_path}` is absent or is not a regular file — phase-1-init **aborts immediately**: it does NOT fall back to writing the pointer string as the body, does NOT emit an empty-brief `request.md`, and does NOT proceed to Step 5b / Step 5c / Step 6. The script writes nothing on this path, so no partial `request.md` is left behind — the plan directory created at Step 3 is the only residue. Return the structured refusal and emit the `[ERROR]` work-log line per § Error Handling → **Spec Pointer Unreadable**. The refusal aligns with ADR-009 (*Status reporting fails closed with an explicit unknown state*): an unresolvable brief yields a distinct, legible refusal, never a vacuously-successful plan it cannot substantiate.
+  **Fail-closed obligation (load-bearing).** The pointer-branch `request create --body-file` invocation (Step 5.1) MUST be checked by **branching on the returned TOON `status`, never on the process exit code**. `manage-plan-documents` follows the canonical output contract: an *operation* failure exits `0` and carries its verdict only in the stdout TOON, so inferring success from `exit_code == 0` is the exact "confident signal hides a caveat" shape this plan exists to close — the contract MUST inspect `status` / `error` and MUST NOT read the zero exit code as success. On `status: error` with EITHER `error: body_file_not_found` (the spec at `{spec_path}` is absent or is not a regular file) OR `error: body_file_unreadable` (the spec exists as a regular file but cannot be read as UTF-8 text) — phase-1-init **aborts immediately**: it does NOT fall back to writing the pointer string as the body, does NOT emit an empty-brief `request.md`, and does NOT proceed to Step 5b / Step 5c / Step 6. The script writes nothing on this path, so no partial `request.md` is left behind — the plan directory created at Step 3 is the only residue. Return the structured refusal and emit the `[ERROR]` work-log line per § Error Handling → **Spec Pointer Unreadable**. The refusal aligns with ADR-009 (*Status reporting fails closed with an explicit unknown state*): an unresolvable brief yields a distinct, legible refusal, never a vacuously-successful plan it cannot substantiate.
 
 **From Lesson**:
 
@@ -1145,9 +1145,13 @@ The orchestrator's post-init contract assertion (`plan-marshall:plan-marshall/wo
 
 Raised by the **Step 4 "From Description" file-pointer branch** when Step 5.1's
 `request create --body-file "{spec_path}"` invocation returns `status: error`
-with `error: body_file_not_found` — the description named a spec file that does
-not exist or is not a regular file. The refusal is detected by **branching on the
-returned TOON `status`, not the process exit code**: `manage-plan-documents`
+with one of two underlying refusals: `error: body_file_not_found` — the
+description named a spec file that does not exist or is not a regular file — or
+`error: body_file_unreadable` — the spec exists as a regular file but cannot be
+decoded as UTF-8 text (a `UnicodeDecodeError` or `OSError` at read time). The
+`underlying_error` field below carries which of the two fired. The refusal is
+detected by **branching on the returned TOON `status`, not the process exit
+code**: `manage-plan-documents`
 follows the canonical output contract where an operation failure exits `0` and
 carries the verdict only in the stdout TOON, so a caller that inferred success
 from `exit_code == 0` would silently create a plan on an empty brief — the exact
@@ -1162,8 +1166,8 @@ status: error
 error: spec_pointer_unreadable
 plan_id: {plan_id}
 spec_path: {spec_path}
-underlying_error: body_file_not_found
-message: Description names spec file '{spec_path}' but it does not exist or is not a regular file. Refusing to create a plan on an empty brief.
+underlying_error: body_file_not_found | body_file_unreadable
+message: Description names spec file '{spec_path}' but it does not exist, is not a regular file, or cannot be read as UTF-8 text. Refusing to create a plan on an empty brief.
 recovery: Re-run init with a readable spec path, or pass the brief inline as a free-form description.
 ```
 

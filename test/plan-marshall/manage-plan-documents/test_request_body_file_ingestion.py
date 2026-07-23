@@ -157,6 +157,40 @@ def test_body_file_directory_target_refuses_loud(plan_context):
     assert not (plan_context.plan_dir_for('ingest-directory') / 'request.md').exists()
 
 
+def test_body_file_undecodable_refuses_loud(plan_context):
+    """Loud failure: an existing regular file with invalid UTF-8 yields body_file_unreadable."""
+    # Arrange: an existing regular file whose bytes are not valid UTF-8, so the
+    # exists() and is_file() guards both pass and only the decode guard can refuse.
+    undecodable = plan_context.fixture_dir / 'undecodable-spec.md'
+    undecodable.write_bytes(b'\xff\xfe\x00 invalid utf-8 bytes \xff')
+    assert undecodable.is_file()
+
+    # Act.
+    result = run_script(
+        SCRIPT_PATH,
+        'request',
+        'create',
+        '--plan-id',
+        'ingest-undecodable',
+        '--title',
+        'Ingest Undecodable Target',
+        '--source',
+        'description',
+        '--body-file',
+        str(undecodable),
+    )
+
+    # Assert: the read no longer raises an uncaught UnicodeDecodeError — the
+    # structured refusal is on the TOON, not the exit code.
+    data = parse_toon(result.stdout)
+    assert data['status'] == 'error', f'stdout={result.stdout!r} stderr={result.stderr!r}'
+    assert data['error'] == 'body_file_unreadable'
+    assert 'body_file' in data
+    assert 'message' in data
+    # The abort leaves no empty-brief artifact behind.
+    assert not (plan_context.plan_dir_for('ingest-undecodable') / 'request.md').exists()
+
+
 def test_no_body_file_preserves_metadata_stub(plan_context):
     """Non-pointer branch: create without --body-file keeps the stub placeholder."""
     # Act: the plain-description branch — no --body-file, caller writes the body
