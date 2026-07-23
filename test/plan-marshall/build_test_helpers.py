@@ -225,16 +225,37 @@ def assert_run_config_key_contract(script_path, build_tool, canonical_args, *, c
 
     representative_args, representative_suffix = suffix_cases[0]
 
-    # 1. TOON shape.
-    result = run_script(script_path, 'run-config-key', '--command-args', representative_args)
-    assert result.success, f'Script failed: {result.stderr}'
-    data = result.toon()
+    # Spawn ``run-config-key --command-args X`` ONCE per UNIQUE args string, then
+    # run every assertion below against the cached real-CLI TOON. The subcommand
+    # is a pure, deterministic function of ``--command-args``, so a second
+    # subprocess for an args string already spawned re-verifies nothing the first
+    # did not. Previously the representative case (sections 1 + 3) and every
+    # canonical arg (sections 3 + 4) were each spawned twice; deduping keeps the
+    # full E2E surface — every DISTINCT CLI invocation still runs as a real
+    # subprocess and every field is still asserted — while removing the redundant
+    # process starts that dominated this test's wall-clock (a ~14→8 spawn drop for
+    # the pyproject backend). Insertion order is preserved so a failure names a
+    # stable arg.
+    unique_args: list[str] = []
+    for args in [a for a, _ in suffix_cases] + list(canonical_args):
+        if args not in unique_args:
+            unique_args.append(args)
+
+    toon_by_args = {}
+    for args in unique_args:
+        result = run_script(script_path, 'run-config-key', '--command-args', args)
+        assert result.success, f'Script failed for args={args!r}: {result.stderr}'
+        toon_by_args[args] = result.toon()
+
+    # 1. TOON shape (representative case).
+    data = toon_by_args[representative_args]
     assert data['status'] == 'success'
     assert data['build_tool'] == build_tool
     assert data['key_suffix'] == representative_suffix
     assert data['command_key'] == f'{build_tool}:{representative_suffix}'
 
-    # 2. JSON format emits the same four fields.
+    # 2. JSON format emits the same four fields (distinct CLI invocation — the
+    #    ``--format json`` surface is not covered by the TOON spawns above).
     result = run_script(
         script_path, 'run-config-key', '--command-args', representative_args, '--format', 'json'
     )
@@ -247,9 +268,7 @@ def assert_run_config_key_contract(script_path, build_tool, canonical_args, *, c
 
     # 3. Canonical args -> key_suffix / command_key mapping.
     for args, expected_suffix in suffix_cases:
-        result = run_script(script_path, 'run-config-key', '--command-args', args)
-        assert result.success, f'Script failed for args={args!r}: {result.stderr}'
-        data = result.toon()
+        data = toon_by_args[args]
         assert data['build_tool'] == build_tool
         assert data['key_suffix'] == expected_suffix, (
             f'key_suffix {data["key_suffix"]!r} != expected {expected_suffix!r} for args={args!r}'
@@ -259,15 +278,13 @@ def assert_run_config_key_contract(script_path, build_tool, canonical_args, *, c
     # 4. Round-trip drift guard against compute_command_key.
     for args in canonical_args:
         expected_key = compute_command_key(config, args)
-        result = run_script(script_path, 'run-config-key', '--command-args', args)
-        assert result.success, f'Script failed for args={args!r}: {result.stderr}'
-        data = result.toon()
+        data = toon_by_args[args]
         assert data['command_key'] == expected_key, (
             f'CLI command_key {data["command_key"]!r} drifted from '
             f'compute_command_key {expected_key!r} for args={args!r}'
         )
 
-    # 5. Omitting --command-args is an argparse rejection.
+    # 5. Omitting --command-args is an argparse rejection (distinct invocation).
     result = run_script(script_path, 'run-config-key')
     assert not result.success, 'Expected non-zero exit when --command-args is omitted'
 
