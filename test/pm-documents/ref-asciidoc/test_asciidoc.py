@@ -38,7 +38,6 @@ cmd_format = _format_mod.cmd_format
 cmd_verify_links = _verify_links_mod.cmd_verify_links
 verify_links = _verify_links_mod.verify_links
 extract_anchors_from_file = _verify_links_mod.extract_anchors_from_file
-extract_links_from_file = _verify_links_mod.extract_links_from_file
 cmd_classify_links = _classify_links_mod.cmd_classify_links
 
 FORMAT_FIX_TYPES = ['lists', 'xref', 'whitespace', 'all']
