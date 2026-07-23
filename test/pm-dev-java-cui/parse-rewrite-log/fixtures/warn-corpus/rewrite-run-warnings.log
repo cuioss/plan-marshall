@@ -1,0 +1,11 @@
+[INFO] --- rewrite-maven-plugin:5.42.0:run (default-cli) @ example-app ---
+[INFO] Validating active recipes...
+[INFO] Scanning sources in project example-app
+[INFO] Running recipe(s)...
+CUI_REWRITE-100: Finding detected at src/main/java/de/cuioss/example/PaymentService.java:3:9 by TestRecipe: TODO: Throw specific not RuntimeException
+CUI_REWRITE-101: Finding pre-existing at src/main/java/de/cuioss/example/PaymentService.java:3:9 by TestRecipe: TODO: Throw specific not RuntimeException
+[WARNING] CUI_REWRITE-100: Finding detected at src/main/java/de/cuioss/example/OrderValidator.java:42:5 by InvalidExceptionUsageRecipe: Replace RuntimeException with a specific exception type
+2026-01-15 10:23:45,123 WARN  [de.cuioss.rewrite.util.RecipeMarkerUtil] (main) CUI_REWRITE-101: Finding pre-existing at src/main/java/de/cuioss/example/AuditLogger.java:88:13 by CuiLogRecordPatternRecipe: Wrap log statement in a LogRecord constant
+CUI_REWRITE-100: Finding detected at src/main/java/de/cuioss/example/ReportGenerator.java:120:17 by CuiLoggerStandardsRecipe: Use CuiLogger instead of java.util.logging directly
+[INFO] Please review and commit the results.
+[INFO] BUILD SUCCESS
