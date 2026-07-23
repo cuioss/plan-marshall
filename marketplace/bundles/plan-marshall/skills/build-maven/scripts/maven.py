@@ -26,6 +26,7 @@ from _build_cli import (
 from _build_coverage_report import create_coverage_report_handler
 from _maven_cmd_discover import discover_maven_modules
 from _maven_cmd_parse import parse_log
+from _maven_cmd_rewrite_log import consume_rewrite_log
 from _maven_execute import _CONFIG, cmd_run
 
 # --- Tool-specific configuration inlined from former wrapper files ---
@@ -45,6 +46,43 @@ cmd_check_warnings = create_check_warnings_handler(
 )
 
 
+def cmd_rewrite_log(args) -> int:
+    """Consume the OpenRewrite log-parse signal from a captured Maven build log.
+
+    Additive to the existing run/parse issue routing: this surfaces the #118
+    log-parse findings (Signal B) as a distinct fail-closed verdict without
+    altering the existing openrewrite_info categorization. See
+    ``_maven_cmd_rewrite_log.consume_rewrite_log`` for the fail-closed contract.
+    """
+    result = consume_rewrite_log(args.log)
+    if getattr(args, 'format', 'toon') == 'json':
+        import json as _json
+
+        print(_json.dumps(result, indent=2))
+    else:
+        from toon_parser import serialize_toon as _serialize_toon
+
+        print(_serialize_toon(result))
+    return 0
+
+
+def _register_rewrite_log(subparsers) -> None:
+    """Register the additive 'rewrite-log' subcommand (Signal B log-parse consumption)."""
+    rewrite_parser = subparsers.add_parser(
+        'rewrite-log',
+        help='Consume the OpenRewrite #118 log-parse signal from a captured build log (fail-closed)',
+        allow_abbrev=False,
+    )
+    rewrite_parser.add_argument('--log', required=True, help='Path to the captured Maven build log file')
+    rewrite_parser.add_argument(
+        '--format',
+        choices=['toon', 'json'],
+        default='toon',
+        help='Output format (default: toon)',
+    )
+    rewrite_parser.set_defaults(func=cmd_rewrite_log)
+
+
 def main() -> int:
     """Main entry point."""
     return build_main(
@@ -62,6 +100,7 @@ def main() -> int:
             discover_handler=discover_maven_modules,
             discover_help='Discover Maven modules',
             run_config_key_config=_CONFIG,
+            extra_register_fns=[_register_rewrite_log],
         ),
     )
 

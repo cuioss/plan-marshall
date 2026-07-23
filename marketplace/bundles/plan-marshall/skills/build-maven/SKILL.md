@@ -23,10 +23,11 @@ All commands use `python3 .plan/execute-script.py plan-marshall:build-maven:mave
 | `_maven_execute.py` | Execution config via factory (uses shared `default_command_key_fn`) |
 | `_maven_cmd_discover.py` | Module discovery via pom.xml + Maven metadata commands |
 | `_maven_cmd_parse.py` | Log parsing with JVM base patterns + Maven-specific extensions |
+| `_maven_cmd_rewrite_log.py` | Additive OpenRewrite #118 log-parse consumption (Signal B) via the `rewrite-log-parse` domain verb, fail-closed |
 
 ## Subcommands
 
-Supports: **run**, **parse**, **coverage-report**, **check-warnings**, **discover**.
+Supports: **run**, **parse**, **coverage-report**, **check-warnings**, **discover**, **rewrite-log**.
 See `build-api-reference.md` for the full subcommand API and availability matrix.
 
 ### Maven-Specific Behavior
@@ -49,6 +50,20 @@ When `run` is invoked with `--plan-id <P>`, every parsed issue from a failed bui
 Severity is mapped from `Issue.severity` (`error` → `error`, `warning` → `warning`). The finding's `module` carries `maven`, `rule` carries the parser category.
 
 > For the producer→store→consumer→gate flow including the producer-mismatch fidelity contract, see [`ref-workflow-architecture/standards/findings-pipeline.md`](../ref-workflow-architecture/standards/findings-pipeline.md). This SKILL.md owns the per-tool issue→finding-type routing only.
+
+### Additive OpenRewrite log-parse consumption (`rewrite-log`)
+
+The `rewrite-log` subcommand consumes **Signal B** of the two-signal OpenRewrite model — the `cui-open-rewrite` #118 structured WARN lines in the captured Maven build log — additively, alongside (never replacing) the existing `openrewrite_info` categorization and issue routing. build-maven does NOT parse the WARN format itself: the format is owned by the domain bundle, and core reaches it only through the `rewrite-log-parse` **domain verb**, resolved null-on-absent. See [`../extension-api/standards/ext-point-domain-verb.md`](../extension-api/standards/ext-point-domain-verb.md) § Declaration for the resolution/dispatch contract (not re-copied here).
+
+The consumption is **fail-closed** (ADR-009) — it never reports a vacuous "clean". Three distinct verdicts:
+
+| Verdict | Condition | Meaning |
+|---------|-----------|---------|
+| `observed` | The build reached `rewrite:run` AND an active domain provides the verb | The domain parser was dispatched against the log; structured findings (`path`, `line`, `column`, `recipe`, `message`, newly-detected vs pre-existing) are surfaced. |
+| `not_observed` | The build never reached `rewrite:run` (e.g. a compile failure before the OpenRewrite goal) | Absence-of-evidence is a distinct third state, **never** a false `clean` — the findings were simply not produced this run. |
+| `domain_inactive` | The build reached `rewrite:run` but no active domain provides the `rewrite-log-parse` verb (e.g. a non-java-cui project) | A first-class skip via null-on-absent resolution, **not** a false clean. |
+
+The existing Maven parse pipeline, the `openrewrite_info` categorization, and the tree-scan marker signal (`marker-detect`) are unchanged by this additive consumer.
 
 ## Module Discovery
 
@@ -112,6 +127,15 @@ python3 .plan/execute-script.py plan-marshall:build-maven:maven check-warnings \
 python3 .plan/execute-script.py plan-marshall:build-maven:maven discover \
   [--root ROOT] [--format {toon,json}]
 ```
+
+### rewrite-log
+
+```bash
+python3 .plan/execute-script.py plan-marshall:build-maven:maven rewrite-log \
+  --log LOG [--format {toon,json}]
+```
+
+Consumes the OpenRewrite #118 log-parse signal from a captured build log, fail-closed. Returns a `rewrite_log.verdict` of `observed` / `not_observed` / `domain_inactive` (see § "Additive OpenRewrite log-parse consumption").
 
 ### run-config-key
 
