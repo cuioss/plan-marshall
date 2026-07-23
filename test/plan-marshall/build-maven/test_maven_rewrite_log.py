@@ -36,6 +36,7 @@ _parser = load_script_module(
 TEST_DATA_DIR = Path(__file__).parent / 'fixtures' / 'log-test-data'
 OBSERVED_LOG = TEST_DATA_DIR / 'rewrite-run-observed.log'
 NOT_OBSERVED_LOG = TEST_DATA_DIR / 'rewrite-run-not-observed.log'
+DRYRUN_ADVISORY_LOG = TEST_DATA_DIR / 'rewrite-run-dryrun-advisory.log'
 
 #: Deliverable 1's provenance corpus — the single format source of truth for the
 #: #118 WARN lines. parents[2] is the test/ root.
@@ -82,11 +83,22 @@ class TestReachedRewriteRun:
     def test_not_observed_log_did_not_reach_rewrite_run(self):
         assert reached_rewrite_run(NOT_OBSERVED_LOG.read_text(encoding='utf-8')) is False
 
-    def test_short_goal_form_matches(self):
-        assert reached_rewrite_run('[INFO] running rewrite:run now') is True
+    def test_short_prefix_banner_form_matches(self):
+        # The older/prefix banner form ``--- rewrite:run (default-cli) @ app ---``.
+        assert reached_rewrite_run('[INFO] --- rewrite:run (default-cli) @ my-app ---') is True
 
     def test_unrelated_log_does_not_match(self):
         assert reached_rewrite_run('[INFO] --- maven-compiler-plugin:3.11.0:compile ---') is False
+
+    def test_dryrun_advisory_prose_does_not_match(self):
+        # OpenRewrite dryRun mode emits advisory prose carrying the literal
+        # ``rewrite:run`` but no goal-execution banner — it must NOT be mistaken
+        # for a real run (ADR-009 fail-closed).
+        assert reached_rewrite_run("[INFO] Run 'mvn rewrite:run' to apply the fixes.") is False
+        assert reached_rewrite_run('[INFO] ...or run `mvn rewrite:run` again.') is False
+
+    def test_dryrun_advisory_fixture_did_not_reach_rewrite_run(self):
+        assert reached_rewrite_run(DRYRUN_ADVISORY_LOG.read_text(encoding='utf-8')) is False
 
 
 class TestObservedVerdict:
@@ -143,6 +155,16 @@ class TestNotObservedVerdict:
         # _exploding_resolver raises if called; reaching here proves the
         # not-reached branch short-circuits before verb resolution.
         consume_rewrite_log(str(NOT_OBSERVED_LOG), resolve_verb=_exploding_resolver)
+
+    def test_dryrun_advisory_yields_not_observed(self):
+        # A dryRun-only build never executed the run goal: the advisory prose
+        # carrying ``rewrite:run`` must not flip the verdict to observed.
+        result = consume_rewrite_log(str(DRYRUN_ADVISORY_LOG), resolve_verb=_exploding_resolver)
+        rewrite_log = result['rewrite_log']
+        assert rewrite_log['verdict'] == VERDICT_NOT_OBSERVED
+        assert rewrite_log['verdict'] != VERDICT_OBSERVED
+        assert rewrite_log['total_findings'] == 0
+        assert rewrite_log['findings'] == []
 
 
 class TestDomainInactiveVerdict:

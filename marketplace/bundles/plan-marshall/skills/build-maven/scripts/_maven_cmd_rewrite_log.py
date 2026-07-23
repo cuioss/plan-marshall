@@ -39,11 +39,15 @@ VERDICT_OBSERVED = 'observed'
 VERDICT_NOT_OBSERVED = 'not_observed'
 VERDICT_DOMAIN_INACTIVE = 'domain_inactive'
 
-# Detects that the build reached the rewrite-maven-plugin ``run`` goal. Matches
-# both the short goal form ``rewrite:run`` and the fully-qualified Maven goal
-# execution form ``rewrite-maven-plugin:<version>:run`` (e.g. the
-# ``[INFO] --- rewrite-maven-plugin:5.42.0:run (default-cli) @ app ---`` line).
-REWRITE_RUN_PATTERN = re.compile(r'\brewrite(?:-maven-plugin:[\w.\-]+)?:run\b')
+# Detects that the build reached the rewrite-maven-plugin ``run`` goal. Anchored
+# on the Maven goal-EXECUTION banner — the ``--- `` goal opener before the plugin
+# coordinate AND the ``(`` execution-id immediately after ``:run`` — so it fires
+# ONLY on a real goal execution, never on advisory dryRun prose (``mvn
+# rewrite:run``, backtick-quoted, "Run 'mvn rewrite:run' to apply") which carries
+# neither the banner opener nor the execution-id. Matches both the fully-qualified
+# form ``[INFO] --- rewrite-maven-plugin:5.42.0:run (default-cli) @ app ---`` and
+# the short prefix form ``[INFO] --- rewrite:run (default-cli) @ app ---``.
+REWRITE_RUN_PATTERN = re.compile(r'---\s+rewrite(?:-maven-plugin:[\w.\-]+)?:run\s+\(')
 
 
 def reached_rewrite_run(log_text: str) -> bool:
