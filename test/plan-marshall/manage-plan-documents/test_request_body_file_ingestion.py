@@ -49,7 +49,7 @@ def test_body_file_ingestion_carries_the_brief(plan_context):
     # the marshalling path — which the inline --body shell argument used to trip —
     # is exercised end to end).
     spec_path = plan_context.fixture_dir / 'PLAN-99-example-spec.md'
-    spec_body = (
+    spec_text = (
         '# Example Spec Brief\n'
         '\n'
         'A distinctive first paragraph that only exists in the spec file.\n'
@@ -62,7 +62,7 @@ def test_body_file_ingestion_carries_the_brief(plan_context):
         '\n'
         'Closing paragraph after the fenced block.\n'
     )
-    spec_path.write_text(spec_body, encoding='utf-8')
+    spec_path.write_text(spec_text, encoding='utf-8')
 
     # Act: invoke the seam exactly as the phase-1-init pointer branch does.
     result = run_script(
