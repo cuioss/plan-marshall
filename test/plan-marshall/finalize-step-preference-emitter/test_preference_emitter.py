@@ -89,6 +89,16 @@ def _discovered_description(step_id: str) -> str:
     return ''
 
 
+def _discovered_record(step_id: str) -> dict:
+    """Return the discovered implementor record for a finalize-step id."""
+    from extension_discovery import find_implementors
+
+    for rec in find_implementors(_config_defaults.FINALIZE_STEP_EXT_POINT):
+        if rec.get('name') == step_id:
+            return rec
+    return {}
+
+
 class TestPreferenceEmitterSeedWiring:
     """The step id is a discovered default-on built-in finalize-step implementor."""
 
@@ -98,13 +108,46 @@ class TestPreferenceEmitterSeedWiring:
             'consumer marshal.json discovers it'
         )
 
-    def test_step_ordered_after_branch_cleanup(self):
-        # order: 80 places it after branch-cleanup (70) so dispositions are stable
+    def test_step_ordered_before_merge_gate(self):
+        # order: 61 places it in the settle band — after lessons-capture (60) and
+        # BEFORE the merge gate branch-cleanup (70). The step promotes dispositions
+        # into architecture-hint source edits, so it MUST run while the feature
+        # branch is still open, before the squash-merge makes the edit unpushable
+        # (the pre-merge source-edit pushability invariant).
         steps = _discovered_seed_step_ids()
         assert _STEP_ID in steps
         assert 'default:branch-cleanup' in steps
-        assert steps.index(_STEP_ID) > steps.index('default:branch-cleanup'), (
-            'preference-emitter must follow branch-cleanup'
+        assert steps.index(_STEP_ID) < steps.index('default:branch-cleanup'), (
+            'preference-emitter mutates tracked source (architecture hints), so it '
+            'must run BEFORE the merge gate default:branch-cleanup while the edit '
+            'is still pushable on the open feature branch'
+        )
+
+    def test_step_ordered_after_lessons_capture(self):
+        # settle-band lower bound: it learns from dispositions settled by
+        # lessons-capture (60), so it must run AFTER it
+        steps = _discovered_seed_step_ids()
+        assert _STEP_ID in steps
+        assert 'default:lessons-capture' in steps
+        assert steps.index(_STEP_ID) > steps.index('default:lessons-capture'), (
+            'preference-emitter learns from settled dispositions, so it must run '
+            'after default:lessons-capture'
+        )
+
+    def test_step_declares_mutates_source(self):
+        # deliverable 1: the discovered step declares mutates_source: true so the
+        # settle-band merge-gate rule can enforce its pre-merge placement.
+        record = _discovered_record(_STEP_ID)
+        assert record, (
+            f'{_STEP_ID} must be a discovered finalize-step implementor'
+        )
+        from extension_discovery import _read_frontmatter_fields
+
+        fields = _read_frontmatter_fields(Path(record['path']), ('mutates_source',))
+        assert fields.get('mutates_source') is True, (
+            f'{_STEP_ID} promotes dispositions into architecture-hint source edits '
+            'on the open feature branch, so its frontmatter must declare '
+            'mutates_source: true'
         )
 
     def test_step_ordered_before_record_metrics(self):

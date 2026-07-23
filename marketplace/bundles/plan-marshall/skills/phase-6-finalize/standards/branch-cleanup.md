@@ -5,6 +5,7 @@ lane:
 name: default:branch-cleanup
 description: Branch cleanup — adapts to PR mode or local-only based on create-pr step presence
 order: 70
+mutates_source: false
 advances_main_via_rebase: true
 default_on: true
 presets:

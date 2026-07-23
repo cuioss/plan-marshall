@@ -10,6 +10,7 @@ user-invocable: true
 mode: workflow
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion, Skill
 order: 995
+mutates_source: false
 default_on: false
 presets:
   - full

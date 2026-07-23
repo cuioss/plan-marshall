@@ -30,7 +30,7 @@ implements:
 
 **Frontmatter is the sole source of truth for finalize-step discovery.** The `find_implementors()` scanner reads the `implements:` declaration from each candidate step doc and selects every doc whose declaration includes the canonical value above. The scanner does **not** read the markdown body for a discovery signal, and it does **not** identify a step by a directory-name or filename heuristic. A step doc whose frontmatter omits the declaration is not discovered.
 
-Beyond the `implements:` declaration, each finalize-step doc carries the following frontmatter contract — five required fields plus one optional field. These fields replace the removed `BUILT_IN_FINALIZE_STEPS` / `OPTIONAL_BUNDLE_FINALIZE_STEPS` lists and the `*_DESCRIPTIONS` maps as the per-step source of truth:
+Beyond the `implements:` declaration, each finalize-step doc carries the following frontmatter contract — five required fields plus one conditionally-required field. These fields replace the removed `BUILT_IN_FINALIZE_STEPS` / `OPTIONAL_BUNDLE_FINALIZE_STEPS` lists and the `*_DESCRIPTIONS` maps as the per-step source of truth:
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -39,7 +39,7 @@ Beyond the `implements:` declaration, each finalize-step doc carries the followi
 | `default_on` | bool | Yes | `true` ⇒ the step is included in the default seed (`_seed_finalize_steps()` filters to `default_on == true`). `false` ⇒ the step is discoverable but opt-in (it is added to a project's `phase-6-finalize.steps` only by an explicit preset or hand-registration). |
 | `presets` | list[str] | Yes | The named presets this step belongs to — a (possibly empty) subset of `[local, standard, full]`. The preset builder derives "step S belongs to preset P" as `P ∈ S.presets`. An empty list `[]` means the step is in no named preset. |
 | `description` | str | Yes | The human-readable discovery description (shown by `list-finalize-steps` and the wizard). This is the single source of the per-step description, replacing the removed `*_DESCRIPTIONS` maps. |
-| `mutates_source` | bool | No | `true` means the step edits tracked source at runtime; such a step MUST be ordered before `default:branch-cleanup`, per [phase-6-finalize/standards/source-edit-pushability.md](../../phase-6-finalize/standards/source-edit-pushability.md). |
+| `mutates_source` | bool | Conditional | `true` means the step edits tracked source at runtime; such a step MUST be ordered before `default:branch-cleanup`, per [phase-6-finalize/standards/source-edit-pushability.md](../../phase-6-finalize/standards/source-edit-pushability.md). Declaring this field is **mandatory** for any step whose `order` is at or after the dynamically-resolved merge gate (`default:branch-cleanup`) and optional for a step ordered below it. |
 
 ### Addressing Surface
 
@@ -135,10 +135,10 @@ Every step doc that declares the finalize-step interface. Built-in steps live un
 | `default:architecture-refresh` | built-in | 25 | false | `[]` |
 | `default:sonar-roundtrip` | built-in | 40 | true | `[full]` |
 | `default:lessons-capture` | built-in | 60 | true | `[local, standard, full]` |
+| `default:finalize-step-preference-emitter` | built-in | 61 | true | `[]` |
 | `default:adr-propose` | built-in | 62 | false | `[]` |
 | `default:pre-submission-self-review` | built-in | 7 | true | `[]` |
 | `default:branch-cleanup` | built-in | 70 | true | `[local, standard, full]` |
-| `default:finalize-step-preference-emitter` | built-in | 80 | true | `[]` |
 | `default:record-metrics` | built-in | 998 | true | `[local, standard, full]` |
 | `default:finalize-step-print-phase-breakdown` | built-in | 999 | true | `[]` |
 | `default:archive-plan` | built-in | 1000 | true | `[local, standard, full]` |

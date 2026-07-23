@@ -442,8 +442,8 @@ _ORDER_RESOLVABLE_CANDIDATES = [
     'push',  # order 10
     'ci-verify',  # order 22
     'architecture-refresh',  # order 25
+    'finalize-step-preference-emitter',  # order 61
     'branch-cleanup',  # order 70
-    'finalize-step-preference-emitter',  # order 80
     'record-metrics',  # order 998
     'finalize-step-print-phase-breakdown',  # order 999
     'archive-plan',  # order 1000 — the plan-mutating barrier, highest order

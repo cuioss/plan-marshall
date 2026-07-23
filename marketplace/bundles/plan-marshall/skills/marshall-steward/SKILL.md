@@ -284,7 +284,7 @@ are declared in each step doc's frontmatter (`implements: ...ext-point-finalize-
 The seed intentionally covers only steps that are sensible defaults for
 **any** plan-marshall consumer (pre-push-quality-gate, finalize-step-simplify,
 finalize-step-security-audit, push, create-pr, ci-verify, automated-review,
-sonar-roundtrip, lessons-capture, branch-cleanup, finalize-step-preference-emitter,
+sonar-roundtrip, lessons-capture, finalize-step-preference-emitter, branch-cleanup,
 record-metrics, finalize-step-print-phase-breakdown, archive-plan), ordered
 by their declared `order`. `pre-push-quality-gate` is a built-in default
 like the rest; its activation is derived from `build.map` — it activates

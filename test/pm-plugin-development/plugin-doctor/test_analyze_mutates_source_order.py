@@ -13,9 +13,10 @@ Test layers:
   * (b) Post-merge case — the same step ordered at or after the merge gate
         produces exactly one finding with the expected rule_id, severity, and
         line anchor.
-  * (c) No-claim case — a step declaring no ``mutates_source`` key at a
-        post-merge order produces zero findings (the discriminator requires an
-        explicit source-mutation claim).
+  * (c) Missing-declaration case — a step declaring no ``mutates_source`` key
+        AT OR AFTER the merge gate is itself flagged (the band must settle the
+        claim explicitly), while the same omission BELOW the gate, and an
+        explicit ``mutates_source: false``, stay clean.
   * (d) Undiscoverable-merge-gate case — an absent ``default:branch-cleanup``
         record yields zero findings rather than raising.
   * (e) Live-tree assertion — the shipped marketplace corpus is clean.
@@ -35,6 +36,7 @@ _amso = load_script_module(
 analyze_mutates_source_order = _amso.analyze_mutates_source_order
 RULE_ID = _amso.RULE_ID
 FINDING_TYPE = _amso.FINDING_TYPE
+FINDING_TYPE_DECLARATION_MISSING = _amso.FINDING_TYPE_DECLARATION_MISSING
 RULE_NAME = _amso.RULE_NAME
 
 _EXT_POINT = 'plan-marshall:extension-api/standards/ext-point-finalize-step'
@@ -85,13 +87,22 @@ def _order_line_number(text: str) -> int:
 
 
 def _write_merge_gate(bundles_root: Path, order: int = _MERGE_GATE_ORDER) -> Path:
-    """Write the ``default:branch-cleanup`` record the rule reads its threshold from."""
+    """Write the ``default:branch-cleanup`` record the rule reads its threshold from.
+
+    The gate itself declares ``mutates_source: false`` — it sits at (and defines)
+    the merge-gate order, so under the missing-declaration branch an omitted key
+    would flag the gate's own doc. The explicit negative keeps the gate clean
+    while each fixture exercises the real step under test.
+    """
     standards = (
         bundles_root / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'standards'
     )
     standards.mkdir(parents=True, exist_ok=True)
     target = standards / 'branch-cleanup.md'
-    target.write_text(_step_doc_text('default:branch-cleanup', order), encoding='utf-8')
+    target.write_text(
+        _step_doc_text('default:branch-cleanup', order, mutates_source=False),
+        encoding='utf-8',
+    )
     return target
 
 
@@ -250,18 +261,75 @@ class TestPostMergeOrdering:
 
 
 class TestNoMutatesSourceClaim:
-    """A step that makes no source-mutation claim is never flagged."""
+    """Mutates-source-claim handling: an explicit ``false`` (or a pre-merge
+    omission) is clean, while a post-merge omission is itself flagged."""
 
-    def test_step_without_mutates_source_key_produces_no_finding(
+    def test_post_merge_step_without_mutates_source_key_is_flagged(
         self, tmp_path: Path
     ) -> None:
-        """A post-merge step with no ``mutates_source`` key is out of scope."""
+        """A post-merge step that declares NO ``mutates_source`` key is flagged.
+
+        The merge/post-merge band requires the pushability claim be settled
+        explicitly; a silent omission is exactly how a source-mutating step
+        slips past the ordering check without ever making the claim. The finding
+        carries the shared rule_id under the distinct declaration-missing type.
+        """
         _write_merge_gate(tmp_path)
-        _write_bundle_step(tmp_path, 'test-bundle:test-step', 996)
+        step_path, content = _write_bundle_step(
+            tmp_path, 'test-bundle:test-step', 996
+        )
+
+        findings = analyze_mutates_source_order(tmp_path)
+
+        assert len(findings) == 1
+        finding = findings[0]
+        assert finding['rule_id'] == RULE_ID
+        assert finding['type'] == FINDING_TYPE_DECLARATION_MISSING
+        assert finding['rule'] == RULE_NAME
+        assert finding['severity'] == 'error'
+        assert finding['fixable'] is False
+        assert finding['file'] == str(step_path)
+        assert finding['line'] == _order_line_number(content)
+        assert finding['details']['step_name'] == 'test-bundle:test-step'
+        assert finding['details']['step_order'] == 996
+        assert finding['details']['merge_gate_order'] == _MERGE_GATE_ORDER
+
+    def test_pre_merge_step_without_mutates_source_key_produces_no_finding(
+        self, tmp_path: Path
+    ) -> None:
+        """Below the merge gate an absent ``mutates_source`` key stays out of scope.
+
+        The missing-declaration flag is deliberately narrow: only steps AT OR
+        AFTER the gate must settle the claim. A pre-merge omitter makes no
+        source-mutation claim and cannot evade the gate, so it is never flagged.
+        """
+        _write_merge_gate(tmp_path)
+        _write_bundle_step(
+            tmp_path, 'test-bundle:test-step', _MERGE_GATE_ORDER - 1
+        )
 
         findings = analyze_mutates_source_order(tmp_path)
 
         assert findings == []
+
+    def test_missing_key_at_merge_gate_order_is_flagged(
+        self, tmp_path: Path
+    ) -> None:
+        """The missing-declaration boundary is inclusive at the gate order.
+
+        A step sharing the merge gate's order has no guaranteed ordering against
+        it, so an absent claim at exactly the gate order is flagged.
+        """
+        _write_merge_gate(tmp_path)
+        _write_bundle_step(
+            tmp_path, 'test-bundle:test-step', _MERGE_GATE_ORDER
+        )
+
+        findings = analyze_mutates_source_order(tmp_path)
+
+        assert len(findings) == 1
+        assert findings[0]['type'] == FINDING_TYPE_DECLARATION_MISSING
+        assert findings[0]['details']['merge_gate_order'] == _MERGE_GATE_ORDER
 
     def test_explicitly_false_mutates_source_produces_no_finding(
         self, tmp_path: Path

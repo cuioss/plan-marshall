@@ -5,6 +5,7 @@ lane:
 name: default:archive-plan
 description: Archive the completed plan
 order: 1000
+mutates_source: false
 default_on: true
 presets:
   - local
