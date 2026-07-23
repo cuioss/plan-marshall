@@ -331,9 +331,12 @@ class TestReadMarshal:
         assert result is not None
         assert result["runtime"]["target"] == "opencode"
 
-    def test_cwd_walk_returns_none_when_no_marshal_found(self, tmp_path, monkeypatch):
+    def test_cwd_walk_returns_none_when_no_marshal_found(self, outside_repo_dir, monkeypatch):
         """_read_marshal returns None when marshal.json is absent in the entire ancestry."""
-        monkeypatch.chdir(tmp_path)
+        # cwd must be OUTSIDE the repo: pytest's tmp_path now roots under the
+        # repo-local --basetemp, so the upward walk would find the real repo
+        # .plan/marshal.json instead of returning None.
+        monkeypatch.chdir(outside_repo_dir)
         result = _read_marshal(None)
         assert result is None
 
@@ -842,10 +845,12 @@ class TestMain:
         captured = capsys.readouterr()
         assert "usage" in captured.err.lower() or "platform_runtime" in captured.err.lower()
 
-    def test_main_missing_marshal_returns_0_with_toon_error(self, tmp_path, monkeypatch, capsys):
+    def test_main_missing_marshal_returns_0_with_toon_error(self, outside_repo_dir, monkeypatch, capsys):
         """main() with non-project-initial-setup op and no marshal prints TOON error, exit 0."""
         # Change cwd to a directory with no marshal.json anywhere in its ancestry.
-        monkeypatch.chdir(tmp_path)
+        # Must be OUTSIDE the repo: pytest's tmp_path now roots under the
+        # repo-local --basetemp, whose ancestry contains the real .plan/marshal.json.
+        monkeypatch.chdir(outside_repo_dir)
         code = main(["session", "capture", "--plan-id", "p1"])
         assert code == 0
         captured = capsys.readouterr()

@@ -79,9 +79,11 @@ class TestVerifyGitRepo:
 
         assert result is None
 
-    def test_returns_error_for_non_git_path(self, tmp_path: Path) -> None:
+    def test_returns_error_for_non_git_path(self, outside_repo_dir: Path) -> None:
         """Returns an error string when path is not a git repo."""
-        result = _verify_git_repo(tmp_path)
+        # Must be OUTSIDE the repo: pytest's tmp_path now roots under the
+        # repo-local --basetemp, which IS a valid git working tree.
+        result = _verify_git_repo(outside_repo_dir)
 
         assert result is not None
         assert 'working tree' in result
@@ -135,9 +137,12 @@ class TestResolveBranchAndPath:
 class TestCmdForcePushEscapeHatch:
     """Direct-import tests for cmd_force_push via --project-dir."""
 
-    def test_project_dir_not_a_git_repo_returns_error(self, tmp_path: Path) -> None:
+    def test_project_dir_not_a_git_repo_returns_error(self, outside_repo_dir: Path) -> None:
         """--project-dir pointing at a non-git directory → project_dir_not_a_git_repo."""
-        args = Namespace(plan_id=None, project_dir=str(tmp_path), branch='feature/x')
+        # Must be OUTSIDE the repo: pytest's tmp_path now roots under the
+        # repo-local --basetemp, which IS a git repo (would surface a later
+        # branch_not_found error instead of project_dir_not_a_git_repo).
+        args = Namespace(plan_id=None, project_dir=str(outside_repo_dir), branch='feature/x')
 
         result = cmd_force_push(args)
 

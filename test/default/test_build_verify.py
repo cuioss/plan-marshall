@@ -62,3 +62,54 @@ def test_verify_short_circuits_before_test_compile_on_quality_gate_failure(monke
 
     assert rc == 1
     assert calls == ['quality-gate']
+
+
+def test_module_tests_emits_per_session_basetemp_flag(monkeypatch):
+    """cmd_module_tests's pytest cmd carries a per-session --basetemp under the root.
+
+    Guards the per-session basetemp contract: each invocation must pass an
+    explicit ``--basetemp`` pointing under ``.plan/temp/pytest-basetemp/`` so
+    concurrent worktrees and killed-then-restarted sessions never share the
+    default ``pytest-of-{user}`` root whose keep-last-3 cleanup races.
+    """
+    captured: dict[str, list[str]] = {}
+
+    def fake_run(cmd: list[str], description: str, env: dict[str, str] | None = None) -> int:
+        captured['cmd'] = cmd
+        return 0
+
+    monkeypatch.setattr(build, 'run', fake_run)
+    monkeypatch.setattr(build, '_prune_basetemp_roots', lambda *a, **k: None)
+    monkeypatch.setattr(build.Path, 'mkdir', lambda *a, **k: None)
+    monkeypatch.setattr(build, 'get_test_path', lambda module: 'test')
+
+    rc = build.cmd_module_tests(None)
+
+    assert rc == 0
+    cmd = captured['cmd']
+    matches = [a for a in cmd if a.startswith('--basetemp=')]
+    assert len(matches) == 1, f'expected exactly one --basetemp flag; got {matches!r} in {cmd!r}'
+    basetemp = matches[0][len('--basetemp='):]
+    assert basetemp.startswith('.plan/temp/pytest-basetemp/'), (
+        f'cmd_module_tests --basetemp must point under .plan/temp/pytest-basetemp/; got {basetemp!r}'
+    )
+
+
+def test_module_tests_distinct_invocations_do_not_collide(monkeypatch):
+    """Two cmd_module_tests invocations yield distinct per-session --basetemp paths."""
+    seen: list[str] = []
+
+    def fake_run(cmd: list[str], description: str, env: dict[str, str] | None = None) -> int:
+        seen.append(next(a[len('--basetemp='):] for a in cmd if a.startswith('--basetemp=')))
+        return 0
+
+    monkeypatch.setattr(build, 'run', fake_run)
+    monkeypatch.setattr(build, '_prune_basetemp_roots', lambda *a, **k: None)
+    monkeypatch.setattr(build.Path, 'mkdir', lambda *a, **k: None)
+    monkeypatch.setattr(build, 'get_test_path', lambda module: 'test')
+
+    build.cmd_module_tests(None)
+    build.cmd_module_tests(None)
+
+    assert len(seen) == 2
+    assert seen[0] != seen[1], f'invocations must not collide; got {seen[0]!r} twice'

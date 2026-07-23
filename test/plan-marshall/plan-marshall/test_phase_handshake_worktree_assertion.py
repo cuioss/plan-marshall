@@ -192,9 +192,12 @@ def test_assertion_fails_when_worktree_path_does_not_exist(tmp_path: Path) -> No
     assert err['worktree_path'] == str(ghost)
 
 
-def test_assertion_fails_when_path_is_not_a_git_worktree(tmp_path: Path) -> None:
+def test_assertion_fails_when_path_is_not_a_git_worktree(outside_repo_dir: Path) -> None:
     """Existing dir but ``git rev-parse`` exits non-zero → refusal."""
-    plain = tmp_path / 'not-a-repo'
+    # ``plain`` must be OUTSIDE the repo: pytest's tmp_path now roots under the
+    # repo-local --basetemp, where ``git rev-parse`` succeeds (the dir is inside
+    # a git worktree), surfacing worktree_path_stale instead of not_a_git_worktree.
+    plain = outside_repo_dir / 'not-a-repo'
     plain.mkdir()
     metadata = {'use_worktree': True, 'worktree_path': str(plain)}
     err = cmds._resolve_worktree_assertion(metadata)

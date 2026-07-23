@@ -125,9 +125,11 @@ class TestGitOutput:
 
         assert gen._git_output(['rev-parse', 'HEAD'], tmp_path) is None
 
-    def test_returns_none_on_nonzero_exit(self, tmp_path):
+    def test_returns_none_on_nonzero_exit(self, outside_repo_dir):
         # A non-repo directory makes 'git -C <dir> rev-parse HEAD' exit non-zero.
-        assert gen._git_output(['rev-parse', 'HEAD'], tmp_path) is None
+        # Must be OUTSIDE the repo: pytest's tmp_path now roots under the
+        # repo-local --basetemp, where 'git rev-parse HEAD' would succeed.
+        assert gen._git_output(['rev-parse', 'HEAD'], outside_repo_dir) is None
 
 
 class TestVersionResolution:

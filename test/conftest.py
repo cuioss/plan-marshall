@@ -905,6 +905,41 @@ def plan_context(tmp_path, monkeypatch):
     yield Context()
 
 
+@pytest.fixture
+def outside_repo_dir():
+    """Yield a directory guaranteed to live OUTSIDE the repository worktree.
+
+    ``build.py`` gives each pytest invocation an explicit repo-local
+    ``--basetemp`` under ``.plan/temp/pytest-basetemp/`` (per-session,
+    bounded-growth). As a consequence pytest's own ``tmp_path`` /
+    ``tmp_path_factory`` trees now resolve INSIDE the git worktree — and inside
+    the repo's ``.plan/`` tree and its ``marketplace/`` ancestor. A test that
+    must exercise genuine *outside-the-repo* behaviour (a non-git directory, a
+    path with no ``.plan/local`` ancestor, a tree with no ``marketplace/``
+    ancestor, a cwd from which no marshal config resolves) therefore CANNOT use
+    ``tmp_path`` for that role — ``tmp_path`` is now inside the repo.
+
+    This fixture allocates a directory under the system temp root via
+    ``tempfile.mkdtemp`` (which honours ``$TMPDIR`` and is never rooted in the
+    repo — ``build.py`` sets only ``--basetemp``, it does not touch
+    ``$TMPDIR``), so the yielded path is reliably outside the worktree, outside
+    any git repo, and has no ``.plan/`` or ``marketplace/`` ancestor. The
+    directory is removed on teardown.
+
+    The path is ``resolve()``-d before it is yielded so it is the canonical
+    (symlink-free) form. On macOS the system temp root is a symlink
+    (``/var/folders/... -> /private/var/folders/...``); ``git`` and other
+    subprocesses report the resolved form, so a test that compares the yielded
+    path against a subprocess-reported path would otherwise mismatch on the
+    ``/private`` prefix.
+    """
+    outside = Path(tempfile.mkdtemp(prefix='pm-outside-repo-')).resolve()
+    try:
+        yield outside
+    finally:
+        shutil.rmtree(outside, ignore_errors=True)
+
+
 # =============================================================================
 # Utilities
 # =============================================================================

@@ -98,8 +98,11 @@ class TestFindPlanRootFromCwd:
         monkeypatch.chdir(worktree)
         assert _find_plan_root_from_cwd() == main.resolve()
 
-    def test_no_plan_local_ancestor_returns_none(self, tmp_path, monkeypatch):
-        bare = tmp_path / 'bare'
+    def test_no_plan_local_ancestor_returns_none(self, outside_repo_dir, monkeypatch):
+        # ``bare`` must be OUTSIDE the repo: pytest's tmp_path now roots under
+        # the repo-local --basetemp, whose ancestry HAS a .plan/local, so the
+        # walk-up would find one instead of returning None.
+        bare = outside_repo_dir / 'bare'
         bare.mkdir()
         monkeypatch.chdir(bare)
         assert _find_plan_root_from_cwd() is None
@@ -150,10 +153,11 @@ class TestFindMarketplacePath:
         result = find_marketplace_path()
         assert result == bundles
 
-    def test_not_found(self, tmp_path, monkeypatch):
-        # tmp_path is outside the repo, so the cwd walk-up finds no
-        # marketplace/bundles ancestor.
-        bare = tmp_path / 'bare'
+    def test_not_found(self, outside_repo_dir, monkeypatch):
+        # ``bare`` must be OUTSIDE the repo so the cwd walk-up finds no
+        # marketplace/bundles ancestor. pytest's tmp_path now roots under the
+        # repo-local --basetemp, which DOES have a marketplace/bundles ancestor.
+        bare = outside_repo_dir / 'bare'
         bare.mkdir()
         monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
         monkeypatch.chdir(bare)
@@ -442,14 +446,18 @@ class TestGetBasePath:
         result = get_base_path('auto')
         assert result == bundles
 
-    def test_auto_falls_back_to_cache_without_marketplace(self, tmp_path, monkeypatch):
+    def test_auto_falls_back_to_cache_without_marketplace(self, tmp_path, outside_repo_dir, monkeypatch):
         """auto scope falls back to the plugin cache when no marketplace resolves.
 
         With no explicit anchor and no ``marketplace/bundles`` discoverable by the
         cwd walk-up, ``auto`` resolves to the plugin cache rather than raising.
         This is the auto-scope cache-fallback fix.
         """
-        bare = tmp_path / 'bare'
+        # ``bare`` (cwd) must be OUTSIDE the repo so the cwd walk-up finds no
+        # marketplace/bundles ancestor and the cache fallback fires. pytest's
+        # tmp_path now roots under the repo-local --basetemp, which HAS a
+        # marketplace ancestor. The cache + patched home stay under tmp_path.
+        bare = outside_repo_dir / 'bare'
         bare.mkdir()
         monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
         monkeypatch.chdir(bare)
@@ -493,8 +501,12 @@ class TestGetBasePath:
         result = get_base_path('auto')
         assert result == bundles
 
-    def test_auto_raises_when_nothing_found(self, tmp_path, monkeypatch):
-        bare = tmp_path / 'bare'
+    def test_auto_raises_when_nothing_found(self, tmp_path, outside_repo_dir, monkeypatch):
+        # ``bare`` (cwd) must be OUTSIDE the repo so the walk-up finds no
+        # marketplace; with no cache under the patched home either, auto raises.
+        # pytest's tmp_path now roots under the repo-local --basetemp, which HAS
+        # a marketplace ancestor and would otherwise resolve without raising.
+        bare = outside_repo_dir / 'bare'
         bare.mkdir()
         monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
         monkeypatch.chdir(bare)
@@ -674,15 +686,17 @@ class TestResolveMainAnchoredPath:
         assert 'import file_ops' not in module_top
 
     def test_resolve_main_anchored_path_raises_when_not_a_repo(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, outside_repo_dir: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         # Outside any git repo, no override — the production branch must raise
-        # RuntimeError (identical contract to merge_lock).
+        # RuntimeError (identical contract to merge_lock). ``bare`` must be
+        # OUTSIDE the repo: pytest's tmp_path now roots under the repo-local
+        # --basetemp, where the git resolution succeeds instead of raising.
         monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
         import file_ops
 
         monkeypatch.setattr(file_ops, '_BASE_DIR_OVERRIDE', None)
-        bare = tmp_path / 'bare'
+        bare = outside_repo_dir / 'bare'
         bare.mkdir()
         monkeypatch.chdir(bare)
 

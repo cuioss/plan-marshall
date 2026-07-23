@@ -268,11 +268,14 @@ def test_non_default_knobs_are_honoured_from_marshal_json(tmp_path: Path):
     assert len(report['kept']) >= 7
 
 
-def test_absent_config_falls_back_to_documented_defaults(tmp_path: Path):
+def test_absent_config_falls_back_to_documented_defaults(tmp_path: Path, outside_repo_dir: Path):
     """With no ``marshal.json`` the sweep falls back to 5/3 and annotates the
     source so a surprising keep-set stays diagnosable."""
     cache_root = _make_cache(tmp_path, ['0.1.1'])
-    project_root = tmp_path / 'no-config'
+    # ``project_root`` must be OUTSIDE the repo: pytest's tmp_path now roots
+    # under the repo-local --basetemp, so the sweep's upward walk would find the
+    # real repo ``.plan/marshal.json`` instead of resolving to the defaults.
+    project_root = outside_repo_dir / 'no-config'
     project_root.mkdir()
 
     report = cache_retention.sweep(cache_root, project_root=project_root)
