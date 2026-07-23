@@ -26,8 +26,10 @@ normally a build wrapper, and the wrapper exits 0 even when the build failed —
 reports its real verdict in the build-result TOON it emits (``status:`` /
 ``exit_code:``), not in its process exit code. Classifying purely on
 ``returncode == 0`` therefore renders a false ``success`` for every failing routed
-build. :func:`read_log_verdict` reads that emitted verdict back from the job log,
-and :func:`run_job` downgrades a ``success`` classification to ``failure``
+build. The shared :func:`_build_server_protocol.read_log_verdict` reads that
+emitted verdict back from the job log — the single reader both this supervisor and
+the client-side ``_build_execute_factory`` cross-check consume — and
+:func:`run_job` downgrades a ``success`` classification to ``failure``
 (carrying the TOON's ``exit_code``) whenever the verdict does not affirmatively
 agree. The ``timeout`` and ``killed`` legs are NOT subject to this narrowing — a
 supervisor timeout and an external kill always outrank log content — and a job log
@@ -63,6 +65,7 @@ from _build_result import STATUS_SUCCESS as RESULT_STATUS_SUCCESS
 from _build_server_protocol import (
     MARSHALLD_JOB_ENV,
     STATUS_KILLED,
+    read_log_verdict,
     status_from_result,
     status_payload,
 )
@@ -120,66 +123,6 @@ def classify_terminal(returncode: int | None, *, timed_out: bool) -> str:
     if returncode < 0:
         return STATUS_KILLED
     return 'success' if returncode == 0 else 'failure'
-
-
-@dataclass(frozen=True)
-class LogVerdict:
-    """The build wrapper's own verdict, read back from a job log.
-
-    Attributes:
-        status: The ``status:`` value the emitted build TOON carried
-            (``success`` / ``error`` / ``timeout`` — the :mod:`_build_result`
-            vocabulary, NOT the daemon's wire vocabulary).
-        exit_code: The ``exit_code:`` value, or ``None`` when the log carried no
-            parseable one.
-    """
-
-    status: str
-    exit_code: int | None
-
-
-def _toon_scalar(line: str) -> str:
-    """Return the unquoted scalar value of a ``key: value`` TOON line."""
-    value = line.split(':', 1)[1].strip()
-    if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
-        return value[1:-1]
-    return value
-
-
-def read_log_verdict(log_file: str) -> LogVerdict | None:
-    """Read the build wrapper's emitted TOON verdict back from a job log.
-
-    Pure with respect to the daemon's state — it only reads the log the
-    supervisor already streamed. Only the two top-level (column-0) ``status:``
-    and ``exit_code:`` keys are parsed; indented TOON rows (e.g. ``errors[]``
-    table lines) and every other key are ignored. The LAST occurrence of each key
-    wins, because the wrapper emits its result TOON after any progress output it
-    already wrote to the same log.
-
-    Args:
-        log_file: Path to the job log the supervisor streamed the child into.
-
-    Returns:
-        The parsed :class:`LogVerdict`, or ``None`` when the log is missing,
-        unreadable, or carries no top-level ``status:`` line at all.
-    """
-    status: str | None = None
-    exit_code: int | None = None
-    try:
-        with open(log_file, encoding='utf-8', errors='replace') as handle:
-            for line in handle:
-                if line.startswith('status:'):
-                    status = _toon_scalar(line)
-                elif line.startswith('exit_code:'):
-                    try:
-                        exit_code = int(_toon_scalar(line))
-                    except ValueError:
-                        exit_code = None
-    except OSError:
-        return None
-    if status is None:
-        return None
-    return LogVerdict(status=status, exit_code=exit_code)
 
 
 @dataclass
