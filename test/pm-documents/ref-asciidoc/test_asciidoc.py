@@ -36,6 +36,9 @@ analyze_file_stats = _stats_mod.analyze_file_stats
 cmd_validate = _validate_mod.cmd_validate
 cmd_format = _format_mod.cmd_format
 cmd_verify_links = _verify_links_mod.cmd_verify_links
+verify_links = _verify_links_mod.verify_links
+extract_anchors_from_file = _verify_links_mod.extract_anchors_from_file
+extract_links_from_file = _verify_links_mod.extract_links_from_file
 cmd_classify_links = _classify_links_mod.cmd_classify_links
 
 FORMAT_FIX_TYPES = ['lists', 'xref', 'whitespace', 'all']
@@ -322,3 +325,155 @@ def test_classify_links_writes_categorized_output():
     finally:
         input_file.unlink(missing_ok=True)
         output_file.unlink(missing_ok=True)
+
+
+# Tier 2: Link-verification core logic (anchor extraction, link resolution)
+
+
+def _write_adoc(directory: Path, name: str, content: str) -> str:
+    """Write an .adoc file under ``directory`` and return its string path."""
+    path = directory / name
+    path.write_text(content, encoding='utf-8')
+    return str(path)
+
+
+def test_extract_anchors_collects_explicit_ids_and_section_titles():
+    """Anchors come from ``[[id]]``, ``[#id]``, and normalised section titles."""
+    with tempfile.TemporaryDirectory() as tmp:
+        d = Path(tmp)
+        adoc = _write_adoc(
+            d,
+            'a.adoc',
+            '= Doc\n\n[[explicit-anchor]]\n[#hash-anchor]\n\n== My Section Heading\n\nbody\n',
+        )
+
+        anchors = extract_anchors_from_file(adoc)
+
+        assert 'explicit-anchor' in anchors
+        assert 'hash-anchor' in anchors
+        assert 'my-section-heading' in anchors  # section title normalised to a slug
+
+
+def test_verify_links_valid_cross_ref_to_explicit_anchor_has_no_issue():
+    """A ``<<anchor>>`` that resolves to a defined ``[[anchor]]`` is not flagged."""
+    with tempfile.TemporaryDirectory() as tmp:
+        d = Path(tmp)
+        adoc = _write_adoc(d, 'a.adoc', '= Doc\n\n[[target]]\nSee <<target>> above.\n')
+
+        _links, issues = verify_links([adoc])
+
+        assert issues == []
+
+
+def test_verify_links_cross_ref_resolves_section_title_anchor():
+    """A cross-ref may resolve against a section-title-derived anchor."""
+    with tempfile.TemporaryDirectory() as tmp:
+        d = Path(tmp)
+        adoc = _write_adoc(d, 'a.adoc', '= Doc\n\n== Overview\n\nJump to <<overview>>.\n')
+
+        _links, issues = verify_links([adoc])
+
+        assert issues == []
+
+
+def test_verify_links_broken_cross_ref_is_reported():
+    """A ``<<missing>>`` with no matching anchor is a broken-link issue."""
+    with tempfile.TemporaryDirectory() as tmp:
+        d = Path(tmp)
+        adoc = _write_adoc(d, 'a.adoc', '= Doc\n\nDangling <<missing-anchor>> ref.\n')
+
+        _links, issues = verify_links([adoc])
+
+        broken = [i for i in issues if i.issue_type == 'broken']
+        assert any('missing-anchor' in i.description for i in broken)
+
+
+def test_verify_links_xref_to_missing_target_is_reported():
+    """An ``xref:`` to a non-existent target file is a broken-link issue."""
+    with tempfile.TemporaryDirectory() as tmp:
+        d = Path(tmp)
+        adoc = _write_adoc(d, 'a.adoc', '= Doc\n\nSee xref:nope.adoc[Nope].\n')
+
+        _links, issues = verify_links([adoc])
+
+        assert any(i.issue_type == 'broken' and 'not found' in i.description for i in issues)
+
+
+def test_verify_links_xref_to_existing_target_has_no_issue():
+    """An ``xref:`` to a sibling file that exists resolves cleanly."""
+    with tempfile.TemporaryDirectory() as tmp:
+        d = Path(tmp)
+        _write_adoc(d, 'b.adoc', '= B\n\nbody\n')
+        a = _write_adoc(d, 'a.adoc', '= A\n\nSee xref:b.adoc[B].\n')
+
+        _links, issues = verify_links([a])
+
+        assert issues == []
+
+
+def test_verify_links_xref_to_missing_anchor_in_existing_target_is_reported():
+    """An ``xref:`` whose target exists but lacks the referenced anchor is broken."""
+    with tempfile.TemporaryDirectory() as tmp:
+        d = Path(tmp)
+        _write_adoc(d, 'b.adoc', '= B\n\nno anchors here\n')
+        a = _write_adoc(d, 'a.adoc', '= A\n\nSee xref:b.adoc#ghost[B].\n')
+
+        _links, issues = verify_links([a])
+
+        assert any(i.issue_type == 'broken' and 'ghost' in i.description for i in issues)
+
+
+def test_verify_links_deprecated_double_angle_adoc_is_a_format_violation():
+    """The legacy ``<<file.adoc>>`` include form is flagged as a format violation
+    with an ``xref:`` migration suggestion."""
+    with tempfile.TemporaryDirectory() as tmp:
+        d = Path(tmp)
+        adoc = _write_adoc(d, 'a.adoc', '= Doc\n\nOld style <<legacy.adoc>> link.\n')
+
+        _links, issues = verify_links([adoc])
+
+        violations = [i for i in issues if i.issue_type == 'format_violation']
+        assert violations
+        assert violations[0].suggested_fix.startswith('xref:')
+
+
+def test_cmd_verify_links_directory_mode_processes_every_adoc():
+    """Directory mode verifies every .adoc file under the directory."""
+    with tempfile.TemporaryDirectory() as tmp:
+        d = Path(tmp)
+        _write_adoc(d, 'one.adoc', '= One\n\nbody\n')
+        _write_adoc(d, 'two.adoc', '= Two\n\nbody\n')
+
+        result = cmd_verify_links(
+            Namespace(command='verify-links', file=None, directory=str(d), recursive=False, report=None)
+        )
+
+        assert result['data']['files_processed'] == 2
+
+
+def test_cmd_verify_links_empty_directory_reports_no_files():
+    """A directory with no .adoc files yields a structured no_files error."""
+    with tempfile.TemporaryDirectory() as tmp:
+        result = cmd_verify_links(
+            Namespace(command='verify-links', file=None, directory=tmp, recursive=False, report=None)
+        )
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'no_files'
+
+
+def test_cmd_verify_links_writes_report_file_when_requested():
+    """``--report`` persists the full result as JSON to the given path."""
+    with tempfile.TemporaryDirectory() as tmp:
+        d = Path(tmp)
+        _write_adoc(d, 'a.adoc', '= Doc\n\n[[ok]]\n<<ok>>\n')
+        report = d / 'report.json'
+
+        result = cmd_verify_links(
+            Namespace(command='verify-links', file=str(d / 'a.adoc'), directory=None, recursive=False, report=str(report))
+        )
+
+        assert report.exists()
+        persisted = json.loads(report.read_text())
+        assert persisted['status'] == result['status']
+        assert 'data' in persisted
