@@ -1,0 +1,1029 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
+"""
+Skill domains command handlers for manage-config.
+
+Handles: skill-domains, resolve-domain-skills, list-recipes, resolve-recipe, list-finalize-steps
+
+Domain discovery uses extension.py files in each bundle's plan-marshall-plugin skill.
+Extension API functions:
+- get_skill_domains() -> domain metadata with profiles
+- provides_triage() -> triage skill reference or None
+- provides_outline_skill() -> outline skill reference or None
+- provides_recipes() -> list of recipe definition dicts
+- provides_domain_verb() -> {'verb': str, 'notation': str} descriptor or None
+"""
+
+import copy
+import re
+import sys
+from pathlib import Path
+
+from _config_core import (
+    MarshalNotInitializedError,
+    error_exit,
+    get_skill_description,
+    is_nested_domain,
+    load_config,
+    require_initialized,
+    save_config,
+    success_exit,
+)
+from _config_defaults import (
+    DEFAULT_SYSTEM_DOMAIN,
+    validate_domain_inclusion,
+    validate_domain_invariants,
+)
+from _config_detection import detect_domains
+
+# Direct imports - PYTHONPATH set by executor
+from extension_discovery import (
+    discover_all_extensions,
+    discover_applicable_extensions,
+)
+from marketplace_paths import (
+    iter_project_skill_dirs,
+)
+
+
+def _read_frontmatter_order(path: Path) -> int | None:
+    """Read the YAML frontmatter `order` field from a markdown file.
+
+    Parses `order: <int>` (optionally negative) from the frontmatter block
+    delimited by `---` lines at the start of the file. Returns `None` when the
+    file is missing, has no frontmatter, or the `order` key is absent.
+    """
+    if not path.is_file():
+        return None
+    try:
+        content = path.read_text()
+    except OSError:
+        return None
+    lines = content.split('\n')
+    if not lines or lines[0].strip() != '---':
+        return None
+    end_idx: int | None = None
+    for i in range(1, len(lines)):
+        if lines[i].strip() == '---':
+            end_idx = i
+            break
+    if end_idx is None:
+        return None
+    for line in lines[1:end_idx]:
+        match = re.match(r'^\s*order:\s*(-?\d+)\s*(?:#.*)?$', line.rstrip('\r'))
+        if match:
+            return int(match.group(1))
+    return None
+
+
+def _extract_skill_name(entry: str | dict) -> str:
+    """Extract skill name from a skill entry.
+
+    Skill entries can be plain strings or dicts with skill+description:
+    - String: "pm-dev-java:java-core" -> "pm-dev-java:java-core"
+    - Dict: {"skill": "pm-dev-java:java-core", "description": "..."} -> "pm-dev-java:java-core"
+
+    Args:
+        entry: Skill entry (string or dict)
+
+    Returns:
+        Skill name string
+    """
+    if isinstance(entry, dict):
+        skill = entry.get('skill', '')
+        return str(skill) if skill else ''
+    return entry
+
+
+def _extract_skill_description(entry: str | dict) -> str:
+    """Extract description from a skill entry.
+
+    Args:
+        entry: Skill entry (string or dict)
+
+    Returns:
+        Description string (empty if not available)
+    """
+    if isinstance(entry, dict):
+        desc = entry.get('description', '')
+        return str(desc) if desc else ''
+    return ''
+
+
+def _extract_skill_names(entries: list) -> list[str]:
+    """Extract skill names from a list of skill entries.
+
+    Args:
+        entries: List of skill entries (strings or dicts)
+
+    Returns:
+        List of skill name strings
+    """
+    return [_extract_skill_name(e) for e in entries]
+
+
+def _build_skill_dict_with_descriptions(entries: list) -> dict[str, str]:
+    """Build a dict mapping skill names to descriptions.
+
+    For entries with embedded descriptions, use those.
+    For string-only entries, fetch description from SKILL.md.
+
+    Args:
+        entries: List of skill entries (strings or dicts)
+
+    Returns:
+        Dict mapping skill names to descriptions
+    """
+    result = {}
+    for entry in entries:
+        skill_name = _extract_skill_name(entry)
+        if not skill_name:
+            continue
+        # Use embedded description if available, otherwise fetch from SKILL.md
+        desc = _extract_skill_description(entry)
+        if not desc:
+            desc = get_skill_description(skill_name)
+        result[skill_name] = desc
+    return result
+
+
+# Prefixes owned by dedicated `.claude/skills/` discoveries. A skill dir whose
+# name starts with one of these is surfaced by its own discovery
+# (`_discover_all_recipes` for `recipe-`, `_discover_all_verify_steps` for
+# `verify-step-`, `_discover_all_finalize_steps` for `finalize-step-`, audit
+# recipes for `audit-`) and is NOT domain-attachable. `discover_project_skills()`
+# excludes them so the wizard's domain-attach question does not double-surface a
+# skill another discovery already owns (attaching a recipe/finalize-step/etc. to
+# a domain is a no-op).
+_DEDICATED_PREFIXES = ('recipe-', 'verify-step-', 'finalize-step-', 'audit-')
+
+
+def discover_project_skills() -> list[dict]:
+    """Discover domain-attachable project-level skills from .claude/skills/.
+
+    Scans for SKILL.md files and extracts name + description from frontmatter,
+    excluding any skill dir whose name is owned by a dedicated prefix discovery
+    (``recipe-``, ``verify-step-``, ``finalize-step-``, ``audit-``). The residual
+    is the true domain-attachable set — empty for a well-formed project that holds
+    only prefixed skills.
+
+    Returns:
+        List of dicts: [{notation: "project:{name}", name: str, description: str}]
+    """
+    skills: list[dict] = []
+    seen: set[str] = set()
+    # Iterate the target's project-local-skill roots in priority order; a skill
+    # surfaced under more than one root (OpenCode multi-root) is taken from the
+    # highest-priority root only.
+    for skill_dir in iter_project_skill_dirs():
+        if skill_dir.name.startswith('.') or skill_dir.name in seen:
+            continue
+        # Skip dirs owned by a dedicated prefix discovery — they are not
+        # domain-attachable. Mirrors the `.startswith()` filter shape used by the
+        # sibling discoveries (each of which claims exactly its owning prefix).
+        if skill_dir.name.startswith(_DEDICATED_PREFIXES):
+            continue
+        skill_md = skill_dir / 'SKILL.md'
+        if not skill_md.exists():
+            continue
+
+        seen.add(skill_dir.name)
+        notation = f'project:{skill_dir.name}'
+        description = get_skill_description(notation)
+        # If get_skill_description returns the notation itself, use the name as fallback
+        if description == notation:
+            description = skill_dir.name
+
+        skills.append(
+            {
+                'notation': notation,
+                'name': skill_dir.name,
+                'description': description,
+            }
+        )
+
+    return skills
+
+
+def discover_available_domains(project_root: Path | None = None) -> dict:
+    """Discover domains from extension.py files.
+
+    Args:
+        project_root: Optional project root for applicability check.
+                     If provided, each domain gets an 'applicable' flag.
+
+    Returns dict with 'domains' list. Each domain has:
+        - key, name, description, bundle
+        - has_triage, has_outline
+        - applicable (bool) - True if domain applies to project (when project_root provided)
+    """
+    all_extensions = discover_all_extensions()
+
+    # Get applicable bundles if project_root provided
+    applicable_bundles = set()
+    discovered_modules = []
+    if project_root:
+        applicable_extensions = discover_applicable_extensions(project_root)
+        applicable_bundles = {ext['bundle'] for ext in applicable_extensions}
+        # Collect all modules discovered by build extensions for applies_to_module() checks
+        for app_ext in applicable_extensions:
+            discovered_modules.extend(app_ext.get('discovered_modules', []))
+
+    domains = []
+
+    for ext in all_extensions:
+        module = ext.get('module')
+        if not module:
+            continue
+
+        # Check for domain (has get_skill_domains with domain.key)
+        if hasattr(module, 'get_skill_domains'):
+            try:
+                all_domains = module.get_skill_domains()
+                for domain_info in all_domains:
+                    if not domain_info or not isinstance(domain_info.get('domain'), dict):
+                        continue
+                    domain_data = domain_info['domain']
+                    has_triage = False
+
+                    # Check for extension functions
+                    if hasattr(module, 'provides_triage'):
+                        has_triage = module.provides_triage() is not None
+                    has_outline_skill = False
+                    if hasattr(module, 'provides_outline_skill'):
+                        outline_skill = module.provides_outline_skill()
+                        has_outline_skill = outline_skill is not None
+
+                    has_recipes = False
+                    if hasattr(module, 'provides_recipes'):
+                        recipes = module.provides_recipes()
+                        has_recipes = bool(recipes)
+
+                    domain_entry = {
+                        'key': domain_data.get('key', ''),
+                        'name': domain_data.get('name', ''),
+                        'description': domain_data.get('description', ''),
+                        'bundle': ext['bundle'],
+                        'has_triage': has_triage,
+                        'has_outline_skill': has_outline_skill,
+                        'has_recipes': has_recipes,
+                    }
+
+                    # Add applicability flag if project_root was provided
+                    if project_root:
+                        if ext['bundle'] in applicable_bundles:
+                            domain_entry['applicable'] = True
+                        elif discovered_modules and hasattr(module, 'applies_to_module'):
+                            # Domain-only extensions don't override discover_modules()
+                            # but define applies_to_module() — check against build-discovered modules
+                            domain_entry['applicable'] = any(
+                                module.applies_to_module(m).get('applicable', False) for m in discovered_modules
+                            )
+                        else:
+                            domain_entry['applicable'] = False
+
+                    domains.append(domain_entry)
+            except Exception as e:
+                print(f'Warning: Failed to get domains from {ext["bundle"]}: {e}', file=sys.stderr)
+
+    return {'domains': domains}
+
+
+def load_domain_config_from_bundle(domain_key: str) -> dict | None:
+    """Load domain configuration from bundle's extension.py.
+
+    Only returns bundle reference and workflow_skill_extensions.
+    Profiles are NOT stored in marshal.json - read from extension.py at runtime.
+
+    Args:
+        domain_key: Domain key to look for (e.g., 'java', 'javascript')
+
+    Returns:
+        Domain config dict or None if not found
+    """
+    extensions = discover_all_extensions()
+
+    for ext in extensions:
+        module = ext.get('module')
+        if not module or not hasattr(module, 'get_skill_domains'):
+            continue
+
+        try:
+            # Check all domains (supports multi-domain extensions)
+            all_domains = module.get_skill_domains()
+
+            for domain_info in all_domains:
+                if not domain_info:
+                    continue
+                domain_data = domain_info.get('domain', {})
+                if isinstance(domain_data, dict) and domain_data.get('key') == domain_key:
+                    return convert_extension_to_domain_config(module, domain_info, ext['bundle'])
+        except Exception:
+            continue
+
+    return None
+
+
+def convert_extension_to_domain_config(module, domain_info: dict, bundle_name: str) -> dict:
+    """Convert extension.py data to skill_domains config format.
+
+    Profiles are NOT copied - they're read from extension.py at runtime.
+    Only bundle reference and workflow_skill_extensions are stored in marshal.json.
+
+    Args:
+        module: Loaded extension module
+        domain_info: Result from get_skill_domains()
+        bundle_name: Name of the bundle providing this domain
+
+    Returns:
+        Config dict compatible with marshal.json skill_domains
+    """
+    from typing import Any
+
+    config: dict[str, Any] = {'bundle': bundle_name}
+
+    # Extract extensions from dedicated functions
+    if (
+        hasattr(module, 'provides_triage')
+        or hasattr(module, 'provides_outline_skill')
+        or hasattr(module, 'provides_domain_verb')
+    ):
+        extensions: dict[str, Any] = {}
+        if hasattr(module, 'provides_outline_skill'):
+            outline_skill = module.provides_outline_skill()
+            if outline_skill:
+                config['outline_skill'] = outline_skill
+        if hasattr(module, 'provides_triage'):
+            triage = module.provides_triage()
+            if triage:
+                extensions['triage'] = triage
+        if hasattr(module, 'provides_domain_verb'):
+            domain_verb = module.provides_domain_verb()
+            if domain_verb:
+                extensions[domain_verb['verb']] = domain_verb['notation']
+        if extensions:
+            config['workflow_skill_extensions'] = extensions
+
+    return config
+
+
+def _configured_domains_provide_arch_gate(domain_keys: list[str]) -> bool:
+    """Return True when any extension owning one of ``domain_keys`` declares an arch-gate tool.
+
+    Iterates the discovered extensions once, mapping each to the domain keys it
+    owns via ``get_skill_domains()``. For an extension owning a configured domain,
+    calls the optional ``provides_arch_gate()`` hook (``ExtensionBase`` default
+    ``None``). Returns True as soon as one such extension returns a non-None
+    descriptor; False when none do — the silent-skip default that appends no
+    arch-gate verify-step. The single arch-gate verify-step (``default:verify:arch-gate``)
+    is appended once for the project regardless of how many configured domains
+    declare a tool, so the caller needs only this boolean.
+
+    Args:
+        domain_keys: The configured domain keys to check (the ``domains_configured``
+            set from ``configure``).
+
+    Returns:
+        True when at least one configured domain's extension declares an arch-gate
+        tool via ``provides_arch_gate()``; False otherwise.
+    """
+    wanted = set(domain_keys)
+    if not wanted:
+        return False
+    for ext in discover_all_extensions():
+        module = ext.get('module')
+        if not module or not hasattr(module, 'get_skill_domains') or not hasattr(module, 'provides_arch_gate'):
+            continue
+        try:
+            owned = {
+                d['domain']['key']
+                for d in module.get_skill_domains()
+                if d and isinstance(d.get('domain'), dict) and d['domain'].get('key')
+            }
+        except Exception:
+            continue
+        if not (owned & wanted):
+            continue
+        try:
+            if module.provides_arch_gate() is not None:
+                return True
+        except Exception:
+            continue
+    return False
+
+
+def load_profiles_from_bundle(bundle_name: str, domain_key: str | None = None) -> dict:
+    """Load profiles directly from bundle's extension.py.
+
+    Args:
+        bundle_name: Bundle name (e.g., 'pm-dev-java')
+        domain_key: Optional domain key to match for multi-domain bundles.
+            If provided, finds the domain with this key. If not, uses first domain.
+
+    Returns:
+        Dict with 'profiles' containing core, implementation, etc.
+        Returns empty dict if bundle not found or has no profiles.
+    """
+    extensions = discover_all_extensions()
+
+    for ext in extensions:
+        if ext.get('bundle') != bundle_name:
+            continue
+
+        module = ext.get('module')
+        if not module or not hasattr(module, 'get_skill_domains'):
+            continue
+
+        try:
+            all_domains = module.get_skill_domains()
+            if not all_domains:
+                continue
+            # Match by domain_key if provided (for multi-domain bundles)
+            if domain_key:
+                for d in all_domains:
+                    if d.get('domain', {}).get('key') == domain_key:
+                        return {'profiles': d.get('profiles', {})}
+            return {'profiles': all_domains[0].get('profiles', {})}
+        except Exception:
+            pass
+
+    return {'profiles': {}}
+
+
+def _discover_all_verify_steps() -> list[dict]:
+    """Discover all verify steps from built-in and project sources.
+
+    Sources (in order):
+    1. Built-in steps discovered via ``extension_discovery.find_implementors``
+       on the ``ext-point-build-verify-step`` interface — each implementor's
+       ``canonicals`` list is expanded into ``default:verify:{canonical}`` step
+       IDs in list order, carrying the implementor's ``order`` and ``description``.
+    2. Project verify-step-* skills in .claude/skills/
+
+    Each result dict includes an `order` field (int) or `None` when the source
+    authoritative file/return dict does not declare one. Sorting and collision
+    handling are the caller's responsibility (marshall-steward).
+
+    Returns:
+        List of step dicts with name, description, type, source, order.
+    """
+    # Lazy import — executor sets PYTHONPATH for cross-skill imports.
+    from _config_defaults import _VERIFY_STEP_PREFIX, BUILD_VERIFY_STEP_EXT_POINT
+    from extension_discovery import find_implementors
+
+    all_steps: list[dict] = []
+
+    # Source 1: Built-in steps — discovered via the single find_implementors query
+    # (the SOLE discovery path; there is no parallel constant list). Each
+    # implementor declares a ``canonicals`` list, which expands into one
+    # ``default:verify:{canonical}`` step ID per entry, in list order. The
+    # implementor's ``order`` positions the parameterized doc; the per-step
+    # ``description`` is sourced from the implementor record.
+    built_in = sorted(
+        (rec for rec in find_implementors(BUILD_VERIFY_STEP_EXT_POINT) if rec.get('source') == 'built-in'),
+        key=lambda rec: (rec.get('order', 0), rec.get('name', '')),
+    )
+    for rec in built_in:
+        for canonical in rec.get('canonicals', []):
+            step_name = f'{_VERIFY_STEP_PREFIX}{canonical}'
+            all_steps.append(
+                {
+                    'name': step_name,
+                    'description': rec.get('description') or step_name,
+                    'type': 'built-in',
+                    'source': 'built-in',
+                    'order': rec.get('order'),
+                }
+            )
+
+    # Source 2: Project verify-step-* skills (across the target's layout roots)
+    seen_verify: set[str] = set()
+    for skill_dir in iter_project_skill_dirs():
+        if not skill_dir.name.startswith('verify-step-') or skill_dir.name in seen_verify:
+            continue
+        skill_md = skill_dir / 'SKILL.md'
+        if not skill_md.exists():
+            continue
+
+        seen_verify.add(skill_dir.name)
+        content = skill_md.read_text()
+        description = ''
+        fm_match = re.search(r'^description:\s*(.+)$', content, re.MULTILINE)
+        if fm_match:
+            description = fm_match.group(1).strip()
+
+        step_ref = f'project:{skill_dir.name}'
+        all_steps.append(
+            {
+                'name': step_ref,
+                'description': description or skill_dir.name,
+                'type': 'project',
+                'source': 'project',
+                'order': _read_frontmatter_order(skill_md),
+            }
+        )
+
+    return all_steps
+
+
+def cmd_list_verify_steps(args) -> dict:
+    """List all available verify steps discovered at runtime.
+
+    Sources: built-in + project verify-step-* skills.
+    """
+    all_steps = _discover_all_verify_steps()
+    return success_exit({'steps': all_steps, 'count': len(all_steps)})
+
+
+def cmd_skill_domains(args) -> dict:
+    """Handle skill-domains noun."""
+    try:
+        require_initialized()
+    except MarshalNotInitializedError as e:
+        return error_exit(str(e))
+
+    config = load_config()
+
+    # Verbs that work without skill_domains existing
+    if args.verb not in ('get-available', 'configure'):
+        if 'skill_domains' not in config:
+            return error_exit('skill_domains not configured. Run command /marshall-steward first')
+
+    skill_domains = config.get('skill_domains', {})
+
+    if args.verb == 'list':
+        domains = list(skill_domains.keys())
+        return success_exit({'domains': domains, 'count': len(domains)})
+
+    elif args.verb == 'get':
+        domain = args.domain
+        if domain not in skill_domains:
+            return error_exit(f'Unknown domain: {domain}')
+        domain_config = skill_domains[domain]
+
+        # Check if nested structure
+        if is_nested_domain(domain_config):
+            result = {'domain': domain}
+            # Include bundle reference if present
+            if 'bundle' in domain_config:
+                result['bundle'] = domain_config['bundle']
+            # Include workflow_skill_extensions if present
+            if 'workflow_skill_extensions' in domain_config:
+                result['workflow_skill_extensions'] = domain_config['workflow_skill_extensions']
+            # Include top-level defaults/optionals if present (system domain)
+            if 'defaults' in domain_config:
+                result['defaults'] = domain_config['defaults']
+            if 'optionals' in domain_config:
+                result['optionals'] = domain_config['optionals']
+
+            # Include project_skills if present
+            if 'project_skills' in domain_config:
+                result['project_skills'] = domain_config['project_skills']
+
+            # Surface the per-domain inclusion keys with their absent-by-default
+            # values (always_on false, file_globs []). These drive the
+            # domain-detect always_on / file_globs merge legs.
+            result['always_on'] = domain_config.get('always_on', False)
+            result['file_globs'] = domain_config.get('file_globs', [])
+
+            # Load profiles from extension.py if bundle is present
+            bundle = domain_config.get('bundle')
+            if bundle:
+                ext_data = load_profiles_from_bundle(bundle, domain)
+                profiles = ext_data.get('profiles', {})
+                for profile_name in ['core', 'implementation', 'module_testing', 'integration_testing', 'quality']:
+                    if profile_name in profiles:
+                        result[profile_name] = profiles[profile_name]
+            return success_exit(result)
+        else:
+            # Flat structure (non-nested domain config)
+            return success_exit(
+                {
+                    'domain': domain,
+                    'defaults': domain_config.get('defaults', []),
+                    'optionals': domain_config.get('optionals', []),
+                }
+            )
+
+    elif args.verb == 'get-defaults':
+        domain = args.domain
+        if domain not in skill_domains:
+            return error_exit(f'Unknown domain: {domain}')
+        domain_config = skill_domains[domain]
+        # For nested structure, load core.defaults from extension.py
+        if is_nested_domain(domain_config):
+            bundle = domain_config.get('bundle')
+            if bundle:
+                ext_data = load_profiles_from_bundle(bundle, domain)
+                defaults = ext_data.get('profiles', {}).get('core', {}).get('defaults', [])
+            else:
+                defaults = domain_config.get('defaults', [])
+        else:
+            defaults = domain_config.get('defaults', [])
+        return success_exit({'domain': domain, 'defaults': defaults})
+
+    elif args.verb == 'get-optionals':
+        domain = args.domain
+        if domain not in skill_domains:
+            return error_exit(f'Unknown domain: {domain}')
+        domain_config = skill_domains[domain]
+        # For nested structure, load core.optionals from extension.py
+        if is_nested_domain(domain_config):
+            bundle = domain_config.get('bundle')
+            if bundle:
+                ext_data = load_profiles_from_bundle(bundle, domain)
+                optionals = ext_data.get('profiles', {}).get('core', {}).get('optionals', [])
+            else:
+                optionals = domain_config.get('optionals', [])
+        else:
+            optionals = domain_config.get('optionals', [])
+        return success_exit({'domain': domain, 'optionals': optionals})
+
+    elif args.verb == 'set':
+        domain = args.domain
+        if domain not in skill_domains:
+            return error_exit(f"Unknown domain: {domain}. Use 'add' to create new domain.")
+
+        domain_config = skill_domains[domain]
+        profile = getattr(args, 'profile', None)
+
+        if profile:
+            # Profile modification not supported - profiles come from extension.py
+            return error_exit(
+                'Profile modification not supported. Profiles are defined in bundle extension.py '
+                'and cannot be modified via marshal.json.'
+            )
+        else:
+            # Flat structure update (system domain only)
+            if args.defaults:
+                skill_domains[domain]['defaults'] = args.defaults.split(',')
+            if args.optionals is not None:
+                skill_domains[domain]['optionals'] = args.optionals.split(',') if args.optionals else []
+
+        config['skill_domains'] = skill_domains
+        save_config(config)
+        return success_exit({'domain': domain, 'updated': skill_domains[domain]})
+
+    elif args.verb == 'set-inclusion':
+        domain = args.domain
+        if domain not in skill_domains or not isinstance(skill_domains[domain], dict):
+            return error_exit(f'Unknown domain: {domain}')
+        domain_config = skill_domains[domain]
+
+        always_on = getattr(args, 'always_on', None)
+        file_globs_raw = getattr(args, 'file_globs', None)
+        file_globs = None
+        if file_globs_raw is not None:
+            file_globs = [g.strip() for g in file_globs_raw.split(',') if g.strip()]
+
+        try:
+            validate_domain_inclusion(always_on, file_globs)
+        except ValueError as e:
+            return error_exit(str(e))
+
+        # Each key is written independently: an absent flag leaves the persisted
+        # value untouched (tri-state --always-on / no flag; --file-globs absent).
+        if always_on is not None:
+            domain_config['always_on'] = always_on
+        if file_globs is not None:
+            domain_config['file_globs'] = file_globs
+        skill_domains[domain] = domain_config
+        config['skill_domains'] = skill_domains
+        save_config(config)
+        return success_exit(
+            {
+                'domain': domain,
+                'always_on': domain_config.get('always_on', False),
+                'file_globs': domain_config.get('file_globs', []),
+            }
+        )
+
+    elif args.verb == 'get-extensions':
+        domain = args.domain
+        if domain not in skill_domains:
+            return error_exit(f'Unknown domain: {domain}')
+        domain_config = skill_domains[domain]
+        extensions = domain_config.get('workflow_skill_extensions', {})
+        return success_exit({'domain': domain, 'extensions': extensions})
+
+    elif args.verb == 'set-extensions':
+        domain = args.domain
+        ext_type = args.type
+        skill = args.skill
+        if domain not in skill_domains:
+            return error_exit(f'Unknown domain: {domain}')
+        domain_config = skill_domains[domain]
+        if 'workflow_skill_extensions' not in domain_config:
+            domain_config['workflow_skill_extensions'] = {}
+        domain_config['workflow_skill_extensions'][ext_type] = skill
+        skill_domains[domain] = domain_config
+        config['skill_domains'] = skill_domains
+        save_config(config)
+        return success_exit({'domain': domain, 'type': ext_type, 'skill': skill})
+
+    elif args.verb == 'add':
+        domain = args.domain
+        if domain in skill_domains:
+            return error_exit(f'Domain already exists: {domain}')
+        defaults = args.defaults.split(',') if args.defaults else []
+        optionals = args.optionals.split(',') if args.optionals else []
+        skill_domains[domain] = {'defaults': defaults, 'optionals': optionals}
+        config['skill_domains'] = skill_domains
+        save_config(config)
+        return success_exit({'domain': domain, 'added': skill_domains[domain]})
+
+    elif args.verb == 'validate':
+        domain = args.domain
+        skill = args.skill
+        if domain not in skill_domains:
+            return error_exit(f'Unknown domain: {domain}')
+        domain_config = skill_domains[domain]
+
+        # Handle nested structure
+        if is_nested_domain(domain_config):
+            # Load profiles from extension.py
+            bundle = domain_config.get('bundle')
+            if bundle:
+                ext_data = load_profiles_from_bundle(bundle, domain)
+                profiles = ext_data.get('profiles', {})
+
+                # Collect all defaults and optionals across all profiles
+                all_defaults = []
+                all_optionals = []
+                for key in ['core', 'implementation', 'module_testing', 'integration_testing', 'quality']:
+                    if key in profiles:
+                        all_defaults.extend(profiles[key].get('defaults', []))
+                        all_optionals.extend(profiles[key].get('optionals', []))
+                valid = skill in all_defaults or skill in all_optionals
+                return success_exit(
+                    {
+                        'domain': domain,
+                        'skill': skill,
+                        'valid': valid,
+                        'in_defaults': skill in all_defaults,
+                        'in_optionals': skill in all_optionals,
+                    }
+                )
+            else:
+                # System domain with top-level defaults/optionals
+                all_skills = domain_config.get('defaults', []) + domain_config.get('optionals', [])
+                valid = skill in all_skills
+                return success_exit(
+                    {
+                        'domain': domain,
+                        'skill': skill,
+                        'valid': valid,
+                        'in_defaults': skill in domain_config.get('defaults', []),
+                        'in_optionals': skill in domain_config.get('optionals', []),
+                    }
+                )
+        else:
+            # Flat structure
+            all_skills = domain_config.get('defaults', []) + domain_config.get('optionals', [])
+            valid = skill in all_skills
+            return success_exit(
+                {
+                    'domain': domain,
+                    'skill': skill,
+                    'valid': valid,
+                    'in_defaults': skill in domain_config.get('defaults', []),
+                    'in_optionals': skill in domain_config.get('optionals', []),
+                }
+            )
+
+    elif args.verb == 'detect':
+        detected_keys = detect_domains()  # Returns list of domain keys
+        # Load configs from discovery for detected domains
+        for domain_key in detected_keys:
+            if domain_key not in skill_domains:
+                domain_config = load_domain_config_from_bundle(domain_key)
+                if domain_config:
+                    skill_domains[domain_key] = domain_config
+        save_config(config)
+        return success_exit(
+            {
+                'detected': detected_keys,
+                'count': len(detected_keys),
+                'message': f'Detected domains: {", ".join(detected_keys)}' if detected_keys else 'No domains detected',
+            }
+        )
+
+    elif args.verb == 'get-available':
+        # Use dynamic discovery to find available domains
+        # Pass project root to get applicability flags
+        project_root = Path('.').resolve()
+        discovery = discover_available_domains(project_root)
+
+        result = {'discovered_domains': discovery.get('domains', [])}
+        if 'error' in discovery and discovery['error']:
+            result['error'] = discovery['error']
+
+        return success_exit(result)
+
+    elif args.verb == 'configure':
+        selected_domains = [d.strip() for d in args.domains.split(',') if d.strip()]
+
+        # Preserve existing per-domain attachments before clearing.
+        # project_skills and active_profiles are restored only for domains that
+        # still exist after reconfigure (mirroring project_skills semantics).
+        existing_project_skills: dict[str, list] = {}
+        existing_domain_active_profiles: dict[str, list] = {}
+        existing_domain_inclusion: dict[str, dict] = {}
+        for domain_key, domain_config in skill_domains.items():
+            if isinstance(domain_config, dict):
+                if 'project_skills' in domain_config:
+                    existing_project_skills[domain_key] = domain_config['project_skills']
+                if 'active_profiles' in domain_config:
+                    existing_domain_active_profiles[domain_key] = domain_config['active_profiles']
+                inclusion = {}
+                if 'always_on' in domain_config:
+                    inclusion['always_on'] = domain_config['always_on']
+                if 'file_globs' in domain_config:
+                    inclusion['file_globs'] = domain_config['file_globs']
+                if inclusion:
+                    existing_domain_inclusion[domain_key] = inclusion
+
+        # Preserve top-level skill_domains siblings that are NOT domain configs.
+        # The global active_profiles list lives as a sibling of the domain
+        # entries and must survive reconfigure unconditionally — it is not
+        # domain-scoped. (The build_map file-to-build contract no longer lives
+        # under skill_domains; it is a top-level build.map block, so it is
+        # unaffected by reconfigure.)
+        existing_global_active_profiles = skill_domains.get('active_profiles')
+
+        # Clear existing domains and start fresh with only selected ones
+        skill_domains = {}
+
+        # Restore top-level siblings (global active_profiles)
+        if existing_global_active_profiles is not None:
+            skill_domains['active_profiles'] = existing_global_active_profiles
+
+        # Always add system domain
+        skill_domains['system'] = copy.deepcopy(DEFAULT_SYSTEM_DOMAIN)
+        validate_domain_invariants(skill_domains['system'])
+
+        # Apply domain config for each selected domain from bundle extension.py
+        domains_configured = []
+        domains_not_found = []
+
+        for domain_key in selected_domains:
+            # Load from bundle extension.py (returns converted config directly)
+            domain_config = load_domain_config_from_bundle(domain_key)
+            if domain_config:
+                skill_domains[domain_key] = domain_config
+                domains_configured.append(domain_key)
+            else:
+                domains_not_found.append(domain_key)
+
+        # Restore project_skills to domains that still exist
+        for domain_key, ps in existing_project_skills.items():
+            if domain_key in skill_domains:
+                skill_domains[domain_key]['project_skills'] = ps
+
+        # Restore per-domain active_profiles to domains that still exist
+        for domain_key, ap in existing_domain_active_profiles.items():
+            if domain_key in skill_domains:
+                skill_domains[domain_key]['active_profiles'] = ap
+
+        # Restore operator-set always_on / file_globs inclusion keys to domains
+        # that still exist (mirrors the project_skills / active_profiles blocks).
+        for domain_key, inclusion in existing_domain_inclusion.items():
+            if domain_key in skill_domains:
+                skill_domains[domain_key].update(inclusion)
+
+        config['skill_domains'] = skill_domains
+
+        # Persist verify steps to plan.phase-5-execute.verification_steps as an
+        # id-keyed map: built-in steps, each keyed to its nested param object.
+        # Verification steps own no params, so every value is the empty object
+        # `{}`. Key insertion order is the execution order — this seeds the
+        # keyed-map shape that the manifest composer's keyed-map-only reader
+        # (`_read_marshal_phase_steps`, no list fallback) consumes. The built-in
+        # step set is sourced from the single `_seed_verify_steps()` discovery
+        # query (expanding each ext-point-build-verify-step implementor's `canonicals`
+        # list into `default:verify:{canonical}` IDs) — there is no parallel
+        # constant list.
+        from _config_defaults import _seed_verify_steps
+
+        plan_config = config.get('plan', {})
+        execute_section = plan_config.get('phase-5-execute', {})
+        verification_steps = _seed_verify_steps()
+        # Append the domain-conditional arch-gate verify-step for the project when
+        # any configured domain's extension declares an arch-gate tool via the
+        # optional provides_arch_gate() hook. Domains returning None append nothing
+        # (the silent-skip default). The keyed map de-dups by key, so the append is
+        # idempotent across re-configures. `default:verify:arch-gate` is resolved
+        # through the same parameterized canonical_verify.md doc via
+        # `architecture resolve --command arch-gate`.
+        if _configured_domains_provide_arch_gate(domains_configured):
+            verification_steps['default:verify:arch-gate'] = {}
+        execute_section['verification_steps'] = verification_steps
+        plan_config['phase-5-execute'] = execute_section
+        config['plan'] = plan_config
+
+        save_config(config)
+
+        result = {
+            'system_domain': 'configured',
+            'domains_configured': len(domains_configured),
+            'domains': ','.join(domains_configured),
+        }
+        if domains_not_found:
+            result['domains_not_found'] = ','.join(domains_not_found)
+
+        return success_exit(result)
+
+    elif args.verb == 'discover-project':
+        skills = discover_project_skills()
+        return success_exit(
+            {
+                'skills': skills,
+                'count': len(skills),
+            }
+        )
+
+    elif args.verb == 'attach-project':
+        domain = args.domain
+        if domain not in skill_domains:
+            return error_exit(f'Unknown domain: {domain}')
+
+        skills_input = [s.strip() for s in args.skills.split(',') if s.strip()]
+
+        # Validate notation
+        invalid = [s for s in skills_input if not s.startswith('project:')]
+        if invalid:
+            return error_exit(f'Invalid notation (must start with project:): {", ".join(invalid)}')
+
+        domain_config = skill_domains[domain]
+        existing = domain_config.get('project_skills', [])
+
+        # Merge without duplicates, preserve order
+        merged = list(existing)
+        for skill in skills_input:
+            if skill not in merged:
+                merged.append(skill)
+
+        domain_config['project_skills'] = merged
+        skill_domains[domain] = domain_config
+        config['skill_domains'] = skill_domains
+        save_config(config)
+
+        return success_exit(
+            {
+                'domain': domain,
+                'project_skills': merged,
+                'added': len(merged) - len(existing),
+            }
+        )
+
+    elif args.verb == 'active-profiles':
+        ap_verb = getattr(args, 'ap_verb', None)
+
+        if ap_verb is None:
+            # Show current active_profiles config
+            ap_result: dict = {}
+            if 'active_profiles' in skill_domains:
+                ap_result['global'] = skill_domains['active_profiles']
+            for dk, dc in skill_domains.items():
+                if isinstance(dc, dict) and 'active_profiles' in dc:
+                    ap_result[dk] = dc['active_profiles']
+            if not ap_result:
+                ap_result['status'] = 'not_configured'
+            return success_exit(ap_result)
+
+        elif ap_verb == 'set':
+            profiles_list = [p.strip() for p in args.profiles.split(',') if p.strip()]
+            domain = getattr(args, 'domain', None)
+            if domain:
+                if domain not in skill_domains:
+                    return error_exit(f'Unknown domain: {domain}')
+                if not isinstance(skill_domains[domain], dict):
+                    return error_exit(f'Domain {domain} is not a dict')
+                skill_domains[domain]['active_profiles'] = profiles_list
+            else:
+                skill_domains['active_profiles'] = profiles_list
+            config['skill_domains'] = skill_domains
+            save_config(config)
+            return success_exit(
+                {
+                    'scope': domain or 'global',
+                    'active_profiles': profiles_list,
+                }
+            )
+
+        elif ap_verb == 'remove':
+            domain = getattr(args, 'domain', None)
+            if domain:
+                if domain not in skill_domains:
+                    return error_exit(f'Unknown domain: {domain}')
+                if isinstance(skill_domains[domain], dict):
+                    skill_domains[domain].pop('active_profiles', None)
+            else:
+                skill_domains.pop('active_profiles', None)
+            config['skill_domains'] = skill_domains
+            save_config(config)
+            return success_exit({'scope': domain or 'global', 'removed': True})
+
+    return error_exit('Unknown skill-domains verb')
+
+
+### Resolution and discovery commands in _cmd_skill_resolution.py ###

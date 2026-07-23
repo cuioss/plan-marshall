@@ -1,0 +1,26 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "skills": {
+    "paths": [
+      "./skill"
+    ]
+  },
+  "agent": {
+    "execution-context": {},
+    "execution-context-level-1": {},
+    "execution-context-level-2": {},
+    "execution-context-level-3": {},
+    "execution-context-level-4": {},
+    "execution-context-level-5": {},
+    "execution-context-level-6": {},
+    "execution-context-level-7": {},
+    "execution-context-reader": {},
+    "execution-context-reader-level-1": {},
+    "execution-context-reader-level-2": {},
+    "execution-context-reader-level-3": {},
+    "execution-context-reader-level-4": {},
+    "execution-context-reader-level-5": {},
+    "execution-context-reader-level-6": {},
+    "execution-context-reader-level-7": {}
+  }
+}

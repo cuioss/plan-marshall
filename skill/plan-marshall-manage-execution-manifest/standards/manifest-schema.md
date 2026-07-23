@@ -1,0 +1,147 @@
+# Execution Manifest Schema
+
+The execution manifest is the single source of truth for which Phase 5
+verification steps and which Phase 6 finalize steps a plan runs. It is
+composed by `phase-4-plan` (Step 8b) and persisted to
+`.plan/local/plans/{plan_id}/execution.toon`.
+
+## Schema (TOON)
+
+```toon
+plan_id: {plan_id}
+manifest_version: 1
+phase_5:
+  early_terminate: true | false
+  verification_steps[N]:
+    - <step-id>
+    ...
+  step_execution_tier[N]{step_id,tier}:
+    <step-id>,per_task | orchestrator
+    ...
+  step_params:
+    <step-id>: { <param>: <value>, ... }
+    ...
+phase_6:
+  steps[N]:
+    - <step-id>
+    ...
+  step_params:
+    <step-id>: { <param>: <value>, ... }
+    ...
+```
+
+The in-manifest `verification_steps` / `steps` arrays carry the ordered step-id list (a `list[str]`); the sibling `step_params` map carries each selected step's resolved per-step params alongside it, keyed by the same (bare) step id.
+
+`phase_5.step_execution_tier` is an **advisory** compose-time snapshot of the per-step execution tier: a `{step_id, tier}` record list stamped by `compose()` for every `phase_5.verification_steps` entry, where `tier` is `per_task` (the step fit inside the Bash ceiling when the plan was composed) or `orchestrator` (it exceeded the ceiling, so the orchestrator's `await-long-running` seam owns it, never the leaf). An absent or unresolved tier defaults to `per_task`.
+
+The stamp is **not the routing authority**. Its input — `bash_timeout_seconds` — is computed from the adaptive learned build duration, which every intervening build updates, so a ceiling-adjacent step's tier legitimately changes between compose and execute. The leaf re-resolves the tier live when it runs the step and routes on that verdict; the stamp serves planning and observability. See [decision-rules.md](decision-rules.md) § "execution_tier Stamping" and [`../../phase-5-execute/standards/canonical_verify.md`](../../phase-5-execute/standards/canonical_verify.md) § Workflow.
+
+`<step-id>` notation:
+
+- **Built-in (`default:` prefix)** — phase-6 default steps documented
+  in [`../../phase-6-finalize/standards/required-steps.md`](../../phase-6-finalize/standards/required-steps.md).
+  The `default:` prefix is optional in the manifest — both `push`
+  and `default:push` resolve to the same step.
+- **Project (`project:` prefix)** — project-local SKILL.md under
+  `.claude/skills/{name}/`.
+- **Skill (`bundle:skill` notation)** — extension-contributed
+  finalize steps registered via the
+  `plan-marshall:extension-api/standards/ext-point-execution-context-workflow`
+  contract.
+
+## `phase_6.steps` is the lane-resolved set
+
+The persisted `phase_6.steps` array is the **execution-profile-resolved** finalize-step set, not the raw configured candidate list. `compose` reads the chosen posture from `status.metadata.execution_profile` (absent → `full` → no pruning) and applies the lane cutoff over each element's `lane:` frontmatter block (`class` / `tier` / `cost_size`) — the contract is owned by [`../../extension-api/standards/ext-point-lane-element.md`](../../extension-api/standards/ext-point-lane-element.md). The resolution rules, the twice-compose timing, and the q-gate / derived-state invariants are documented in [decision-rules.md](decision-rules.md) § "Execution-profile lane resolution". Because the same `lanes preview` projection feeds both the `phase-1-init` posture dialogue and this composed manifest, the previewed step set and the executed step set cannot diverge for the config-only part.
+
+## `step_params` — per-step param snapshot + per-plan override
+
+`phase_5.step_params` and `phase_6.step_params` are id-keyed maps (one entry per SELECTED step, keyed by the bare in-manifest step id) carrying each step's resolved per-step param object. They implement the **plan-local tier** of the two-tier source model:
+
+- **Compose-time snapshot** — `compose` reads each selected step's param object from the marshal.json keyed map (`plan.phase-{5,6}-{execute,finalize}.{verification_steps,steps}['{step}']`) and snapshots it into the manifest body. The snapshot is taken at the same write time as the step list (the write-time-snapshot model). marshal.json is the compose-time default; the manifest is the plan-local runtime source.
+- **Per-plan override** — `manage-execution-manifest step-params set --step-id {id} --param {k} --value {v}` writes an override into the manifest's `step_params` for that step. A subsequent `step-params get` returns the overridden value — the manifest value wins over the marshal.json default for the remainder of the plan.
+- **Runtime read** — phase-5/6 consumers read params via `manage-execution-manifest step-params get --phase {5-execute|6-finalize} --step-id {id}`, returning `{phase, step_id, params}`. This replaces per-field `manage-config get --field {sonar_*|review_bot_buffer_seconds|pr_merge_strategy|…}` reads of step-owned params.
+
+A step with no marshal-side params (e.g. a verify step) snapshots as the empty object `{}`. Only steps that survive selection into the manifest step list are snapshotted.
+
+**Key-normalization invariant for the id-keyed accessor family.** The `step_params` map is keyed by the **bare** step id — the `default:` prefix is stripped before lookup, so `push` and `default:push` resolve to the same entry (the same normalization the step-id notation applies above). Every member of the id-keyed accessor family (`step-params get`, `step-params set`, `record-step`, and any future verb that keys into this map) MUST apply this SAME key-normalization before reading or writing. A newly-added accessor that keys the map by the raw, un-normalized step id silently misses the entry written under the bare key (or writes a duplicate entry under the prefixed key), so a `default:`-prefixed caller and a bare caller diverge. When adding a member to this id-keyed family, normalize the incoming step id the same way the existing members do — the normalization is a property of the family, not of any single verb.
+
+**Finalize ceremony-gate `lane` overrides and step-owned escape hatches.** The four finalize ceremony gates — `qgate`, `self_review`, `simplify`, `security_audit` — are each governed by their owning step's per-element `lane` override (`steps.<step>.lane` ∈ `off`/`minimal`/`auto`) in marshal.json's `phase-6-finalize.steps` map: `pre-push-quality-gate` (qgate), `default:pre-submission-self-review` (self_review), `default:finalize-step-simplify` (simplify), `default:finalize-step-security-audit` (security_audit). The `lane` override snapshots into `phase_6.step_params[{owning-step}]` alongside the step's other params whenever that step survives selection, and the composer's finalize-selection ceremony transform reads it at compose time directly from the owning step's param object (mapping `off→never`, `minimal→always`, `auto`/absent`→auto`), NOT from a flat phase-level sibling — there is no flat `plan.phase-6-finalize.qgate` sibling. The `drop_review_on_scope_gate` escape hatch (under `default:pre-submission-self-review`) is likewise a step-owned param folded into its owning step's nested object.
+
+## Step ownership — `orchestrator-owned` vs `leaf-dispatchable`
+
+Every finalize step carries a declared **owner** classifying which execution
+context may run it. The two values are the closed vocabulary
+`VALID_STEP_OWNERS` in `scripts/_manifest_core.py`:
+
+- **`orchestrator-owned`** — the step sub-dispatches (it issues its own `Task:`
+  dispatches — an LLM cognitive-review pass, a simplify sweep, etc.). A
+  dispatched `execution-context` leaf has NO Task tool and therefore CANNOT run
+  it; the main-context orchestrator MUST own it.
+- **`leaf-dispatchable`** — a self-contained script or inline workflow the
+  orchestrator MAY hand to a dispatched leaf.
+
+The owner is a deterministic property of the step, resolved by `owner_of(step_id)`
+in `_manifest_core.py` against the `ORCHESTRATOR_OWNED_STEPS` registry (the
+sub-dispatching finalize steps: `finalize-step-plugin-doctor`,
+`pre-submission-self-review`, `automated-review`,
+`finalize-step-simplify`). The classifier strips the leading `default:` prefix
+and, for project-local steps, the `project:` prefix before the membership test —
+`project:finalize-step-plugin-doctor` and a bare `finalize-step-plugin-doctor`
+classify identically. Any step not in the registry defaults to
+`DEFAULT_STEP_OWNER` (`leaf-dispatchable`), matching the de-facto
+pre-declaration behaviour.
+
+Declaring the owner makes routing **deterministic instead of
+discovered-by-failure**, and — because the `mark-step-done` obligation travels
+to the ACTUAL owner — closes the recurring omitted-bookkeeping wart where the
+wrong context ran a step and lost its step-done marker.
+
+**Canonicalized mark-step-done key contract.** The `mark-step-done` boundary
+(`manage-status/scripts/_cmd_mark_step.py`) canonicalizes the incoming `--step`
+key by stripping a leading `default:` prefix BEFORE recording it, so the
+recorded key always equals the bare manifest key the dispatcher reads back.
+This is the write-side complement of the key-normalization invariant the id-keyed
+accessor family already applies on the read side (see § "`step_params` — per-step
+param snapshot" above): a `default:`-prefixed and a bare caller record under the
+SAME bare key, eliminating the `step_record_mismatched_key` orphans (both
+`default:push` and `push` reconcile to `push`).
+
+## Default phase-6 step set
+
+Composed from `DEFAULT_PHASE_6_STEPS` in
+`scripts/manage-execution-manifest.py`. The canonical default order:
+
+```text
+push
+create-pr
+ci-verify
+automated-review
+sonar-roundtrip
+lessons-capture
+branch-cleanup
+archive-plan
+```
+
+`ci-verify` sits between `create-pr` and `automated-review` so CI
+verdicts are triaged before the consumer steps that depend on them.
+
+## Per-producer dispatch fan-out
+
+`ci-verify` is a deterministic finalize-step SCRIPT (`scripts/ci_verify.py`),
+NOT a dispatched workflow: on GREEN CI it marks the step done with ZERO
+dispatch, and only on RED CI does it file one taxonomy finding per failing
+check and return a per-producer needs-triage signal so the dispatcher runs the
+`verification-feedback` triage once per producer string (seven possible
+producers: `ci-verify-{build,policy,timeout,cancelled,action-required,stale,
+missing}`). The manifest validator MUST NOT double-count that red-CI-only
+per-producer fan-out — the producers are a runtime detail of the deterministic
+classifier, not separate manifest entries. The manifest contains exactly ONE
+`ci-verify` row regardless of how many producer strings the step fans out into
+at runtime.
+
+## Validation
+
+`manage-execution-manifest validate-loadable` checks that every step
+named in `phase_6.steps` resolves to a readable standards file under
+`phase-6-finalize/standards/{step}.md`. For `ci-verify`, the
+standards file is [`../../phase-6-finalize/standards/ci-verify.md`](../../phase-6-finalize/standards/ci-verify.md).

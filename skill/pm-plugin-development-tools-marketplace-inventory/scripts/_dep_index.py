@@ -1,0 +1,504 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
+"""
+Dependency index building and querying for resolve-dependencies.py.
+
+Provides functions to:
+- Discover all components in marketplace
+- Build a dependency index from all components
+- Query forward and reverse dependencies
+- Detect circular dependencies
+"""
+
+import ast
+import re
+from collections import defaultdict
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+from _dep_detection import (
+    ComponentId,
+    Dependency,
+    DependencyType,
+    detect_all_dependencies,
+    extract_frontmatter,
+)
+from marketplace_bundles import resolve_bundles_root
+from marketplace_paths import get_bundle_cache_roots
+
+# Constants for path discovery
+MARKETPLACE_BUNDLES_PATH = 'marketplace/bundles'
+CLAUDE_DIR = '.claude'
+
+
+class AstCache:
+    """Parse-once cache of ``ast.parse`` results for ``.py`` files.
+
+    The index substrate indexes frontmatter; the parsed Python AST is the one
+    piece it does not provide. This cache memoizes ``ast.parse`` so each file is
+    read and parsed at most once per scan run: repeated ``get_tree`` calls for
+    the same path return the identical cached ``ast.Module`` object (or ``None``
+    when the file is unreadable or fails to parse — the negative result is
+    cached too, so a bad file is never re-parsed). ``parse_count`` records how
+    many successful ``ast.parse`` calls ran, letting callers assert the
+    parse-once invariant.
+    """
+
+    def __init__(self) -> None:
+        self._trees: dict[str, ast.Module | None] = {}
+        self.parse_count = 0
+
+    def get_tree(self, file_path: Path) -> ast.Module | None:
+        """Return the cached AST for ``file_path``, parsing it on first request.
+
+        Reads the file as UTF-8 and parses with ``filename=str(file_path)`` —
+        byte-identical to the per-analyzer ``ast.parse`` calls this cache
+        replaces. ``None`` is returned and cached for unreadable or unparseable
+        files so the same path is never processed twice.
+        """
+        key = str(file_path)
+        if key in self._trees:
+            return self._trees[key]
+        tree = self._parse(file_path)
+        self._trees[key] = tree
+        return tree
+
+    def _parse(self, file_path: Path) -> ast.Module | None:
+        try:
+            source = file_path.read_text(encoding='utf-8')
+        except (OSError, UnicodeDecodeError):
+            return None
+        try:
+            tree = ast.parse(source, filename=str(file_path))
+        except SyntaxError:
+            return None
+        self.parse_count += 1
+        return tree
+
+
+@dataclass
+class ComponentInfo:
+    """Information about a discovered component."""
+
+    component_id: ComponentId
+    file_path: Path
+    frontmatter: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class DependencyIndex:
+    """Index of all dependencies between components."""
+
+    components: dict[str, ComponentInfo] = field(default_factory=dict)
+    forward_deps: dict[str, list[Dependency]] = field(default_factory=lambda: defaultdict(list))
+    reverse_deps: dict[str, list[Dependency]] = field(default_factory=lambda: defaultdict(list))
+    implements_index: dict[str, list[str]] = field(default_factory=lambda: defaultdict(list))
+
+    def add_component(self, component: ComponentInfo) -> None:
+        """Add a component to the index."""
+        key = component.component_id.to_notation()
+        self.components[key] = component
+
+    def add_dependency(self, dep: Dependency) -> None:
+        """Add a dependency to the index."""
+        source_key = dep.source.to_notation()
+        target_key = dep.target.to_notation()
+
+        self.forward_deps[source_key].append(dep)
+        self.reverse_deps[target_key].append(dep)
+
+        # Track implements relationships specially
+        if dep.dep_type == DependencyType.IMPLEMENTS:
+            self.implements_index[target_key].append(source_key)
+
+    def get_forward_deps(self, notation: str) -> list[Dependency]:
+        """Get direct dependencies of a component."""
+        return self.forward_deps.get(notation, [])
+
+    def get_reverse_deps(self, notation: str) -> list[Dependency]:
+        """Get components that depend on this component."""
+        return self.reverse_deps.get(notation, [])
+
+    def get_implementations(self, interface_notation: str) -> list[str]:
+        """Get all components implementing an interface."""
+        return self.implements_index.get(interface_notation, [])
+
+    def resolve_transitive_deps(
+        self,
+        notation: str,
+        max_depth: int = 10,
+        dep_types: set[DependencyType] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Resolve transitive dependencies.
+
+        Args:
+            notation: Component notation to resolve
+            max_depth: Maximum depth to traverse
+            dep_types: Filter to specific dependency types
+
+        Returns:
+            List of dicts with target, depth, via fields
+        """
+        result: list[dict[str, Any]] = []
+        visited: set[str] = {notation}
+        queue: list[tuple[str, int, str]] = [(notation, 0, '')]
+
+        while queue:
+            current, depth, via = queue.pop(0)
+            if depth >= max_depth:
+                continue
+
+            for dep in self.forward_deps.get(current, []):
+                if dep_types and dep.dep_type not in dep_types:
+                    continue
+
+                target_key = dep.target.to_notation()
+                if target_key not in visited:
+                    visited.add(target_key)
+                    new_via = current if depth > 0 else ''
+                    result.append(
+                        {
+                            'target': target_key,
+                            'depth': depth + 1,
+                            'via': new_via,
+                        }
+                    )
+                    queue.append((target_key, depth + 1, current))
+
+        return result
+
+    def detect_circular_deps(self) -> list[list[str]]:
+        """Detect circular dependencies.
+
+        Returns:
+            List of cycles, where each cycle is a list of component notations
+        """
+        cycles: list[list[str]] = []
+        visited: set[str] = set()
+        rec_stack: set[str] = set()
+
+        def dfs(node: str, path: list[str]) -> None:
+            visited.add(node)
+            rec_stack.add(node)
+            path.append(node)
+
+            for dep in self.forward_deps.get(node, []):
+                target = dep.target.to_notation()
+                if target not in visited:
+                    dfs(target, path.copy())
+                elif target in rec_stack:
+                    # Found a cycle
+                    cycle_start = path.index(target)
+                    cycle = path[cycle_start:] + [target]
+                    # Normalize cycle to avoid duplicates
+                    min_idx = cycle.index(min(cycle))
+                    normalized = cycle[min_idx:-1] + cycle[:min_idx] + [cycle[min_idx]]
+                    if normalized not in cycles:
+                        cycles.append(normalized)
+
+            rec_stack.remove(node)
+
+        for component in self.components:
+            if component not in visited:
+                dfs(component, [])
+
+        return cycles
+
+
+def discover_components(base_path: Path) -> list[ComponentInfo]:
+    """Discover all components in a marketplace directory.
+
+    Args:
+        base_path: Path to marketplace/bundles or similar
+
+    Returns:
+        List of discovered components
+    """
+    components: list[ComponentInfo] = []
+
+    # Find all bundles (directories with .claude-plugin/plugin.json)
+    for plugin_json in base_path.rglob('.claude-plugin/plugin.json'):
+        bundle_dir = plugin_json.parent.parent
+        bundle_name = _extract_bundle_name(bundle_dir)
+
+        # Discover agents
+        agents_dir = bundle_dir / 'agents'
+        if agents_dir.is_dir():
+            for agent_file in agents_dir.glob('*.md'):
+                component_id = ComponentId(
+                    bundle=bundle_name,
+                    component_type='agent',
+                    name=agent_file.stem,
+                )
+                content = agent_file.read_text()
+                frontmatter = extract_frontmatter(content).fields
+                components.append(
+                    ComponentInfo(
+                        component_id=component_id,
+                        file_path=agent_file,
+                        frontmatter=frontmatter,
+                    )
+                )
+
+        # Discover commands
+        commands_dir = bundle_dir / 'commands'
+        if commands_dir.is_dir():
+            for command_file in commands_dir.glob('*.md'):
+                component_id = ComponentId(
+                    bundle=bundle_name,
+                    component_type='command',
+                    name=command_file.stem,
+                )
+                content = command_file.read_text()
+                frontmatter = extract_frontmatter(content).fields
+                components.append(
+                    ComponentInfo(
+                        component_id=component_id,
+                        file_path=command_file,
+                        frontmatter=frontmatter,
+                    )
+                )
+
+        # Discover skills and scripts
+        skills_dir = bundle_dir / 'skills'
+        if skills_dir.is_dir():
+            for skill_md in skills_dir.glob('*/SKILL.md'):
+                skill_dir = skill_md.parent
+                skill_name = skill_dir.name
+
+                # Add skill
+                content = skill_md.read_text()
+                frontmatter = extract_frontmatter(content).fields
+                component_id = ComponentId(
+                    bundle=bundle_name,
+                    component_type='skill',
+                    name=skill_name,
+                )
+                components.append(
+                    ComponentInfo(
+                        component_id=component_id,
+                        file_path=skill_md,
+                        frontmatter=frontmatter,
+                    )
+                )
+
+                # Add scripts (excluding private modules)
+                scripts_dir = skill_dir / 'scripts'
+                if scripts_dir.is_dir():
+                    for script_file in scripts_dir.glob('*.py'):
+                        # Skip private modules (underscore prefix)
+                        if script_file.name.startswith('_'):
+                            continue
+                        script_id = ComponentId(
+                            bundle=bundle_name,
+                            component_type='script',
+                            name=script_file.stem,
+                            parent_skill=skill_name,
+                        )
+                        components.append(
+                            ComponentInfo(
+                                component_id=script_id,
+                                file_path=script_file,
+                                frontmatter={},
+                            )
+                        )
+
+                    for script_file in scripts_dir.glob('*.sh'):
+                        if script_file.name.startswith('_'):
+                            continue
+                        script_id = ComponentId(
+                            bundle=bundle_name,
+                            component_type='script',
+                            name=script_file.stem,
+                            parent_skill=skill_name,
+                        )
+                        components.append(
+                            ComponentInfo(
+                                component_id=script_id,
+                                file_path=script_file,
+                                frontmatter={},
+                            )
+                        )
+
+    return components
+
+
+def _extract_bundle_name(bundle_dir: Path) -> str:
+    """Extract bundle name, handling versioned plugin-cache structure.
+
+    For versioned structure (plugin-cache): .../plan-marshall/0.1-BETA/ -> "plan-marshall"
+    For non-versioned structure (marketplace): .../plan-marshall/ -> "plan-marshall"
+    """
+    name = bundle_dir.name
+    # If name looks like a version, use parent name
+    if re.match(r'^\d+\.\d+', name):
+        return bundle_dir.parent.name
+    return name
+
+
+# Sub-document directories under a skill that hold markdown reference material.
+SKILL_SUBDOC_DIRS = ('references', 'standards', 'workflow', 'templates')
+
+
+@dataclass
+class SkillFile:
+    """An enumerated file belonging to a skill (markdown or script).
+
+    ``kind`` is one of ``skill_md`` (the skill's SKILL.md), ``subdoc`` (a markdown
+    sub-document under references/standards/workflow/templates), or ``script`` (a
+    ``.py``/``.sh`` file under ``scripts/`` — private ``_``-prefixed modules
+    included). Downstream framework passes (AST cache, single-pass runner) consume
+    this enumeration instead of re-globbing the bundle tree.
+    """
+
+    bundle: str
+    skill: str
+    kind: str
+    file_path: Path
+
+
+def enumerate_skill_files(base_path: Path) -> list[SkillFile]:
+    """Enumerate every skill SKILL.md, markdown sub-document, and script file.
+
+    Walks each bundle's ``skills/`` tree once and returns the full file set the
+    plugin-doctor framework needs: the skill definition, its sub-documents, and
+    its scripts (including private ``_``-prefixed Python modules). Pure
+    enumeration — no parsing — so callers layer their own frontmatter/AST passes.
+    """
+    files: list[SkillFile] = []
+
+    for plugin_json in sorted(base_path.rglob('.claude-plugin/plugin.json')):
+        bundle_dir = plugin_json.parent.parent
+        bundle_name = _extract_bundle_name(bundle_dir)
+
+        skills_dir = bundle_dir / 'skills'
+        if not skills_dir.is_dir():
+            continue
+
+        for skill_md in sorted(skills_dir.glob('*/SKILL.md')):
+            skill_dir = skill_md.parent
+            skill_name = skill_dir.name
+
+            files.append(SkillFile(bundle_name, skill_name, 'skill_md', skill_md))
+
+            for subdoc_dir_name in SKILL_SUBDOC_DIRS:
+                subdoc_dir = skill_dir / subdoc_dir_name
+                if subdoc_dir.is_dir():
+                    for md_file in sorted(subdoc_dir.rglob('*.md')):
+                        files.append(SkillFile(bundle_name, skill_name, 'subdoc', md_file))
+
+            scripts_dir = skill_dir / 'scripts'
+            if scripts_dir.is_dir():
+                for script_file in sorted(scripts_dir.glob('*.py')):
+                    files.append(SkillFile(bundle_name, skill_name, 'script', script_file))
+                for script_file in sorted(scripts_dir.glob('*.sh')):
+                    files.append(SkillFile(bundle_name, skill_name, 'script', script_file))
+
+    return files
+
+
+def build_dependency_index(
+    base_path: Path,
+    dep_types: set[DependencyType] | None = None,
+) -> DependencyIndex:
+    """Build a complete dependency index from a marketplace directory.
+
+    Args:
+        base_path: Path to marketplace/bundles or similar
+        dep_types: Filter to specific dependency types
+
+    Returns:
+        Populated DependencyIndex
+    """
+    index = DependencyIndex()
+
+    # Discover all components
+    components = discover_components(base_path)
+
+    # Add components to index
+    for component in components:
+        index.add_component(component)
+
+    # Detect dependencies for each component
+    for component in components:
+        deps = detect_all_dependencies(
+            component.file_path,
+            component.component_id,
+            dep_types,
+        )
+        for dep in deps:
+            # Mark as unresolved if target not in index
+            target_key = dep.target.to_notation()
+            if target_key not in index.components:
+                dep.resolved = False
+            index.add_dependency(dep)
+
+    return index
+
+
+def _first_existing_bundle_cache_root() -> Path | None:
+    """Return the first deployed-bundle cache root that exists on disk, else None.
+
+    Routes through the platform-runtime ``layout bundle-cache-root`` op (via
+    ``marketplace_paths.get_bundle_cache_roots``), so deployed-bundle discovery
+    covers both the Claude ``~/.claude/plugins/cache/plan-marshall`` cache root
+    and the OpenCode user-global skill roots. The literal Claude cache subpath
+    is no longer hardcoded here.
+    """
+    for root in get_bundle_cache_roots():
+        candidate = Path(root).expanduser()
+        if candidate.is_dir():
+            return candidate
+    return None
+
+
+def get_base_path(scope: str) -> Path:
+    """Determine base path based on scope.
+
+    Args:
+        scope: One of 'auto', 'marketplace', 'plugin-cache', 'project'
+
+    Returns:
+        Path to the base directory
+
+    Raises:
+        FileNotFoundError: If the specified scope cannot be found
+    """
+    # Script-relative path to bundles root, validated by anchor helper.
+    marketplace_from_script = resolve_bundles_root(Path(__file__))
+
+    if scope == 'auto':
+        # Try marketplace first
+        if (Path.cwd() / MARKETPLACE_BUNDLES_PATH).is_dir():
+            return Path.cwd() / MARKETPLACE_BUNDLES_PATH
+        if marketplace_from_script.is_dir():
+            return marketplace_from_script
+        # Fall back to the deployed-bundle cache (target-aware roots).
+        cache = _first_existing_bundle_cache_root()
+        if cache is not None:
+            return cache
+        raise FileNotFoundError(f'Neither {MARKETPLACE_BUNDLES_PATH} nor plugin cache found.')
+
+    if scope == 'marketplace':
+        if (Path.cwd() / MARKETPLACE_BUNDLES_PATH).is_dir():
+            return Path.cwd() / MARKETPLACE_BUNDLES_PATH
+        if marketplace_from_script.is_dir():
+            return marketplace_from_script
+        raise FileNotFoundError(f'{MARKETPLACE_BUNDLES_PATH} directory not found')
+
+    if scope == 'plugin-cache':
+        cache = _first_existing_bundle_cache_root()
+        if cache is not None:
+            return cache
+        raise FileNotFoundError(
+            f'Plugin cache not found in any of: {", ".join(get_bundle_cache_roots())}'
+        )
+
+    if scope == 'project':
+        project_claude = Path.cwd() / CLAUDE_DIR
+        if project_claude.is_dir():
+            return project_claude
+        raise FileNotFoundError(f'Project .claude directory not found: {project_claude}')
+
+    raise ValueError(f'Invalid scope: {scope}')

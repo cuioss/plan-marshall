@@ -1,0 +1,230 @@
+---
+name: pm-dev-java-manage-maven-profiles
+description: Maven build profile classification and user workflow for unmatched profiles
+compatibility: Adapted from plan-marshall marketplace (Claude Code native)
+---
+
+# Maven Profile Management
+
+Classify Maven build profiles that weren't auto-matched during discovery.
+
+## Enforcement
+
+**Execution mode**: Invoked conditionally from architecture analysis workflow when unmatched profiles are found. Execute workflow steps sequentially.
+
+**Prohibited actions:**
+- Do not invoke this skill directly -- it is called by `manage-architecture` only
+- Do not invent script notations -- use only documented notations from this skill and referenced skills
+
+**Constraints:**
+- Every workflow step that performs a script operation has an explicit bash code block with the full `python3 .plan/execute-script.py` command (Rule 9)
+- Use `pm-dev-java:manage-maven-profiles:profiles` notation for this skill's own script operations
+- Use `plan-marshall:manage-architecture:architecture` notation for architecture queries
+- Use `plan-marshall:manage-config:manage-config` notation for config operations
+
+## When to Use
+
+This skill is invoked by `manage-architecture` when:
+1. Project contains Maven modules (`build_systems` includes `maven`)
+2. Discovery found NO-MATCH-FOUND profiles
+
+**Do not use directly** - invoked conditionally from architecture analysis workflow.
+
+---
+
+## Profile Classification
+
+Maven profiles enable optional build features. Extension API classifies profiles during discovery:
+
+| Classification | Meaning |
+|----------------|---------|
+| Canonical (e.g., `coverage`) | Generates build command |
+| `NO-MATCH-FOUND` | No command generated |
+
+For canonical classification types, storage format, and common NO-MATCH-FOUND examples, see `standards/profile-classification.md`.
+
+---
+
+## Workflow
+
+### Step 1: Collect Unmatched Profiles Across All Modules
+
+#### Step 1a: Get Module List
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture modules
+```
+
+**Output (TOON)**:
+```toon
+modules[N]:
+  - module-a
+  - module-b
+  - module-c
+```
+
+#### Step 1b: Query Each Module for Profiles
+
+For each module in the list:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
+  derived-module --module {module-name}
+```
+
+Parse the TOON output:
+- Check `build_systems` contains `maven`
+- If Maven, check `metadata.profiles` for entries with `canonical: NO-MATCH-FOUND`
+
+#### Step 1c: Build Unmatched Profile Set
+
+Collect all NO-MATCH-FOUND profiles into a deduplicated set:
+
+```text
+unmatched_profiles = {profile-id-1, profile-id-2, ...}
+```
+
+**Note**: Same profile ID may appear in multiple modules. Only ask once per unique profile ID.
+
+**If set is empty** → Exit, nothing to do.
+
+### Step 2: Ask User About Each Unmatched Profile
+
+For each NO-MATCH-FOUND profile:
+
+```yaml
+AskUserQuestion:
+  question: "Maven profile '{profile-id}' is unmatched. What should it do?"
+  header: "Profile"
+  options:
+    - label: "Ignore"
+      description: "Leave as NO-MATCH-FOUND, no command generated"
+    - label: "Skip"
+      description: "Add to skip list, exclude from all processing"
+    - label: "Map to canonical"
+      description: "Map to integration-tests, coverage, benchmark, or quality-gate"
+  multiSelect: false
+```
+
+### Step 3: Apply User Decision
+
+| Choice | Action | Command |
+|--------|--------|---------|
+| Ignore | Leave as-is | None |
+| Skip | Add to skip list | See below |
+| Map | Add mapping | See below |
+
+**Skip** - Add to skip list:
+```bash
+# Get current value first
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config ext-defaults get \
+  --key build.maven.profiles.skip
+
+# Append new profile (comma-separated)
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config ext-defaults set \
+  --key build.maven.profiles.skip --value "{existing},{profile-id}"
+```
+
+**Map** - Add canonical mapping:
+```bash
+# Get current mappings first
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config ext-defaults get \
+  --key build.maven.profiles.map.canonical
+
+# Append new mapping (comma-separated profile:canonical pairs)
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config ext-defaults set \
+  --key build.maven.profiles.map.canonical --value "{existing},{profile-id}:{canonical}"
+```
+
+### Step 4: Re-run Discovery
+
+After any configuration change:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture discover --force
+```
+
+---
+
+## Standards
+
+- `standards/profile-classification.md` — Canonical classifications, multi-profile handling, storage format
+
+---
+
+## External Resources
+
+### Scripts (scripts/)
+
+| Script | Subcommand | Purpose |
+|--------|------------|---------|
+| `profiles.py` | `list` | List Maven profiles from all modules |
+| `profiles.py` | `unmatched` | List unmatched profiles (NO-MATCH-FOUND), excluding configured skip/mapped profiles |
+| `profiles.py` | `classify` | Classify a single profile by pattern matching |
+| `profiles.py` | `suggest` | Suggest classifications for all unmatched profiles |
+
+**Notation**: `pm-dev-java:manage-maven-profiles:profiles {subcommand}`
+
+**List profiles**:
+```bash
+python3 .plan/execute-script.py pm-dev-java:manage-maven-profiles:profiles list
+python3 .plan/execute-script.py pm-dev-java:manage-maven-profiles:profiles list --module {module-name}
+```
+
+**List unmatched profiles**:
+```bash
+python3 .plan/execute-script.py pm-dev-java:manage-maven-profiles:profiles unmatched
+```
+
+**Classify a single profile**:
+```bash
+python3 .plan/execute-script.py pm-dev-java:manage-maven-profiles:profiles classify --profile-id {profile-id}
+```
+
+**Suggest classifications for unmatched profiles**:
+```bash
+python3 .plan/execute-script.py pm-dev-java:manage-maven-profiles:profiles suggest
+```
+
+All subcommands accept either `--plan-id {plan_id}` (preferred — auto-resolves the worktree path via `manage-status get-worktree-path`) or `--project-dir {path}` (escape hatch / explicit override; default: current directory). The two flags are mutually exclusive — supplying both raises `mutually_exclusive_args`. See `plan-marshall:tools-script-executor/standards/cwd-policy.md` § "Bucket B" for the canonical two-state contract.
+
+---
+
+## Related Documents
+
+| Document | Purpose |
+|----------|---------|
+| `plan-marshall:build-maven` → `standards/maven-impl.md` | Maven profile pipeline implementation |
+| `plan-marshall:extension-api` → `standards/canonical-commands.md` | Command vocabulary |
+
+## Canonical invocations
+
+The canonical argparse surface for `profiles.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation". `--project-dir` and `--plan-id` are top-level flags (placed before the subcommand) and are mutually exclusive.
+
+### list
+
+```bash
+python3 .plan/execute-script.py pm-dev-java:manage-maven-profiles:profiles \
+  [--project-dir PROJECT_DIR | --plan-id PLAN_ID] list [--module MODULE]
+```
+
+### unmatched
+
+```bash
+python3 .plan/execute-script.py pm-dev-java:manage-maven-profiles:profiles \
+  [--project-dir PROJECT_DIR | --plan-id PLAN_ID] unmatched
+```
+
+### classify
+
+```bash
+python3 .plan/execute-script.py pm-dev-java:manage-maven-profiles:profiles \
+  [--project-dir PROJECT_DIR | --plan-id PLAN_ID] classify --profile-id PROFILE_ID
+```
+
+### suggest
+
+```bash
+python3 .plan/execute-script.py pm-dev-java:manage-maven-profiles:profiles \
+  [--project-dir PROJECT_DIR | --plan-id PLAN_ID] suggest
+```
