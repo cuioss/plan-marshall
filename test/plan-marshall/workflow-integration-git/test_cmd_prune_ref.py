@@ -80,8 +80,10 @@ class TestVerifyGitRepo:
 
         assert _verify_git_repo(tmp_path) is None
 
-    def test_non_git_path_returns_error_string(self, tmp_path: Path) -> None:
-        result = _verify_git_repo(tmp_path)
+    def test_non_git_path_returns_error_string(self, outside_repo_dir: Path) -> None:
+        # Must be OUTSIDE the repo: pytest's tmp_path now roots under the
+        # repo-local --basetemp, which IS a valid git working tree.
+        result = _verify_git_repo(outside_repo_dir)
 
         assert result is not None
         assert 'working tree' in result
@@ -138,9 +140,12 @@ def _patch_run_git(monkeypatch: pytest.MonkeyPatch, fake_run_git) -> None:
 
 
 class TestCmdPruneRefEscapeHatch:
-    def test_non_git_project_dir_returns_error(self, tmp_path: Path) -> None:
+    def test_non_git_project_dir_returns_error(self, outside_repo_dir: Path) -> None:
         """--project-dir not a git repo → project_dir_not_a_git_repo."""
-        args = Namespace(plan_id=None, project_dir=str(tmp_path), head='feature/x', mode='local_and_remote')
+        # Must be OUTSIDE the repo: pytest's tmp_path now roots under the
+        # repo-local --basetemp, which IS a git repo (would surface a later
+        # branch_delete_failed instead of project_dir_not_a_git_repo).
+        args = Namespace(plan_id=None, project_dir=str(outside_repo_dir), head='feature/x', mode='local_and_remote')
 
         result = cmd_prune_ref(args)
 
@@ -374,11 +379,13 @@ class TestCmdPruneRefCli:
         assert parsed['status'] == 'error'
         assert parsed['error_type'] == 'missing_required_arg'
 
-    def test_non_git_project_dir_returns_toon_error(self, tmp_path: Path) -> None:
+    def test_non_git_project_dir_returns_toon_error(self, outside_repo_dir: Path) -> None:
         """Non-git --project-dir + --head → project_dir_not_a_git_repo."""
+        # Must be OUTSIDE the repo: pytest's tmp_path now roots under the
+        # repo-local --basetemp, which IS a git repo.
         result = run_script(
             _SCRIPT_PATH, 'prune-local-and-remote-ref',
-            '--project-dir', str(tmp_path),
+            '--project-dir', str(outside_repo_dir),
             '--head', 'feature/x',
         )
 

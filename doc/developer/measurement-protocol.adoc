@@ -1,0 +1,121 @@
+= Test-Suite Measurement Protocol
+:nofooter:
+:toc: left
+:toclevels: 3
+:toc-title: Table of Contents
+:sectnums:
+:source-highlighter: highlight.js
+
+xref:../../README.md[Plan Marshall] » xref:README.adoc[Developer Guide]
+
+A repeatable methodology for measuring test-suite duration and coverage, and — as a first-class part of the method — a stated detection limit that says which effects the protocol can and cannot resolve.
+
+== Overview
+
+Claims about "the suite got faster" or "coverage went up" are only trustworthy when the measurement that backs them is repeatable and its noise floor is known. This page defines that measurement discipline. It has three parts:
+
+* a CI-history method for suite-level duration, using the free, accumulating verify-job signal over a *median of several runs*;
+* a per-test attribution method, using `--durations` tables that are near-immune to fixed per-run overhead;
+* an explicit *detection limit* — the smallest effect the protocol can resolve — treated here as a valued deliverable, not a caveat.
+
+The rule that governs every duration claim: a suite-level wall-clock number never stands alone as evidence. It is either backed by per-test `--durations` deltas or by a median over multiple CI runs, or it is not a claim.
+
+== Prerequisite: deterministic local runs
+
+Local measurement is only trustworthy when a run's own machinery does not perturb it. Each `module-tests` and `coverage` pytest invocation is given its own per-session `--basetemp` under `.plan/temp/pytest-basetemp/{session}` (see `build.py`), so concurrent worktrees and a killed-then-restarted session never share a temp root and never race pytest's own cleanup. Without that isolation a cleanup race can perturb — or, under `filterwarnings=["error"]`, kill — an otherwise-green run, which contaminates any duration reading taken from it. Treat the per-session basetemp as the precondition for every local measurement below.
+
+== Method 1 — Suite-level duration from CI history
+
+The verify job records its own elapsed time on every run. That signal is free (it already exists on every PR), accumulating (it grows with each run rather than costing a fresh measurement), and taken on a controlled runner rather than a developer laptop.
+
+Read it through the CI abstraction, never `gh`/`glab` directly:
+
+[source,bash]
+----
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci checks status --pr {number}
+----
+
+Discipline for a duration claim from this signal:
+
+* Collect the verify-job `elapsed_sec` from *at least five* runs, then report the *median* — never a single run. A single run mixes in runner scheduling, cache state, and concurrent-load variance that the median suppresses.
+* Compare medians of comparable populations (for example, five pre-change runs against five post-change runs), not a before/after pair.
+* Hold the confounds fixed or state them: cache state (cold vs warm), runner class, and any toolchain shift within the sample window.
+
+== Method 2 — Per-test attribution with `--durations`
+
+Suite wall-clock cannot tell you *which* test moved. The per-test `--durations` table can, and it is near-immune to fixed per-run overhead: a constant startup or teardown cost lands outside the per-test timings, so the ranked table isolates the tests that actually dominate.
+
+[source,bash]
+----
+./pw module-tests {bundle} -- --durations=25
+----
+
+(Resolve the wrapper through the architecture API in workflow code — never hard-code `./pw`; see xref:build.adoc[Build].)
+
+Discipline for a per-test duration claim:
+
+* Attribute a hotspot from the ranked `--durations` table, scoped per module so an instrumented run fits under the local time ceiling. Whole-tree instrumented runs are long enough to be orchestrator-tier / CI-only — never blind-backgrounded locally.
+* Back every applied fix with a *per-test before/after `--durations` delta*, recorded in the plan artifacts. The per-test delta is the evidence; the suite wall-clock is not.
+* Fix the specific cause the table points at — an over-broad fixture, an unnecessary subprocess spawn, a real `sleep()`, a session-vs-function scope mismatch — without dropping or weakening any assertion.
+
+== Detection limit (stated, first-class)
+
+A protocol that cannot say what it *cannot* see invites false claims. The detection limit below is therefore a deliverable in its own right, not a disclaimer.
+
+*A sub-20-second suite-level duration effect is below this protocol's noise floor and is undetectable at the suite level.* Two independently observed sources of variance each dwarf a 20-second effect:
+
+* a cold-versus-warm swing of roughly 59 seconds between an uncached and a cached run of the same suite;
+* a verify-job range of about 116 seconds across recent PRs on the CI runner.
+
+Because either source alone is several times larger than a 20-second change, no suite-level measurement — however many runs are medianed — can attribute a change that small to the code rather than to cache state or runner variance.
+
+Consequences for how results are reported:
+
+* A change whose only expected effect is a sub-20-second suite-level duration shift *should not* be claimed from suite wall-clock. Use Method 2 (per-test deltas) to attribute it, or report it as below the detection limit.
+* A *bounded or negative* suite-level duration outcome, honestly reported against this stated limit, is an accepted result — not a failure of the work.
+* Coverage is the axis expected to move measurably; duration at the suite level often is not. Size expectations accordingly before running the measurement.
+
+== Applying the protocol
+
+For a change that touches test duration or coverage:
+
+. Confirm deterministic local runs (per-session basetemp in place).
+. Re-derive the live population first — the current per-test `--durations` ranking, or the current module coverage percentage — never an inherited or stale list.
+. Take the measurement by the matching method: Method 1 for suite-level duration, Method 2 for per-test attribution, and a module-scoped `coverage {bundle}` run for coverage percentage.
+. Record the reading in the plan artifacts as evidence, with its confounds and its position relative to the detection limit.
+. Report deltas against the freshly re-derived baseline, citing per-test `--durations` deltas or CI-history medians — never a standalone suite wall-clock number.
+
+== Measured baseline and confounds
+
+This section records the current-state measurements taken under this protocol, with every confound stated explicitly so a later reader can judge which numbers are trustworthy and at what resolution.
+
+=== Coverage — the axis that moved measurably
+
+Each module's coverage was re-derived live (never carried forward from a prior figure) via the module-scoped `coverage {bundle}` command *before* any test was written, then re-measured after the highest-value gaps were filled with behavior-focused tests:
+
+[cols="2,1,1", options="header"]
+|===
+|Module |Re-derived baseline (line) |After (line)
+
+|pm-dev-java |56.87% |76.78%
+|pm-dev-java-cui |64.71% |82.35%
+|pm-documents |76.35% |80.33%
+|pm-dev-frontend |76.82% |82.40%
+|===
+
+Coverage is the axis this work moved measurably: every module rose against its freshly re-derived baseline, and three of the four cleared the 80% line threshold. The pm-dev-java result stops below the threshold by design — its remaining gap is defensive error-handling glue whose only tests would be line-chasing, which this protocol excludes in favour of behavior-focused tests.
+
+=== Duration — bounded, honestly reported
+
+The hotspot work re-derived the live per-test `--durations` ranking and fixed the one mutation-eligible hotspot within scope (the shared `run_config_key_contract` build-backend family), deduplicating redundant CLI subprocess spawns — a deterministic reduction from 14 to 8 spawns for the pyproject backend, with every assertion and the full end-to-end CLI surface preserved. The true top-of-suite hotspots (the real coverage-subprocess build tests) were deliberately left out of scope.
+
+The suite-level wall-clock delta is *not* reported as a standalone number: measured across differently-scoped runs it is dominated by xdist scheduling contention — exactly the noise the detection limit above describes. The trustworthy per-test evidence is the deterministic spawn-count reduction. A bounded, or even negative, suite-level duration outcome, honestly reported against the stated detection limit, is an accepted result of this work.
+
+=== Confounds
+
+Every measurement above was taken under these confounds, held fixed or stated:
+
+* *Cache state* — cold-versus-warm runs of the same suite swing by roughly 59 seconds, so a duration reading is only comparable against another reading taken in the same cache state.
+* *Sample count* — a suite-level duration claim requires the median of at least five CI runs; a single run is never sufficient.
+* *Toolchain shift* — the toolchain moved recently (pytest 8 to 9.1.1, xdist to 3.8.0, interpreter 3.12.3 rather than a previously cited 3.14.6), so any comparison straddling the shift mixes a code effect with a toolchain effect.
+* *Test-count growth* — the suite grew from 14423 to 14794 tests (and higher still after the behavior-focused additions in this work), so a raw suite wall-clock is measuring a larger suite, not only a faster one.

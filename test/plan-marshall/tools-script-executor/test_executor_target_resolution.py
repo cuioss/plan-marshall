@@ -599,11 +599,14 @@ class TestCwdWalkResolver:
         assert os.path.isabs(result), f'Returned path must be absolute, got {result!r}'
         assert result == str(script.resolve())
 
-    def test_returns_none_when_no_marketplace_tree(self, tmp_path, monkeypatch):
+    def test_returns_none_when_no_marketplace_tree(self, outside_repo_dir, monkeypatch):
         """Returns None when no marketplace/bundles tree is found above cwd."""
         ns = _extract_cwd_walk_resolver()
 
-        empty = tmp_path / 'empty'
+        # cwd must be OUTSIDE the repo: pytest's tmp_path now roots under the
+        # repo-local --basetemp, whose ancestry HAS a marketplace/bundles tree,
+        # so the cwd-walk would resolve a real script instead of returning None.
+        empty = outside_repo_dir / 'empty'
         empty.mkdir()
         monkeypatch.chdir(empty)
 

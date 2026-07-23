@@ -690,17 +690,23 @@ def _generate_with_anchor(
     return _read_generated_scripts(generated_executor)
 
 
-def test_marketplace_root_flag_anchors_discovery_to_supplied_path(tmp_path, monkeypatch):
+def test_marketplace_root_flag_anchors_discovery_to_supplied_path(outside_repo_dir, monkeypatch):
     """generate --marketplace-root <path> roots the SCRIPTS dict at <path>.
 
     Regression for the case where worktree-driven invocations of
     generate_executor.py picked up the wrong marketplace tree because the
     cwd-based fallback resolved to the parent checkout. The flag must
     override every other resolution branch.
-    """
-    fake_ws = _build_fake_marketplace(tmp_path)
 
-    mappings = _generate_with_anchor(tmp_path, fake_ws, use_flag=True, monkeypatch=monkeypatch)
+    Uses ``outside_repo_dir`` (not ``tmp_path``): the helper chdir's into this
+    directory precisely so the cwd-based discovery branch finds NO marketplace
+    ancestor, isolating the ``--marketplace-root`` flag as the sole anchor.
+    pytest's tmp_path now roots under the repo-local --basetemp, whose ancestry
+    HAS a real marketplace/bundles — which would poison the cwd branch.
+    """
+    fake_ws = _build_fake_marketplace(outside_repo_dir)
+
+    mappings = _generate_with_anchor(outside_repo_dir, fake_ws, use_flag=True, monkeypatch=monkeypatch)
 
     # Sentinel: the fake bundle script must appear in SCRIPTS, with its
     # absolute path rooted at the fake marketplace tree (NOT the real
@@ -729,9 +735,9 @@ def test_marketplace_root_flag_anchors_discovery_to_supplied_path(tmp_path, monk
         )
         # Defense-in-depth: the sentinel path is the strongest signal, but
         # also verify no path leaked back to the real project root via cwd
-        # discovery. Allow paths under tmp_path which (on macOS) may resolve
-        # via /private/var symlinks.
-        if not path.startswith(str(tmp_path.resolve())) and not path.startswith(str(tmp_path)):
+        # discovery. Allow paths under the out-of-repo working dir which (on
+        # macOS) may resolve via /private/var symlinks.
+        if not path.startswith(str(outside_repo_dir.resolve())) and not path.startswith(str(outside_repo_dir)):
             assert not path.startswith(real_cwd), (
                 f'{notation} resolved under real cwd {real_cwd}: {path}'
             )
@@ -1485,17 +1491,21 @@ def test_read_executor_version_unknown_on_undecodable_executor(tmp_path, monkeyp
     assert module.read_executor_version() == 'unknown'
 
 
-def test_preflight_fails_closed_on_unresolvable_manifest(tmp_path, monkeypatch, capsys):
+def test_preflight_fails_closed_on_unresolvable_manifest(outside_repo_dir, monkeypatch, capsys):
     """With no resolvable manifest, preflight fails CLOSED: it reports the full
     seven-field TOON with marshal_status 'unknown' (never a vacuous 'fresh'),
     populates the warning field, and emits a legible warning to stderr — so a
     caller can never mistake "could not determine" for "confirmed fresh"."""
     module = load_module()
 
-    monkeypatch.setenv('PM_DIST_MANIFEST', str(tmp_path / 'absent.json'))
-    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path / '.plan'))
-    (tmp_path / '.plan').mkdir()
-    monkeypatch.chdir(tmp_path)
+    # cwd/base must be OUTSIDE the repo: pytest's tmp_path now roots under the
+    # repo-local --basetemp, whose ancestry carries a resolvable dist-manifest /
+    # marketplace version, so the manifest would resolve to a real version
+    # instead of the 'unknown' this fail-closed test requires.
+    monkeypatch.setenv('PM_DIST_MANIFEST', str(outside_repo_dir / 'absent.json'))
+    monkeypatch.setenv('PLAN_BASE_DIR', str(outside_repo_dir / '.plan'))
+    (outside_repo_dir / '.plan').mkdir()
+    monkeypatch.chdir(outside_repo_dir)
     # Isolate the orthogonal multi-version-pollution scan (which reads the real
     # plugin-cache tree) so this fail-closed case stays hermetic.
     monkeypatch.setattr(module, '_detect_multi_version_pollution', lambda *a, **k: [])

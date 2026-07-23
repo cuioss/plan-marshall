@@ -516,9 +516,12 @@ class TestResolveFootprintTiers:
         footprint = _check_mod._resolve_footprint(plan_dir)
         assert footprint == set()
 
-    def test_tier2_fallback_when_worktree_not_a_git_dir(self, tmp_path):
+    def test_tier2_fallback_when_worktree_not_a_git_dir(self, tmp_path, outside_repo_dir):
         """A worktree_path that is not a git tree falls through to the legacy key."""
-        plain = tmp_path / 'plain'
+        # ``plain`` must be OUTSIDE the repo: pytest's tmp_path now roots under
+        # the repo-local --basetemp, where it IS a git tree and the tier-1 live
+        # footprint would resolve instead of falling through to the legacy key.
+        plain = outside_repo_dir / 'plain'
         plain.mkdir()
 
         plan_dir = tmp_path / 'plan'

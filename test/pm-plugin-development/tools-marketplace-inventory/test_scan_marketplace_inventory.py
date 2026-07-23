@@ -1485,7 +1485,7 @@ def test_full_content_pattern_excludes_non_matching_subdocs(scan):
 # directory (excluded from the default run via the root conftest collect_ignore).
 
 
-def test_find_marketplace_path_returns_none_outside_any_repo(tmp_path, monkeypatch):
+def test_find_marketplace_path_returns_none_outside_any_repo(outside_repo_dir, monkeypatch):
     """find_marketplace_path() returns None when cwd is outside any git repo.
 
     With the script-relative anchor removed, an "outside-repo" cwd with no
@@ -1493,11 +1493,16 @@ def test_find_marketplace_path_returns_none_outside_any_repo(tmp_path, monkeypat
     (none) -> env (none) -> git-root (not a repo) -> cwd (no marketplace). The
     contract is fail-closed rather than silently anchoring on the helper's own
     file location.
+
+    Uses ``outside_repo_dir`` (not ``tmp_path``): pytest's tmp_path now roots
+    under the repo-local --basetemp, which IS inside a git repo and HAS a
+    marketplace ancestor, so the "outside any repo" precondition can only be met
+    from a directory outside the repo.
     """
     from marketplace_paths import find_marketplace_path
 
     monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
-    monkeypatch.chdir(tmp_path)
+    monkeypatch.chdir(outside_repo_dir)
     result = find_marketplace_path()
     assert result is None, (
         f'Resolution from outside any git repo with no anchor should return None, got {result}'

@@ -166,8 +166,11 @@ def test_detached_head_resolves_digest(repo: Path) -> None:
     assert len(digest) == _HEX64
 
 
-def test_non_git_directory_returns_none(tmp_path: Path) -> None:
-    plain = tmp_path / 'plain'
+def test_non_git_directory_returns_none(outside_repo_dir: Path) -> None:
+    # ``plain`` must be OUTSIDE the repo: pytest's tmp_path now roots under the
+    # repo-local --basetemp, where ``git rev-parse HEAD`` succeeds and yields a
+    # digest instead of the None this test requires.
+    plain = outside_repo_dir / 'plain'
     plain.mkdir()
 
     digest = compute_worktree_sha(plain)
