@@ -11,6 +11,8 @@ the argparse CLI plumbing (mirrors the pm-documents ref-documentation /
 ref-asciidoc in-process pattern).
 """
 
+import tempfile
+from argparse import Namespace
 from pathlib import Path
 
 from conftest import get_script_path, load_script_module, run_script
@@ -23,6 +25,7 @@ FIXTURES_DIR = Path(__file__).parent / 'jsdoc'
 # the CLI serializes to TOON, so the tests assert directly against it.
 _jsdoc = load_script_module('pm-dev-frontend', 'javascript', 'jsdoc.py', 'jsdoc')
 analyze_jsdoc = _jsdoc.analyze_jsdoc
+cmd_analyze = _jsdoc.cmd_analyze
 
 
 # =============================================================================
@@ -163,6 +166,40 @@ def test_analyze_violation_structure():
         assert 'type' in v, 'Violation must have type field'
         assert 'severity' in v, 'Violation must have severity field'
         assert v['severity'] in ('CRITICAL', 'WARNING', 'SUGGESTION'), f'Invalid severity: {v["severity"]}'
+
+
+# =============================================================================
+# CLI handler (cmd_analyze) in-process + empty-target behaviors
+# =============================================================================
+
+
+def test_cmd_analyze_file_prints_toon_and_returns_success(capsys):
+    """cmd_analyze on a single file serializes the result to TOON and returns 0."""
+    rc = cmd_analyze(Namespace(directory=None, file=str(FIXTURES_DIR / 'valid-jsdoc.js'), scope='all'))
+
+    assert rc == 0
+    assert 'status:' in capsys.readouterr().out
+
+
+def test_cmd_analyze_directory_prints_toon_and_returns_success(capsys):
+    """cmd_analyze on a directory serializes the aggregate result to TOON."""
+    rc = cmd_analyze(Namespace(directory=str(FIXTURES_DIR), file=None, scope='all'))
+
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert 'status:' in out
+    assert 'metrics' in out
+
+
+def test_analyze_empty_directory_reports_zero_files_success():
+    """A directory with no JavaScript files is a clean success with zero files —
+    the no-files short-circuit, not an error."""
+    with tempfile.TemporaryDirectory() as empty:
+        data = analyze_jsdoc(empty, is_directory=True, scope='all')
+
+        assert data['status'] == 'success'
+        assert int(data['metrics']['total_files']) == 0
+        assert data['data']['violations'] == []
 
 
 # =============================================================================
