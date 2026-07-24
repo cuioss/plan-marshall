@@ -2,10 +2,11 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the additive OpenRewrite log-parse consumption (_maven_cmd_rewrite_log).
 
-Covers the three fail-closed verdicts of the build-maven Signal B consumer:
-- ``observed``       — the build reached rewrite:run and the verb resolves.
+Covers the four fail-closed verdicts of the build-maven Signal B consumer:
+- ``observed``       — the build reached rewrite:run, the verb resolves, dispatch succeeded.
 - ``not_observed``   — the build never reached rewrite:run (never a false clean).
 - ``domain_inactive``— the verb resolves to null (never a false clean).
+- ``parse_error``    — dispatch returned an error payload / non-dict (never a false observed).
 
 The observed fixture's #118 WARN lines are copied verbatim from deliverable 1's
 provenance corpus — the SINGLE format source of truth — and a cross-check test
@@ -23,9 +24,11 @@ _rewrite_log = load_script_module(
 reached_rewrite_run = _rewrite_log.reached_rewrite_run
 consume_rewrite_log = _rewrite_log.consume_rewrite_log
 resolve_domain_verb = _rewrite_log.resolve_domain_verb
+dispatch_parser = _rewrite_log.dispatch_parser
 VERDICT_OBSERVED = _rewrite_log.VERDICT_OBSERVED
 VERDICT_NOT_OBSERVED = _rewrite_log.VERDICT_NOT_OBSERVED
 VERDICT_DOMAIN_INACTIVE = _rewrite_log.VERDICT_DOMAIN_INACTIVE
+VERDICT_PARSE_ERROR = _rewrite_log.VERDICT_PARSE_ERROR
 
 # The domain-owned parser (deliverable 1) — imported here only to drive the
 # observed-case dispatch against the fixture without the executor subprocess.
@@ -240,3 +243,82 @@ class TestResolveDomainVerb:
         monkeypatch.setattr(file_ops, 'get_marshal_path', lambda: tmp_path / 'nonexistent.json')
 
         assert resolve_domain_verb() is None
+
+
+class TestParseErrorVerdict:
+    """A dispatch that returns an error payload yields parse_error — never a false clean/observed.
+
+    ADR-009 fail-closed: when the build reached rewrite:run and the verb resolves
+    but the dispatched parser could not observe findings (executor not found /
+    output unparseable / not an object / a non-dict return), the consumer must
+    fail closed to parse_error, not fold a false ``observed`` with zero findings.
+    """
+
+    def test_dispatch_error_payload_yields_parse_error(self):
+        # A real rewrite:run banner is present (OBSERVED_LOG), the verb resolves,
+        # but dispatch returns an executor_not_found error payload.
+        result = consume_rewrite_log(
+            str(OBSERVED_LOG),
+            resolve_verb=lambda: 'pm-dev-java-cui:parse-rewrite-log',
+            dispatch=lambda notation, log_file: {'status': 'error', 'error': 'executor_not_found'},
+        )
+        rewrite_log = result['rewrite_log']
+        assert rewrite_log['verdict'] == VERDICT_PARSE_ERROR
+        assert rewrite_log['verdict'] != VERDICT_OBSERVED
+
+    def test_parse_error_is_never_clean(self):
+        result = consume_rewrite_log(
+            str(OBSERVED_LOG),
+            resolve_verb=lambda: 'pm-dev-java-cui:parse-rewrite-log',
+            dispatch=lambda notation, log_file: {'status': 'error', 'error': 'parser_output_unparseable'},
+        )
+        rewrite_log = result['rewrite_log']
+        assert rewrite_log['verdict'] != 'clean'
+        assert rewrite_log['total_findings'] == 0
+        assert rewrite_log['findings'] == []
+
+    def test_parse_error_names_the_dispatch_error(self):
+        result = consume_rewrite_log(
+            str(OBSERVED_LOG),
+            resolve_verb=lambda: 'pm-dev-java-cui:parse-rewrite-log',
+            dispatch=lambda notation, log_file: {'status': 'error', 'error': 'executor_not_found'},
+        )
+        assert 'executor_not_found' in result['rewrite_log']['reason']
+
+    def test_non_dict_dispatch_return_yields_parse_error(self):
+        result = consume_rewrite_log(
+            str(OBSERVED_LOG),
+            resolve_verb=lambda: 'pm-dev-java-cui:parse-rewrite-log',
+            dispatch=lambda notation, log_file: None,
+        )
+        rewrite_log = result['rewrite_log']
+        assert rewrite_log['verdict'] == VERDICT_PARSE_ERROR
+        assert rewrite_log['total_findings'] == 0
+
+
+class TestDispatchParserMalformedNotation:
+    """dispatch_parser fails closed on a malformed notation, never crashing on the split."""
+
+    def test_colonless_notation_returns_error_without_subprocess(self, monkeypatch):
+        # subprocess.run must never be reached for a colonless notation; make it
+        # explode so any reach-through is a hard test failure.
+        def _explode(*args, **kwargs):
+            raise AssertionError('subprocess.run must not run on a malformed notation')
+
+        monkeypatch.setattr(_rewrite_log.subprocess, 'run', _explode)
+
+        result = dispatch_parser('no-colon-here', '/some/log')
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'malformed_notation'
+
+    def test_empty_skill_segment_returns_error(self, monkeypatch):
+        def _explode(*args, **kwargs):
+            raise AssertionError('subprocess.run must not run on an empty skill segment')
+
+        monkeypatch.setattr(_rewrite_log.subprocess, 'run', _explode)
+
+        result = dispatch_parser('bundle-only:', '/some/log')
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'malformed_notation'

@@ -360,7 +360,16 @@ def convert_extension_to_domain_config(module, domain_info: dict, bundle_name: s
             domain_verbs = module.provides_domain_verb()
             if domain_verbs:
                 for descriptor in domain_verbs:
-                    extensions[descriptor['verb']] = descriptor['notation']
+                    verb = descriptor['verb']
+                    # A declared capability must never silently disappear: reject a
+                    # collision (a verb already seeded, e.g. 'triage', or a duplicate
+                    # in the descriptor list) rather than overwrite it.
+                    if verb in extensions:
+                        raise ValueError(
+                            f"Duplicate domain-verb '{verb}' in bundle '{bundle_name}': "
+                            f'a verb key may be declared only once'
+                        )
+                    extensions[verb] = descriptor['notation']
         if extensions:
             config['workflow_skill_extensions'] = extensions
 

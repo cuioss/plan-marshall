@@ -14,6 +14,7 @@ import os
 import sys
 from argparse import Namespace
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -417,6 +418,58 @@ def test_set_extensions(plan_context, monkeypatch):
     assert result['status'] == 'success'
     assert result['type'] == 'triage'
     assert result['skill'] == 'pm-dev-java:new-triage'
+
+
+def test_convert_extension_rejects_duplicate_domain_verb():
+    """A duplicate verb across the descriptor list is rejected, not silently overwritten.
+
+    A declared capability must never vanish: two descriptors carrying the same
+    verb key must raise rather than let the second overwrite the first.
+    """
+    convert = _cmd_skill_domains.convert_extension_to_domain_config
+    module = SimpleNamespace(
+        provides_domain_verb=lambda: [
+            {'verb': 'rewrite-log-parse', 'notation': 'pm-dev-java-cui:parse-rewrite-log'},
+            {'verb': 'rewrite-log-parse', 'notation': 'other:parse-shadow'},
+        ]
+    )
+
+    with pytest.raises(ValueError, match='rewrite-log-parse'):
+        convert(module, {}, 'pm-dev-java-cui')
+
+
+def test_convert_extension_rejects_domain_verb_colliding_with_seeded_triage():
+    """A domain-verb whose key collides with the pre-seeded 'triage' key is rejected.
+
+    The seeder assigns the triage extension first; a later descriptor reusing the
+    'triage' verb must raise rather than silently overwrite the seeded triage
+    notation.
+    """
+    convert = _cmd_skill_domains.convert_extension_to_domain_config
+    module = SimpleNamespace(
+        provides_triage=lambda: 'pm-dev-java:ext-triage-java',
+        provides_domain_verb=lambda: [{'verb': 'triage', 'notation': 'shadow:verb'}],
+    )
+
+    with pytest.raises(ValueError, match='triage'):
+        convert(module, {}, 'pm-dev-java')
+
+
+def test_convert_extension_accepts_distinct_domain_verbs():
+    """Distinct verb keys are seeded without collision (the non-colliding happy path)."""
+    convert = _cmd_skill_domains.convert_extension_to_domain_config
+    module = SimpleNamespace(
+        provides_triage=lambda: 'pm-dev-java:ext-triage-java',
+        provides_domain_verb=lambda: [
+            {'verb': 'rewrite-log-parse', 'notation': 'pm-dev-java-cui:parse-rewrite-log'},
+        ],
+    )
+
+    config = convert(module, {}, 'pm-dev-java')
+
+    extensions = config['workflow_skill_extensions']
+    assert extensions['triage'] == 'pm-dev-java:ext-triage-java'
+    assert extensions['rewrite-log-parse'] == 'pm-dev-java-cui:parse-rewrite-log'
 
 
 def test_set_extensions_rejects_self_review_type(plan_context):
