@@ -110,7 +110,9 @@ def parse_rewrite_log(text: str) -> dict:
         newly-detected / pre-existing summary counts.
     """
     findings: list[dict] = []
-    for line in text.split('\n'):
+    # splitlines (not split('\n')) so a CRLF-terminated log does not leave a
+    # trailing '\r' swallowed into the greedy end-of-line message capture.
+    for line in text.splitlines():
         finding = parse_finding_line(line)
         if finding is not None:
             findings.append(finding)

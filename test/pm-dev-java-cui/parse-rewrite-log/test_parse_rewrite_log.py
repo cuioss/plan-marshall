@@ -152,6 +152,30 @@ class TestGreedyMessageCapture:
             assert ': ' in match['message']
 
 
+class TestCrlfRobustness:
+    """CRLF-terminated logs must not leave a trailing '\\r' in the greedy message capture."""
+
+    def test_crlf_terminated_line_message_has_no_trailing_cr(self):
+        # Build a CRLF corpus from the provenance finding lines; the greedy
+        # end-of-line message group must not swallow the '\r'.
+        crlf_text = '\r\n'.join(_corpus_finding_lines()) + '\r\n'
+        findings = parse_rewrite_log(crlf_text)['data']['findings']
+
+        assert findings, 'CRLF corpus must still yield findings'
+        for finding in findings:
+            assert not finding['message'].endswith('\r'), (
+                f"message retained a trailing CR: {finding['message']!r}"
+            )
+
+    def test_crlf_and_lf_yield_identical_findings(self):
+        # The same corpus lines under CRLF and LF must parse to the same messages.
+        lines = _corpus_finding_lines()
+        lf_findings = parse_rewrite_log('\n'.join(lines) + '\n')['data']['findings']
+        crlf_findings = parse_rewrite_log('\r\n'.join(lines) + '\r\n')['data']['findings']
+
+        assert [f['message'] for f in crlf_findings] == [f['message'] for f in lf_findings]
+
+
 class TestSubstringMatch:
     """The prefix is matched as a substring anywhere in the line, never anchored at ^."""
 
