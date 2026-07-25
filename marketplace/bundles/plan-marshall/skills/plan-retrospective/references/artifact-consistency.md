@@ -27,17 +27,17 @@ checks[*]{name,status,message}:
   solution_outline_sections,pass,"all required sections present"
   deliverable_count,pass,"6 deliverables declared"
   task_deliverable_match,pass,"6 tasks linked to 6 deliverables"
-  affected_files_recall,partial,"5/6 expected files found in the live footprint"
+  affected_files_recall,fail,"Recall 50% below 70% threshold"
   affected_files_exact_match,inconclusive,"both the declared set and the resolved footprint are empty"
   metrics_generated,fail,"metrics.md not found (record-metrics skipped?)"
 findings[*]{severity,message}:
   error,"metrics.md missing — record-metrics step did not run"
-  warning,"1 expected file missing from the live footprint"
+  warning,"Recall 50% below 70% threshold"
   warning,"both the declared set and the resolved footprint are empty — the comparison substantiates no verdict"
 summary:
   passed: N
   failed: N
-  partial: N
+  skipped: N
 ```
 
 ## Novel Checks (from verify-structure.py)
@@ -73,7 +73,9 @@ Pre-manifest plans (legacy / in-flight, no `execution.toon`) keep the original `
 
 - `fail` checks MUST surface in the final report.
 - `inconclusive` checks MUST surface in the final report. `inconclusive` means the check's inputs could not substantiate any verdict — it is NOT a benign non-failure and MUST NOT be read as a pass. Name the unresolvable input (an empty declared set, an empty resolved footprint, or both) so the reader can repair the plan state rather than trusting an absent signal.
-- `partial` checks surface only when their message is actionable (e.g., missing files named).
+- `warn` checks surface only when their message is actionable (e.g., the drifting `outline_only` / `references_only` sets are named).
+- `info` checks do NOT surface here — the manifest-aware forwarding downgrade routes the reader to the **Manifest Decisions** section instead.
+- `skip` checks do NOT surface — the check had nothing to judge (see `affected_files_recall`'s no-deliverables branch).
 - Presence of `metrics.md` is required when the plan ran `default:record-metrics`. Absence implies either the step was skipped OR an earlier step crashed.
 
 ## Finding Shape
