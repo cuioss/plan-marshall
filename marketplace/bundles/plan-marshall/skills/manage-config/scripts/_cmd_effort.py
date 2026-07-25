@@ -650,7 +650,7 @@ def cmd_effort_set(args) -> dict:
     # Nested scope: {phase}.{role}.
     if '.' not in scope:
         return error_exit(
-            f"scope '{scope}' must be 'plan', 'orchestrator[.{{surface}}|.max]', or a dotted "
+            f"scope '{scope}' must be 'plan', 'orchestrator[.{{surface}}|.default|.max]', or a dotted "
             f"'{{phase}}.{{role}}' scope (e.g. phase-6-finalize.verification-feedback)"
         )
     phase, role = scope.split('.', 1)

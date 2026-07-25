@@ -538,9 +538,9 @@ def main() -> int:
             '(e.g. "phase-6-finalize.verification-feedback"), the literal '
             '"plan" for the plan-wide scalar fallback, or an orchestrator scope '
             '("orchestrator" scalar shorthand, "orchestrator.{surface}" per-surface '
-            'override, or "orchestrator.max" uplift ceiling). The nested write '
-            'preserves sibling sub-keys; a pre-existing scalar effort string '
-            'is normalised into an object first.'
+            'override, "orchestrator.default" in-block fallback, or "orchestrator.max" '
+            'uplift ceiling). The nested write preserves sibling sub-keys; a '
+            'pre-existing scalar effort string is normalised into an object first.'
         ),
     )
     effort_set.add_argument(
