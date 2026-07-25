@@ -131,6 +131,9 @@ JSON structure and field definitions for project configuration.
       "project_key": "cuioss_plan-marshall"
     }
   },
+  "orchestrator": {
+    "auto_emit": false
+  },
   "skill_domains": {
     "system": {
       "defaults": ["plan-marshall:persona-plan-marshall-agent"],
@@ -222,6 +225,30 @@ Non-secret per-provider configuration (committed, shared via git), written by `m
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `<key>` | string | No | A non-secret provider-config field (e.g. `organization`, `project_key` for SonarCloud). Keys are provider-defined; `manage-providers` upserts them idempotently via `--extra KEY=VALUE`. |
+
+## Section: orchestrator
+
+Orchestrator-tier autonomy settings (committed, shared via git). A top-level block carrying the opt-in autonomy knobs that govern the epic orchestrator's behaviour — the orchestrator-tier analog of the plan-tier autonomy family under `plan.phase-6-finalize` (`finalize_without_asking` / `loop_back_without_asking`). Seeded on `init` and back-filled into existing projects by `sync-defaults` (the same non-destructive deep-merge `project` relies on). `save_config` orders it canonically between `credentials_config` and `project` (see `CANONICAL_TOP_LEVEL_KEY_ORDER` in `_config_core.py`). On a fresh `marshal.json` that lacks the block, `orchestrator get` returns the value from `DEFAULT_ORCHESTRATOR` so consumers always observe the canonical default.
+
+### Structure
+
+```json
+{
+  "orchestrator": {
+    "auto_emit": false
+  }
+}
+```
+
+### Fields
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `auto_emit` | bool | `false` | Governs the epic orchestrator's post-landing queue-fill emit (the `marshall-orchestrator` `next` verb, and the proactive emit in `analyze`). When `false` (default, the safe posture), the emit is stage-and-wait: the orchestrator produces the copy-paste block and records each plan's `launched` transition only on operator-confirmed launch. When `true`, the emit auto-fills toward `parallelization_scope` — the `launched` transition for every selected candidate in the emitted `N − R` block is auto-recorded, under the unchanged disjointness + prep-readiness + "only if sensible" guards. **`auto_emit` automates the *emit* (marking each emitted plan `launched`), NEVER the *start*: the operator-confirmed `launched → running` transition stays operator-owned under both knob values — the emit≠running invariant is absolute.** A shortfall (no qualifying candidate) emits nothing and logs the blocking reason under both values; `auto_emit=true` never emits a colliding, blocked, or unprepared plan to fill a slot. See [`persona-marshall-orchestrator/standards/orchestration-model.md` § Parallelization by Surface Disjointness](../../persona-marshall-orchestrator/standards/orchestration-model.md#parallelization-by-surface-disjointness). Boolean coercion is handled by `_coerce_value` (as `merge_queue_managed_externally` is); an unknown `orchestrator` field is rejected at set-time (fail-closed provisioning). |
+
+### Access
+
+Read/write via the `orchestrator` noun: `manage-config orchestrator get --field auto_emit` returns the persisted value (falling back to `DEFAULT_ORCHESTRATOR` when the block is absent); `manage-config orchestrator set --field auto_emit --value true` coerces and persists, rejecting any unknown field with `status: error` / `error_type: unknown_field`.
 
 ## Section: skill_domains
 
