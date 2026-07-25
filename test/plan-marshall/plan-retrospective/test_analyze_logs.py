@@ -413,8 +413,8 @@ class TestPhase5LoggingGapExtractors:
         assert result['re_entering_markers'] == 0
 
     def test_cluster_dispatches_script_log_lines_are_a_no_op(self):
-        """The marker lines occur only in work.log, so scanning the script log
-        for them changes nothing — the signature is kept for caller stability."""
+        """A non-marker script-log line leaves every output unchanged — the
+        parameter is kept in the signature purely for caller stability."""
         work = [self._marker('2026-05-08T14:00:00Z')]
         script = [
             '[2026-05-08T14:00:05Z] [INFO] [xyz] '
@@ -424,6 +424,30 @@ class TestPhase5LoggingGapExtractors:
         without_script = _analyze_logs.cluster_dispatches(work, [], gap_threshold_s=30.0)
         assert with_script == without_script
         assert with_script['inferred_dispatches'] == 1
+
+    def test_cluster_dispatches_marker_shaped_script_log_line_is_a_no_op(self):
+        """A MARKER-SHAPED line in the script log must NOT move
+        ``inferred_dispatches``.
+
+        The sibling test above only exercises a non-marker script-log line, so it
+        passes whether or not the script log is scanned. This one places a real
+        marker line — more than ``gap_threshold_s`` from the work-log marker, so
+        it would open its own cluster if admitted — into ``script_log_lines``.
+        Admitting it would raise ``inferred_dispatches`` to 2 while
+        ``starting_markers`` / ``re_entering_markers`` (computed from
+        ``work_log_lines`` alone) stayed at 1 / 0: a dispatch fact no marker count
+        can corroborate, which is exactly the false verdict the consuming
+        RE_ENTRY_COVERAGE rule would report as a logging-discipline regression.
+        """
+        work = [self._marker('2026-05-08T14:00:00Z')]
+        script = [self._marker('2026-05-08T14:30:00Z', 'Re-entering')]
+
+        result = _analyze_logs.cluster_dispatches(work, script, gap_threshold_s=30.0)
+
+        assert result == _analyze_logs.cluster_dispatches(work, [], gap_threshold_s=30.0)
+        assert result['inferred_dispatches'] == 1
+        assert result['starting_markers'] == 1
+        assert result['re_entering_markers'] == 0
 
     # ------------------------------------------------------------------
     # detect_outcome_for_diffed_tasks

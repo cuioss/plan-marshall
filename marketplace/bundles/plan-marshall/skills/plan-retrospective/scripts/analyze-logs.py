@@ -417,12 +417,18 @@ def cluster_dispatches(
     the missing emission is a phase-5-execute orchestration concern, not this
     extractor's.
 
-    `script_log_lines` stays in the signature and in the scanned population: the
-    marker lines occur only in `work.log`, so scanning the script-log lines for
-    them is a harmless no-op and no caller or test signature changes.
+    `script_log_lines` stays in the signature for caller compatibility but is
+    deliberately NOT scanned. The marker lines are emitted only into `work.log`,
+    and `work_log_lines` is the sole population the `starting_markers` /
+    `re_entering_markers` counts below are computed from — so admitting the
+    script-log lines into the timestamp scan would let a marker-shaped line
+    landing in `script-execution.log` change `inferred_dispatches` while staying
+    invisible to those counts, i.e. produce a dispatch fact no marker count can
+    corroborate. Scanning one population for all three outputs makes that
+    divergence structurally impossible rather than merely unlikely.
     """
     timestamps: list[float] = []
-    for line in work_log_lines + script_log_lines:
+    for line in work_log_lines:
         # Only the two literal execute-phase markers delimit a dispatch.
         if not (_STARTING_RE.search(line) or _RE_ENTERING_RE.search(line)):
             continue
