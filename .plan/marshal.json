@@ -301,7 +301,10 @@
       "plugin_cache_keep_versions": 5,
       "plugin_cache_keep_days": 3
     },
-    "provisioned_version": "0.1.1192",
+    "provisioned_version": "0.1.1212",
     "config_seed_fingerprint": "9a1bd104"
+  },
+  "orchestrator": {
+    "parallelization_scope": 4
   }
 }
