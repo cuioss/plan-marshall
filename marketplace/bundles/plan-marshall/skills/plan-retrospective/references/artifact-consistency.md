@@ -27,11 +27,13 @@ checks[*]{name,status,message}:
   solution_outline_sections,pass,"all required sections present"
   deliverable_count,pass,"6 deliverables declared"
   task_deliverable_match,pass,"6 tasks linked to 6 deliverables"
-  affected_files_recall,partial,"5/6 expected files found in references.json"
+  affected_files_recall,partial,"5/6 expected files found in the live footprint"
+  affected_files_exact_match,inconclusive,"both the declared set and the resolved footprint are empty"
   metrics_generated,fail,"metrics.md not found (record-metrics skipped?)"
 findings[*]{severity,message}:
   error,"metrics.md missing — record-metrics step did not run"
-  warning,"1 expected file missing from references.json"
+  warning,"1 expected file missing from the live footprint"
+  warning,"both the declared set and the resolved footprint are empty — the comparison substantiates no verdict"
 summary:
   passed: N
   failed: N
@@ -43,7 +45,8 @@ summary:
 - **solution_outline_sections**: required sections are `summary`, `overview`, `deliverables`.
 - **deliverable_count**: extracted from the Deliverables section using heading level 3 (`### `).
 - **task_deliverable_match**: each deliverable index (1..N) MUST have a corresponding task whose `deliverable` field matches.
-- **affected_files_recall**: when `solution_outline.md` declares `Affected files:` bullets per deliverable, the plan's live footprint SHOULD contain at least 70% of them. < 70% is a fail. When the peer top-level key `affected_files_exact_match` reports `status: warn`, the retrospective synthesizer MUST surface the drift in the report naming `outline_only` and `references_only` verbatim.
+- **affected_files_recall**: when `solution_outline.md` declares `Affected files:` bullets per deliverable, the plan's live footprint SHOULD contain at least 70% of them. < 70% is a fail. An empty declared set is NOT a benign outcome: when the outline declares at least one deliverable yet no bullet was extracted, the check reports `fail` naming the parse failure, because an unparseable bullet list cannot substantiate any coverage verdict. `skip` is reserved for an outline that genuinely declares no deliverables.
+- **affected_files_exact_match**: the declared set and the resolved footprint MUST agree exactly. A both-empty comparison reports `inconclusive` — two empty sets are trivially equal whether the plan really touched no files or both the parser and the footprint resolver failed — and is accompanied by a `severity: warning` finding. `pass` is reserved for two non-empty, exactly-agreeing sets. When the check reports `status: warn`, the retrospective synthesizer MUST surface the drift in the report naming `outline_only` and `references_only` verbatim.
 
 ## Manifest-Aware Mode (when `execution.toon` exists)
 
@@ -58,6 +61,7 @@ Pre-manifest plans (legacy / in-flight, no `execution.toon`) keep the original `
 ## LLM Interpretation Rules
 
 - `fail` checks MUST surface in the final report.
+- `inconclusive` checks MUST surface in the final report. `inconclusive` means the check's inputs could not substantiate any verdict — it is NOT a benign non-failure and MUST NOT be read as a pass. Name the unresolvable input (an empty declared set, an empty resolved footprint, or both) so the reader can repair the plan state rather than trusting an absent signal.
 - `partial` checks surface only when their message is actionable (e.g., missing files named).
 - Presence of `metrics.md` is required when the plan ran `default:record-metrics`. Absence implies either the step was skipped OR an earlier step crashed.
 
