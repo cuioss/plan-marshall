@@ -258,12 +258,17 @@ class TestRegression:
         assert float(details['recall_pct']) == 0.0
 
 
-def _outline_with_affected_files(files: list[str]) -> str:
+def _outline_with_affected_files(files: list[str], *, annotation: str | None = None) -> str:
     """Build a solution_outline.md string that declares ``files`` as a single
     deliverable's Affected files bullets. When ``files`` is empty the outline
     still contains a valid Deliverables section but no Affected files block.
+
+    ``annotation`` selects the bullet form. ``None`` emits the plain backticked
+    form ``- `path```; a string emits the canonical annotated form
+    ``- `path` (annotation)`` that real solution outlines use.
     """
-    bullets = ''.join(f'- `{p}`\n' for p in files)
+    suffix = f' ({annotation})' if annotation else ''
+    bullets = ''.join(f'- `{p}`{suffix}\n' for p in files)
     affected_block = '\n**Affected files:**\n' + bullets if files else ''
     return (
         '# Solution: ExactMatch\n'
@@ -285,6 +290,7 @@ def _setup_exact_match_plan(
     outline_files: list[str],
     references_files: list[str],
     plan_id: str = 'retro-exact-match',
+    outline_annotation: str | None = None,
 ) -> tuple[str, Path]:
     """Create a live plan whose outline and references.json are seeded with
     caller-supplied file lists. Reuses ``build_happy_plan_dir`` to keep the
@@ -304,7 +310,10 @@ def _setup_exact_match_plan(
     # Overwrite outline with a variant whose deliverable count matches the
     # default tasks fixture (a single deliverable) so task_deliverable_match
     # does not go red and drown out the check under test.
-    (plan_dir / 'solution_outline.md').write_text(_outline_with_affected_files(outline_files), encoding='utf-8')
+    (plan_dir / 'solution_outline.md').write_text(
+        _outline_with_affected_files(outline_files, annotation=outline_annotation),
+        encoding='utf-8',
+    )
     # Trim tasks to a single deliverable to match the outline above.
     tasks_dir = plan_dir / 'tasks'
     for leftover in tasks_dir.glob('TASK-*.json'):
@@ -417,8 +426,15 @@ class TestAffectedFilesExactMatch:
         assert exact['outline_only'] == ['src/bar.py', 'src/foo.py']
         assert exact['references_only'] == ['src/alpha.py', 'src/beta.py']
 
-    def test_case_e_both_empty_passes(self, tmp_path, monkeypatch):
-        """No outline files and no references files -> pass, empty lists."""
+    def test_case_e_both_empty_is_inconclusive(self, tmp_path, monkeypatch):
+        """No outline files and no references files -> inconclusive, never pass.
+
+        Two empty sets are trivially equal whether the plan really touched no
+        files or the bullet parser and the footprint resolver both failed, so
+        the comparison substantiates no verdict. The check must report
+        ``inconclusive`` and emit a warning finding rather than a vacuous
+        ``pass``.
+        """
         plan_id, _ = _setup_exact_match_plan(
             tmp_path,
             monkeypatch,
@@ -432,9 +448,134 @@ class TestAffectedFilesExactMatch:
 
         assert 'affected_files_exact_match' in data
         exact = data['affected_files_exact_match']
+        assert exact['status'] == 'inconclusive'
+        assert exact['outline_only'] == []
+        assert exact['references_only'] == []
+
+        check = _check_by_name(data['checks'], 'affected_files_exact_match')
+        assert check is not None
+        assert check['status'] == 'inconclusive'
+
+        # The inconclusive verdict must be visible to the synthesizer.
+        assert any(
+            f.get('severity') == 'warning' and 'substantiates no verdict' in f.get('message', '')
+            for f in data['findings']
+        ), f'Expected a warning finding for the inconclusive verdict, got {data["findings"]}'
+
+        # An inconclusive row contributes to none of the summary counters, so
+        # it can never be silently absorbed as a pass.
+        summary = data['summary']
+        assert int(summary['passed']) + int(summary['failed']) + int(summary['skipped']) == sum(
+            1 for c in data['checks'] if c['status'] in ('pass', 'fail', 'skip')
+        )
+        assert not any(c['status'] == 'pass' for c in data['checks'] if c['name'] == 'affected_files_exact_match')
+
+
+class TestAffectedFilesBulletParsing:
+    """Regression coverage for the ``Affected files:`` bullet parser.
+
+    The canonical bullet form real solution outlines emit is
+    ``- `path/to/file` (intent)``. The pre-fix regex anchored ``\\s*$``
+    immediately after the optional closing backtick, so that form never
+    matched and the declared set silently came back empty — which the two
+    downstream verdicts then compounded into a false green.
+    """
+
+    def test_annotated_canonical_bullets_extract_with_intent_stripped(self, tmp_path, monkeypatch):
+        """``- `path` (intent)`` yields the bare path, annotation discarded."""
+        files = ['src/foo.py', 'src/bar.py', 'src/baz.py']
+        plan_id, _ = _setup_exact_match_plan(
+            tmp_path,
+            monkeypatch,
+            outline_files=files,
+            references_files=files,
+            plan_id='retro-annotated-bullets',
+            outline_annotation='write-replace',
+        )
+        result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
+        assert result.success, result.stderr
+        data = result.toon()
+
+        details = data['details']['affected_files_recall']
+        assert int(details['declared']) == len(files), (
+            'Annotated canonical bullets must extract; an empty declared set '
+            'means the bullet regex regressed to the pre-fix anchor.'
+        )
+        assert int(details['found']) == len(files)
+
+        recall = _check_by_name(data['checks'], 'affected_files_recall')
+        assert recall['status'] != 'skip'
+        assert recall['status'] == 'pass'
+
+        # The intent annotation must not leak into the extracted paths: an
+        # exact match against the references set proves each path was stripped.
+        exact = data['affected_files_exact_match']
         assert exact['status'] == 'pass'
         assert exact['outline_only'] == []
         assert exact['references_only'] == []
+
+    def test_bare_unannotated_bullets_still_extract(self, tmp_path, monkeypatch):
+        """The regex change is additive — the bare ``- path`` form still parses."""
+        files = ['src/foo.py', 'src/bar.py']
+        base = tmp_path / 'base'
+        base.mkdir()
+        plan_dir = base / 'plans' / 'retro-bare-bullets'
+        build_happy_plan_dir(plan_dir)
+        outline = (
+            '# Solution: Bare\n'
+            'plan_id: bare\n\n'
+            '## Summary\n\nBare fixture.\n\n'
+            '## Overview\n\nOverview.\n\n'
+            '## Deliverables\n\n'
+            '### 1. Deliverable one\n\n'
+            '**Affected files:**\n'
+            '- src/foo.py\n'
+            '- src/bar.py\n'
+        )
+        (plan_dir / 'solution_outline.md').write_text(outline, encoding='utf-8')
+        tasks_dir = plan_dir / 'tasks'
+        for leftover in tasks_dir.glob('TASK-*.json'):
+            leftover.unlink()
+        (tasks_dir / 'TASK-001.json').write_text(
+            json.dumps({'number': 1, 'deliverable': 1, 'status': 'done'}),
+            encoding='utf-8',
+        )
+        (plan_dir / 'references.json').write_text(
+            json.dumps({'modified_files': files, 'domains': []}), encoding='utf-8'
+        )
+        monkeypatch.setenv('PLAN_BASE_DIR', str(base))
+
+        result = run_script(SCRIPT_PATH, 'run', '--plan-id', 'retro-bare-bullets', '--mode', 'live')
+        assert result.success, result.stderr
+        data = result.toon()
+        details = data['details']['affected_files_recall']
+        assert int(details['declared']) == 2
+        assert int(details['found']) == 2
+
+    def test_deliverables_present_but_nothing_parsed_fails_recall(self, tmp_path, monkeypatch):
+        """Deliverables declared + zero extractable bullets -> fail, never skip.
+
+        An empty declared set cannot substantiate any coverage verdict when the
+        outline declares deliverables — the parser produced nothing, which is a
+        parse failure the retrospective must surface.
+        """
+        plan_id, _ = _setup_exact_match_plan(
+            tmp_path,
+            monkeypatch,
+            outline_files=[],
+            references_files=[],
+            plan_id='retro-unparsed-bullets',
+        )
+        result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
+        assert result.success, result.stderr
+        data = result.toon()
+
+        recall = _check_by_name(data['checks'], 'affected_files_recall')
+        assert recall['status'] == 'fail'
+        assert 'parser produced nothing' in recall['message']
+        details = data['details']['affected_files_recall']
+        assert int(details['declared']) == 0
+        assert int(details['deliverables']) >= 1
 
 
 # =============================================================================

@@ -397,6 +397,36 @@ class TestAddAspectKeyValidation:
         assert data['aspect'] == 'routing-decisions'
         assert data['aspects'] == ['routing-decisions']
 
+    def test_accepts_chat_history_analysis_aspect_key(self, tmp_path, monkeypatch):
+        # chat-history-analysis (aspect 14) ships with a producer
+        # (extract-chat-signal.py + the reference-doc synthesis step) AND a
+        # SECTION_SPEC render row. The row makes it a member of
+        # valid_aspect_keys(), so cmd_add MUST accept it — without the row the
+        # registration is rejected with `Unregistered aspect key` and the
+        # fragment can never reach the report.
+        plan_id, _plan_dir = setup_live_plan(tmp_path, monkeypatch)
+        _init_bundle(plan_id)
+        fragment_path = _write_fragment(
+            tmp_path, 'frag.toon', _valid_fragment_body('chat-history-analysis')
+        )
+
+        result = run_script(
+            SCRIPT_PATH,
+            'add',
+            '--plan-id',
+            plan_id,
+            '--aspect',
+            'chat-history-analysis',  # registered static key (SECTION_SPEC row)
+            '--fragment-file',
+            str(fragment_path),
+        )
+
+        assert result.success, result.stderr
+        data = result.toon()
+        assert data['status'] == 'success'
+        assert data['aspect'] == 'chat-history-analysis'
+        assert data['aspects'] == ['chat-history-analysis']
+
     def test_accepts_registered_domain_aspect_key(self, tmp_path, monkeypatch):
         # a domain-contributed aspect (e.g. wrapper-tangle from
         # pm-plugin-development) is registered through provides_retrospective_aspects

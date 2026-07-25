@@ -52,6 +52,18 @@ SECTION_SPEC: tuple[tuple[str, str, str | None], ...] = (
     # analysis rows above (lesson 2026-06-20-17-003: a producer without this
     # render row ships the aspect dead).
     ('Routing Decisions', 'routing-decisions', 'routing-decisions'),
+    # Chat History Analysis is conditional on its own fragment being present —
+    # the aspect is skipped entirely when ``--session-id`` is absent, mirroring
+    # the two conditional rows above. Its position (after Routing Decisions,
+    # before Proposed Lessons) matches the SKILL.md aspect order: aspect 14 sits
+    # between aspect 13 (routing-decisions) and aspect 15.
+    #
+    # The registry key is the HYPHENATED ``chat-history-analysis``. The
+    # fragment's own body carries ``aspect: chat_history_analysis``
+    # (underscored) — the two spellings are deliberately different, and keying
+    # this row on the underscored form silently empties the section because the
+    # consumer lookup never finds the producer's payload.
+    ('Chat History Analysis', 'chat-history-analysis', 'chat-history-analysis'),
     ('Proposed Lessons', 'lessons-proposal', None),
 )
 

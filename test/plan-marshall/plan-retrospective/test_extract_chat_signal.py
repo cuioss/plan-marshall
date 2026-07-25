@@ -2,10 +2,12 @@
 """Tests for ``extract-chat-signal.py``.
 
 The script reduces a Claude Code session JSONL transcript to its
-signal-bearing turns (Aspect 13 of ``plan-retrospective``). It keeps every
-``user`` turn verbatim and every ``assistant`` turn carrying a decision
-marker, dropping everything else. It then emits a TOON payload carrying the
-two Tier-2 trigger flags:
+signal-bearing turns (Aspect 14 of ``plan-retrospective``). It keeps every
+OPERATOR-AUTHORED ``user`` turn and every ``assistant`` turn carrying a decision
+marker, dropping everything else — including the two classes of synthetic
+``user`` turn the harness injects (empty / whitespace-only tool-result
+placeholders, and skill bodies injected as ``user`` turns). It then emits a TOON
+payload carrying the two Tier-2 trigger flags:
 
 - ``no_signal`` — true when the reduction kept zero turns.
 - ``over_budget`` — true when the reduced text exceeds ``--read-budget-bytes``.
@@ -57,6 +59,15 @@ def _text_blocks(*texts: str) -> list[dict[str, str]]:
     return [{'type': 'text', 'text': t} for t in texts]
 
 
+# The structural signature of a skill body injected as a synthetic ``user``
+# turn: the base-directory line followed by a markdown heading and a body.
+SKILL_LOAD_TEXT = (
+    'Base directory for this skill: /Users/x/.claude/plugins/cache/demo/skills/demo\n\n'
+    '# Demo Skill\n\n'
+    'Long injected skill body. ' * 40
+)
+
+
 # ---------------------------------------------------------------------------
 # Unit tests: extract_text
 # ---------------------------------------------------------------------------
@@ -99,11 +110,29 @@ class TestExtractText:
 
 
 class TestIsSignalBearing:
-    def test_user_turn_always_kept(self):
-        assert _mod.is_signal_bearing('user', 'anything at all') is True
+    def test_operator_authored_user_turn_kept(self):
+        """A genuine operator utterance is kept — the predicate filters by
+        provenance and content, not by role alone."""
+        assert _mod.is_signal_bearing('user', 'please rename the module') is True
 
-    def test_user_turn_kept_even_when_empty(self):
-        assert _mod.is_signal_bearing('user', '') is True
+    def test_user_turn_dropped_when_empty_or_whitespace(self):
+        """Empty and whitespace-only user turns are tool-result placeholders
+        carrying no operator signal, and are dropped."""
+        assert _mod.is_signal_bearing('user', '') is False
+        assert _mod.is_signal_bearing('user', '   \n\t  ') is False
+
+    def test_synthetic_skill_load_user_turn_dropped(self):
+        assert _mod.is_signal_bearing('user', SKILL_LOAD_TEXT) is False
+
+    def test_operator_quoting_the_marker_line_is_kept(self):
+        """The predicate is structural — the marker line alone is not enough.
+
+        An operator who merely mentions the base-directory line, with no
+        markdown heading following it, is real signal and must survive.
+        """
+        text = 'why does the log say Base directory for this skill: /tmp/x ?'
+        assert _mod.is_synthetic_skill_load(text) is False
+        assert _mod.is_signal_bearing('user', text) is True
 
     def test_assistant_turn_kept_with_decision_marker(self):
         assert _mod.is_signal_bearing('assistant', 'now [STATUS] running phase') is True
@@ -159,8 +188,13 @@ class TestParseTurn:
         assert _mod.parse_turn(json.dumps({'message': {'role': '', 'content': 'x'}})) is None
 
     def test_turn_with_only_non_text_blocks_yields_empty_text(self):
+        """``parse_turn`` still surfaces the empty text — the DROP happens one
+        layer later, in ``is_signal_bearing``, so the two concerns stay
+        separable (parsing reports what the turn carried; reduction decides
+        whether it is signal)."""
         line = _turn('user', [{'type': 'tool_result', 'content': 'r'}])
         assert _mod.parse_turn(line) == ('user', '')
+        assert _mod.is_signal_bearing('user', '') is False
 
 
 # ---------------------------------------------------------------------------
@@ -169,18 +203,31 @@ class TestParseTurn:
 
 
 class TestReduceTranscript:
-    def test_keeps_user_and_marked_assistant_drops_rest(self):
+    def test_keeps_operator_and_marked_assistant_drops_rest(self):
         lines = [
             _turn('user', 'do the thing'),
             _turn('assistant', 'thinking out loud with no marker'),
             _turn('assistant', _text_blocks('[DISPATCH] launching agent')),
             _turn('tool', 'tool output that must be dropped'),
         ]
-        kept = _mod.reduce_transcript(lines)
+        kept, raw = _mod.reduce_transcript(lines)
         assert kept == [
             {'role': 'user', 'text': 'do the thing'},
             {'role': 'assistant', 'text': '[DISPATCH] launching agent'},
         ]
+        assert raw == 4
+
+    def test_drops_empty_and_synthetic_user_turns(self):
+        """The reduction keeps only the operator turn out of four user turns."""
+        lines = [
+            _turn('user', 'rename the module please'),
+            _turn('user', SKILL_LOAD_TEXT),
+            _turn('user', ''),
+            _turn('user', '   \n  '),
+        ]
+        kept, raw = _mod.reduce_transcript(lines)
+        assert kept == [{'role': 'user', 'text': 'rename the module please'}]
+        assert raw == 4
 
     def test_preserves_document_order(self):
         lines = [
@@ -188,7 +235,7 @@ class TestReduceTranscript:
             _turn('user', 'b'),
             _turn('assistant', '[ERROR] c'),
         ]
-        kept = _mod.reduce_transcript(lines)
+        kept, _raw = _mod.reduce_transcript(lines)
         assert [t['text'] for t in kept] == ['[STATUS] a', 'b', '[ERROR] c']
 
     def test_malformed_lines_dropped_silently(self):
@@ -198,11 +245,13 @@ class TestReduceTranscript:
             _turn('user', 'survives'),
             json.dumps({'type': 'summary'}),
         ]
-        kept = _mod.reduce_transcript(lines)
+        kept, raw = _mod.reduce_transcript(lines)
         assert kept == [{'role': 'user', 'text': 'survives'}]
+        # Malformed and non-turn lines never parse, so they are not raw turns.
+        assert raw == 1
 
     def test_empty_history_keeps_nothing(self):
-        assert _mod.reduce_transcript([]) == []
+        assert _mod.reduce_transcript([]) == ([], 0)
 
     def test_all_unmarked_assistant_keeps_nothing(self):
         lines = [
@@ -210,7 +259,9 @@ class TestReduceTranscript:
             _turn('assistant', 'prose two'),
             _turn('tool', 'output'),
         ]
-        assert _mod.reduce_transcript(lines) == []
+        kept, raw = _mod.reduce_transcript(lines)
+        assert kept == []
+        assert raw == 3
 
 
 # ---------------------------------------------------------------------------
@@ -285,6 +336,60 @@ class TestCmdRun:
         assert 'implement the feature' in result['reduced_transcript']
         assert 'unmarked prose dropped' not in result['reduced_transcript']
 
+    def test_reduction_keeps_only_the_operator_turn(self, tmp_path):
+        """Regression: a transcript of one operator turn plus three synthetic
+        turns reduces to exactly the operator turn, and reports the removal.
+
+        Before the fix every ``user`` turn was kept verbatim, so the "reduced"
+        transcript was dominated by injected skill bodies and empty
+        placeholders.
+        """
+        path = tmp_path / 'session.jsonl'
+        path.write_text(
+            _turn('user', 'rename the module please') + '\n'
+            + _turn('user', SKILL_LOAD_TEXT) + '\n'
+            + _turn('user', '') + '\n'
+            + _turn('user', '   \n  ') + '\n',
+            encoding='utf-8',
+        )
+        result = _mod.cmd_run(_Args(str(path), _mod.DEFAULT_READ_BUDGET_BYTES))
+
+        assert result['reduced_turn_count'] == 1
+        assert result['raw_turn_count'] == 4
+        assert result['dropped_turn_count'] == 3
+        assert result['no_signal'] is False
+        assert result['reduced_transcript'] == 'user: rename the module please'
+        assert 'Base directory for this skill:' not in result['reduced_transcript']
+
+    def test_only_skill_load_and_empty_turns_yields_no_signal(self, tmp_path):
+        """A transcript composed entirely of framework boilerplate degrades
+        honestly to Tier 2 instead of paying a full Tier-1 read."""
+        path = tmp_path / 'boilerplate.jsonl'
+        path.write_text(
+            _turn('user', SKILL_LOAD_TEXT) + '\n'
+            + _turn('user', SKILL_LOAD_TEXT) + '\n'
+            + _turn('user', '') + '\n',
+            encoding='utf-8',
+        )
+        result = _mod.cmd_run(_Args(str(path), _mod.DEFAULT_READ_BUDGET_BYTES))
+
+        assert result['no_signal'] is True
+        assert result['reduced_turn_count'] == 0
+        assert result['raw_turn_count'] == 3
+        assert result['dropped_turn_count'] == 3
+
+    def test_marker_bearing_assistant_turns_still_retained(self, tmp_path):
+        """The reduction narrows only the user-turn branch."""
+        path = tmp_path / 'mixed.jsonl'
+        path.write_text(
+            _turn('user', SKILL_LOAD_TEXT) + '\n'
+            + _turn('assistant', '[DECISION] chose option A') + '\n',
+            encoding='utf-8',
+        )
+        result = _mod.cmd_run(_Args(str(path), _mod.DEFAULT_READ_BUDGET_BYTES))
+        assert result['reduced_turn_count'] == 1
+        assert '[DECISION] chose option A' in result['reduced_transcript']
+
     def test_empty_history_sets_no_signal(self, tmp_path):
         path = tmp_path / 'empty.jsonl'
         path.write_text('', encoding='utf-8')
@@ -340,6 +445,8 @@ class TestCmdRun:
         assert result['no_signal'] is True
         assert result['over_budget'] is False
         assert result['reduced_turn_count'] == 0
+        assert result['raw_turn_count'] == 0
+        assert result['dropped_turn_count'] == 0
         assert result['reduced_transcript'] == ''
 
     def test_malformed_lines_do_not_crash(self, tmp_path):
@@ -380,6 +487,22 @@ class TestCmdRunIntegration:
         assert int(data['reduced_turn_count']) == 2
         assert data['no_signal'] is False
         assert data['over_budget'] is False
+
+    def test_toon_reports_raw_and_dropped_turn_counts(self, tmp_path):
+        """The reduction must be observable in the emitted TOON."""
+        path = tmp_path / 'session.jsonl'
+        path.write_text(
+            _turn('user', 'operator turn') + '\n'
+            + _turn('user', SKILL_LOAD_TEXT) + '\n'
+            + _turn('assistant', 'unmarked prose') + '\n',
+            encoding='utf-8',
+        )
+        result = run_script(SCRIPT_PATH, 'run', '--transcript-path', str(path))
+        assert result.success, result.stderr
+        data = result.toon()
+        assert int(data['reduced_turn_count']) == 1
+        assert int(data['raw_turn_count']) == 3
+        assert int(data['dropped_turn_count']) == 2
 
     def test_skipped_status_for_missing_transcript(self, tmp_path):
         missing = tmp_path / 'gone.jsonl'

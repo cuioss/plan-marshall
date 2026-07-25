@@ -11,8 +11,15 @@ Checks performed:
 - ``task_deliverable_match`` — each declared deliverable has a matching
   ``TASK-*.json`` whose ``deliverable`` field aligns with its index.
 - ``affected_files_recall`` — files declared in the solution outline's
-  ``Affected files:`` bullets appear in ``references.json`` ``affected_files``
-  with >= 70% coverage.
+  ``Affected files:`` bullets appear in the resolved plan footprint with
+  >= 70% coverage. When the outline declares at least one deliverable but no
+  bullet could be extracted, the check reports ``fail`` naming the parse
+  failure — an empty declared set is never reported as a benign ``skip``.
+  ``skip`` is retained only when the outline genuinely declares no
+  deliverables.
+- ``affected_files_exact_match`` — the declared set and the resolved footprint
+  agree exactly. A both-empty comparison substantiates nothing and reports
+  ``inconclusive``, never ``pass``.
 - ``metrics_generated`` — ``metrics.md`` exists.
 
 Usage:
@@ -62,7 +69,18 @@ _REQUIRED_SECTIONS = ('summary', 'overview', 'deliverables')
 _RECALL_THRESHOLD = 0.70
 
 # Regex for ``Affected files:`` bullet lists in deliverable sections.
-_AFFECTED_FILE_BULLET_RE = re.compile(r'^\s*-\s+`?([^`\n]+?)`?\s*$', re.MULTILINE)
+#
+# Two tolerated bullet forms, in alternation order:
+#   1. Backtick-delimited, optionally annotated — ``- `path/to/file` (intent)``.
+#      Group ``quoted`` captures only the span between the backticks; anything
+#      following the closing backtick (the intent annotation) is discarded.
+#   2. Bare, un-backticked, un-annotated — ``- path/to/file``. Group ``bare``
+#      captures the whole trimmed line body. The class excludes backticks so a
+#      backticked line can never fall through to this branch.
+_AFFECTED_FILE_BULLET_RE = re.compile(
+    r'^[ \t]*-[ \t]+(?:`(?P<quoted>[^`\n]+)`[^\n]*|(?P<bare>[^`\n]+?))[ \t]*$',
+    re.MULTILINE,
+)
 
 
 def resolve_plan_dir(mode: str, plan_id: str | None, archived_plan_path: str | None) -> Path:
@@ -160,6 +178,10 @@ def extract_affected_files_per_deliverable(content: str) -> list[str]:
     Declared files are often listed as bullets beneath an ``**Affected files:**``
     heading inside each deliverable section. We collect all such bullets into
     a flat list for the recall check.
+
+    Both tolerated bullet forms yield the bare path: the canonical
+    ``- `path` (intent)`` form contributes only the backtick-delimited span,
+    and the bare ``- path`` form contributes the trimmed line body.
     """
     files: list[str] = []
     # Iterate blocks that start with the Affected files heading.
@@ -169,18 +191,31 @@ def extract_affected_files_per_deliverable(content: str) -> list[str]:
         # Stop at the next bold heading (next deliverable field).
         chunk = re.split(r'\*\*[A-Z][^*]+:\*\*', block, maxsplit=1)[0]
         for match in _AFFECTED_FILE_BULLET_RE.finditer(chunk):
-            path = match.group(1).strip()
+            raw = match.group('quoted') or match.group('bare') or ''
+            path = raw.strip()
             if path:
                 files.append(path)
     return files
 
 
-def check_affected_files_recall(solution_content: str, plan_dir: Path) -> tuple[str, str, dict[str, Any]]:
+def check_affected_files_recall(
+    solution_content: str, plan_dir: Path, deliverables: list[dict[str, str]]
+) -> tuple[str, str, dict[str, Any]]:
     """Return ``(status, message, details)`` for the affected-files recall check.
 
     Recall compares the outline's declared ``Affected files:`` against the live
     plan footprint resolved via :func:`_resolve_footprint` (live diff, then the
     legacy ``modified_files`` key for older archived plans, then empty).
+
+    ``deliverables`` is the already-extracted deliverable list from
+    :func:`check_deliverable_count`; it is threaded in rather than re-parsed so
+    the empty-declared-set branch can distinguish two very different states:
+
+    - the outline declares at least one deliverable yet no bullet could be
+      extracted — the parser produced nothing, which is a ``fail`` naming the
+      parse failure, never a benign ``skip``;
+    - the outline genuinely declares no deliverables — nothing could be
+      declared, so ``skip`` is substantiated.
 
     A present-but-unreadable ``references.json`` is surfaced distinctly as a
     recall failure (the retrospective must flag corrupt plan state rather than
@@ -188,7 +223,18 @@ def check_affected_files_recall(solution_content: str, plan_dir: Path) -> tuple[
     """
     declared = set(extract_affected_files_per_deliverable(solution_content))
     if not declared:
-        return 'skip', 'No Affected files declared in solution outline', {'declared': 0}
+        if deliverables:
+            return (
+                'fail',
+                f'No Affected files extracted from {len(deliverables)} declared deliverable(s) — '
+                'the Affected files bullet parser produced nothing',
+                {'declared': 0, 'deliverables': len(deliverables)},
+            )
+        return (
+            'skip',
+            'Solution outline declares no deliverables — nothing to declare',
+            {'declared': 0, 'deliverables': 0},
+        )
 
     references_path = plan_dir / 'references.json'
     if references_path.exists():
@@ -219,12 +265,23 @@ def check_affected_files_exact_match(
 ) -> tuple[str, str, list[str], list[str]]:
     """Return ``(status, message, outline_only, references_only)`` for the exact-match check.
 
-    Strict variant of the recall check: passes only when the outline and references
-    sets agree exactly (including both empty). Any drift — files declared in the
-    outline but missing from references, or listed in references but not declared
-    in the outline — produces a ``warn`` with both sides surfaced for the
-    retrospective synthesizer.
+    Strict variant of the recall check: ``pass`` only when both sides are
+    non-empty and agree exactly. A both-empty comparison substantiates nothing —
+    two empty sets are trivially equal whether the plan really touched no files
+    or the parser and the footprint resolver both failed — so it reports
+    ``inconclusive`` rather than a vacuous ``pass``. Any drift — files declared
+    in the outline but missing from references, or listed in references but not
+    declared in the outline — produces a ``warn`` with both sides surfaced for
+    the retrospective synthesizer.
     """
+    if not outline_files and not references_files:
+        return (
+            'inconclusive',
+            'Both the declared set and the resolved footprint are empty — '
+            'the comparison substantiates no verdict',
+            [],
+            [],
+        )
     if outline_files == references_files:
         return 'pass', 'Outline and references agree exactly', [], []
     outline_only = sorted(outline_files - references_files)
@@ -321,7 +378,9 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
         findings.append({'severity': 'error', 'message': tm_message})
 
     # Affected-files recall
-    rec_status, rec_message, rec_details = check_affected_files_recall(solution_content, plan_dir)
+    rec_status, rec_message, rec_details = check_affected_files_recall(
+        solution_content, plan_dir, deliverables
+    )
     checks.append({'name': 'affected_files_recall', 'status': rec_status, 'message': rec_message})
     details['affected_files_recall'] = rec_details
     if rec_status == 'fail':
@@ -367,7 +426,7 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
                 'message': exact_message,
             }
         )
-        if exact_status == 'warn':
+        if exact_status in ('warn', 'inconclusive'):
             findings.append({'severity': 'warning', 'message': exact_message})
 
     # metrics.md presence

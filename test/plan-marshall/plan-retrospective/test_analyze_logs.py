@@ -322,40 +322,131 @@ class TestPhase5LoggingGapExtractors:
     # cluster_dispatches
     # ------------------------------------------------------------------
 
+    # ``inferred_dispatches`` counts time-separated MARKER clusters. Only the
+    # two literal `Starting` / `Re-entering execute phase` lines contribute a
+    # timestamp; every other line carrying the `plan-marshall:phase-5-execute`
+    # caller tag is inert. The pre-fix substring admission inflated the count
+    # roughly 6x-18x on real logs, and the consuming RE_ENTRY_COVERAGE rule then
+    # reported a logging-discipline regression that did not exist.
+
+    @staticmethod
+    def _marker(ts: str, kind: str = 'Starting') -> str:
+        return (
+            f'[{ts}] [INFO] [abc] '
+            f'[STATUS] (plan-marshall:phase-5-execute) {kind} execute phase — 3 tasks pending'
+        )
+
+    @staticmethod
+    def _noise(ts: str, task: str = 'TASK-001') -> str:
+        """A phase-5-tagged NON-marker line — inert for clustering."""
+        return (
+            f'[{ts}] [INFO] [def] '
+            f'[OUTCOME] (plan-marshall:phase-5-execute) Completed {task}: x (1 steps)'
+        )
+
     def test_cluster_dispatches_single_cluster(self):
-        """All phase-5-execute lines within `gap_threshold_s` form one cluster."""
+        """Markers within `gap_threshold_s` of each other form one cluster."""
         work = [
-            '[2026-05-08T14:00:00Z] [INFO] [abc] '
-            '[STATUS] (plan-marshall:phase-5-execute) Starting execute phase — 3 tasks pending',
-            '[2026-05-08T14:00:10Z] [INFO] [def] '
-            '[OUTCOME] (plan-marshall:phase-5-execute) Completed TASK-001: x (1 steps)',
-            '[2026-05-08T14:00:20Z] [INFO] [ghi] '
-            '[OUTCOME] (plan-marshall:phase-5-execute) Completed TASK-002: y (1 steps)',
+            self._marker('2026-05-08T14:00:00Z'),
+            self._marker('2026-05-08T14:00:10Z', 'Re-entering'),
+            self._noise('2026-05-08T14:00:20Z', 'TASK-002'),
         ]
-        script: list[str] = []
-        result = _analyze_logs.cluster_dispatches(work, script, gap_threshold_s=30.0)
+        result = _analyze_logs.cluster_dispatches(work, [], gap_threshold_s=30.0)
         assert result['inferred_dispatches'] == 1
         assert result['starting_markers'] == 1
-        assert result['re_entering_markers'] == 0
+        assert result['re_entering_markers'] == 1
 
     def test_cluster_dispatches_regression_ghost_re_entry(self):
-        """Two clusters with a gap > 30s but only one Re-entering marker — the
-        cluster-02 ghost-re-entry pattern."""
+        """Two marker clusters split by a >30s gap, only one Re-entering marker.
+
+        Rewritten to marker-derived semantics: the second cluster is delimited by
+        a real marker line, NOT by an unrelated `[OUTCOME]` line. Under the
+        pre-fix substring admission this population's `[OUTCOME]` line alone
+        produced the second cluster, which is exactly the fabricated boundary the
+        fix removes.
+        """
         work = [
-            '[2026-05-08T14:00:00Z] [INFO] [abc] '
-            '[STATUS] (plan-marshall:phase-5-execute) Starting execute phase — 3 tasks pending',
-            '[2026-05-08T14:00:10Z] [INFO] [def] '
-            '[OUTCOME] (plan-marshall:phase-5-execute) Completed TASK-001: x (1 steps)',
-            # 5-minute gap → second dispatch cluster.
-            '[2026-05-08T14:05:10Z] [INFO] [ghi] '
-            '[OUTCOME] (plan-marshall:phase-5-execute) Completed TASK-002: y (1 steps)',
+            self._marker('2026-05-08T14:00:00Z'),
+            self._noise('2026-05-08T14:00:10Z'),
+            # 5-minute gap, then a genuine second dispatch marker.
+            self._marker('2026-05-08T14:05:10Z', 'Re-entering'),
+            self._noise('2026-05-08T14:05:20Z', 'TASK-002'),
         ]
-        script: list[str] = []
-        result = _analyze_logs.cluster_dispatches(work, script, gap_threshold_s=30.0)
+        result = _analyze_logs.cluster_dispatches(work, [], gap_threshold_s=30.0)
         assert result['inferred_dispatches'] == 2
         assert result['starting_markers'] == 1
-        # No "Re-entering" line was emitted for the second cluster — the
-        # symptom the LLM rule is meant to flag.
+        assert result['re_entering_markers'] == 1
+
+    def test_cluster_dispatches_ignores_non_marker_phase_5_lines(self):
+        """Regression: N markers plus M >> N spaced-out phase-5-tagged non-marker
+        lines must yield exactly N, not N + M.
+
+        Each `[OUTCOME]` line below is more than the 30s gap threshold from its
+        neighbours, so under the pre-fix substring admission every one of them
+        opened its own cluster.
+        """
+        work = [
+            self._marker('2026-05-08T14:00:00Z'),
+            self._marker('2026-05-08T14:30:00Z', 'Re-entering'),
+        ]
+        for minute in range(1, 11):
+            work.append(self._noise(f'2026-05-08T15:{minute:02d}:00Z', f'TASK-{minute:03d}'))
+
+        result = _analyze_logs.cluster_dispatches(work, [], gap_threshold_s=30.0)
+        assert result['inferred_dispatches'] == 2, (
+            'Only the two literal marker lines delimit a dispatch — the ten '
+            'spaced-out phase-5-tagged [OUTCOME] lines must contribute nothing.'
+        )
+        assert result['starting_markers'] == 1
+        assert result['re_entering_markers'] == 1
+
+    def test_cluster_dispatches_zero_markers_yields_zero(self):
+        """A log of nothing but phase-5-tagged non-marker lines infers 0 dispatches."""
+        work = [
+            self._noise('2026-05-08T14:00:00Z', 'TASK-001'),
+            self._noise('2026-05-08T14:10:00Z', 'TASK-002'),
+            self._noise('2026-05-08T14:20:00Z', 'TASK-003'),
+        ]
+        result = _analyze_logs.cluster_dispatches(work, [], gap_threshold_s=30.0)
+        assert result['inferred_dispatches'] == 0
+        assert result['starting_markers'] == 0
+        assert result['re_entering_markers'] == 0
+
+    def test_cluster_dispatches_script_log_lines_are_a_no_op(self):
+        """A non-marker script-log line leaves every output unchanged — the
+        parameter is kept in the signature purely for caller stability."""
+        work = [self._marker('2026-05-08T14:00:00Z')]
+        script = [
+            '[2026-05-08T14:00:05Z] [INFO] [xyz] '
+            'plan-marshall:manage-tasks:manage-tasks next (0.12s)',
+        ]
+        with_script = _analyze_logs.cluster_dispatches(work, script, gap_threshold_s=30.0)
+        without_script = _analyze_logs.cluster_dispatches(work, [], gap_threshold_s=30.0)
+        assert with_script == without_script
+        assert with_script['inferred_dispatches'] == 1
+
+    def test_cluster_dispatches_marker_shaped_script_log_line_is_a_no_op(self):
+        """A MARKER-SHAPED line in the script log must NOT move
+        ``inferred_dispatches``.
+
+        The sibling test above only exercises a non-marker script-log line, so it
+        passes whether or not the script log is scanned. This one places a real
+        marker line — more than ``gap_threshold_s`` from the work-log marker, so
+        it would open its own cluster if admitted — into ``script_log_lines``.
+        Admitting it would raise ``inferred_dispatches`` to 2 while
+        ``starting_markers`` / ``re_entering_markers`` (computed from
+        ``work_log_lines`` alone) stayed at 1 / 0: a dispatch fact no marker count
+        can corroborate, which is exactly the false verdict the consuming
+        RE_ENTRY_COVERAGE rule would report as a logging-discipline regression.
+        """
+        work = [self._marker('2026-05-08T14:00:00Z')]
+        script = [self._marker('2026-05-08T14:30:00Z', 'Re-entering')]
+
+        result = _analyze_logs.cluster_dispatches(work, script, gap_threshold_s=30.0)
+
+        assert result == _analyze_logs.cluster_dispatches(work, [], gap_threshold_s=30.0)
+        assert result['inferred_dispatches'] == 1
+        assert result['starting_markers'] == 1
         assert result['re_entering_markers'] == 0
 
     # ------------------------------------------------------------------

@@ -112,6 +112,20 @@ def should_emit(section_key: str, trigger_key: str | None, fragments: dict[str, 
         return _dispatch_boundaries_has_present_phase(fragment)
     if not isinstance(fragment, dict):
         return False
+    # Chat-history-analysis is gated BEFORE the status guard below, and that
+    # position is load-bearing — do NOT "tidy" this branch down beside the
+    # manifest-decisions / routing-decisions carve-outs. Those two gate
+    # ``status: success`` fragments, so sitting after the guard is correct for
+    # them. This aspect's Tier-2 graceful-skip fragment (specified by
+    # ``references/chat-history-analysis.md``) carries ``status: skipped`` plus a
+    # ``severity: warning`` finding the reference explicitly requires to be
+    # visible in the compiled report — the status guard would drop it, making a
+    # post-guard branch dead code for the only case it exists to serve. Keying on
+    # this aspect's own trigger_key means no other section's gating changes.
+    if trigger_key == 'chat-history-analysis':
+        findings = fragment.get('findings')
+        if isinstance(findings, list) and findings:
+            return True
     # Accept only success-status fragments with meaningful content.
     status = fragment.get('status')
     if status not in (None, 'success'):

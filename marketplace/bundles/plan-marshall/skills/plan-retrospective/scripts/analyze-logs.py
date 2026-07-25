@@ -386,12 +386,13 @@ def cluster_dispatches(
     script_log_lines: list[str],
     gap_threshold_s: float = 30.0,
 ) -> dict[str, Any]:
-    """Cluster phase-5-execute dispatches by inter-line gap to infer dispatch boundaries.
+    """Cluster the literal execute-phase MARKER lines to infer dispatch boundaries.
 
     Returns a dict with:
-      - inferred_dispatches: number of dispatch clusters detected (a cluster is
-            a contiguous run of phase-5-related log lines whose timestamps are
-            all within `gap_threshold_s` of the previous line in the run).
+      - inferred_dispatches: number of time-separated MARKER clusters (a cluster
+            is a contiguous run of `Starting`/`Re-entering execute phase` marker
+            lines whose timestamps are all within `gap_threshold_s` of the
+            previous marker in the run).
       - starting_markers: count of `[STATUS] ... Starting execute phase` lines.
       - re_entering_markers: count of `[STATUS] ... Re-entering execute phase` lines.
 
@@ -399,12 +400,37 @@ def cluster_dispatches(
     orchestrator re-dispatched the per-task `phase-5-execute` envelope more times
     than there are Re-entering markers (the symptom of D2's re-entry logging
     being skipped).
+
+    Only a line matching `_STARTING_RE` or `_RE_ENTERING_RE` contributes a
+    timestamp. Admitting every line merely CONTAINING the substring
+    `plan-marshall:phase-5-execute` inflated the count roughly 6x-18x, because
+    `work.log` is dense with unrelated `[STATUS]` / `[OUTCOME]` /
+    `[MANAGE-TASKS]` / title-token lines carrying that caller tag and spaced more
+    than the gap threshold apart during normal execution.
+
+    Caveat — the narrowed population may UNDER-count the first dispatch:
+    `starting_markers` is observed to be `0` on real plans, because the
+    `Starting execute phase` line documented in `phase-5-execute/SKILL.md` is
+    frequently not emitted. That under-count is itself an honest
+    logging-discipline signal for the consuming `RE_ENTRY_COVERAGE` rule, rather
+    than the fabricated over-count the substring admission produced. Repairing
+    the missing emission is a phase-5-execute orchestration concern, not this
+    extractor's.
+
+    `script_log_lines` stays in the signature for caller compatibility but is
+    deliberately NOT scanned. The marker lines are emitted only into `work.log`,
+    and `work_log_lines` is the sole population the `starting_markers` /
+    `re_entering_markers` counts below are computed from — so admitting the
+    script-log lines into the timestamp scan would let a marker-shaped line
+    landing in `script-execution.log` change `inferred_dispatches` while staying
+    invisible to those counts, i.e. produce a dispatch fact no marker count can
+    corroborate. Scanning one population for all three outputs makes that
+    divergence structurally impossible rather than merely unlikely.
     """
     timestamps: list[float] = []
-    for line in work_log_lines + script_log_lines:
-        # Restrict to lines that mention the phase-5-execute caller — non-phase-5-execute lines
-        # do not contribute to phase-5-execute dispatch counting.
-        if 'plan-marshall:phase-5-execute' not in line:
+    for line in work_log_lines:
+        # Only the two literal execute-phase markers delimit a dispatch.
+        if not (_STARTING_RE.search(line) or _RE_ENTERING_RE.search(line)):
             continue
         ts_match = _LINE_TIMESTAMP_RE.search(line)
         if not ts_match:

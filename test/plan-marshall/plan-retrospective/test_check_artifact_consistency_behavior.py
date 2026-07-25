@@ -33,7 +33,19 @@ _cac = load_script_module(
 # retrospective parses. ``parse_document_sections`` lowercases ``## Heading``
 # names, and ``extract_affected_files_per_deliverable`` collects bullets under
 # each ``**Affected files:**`` block.
-def _outline(deliverables: int = 1, affected: list[str] | None = None) -> str:
+def _outline(
+    deliverables: int = 1,
+    affected: list[str] | None = None,
+    *,
+    annotation: str | None = None,
+) -> str:
+    """Build an outline fragment.
+
+    ``annotation`` selects the ``Affected files:`` bullet form: ``None`` emits
+    the plain backticked ``- `path``` form, a string emits the canonical
+    annotated ``- `path` (annotation)`` form real outlines use.
+    """
+    suffix = f' ({annotation})' if annotation else ''
     parts = [
         '# Solution: Behavior',
         '',
@@ -53,7 +65,7 @@ def _outline(deliverables: int = 1, affected: list[str] | None = None) -> str:
         parts.append('')
         if affected and i == 1:
             parts.append('**Affected files:**')
-            parts.extend(f'- `{p}`' for p in affected)
+            parts.extend(f'- `{p}`{suffix}' for p in affected)
             parts.append('')
     return '\n'.join(parts) + '\n'
 
@@ -152,33 +164,94 @@ class TestExtractAffectedFiles:
         )
         assert files == ['src/a.py', 'src/b.py']
 
+    def test_collects_annotated_canonical_bullets_with_intent_stripped(self):
+        """The canonical ``- `path` (intent)`` form extracts the bare path.
+
+        The un-annotated case above is exactly why the pre-fix regex defect
+        survived: its ``\\s*$`` anchor sat immediately after the closing
+        backtick, so only un-annotated bullets ever matched.
+        """
+        files = _cac.extract_affected_files_per_deliverable(
+            _outline(affected=['src/a.py', 'src/b.py'], annotation='write-replace')
+        )
+        assert files == ['src/a.py', 'src/b.py']
+
+    def test_collects_bare_unbackticked_bullets(self):
+        """The bare ``- path`` form remains supported — the fix is additive."""
+        content = (
+            '# Solution\n\n## Summary\n\ns\n\n## Overview\n\no\n\n## Deliverables\n\n'
+            '### 1. One\n\n**Affected files:**\n- src/a.py\n- src/b.py\n'
+        )
+        assert _cac.extract_affected_files_per_deliverable(content) == ['src/a.py', 'src/b.py']
+
     def test_no_affected_block_yields_empty(self):
         assert _cac.extract_affected_files_per_deliverable(_outline()) == []
 
 
+_ONE_DELIVERABLE = [{'number': '1', 'title': 'Deliverable 1'}]
+
+
 class TestAffectedFilesRecall:
-    def test_skip_when_nothing_declared(self, tmp_path):
-        status, message, details = _cac.check_affected_files_recall(_outline(), tmp_path)
+    """An empty declared set is discriminated by whether the outline declared
+    any deliverable at all: nothing to declare is a substantiated ``skip``,
+    while deliverables-present-but-nothing-parsed is a parse ``fail``.
+    """
+
+    def test_skip_when_outline_declares_no_deliverables(self, tmp_path):
+        """Genuine no-deliverables outline → skip; nothing could be declared."""
+        status, message, details = _cac.check_affected_files_recall(
+            _outline(deliverables=0), tmp_path, []
+        )
         assert status == 'skip'
         assert int(details['declared']) == 0
+        assert int(details['deliverables']) == 0
+        assert 'no deliverables' in message.lower()
+
+    def test_fail_when_deliverables_present_but_nothing_parsed(self, tmp_path):
+        """Deliverables declared but zero bullets extracted → fail, not skip.
+
+        This is the vacuous-skip defect: the bullet parser produced nothing, so
+        no coverage verdict is substantiated and the check must say so.
+        """
+        status, message, details = _cac.check_affected_files_recall(
+            _outline(), tmp_path, _ONE_DELIVERABLE
+        )
+        assert status == 'fail'
+        assert int(details['declared']) == 0
+        assert int(details['deliverables']) == 1
+        assert 'parser produced nothing' in message
 
     def test_pass_when_footprint_covers_declared(self, tmp_path):
         (tmp_path / 'references.json').write_text(
             json.dumps({'modified_files': ['src/a.py', 'src/b.py']}), encoding='utf-8'
         )
         status, _msg, details = _cac.check_affected_files_recall(
-            _outline(affected=['src/a.py', 'src/b.py']), tmp_path
+            _outline(affected=['src/a.py', 'src/b.py']), tmp_path, _ONE_DELIVERABLE
         )
         assert status == 'pass'
         assert int(details['found']) == 2
         assert float(details['recall_pct']) == 100.0
+
+    def test_pass_when_annotated_bullets_cover_declared(self, tmp_path):
+        """The canonical annotated bullet form yields the same recall verdict."""
+        (tmp_path / 'references.json').write_text(
+            json.dumps({'modified_files': ['src/a.py', 'src/b.py']}), encoding='utf-8'
+        )
+        status, _msg, details = _cac.check_affected_files_recall(
+            _outline(affected=['src/a.py', 'src/b.py'], annotation='write-replace'),
+            tmp_path,
+            _ONE_DELIVERABLE,
+        )
+        assert status == 'pass'
+        assert int(details['declared']) == 2
+        assert int(details['found']) == 2
 
     def test_fail_when_recall_below_threshold(self, tmp_path):
         (tmp_path / 'references.json').write_text(
             json.dumps({'modified_files': ['src/a.py']}), encoding='utf-8'
         )
         status, _msg, details = _cac.check_affected_files_recall(
-            _outline(affected=['src/a.py', 'src/b.py', 'src/c.py']), tmp_path
+            _outline(affected=['src/a.py', 'src/b.py', 'src/c.py']), tmp_path, _ONE_DELIVERABLE
         )
         assert status == 'fail'
         assert int(details['found']) == 1
@@ -187,19 +260,38 @@ class TestAffectedFilesRecall:
     def test_fail_when_references_unreadable(self, tmp_path):
         (tmp_path / 'references.json').write_text('{ broken', encoding='utf-8')
         status, message, _details = _cac.check_affected_files_recall(
-            _outline(affected=['src/a.py']), tmp_path
+            _outline(affected=['src/a.py']), tmp_path, _ONE_DELIVERABLE
         )
         assert status == 'fail'
         assert 'unreadable' in message.lower()
 
 
 class TestExactMatch:
-    def test_pass_on_identical_sets(self):
+    def test_pass_on_identical_non_empty_sets(self):
         status, _msg, outline_only, references_only = _cac.check_affected_files_exact_match(
             {'a', 'b'}, {'a', 'b'}
         )
         assert status == 'pass'
         assert outline_only == []
+        assert references_only == []
+
+    def test_inconclusive_on_both_empty(self):
+        """Two empty sets are trivially equal and substantiate no verdict."""
+        status, message, outline_only, references_only = _cac.check_affected_files_exact_match(
+            set(), set()
+        )
+        assert status == 'inconclusive'
+        assert 'substantiates no verdict' in message
+        assert outline_only == []
+        assert references_only == []
+
+    def test_warn_when_only_one_side_empty(self):
+        """A one-sided empty set is real drift, not an inconclusive comparison."""
+        status, _msg, outline_only, references_only = _cac.check_affected_files_exact_match(
+            {'a'}, set()
+        )
+        assert status == 'warn'
+        assert outline_only == ['a']
         assert references_only == []
 
     def test_warn_and_surface_both_sides(self):
@@ -310,6 +402,58 @@ class TestCmdRunInProcess:
         assert present is not None
         assert present['status'] == 'fail'
         assert any('solution_outline.md missing' in f['message'] for f in result['findings'])
+
+    def test_both_empty_yields_inconclusive_and_recall_fail(self, tmp_path):
+        """A plan declaring deliverables but no parseable bullets, with an empty
+        footprint, must report ``affected_files_recall: fail`` and
+        ``affected_files_exact_match: inconclusive`` — never the pre-fix
+        ``skip`` + ``pass`` pair that read as a clean green.
+        """
+        plan_dir = tmp_path / 'plan'
+        plan_dir.mkdir()
+        (plan_dir / 'solution_outline.md').write_text(_outline(), encoding='utf-8')
+        (plan_dir / 'references.json').write_text(
+            json.dumps({'modified_files': []}), encoding='utf-8'
+        )
+        (plan_dir / 'metrics.md').write_text('# Metrics\n', encoding='utf-8')
+        tasks = plan_dir / 'tasks'
+        tasks.mkdir()
+        (tasks / 'TASK-001.json').write_text(json.dumps({'deliverable': 1}), encoding='utf-8')
+
+        result = _cac.cmd_run(_run_args(plan_dir))
+
+        recall = _check(result['checks'], 'affected_files_recall')
+        assert recall['status'] == 'fail'
+        exact = _check(result['checks'], 'affected_files_exact_match')
+        assert exact['status'] == 'inconclusive'
+        assert result['affected_files_exact_match']['status'] == 'inconclusive'
+        assert any(
+            f['severity'] == 'warning' and 'substantiates no verdict' in f['message']
+            for f in result['findings']
+        )
+
+    def test_manifest_present_does_not_forward_inconclusive(self, tmp_path):
+        """The manifest downgrade keys on ``warn`` only — an ``inconclusive``
+        verdict is never absorbed into the ``info`` forwarding branch.
+        """
+        plan_dir = tmp_path / 'plan'
+        plan_dir.mkdir()
+        (plan_dir / 'solution_outline.md').write_text(_outline(), encoding='utf-8')
+        (plan_dir / 'references.json').write_text(
+            json.dumps({'modified_files': []}), encoding='utf-8'
+        )
+        (plan_dir / 'metrics.md').write_text('# Metrics\n', encoding='utf-8')
+        tasks = plan_dir / 'tasks'
+        tasks.mkdir()
+        (tasks / 'TASK-001.json').write_text(json.dumps({'deliverable': 1}), encoding='utf-8')
+        (plan_dir / 'execution.toon').write_text('plan_id: plan\n', encoding='utf-8')
+
+        result = _cac.cmd_run(_run_args(plan_dir))
+
+        exact = _check(result['checks'], 'affected_files_exact_match')
+        assert exact['status'] == 'inconclusive'
+        assert result['affected_files_exact_match']['manifest_present'] is True
+        assert result['affected_files_exact_match']['forwarded_to_manifest'] is False
 
     def test_exact_match_warn_drives_warning_finding_without_manifest(self, tmp_path):
         plan_dir = tmp_path / 'plan'

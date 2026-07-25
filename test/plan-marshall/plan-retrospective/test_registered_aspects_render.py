@@ -79,6 +79,31 @@ def _scan_dispatched_aspects() -> set[str]:
     Source-independent of ``SECTION_SPEC`` — reads the ``SKILL.md`` text and
     extracts every literal ``add --aspect <key>`` command. Placeholder templates
     (``{name}`` / ``{aspect}``) are excluded by the regex anchor.
+
+    **Known blind spot — file scope, not regex scope.** This scanner reads ONLY
+    ``SKILL.md``. An aspect whose ``add --aspect <key>`` command lives in its
+    aspect REFERENCE doc rather than in ``SKILL.md`` is therefore invisible to
+    direction (b) of the completeness guard, even though the regex would match
+    the command fine. ``chat-history-analysis`` is exactly that shape —
+    ``SKILL.md``'s aspect-14 block dispatches only the ``extract-chat-signal``
+    pre-pass and delegates fragment synthesis and registration to
+    ``references/chat-history-analysis.md`` — which is why it needs the explicit
+    anchor in ``TestChatHistoryAnalysisRenders`` below. Direction (a) misses it
+    too: an unregisterable key is not in ``_registerable_aspect_keys()`` and so is
+    never iterated.
+
+    **Explicitly-unresolved out-of-scope gap.** An outline-time trial of the
+    obvious "scan ``references/*.md`` too" widening surfaced two FURTHER
+    dispatched-but-unlisted keys — ``direct-gh-glab-usage``
+    (``references/direct-gh-glab-usage.md``) and
+    ``execution-context-dispatch-audit``
+    (``standards/execution-context-dispatch-audit.md``). Those two may be
+    legitimately domain-contributed (registerable via ``_domain_aspect_keys()``
+    rather than ``SECTION_SPEC``), or they may be the same defect a second and
+    third time — that was NOT resolved. Widening the scanner's file set here
+    would turn the guard red for aspects outside the owning plan's scope, so the
+    widening is deliberately deferred and the two keys are recorded here so the
+    next reader inherits the finding rather than rediscovering it.
     """
     skill_text = _SKILL_MD_PATH.read_text(encoding='utf-8')
     return set(_ASPECT_DISPATCH_RE.findall(skill_text))
@@ -228,3 +253,110 @@ class TestConditionalFragmentActuallyRenders:
             'routing-decisions has a SECTION_SPEC row but its real (findings-less) '
             'fragment shape is rejected by should_emit — the section never renders'
         )
+
+
+_CHAT_HISTORY_KEY = 'chat-history-analysis'
+_CHAT_HISTORY_HEADING = 'Chat History Analysis'
+_TIER2_WARNING = 'transcript unavailable — chat-history analysis skipped'
+
+
+class TestChatHistoryAnalysisRenders:
+    """Explicit anchor for aspect 14, which the SKILL.md scanner cannot see.
+
+    ``_scan_dispatched_aspects()`` reads only ``SKILL.md`` and aspect 14's
+    ``add --aspect chat-history-analysis`` command lives in
+    ``references/chat-history-analysis.md`` (see the scanner's docstring for the
+    full blind-spot note and the two unresolved out-of-scope keys), so neither
+    direction of the completeness guard covers this aspect. These assertions are
+    that missing coverage, made explicitly.
+    """
+
+    @staticmethod
+    def _tier1_fragment() -> dict:
+        """Tier-1 success fragment — a real transcript was read and analyzed."""
+        return {
+            'status': 'success',
+            'aspect': 'chat_history_analysis',
+            'findings': [
+                {'severity': 'info', 'message': 'operator corrected the scope once'},
+            ],
+        }
+
+    @staticmethod
+    def _tier2_fragment() -> dict:
+        """Tier-2 graceful-skip fragment — ``status: skipped`` plus a warning.
+
+        ``references/chat-history-analysis.md`` explicitly requires this warning
+        to be visible in the compiled report, so the fragment MUST render despite
+        its non-success status.
+        """
+        return {
+            'status': 'skipped',
+            'aspect': 'chat_history_analysis',
+            'findings': [{'severity': 'warning', 'message': _TIER2_WARNING}],
+        }
+
+    def test_chat_history_analysis_is_registerable(self):
+        assert _CHAT_HISTORY_KEY in _cf._registerable_aspect_keys(), (
+            'chat-history-analysis must be registerable — without a SECTION_SPEC row '
+            '`collect-fragments add --aspect chat-history-analysis` is rejected with '
+            '`Unregistered aspect key` and the aspect ships dead.'
+        )
+
+    def test_chat_history_analysis_has_a_section_spec_row(self):
+        assert _CHAT_HISTORY_KEY in _spec_fragment_keys()
+
+    def test_section_sits_between_routing_decisions_and_proposed_lessons(self):
+        keys = [fragment_key for _heading, fragment_key, _trigger in _rs.SECTION_SPEC]
+        assert keys.index('routing-decisions') < keys.index(_CHAT_HISTORY_KEY)
+        assert keys.index(_CHAT_HISTORY_KEY) < keys.index('lessons-proposal')
+
+    def test_tier1_fragment_renders_section(self):
+        fragments = {'_meta': {'mode': 'live'}, _CHAT_HISTORY_KEY: self._tier1_fragment()}
+        content, _written, _omitted = _cr.build_document(
+            'p', 'live', Path('/tmp/plan'), None, fragments)
+        assert f'## {_CHAT_HISTORY_HEADING}' in content
+
+    def test_tier2_skipped_fragment_renders_section_and_warning(self):
+        """Asserted on the RENDERED DOCUMENT, deliberately.
+
+        Asserting only that a ``should_emit`` branch exists would pass against
+        the dead-code placement this deliverable exists to avoid: a branch placed
+        AFTER the ``status not in (None, 'success')`` guard never runs for a
+        ``skipped`` fragment. Only the rendered output proves the branch sits
+        before the guard.
+        """
+        fragments = {'_meta': {'mode': 'live'}, _CHAT_HISTORY_KEY: self._tier2_fragment()}
+        content, _written, _omitted = _cr.build_document(
+            'p', 'live', Path('/tmp/plan'), None, fragments)
+        assert f'## {_CHAT_HISTORY_HEADING}' in content, (
+            'The Tier-2 status:skipped chat-history fragment must still render — its '
+            'warning finding is required to be visible in the compiled report. A '
+            'should_emit branch placed after the status guard is dead code for this case.'
+        )
+        assert _TIER2_WARNING in content
+
+    def test_should_emit_true_for_skipped_fragment(self):
+        """Function-level pin on the pre-guard placement."""
+        fragment = self._tier2_fragment()
+        assert _cr.should_emit(
+            _CHAT_HISTORY_HEADING, _CHAT_HISTORY_KEY, {_CHAT_HISTORY_KEY: fragment}
+        ) is True
+
+    def test_should_emit_false_for_skipped_fragment_without_findings(self):
+        """The carve-out is bounded — it does not blanket-admit every skip.
+
+        A ``skipped`` fragment carrying no finding has nothing for the report to
+        surface, so it falls through to the ordinary status guard.
+        """
+        fragment = {'status': 'skipped', 'aspect': 'chat_history_analysis', 'findings': []}
+        assert _cr.should_emit(
+            _CHAT_HISTORY_HEADING, _CHAT_HISTORY_KEY, {_CHAT_HISTORY_KEY: fragment}
+        ) is False
+
+    def test_other_sections_gating_is_unchanged(self):
+        """The branch keys on its own trigger_key — no other section is affected."""
+        skipped_other = {'status': 'skipped', 'findings': [{'severity': 'warning', 'message': 'x'}]}
+        assert _cr.should_emit(
+            'Artifact Consistency', 'artifact-consistency', {'artifact-consistency': skipped_other}
+        ) is False

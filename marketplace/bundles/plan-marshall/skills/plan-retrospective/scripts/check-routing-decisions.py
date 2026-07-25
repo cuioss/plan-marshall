@@ -19,10 +19,18 @@ sets ``llm_judgement_required: true`` to mark that boundary.
 Facts emitted:
   * ``posture`` / ``planning_lane`` — the recorded routing decisions.
   * ``mis_prune`` checks — for each prunable step ABSENT from the final
-    ``phase_6.steps``, re-evaluate its predicate against the realized footprint.
-    A predicate that is now FALSE (e.g. ``sonar-roundtrip`` skipped as
-    "no code delta" but the merged diff touched production code) is a mis-prune
-    — the highest-value output.
+    ``phase_6.steps``, first resolve WHY it was removed from the recorded
+    decision log, and only then re-evaluate its predicate. A step named by one
+    of the four recorded non-predicate removal mechanisms (posture cutoff,
+    ``unresolved_ask_provider_drop``, ``simplify_inactive``, and a
+    ``ceremony_finalize_selection`` resolving ``never``) is SKIPPED — its
+    predicate never fired, so its absence proves nothing about the footprint.
+    Only a step whose removal no recorded mechanism explains, in a decision log
+    that was actually readable, has its predicate re-evaluated: a predicate that
+    is now FALSE (e.g. ``sonar-roundtrip`` skipped as "no code delta" but the
+    merged diff touched production code) is a mis-prune — the highest-value
+    output. An absent or unreadable decision log substantiates no cause at all,
+    so the verdict is ``inconclusive`` rather than a fabricated ``fail``.
   * ``cost_preview`` — predicted (init preview) vs actual (``execution_log``)
     token totals and the delta, feeding the §4.6a recalibration loop.
   * ``kept_step_yield`` — finding count as the adversarial-step yield proxy.
@@ -65,6 +73,14 @@ _TEST_NAME_RE = re.compile(
 # the realized footprint. Each maps to its ``prunable_when`` predicate id — the
 # vocabulary is owned by ext-point-lane-element.md; this map records only which
 # step carries which predicate for the deterministic re-evaluation.
+#
+# RE-DERIVATION OBLIGATION: ``_REMOVAL_CAUSE_PATTERNS`` below enumerates every
+# recorded mechanism that can remove one of THESE members from ``phase_6.steps``
+# without its predicate firing. That enumeration is bound to this map's
+# membership — adding a step here obliges a re-derivation of the removal-cause
+# set against ``manage-execution-manifest/standards/decision-rules.md``. An
+# unenumerated removal mechanism reintroduces the false ``mis_prune`` verdict by
+# that route.
 _PRUNABLE_PREDICATES = {
     'sonar-roundtrip': 'no_code_delta',
     'finalize-step-simplify': 'no_code_delta',
@@ -72,6 +88,98 @@ _PRUNABLE_PREDICATES = {
 
 # The lane_resolution decision-log caller tag.
 _LANE_DECISION_RE = re.compile(r'lane_resolution\b')
+
+# Recorded non-predicate removal mechanisms, one pattern per mechanism. Each
+# line shape is copied verbatim from
+# ``manage-execution-manifest/standards/decision-rules.md`` (the emitter
+# contract). A step named by any of these left ``phase_6.steps`` for a reason
+# orthogonal to its prune predicate, so its absence is NOT evidence the
+# predicate fired.
+#
+# Mechanism 4 (``ceremony_finalize_selection``) shares one line shape across
+# both directions — ``added {step} to`` and ``dropped {step} from``. Only the
+# ``dropped ... from`` direction is a removal; the ``added`` direction is a
+# force-include and MUST NOT be read as a cause.
+_REMOVAL_CAUSE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    (
+        'posture_cutoff',
+        re.compile(
+            r'lane_resolution\s+—\s+execution_profile=[^,]+,\s+dropped\s+(?P<steps>.+?)'
+            r'\s+from\s+phase_6\.steps\s+\(tier above posture cutoff\)'
+        ),
+    ),
+    (
+        'unresolved_ask_provider_drop',
+        re.compile(
+            r'unresolved_ask_provider_drop\s+—\s+dropped\s+(?P<steps>.+?)'
+            r'\s+from\s+phase_6\.steps\s+\(unresolved lane:ask, provider absent\)'
+        ),
+    ),
+    (
+        'simplify_inactive',
+        re.compile(r'(?P<steps>finalize-step-simplify)\s+omitted\s+—\s+change_type='),
+    ),
+    (
+        'ceremony_finalize_never',
+        re.compile(
+            r'ceremony_finalize selection\s+—\s+finalize\.\w+=[^,]+,\s+dropped\s+(?P<steps>.+?)'
+            r'\s+from\s+phase_6\.steps'
+        ),
+    ),
+)
+
+# Removal-cause tokens for rows where no recorded mechanism applies.
+_CAUSE_NOT_REMOVED = 'not_removed'
+_CAUSE_NOT_EVALUATED = 'not_evaluated'
+_CAUSE_PREDICATE_EVALUATED = 'predicate_evaluated'
+_CAUSE_UNESTABLISHABLE = 'unestablishable'
+
+
+def _bare_step(name: str) -> str:
+    """Normalize a step key to its bare form.
+
+    Recorded decision-log lines may name a step with a ``default:`` /
+    ``project:`` prefix while ``_PRUNABLE_PREDICATES`` keys are bare. Both sides
+    are normalized with the same ``rsplit(':', 1)`` rule ``_phase_6_steps``
+    applies, so a prefixed recorded drop matches the bare predicate key.
+    """
+    return name.rsplit(':', 1)[-1] if ':' in name else name
+
+
+def _parse_step_tokens(raw: str) -> list[str]:
+    """Split a decision-log ``{steps}`` capture into bare step names.
+
+    The lane-resolution mechanism renders its step list as a Python list repr
+    (``['a', 'b']``); the other three name a single bare step. Both forms are
+    tolerated.
+    """
+    text = raw.strip()
+    if text.startswith('[') and text.endswith(']'):
+        text = text[1:-1]
+    tokens = []
+    for part in text.split(','):
+        token = part.strip().strip('\'"').strip()
+        if token:
+            tokens.append(_bare_step(token))
+    return tokens
+
+
+def resolve_removal_causes(decision_lines: list[str]) -> dict[str, str]:
+    """Return ``{bare_step_name: removal_cause}`` from the recorded decision log.
+
+    Pure over its input — no filesystem access. The first mechanism that names a
+    step wins, so a step removed once and later re-added-then-dropped keeps its
+    earliest recorded cause.
+    """
+    causes: dict[str, str] = {}
+    for line in decision_lines:
+        for cause, pattern in _REMOVAL_CAUSE_PATTERNS:
+            match = pattern.search(line)
+            if not match:
+                continue
+            for step in _parse_step_tokens(match.group('steps')):
+                causes.setdefault(step, cause)
+    return causes
 
 
 def resolve_plan_dir(mode: str, plan_id: str | None, archived_plan_path: str | None) -> Path:
@@ -114,16 +222,35 @@ def load_status_metadata(plan_dir: Path) -> dict[str, Any]:
     return metadata if isinstance(metadata, dict) else {}
 
 
-def load_decision_lane_entries(plan_dir: Path) -> list[str]:
-    """Return the decision-log lines mentioning ``lane_resolution``."""
+def load_decision_log_lines(plan_dir: Path) -> tuple[list[str], bool]:
+    """Return ``(lines, log_readable)`` for the plan's decision log.
+
+    ``log_readable`` is ``True`` only when the file existed AND was read
+    successfully. A missing or unreadable log yields ``([], False)`` — the
+    explicit discriminator that separates "the log records no removal cause for
+    this step" (positive evidence) from "no log was available to record one"
+    (no evidence at all). Collapsing both to ``[]``, as the previous loader did,
+    is exactly the ambiguity that let an unestablishable cause be reported as a
+    substantiated mis-prune.
+    """
     log_path = plan_dir.joinpath(*DECISION_LOG_RELPATH)
     if not log_path.exists():
-        return []
+        return [], False
     try:
-        lines = log_path.read_text(encoding='utf-8').splitlines()
+        return log_path.read_text(encoding='utf-8').splitlines(), True
     except OSError:
-        return []
-    return [line for line in lines if _LANE_DECISION_RE.search(line)]
+        return [], False
+
+
+def lane_resolution_view(decision_lines: list[str]) -> list[str]:
+    """Return the ``lane_resolution`` subset of ``decision_lines``.
+
+    The thin view feeding the report-facing ``recompose_divergence`` /
+    ``recorded_lane_decisions`` fields. Widening the underlying loader must not
+    change what those two fields count, so the filter lives here rather than in
+    the loader.
+    """
+    return [line for line in decision_lines if _LANE_DECISION_RE.search(line)]
 
 
 def load_diff_files(diff_file: str | None) -> list[str]:
@@ -190,25 +317,88 @@ def _phase_6_steps(manifest: dict[str, Any]) -> list[str]:
     return []
 
 
-def evaluate_mis_prunes(manifest: dict[str, Any], footprint: list[str], have_footprint: bool) -> list[dict[str, Any]]:
-    """Re-evaluate each absent prunable step's predicate against the realized footprint.
+def evaluate_mis_prunes(
+    manifest: dict[str, Any],
+    footprint: list[str],
+    have_footprint: bool,
+    decision_lines: list[str],
+    log_readable: bool,
+) -> list[dict[str, Any]]:
+    """Resolve each absent prunable step's REMOVAL CAUSE, then re-evaluate its predicate.
 
-    A prunable step ABSENT from the final ``phase_6.steps`` whose ``no_code_delta``
-    predicate is now FALSE (the merged diff touched production code) is flagged as
-    a mis-prune. When no footprint is available the checks SKIP (no false
-    positives).
+    The removal *fact* never implies the removal *cause*: a prunable step can
+    leave ``phase_6.steps`` through four recorded mechanisms that are all
+    orthogonal to the footprint (see ``_REMOVAL_CAUSE_PATTERNS``). The recorded
+    decision log is consulted FIRST, and the predicate is re-evaluated only for a
+    step whose removal no recorded mechanism explains.
+
+    The verdict rules are mutually exclusive and jointly exhaustive over an
+    absent step:
+
+    ===================================================  ==============
+    Absent step's state                                  Verdict
+    ===================================================  ==============
+    No realized footprint                                ``skip``
+    Named by a recorded non-predicate cause              ``skip``
+    Log unreadable / absent (``log_readable == False``)  ``inconclusive``
+    Readable log names no cause, predicate now false     ``fail``
+    Readable log names no cause, predicate still holds   ``pass``
+    ===================================================  ==============
+
+    ``log_readable`` is the SOLE discriminator between ``fail`` and
+    ``inconclusive``. The composer emits a decision-log line for every one of the
+    four mechanisms, so a *readable* log naming no cause for this step is
+    positive evidence the predicate is the remover — a substantiated ``fail``.
+    An *unreadable or absent* log substantiates nothing, so the honest verdict is
+    ``inconclusive``.
+
+    Every returned row carries ``removal_cause``: the mechanism token for a
+    recorded removal, ``predicate_evaluated`` where the predicate actually ran,
+    and a descriptive token otherwise.
     """
     final_steps = {s.rsplit(':', 1)[-1] if ':' in s else s for s in _phase_6_steps(manifest)}
     bare_final = set(_phase_6_steps(manifest)) | final_steps
     has_production = footprint_has_production(footprint)
+    removal_causes = resolve_removal_causes(decision_lines)
     checks: list[dict[str, Any]] = []
     for step, predicate in _PRUNABLE_PREDICATES.items():
         absent = step not in bare_final
         if not absent:
-            checks.append({'check': f'mis_prune:{step}', 'status': 'pass', 'predicate': predicate, 'detail': 'step ran'})
+            checks.append({
+                'check': f'mis_prune:{step}',
+                'status': 'pass',
+                'predicate': predicate,
+                'removal_cause': _CAUSE_NOT_REMOVED,
+                'detail': 'step ran',
+            })
             continue
         if not have_footprint:
-            checks.append({'check': f'mis_prune:{step}', 'status': 'skip', 'predicate': predicate, 'detail': 'no realized footprint'})
+            checks.append({
+                'check': f'mis_prune:{step}',
+                'status': 'skip',
+                'predicate': predicate,
+                'removal_cause': _CAUSE_NOT_EVALUATED,
+                'detail': 'no realized footprint',
+            })
+            continue
+        recorded_cause = removal_causes.get(step)
+        if recorded_cause is not None:
+            checks.append({
+                'check': f'mis_prune:{step}',
+                'status': 'skip',
+                'predicate': predicate,
+                'removal_cause': recorded_cause,
+                'detail': f'dropped by {recorded_cause}, prune predicate not evaluated',
+            })
+            continue
+        if not log_readable:
+            checks.append({
+                'check': f'mis_prune:{step}',
+                'status': 'inconclusive',
+                'predicate': predicate,
+                'removal_cause': _CAUSE_UNESTABLISHABLE,
+                'detail': 'removal cause unestablishable — decision log absent or unreadable',
+            })
             continue
         # no_code_delta predicate is now FALSE when the diff touched production.
         if predicate == 'no_code_delta' and has_production:
@@ -216,10 +406,17 @@ def evaluate_mis_prunes(manifest: dict[str, Any], footprint: list[str], have_foo
                 'check': f'mis_prune:{step}',
                 'status': 'fail',
                 'predicate': predicate,
+                'removal_cause': _CAUSE_PREDICATE_EVALUATED,
                 'detail': f'{step} skipped as no_code_delta but the realized footprint touched production code',
             })
         else:
-            checks.append({'check': f'mis_prune:{step}', 'status': 'pass', 'predicate': predicate, 'detail': 'predicate still holds'})
+            checks.append({
+                'check': f'mis_prune:{step}',
+                'status': 'pass',
+                'predicate': predicate,
+                'removal_cause': _CAUSE_PREDICATE_EVALUATED,
+                'detail': 'predicate still holds',
+            })
     return checks
 
 
@@ -263,11 +460,14 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
         }
 
     metadata = load_status_metadata(plan_dir)
-    lane_decision_entries = load_decision_lane_entries(plan_dir)
+    decision_lines, log_readable = load_decision_log_lines(plan_dir)
+    lane_decision_entries = lane_resolution_view(decision_lines)
     footprint = load_diff_files(args.diff_file)
     have_footprint = bool(footprint)
 
-    mis_prune_checks = evaluate_mis_prunes(manifest, footprint, have_footprint)
+    mis_prune_checks = evaluate_mis_prunes(
+        manifest, footprint, have_footprint, decision_lines, log_readable
+    )
     cost_preview = evaluate_cost_preview(manifest, metadata)
 
     summary = {
