@@ -25,8 +25,8 @@ Module import resolves via the root conftest's marketplace PYTHONPATH setup
 
 import bot_registry
 
-# The three bots shipped as standards docs in this skill.
-_SHIPPED_BOTS = ['coderabbit', 'gemini', 'sourcery']
+# The bots shipped as standards docs in this skill.
+_SHIPPED_BOTS = ['coderabbit', 'gemini', 'pr-agent', 'sourcery']
 
 
 # =============================================================================
@@ -52,6 +52,7 @@ def test_login_to_bot_kind_maps_every_shipped_author():
     assert mapping == {
         'coderabbitai': 'coderabbit',
         'gemini-code-assist': 'gemini',
+        'cuioss-review-bot': 'pr-agent',
         'sourcery-ai': 'sourcery',
     }
 
@@ -61,18 +62,27 @@ def test_trigger_comment_per_bot():
     assert bot_registry.trigger_comment('coderabbit') == '@coderabbitai review'
     assert bot_registry.trigger_comment('gemini') == '/gemini review'
     assert bot_registry.trigger_comment('sourcery') == '@sourcery-ai review'
+    assert bot_registry.trigger_comment('pr-agent') == '/review'
 
 
 def test_completion_check_name_per_bot():
-    """CodeRabbit publishes an in-progress completion check-run; Sourcery and Gemini do not."""
+    """CodeRabbit publishes an in-progress completion check-run; the others do not."""
     assert bot_registry.completion_check_name('coderabbit') == 'CodeRabbit'
     assert bot_registry.completion_check_name('sourcery') == ''
     assert bot_registry.completion_check_name('gemini') == ''
+    assert bot_registry.completion_check_name('pr-agent') == ''
 
 
 def test_honors_skip_label_per_bot():
-    """CodeRabbit honors the central skip label; Sourcery and Gemini do not."""
+    """CodeRabbit and PR-Agent honor the central skip label; Sourcery and Gemini do not.
+
+    The two ``True`` cases are honored by DIFFERENT mechanisms — CodeRabbit from its own
+    central config, PR-Agent from the reusable workflow's ``if:`` guard, because its
+    ``ignore_pr_labels`` setting is webhook-server-only and inert in GitHub Action mode.
+    The registry records the observable behaviour, not the mechanism.
+    """
     assert bot_registry.honors_skip_label('coderabbit') is True
+    assert bot_registry.honors_skip_label('pr-agent') is True
     assert bot_registry.honors_skip_label('sourcery') is False
     assert bot_registry.honors_skip_label('gemini') is False
 
@@ -88,6 +98,9 @@ def test_ignore_patterns_are_nonempty_literal_markers():
 
     gemini = bot_registry.ignore_patterns('gemini')
     assert 'being sunset' in gemini
+
+    pr_agent = bot_registry.ignore_patterns('pr-agent')
+    assert '## PR Agent Walkthrough' in pr_agent
 
 
 def test_ignore_patterns_preserve_quoted_special_characters():
@@ -107,6 +120,9 @@ def test_severity_map_per_bot():
 
     gemini = bot_registry.severity_map('gemini')
     assert gemini['low'] == 'low'
+
+    pr_agent = bot_registry.severity_map('pr-agent')
+    assert pr_agent['security_concern'] == 'high'
 
 
 def test_module_functions_match_registry_singleton():
