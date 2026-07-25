@@ -154,24 +154,33 @@ The JSON array round-trips through `get`.
 
 ## Noun: orchestrator
 
-Manage orchestrator-tier settings stored under the `orchestrator.*` block in
-marshal.json. The block mirrors the plan-tier autonomy knobs
-(`finalize_without_asking` / `loop_back_without_asking` / `auto_merge_after_ci`)
-at the epic-orchestration tier. `marshall-steward` seeds `orchestrator.auto_emit`
-to its safe default (`false`); on a fresh marshal.json that lacks the block, `get`
-returns the canonical default from `DEFAULT_ORCHESTRATOR`, mirroring the
-implicit-default semantics of `project get`.
+Manage the top-level `orchestrator` block in marshal.json — a **sibling of `plan`**, not a child of it. The block pins the effort of the orchestrator's read-only analysis dispatch surfaces (`analyze` / `decompose` / `reader`) behind a config-resolved uplift ceiling, holds the project-level `parallelization_scope` default that pre-fills the per-epic `AskUserQuestion` in `marshall-orchestrator` init, and carries the epic-orchestration autonomy knob `auto_emit` (the orchestrator-tier analog of the plan-tier `finalize_without_asking` / `loop_back_without_asking` / `auto_merge_after_ci` family). `marshall-steward` seeds `orchestrator.auto_emit` to its safe default (`false`); the `effort` and `parallelization_scope` slots stay unset (implicit defaults) until written. With `orchestrator.effort` / `orchestrator.parallelization_scope` unset, every reader resolves exactly as before this block existed — `plan.effort` for baseline orchestrator effort, an unset-ceiling no-op for the uplift bound, and the hard-coded `parallelization_scope` default of `1`.
+
+This noun (`orchestrator get`/`set --field`) owns the block's **scalar** knobs (`parallelization_scope` and `auto_emit`). The `orchestrator.effort` sub-block is NOT handled here — it lives in the `effort` noun's `read`/`resolve-target --role orchestrator[.{surface}]` and `set --scope orchestrator[.{surface}|.default|.max]` forms (see [Noun: effort](#noun-effort) below).
 
 | Verb | Parameters | Description |
 |------|-----------|-------------|
-| `get` | `--field` | Get an orchestrator field. Falls back to the canonical default (from `DEFAULT_ORCHESTRATOR`) when the key is absent from the live `orchestrator` block. |
-| `set` | `--field`, `--value` | Set an orchestrator field. Scalar-coerced via `_coerce_value` (so `auto_emit` round-trips `true`/`false` as a bool, exactly like `merge_queue_managed_externally`), then rejects any `--field` outside the known orchestrator field set via the shared fail-closed provisioning-write seam (ADR-009) with `error_type: field_not_found` before any write — a typo'd or retired key never persists a dead key. |
+| `get` | `--field` | Get one scalar field off the top-level `orchestrator` block. Returns `{field, value, set}` — `set` is `false` when the field is unset in the live block; `value` then falls back to the canonical default from `DEFAULT_ORCHESTRATOR` (so `auto_emit` reads `false` when unset) or `null` when the field carries no seeded default. `--field` is checked against the known-field whitelist (`parallelization_scope`, `auto_emit`) before the read. |
+| `set` | `--field`, `--value` | Set one scalar field on the top-level `orchestrator` block. Per-field coerced/validated (`parallelization_scope` → int `>= 1`; `auto_emit` → bool), then rejects any `--field` outside the known scalar field set via the shared fail-closed provisioning-write seam (ADR-009) with `error_type: unknown_field` before any write — a typo'd or retired key never persists a dead key. |
 
 ### Fields
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
+| `parallelization_scope` | int (`>= 1`) | unset (ask keeps its hard-coded `1` default) | Project-level default that pre-fills the per-epic `parallelization_scope` ask in `marshall-orchestrator` init. The stored per-epic answer and the ask's own positive-integer validation are unaffected — this knob only supplies the initial suggestion for a NEW epic's first ask. `bool` is rejected even though it is an `int` subclass. |
 | `auto_emit` | bool | `false` | When `true`, the epic orchestrator auto-fills the emit queue toward `parallelization_scope` on each landing, marking each emitted plan `launched`. It NEVER records the operator-confirmed `launched → running` transition — the emit≠running invariant is absolute — and never emits a colliding, blocked, or unprepared plan (a shortfall is logged, not filled). When `false` (default), the post-landing emit is manual stage-and-wait. See [`data-model.md`](data-model.md) § orchestrator for the schema and [`persona-marshall-orchestrator/standards/orchestration-model.md`](../../persona-marshall-orchestrator/standards/orchestration-model.md) for the invariant the knob operates within. |
+
+### Example: get parallelization_scope
+
+```bash
+manage-config orchestrator get --field parallelization_scope
+```
+
+### Example: set parallelization_scope
+
+```bash
+manage-config orchestrator set --field parallelization_scope --value 3
+```
 
 ### Example: get auto_emit
 
@@ -187,6 +196,11 @@ the key is absent from marshal.json.
 ```bash
 manage-config orchestrator set --field auto_emit --value true
 ```
+
+### Extension seam
+
+The block is additively shaped: the `get`/`set --field` verb and its known-field whitelist (`ORCHESTRATOR_SCALAR_FIELDS` in `_cmd_orchestrator.py`) are the seam through which a future scalar knob folds into the SAME block without a schema rework — no new verb, no new noun.
+
 
 ---
 
@@ -330,15 +344,19 @@ manage-config ext-defaults set-default --key my_setting --value fallback
 
 Manage per-phase effort levels stored under each `plan.<phase>.effort`
 attribute (with `plan.effort` as the plan-wide fallback) in
-`.plan/marshal.json`. The read verb is a pure resolver; the write
-verb completely overwrites the per-phase effort configuration from a
-named preset.
+`.plan/marshal.json`, plus the sibling `orchestrator.effort` block (NOT a
+`plan.<phase>` entry — see [Noun: orchestrator](#noun-orchestrator)). `read` /
+`resolve-target` are pure resolvers; `apply-preset` completely overwrites the
+per-phase effort configuration from a named preset; `set` is the surgical
+per-scope writer covering `plan.<phase>.<role>`, the plan-wide scalar, and the
+`orchestrator[...]` scopes.
 
 | Verb | Parameters | Description |
 |------|-----------|-------------|
-| `read` | `--phase` and/or `--role` (or `--default`) | Resolve the level keyword (walks `plan.<phase>.effort.<subkey>` -> `plan.<phase>.effort.default` -> `plan.effort` -> `inherit`) |
-| `resolve-target` | same as `read` | Resolve + compute the dispatched-variant target name (`execution-context-{level}` or canonical) |
-| `apply-preset` | `--preset` | **Completely overwrite** the per-phase effort configuration with a named preset (see `effort_presets.py` for per-preset values) |
+| `read` | `--phase` and/or `--role` (or `--default`) | Resolve the level keyword. For a `plan.<phase>` role: walks `plan.<phase>.effort.<subkey>` -> `plan.<phase>.effort.default` -> `plan.effort` -> `inherit`. For `--role orchestrator` or `--role orchestrator.{analyze\|decompose\|reader}`: walks the sibling `orchestrator.effort.{surface}` -> `orchestrator.effort.default` (or the bare-string shorthand) -> `plan.effort` -> `inherit`, then CLAMPS the result to `orchestrator.effort.max` (unset `max` = no-op) |
+| `resolve-target` | same as `read` | Resolve + compute the dispatched-variant target name (`execution-context-{level}` or canonical). For `--role orchestrator.reader`, the resolved level is what the *dispatch site* composes into the read-only `execution-context-reader-{level}` variant — `resolve-target` itself still returns the plain `execution-context-{level}` name. |
+| `apply-preset` | `--preset` | **Completely overwrite** the per-phase effort configuration with a named preset (see `effort_presets.py` for per-preset values). Does not touch `orchestrator.effort`. |
+| `set` | `--scope`, `--level` | Surgical per-scope writer — see [Verb: set](#verb-set) below |
 
 ### Verb: read
 
@@ -360,6 +378,50 @@ Walks the documented resolution order and validates the resolved value against
 `ALLOWED_LEVELS` (`level-1|level-2|level-3|level-4|level-5|level-6|level-7|inherit`). Unknown role
 groups produce a warning (not an error) so registry renames do not break
 saved configs.
+
+### Verb: set
+
+```bash
+# Nested {phase}.{role} scope — writes plan.<phase>.effort.<role>
+manage-config effort set --scope phase-6-finalize.verification-feedback --level level-4
+
+# Plan-wide scalar — writes plan.effort
+manage-config effort set --scope plan --level level-3
+
+# Orchestrator scalar shorthand — writes orchestrator.effort (a bare string)
+manage-config effort set --scope orchestrator --level level-4
+
+# Orchestrator per-surface override — writes orchestrator.effort.{analyze|decompose|reader}
+manage-config effort set --scope orchestrator.reader --level level-5
+
+# Orchestrator in-block fallback — writes orchestrator.effort.default
+manage-config effort set --scope orchestrator.default --level level-3
+
+# Orchestrator uplift ceiling — writes orchestrator.effort.max
+manage-config effort set --scope orchestrator.max --level level-6
+```
+
+Surgical per-scope writer — writes exactly one effort scope without disturbing siblings:
+
+- `--scope {phase}.{role}` — validates `phase` against `KNOWN_ROLES` and `role` against that group's schema, then writes `plan.<phase>.effort.<role>`, creating the `plan.<phase>` entry and its `effort` object as needed. A pre-existing **scalar** `plan.<phase>.effort` string is normalised into an object first (its prior value seeded into `default`) so the per-scope write does not clobber sibling sub-keys.
+- `--scope plan` — writes the plan-wide scalar `plan.effort`.
+- `--scope orchestrator` — writes the `orchestrator.effort` scalar shorthand (the level applies to every orchestrator surface).
+- `--scope orchestrator.{analyze|decompose|reader}` — writes one per-surface override under `orchestrator.effort`. A pre-existing scalar `orchestrator.effort` string is normalised into an object first (its prior value seeded into `default`), mirroring the `{phase}.{role}` normalisation.
+- `--scope orchestrator.default` — writes the `orchestrator.effort` in-block fallback slot (the baseline every surface without its own override falls back to).
+- `--scope orchestrator.max` — writes the `orchestrator.effort.max` uplift **ceiling** — a level keyword that CLAMPS the resolved surface level on the ordinal ladder (`min(resolved, max)`), it does not replace resolution. An unset `max` is a no-op.
+
+Every `--level` value is validated via `_validate_level` against `ALLOWED_LEVELS`. Unknown `{phase}.{role}`, an unwritable `orchestrator.<key>` sub-key (outside `{analyze, decompose, reader, default, max}`), and an invalid `--level` are all rejected with `status: error`.
+
+Success payload:
+
+```toon
+status: success
+scope: orchestrator.reader
+level: level-5
+target: orchestrator.effort.reader
+```
+
+`target` is the dotted path actually written — `plan.effort` for `--scope plan`, `plan.<phase>.effort.<role>` for a nested scope, `orchestrator.effort` for the bare `--scope orchestrator` scalar shorthand, or `orchestrator.effort.<key>` for an `orchestrator.{surface|default|max}` scope.
 
 ### Verb: apply-preset
 

@@ -26,6 +26,16 @@ JSON structure and field definitions for project configuration.
     "pr_compact_max_changed_files": 150,
     "merge_queue_managed_externally": false
   },
+  "orchestrator": {
+    "effort": {
+      "default": "level-4",
+      "analyze": "level-5",
+      "decompose": "level-4",
+      "reader": "level-3",
+      "max": "level-6"
+    },
+    "parallelization_scope": 3
+  },
   "plan": {
     "open_in_ide": true,
     "finding_raw_input_max_bytes": 65536,
@@ -202,6 +212,63 @@ Project-level settings (committed, shared via git). Seeded on `init` and back-fi
 | `pr_strategy` | string | `"compact"` | PR-consolidation policy. `compact` ⇒ follow-up / config-migration / ad-hoc changes ride an already-pending related PR when the changed-file count stays within `pr_compact_max_changed_files`; `distinct` ⇒ always open a separate PR. The `manage-config project pr-decision --changed-files N` verb resolves this knob (with `pr_compact_max_changed_files`) into a `ride|split` decision — see `manage-config` Canonical invocations → `project pr-decision`; it is the consult surface every PR-opening guidance references rather than re-deriving the comparison. |
 | `pr_compact_max_changed_files` | int | `150` | The compact-strategy ceiling: under `pr_strategy: compact`, a change riding an existing PR splits into its own PR once the changed-file count exceeds this value. Resolved together with `pr_strategy` by the `manage-config project pr-decision --changed-files N` consult verb (see `manage-config` Canonical invocations → `project pr-decision`). |
 | `merge_queue_managed_externally` | bool | `false` | Declares that the repository's merge queue is owned by an org- or externally-managed ruleset rather than by plan-marshall. When `true`, `marshall-steward` never prompts to create or enable a queue and never reconciles a foreign ruleset — it only aligns the `use_merge_queue` step param to the detected platform state (see `marshall-steward/references/merge-queue-setup.md` § Step MQ-0). It also short-circuits the probe-backed set-time validation of `use_merge_queue`, since plan-marshall has neither the standing nor necessarily the token scope to adjudicate a foreign queue's eligibility. |
+
+## Section: orchestrator
+
+A top-level block **sibling of `plan`** (not a child of it) governing the epic-orchestration identity (`marshall-orchestrator`). Seeded EMPTY (`{}`) by `init` / back-filled empty by `sync-defaults`; an **empty block is legal and behaviourally inert** — with `orchestrator.*` unset everywhere, every reader resolves exactly as it did before this block existed: `plan.effort` supplies the baseline for the orchestrator's three read-only dispatch surfaces, the uplift ceiling is an unset-no-op, and `parallelization_scope` falls back to the hard-coded default of `1`. The block is additively shaped: `orchestrator get`/`set --field` and its known-field whitelist are the extension seam a future scalar knob folds into without a schema rework.
+
+### Structure
+
+```json
+{
+  "orchestrator": {
+    "effort": {
+      "default": "level-4",
+      "analyze": "level-5",
+      "decompose": "level-4",
+      "reader": "level-3",
+      "max": "level-6"
+    },
+    "parallelization_scope": 3
+  }
+}
+```
+
+`effort` may also be a bare string (single-level shorthand applying to every orchestrator surface) instead of the object form above. An empty `{}` orchestrator block, or an orchestrator block missing either key, is equally legal — every field below resolves to its documented fallback when absent.
+
+### `orchestrator.effort`
+
+Reuses the polymorphic **string-or-object** shape of `plan.<phase>.effort` verbatim, extended with one clamp key:
+
+| Field | Type | Default (when absent) | Description |
+|-------|------|------------------------|-------------|
+| `orchestrator.effort` (bare string) | string (effort level) | — | Single-level shorthand: the same level applies to every orchestrator surface (`analyze` / `decompose` / `reader`). |
+| `orchestrator.effort.{analyze\|decompose\|reader}` | string (effort level) | falls through to `default`, then `plan.effort`, then `inherit` | Per-surface override for one of the three read-only orchestrator dispatch surfaces. |
+| `orchestrator.effort.default` | string (effort level) | falls through to `plan.effort`, then `inherit` | In-block fallback consulted by any surface without its own override. |
+| `orchestrator.effort.max` | string (effort level) | unset = no-op (no clamp) | Uplift **ceiling** that CLAMPS the resolved surface level on the `level-1`..`level-7` ordinal ladder (`min(resolved, max)`) — it is NOT an explicit level that replaces resolution. |
+
+**Per-surface resolution precedence** (surface ∈ `{analyze, decompose, reader}`):
+
+```text
+orchestrator.effort.{surface}  →  orchestrator.effort.default (or the bare-string shorthand)  →  plan.effort  →  inherit
+                          then CLAMP to orchestrator.effort.max  (min(resolved, max) on the level-1..level-7 ordinal ladder; unset max = no-op)
+```
+
+The `reader` surface resolves a LEVEL exactly like the other two; the dispatch site composes the read-only `execution-context-reader-{level}` variant from that resolved level (untrusted-text ingestion runs under the reader variant, never the write-capable one) — `effort resolve-target` itself still returns the plain `execution-context-{level}` target name.
+
+Read via `manage-config effort read --role orchestrator[.{surface}]` / `effort resolve-target --role orchestrator[.{surface}]`; write via `manage-config effort set --scope orchestrator[.{surface}|.default|.max] --level LEVEL`. See [`api-reference.md` § Noun: effort](api-reference.md#noun-effort).
+
+### `orchestrator.parallelization_scope`
+
+| Field | Type | Default (when absent) | Description |
+|-------|------|------------------------|-------------|
+| `parallelization_scope` | int (`>= 1`) | the ask's hard-coded `1` default | Project-level default that pre-fills the per-epic `parallelization_scope` `AskUserQuestion` in `marshall-orchestrator` init. Still fully operator-overridable per epic; the stored per-epic answer and the ask's own positive-integer validation are unaffected — this knob only supplies the initial suggestion for a NEW epic's first ask. `bool` is rejected even though it is an `int` subclass, mirroring the sibling numeric validators. |
+
+Read/write via `manage-config orchestrator get/set --field parallelization_scope`. See [`api-reference.md` § Noun: orchestrator](api-reference.md#noun-orchestrator).
+
+### Validation
+
+The whole block is validated by `validate_orchestrator_block` (`_config_defaults.py`): an empty `{}` passes trivially; a populated block rejects any top-level key outside `{effort, parallelization_scope}`, any `orchestrator.effort` object key outside `{analyze, decompose, reader, default, max}`, any non-`ALLOWED_LEVELS` effort value, and a `parallelization_scope` that is not an int `>= 1`.
 
 ## Section: credentials_config
 
