@@ -152,6 +152,44 @@ The JSON array round-trips through `get`.
 
 ---
 
+## Noun: orchestrator
+
+Manage orchestrator-tier settings stored under the `orchestrator.*` block in
+marshal.json. The block mirrors the plan-tier autonomy knobs
+(`finalize_without_asking` / `loop_back_without_asking` / `auto_merge_after_ci`)
+at the epic-orchestration tier. `marshall-steward` seeds `orchestrator.auto_emit`
+to its safe default (`false`); on a fresh marshal.json that lacks the block, `get`
+returns the canonical default from `DEFAULT_ORCHESTRATOR`, mirroring the
+implicit-default semantics of `project get`.
+
+| Verb | Parameters | Description |
+|------|-----------|-------------|
+| `get` | `--field` | Get an orchestrator field. Falls back to the canonical default (from `DEFAULT_ORCHESTRATOR`) when the key is absent from the live `orchestrator` block. |
+| `set` | `--field`, `--value` | Set an orchestrator field. Scalar-coerced via `_coerce_value` (so `auto_emit` round-trips `true`/`false` as a bool, exactly like `merge_queue_managed_externally`), then rejects any `--field` outside the known orchestrator field set via the shared fail-closed provisioning-write seam (ADR-009) with `error_type: field_not_found` before any write — a typo'd or retired key never persists a dead key. |
+
+### Fields
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `auto_emit` | bool | `false` | When `true`, the epic orchestrator auto-fills the emit queue toward `parallelization_scope` on each landing, marking each emitted plan `launched`. It NEVER records the operator-confirmed `launched → running` transition — the emit≠running invariant is absolute — and never emits a colliding, blocked, or unprepared plan (a shortfall is logged, not filled). When `false` (default), the post-landing emit is manual stage-and-wait. See [`data-model.md`](data-model.md) § orchestrator for the schema and [`persona-marshall-orchestrator/standards/orchestration-model.md`](../../persona-marshall-orchestrator/standards/orchestration-model.md) for the invariant the knob operates within. |
+
+### Example: get auto_emit
+
+```bash
+manage-config orchestrator get --field auto_emit
+```
+
+Returns the live value, or the default `false` (implicit-default fallback) when
+the key is absent from marshal.json.
+
+### Example: set auto_emit
+
+```bash
+manage-config orchestrator set --field auto_emit --value true
+```
+
+---
+
 ## Noun: plan
 
 Manage phase-specific plan configuration. Each phase has its own sub-noun.
