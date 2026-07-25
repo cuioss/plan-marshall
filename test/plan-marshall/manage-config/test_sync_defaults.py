@@ -108,12 +108,13 @@ def test_sync_defaults_empty_marshal_gains_all_defaults(plan_context):
     assert 'project' in result['added']
 
 
-def test_sync_defaults_backfills_empty_orchestrator_block(plan_context):
-    """A config lacking the ``orchestrator`` block gains the empty block on sync.
+def test_sync_defaults_backfills_orchestrator_block(plan_context):
+    """A config lacking the ``orchestrator`` block gains the seeded block on sync.
 
-    ``get_default_config()`` seeds ``orchestrator: {}`` (a sibling of ``plan``), so
-    the non-destructive deep-merge back-fills it into a config that predates the
-    block, and reports the ``orchestrator`` top-level path in ``added``.
+    ``get_default_config()`` seeds ``orchestrator: {'auto_emit': False}`` (a
+    sibling of ``plan``), so the non-destructive deep-merge back-fills it into a
+    config that predates the block, and reports the ``orchestrator`` top-level
+    path in ``added``.
     """
     _write_marshal(plan_context.fixture_dir, {'plan': {'effort': 'level-3'}})
 
@@ -121,7 +122,9 @@ def test_sync_defaults_backfills_empty_orchestrator_block(plan_context):
 
     assert result['status'] == 'success'
     config = _read_marshal(plan_context.fixture_dir)
-    assert config['orchestrator'] == {}, 'the empty orchestrator block must be back-filled'
+    assert config['orchestrator'] == {'auto_emit': False}, (
+        'the seeded orchestrator block (auto_emit=False) must be back-filled'
+    )
     assert 'orchestrator' in result['added']
 
 
@@ -129,8 +132,11 @@ def test_sync_defaults_preserves_populated_orchestrator_block(plan_context):
     """A pre-existing populated ``orchestrator`` block survives sync non-destructively.
 
     The deep-merge only adds MISSING keys, so an operator-populated orchestrator
-    block (effort surfaces + parallelization_scope) is preserved verbatim and NOT
-    re-reported in ``added``.
+    block (effort surfaces + parallelization_scope) is preserved verbatim; the
+    only change is the non-destructive back-fill of the seeded ``auto_emit``
+    default (a sub-key the pre-auto_emit block lacked), reported as the nested
+    ``orchestrator.auto_emit`` path — the ``orchestrator`` top-level path itself
+    is NOT re-reported as added.
     """
     _write_marshal(
         plan_context.fixture_dir,
@@ -147,12 +153,13 @@ def test_sync_defaults_preserves_populated_orchestrator_block(plan_context):
 
     assert result['status'] == 'success'
     config = _read_marshal(plan_context.fixture_dir)
-    # the populated block survives verbatim
+    # the populated surfaces survive verbatim; auto_emit is back-filled to its default
     assert config['orchestrator'] == {
         'effort': {'analyze': 'level-6', 'max': 'level-5'},
         'parallelization_scope': 3,
+        'auto_emit': False,
     }
-    # the present block is not re-reported as added
+    # the present block is not re-reported as an added top-level path
     assert 'orchestrator' not in result['added']
 
 

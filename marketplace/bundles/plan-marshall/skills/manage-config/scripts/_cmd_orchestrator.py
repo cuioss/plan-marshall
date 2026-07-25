@@ -21,9 +21,11 @@ to ``marshal.json`` where no reader would consult it.
 Known scalar fields:
     ``parallelization_scope``  int >= 1  — project default that pre-fills the
         per-epic parallelization-scope ask in ``marshall-orchestrator`` init.
+    ``auto_emit``  bool  — the orchestrator-tier autonomy knob (default False);
+        when true the epic orchestrator auto-fills the emit queue on landing.
 
-PLAN-48 extends :data:`ORCHESTRATOR_SCALAR_FIELDS` with ``auto_emit`` (a
-default-off boolean) and reads it through this same verb — no schema rework.
+Both scalar knobs read/write through this same verb against the shared
+whitelist — no schema rework as the block grows.
 """
 
 from _config_core import (
@@ -34,10 +36,11 @@ from _config_core import (
     save_config,
     success_exit,
 )
+from _config_defaults import DEFAULT_ORCHESTRATOR
 
 # The orchestrator block's known scalar (non-effort) fields — the fail-closed
-# whitelist consulted by every scalar read/write. PLAN-48 adds 'auto_emit'.
-ORCHESTRATOR_SCALAR_FIELDS: tuple[str, ...] = ('parallelization_scope',)
+# whitelist consulted by every scalar read/write.
+ORCHESTRATOR_SCALAR_FIELDS: tuple[str, ...] = ('parallelization_scope', 'auto_emit')
 
 
 def _validate_parallelization_scope(value: object) -> tuple[bool, str | None]:
@@ -51,6 +54,25 @@ def _validate_parallelization_scope(value: object) -> tuple[bool, str | None]:
     if value < 1:
         return False, 'parallelization_scope must be an integer >= 1'
     return True, None
+
+
+def _coerce_bool(raw_value: object) -> bool | None:
+    """Coerce a CLI value into a bool, or ``None`` when it is not boolean-shaped.
+
+    Accepts an actual ``bool`` and the case-insensitive strings ``true``/``false``
+    (and their ``1``/``0`` synonyms), mirroring how the plan-tier autonomy knobs
+    round-trip ``true``/``false`` from the CLI. Any other value yields ``None`` so
+    the caller can fail closed.
+    """
+    if isinstance(raw_value, bool):
+        return raw_value
+    if isinstance(raw_value, str):
+        lowered = raw_value.strip().lower()
+        if lowered in ('true', '1', 'yes'):
+            return True
+        if lowered in ('false', '0', 'no'):
+            return False
+    return None
 
 
 def cmd_orchestrator_get(args) -> dict:
@@ -75,9 +97,18 @@ def cmd_orchestrator_get(args) -> dict:
 
     config = load_config()
     orch_block = config.get('orchestrator')
-    value = orch_block.get(field) if isinstance(orch_block, dict) else None
+    # When the field is unset in the live block, fall back to the canonical
+    # default (so `auto_emit` reads its seeded `False`); `parallelization_scope`
+    # carries no seeded default, so its fallback is `None` and callers key off
+    # `set` to apply their own default.
+    if isinstance(orch_block, dict) and field in orch_block:
+        is_set = True
+        value = orch_block[field]
+    else:
+        is_set = False
+        value = DEFAULT_ORCHESTRATOR.get(field)
 
-    return success_exit({'field': field, 'value': value, 'set': value is not None})
+    return success_exit({'field': field, 'value': value, 'set': is_set})
 
 
 def cmd_orchestrator_set(args) -> dict:
@@ -112,9 +143,13 @@ def cmd_orchestrator_set(args) -> dict:
         ok, err = _validate_parallelization_scope(coerced)
         if not ok:
             return error_exit(err or 'invalid parallelization_scope')
+    elif field == 'auto_emit':
+        coerced = _coerce_bool(raw_value)
+        if coerced is None:
+            return error_exit('auto_emit must be a boolean (true/false)')
     else:
-        # Unreachable while the whitelist has a single member; the branch keeps
-        # the coercion contract explicit as PLAN-48 adds further fields.
+        # Unreachable while the whitelist is fully enumerated above; the branch
+        # keeps the coercion contract explicit as further fields are added.
         coerced = raw_value
 
     config = load_config()

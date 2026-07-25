@@ -576,7 +576,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci issue view
 | `ext-defaults` | get, set, set-default, list, remove |
 | `system` | retention get, retention set |
 | `project` | `get/set` (`default_base_branch`, `working_prefixes`, `pr_strategy`, `pr_compact_max_changed_files`), `pr-decision --changed-files N` (resolve the two PR-batching knobs into a `ride`\|`split` verdict) |
-| `orchestrator` | `get --field parallelization_scope`, `set --field parallelization_scope --value N` (int >= 1; whitelist-guarded scalar knobs on the top-level `orchestrator` block, a sibling of `plan`. `orchestrator.effort.*` is NOT handled here — see the `effort` row's `orchestrator[...]` scope forms.) |
+| `orchestrator` | `get`/`set --field {parallelization_scope\|auto_emit}` (whitelist-guarded scalar knobs on the top-level `orchestrator` block, a sibling of `plan`: `parallelization_scope` int >= 1, `auto_emit` bool. `orchestrator.effort.*` is NOT handled here — see the `effort` row's `orchestrator[...]` scope forms.) |
 | `plan` | `{phase} get/set` (incl. gate_mode planning gates + flat finalize automation knobs), `{phase} step get/set` (one-stop keyed-map step-param read/write; ceremony gates ride the step `lane` param), set-steps, add-step, remove-step, set-max-iterations |
 | `effort` | `read` (role/phase/`--default` resolver; `--role orchestrator`\|`orchestrator.{analyze\|decompose\|reader}` resolves the sibling `orchestrator.effort` block, clamped to `orchestrator.effort.max`), `resolve-target` (same lookup plus `execution-context-{level}` target-name computation), `apply-preset --preset` (whole-tree writer), `set --scope {phase}.{role}\|plan\|orchestrator[.{analyze\|decompose\|reader}\|default\|max] --level` (surgical per-scope writer) |
 | `ci` | get, get-provider, get-tools, get-command, set-provider, set-tools, persist |
@@ -1047,7 +1047,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config orches
   --field FIELD
 ```
 
-Returns the stored value (or `null` when unset), plus a `set` boolean distinguishing a configured value from an unset one. `--field` is checked against the scalar whitelist (`parallelization_scope`); an unknown field is rejected before the read.
+Returns the stored value plus a `set` boolean distinguishing a configured value from an unset one. When unset, `value` falls back to the canonical default from `DEFAULT_ORCHESTRATOR` (so `auto_emit` reads `false`) or `null` when the field carries no seeded default (`parallelization_scope`). `--field` is checked against the scalar whitelist (`parallelization_scope`, `auto_emit`); an unknown field is rejected before the read.
 
 ### orchestrator set
 
@@ -1056,7 +1056,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config orches
   --field FIELD --value VALUE
 ```
 
-Writes one scalar knob into the top-level `orchestrator` block (a sibling of `plan`), rejecting an unknown `--field` against the same whitelist. `parallelization_scope` (int `>= 1`; `bool` is rejected even though it is an `int` subclass) is the only known field today — it pre-fills the per-epic `parallelization_scope` ask in `marshall-orchestrator` init. `orchestrator.effort.*` is NOT written here — see `effort set --scope orchestrator[...]` below.
+Writes one scalar knob into the top-level `orchestrator` block (a sibling of `plan`), rejecting an unknown `--field` against the same whitelist with `error_type: unknown_field`. Two known scalar fields: `parallelization_scope` (int `>= 1`; `bool` is rejected even though it is an `int` subclass) pre-fills the per-epic `parallelization_scope` ask in `marshall-orchestrator` init; `auto_emit` (bool; the orchestrator-tier autonomy knob, default `false`) governs the post-landing queue-fill emit. `orchestrator.effort.*` is NOT written here — see `effort set --scope orchestrator[...]` below.
 
 ### plan {phase} get
 

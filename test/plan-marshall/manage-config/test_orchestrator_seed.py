@@ -91,6 +91,12 @@ def test_inherit_is_a_legal_effort_level():
     validate_orchestrator_block({'effort': {'default': 'inherit'}})
 
 
+def test_auto_emit_bool_is_legal():
+    """``auto_emit`` as a bool is a legal scalar knob (merged PLAN-48 field)."""
+    validate_orchestrator_block({'auto_emit': True})
+    validate_orchestrator_block({'auto_emit': False})
+
+
 # =============================================================================
 # validate_orchestrator_block — rejected shapes
 # =============================================================================
@@ -105,7 +111,13 @@ def test_non_dict_block_is_rejected():
 def test_unknown_top_level_key_is_rejected():
     """An unknown key in the orchestrator block is rejected (fail-closed)."""
     with pytest.raises(ValueError, match='orchestrator block keys'):
-        validate_orchestrator_block({'auto_emit': True})
+        validate_orchestrator_block({'bogus_knob': True})
+
+
+def test_auto_emit_non_bool_is_rejected():
+    """A non-bool ``auto_emit`` is rejected (fail-closed)."""
+    with pytest.raises(ValueError, match='orchestrator.auto_emit'):
+        validate_orchestrator_block({'auto_emit': 'yes'})
 
 
 def test_bad_effort_string_level_is_rejected():
@@ -164,8 +176,8 @@ def test_parallelization_scope_bool_is_rejected():
 def test_get_default_config_self_validation_is_clean():
     """get_default_config() runs the orchestrator self-validation without raising."""
     config = _config_defaults_mod.get_default_config()
-    # the seeded block is present, empty, and passes its own validator
-    assert config['orchestrator'] == {}
+    # the seeded block carries only auto_emit=False and passes its own validator
+    assert config['orchestrator'] == {'auto_emit': False}
     validate_orchestrator_block(config['orchestrator'])
 
 

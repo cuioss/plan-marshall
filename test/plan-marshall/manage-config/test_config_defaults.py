@@ -91,6 +91,9 @@ _cmd_init_mod = _load_module(
 _cmd_system_plan_mod = _load_module(
     '_cmd_system_plan_for_split_gate_test', '_cmd_system_plan.py'
 )
+_cmd_orchestrator_mod = _load_module(
+    '_cmd_orchestrator_for_split_gate_test', '_cmd_orchestrator.py'
+)
 _cmd_quality_phases_mod = _load_module(
     '_cmd_quality_phases_for_simplicity_test', '_cmd_quality_phases.py'
 )
@@ -1246,12 +1249,15 @@ def test_get_default_config_includes_orchestrator_block():
 
 
 def test_orchestrator_in_canonical_top_level_key_order():
-    """'orchestrator' must sit between credentials_config and project in canonical order."""
+    """'orchestrator' must sit immediately after 'plan' (its parallel sibling) in canonical order."""
     order = _config_core_mod.CANONICAL_TOP_LEVEL_KEY_ORDER
 
     assert 'orchestrator' in order, "'orchestrator' must be in the canonical top-level key order"
-    assert order.index('credentials_config') < order.index('orchestrator') < order.index('project'), (
-        "'orchestrator' must sit between credentials_config and project in canonical order"
+    assert order.index('plan') < order.index('orchestrator') < order.index('project'), (
+        "'orchestrator' must sit after plan and before project in canonical order"
+    )
+    assert order.index('orchestrator') == order.index('plan') + 1, (
+        "'orchestrator' must sit immediately after 'plan'"
     )
 
 
@@ -1259,8 +1265,7 @@ def test_orchestrator_get_returns_auto_emit_default_false(plan_context):
     """`orchestrator get --field auto_emit` returns False from the merged default on a fresh marshal.json."""
     _cmd_init_mod.cmd_init(Namespace(force=False))
 
-    get_args = Namespace(verb='get', field='auto_emit')
-    get_result = _cmd_system_plan_mod.cmd_orchestrator(get_args)
+    get_result = _cmd_orchestrator_mod.cmd_orchestrator_get(Namespace(field='auto_emit'))
 
     assert get_result['status'] == 'success'
     assert get_result['value'] is False
@@ -1270,13 +1275,13 @@ def test_orchestrator_set_then_get_roundtrip_auto_emit(plan_context):
     """`orchestrator set --field auto_emit --value true` must round-trip via get (bool-coerced)."""
     _cmd_init_mod.cmd_init(Namespace(force=False))
 
-    set_args = Namespace(verb='set', field='auto_emit', value='true')
-    set_result = _cmd_system_plan_mod.cmd_orchestrator(set_args)
+    set_result = _cmd_orchestrator_mod.cmd_orchestrator_set(
+        Namespace(field='auto_emit', value='true')
+    )
     assert set_result['status'] == 'success'
     assert set_result['value'] is True
 
-    get_args = Namespace(verb='get', field='auto_emit')
-    get_result = _cmd_system_plan_mod.cmd_orchestrator(get_args)
+    get_result = _cmd_orchestrator_mod.cmd_orchestrator_get(Namespace(field='auto_emit'))
 
     assert get_result['status'] == 'success'
     assert get_result['value'] is True
@@ -1290,8 +1295,9 @@ def test_orchestrator_set_unknown_field_is_rejected(plan_context):
     """
     _cmd_init_mod.cmd_init(Namespace(force=False))
 
-    set_args = Namespace(verb='set', field='bogus_knob', value='true')
-    result = _cmd_system_plan_mod.cmd_orchestrator(set_args)
+    result = _cmd_orchestrator_mod.cmd_orchestrator_set(
+        Namespace(field='bogus_knob', value='true')
+    )
 
     assert result['status'] == 'error'
     assert result.get('error_type') == 'unknown_field'
@@ -2104,35 +2110,36 @@ def test_save_config_appends_unknown_keys_after_canonical_block(tmp_path, monkey
     assert actual_order == ['plan', 'system', 'zzz_unknown']
 
 
-def test_get_default_config_seeds_empty_orchestrator_block():
-    """get_default_config() seeds a top-level ``orchestrator`` block == ``{}``.
+def test_get_default_config_seeds_orchestrator_block_with_auto_emit_default():
+    """get_default_config() seeds a top-level ``orchestrator`` block == ``{'auto_emit': False}``.
 
-    The block is a sibling of ``plan``, seeded empty and behaviourally inert: it
-    carries no effort or scope keys, so every orchestrator reader falls through to
-    today's values.
+    The block is a sibling of ``plan``. It seeds only the ``auto_emit`` autonomy
+    knob at its safe default (``False``); the ``effort`` sub-block and the
+    ``parallelization_scope`` scalar stay unset, so every effort/scope reader
+    falls through to today's values.
     """
     config = _config_defaults_mod.get_default_config()
 
     assert 'orchestrator' in config, 'get_default_config() must seed a top-level orchestrator block'
-    assert config['orchestrator'] == {}, (
-        f'the seeded orchestrator block must be empty; got {config["orchestrator"]!r}'
+    assert config['orchestrator'] == {'auto_emit': False}, (
+        f'the seeded orchestrator block must carry only auto_emit=False; got {config["orchestrator"]!r}'
     )
 
 
-def test_seeded_empty_orchestrator_leaves_effort_and_scope_resolution_unchanged():
-    """With the seeded empty ``orchestrator`` block, effort + scope resolution is inert.
+def test_seeded_orchestrator_leaves_effort_and_scope_resolution_unchanged():
+    """With the seeded ``orchestrator`` block, effort + scope resolution is inert.
 
-    Unset ``orchestrator.*`` means the block holds no surface override, ``default``
-    slot, or ``max`` ceiling to perturb effort resolution (every surface falls
-    through to ``plan.effort``), and no ``parallelization_scope`` (the caller keeps
-    its hard-coded default of 1). The per-surface resolution itself is exercised
-    against a live marshal.json in ``test_orchestrator_scope``; here the seed shape
-    is the assertion surface.
+    The seed carries only ``auto_emit`` — no ``effort`` surface override,
+    ``default`` slot, or ``max`` ceiling to perturb effort resolution (every
+    surface falls through to ``plan.effort``), and no ``parallelization_scope``
+    (the caller keeps its hard-coded default of 1). The per-surface resolution
+    itself is exercised against a live marshal.json in ``test_orchestrator_scope``;
+    here the seed shape is the assertion surface.
     """
     config = _config_defaults_mod.get_default_config()
 
-    # The block is empty, so nothing in it can change resolution.
-    assert config['orchestrator'] == {}
+    # The block carries only auto_emit, so nothing in it can change effort/scope resolution.
+    assert config['orchestrator'] == {'auto_emit': False}
     assert 'effort' not in config['orchestrator']
     assert 'parallelization_scope' not in config['orchestrator']
     # plan.effort remains the baseline fallback every orchestrator surface resolves to.

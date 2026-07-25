@@ -51,7 +51,7 @@ from _cmd_skill_resolution import (
 )
 from _cmd_steps_sort import cmd_steps_sort
 from _cmd_sync_defaults import cmd_sync_defaults
-from _cmd_system_plan import cmd_orchestrator, cmd_plan, cmd_project, cmd_system
+from _cmd_system_plan import cmd_plan, cmd_project, cmd_system
 from _config_core import normalize_keys
 
 # Direct imports - PYTHONPATH set by executor
@@ -299,19 +299,6 @@ def main() -> int:
         type=int,
         help="The change's changed-file count (int >= 0)",
     )
-
-    # --- orchestrator (orchestrator-tier autonomy config) ---
-    p_orch = subparsers.add_parser(
-        'orchestrator', help='Manage orchestrator-tier autonomy settings', allow_abbrev=False
-    )
-    orch_sub = p_orch.add_subparsers(dest='verb', required=True, help='Operation')
-
-    orch_get = orch_sub.add_parser('get', help='Get an orchestrator field', allow_abbrev=False)
-    add_field_arg(orch_get)
-
-    orch_set = orch_sub.add_parser('set', help='Set an orchestrator field', allow_abbrev=False)
-    add_field_arg(orch_set)
-    orch_set.add_argument('--value', required=True, help='Field value')
 
     # --- plan (phase-based sub-nouns) ---
     p_plan = subparsers.add_parser('plan', help='Manage plan settings', allow_abbrev=False)
@@ -850,11 +837,6 @@ def main() -> int:
             p_proj.print_help()
             return 2
         result = cmd_project(args)
-    elif args.noun == 'orchestrator':
-        if not args.verb:
-            p_orch.print_help()
-            return 2
-        result = cmd_orchestrator(args)
     elif args.noun == 'plan':
         if not args.sub_noun or not args.verb:
             p_plan.print_help()

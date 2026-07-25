@@ -34,7 +34,8 @@ JSON structure and field definitions for project configuration.
       "reader": "level-3",
       "max": "level-6"
     },
-    "parallelization_scope": 3
+    "parallelization_scope": 3,
+    "auto_emit": false
   },
   "plan": {
     "open_in_ide": true,
@@ -141,9 +142,6 @@ JSON structure and field definitions for project configuration.
       "project_key": "cuioss_plan-marshall"
     }
   },
-  "orchestrator": {
-    "auto_emit": false
-  },
   "skill_domains": {
     "system": {
       "defaults": ["plan-marshall:persona-plan-marshall-agent"],
@@ -215,7 +213,7 @@ Project-level settings (committed, shared via git). Seeded on `init` and back-fi
 
 ## Section: orchestrator
 
-A top-level block **sibling of `plan`** (not a child of it) governing the epic-orchestration identity (`marshall-orchestrator`). Seeded EMPTY (`{}`) by `init` / back-filled empty by `sync-defaults`; an **empty block is legal and behaviourally inert** — with `orchestrator.*` unset everywhere, every reader resolves exactly as it did before this block existed: `plan.effort` supplies the baseline for the orchestrator's three read-only dispatch surfaces, the uplift ceiling is an unset-no-op, and `parallelization_scope` falls back to the hard-coded default of `1`. The block is additively shaped: `orchestrator get`/`set --field` and its known-field whitelist are the extension seam a future scalar knob folds into without a schema rework.
+A top-level block **sibling of `plan`** (not a child of it) governing the epic-orchestration identity (`marshall-orchestrator`). It carries three key families: the `effort` sub-block (per-surface effort of the orchestrator's read-only dispatch surfaces behind an uplift ceiling), the `parallelization_scope` scalar (the per-epic ask's project default), and the `auto_emit` autonomy knob (the orchestrator-tier analog of the plan-tier `finalize_without_asking` / `loop_back_without_asking` family). `init` seeds the block with `auto_emit` at its safe default (`false`); `sync-defaults` back-fills it non-destructively into existing projects (the same deep-merge `project` relies on). The `effort` and `parallelization_scope` slots stay **unset** until written and are behaviourally inert while unset — with them unset everywhere, every reader resolves exactly as it did before this block existed: `plan.effort` supplies the baseline for the orchestrator's three read-only dispatch surfaces, the uplift ceiling is an unset-no-op, and `parallelization_scope` falls back to the hard-coded default of `1`. `save_config` orders the block canonically immediately after `plan` (see `CANONICAL_TOP_LEVEL_KEY_ORDER` in `_config_core.py`). The scalar knobs are additively shaped: `orchestrator get`/`set --field` and its known-field whitelist are the extension seam a future scalar knob folds into without a schema rework.
 
 ### Structure
 
@@ -229,12 +227,13 @@ A top-level block **sibling of `plan`** (not a child of it) governing the epic-o
       "reader": "level-3",
       "max": "level-6"
     },
-    "parallelization_scope": 3
+    "parallelization_scope": 3,
+    "auto_emit": false
   }
 }
 ```
 
-`effort` may also be a bare string (single-level shorthand applying to every orchestrator surface) instead of the object form above. An empty `{}` orchestrator block, or an orchestrator block missing either key, is equally legal — every field below resolves to its documented fallback when absent.
+`effort` may also be a bare string (single-level shorthand applying to every orchestrator surface) instead of the object form above. A block carrying only the seeded `auto_emit`, or one missing any of the three key families, is equally legal — every field below resolves to its documented fallback when absent.
 
 ### `orchestrator.effort`
 
@@ -266,9 +265,17 @@ Read via `manage-config effort read --role orchestrator[.{surface}]` / `effort r
 
 Read/write via `manage-config orchestrator get/set --field parallelization_scope`. See [`api-reference.md` § Noun: orchestrator](api-reference.md#noun-orchestrator).
 
+### `orchestrator.auto_emit`
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `auto_emit` | bool | `false` | Governs the epic orchestrator's post-landing queue-fill emit (the `marshall-orchestrator` `next` verb, and the proactive emit in `analyze`). When `false` (default, the safe posture), the emit is stage-and-wait: the orchestrator produces the copy-paste block and records each plan's `launched` transition only on operator-confirmed launch. When `true`, the emit auto-fills toward `parallelization_scope` — the `launched` transition for every selected candidate in the emitted `N − R` block is auto-recorded, under the unchanged disjointness + prep-readiness + "only if sensible" guards. **`auto_emit` automates the *emit* (marking each emitted plan `launched`), NEVER the *start*: the operator-confirmed `launched → running` transition stays operator-owned under both knob values — the emit≠running invariant is absolute.** A shortfall (no qualifying candidate) emits nothing and logs the blocking reason under both values; `auto_emit=true` never emits a colliding, blocked, or unprepared plan to fill a slot. See [`persona-marshall-orchestrator/standards/orchestration-model.md` § Parallelization by Surface Disjointness](../../persona-marshall-orchestrator/standards/orchestration-model.md#parallelization-by-surface-disjointness). |
+
+Read/write via `manage-config orchestrator get/set --field auto_emit`: `get` returns the persisted value, falling back to the canonical default (`false`) from `DEFAULT_ORCHESTRATOR` when the key is unset; `set` bool-coerces (`true`/`false`) and persists, rejecting any unknown field with `status: error` / `error_type: unknown_field`.
+
 ### Validation
 
-The whole block is validated by `validate_orchestrator_block` (`_config_defaults.py`): an empty `{}` passes trivially; a populated block rejects any top-level key outside `{effort, parallelization_scope}`, any `orchestrator.effort` object key outside `{analyze, decompose, reader, default, max}`, any non-`ALLOWED_LEVELS` effort value, and a `parallelization_scope` that is not an int `>= 1`.
+The whole block is validated by `validate_orchestrator_block` (`_config_defaults.py`): the seeded shape (`{"auto_emit": false}`) passes trivially; a populated block rejects any top-level key outside `{effort, parallelization_scope, auto_emit}`, any `orchestrator.effort` object key outside `{analyze, decompose, reader, default, max}`, any non-`ALLOWED_LEVELS` effort value, a `parallelization_scope` that is not an int `>= 1`, and an `auto_emit` that is not a bool.
 
 ## Section: credentials_config
 
@@ -292,30 +299,6 @@ Non-secret per-provider configuration (committed, shared via git), written by `m
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `<key>` | string | No | A non-secret provider-config field (e.g. `organization`, `project_key` for SonarCloud). Keys are provider-defined; `manage-providers` upserts them idempotently via `--extra KEY=VALUE`. |
-
-## Section: orchestrator
-
-Orchestrator-tier autonomy settings (committed, shared via git). A top-level block carrying the opt-in autonomy knobs that govern the epic orchestrator's behaviour — the orchestrator-tier analog of the plan-tier autonomy family under `plan.phase-6-finalize` (`finalize_without_asking` / `loop_back_without_asking`). Seeded on `init` and back-filled into existing projects by `sync-defaults` (the same non-destructive deep-merge `project` relies on). `save_config` orders it canonically between `credentials_config` and `project` (see `CANONICAL_TOP_LEVEL_KEY_ORDER` in `_config_core.py`). On a fresh `marshal.json` that lacks the block, `orchestrator get` returns the value from `DEFAULT_ORCHESTRATOR` so consumers always observe the canonical default.
-
-### Structure
-
-```json
-{
-  "orchestrator": {
-    "auto_emit": false
-  }
-}
-```
-
-### Fields
-
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `auto_emit` | bool | `false` | Governs the epic orchestrator's post-landing queue-fill emit (the `marshall-orchestrator` `next` verb, and the proactive emit in `analyze`). When `false` (default, the safe posture), the emit is stage-and-wait: the orchestrator produces the copy-paste block and records each plan's `launched` transition only on operator-confirmed launch. When `true`, the emit auto-fills toward `parallelization_scope` — the `launched` transition for every selected candidate in the emitted `N − R` block is auto-recorded, under the unchanged disjointness + prep-readiness + "only if sensible" guards. **`auto_emit` automates the *emit* (marking each emitted plan `launched`), NEVER the *start*: the operator-confirmed `launched → running` transition stays operator-owned under both knob values — the emit≠running invariant is absolute.** A shortfall (no qualifying candidate) emits nothing and logs the blocking reason under both values; `auto_emit=true` never emits a colliding, blocked, or unprepared plan to fill a slot. See [`persona-marshall-orchestrator/standards/orchestration-model.md` § Parallelization by Surface Disjointness](../../persona-marshall-orchestrator/standards/orchestration-model.md#parallelization-by-surface-disjointness). Boolean coercion is handled by `_coerce_value` (as `merge_queue_managed_externally` is); an unknown `orchestrator` field is rejected at set-time (fail-closed provisioning). |
-
-### Access
-
-Read/write via the `orchestrator` noun: `manage-config orchestrator get --field auto_emit` returns the persisted value (falling back to `DEFAULT_ORCHESTRATOR` when the block is absent); `manage-config orchestrator set --field auto_emit --value true` coerces and persists, rejecting any unknown field with `status: error` / `error_type: unknown_field`.
 
 ## Section: skill_domains
 

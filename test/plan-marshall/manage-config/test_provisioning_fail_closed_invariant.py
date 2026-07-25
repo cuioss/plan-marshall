@@ -38,9 +38,11 @@ def _load_module(name, filename):
 
 
 _cmd_system_plan = _load_module('_cmd_system_plan', '_cmd_system_plan.py')
+_cmd_orchestrator = _load_module('_cmd_orchestrator', '_cmd_orchestrator.py')
 
 cmd_system = _cmd_system_plan.cmd_system
 cmd_project = _cmd_system_plan.cmd_project
+cmd_orchestrator_set = _cmd_orchestrator.cmd_orchestrator_set
 # Reached through the loaded module's own namespace so the guard and whitelists
 # are the exact instances the handlers use (no separate module copy).
 reject_unknown_provisioning_field = _cmd_system_plan.reject_unknown_provisioning_field
@@ -68,9 +70,18 @@ def _known_project_write():
     return cmd_project(Namespace(verb='set', field='default_base_branch', value='main'))
 
 
+def _unknown_orchestrator_write():
+    return cmd_orchestrator_set(Namespace(field='not_a_real_orchestrator_key', value='1'))
+
+
+def _known_orchestrator_write():
+    return cmd_orchestrator_set(Namespace(field='parallelization_scope', value='2'))
+
+
 _PROVISIONING_WRITE_HANDLERS = [
     ('system.retention set', _unknown_retention_write, _known_retention_write),
     ('project set', _unknown_project_write, _known_project_write),
+    ('orchestrator set', _unknown_orchestrator_write, _known_orchestrator_write),
 ]
 
 

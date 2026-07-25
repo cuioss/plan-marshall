@@ -1082,20 +1082,20 @@ BUILD_SYSTEM_DEFAULTS = {
 # operator-visible and editable directly in marshal.json.
 DEFAULT_BUILD_QUEUE = {'max_slots': 5, 'max_retries': 10, 'upper_limit_seconds': 600}
 
-# Top-level `orchestrator` block default (`orchestrator` in marshal.json — a
-# sibling of `plan`, NOT a child of it). Seeded EMPTY: the block is behaviourally
-# inert until populated, so with `orchestrator.*` unset every orchestrator reader
+# The top-level `orchestrator` block default is `DEFAULT_ORCHESTRATOR`, defined
+# earlier in this module. It seeds only the `auto_emit` autonomy knob (default
+# `False`); the `effort` sub-block and the `parallelization_scope` scalar stay
+# unset (implicit defaults) so with those keys unset every orchestrator reader
 # falls through to today's values — `plan.effort` for the baseline effort of the
 # three read-only orchestrator surfaces, an unset-`max` no-op for the uplift
 # ceiling, and the hard-coded `parallelization_scope` default of 1. The block is
 # the extensible home the orchestrator effort surfaces + scalar knobs
-# (`parallelization_scope` today; PLAN-48's `auto_emit` next) read/write through
-# the `orchestrator` noun and the `effort set --scope orchestrator[...]` writer.
-# Validated by validate_orchestrator_block (empty is legal; a populated block's
-# effort + parallelization_scope shapes are checked). `/marshall-steward`'s
-# upgrade verb back-fills the empty block through the existing `sync-defaults`
-# deep-merge — no new provisioning mechanism.
-DEFAULT_ORCHESTRATOR: dict = {}
+# (`parallelization_scope`, `auto_emit`) read/write through the `orchestrator`
+# noun and the `effort set --scope orchestrator[...]` writer. Validated by
+# validate_orchestrator_block below (the seeded shape is legal; a populated
+# block's effort + parallelization_scope + auto_emit shapes are checked).
+# `/marshall-steward`'s upgrade verb back-fills the block through the existing
+# `sync-defaults` deep-merge — no new provisioning mechanism.
 
 
 def validate_orchestrator_block(value: object) -> None:
@@ -1111,6 +1111,8 @@ def validate_orchestrator_block(value: object) -> None:
     - ``parallelization_scope`` (optional) is an int ``>= 1``. Booleans are
       rejected even though ``bool`` is an ``int`` subclass, mirroring the sibling
       numeric validators.
+    - ``auto_emit`` (optional) is a bool — the orchestrator-tier autonomy knob
+      seeded into every fresh block at its safe default ``False``.
 
     An unknown top-level key in the block is rejected so a typo'd knob fails loud
     rather than persisting silently.
@@ -1134,7 +1136,7 @@ def validate_orchestrator_block(value: object) -> None:
     if not value:
         return  # empty block is legal (behaviourally inert)
 
-    known_keys = {'effort', 'parallelization_scope'}
+    known_keys = {'effort', 'parallelization_scope', 'auto_emit'}
     unknown = sorted(set(value.keys()) - known_keys)
     if unknown:
         raise ValueError(
@@ -1175,6 +1177,13 @@ def validate_orchestrator_block(value: object) -> None:
             raise ValueError(
                 f'Invalid orchestrator.parallelization_scope {scope!r}: expected an '
                 'int >= 1.'
+            )
+
+    if 'auto_emit' in value:
+        auto_emit = value['auto_emit']
+        if not isinstance(auto_emit, bool):
+            raise ValueError(
+                f'Invalid orchestrator.auto_emit {auto_emit!r}: expected a bool.'
             )
 
 
@@ -1240,7 +1249,6 @@ def get_default_config() -> dict:
     execute_section['verification_steps'] = _seed_verify_steps()
     config = {
         'providers': [],
-        'orchestrator': copy.deepcopy(DEFAULT_ORCHESTRATOR),
         'project': copy.deepcopy(DEFAULT_PROJECT),
         'skill_domains': {'system': system_domain},
         'build': {
@@ -1265,8 +1273,9 @@ def get_default_config() -> dict:
             'phase-5-execute': execute_section,
             'phase-6-finalize': finalize_section,
         },
-        # Top-level `orchestrator` block — a sibling of `plan`, seeded empty and
-        # behaviourally inert until populated (see DEFAULT_ORCHESTRATOR). Its
+        # Top-level `orchestrator` block — a sibling of `plan`. Seeds only the
+        # `auto_emit` autonomy knob (default False; see DEFAULT_ORCHESTRATOR);
+        # effort + parallelization_scope stay unset (implicit defaults). Its
         # canonical placement immediately after `plan` is handled by
         # _config_core.CANONICAL_TOP_LEVEL_KEY_ORDER at save time.
         'orchestrator': copy.deepcopy(DEFAULT_ORCHESTRATOR),
