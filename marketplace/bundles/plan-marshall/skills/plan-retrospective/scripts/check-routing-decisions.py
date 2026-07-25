@@ -253,12 +253,6 @@ def lane_resolution_view(decision_lines: list[str]) -> list[str]:
     return [line for line in decision_lines if _LANE_DECISION_RE.search(line)]
 
 
-def load_decision_lane_entries(plan_dir: Path) -> list[str]:
-    """Return the decision-log lines mentioning ``lane_resolution``."""
-    lines, _readable = load_decision_log_lines(plan_dir)
-    return lane_resolution_view(lines)
-
-
 def load_diff_files(diff_file: str | None) -> list[str]:
     """Return the realized footprint path list from a pre-saved diff file.
 
