@@ -107,6 +107,8 @@ python3 .plan/execute-script.py pm-dev-java-cui:search-markers:search_markers se
 
 ## Related
 
+- [`standards/marker-detection.md`](standards/marker-detection.md) — the two-signal OpenRewrite detection model; this skill is **Signal A** (tree-scan), complementary to Signal B (`pm-dev-java-cui:parse-rewrite-log`, log-parse of the #118 WARN lines)
+- `pm-dev-java-cui:parse-rewrite-log` — Signal B, the log-line finding parser this detector complements (never replaces)
 - `plan-marshall:extension-api/standards/ext-point-domain-verb.md` — the `marker-detect` domain-verb contract this skill implements the domain side of
 - `pm-dev-java-cui:plan-marshall-plugin` — the bundle manifest whose `provides_domain_verb()` override declares this skill's notation
 - `pm-dev-java-cui:recipe-cui-logging-enforce` — the recipe that defines `CuiLogRecordPatternRecipe`, one of the auto-suppressible recipes above

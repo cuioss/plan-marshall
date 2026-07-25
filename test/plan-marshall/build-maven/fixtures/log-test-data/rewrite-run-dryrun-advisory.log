@@ -1,0 +1,17 @@
+[INFO] Scanning for projects...
+[INFO]
+[INFO] ------------------------< de.cuioss:example-app >------------------------
+[INFO] Building example-app 1.0.0-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO]
+[INFO] --- rewrite-maven-plugin:5.42.0:dryRun (default-cli) @ example-app ---
+[INFO] Using active recipe(s) [de.cuioss.CodeCleanup]
+[INFO] Validating active recipes...
+[INFO] Scanning sources...
+[WARNING] Changes have been made to src/main/java/de/cuioss/example/OrderValidator.java by recipe de.cuioss.CodeCleanup.
+[INFO] Please review and commit the results, or run `mvn rewrite:run` again.
+[INFO] Run 'mvn rewrite:run' to apply the fixes.
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------

@@ -867,28 +867,32 @@ class ExtensionBase(ABC):
         """
         return None
 
-    def provides_domain_verb(self) -> dict | None:
-        """Return this domain's executable-verb descriptor, or None.
+    def provides_domain_verb(self) -> list[dict] | None:
+        """Return this domain's executable-verb descriptors, or None.
 
         Optional additive hook generalising provides_arch_gate(): a domain
-        bundle overrides it to declare a named executable capability it owns —
-        a resolvable script notation core dispatches when the domain is active
-        and resolves to a first-class ``null`` when it is not. Where
+        bundle overrides it to declare the named executable capabilities it owns
+        — each a resolvable script notation core dispatches when the domain is
+        active and resolves to a first-class ``null`` when it is not. Where
         provides_triage() contributes a *skill* to load, a domain verb
         contributes a *command* to run.
 
-        The descriptor is persisted into the domain's
+        Each descriptor is persisted into the domain's
         ``workflow_skill_extensions`` map keyed by verb type, alongside the
         triage/outline entries, and resolved through
         ``manage-config resolve-workflow-skill-extension --domain {domain}
         --type {verb}`` (null-on-absent).
 
         Returns:
-            A descriptor dict ``{'verb': str, 'notation': str}`` naming the
-            verb type and the resolvable script notation the domain owns (e.g.
-            ``{'verb': 'marker-detect',
-            'notation': 'pm-dev-java-cui:search-markers'}``), or None (the
-            default) when the domain provides no such verb.
+            A LIST of descriptor dicts, each ``{'verb': str, 'notation': str}``
+            naming a verb type and the resolvable script notation the domain
+            owns (e.g. ``[{'verb': 'marker-detect',
+            'notation': 'pm-dev-java-cui:search-markers'},
+            {'verb': 'rewrite-log-parse',
+            'notation': 'pm-dev-java-cui:parse-rewrite-log'}]``), or None (the
+            default) when the domain provides no such verb. The seeder iterates
+            the list, registering one ``workflow_skill_extensions`` entry per
+            descriptor; a ``None`` or empty-list return seeds nothing.
 
         See extension-api/standards/ext-point-domain-verb.md for the full
         contract.
