@@ -21,8 +21,11 @@ permissions:
   contents: read
   pull-requests: write
   issues: write
+  # Required: mints the OIDC token Workload Identity Federation exchanges for the short-lived
+  # GCP credentials the reviewer uses to reach Gemini on Vertex AI.
+  id-token: write
 
 jobs:
   review:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-pr-agent-review.yml@19d5894332b91eb52396659568933c4a751346a4 # v0.14.1
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-pr-agent-review.yml@0f9c794859ef77d2780f10a27054b45b3dd98d71 # v0.15.0
     secrets: inherit
