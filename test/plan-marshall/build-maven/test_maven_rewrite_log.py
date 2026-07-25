@@ -295,6 +295,45 @@ class TestParseErrorVerdict:
         assert rewrite_log['verdict'] == VERDICT_PARSE_ERROR
         assert rewrite_log['total_findings'] == 0
 
+    def test_raising_dispatch_yields_parse_error(self):
+        # A dispatcher that RAISES (e.g. subprocess.run raising OSError) must be
+        # caught and fail closed to parse_error, never escape the consumer.
+        def _raising_dispatch(notation, log_file):
+            raise OSError('simulated subprocess failure')
+
+        result = consume_rewrite_log(
+            str(OBSERVED_LOG),
+            resolve_verb=lambda: 'pm-dev-java-cui:parse-rewrite-log',
+            dispatch=_raising_dispatch,
+        )
+        rewrite_log = result['rewrite_log']
+        assert rewrite_log['verdict'] == VERDICT_PARSE_ERROR
+        assert rewrite_log['total_findings'] == 0
+        assert 'OSError' in rewrite_log['reason']
+
+    def test_malformed_successful_data_yields_parse_error(self):
+        # A status:success payload whose data is non-dict must NOT be coerced
+        # into a false observed-with-zero-findings.
+        result = consume_rewrite_log(
+            str(OBSERVED_LOG),
+            resolve_verb=lambda: 'pm-dev-java-cui:parse-rewrite-log',
+            dispatch=lambda notation, log_file: {'status': 'success', 'data': None},
+        )
+        rewrite_log = result['rewrite_log']
+        assert rewrite_log['verdict'] == VERDICT_PARSE_ERROR
+        assert rewrite_log['total_findings'] == 0
+
+    def test_non_list_findings_yields_parse_error(self):
+        # A status:success payload whose findings is not a list must fail closed.
+        result = consume_rewrite_log(
+            str(OBSERVED_LOG),
+            resolve_verb=lambda: 'pm-dev-java-cui:parse-rewrite-log',
+            dispatch=lambda notation, log_file: {'status': 'success', 'data': {'findings': 'oops'}},
+        )
+        rewrite_log = result['rewrite_log']
+        assert rewrite_log['verdict'] == VERDICT_PARSE_ERROR
+        assert rewrite_log['total_findings'] == 0
+
 
 class TestDispatchParserMalformedNotation:
     """dispatch_parser fails closed on a malformed notation, never crashing on the split."""
@@ -319,6 +358,32 @@ class TestDispatchParserMalformedNotation:
         monkeypatch.setattr(_rewrite_log.subprocess, 'run', _explode)
 
         result = dispatch_parser('bundle-only:', '/some/log')
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'malformed_notation'
+
+    def test_empty_bundle_segment_returns_error(self, monkeypatch):
+        # A leading-colon notation (empty bundle) is not the exact bundle:skill
+        # contract and must fail closed without reaching subprocess.
+        def _explode(*args, **kwargs):
+            raise AssertionError('subprocess.run must not run on an empty bundle segment')
+
+        monkeypatch.setattr(_rewrite_log.subprocess, 'run', _explode)
+
+        result = dispatch_parser(':parse-rewrite-log', '/some/log')
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'malformed_notation'
+
+    def test_extra_colon_segment_returns_error(self, monkeypatch):
+        # A three-part notation violates the exact bundle:skill contract and must
+        # fail closed without reaching subprocess.
+        def _explode(*args, **kwargs):
+            raise AssertionError('subprocess.run must not run on a 3-part notation')
+
+        monkeypatch.setattr(_rewrite_log.subprocess, 'run', _explode)
+
+        result = dispatch_parser('bundle:skill:extra', '/some/log')
 
         assert result['status'] == 'error'
         assert result['error'] == 'malformed_notation'

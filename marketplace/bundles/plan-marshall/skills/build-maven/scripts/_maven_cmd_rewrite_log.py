@@ -128,13 +128,13 @@ def dispatch_parser(notation: str, log_file: str) -> dict:
         The parser's parsed JSON result dict, or a ``status: error`` dict when
         the executor cannot be located or the parser produced no parseable JSON.
     """
-    # Notation must be a ``bundle:skill`` pair with a non-empty skill segment; a
-    # colonless/empty notation is fail-closed here, never a ValueError crash.
-    if ':' not in notation:
+    # Notation must be EXACTLY ``bundle:skill`` — two non-empty segments and no
+    # extra colons; anything else (colonless, empty bundle/skill, or a third
+    # ``:extra`` segment) is fail-closed here, never a ValueError crash.
+    parts = notation.split(':')
+    if len(parts) != 2 or not parts[0] or not parts[1]:
         return {'status': 'error', 'error': 'malformed_notation'}
-    skill = notation.split(':', 1)[1]
-    if not skill:
-        return {'status': 'error', 'error': 'malformed_notation'}
+    skill = parts[1]
     script = skill.replace('-', '_')
     full_notation = f'{notation}:{script}'
     executor = _find_executor()
@@ -155,6 +155,20 @@ def dispatch_parser(notation: str, log_file: str) -> dict:
     if not isinstance(parsed, dict):
         return {'status': 'error', 'error': 'parser_output_not_object'}
     return parsed
+
+
+def _parse_error_result(notation: str, reason: str) -> dict:
+    """Build the fail-closed ``parse_error`` result — never a false ``observed``."""
+    return {
+        'status': 'success',
+        'rewrite_log': {
+            'verdict': VERDICT_PARSE_ERROR,
+            'notation': notation,
+            'reason': reason,
+            'total_findings': 0,
+            'findings': [],
+        },
+    }
 
 
 def consume_rewrite_log(log_file: str, *, resolve_verb=resolve_domain_verb, dispatch=dispatch_parser) -> dict:
@@ -212,24 +226,31 @@ def consume_rewrite_log(log_file: str, *, resolve_verb=resolve_domain_verb, disp
             },
         }
 
-    payload = dispatch(notation, log_file)
+    try:
+        payload = dispatch(notation, log_file)
+    except Exception as exc:
+        # Fail closed on ANY dispatcher error (e.g. subprocess.run raising
+        # OSError): a raised exception must never escape as an unobserved run.
+        return _parse_error_result(
+            notation,
+            f'log-parse dispatch raised ({type(exc).__name__}) — findings could not be observed this run',
+        )
     if not isinstance(payload, dict) or payload.get('status') != 'success':
         error = payload.get('error') if isinstance(payload, dict) else 'dispatch_returned_non_dict'
-        return {
-            'status': 'success',
-            'rewrite_log': {
-                'verdict': VERDICT_PARSE_ERROR,
-                'notation': notation,
-                'reason': f'log-parse dispatch failed ({error}) — findings could not be observed this run',
-                'total_findings': 0,
-                'findings': [],
-            },
-        }
+        return _parse_error_result(
+            notation,
+            f'log-parse dispatch failed ({error}) — findings could not be observed this run',
+        )
 
-    data = payload.get('data', {})
-    if not isinstance(data, dict):
-        data = {}
-    findings = data.get('findings', []) or []
+    # A "successful" payload whose data/findings shape is malformed (non-dict
+    # data or non-list findings) must NOT be coerced into a false observed-clean.
+    data = payload.get('data')
+    findings = data.get('findings', []) if isinstance(data, dict) else None
+    if not isinstance(data, dict) or not isinstance(findings, list):
+        return _parse_error_result(
+            notation,
+            'log-parse dispatch succeeded but returned a malformed data/findings shape — findings could not be observed this run',
+        )
     return {
         'status': 'success',
         'rewrite_log': {
