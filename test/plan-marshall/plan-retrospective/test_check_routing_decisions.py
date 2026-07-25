@@ -19,9 +19,9 @@ from argparse import Namespace
 from pathlib import Path
 
 import pytest
+from toon_parser import serialize_toon
 
 from conftest import load_script_module
-from toon_parser import serialize_toon
 
 _crd = load_script_module(
     'plan-marshall', 'plan-retrospective', 'check-routing-decisions.py', 'crd_behavior_mod'
