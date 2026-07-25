@@ -404,7 +404,7 @@ class TestAddAspectKeyValidation:
         # valid_aspect_keys(), so cmd_add MUST accept it — without the row the
         # registration is rejected with `Unregistered aspect key` and the
         # fragment can never reach the report.
-        plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
+        plan_id, _plan_dir = setup_live_plan(tmp_path, monkeypatch)
         _init_bundle(plan_id)
         fragment_path = _write_fragment(
             tmp_path, 'frag.toon', _valid_fragment_body('chat-history-analysis')
