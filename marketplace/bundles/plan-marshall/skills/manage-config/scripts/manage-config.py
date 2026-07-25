@@ -34,6 +34,7 @@ from _cmd_finalize_steps import (
     cmd_finalize_steps_set_lane,
 )
 from _cmd_init import cmd_init
+from _cmd_orchestrator import cmd_orchestrator_get, cmd_orchestrator_set
 from _cmd_recipe_match import cmd_recipe_match
 from _cmd_skill_domains import (
     cmd_list_verify_steps,
@@ -457,7 +458,10 @@ def main() -> int:
             'Role key (see effort-roles.md registry). Accepted forms: bare '
             'group "phase-1-init"; dotted "phase-3-outline"; or use --phase '
             'plus a bare subkey ("--phase phase-6-finalize --role '
-            'verification-feedback").'
+            'verification-feedback"). The sibling "orchestrator" group '
+            '(surfaces analyze/decompose/reader, resolved under the top-level '
+            'orchestrator.effort block, then clamped by orchestrator.effort.max) '
+            'is addressed as "orchestrator.{surface}".'
         ),
     )
     effort_read.add_argument(
@@ -544,8 +548,10 @@ def main() -> int:
         required=True,
         help=(
             "Effort scope to write: a dotted '{phase}.{role}' nested scope "
-            '(e.g. "phase-6-finalize.verification-feedback"), or the literal '
-            '"plan" for the plan-wide scalar fallback. The nested write '
+            '(e.g. "phase-6-finalize.verification-feedback"), the literal '
+            '"plan" for the plan-wide scalar fallback, or an orchestrator scope '
+            '("orchestrator" scalar shorthand, "orchestrator.{surface}" per-surface '
+            'override, or "orchestrator.max" uplift ceiling). The nested write '
             'preserves sibling sub-keys; a pre-existing scalar effort string '
             'is normalised into an object first.'
         ),
@@ -555,6 +561,29 @@ def main() -> int:
         required=True,
         help='Effort level keyword (level-1..level-7 or inherit).',
     )
+
+    # --- orchestrator ---
+    # Scalar (non-effort) knobs of the top-level `orchestrator` block. The
+    # effort knobs live on the `effort` noun (`--role orchestrator.{surface}` /
+    # `--scope orchestrator[.{surface}|.max]`); this noun owns only the
+    # provisioning scalars (parallelization_scope today; PLAN-48 adds auto_emit).
+    p_orch = subparsers.add_parser(
+        'orchestrator',
+        help='Manage the top-level orchestrator block scalar knobs (get/set --field)',
+        allow_abbrev=False,
+    )
+    orch_sub = p_orch.add_subparsers(dest='verb', required=True, help='Operation')
+
+    orch_get = orch_sub.add_parser(
+        'get', help='Get an orchestrator scalar field (e.g. parallelization_scope)', allow_abbrev=False
+    )
+    add_field_arg(orch_get)
+
+    orch_set = orch_sub.add_parser(
+        'set', help='Set an orchestrator scalar field (whitelist-guarded)', allow_abbrev=False
+    )
+    add_field_arg(orch_set)
+    orch_set.add_argument('--value', required=True, help='Field value')
 
     # --- coverage ---
     # Two-dial coverage contract: thoroughness (T1-T5) x scope
@@ -867,6 +896,14 @@ def main() -> int:
             result = cmd_effort_set(args)
         else:
             result = cmd_effort(args)
+    elif args.noun == 'orchestrator':
+        if not args.verb:
+            p_orch.print_help()
+            return 2
+        if args.verb == 'get':
+            result = cmd_orchestrator_get(args)
+        else:
+            result = cmd_orchestrator_set(args)
     elif args.noun == 'coverage':
         if not args.verb:
             p_coverage.print_help()
