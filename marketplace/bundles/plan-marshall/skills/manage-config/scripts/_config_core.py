@@ -80,9 +80,12 @@ def load_config() -> dict:
 CANONICAL_TOP_LEVEL_KEY_ORDER = [
     'extension_defaults',
     'plan',
+    # `orchestrator` is a top-level sibling of `plan` (the epic-orchestration
+    # config block); it is emitted immediately after `plan`, its parallel primary
+    # sibling, so a seeded/back-filled empty block lands canonically next to it.
+    'orchestrator',
     'build',
     'credentials_config',
-    'orchestrator',
     'project',
     'providers',
     'skill_domains',

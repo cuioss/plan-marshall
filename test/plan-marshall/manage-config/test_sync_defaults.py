@@ -108,6 +108,75 @@ def test_sync_defaults_empty_marshal_gains_all_defaults(plan_context):
     assert 'project' in result['added']
 
 
+def test_sync_defaults_backfills_orchestrator_block(plan_context):
+    """A config lacking the ``orchestrator`` block gains the seeded block on sync.
+
+    ``get_default_config()`` seeds ``orchestrator: {'auto_emit': False}`` (a
+    sibling of ``plan``), so the non-destructive deep-merge back-fills it into a
+    config that predates the block, and reports the ``orchestrator`` top-level
+    path in ``added``.
+    """
+    _write_marshal(plan_context.fixture_dir, {'plan': {'effort': 'level-3'}})
+
+    result = cmd_sync_defaults(Namespace(audit_plan_id=None))
+
+    assert result['status'] == 'success'
+    config = _read_marshal(plan_context.fixture_dir)
+    assert config['orchestrator'] == {'auto_emit': False}, (
+        'the seeded orchestrator block (auto_emit=False) must be back-filled'
+    )
+    assert 'orchestrator' in result['added']
+
+
+def test_sync_defaults_preserves_populated_orchestrator_block(plan_context):
+    """A pre-existing populated ``orchestrator`` block survives sync non-destructively.
+
+    The deep-merge only adds MISSING keys, so an operator-populated orchestrator
+    block (effort surfaces + parallelization_scope) is preserved verbatim; the
+    only change is the non-destructive back-fill of the seeded ``auto_emit``
+    default (a sub-key the pre-auto_emit block lacked), reported as the nested
+    ``orchestrator.auto_emit`` path — the ``orchestrator`` top-level path itself
+    is NOT re-reported as added.
+    """
+    _write_marshal(
+        plan_context.fixture_dir,
+        {
+            'orchestrator': {
+                'effort': {'analyze': 'level-6', 'max': 'level-5'},
+                'parallelization_scope': 3,
+            },
+            'plan': {'effort': 'level-3'},
+        },
+    )
+
+    result = cmd_sync_defaults(Namespace(audit_plan_id=None))
+
+    assert result['status'] == 'success'
+    config = _read_marshal(plan_context.fixture_dir)
+    # the populated surfaces survive verbatim; auto_emit is back-filled to its default
+    assert config['orchestrator'] == {
+        'effort': {'analyze': 'level-6', 'max': 'level-5'},
+        'parallelization_scope': 3,
+        'auto_emit': False,
+    }
+    # the present block is not re-reported as an added top-level path
+    assert 'orchestrator' not in result['added']
+
+
+def test_sync_defaults_orchestrator_backfill_is_idempotent(plan_context):
+    """A second sync after back-filling the orchestrator block adds nothing further."""
+    _write_marshal(plan_context.fixture_dir, {'plan': {'effort': 'level-3'}})
+
+    first = cmd_sync_defaults(Namespace(audit_plan_id=None))
+    assert first['status'] == 'success'
+    assert 'orchestrator' in first['added']
+
+    second = cmd_sync_defaults(Namespace(audit_plan_id=None))
+
+    assert second['status'] == 'success'
+    assert 'orchestrator' not in second['added']
+
+
 def test_sync_defaults_preserves_user_set_param_in_keyed_map(plan_context):
     """A user-set per-step param survives the sync; missing siblings are back-filled.
 

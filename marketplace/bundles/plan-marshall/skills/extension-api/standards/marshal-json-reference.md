@@ -117,6 +117,44 @@ The three surviving lifecycle gates ride the `gate_mode` enum (`auto`\|`always`\
 | `plan.phase-6-finalize.steps['default:branch-cleanup'].final_merge_without_asking` (step-owned param; read via `manage-execution-manifest step-params get`) | User config | phase-6-finalize (branch-cleanup pre-merge gate) | - |
 | `plan.phase-6-finalize.steps['plan-marshall:automatic-review'].review_bot_buffer_seconds` (step-owned param; read via `manage-execution-manifest step-params get`) | User config | phase-6-finalize / workflow-pr-doctor (review-bot comment wait) | - |
 
+## Orchestrator Configuration (marshal.json)
+
+The `orchestrator` block is a **top-level sibling of `plan`** that governs the epic-orchestration identity (`marshall-orchestrator`). It pins the effort of the orchestrator's read-only analysis dispatch surfaces behind a config-resolved uplift ceiling, and holds the project-level `parallelization_scope` default that pre-fills the per-epic interactive ask. An **empty `{}` block is legal** and behaviourally inert: with `orchestrator.*` unset everywhere, every reader resolves EXACTLY as today — `plan.effort` for baseline orchestrator effort, an unset-ceiling no-op for the uplift bound, and the hard-coded `parallelization_scope` default of `1`.
+
+The block is additively shaped: the `orchestrator get/set --field` verb and its known-field whitelist are the extension seam through which a future scalar knob (the reserved PLAN-48 `orchestrator.auto_emit` boolean) folds into the SAME block without a schema rework.
+
+### `orchestrator.effort` — surfaces, `default` slot, and `max` ceiling
+
+`orchestrator.effort` reuses the polymorphic **string-or-object** shape of `plan.<phase>.effort` verbatim, extended with one clamp key:
+
+- **String shorthand** → the single level applies to every orchestrator surface.
+- **Object** → sub-keys are the three read-only orchestrator surfaces `analyze` / `decompose` / `reader`, a `default` slot (baseline for every surface without its own override), and a `max` uplift **ceiling**.
+
+Per-surface resolution precedence (surface ∈ {`analyze`, `decompose`, `reader`}):
+
+```text
+orchestrator.effort.{surface}  →  orchestrator.effort.default (or bare string)  →  plan.effort  →  inherit
+                          then CLAMP to orchestrator.effort.max  (min(resolved, max) on the level-1..level-7 ordinal ladder; unset max = no-op)
+```
+
+`max` is a **ceiling LEVEL keyword that clamps** the resolved surface level on the ordinal ladder — NOT an explicit level that replaces resolution. The per-surface value carries the uplift; `max` deterministically bounds it. An unset `max` is a no-op (no clamp), so the resolved level stays exactly what the precedence walk produced. This replaces the former free-prose "read-only analysis MAY run at a higher tier" discretion with a config-resolved, deterministically-bounded ceiling.
+
+The `reader` surface resolves a LEVEL like the others; the dispatch site composes the read-only `execution-context-reader-{level}` variant from that resolved level (untrusted-text ingestion runs under the reader variant, not the write-capable one).
+
+### `orchestrator.parallelization_scope`
+
+`orchestrator.parallelization_scope` is a project-level integer (>= 1) that pre-fills the per-epic parallelization-scope `AskUserQuestion` in `marshall-orchestrator` init. When set it seeds the ask's default suggestion (still fully operator-overridable per epic); when unset the ask keeps today's hard-coded `1` default. The stored per-epic answer and the positive-integer reduction are unaffected — the project default only supplies the initial suggestion for a NEW epic's first ask.
+
+| Path | Set By | Used By | Extension Point Doc |
+|------|--------|---------|---------------------|
+| `orchestrator` (empty `{}` legal; sibling of `plan`) | `init` seed / `sync-defaults` back-fill | Runtime (orchestrator effort + parallelization resolution) | - |
+| `orchestrator.effort` (string OR object; `default` + `analyze`/`decompose`/`reader` surfaces + `max` ceiling) | User config (`manage-config effort set --scope orchestrator[.{surface}\|.max]`) | `manage-config effort read`/`resolve-target --role orchestrator.{surface}`; marshall-orchestrator analyze/decompose dispatch sites | - |
+| `orchestrator.effort.{analyze\|decompose\|reader}` (per-surface override level) | User config | `effort resolve-target --role orchestrator.{surface}` (reader composes `execution-context-reader-{level}`) | - |
+| `orchestrator.effort.max` (uplift ceiling level; clamps resolved surface level; unset = no-op) | User config | manage-config effort resolver (ordinal clamp) | - |
+| `orchestrator.parallelization_scope` (int >= 1; project default) | User config (`manage-config orchestrator set --field parallelization_scope`) | marshall-orchestrator init Step 4 (per-epic ask pre-fill) | - |
+
+> **Reserved extension slot (PLAN-48).** `orchestrator.auto_emit` (a scalar boolean, default-off) folds into this SAME block via the `manage-config orchestrator get/set --field` verb and its `reject_unknown_provisioning_field` whitelist. This plan defines the block and the extensible scalar verb; PLAN-48 extends the whitelist with `auto_emit` and reads it through the same verb — no schema rework is owed.
+
 ## Project Configuration (marshal.json)
 
 Project-level settings under the `project.*` block — persist across plans, seeded by `init`, back-filled into existing projects by `sync-defaults`.

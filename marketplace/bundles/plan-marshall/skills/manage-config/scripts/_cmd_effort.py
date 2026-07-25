@@ -82,6 +82,17 @@ KNOWN_ROLES: dict[str, tuple[str, ...]] = {
     'phase-6-finalize': ('default', 'verification-feedback', 'post-run-review'),
 }
 
+# The `orchestrator` role group is NOT a `plan.<phase>` entry — it resolves
+# against the sibling top-level `orchestrator.effort` block (see
+# effort-roles.md § "Orchestrator role group"). Its read surfaces are the three
+# read-only orchestrator dispatches; `default` is the in-block fallback and
+# `max` is the uplift ceiling that clamps the resolved surface level.
+ORCHESTRATOR_SURFACES: tuple[str, ...] = ('analyze', 'decompose', 'reader')
+
+# The writable `orchestrator.effort` object keys: the read surfaces plus the
+# `default` fallback slot and the `max` uplift ceiling.
+ORCHESTRATOR_EFFORT_SET_KEYS: tuple[str, ...] = ORCHESTRATOR_SURFACES + ('default', 'max')
+
 
 
 def _validate_level(value: str, source: str) -> tuple[bool, str | None]:
@@ -223,6 +234,105 @@ def _resolve_level(
     return 'inherit', 'implicit_default', None
 
 
+def _level_ordinal(level: str) -> int | None:
+    """Return the integer rung of a ``level-N`` keyword, else None.
+
+    ``inherit`` and any non-``level-N`` keyword return None — they have no
+    position on the ordinal ladder and therefore cannot participate in a clamp.
+    """
+    if level.startswith('level-'):
+        try:
+            return int(level.split('-', 1)[1])
+        except ValueError:
+            return None
+    return None
+
+
+def _clamp_level(level: str, max_level: str | None, source: str) -> tuple[str, str]:
+    """Clamp a resolved ``level`` to the ``max_level`` ceiling on the ordinal ladder.
+
+    Returns ``(level, source)`` unchanged when the clamp is a no-op — ``max`` is
+    unset, either side is non-ordinal (e.g. ``inherit``), or the resolved level
+    already sits at or below the ceiling. When the resolved level exceeds the
+    ceiling, returns the ceiling and a clamp-annotated source.
+    """
+    if max_level is None:
+        return level, source
+    resolved_ord = _level_ordinal(level)
+    max_ord = _level_ordinal(max_level)
+    if resolved_ord is None or max_ord is None:
+        return level, source
+    if resolved_ord > max_ord:
+        return max_level, 'orchestrator.effort.max (clamp)'
+    return level, source
+
+
+def _resolve_orchestrator_level(
+    config: dict,
+    default_level: str | None,
+    subkey: str | None,
+) -> tuple[str, str, str | None]:
+    """Walk the sibling ``orchestrator.effort`` block to a single level keyword.
+
+    Returns:
+        (level, source, error). When ``error`` is set, ``level`` and ``source``
+        are empty strings.
+
+    Resolution order (surface in :data:`ORCHESTRATOR_SURFACES`):
+        1. subkey (if supplied) must be a registered orchestrator surface.
+        2. ``orchestrator.effort`` is a **string** -> single-level shorthand.
+        3. ``orchestrator.effort`` is an **object**:
+           - surface supplied AND present -> that value.
+           - surface supplied but absent  -> walk to the ``default`` slot.
+           - surface absent (bare group)  -> walk to the ``default`` slot.
+        4. ``plan.effort`` -> fall through when nothing matched above.
+        5. ``inherit`` -> implicit final fallback.
+        Then CLAMP the resolved level to ``orchestrator.effort.max`` when set
+        (min on the ordinal ladder; unset / non-ordinal = no-op).
+    """
+    if subkey is not None and subkey not in ORCHESTRATOR_SURFACES:
+        return (
+            '',
+            '',
+            f"subkey '{subkey}' is not a registered orchestrator surface "
+            f'in effort-roles.md (valid: {list(ORCHESTRATOR_SURFACES)})',
+        )
+
+    orch_block = config.get('orchestrator')
+    orch_effort = orch_block.get('effort') if isinstance(orch_block, dict) else None
+
+    level: str | None = None
+    source: str | None = None
+    max_level: str | None = None
+
+    if isinstance(orch_effort, str):
+        level, source = orch_effort, 'orchestrator.effort'
+    elif isinstance(orch_effort, dict):
+        max_candidate = orch_effort.get('max')
+        if isinstance(max_candidate, str):
+            ok, err = _validate_level(max_candidate, 'orchestrator.effort.max')
+            if not ok:
+                return '', '', err
+            max_level = max_candidate
+        if subkey is not None:
+            sub_value = orch_effort.get(subkey)
+            if isinstance(sub_value, str):
+                level, source = sub_value, f'orchestrator.effort.{subkey}'
+        if level is None:
+            default_slot = orch_effort.get('default')
+            if isinstance(default_slot, str):
+                level, source = default_slot, 'orchestrator.effort.default'
+
+    if level is None or source is None:
+        if default_level is not None:
+            level, source = default_level, 'plan.effort'
+        else:
+            level, source = 'inherit', 'implicit_default'
+
+    clamped_level, clamped_source = _clamp_level(level, max_level, source)
+    return clamped_level, clamped_source, None
+
+
 def _compute_target(level: str) -> str:
     """Compute the dispatched-variant target name from a resolved level."""
     if level == 'inherit' or not level:
@@ -273,6 +383,24 @@ def cmd_effort(args) -> dict:
         ok, default_err = _validate_level(default_level, 'plan.effort')
         if not ok:
             return error_exit(default_err or 'invalid effort')
+
+    # Orchestrator scope: resolve against the sibling `orchestrator.effort`
+    # block (NOT `plan.<phase>`), then clamp to the `max` uplift ceiling.
+    if group == 'orchestrator':
+        level, source, orch_err = _resolve_orchestrator_level(config, default_level, subkey)
+        if orch_err is not None:
+            return error_exit(orch_err)
+        if level != 'inherit':
+            ok, validation_err = _validate_level(level, source)
+            if not ok:
+                return error_exit(validation_err or 'invalid effort')
+        return success_exit(
+            {
+                'role': f'orchestrator.{subkey}' if subkey is not None else 'orchestrator',
+                'level': level,
+                'source': source,
+            }
+        )
 
     warnings: list[str] = []
 
@@ -405,6 +533,64 @@ def _count_roles(expanded: dict[str, object]) -> int:
     return count
 
 
+def _set_orchestrator_effort(scope: str, level: str) -> dict:
+    """Write one ``orchestrator.effort`` scope (scalar shorthand or per-key).
+
+    - ``orchestrator``            -> scalar shorthand ``orchestrator.effort = level``.
+    - ``orchestrator.{surface}``  -> per-surface override; a pre-existing scalar
+      ``orchestrator.effort`` string is normalised into an object (its prior value
+      seeded into ``default``) so the write does not clobber siblings.
+    - ``orchestrator.default`` / ``orchestrator.max`` -> the in-block fallback slot
+      and the uplift ceiling, respectively.
+
+    Unknown ``orchestrator.<key>`` scopes and invalid levels are rejected.
+    """
+    if scope == 'orchestrator':
+        target_key: str | None = None
+        source = 'orchestrator.effort'
+    else:
+        target_key = scope.split('.', 1)[1]
+        if target_key not in ORCHESTRATOR_EFFORT_SET_KEYS:
+            return error_exit(
+                f"orchestrator effort scope '{scope}' is not writable "
+                f'(valid sub-keys: {list(ORCHESTRATOR_EFFORT_SET_KEYS)})'
+            )
+        source = f'orchestrator.effort.{target_key}'
+
+    ok, err = _validate_level(level, source)
+    if not ok:
+        return error_exit(err or 'invalid effort')
+
+    config = load_config()
+    orch_block = config.setdefault('orchestrator', {})
+    if not isinstance(orch_block, dict):
+        return error_exit('orchestrator block in marshal.json is not a dictionary')
+
+    # Scalar shorthand write: replace the whole `effort` value with a string.
+    if target_key is None:
+        orch_block['effort'] = level
+        save_config(config)
+        return success_exit(
+            {'scope': scope, 'level': level, 'target': 'orchestrator.effort'}
+        )
+
+    # Per-key object write: normalise a scalar shorthand into an object first so
+    # the sibling sub-keys survive.
+    existing_effort = orch_block.get('effort')
+    if isinstance(existing_effort, dict):
+        effort_obj = existing_effort
+    elif isinstance(existing_effort, str):
+        effort_obj = {'default': existing_effort}
+        orch_block['effort'] = effort_obj
+    else:
+        effort_obj = {}
+        orch_block['effort'] = effort_obj
+
+    effort_obj[target_key] = level
+    save_config(config)
+    return success_exit({'scope': scope, 'level': level, 'target': source})
+
+
 def cmd_effort_set(args) -> dict:
     """Handle ``effort set --scope <scope> --level <value>`` subcommand.
 
@@ -456,11 +642,16 @@ def cmd_effort_set(args) -> dict:
             }
         )
 
+    # Orchestrator scope: the sibling `orchestrator.effort` block (bare scalar,
+    # per-surface override, or the `max` ceiling) — NOT a `plan.<phase>` scope.
+    if scope == 'orchestrator' or scope.startswith('orchestrator.'):
+        return _set_orchestrator_effort(scope, level)
+
     # Nested scope: {phase}.{role}.
     if '.' not in scope:
         return error_exit(
-            f"scope '{scope}' must be 'plan' or a dotted '{{phase}}.{{role}}' scope "
-            f'(e.g. phase-6-finalize.verification-feedback)'
+            f"scope '{scope}' must be 'plan', 'orchestrator[.{{surface}}|.default|.max]', or a dotted "
+            f"'{{phase}}.{{role}}' scope (e.g. phase-6-finalize.verification-feedback)"
         )
     phase, role = scope.split('.', 1)
 

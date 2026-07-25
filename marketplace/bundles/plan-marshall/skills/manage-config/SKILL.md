@@ -576,8 +576,9 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci issue view
 | `ext-defaults` | get, set, set-default, list, remove |
 | `system` | retention get, retention set |
 | `project` | `get/set` (`default_base_branch`, `working_prefixes`, `pr_strategy`, `pr_compact_max_changed_files`), `pr-decision --changed-files N` (resolve the two PR-batching knobs into a `ride`\|`split` verdict) |
+| `orchestrator` | `get`/`set --field {parallelization_scope\|auto_emit}` (whitelist-guarded scalar knobs on the top-level `orchestrator` block, a sibling of `plan`: `parallelization_scope` int >= 1, `auto_emit` bool. `orchestrator.effort.*` is NOT handled here — see the `effort` row's `orchestrator[...]` scope forms.) |
 | `plan` | `{phase} get/set` (incl. gate_mode planning gates + flat finalize automation knobs), `{phase} step get/set` (one-stop keyed-map step-param read/write; ceremony gates ride the step `lane` param), set-steps, add-step, remove-step, set-max-iterations |
-| `effort` | `read` (role/phase/`--default` resolver), `resolve-target` (`execution-context-{level}` variant name), `apply-preset --preset` (whole-tree writer), `set --scope {phase}.{role}\|plan --level` (surgical per-scope writer) |
+| `effort` | `read` (role/phase/`--default` resolver; `--role orchestrator`\|`orchestrator.{analyze\|decompose\|reader}` resolves the sibling `orchestrator.effort` block, clamped to `orchestrator.effort.max`), `resolve-target` (same lookup plus `execution-context-{level}` target-name computation), `apply-preset --preset` (whole-tree writer), `set --scope {phase}.{role}\|plan\|orchestrator[.{analyze\|decompose\|reader}\|default\|max] --level` (surgical per-scope writer) |
 | `ci` | get, get-provider, get-tools, get-command, set-provider, set-tools, persist |
 | `build-map` | `seed` (re-seed `build.map` from applicable extensions, write-once; `--force` clears + re-derives), `read` (effective map from `build.map`, fail-closed when absent), `drift` (read-only diff of persisted vs derived map: `in_sync` + per-domain added/removed globs) |
 | `build-decision` | `[--command] --plan-id` (the sole build/no-build authority's verdict: `build` / `not_necessary`; `not_necessary` carries a log-friendly `reason`. `--command` is an optional echo-only label that never enters the predicate — omit it for the command-free plan-wide verdict) |
@@ -1039,6 +1040,24 @@ threshold: 151
 is the first changed-file count that forces a split under the compact strategy
 (`max + 1`).
 
+### orchestrator get
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config orchestrator get \
+  --field FIELD
+```
+
+Returns the stored value plus a `set` boolean distinguishing a configured value from an unset one. When unset, `value` falls back to the canonical default from `DEFAULT_ORCHESTRATOR` (so `auto_emit` reads `false`) or `null` when the field carries no seeded default (`parallelization_scope`). `--field` is checked against the scalar whitelist (`parallelization_scope`, `auto_emit`); an unknown field is rejected before the read.
+
+### orchestrator set
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config orchestrator set \
+  --field FIELD --value VALUE
+```
+
+Writes one scalar knob into the top-level `orchestrator` block (a sibling of `plan`), rejecting an unknown `--field` against the same whitelist with `error_type: unknown_field`. Two known scalar fields: `parallelization_scope` (int `>= 1`; `bool` is rejected even though it is an `int` subclass) pre-fills the per-epic `parallelization_scope` ask in `marshall-orchestrator` init; `auto_emit` (bool; the orchestrator-tier autonomy knob, default `false`) governs the post-landing queue-fill emit. `orchestrator.effort.*` is NOT written here — see `effort set --scope orchestrator[...]` below.
+
 ### plan {phase} get
 
 Applies to every phase sub-noun: `phase-1-init`, `phase-2-refine`, `phase-3-outline`,
@@ -1158,6 +1177,8 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config effort
   [--role ROLE] [--phase PHASE] [--default]
 ```
 
+`--role orchestrator` (bare) or `--role orchestrator.{analyze|decompose|reader}` resolves against the sibling `orchestrator.effort` block instead of a `plan.<phase>` entry: `orchestrator.effort.{surface}` → `orchestrator.effort.default` (or the bare-string shorthand) → `plan.effort` → `inherit`, then CLAMPED to `orchestrator.effort.max` when set. The `reader` surface's resolved level is what the *dispatch site* composes into the read-only `execution-context-reader-{level}` variant (untrusted-text ingestion runs under the reader variant, not the write-capable one) — `resolve-target` itself still returns the plain `execution-context-{level}` target name.
+
 ### effort apply-preset
 
 ```bash
@@ -1169,10 +1190,10 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config effort
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config effort set \
-  --scope {phase}.{role}|plan --level LEVEL
+  --scope {phase}.{role}|plan|orchestrator[.{analyze|decompose|reader}|.default|.max] --level LEVEL
 ```
 
-Surgical per-scope writer. `--scope {phase}.{role}` (e.g. `phase-6-finalize.verification-feedback`) writes one nested effort scope, preserving sibling sub-keys (a pre-existing scalar `effort` string is normalised into an object first). `--scope plan` writes the `plan.effort` plan-wide scalar. Unknown phase/role and invalid `--level` are rejected.
+Surgical per-scope writer. `--scope {phase}.{role}` (e.g. `phase-6-finalize.verification-feedback`) writes one nested effort scope, preserving sibling sub-keys (a pre-existing scalar `effort` string is normalised into an object first). `--scope plan` writes the `plan.effort` plan-wide scalar. `--scope orchestrator` writes the `orchestrator.effort` scalar shorthand (a bare level string applying to every orchestrator surface); `--scope orchestrator.{analyze|decompose|reader}` writes one per-surface override (normalising a pre-existing scalar `orchestrator.effort` into an object first, seeding its prior value into `default`); `--scope orchestrator.default` writes the in-block fallback slot; `--scope orchestrator.max` writes the uplift **ceiling** that clamps every resolved orchestrator surface level on the ordinal ladder (an unset `max` is a no-op). Unknown phase/role, an unwritable `orchestrator.<key>` sub-key, and invalid `--level` are all rejected.
 
 ### coverage read
 
