@@ -73,12 +73,32 @@ EMIT one ready-to-run command per selected candidate — the whole `N − R` blo
 
 The one-line pointer is the whole hand-off. The plan lifecycle ingests the referenced spec file's *contents* at `phase-1-init` — the file-pointer branch of Step 4 "From Description" reads the path through the deterministic `request create --body-file` seam, so the referenced spec becomes the request body and the pointer alone is a self-sufficient brief. The emit therefore surfaces NO inlined spec body and NO operator-facing spec preview: there is deliberately no surface at this step that reproduces the spec text. Should a future author ever need to show a spec body at an orchestrator surface, it MUST be obtained by a `Read` of the spec path — a deterministic file read — NEVER by LLM retyping, paraphrase, or reconstruction from context; a re-introduced "verbatim spec text" inline is exactly the retyping-drift this retirement removed.
 
-The verb NEVER launches the plan inline — the operator runs the emitted command; implementation happens exclusively inside the plan lifecycle. This holds for every command in the block: the orchestrator emits `N − R` ready commands and launches none of them. When the operator confirms a launch, record the transition (once per launched plan):
+The verb NEVER launches the plan inline — the operator runs the emitted command; implementation happens exclusively inside the plan lifecycle. This holds for every command in the block: the orchestrator emits `N − R` ready commands and launches none of them.
+
+**`auto_emit` gate — record the `launched` transition.** Read the orchestrator-tier autonomy knob (default `false`), the orchestrator-tier analog of the plan-tier autonomy family (`finalize_without_asking` / `loop_back_without_asking`):
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator queue \
-  --slug {slug} --transition PLAN-NN --status launched
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config orchestrator get \
+  --field auto_emit
 ```
+
+Branch on the resolved value. The Step 4 candidate selection (disjoint + prep-ready + the `N − R` slot count) is unchanged under either branch — only whether the emitted block's `launched` transition is auto-recorded or operator-gated changes:
+
+- **`auto_emit == true`** — auto-fill toward `parallelization_scope`: immediately record the `launched` transition for every selected candidate in the emitted `N − R` block (once per plan), then continue. Do NOT wait for a per-plan operator confirmation.
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator queue \
+    --slug {slug} --transition PLAN-NN --status launched
+  ```
+
+- **`auto_emit == false` (default)** — today's stage-and-wait cadence, verbatim: emit the block, and record the `launched` transition only when the operator confirms a launch (once per launched plan).
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator queue \
+    --slug {slug} --transition PLAN-NN --status launched
+  ```
+
+**The emit≠running invariant is absolute — neither branch ever records the operator-confirmed started/`running` state.** `auto_emit` automates the *emit* (marking each emitted plan `launched`), never the *start*: the `launched → running` transition stays operator-owned under both knob values. A shortfall (no qualifying candidate for a slot — Step 4's disjointness / prep-readiness guards refused it) emits nothing and logs the blocking reason per candidate under **both** knob values; `auto_emit=true` never emits a colliding, blocked, or unprepared plan merely to fill a slot.
 
 ### Step 6 (verb = `next`): Log and set the resume anchor
 
@@ -91,6 +111,8 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging deci
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status update-field \
   --plan-id {slug} --field resume_anchor --value "{next action}" --store orchestrator
 ```
+
+Word the `resume_anchor` to reflect the Step 5 `auto_emit` branch: under `auto_emit == true` the `launched` transitions are already recorded, so the anchor names the auto-emitted `launched` block awaiting the operator-confirmed start (`launched → running`); under `auto_emit == false` (default) it names the emitted block awaiting operator-confirmed launch. Neither wording ever asserts a `running`/started state the orchestrator did not observe the operator confirm — the emit≠running invariant holds here too.
 
 Regenerate the START-HERE block (Step 3 invocation) after any queue-touching change.
 
