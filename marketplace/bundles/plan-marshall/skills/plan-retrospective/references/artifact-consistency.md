@@ -48,6 +48,17 @@ summary:
 - **affected_files_recall**: when `solution_outline.md` declares `Affected files:` bullets per deliverable, the plan's live footprint SHOULD contain at least 70% of them. < 70% is a fail. An empty declared set is NOT a benign outcome: when the outline declares at least one deliverable yet no bullet was extracted, the check reports `fail` naming the parse failure, because an unparseable bullet list cannot substantiate any coverage verdict. `skip` is reserved for an outline that genuinely declares no deliverables.
 - **affected_files_exact_match**: the declared set and the resolved footprint MUST agree exactly. A both-empty comparison reports `inconclusive` — two empty sets are trivially equal whether the plan really touched no files or both the parser and the footprint resolver failed — and is accompanied by a `severity: warning` finding. `pass` is reserved for two non-empty, exactly-agreeing sets. When the check reports `status: warn`, the retrospective synthesizer MUST surface the drift in the report naming `outline_only` and `references_only` verbatim.
 
+## Borrowed grammar: the `Affected files:` bullet form is owned elsewhere
+
+The `Affected files:` bullet grammar the `affected_files_*` checks parse is **owned by `plan-marshall:manage-solution-outline`**, which authors and validates those bullets. `check-artifact-consistency.py` re-parses that grammar with its own regex — a second reader of a format it does not own — so the two can drift apart silently: the owner accepts a bullet form the borrowed reader cannot match, and the check reports an empty declared set rather than a parse error.
+
+Two obligations follow, and they are the recurrence guard for that drift:
+
+- **A change to the bullet grammar in `manage-solution-outline` MUST be mirrored into this check's extractor in the same change.** The canonical annotated form is ``- `path/to/file` (intent)`` — the backtick-delimited span is the path and everything after the closing backtick is metadata to discard. A bare, un-annotated ``- path/to/file`` is also accepted. A grammar addition that lands on only one side is a defect even though both sides individually pass their own tests.
+- **The borrowed reader MUST fail loudly, never quietly.** Because the reader can silently under-match, an empty declared set is treated as a parse failure (`fail`) whenever the outline declares at least one deliverable, and a both-empty comparison is `inconclusive` — see the two check definitions above. Those verdicts exist specifically because a borrowed parser's silence is indistinguishable from a genuine absence.
+
+Reusing the owner's extractor rather than re-implementing the grammar removes the drift class entirely and is the preferred direction whenever this check is next reworked.
+
 ## Manifest-Aware Mode (when `execution.toon` exists)
 
 When the plan directory contains an `execution.toon` manifest produced by `plan-marshall:manage-execution-manifest`, the script enters manifest-aware mode for the `affected_files_exact_match` check:

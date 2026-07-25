@@ -21,9 +21,21 @@ The aspect resolves to exactly one of two tiers, gated by the `extract-chat-sign
 
 The pre-pass is the single decision source — the orchestrator never inspects raw file size directly. The `extract-chat-signal.py run --transcript-path {abs} [--read-budget-bytes N]` invocation returns:
 
-- `no_signal` — `true` when the reduction kept zero turns (the transcript carried no user turns and no marker-bearing assistant turns).
+- `no_signal` — `true` when the reduction kept zero turns, i.e. the transcript carried no operator-authored user turn and no marker-bearing assistant turn.
 - `over_budget` — `true` when the reduced text still exceeds `--read-budget-bytes` (default 2 MiB).
 - `reduced_transcript` — the Tier-1 input; non-empty only when both flags are `false`.
+- `raw_turn_count` / `dropped_turn_count` — the parseable-turn count before reduction and how many the reduction removed, so the caller can see how much was boilerplate.
+
+### The reduction filters by provenance, not by role
+
+A `user` turn is kept only when it is **operator-authored**. The harness injects synthetic turns under the `user` role that carry no operator signal, and a role-only filter cannot tell them apart from a real utterance — so the reduction drops two structurally recognizable classes:
+
+- an **empty or whitespace-only** turn (a tool-result placeholder that carried no text block);
+- a **synthetic skill-load** turn — a loaded skill's body injected into the conversation, recognized by a `Base directory for this skill:` line followed by a markdown heading.
+
+This distinction is load-bearing for the tier decision, not cosmetic. Under the earlier role-only filter a transcript could be ~90% verbatim framework markdown with fewer than 10 of 287 turns operator-authored, stay under the read budget, and be classified Tier 1 with confidence — the aspect then paid a full LLM read for boilerplate. Because the surviving set is operator-authored by construction, `no_signal` is now an honest "this session carried no operator signal" verdict and Tier 2 is reached honestly rather than never.
+
+**The generalizable rule**: when a channel's producer injects synthetic entries under the same structural label real entries use, a filter keyed on that label measures the label, not the content. Key such a filter on provenance or content shape, and derive any downstream sufficiency flag from the surviving set — never from the raw count.
 
 Either flag being `true` is the Tier-2 trigger. When BOTH are `false`, `reduced_transcript` is the Tier-1 input to the LLM prompt. The 2 MiB read budget is the canonical threshold and is owned by the script (`DEFAULT_READ_BUDGET_BYTES`); this document references it, it does not re-declare it.
 
