@@ -1213,6 +1213,90 @@ def test_project_set_then_get_roundtrip_default_base_branch(plan_context):
     assert get_result['value'] == 'develop'
 
 
+# =============================================================================
+# orchestrator noun — orchestrator.auto_emit knob (this plan, PLAN-48 D1)
+# =============================================================================
+#
+# The orchestrator-tier autonomy knob mirrors the plan-tier autonomy family
+# (finalize_without_asking / loop_back_without_asking). Default False: manual
+# emit is the safe posture. The knob automates the `launched` emit, NEVER the
+# operator-confirmed `launched -> running` (started) transition — the
+# emit != running invariant is absolute.
+
+
+def test_default_orchestrator_auto_emit_is_false():
+    """DEFAULT_ORCHESTRATOR must declare auto_emit with default False."""
+    orchestrator_defaults = _config_defaults_mod.DEFAULT_ORCHESTRATOR
+
+    assert 'auto_emit' in orchestrator_defaults, (
+        'auto_emit must be schema-registered in DEFAULT_ORCHESTRATOR'
+    )
+    assert orchestrator_defaults['auto_emit'] is False, (
+        'auto_emit default must be False (manual emit is the safe posture; '
+        'orchestrator-tier autonomy is opt-in)'
+    )
+
+
+def test_get_default_config_includes_orchestrator_block():
+    """get_default_config() must surface the orchestrator block with auto_emit == False."""
+    config = _config_defaults_mod.get_default_config()
+
+    assert 'orchestrator' in config, 'the orchestrator top-level block must be seeded'
+    assert config['orchestrator'].get('auto_emit') is False
+
+
+def test_orchestrator_in_canonical_top_level_key_order():
+    """'orchestrator' must sit between credentials_config and project in canonical order."""
+    order = _config_core_mod.CANONICAL_TOP_LEVEL_KEY_ORDER
+
+    assert 'orchestrator' in order, "'orchestrator' must be in the canonical top-level key order"
+    assert order.index('credentials_config') < order.index('orchestrator') < order.index('project'), (
+        "'orchestrator' must sit between credentials_config and project in canonical order"
+    )
+
+
+def test_orchestrator_get_returns_auto_emit_default_false(plan_context):
+    """`orchestrator get --field auto_emit` returns False from the merged default on a fresh marshal.json."""
+    _cmd_init_mod.cmd_init(Namespace(force=False))
+
+    get_args = Namespace(verb='get', field='auto_emit')
+    get_result = _cmd_system_plan_mod.cmd_orchestrator(get_args)
+
+    assert get_result['status'] == 'success'
+    assert get_result['value'] is False
+
+
+def test_orchestrator_set_then_get_roundtrip_auto_emit(plan_context):
+    """`orchestrator set --field auto_emit --value true` must round-trip via get (bool-coerced)."""
+    _cmd_init_mod.cmd_init(Namespace(force=False))
+
+    set_args = Namespace(verb='set', field='auto_emit', value='true')
+    set_result = _cmd_system_plan_mod.cmd_orchestrator(set_args)
+    assert set_result['status'] == 'success'
+    assert set_result['value'] is True
+
+    get_args = Namespace(verb='get', field='auto_emit')
+    get_result = _cmd_system_plan_mod.cmd_orchestrator(get_args)
+
+    assert get_result['status'] == 'success'
+    assert get_result['value'] is True
+
+
+def test_orchestrator_set_unknown_field_is_rejected(plan_context):
+    """`orchestrator set` on an unknown field must fail-closed (provisioning rejection).
+
+    Mirrors the `project` fail-closed guard: an out-of-schema field returns
+    status: error rather than being silently persisted where no reader consults it.
+    """
+    _cmd_init_mod.cmd_init(Namespace(force=False))
+
+    set_args = Namespace(verb='set', field='bogus_knob', value='true')
+    result = _cmd_system_plan_mod.cmd_orchestrator(set_args)
+
+    assert result['status'] == 'error'
+    assert result.get('error_type') == 'unknown_field'
+
+
 def test_project_get_returns_default_when_block_absent(plan_context):
     """A fresh marshal.json without the `project` block returns DEFAULT_PROJECT values."""
     # initialize then remove `project` block to emulate legacy schema

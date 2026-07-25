@@ -177,6 +177,30 @@ DEFAULT_PROJECT = {
 }
 
 
+# Orchestrator-tier autonomy defaults (`orchestrator.*` in marshal.json).
+#
+# `auto_emit` (bool, default `false`) is the orchestrator-tier analog of the
+# plan-tier autonomy family (`finalize_without_asking` / `loop_back_without_asking`
+# / `auto_merge_after_ci`). When `false` (the default, the safe posture), the epic
+# orchestrator's post-landing queue-fill emit stays stage-and-wait: it produces the
+# copy-paste block and records the `launched` transition only on operator
+# confirmation. When `true`, the emit fires automatically under the existing
+# disjointness + prep-readiness + "only if sensible" guards, auto-recording the
+# `launched` transition for every emitted candidate toward `parallelization_scope`.
+#
+# The emit≠running invariant is ABSOLUTE and this knob NEVER weakens it: `auto_emit`
+# automates the *emit* (marking each emitted plan `launched`), never the *start*
+# (the operator-confirmed `launched → running` transition). A colliding, blocked, or
+# unprepared candidate emits nothing and logs the shortfall — never a bad emit to
+# fill a slot. Boolean coercion is handled by `_coerce_value` (exactly as
+# `merge_queue_managed_externally` is), so no bespoke `validate_*` helper is
+# warranted. See `manage-config/standards/data-model.md` for the canonical field
+# semantics.
+DEFAULT_ORCHESTRATOR = {
+    'auto_emit': False,
+}
+
+
 # PR-batching strategy enum (`project.pr_strategy` in marshal.json).
 #   - 'compact'  (default): ride an already-pending related PR when the changed-
 #                           file count stays within pr_compact_max_changed_files.
@@ -1117,6 +1141,7 @@ def get_default_config() -> dict:
     execute_section['verification_steps'] = _seed_verify_steps()
     config = {
         'providers': [],
+        'orchestrator': copy.deepcopy(DEFAULT_ORCHESTRATOR),
         'project': copy.deepcopy(DEFAULT_PROJECT),
         'skill_domains': {'system': system_domain},
         'build': {

@@ -22,6 +22,7 @@ from _config_core import (
     success_exit,
 )
 from _config_defaults import (
+    DEFAULT_ORCHESTRATOR,
     DEFAULT_PROJECT,
     DEFAULT_SYSTEM_RETENTION,
     pr_compact_rides_existing_pr,
@@ -223,6 +224,65 @@ def cmd_project(args) -> dict:
         })
 
     return error_exit('Unknown project verb')
+
+
+def cmd_orchestrator(args) -> dict:
+    """Handle orchestrator noun.
+
+    Exposes the orchestrator-tier `orchestrator.*` block in marshal.json
+    (currently `auto_emit`). On a fresh marshal.json that lacks the
+    `orchestrator` block, `get` returns the value from
+    :data:`DEFAULT_ORCHESTRATOR` so consumers always observe the canonical
+    default — mirroring the implicit-default semantics of :func:`cmd_project`.
+
+    `set` coerces the value via `_coerce_value` (so `auto_emit` round-trips
+    `true`/`false` as a bool exactly like `merge_queue_managed_externally`) and
+    rejects any unknown field via the shared fail-closed provisioning-write seam
+    (ADR-009) before persisting — a typo'd/retired key returns `status: error`
+    rather than being silently written where no reader would consult it.
+    """
+    try:
+        require_initialized()
+    except MarshalNotInitializedError as e:
+        return error_exit(str(e))
+
+    config = load_config()
+    orchestrator_config = config.get('orchestrator', {})
+    if not isinstance(orchestrator_config, dict):
+        return error_exit(
+            f"orchestrator block in marshal.json is not a dict, got "
+            f"{type(orchestrator_config).__name__}",
+            error_type='invalid_type',
+        )
+
+    if args.verb == 'get':
+        field = args.field
+        if field in orchestrator_config:
+            return success_exit({'field': field, 'value': orchestrator_config[field]})
+        if field in DEFAULT_ORCHESTRATOR:
+            return success_exit({'field': field, 'value': DEFAULT_ORCHESTRATOR[field]})
+        return error_exit(
+            f"Field '{field}' not found in orchestrator config",
+            error_type='field_not_found',
+        )
+
+    elif args.verb == 'set':
+        field = args.field
+        value = _coerce_value(args.value)
+
+        # Reject any field not in the orchestrator schema before persisting it,
+        # via the shared fail-closed provisioning-write seam (ADR-009).
+        # DEFAULT_ORCHESTRATOR is the canonical field whitelist.
+        rejection = reject_unknown_provisioning_field(field, DEFAULT_ORCHESTRATOR, 'orchestrator')
+        if rejection is not None:
+            return rejection
+
+        orchestrator_config[field] = value
+        config['orchestrator'] = orchestrator_config
+        save_config(config)
+        return success_exit({'field': field, 'value': value})
+
+    return error_exit('Unknown orchestrator verb')
 
 
 def cmd_plan(args) -> dict:

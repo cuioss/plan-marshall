@@ -82,6 +82,7 @@ CANONICAL_TOP_LEVEL_KEY_ORDER = [
     'plan',
     'build',
     'credentials_config',
+    'orchestrator',
     'project',
     'providers',
     'skill_domains',
