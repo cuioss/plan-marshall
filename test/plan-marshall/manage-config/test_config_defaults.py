@@ -2003,6 +2003,9 @@ def test_build_map_round_trips_at_top_level_build_path(tmp_path, monkeypatch):
 _EXPECTED_CANONICAL_KEY_ORDER = [
     'extension_defaults',
     'plan',
+    # `orchestrator` (the epic-orchestration config block) is a top-level sibling
+    # of `plan`, emitted immediately after it.
+    'orchestrator',
     'build',
     'credentials_config',
     'project',
@@ -2046,6 +2049,7 @@ def test_save_config_emits_canonical_top_level_key_order(tmp_path, monkeypatch):
         'providers': {},
         'project': {},
         'credentials_config': {},
+        'orchestrator': {},
         'plan': {},
         'extension_defaults': {},
         'build': {},
@@ -2054,7 +2058,7 @@ def test_save_config_emits_canonical_top_level_key_order(tmp_path, monkeypatch):
 
     actual_order = _save_config_to(marshal_path, scrambled, monkeypatch)
 
-    # canonical order regardless of input order
+    # canonical order regardless of input order — orchestrator lands right after plan
     assert actual_order == _EXPECTED_CANONICAL_KEY_ORDER
 
 
@@ -2098,6 +2102,42 @@ def test_save_config_appends_unknown_keys_after_canonical_block(tmp_path, monkey
 
     # canonical keys first (in order), unknown appended last
     assert actual_order == ['plan', 'system', 'zzz_unknown']
+
+
+def test_get_default_config_seeds_empty_orchestrator_block():
+    """get_default_config() seeds a top-level ``orchestrator`` block == ``{}``.
+
+    The block is a sibling of ``plan``, seeded empty and behaviourally inert: it
+    carries no effort or scope keys, so every orchestrator reader falls through to
+    today's values.
+    """
+    config = _config_defaults_mod.get_default_config()
+
+    assert 'orchestrator' in config, 'get_default_config() must seed a top-level orchestrator block'
+    assert config['orchestrator'] == {}, (
+        f'the seeded orchestrator block must be empty; got {config["orchestrator"]!r}'
+    )
+
+
+def test_seeded_empty_orchestrator_leaves_effort_and_scope_resolution_unchanged():
+    """With the seeded empty ``orchestrator`` block, effort + scope resolution is inert.
+
+    Unset ``orchestrator.*`` means the block holds no surface override, ``default``
+    slot, or ``max`` ceiling to perturb effort resolution (every surface falls
+    through to ``plan.effort``), and no ``parallelization_scope`` (the caller keeps
+    its hard-coded default of 1). The per-surface resolution itself is exercised
+    against a live marshal.json in ``test_orchestrator_scope``; here the seed shape
+    is the assertion surface.
+    """
+    config = _config_defaults_mod.get_default_config()
+
+    # The block is empty, so nothing in it can change resolution.
+    assert config['orchestrator'] == {}
+    assert 'effort' not in config['orchestrator']
+    assert 'parallelization_scope' not in config['orchestrator']
+    # plan.effort remains the baseline fallback every orchestrator surface resolves to.
+    plan_effort = config['plan']['effort']
+    assert isinstance(plan_effort, str) and plan_effort
 
 
 def test_committed_marshal_json_top_level_keys_already_canonical():

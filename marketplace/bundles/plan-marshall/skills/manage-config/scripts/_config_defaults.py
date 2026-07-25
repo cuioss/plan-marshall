@@ -1082,6 +1082,102 @@ BUILD_SYSTEM_DEFAULTS = {
 # operator-visible and editable directly in marshal.json.
 DEFAULT_BUILD_QUEUE = {'max_slots': 5, 'max_retries': 10, 'upper_limit_seconds': 600}
 
+# Top-level `orchestrator` block default (`orchestrator` in marshal.json — a
+# sibling of `plan`, NOT a child of it). Seeded EMPTY: the block is behaviourally
+# inert until populated, so with `orchestrator.*` unset every orchestrator reader
+# falls through to today's values — `plan.effort` for the baseline effort of the
+# three read-only orchestrator surfaces, an unset-`max` no-op for the uplift
+# ceiling, and the hard-coded `parallelization_scope` default of 1. The block is
+# the extensible home the orchestrator effort surfaces + scalar knobs
+# (`parallelization_scope` today; PLAN-48's `auto_emit` next) read/write through
+# the `orchestrator` noun and the `effort set --scope orchestrator[...]` writer.
+# Validated by validate_orchestrator_block (empty is legal; a populated block's
+# effort + parallelization_scope shapes are checked). `/marshall-steward`'s
+# upgrade verb back-fills the empty block through the existing `sync-defaults`
+# deep-merge — no new provisioning mechanism.
+DEFAULT_ORCHESTRATOR: dict = {}
+
+
+def validate_orchestrator_block(value: object) -> None:
+    """Validate the top-level ``orchestrator`` block (a sibling of ``plan``).
+
+    An empty block (``{}``) is legal and behaviourally inert. When populated:
+
+    - ``effort`` (optional) is a **string** single-level shorthand OR an
+      **object** whose keys are drawn from the known orchestrator effort keys —
+      the ``analyze`` / ``decompose`` / ``reader`` surfaces plus the ``default``
+      fallback slot and the ``max`` uplift ceiling — each value a valid effort
+      level keyword.
+    - ``parallelization_scope`` (optional) is an int ``>= 1``. Booleans are
+      rejected even though ``bool`` is an ``int`` subclass, mirroring the sibling
+      numeric validators.
+
+    An unknown top-level key in the block is rejected so a typo'd knob fails loud
+    rather than persisting silently.
+
+    The level enum (``ALLOWED_LEVELS``) and the writable effort-object key set
+    (``ORCHESTRATOR_EFFORT_SET_KEYS``) are the single source of truth in
+    ``_cmd_effort`` (same skill); they are imported lazily here so the seed-time
+    validator shares that source without a module-import-time coupling.
+
+    Args:
+        value: The candidate ``orchestrator`` block.
+
+    Raises:
+        ValueError: If the block is not a dict, carries an unknown top-level key,
+            or holds a malformed ``effort`` / ``parallelization_scope`` value.
+    """
+    from _cmd_effort import ALLOWED_LEVELS, ORCHESTRATOR_EFFORT_SET_KEYS
+
+    if not isinstance(value, dict):
+        raise ValueError(f'Invalid orchestrator block {value!r}: expected a dict.')
+    if not value:
+        return  # empty block is legal (behaviourally inert)
+
+    known_keys = {'effort', 'parallelization_scope'}
+    unknown = sorted(set(value.keys()) - known_keys)
+    if unknown:
+        raise ValueError(
+            f'Invalid orchestrator block keys {unknown}: expected a subset of '
+            f'{sorted(known_keys)}.'
+        )
+
+    if 'effort' in value:
+        effort = value['effort']
+        if isinstance(effort, str):
+            if effort not in ALLOWED_LEVELS:
+                raise ValueError(
+                    f"Invalid orchestrator.effort '{effort}': expected an effort "
+                    f'level keyword {list(ALLOWED_LEVELS)}.'
+                )
+        elif isinstance(effort, dict):
+            bad_keys = sorted(set(effort.keys()) - set(ORCHESTRATOR_EFFORT_SET_KEYS))
+            if bad_keys:
+                raise ValueError(
+                    f'Invalid orchestrator.effort keys {bad_keys}: expected a subset '
+                    f'of {list(ORCHESTRATOR_EFFORT_SET_KEYS)}.'
+                )
+            for surface, level in effort.items():
+                if not isinstance(level, str) or level not in ALLOWED_LEVELS:
+                    raise ValueError(
+                        f'Invalid orchestrator.effort.{surface} {level!r}: expected an '
+                        f'effort level keyword {list(ALLOWED_LEVELS)}.'
+                    )
+        else:
+            raise ValueError(
+                f'Invalid orchestrator.effort {effort!r}: expected a level string '
+                'or an object of surface->level.'
+            )
+
+    if 'parallelization_scope' in value:
+        scope = value['parallelization_scope']
+        if isinstance(scope, bool) or not isinstance(scope, int) or scope < 1:
+            raise ValueError(
+                f'Invalid orchestrator.parallelization_scope {scope!r}: expected an '
+                'int >= 1.'
+            )
+
+
 def get_default_config() -> dict:
     """Get complete default marshal.json configuration.
 
@@ -1127,6 +1223,9 @@ def get_default_config() -> dict:
     # enum string validated from the set path, mirroring validate_gate_mode /
     # validate_simplicity — not self-validated here.)
     validate_lane_prune_thresholds(DEFAULT_PLAN_INIT['lane_prune_thresholds'])
+    # Self-validate the seeded (empty) orchestrator block so a malformed default
+    # fails loud at seed time rather than at first read.
+    validate_orchestrator_block(DEFAULT_ORCHESTRATOR)
     # Materialize the finalize-step defaults seed lazily via the configurable-
     # contract parser (the `'steps': None` placeholder in DEFAULT_PLAN_FINALIZE is
     # replaced here). Done after the deepcopy below so the module-level constant
@@ -1166,6 +1265,11 @@ def get_default_config() -> dict:
             'phase-5-execute': execute_section,
             'phase-6-finalize': finalize_section,
         },
+        # Top-level `orchestrator` block — a sibling of `plan`, seeded empty and
+        # behaviourally inert until populated (see DEFAULT_ORCHESTRATOR). Its
+        # canonical placement immediately after `plan` is handled by
+        # _config_core.CANONICAL_TOP_LEVEL_KEY_ORDER at save time.
+        'orchestrator': copy.deepcopy(DEFAULT_ORCHESTRATOR),
     }
     return config
 
