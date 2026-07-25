@@ -1,0 +1,28 @@
+# Third automated PR reviewer (PR-Agent on Google Gemini), beside CodeRabbit and Sourcery.
+#
+# All review tuning is central in cuioss/pr-agent-settings (.pr_agent.toml) — nothing is
+# configured here. The org skip rules (dependabot[bot], cuioss-release-bot[bot], the
+# skip-bot-review label, fork PRs) are enforced by the reusable workflow's job-level `if:`
+# guard, because PR-Agent's own ignore_pr_* settings are inert in GitHub Action mode.
+#
+# See https://github.com/cuioss/pr-agent-settings/blob/main/README.adoc
+
+name: PR Agent Review
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review]
+  # On-demand commands (/review, /ask, /improve, /help). Also how a re-review is requested
+  # after pushing fixes — there is deliberately no automatic re-review on every push.
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  review:
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-pr-agent-review.yml@830c2dd2ffe4850be37c5faa0a0d112713dfd7e3 # v0.14.0
+    secrets: inherit
