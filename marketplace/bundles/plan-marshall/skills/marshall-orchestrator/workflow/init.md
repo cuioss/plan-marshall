@@ -64,7 +64,14 @@ The read has two branches, and BOTH are gated on the same reduction: a fresh ope
 - The value parses as an integer `≤ 0`, or does not parse as an integer at all → fire the `AskUserQuestion` exactly ONCE, stating that the scope must be a whole number of concurrent plans, `1` or greater, and reduce that answer instead.
 - The re-prompted answer still fails the same test → fall back to the documented default `N = 1` (strictly sequential) and record the fallback in the decision log below.
 
-**Branch A — the field is unset**: fire exactly ONE `AskUserQuestion` for the operator's **parallelization scope** — the maximum number of plans the orchestrator may have launched concurrently, `1` meaning strictly sequential and `N` meaning up to `N` concurrent plans. `init` runs in main context, so the prompt is fired natively here. Run the operator's raw answer through the reduction, then persist the surviving `N`.
+**Branch A — the field is unset**: fire exactly ONE `AskUserQuestion` for the operator's **parallelization scope** — the maximum number of plans the orchestrator may have launched concurrently, `1` meaning strictly sequential and `N` meaning up to `N` concurrent plans. Before firing, read the project-level default that pre-fills the ask's initial suggestion:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config orchestrator get \
+  --field parallelization_scope
+```
+
+When the returned `set` is `true`, seed the returned `value` as the ask's default suggestion — the operator sees it pre-filled and may accept or override it per epic; when `set` is `false`, keep today's hard-coded default suggestion of `1` (strictly sequential). The pre-fill supplies only the INITIAL suggestion for this NEW epic's first ask; the operator's answer stays fully overridable per epic, and the persisted per-epic value is unaffected by the project default. `init` runs in main context, so the prompt is fired natively here. Run the operator's raw answer through the reduction, then persist the surviving `N`.
 
 **Branch B — the field is already set**: run the STORED value through the same reduction BEFORE treating its presence as sufficient to skip the prompt. A stored value that survives is authoritative — skip the prompt and persist nothing. A stored value that fails is corrected by the reduction (one re-prompt, else the default `1`) and the corrected `N` is persisted through the same call below, so an invalid stored value never reaches `next`.
 
