@@ -258,10 +258,52 @@ class TestRegression:
         assert float(details['recall_pct']) == 0.0
 
 
-def _outline_with_affected_files(files: list[str], *, annotation: str | None = None) -> str:
+def _outline_with_deliverable_blocks(blocks: list[list[str] | None]) -> str:
+    """Build a multi-deliverable outline mixing per-deliverable declaration states.
+
+    Each entry of ``blocks`` selects the declaration state of the deliverable at
+    that position (1-based in the emitted document):
+
+    - a non-empty list — the ``**Affected files:**`` heading followed by one
+      backticked bullet per path (a well-formed declaration);
+    - an empty list — the heading with NO bullets beneath it (the
+      heading-present-but-unparseable, loud-fail shape);
+    - ``None`` — no ``**Affected files:**`` heading at all.
+    """
+    parts = [
+        '# Solution: Mixed',
+        'plan_id: mixed',
+        '',
+        '## Summary',
+        '',
+        'Mixed-declaration fixture.',
+        '',
+        '## Overview',
+        '',
+        'Overview.',
+        '',
+        '## Deliverables',
+        '',
+    ]
+    for index, declared in enumerate(blocks, start=1):
+        parts.append(f'### {index}. Deliverable {index}')
+        parts.append('')
+        if declared is None:
+            continue
+        parts.append('**Affected files:**')
+        parts.extend(f'- `{path}`' for path in declared)
+        parts.append('')
+    return '\n'.join(parts) + '\n'
+
+
+def _outline_with_affected_files(
+    files: list[str], *, annotation: str | None = None, empty_heading: bool = False
+) -> str:
     """Build a solution_outline.md string that declares ``files`` as a single
     deliverable's Affected files bullets. When ``files`` is empty the outline
-    still contains a valid Deliverables section but no Affected files block.
+    still contains a valid Deliverables section but no Affected files block —
+    unless ``empty_heading`` is set, which emits the heading with no bullets
+    beneath it (the heading-present-but-unparseable, loud-fail shape).
 
     ``annotation`` selects the bullet form. ``None`` emits the plain backticked
     form ``- `path```; a string emits the canonical annotated form
@@ -269,7 +311,12 @@ def _outline_with_affected_files(files: list[str], *, annotation: str | None = N
     """
     suffix = f' ({annotation})' if annotation else ''
     bullets = ''.join(f'- `{p}`{suffix}\n' for p in files)
-    affected_block = '\n**Affected files:**\n' + bullets if files else ''
+    if files:
+        affected_block = '\n**Affected files:**\n' + bullets
+    elif empty_heading:
+        affected_block = '\n**Affected files:**\n'
+    else:
+        affected_block = ''
     return (
         '# Solution: ExactMatch\n'
         'plan_id: exact-match\n\n'
@@ -291,6 +338,7 @@ def _setup_exact_match_plan(
     references_files: list[str],
     plan_id: str = 'retro-exact-match',
     outline_annotation: str | None = None,
+    outline_empty_heading: bool = False,
 ) -> tuple[str, Path]:
     """Create a live plan whose outline and references.json are seeded with
     caller-supplied file lists. Reuses ``build_happy_plan_dir`` to keep the
@@ -311,7 +359,11 @@ def _setup_exact_match_plan(
     # default tasks fixture (a single deliverable) so task_deliverable_match
     # does not go red and drown out the check under test.
     (plan_dir / 'solution_outline.md').write_text(
-        _outline_with_affected_files(outline_files, annotation=outline_annotation),
+        _outline_with_affected_files(
+            outline_files,
+            annotation=outline_annotation,
+            empty_heading=outline_empty_heading,
+        ),
         encoding='utf-8',
     )
     # Trim tasks to a single deliverable to match the outline above.
@@ -325,6 +377,48 @@ def _setup_exact_match_plan(
 
     # Overwrite references.json with the caller's list, keyed on the
     # production-shape ``modified_files`` field (see peer recall check).
+    (plan_dir / 'references.json').write_text(
+        json.dumps({'modified_files': references_files, 'domains': []}),
+        encoding='utf-8',
+    )
+    monkeypatch.setenv('PLAN_BASE_DIR', str(base))
+    return plan_id, plan_dir
+
+
+def _setup_multi_deliverable_plan(
+    tmp_path: Path,
+    monkeypatch,
+    *,
+    blocks: list[list[str] | None],
+    references_files: list[str],
+    plan_id: str,
+) -> tuple[str, Path]:
+    """Create a live plan whose outline mixes per-deliverable declaration states.
+
+    ``blocks`` is forwarded to :func:`_outline_with_deliverable_blocks`. The
+    fixture writes one ``TASK-*.json`` per deliverable so
+    ``task_deliverable_match`` stays green and cannot drown out the recall check
+    under test — the multi-deliverable counterpart of what
+    :func:`_setup_exact_match_plan` does for the single-deliverable case.
+    """
+    base = tmp_path / 'base'
+    base.mkdir()
+    plan_dir = base / 'plans' / plan_id
+    build_happy_plan_dir(plan_dir)
+
+    (plan_dir / 'solution_outline.md').write_text(
+        _outline_with_deliverable_blocks(blocks), encoding='utf-8'
+    )
+
+    tasks_dir = plan_dir / 'tasks'
+    for leftover in tasks_dir.glob('TASK-*.json'):
+        leftover.unlink()
+    for index in range(1, len(blocks) + 1):
+        (tasks_dir / f'TASK-{index:03d}.json').write_text(
+            json.dumps({'number': index, 'deliverable': index, 'status': 'done'}),
+            encoding='utf-8',
+        )
+
     (plan_dir / 'references.json').write_text(
         json.dumps({'modified_files': references_files, 'domains': []}),
         encoding='utf-8',
@@ -553,11 +647,12 @@ class TestAffectedFilesBulletParsing:
         assert int(details['found']) == 2
 
     def test_deliverables_present_but_nothing_parsed_fails_recall(self, tmp_path, monkeypatch):
-        """Deliverables declared + zero extractable bullets -> fail, never skip.
+        """Heading declared + zero extractable bullets -> fail, never skip.
 
-        An empty declared set cannot substantiate any coverage verdict when the
-        outline declares deliverables — the parser produced nothing, which is a
-        parse failure the retrospective must surface.
+        A deliverable that declares an ``Affected files`` section yet yields no
+        parseable bullet cannot substantiate any coverage verdict — the parser
+        produced nothing, which is a parse failure the retrospective must
+        surface naming the offending deliverable.
         """
         plan_id, _ = _setup_exact_match_plan(
             tmp_path,
@@ -565,6 +660,7 @@ class TestAffectedFilesBulletParsing:
             outline_files=[],
             references_files=[],
             plan_id='retro-unparsed-bullets',
+            outline_empty_heading=True,
         )
         result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
         assert result.success, result.stderr
@@ -572,10 +668,90 @@ class TestAffectedFilesBulletParsing:
 
         recall = _check_by_name(data['checks'], 'affected_files_recall')
         assert recall['status'] == 'fail'
-        assert 'parser produced nothing' in recall['message']
+        assert 'no bullet parsed' in recall['message']
+        assert 'Deliverable one' in recall['message']
         details = data['details']['affected_files_recall']
         assert int(details['declared']) == 0
         assert int(details['deliverables']) >= 1
+
+    def test_no_affected_heading_skips_recall(self, tmp_path, monkeypatch):
+        """Sibling of the loud-fail case: heading absent -> skip, not fail.
+
+        A deliverable that never claimed to declare files has nothing to parse,
+        so no parse failure is substantiated and the empty aggregate is a
+        genuine ``skip`` — pinned through the real argparse path.
+        """
+        plan_id, _ = _setup_exact_match_plan(
+            tmp_path,
+            monkeypatch,
+            outline_files=[],
+            references_files=[],
+            plan_id='retro-no-affected-heading',
+        )
+        result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
+        assert result.success, result.stderr
+        data = result.toon()
+
+        recall = _check_by_name(data['checks'], 'affected_files_recall')
+        assert recall['status'] == 'skip'
+        assert 'no deliverable declares' in recall['message'].lower()
+
+    def test_sibling_declaration_does_not_absorb_unparseable_deliverable(
+        self, tmp_path, monkeypatch
+    ):
+        """Sibling-absorption regression: a well-formed deliverable 1 must not
+        mask deliverable 2's unparseable heading.
+
+        Before the per-deliverable read, the checker compared only the flattened
+        aggregate declared set: deliverable 1's bullets made it non-empty, so
+        deliverable 2's heading-with-no-bullets slipped through into a recall
+        computation instead of the parse failure it is.
+        """
+        declared = ['src/foo.py', 'src/bar.py']
+        plan_id, _ = _setup_multi_deliverable_plan(
+            tmp_path,
+            monkeypatch,
+            blocks=[declared, []],
+            references_files=declared,
+            plan_id='retro-sibling-absorption',
+        )
+        result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
+        assert result.success, result.stderr
+        data = result.toon()
+
+        recall = _check_by_name(data['checks'], 'affected_files_recall')
+        assert recall['status'] == 'fail', (
+            'A sibling deliverable declaring files must not absorb deliverable 2 '
+            "'s unparseable heading into a non-empty aggregate."
+        )
+        assert 'Deliverable 2' in recall['message']
+        details = data['details']['affected_files_recall']
+        assert [str(n) for n in details['unparseable_deliverables']] == ['2']
+
+    def test_sibling_without_heading_does_not_trigger_parse_fail(self, tmp_path, monkeypatch):
+        """Complement of the absorption regression: a deliverable carrying NO
+        ``Affected files:`` heading is not a parse failure, and recall is
+        computed from the declaring deliverable's set alone.
+        """
+        declared = ['src/foo.py', 'src/bar.py']
+        plan_id, _ = _setup_multi_deliverable_plan(
+            tmp_path,
+            monkeypatch,
+            blocks=[declared, None],
+            references_files=declared,
+            plan_id='retro-sibling-no-heading',
+        )
+        result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
+        assert result.success, result.stderr
+        data = result.toon()
+
+        recall = _check_by_name(data['checks'], 'affected_files_recall')
+        assert recall['status'] == 'pass'
+        details = data['details']['affected_files_recall']
+        assert 'unparseable_deliverables' not in details
+        assert int(details['declared']) == len(declared)
+        assert int(details['found']) == len(declared)
+        assert float(details['recall_pct']) == 100.0
 
 
 # =============================================================================
