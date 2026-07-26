@@ -1,6 +1,6 @@
 # Requirements PR Comment Disposition
 
-Decision criteria for disposing of automated PR review comments (gemini-code-assist, Copilot, AsciiDoc-lint, requirements-validator, traceability-checker, Sonar, etc.) on requirements documents, specifications, and acceptance-criteria artifacts. Comments reach this disposition step **after** the validity check from `persona-plan-marshall-agent` (PR review hard rule): if a suggestion contradicts the plan's stated intent or driving lesson, reply-and-resolve immediately. Use this document when the suggestion is plan-compatible and you must decide between FIX, REPLY-AND-RESOLVE, or ESCALATE.
+Decision criteria for disposing of automated PR review comments (CodeRabbit, Sourcery, PR-Agent, Copilot, AsciiDoc-lint, requirements-validator, traceability-checker, Sonar, etc.) on requirements documents, specifications, and acceptance-criteria artifacts. Comments reach this disposition step **after** the validity check from `persona-plan-marshall-agent` (PR review hard rule): if a suggestion contradicts the plan's stated intent or driving lesson, reply-and-resolve immediately. Use this document when the suggestion is plan-compatible and you must decide between FIX, REPLY-AND-RESOLVE, or ESCALATE.
 
 ## Disposition Outcomes
 

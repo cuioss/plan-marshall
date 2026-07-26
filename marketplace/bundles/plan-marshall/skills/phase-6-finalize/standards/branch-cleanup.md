@@ -594,7 +594,7 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
   step-params get --plan-id {plan_id} --phase 6-finalize --step-id plan-marshall:automatic-review
 ```
 
-Extract `enabled_bots` from the returned `params` object as `{enabled_bots}` (e.g. `coderabbit,sourcery,gemini`).
+Extract `enabled_bots` from the returned `params` object as `{enabled_bots}` (e.g. `coderabbit,sourcery,pr-agent`).
 
 #### Re-fetch bot comments against the current HEAD
 

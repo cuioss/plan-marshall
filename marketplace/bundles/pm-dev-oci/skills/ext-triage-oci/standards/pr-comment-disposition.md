@@ -1,6 +1,6 @@
 # OCI Container PR Comment Disposition
 
-Decision criteria for disposing of automated PR review comments (gemini-code-assist, Copilot, Hadolint-bot, Trivy-bot, Docker Scout, Sonar, etc.) on Dockerfiles, Containerfiles, and container build configuration. Comments reach this disposition step **after** the validity check from `persona-plan-marshall-agent` (PR review hard rule): if a suggestion contradicts the plan's stated intent or driving lesson, reply-and-resolve immediately. Use this document when the suggestion is plan-compatible and you must decide between FIX, REPLY-AND-RESOLVE, or ESCALATE.
+Decision criteria for disposing of automated PR review comments (CodeRabbit, Sourcery, PR-Agent, Copilot, Hadolint-bot, Trivy-bot, Docker Scout, Sonar, etc.) on Dockerfiles, Containerfiles, and container build configuration. Comments reach this disposition step **after** the validity check from `persona-plan-marshall-agent` (PR review hard rule): if a suggestion contradicts the plan's stated intent or driving lesson, reply-and-resolve immediately. Use this document when the suggestion is plan-compatible and you must decide between FIX, REPLY-AND-RESOLVE, or ESCALATE.
 
 ## Disposition Outcomes
 

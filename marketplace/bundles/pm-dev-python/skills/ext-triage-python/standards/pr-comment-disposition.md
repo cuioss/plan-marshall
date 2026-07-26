@@ -1,6 +1,6 @@
 # Python PR Comment Disposition
 
-Decision criteria for disposing of automated PR review comments (gemini-code-assist, Copilot, Sonar, CodeRabbit, ruff-bot, etc.) on Python code. Comments reach this disposition step **after** the validity check from `persona-plan-marshall-agent` (PR review hard rule): if a suggestion contradicts the plan's stated intent or driving lesson, reply-and-resolve immediately. Use this document when the suggestion is plan-compatible and you must decide between FIX, REPLY-AND-RESOLVE, or ESCALATE.
+Decision criteria for disposing of automated PR review comments (CodeRabbit, Sourcery, PR-Agent, Copilot, Sonar, ruff-bot, etc.) on Python code. Comments reach this disposition step **after** the validity check from `persona-plan-marshall-agent` (PR review hard rule): if a suggestion contradicts the plan's stated intent or driving lesson, reply-and-resolve immediately. Use this document when the suggestion is plan-compatible and you must decide between FIX, REPLY-AND-RESOLVE, or ESCALATE.
 
 ## Disposition Outcomes
 
@@ -80,7 +80,7 @@ Use `AskUserQuestion` when the comment falls into any row below. Do NOT silently
 | Ambiguity | Why It Needs Escalation |
 |-----------|------------------------|
 | Suggestion changes a public function signature (positional → keyword-only, etc.) without a deprecation path declared in the plan | Breaking-API decisions require explicit user confirmation per compatibility strategy |
-| Suggestion conflicts between two automated reviewers (mypy says A, ruff says B; gemini vs Copilot) | Cannot satisfy both; user must pick a direction |
+| Suggestion conflicts between two automated reviewers (mypy says A, ruff says B; CodeRabbit vs Copilot) | Cannot satisfy both; user must pick a direction |
 | Suggestion proposes a security-sensitive change (auth, crypto, deserialization, subprocess) outside this PR's stated scope | Security delta in unrelated code requires explicit go/no-go |
 | Suggestion swaps `multiprocessing` ↔ `asyncio` ↔ `threading` on hot-path code without benchmark | Concurrency model change is architectural; needs maintainer call |
 | Suggestion contradicts a project-specific lesson (e.g., "no shell polling loops", "no PYTHONPATH smoke tests") but the lesson is not referenced in the plan | Verify the lesson still applies before accepting or rejecting |

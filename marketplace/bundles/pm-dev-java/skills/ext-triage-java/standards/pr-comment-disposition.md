@@ -1,6 +1,6 @@
 # Java PR Comment Disposition
 
-Decision criteria for disposing of automated PR review comments (gemini-code-assist, Copilot, Sonar bots, CodeRabbit, etc.) on Java code. Comments reach this disposition step **after** the validity check from `persona-plan-marshall-agent` (PR review hard rule): if a suggestion contradicts the plan's stated intent or driving lesson, reply-and-resolve immediately. Use this document when the suggestion is plan-compatible and you must decide between FIX, REPLY-AND-RESOLVE, or ESCALATE.
+Decision criteria for disposing of automated PR review comments (CodeRabbit, Sourcery, PR-Agent, Copilot, Sonar bots, etc.) on Java code. Comments reach this disposition step **after** the validity check from `persona-plan-marshall-agent` (PR review hard rule): if a suggestion contradicts the plan's stated intent or driving lesson, reply-and-resolve immediately. Use this document when the suggestion is plan-compatible and you must decide between FIX, REPLY-AND-RESOLVE, or ESCALATE.
 
 ## Disposition Outcomes
 
@@ -74,7 +74,7 @@ Use `AskUserQuestion` when the comment falls into any row below. Do NOT silently
 | Ambiguity | Why It Needs Escalation |
 |-----------|------------------------|
 | Suggestion changes a public API signature without a deprecation strategy declared in the plan | Breaking-API decisions require explicit user confirmation per compatibility strategy |
-| Suggestion conflicts between two automated reviewers (gemini says A, Copilot says B) | Cannot satisfy both; user must pick a direction |
+| Suggestion conflicts between two automated reviewers (CodeRabbit says A, Copilot says B) | Cannot satisfy both; user must pick a direction |
 | Suggestion proposes a security-sensitive change (auth, crypto, input validation) outside this PR's stated scope | Security delta in unrelated code requires explicit go/no-go |
 | Suggestion alters concurrency semantics on hot-path code with no benchmark | Performance/correctness tradeoff cannot be assessed by reviewer alone |
 | Suggestion contradicts a project-specific lesson learned (CUI HTTP, MockWebServer) but the lesson is not referenced in the plan | Verify the lesson still applies before accepting or rejecting |

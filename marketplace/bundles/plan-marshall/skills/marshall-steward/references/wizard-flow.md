@@ -446,7 +446,7 @@ The verb returns `ask_steps` (the finalize step ids whose lane override is still
 `ask`). For **EACH** id in `ask_steps`, prompt the operator and persist the
 answer — one `AskUserQuestion` and one `set-lane` write per element. Map the
 element id to a human label: `plan-marshall:automatic-review` → "PR-review bots
-(CodeRabbit / Gemini / …)"; `default:sonar-roundtrip` → "Sonar new-code
+(CodeRabbit / Sourcery / …)"; `default:sonar-roundtrip` → "Sonar new-code
 roundtrip".
 
 ```text
