@@ -430,6 +430,62 @@ class TestResumeSummary:
         assert 'status: landed' in summary
         assert 'PR #901' in summary
 
+    def test_should_mark_terminal_row_missing_both_links(self, plan_context):
+        _write_status(
+            plan_context, 'gap-both-epic', plans=[_make_plan('PLAN-01', status='shipped')]
+        )
+
+        result = cmd_resume_summary(Namespace(slug='gap-both-epic'))
+
+        assert '(!) missing: pr, landing' in result['summary']
+
+    def test_should_mark_terminal_row_missing_only_pr(self, plan_context):
+        _write_status(
+            plan_context,
+            'gap-pr-epic',
+            plans=[_make_plan('PLAN-01', status='shipped', landing='PLAN-01.md')],
+        )
+
+        result = cmd_resume_summary(Namespace(slug='gap-pr-epic'))
+
+        assert '(!) missing: pr' in result['summary']
+        assert '(!) missing: pr, landing' not in result['summary']
+
+    def test_should_mark_landed_row_the_same_as_shipped(self, plan_context):
+        _write_status(
+            plan_context,
+            'gap-landed-epic',
+            plans=[_make_plan('PLAN-01', status='landed', pr='#901')],
+        )
+
+        result = cmd_resume_summary(Namespace(slug='gap-landed-epic'))
+
+        assert '(!) missing: landing' in result['summary']
+
+    def test_should_not_mark_fully_stamped_terminal_row(self, plan_context):
+        _write_status(
+            plan_context,
+            'gap-none-epic',
+            plans=[
+                _make_plan('PLAN-01', status='shipped', pr='#901', landing='PLAN-01.md')
+            ],
+        )
+
+        result = cmd_resume_summary(Namespace(slug='gap-none-epic'))
+
+        assert '(!) missing' not in result['summary']
+
+    def test_should_not_mark_non_terminal_row_with_empty_links(self, plan_context):
+        _write_status(
+            plan_context,
+            'gap-inflight-epic',
+            plans=[_make_plan('PLAN-01', status='staged'), _make_plan('PLAN-02', status='running')],
+        )
+
+        result = cmd_resume_summary(Namespace(slug='gap-inflight-epic'))
+
+        assert '(!) missing' not in result['summary']
+
     def test_should_render_empty_queue_marker(self, plan_context):
         _write_status(plan_context, 'empty-epic', plans=[])
 

@@ -59,6 +59,16 @@ FILE_STATUS = 'status.json'
 # identity, not result, so they are seeded by ``decompose`` and never patched.
 PLAN_ROW_FIELDS = frozenset({'plan_marshall_plan_id', 'pr', 'landing'})
 
+# Statuses at which a plan row is finished, so its result links are expected to
+# be present. A terminal row missing one is the reconciliation gap the summary's
+# completeness marker surfaces. Both spellings are live in the corpus:
+# ``analyze`` writes ``shipped``, while archived ledgers carry ``landed``.
+TERMINAL_PLAN_STATUSES = ('shipped', 'landed')
+
+# The result links a terminal row must carry, in the fixed order the gap marker
+# names them.
+TERMINAL_REQUIRED_FIELDS = ('pr', 'landing')
+
 
 def _error(slug: str, error: str, message: str, **extra: Any) -> dict[str, Any]:
     """Build the standard TOON error envelope for this script."""
@@ -292,7 +302,17 @@ def cmd_queue(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def _format_plan_line(plan: dict[str, Any]) -> str:
-    """Render one plan as a summary line, appending the non-empty link fields."""
+    """Render one plan as a summary line, appending the non-empty link fields.
+
+    A row whose status is in :data:`TERMINAL_PLAN_STATUSES` and that is missing
+    any of :data:`TERMINAL_REQUIRED_FIELDS` also carries a deterministic ASCII
+    gap marker — ``(!) missing: pr, landing`` — naming the absent fields in that
+    fixed order. The marker is a TERMINAL-status signal, not a general emptiness
+    signal: a staged or running row with empty links is mid-flight, not
+    incomplete, and renders no marker. A fully-stamped terminal row also renders
+    no marker, so correct data renders exactly as it did before the marker
+    existed.
+    """
     parts = [f'{plan.get("id", "?")} ({plan.get("workstream", "?")})']
     if plan.get('plan_marshall_plan_id'):
         parts.append(f'plan={plan["plan_marshall_plan_id"]}')
@@ -300,6 +320,10 @@ def _format_plan_line(plan: dict[str, Any]) -> str:
         parts.append(f'PR {plan["pr"]}')
     if plan.get('landing'):
         parts.append(f'landing={plan["landing"]}')
+    if plan.get('status') in TERMINAL_PLAN_STATUSES:
+        missing = [field for field in TERMINAL_REQUIRED_FIELDS if not plan.get(field)]
+        if missing:
+            parts.append(f'(!) missing: {", ".join(missing)}')
     return ' — '.join(parts)
 
 
@@ -309,6 +333,10 @@ def _build_summary(status_doc: dict[str, Any]) -> str:
     Renders the resume anchor, the epic phase, the running/parked plans, the
     staged queue (in ``plans[]`` order), and a residual per-status listing for
     every other status value — so no plan is ever invisible in the summary.
+
+    Terminal rows that are missing a result link carry the gap marker
+    :func:`_format_plan_line` appends, so an unreconciled landing is visible in
+    the generated block rather than only in the raw status.json.
     """
     plans = status_doc.get('plans', [])
     lines = [
