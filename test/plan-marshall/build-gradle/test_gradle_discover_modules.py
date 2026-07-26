@@ -20,12 +20,17 @@ Note: Tests must handle both cases since Gradle may or may not be
 available depending on the environment (CI runners have it, local may not).
 """
 
-import shutil
 import sys
 from pathlib import Path
 
 # Shared discovery helpers (test/plan-marshall/conftest.py adds parent to sys.path)
-from discovery_test_helpers import assert_valid_module
+from discovery_test_helpers import (
+    assert_command_uses_executor,
+    assert_module_commands,
+    assert_module_paths,
+    assert_module_stats,
+    assert_valid_module,
+)
 
 from conftest import BuildContext
 
@@ -43,8 +48,11 @@ java_extension = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(java_extension)
 Extension = java_extension.Extension
 
-# Check if Gradle is available system-wide
-GRADLE_AVAILABLE = shutil.which('gradle') is not None
+# Gradle discovery shells out, so a host without a Gradle binary yields the
+# minimal error struct instead of a populated module. Concrete-value assertions
+# below therefore branch on ``'error' not in module`` — the runtime shape itself
+# — rather than on a ``shutil.which('gradle')`` probe, so they hold on hosts
+# with and without Gradle.
 
 
 def _assert_valid_module_structure(module: dict) -> None:
@@ -168,6 +176,8 @@ def test_gradle_discover_sources():
     """Test source directory discovery for Gradle.
 
     Returns either error structure (no Gradle) or success structure (Gradle available).
+    On the success branch, asserts the discovered source and test directories are
+    exactly the ``src/main/java`` and ``src/test/java`` trees this fixture creates.
     """
     with BuildContext() as ctx:
         # Create build.gradle
@@ -181,7 +191,16 @@ def test_gradle_discover_sources():
         modules = ext.discover_modules(str(ctx.temp_dir))
 
         assert len(modules) == 1
-        _assert_valid_module_structure(modules[0])
+        module = modules[0]
+        _assert_valid_module_structure(module)
+
+        if 'error' in module:
+            return
+
+        assert_module_paths(module)
+        # Only the java trees exist, so discovery must resolve exactly those two.
+        assert module['paths']['sources'] == ['src/main/java']
+        assert module['paths']['tests'] == ['src/test/java']
 
 
 def test_gradle_stats_file_counts():
@@ -206,7 +225,19 @@ def test_gradle_stats_file_counts():
         ext = Extension()
         modules = ext.discover_modules(str(ctx.temp_dir))
 
-        _assert_valid_module_structure(modules[0])
+        assert len(modules) == 1
+        module = modules[0]
+        _assert_valid_module_structure(module)
+
+        if 'error' in module:
+            return
+
+        assert_module_stats(module, min_source_files=1, min_test_files=1)
+        # The fixture above writes exactly Foo.java + Bar.java and FooTest.java.
+        # Asserted inline rather than through assert_module_stats, which exposes
+        # lower bounds only, and asserted here where those three files are visible.
+        assert module['stats']['source_files'] == 2
+        assert module['stats']['test_files'] == 1
 
 
 def test_gradle_kotlin_sources_detected():
@@ -319,6 +350,8 @@ def test_gradle_stats_readme_in_paths():
     """Test README detection.
 
     Returns either error structure (no Gradle) or success structure (Gradle available).
+    On the success branch, asserts paths.readme resolves to the README this
+    fixture writes.
     """
     with BuildContext() as ctx:
         (ctx.temp_dir / 'build.gradle').write_text('apply plugin: "java"')
@@ -327,13 +360,25 @@ def test_gradle_stats_readme_in_paths():
         ext = Extension()
         modules = ext.discover_modules(str(ctx.temp_dir))
 
-        _assert_valid_module_structure(modules[0])
+        assert len(modules) == 1
+        module = modules[0]
+        _assert_valid_module_structure(module)
+
+        if 'error' in module:
+            return
+
+        assert_module_paths(module, expect_readme=True)
+        # Discovery reports the README by file name, not full path.
+        assert module['paths']['readme'] == 'README.md'
 
 
 def test_gradle_module_has_commands():
     """Test Gradle module commands.
 
     Returns either error structure (no Gradle) or success structure (Gradle available).
+    On the success branch, asserts the canonical command set this fixture earns —
+    it has both sources and tests — and that each resolved command routes through
+    the executor rather than invoking gradle directly.
     """
     with BuildContext() as ctx:
         (ctx.temp_dir / 'build.gradle').write_text('apply plugin: "java"')
@@ -349,7 +394,30 @@ def test_gradle_module_has_commands():
         ext = Extension()
         modules = ext.discover_modules(str(ctx.temp_dir))
 
-        _assert_valid_module_structure(modules[0])
+        assert len(modules) == 1
+        module = modules[0]
+        _assert_valid_module_structure(module)
+
+        if 'error' in module:
+            return
+
+        # Unconditional commands plus the source- and test-conditional ones this
+        # fixture earns by writing App.java and AppTest.java.
+        expected = [
+            'clean',
+            'quality-gate',
+            'verify',
+            'install',
+            'clean-install',
+            'package',
+            'compile',
+            'test-compile',
+            'module-tests',
+            'coverage',
+        ]
+        assert_module_commands(module, expected_commands=expected)
+        for command_name in expected:
+            assert_command_uses_executor(module, command_name, skill_notation='plan-marshall:build-gradle:gradle')
 
 
 def test_no_duplicate_modules_with_both_build_files():
