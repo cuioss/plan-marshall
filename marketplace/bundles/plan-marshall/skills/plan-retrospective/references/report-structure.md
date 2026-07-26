@@ -30,6 +30,8 @@ The compiler must emit exactly these sections in this order:
 
 Conditional sections are emitted only when their source fragment carries non-empty data. When a fragment is absent, has `status: skipped`, or carries only an empty list, the compiler must omit the entire section — it must not emit an empty heading. That is a benign omission and the compiler reports it under `sections_omitted`.
 
+Chat History Analysis (item 14) is the sole documented exception: its own entry specifies that a `status: skipped` fragment carrying a warning finding still renders, because that warning is required to be visible. The override is keyed to that one section — every other conditional section still omits on `status: skipped` regardless of payload.
+
 The counterpart holds too: a fragment that IS present and DOES carry payload but still does not render is a **drop**, not an omission, and must be reported as such — under `sections_dropped`, with the run's status raised to `warning`. A dropped section is content the aspect produced and the report lost, so it can never ride the same clean-run signal as an omission.
 
 ## Heading Style
