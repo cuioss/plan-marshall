@@ -27,7 +27,7 @@ permissions:
 
 jobs:
   review:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-pr-agent-review.yml@ab447694b019d30edc56f2ff7c5100ba731ca590 # v0.15.3
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-pr-agent-review.yml@b42917c5ac86d3c6cff290b3107b384c3d1a6fb2 # v0.15.4
     # Map only what the reviewer needs. `secrets: inherit` would hand it every secret this
     # repo can see (GPG keys, Sonatype credentials, SONAR_TOKEN, …) for no reason; these two
     # are the whole requirement, because Vertex AI is reached keylessly.
