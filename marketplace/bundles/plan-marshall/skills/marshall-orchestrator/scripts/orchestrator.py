@@ -9,8 +9,12 @@ operations against the main-anchored orchestrator store
 ``file_ops.get_store_dir('orchestrator', slug)``):
 
 - ``scaffold --slug S`` — create the epic directory tree (idempotent).
-- ``queue --slug S [--transition PLAN-NN --status X]`` — read the plan
-  queue from ``status.json``, or transition one plan's status.
+- ``queue --slug S [--transition PLAN-NN --status X | --set-row PLAN-NN
+  --field F --value V]`` — a three-way surface over the plan queue in
+  ``status.json``: read the whole queue, transition one plan's ``status``,
+  or set one result field (:data:`PLAN_ROW_FIELDS`) of one plan row. Both
+  write forms mutate the located row inside the shared ``rmw_json``
+  critical section, so no unsynchronised whole-array rewrite remains.
 - ``resume-summary --slug S`` — generate the "START HERE" block from
   ``status.json`` (the machine authority) for the LLM to paste into
   ``epic.md`` between the generated-block markers.
@@ -26,9 +30,11 @@ No implementation-side capability (no build/CI/source verbs) exists here.
 
 import argparse
 import shutil
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from _locks_core import rmw_json
 from file_ops import (
     get_archived_orchestrator_dir,
     get_store_dir,
@@ -36,7 +42,6 @@ from file_ops import (
     output_toon,
     read_json,
     safe_main,
-    write_json,
 )
 from input_validation import validate_plan_id
 
@@ -47,6 +52,22 @@ ORCHESTRATOR_STORE = 'orchestrator'
 EPIC_SUBDIRS = ('workstreams', 'plans', 'landings', 'logs')
 
 FILE_STATUS = 'status.json'
+
+# The per-row RESULT fields ``queue --set-row`` may write. Deliberately narrow:
+# ``status`` stays exclusive to ``--transition`` (a status change and a landing
+# stamp are independent events), and ``id``/``slug``/``workstream`` are row
+# identity, not result, so they are seeded by ``decompose`` and never patched.
+PLAN_ROW_FIELDS = frozenset({'plan_marshall_plan_id', 'pr', 'landing'})
+
+# Statuses at which a plan row is finished, so its result links are expected to
+# be present. A terminal row missing one is the reconciliation gap the summary's
+# completeness marker surfaces. Both spellings are live in the corpus:
+# ``analyze`` writes ``shipped``, while archived ledgers carry ``landed``.
+TERMINAL_PLAN_STATUSES = ('shipped', 'landed')
+
+# The result links a terminal row must carry, in the fixed order the gap marker
+# names them.
+TERMINAL_REQUIRED_FIELDS = ('pr', 'landing')
 
 
 def _error(slug: str, error: str, message: str, **extra: Any) -> dict[str, Any]:
@@ -108,10 +129,45 @@ def _read_status(slug: str, allow_archived: bool = False) -> dict[str, Any]:
     return dict(data)
 
 
-def _write_status(slug: str, status: dict[str, Any]) -> None:
-    """Write the epic's status.json, stamping ``updated``."""
-    status['updated'] = now_utc_iso()
-    write_json(_epic_root(slug) / FILE_STATUS, status)
+def _set_row_field(row: dict[str, Any], field: str, value: str) -> dict[str, Any]:
+    """Set one field of a plan row, returning the previous and new values."""
+    previous = row.get(field, '')
+    row[field] = value
+    return {'previous': previous, 'new': value}
+
+
+def _mutate_plan_row(
+    slug: str, plan_id: str, apply: Callable[[dict[str, Any]], dict[str, Any]]
+) -> dict[str, Any]:
+    """Apply ``apply`` to one ``plans[]`` row inside a serialized critical section.
+
+    The single write path for the plan queue: both ``--transition`` and
+    ``--set-row`` route through here, so no unsynchronised read-modify-write of
+    ``plans[]`` remains. The mutation runs against the FRESH in-lock state via
+    the shared ``O_EXCL``-guarded :func:`_locks_core.rmw_json` — the same
+    critical section ``manage-status update-field`` uses for this very document
+    — so a concurrent orchestrator session stamping a DIFFERENT row (or a
+    different field of the same row) cannot be clobbered by a last-writer-wins
+    over a stale read. ``updated`` is re-stamped only when a row was located.
+
+    Returns a dict carrying either ``result`` (the value ``apply`` returned for
+    the located row) or ``available_plans`` (every queued plan id) when
+    ``plan_id`` is absent from the queue.
+    """
+    outcome: dict[str, Any] = {}
+
+    def _mutate(state: dict[str, Any]) -> dict[str, Any]:
+        plans = state.get('plans', [])
+        for row in plans:
+            if row.get('id') == plan_id:
+                outcome['result'] = apply(row)
+                state['updated'] = now_utc_iso()
+                return state
+        outcome['available_plans'] = [row.get('id', '') for row in plans]
+        return state
+
+    rmw_json(_epic_root(slug) / FILE_STATUS, _mutate)
+    return outcome
 
 
 def cmd_scaffold(args: argparse.Namespace) -> dict[str, Any]:
@@ -142,32 +198,64 @@ def cmd_scaffold(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def cmd_queue(args: argparse.Namespace) -> dict[str, Any]:
-    """Read the plan queue, or transition one plan's status.
+    """Read the plan queue, transition one plan's status, or set one row field.
 
-    Without ``--transition``: returns ``phase``, ``resume_anchor``, and the
-    full ``plans[]`` queue from ``status.json``. With ``--transition PLAN-NN
-    --status X``: sets that plan's ``status`` field and writes the document
-    back. The status vocabulary is owned by the orchestrator workflows; the
-    script stores the supplied value verbatim.
+    Three-way surface over ``status.json``'s ``plans[]``:
+
+    - **read** (no write flags): returns ``phase``, ``resume_anchor``, and the
+      full ``plans[]`` queue.
+    - **transition** (``--transition PLAN-NN --status X``): sets that plan's
+      ``status``. The status vocabulary is owned by the orchestrator workflows;
+      the script stores the supplied value verbatim.
+    - **set-row** (``--set-row PLAN-NN --field F --value V``): sets one result
+      field of that plan's row, where ``F`` is one of :data:`PLAN_ROW_FIELDS`.
+      This is the sanctioned way to stamp a landing (``pr``, ``landing``,
+      ``plan_marshall_plan_id``) without re-serializing the whole array.
+
+    The two write forms are mutually exclusive, each triple/pair must be
+    supplied complete, and both mutate the located row through
+    :func:`_mutate_plan_row`'s critical section.
     """
     invalid = _validate_slug(args.slug)
     if invalid:
         return _error(args.slug, 'invalid_slug', invalid)
+    set_row_args = (args.set_row, args.field, args.value)
+    transition_args = (args.transition, args.status)
+    set_row_given = any(arg is not None for arg in set_row_args)
+    transition_given = any(arg is not None for arg in transition_args)
+    if set_row_given and transition_given:
+        return _error(
+            args.slug,
+            'wrong_parameters',
+            '--set-row/--field/--value are mutually exclusive with --transition/--status',
+        )
+    if set_row_given and not all(arg is not None for arg in set_row_args):
+        return _error(
+            args.slug,
+            'wrong_parameters',
+            '--set-row, --field and --value must be supplied together',
+        )
     if (args.transition is None) != (args.status is None):
         return _error(
             args.slug,
             'wrong_parameters',
             '--transition and --status must be supplied together',
         )
-    # Read-path (no --transition) resolves an archived epic transparently; the
-    # --transition write-path stays strict so an archived epic is never mutated.
-    status_doc = _read_status(args.slug, allow_archived=args.transition is None)
+    if set_row_given and args.field not in PLAN_ROW_FIELDS:
+        return _error(
+            args.slug,
+            'invalid_field',
+            f'--field must be one of {sorted(PLAN_ROW_FIELDS)}, got: {args.field}',
+        )
+    # Read-path resolves an archived epic transparently; both write-paths stay
+    # strict so an archived epic is never mutated at the active path.
+    is_read = not set_row_given and not transition_given
+    status_doc = _read_status(args.slug, allow_archived=is_read)
     if not status_doc:
         return _error(
             args.slug, 'file_not_found', 'status.json not found in orchestrator store'
         )
-    plans = status_doc.get('plans', [])
-    if args.transition is None:
+    if is_read:
         return {
             'status': 'success',
             'operation': 'queue',
@@ -175,32 +263,56 @@ def cmd_queue(args: argparse.Namespace) -> dict[str, Any]:
             'store': ORCHESTRATOR_STORE,
             'phase': status_doc.get('phase', ''),
             'resume_anchor': status_doc.get('resume_anchor', ''),
-            'plans': plans,
+            'plans': status_doc.get('plans', []),
         }
-    for plan in plans:
-        if plan.get('id') == args.transition:
-            previous = plan.get('status', '')
-            plan['status'] = args.status
-            _write_status(args.slug, status_doc)
-            return {
-                'status': 'success',
-                'operation': 'queue-transition',
-                'slug': args.slug,
-                'store': ORCHESTRATOR_STORE,
-                'plan': args.transition,
-                'previous_status': previous,
-                'new_status': args.status,
-            }
-    return _error(
-        args.slug,
-        'plan_not_found',
-        f'plan {args.transition!r} not found in the queue',
-        available_plans=[plan.get('id', '') for plan in plans],
+    plan_id = args.set_row if set_row_given else args.transition
+    field = args.field if set_row_given else 'status'
+    value = args.value if set_row_given else args.status
+    outcome = _mutate_plan_row(
+        args.slug, plan_id, lambda row: _set_row_field(row, field, value)
     )
+    if 'result' not in outcome:
+        return _error(
+            args.slug,
+            'plan_not_found',
+            f'plan {plan_id!r} not found in the queue',
+            available_plans=outcome['available_plans'],
+        )
+    result = outcome['result']
+    if set_row_given:
+        return {
+            'status': 'success',
+            'operation': 'queue-set-row',
+            'slug': args.slug,
+            'store': ORCHESTRATOR_STORE,
+            'plan': plan_id,
+            'field': field,
+            'previous_value': result['previous'],
+            'new_value': result['new'],
+        }
+    return {
+        'status': 'success',
+        'operation': 'queue-transition',
+        'slug': args.slug,
+        'store': ORCHESTRATOR_STORE,
+        'plan': plan_id,
+        'previous_status': result['previous'],
+        'new_status': result['new'],
+    }
 
 
 def _format_plan_line(plan: dict[str, Any]) -> str:
-    """Render one plan as a summary line, appending the non-empty link fields."""
+    """Render one plan as a summary line, appending the non-empty link fields.
+
+    A row whose status is in :data:`TERMINAL_PLAN_STATUSES` and that is missing
+    any of :data:`TERMINAL_REQUIRED_FIELDS` also carries a deterministic ASCII
+    gap marker — ``(!) missing: pr, landing`` — naming the absent fields in that
+    fixed order. The marker is a TERMINAL-status signal, not a general emptiness
+    signal: a staged or running row with empty links is mid-flight, not
+    incomplete, and renders no marker. A fully-stamped terminal row also renders
+    no marker, so correct data renders exactly as it did before the marker
+    existed.
+    """
     parts = [f'{plan.get("id", "?")} ({plan.get("workstream", "?")})']
     if plan.get('plan_marshall_plan_id'):
         parts.append(f'plan={plan["plan_marshall_plan_id"]}')
@@ -208,6 +320,10 @@ def _format_plan_line(plan: dict[str, Any]) -> str:
         parts.append(f'PR {plan["pr"]}')
     if plan.get('landing'):
         parts.append(f'landing={plan["landing"]}')
+    if plan.get('status') in TERMINAL_PLAN_STATUSES:
+        missing = [field for field in TERMINAL_REQUIRED_FIELDS if not plan.get(field)]
+        if missing:
+            parts.append(f'(!) missing: {", ".join(missing)}')
     return ' — '.join(parts)
 
 
@@ -217,6 +333,10 @@ def _build_summary(status_doc: dict[str, Any]) -> str:
     Renders the resume anchor, the epic phase, the running/parked plans, the
     staged queue (in ``plans[]`` order), and a residual per-status listing for
     every other status value — so no plan is ever invisible in the summary.
+
+    Terminal rows that are missing a result link carry the gap marker
+    :func:`_format_plan_line` appends, so an unreconciled landing is visible in
+    the generated block rather than only in the raw status.json.
     """
     plans = status_doc.get('plans', [])
     lines = [
@@ -341,7 +461,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         prog='orchestrator',
         description=(
             'Thin scaffolding for marshall-orchestrator epics: scaffold the '
-            'epic tree, read/transition the plan queue, generate the '
+            'epic tree, read/transition/stamp the plan queue, generate the '
             'START-HERE resume summary.'
         ),
         allow_abbrev=False,
@@ -358,7 +478,10 @@ def _build_arg_parser() -> argparse.ArgumentParser:
 
     queue = subparsers.add_parser(
         'queue',
-        help='Read the plan queue from status.json, or transition one plan status.',
+        help=(
+            'Read the plan queue from status.json, transition one plan status, '
+            'or set one plan row field.'
+        ),
         allow_abbrev=False,
     )
     _add_slug_arg(queue)
@@ -373,6 +496,27 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         default=None,
         metavar='STATUS',
         help='New status value for the plan named by --transition.',
+    )
+    queue.add_argument(
+        '--set-row',
+        default=None,
+        metavar='PLAN-NN',
+        help=(
+            'Plan id whose row field to set (requires --field and --value; '
+            'mutually exclusive with --transition/--status).'
+        ),
+    )
+    queue.add_argument(
+        '--field',
+        default=None,
+        metavar='FIELD',
+        help=f'Row field to set: one of {sorted(PLAN_ROW_FIELDS)} (requires --set-row).',
+    )
+    queue.add_argument(
+        '--value',
+        default=None,
+        metavar='VALUE',
+        help='New value for the field named by --field (requires --set-row).',
     )
     queue.set_defaults(handler=cmd_queue)
 

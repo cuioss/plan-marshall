@@ -84,7 +84,7 @@ Authoring templates for the ledger documents live in `templates/` and mirror the
 
 | Script | Notation | Purpose |
 |--------|----------|---------|
-| orchestrator | `plan-marshall:marshall-orchestrator:orchestrator` | Thin scaffolding: `scaffold` (create the epic tree), `queue` (read/transition plan-queue state), `resume-summary` (generate the START-HERE block from status.json), `archive` (relocate a closed epic tree to `archived-orchestrators/`) |
+| orchestrator | `plan-marshall:marshall-orchestrator:orchestrator` | Thin scaffolding: `scaffold` (create the epic tree), `queue` (read the plan queue, transition a plan's status, or set one plan row's result field), `resume-summary` (generate the START-HERE block from status.json), `archive` (relocate a closed epic tree to `archived-orchestrators/`) |
 
 ## Canonical invocations
 
@@ -101,10 +101,10 @@ python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator queue \
-  --slug SLUG [--transition PLAN-NN --status STATUS]
+  --slug SLUG [--transition PLAN-NN --status STATUS] [--set-row PLAN-NN --field FIELD --value VALUE]
 ```
 
-`--transition` and `--status` are supplied together: without them the verb reads the queue; with them it transitions the named plan to the new status.
+A three-way surface over `status.json`'s `plans[]`. With no write flags the verb reads the queue. `--transition` and `--status` are supplied together and transition the named plan to the new status. `--set-row`, `--field`, and `--value` are likewise supplied together and stamp ONE result field of the named plan's row — `--field` is restricted to the whitelist `plan_marshall_plan_id`, `pr`, `landing` (an out-of-whitelist field returns `invalid_field`; `status` is reachable only through `--transition`). The two write forms are mutually exclusive: supplying both returns `wrong_parameters`. Both mutate only the located row, inside a shared read-modify-write critical section — this, not a whole-array `manage-status update-field --field plans` rewrite, is the mechanism for stamping a landing.
 
 ### resume-summary
 
