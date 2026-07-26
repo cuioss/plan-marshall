@@ -1,0 +1,36 @@
+# Third automated PR reviewer (PR-Agent on Google Gemini), beside CodeRabbit and Sourcery.
+#
+# All review tuning is central in cuioss/pr-agent-settings (.pr_agent.toml) — nothing is
+# configured here. The org skip rules (dependabot[bot], cuioss-release-bot[bot], the
+# skip-bot-review label, fork PRs) are enforced by the reusable workflow's job-level `if:`
+# guard, because PR-Agent's own ignore_pr_* settings are inert in GitHub Action mode.
+#
+# See https://github.com/cuioss/pr-agent-settings/blob/main/README.adoc
+
+name: PR Agent Review
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review]
+  # On-demand commands (/review, /ask, /improve, /help). Also how a re-review is requested
+  # after pushing fixes — there is deliberately no automatic re-review on every push.
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  # Required: mints the OIDC token Workload Identity Federation exchanges for the short-lived
+  # GCP credentials the reviewer uses to reach Gemini on Vertex AI.
+  id-token: write
+
+jobs:
+  review:
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-pr-agent-review.yml@ab447694b019d30edc56f2ff7c5100ba731ca590 # v0.15.3
+    # Map only what the reviewer needs. `secrets: inherit` would hand it every secret this
+    # repo can see (GPG keys, Sonatype credentials, SONAR_TOKEN, …) for no reason; these two
+    # are the whole requirement, because Vertex AI is reached keylessly.
+    secrets:
+      REVIEW_APP_ID: ${{ secrets.REVIEW_APP_ID }}
+      REVIEW_APP_PRIVATE_KEY: ${{ secrets.REVIEW_APP_PRIVATE_KEY }}
