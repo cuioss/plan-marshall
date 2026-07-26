@@ -390,7 +390,7 @@ def main() -> int:
     re_review.add_argument('--pr-number', type=int, required=True, help='PR number')
     re_review.add_argument('--bot-kind', choices=BOT_KINDS, required=True, help='Reviewer bot identity key')
     re_review.add_argument('--head-sha', required=True, help='Current HEAD SHA the fresh review must match')
-    re_review.add_argument('--push-time', required=True, help='ISO-8601 push time (retained for routing uniformity; both bots now post an explicit trigger comment)')
+    re_review.add_argument('--push-time', required=True, help='ISO-8601 push time (retained for routing uniformity; every registered bot posts an explicit trigger comment)')
     re_review.add_argument(
         '--timeout',
         type=int,
