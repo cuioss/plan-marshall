@@ -44,6 +44,22 @@ For workflow-resolved invocations, see xref:build.adoc[Build] — never hard-cod
 |Inheritable base for tests that drive marketplace scripts via subprocess. Resolves scripts via the executor convention (`{bundle}:{skill}:{script}`) using `get_script_path(bundle, skill, script)`.
 |===
 
+=== Coverage-fixture duplication is a closed decision, not an open item
+
+Coverage fixtures are duplicated across build backends. This was assessed and the duplication is **deliberately retained**; it is recorded here so it stops reading as an open watch item.
+
+*A 4-way share is impossible.* `test/plan-marshall/build-pyproject/fixtures/coverage/` ships `high-coverage.xml` (blob `ed37316`) and `low-coverage.xml` (blob `4125fab`), both **Cobertura** — a `<coverage line-rate branch-rate>` root over `<packages>/<package>/<classes>/<class filename>`. The gradle, maven and pm-dev-java fixtures are **JaCoCo** — a `<report>` root under the `-//JACOCO//DTD Report 1.1//EN` doctype with `<counter type=…>` elements. One file cannot serve both parsers, so no 4-way consolidation exists at any price.
+
+*The residual candidate is a 3-way JaCoCo dedup, not a 2-way one.* `build-gradle/fixtures/coverage/high-coverage.xml`, `build-maven/fixtures/coverage/high-coverage.xml` and `test/pm-dev-java/coverage/jacoco-report.xml` are the same blob (`e2e65fc`) under three names. The low trio is likewise 3-way: gradle, maven (`low-coverage.xml`) and `test/pm-dev-java/coverage/low-coverage.xml` are all `395b3d9`. `test/pm-dev-java/coverage/high-coverage.xml` (`d1bf934`) is a genuinely different JaCoCo fixture and is not part of the duplicate set.
+
+The duplication is of *content*, not of *plumbing*: each backend's test module declares `FIXTURES_DIR = Path(__file__).parent / 'fixtures' / 'coverage'` and passes it into the shared `build_test_helpers.run_coverage_report_case`. The gradle/maven divergence in `custom_threshold_report` / `custom_threshold` is parameterization, not fixture divergence, so it is no obstacle to sharing.
+
+*Where a future consolidation belongs.* `test/plan-marshall/extension-api/fixtures/coverage/` already stores fixtures organised **by format** rather than by consumer — `cobertura-high.xml`, `cobertura-low.xml`, `jacoco-high.xml`, `jacoco-low.xml`, `jest-high.json`, `jest-low.json` and `sample.lcov`, all distinct blobs. It is the natural destination. `test/plan-marshall/build-npm/coverage/` and `test/pm-dev-frontend-cui/coverage/` hold JSON and lcov, not XML, and are out of scope for an XML-fixture consolidation.
+
+*Why the cheap 3-way dedup is nevertheless deferred.* The blocker is structural, not a preference. The fixtures are `.xml` files under `test/`, and the only `classify_paths()` predicates claiming anything under `test/` are `build-pyproject`'s `test/**/*.py` / `test/*.py` (Maven claims `**/pom.xml` and nothing else there). A `.xml` path under `test/` is claimed by no registered extension, and a deliverable carrying at least one unclaimed path resolves to the `unknown` file-type bucket, which is a hard block at plan time — mixing the `.xml` moves with the claimed `.py` constant edits does not rescue it.
+
+Unblocking therefore requires a `classify_paths()` predicate that claims test-fixture data files — a change to the extension contract, not to the fixtures. That gap is tracked as lesson `2026-07-26-20-001` against `plan-marshall:build-pyproject`.
+
 == Patterns
 
 === Resolve scripts via `get_script_path`

@@ -106,6 +106,16 @@ Tool configuration is in `pyproject.toml`:
 * `[tool.pyprojectx.aliases]` — command shortcuts
 * `[tool.pytest.ini_options]` — pytest configuration
 * `[tool.coverage.run]` / `[tool.coverage.report]` — coverage data-collection + reporting settings. The HTML output directory (`.plan/temp/htmlcov/`) is wired in `build.py` via `--cov-report=html:…`, not in `pyproject.toml`.
++
+The coverage denominator is deliberately restricted to `marketplace/bundles` — the surface this repository ships. It is governed by *two* sites, not one: `[tool.coverage.run].source` and `build.py:cmd_coverage`, which passes `--cov={bundle_path}` that pytest-cov applies over `source`. Editing `source` alone is inert.
++
+Three surfaces are outside the denominator on purpose even though tests exercise them: `marketplace/targets/**` (24 test modules under `test/marketplace/`), `build.py` (`test/default/test_build_verify.py`), and `.claude/skills/**` (`test/finalize-step-deploy-target/` and `test/finalize-step-sync-plugin-cache/`). They are build- and developer-tooling surfaces, not shipped product, so counting them would dilute the figure the denominator exists to report.
++
+Two conditions must both be met before widening is worth revisiting:
++
+. `build.py:cmd_coverage` widens its `--cov` set in lock-step, so the two controlling sites stay in agreement.
+. `build.py` and `marketplace/targets/**` become claimable by a `classify_paths()` predicate. Today they match none, so a deliverable that declares either resolves to the `unknown` file-type bucket and is blocked at plan time — which is what makes the widening unlandable rather than merely undesired.
+
 * `[tool.ruff]` — linter/formatter configuration
 * `[tool.mypy]` — type checker configuration
 
