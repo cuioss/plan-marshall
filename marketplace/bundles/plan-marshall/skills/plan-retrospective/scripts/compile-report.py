@@ -170,13 +170,21 @@ def _fragment_has_payload(fragment: Any) -> bool:
     fragment non-empty. This is the discriminator between a benign omission
     (the aspect genuinely produced nothing) and a loud drop (the aspect
     produced content that ``should_emit`` nonetheless refused).
+
+    ``False`` is matched by identity, never by equality: ``False == 0`` and
+    ``False == 0.0`` in Python, so an equality-based sentinel tuple would
+    misclassify a fragment whose only real content is numeric zero (a count of
+    ``0``, a ratio of ``0.0``) as carrying no payload — silently dropping the
+    very content this discriminator exists to make loud.
     """
     if not isinstance(fragment, dict):
         return False
     for key, value in fragment.items():
         if key in ('status', 'aspect'):
             continue
-        if value not in (None, '', [], {}, False):
+        if value is False:
+            continue
+        if value not in (None, '', [], {}):
             return True
     return False
 
