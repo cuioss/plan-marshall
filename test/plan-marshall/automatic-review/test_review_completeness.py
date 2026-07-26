@@ -137,14 +137,14 @@ def test_mixed_pending_and_unfetched(plan_context):
     plan_context.plan_dir_for(plan_id)
     _seed(plan_id, 'coderabbit', resolution='pending')
     _seed(plan_id, 'sourcery', resolution='fixed')
-    # gemini seeded with no finding at all → unfetched
+    # pr-agent seeded with no finding at all → unfetched
 
-    result = rc.check_completeness(plan_id, ['coderabbit', 'sourcery', 'gemini'])
+    result = rc.check_completeness(plan_id, ['coderabbit', 'sourcery', 'pr-agent'])
 
     assert result['status'] == 'success'
     assert result['complete'] is False
     assert result['pending_bots'] == ['coderabbit']
-    assert result['unfetched_bots'] == ['gemini']
+    assert result['unfetched_bots'] == ['pr-agent']
 
 
 def test_empty_store_all_unfetched(plan_context):
@@ -152,12 +152,12 @@ def test_empty_store_all_unfetched(plan_context):
     plan_id = 'rc-empty-store'
     plan_context.plan_dir_for(plan_id)
 
-    result = rc.check_completeness(plan_id, ['coderabbit', 'gemini'])
+    result = rc.check_completeness(plan_id, ['coderabbit', 'pr-agent'])
 
     assert result['status'] == 'success'
     assert result['complete'] is False
     assert result['pending_bots'] == []
-    assert result['unfetched_bots'] == ['coderabbit', 'gemini']
+    assert result['unfetched_bots'] == ['coderabbit', 'pr-agent']
 
 
 def test_empty_enabled_bots_is_complete(plan_context):

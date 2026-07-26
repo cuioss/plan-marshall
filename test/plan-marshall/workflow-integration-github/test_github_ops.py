@@ -344,20 +344,20 @@ def test_post_pr_comment_success(monkeypatch):
 
     monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
 
-    result = github_ops.post_pr_comment(42, '/gemini review')
+    result = github_ops.post_pr_comment(42, '/review')
 
     assert result['status'] == 'success'
     assert result['operation'] == 'post_pr_comment'
     assert result['pr_number'] == 42
     assert result['output'] == 'https://github.com/octo/repo/pull/42#issuecomment-1'
-    assert captured == [['pr', 'comment', '42', '--body', '/gemini review']]
+    assert captured == [['pr', 'comment', '42', '--body', '/review']]
 
 
 def test_post_pr_comment_gh_failure_returns_error(monkeypatch):
     """A non-zero gh exit surfaces as an error envelope carrying stderr."""
     monkeypatch.setattr(github_ops, 'run_gh', lambda *_a, **_kw: (1, '', 'no such PR\n'))
 
-    result = github_ops.post_pr_comment(42, '/gemini review')
+    result = github_ops.post_pr_comment(42, '/review')
 
     assert result['status'] == 'error'
     assert result['operation'] == 'post_pr_comment'
@@ -492,6 +492,172 @@ def test_ci_status_dual_flag_rejected(monkeypatch):
 
 def _wait_for_comments_args(timeout=2, interval=1):
     return argparse.Namespace(pr_number=42, timeout=timeout, interval=interval)
+
+
+# =============================================================================
+# fetch_pr_comments_data — GraphQL projection, including updated_at
+# =============================================================================
+#
+# ``updated_at`` is what makes an EDITED persistent comment visible as fresh
+# activity to the re-review completion matcher. A ``created_at``-only projection
+# would silently report no new activity from the second edit onward.
+
+
+def _patch_graphql(monkeypatch, pull_request):
+    """Patch auth, repo resolution, and the GraphQL call for fetch_pr_comments_data."""
+    monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
+    monkeypatch.setattr(github_ops, 'get_repo_info', lambda: ('octo', 'repo'))
+    monkeypatch.setattr(
+        github_ops,
+        'run_graphql',
+        lambda query, variables: (0, {'repository': {'pullRequest': pull_request}}, ''),
+    )
+
+
+def _comment_record(result, comment_id):
+    """Return the projected comment record carrying ``comment_id``."""
+    return next(c for c in result['comments'] if c['id'] == comment_id)
+
+
+def test_fetch_pr_comments_data_surfaces_updated_at_on_issue_comments(monkeypatch):
+    """An issue comment's ``updatedAt`` is projected as ``updated_at``."""
+    _patch_graphql(
+        monkeypatch,
+        {
+            'reviewThreads': {'nodes': []},
+            'reviews': {'nodes': []},
+            'comments': {
+                'nodes': [
+                    {
+                        'id': 'IC_1',
+                        'body': '## PR Reviewer Guide',
+                        'author': {'login': 'cuioss-review-bot'},
+                        'createdAt': '2026-07-26T09:27:15Z',
+                        'updatedAt': '2026-07-26T11:00:00Z',
+                    }
+                ]
+            },
+        },
+    )
+
+    result = github_ops.fetch_pr_comments_data(103)
+
+    assert result['status'] == 'success'
+    record = _comment_record(result, 'IC_1')
+    assert record['kind'] == 'issue_comment'
+    assert record['created_at'] == '2026-07-26T09:27:15Z'
+    assert record['updated_at'] == '2026-07-26T11:00:00Z'
+
+
+def test_fetch_pr_comments_data_updated_at_degrades_to_empty_string(monkeypatch):
+    """A provider payload omitting ``updatedAt`` yields ``''``, never a missing key.
+
+    The key must always be present so a consumer can read it unconditionally —
+    mirroring the existing ``created_at`` handling.
+    """
+    _patch_graphql(
+        monkeypatch,
+        {
+            'reviewThreads': {'nodes': []},
+            'reviews': {'nodes': []},
+            'comments': {
+                'nodes': [
+                    {
+                        'id': 'IC_2',
+                        'body': 'A comment with no edit timestamp.',
+                        'author': {'login': 'alice'},
+                        'createdAt': '2026-07-26T09:00:00Z',
+                    }
+                ]
+            },
+        },
+    )
+
+    result = github_ops.fetch_pr_comments_data(103)
+
+    record = _comment_record(result, 'IC_2')
+    assert record['updated_at'] == ''
+    assert record['created_at'] == '2026-07-26T09:00:00Z'
+
+
+def test_fetch_pr_comments_data_preserves_existing_fields_across_all_kinds(monkeypatch):
+    """Adding ``updated_at`` disturbs no existing key on any of the three kinds.
+
+    ``kind`` / ``thread_id`` / ``created_at`` / ``resolved`` keep their meanings
+    for inline thread comments, review bodies, and issue comments alike.
+    """
+    _patch_graphql(
+        monkeypatch,
+        {
+            'reviewThreads': {
+                'nodes': [
+                    {
+                        'id': 'PRRT_1',
+                        'isResolved': False,
+                        'path': 'src/a.py',
+                        'line': 10,
+                        'comments': {
+                            'nodes': [
+                                {
+                                    'id': 'PRRC_1',
+                                    'body': 'Guard the None case.',
+                                    'author': {'login': 'coderabbitai'},
+                                    'createdAt': '2026-07-26T08:00:00Z',
+                                }
+                            ]
+                        },
+                    }
+                ]
+            },
+            'reviews': {
+                'nodes': [
+                    {
+                        'id': 'PRR_1',
+                        'state': 'COMMENTED',
+                        'body': 'Overall Comments: extract the helper.',
+                        'author': {'login': 'sourcery-ai'},
+                        'submittedAt': '2026-07-26T08:30:00Z',
+                    }
+                ]
+            },
+            'comments': {
+                'nodes': [
+                    {
+                        'id': 'IC_3',
+                        'body': '## PR Reviewer Guide',
+                        'author': {'login': 'cuioss-review-bot'},
+                        'createdAt': '2026-07-26T09:27:15Z',
+                        'updatedAt': '2026-07-26T09:27:15Z',
+                    }
+                ]
+            },
+        },
+    )
+
+    result = github_ops.fetch_pr_comments_data(103)
+
+    assert result['total'] == 3
+
+    inline = _comment_record(result, 'PRRC_1')
+    assert inline['kind'] == 'inline'
+    assert inline['thread_id'] == 'PRRT_1'
+    assert inline['path'] == 'src/a.py'
+    assert inline['line'] == 10
+    assert inline['resolved'] is False
+    assert inline['created_at'] == '2026-07-26T08:00:00Z'
+    # Inline thread comments expose no edit timestamp in the query projection.
+    assert inline['updated_at'] == ''
+
+    review_body = _comment_record(result, 'PRR_1')
+    assert review_body['kind'] == 'review_body'
+    assert review_body['thread_id'] == ''
+    assert review_body['created_at'] == '2026-07-26T08:30:00Z'
+    assert review_body['updated_at'] == ''
+
+    issue_comment = _comment_record(result, 'IC_3')
+    assert issue_comment['kind'] == 'issue_comment'
+    assert issue_comment['thread_id'] == ''
+    assert issue_comment['updated_at'] == '2026-07-26T09:27:15Z'
 
 
 def test_pr_wait_for_comments_returns_when_new_comment_arrives(monkeypatch):

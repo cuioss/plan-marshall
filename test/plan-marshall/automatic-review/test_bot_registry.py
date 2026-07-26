@@ -5,7 +5,9 @@
 The registry parses each ``automatic-review/standards/{bot_kind}.md`` fenced-YAML
 data block ONCE and exposes stable accessors so the finding store, the re-review
 strategy registry, and the producer pre-filter DERIVE what they need instead of
-hard-coding three bots across three code files.
+hard-coding the shipped bot set across three code files. Three bots ship today
+(``coderabbit``, ``pr-agent``, ``sourcery``), and that count is asserted from
+:data:`_SHIPPED_BOTS` rather than restated per test.
 
 Coverage:
 
@@ -26,7 +28,7 @@ Module import resolves via the root conftest's marketplace PYTHONPATH setup
 import bot_registry
 
 # The bots shipped as standards docs in this skill.
-_SHIPPED_BOTS = ['coderabbit', 'gemini', 'pr-agent', 'sourcery']
+_SHIPPED_BOTS = ['coderabbit', 'pr-agent', 'sourcery']
 
 
 # =============================================================================
@@ -51,7 +53,6 @@ def test_login_to_bot_kind_maps_every_shipped_author():
     mapping = bot_registry.login_to_bot_kind()
     assert mapping == {
         'coderabbitai': 'coderabbit',
-        'gemini-code-assist': 'gemini',
         'cuioss-review-bot': 'pr-agent',
         'sourcery-ai': 'sourcery',
     }
@@ -60,7 +61,6 @@ def test_login_to_bot_kind_maps_every_shipped_author():
 def test_trigger_comment_per_bot():
     """Each bot's re-review trigger comment is read from its data block."""
     assert bot_registry.trigger_comment('coderabbit') == '@coderabbitai review'
-    assert bot_registry.trigger_comment('gemini') == '/gemini review'
     assert bot_registry.trigger_comment('sourcery') == '@sourcery-ai review'
     assert bot_registry.trigger_comment('pr-agent') == '/review'
 
@@ -69,12 +69,11 @@ def test_completion_check_name_per_bot():
     """CodeRabbit publishes an in-progress completion check-run; the others do not."""
     assert bot_registry.completion_check_name('coderabbit') == 'CodeRabbit'
     assert bot_registry.completion_check_name('sourcery') == ''
-    assert bot_registry.completion_check_name('gemini') == ''
     assert bot_registry.completion_check_name('pr-agent') == ''
 
 
 def test_honors_skip_label_per_bot():
-    """CodeRabbit and PR-Agent honor the central skip label; Sourcery and Gemini do not.
+    """CodeRabbit and PR-Agent honor the central skip label; Sourcery does not.
 
     The two ``True`` cases are honored by DIFFERENT mechanisms — CodeRabbit from its own
     central config, PR-Agent from the reusable workflow's ``if:`` guard, because its
@@ -84,7 +83,6 @@ def test_honors_skip_label_per_bot():
     assert bot_registry.honors_skip_label('coderabbit') is True
     assert bot_registry.honors_skip_label('pr-agent') is True
     assert bot_registry.honors_skip_label('sourcery') is False
-    assert bot_registry.honors_skip_label('gemini') is False
 
 
 def test_ignore_patterns_are_nonempty_literal_markers():
@@ -95,9 +93,6 @@ def test_ignore_patterns_are_nonempty_literal_markers():
 
     sourcery = bot_registry.ignore_patterns('sourcery')
     assert 'found 0 issues' in sourcery
-
-    gemini = bot_registry.ignore_patterns('gemini')
-    assert 'being sunset' in gemini
 
     pr_agent = bot_registry.ignore_patterns('pr-agent')
     assert '## PR Agent Walkthrough' in pr_agent
@@ -118,11 +113,11 @@ def test_severity_map_per_bot():
     sourcery = bot_registry.severity_map('sourcery')
     assert sourcery['security'] == 'critical'
 
-    gemini = bot_registry.severity_map('gemini')
-    assert gemini['low'] == 'low'
-
+    # PR-Agent's map is an ASSIGNMENT map keyed on the review-table row a finding
+    # came from — the observed review emits no severity vocabulary to parse. All
+    # three keys are asserted so a dropped row is caught, not just the first.
     pr_agent = bot_registry.severity_map('pr-agent')
-    assert pr_agent['security_concern'] == 'high'
+    assert pr_agent == {'security_concern': 'high', 'focus_area': 'medium', 'missing_tests': 'low'}
 
 
 def test_module_functions_match_registry_singleton():
@@ -148,11 +143,17 @@ def test_findings_core_bot_kinds_is_derived_from_registry():
 
 
 def test_findings_core_bot_kinds_contains_every_shipped_bot():
-    """The derived enum still contains each shipped bot (coderabbit/gemini/sourcery)."""
+    """The derived enum contains each shipped bot, and nothing beyond them.
+
+    The negative half is the retirement guard: a bot whose ``standards/{bot_kind}.md``
+    doc is deleted must disappear from the enum with no code change, so a stale
+    ``bot_kind`` can never be stored as a finding.
+    """
     from _findings_core import BOT_KINDS
 
     for bot_kind in _SHIPPED_BOTS:
         assert bot_kind in BOT_KINDS
+    assert set(BOT_KINDS) == set(_SHIPPED_BOTS)
 
 
 # =============================================================================
