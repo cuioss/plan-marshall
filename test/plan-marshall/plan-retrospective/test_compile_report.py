@@ -158,6 +158,10 @@ class TestLiveMode:
         )
         assert result.success, result.stderr
         data = result.toon()
+        # Benign omission: the trigger fragments are absent, so nothing was
+        # dropped and the run stays clean.
+        assert data['status'] == 'success'
+        assert not data.get('sections_dropped')
         omitted = data['sections_omitted']
         assert 'Script Failure Analysis' in omitted
         assert 'Permission Prompt Analysis' in omitted
@@ -856,7 +860,10 @@ class TestPhaseDispatchBoundariesSection:
         )
         assert result.success, result.stderr
         data = result.toon()
+        # Absent fragment ⇒ benign omission, never a drop.
+        assert data['status'] == 'success'
         assert 'Phase Dispatch Boundaries' in data['sections_omitted']
+        assert not data.get('sections_dropped')
         content = (plan_dir / 'quality-verification-report.md').read_text(encoding='utf-8')
         assert '## Phase Dispatch Boundaries' not in content
 
@@ -902,3 +909,169 @@ class TestPhaseDispatchBoundariesSection:
         assert '| 4-plan | 0 | 0 | 0 |' in content
         assert '| 5-execute | 0 | 1 | 2 |' in content
         assert '| 6-finalize | 0 | 0 | 0 |' in content
+
+
+# =============================================================================
+# Loud-drop partition of the non-emit path
+# =============================================================================
+
+
+def _write_fragments_with_extra(tmp_path: Path, extra_lines: list[str], name: str) -> Path:
+    """Write the minimal bundle plus ``extra_lines`` appended verbatim.
+
+    ``_write_fragments`` returns a path whose content is the baseline bundle;
+    this helper re-reads it and emits a distinct file so a single test can pin
+    a bespoke fragment shape without disturbing the shared baseline.
+    """
+    base = _write_fragments(tmp_path)
+    content = base.read_text(encoding='utf-8') + '\n'.join(extra_lines) + '\n'
+    fragments_file = tmp_path / name
+    fragments_file.write_text(content, encoding='utf-8')
+    return fragments_file
+
+
+class TestDroppedSectionIsLoud:
+    """A section whose trigger fragment carries real payload is a DROP, not an omission.
+
+    The distinction the partition exists to make: an absent or genuinely empty
+    trigger fragment is a benign omission that leaves ``status: success``,
+    while a trigger fragment carrying content the gate refused is content the
+    report lost — it lands in ``sections_dropped`` and flips the TOON status to
+    ``warning`` so the caller cannot mistake the run for clean.
+    """
+
+    def test_dispatch_boundaries_without_present_phase_is_dropped(self, tmp_path, monkeypatch):
+        # Per-phase entries exist (real payload) but no phase reports
+        # present: true, so should_emit refuses — that is a drop, not an omission.
+        plan_id, _ = setup_live_plan(tmp_path, monkeypatch)
+        fragments = _write_fragments_with_dispatch_boundaries(
+            tmp_path,
+            phases={
+                '5-execute': {
+                    'present': False,
+                    'rows': [],
+                    'unknown_count': 0,
+                    'clean_exit_queue_empty_count': 0,
+                },
+            },
+        )
+
+        result = run_script(
+            SCRIPT_PATH,
+            'run',
+            '--plan-id',
+            plan_id,
+            '--mode',
+            'live',
+            '--fragments-file',
+            str(fragments),
+        )
+
+        assert result.success, result.stderr
+        data = result.toon()
+        assert data['status'] == 'warning'
+        assert 'Phase Dispatch Boundaries' in data['sections_dropped']
+        assert 'Phase Dispatch Boundaries' not in data['sections_omitted']
+        assert 'Phase Dispatch Boundaries' in data['message']
+
+    def test_non_success_status_with_findings_is_dropped(self, tmp_path, monkeypatch):
+        # A registered conditional aspect that produced findings but reports a
+        # non-success status: the gate refuses it, so the findings are lost.
+        plan_id, _ = setup_live_plan(tmp_path, monkeypatch)
+        fragments = _write_fragments_with_extra(
+            tmp_path,
+            [
+                'script-failure-analysis:',
+                '  status: error',
+                '  aspect: script_failure_analysis',
+                '  findings[1]{severity,message}:',
+                '    warning,producer blew up mid-run',
+            ],
+            'fragments-non-success-findings.toon',
+        )
+
+        result = run_script(
+            SCRIPT_PATH,
+            'run',
+            '--plan-id',
+            plan_id,
+            '--mode',
+            'live',
+            '--fragments-file',
+            str(fragments),
+        )
+
+        assert result.success, result.stderr
+        data = result.toon()
+        assert data['status'] == 'warning'
+        assert 'Script Failure Analysis' in data['sections_dropped']
+        assert 'Script Failure Analysis' not in data['sections_omitted']
+
+    def test_bookkeeping_only_fragment_is_a_benign_omission(self, tmp_path, monkeypatch):
+        # Envelope keys plus an empty payload list carry nothing the report
+        # could have rendered — a benign omission that keeps status: success.
+        plan_id, _ = setup_live_plan(tmp_path, monkeypatch)
+        fragments = _write_fragments_with_extra(
+            tmp_path,
+            [
+                'permission-prompt-analysis:',
+                '  status: success',
+                '  aspect: permission_prompt_analysis',
+                '  prompts[0]:',
+            ],
+            'fragments-bookkeeping-only.toon',
+        )
+
+        result = run_script(
+            SCRIPT_PATH,
+            'run',
+            '--plan-id',
+            plan_id,
+            '--mode',
+            'live',
+            '--fragments-file',
+            str(fragments),
+        )
+
+        assert result.success, result.stderr
+        data = result.toon()
+        assert data['status'] == 'success'
+        assert 'Permission Prompt Analysis' in data['sections_omitted']
+        assert not data.get('sections_dropped')
+
+    def test_unregistered_aspect_is_rendered_by_the_catch_all(self, tmp_path, monkeypatch):
+        # Regression guard for the generic fallback: a domain-contributed key
+        # with no SECTION_SPEC row is rendered under a synthesized heading and
+        # is therefore neither omitted nor dropped.
+        plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
+        fragments = _write_fragments_with_extra(
+            tmp_path,
+            [
+                'wrapper-tangle:',
+                '  status: success',
+                '  aspect: wrapper_tangle',
+                '  findings[1]{severity,message}:',
+                '    info,domain aspect with no SECTION_SPEC row',
+            ],
+            'fragments-unregistered-aspect.toon',
+        )
+
+        result = run_script(
+            SCRIPT_PATH,
+            'run',
+            '--plan-id',
+            plan_id,
+            '--mode',
+            'live',
+            '--fragments-file',
+            str(fragments),
+        )
+
+        assert result.success, result.stderr
+        data = result.toon()
+        assert data['status'] == 'success'
+        assert 'Wrapper Tangle' in data['sections_written']
+        assert 'Wrapper Tangle' not in data['sections_omitted']
+        assert 'Wrapper Tangle' not in (data.get('sections_dropped') or [])
+        content = (plan_dir / 'quality-verification-report.md').read_text(encoding='utf-8')
+        assert '## Wrapper Tangle' in content

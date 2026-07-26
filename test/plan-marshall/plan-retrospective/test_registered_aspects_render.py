@@ -69,7 +69,7 @@ def _build_doc_with_aspect(aspect_key: str) -> str:
         '_meta': {'mode': 'live'},
         aspect_key: {'status': 'success', 'summary': f'synthetic body for {aspect_key}'},
     }
-    content, _written, _omitted = _cr.build_document('p', 'live', Path('/tmp/plan'), None, fragments)
+    content, _written, _omitted, _dropped = _cr.build_document('p', 'live', Path('/tmp/plan'), None, fragments)
     return content
 
 
@@ -151,7 +151,7 @@ class TestRegisterableAspectsRenderable:
             '_executive-summary': {'summary': 'exec'},
             'artifact-consistency': {'status': 'success', 'summary': 'listed aspect'},
         }
-        content, written, _omitted = _cr.build_document('p', 'live', Path('/tmp/plan'), None, fragments)
+        content, written, _omitted, _dropped = _cr.build_document('p', 'live', Path('/tmp/plan'), None, fragments)
 
         # No section is derived from a reserved meta key.
         assert '## Meta' not in content
@@ -247,7 +247,7 @@ class TestConditionalFragmentActuallyRenders:
 
         fragments = {'_meta': {'mode': 'live'},
                      'routing-decisions': self._routing_decisions_fragment()}
-        content, _written, _omitted = _cr.build_document(
+        content, _written, _omitted, _dropped = _cr.build_document(
             'p', 'live', Path('/tmp/plan'), None, fragments)
         assert f'## {heading}' in content, (
             'routing-decisions has a SECTION_SPEC row but its real (findings-less) '
@@ -313,7 +313,7 @@ class TestChatHistoryAnalysisRenders:
 
     def test_tier1_fragment_renders_section(self):
         fragments = {'_meta': {'mode': 'live'}, _CHAT_HISTORY_KEY: self._tier1_fragment()}
-        content, _written, _omitted = _cr.build_document(
+        content, _written, _omitted, _dropped = _cr.build_document(
             'p', 'live', Path('/tmp/plan'), None, fragments)
         assert f'## {_CHAT_HISTORY_HEADING}' in content
 
@@ -327,7 +327,7 @@ class TestChatHistoryAnalysisRenders:
         before the guard.
         """
         fragments = {'_meta': {'mode': 'live'}, _CHAT_HISTORY_KEY: self._tier2_fragment()}
-        content, _written, _omitted = _cr.build_document(
+        content, _written, _omitted, _dropped = _cr.build_document(
             'p', 'live', Path('/tmp/plan'), None, fragments)
         assert f'## {_CHAT_HISTORY_HEADING}' in content, (
             'The Tier-2 status:skipped chat-history fragment must still render — its '

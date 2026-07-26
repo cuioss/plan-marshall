@@ -34,6 +34,7 @@ implements:
 - Never write to archived plan directories. Archived mode writes the report next to the archived plan, but the plan state itself is read-only.
 - Never call `mark-step-done` in archived mode or user-invocable live mode — only the finalize-step mode emits the handshake tail.
 - Never silently skip aspect dispatch. If a script fails, record the failure in the report under "Script failure analysis" and continue.
+- Never treat a `compile-report` warning as a clean pass. A non-empty `sections_dropped` MUST be surfaced in the report and carried into the Step 5 lessons proposal — a dropped fragment may have carried a live finding.
 - Do not modify any .plan/ files directly — all plan state access goes through `manage-*` scripts and the scripts in this skill.
 
 **Constraints**:
@@ -259,7 +260,7 @@ python3 .plan/execute-script.py plan-marshall:plan-retrospective:compile-report 
   run --plan-id {plan_id} --mode {live|archived} --fragments-file {bundle_path}
 ```
 
-The script returns the report's absolute path and the list of sections written. Section order follows `references/report-structure.md`.
+The script returns the report's absolute path and a three-valued section outcome. `sections_written` names every section the report carries. `sections_omitted` is the BENIGN half of the non-emit path — the section's trigger fragment was absent or carried nothing renderable, so there was nothing to lose. `sections_dropped` is the LOUD half — a registered fragment that was present and carried payload but still did not render. When `sections_dropped` is non-empty the script returns `status: warning` (never `success`) and a `message` naming the dropped headings; the process exit code stays `0` because the report itself was written. Section order follows `references/report-structure.md`.
 
 **Cleanup**: `compile-report run` auto-deletes the fragment bundle after a successful report write. On failure paths (before the report is flushed to disk), the bundle is retained so the aspect fragments remain available for debugging.
 

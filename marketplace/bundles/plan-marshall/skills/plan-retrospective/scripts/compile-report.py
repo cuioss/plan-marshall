@@ -161,6 +161,26 @@ def should_emit(section_key: str, trigger_key: str | None, fragments: dict[str, 
     return False
 
 
+def _fragment_has_payload(fragment: Any) -> bool:
+    """Return True when a fragment carries content beyond its envelope keys.
+
+    ``status`` and ``aspect`` are envelope metadata every fragment carries, so
+    they never count as payload. Any other key whose value is not one of the
+    empty sentinels (``None``, ``''``, ``[]``, ``{}``, ``False``) makes the
+    fragment non-empty. This is the discriminator between a benign omission
+    (the aspect genuinely produced nothing) and a loud drop (the aspect
+    produced content that ``should_emit`` nonetheless refused).
+    """
+    if not isinstance(fragment, dict):
+        return False
+    for key, value in fragment.items():
+        if key in ('status', 'aspect'):
+            continue
+        if value not in (None, '', [], {}, False):
+            return True
+    return False
+
+
 def render_dispatch_boundaries_body(fragment: Any) -> str:
     """Render the Phase Dispatch Boundaries section body.
 
@@ -269,13 +289,14 @@ def build_document(
     plan_dir: Path,
     session_id: str | None,
     fragments: dict[str, Any],
-) -> tuple[str, list[str], list[str]]:
+) -> tuple[str, list[str], list[str], list[str]]:
     """Assemble the markdown document.
 
-    Returns ``(content, sections_written, sections_omitted)``.
+    Returns ``(content, sections_written, sections_omitted, sections_dropped)``.
     """
     written: list[str] = []
     omitted: list[str] = []
+    dropped: list[str] = []
     parts: list[str] = [build_header(plan_id, mode, plan_dir, session_id)]
 
     # Executive summary is synthesized from fragment data — if the caller
@@ -295,7 +316,15 @@ def build_document(
             written.append(heading)
             continue
         if not should_emit(fragment_key, trigger, fragments):
-            omitted.append(heading)
+            # Partition the non-emit path: a section whose trigger fragment is
+            # absent or genuinely empty is a benign omission; a section whose
+            # trigger fragment carries real payload is a DROP — content the
+            # aspect produced that the gate refused — and must be loud.
+            trigger_fragment = fragments.get(trigger) if trigger is not None else None
+            if _fragment_has_payload(trigger_fragment):
+                dropped.append(heading)
+            else:
+                omitted.append(heading)
             continue
         fragment = fragments.get(fragment_key)
         # Dispatch_boundaries uses a dedicated per-phase table renderer; every
@@ -308,17 +337,11 @@ def build_document(
         written.append(heading)
 
     # Generic fallback render path (registered ⇒ rendered completeness guard).
-    # collect-fragments accepts domain-contributed aspects (via
-    # ``_registerable_aspect_keys`` = ``valid_aspect_keys()`` ∪
-    # ``_domain_aspect_keys()``) that are NOT in the static SECTION_SPEC — e.g.
-    # ``wrapper-tangle`` from pm-plugin-development. Without this fallback the
-    # SECTION_SPEC loop above never looks them up and compile-report silently
-    # drops their sections. Iterate the bundle for any genuine aspect key that
-    # has no dedicated SECTION_SPEC row and is not a reserved/underscore-prefixed
-    # meta key (``_meta``, ``_executive-summary``), and render each verbatim via
-    # the existing render_section_body. The renderer stays judgment-free — a
-    # domain aspect is surfaced rather than lost. Keys are sorted for a
-    # deterministic section order.
+    # Guarantee: an aspect key present in the bundle that has no dedicated
+    # SECTION_SPEC row — e.g. a domain-contributed ``wrapper-tangle`` — is
+    # rendered verbatim under a heading synthesized from its key, never lost.
+    # Reserved underscore-prefixed meta keys (``_meta``, ``_executive-summary``)
+    # are excluded; keys are sorted for a deterministic section order.
     spec_keys = {fragment_key for _heading, fragment_key, _trigger in SECTION_SPEC}
     for aspect_key in sorted(fragments):
         if aspect_key.startswith('_'):
@@ -330,7 +353,7 @@ def build_document(
         parts.append(f'## {heading}\n\n{body}')
         written.append(heading)
 
-    return '\n'.join(parts), written, omitted
+    return '\n'.join(parts), written, omitted, dropped
 
 
 def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
@@ -341,7 +364,9 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     fragments = load_fragments(Path(args.fragments_file))
     plan_id = args.plan_id or plan_dir.name
 
-    content, written, omitted = build_document(plan_id, args.mode, plan_dir, args.session_id, fragments)
+    content, written, omitted, dropped = build_document(
+        plan_id, args.mode, plan_dir, args.session_id, fragments
+    )
 
     output_path = resolve_output_path(args.mode, plan_dir)
     output_path.write_text(content, encoding='utf-8')
@@ -362,14 +387,23 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
             file=sys.stderr,
         )
 
-    return {
-        'status': 'success',
+    # A dropped section is content the aspect produced and the report lost —
+    # ride the signal on the TOON status so the caller cannot mistake it for a
+    # clean run. The process exit code stays 0: the document was written.
+    result: dict[str, Any] = {
+        'status': 'warning' if dropped else 'success',
         'plan_id': plan_id,
         'mode': args.mode,
         'output_path': str(output_path),
         'sections_written': written,
         'sections_omitted': omitted,
+        'sections_dropped': dropped,
     }
+    if dropped:
+        result['message'] = (
+            'Dropped non-empty sections from the compiled report: ' + ', '.join(dropped)
+        )
+    return result
 
 
 @safe_main
