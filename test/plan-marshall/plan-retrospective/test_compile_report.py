@@ -1075,38 +1075,3 @@ class TestDroppedSectionIsLoud:
         assert 'Wrapper Tangle' not in (data.get('sections_dropped') or [])
         content = (plan_dir / 'quality-verification-report.md').read_text(encoding='utf-8')
         assert '## Wrapper Tangle' in content
-
-
-# =============================================================================
-# Payload discriminator (_fragment_has_payload)
-# =============================================================================
-
-
-class TestFragmentHasPayload:
-    """Unit coverage for the omission-vs-drop discriminator.
-
-    ``_fragment_has_payload`` decides whether a refused fragment was a benign
-    omission (nothing to render) or a loud drop (content the report lost), so a
-    false negative here re-introduces the very silent drop the partition exists
-    to eliminate.
-    """
-
-    def test_numeric_zero_counts_as_payload(self):
-        # ``False == 0`` and ``False == 0.0`` in Python, so an equality-based
-        # sentinel tuple would misclassify a zero-valued count or ratio as
-        # carrying no payload.
-        assert _compile_report._fragment_has_payload({'status': 'success', 'aspect': 'probe', 'unknown_count': 0})
-        assert _compile_report._fragment_has_payload({'status': 'success', 'aspect': 'probe', 'pass_ratio': 0.0})
-
-    def test_boolean_false_remains_an_empty_sentinel(self):
-        # Identity-matched ``False`` still reads as "no payload" — a flag that
-        # is off carries nothing the report could have rendered.
-        assert not _compile_report._fragment_has_payload(
-            {'status': 'success', 'aspect': 'probe', 'manifest_present': False}
-        )
-
-    def test_envelope_only_fragment_has_no_payload(self):
-        assert not _compile_report._fragment_has_payload({'status': 'success', 'aspect': 'probe'})
-
-    def test_non_dict_fragment_has_no_payload(self):
-        assert not _compile_report._fragment_has_payload(None)

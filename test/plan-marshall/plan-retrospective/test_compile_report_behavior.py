@@ -228,6 +228,14 @@ class TestFragmentHasPayload:
     def test_any_non_empty_non_envelope_value_is_true(self):
         assert _cr._fragment_has_payload({'status': 'error', 'findings': [{'severity': 'x'}]}) is True
 
+    def test_numeric_zero_counts_as_payload(self):
+        # ``False == 0`` and ``False == 0.0`` in Python, so an equality-based
+        # sentinel tuple would misclassify a zero-valued count or ratio as
+        # carrying no payload — silently dropping the very content this
+        # discriminator exists to make loud.
+        assert _cr._fragment_has_payload({'status': 'success', 'aspect': 'probe', 'unknown_count': 0}) is True
+        assert _cr._fragment_has_payload({'status': 'success', 'aspect': 'probe', 'pass_ratio': 0.0}) is True
+
 
 class TestCmdRunInProcess:
     def _write_bundle(self, path: Path) -> Path:
