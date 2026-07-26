@@ -6,8 +6,9 @@ Covers the three-verb surface of ``orchestrator.py`` under ``PLAN_BASE_DIR``
 isolation (via ``plan_context``):
 
 - ``scaffold``: directory-tree creation and idempotency.
-- ``queue``: read and transition round-trip against a fixture status.json,
-  plus the error envelopes (missing status, unknown plan, unpaired flags).
+- ``queue``: read, transition, and per-row field-set round-trips against a
+  fixture status.json, plus the error envelopes (missing status, unknown
+  plan, unknown field, unpaired flags, mutually-exclusive write forms).
 - ``resume-summary``: START-HERE block generation derived purely from
   status.json (resume anchor, phase, running/parked plans, ordered queue).
 - CLI boundary: all three verbs driven through the ``orchestrator.py`` entry
@@ -30,12 +31,32 @@ cmd_scaffold = _orch.cmd_scaffold
 cmd_queue = _orch.cmd_queue
 cmd_resume_summary = _orch.cmd_resume_summary
 EPIC_SUBDIRS = _orch.EPIC_SUBDIRS
+PLAN_ROW_FIELDS = _orch.PLAN_ROW_FIELDS
 
 FIXED_TIMESTAMP = '2020-01-01T00:00:00Z'
 
 
 def _epic_dir(plan_context, slug: str) -> Path:
     return Path(plan_context.fixture_dir) / 'orchestrator' / slug
+
+
+def _queue_args(
+    slug: str,
+    transition: str | None = None,
+    status: str | None = None,
+    set_row: str | None = None,
+    field: str | None = None,
+    value: str | None = None,
+) -> Namespace:
+    """Build a complete ``queue`` Namespace so every flag attribute is present."""
+    return Namespace(
+        slug=slug,
+        transition=transition,
+        status=status,
+        set_row=set_row,
+        field=field,
+        value=value,
+    )
 
 
 def _make_plan(
@@ -150,7 +171,7 @@ class TestQueueRead:
         plans = [_make_plan('PLAN-01'), _make_plan('PLAN-02', status='running')]
         _write_status(plan_context, 'read-epic', plans=plans)
 
-        result = cmd_queue(Namespace(slug='read-epic', transition=None, status=None))
+        result = cmd_queue(_queue_args('read-epic'))
 
         assert result['status'] == 'success'
         assert result['operation'] == 'queue'
@@ -161,13 +182,13 @@ class TestQueueRead:
     def test_should_error_when_status_json_missing(self, plan_context):
         cmd_scaffold(Namespace(slug='bare-epic'))
 
-        result = cmd_queue(Namespace(slug='bare-epic', transition=None, status=None))
+        result = cmd_queue(_queue_args('bare-epic'))
 
         assert result['status'] == 'error'
         assert result['error'] == 'file_not_found'
 
     def test_should_reject_invalid_slug(self, plan_context):
-        result = cmd_queue(Namespace(slug='../evil', transition=None, status=None))
+        result = cmd_queue(_queue_args('../evil'))
 
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_slug'
@@ -184,9 +205,7 @@ class TestQueueTransition:
             plan_context, 'flow-epic', plans=[_make_plan('PLAN-01'), _make_plan('PLAN-02')]
         )
 
-        result = cmd_queue(
-            Namespace(slug='flow-epic', transition='PLAN-01', status='running')
-        )
+        result = cmd_queue(_queue_args('flow-epic', transition='PLAN-01', status='running'))
 
         assert result['status'] == 'success'
         assert result['operation'] == 'queue-transition'
@@ -200,22 +219,22 @@ class TestQueueTransition:
     def test_should_stamp_updated_on_transition(self, plan_context):
         status_path = _write_status(plan_context, 'stamp-epic', plans=[_make_plan('PLAN-01')])
 
-        cmd_queue(Namespace(slug='stamp-epic', transition='PLAN-01', status='parked'))
+        cmd_queue(_queue_args('stamp-epic', transition='PLAN-01', status='parked'))
 
         assert _read_status_file(status_path)['updated'] != FIXED_TIMESTAMP
 
     def test_should_read_back_transitioned_state(self, plan_context):
         _write_status(plan_context, 'roundtrip-epic', plans=[_make_plan('PLAN-01')])
-        cmd_queue(Namespace(slug='roundtrip-epic', transition='PLAN-01', status='landed'))
+        cmd_queue(_queue_args('roundtrip-epic', transition='PLAN-01', status='landed'))
 
-        result = cmd_queue(Namespace(slug='roundtrip-epic', transition=None, status=None))
+        result = cmd_queue(_queue_args('roundtrip-epic'))
 
         assert result['plans'][0]['status'] == 'landed'
 
     def test_should_error_for_unknown_plan_id(self, plan_context):
         _write_status(plan_context, 'miss-epic', plans=[_make_plan('PLAN-01')])
 
-        result = cmd_queue(Namespace(slug='miss-epic', transition='PLAN-99', status='running'))
+        result = cmd_queue(_queue_args('miss-epic', transition='PLAN-99', status='running'))
 
         assert result['status'] == 'error'
         assert result['error'] == 'plan_not_found'
@@ -224,7 +243,7 @@ class TestQueueTransition:
     def test_should_require_status_with_transition(self, plan_context):
         _write_status(plan_context, 'pair-epic', plans=[_make_plan('PLAN-01')])
 
-        result = cmd_queue(Namespace(slug='pair-epic', transition='PLAN-01', status=None))
+        result = cmd_queue(_queue_args('pair-epic', transition='PLAN-01'))
 
         assert result['status'] == 'error'
         assert result['error'] == 'wrong_parameters'
@@ -232,14 +251,146 @@ class TestQueueTransition:
     def test_should_require_transition_with_status(self, plan_context):
         _write_status(plan_context, 'pair2-epic', plans=[_make_plan('PLAN-01')])
 
-        result = cmd_queue(Namespace(slug='pair2-epic', transition=None, status='running'))
+        result = cmd_queue(_queue_args('pair2-epic', status='running'))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'wrong_parameters'
+
+    def test_should_error_when_status_json_missing(self, plan_context):
+        result = cmd_queue(_queue_args('absent-epic', transition='PLAN-01', status='running'))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'file_not_found'
+
+
+# =============================================================================
+# queue — set-row
+# =============================================================================
+
+
+class TestQueueSetRow:
+    def test_should_set_named_row_field_and_leave_siblings_untouched(self, plan_context):
+        siblings = [_make_plan('PLAN-02'), _make_plan('PLAN-03', status='running')]
+        status_path = _write_status(
+            plan_context, 'set-epic', plans=[_make_plan('PLAN-01'), *siblings]
+        )
+
+        result = cmd_queue(
+            _queue_args('set-epic', set_row='PLAN-01', field='pr', value='#1001')
+        )
+
+        assert result['status'] == 'success'
+        assert result['operation'] == 'queue-set-row'
+        assert result['plan'] == 'PLAN-01'
+        assert result['field'] == 'pr'
+        assert result['previous_value'] == ''
+        assert result['new_value'] == '#1001'
+        on_disk = _read_status_file(status_path)
+        assert on_disk['plans'][0]['pr'] == '#1001'
+        assert on_disk['plans'][1:] == siblings
+
+    def test_should_round_trip_every_whitelisted_field(self, plan_context):
+        _write_status(plan_context, 'fields-epic', plans=[_make_plan('PLAN-01')])
+        values = {
+            'plan_marshall_plan_id': 'epic-plan-1',
+            'pr': '#1002',
+            'landing': 'PLAN-01.md',
+        }
+        assert set(values) == set(PLAN_ROW_FIELDS)
+
+        for field, value in values.items():
+            cmd_queue(
+                _queue_args('fields-epic', set_row='PLAN-01', field=field, value=value)
+            )
+
+        row = cmd_queue(_queue_args('fields-epic'))['plans'][0]
+        for field, value in values.items():
+            assert row[field] == value
+
+    def test_should_report_previous_value_on_overwrite(self, plan_context):
+        _write_status(
+            plan_context, 'overwrite-epic', plans=[_make_plan('PLAN-01', pr='#900')]
+        )
+
+        result = cmd_queue(
+            _queue_args('overwrite-epic', set_row='PLAN-01', field='pr', value='#901')
+        )
+
+        assert result['previous_value'] == '#900'
+        assert result['new_value'] == '#901'
+
+    def test_should_stamp_updated_on_set_row(self, plan_context):
+        status_path = _write_status(
+            plan_context, 'set-stamp-epic', plans=[_make_plan('PLAN-01')]
+        )
+
+        cmd_queue(
+            _queue_args('set-stamp-epic', set_row='PLAN-01', field='landing', value='x.md')
+        )
+
+        assert _read_status_file(status_path)['updated'] != FIXED_TIMESTAMP
+
+    def test_should_error_for_unknown_plan_id(self, plan_context):
+        _write_status(plan_context, 'set-miss-epic', plans=[_make_plan('PLAN-01')])
+
+        result = cmd_queue(
+            _queue_args('set-miss-epic', set_row='PLAN-99', field='pr', value='#1')
+        )
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'plan_not_found'
+        assert result['available_plans'] == ['PLAN-01']
+
+    def test_should_error_for_unknown_field(self, plan_context):
+        status_path = _write_status(
+            plan_context, 'set-field-epic', plans=[_make_plan('PLAN-01')]
+        )
+
+        result = cmd_queue(
+            _queue_args('set-field-epic', set_row='PLAN-01', field='status', value='shipped')
+        )
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_field'
+        assert 'landing' in result['message']
+        assert _read_status_file(status_path)['plans'][0]['status'] == 'staged'
+
+    def test_should_require_field_and_value_with_set_row(self, plan_context):
+        _write_status(plan_context, 'set-pair-epic', plans=[_make_plan('PLAN-01')])
+
+        result = cmd_queue(_queue_args('set-pair-epic', set_row='PLAN-01'))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'wrong_parameters'
+
+    def test_should_require_set_row_with_field(self, plan_context):
+        _write_status(plan_context, 'set-pair2-epic', plans=[_make_plan('PLAN-01')])
+
+        result = cmd_queue(_queue_args('set-pair2-epic', field='pr', value='#1'))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'wrong_parameters'
+
+    def test_should_reject_set_row_combined_with_transition(self, plan_context):
+        _write_status(plan_context, 'set-excl-epic', plans=[_make_plan('PLAN-01')])
+
+        result = cmd_queue(
+            _queue_args(
+                'set-excl-epic',
+                transition='PLAN-01',
+                status='shipped',
+                set_row='PLAN-01',
+                field='pr',
+                value='#1',
+            )
+        )
 
         assert result['status'] == 'error'
         assert result['error'] == 'wrong_parameters'
 
     def test_should_error_when_status_json_missing(self, plan_context):
         result = cmd_queue(
-            Namespace(slug='absent-epic', transition='PLAN-01', status='running')
+            _queue_args('set-absent-epic', set_row='PLAN-01', field='pr', value='#1')
         )
 
         assert result['status'] == 'error'
@@ -346,6 +497,32 @@ class TestCli:
         assert 'new_status: running' in transition.stdout
         assert read.returncode == 0
         assert 'running' in read.stdout
+
+    def test_should_set_row_field_and_read_it_back_through_cli(self, plan_context):
+        env = {'PLAN_BASE_DIR': str(plan_context.fixture_dir)}
+        _write_status(plan_context, 'cli-setrow-epic', plans=[_make_plan('PLAN-01')])
+
+        set_row = run_script(
+            SCRIPT_PATH,
+            'queue',
+            '--slug',
+            'cli-setrow-epic',
+            '--set-row',
+            'PLAN-01',
+            '--field',
+            'pr',
+            '--value',
+            '#1001',
+            env_overrides=env,
+        )
+        read = run_script(SCRIPT_PATH, 'queue', '--slug', 'cli-setrow-epic', env_overrides=env)
+
+        assert set_row.returncode == 0
+        assert 'operation: queue-set-row' in set_row.stdout
+        assert 'field: pr' in set_row.stdout
+        assert '#1001' in set_row.stdout
+        assert read.returncode == 0
+        assert '#1001' in read.stdout
 
     def test_should_generate_resume_summary_through_cli(self, plan_context):
         env = {'PLAN_BASE_DIR': str(plan_context.fixture_dir)}
