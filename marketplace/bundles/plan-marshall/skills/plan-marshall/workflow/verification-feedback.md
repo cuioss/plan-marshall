@@ -240,7 +240,7 @@ Triage (Steps 3-6) RECORDED a disposition and a reviewer-ready `resolution_detai
 
 The respond verbs are the pure zero-LLM provider surface (D3) — they apply dispositions, they never decide them:
 
-1. **PR providers (`pr-comment`, and `sonar-issue` when `pr_number` is set for thread context)** — one `post_responses` call transmits every terminal-disposition finding that carries a `thread_id` and a `resolution_detail`: it posts the stored `resolution_detail` as a thread-reply, then resolves the thread. Findings without a `thread_id` or `resolution_detail` are skipped, never guessed at:
+1. **PR providers (`pr-comment`, and `sonar-issue` when `pr_number` is set for thread context)** — one `post_responses` call transmits every terminal-disposition finding carrying a `resolution_detail`: a thread-bearing finding gets a thread-reply then a resolve-thread; the thread-less ones (a `review_body` finding from any bot, or a bot that posts only issue comments) go out together in ONE batched PR-level comment anchored on each source `comment_id`. Only a finding with no `resolution_detail` is skipped — there is genuinely nothing to transmit:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr \
@@ -248,6 +248,8 @@ The respond verbs are the pure zero-LLM provider surface (D3) — they apply dis
    ```
 
    (or `workflow-integration-gitlab:gitlab_pr post_responses` for GitLab projects — one provider per host).
+
+   **Read the returned `status`, not just the exit code.** `status: partial` with a non-zero `count_untransmitted` means at least one disposition had something to say and could NOT be delivered; every such finding is enumerated in `untransmitted[]` with a reason. Surface that to the operator rather than treating the RESPOND loop as clean. See [`workflow-integration-github` SKILL.md](../../workflow-integration-github/SKILL.md) § Workflow 2 step 4 for the full three-way transmit table and the `transmit_mode` / `resolved_on_provider` fields.
 
 2. **Sonar server-side dismissals** — one `sonar post_responses` call transmits every terminal `sonar-issue` dismissal keyed by `hash_id`: it maps a `suppressed` resolution to a `wontfix` transition and a `rejected` resolution to a `falsepositive` transition, reading the Sonar issue key from each finding's own record (never a positional pairing). See `workflow-integration-sonar` Canonical invocations → `sonar — post_responses`:
 

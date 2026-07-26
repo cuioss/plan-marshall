@@ -13,9 +13,14 @@ lives here:
   embedded raw in the top-level ``detail``); the batched ``manage-findings
   ingest`` pass promotes it to top-level only after ``validate_struct``.
 - ``post_responses`` applies already-decided triage dispositions back to the
-  provider — a thread-reply carrying the ``resolution_detail`` then a
-  resolve-thread — keyed by each finding's own ``hash_id`` (no positional
-  pairing). It reads only findings the triage pass already resolved.
+  provider, keyed by each finding's own ``hash_id`` (no positional pairing), via
+  a three-way disposition that never loses a decision: a finding with no
+  ``resolution_detail`` is ``skipped`` (nothing to transmit); a thread-bearing
+  finding gets the thread-reply-then-resolve path; and a thread-less finding
+  whose disposition has a body is transmitted in ONE batched PR-level comment
+  anchored on each source ``comment_id``. Anything that had something to say but
+  could not be delivered lands in ``untransmitted`` and drives ``status:
+  partial``. It reads only findings the triage pass already resolved.
 
 Beside the findings contract sits one auxiliary provider read:
 
@@ -429,7 +434,7 @@ def cmd_fetch_findings(args):
         author = comment.get('author') or 'unknown'
 
         # Derive bot_kind from the comment author login (coderabbitai ->
-        # coderabbit, gemini-code-assist -> gemini); a human author resolves to
+        # coderabbit, cuioss-review-bot -> pr-agent); a human author resolves to
         # None. Computed BEFORE the noise pre-filter (so per-bot ignore patterns
         # apply) AND before the dedup check (so the cross-iteration guard can key
         # on (bot_kind, comment_id)).
@@ -680,19 +685,64 @@ def _thread_id_from_detail(detail: str | None) -> str:
     return match.group('id') if match else ''
 
 
+def _comment_id_from_detail(detail: str | None) -> str:
+    """Extract the ``comment_id`` value from a pr-comment finding's detail block."""
+    match = _COMMENT_ID_DETAIL.search(detail or '')
+    return match.group('id') if match else ''
+
+
+def _build_batched_response_body(entries: list[tuple[str, str]]) -> str:
+    """Render the single batched PR comment carrying every thread-less disposition.
+
+    Args:
+        entries: ``(comment_id, reply_body)`` pairs in finding order. A pair whose
+            ``comment_id`` is empty is still rendered — the disposition must be
+            transmitted even when its source anchor is unrecoverable.
+
+    Returns:
+        One markdown body with a heading and one anchored section per entry.
+    """
+    parts = ['## Triage dispositions', '']
+    for comment_id, reply_body in entries:
+        anchor = f'comment_id: `{comment_id}`' if comment_id else 'comment_id: _(unrecorded)_'
+        parts.append(f'### In reply to {anchor}')
+        parts.append('')
+        parts.append(reply_body)
+        parts.append('')
+    return '\n'.join(parts).rstrip() + '\n'
+
+
 def cmd_post_responses(args):
     """RESPOND verb: apply already-decided triage dispositions back to the PR.
 
     Reads every ``pr-comment`` finding whose ``resolution`` is a terminal triage
-    disposition (``_RESPONDABLE_RESOLUTIONS``) and that carries a ``thread_id``,
-    and — keyed by each finding's own ``hash_id`` (never positional pairing) —
-    posts the finding's ``resolution_detail``
-    as a thread-reply then resolves the thread. This verb makes NO triage
-    decision; it only transmits decisions the triage pass already recorded.
+    disposition (``_RESPONDABLE_RESOLUTIONS``) and — keyed by each finding's own
+    ``hash_id`` (never positional pairing) — transmits it through a three-way
+    disposition. This verb makes NO triage decision; it only transmits decisions
+    the triage pass already recorded.
+
+    1. **No ``resolution_detail``** — recorded in ``skipped`` with reason
+       ``no_resolution_detail``. There is genuinely nothing to transmit.
+    2. **``thread_id`` present** — thread-reply carrying the disposition, then
+       resolve-thread. Recorded in ``responded`` with ``transmit_mode:
+       thread_reply`` and ``resolved_on_provider: true``.
+    3. **``thread_id`` empty, disposition body present** — collected across the
+       whole loop and transmitted as ONE batched PR-level comment, each section
+       anchored on its source ``comment_id``. Recorded in ``responded`` with
+       ``transmit_mode: batched_issue_comment`` and ``resolved_on_provider:
+       false`` — an issue comment has no resolvable thread, and reporting
+       ``true`` would be a false signal. Batching is deliberate: ``review_body``
+       findings from every bot are thread-less, so a per-finding comment would
+       spam the PR.
+
+    Every disposition that had something to say but could not be delivered — a
+    failed thread-reply, a failed resolve-thread, or a failed batched post —
+    lands in ``untransmitted`` and drives ``count_untransmitted`` and a top-level
+    ``status`` of ``partial``. Nothing is folded into a generic skip and nothing
+    is masked by an unconditional ``success``.
 
     Fail-loud: returns a typed ``unconfigured`` status when GitHub is not
-    authenticated. A finding without a ``resolution_detail`` or ``thread_id`` is
-    skipped (recorded in ``skipped``), never guessed at.
+    authenticated.
     """
     from _findings_core import query_findings
 
@@ -707,43 +757,77 @@ def cmd_post_responses(args):
 
     responded: list[dict[str, str]] = []
     skipped: list[dict[str, str]] = []
-    failures: list[dict[str, str]] = []
+    untransmitted: list[dict[str, str]] = []
+    # Thread-less dispositions accumulate here and go out in ONE batched comment
+    # after the loop: (hash_id, comment_id, reply_body).
+    batch: list[tuple[str, str, str]] = []
 
     for finding in findings:
         hash_id = finding.get('hash_id', '')
         if finding.get('resolution') not in _RESPONDABLE_RESOLUTIONS:
             continue
 
-        thread_id = _thread_id_from_detail(finding.get('detail'))
         reply_body = finding.get('resolution_detail') or ''
-        if not thread_id or not reply_body:
-            skipped.append({'hash_id': hash_id, 'reason': 'no thread_id or resolution_detail'})
+        if not reply_body:
+            skipped.append({'hash_id': hash_id, 'reason': 'no_resolution_detail'})
+            continue
+
+        thread_id = _thread_id_from_detail(finding.get('detail'))
+        if not thread_id:
+            batch.append((hash_id, _comment_id_from_detail(finding.get('detail')), reply_body))
             continue
 
         # Reply carrying the recorded disposition, then resolve — keyed by this
         # finding's own thread_id (relational, not positional).
         rc, _data, err = _github.run_graphql(THREAD_REPLY_MUTATION, {'threadId': thread_id, 'body': reply_body})
         if rc != 0:
-            failures.append({'hash_id': hash_id, 'thread_id': thread_id, 'error': f'thread-reply failed: {err}'})
+            untransmitted.append({'hash_id': hash_id, 'reason': f'thread-reply failed: {err}'})
             continue
         rc2, _data2, err2 = _github.run_graphql(RESOLVE_THREAD_MUTATION, {'threadId': thread_id})
         if rc2 != 0:
-            failures.append({'hash_id': hash_id, 'thread_id': thread_id, 'error': f'resolve-thread failed: {err2}'})
+            untransmitted.append({'hash_id': hash_id, 'reason': f'resolve-thread failed: {err2}'})
             continue
-        responded.append({'hash_id': hash_id, 'thread_id': thread_id})
+        responded.append(
+            {
+                'hash_id': hash_id,
+                'thread_id': thread_id,
+                'transmit_mode': 'thread_reply',
+                'resolved_on_provider': True,
+            }
+        )
+
+    if batch:
+        body = _build_batched_response_body([(comment_id, text) for _hash, comment_id, text in batch])
+        post_result = _github.post_pr_comment(pr_number, body)
+        if post_result.get('status') == 'success':
+            for hash_id, comment_id, _text in batch:
+                responded.append(
+                    {
+                        'hash_id': hash_id,
+                        'comment_id': comment_id,
+                        'transmit_mode': 'batched_issue_comment',
+                        'resolved_on_provider': False,
+                    }
+                )
+        else:
+            # The single post carries the WHOLE batch — one failure means every
+            # disposition in it is untransmitted.
+            reason = f'batched-comment post failed: {post_result.get("detail") or post_result.get("message") or ""}'
+            for hash_id, _comment_id, _text in batch:
+                untransmitted.append({'hash_id': hash_id, 'reason': reason})
 
     return {
-        'status': 'success',
+        'status': 'partial' if untransmitted else 'success',
         'operation': 'post_responses',
         'provider': 'github',
         'pr_number': pr_number,
         'plan_id': plan_id,
         'count_responded': len(responded),
         'count_skipped': len(skipped),
-        'count_failed': len(failures),
+        'count_untransmitted': len(untransmitted),
         'responded': responded,
         'skipped': skipped,
-        'failures': failures,
+        'untransmitted': untransmitted,
     }
 
 
@@ -793,7 +877,7 @@ Examples:
                         'flags': ['--enabled-bots'],
                         'dest': 'enabled_bots',
                         'help': (
-                            'Comma-joined enabled bot_kinds (e.g. "coderabbit,sourcery,gemini"). When '
+                            'Comma-joined enabled bot_kinds (e.g. "coderabbit,sourcery,pr-agent"). When '
                             'supplied, a comment whose derived bot_kind is non-empty and NOT in this set '
                             'files no finding — its bot is disabled for this plan/flow, so its re-review is '
                             'transitively suppressed. Human comments (bot_kind is None) always pass. Omit '

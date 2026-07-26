@@ -1216,7 +1216,7 @@ def post_pr_comment(pr_number: int | str, body: str) -> dict:
     """Post a comment on a PR via ``gh pr comment``.
 
     Used by the re-review strategy registry to post a bot review-trigger
-    comment (e.g. ``/gemini review``). Reuses the existing ``run_gh`` wrapper —
+    comment (e.g. ``/review``). Reuses the existing ``run_gh`` wrapper —
     no new HTTP path. Returns a structured envelope with ``status`` of
     ``success`` or ``error``.
     """
