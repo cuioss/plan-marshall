@@ -10,37 +10,131 @@ scan-marketplace-inventory.py, and other scripts that work with bundles.
 import os
 import re
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 
+def _partition_version_dirs(
+    bundle_dir: Path, is_candidate: Callable[[Path], bool]
+) -> tuple[list[Path], list[Path]]:
+    """Partition ``bundle_dir``'s version dirs into (eligible, live).
+
+    The ONE place the ``.orphaned_at`` marker is read and the ONE place the
+    retention pin is computed. :func:`select_live_version_dir` (which dir wins)
+    and :func:`live_version_dirs` (which dirs are live) are both thin views over
+    this partition, so the two can never disagree.
+
+    ``live`` is the subset of ``eligible`` whose marker does not disqualify it: an
+    unmarked dir, or the bundle's newest-on-disk (retention-pinned) dir whose mark
+    is ignored outright.
+    """
+    try:
+        version_dirs = [d for d in bundle_dir.iterdir() if d.is_dir() and not d.name.startswith('.')]
+    except OSError:
+        return [], []
+    if not version_dirs:
+        return [], []
+    pinned = max(version_dirs, key=lambda d: _version_sort_key(d.name))
+    eligible = [d for d in version_dirs if is_candidate(d)]
+    live = [d for d in eligible if d == pinned or not (d / '.orphaned_at').exists()]
+    return eligible, live
+
+
+def live_version_dirs(bundle_dir: Path, is_candidate: Callable[[Path], bool]) -> list[Path]:
+    """Return the eligible version dirs of ``bundle_dir`` the marker policy treats as live.
+
+    The plural view of the same policy :func:`select_live_version_dir` selects
+    from — it re-implements nothing, both delegate to
+    :func:`_partition_version_dirs`. Consumers that must COUNT live dirs (the
+    executor preflight's multi-version-pollution detector) use this; consumers
+    that need the ONE dir to resolve against use the selector.
+
+    Args:
+        bundle_dir: Directory whose immediate subdirectories are the version dirs.
+        is_candidate: Caller-supplied eligibility predicate over a version dir.
+
+    Returns:
+        The live version dirs (possibly empty), in ``iterdir`` order.
+    """
+    _eligible, live = _partition_version_dirs(bundle_dir, is_candidate)
+    return live
+
+
+def select_live_version_dir(bundle_dir: Path, is_candidate: Callable[[Path], bool]) -> Path | None:
+    """Select the live version directory of ``bundle_dir``, or ``None`` when none qualifies.
+
+    This is the single authority for the "which cached version dir is live?"
+    decision. Callers contribute ONLY their own eligibility predicate
+    (``is_candidate``: manifest present / requested subpath present / ``skills/``
+    present); liveness (the ``.orphaned_at`` marker semantics) and ordering (the
+    ``_version_sort_key`` numeric tuple) are decided here and nowhere else, so
+    two call sites in the same process can never resolve to different version
+    dirs.
+
+    Policy:
+
+    - The bundle's **newest-on-disk** version dir is retention-pinned: it is what
+      the highest-version-wins resolver — and the ``marshall-steward``
+      ``cache_retention sweep`` keep-union — actually selects, so a ``.orphaned_at``
+      mark on it is ignored outright. A mark is written at one point in time and
+      nothing clears it when pruning later promotes that dir to newest-on-disk,
+      so honouring the mark there would let a stale marker suppress the current
+      version.
+    - Otherwise a ``.orphaned_at`` mark disqualifies a candidate, and the
+      numerically-newest surviving candidate wins (tiers 1 and 2 of the former
+      ``find_bundles`` precedence collapse into this one selection: a live current
+      version is by construction the newest unmarked candidate).
+    - When *every* candidate is marked (saturation, reachable only when the pinned
+      dir is not itself a candidate), a degraded fallback returns the newest
+      candidate overall and emits a stderr line naming the bundle, the saturation
+      condition, and its remedy. This guarantees a bundle with an eligible version
+      dir on disk never contributes zero — the silent break the fallback closes —
+      while keeping the degraded state diagnosable (ADR-009) rather than
+      indistinguishable from routine noise.
+
+    Args:
+        bundle_dir: Directory whose immediate subdirectories are the version dirs.
+        is_candidate: Caller-supplied eligibility predicate over a version dir.
+
+    Returns:
+        The selected version dir, or ``None`` when ``bundle_dir`` is unreadable or
+        no subdirectory satisfies ``is_candidate``.
+    """
+    candidates, live = _partition_version_dirs(bundle_dir, is_candidate)
+    if not candidates:
+        return None
+    if live:
+        return max(live, key=lambda d: _version_sort_key(d.name))
+
+    newest = max(candidates, key=lambda d: _version_sort_key(d.name))
+    print(
+        f'marketplace_bundles.select_live_version_dir: DEGRADED (orphan-marker saturation) for bundle '
+        f"'{bundle_dir.name}' — all {len(candidates)} eligible version dir(s) carry .orphaned_at "
+        f'and 0 are live, so the marker carries no currency signal; falling back to '
+        f"newest eligible '{newest.name}'. Remedy: run the marshall-steward upgrade flow's "
+        f'cache-retention-sweep sub-step '
+        f'(plan-marshall:marshall-steward:cache_retention sweep) to prune the superseded '
+        f'version dirs; the executor preflight no longer marks the retention-pinned '
+        f'(newest-on-disk / provisioned / manifest-named) versions, so a re-run leaves at '
+        f'least one dir live.',
+        file=sys.stderr,
+    )
+    return newest
+
+
 def find_bundles(base_path: Path) -> list[Path]:
-    """Find bundle directories, selecting one version dir per bundle by precedence.
+    """Find bundle directories, selecting one version dir per bundle.
 
     Locates ``.claude-plugin/plugin.json`` files, then reduces each bundle to a
     single directory:
 
     - In the versioned plugin-cache layout (``.../plan-marshall/0.1-BETA/``), a
       directory whose name matches ``^\\d+\\.\\d+`` is a version directory. Version
-      directories sharing a parent belong to the same bundle and are reduced by a
-      three-tier precedence (a ``.orphaned_at`` marker is the currency signal — an
-      unmarked version dir is a live/current one, a marked one is stale):
-
-      1. the newest live (non-orphaned) version dir — this is the manifest-current
-         dir whenever the current version is live, since a live current version is
-         by construction the numerically-newest unmarked dir;
-      2. when the current version is orphaned but an older one is still live, the
-         newest remaining live dir (an orphaned dir can never shadow a live one);
-      3. when *every* version dir is orphaned, a degraded fallback selects the
-         newest-on-disk dir regardless of the orphan marker and emits a stderr log
-         line naming the bundle, the saturation condition, and its remedy. This
-         guarantees a bundle with any version dir on disk never contributes zero —
-         the silent-break the fallback closes — while keeping the degraded state
-         diagnosable (ADR-009) rather than indistinguishable from routine noise.
-
-      Tiers 1 and 2 both select ``max(live)``; the numeric ordering (via
-      ``_version_sort_key``, the same helper ``resolve_bundle_path`` and
-      ``collect_script_dirs`` use) makes the current-when-live case fall out of the
-      newest-live selection.
+      directories sharing a parent belong to the same bundle and are reduced by
+      :func:`select_live_version_dir`, to which this function contributes only its
+      eligibility predicate: "carries a ``.claude-plugin/plugin.json``". The
+      marker semantics and the ordering live in the selector, so this leg can
+      never diverge from ``resolve_bundle_path`` or ``collect_script_dirs``.
     - In the non-versioned marketplace layout, each bundle directory forms its own
       singleton group and passes through unchanged — even when its name happens to
       match the version-dir digit pattern (e.g. ``1.0-my-bundle``). The version-dir
@@ -63,32 +157,13 @@ def find_bundles(base_path: Path) -> list[Path]:
             singletons.append(bundle_dir)
 
     selected: list[Path] = list(singletons)
-    for version_dirs in versioned_groups.values():
-        live = [d for d in version_dirs if not (d / '.orphaned_at').exists()]
-        if live:
-            # Tiers 1 & 2: newest live (non-orphaned) version dir.
-            selected.append(max(live, key=lambda d: _version_sort_key(d.name)))
-        else:
-            # Tier 3: every version dir is orphaned. Degraded fallback — select the
-            # newest-on-disk dir regardless of the orphan marker so the bundle is
-            # never silently dropped, and log the degradation diagnosably (ADR-009):
-            # the line names the SATURATION CONDITION (all N dirs marked, zero live)
-            # and points at the remedy, so a permanently-degraded steady state reads
-            # as a defect rather than as routine noise.
-            newest = max(version_dirs, key=lambda d: _version_sort_key(d.name))
-            print(
-                f"marketplace_bundles.find_bundles: DEGRADED (orphan-marker saturation) for bundle "
-                f"'{newest.parent.name}' — all {len(version_dirs)} version dir(s) carry .orphaned_at "
-                f"and 0 are live, so the marker carries no currency signal; falling back to "
-                f"newest-on-disk '{newest.name}'. Remedy: run the marshall-steward upgrade flow's "
-                f"cache-retention-sweep sub-step "
-                f"(plan-marshall:marshall-steward:cache_retention sweep) to prune the superseded "
-                f"version dirs; the executor preflight no longer marks the retention-pinned "
-                f"(newest-on-disk / provisioned / manifest-named) versions, so a re-run leaves at "
-                f"least one dir live.",
-                file=sys.stderr,
-            )
-            selected.append(newest)
+    for parent, version_dirs in versioned_groups.items():
+        # Eligibility: "this version dir carries a .claude-plugin/plugin.json" —
+        # i.e. it is one of the dirs the rglob above discovered for this bundle.
+        group = set(version_dirs)
+        chosen = select_live_version_dir(parent, group.__contains__)
+        if chosen is not None:
+            selected.append(chosen)
     return sorted(selected)
 
 
@@ -117,20 +192,13 @@ def resolve_bundle_path(base_path: Path, bundle_name: str, subpath: str) -> Path
     bundle_dir = base_path / bundle_name
 
     if bundle_dir.is_dir():
-        # Select the NEWEST version dir that carries the subpath. Returning the
-        # lexically-first match (the old iterdir loop) let an older version dir
-        # (e.g. '1.0.0') shadow the current one ('1.0.10'), the same silent-stale
-        # class collect_script_dirs already guards against with its max() sort.
-        candidates = [
-            version_dir
-            for version_dir in bundle_dir.iterdir()
-            if version_dir.is_dir()
-            and not version_dir.name.startswith('.')
-            and (version_dir / subpath).exists()
-        ]
-        if candidates:
-            newest = max(candidates, key=lambda d: _version_sort_key(d.name))
-            return newest / subpath
+        # Eligibility only: "this version dir carries the requested subpath".
+        # Liveness and ordering are decided by select_live_version_dir, so this
+        # leg resolves to the same version dir as find_bundles and
+        # collect_script_dirs for any on-disk marker state.
+        selected = select_live_version_dir(bundle_dir, lambda d: (d / subpath).exists())
+        if selected is not None:
+            return selected / subpath
 
     return bundle_dir / subpath
 
@@ -164,24 +232,13 @@ def collect_script_dirs(base_path: Path) -> list[str]:
             continue
 
         # Determine base directories to scan for skills:
-        # versioned (plugin-cache) -> each version subdir; non-versioned -> bundle itself.
-        # Candidates are the version dirs that actually carry a skills/ tree.
-        try:
-            version_dirs = [
-                d
-                for d in bundle_dir.iterdir()
-                if d.is_dir() and not d.name.startswith('.') and (d / 'skills').is_dir()
-            ]
-        except OSError:
-            version_dirs = []
-        if version_dirs:
-            # Select ONLY the newest version dir per bundle. Scanning every
-            # version dir pollutes PYTHONPATH with multiple versions of the same
-            # script, so an older version can shadow the current one. The newest
-            # is chosen by a numeric version-tuple sort key.
-            scan_roots = [max(version_dirs, key=lambda d: _version_sort_key(d.name))]
-        else:
-            scan_roots = [bundle_dir]
+        # versioned (plugin-cache) -> the ONE live version subdir; non-versioned ->
+        # bundle itself. Scanning every version dir pollutes PYTHONPATH with
+        # multiple versions of the same script, so an older version can shadow the
+        # current one. Eligibility here is only "this version dir carries a skills/
+        # tree"; select_live_version_dir decides liveness and ordering.
+        selected = select_live_version_dir(bundle_dir, lambda d: (d / 'skills').is_dir())
+        scan_roots = [selected] if selected is not None else [bundle_dir]
 
         for root in scan_roots:
             skills_dir = root / 'skills'

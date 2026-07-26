@@ -289,20 +289,40 @@ This pattern enables:
 ### Version-aware bundle-path resolution
 
 The glob patterns above resolve a script path across a single *unknown* version
-segment. `resolve_bundle_path` (in `script-shared/scripts/marketplace_bundles.py`)
-is the version-*aware* counterpart used inside scripts that must pick ONE version
-dir when several coexist in the plugin cache. It selects the **newest** version dir
-that carries the requested subpath — parsing each version-dir name into a comparable
-integer tuple (`0.1.1069` → `(0, 1, 1069)`) via `_version_sort_key` and taking the
-`max` — then falls back to the non-versioned (marketplace) layout when no version
-dir matches.
+segment. `select_live_version_dir` (in
+`script-shared/scripts/marketplace_bundles.py`) is the version-*aware* counterpart
+used inside scripts that must pick ONE version dir when several coexist in the
+plugin cache. It is the **single function that decides liveness and ordering**:
+every call site — `find_bundles`, `resolve_bundle_path`, `collect_script_dirs`, and
+the executor preflight's own version-dir helpers — supplies only its own
+*eligibility* predicate (manifest present / requested subpath present / `skills/`
+present) and delegates the decision. `resolve_bundle_path` therefore contributes
+only "this version dir carries the requested subpath", then falls back to the
+non-versioned (marketplace) layout when no version dir qualifies.
 
-Selecting the newest match — rather than the lexically-first `iterdir` result — is
+The selector's policy: `_version_sort_key` remains the single ordering key
+underneath it (parsing each version-dir name into a comparable integer tuple,
+`0.1.1069` → `(0, 1, 1069)`); a `.orphaned_at` mark disqualifies a candidate
+**except** on the retention-pinned newest-on-disk dir, whose mark is ignored
+outright; and when every eligible dir is marked, the newest eligible dir is
+returned with a diagnosable stderr line.
+
+Selecting the live newest — rather than the lexically-first `iterdir` result — is
 load-bearing: a stale older version dir (e.g. `1.0.0` alongside `1.0.10`) would
-otherwise shadow the current one on the cross-skill import path. This is the same
-silent-stale multi-version-pollution class `collect_script_dirs` guards against with
-its own `max()` sort, and that the executor-staleness check surfaces via
-`_detect_multi_version_pollution`.
+otherwise shadow the current one on the cross-skill import path. Routing every leg
+through one selector additionally closes the *predicate-divergence* class, where a
+marker-aware leg and a marker-blind leg resolved to different version dirs and the
+generated executor ended up internally version-split; the executor-staleness check
+surfaces the on-disk condition via `_detect_multi_version_pollution`, and
+`generate_executor`'s Guard 4 refuses at write time to emit an executor whose paths
+span more than one version dir per bundle.
+
+The executor's own embedded runtime resolver (`_resolve_notation_by_target`, the
+`SCRIPTS`-miss fallback substituted into the generated file) carries a deliberate,
+docstring-marked **duplicate** of that policy: the generated executor is
+bootstrap-free and must resolve notations before any marketplace module is
+importable, so it cannot import the selector. The duplicate is minimal, consumes
+the same on-disk input set, and is pinned equivalent by test.
 
 > **Worked example — pre-merge source-edit contract.** Documenting this version-aware
 > resolution in its governing skill is a worked example of the

@@ -25,7 +25,7 @@ shim-to-external-executor split — every documented call site
 Self-checking, atomic regeneration:
     ``generate`` is fail-safe by construction — it never overwrites a working
     executor with a malformed one. After the template is read and all
-    placeholders are substituted, three deterministic guards run BEFORE any
+    placeholders are substituted, four deterministic guards run BEFORE any
     write: (1) a **format handshake** asserts the template's
     ``TEMPLATE_FORMAT_VERSION`` marker equals the generator's
     ``_SUPPORTED_TEMPLATE_FORMAT_VERSION`` constant (a skew is refused loudly
@@ -33,7 +33,12 @@ Self-checking, atomic regeneration:
     ``{{...}}`` placeholder token (template/generator placeholder-set
     disagreement); (3) a **py_compile self-check** compiles the substituted
     content in memory and, on ``SyntaxError``, returns ``status: error`` rather
-    than writing. Only a content that passes all three is committed, and the
+    than writing; (4) a **provenance guard** refuses a content whose emitted
+    paths carry more than one plugin-cache version dir for a single bundle (an
+    internally version-split executor), no-opping in the version-less
+    marketplace layout. Guards 1-3 are shape checks; guard 4 is the only one that
+    compares the emitted path families against each other.
+    Only a content that passes all four is committed, and the
     commit is **atomic** — written to a sibling temp path and ``os.replace``-d
     onto the real executor, so a partial or broken write can never leave a
     corrupt executor in place. Every regen caller (the meta upgrade path, the
@@ -133,10 +138,11 @@ SCRIPT_DIR = Path(__file__).parent.resolve()
 
 # Shared path resolution (from script-shared)
 from marketplace_bundles import (  # noqa: E402, I001
-    _version_sort_key,
     build_pythonpath,
     collect_script_dirs,
+    live_version_dirs,
     resolve_bundle_path,
+    select_live_version_dir,
 )
 from marketplace_paths import get_base_path as _shared_get_base_path  # noqa: E402, I001
 from file_ops import get_base_dir as _get_plan_base_dir  # noqa: E402, I001
@@ -461,21 +467,35 @@ def _resolve_notation_by_target(notation: str) -> str | None:
 
     Walks ``~/.claude/plugins/cache/plan-marshall/*/skills/{skill}/scripts/{script}.py``,
     collects EVERY version dir that carries the candidate script, and returns the
-    NEWEST one by numeric version-tuple.  Returning the newest (rather than the
-    first ``iterdir`` match) stops a stale, lexically-earlier version dir left on
-    disk from shadowing the current scripts — the same multi-version-pollution
-    class ``collect_script_dirs`` and ``resolve_bundle_path`` guard against with
-    their newest-only ``max()`` selection.  When the currently-pinned version dir
-    is pruned, a later invocation re-resolves at runtime to the newest surviving
-    version dir.  The ``bundle`` component of the notation is not used for path
-    construction (the Claude plugin cache is a flat, single-bundle install) but
-    may be useful for logging.
+    LIVE one under the same liveness-and-ordering policy the generation-time
+    selector applies: a ``.orphaned_at`` mark disqualifies a candidate EXCEPT on
+    the newest-on-disk (retention-pinned) version dir, whose mark is ignored
+    outright; the numerically-newest surviving candidate wins; and when every
+    candidate is marked, the newest candidate overall is returned.  Selecting the
+    live newest (rather than the first ``iterdir`` match) stops a stale version
+    dir left on disk from shadowing the current scripts.  When the currently-
+    pinned version dir is pruned, a later invocation re-resolves at runtime to the
+    newest surviving version dir.  The ``bundle`` component of the notation is not
+    used for path construction (the Claude plugin cache is a flat, single-bundle
+    install) but may be useful for logging.
+
+    DELIBERATE POLICY DUPLICATE — tracked authority:
+    ``marketplace_bundles.select_live_version_dir``.  This body is substituted
+    verbatim into the generated executor, which is bootstrap-free by construction:
+    it must resolve notations BEFORE any marketplace module is importable, so it
+    cannot import the selector without recreating the chicken-and-egg the executor
+    exists to break.  Both sides consume the same input set — the on-disk version
+    dirs and their ``.orphaned_at`` markers — so the copy is behaviourally
+    identical rather than approximate, and no manifest pin is needed on either
+    side.  This is the single sanctioned copy: any change to the selector's policy
+    MUST be mirrored here, and a test pins the two to the same verdict in every
+    marker state.
 
     Args:
         notation: Three-part notation ``{bundle}:{skill}:{script}``.
 
     Returns:
-        Absolute path string of the newest version dir's script, or ``None``
+        Absolute path string of the live version dir's script, or ``None``
         when no match is found.
     """
     import re
@@ -494,16 +514,23 @@ def _resolve_notation_by_target(notation: str) -> str | None:
         cache_root = Path.home() / '.claude' / 'plugins' / 'cache' / 'plan-marshall'
         if not cache_root.is_dir():
             return None
+        version_dirs = [d for d in cache_root.iterdir() if d.is_dir() and not d.name.startswith('.')]
+        if not version_dirs:
+            return None
+        pinned = max(version_dirs, key=lambda d: _version_key(d.name))
         candidates = []
-        for version_dir in cache_root.iterdir():
-            if not version_dir.is_dir() or version_dir.name.startswith('.'):
-                continue
+        for version_dir in version_dirs:
             candidate = version_dir / 'skills' / skill / 'scripts' / f'{script}.py'
             if candidate.is_file():
-                candidates.append((version_dir.name, candidate))
+                candidates.append((version_dir, candidate))
         if candidates:
-            _name, newest = max(candidates, key=lambda pair: _version_key(pair[0]))
-            return str(newest.resolve())
+            live = [
+                pair
+                for pair in candidates
+                if pair[0] == pinned or not (pair[0] / '.orphaned_at').exists()
+            ]
+            _dir, selected = max(live or candidates, key=lambda pair: _version_key(pair[0].name))
+            return str(selected.resolve())
     except (OSError, ValueError, RuntimeError):
         pass
     return None
@@ -671,6 +698,76 @@ _TEMPLATE_FORMAT_VERSION_RE = re.compile(r'^#\s*TEMPLATE_FORMAT_VERSION:\s*(\d+)
 # Matches any residual ``{{...}}`` placeholder token that survived substitution.
 _UNSUBSTITUTED_PLACEHOLDER_RE = re.compile(r'\{\{[^{}]*\}\}')
 
+# Matches a plugin-cache version-directory name (``0.1.1194``, ``0.1-BETA``) —
+# the same shape ``marketplace_bundles`` treats as a version dir.
+_VERSION_DIR_NAME_RE = re.compile(r'^\d+\.\d+')
+
+
+def _split_bundle_version(path: str) -> tuple[str, str] | None:
+    """Return ``(bundle, version_dir)`` for a path inside a versioned cache layout.
+
+    A plugin-cache path is ``{base}/{bundle}/{version}/skills/...``, so the owning
+    bundle is the segment immediately preceding the first version-shaped segment.
+    Returns ``None`` for a path carrying no version-dir segment — the marketplace
+    layout, where the provenance guard has nothing to compare.
+    """
+    parts = Path(path).parts
+    for index, part in enumerate(parts):
+        if index > 0 and _VERSION_DIR_NAME_RE.match(part):
+            return parts[index - 1], part
+    return None
+
+
+def _check_emitted_path_provenance(emitted_paths: list[str]) -> dict | None:
+    """Return an error dict when any bundle's emitted paths span >1 version dir.
+
+    Guard 4. The generator composes the executor from two independently-resolved
+    path families — the notation→path ``mappings`` (discovered through
+    ``find_bundles``) and the ``sys.path`` / PYTHONPATH entries (resolved through
+    ``resolve_bundle_path`` and ``collect_script_dirs``). A single selector now
+    makes them agree by construction; this guard is the fail-closed proof of that
+    agreement at the write boundary, extending ADR-009's fail-closed principle
+    from status reads to a generation write: never report success for an artifact
+    whose internal consistency was never checked.
+
+    No-ops (returns ``None``) when the emitted paths carry no version-dir segment,
+    which is the marketplace layout.
+
+    Args:
+        emitted_paths: Every path the generated executor will embed.
+
+    Returns:
+        ``None`` when every bundle contributes exactly one version dir, else a
+        ``{'status': 'error', 'error': ...}`` dict naming the bundle and the
+        conflicting version dirs.
+    """
+    by_bundle: dict[str, set[str]] = {}
+    for path in emitted_paths:
+        split = _split_bundle_version(path)
+        if split is None:
+            continue
+        bundle, version = split
+        by_bundle.setdefault(bundle, set()).add(version)
+
+    for bundle in sorted(by_bundle):
+        versions = by_bundle[bundle]
+        if len(versions) > 1:
+            conflicting = ', '.join(sorted(versions))
+            return {
+                'status': 'error',
+                'error': (
+                    f"Version-split executor refused: bundle '{bundle}' contributes emitted paths "
+                    f'from more than one version dir ({conflicting}). The generated executor would '
+                    f'carry script mappings and import paths from different versions of the same '
+                    f'bundle. No executor was written and any pre-existing executor was left '
+                    f'untouched. Remedy: run the marshall-steward upgrade flow\'s '
+                    f'cache-retention-sweep sub-step '
+                    f'(plan-marshall:marshall-steward:cache_retention sweep) to prune the '
+                    f'superseded version dirs, then regenerate.'
+                ),
+            }
+    return None
+
 
 def parse_template_format_version(template: str) -> int | None:
     """Parse the ``# TEMPLATE_FORMAT_VERSION: N`` marker from template text.
@@ -697,7 +794,7 @@ def generate_executor(
     """
     Generate execute-script.py with embedded mappings.
 
-    After the template is read and all placeholders are substituted, three
+    After the template is read and all placeholders are substituted, four
     deterministic guards run BEFORE any write, so a malformed generation can
     never overwrite a working executor:
 
@@ -707,11 +804,18 @@ def generate_executor(
     2. **Residue guard** — any surviving ``{{...}}`` placeholder token (a
        placeholder the generator did not fill, or one a newer template
        introduced) returns a ``status: error`` dict and writes nothing.
-    3. **py_compile self-check + atomic write** — the substituted content is
-       compiled in memory; a ``SyntaxError`` returns a ``status: error`` dict
-       leaving any pre-existing executor byte-identical, and a clean compile is
-       written to a sibling temp path and ``os.replace``-d onto the real
-       executor so a partial write can never leave a corrupt executor in place.
+    3. **py_compile self-check** — the substituted content is compiled in memory;
+       a ``SyntaxError`` returns a ``status: error`` dict leaving any pre-existing
+       executor byte-identical.
+    4. **Provenance guard + atomic write** — every emitted path (the ``mappings``
+       values, the shared-module dirs, the logging dir, and the collected script
+       dirs) is grouped by owning bundle; a bundle contributing paths from more
+       than one plugin-cache version dir returns a ``status: error`` dict naming
+       the bundle and the conflicting version dirs, again leaving any pre-existing
+       executor byte-identical. The guard no-ops in the version-less marketplace
+       layout. A content passing all four guards is written to a sibling temp path
+       and ``os.replace``-d onto the real executor so a partial write can never
+       leave a corrupt executor in place.
 
     Args:
         mappings: Script notation to path mappings
@@ -829,6 +933,20 @@ def generate_executor(
                 f'malformed executor. Any pre-existing executor was left untouched.'
             ),
         }
+
+    # Guard 4 — provenance guard: refuse a content whose emitted paths carry more
+    # than one version dir for a single bundle (an internally version-split
+    # executor). Shape checks 1-3 cannot see this class; only comparing the path
+    # families against each other can.
+    emitted_paths = [
+        *mappings.values(),
+        *(d.as_posix() for d in shared_dirs),
+        logging_dir,
+        *all_script_dirs,
+    ]
+    provenance_error = _check_emitted_path_provenance(emitted_paths)
+    if provenance_error is not None:
+        return provenance_error
 
     # Atomic write: write to a sibling temp path and os.replace() it onto the
     # real executor so a partial/broken write can never leave a corrupt executor
@@ -1537,39 +1655,29 @@ def cmd_cleanup(args: argparse.Namespace) -> dict:
     return {'status': 'success', 'deleted': deleted}
 
 
+def _carries_skills_tree(version_dir: Path) -> bool:
+    """Eligibility predicate: this version dir carries a ``skills/`` tree.
+
+    The ONLY thing this module contributes to the version-dir decision. Liveness
+    (the ``.orphaned_at`` marker semantics) and ordering belong to
+    ``marketplace_bundles.select_live_version_dir`` / ``live_version_dirs``, so
+    ``_detect_multi_version_pollution``, ``_retention_pinned_versions`` and
+    ``_mark_superseded_version_dirs`` agree with the resolvers by construction.
+    """
+    return (version_dir / 'skills').is_dir()
+
+
 def _live_version_dirs(bundle_dir: Path) -> list[Path]:
-    """Return the LIVE (non-orphaned) version dirs directly under ``bundle_dir``.
+    """Return the LIVE version dirs directly under ``bundle_dir``.
 
-    A version dir qualifies when it is a directory, not dot-prefixed, carries a
-    ``skills/`` tree, and does NOT carry the ``.orphaned_at`` deferral marker.
-    Shared by ``_detect_multi_version_pollution`` (which counts them) and
-    ``_mark_superseded_version_dirs`` (which marks every non-newest one) so the
-    "what counts as live" predicate is encoded once. Raises ``OSError`` on an
-    unreadable ``bundle_dir`` — callers catch it.
+    A thin view over the shared policy: the version dirs carrying a ``skills/``
+    tree that ``marketplace_bundles.live_version_dirs`` treats as live — unmarked,
+    or the retention-pinned newest-on-disk dir whose ``.orphaned_at`` mark is
+    ignored outright. Shared by :func:`_detect_multi_version_pollution` (which
+    counts them) and :func:`_mark_superseded_version_dirs` (which marks every
+    non-newest, non-pinned one). Returns ``[]`` on an unreadable ``bundle_dir``.
     """
-    return [
-        d
-        for d in bundle_dir.iterdir()
-        if d.is_dir()
-        and not d.name.startswith('.')
-        and (d / 'skills').is_dir()
-        and not (d / '.orphaned_at').exists()
-    ]
-
-
-def _all_version_dirs(bundle_dir: Path) -> list[Path]:
-    """Return EVERY version dir under ``bundle_dir``, marked or not.
-
-    The marker-blind counterpart of :func:`_live_version_dirs`. The retention
-    pin-set is computed over this list on purpose: the newest dir ON DISK is what
-    the highest-version-wins resolver actually selects, whether or not a previous
-    run marked it. Raises ``OSError`` on an unreadable ``bundle_dir``.
-    """
-    return [
-        d
-        for d in bundle_dir.iterdir()
-        if d.is_dir() and not d.name.startswith('.') and (d / 'skills').is_dir()
-    ]
+    return live_version_dirs(bundle_dir, _carries_skills_tree)
 
 
 def _retention_pinned_versions(base_path: Path | None, bundle_dir: Path) -> set[str]:
@@ -1581,13 +1689,15 @@ def _retention_pinned_versions(base_path: Path | None, bundle_dir: Path) -> set[
     named by ``marshal.json``'s ``system.provisioned_version``, and the version
     named by the installed ``dist-manifest.json``.
 
-    Pinning these is what makes marker saturation structurally impossible: the
-    newest-on-disk dir is pinned unconditionally, so at least one live (unmarked)
-    version dir always survives per bundle. Without the pin, a run whose newest
-    dir was already marked promotes an OLDER dir to "newest live" and marks the
-    rest, and the cascade converges on zero live dirs — which renders
+    Pinning these is what makes marker saturation structurally impossible: the dir
+    the resolver selects is pinned unconditionally, so at least one live version
+    dir always survives per bundle. Without the pin, a run whose newest dir was
+    already marked promotes an OLDER dir to "newest live" and marks the rest, and
+    the cascade converges on zero live dirs — which renders
     :func:`_detect_multi_version_pollution` vacuous and forces
     ``marketplace_bundles.find_bundles`` into its degraded all-orphaned fallback.
+    The disk arm is read from ``select_live_version_dir`` itself rather than
+    re-derived here, so the pin names exactly the dir the resolvers select.
 
     Args:
         base_path: The resolved bundles/cache root, or ``None``.
@@ -1597,12 +1707,9 @@ def _retention_pinned_versions(base_path: Path | None, bundle_dir: Path) -> set[
         The set of pinned version-directory names (possibly empty).
     """
     pinned: set[str] = set()
-    try:
-        version_dirs = _all_version_dirs(bundle_dir)
-    except OSError:
-        version_dirs = []
-    if version_dirs:
-        pinned.add(max(version_dirs, key=lambda d: _version_sort_key(d.name)).name)
+    selected = select_live_version_dir(bundle_dir, _carries_skills_tree)
+    if selected is not None:
+        pinned.add(selected.name)
     provisioned = read_marshal_provisioned_version()
     if provisioned and provisioned != 'unknown':
         pinned.add(provisioned)
@@ -1632,11 +1739,14 @@ def _detect_multi_version_pollution(base_path: Path | None) -> list[str]:
     (unmarked) version dir per bundle and reports ``executor_action: fresh``
     instead of regenerating on every run.
 
-    The count cannot be rendered vacuous by marker saturation:
-    :func:`_mark_superseded_version_dirs` never marks a retention-pinned version
-    (see :func:`_retention_pinned_versions`), so the newest-on-disk dir always
-    stays live and every bundle with a version dir on disk contributes at least
-    one.
+    The count cannot be rendered vacuous by marker saturation, and the guarantee
+    is now structural rather than merely procedural: the shared selector ignores a
+    ``.orphaned_at`` mark on the retention-pinned dir outright (see
+    ``marketplace_bundles.select_live_version_dir``), so that dir stays live even
+    if a legacy pass marked it, and every bundle with a version dir on disk
+    contributes at least one. :func:`_mark_superseded_version_dirs` additionally
+    never writes a mark onto a pinned version (see
+    :func:`_retention_pinned_versions`).
     """
     if base_path is None or not base_path.is_dir():
         return []
@@ -1645,11 +1755,7 @@ def _detect_multi_version_pollution(base_path: Path | None) -> list[str]:
         for bundle_dir in base_path.iterdir():
             if not bundle_dir.is_dir() or bundle_dir.name.startswith('.'):
                 continue
-            try:
-                version_dirs = _live_version_dirs(bundle_dir)
-            except OSError:
-                continue
-            if len(version_dirs) > 1:
+            if len(_live_version_dirs(bundle_dir)) > 1:
                 polluted.append(bundle_dir.name)
     except OSError:
         pass
@@ -1657,14 +1763,14 @@ def _detect_multi_version_pollution(base_path: Path | None) -> list[str]:
 
 
 def _mark_superseded_version_dirs(base_path: Path | None, polluted_bundles: list[str]) -> None:
-    """Mark the superseded (non-newest) version dirs of each polluted bundle.
+    """Mark the superseded (non-pinned) version dirs of each polluted bundle.
 
-    For every polluted bundle, keep the numerically-newest live version dir (the
-    one ``collect_script_dirs`` embeds after a regen) and stamp every OTHER live
-    version dir with the ``.orphaned_at`` deferral marker — EXCEPT any version
-    the retention policy pins (see :func:`_retention_pinned_versions`: the
-    newest-on-disk, the ``marshal.json``-provisioned, and the manifest-named
-    versions). Pinning is what makes marker saturation structurally impossible;
+    For every polluted bundle, stamp every live version dir with the
+    ``.orphaned_at`` deferral marker EXCEPT the versions the retention policy pins
+    (see :func:`_retention_pinned_versions`: the dir the shared selector resolves
+    to — which ``collect_script_dirs`` embeds after a regen — plus the
+    ``marshal.json``-provisioned and the manifest-named versions). Pinning is what
+    makes marker saturation structurally impossible;
     without it the marker converges on "every dir marked, none live", which
     renders the pollution detector vacuous and forces
     ``marketplace_bundles.find_bundles`` permanently into its degraded
@@ -1682,9 +1788,9 @@ def _mark_superseded_version_dirs(base_path: Path | None, polluted_bundles: list
     version dir per bundle and no longer regenerates.
 
     The marker content is a fresh ISO-8601 UTC timestamp. The write is idempotent
-    by construction — an already-marked dir is never re-selected (the newest-live
-    scan excludes marked dirs), so the clock is never reset on a dir that was
-    already marked.
+    by construction — an already-marked dir is not live (the shared liveness view
+    excludes marked dirs) unless it is pinned, and a pinned dir is never marked,
+    so the clock is never reset on a dir that was already marked.
     """
     if base_path is None:
         return
@@ -1693,16 +1799,12 @@ def _mark_superseded_version_dirs(base_path: Path | None, polluted_bundles: list
         bundle_dir = base_path / bundle_name
         if not bundle_dir.is_dir():
             continue
-        try:
-            live_version_dirs = _live_version_dirs(bundle_dir)
-        except OSError:
-            continue
-        if len(live_version_dirs) <= 1:
+        live_dirs = _live_version_dirs(bundle_dir)
+        if len(live_dirs) <= 1:
             continue
         pinned = _retention_pinned_versions(base_path, bundle_dir)
-        newest = max(live_version_dirs, key=lambda d: _version_sort_key(d.name))
-        for version_dir in live_version_dirs:
-            if version_dir == newest or version_dir.name in pinned:
+        for version_dir in live_dirs:
+            if version_dir.name in pinned:
                 continue
             try:
                 (version_dir / '.orphaned_at').write_text(marker_ts, encoding='utf-8')
