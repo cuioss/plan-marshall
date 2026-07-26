@@ -105,7 +105,7 @@
           "lane": "minimal"
         },
         "plan-marshall:automatic-review": {
-          "enabled_bots": "coderabbit,sourcery,gemini",
+          "enabled_bots": "coderabbit,sourcery,pr-agent",
           "review_bot_buffer_seconds": 180,
           "re_review_on_loopback": false,
           "re_review_on_branch_cleanup": true,
