@@ -43,6 +43,19 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ## Recording Lessons
 
+### Orchestration context
+
+In orchestration context — a plan launched from an epic's staged plan spec — the three-gate policy and the global-store write below are **not applicable at all**, at either write-site. The plan makes zero `manage-lessons add` calls from any finalize step and routes every emitted item to its epic's `inbox/` OUTBOX instead. Classification is deferred to the orchestrator-side pickup, because only the orchestrator holds the cross-plan context that judgement needs.
+
+The write-site set is **two**, and this is the one place a reader learns it:
+
+| Write-site | Orchestrated branch |
+|------------|---------------------|
+| [`../workflow/lessons-capture.md`](../workflow/lessons-capture.md) § "Orchestration branch" | Zero `manage-lessons add`, zero `architecture enrich`; one `kind: landing` message per run plus one `kind: candidate-lesson` per candidate. |
+| [`../../plan-retrospective/SKILL.md`](../../plan-retrospective/SKILL.md) Step 5b | Zero `manage-lessons add`; Step 5a dedup and the `already_closed` deletion path do not run; every proposal rides as one `kind: candidate-lesson` message. |
+
+The envelope schema is owned by [`../../marshall-orchestrator/standards/inbox-envelope.md`](../../marshall-orchestrator/standards/inbox-envelope.md) and the branch mechanics by the two documents above; neither is restated here.
+
 Before recording any new lesson, run the canonical before-recording gate sequence in [`../../manage-lessons/standards/lesson-creation-policy.md`](../../manage-lessons/standards/lesson-creation-policy.md): Gate 1 (dedup against the existing corpus), Gate 2 (active-plan check), then Gate 3 (create). That standard is authoritative for the gate mechanics; the two-step path-allocate flow below is Gate 3, reached only when Gates 1 and 2 both clear. When Gate 1 returns `merge_into` / `already_closed` or Gate 2 finds a covering active plan, extend the existing lesson or fold into the plan instead of allocating a new one.
 
 For each notable finding that clears the gates, follow the two-step path-allocate flow (the single supported API — there is no `--detail` inline form):

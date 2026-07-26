@@ -33,7 +33,10 @@ See also `standards/lessons-integration.md` for conceptual guidance on when and 
 
 **Dispatcher-level Signal Gate precondition (B4)**: This body NO LONGER carries the three-signal Signal Gate. The deterministic three-signal precondition (pending Q-Gate findings, automated-review outcome, script-failure clusters) has been relocated to `phase-6-finalize/SKILL.md` Step 3 § "Lessons-capture Signal Gate" (item 4b in the dispatch loop) so the envelope spawn cost is avoided when all three signals are zero. The semantics are preserved bit-for-bit: when the dispatcher observes all three counts zero, it records `mark-step-done --outcome skipped --display-detail "no lesson-bearing signals"` directly and this workflow body is NOT dispatched. Reaching this body therefore PROVES at least one signal was non-zero — the body proceeds straight into the three-step path-allocate flow below without re-evaluating any signals.
 
-**Gate counts as runtime inputs**: The dispatcher forwards the three observed counts on the prompt body so the body never re-issues the signal queries. The available runtime inputs are:
+**Gate counts and orchestration context as runtime inputs**: The dispatcher forwards the three observed counts AND the once-per-run orchestration verdict on the prompt body so the body never re-issues the signal queries and never re-issues the orchestration detection. The available runtime inputs are:
+
+- `orchestrated` — bool; `true` when this plan was launched from an epic's staged plan spec. Resolved once per finalize run by the dispatcher (`phase-6-finalize/SKILL.md` Step 3 item 4b.a0) via `manage-plan-documents request read --section source_id` then `orchestrator inbox detect`. The body MUST NOT re-issue either call.
+- `epic` — string; the epic slug when `orchestrated` is `true`, the empty string otherwise. Same must-not-recompute obligation.
 
 - `signal_qgate_pending_count` — integer; sum across `2-refine`, `3-outline`, `4-plan`, `5-execute`, `6-finalize`.
 - `signal_automated_review_count` — integer (0 or 1); 1 when the `automated-review` step had an outstanding/non-done state (outcome anything other than `done`, or its `display_detail` reports a non-zero promoted-comment count) OR when the run remediated one or more actionable review-bot findings (`manage-findings list --type pr-comment --resolution fixed` returned `filtered_count >= 1`). The remediated-in-run trigger fires the signal even when the step `outcome=done` and zero comments are outstanding at gate-evaluation time — a review-bot finding caught-and-fixed in-run is exactly the slipped-then-caught defect class lessons-capture exists to record.
@@ -63,6 +66,38 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 ```
 
 ## Execution
+
+### Orchestration branch (evaluate FIRST)
+
+Branch on the `orchestrated` runtime input before anything else. The branch supersedes the ACTIONABLE/KNOWLEDGE partition and the three-gate lesson-creation policy for the orchestrated case.
+
+- **`orchestrated: false`** — every existing path below is unchanged: the ACTIONABLE/KNOWLEDGE partition, the three-gate policy, the three-step path-allocate `manage-lessons` flow, and Branches A / B / B2 / B3. Continue at "The dispatcher-level Signal Gate…" below.
+- **`orchestrated: true`** — make **zero** `manage-lessons add` calls and **zero** `architecture enrich` calls for lesson-shaped output, and do NOT run the ACTIONABLE/KNOWLEDGE partition or the three-gate policy. Classification is deferred to the orchestrator-side pickup, because only the orchestrator holds the cross-plan context that judgement needs. Follow the message-emission contract immediately below, then record **Branch B4**.
+
+#### Orchestrated emission contract
+
+Message granularity is **one message per emitted item** — that is what the envelope's sequence exists to allocate:
+
+- Exactly **one `kind: landing` message per orchestrated finalize run**, emitted unconditionally — including at zero signals. This is why the dispatcher's three-zero short-circuit carries the orchestration carve-out.
+- **One `kind: candidate-lesson` message per candidate.** Every candidate lesson and every finding rides as `candidate-lesson`; the plan performs **no** global-vs-epic classification.
+
+For each message, stage the payload body with the `Write` tool first, then write it:
+
+```text
+Write {plan_dir}/work/inbox-payload.md
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator inbox write \
+  --slug {epic} --sender-type plan --sender-id {plan_id} --kind {kind} \
+  --payload-file {plan_dir}/work/inbox-payload.md
+```
+
+Staging the body with `Write` first is the same shell-safety reason the lesson three-step flow exists — the anti-pattern list below (inline `python -c`, `$(printf …)`, `#`-bearing heredocs) applies verbatim to inbox payload bodies. See [`../../marshall-orchestrator/standards/inbox-envelope.md`](../../marshall-orchestrator/standards/inbox-envelope.md) for the envelope schema, the `kind` enum, and the header-field table; do not restate them here.
+
+Branch B4 writes only under `.plan/`, so the dispatcher's post-step porcelain check observes an empty tree — the `mutates_source: true` frontmatter fact is unchanged and B4 is an item-5f case-(c) no-op, exactly like Branch A.
+
+### Non-orchestrated execution
 
 The dispatcher-level Signal Gate (see header above, and `phase-6-finalize/SKILL.md` Step 3 item 4b) has already certified that at least one of the three signal sources is non-zero before this body runs. Proceed to the `Skill: plan-marshall:manage-lessons` load below, then run the three-gate lesson-creation policy before allocating any new lesson.
 
@@ -195,15 +230,24 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
   --display-detail "{N} fact(s) routed to architecture"
 ```
 
+**Branch B4 — routed to epic inbox, no global-store write**: the `orchestrated: true` branch fired; every emitted item was written as one inbox message and zero `manage-lessons add` / `architecture enrich` calls were made. `{N}` is the count of `orchestrator inbox write` calls made in this step (always ≥ 1 — the `kind: landing` message is unconditional).
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
+  --plan-id {plan_id} --phase 6-finalize --step lessons-capture --outcome done \
+  --display-detail "{N} inbox message(s) -> epic {epic}"
+```
+
 **Branch C — no lesson-bearing signals (skip)**: NOT emitted by this body. The `outcome=skipped` recording is now the dispatcher's responsibility (see `phase-6-finalize/SKILL.md` Step 3 item 4b) and fires before this workflow is dispatched. This body only runs when at least one signal was non-zero, so its `mark-step-done` calls are exclusively Branches A or B above.
 
 ## Output
 
 ```toon
 status: success | error
-display_detail: "<{N} lessons recorded or `no lessons recorded` or `{N} fact(s) routed to architecture`>"
+display_detail: "<{N} lessons recorded or `no lessons recorded` or `{N} fact(s) routed to architecture` or `{N} inbox message(s) -> epic {epic}`>"
 lessons_recorded: {N}
 facts_routed: {N}
+inbox_messages_written: {N}
 ```
 
-`lessons_recorded` is the count of `manage-lessons add` calls made in this step (Branch A); it is `0` for Branches B, B2, and B3. `facts_routed` is the count of `architecture enrich` calls made in this step (Branch B3); it is `0` when no KNOWLEDGE signals were processed. Downstream consumers MUST check `facts_routed` to distinguish a B3 (all-KNOWLEDGE) outcome from a B/B2 (nothing lesson-worthy) outcome — both set `lessons_recorded: 0` but only B3 sets a non-zero `facts_routed`. The `display_detail` value (≤80 chars, ASCII, no trailing period) is forwarded verbatim via `mark-step-done --display-detail` above.
+`lessons_recorded` is the count of `manage-lessons add` calls made in this step (Branch A); it is `0` for Branches B, B2, B3, and B4. `facts_routed` is the count of `architecture enrich` calls made in this step (Branch B3); it is `0` when no KNOWLEDGE signals were processed and `0` on B4. `inbox_messages_written` is the count of `orchestrator inbox write` calls made in this step (Branch B4); it is `0` on every non-orchestrated branch and always `≥ 1` on B4. Downstream consumers MUST check `facts_routed` and `inbox_messages_written` to distinguish the three zero-lesson outcomes: B3 (all-KNOWLEDGE) sets a non-zero `facts_routed`, B4 (routed to the epic inbox) sets a non-zero `inbox_messages_written`, and B/B2 (nothing lesson-worthy) leaves both `0` — all three set `lessons_recorded: 0`. The `display_detail` value (≤80 chars, ASCII, no trailing period) is forwarded verbatim via `mark-step-done --display-detail` above.
