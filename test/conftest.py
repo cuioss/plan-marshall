@@ -39,13 +39,12 @@ TEST_FIXTURE_BASE = PROJECT_ROOT / PLAN_DIR_NAME / 'temp' / 'test-fixture'
 # Pytest Collection Configuration
 # =============================================================================
 
-# Integration tests with unresolvable import dependencies (``integration_common``,
-# pm-dev-java ``extension`` module) — never resolvable in the unit-test
-# PYTHONPATH and therefore always excluded from default collection.
+# Real-tree smoke tests — each spawns a scanner against the actual
+# marketplace/bundles/ tree or the live executor, so they are slow and
+# environment-coupled. They are excluded from default collection; the
+# equivalent per-shape coverage lives in the in-process synthetic units named
+# beside each entry.
 collect_ignore = [
-    'plan-marshall/integration/discover_modules/test_gradle_discover_modules_integration.py',
-    'plan-marshall/integration/discover_modules/test_maven_discover_modules.py',
-    'plan-marshall/integration/module_aggregation/test_hybrid_merge.py',
     # Real-tree smoke that walks the actual marketplace/bundles/ tree — kept out
     # of the default module-tests run so it uses only the in-process synthetic
     # units in tools-marketplace-inventory/test_scan_marketplace_inventory.py.

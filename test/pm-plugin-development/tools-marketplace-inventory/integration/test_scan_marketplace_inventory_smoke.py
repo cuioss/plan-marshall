@@ -3,8 +3,8 @@
 """Real-tree integration smokes for scan-marketplace-inventory.py.
 
 EXCLUDED from the default ``module-tests`` run — registered in the root
-``test/conftest.py`` ``collect_ignore`` list, mirroring the established
-``test/plan-marshall/integration/`` segregation pattern. These are the only
+``test/conftest.py`` ``collect_ignore`` list, which is the segregation
+mechanism for every real-tree smoke in the suite. These are the only
 tests that walk the REAL ``marketplace/bundles/`` tree (or shell ``find`` over
 it); the per-filter / per-field / content-filtering coverage lives in the
 sibling in-process unit suite (``test_scan_marketplace_inventory.py``) against a

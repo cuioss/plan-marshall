@@ -3,8 +3,8 @@
 """Real-tree integration smokes for resolve-dependencies.py.
 
 EXCLUDED from the default ``module-tests`` run — registered in the root
-``test/conftest.py`` ``collect_ignore`` list, mirroring the established
-``test/plan-marshall/integration/`` segregation pattern. These are the only
+``test/conftest.py`` ``collect_ignore`` list, which is the segregation
+mechanism for every real-tree smoke in the suite. These are the only
 ``resolve-dependencies`` tests that build a dependency index over the REAL
 ``marketplace/bundles/`` tree; the per-subcommand / per-filter / output-format
 coverage lives in the sibling in-process unit suite

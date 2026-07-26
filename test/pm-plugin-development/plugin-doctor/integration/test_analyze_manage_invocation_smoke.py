@@ -4,8 +4,8 @@
 """Real-tree integration smokes for the manage-invocation analyzer.
 
 EXCLUDED from the default ``module-tests`` run — registered in the root
-``test/conftest.py`` ``collect_ignore`` list, mirroring the established
-``test/plan-marshall/integration/`` segregation pattern. These are the only
+``test/conftest.py`` ``collect_ignore`` list, which is the segregation
+mechanism for every real-tree smoke in the suite. These are the only
 manage-invocation tests that probe the REAL ``.plan/execute-script.py``
 executor and derive a real script's ``--help`` surface; the per-shape /
 per-finding-type coverage lives in the sibling in-process unit suite
