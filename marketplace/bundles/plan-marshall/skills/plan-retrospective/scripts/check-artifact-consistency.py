@@ -12,11 +12,12 @@ Checks performed:
   ``TASK-*.json`` whose ``deliverable`` field aligns with its index.
 - ``affected_files_recall`` — files declared in the solution outline's
   ``Affected files:`` bullets appear in the resolved plan footprint with
-  >= 70% coverage. When the outline declares at least one deliverable but no
-  bullet could be extracted, the check reports ``fail`` naming the parse
-  failure — an empty declared set is never reported as a benign ``skip``.
-  ``skip`` is retained only when the outline genuinely declares no
-  deliverables.
+  >= 70% coverage. The declaration state is read **per deliverable**: any
+  deliverable whose own content carries the ``Affected files:`` heading but
+  from which no bullet could be parsed reports ``fail``, naming that
+  deliverable — even when sibling deliverables declared files and the
+  aggregate declared set is non-empty. ``skip`` is retained only when no
+  deliverable declares an ``Affected files`` section at all.
 - ``affected_files_exact_match`` — the declared set and the resolved footprint
   agree exactly. A both-empty comparison substantiates nothing and reports
   ``inconclusive``, never ``pass``.
@@ -39,6 +40,7 @@ from typing import Any
 from _plan_parsing import (
     extract_deliverable_headings,
     parse_document_sections,
+    split_deliverable_blocks,
 )
 from _references_core import (
     compute_plan_branch_diff,
@@ -198,6 +200,48 @@ def extract_affected_files_per_deliverable(content: str) -> list[str]:
     return files
 
 
+def _declaration_state_per_deliverable(solution_content: str) -> list[dict[str, Any]]:
+    """Return the per-deliverable ``Affected files:`` declaration state.
+
+    For each ``### N. Title`` block of the outline's Deliverables section,
+    records whether that block's OWN content carries the ``**Affected files:**``
+    heading and, when it does, the bullets :data:`_AFFECTED_FILE_BULLET_RE`
+    extracts from it — truncated at the next ``**Field:**`` heading exactly as
+    :func:`extract_affected_files_per_deliverable` does for the aggregate.
+
+    Attribution is per deliverable so a heading that parses to zero bullets is
+    detectable even when sibling deliverables declared files, which the
+    aggregate (flattened) view cannot express.
+
+    Returns:
+        List of dicts with 'number', 'title', 'heading_present', 'files' keys,
+        in document order.
+    """
+    sections = parse_document_sections(solution_content)
+    deliverables_section = sections.get('deliverables', '')
+
+    states: list[dict[str, Any]] = []
+    for block in split_deliverable_blocks(deliverables_section):
+        blocks = re.split(r'\*\*Affected files:\*\*', block['content'])
+        files: list[str] = []
+        for chunk_source in blocks[1:]:
+            chunk = re.split(r'\*\*[A-Z][^*]+:\*\*', chunk_source, maxsplit=1)[0]
+            for match in _AFFECTED_FILE_BULLET_RE.finditer(chunk):
+                raw = match.group('quoted') or match.group('bare') or ''
+                path = raw.strip()
+                if path:
+                    files.append(path)
+        states.append(
+            {
+                'number': block['number'],
+                'title': block['title'],
+                'heading_present': len(blocks) > 1,
+                'files': files,
+            }
+        )
+    return states
+
+
 def check_affected_files_recall(
     solution_content: str, plan_dir: Path, deliverables: list[dict[str, str]]
 ) -> tuple[str, str, dict[str, Any]]:
@@ -207,33 +251,50 @@ def check_affected_files_recall(
     plan footprint resolved via :func:`_resolve_footprint` (live diff, then the
     legacy ``modified_files`` key for older archived plans, then empty).
 
-    ``deliverables`` is the already-extracted deliverable list from
-    :func:`check_deliverable_count`; it is threaded in rather than re-parsed so
-    the empty-declared-set branch can distinguish two very different states:
+    The skip-vs-fail head reads the declaration state **per deliverable** (via
+    :func:`_declaration_state_per_deliverable`) rather than off the flattened
+    aggregate, in this order:
 
-    - the outline declares at least one deliverable yet no bullet could be
-      extracted — the parser produced nothing, which is a ``fail`` naming the
-      parse failure, never a benign ``skip``;
-    - the outline genuinely declares no deliverables — nothing could be
-      declared, so ``skip`` is substantiated.
+    - any deliverable whose own content carries the ``Affected files:`` heading
+      yet yields no parsed bullet is a ``fail`` naming that deliverable — this
+      fires even when sibling deliverables declared files and the aggregate
+      declared set is non-empty, which the aggregate view cannot detect;
+    - otherwise, an empty aggregate declared set means no deliverable declares
+      an ``Affected files`` section at all, so ``skip`` is substantiated;
+    - otherwise the recall comparison proceeds.
+
+    ``deliverables`` is the already-extracted deliverable list from
+    :func:`check_deliverable_count`; it remains the deliverable count reported
+    in ``details``.
 
     A present-but-unreadable ``references.json`` is surfaced distinctly as a
     recall failure (the retrospective must flag corrupt plan state rather than
     silently treating it as "no footprint").
     """
     declared = set(extract_affected_files_per_deliverable(solution_content))
+
+    unparseable = [
+        state
+        for state in _declaration_state_per_deliverable(solution_content)
+        if state['heading_present'] and not state['files']
+    ]
+    if unparseable:
+        named = ', '.join(f'{state["number"]}. {state["title"]}' for state in unparseable)
+        return (
+            'fail',
+            f'Affected files heading present but no bullet parsed for deliverable(s): {named}',
+            {
+                'declared': len(declared),
+                'deliverables': len(deliverables),
+                'unparseable_deliverables': [state['number'] for state in unparseable],
+            },
+        )
+
     if not declared:
-        if deliverables:
-            return (
-                'fail',
-                f'No Affected files extracted from {len(deliverables)} declared deliverable(s) — '
-                'the Affected files bullet parser produced nothing',
-                {'declared': 0, 'deliverables': len(deliverables)},
-            )
         return (
             'skip',
-            'Solution outline declares no deliverables — nothing to declare',
-            {'declared': 0, 'deliverables': 0},
+            'No deliverable declares an Affected files section — nothing to compare',
+            {'declared': 0, 'deliverables': len(deliverables)},
         )
 
     references_path = plan_dir / 'references.json'

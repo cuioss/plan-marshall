@@ -10,6 +10,7 @@ Usage:
     from _plan_parsing import (
         parse_document_sections,
         extract_deliverable_headings,
+        split_deliverable_blocks,
         extract_deliverables,
         parse_toon_simple,
     )
@@ -126,6 +127,41 @@ def extract_deliverable_headings(content: str) -> list[dict[str, str]]:
     return deliverables
 
 
+def split_deliverable_blocks(deliverables_section: str) -> list[dict[str, Any]]:
+    """Split a Deliverables section into one block per ``### N. Title`` heading.
+
+    Each block carries the heading's number and title plus the body content that
+    belongs to that deliverable alone — everything from the end of its heading
+    line up to the start of the next heading (or the end of the section for the
+    last deliverable). Blocks are returned in document order, NOT sorted by
+    number, so callers that need per-deliverable attribution see the document as
+    written.
+
+    Args:
+        deliverables_section: The Deliverables section content
+
+    Returns:
+        List of dicts with 'number' (int), 'title' (str), and 'content' (str) keys
+    """
+    blocks: list[dict[str, Any]] = []
+    pattern = re.compile(r'^###\s+(\d+)\.\s+(.+)$', re.MULTILINE)
+
+    matches = list(pattern.finditer(deliverables_section))
+
+    for i, match in enumerate(matches):
+        start_pos = match.end()
+        end_pos = matches[i + 1].start() if i + 1 < len(matches) else len(deliverables_section)
+        blocks.append(
+            {
+                'number': int(match.group(1)),
+                'title': match.group(2).strip(),
+                'content': deliverables_section[start_pos:end_pos].strip(),
+            }
+        )
+
+    return blocks
+
+
 def extract_deliverables(deliverables_section: str) -> list[dict[str, Any]]:
     """Extract full deliverable information from Deliverables section.
 
@@ -139,19 +175,11 @@ def extract_deliverables(deliverables_section: str) -> list[dict[str, Any]]:
         List of deliverable dicts with full metadata
     """
     deliverables: list[dict[str, Any]] = []
-    pattern = re.compile(r'^###\s+(\d+)\.\s+(.+)$', re.MULTILINE)
 
-    # Find all deliverable start positions
-    matches = list(pattern.finditer(deliverables_section))
-
-    for i, match in enumerate(matches):
-        number = int(match.group(1))
-        title = match.group(2).strip()
-
-        # Get content until next deliverable or end
-        start_pos = match.end()
-        end_pos = matches[i + 1].start() if i + 1 < len(matches) else len(deliverables_section)
-        content = deliverables_section[start_pos:end_pos].strip()
+    for block in split_deliverable_blocks(deliverables_section):
+        number = block['number']
+        title = block['title']
+        content = block['content']
 
         # Extract structured blocks
         metadata = _extract_metadata_block(content)

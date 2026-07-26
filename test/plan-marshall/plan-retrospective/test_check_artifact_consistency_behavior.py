@@ -38,12 +38,19 @@ def _outline(
     affected: list[str] | None = None,
     *,
     annotation: str | None = None,
+    empty_affected_heading: bool = False,
 ) -> str:
     """Build an outline fragment.
 
     ``annotation`` selects the ``Affected files:`` bullet form: ``None`` emits
     the plain backticked ``- `path``` form, a string emits the canonical
     annotated ``- `path` (annotation)`` form real outlines use.
+
+    ``empty_affected_heading`` emits deliverable 1 with the
+    ``**Affected files:**`` heading and NO bullets beneath it — the loud-fail
+    shape. It is independent of the heading-absent shape (the default, where
+    the deliverable carries no ``Affected files`` heading at all), so the two
+    branches of the per-deliverable rule can be pinned separately.
     """
     suffix = f' ({annotation})' if annotation else ''
     parts = [
@@ -66,6 +73,10 @@ def _outline(
         if affected and i == 1:
             parts.append('**Affected files:**')
             parts.extend(f'- `{p}`{suffix}' for p in affected)
+            parts.append('')
+        elif empty_affected_heading and i == 1:
+            # Heading present, zero bullets beneath it — the loud-fail shape.
+            parts.append('**Affected files:**')
             parts.append('')
     return '\n'.join(parts) + '\n'
 
@@ -192,9 +203,11 @@ _ONE_DELIVERABLE = [{'number': '1', 'title': 'Deliverable 1'}]
 
 
 class TestAffectedFilesRecall:
-    """An empty declared set is discriminated by whether the outline declared
-    any deliverable at all: nothing to declare is a substantiated ``skip``,
-    while deliverables-present-but-nothing-parsed is a parse ``fail``.
+    """The declaration state is read per deliverable, so an empty declared set
+    is discriminated by whether any deliverable actually carried the
+    ``Affected files:`` heading: a heading that parsed to zero bullets is a
+    ``fail`` naming that deliverable, while no deliverable declaring a section
+    at all is a substantiated ``skip``.
     """
 
     def test_skip_when_outline_declares_no_deliverables(self, tmp_path):
@@ -205,21 +218,40 @@ class TestAffectedFilesRecall:
         assert status == 'skip'
         assert int(details['declared']) == 0
         assert int(details['deliverables']) == 0
-        assert 'no deliverables' in message.lower()
+        assert 'no deliverable declares' in message.lower()
 
     def test_fail_when_deliverables_present_but_nothing_parsed(self, tmp_path):
-        """Deliverables declared but zero bullets extracted → fail, not skip.
+        """Heading present but zero bullets extracted → fail, not skip.
 
-        This is the vacuous-skip defect: the bullet parser produced nothing, so
-        no coverage verdict is substantiated and the check must say so.
+        This is the vacuous-skip defect: the deliverable declared an
+        ``Affected files`` section yet the bullet parser produced nothing, so
+        no coverage verdict is substantiated and the check must say so, naming
+        the offending deliverable.
         """
         status, message, details = _cac.check_affected_files_recall(
-            _outline(), tmp_path, _ONE_DELIVERABLE
+            _outline(empty_affected_heading=True), tmp_path, _ONE_DELIVERABLE
         )
         assert status == 'fail'
         assert int(details['declared']) == 0
         assert int(details['deliverables']) == 1
-        assert 'parser produced nothing' in message
+        assert '1. Deliverable 1' in message
+        assert details['unparseable_deliverables'] == [1]
+
+    def test_skip_when_single_deliverable_declares_no_affected_section(self, tmp_path):
+        """Heading absent on the only deliverable → skip, not a parse fail.
+
+        Sibling of the loud-fail case above: a deliverable that never claimed
+        to declare files has nothing to parse, so no parse failure is
+        substantiated and the aggregate empty set is a genuine ``skip``.
+        """
+        status, message, details = _cac.check_affected_files_recall(
+            _outline(), tmp_path, _ONE_DELIVERABLE
+        )
+        assert status == 'skip'
+        assert int(details['declared']) == 0
+        assert int(details['deliverables']) == 1
+        assert 'unparseable_deliverables' not in details
+        assert 'no deliverable declares' in message.lower()
 
     def test_pass_when_footprint_covers_declared(self, tmp_path):
         (tmp_path / 'references.json').write_text(
@@ -403,11 +435,13 @@ class TestCmdRunInProcess:
         assert present['status'] == 'fail'
         assert any('solution_outline.md missing' in f['message'] for f in result['findings'])
 
-    def test_both_empty_yields_inconclusive_and_recall_fail(self, tmp_path):
-        """A plan declaring deliverables but no parseable bullets, with an empty
-        footprint, must report ``affected_files_recall: fail`` and
-        ``affected_files_exact_match: inconclusive`` — never the pre-fix
-        ``skip`` + ``pass`` pair that read as a clean green.
+    def test_both_empty_yields_inconclusive_and_recall_skip(self, tmp_path):
+        """A plan whose only deliverable declares no ``Affected files`` section,
+        with an empty footprint, reports ``affected_files_recall: skip`` — the
+        deliverable never claimed to declare files, so there is no parse
+        failure — while ``affected_files_exact_match`` stays ``inconclusive``:
+        two empty sets substantiate no verdict, and that aggregate verdict must
+        not regress to a vacuous ``pass``.
         """
         plan_dir = tmp_path / 'plan'
         plan_dir.mkdir()
@@ -423,7 +457,7 @@ class TestCmdRunInProcess:
         result = _cac.cmd_run(_run_args(plan_dir))
 
         recall = _check(result['checks'], 'affected_files_recall')
-        assert recall['status'] == 'fail'
+        assert recall['status'] == 'skip'
         exact = _check(result['checks'], 'affected_files_exact_match')
         assert exact['status'] == 'inconclusive'
         assert result['affected_files_exact_match']['status'] == 'inconclusive'
