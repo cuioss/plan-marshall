@@ -69,6 +69,8 @@ transcribed into the command.}
 ## Write-Boundary
 
 The plan implementing this spec touches only its own repository source and tests. It creates
-and edits NO file under `.plan/local/orchestrator/` — the orchestrator owns every ledger write
-— and reports its outcome through its PR alone. See
+and edits NO file under `.plan/local/orchestrator/` other than its own
+`inbox/{sender}-{seq}` message — the orchestrator owns every other ledger write — and reports
+its outcome through its PR and its inbox message. The inbox exception's qualifiers and the
+sole sanctioned write mechanism are stated in
 `persona-marshall-orchestrator/standards/orchestration-model.md` § Ledger Write-Boundary.
