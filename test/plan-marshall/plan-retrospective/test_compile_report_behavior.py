@@ -178,24 +178,63 @@ class TestBuildHeader:
 class TestBuildDocument:
     def test_executive_summary_from_dict_fragment(self, tmp_path):
         fragments = {'_executive-summary': {'summary': 'All green.'}}
-        content, written, _omitted = _cr.build_document('demo', 'live', tmp_path, None, fragments)
+        content, written, _omitted, _dropped = _cr.build_document('demo', 'live', tmp_path, None, fragments)
         assert 'All green.' in content
         assert 'Executive Summary' in written
 
     def test_executive_summary_from_plain_string(self, tmp_path):
         fragments = {'_executive-summary': 'String summary here'}
-        content, _written, _omitted = _cr.build_document('demo', 'live', tmp_path, None, fragments)
+        content, _written, _omitted, _dropped = _cr.build_document('demo', 'live', tmp_path, None, fragments)
         assert 'String summary here' in content
 
     def test_missing_executive_summary_uses_placeholder(self, tmp_path):
-        content, _written, _omitted = _cr.build_document('demo', 'live', tmp_path, None, {})
+        content, _written, _omitted, _dropped = _cr.build_document('demo', 'live', tmp_path, None, {})
         assert 'No executive summary provided' in content
 
     def test_conditional_section_omitted_when_no_data(self, tmp_path):
         # No script-failure-analysis fragment → that conditional section is omitted.
-        content, _written, omitted = _cr.build_document('demo', 'live', tmp_path, None, {})
+        content, _written, omitted, dropped = _cr.build_document('demo', 'live', tmp_path, None, {})
         assert 'Script Failure Analysis' in omitted
         assert '## Script Failure Analysis' not in content
+        assert dropped == []
+
+    def test_payload_bearing_trigger_fragment_is_dropped_not_omitted(self, tmp_path):
+        # The trigger fragment carries findings the gate refuses (non-success
+        # status), so the section is a loud drop rather than a benign omission.
+        fragments = {
+            'script-failure-analysis': {
+                'status': 'error',
+                'aspect': 'script_failure_analysis',
+                'findings': [{'severity': 'warning', 'message': 'blew up'}],
+            }
+        }
+        _content, _written, omitted, dropped = _cr.build_document('demo', 'live', tmp_path, None, fragments)
+        assert 'Script Failure Analysis' in dropped
+        assert 'Script Failure Analysis' not in omitted
+
+
+class TestFragmentHasPayload:
+    def test_non_dict_is_false(self):
+        assert _cr._fragment_has_payload('nope') is False
+        assert _cr._fragment_has_payload(None) is False
+
+    def test_envelope_only_fragment_is_false(self):
+        assert _cr._fragment_has_payload({'status': 'success', 'aspect': 'x'}) is False
+
+    def test_empty_payload_values_are_false(self):
+        fragment = {'status': 'success', 'findings': [], 'summary': '', 'extra': None, 'flag': False}
+        assert _cr._fragment_has_payload(fragment) is False
+
+    def test_any_non_empty_non_envelope_value_is_true(self):
+        assert _cr._fragment_has_payload({'status': 'error', 'findings': [{'severity': 'x'}]}) is True
+
+    def test_numeric_zero_counts_as_payload(self):
+        # ``False == 0`` and ``False == 0.0`` in Python, so an equality-based
+        # sentinel tuple would misclassify a zero-valued count or ratio as
+        # carrying no payload — silently dropping the very content this
+        # discriminator exists to make loud.
+        assert _cr._fragment_has_payload({'status': 'success', 'aspect': 'probe', 'unknown_count': 0}) is True
+        assert _cr._fragment_has_payload({'status': 'success', 'aspect': 'probe', 'pass_ratio': 0.0}) is True
 
 
 class TestCmdRunInProcess:
