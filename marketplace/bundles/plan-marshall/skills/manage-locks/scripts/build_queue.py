@@ -26,8 +26,8 @@ is modeled on ``merge_lock.py`` (the ``k=1`` merge mutex); the build queue is th
 ``k>=1`` primitive that needs the FIFO waiting queue.
 
 Every entry that enters the ``active`` set records an ``active_since`` activation
-timestamp (distinct from ``ts``, the admit/enqueue time used for FIFO ordering),
-set on a first-acquire admit, an idempotent-waiting promotion, and a release
+timestamp (distinct from ``ts``, the informational admit/enqueue time), set on a
+first-acquire admit, an idempotent-waiting promotion, and a release
 FIFO-promote. The self-healing reaper :func:`validate_lock_queue` runs implicitly
 at the start of EVERY acquire and release — inside the SAME ``rmw_json``
 mutation — and reaps any active entry whose age (``now - active_since``) exceeds
@@ -60,7 +60,8 @@ It exposes two actions:
     against, not an error.
   * ``release`` — first run the implicit :func:`validate_lock_queue` reaper, then
     remove ``--id`` from ``active`` (and defensively from ``waiting``),
-    FIFO-promote the oldest waiting entry (by admit-``ts``) into the freed slot
+    FIFO-promote the front waiting entry (the first list element — serialized
+    append order) into the freed slot
     when capacity allows (stamping the promoted entry's ``active_since``), and —
     only on a real release — append an id+timestamp entry to the ``run_log``,
     pruning it to the most recent 100 entries so ``build-queue.json`` stays
@@ -93,6 +94,19 @@ slot boundary is never over-admitted and a FIFO promote never double-promotes or
 loses a waiting entry. The TOCTOU / check-then-act mitigation menu lives in
 ``ref-code-quality/standards/code-organization.md#toctou--check-then-act-hazards``
 and is not duplicated here.
+
+**FIFO ordering — list position is the single source of truth.** The ``waiting``
+list order IS the arrival order: every enqueue/dequeue mutation runs inside the
+serialized ``rmw_json`` critical section, so the list records plans in the exact
+order their enqueues were serialized. Every FIFO decision — the reaper promote,
+the idempotent re-poll promote-eligibility check, and the release promote —
+therefore selects by list position via :func:`_fifo_front_n`. The admit-``ts``
+field is **informational only** (it feeds the ``run_log`` audit tail): it is
+sampled from the wall clock BEFORE the rmw section is entered, so under
+concurrent enqueue it can disagree with the order the appends actually landed,
+and a ``min(ts)`` selector could elect a different entry than the file's first —
+splitting the queue's notion of "front". This mirrors the invariant its sibling
+``merge_lock._fifo_front`` already encodes.
 
 **Holder liveness via the shared core (no duplicate).** The plan-liveness
 predicate is :func:`_locks_core.holder_is_dead`, imported from the shared
@@ -228,6 +242,30 @@ def _plan_id_of(entry_id: str) -> str:
     return head if sep else ''
 
 
+def _fifo_front_n(waiting: list[dict[str, Any]], n: int) -> list[dict[str, Any]]:
+    """Return the ``n`` FIFO-front entries (first by serialized arrival order).
+
+    The ``waiting`` list order IS the arrival order: every enqueue/dequeue mutation
+    runs inside the serialized :func:`_locks_core.rmw_json` critical section, so the
+    list records plans in the exact order their enqueues were serialized. The first
+    ``n`` list entries are therefore the ``n`` longest-waiting plans and the only
+    promotion-eligible ones. List position — NOT the informational admit-``ts``
+    field — is the single ordering key: ``ts`` is sampled per call from the wall
+    clock BEFORE the rmw section is entered, and under concurrent enqueue it can
+    disagree with serialization order (a ``ts`` sampled before the rmw section does
+    not reflect when the append actually landed), so selecting the front by
+    ``min(ts)`` could pick a different entry than the file's first and split the
+    queue's notion of "front". Using list position keeps one source of truth for
+    arrival order, mirroring :func:`merge_lock._fifo_front`.
+
+    A non-positive ``n`` yields the empty list, so a caller at capacity (``free``
+    computed as zero or negative) promotes nothing.
+    """
+    if n <= 0:
+        return []
+    return waiting[:n]
+
+
 def _prune_dead_active(active: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Drop active entries whose holder plan is dead (crashed session reclaim).
 
@@ -266,13 +304,14 @@ def validate_lock_queue(
     The reap threshold is ``2 × upper_limit`` (the ``2 ×`` safety factor over the
     already monotonic-up adaptive limit makes a false reap of a genuinely long
     build vanishingly unlikely). Age is measured from ``active_since`` — the
-    wall-clock time the entry entered ``active`` — NOT from ``ts`` (the
-    admit/enqueue time used for FIFO ordering): a promoted entry's ``ts`` is its
+    wall-clock time the entry entered ``active`` — NOT from the informational
+    admit/enqueue ``ts``: a promoted entry's ``ts`` is its
     original enqueue time, so measuring age from ``ts`` would over-age a recently
     promoted entry. An entry with NO ``active_since`` (written before this change
     shipped) is treated as ``now`` and is therefore never reaped on first contact.
 
-    After reaping, waiting entries are FIFO-promoted (oldest admit-``ts`` first)
+    After reaping, waiting entries are FIFO-promoted by list position
+    (:func:`_fifo_front_n` — serialized append order, never admit-``ts``)
     into the freed slots up to ``max_slots``, each stamped with a fresh
     ``active_since``. The function mutates ``state['active']`` / ``state['waiting']``
     in place and returns the list of reaped entries (each carrying its ``id`` and
@@ -294,11 +333,12 @@ def validate_lock_queue(
             survivors.append(entry)
     active = survivors
 
-    # FIFO-promote the oldest waiting entries (smallest admit-ts) into the slots
-    # freed by the reap, stamping a fresh active_since on each promoted entry.
+    # FIFO-promote the front waiting entries (by list position — serialized append
+    # order) into the slots freed by the reap, stamping a fresh active_since on
+    # each promoted entry.
     if waiting and len(active) < max_slots:
         free = max_slots - len(active)
-        promotable = sorted(waiting, key=lambda e: e.get('ts', 0.0))[:free]
+        promotable = _fifo_front_n(waiting, free)
         promoted_ids = {e['id'] for e in promotable}
         for entry in promotable:
             entry['active_since'] = now
@@ -326,7 +366,8 @@ def run_acquire(args: Namespace) -> dict[str, Any]:
     * If ``plan_id`` already has a ``waiting`` entry, that entry KEEPS its FIFO
       position (it is NOT re-appended to the back). When a slot has since freed up
       and the entry is now within the first ``max_slots - len(active)`` waiting
-      entries by admit-``ts``, it is promoted to ``active`` → ``admission:
+      entries **by list position** (serialized append order — never admit-``ts``),
+      it is promoted to ``active`` → ``admission:
       admitted`` (reusing its existing id); otherwise it stays ``blocked`` with
       the same id.
     * Only when ``plan_id`` has NO existing entry is a fresh admission id
@@ -377,12 +418,12 @@ def run_acquire(args: Namespace) -> dict[str, Any]:
 
         # Idempotent re-poll: a plan already in the waiting queue keeps its FIFO
         # position. Promote it ONLY when a slot has freed up AND it is within the
-        # available-slot prefix of the FIFO-ordered (by admit-ts) waiting queue —
-        # never re-append to the back.
+        # available-slot prefix of the waiting queue by list position (serialized
+        # append order) — never re-append to the back.
         existing_waiting = next((e for e in waiting if e.get('plan_id') == plan_id), None)
         if existing_waiting is not None:
             free = max_slots - len(active)
-            promotable = sorted(waiting, key=lambda e: e.get('ts', 0.0))[:max(free, 0)]
+            promotable = _fifo_front_n(waiting, free)
             if any(e['id'] == existing_waiting['id'] for e in promotable):
                 waiting = [e for e in waiting if e['id'] != existing_waiting['id']]
                 existing_waiting['active_since'] = time.time()
@@ -464,7 +505,8 @@ def run_release(args: Namespace) -> dict[str, Any]:
 
     Removes ``--id`` from ``active`` (and defensively from ``waiting``, so a
     release of a still-queued id is benign), then — when a slot is now free —
-    FIFO-promotes the oldest waiting entry (by admit-``ts``) into ``active`` and
+    FIFO-promotes the front waiting entry (the first list element — serialized
+    append order, never admit-``ts``) into ``active`` and
     records it as the ``promoted`` id. On a real release (the id was actually
     present), appends an id+timestamp entry to the ``run_log`` and prunes it to
     the most recent 100 entries so ``build-queue.json`` stays bounded; a no-op
@@ -507,18 +549,19 @@ def run_release(args: Namespace) -> dict[str, Any]:
         removed = (len(active) + len(waiting)) < before
         outcome['action'] = 'released' if removed else 'noop'
 
-        # FIFO-promote the oldest waiting entry (smallest admit-ts) when the
-        # release freed a slot. Each released slot promotes exactly one distinct
-        # waiting entry — never two — so concurrent releases (serialized by the
-        # rmw guard) cannot double-promote or lose a waiting entry. The promoted
-        # entry is stamped with a fresh active_since (it is only now active).
+        # FIFO-promote the front waiting entry (by list position — serialized
+        # append order) when the release freed a slot. Each released slot promotes
+        # exactly one distinct waiting entry — never two — so concurrent releases
+        # (serialized by the rmw guard) cannot double-promote or lose a waiting
+        # entry. The promoted entry is stamped with a fresh active_since (it is
+        # only now active).
         promoted: str | None = None
         if waiting and len(active) < max_slots:
-            oldest = min(waiting, key=lambda e: e.get('ts', 0.0))
-            waiting = [e for e in waiting if e['id'] != oldest['id']]
-            oldest['active_since'] = time.time()
-            active.append(oldest)
-            promoted = oldest['id']
+            front = _fifo_front_n(waiting, 1)[0]
+            waiting = [e for e in waiting if e['id'] != front['id']]
+            front['active_since'] = time.time()
+            active.append(front)
+            promoted = front['id']
         outcome['promoted'] = promoted
 
         # Append to the run_log ONLY on a real release (the id was actually
