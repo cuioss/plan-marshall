@@ -1,6 +1,6 @@
 ---
 name: marshall-orchestrator
-description: Resumable epic-orchestration skill - decomposes epics into workstreams and staged plans, emits ready-to-run /plan-marshall commands, tracks plan lifecycles, analyzes landings, and reconciles the persisted orchestrator ledger; orchestrates, never implements
+description: Resumable epic-orchestration skill - decomposes epics into workstreams and staged plans, emits ready-to-run /plan-marshall commands, tracks plan lifecycles, analyzes landings, receives structured inbox messages from executing plans, and reconciles the persisted orchestrator ledger; orchestrates, never implements
 user-invocable: true
 mode: workflow
 ---
@@ -84,7 +84,7 @@ Authoring templates for the ledger documents live in `templates/` and mirror the
 
 | Script | Notation | Purpose |
 |--------|----------|---------|
-| orchestrator | `plan-marshall:marshall-orchestrator:orchestrator` | Thin scaffolding: `scaffold` (create the epic tree), `queue` (read the plan queue, transition a plan's status, or set one plan row's result field), `resume-summary` (generate the START-HERE block from status.json), `archive` (relocate a closed epic tree to `archived-orchestrators/`) |
+| orchestrator | `plan-marshall:marshall-orchestrator:orchestrator` | Thin scaffolding: `scaffold` (create the epic tree), `queue` (read the plan queue, transition a plan's status, or set one plan row's result field), `resume-summary` (generate the START-HERE block from status.json), `archive` (relocate a closed epic tree to `archived-orchestrators/`), `inbox` (append/validate a plan-written OUTBOX message, or detect orchestration context from a plan's `source_id`) |
 
 ## Canonical invocations
 
@@ -122,8 +122,36 @@ python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator
 
 Relocates a *closed* epic tree to `archived-orchestrators/{slug}/` — a post-close, mechanical move. Refuses a non-closed epic (`not_closed`), a missing epic (`not_found`), or an existing archive (`archive_conflict`); an already-archived slug returns idempotent success (`already_archived`).
 
+### inbox write
+
+```bash
+python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator inbox write \
+  --slug SLUG --sender-type SENDER_TYPE --sender-id SENDER_ID --kind KIND --payload-file PAYLOAD_FILE
+```
+
+Appends ONE message to the epic's plan-writable OUTBOX at `inbox/{sender_id}-{NNN}.md`. `--sender-type` is `plan` or `orchestrator`; `--kind` is `landing`, `finding`, or `candidate-lesson`; `--payload-file` names a markdown body staged with the `Write` tool first (no message body ever passes through a shell argument). The target path is derived solely from the validated `--slug` and `--sender-id` — **no caller-supplied output path exists in the surface**, which is what makes the write-boundary carve-out enforced by construction rather than by prose. Refuses an unsafe slug (`invalid_slug`), an unsafe sender id (`invalid_sender_id`), an out-of-enum sender type (`invalid_sender_type`) or kind (`invalid_kind`), an unscaffolded epic (`epic_not_found`), and a missing or empty payload (`payload_not_found` / `empty_payload`). See [`standards/inbox-envelope.md`](standards/inbox-envelope.md) for the envelope schema.
+
+### inbox validate
+
+```bash
+python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator inbox validate \
+  --slug SLUG --message MESSAGE
+```
+
+Validates one existing message against the envelope schema. `--message` is a bare filename inside the epic's `inbox/` directory (a path is refused with `invalid_message_name`). Returns the parsed header on success; on rejection returns the distinct error code for the failing class — `missing_header_field`, `unknown_envelope_version`, `invalid_sender_type`, `invalid_kind`, `empty_payload`, `epic_mismatch`, or `filename_sender_mismatch` (checked in that order; see the validator error-code table in [`standards/inbox-envelope.md`](standards/inbox-envelope.md)).
+
+### inbox detect
+
+```bash
+python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator inbox detect \
+  --source-id SOURCE_ID
+```
+
+Classifies a plan's `request.md` `source_id` — the pointer `phase-1-init` already persists — as an orchestrated plan spec. Returns `orchestrated`, `epic`, and `plan_spec`. A pointer of the shape `.plan/local/orchestrator/{slug}/plans/PLAN-NN-*.md` with a path-safe `{slug}` is orchestrated; every other string (prose, an unrelated path, a traversal attempt) returns `orchestrated: false` with empty `epic` / `plan_spec`. This is the single detection seam — consumers never add a second detector or a new persisted metadata field.
+
 ## Related
 
+- [`standards/inbox-envelope.md`](standards/inbox-envelope.md) — the inbox message schema, invariants, and validator error codes
 - [`persona-marshall-orchestrator`](../persona-marshall-orchestrator/SKILL.md) — the orchestrator work identity and its central standard
 - [`manage-status`](../manage-status/SKILL.md) — `--store orchestrator` status verbs (`kind=orchestrator` schema)
 - [`manage-logging`](../manage-logging/SKILL.md) — `--store orchestrator` decision/work logging

@@ -2,17 +2,22 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the marshall-orchestrator scaffolding script (D7).
 
-Covers the three-verb surface of ``orchestrator.py`` under ``PLAN_BASE_DIR``
-isolation (via ``plan_context``):
+Covers the ``scaffold`` / ``queue`` / ``resume-summary`` verbs under
+``PLAN_BASE_DIR`` isolation (via ``plan_context``). The ``archive`` verb has
+its own module (``test_orchestrator_archive.py``), and the ``inbox`` verb
+group's envelope schema and handler surface have theirs
+(``test_inbox_envelope.py``):
 
-- ``scaffold``: directory-tree creation and idempotency.
+- ``scaffold``: directory-tree creation (including ``inbox/``) and idempotency.
 - ``queue``: read, transition, and per-row field-set round-trips against a
   fixture status.json, plus the error envelopes (missing status, unknown
   plan, unknown field, unpaired flags, mutually-exclusive write forms).
 - ``resume-summary``: START-HERE block generation derived purely from
   status.json (resume anchor, phase, running/parked plans, ordered queue).
-- CLI boundary: all three verbs driven through the ``orchestrator.py`` entry
-  point with constructed argv at the subprocess boundary (``run_script``).
+- CLI boundary: the three verbs above driven through the ``orchestrator.py``
+  entry point with constructed argv at the subprocess boundary
+  (``run_script``); the ``inbox`` group's CLI wiring is covered in
+  ``test_inbox_channel_contract.py``.
 """
 
 import json
@@ -122,14 +127,14 @@ class TestScaffold:
         root = _epic_dir(plan_context, 'fresh-epic')
         assert result['root'] == str(root)
         assert root.is_dir()
-        for sub in ('workstreams', 'plans', 'landings', 'logs'):
+        for sub in ('workstreams', 'plans', 'landings', 'logs', 'inbox'):
             assert (root / sub).is_dir()
 
     def test_should_report_all_layout_subdirs(self, plan_context):
         result = cmd_scaffold(Namespace(slug='layout-epic'))
 
         assert sorted(result['directories']) == sorted(EPIC_SUBDIRS)
-        assert set(EPIC_SUBDIRS) == {'workstreams', 'plans', 'landings', 'logs'}
+        assert set(EPIC_SUBDIRS) == {'workstreams', 'plans', 'landings', 'logs', 'inbox'}
 
     def test_should_be_idempotent_on_rerun(self, plan_context):
         cmd_scaffold(Namespace(slug='rerun-epic'))
@@ -528,7 +533,7 @@ class TestCli:
         assert result.returncode == 0
         assert 'status: success' in result.stdout
         assert 'already_existed: false' in result.stdout
-        for sub in ('workstreams', 'plans', 'landings', 'logs'):
+        for sub in ('workstreams', 'plans', 'landings', 'logs', 'inbox'):
             assert (_epic_dir(plan_context, 'cli-epic') / sub).is_dir()
 
     def test_should_transition_and_read_queue_through_cli(self, plan_context):
