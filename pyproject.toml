@@ -154,6 +154,18 @@ markers = [
 ]
 
 [tool.coverage.run]
+# The coverage denominator is deliberately restricted to the shipped product
+# surface. `marketplace/bundles` is what this repository ships; `build.py`,
+# `marketplace/targets/**` and `.claude/skills/**` are build- and
+# developer-tooling surfaces that sit outside it on purpose, even though tests
+# do exercise all three.
+#
+# This key is NOT the whole story: `build.py:cmd_coverage` passes
+# `--cov={bundle_path}` on every coverage invocation, and pytest-cov applies
+# that over the `source` value below. Widening the denominator therefore
+# requires editing both sites in lock-step — changing `source` alone is inert.
+# See doc/developer/build.adoc § "Tool Configuration" for the recorded decision
+# and the conditions under which widening becomes worth revisiting.
 source = ["marketplace/bundles"]
 branch = true
 omit = [
