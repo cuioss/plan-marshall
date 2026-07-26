@@ -55,23 +55,42 @@ Decide which output contract applies:
      --slug {slug} --transition PLAN-NN --status shipped
    ```
 
-3. Reconcile `epic.md` from status.json: update the Ordered Queue row, retire queue items the landing folded in (with a decision naming what absorbed them), move resolved Open Defects out, retire satisfied Watches, and add new defects/watches the landing surfaced.
-4. Check parallelization consequences: when the landing revealed that two supposedly disjoint plans collided (rebase conflicts, re-verify signals), record the overlap so the next `next`-verb pairing decision uses it.
-5. Regenerate the START-HERE block:
+3. Stamp the plan's three result fields, one `--set-row` call per field, so the landing is reconciled COMPLETELY by sanctioned calls. A `shipped`/`landed` row missing `pr` or `landing` renders the `(!) missing: ...` gap marker in the START-HERE block regenerated at item 6, so an unstamped row is visible rather than silent:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator queue \
+     --slug {slug} --set-row PLAN-NN --field pr --value "{pr_number}"
+   ```
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator queue \
+     --slug {slug} --set-row PLAN-NN --field landing --value "landings/PLAN-NN.md"
+   ```
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator queue \
+     --slug {slug} --set-row PLAN-NN --field plan_marshall_plan_id --value "{plan_marshall_plan_id}"
+   ```
+
+   `queue --set-row` is THE stamping mechanism. The whole-array `manage-status update-field --field plans` rewrite is reserved for `decompose`'s bulk queue seed (see [`decompose.md`](decompose.md)) and MUST NOT be used to stamp a landing — re-serializing every row to change one cell is the lost-update path `--set-row` exists to remove. Editing `status.json` by direct file access is prohibited outright (see the skill's Enforcement block).
+
+4. Reconcile `epic.md` from status.json: update the Ordered Queue row, retire queue items the landing folded in (with a decision naming what absorbed them), move resolved Open Defects out, retire satisfied Watches, and add new defects/watches the landing surfaced.
+5. Check parallelization consequences: when the landing revealed that two supposedly disjoint plans collided (rebase conflicts, re-verify signals), record the overlap so the next `next`-verb pairing decision uses it.
+6. Regenerate the START-HERE block:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator resume-summary \
      --slug {slug}
    ```
 
-6. **Conclude with the proactive emit.** Run the [`orchestrate.md` `next` selection](orchestrate.md) — its `parallelization_scope` read, `N − R` slot count, and disjoint-plus-prep-ready admission tests govern; do not restate them — and emit the resulting queue-filling copy-paste block. When nothing qualifies, state "nothing emittable, blocked on {X}" instead, enumerating each unemittable candidate and its blocking reason. The emit-only rule holds: the block is handed to the operator, never launched. The [`orchestrate.md` Step 5 `auto_emit` gate](orchestrate.md) applies unchanged: under `orchestrator.auto_emit == true` the emitted block's `launched` transitions are auto-recorded; under `false` (default) they stay operator-confirmed — and under **both** values the started/`running` transition remains operator-owned (emit≠running).
+7. **Conclude with the proactive emit.** Run the [`orchestrate.md` `next` selection](orchestrate.md) — its `parallelization_scope` read, `N − R` slot count, and disjoint-plus-prep-ready admission tests govern; do not restate them — and emit the resulting queue-filling copy-paste block. When nothing qualifies, state "nothing emittable, blocked on {X}" instead, enumerating each unemittable candidate and its blocking reason. The emit-only rule holds: the block is handed to the operator, never launched. The [`orchestrate.md` Step 5 `auto_emit` gate](orchestrate.md) applies unchanged: under `orchestrator.auto_emit == true` the emitted block's `launched` transitions are auto-recorded; under `false` (default) they stay operator-confirmed — and under **both** values the started/`running` transition remains operator-owned (emit≠running).
 
 ### Step 5: Mid-flight observation — minimal reconciliation
 
 1. Record the observation as a Watch or Open Defect entry in `epic.md` — NO ship semantics, no landing report, no queue-status transition for the observed plan.
 2. When the observation warrants new work, either **fold** it into an existing staged `plans/PLAN-NN-{plan_slug}.md` spec or **spawn** a new spec (and queue entry via the `decompose.md` Step 5 queue-write shape) — anything larger than the small-ops carve-out becomes a plan, never inline work.
-3. Regenerate the START-HERE block only when the queue was touched (the Step 4 item 5 invocation).
-4. **Conclude with the proactive emit** — the same standing output as Step 4 item 6, under the same `orchestrate.md` selection rules AND the same [`auto_emit` gate](orchestrate.md): emit the queue-filling block, or the explicit "nothing emittable, blocked on {X}" statement with a reason per unemittable candidate. `auto_emit == true` auto-records the emitted block's `launched` transitions; `auto_emit == false` (default) leaves them operator-confirmed; neither records started/`running` (emit≠running).
+3. Regenerate the START-HERE block only when the queue was touched (the Step 4 item 6 invocation).
+4. **Conclude with the proactive emit** — the same standing output as Step 4 item 7, under the same `orchestrate.md` selection rules AND the same [`auto_emit` gate](orchestrate.md): emit the queue-filling block, or the explicit "nothing emittable, blocked on {X}" statement with a reason per unemittable candidate. `auto_emit == true` auto-records the emitted block's `launched` transitions; `auto_emit == false` (default) leaves them operator-confirmed; neither records started/`running` (emit≠running).
 
 ### Step 6: Log and set the resume anchor
 

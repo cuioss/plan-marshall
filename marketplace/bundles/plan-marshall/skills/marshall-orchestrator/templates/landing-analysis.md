@@ -40,16 +40,21 @@ collisions observed here feed the next pairing decision.}
 
 ## Reconciliation Actions
 
-{The ledger updates this landing drives — each action is executed, not just listed:
-status.json plan entry updated (status/pr/landing), epic.md queue row reconciled,
-folded queue items retired, defects/watches opened or closed, resume_anchor updated,
-START-HERE block regenerated.}
+{The ledger updates this landing drives — each action is executed, not just listed, and
+each names the sanctioned verb that performs it. The four `status.json` row updates are
+one call each: `queue --transition` for the status, `queue --set-row` for each of the
+three result fields. Never edit `status.json` by direct file access, and never stamp a
+landing with the whole-array `manage-status update-field --field plans` rewrite — that
+form is reserved for `decompose`'s bulk queue seed.}
 
-- [ ] status.json `plans[]` entry updated
+- [ ] row `status` → `shipped` — `orchestrator queue --transition PLAN-NN --status shipped`
+- [ ] row `pr` stamped — `orchestrator queue --set-row PLAN-NN --field pr --value {pr}`
+- [ ] row `landing` stamped — `orchestrator queue --set-row PLAN-NN --field landing --value landings/PLAN-NN.md`
+- [ ] row `plan_marshall_plan_id` stamped — `orchestrator queue --set-row PLAN-NN --field plan_marshall_plan_id --value {plan_id}`
 - [ ] epic.md queue reconciled from status.json
 - [ ] {defect/watch opened or retired}
-- [ ] resume_anchor updated
-- [ ] START-HERE block regenerated
+- [ ] resume_anchor updated — `manage-status update-field --field resume_anchor --store orchestrator`
+- [ ] START-HERE block regenerated — `orchestrator resume-summary` (carries no `(!) missing:` marker once the three fields above are stamped)
 
 ## Follow-Ups
 
