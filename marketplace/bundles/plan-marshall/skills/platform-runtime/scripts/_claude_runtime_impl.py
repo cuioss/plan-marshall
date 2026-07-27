@@ -1798,8 +1798,7 @@ class ClaudeRuntime(Runtime):
         # misconfiguration, so failing on it would train callers to ignore the
         # verb's status. ``all_healthy`` continues to report the aggregate for
         # those checks.
-        payload: dict[str, Any] = {
-            "operation": "health-check",
+        fields: dict[str, Any] = {
             "checks_run": [r["check"] for r in results],
             "all_healthy": all_healthy,
             "results": results,
@@ -1816,15 +1815,9 @@ class ClaudeRuntime(Runtime):
                     "status": "error",
                     "error": "display_unhealthy",
                     "message": f"display check failed — {display_result['detail']}",
-                    **payload,
+                    "operation": "health-check",
+                    **fields,
                 }
             )
 
-        return toon_success(
-            "health-check",
-            {
-                "checks_run": payload["checks_run"],
-                "all_healthy": all_healthy,
-                "results": results,
-            },
-        )
+        return toon_success("health-check", fields)

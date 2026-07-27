@@ -320,10 +320,10 @@ glyph or icon. The state → display rendering is owned exclusively by the compo
 and `build-busy` maps to the 🔨 icon-slot override (see Composer below).
 `build-busy` is deliberately absent from `TITLE_TOKEN_GLYPHS` — it is an
 icon-slot override, not a glyph. This keeps `manage-status` free of any display
-vocabulary. `build-busy` is set/cleared by the orchestration layer to bracket a
-long-running call — see
-[`persona-plan-marshall-agent`](../../persona-plan-marshall-agent/SKILL.md) for
-the normative orchestration requirement.
+vocabulary. `build-busy` is set and cleared by the **machine-owned** render-hook
+bracket (`PreToolUse:Bash` / `PostToolUse:Bash`, owner `build-hook`) around a
+foreground build, and by the orchestrator wait seam (owner `cli`) around a
+detached one — see Channel Delivery Contract ruling (c) above.
 
 ### Persisted-title-state-write drive seam
 
@@ -439,9 +439,9 @@ composes `'{icon} {glyph} {body}'` from three independent inputs:
   trigger while a long-running Bash tool call executes; `PreToolUse:Bash` and
   `PostToolUse:Bash` bracket the busy window (busy on enter, back to ➤ active on
   exit). The process icons ➤ and ? MUST NOT appear for a finished plan. The
-  `build-busy` state is set/cleared by the orchestration layer — see
-  [`persona-plan-marshall-agent`](../../persona-plan-marshall-agent/SKILL.md) for
-  the normative orchestration requirement.
+  `build-busy` state is set and cleared by the **machine-owned** render-hook
+  bracket — the `PreToolUse:Bash` / `PostToolUse:Bash` render assist, no LLM turn
+  owns either half — see Channel Delivery Contract ruling (c).
 
 ## Resolve + Emit — `platform-runtime`
 
@@ -506,15 +506,20 @@ nothing** — per Channel Delivery Contract ruling (a) the `/dev/tty` write is
 deleted, and per ruling (b2) the paired repaint is deferred to the next hook
 event. The `--icon` argument is **optional**: a glyph state (⏳/🔒 from the lock
 machinery) supplies it, while a plain state refresh omits it (`icon=None`) to
-keep the default active icon. Three consumers drive this one seam:
+keep the default active icon. Two consumers drive this one seam:
 
 - **`manage-status`'s phase-write drive seam** — an icon-less state persist on
-  every `current_phase` write (see State above);
+  every `current_phase` write (see State above); and
 - **`manage-locks/merge_lock.py`** — the ⏳/🔒 lock-state writes on
   acquire/block, AND a plain icon-less write on the release/clear path so the
-  next render drops the lock glyph; and
-- the orchestration-layer `build-busy` bracketing (see
-  [`persona-plan-marshall-agent`](../../persona-plan-marshall-agent/SKILL.md)).
+  next render drops the lock glyph.
+
+`build-busy` is NOT a consumer of this seam. The render-hook bracket
+(`PreToolUse:Bash` / `PostToolUse:Bash`) mutates the in-memory state dict
+directly and persists through `manage-status title-token set/clear --owner
+build-hook`, and the orchestrator wait seam persists through `title-token set
+--owner cli` (see [`await-long-running`](../../plan-marshall/workflow/await-long-running.md)
+§ step (b)) — neither calls `session push-title-token`.
 
 With `store="orchestrator"` (the orchestrator-epic variant driven by the
 orchestrator's per-verb call) the seam additionally **establishes the
