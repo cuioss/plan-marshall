@@ -3,7 +3,7 @@ lane:
   class: core
   cost_size: S
 name: default:pre-push-quality-gate
-description: Run quality-gate per affected bundle, then whole-tree test-compile, then gate whole-tree module-tests on scoped-vs-whole-tree divergence risk, as the last gate before push
+description: Run quality-gate per affected bundle then one whole-tree quality-gate, then whole-tree test-compile, then gate whole-tree module-tests on scoped-vs-whole-tree divergence risk, as the last gate before push
 order: 5
 mutates_source: false
 default_on: true
@@ -14,9 +14,17 @@ implements: plan-marshall:extension-api/standards/ext-point-finalize-step
 
 # Pre-Push Quality Gate
 
-Pure executor for the `pre-push-quality-gate` finalize step. Runs three guards once per plan, immediately before `default:push` (`order: 10`): (1) `quality-gate` (mypy + ruff over production sources) once per unique bundle derived from the plan's live footprint (the `compute-footprint` query against the worktree), (2) a whole-tree **`test-compile`** (mypy over `test/`), and (3) a whole-tree **module-tests (pytest) gate** that escalates to a whole-tree run only when the footprint risks a scoped-green / whole-tree-red divergence. This is the deterministic last-line guard against type/lint AND cross-module test regressions reaching remote CI — converting soft "consider quality-gate" guidance into a hard precondition for push.
+Pure executor for the `pre-push-quality-gate` finalize step. Runs three guards once per plan, immediately before `default:push` (`order: 10`): (1) `quality-gate` (mypy + ruff over production sources) once per unique bundle derived from the plan's live footprint (the `compute-footprint` query against the worktree), **followed by one whole-tree `quality-gate`**, (2) a whole-tree **`test-compile`** (mypy over `test/`), and (3) a whole-tree **module-tests (pytest) gate** that escalates to a whole-tree run only when the footprint risks a scoped-green / whole-tree-red divergence. This is the deterministic last-line guard against type/lint AND cross-module test regressions reaching remote CI — converting soft "consider quality-gate" guidance into a hard precondition for push.
 
-The three-guard order — quality-gate → test-compile → module-tests — is the order `build.py:cmd_verify` uses on the CI path. Matching it is the point: the gate is only a useful pre-push proxy for CI if it runs the same checks in the same sequence.
+The three-guard order — quality-gate (per-bundle, then whole-tree) → test-compile → module-tests — is the order `build.py:cmd_verify` uses on the CI path. Matching it is the point: the gate is only a useful pre-push proxy for CI if it runs the same checks in the same sequence.
+
+**Why guard 1 carries a whole-tree arm.** Three `quality-gate` dimensions exist ONLY at whole-tree scope, so a purely bundle-scoped sweep can never reach them and they surface first at remote CI:
+
+1. **The marketplace-wide plugin-doctor static-analysis pass** — it analyses the marketplace as a whole; no per-bundle invocation runs it.
+2. **The `.claude/` ruff coverage** — whole-tree scope widens the linted path set to include `.claude/` alongside `marketplace/bundles` and `test`; a bundle-scoped run never lints `.claude/`.
+3. **The `marketplace/targets` SPDX-header coverage** — whole-tree scope widens the SPDX-enforced path set to include `marketplace/targets`; a bundle-scoped run never enforces headers there.
+
+The per-bundle loop remains the precise, footprint-proportional pass that attributes a failure to its bundle; the whole-tree arm exists solely to make those three dimensions reachable.
 
 The module-tests gate consults the callable scope-resolution seam (`pyproject_build resolve-test-scope`, backed by the pure `_test_scope_divergence.resolve_test_scope`) and runs a real whole-tree `module-tests` only when divergence is possible — mirroring the escalate-only-on-trigger discipline of the `finalize-step-plugin-doctor` reference behavior (PLAN-02), so whole-tree cost is paid only where a scoped run could miss a cross-module regression.
 
@@ -86,7 +94,28 @@ python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build \
 
 Inspect the TOON output. On `status: error`, halt: stop iterating, record the failing bundle, and proceed to **Mark Step Complete (Failure)** below. The underlying `pyproject_build` TOON output already carries `errors[N]{file,line,message,category}` — surface the offending file/line via the standard finalize TOON.
 
-If every bundle succeeds (`status: success` for all `N` invocations), proceed to the **Whole-tree test-compile gate** below.
+If every bundle succeeds (`status: success` for all `N` invocations), proceed to the **Whole-tree quality-gate arm** below.
+
+### Whole-tree quality-gate arm
+
+The per-bundle loop above cannot reach the three whole-tree-only dimensions named in the opening section (the marketplace-wide plugin-doctor pass, the `.claude/` ruff coverage, and the `marketplace/targets` SPDX coverage). Run one whole-tree `quality-gate` — no bundle argument, so the whole tree is the authority:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build \
+  run --command-args "quality-gate" --plan-id {plan_id}
+```
+
+Inspect the TOON output. On `status: error`, halt: record the failure and proceed to **Mark Step Complete (Failure)** below. Do not weaken the check or fall back to the per-bundle result to get past a red — a finding that only whole-tree scope can see is exactly what this arm exists for. On `status: success`, proceed to the **Whole-tree test-compile gate** below.
+
+**Honest-degradation branch — whole-tree `quality-gate` unavailable.** When the whole-tree invocation cannot run at all (the canonical does not resolve at default scope in this project, or the project exposes no whole-tree `quality-gate` target), do NOT silently skip it. Emit one loud WARNING naming **all three** un-gated dimensions explicitly — never a silent skip and never a singular "the whole-tree dimension" — then proceed to the **Whole-tree test-compile gate**. Mirror the wording shape of the module-tests `whole_tree_available == false` branch below:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level WARNING \
+  --message "[WARNING] (plan-marshall:pre-push-quality-gate) Whole-tree quality-gate unavailable — three whole-tree-only dimensions are UN-GATED at finalize for this push: the marketplace-wide plugin-doctor static-analysis pass, the .claude/ ruff path coverage, and the marketplace/targets SPDX-header coverage. Proceeding on honest degradation."
+```
+
+The same escalate-only-on-trigger discipline the module-tests gate applies (below) is available here should the unconditional whole-tree run prove too expensive in a given project: gate the arm on a trigger, and emit the identical three-dimension WARNING on every path where the run is skipped. The WARNING is mandatory on any skip path — the degradation must be legible in the work-log, never inferred from its absence.
 
 ### Whole-tree test-compile gate
 
@@ -155,13 +184,13 @@ The guards above run mypy + ruff over production sources and mypy over `test/` �
 
    Gate on its result the same way: `status: error` → **Mark Step Complete (Failure)** (halt before push); `status: success` → **Mark Step Complete (Success)**.
 
-The module-tests outcome folds into the Mark Step Complete branches below: Branch A (green) requires a clean per-bundle `quality-gate` sweep AND a clean whole-tree `test-compile` AND a clean module-tests gate; Branch B (failure) covers a red per-bundle `quality-gate` OR a red `test-compile` OR a red module-tests run.
+The module-tests outcome folds into the Mark Step Complete branches below: Branch A (green) requires a clean per-bundle `quality-gate` sweep AND a clean whole-tree `quality-gate` AND a clean whole-tree `test-compile` AND a clean module-tests gate; Branch B (failure) covers a red per-bundle `quality-gate` OR a red whole-tree `quality-gate` OR a red `test-compile` OR a red module-tests run.
 
 ## Mark Step Complete
 
-Record the outcome on the live plan so the `phase_steps_complete` handshake invariant is satisfied at phase transition time. Branch A requires ALL THREE of the per-bundle `quality-gate` sweep, the whole-tree `test-compile`, and the module-tests divergence gate to be green; Branch B fires when ANY of the three failed.
+Record the outcome on the live plan so the `phase_steps_complete` handshake invariant is satisfied at phase transition time. Branch A requires ALL FOUR of the per-bundle `quality-gate` sweep, the whole-tree `quality-gate` arm, the whole-tree `test-compile`, and the module-tests divergence gate to be green; Branch B fires when ANY of the four failed.
 
-**Branch A — all bundles green AND test-compile green AND module-tests gate green**:
+**Branch A — all bundles green AND whole-tree quality-gate green AND test-compile green AND module-tests gate green**:
 
 Immediately before invoking `mark-step-done`, resolve the worktree HEAD SHA so the dispatcher can detect a stale completion record after a downstream loop-back commit advances HEAD:
 
@@ -174,18 +203,18 @@ The `{worktree_path}` value is the path resolved by `phase-6-finalize` Step 0 (R
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step pre-push-quality-gate --outcome done \
-  --display-detail "quality-gate green for {N} bundle(s), test-compile green, module-tests gate green" \
+  --display-detail "{N} bundles + whole-tree quality-gate green, test-compile + module-tests green" \
   --head-at-completion {sha}
 ```
 
 The persisted `head_at_completion` field is consumed by phase-6-finalize Step 3's resumable re-entry check: when the worktree HEAD has advanced past `{sha}` (typically because `automated-review` or `sonar-roundtrip` opened a loop-back fix-task that produced a new commit), the dispatcher re-fires this gate against the newer HEAD instead of skipping it.
 
-**Branch B — at least one bundle's quality-gate failed OR test-compile failed OR the module-tests gate failed**:
+**Branch B — at least one bundle's quality-gate failed OR the whole-tree quality-gate failed OR test-compile failed OR the module-tests gate failed**:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step pre-push-quality-gate --outcome failed \
-  --display-detail "{quality-gate failed for {bundle} | test-compile red | whole-tree module-tests red | scoped module-tests red for {recommended_target}}"
+  --display-detail "{quality-gate failed for {bundle} | whole-tree quality-gate red | test-compile red | whole-tree module-tests red | scoped module-tests red for {recommended_target}}"
 ```
 
-Use `quality-gate failed for {bundle}` when a bundle's `quality-gate` failed, `test-compile red` when the whole-tree `test-compile` gate caught a test-tree type error, `whole-tree module-tests red` when the whole-tree module-tests divergence gate caught a scoped-green / whole-tree-red regression, or `scoped module-tests red for {recommended_target}` when the step-4 scoped `module-tests {recommended_target}` run failed on a non-divergent footprint. The failure branch does not need `--head-at-completion`: the dispatcher unconditionally retries `failed` records on re-entry regardless of HEAD, so the SHA carries no decision value here. The dispatcher's existing failure handling halts the phase on `outcome=failed` and surfaces the offending file/line (or failing test) through the finalize TOON, matching the contract used by the other gating steps.
+Use `quality-gate failed for {bundle}` when a bundle's `quality-gate` failed, `whole-tree quality-gate red` when the whole-tree `quality-gate` arm caught a finding only whole-tree scope can see (the plugin-doctor pass, the `.claude/` ruff coverage, or the `marketplace/targets` SPDX coverage), `test-compile red` when the whole-tree `test-compile` gate caught a test-tree type error, `whole-tree module-tests red` when the whole-tree module-tests divergence gate caught a scoped-green / whole-tree-red regression, or `scoped module-tests red for {recommended_target}` when the step-4 scoped `module-tests {recommended_target}` run failed on a non-divergent footprint. The failure branch does not need `--head-at-completion`: the dispatcher unconditionally retries `failed` records on re-entry regardless of HEAD, so the SHA carries no decision value here. The dispatcher's existing failure handling halts the phase on `outcome=failed` and surfaces the offending file/line (or failing test) through the finalize TOON, matching the contract used by the other gating steps.

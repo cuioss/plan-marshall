@@ -40,7 +40,7 @@ The security sibling, link:../../marketplace/bundles/plan-marshall/skills/recipe
 * link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/triage.md[`triage.md`] — the shared per-finding FIX / SUPPRESS / ACCEPT / AskUserQuestion decision loop the envelope hands off to.
 * link:../../marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/ci-verify.md[`phase-6-finalize/standards/ci-verify.md`] — the CI failure-mode taxonomy (build, policy, timeout, cancelled, action-required, stale, missing) with detection rules per row.
 * link:../../marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/pre-submission-self-review.md[`pre-submission-self-review.md`] — the structural self-review (symmetric pairs, regex over-fit, ambiguous wording, duplicate prose, contract drift).
-* link:../../marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/automated-review.md[`automated-review.md`] and link:../../marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/sonar-roundtrip.md[`sonar-roundtrip.md`] — the two external roundtrip workflows.
+* link:../../marketplace/bundles/plan-marshall/skills/automatic-review/SKILL.md[`automatic-review/SKILL.md`] and link:../../marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/sonar-roundtrip.md[`sonar-roundtrip.md`] — the two external roundtrip workflows.
 * link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-triage.md[`ext-point-triage.md`] — per-domain triage extension contract.
 * xref:tools-and-scripts.adoc[Concepts › Tools and Scripts] — why the producer-side integrations are scripts, not MCP tools.
 * xref:audit-trail.adoc[Concepts › Audit Trail] — where findings, decisions, and resolutions land on disk.

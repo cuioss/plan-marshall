@@ -16,10 +16,42 @@ seam behavior end-to-end without spawning pytest. The D1 seam lives on the
 for every test, so it is exercised via a plain import.
 """
 
+import re
+
 import pytest
 
 # Cross-skill import — PYTHONPATH is configured by the root conftest.
 from _test_scope_divergence import classify_divergence, resolve_test_scope
+from conftest import MARKETPLACE_ROOT
+
+_GATE_DOC = (
+    MARKETPLACE_ROOT
+    / 'plan-marshall'
+    / 'skills'
+    / 'phase-6-finalize'
+    / 'standards'
+    / 'pre-push-quality-gate.md'
+)
+
+#: The three guards the gate runs, in `build.py:cmd_verify` order.
+_GUARD_TOKENS = ('quality-gate', 'test-compile', 'module-tests')
+
+#: The three quality-gate dimensions ONLY whole-tree scope reaches. A
+#: degradation WARNING naming fewer than all three is a partial-truth signal.
+_WHOLE_TREE_ONLY_DIMENSIONS = ('plugin-doctor', '.claude/', 'marketplace/targets')
+
+#: Guard 1's whole-tree arm, as the ADJACENT phrase "whole-tree quality-gate"
+#: (tolerating only markdown emphasis/backtick noise between the two words).
+#: Adjacency is load-bearing: a mere-proximity match would be satisfied by the
+#: pre-fix prose, where "whole-tree" belongs to test-compile or module-tests and
+#: never to quality-gate — which is exactly the drift this sweep must catch. So
+#: every lock-step site spells the arm as one adjacent phrase.
+_WHOLE_TREE_QUALITY_GATE = re.compile(
+    r'whole-tree[\s`*_]{0,4}quality-gate', re.IGNORECASE
+)
+
+#: The whole-tree (no bundle argument) quality-gate invocation.
+_WHOLE_TREE_QG_INVOCATION = re.compile(r'run --command-args "quality-gate"')
 
 # The real Python build_map globs (single-``*`` fnmatch spans ``/``).
 _GLOBS = ['marketplace/bundles/*.py', 'test/*.py', 'pyproject.toml']
@@ -137,3 +169,224 @@ def test_whole_tree_unavailable_routes_to_warn():
     assert resolution.divergence_possible is True
     assert route == 'warn'
     assert target is None
+
+
+# ---------------------------------------------------------------------------
+# Guard 1's whole-tree arm: reachability, honest degradation, lock-step
+# ---------------------------------------------------------------------------
+#
+# Three quality-gate dimensions exist ONLY at whole-tree scope (the
+# marketplace-wide plugin-doctor pass, the `.claude/` ruff coverage, and the
+# `marketplace/targets` SPDX coverage). A purely bundle-scoped guard 1 can never
+# reach them, so they surface first at remote CI. These tests pin that guard 1
+# carries a whole-tree arm, that any skip path degrades honestly by naming all
+# three dimensions, and that the lock-step sites describing the guard set cannot
+# drift apart one site at a time.
+
+
+def _gate_text() -> str:
+    text: str = _GATE_DOC.read_text(encoding='utf-8')
+    return text
+
+
+def _lock_step_sites() -> dict[str, str]:
+    """Return the named sites that must all describe the same guard set.
+
+    Each site is located by a stable anchor rather than a line number, so
+    ordinary prose edits around it do not silently drop a site from the sweep.
+    """
+    lines = _gate_text().splitlines()
+    sites: dict[str, str] = {}
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith('description:'):
+            sites.setdefault('frontmatter-description', stripped)
+        elif stripped.startswith('Pure executor for the `pre-push-quality-gate`'):
+            sites.setdefault('body-guard-enumeration', stripped)
+        elif stripped.startswith('The module-tests outcome folds into'):
+            sites.setdefault('folds-into-summary', stripped)
+        elif stripped.startswith('Record the outcome on the live plan'):
+            sites.setdefault('mark-step-complete-preamble', stripped)
+        elif stripped.startswith('**Branch A —'):
+            sites.setdefault('branch-a-condition', stripped)
+        elif stripped.startswith('**Branch B —'):
+            sites.setdefault('branch-b-condition', stripped)
+        elif '--display-detail "{N} bundles' in stripped:
+            sites.setdefault('branch-a-display-detail', stripped)
+        elif '--display-detail "{quality-gate failed for' in stripped:
+            sites.setdefault('branch-b-display-detail', stripped)
+    return sites
+
+
+def _names_all_three_dimensions(text: str) -> bool:
+    return all(dimension in text for dimension in _WHOLE_TREE_ONLY_DIMENSIONS)
+
+
+def _degradation_warning_lines() -> list[str]:
+    """Return the WARNING lines covering the whole-tree quality-gate skip path."""
+    return [
+        line
+        for line in _gate_text().splitlines()
+        if '[WARNING]' in line and _WHOLE_TREE_QUALITY_GATE.search(line)
+    ]
+
+
+def test_whole_tree_quality_gate_pass_is_reachable_from_the_gate_document():
+    text = _gate_text()
+
+    assert _WHOLE_TREE_QG_INVOCATION.search(text), (
+        'The gate document must carry a whole-tree (no bundle argument) '
+        'quality-gate invocation — without it the three whole-tree-only '
+        'dimensions are unreachable from the pre-push gate'
+    )
+
+
+def test_gate_document_names_all_three_whole_tree_only_dimensions():
+    text = _gate_text()
+
+    missing = [d for d in _WHOLE_TREE_ONLY_DIMENSIONS if d not in text]
+
+    assert not missing, (
+        f'The gate document must name every whole-tree-only quality-gate '
+        f'dimension so a reader knows what the arm exists to reach. '
+        f'Missing: {missing}'
+    )
+
+
+def test_degradation_warning_names_all_three_dimensions():
+    warnings = _degradation_warning_lines()
+
+    assert warnings, (
+        'The gate document must carry an honest-degradation WARNING for the '
+        'whole-tree quality-gate skip path — a silent skip is prohibited'
+    )
+    for warning in warnings:
+        assert _names_all_three_dimensions(warning), (
+            f'A whole-tree quality-gate degradation WARNING must name ALL '
+            f'THREE un-gated dimensions {_WHOLE_TREE_ONLY_DIMENSIONS} — never a '
+            f'singular "the whole-tree dimension". Offending line: {warning!r}'
+        )
+
+
+def test_lock_step_sites_all_name_the_whole_tree_quality_gate_arm():
+    sites = _lock_step_sites()
+
+    # Every named site must have been located; a missing site would silently
+    # shrink the sweep and let that site drift unchecked.
+    expected_sites = {
+        'frontmatter-description',
+        'body-guard-enumeration',
+        'folds-into-summary',
+        'mark-step-complete-preamble',
+        'branch-a-condition',
+        'branch-b-condition',
+        'branch-a-display-detail',
+        'branch-b-display-detail',
+    }
+    missing_sites = expected_sites - set(sites)
+    assert not missing_sites, (
+        f'Lock-step sites not found in pre-push-quality-gate.md: '
+        f'{sorted(missing_sites)} — the sweep would silently skip them'
+    )
+
+    stale = [
+        name
+        for name, body in sites.items()
+        if not _WHOLE_TREE_QUALITY_GATE.search(body)
+    ]
+
+    assert not stale, (
+        f'Lock-step drift: these sites describe the guard set without naming '
+        f"guard 1's whole-tree arm, so one site was updated and another left "
+        f'stale: {sorted(stale)}'
+    )
+
+
+def test_lock_step_sites_all_name_every_guard():
+    # The guard set itself must stay consistent across the describing sites —
+    # the branch conditions and display_detail strings are where a guard is
+    # most often added in one place and forgotten in the other.
+    sites = _lock_step_sites()
+
+    drift = {
+        name: [g for g in _GUARD_TOKENS if g not in body]
+        for name, body in sites.items()
+        if name
+        in {
+            'body-guard-enumeration',
+            'folds-into-summary',
+            'mark-step-complete-preamble',
+            'branch-a-condition',
+            'branch-b-condition',
+        }
+    }
+    incomplete = {name: missing for name, missing in drift.items() if missing}
+
+    assert not incomplete, (
+        f'Lock-step drift: these sites omit guards from the guard set '
+        f'{_GUARD_TOKENS}: {incomplete}'
+    )
+
+
+# ---------------------------------------------------------------------------
+# Mutation guards — the sweeps above must fail on the pre-fix shapes
+# ---------------------------------------------------------------------------
+
+
+def test_three_dimension_detector_rejects_a_single_dimension_warning():
+    # A WARNING naming only one dimension is the partial-truth shape this
+    # deliverable forbids; the detector must reject it.
+    single = (
+        '[WARNING] (plan-marshall:pre-push-quality-gate) Whole-tree '
+        'quality-gate unavailable — the plugin-doctor pass is UN-GATED.'
+    )
+    assert not _names_all_three_dimensions(single), (
+        'Three-dimension detector accepted a WARNING naming only one '
+        'dimension — the assertion would be vacuous'
+    )
+
+    two = single.replace('UN-GATED.', 'UN-GATED, and .claude/ ruff coverage.')
+    assert not _names_all_three_dimensions(two), (
+        'Three-dimension detector accepted a two-dimension WARNING'
+    )
+
+    complete = two.replace(
+        'ruff coverage.', 'ruff coverage, and marketplace/targets SPDX coverage.'
+    )
+    assert _names_all_three_dimensions(complete), (
+        'Three-dimension detector rejected a complete three-dimension WARNING'
+    )
+
+
+def test_whole_tree_arm_detector_fires_on_the_pre_fix_bundle_only_prose():
+    # Mutation guard for the lock-step sweep: the pre-fix sites described guard
+    # 1 as bundle-scoped only, with no whole-tree arm.
+    pre_fix_sites = [
+        'description: Run quality-gate per affected bundle, then whole-tree '
+        'test-compile, then gate whole-tree module-tests on scoped-vs-whole-tree '
+        'divergence risk, as the last gate before push',
+        '**Branch A — all bundles green AND test-compile green AND module-tests '
+        'gate green**:',
+        '  --display-detail "quality-gate green for {N} bundle(s), test-compile '
+        'green, module-tests gate green" \\',
+    ]
+
+    # The frontmatter line is the subtle one: it DOES contain "whole-tree", but
+    # only attached to test-compile / module-tests, never to quality-gate. The
+    # adjacency-bounded detector must not be fooled by that.
+    assert not _WHOLE_TREE_QUALITY_GATE.search(pre_fix_sites[0]), (
+        'Whole-tree-arm detector was fooled by a "whole-tree" that belongs to a '
+        'different guard — the lock-step sweep would be vacuously green'
+    )
+    for site in pre_fix_sites[1:]:
+        assert not _WHOLE_TREE_QUALITY_GATE.search(site), (
+            f'Whole-tree-arm detector failed to reject a known pre-fix '
+            f'bundle-only site: {site!r}'
+        )
+
+    # Positive control — the post-fix Branch A condition IS accepted.
+    post_fix = (
+        '**Branch A — all bundles green AND whole-tree quality-gate green AND '
+        'test-compile green AND module-tests gate green**:'
+    )
+    assert _WHOLE_TREE_QUALITY_GATE.search(post_fix)
