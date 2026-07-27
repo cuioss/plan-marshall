@@ -27,12 +27,13 @@ implements:
 
 ## Enforcement
 
-**Execution mode**: Select a mode (finalize-step live, user-invocable live, archived) from the Input Contract, dispatch the 14 aspect references in the documented order, compile the report, propose lessons, then emit the mode-appropriate termination (mark-step-done tail for finalize-step mode only).
+**Execution mode**: Select a mode (finalize-step live, user-invocable live, archived) from the Input Contract, dispatch the 14 aspect references in the documented order, compile the report, then record proposals per Step 5b's orchestration branch — to the global lessons store when `orchestrated: false`, to the epic inbox as `kind: candidate-lesson` messages when `orchestrated: true` — and emit the mode-appropriate termination (mark-step-done tail for finalize-step mode only).
 
 **Prohibited actions**:
 - Never re-run invariant capture. Read `status.metadata.phase_handshake` or `status.metadata.invariants` directly — invariants are already captured by phase transitions.
 - Never write to archived plan directories. Archived mode writes the report next to the archived plan, but the plan state itself is read-only.
 - Never call `mark-step-done` in archived mode or user-invocable live mode — only the finalize-step mode emits the handshake tail.
+- Never call `manage-lessons add` in orchestration context (`orchestrated: true`). Step 5b routes every proposal to the epic inbox on that branch, and the `already_closed` deletion path does not run — deleting a global lesson is a corpus mutation the orchestrator owns.
 - Never silently skip aspect dispatch. If a script fails, record the failure in the report under "Script failure analysis" and continue.
 - Never treat a `compile-report` warning as a clean pass. A non-empty `sections_dropped` MUST be surfaced in the report and carried into the Step 5 lessons proposal — a dropped fragment may have carried a live finding.
 - Do not modify any .plan/ files directly — all plan state access goes through `manage-*` scripts and the scripts in this skill.
@@ -59,6 +60,10 @@ This workflow dispatches under `--phase phase-6-finalize --role post-run-review`
 | `--archived-plan-path` | string | Conditional | Absolute path to an archived plan directory (`.plan/archived-plans/{date}-{plan_id}/`). Required for archived mode. Mutually exclusive with `--plan-id`. |
 | `--session-id` | string | No | Optional session identifier. When present, the chat-history aspect is dispatched; otherwise it is skipped. |
 | `--iteration` | integer | No | Finalize-step iteration counter. Forwarded by `phase-6-finalize`; ignored by user-invocable and archived modes. |
+| `orchestrated` | bool | No | `true` when this plan was launched from an epic's staged plan spec, so Step 5b routes every proposal to the epic inbox instead of the global lessons store. In finalize-step mode the dispatcher forwards it (resolved once per finalize run at `phase-6-finalize/SKILL.md` Step 3 item 4b.a0); this body MUST NOT recompute it. |
+| `epic` | string | No | The epic slug when `orchestrated` is `true`, the empty string otherwise. Same forwarded-and-must-not-recompute obligation. |
+
+**Orchestration-context resolution per mode**: in **finalize-step mode** the dispatcher supplies `orchestrated` / `epic`. In **user-invocable live mode** (a real caller with no dispatcher) this body resolves them itself through the SAME two-call seam — `manage-plan-documents request read --plan-id {plan_id} --section source_id`, then `orchestrator inbox detect --source-id "{source_id}"` — never a third detector. **Archived mode is out of scope and unchanged**: it is a read-only historic audit of an already-landed plan, not part of an orchestrated plan's finalize run, and the epic tree may itself be archived — so archived mode never resolves orchestration context and never writes an inbox message.
 
 **Mode resolution**:
 - `--plan-id` provided, invoked by `phase-6-finalize` → **finalize-step mode** (emit `mark-step-done` tail).
@@ -282,6 +287,20 @@ Dedup-gate enforcement is documented in `references/lessons-proposal.md` ("Dedup
 
 #### Step 5b: Record (gated by 5a)
 
+Branch on `orchestrated` before recording anything.
+
+**`orchestrated: true` — route to the epic inbox.** Make **zero** `manage-lessons add` calls. Step 5a's dedup classification does NOT run on this branch: the corpus it dedups against is the global store, which is not the destination, and only the orchestrator holds the cross-plan context that classification needs. Every proposal — regardless of the kind of finding that produced it — is emitted as one `kind: candidate-lesson` inbox message. Stage each payload body with the `Write` tool first (the same shell-safety reason the global-store flow uses a path-allocate sequence), then write it:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator inbox write \
+  --slug {epic} --sender-type plan --sender-id {plan_id} --kind candidate-lesson \
+  --payload-file {plan_dir}/work/inbox-payload.md
+```
+
+The proposal body composed for the global store is the payload **verbatim** — no transcoding, which is exactly what the markdown + `key=value` envelope choice buys. No `already_closed` deletion happens on this branch: deleting a global lesson is a corpus mutation the orchestrator owns. See [`../marshall-orchestrator/standards/inbox-envelope.md`](../marshall-orchestrator/standards/inbox-envelope.md) for the envelope schema and the `kind` enum; do not restate them here.
+
+**`orchestrated: false` — unchanged.** Every existing path below applies byte for byte: Step 5a dedup classification, the `status: new` gate, `manage-lessons add` + `Write` the body, the `merge_into` `Edit` path, and the `already_closed` deletion path.
+
 Only `status: new` proposals reach `manage-lessons add`:
 
 ```bash
@@ -341,6 +360,14 @@ On Claude Code the runtime reads the stored `session_id` and captures token usag
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step plan-marshall:plan-retrospective --outcome done \
   --display-detail "{N} findings across {M} aspects"
+```
+
+When the Step 5b orchestration branch fired, report the inbox route instead — same ≤80-char ASCII no-trailing-period constraint:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
+  --plan-id {plan_id} --phase 6-finalize --step plan-marshall:plan-retrospective --outcome done \
+  --display-detail "{N} candidate-lesson(s) -> epic {epic}"
 ```
 
 **User-invocable live mode** and **archived mode**: skip the handshake. Emit only the final TOON contract below.

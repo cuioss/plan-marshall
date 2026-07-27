@@ -3,7 +3,7 @@
 """Thin scaffolding script for the marshall-orchestrator skill.
 
 Deliberately lean, per the orchestrator's lean posture: everything that
-requires judgement stays LLM-workflow; this script owns four deterministic
+requires judgement stays LLM-workflow; this script owns five deterministic
 operations against the main-anchored orchestrator store
 (``.plan/local/orchestrator/{slug}/``, resolved via
 ``file_ops.get_store_dir('orchestrator', slug)``):
@@ -21,6 +21,11 @@ operations against the main-anchored orchestrator store
 - ``archive --slug S`` — relocate a *closed* epic tree to
   ``.plan/local/archived-orchestrators/{slug}/`` (a mechanical, post-close
   directory move that requires no judgement; refuses a non-closed epic).
+- ``inbox {write,validate,detect}`` — the epic's plan-writable OUTBOX: append
+  one ``inbox/{sender_id}-{NNN}.md`` message, validate an existing message
+  against the envelope schema, or classify a plan's ``source_id`` pointer as
+  orchestrated. Backed by :mod:`_orchestrator_inbox`; the write boundary is
+  enforced by construction there (no caller-supplied output path exists).
 
 The ``kind=orchestrator`` ``status.json`` schema is owned by
 ``manage-status/standards/status-lifecycle.md``; ``status.json`` is created
@@ -35,6 +40,14 @@ from pathlib import Path
 from typing import Any
 
 from _locks_core import rmw_json
+from _orchestrator_inbox import (
+    INBOX_SUBDIR,
+    KINDS,
+    SENDER_TYPES,
+    cmd_inbox_detect,
+    cmd_inbox_validate,
+    cmd_inbox_write,
+)
 from file_ops import (
     get_archived_orchestrator_dir,
     get_store_dir,
@@ -49,7 +62,7 @@ ORCHESTRATOR_STORE = 'orchestrator'
 
 # Epic subdirectories per the layout contract in
 # persona-marshall-orchestrator/standards/orchestration-model.md.
-EPIC_SUBDIRS = ('workstreams', 'plans', 'landings', 'logs')
+EPIC_SUBDIRS = ('workstreams', 'plans', 'landings', 'logs', INBOX_SUBDIR)
 
 FILE_STATUS = 'status.json'
 
@@ -462,7 +475,8 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         description=(
             'Thin scaffolding for marshall-orchestrator epics: scaffold the '
             'epic tree, read/transition/stamp the plan queue, generate the '
-            'START-HERE resume summary.'
+            'START-HERE resume summary, archive a closed epic, and drive the '
+            'plan-writable inbox OUTBOX.'
         ),
         allow_abbrev=False,
     )
@@ -536,7 +550,78 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     _add_slug_arg(archive)
     archive.set_defaults(handler=cmd_archive)
 
+    _add_inbox_group(subparsers)
+
     return parser
+
+
+def _add_inbox_group(subparsers: Any) -> None:
+    """Register the ``inbox`` verb group (``write``, ``validate``, ``detect``).
+
+    The handlers live in :mod:`_orchestrator_inbox`; this function only wires
+    argv to them. Note what the surface deliberately does NOT expose: no output
+    path, no sequence number, and no inbox directory — the write target is
+    derived from ``--slug`` and ``--sender-id`` alone, which is what makes the
+    ledger write-boundary carve-out enforced by construction.
+    """
+    inbox = subparsers.add_parser(
+        'inbox',
+        help="Epic inbox OUTBOX: append, validate, or detect a plan's messages.",
+        allow_abbrev=False,
+    )
+    actions = inbox.add_subparsers(dest='inbox_action', required=True)
+
+    write = actions.add_parser(
+        'write',
+        help='Append one inbox/{sender_id}-{NNN}.md message to the epic.',
+        allow_abbrev=False,
+    )
+    _add_slug_arg(write)
+    write.add_argument(
+        '--sender-type',
+        required=True,
+        help=f'Sender class: one of {sorted(SENDER_TYPES)}.',
+    )
+    write.add_argument(
+        '--sender-id',
+        required=True,
+        help="Sender identifier (a plan id); also the message filename's sender segment.",
+    )
+    write.add_argument(
+        '--kind', required=True, help=f'Payload kind: one of {sorted(KINDS)}.'
+    )
+    write.add_argument(
+        '--payload-file',
+        required=True,
+        help='Path to the staged markdown payload body (never inline text).',
+    )
+    write.set_defaults(handler=cmd_inbox_write)
+
+    validate = actions.add_parser(
+        'validate',
+        help='Validate one existing inbox message against the envelope schema.',
+        allow_abbrev=False,
+    )
+    _add_slug_arg(validate)
+    validate.add_argument(
+        '--message',
+        required=True,
+        metavar='NAME',
+        help='Bare message filename inside the epic inbox/ directory.',
+    )
+    validate.set_defaults(handler=cmd_inbox_validate)
+
+    detect = actions.add_parser(
+        'detect',
+        help="Classify a plan's request source_id as an orchestrated plan pointer.",
+        allow_abbrev=False,
+    )
+    detect.add_argument(
+        '--source-id',
+        required=True,
+        help="The request.md source_id value recorded by phase-1-init.",
+    )
+    detect.set_defaults(handler=cmd_inbox_detect)
 
 
 @safe_main

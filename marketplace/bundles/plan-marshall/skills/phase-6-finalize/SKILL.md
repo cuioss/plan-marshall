@@ -668,6 +668,26 @@ FOR each step_id in manifest.phase_6.steps:
 
       The deterministic three-signal Signal Gate is evaluated at dispatcher level so the envelope spawn cost is avoided when all three signals are zero. The dispatcher computes the precondition; the LLM workflow body is the recording loop only. When all three signals are zero, short-circuit and record `outcome=skipped`.
 
+      a0. Resolve orchestration context (runs BEFORE the three-zero short-circuit):
+
+         An orchestrated plan — one launched from an epic's staged plan spec — routes its lesson-shaped output to the epic's `inbox/` OUTBOX instead of the global lessons store. The verdict is resolved ONCE per finalize run, here, and forwarded to EVERY dispatched step whose body emits lesson-shaped output. That set is currently **two** steps: `default:lessons-capture` and `plan-marshall:plan-retrospective` (Step 5b). A future step that gains a `manage-lessons add` call site MUST be added to this list and receive the same two runtime inputs.
+
+         Read the plan's spec pointer through its canonical owner:
+
+            python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents \
+              request read --plan-id {plan_id} --section source_id
+
+         Classify it through the single detection seam (no second detector, no new persisted metadata field):
+
+            python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator inbox detect \
+              --source-id "{source_id}"
+
+         Parse `orchestrated` and `epic` from the TOON output. Log the verdict, mirroring the Signal-Gate skip log line:
+
+            python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+              decision --plan-id {plan_id} --level INFO \
+              --message "(plan-marshall:phase-6-finalize:lessons-capture) Orchestration context: orchestrated={orchestrated} epic={epic}"
+
       a. Compute three signal counts:
 
          **Signal 1 — Q-Gate findings, pending OR resolved-in-run (sum across five phases)**:
@@ -718,7 +738,9 @@ FOR each step_id in manifest.phase_6.steps:
 
       b. Three-zero short-circuit:
 
-         When `signal_1_count == 0 AND signal_2_count == 0 AND signal_3_count == 0`:
+         **Orchestration carve-out**: when `orchestrated: true` (from a0) the three-zero short-circuit does NOT fire — the body is dispatched even at zero signals, because an orchestrated plan owes its epic a `kind: landing` message regardless of whether it produced lesson-bearing signals. Skip straight to item c. When `orchestrated: false` the short-circuit below is unchanged, byte for byte.
+
+         When `orchestrated == false AND signal_1_count == 0 AND signal_2_count == 0 AND signal_3_count == 0`:
             - Mark the step done with `outcome=skipped` directly from the dispatcher (do NOT dispatch the envelope):
 
               python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
@@ -733,13 +755,20 @@ FOR each step_id in manifest.phase_6.steps:
 
             - CONTINUE the FOR loop (skip item 5 dispatch entirely for this step).
 
-      c. Forward gate counts on dispatch (when at least one signal is non-zero):
+      c. Forward gate counts and orchestration context on dispatch (when at least one signal is non-zero, OR `orchestrated: true`):
 
-         The envelope no longer re-computes the three signals — the dispatcher forwards them as runtime inputs so the body skips its (now-removed) Signal Gate step. Add the three count fields verbatim into the prompt body's runtime-inputs block alongside `plan_id` (see item 5 below):
+         The envelope no longer re-computes the three signals — the dispatcher forwards them as runtime inputs so the body skips its (now-removed) Signal Gate step. It likewise forwards the a0 orchestration verdict so no body re-issues the detection. Add all five fields verbatim into the prompt body's runtime-inputs block alongside `plan_id` (see item 5 below):
 
             signal_qgate_pending_count: {signal_1_count}
             signal_automated_review_count: {signal_2_count}
             signal_script_failure_clusters_count: {signal_3_count}
+            orchestrated: {true|false}
+            epic: {slug|""}
+
+         The same two orchestration fields are ALSO forwarded on the `plan-marshall:plan-retrospective` dispatch (the DISPATCHED roster entry under `--phase phase-6-finalize --role post-run-review`, and the sole whitelisted `--session-id` recipient), so both lesson-emitting write-sites see one verdict resolved once:
+
+            orchestrated: {true|false}
+            epic: {slug|""}
 
          Continue to item 5 (Dispatch with timeout wrapper).
 
