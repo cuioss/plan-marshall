@@ -6,7 +6,8 @@ Covers every method defined by the Runtime ABC:
   1.  project_initial_setup       — creates dirs, writes marshal.json, installs hook
   2.  session_capture             — reads $CLAUDE_CODE_SESSION_ID, stores via manage-status
   3.  session_render_title        — resolves session → plan → OSC emit
-  4.  session_push_title_token    — live /dev/tty repaint (icon now optional)
+  4.  session_push_title_token    — binds the session and persists the token state for
+      the next render event (icon optional); it performs no terminal write of its own
   4b. session_bind / resolve-plan / doctor — the relocated last-driven-wins binding
       policy (covered in depth by test__claude_runtime_impl.py)
   5.  permission_configure        — overwrites allow list in settings
