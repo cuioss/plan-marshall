@@ -390,7 +390,7 @@ An **assertion**, not a transform: it reorders nothing and drops nothing, and it
 
 | `reason` | Rejected when |
 |----------|---------------|
-| `order_inversion` | A step's resolved `order` is strictly less than the maximum resolved `order` at an earlier list position. The message names BOTH steps of the inverted pair. |
+| `order_inversion` | A step's resolved `order` is strictly less than the maximum resolved `order` at a preceding list position. The message names BOTH steps of the inverted pair. |
 | `unresolvable_order` | A built-in or `project:` step's `order` does not resolve — either its source file declares no integer `order:` key, or its source file could not be resolved at all. The two cases are distinguished in the message. |
 
 A `bundle:skill` external step has no project-local source by design, is legitimately orderless, and is skipped without complaint. Non-string entries are left to the schema checks.
