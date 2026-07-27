@@ -131,6 +131,10 @@
         "default:lessons-capture": {
           "lane": "minimal"
         },
+        "default:finalize-step-preference-emitter": {
+          "preference_min_recurrence": 2,
+          "lane": "minimal"
+        },
         "default:adr-propose": {
           "lane": "off"
         },
@@ -144,10 +148,6 @@
           "use_merge_queue": true,
           "admin_merge_on_stuck_state": false,
           "pre_merge_comment_barrier": "fail_into_loopback",
-          "lane": "minimal"
-        },
-        "default:finalize-step-preference-emitter": {
-          "preference_min_recurrence": 2,
           "lane": "minimal"
         },
         "plan-marshall:plan-retrospective": {
@@ -176,6 +176,9 @@
       }
     },
     "finding_raw_input_max_bytes": 65536
+  },
+  "orchestrator": {
+    "auto_emit": false
   },
   "build": {
     "queue": {
@@ -301,7 +304,7 @@
       "plugin_cache_keep_versions": 5,
       "plugin_cache_keep_days": 3
     },
-    "provisioned_version": "0.1.1192",
-    "config_seed_fingerprint": "9a1bd104"
+    "provisioned_version": "0.1.1228",
+    "config_seed_fingerprint": "4e859c03"
   }
 }
