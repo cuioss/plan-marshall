@@ -86,6 +86,12 @@ A wall-clock budget answers "how long am I willing to hold this wait," and **not
 
 The finalize CI wait is the standard's **first intended consumer**: a fixed wall-clock budget on the CI wait is a bound on the orchestrator's patience, and its expiry means "CI has not concluded yet," which is an actionable pending state — not "CI passed." A budget chosen too small produces more pending outcomes; it never produces a wrong verdict, because the budget has no verdict to give.
 
+## The inner ceiling must margin-clear the outer one
+
+Every tier-2 realisation is invoked through some outer bound the caller does not control — a harness-imposed per-call ceiling, a caller-declared subprocess timeout, or another wrapper's own deadline. **The wait's own internal deadline MUST sit strictly below that outer bound, with enough margin to serialise and return its terminal-outcome envelope before the outer bound fires.** Setting the two equal is not a conservative choice — it is the wrong one: the wait must still finish computing and flushing its result *after* its internal deadline elapses, so its observable finish time is always strictly later than the deadline itself. An inner bound equal to (or above) the outer one therefore guarantees the outer bound wins the race, and when it does the caller gets nothing — no terminal-outcome envelope, no partial output, not even the explicit-unknown the budget-exhaustion rule above requires. The realisation is killed mid-flight instead of returning its own `pending` verdict.
+
+**The wait implementation owns the margin — never the caller.** Telling every caller to raise its outer bound is not a fix: the outer ceiling is frequently a platform property the caller cannot raise, and a caller-side workaround is invisible at the next call site that forgets it. Clamp the internal deadline inside the wait itself, derived from whatever outer bound the caller declares (explicit, learned, or default), so the invariant holds regardless of which origin produced the outer value.
+
 ## Scope
 
 No existing waiting call site is migrated onto the `Runtime` waiting operation by this standard. The seams that wait today — the detach-and-notify orchestration seam, the CI abstraction's bounded wait verbs, the finalize CI wait, and the build-server long poll — continue to behave exactly as they do. This document states the policy they are measured against; migrating them onto the operation is separate work.
