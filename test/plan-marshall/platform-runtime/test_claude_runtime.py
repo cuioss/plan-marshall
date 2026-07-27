@@ -822,7 +822,13 @@ class TestInstallTerminalTitleHooks:
     # ------------------------------------------------------------------
 
     def test_existing_claude_hook_session_start_preserved(self, rt, tmp_path):
-        """A pre-existing claude_hook capture entry is preserved when render entries are added."""
+        """A pre-existing claude_hook capture entry is preserved when render entries are added.
+
+        SessionStart carries BOTH the matcher-less render entry and the
+        ``matcher: "clear"`` one (D6) — the pre-existing foreign capture entry
+        must survive alongside both, and each render entry must appear exactly
+        once (never duplicated by the insert).
+        """
         target = tmp_path / ".claude" / "settings.local.json"
         target.parent.mkdir(parents=True)
         existing = {
@@ -842,10 +848,18 @@ class TestInstallTerminalTitleHooks:
 
         settings = json.loads(target.read_text())
         session_start = settings["hooks"]["SessionStart"]
-        # Capture entry still present.
+        # Foreign capture entry still present, undisturbed.
         assert _count_command(session_start, _HOOK_COMMAND) == 1
-        # The matcher-less render entry was added without disturbing the capture entry.
-        assert _count_command(session_start, _RENDER_HOOK_COMMAND) == 1
+        # Both render entries were added: matcher-less and matcher:"clear",
+        # each exactly once — no duplication of either.
+        assert _count_command(session_start, _RENDER_HOOK_COMMAND) == 2
+        matchers_with_render = {
+            entry.get("matcher", "")
+            for entry in session_start
+            if isinstance(entry, dict)
+            and any(h.get("command") == _RENDER_HOOK_COMMAND for h in entry.get("hooks", []))
+        }
+        assert matchers_with_render == {"", "clear"}
 
     def test_preserves_unrelated_existing_hooks_block(self, rt, tmp_path):
         """Existing unrelated hooks (e.g. UserPromptSubmit with a foreign command) are preserved

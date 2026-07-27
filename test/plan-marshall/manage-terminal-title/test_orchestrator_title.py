@@ -16,10 +16,21 @@ Covers:
 """
 
 import json
+from datetime import UTC, datetime
 
 import claude_runtime
 import platform_runtime
 from manage_terminal_title import compose
+
+
+def _token(state: str, owner: str) -> dict:
+    """Build a ``{owner, state, set_at}`` title_token record for test input.
+
+    ``compose()`` is called with ``now=None`` in every path exercised by this
+    file, so staleness is never evaluated — ``set_at`` only needs to be a
+    well-formed timestamp, not a specific instant.
+    """
+    return {"owner": owner, "state": state, "set_at": datetime.now(UTC).isoformat()}
 
 
 def _write_orchestrator_status(tmp_path, slug: str, extra: dict | None = None) -> None:
@@ -94,12 +105,18 @@ class TestPlanStateRegression:
         assert compose({'short_description': 'demo'}, 'active') is None
 
     def test_should_prepend_lock_glyph_for_active_plan(self):
-        state = {'current_phase': '5-execute', 'title_token': 'lock-owned'}
+        state = {
+            'current_phase': '5-execute',
+            'title_token': _token('lock-owned', owner='merge-lock'),
+        }
 
         assert compose(state, 'active') == '➤ 🔒 pm:5-execute'
 
     def test_should_force_build_icon_for_build_busy_plan(self):
-        state = {'current_phase': '5-execute', 'title_token': 'build-busy'}
+        state = {
+            'current_phase': '5-execute',
+            'title_token': _token('build-busy', owner='build-hook'),
+        }
 
         assert compose(state, 'active') == '🔨 pm:5-execute'
 
@@ -111,12 +128,20 @@ class TestPlanStateRegression:
 
 class TestOrchestratorIconGlyphPrecedence:
     def test_should_force_build_icon_for_build_busy_orchestrator(self):
-        state = {'kind': 'orchestrator', 'slug': 'my-epic', 'title_token': 'build-busy'}
+        state = {
+            'kind': 'orchestrator',
+            'slug': 'my-epic',
+            'title_token': _token('build-busy', owner='build-hook'),
+        }
 
         assert compose(state, 'active') == '🔨 Orchestrator-my-epic'
 
     def test_should_prepend_lock_waiting_glyph_on_orchestrator_body(self):
-        state = {'kind': 'orchestrator', 'slug': 'my-epic', 'title_token': 'lock-waiting'}
+        state = {
+            'kind': 'orchestrator',
+            'slug': 'my-epic',
+            'title_token': _token('lock-waiting', owner='merge-lock'),
+        }
 
         assert compose(state, None) == '➤ ⏳ Orchestrator-my-epic'
 
@@ -126,7 +151,11 @@ class TestOrchestratorIconGlyphPrecedence:
         assert compose(state, None, icon_override='🔒') == '🔒 Orchestrator-my-epic'
 
     def test_should_let_build_busy_win_over_icon_override(self):
-        state = {'kind': 'orchestrator', 'slug': 'my-epic', 'title_token': 'build-busy'}
+        state = {
+            'kind': 'orchestrator',
+            'slug': 'my-epic',
+            'title_token': _token('build-busy', owner='build-hook'),
+        }
 
         assert compose(state, None, icon_override='🔒') == '🔨 Orchestrator-my-epic'
 
@@ -147,7 +176,11 @@ class TestOrchestratorStateRead:
 
     def test_should_carry_title_token_through(self, monkeypatch, tmp_path):
         monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
-        _write_orchestrator_status(tmp_path, 'my-epic', extra={'title_token': 'build-busy'})
+        _write_orchestrator_status(
+            tmp_path,
+            'my-epic',
+            extra={'title_token': _token('build-busy', owner='build-hook')},
+        )
 
         state = claude_runtime._read_orchestrator_title_state('my-epic')
 
