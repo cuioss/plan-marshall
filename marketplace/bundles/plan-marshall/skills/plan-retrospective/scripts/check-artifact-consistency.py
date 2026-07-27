@@ -174,20 +174,23 @@ def check_deliverable_count(content: str) -> tuple[str, str, list[dict[str, str]
     return 'pass', f'{len(deliverables)} deliverables declared', deliverables
 
 
-def extract_affected_files_per_deliverable(content: str) -> list[str]:
-    """Extract every ``Affected files:`` bullet item across all deliverables.
+def _extract_bullets(block_content: str) -> list[str]:
+    """Extract ``Affected files:`` bullets from a block of solution-outline content.
 
-    Declared files are often listed as bullets beneath an ``**Affected files:**``
-    heading inside each deliverable section. We collect all such bullets into
-    a flat list for the recall check.
+    Splits on each ``**Affected files:**`` heading occurrence and collects the
+    bullets beneath it, stopping at the next bold field heading (e.g. the next
+    deliverable field or the next deliverable's own heading).
 
     Both tolerated bullet forms yield the bare path: the canonical
     ``- `path` (intent)`` form contributes only the backtick-delimited span,
     and the bare ``- path`` form contributes the trimmed line body.
+
+    Shared by :func:`extract_affected_files_per_deliverable` (aggregate, across
+    the whole content) and :func:`_declaration_state_per_deliverable`
+    (per-block) so the bullet-matching logic exists in exactly one place.
     """
     files: list[str] = []
-    # Iterate blocks that start with the Affected files heading.
-    blocks = re.split(r'\*\*Affected files:\*\*', content)
+    blocks = re.split(r'\*\*Affected files:\*\*', block_content)
     # First block is before any header, skip.
     for block in blocks[1:]:
         # Stop at the next bold heading (next deliverable field).
@@ -200,14 +203,23 @@ def extract_affected_files_per_deliverable(content: str) -> list[str]:
     return files
 
 
+def extract_affected_files_per_deliverable(content: str) -> list[str]:
+    """Extract every ``Affected files:`` bullet item across all deliverables.
+
+    Declared files are often listed as bullets beneath an ``**Affected files:**``
+    heading inside each deliverable section. We collect all such bullets into
+    a flat list for the recall check.
+    """
+    return _extract_bullets(content)
+
+
 def _declaration_state_per_deliverable(solution_content: str) -> list[dict[str, Any]]:
     """Return the per-deliverable ``Affected files:`` declaration state.
 
     For each ``### N. Title`` block of the outline's Deliverables section,
     records whether that block's OWN content carries the ``**Affected files:**``
-    heading and, when it does, the bullets :data:`_AFFECTED_FILE_BULLET_RE`
-    extracts from it — truncated at the next ``**Field:**`` heading exactly as
-    :func:`extract_affected_files_per_deliverable` does for the aggregate.
+    heading and, when it does, the bullets :func:`_extract_bullets` extracts
+    from it.
 
     Attribution is per deliverable so a heading that parses to zero bullets is
     detectable even when sibling deliverables declared files, which the
@@ -222,21 +234,12 @@ def _declaration_state_per_deliverable(solution_content: str) -> list[dict[str, 
 
     states: list[dict[str, Any]] = []
     for block in split_deliverable_blocks(deliverables_section):
-        blocks = re.split(r'\*\*Affected files:\*\*', block['content'])
-        files: list[str] = []
-        for chunk_source in blocks[1:]:
-            chunk = re.split(r'\*\*[A-Z][^*]+:\*\*', chunk_source, maxsplit=1)[0]
-            for match in _AFFECTED_FILE_BULLET_RE.finditer(chunk):
-                raw = match.group('quoted') or match.group('bare') or ''
-                path = raw.strip()
-                if path:
-                    files.append(path)
         states.append(
             {
                 'number': block['number'],
                 'title': block['title'],
-                'heading_present': len(blocks) > 1,
-                'files': files,
+                'heading_present': '**Affected files:**' in block['content'],
+                'files': _extract_bullets(block['content']),
             }
         )
     return states
