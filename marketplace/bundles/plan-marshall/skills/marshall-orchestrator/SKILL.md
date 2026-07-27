@@ -1,6 +1,6 @@
 ---
 name: marshall-orchestrator
-description: Resumable epic-orchestration skill - decomposes epics into workstreams and staged plans, emits ready-to-run /plan-marshall commands, tracks plan lifecycles, analyzes landings, receives structured inbox messages from executing plans, and reconciles the persisted orchestrator ledger; orchestrates, never implements
+description: Resumable epic-orchestration skill - decomposes epics into workstreams and staged plans, emits ready-to-run /plan-marshall commands, tracks plan lifecycles, analyzes landings, owns the append-only inbox channel executing plans write their structured messages to, and reconciles the persisted orchestrator ledger; orchestrates, never implements
 user-invocable: true
 mode: workflow
 ---
