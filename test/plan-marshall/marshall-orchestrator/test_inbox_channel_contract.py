@@ -20,8 +20,10 @@ point with constructed argv at the subprocess boundary (``run_script``), under
   (sender, sequence) order, reports a malformed message with its distinct
   validator error code instead of dropping it, and never looks inside
   ``inbox/archive/``; ``inbox archive`` relocates a consumed message, is
-  idempotent on repeat, refuses a path-shaped name, and refuses to clobber an
-  existing archived copy.
+  idempotent on repeat, refuses a path-shaped or empty name, refuses to clobber
+  an existing archived copy, and — being a MUTATING verb — refuses an unsafe
+  slug, an unscaffolded epic, and an archived-only epic rather than resolving
+  through the archived read-fallback the read-side verbs use.
 - **Boundary still holds on every non-inbox path**: after a write, and again
   after a ``list`` + ``archive`` pair, every non-inbox path in a pre-populated
   epic tree is byte-identical, and an unsafe slug is refused.
@@ -54,6 +56,10 @@ SENDER = 'contract-plan'
 #: AFTER ``SENDER`` ('c' < 'o'), which is what the order assertion pins.
 OTHER_SENDER = 'other-plan'
 
+#: An epic whose active tree is relocated to ``archived-orchestrators/`` mid-test,
+#: so the mutating-verb resolver is observed against an archived-only epic.
+ARCHIVED_EPIC = 'archived-epic'
+
 #: The five ledger paths that stay forbidden to a plan after the carve-out.
 FORBIDDEN_PATHS = ('status.json', 'epic.md', 'workstreams', 'plans', 'landings')
 
@@ -64,6 +70,10 @@ def _env(plan_context) -> dict[str, str]:
 
 def _epic_dir(plan_context, slug: str = EPIC) -> Path:
     return Path(plan_context.fixture_dir) / 'orchestrator' / slug
+
+
+def _archived_epic_dir(plan_context, slug: str) -> Path:
+    return Path(plan_context.fixture_dir) / 'archived-orchestrators' / slug
 
 
 def _payload(tmp_path: Path, body: str = 'the landing narrative', name: str = 'p.md') -> str:
@@ -267,6 +277,14 @@ class TestCliCarriesRejection:
         assert 'status: error' in result.stdout
         assert 'error: unknown_envelope_version' in result.stdout
 
+    def test_should_refuse_an_empty_message_name(self, plan_context):
+        _scaffold(plan_context)
+
+        result = _validate(plan_context, '')
+
+        assert result.returncode == 0
+        assert 'error: invalid_message_name' in result.stdout
+
 
 # =============================================================================
 # Drain surface: inbox list
@@ -439,6 +457,38 @@ class TestInboxArchive:
         result = _archive(plan_context, f'{SENDER}-404.md')
 
         assert 'error: file_not_found' in result.stdout
+
+    def test_should_refuse_an_empty_message_name(self, plan_context, tmp_path):
+        _scaffold(plan_context)
+        _write(plan_context, _payload(tmp_path))
+
+        result = _archive(plan_context, '')
+
+        assert 'error: invalid_message_name' in result.stdout
+        assert (_epic_dir(plan_context) / 'inbox' / f'{SENDER}-001.md').is_file()
+
+    def test_should_refuse_an_unsafe_slug(self, plan_context):
+        result = _archive(plan_context, f'{SENDER}-001.md', slug='../evil')
+
+        assert 'error: invalid_slug' in result.stdout
+
+    def test_should_refuse_an_unscaffolded_epic(self, plan_context):
+        result = _archive(plan_context, f'{SENDER}-001.md', slug='never-scaffolded')
+
+        assert 'error: epic_not_found' in result.stdout
+
+    def test_should_refuse_to_mutate_an_archived_only_epic(self, plan_context, tmp_path):
+        _scaffold(plan_context, ARCHIVED_EPIC)
+        _write(plan_context, _payload(tmp_path, 'archived body'), slug=ARCHIVED_EPIC)
+        archived = _archived_epic_dir(plan_context, ARCHIVED_EPIC)
+        archived.parent.mkdir(parents=True, exist_ok=True)
+        _epic_dir(plan_context, ARCHIVED_EPIC).rename(archived)
+
+        result = _archive(plan_context, f'{SENDER}-001.md', slug=ARCHIVED_EPIC)
+
+        assert 'error: epic_not_found' in result.stdout
+        assert (archived / 'inbox' / f'{SENDER}-001.md').is_file()
+        assert not (archived / 'inbox' / 'archive').exists()
 
 
 # =============================================================================

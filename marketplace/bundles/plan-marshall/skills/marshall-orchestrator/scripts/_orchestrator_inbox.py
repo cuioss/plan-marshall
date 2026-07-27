@@ -26,7 +26,6 @@ schema itself is documented in
 
 import os
 import re
-import shutil
 from pathlib import Path
 from typing import Any
 
@@ -115,11 +114,16 @@ def _validate_identifier(value: str) -> str | None:
 def _is_bare_filename(name: str) -> bool:
     """Whether ``name`` is a bare filename safe to join onto ``inbox/``.
 
-    The shared guard behind every ``--message`` argument: a value carrying a
-    path separator, a traversal segment, or a directory reference is refused
-    with ``invalid_message_name`` before it can reach a filesystem join.
+    The shared guard behind every ``--message`` argument: an empty value, or a
+    value carrying a path separator, a traversal segment, or a directory
+    reference, is refused with ``invalid_message_name`` before it can reach a
+    filesystem join. The emptiness test is load-bearing rather than defensive:
+    ``Path('').name`` is itself ``''``, so the empty string satisfies the
+    bare-name equality on its own and the join would resolve to ``inbox/``
+    itself — surfacing a confusing not-found against a directory path instead
+    of naming the actual defect in the argument.
     """
-    return name == Path(name).name and name not in ('.', '..')
+    return bool(name) and name == Path(name).name and name not in ('.', '..')
 
 
 def _read_epic_root(slug: str) -> Path:
@@ -135,6 +139,19 @@ def _read_epic_root(slug: str) -> Path:
 def _inbox_dir(slug: str) -> Path:
     """Resolve the epic's ``inbox/`` directory for a READ-side verb."""
     return _read_epic_root(slug) / INBOX_SUBDIR
+
+
+def _mutate_epic_root(slug: str) -> Path:
+    """Resolve the epic's store root for a MUTATING verb.
+
+    Deliberately omits the ``allow_archived=True`` read-fallback
+    :func:`_read_epic_root` opts into. Archival relocates a file, so a verb
+    that MUTATES must never resolve into ``archived-orchestrators/{slug}`` and
+    write inside an epic's frozen audit record once its active tree is gone —
+    :func:`file_ops.get_store_dir`'s strict default returns the (absent) active
+    path instead, which the caller refuses with ``epic_not_found``.
+    """
+    return get_store_dir(ORCHESTRATOR_STORE, slug)
 
 
 def compose_envelope(
@@ -513,21 +530,48 @@ def cmd_inbox_list(args: Any) -> dict[str, Any]:
     }
 
 
+def _archive_success(
+    slug: str, name: str, dest: Path, already_archived: bool
+) -> dict[str, Any]:
+    """Build the ``inbox-archive`` success envelope."""
+    return {
+        'status': 'success',
+        'operation': 'inbox-archive',
+        'slug': slug,
+        'store': ORCHESTRATOR_STORE,
+        'message': name,
+        'already_archived': already_archived,
+        'archived_to': str(dest),
+    }
+
+
 def cmd_inbox_archive(args: Any) -> dict[str, Any]:
     """Retire one consumed message to ``inbox/archive/{name}``.
 
     Archival is the consume marker: the message leaves the enumeration
     :func:`cmd_inbox_list` returns while its audit record survives at the
     archived path, so the append-only invariant is unbroken — the file is
-    relocated, never edited or deleted. Check order mirrors ``cmd_archive``'s
-    three-way epic-tree ordering:
+    relocated, never edited or deleted. Because this verb MUTATES, the epic
+    root resolves strictly (:func:`_mutate_epic_root`): an epic whose active
+    tree is gone is refused with ``epic_not_found`` rather than silently
+    relocating a file inside its frozen archived record.
 
-    - source absent, destination present → idempotent success
-      (``already_archived``), so a resumed or repeated drain is safe.
-    - source absent, destination absent → ``error: file_not_found``.
-    - source present AND destination present → ``error: archive_conflict``
-      (never clobber the retired audit record).
-    - otherwise → create ``inbox/archive/`` on demand and move.
+    The relocation itself is an ATOMIC claim rather than a check-then-move:
+    :func:`os.link` creates ``inbox/archive/{name}`` without ever replacing an
+    existing destination, and the source is unlinked only once that claim has
+    succeeded. Every response is derived from the claim's own outcome, so two
+    racing drains cannot both clear a presence check and have the loser fault
+    on a source the winner already moved:
+
+    - claim refused because the source is gone (``FileNotFoundError``) and the
+      destination is present → idempotent success (``already_archived``), so a
+      resumed, repeated, or race-losing drain is safe.
+    - claim refused because the source is gone and the destination is absent
+      → ``error: file_not_found``.
+    - claim refused because the destination already exists
+      (``FileExistsError``) while the source is still present →
+      ``error: archive_conflict`` (never clobber the retired audit record).
+    - claim succeeded → unlink the source and report the relocation.
     """
     invalid = _validate_identifier(args.slug)
     if invalid:
@@ -539,46 +583,44 @@ def cmd_inbox_archive(args: Any) -> dict[str, Any]:
             f'--message must be a bare filename inside inbox/, got: {name}',
             slug=args.slug,
         )
-    inbox_dir = _inbox_dir(args.slug)
+    root = _mutate_epic_root(args.slug)
+    if not root.is_dir():
+        return _error(
+            'epic_not_found',
+            f'epic {args.slug!r} has no active tree at {root}; '
+            'refusing to archive inside an archived epic',
+            slug=args.slug,
+        )
+    inbox_dir = root / INBOX_SUBDIR
     source = inbox_dir / name
     dest = inbox_dir / INBOX_ARCHIVE_SUBDIR / name
-    if not source.is_file():
+    # Created before the claim so a FileNotFoundError from os.link below can
+    # only mean "the source is gone", never "the archive directory is missing".
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        os.link(source, dest)
+    except FileNotFoundError:
         if dest.is_file():
-            return {
-                'status': 'success',
-                'operation': 'inbox-archive',
-                'slug': args.slug,
-                'store': ORCHESTRATOR_STORE,
-                'message': name,
-                'already_archived': True,
-                'archived_to': str(dest),
-            }
+            return _archive_success(args.slug, name, dest, already_archived=True)
         return _error(
             'file_not_found',
             f'inbox message not found: {source}',
             slug=args.slug,
             message_name=name,
         )
-    if dest.exists():
-        return _error(
-            'archive_conflict',
-            f'inbox message {name} is already archived at {dest}; '
-            'refusing to clobber the audit record',
-            slug=args.slug,
-            message_name=name,
-            archived_to=str(dest),
-        )
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    shutil.move(str(source), str(dest))
-    return {
-        'status': 'success',
-        'operation': 'inbox-archive',
-        'slug': args.slug,
-        'store': ORCHESTRATOR_STORE,
-        'message': name,
-        'already_archived': False,
-        'archived_to': str(dest),
-    }
+    except FileExistsError:
+        if source.is_file():
+            return _error(
+                'archive_conflict',
+                f'inbox message {name} is already archived at {dest}; '
+                'refusing to clobber the audit record',
+                slug=args.slug,
+                message_name=name,
+                archived_to=str(dest),
+            )
+        return _archive_success(args.slug, name, dest, already_archived=True)
+    source.unlink()
+    return _archive_success(args.slug, name, dest, already_archived=False)
 
 
 def cmd_inbox_detect(args: Any) -> dict[str, Any]:

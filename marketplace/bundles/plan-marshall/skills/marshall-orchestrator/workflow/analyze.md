@@ -69,7 +69,7 @@ The drain semantics — enumeration order, the report-never-skip rule for a malf
    | `finding` | Step 5 (mid-flight observation — minimal reconciliation) |
    | `candidate-lesson` | Step 5b (per-item disposition) |
 
-3. **A message the enumeration reported as invalid is NOT processed.** Record it as an Open Defect in `epic.md` naming the validator error code the row carried, and **leave it in `inbox/` un-archived** so it stays visible to the next drain. An invalid message never routes to a branch and never counts as consumed.
+3. **A message the enumeration reported as invalid is NOT processed.** Record it as an Open Defect in `epic.md` naming the validator error code the row carried, and **leave it in `inbox/` un-archived** so it stays visible to the next drain. An invalid message never routes to a branch and never counts as consumed. **Apply the same dedup discipline Step 5b carries**: because the message deliberately survives the drain, every subsequent scan re-enumerates it — a message already tracked by an existing Open Defect FOLDS into that entry (record the recurrence on it) and never becomes a second one.
 
 4. **Archive on consume.** Archive every message immediately after its disposition is **persisted** — a Step 4 landing reconciliation, a Step 5b disposition, or a Step 5 absorption into a Watch or Open Defect (the `observed` disposition). This covers every consuming disposition `drained[]` enumerates (`reconciled`, `observed`, the four Step 5b outcomes); `invalid` is excluded — item 3 leaves it un-archived by design. Retire the message:
 
