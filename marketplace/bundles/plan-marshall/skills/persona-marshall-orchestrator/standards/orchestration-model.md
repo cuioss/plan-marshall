@@ -108,7 +108,7 @@ The orchestrator MAY perform small operations inline, without spawning a plan:
 
 - **Append-only** — a plan creates new message files and never edits or deletes an existing one, including its own.
 - **Own-file-only** — a plan may write only files whose `{sender}` segment is its own plan id.
-- **One-way** — the plan writes, the orchestrator drains. The plan never reads the ledger to make a decision.
+- **One-way** — the plan writes, the orchestrator drains — the drain being the `analyze` verb's inbox-scan input mode ([`marshall-orchestrator/workflow/analyze.md`](../../marshall-orchestrator/workflow/analyze.md) § The four input modes), which enumerates through `inbox list` and consumes through `inbox archive` ([`marshall-orchestrator/SKILL.md`](../../marshall-orchestrator/SKILL.md) § Canonical invocations). The plan never reads the ledger to make a decision.
 
 The envelope schema is owned by [`marshall-orchestrator/standards/inbox-envelope.md`](../../marshall-orchestrator/standards/inbox-envelope.md), and the `orchestrator inbox write` canonical invocation ([`marshall-orchestrator/SKILL.md`](../../marshall-orchestrator/SKILL.md) § Canonical invocations) is the sole sanctioned write mechanism — it derives the target path from the epic slug and sender id alone, so the carve-out is enforced by construction rather than by this prose.
 

@@ -17,7 +17,7 @@ Verb router for epic orchestration. Sits ABOVE the plan lifecycle: it manages th
 /marshall-orchestrator decompose slug={slug}    # Decompose the epic into workstreams and plan specs
 /marshall-orchestrator status slug={slug}       # Report queue and plan states
 /marshall-orchestrator next slug={slug}         # Emit the next ready-to-run /plan-marshall command
-/marshall-orchestrator analyze slug={slug}      # Analyze a landing or mid-flight observation
+/marshall-orchestrator analyze slug={slug}      # Analyze a landing or mid-flight observation; drains the epic inbox when invoked without a paste
 /marshall-orchestrator resume slug={slug}       # Re-anchor a fresh session from the persisted tree
 /marshall-orchestrator close slug={slug}        # Freeze the epic into history.md
 /marshall-orchestrator archive slug={slug}      # Relocate a closed epic to archived-orchestrators/
@@ -61,7 +61,7 @@ Resolve the verb from the invocation (default: `status`), then load and follow t
 | `decompose` | `workflow/decompose.md` | Produce workstream charters and staged plan specs; populate the status.json queue |
 | `status` | `workflow/orchestrate.md` | Report the queue, running/parked plans, and resume anchor |
 | `next` | `workflow/orchestrate.md` | Emit the next ready-to-run `/plan-marshall` command (surface-disjointness checked) |
-| `analyze` | `workflow/analyze.md` | Analyze a landing (pasted / on-disk / cross-repo) or record a mid-flight observation |
+| `analyze` | `workflow/analyze.md` | Analyze a landing (pasted / on-disk / cross-repo) or record a mid-flight observation; with no paste, drains the epic's `inbox/` queue (the fourth input mode) message by message |
 | `resume` | `workflow/resume.md` | Re-anchor a fresh session from status.json + epic.md |
 | `close` | `workflow/close.md` | Freeze epic.md into history.md and mark the epic closed |
 | `archive` | `workflow/archive.md` | Relocate a closed epic tree to `archived-orchestrators/` (post-close, mechanical) |
