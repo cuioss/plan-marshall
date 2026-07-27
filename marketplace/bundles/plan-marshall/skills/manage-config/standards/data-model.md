@@ -349,7 +349,7 @@ The `python`-domain globs above are a representative sample — the real seed ca
 
 ### build_class enum
 
-Closed four-value set, **named for the canonical command directly** — the `build_class` value IS the canonical command name, with no name-to-name indirection map. The single source of truth is `BUILD_CLASSES` in `script-shared`'s extension constants, shared by `ExtensionBase.classify_build_class()`, the domain extensions, and their tests.
+Closed four-value set, **named for the canonical command directly** — the `build_class` value IS the canonical command name, with no name-to-name indirection map. The single source of truth is `BUILD_CLASSES` in `script-shared`'s extension constants, shared by `BuildExtensionBase.classify_build_class()`, the build extensions that override it, and their tests.
 
 | `build_class` | Role it attaches to | Derived verification |
 |---------------|---------------------|----------------------|

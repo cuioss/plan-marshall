@@ -289,37 +289,40 @@ For localized changes where targets are already known from module_mapping.
 
 ### File-type classifier
 
-**Normative source of truth for per-deliverable profile assignment.** Phase-3-outline (both Simple Track Step 7 and Complex Track Step 10) MUST classify each deliverable's `**Affected files:**` list against the six-bucket table below BEFORE assigning `profiles[]`. The vocabulary is produced by the per-domain extension aggregator (`manage-execution-manifest._classify_paths_via_extensions`) which dispatches each path to every registered `ExtensionBase.classify_paths()` and resolves overlaps via longest-glob-wins; see `marketplace/bundles/plan-marshall/skills/manage-execution-manifest/standards/decision-rules.md` § "Overlap resolution policy" and § "Unclaimed paths" for the aggregation contract, and `extension-api/standards/extension-contract.md` § classify_paths() for the per-extension predicates.
+**Normative source of truth for per-deliverable profile assignment.** Phase-3-outline (both Simple Track Step 7 and Complex Track Step 10) MUST classify each deliverable's `**Affected files:**` list against the six-bucket table below BEFORE assigning `profiles[]`. The vocabulary is produced by the aggregator `manage-execution-manifest._classify_paths_via_extensions`, which recognizes owner-less content generically and dispatches the rest to every discovered **build** extension's `BuildExtensionBase.classify_paths()`, resolving overlaps via longest-glob-wins. Axis-B (path classification) belongs to the build-system extensions only — a language/content domain bundle exposes no `classify_paths` (see [ADR-004](../../../../../../doc/adr/004-The_file-to-build_contract_is_owned_by_build-system_extensions_not_languagecontent_domains.adoc)). See `marketplace/bundles/plan-marshall/skills/manage-execution-manifest/standards/decision-rules.md` § "Owner-less recognition (no build owner)", § "Overlap resolution policy" and § "Unclaimed paths" for the aggregation contract and the stage ordering, and `extension-api/standards/extension-contract.md` § classify_paths() for the per-extension predicates.
 
 The bucket names a **file role**, never a build verdict. It governs `profiles[]` assignment and nothing else: no consumer may read a `documentation_only` bucket as "this plan needs no build". Build necessity has one home — the `build-decision` verdict over the `build.map` globs and the live footprint (see [ADR-004](../../../../../../doc/adr/004-The_file-to-build_contract_is_owned_by_build-system_extensions_not_languagecontent_domains.adoc) § "Amendment: `build-decision` is the sole build/no-build authority"). The two concerns share a word, not a meaning.
 
-| Bucket | Predicate (resolved by per-domain extension aggregation) | Profile assignment |
-|--------|----------------------------------------------------------|--------------------|
-| `production_only` | every claimed path resolves under the `production` role (e.g., `pm-dev-python` `**/scripts/**/*.py`, `pm-dev-java` `src/main/**/*.java`) | `implementation` + `module_testing` |
-| `test_only` | every claimed path resolves under the `test` role (e.g., `pm-dev-python` `test/**/*.py`, `pm-dev-java` `src/test/**/*.java`) — test-only deliverable, no production source modified | `module_testing` only |
-| `documentation_only` | every claimed path resolves under the `documentation` role (e.g., `pm-documents` `*.md`, `pm-plugin-development` `marketplace/bundles/*/skills/*/SKILL.md`) | `implementation` only — NEVER `module_testing`, NEVER a paired pytest task |
+| Bucket | Predicate (resolved by the aggregator: generic owner-less rules + build-extension claims) | Profile assignment |
+|--------|-------------------------------------------------------------------------------------------|--------------------|
+| `production_only` | every claimed path resolves under the `production` role (e.g., `build-pyproject` `marketplace/bundles/*.py`, `build-maven` `src/main/*.java`) | `implementation` + `module_testing` |
+| `test_only` | every claimed path resolves under the `test` role (e.g., `build-pyproject` `test/*.py`, `build-maven` `src/test/*.java`) — test-only deliverable, no production source modified | `module_testing` only |
+| `documentation_only` | every claimed path resolves under the `documentation` role, recognized by the aggregator's generic suffix rule (`.md` / `.adoc` / `.asciidoc`) with no build owner | `implementation` only — NEVER `module_testing`, NEVER a paired pytest task |
 | `mixed_code` | claimed paths include both `production` AND `test` roles (no `documentation`) | `implementation` + `module_testing` |
 | `mixed_with_docs` | claimed paths include `production` and/or `test` AND `documentation` | `implementation` + `module_testing`, with `module_testing` scope narrowed to the production/test paths only (declare the narrowed scope in a `**Module_testing scope:**` block above `**Affected files:**`) |
-| `unknown` | at least one path is unclaimed by every registered extension — aggregator emits a `[STATUS]` warning naming the unclaimed paths | BLOCKS the deliverable; phase-4-plan emits a Q-Gate finding requiring the user to either add a domain extension claim or correct the path |
+| *(infrastructure config)* | owner-less infrastructure config (`.github/workflows/*.yml`, `docker-compose*.yml`, `src/main/docker/*.yaml`, …) is recognized by the aggregator's generic family rule under the `config` role — it never forms a bucket of its own | rides with the accompanying surface; an infra-only deliverable resolves `documentation_only` |
+| `unknown` | at least one path is claimed by no build extension AND recognized by neither generic owner-less rule — aggregator emits a `[STATUS]` warning naming the unclaimed paths | BLOCKS the deliverable; phase-4-plan emits a Q-Gate finding. A surviving `unknown` now means a genuinely undeclared file type: correct the affected-files list, or have the owning build system's `BuildExtensionBase` declare a route for it |
 
 **Predicate evaluation rules**:
 
-- The aggregator dispatches each path to every registered extension's `classify_paths()`. Per-path overlap is resolved via longest-glob-wins specificity (highest `classify_path_specificity` score wins; alphabetical domain-key tie-break).
+- The aggregator recognizes documentation generically by suffix first, then dispatches the remaining paths to every discovered **build** extension's `classify_paths()`. Per-path overlap is resolved via longest-glob-wins specificity (highest `classify_path_specificity` score wins; alphabetical domain-key tie-break). A language/content domain bundle takes no part — Axis-B belongs to `BuildExtensionBase` alone.
+- Any path still unclaimed after the build extensions is tested against the generic infrastructure-config family rule and, on a match, takes the `config` role. This fallback runs strictly AFTER the build extensions so it can never take a path a build system claimed; the stage ordering and the never-steal-a-claim invariant are contracted in `decision-rules.md` § "Owner-less recognition (no build owner)".
 - Per-path roles are then collapsed into the six plan-wide buckets above. The `config` role does NOT influence the plan-wide bucket — config changes ride with whatever production/test/docs surface they accompany.
-- A deliverable that touches only paths the registered extensions claim under `documentation` (typical workflow-doc edit) resolves to `documentation_only`.
+- A deliverable that touches only documentation paths (typical workflow-doc edit) resolves to `documentation_only`.
 - A deliverable that touches only `test`-role paths resolves to `test_only` — it MUST NOT carry the `implementation` profile because the deliverable produces no production code.
-- A deliverable with at least one unclaimed path resolves to `unknown` and is a hard error requiring user resolution — never silently route to `documentation_only`.
+- A deliverable with at least one path that neither a build extension claims nor a generic owner-less rule recognizes resolves to `unknown` and is a hard error requiring user resolution — never silently route to `documentation_only`.
 
 **Required recording**: the resolved bucket MUST be recorded as a comment on the `**Profiles:**` line of the deliverable: `**Profiles:** <!-- bucket: documentation_only -->`. The comment is normative — it is the audit trail that lets Q-Gate, phase-4-plan, and reviewers verify the classifier was applied. A missing or wrong bucket comment is a Q-Gate finding.
 
 **Mixed-scope narrowing rule**: when a deliverable resolves to `mixed_with_docs`, the `module_testing` profile applies ONLY to the production/test paths. The deliverable MUST declare the narrowed scope in a dedicated `**Module_testing scope:**` block listing only the production/test paths. This rule prevents pytest from burning cycles on documentation files and ensures the test plan reflects what is actually testable.
 
-**Glob-predicate examples** (resolved by the per-domain extension aggregator; see `extension-api/standards/extension-contract.md` § classify_paths() for the authoritative per-extension predicates):
+**Glob-predicate examples** (resolved by the aggregator; see `extension-api/standards/extension-contract.md` § classify_paths() for the authoritative per-build-extension predicates):
 
-- `marketplace/bundles/plan-marshall/skills/manage-execution-manifest/scripts/manage-execution-manifest.py` → claimed by `pm-dev-python` under `production` → `production_only` component
-- `test/plan-marshall/manage-execution-manifest/test_classify_paths_via_extensions.py` → claimed by `pm-dev-python` under `test` → `test_only` component
-- `marketplace/bundles/plan-marshall/skills/phase-3-outline/SKILL.md` → claimed by both `pm-documents` (specificity 0) and `pm-plugin-development` (specificity 4) under `documentation`; `pm-plugin-development` wins via longest-glob → `documentation_only` component
-- `marketplace/bundles/plan-marshall/skills/phase-3-outline/standards/outline-workflow-detail.md` → claimed by `pm-plugin-development` under `documentation` → `documentation_only` component
+- `marketplace/bundles/plan-marshall/skills/manage-execution-manifest/scripts/manage-execution-manifest.py` → claimed by `build-pyproject` under `production` → `production_only` component
+- `test/plan-marshall/manage-execution-manifest/test_classify_paths_via_extensions.py` → claimed by `build-pyproject` under `test` → `test_only` component
+- `marketplace/bundles/plan-marshall/skills/phase-3-outline/SKILL.md` → recognized by the aggregator's generic documentation suffix rule, with no build extension involved → `documentation_only` component
+- `marketplace/bundles/plan-marshall/skills/phase-3-outline/standards/outline-workflow-detail.md` → recognized by the generic documentation suffix rule → `documentation_only` component
+- `.github/workflows/python-verify.yml` → claimed by no build extension, recognized by the generic infrastructure-config family rule under `config` → rides with the accompanying surface (an infra-only deliverable resolves `documentation_only`)
 
 **Worked classification — three deliverables from the plan that ships this very classifier** (self-referential meta example: this plan IMPLEMENTS the classifier that fixes the very bug it suffers from):
 
@@ -333,7 +336,7 @@ The bucket names a **file role**, never a build verdict. It governs `profiles[]`
 
 - Simple Track [Step 7: Create Deliverables](#step-7-create-deliverables) consumes this classifier when mapping module_mapping entries to deliverables.
 - Complex Track [Step 10: Execute Change-Type Workflow and Write Solution](#step-10-execute-change-type-workflow-and-write-solution) consumes this classifier when composing deliverables from domain skill discovery.
-- `manage-execution-manifest`'s per-domain extension aggregator (`_classify_paths_via_extensions`) reuses the same six-bucket vocabulary to answer a different question — `profiles[]` assignment, never build necessity. `compose()` never infers build necessity from the bucket; the sole build/no-build authority is the `build-decision` verdict (see `marketplace/bundles/plan-marshall/skills/manage-execution-manifest/standards/decision-rules.md` § "The classifier / build-decision boundary").
+- `manage-execution-manifest`'s aggregator (`_classify_paths_via_extensions`) reuses the same six-bucket vocabulary to answer a different question — `profiles[]` assignment, never build necessity. `compose()` never infers build necessity from the bucket; the sole build/no-build authority is the `build-decision` verdict (see `marketplace/bundles/plan-marshall/skills/manage-execution-manifest/standards/decision-rules.md` § "The classifier / build-decision boundary").
 
 ### Step 6: Validate Targets
 
