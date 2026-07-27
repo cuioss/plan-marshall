@@ -137,6 +137,7 @@ def _wrap_with_self_heal(
         project_dir: str = '.',
         env_vars: dict[str, str] | None = None,
         working_dir: str | None = None,
+        explicit_timeout: int | None = None,
     ) -> DirectCommandResult:
         result = inner_execute(
             args=args,
@@ -145,6 +146,7 @@ def _wrap_with_self_heal(
             project_dir=project_dir,
             env_vars=env_vars,
             working_dir=working_dir,
+            explicit_timeout=explicit_timeout,
         )
         if not _should_self_heal(result, project_dir):
             return result
@@ -164,6 +166,7 @@ def _wrap_with_self_heal(
             project_dir=project_dir,
             env_vars=env_vars,
             working_dir=working_dir,
+            explicit_timeout=explicit_timeout,
         )
 
     return execute_direct

@@ -126,16 +126,26 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config valid
 
 ### timeout get / set
 
-Manage adaptive command timeouts.
+Manage adaptive command timeouts. **Every value on this surface is in SECONDS** — the persisted field is `timeout_seconds`, and `--default`, `--explicit`, and `--duration` are all seconds, never milliseconds.
+
+Resolution order for `timeout get`:
+
+- `--explicit N` supplied → `N` **overrides** the persisted learned value outright; no learned value can reduce it.
+- `--explicit` omitted → the persisted learned value applies (scaled by the safety margin), falling back to `--default` when nothing is persisted.
+- A 120-second floor binds on **both** paths — an explicit bound does not waive it, because the floor protects against under-specification.
 
 ```bash
-# Get current timeout for a command (--default: fallback seconds when unset)
+# Get current timeout for a command (--default: fallback seconds when unlearned)
 python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config timeout get \
-  --command mvn-verify --default 120000
+  --command mvn-verify --default 300
 
-# Set timeout value
+# Override the learned value with an explicit bound (seconds)
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config timeout get \
+  --command mvn-verify --default 300 --explicit 1800
+
+# Record an observed duration (seconds) into the adaptive value
 python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config timeout set \
-  --command mvn-verify --duration 300000
+  --command mvn-verify --duration 180
 ```
 
 ### warning add / list / remove
@@ -286,11 +296,13 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config valid
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config timeout get \
-  --command COMMAND --default DEFAULT
+  --command COMMAND --default DEFAULT [--explicit EXPLICIT]
 
 python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config timeout set \
   --command COMMAND --duration DURATION
 ```
+
+`DEFAULT`, `EXPLICIT`, and `DURATION` are all in seconds. `--explicit` overrides the persisted learned value.
 
 ### warning
 
