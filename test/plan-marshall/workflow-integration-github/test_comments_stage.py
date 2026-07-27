@@ -11,9 +11,11 @@ The provider surface is exactly two pure verbs (plus the raw ``fetch-comments``)
 
 These tests cover the producer-side pre-filter helper, the fetch_findings flow
 (with the body quarantined in raw_input and structured metadata in detail), the
-fail-loud unconfigured signal, the hash_id-keyed post_responses respond loop, the
-``--project-dir`` plumbing, and the CLI surface contract (the retired
-``triage`` / ``triage-batch`` / ``comments-stage`` subcommands MUST be gone).
+two-layer classification of reviewer-bot REFUSAL notices (registry data layer
+plus the structural last-resort recognizer), the fail-loud unconfigured signal,
+the hash_id-keyed post_responses respond loop, the ``--project-dir`` plumbing,
+and the CLI surface contract (the retired ``triage`` / ``triage-batch`` /
+``comments-stage`` subcommands MUST be gone).
 """
 
 import importlib.util
@@ -1037,6 +1039,203 @@ class TestPerBotIgnoreFilter:
         assert result['status'] == 'success'
         assert result['count_stored'] == 1
         assert result['count_skipped_noise'] == 0
+
+
+# =============================================================================
+# Reviewer-bot REFUSAL notices — producer-path classification (regression)
+# =============================================================================
+#
+# A refusal notice is a comment a reviewer bot posts IN PLACE OF a review. It
+# carries no actionable feedback, so the producer pre-filter must classify it as
+# noise for every bot. Two layers cooperate, and the split is the whole point of
+# this section:
+#
+#   - DATA LAYER (primary) — a REGISTERED bot's OBSERVED refusal text is a
+#     literal marker in that bot's ``automatic-review/standards/{bot_kind}.md``
+#     ``ignore_patterns``, applied bot-scoped via the resolved ``bot_kind``.
+#   - STRUCTURAL LAYER (last resort) — ``_is_rate_limit_notice`` recognizes an
+#     unknown/unregistered bot's notice, or a phrasing not yet captured as data,
+#     by its shape (a limit-exceeded statement paired with a notice shape).
+#
+# Neither layer is a superset of the other. The #1014 Sourcery refusal below is
+# the proof: it is invisible to the structural recognizer (asserted), so ONLY the
+# registry marker drops it.
+#
+# Every fixture body uses the FLATTENED single-line shape — ``fetch_pr_comments_data``
+# collapses each body's newlines to spaces before any detector runs (the same
+# convention documented in test_pr_wait_for_comments_rate_limited.py).
+
+# Sourcery's OBSERVED #1014 refusal: it declined the review because the PR
+# exceeded its size budget. Handle-free and number-free in the registry, so the
+# marker survives a different account handle and a different character budget.
+_SOURCERY_1014_REFUSAL = (
+    'Sourcery was unable to review this pull request because '
+    'your pull request is larger than the review limit of 150000 characters. '
+    'Reduce the size of the pull request and request another review.'
+)
+
+# CodeRabbit's CURRENT refusal phrasing (registry marker ``Review limit reached``).
+_CODERABBIT_REVIEW_LIMIT_REFUSAL = (
+    '> [!WARNING] > ## Review limit reached > '
+    'You have reached your review limit for the current billing cycle. '
+    'Reviews will resume once the limit resets.'
+)
+
+# An unknown / renamed bot's refusal — no registry record exists for its author,
+# so only the structural last-resort layer can recognize it.
+_UNKNOWN_BOT_REFUSAL = (
+    '> [!WARNING] > ## Usage limit reached > '
+    'This reviewer has reached its monthly usage limit. '
+    'Reviews will resume after the limit resets.'
+)
+
+# A GENUINE review that merely mentions a limit in prose: no notice shape, no
+# registry marker, and review-voiced ("exceeds") rather than notice-voiced.
+_GENUINE_REVIEW_MENTIONING_A_LIMIT = (
+    'This retry loop exceeds the review limit we agreed on for batch size; '
+    'consider lowering it to 50 before this merges.'
+)
+
+
+class TestRefusalNoticeProducerFilter:
+    """Every reviewer bot's refusal notice is producer-side noise, by data or by shape."""
+
+    def test_sourcery_1014_refusal_dropped_via_registry_data_layer(self):
+        """#1014 regression: the Sourcery refusal is noise ONLY because it is filed as data.
+
+        This is the case that regressed. The structural recognizer does not match
+        this phrasing (no limit-EXCEEDED statement — "larger than the review limit
+        of" is a comparison, not an "exceeded/reached/hit" statement), which is
+        asserted explicitly below. So the drop can only come from the registry
+        marker resolved through ``bot_kind='sourcery'`` — which is exactly what
+        makes this a proof that the data layer fired, not the fallback.
+        """
+        from _github_pr import _is_rate_limit_notice
+
+        # The structural last-resort layer is BLIND to this phrasing...
+        assert not _is_rate_limit_notice(_SOURCERY_1014_REFUSAL)
+        # ...so the registry data layer is what drops it, bot-scoped.
+        assert _is_obvious_noise(_SOURCERY_1014_REFUSAL, 'sourcery')
+        # And it stays bot-scoped: the same text from another bot or a human is
+        # not cross-dropped by Sourcery's marker.
+        assert not _is_obvious_noise(_SOURCERY_1014_REFUSAL, 'coderabbit')
+        assert not _is_obvious_noise(_SOURCERY_1014_REFUSAL, None)
+
+    def test_coderabbit_review_limit_refusal_dropped(self):
+        """CodeRabbit's current ``Review limit reached`` notice is noise."""
+        assert _is_obvious_noise(_CODERABBIT_REVIEW_LIMIT_REFUSAL, 'coderabbit')
+
+    def test_genuine_review_mentioning_a_limit_survives(self):
+        """A substantive review that merely mentions a limit is NOT dropped.
+
+        Precision guard for both layers: no registry marker matches, and the
+        structural recognizer sees a review-voiced "exceeds" with no notice shape,
+        so the comment survives the pre-filter and becomes a finding.
+        """
+        from _github_pr import _is_rate_limit_notice
+
+        assert not _is_rate_limit_notice(_GENUINE_REVIEW_MENTIONING_A_LIMIT)
+        assert not _is_obvious_noise(_GENUINE_REVIEW_MENTIONING_A_LIMIT, 'sourcery')
+        assert not _is_obvious_noise(_GENUINE_REVIEW_MENTIONING_A_LIMIT, 'coderabbit')
+        assert not _is_obvious_noise(_GENUINE_REVIEW_MENTIONING_A_LIMIT, None)
+
+    def test_unknown_bot_refusal_dropped_by_structural_fallback(self):
+        """An unregistered bot's refusal is still noise — via the structural layer.
+
+        The author resolves to no ``bot_kind``, so no registry marker can apply.
+        The notice is recognized by shape alone (limit-exceeded statement + alert
+        callout), which is precisely the last-resort layer's job.
+        """
+        from _github_pr import _is_rate_limit_notice
+
+        assert _is_rate_limit_notice(_UNKNOWN_BOT_REFUSAL)
+        assert _is_obvious_noise(_UNKNOWN_BOT_REFUSAL, None)
+
+    def test_fetch_findings_drops_sourcery_refusal_and_keeps_genuine_review(self, plan_context):
+        """End-to-end producer path: the refusal counts as skipped noise and files no finding."""
+        comments = [
+            {
+                'id': 'R1',
+                'kind': 'issue_comment',
+                'author': 'sourcery-ai',
+                'body': _SOURCERY_1014_REFUSAL,
+                'path': '',
+                'line': 0,
+                'thread_id': '',
+            },
+            {
+                'id': 'R2',
+                'kind': 'inline',
+                'author': 'sourcery-ai',
+                'body': _GENUINE_REVIEW_MENTIONING_A_LIMIT,
+                'path': 'src/Retry.java',
+                'line': 31,
+                'thread_id': 'PRRT_r2',
+            },
+        ]
+
+        plan_context.plan_dir_for('gh-pr-refusal-sourcery')
+        with patch('github_pr._github.fetch_pr_comments_data') as mock_fetch:
+            mock_fetch.return_value = {
+                'status': 'success',
+                'provider': 'github',
+                'comments': comments,
+                'total': len(comments),
+                'unresolved': len(comments),
+            }
+            result = cmd_fetch_findings(_stage_make_args(160, 'gh-pr-refusal-sourcery'))
+
+        assert result['status'] == 'success'
+        assert result['count_fetched'] == 2
+        # The refusal is the ONLY drop; the genuine review is stored.
+        assert result['count_skipped_noise'] == 1
+        assert result['count_stored'] == 1
+        assert result['producer_mismatch_hash_id'] is None
+
+        from _findings_core import query_findings
+
+        q = query_findings('gh-pr-refusal-sourcery', finding_type='pr-comment')
+        assert q['filtered_count'] == 1
+        # The surviving finding is the genuine review (R2), never the refusal (R1).
+        assert 'comment_id: R2' in q['findings'][0]['detail']
+
+    def test_detect_coderabbit_rate_limited_stays_author_scoped(self):
+        """The wait-return discriminator still considers CodeRabbit comments only.
+
+        Re-pointing the body classifier must not widen the SELECTION. A Sourcery
+        refusal that is the newest comment overall is ignored, because the newest
+        CODERABBIT comment is a genuine review.
+        """
+        from _github_pr import _detect_coderabbit_rate_limited
+
+        comments = [
+            {
+                'author': 'coderabbitai[bot]',
+                'body': 'Actionable comments posted: 1. Guard the array bound here.',
+                'created_at': '2026-01-02T00:00:00Z',
+            },
+            {
+                'author': 'sourcery-ai[bot]',
+                'body': _SOURCERY_1014_REFUSAL,
+                'created_at': '2026-01-09T00:00:00Z',
+            },
+        ]
+
+        assert _detect_coderabbit_rate_limited(comments) is False
+
+    def test_detect_coderabbit_rate_limited_false_for_human_quoting_refusal(self):
+        """A human quoting a full refusal notice never trips the discriminator."""
+        from _github_pr import _detect_coderabbit_rate_limited
+
+        comments = [
+            {
+                'author': 'octocat',
+                'body': _CODERABBIT_REVIEW_LIMIT_REFUSAL,
+                'created_at': '2026-01-09T00:00:00Z',
+            },
+        ]
+
+        assert _detect_coderabbit_rate_limited(comments) is False
 
 
 # =============================================================================
