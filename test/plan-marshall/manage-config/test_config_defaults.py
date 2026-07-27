@@ -305,8 +305,9 @@ def test_default_plan_finalize_ceremony_gates_have_no_run_at_all_params():
     After the ceremony run-at-all → lane migration: `qgate` is no longer a flat
     phase-level sibling; `simplify` / `self_review` / `security_audit` are no
     longer step-owned params. Each gate's on/off is governed by its owning step's
-    `steps.<step>.lane` override. The pre-submission-self-review step KEEPS its
-    `drop_review_on_scope_gate` escape hatch (not a ceremony gate).
+    `steps.<step>.lane` override. The pre-submission-self-review step is now
+    config-less too: its `drop_review_on_scope_gate` escape hatch was removed in
+    favour of declared-lane immunity in the composer's scope_gated_finalize gate.
     """
     finalize = _config_defaults_mod.DEFAULT_PLAN_FINALIZE
 
@@ -323,10 +324,12 @@ def test_default_plan_finalize_ceremony_gates_have_no_run_at_all_params():
     assert _params_for(seeded_steps, 'default:finalize-step-simplify') == {}
     assert _params_for(seeded_steps, 'default:finalize-step-security-audit') == {}
 
-    # self_review param is gone; drop_review_on_scope_gate (escape hatch) is kept.
+    # self_review run-at-all param is gone, and so is the drop_review_on_scope_gate
+    # escape hatch — the step declares no `configurable:` keys, so it is config-less.
     self_review_params = _params_for(seeded_steps, 'default:pre-submission-self-review')
     assert 'self_review' not in self_review_params
-    assert self_review_params == {'drop_review_on_scope_gate': False}
+    assert 'drop_review_on_scope_gate' not in self_review_params
+    assert self_review_params == {}
 
 
 # ---------------------------------------------------------------------------
@@ -1662,10 +1665,6 @@ def test_default_plan_finalize_config_less_steps_map_to_empty_dict():
         # default:finalize-step-sync-baseline owns the `auto_rebase_threshold`
         # conflict-gate knob (default no_overlap_only), shared with branch-cleanup
         'default:finalize-step-sync-baseline',
-        # default:pre-submission-self-review (the promoted default-on built-in,
-        # order 7) owns the `drop_review_on_scope_gate` scope-gate toggle (the
-        # ceremony `self_review` run-at-all param was removed in the lane migration)
-        'default:pre-submission-self-review',
         # default:finalize-step-preference-emitter owns the per-plan
         # `preference_min_recurrence` promotion threshold knob
         'default:finalize-step-preference-emitter',
@@ -1673,7 +1672,11 @@ def test_default_plan_finalize_config_less_steps_map_to_empty_dict():
     # default_on:false built-in steps carry a `lane: off` override (materialize-all:
     # exclusion is `lane: off`, never absence) — non-empty but not param-owning.
     # default:finalize-step-simplify and default:finalize-step-security-audit are
-    # now config-less (their ceremony run-at-all params were removed).
+    # now config-less (their ceremony run-at-all params were removed), and so is
+    # default:pre-submission-self-review (its `self_review` run-at-all param was
+    # removed in the lane migration, and its `drop_review_on_scope_gate` escape
+    # hatch was removed in favour of declared-lane immunity) — all three fall to
+    # the config-less `{}` branch below.
     lane_off_steps = set(_discovered_default_off_built_in_step_ids())
     for step_id, params in steps.items():
         assert isinstance(params, dict), f'every step value must be a dict; got {params!r}'
