@@ -71,7 +71,7 @@ The drain semantics — enumeration order, the report-never-skip rule for a malf
 
 3. **A message the enumeration reported as invalid is NOT processed.** Record it as an Open Defect in `epic.md` naming the validator error code the row carried, and **leave it in `inbox/` un-archived** so it stays visible to the next drain. An invalid message never routes to a branch and never counts as consumed.
 
-4. **Archive on consume.** Every message that reaches a recorded disposition is archived immediately after that disposition is **persisted** — a Step 4 landing reconciliation, a Step 5b disposition, or a Step 5 absorption into a Watch or Open Defect (the `observed` disposition). This rule is exhaustive over every disposition the `## Output` block's `drained[]` enumerates; a future disposition added there must archive through this same rule, not a re-enumerated trigger list. Retire the message:
+4. **Archive on consume.** Every message that reaches a recorded disposition is archived immediately after that disposition is **persisted** — a Step 4 landing reconciliation, a Step 5b disposition, or a Step 5 absorption into a Watch or Open Defect (the `observed` disposition). This rule is exhaustive over every *consuming* disposition the `## Output` block's `drained[]` enumerates — `reconciled`, `observed`, and the four Step 5b outcomes. It deliberately excludes `invalid`, which item 3 leaves un-archived by design and which `messages_invalid` accounts for. A future disposition added to `drained[]` archives through this same rule unless it is, like `invalid`, a non-consuming outcome — never through a re-enumerated trigger list. Retire the message:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator inbox archive \
