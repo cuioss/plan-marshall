@@ -322,7 +322,7 @@ This *plan-scope* deviation guard is distinct from the *PR-touched-file* in-scop
 
 **Computation rule** — set `loop_back_target = "5-execute"` when `fix_tasks_created > 0` OR `overflow_deferred > 0`; otherwise set `loop_back_target = "6-finalize"`. The two-value enumeration is structural (manage-status validates it); the workflow MUST emit the field on every `loop_back` outcome and MUST omit it on `success` outcomes.
 
-The calling manifest step (e.g., `automated-review.md` Branch C, `sonar-roundtrip.md` triage block) reads this field from the workflow's return TOON and forwards it to its own `mark-step-done --outcome loop_back --loop-back-target {value}` call. The dispatcher in `phase-6-finalize/SKILL.md` Step 3 § 7b reads the persisted field to route between full-phase rollback and inline replay.
+The calling manifest step (e.g., `automatic-review/SKILL.md` § "Handle findings (loop-back)", `sonar-roundtrip.md` triage block) reads this field from the workflow's return TOON and forwards it to its own `mark-step-done --outcome loop_back --loop-back-target {value}` call. The dispatcher in `phase-6-finalize/SKILL.md` Step 3 § 7b reads the persisted field to route between full-phase rollback and inline replay.
 
 ## Output
 

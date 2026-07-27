@@ -107,17 +107,23 @@ def _module_for_path(path: str) -> str | None:
 def resolve_test_scope(footprint: list[str], build_map_globs: list[str]) -> TestScopeResolution:
     """Resolve the scoped module set and whether a whole-tree run is warranted.
 
-    Each footprint entry is fnmatched against ``build_map_globs``; only matching
-    entries contribute a module (segment 2 for ``marketplace/bundles/…``,
-    segment 1 for ``test/…``). ``divergence_possible`` is True when the resolved
-    set spans more than one module, OR any footprint entry touches shared /
-    cross-module test infrastructure, OR at least one build-relevant file matched
-    but resolved to no module (e.g. a root-level ``pyproject.toml``) — the last
-    condition forces a whole-tree run rather than emitting an invalid scoped
-    ``module-tests None`` call. A single-module footprint touching no shared
-    infra yields ``divergence_possible = False`` with that module as the
-    ``recommended_target`` (match by equivalence); a divergent footprint yields
-    ``recommended_target = None`` (whole-tree, no module arg).
+    Every footprint entry contributes its owning module (segment 2 for
+    ``marketplace/bundles/…``, segment 1 for ``test/…``), independent of the
+    ``build_map_globs`` filter. The globs decide *build relevance*
+    (``has_matching_files``); module ownership decides *test-coverage span*, and
+    conflating the two under-reports the span for a change whose cross-bundle
+    files are not ``.py`` — a bundle's rule catalogue or roster document matches
+    no glob yet is asserted on by that bundle's tests.
+
+    ``divergence_possible`` is True when the resolved set spans more than one
+    module, OR any footprint entry touches shared / cross-module test
+    infrastructure, OR at least one build-relevant file matched but resolved to
+    no module (e.g. a root-level ``pyproject.toml``) — the last condition forces
+    a whole-tree run rather than emitting an invalid scoped ``module-tests None``
+    call. A single-module footprint touching no shared infra yields
+    ``divergence_possible = False`` with that module as the ``recommended_target``
+    (match by equivalence); a divergent footprint yields ``recommended_target =
+    None`` (whole-tree, no module arg).
 
     Args:
         footprint: The live footprint — the paths a scoped run derives from.
@@ -130,9 +136,16 @@ def resolve_test_scope(footprint: list[str], build_map_globs: list[str]) -> Test
     modules: set[str] = set()
     has_matching_files = False
     for path in footprint:
-        if not any(fnmatch.fnmatch(path, glob) for glob in build_map_globs):
-            continue
-        has_matching_files = True
+        if any(fnmatch.fnmatch(path, glob) for glob in build_map_globs):
+            has_matching_files = True
+        # Module ownership is derived from EVERY module-owning path, not only
+        # the build_map-matching ones. The globs answer "is this build-relevant"
+        # (a compile/test trigger); this function answers the different question
+        # "could a scoped run miss a regression". A non-``.py`` file a bundle's
+        # tests assert on — a rule catalogue, a roster document, a schema doc —
+        # matches no build_map glob yet is exactly such a path, so filtering it
+        # out here under-reports the module span and silently scopes the gate to
+        # a subset of the bundles the change actually touches.
         module = _module_for_path(path)
         if module is not None:
             modules.add(module)

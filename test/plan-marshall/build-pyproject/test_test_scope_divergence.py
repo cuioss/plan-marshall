@@ -16,6 +16,8 @@ for every test, so it is exercised via a plain import — no build, no
 subprocess.
 """
 
+import fnmatch
+
 import pytest
 
 # Cross-skill import — PYTHONPATH is configured by the root conftest.
@@ -39,6 +41,12 @@ _SHARED_BUILD = (
 _ROOT_CONFTEST = 'test/conftest.py'
 _NESTED_CONFTEST = 'test/plan-marshall/build-pyproject/conftest.py'
 _DOC = 'marketplace/bundles/plan-marshall/skills/foo/SKILL.md'
+#: A non-``.py`` file owned by a DIFFERENT bundle. It matches no build_map glob,
+#: so a glob-filtered module derivation drops the bundle entirely — the exact
+#: shape that under-reported this plan's own two-bundle footprint as one module.
+_CROSS_BUNDLE_DOC = (
+    'marketplace/bundles/pm-plugin-development/skills/plugin-doctor/references/rule-catalog.md'
+)
 
 
 @pytest.mark.parametrize(
@@ -54,11 +62,26 @@ _DOC = 'marketplace/bundles/plan-marshall/skills/foo/SKILL.md'
         pytest.param([_ROOT_CONFTEST], True, None, id='root_conftest'),
         # Nested test/**/conftest.py is shared cross-module test infra too.
         pytest.param([_NESTED_CONFTEST], True, None, id='nested_conftest'),
-        # A non-buildable doc path is filtered out by the glob set; the lone
-        # production path drives the (single-module, no-divergence) result.
-        pytest.param([_DOC, _PROD_PLAN_MARSHALL], False, 'plan-marshall', id='doc_filtered_out'),
-        # A docs-only footprint resolves no module → no divergence, no target.
-        pytest.param([_DOC], False, None, id='docs_only_empty'),
+        # A doc path in the SAME module as the production path collapses to one
+        # module — no divergence, scoped target unchanged.
+        pytest.param([_DOC, _PROD_PLAN_MARSHALL], False, 'plan-marshall', id='doc_same_module'),
+        # A docs-only footprint still owns its bundle: module ownership is
+        # independent of the build_map glob filter, so the bundle is the scoped
+        # target rather than a None that would render `module-tests None`.
+        pytest.param([_DOC], False, 'plan-marshall', id='docs_only_owns_its_bundle'),
+        # REGRESSION (observed on this plan's own finalize): a cross-bundle
+        # footprint whose second bundle is reached only by a NON-`.py` file. The
+        # doc matches no build_map glob, so a glob-filtered module derivation
+        # reported a single module and scoped the gate to `plan-marshall` alone —
+        # while `pm-plugin-development`'s tests assert on that very catalogue.
+        # That is the scoped-green / whole-tree-red class the gate exists to
+        # catch, so the span must be two modules and the run whole-tree.
+        pytest.param(
+            [_PROD_PLAN_MARSHALL, _CROSS_BUNDLE_DOC],
+            True,
+            None,
+            id='cross_bundle_via_non_py_doc',
+        ),
         # A root-level build-relevant file (pyproject.toml) matches a glob but
         # resolves to no module → force divergence so no invalid scoped
         # ``module-tests None`` call is emitted downstream.
@@ -73,6 +96,39 @@ def test_resolve_test_scope_divergence_and_target(footprint, expected_divergence
     # Assert
     assert resolution.divergence_possible is expected_divergence
     assert resolution.recommended_target == expected_target
+
+
+def test_module_span_is_independent_of_the_build_map_glob_filter():
+    """Mutation guard: module ownership must not be gated on the glob filter.
+
+    Reconstructs the pre-fix derivation (filter by ``build_map_globs`` FIRST,
+    then take the owning module) and asserts it produces the WRONG single-module
+    answer on the cross-bundle footprint. Without this, the regression case above
+    would still pass if the glob filter were reintroduced in a form that happened
+    to match the fixture doc — the assertion would be vacuous.
+    """
+    # Arrange
+    footprint = [_PROD_PLAN_MARSHALL, _CROSS_BUNDLE_DOC]
+
+    # Act — the pre-fix derivation, reconstructed inline.
+    pre_fix_modules = set()
+    for path in footprint:
+        if not any(fnmatch.fnmatch(path, glob) for glob in _GLOBS):
+            continue
+        segments = path.split('/')
+        if path.startswith('marketplace/bundles/') and len(segments) > 3:
+            pre_fix_modules.add(segments[2])
+
+    # Assert — the pre-fix rule drops pm-plugin-development, which is the defect.
+    assert pre_fix_modules == {'plan-marshall'}, (
+        'The reconstructed pre-fix derivation no longer reproduces the observed '
+        'defect, so the regression case above proves nothing'
+    )
+
+    # And the live resolver must NOT agree with it.
+    resolution = resolve_test_scope(footprint, _GLOBS)
+    assert resolution.scoped_modules == ('plan-marshall', 'pm-plugin-development')
+    assert resolution.divergence_possible is True
 
 
 def test_resolve_test_scope_dedupes_and_sorts_modules():

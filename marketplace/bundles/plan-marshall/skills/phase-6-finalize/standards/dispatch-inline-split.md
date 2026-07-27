@@ -12,6 +12,8 @@ Adding a new finalize step without classifying it here turns the guarding regres
 
 ## Dispatched steps
 
+**Resolver-lookup completeness invariant**: every row below declares the `manage-config effort resolve-target` lookup it resolves under — the `--phase` value plus the `--role` sub-key, or an explicit "no `--role`" when the step tracks `phase-6-finalize.default`. A row without a declared lookup leaves the dispatcher to guess the sub-key at dispatch time, so the column is complete by construction rather than as-needed. This is a completeness obligation on the roster, stated here as an invariant in its own right; it is **not** an explanation for any past missed `[DISPATCH]` emission — the emission obligation is fused to the dispatch branch in [`../SKILL.md`](../SKILL.md) Step 3, and the two concerns are independent.
+
 - `default:pre-submission-self-review` — → `phase-6-finalize` (no `--role`; tracks `phase-6-finalize.default`)
 - `default:create-pr` — → `phase-6-finalize` (no `--role`)
 - `default:lessons-capture` — → `phase-6-finalize --role post-run-review`
@@ -22,8 +24,8 @@ Adding a new finalize step without classifying it here turns the guarding regres
 - `default:finalize-step-simplify` — → `phase-6-finalize` (no `--role`); holistic post-implementation simplification sweep whose edits settle onto HEAD before the push barrier
 - `default:finalize-step-security-audit` — → `phase-6-finalize` (`persona: persona-security-expert`); hardening edits settle onto HEAD before the push barrier
 - `project:finalize-step-plugin-doctor` — (meta-project only) → `phase-6-finalize --role verification-feedback` (`producer=plugin-doctor` runtime input)
-- `project:finalize-step-lessons-housekeeping` — `mode: workflow`; reasons from the just-finished plan's outcome about the lessons corpus (remove / promote-then-retire / trim), so it earns an envelope
-- `project:finalize-step-review-retrospective` — `mode: workflow`; hybrid by construction — a deterministic per-reviewer metrics pass augmented by an LLM qualitative judgment and comparative verdict
+- `project:finalize-step-lessons-housekeeping` — → `phase-6-finalize` (no `--role`; tracks `phase-6-finalize.default`); `mode: workflow`; reasons from the just-finished plan's outcome about the lessons corpus (remove / promote-then-retire / trim), so it earns an envelope
+- `project:finalize-step-review-retrospective` — → `phase-6-finalize` (no `--role`; tracks `phase-6-finalize.default`); `mode: workflow`; hybrid by construction — a deterministic per-reviewer metrics pass augmented by an LLM qualitative judgment and comparative verdict
 - `plan-marshall:plan-retrospective` — opt-in (`default_on: false`) → `phase-6-finalize --role post-run-review`; its LLM aspects iterate inside one envelope. It is the only roster entry that also accepts a forwarded `--session-id`.
 
 `/workflow-pr-doctor` (a slash-command surface, not a registered finalize step) dispatches → `phase-6-finalize --role verification-feedback` (`producer=pr-state` runtime input). It carries no roster row because it is not in the registry.

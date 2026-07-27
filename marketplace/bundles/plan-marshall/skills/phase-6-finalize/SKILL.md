@@ -126,6 +126,8 @@ A step is active if and only if it appears in `manifest.phase_6.steps`. Absent s
 
 Every default + project finalize step registered in `plan.phase-6-finalize.steps` is classified as either **dispatched** (run under `Task: execution-context-{level}`) or **inline** (pure scripts / trivial orchestration that earn no envelope) — exactly one classification per step, with no count claim to drift against a growing registry. Every dispatched step resolves under the phase-scoped registry `manage-config effort resolve-target --phase phase-6-finalize [--role <subkey>]`. `ci-verify` is a deterministic inline classifier whose green pass-through marks the step done with ZERO dispatch and only red CI routes one taxonomy finding per failing check to `verification-feedback`; CI completion itself is a dispatcher-resolved precondition (`requires: [ci-complete]`), not a sibling step (see Step 3 § "Precondition resolution"). The full per-step dispatched/inline classification, the step→role map, and the rationale live in [`standards/dispatch-inline-split.md`](standards/dispatch-inline-split.md) — the single source of truth the Execute Step Pipeline dispatch branch consumes.
 
+**Record-before-return binds every dispatched step body — built-in included.** A dispatched step's body MUST land its terminal `manage-status mark-step-done` call BEFORE it composes its return TOON, never as a trailing action after the payload is assembled; a `status: done` return is not a substitute for the record, because the item-5d completion guard reads `status.metadata.phase_steps`, not the return. The governing invariant is [`../ref-workflow-architecture/standards/agents.md`](../ref-workflow-architecture/standards/agents.md) § the record-before-return corollary, which binds every dispatched leaf. This paragraph is the reach-point for **built-in** (`default:`) dispatched steps, whose bodies live in `standards/{name}.md` / `workflow/{name}.md` and have no shared authoring contract of their own; **external** (`project:` / `bundle:skill`) dispatched steps reach the same invariant through [`standards/external-step-contract.md`](standards/external-step-contract.md) § "Required termination". Both partitions of the dispatched roster are therefore bound, and neither reach-point restates the invariant it points at.
+
 ## Step Types
 
 Four step types are supported, distinguished by prefix notation:
@@ -584,6 +586,8 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   --message "[DISPATCH] (plan-marshall:phase-6-finalize) target={target} level={level} role={role} workflow={workflow-doc-from-table} plan_id={plan_id}"
 ```
 
+**The emit and the spawn are ONE indivisible pair.** The `[DISPATCH]` write above and the `Task:` spawn below are two halves of a single action, not an instruction followed by an optional adjacent one — the same pairing item 5c states for its metrics row. Spawning the step without having written the line is a **contract violation**, not a cosmetic omission: the work-log then carries no record that the dispatch happened, so the dispatch-audit chain cannot attribute the step's cost, its target, or its role. Never emit the line after the spawn, and never skip it because the dispatch "obviously" happened.
+
 Dispatch:
 
 ```text
@@ -857,10 +861,14 @@ FOR each step_id in manifest.phase_6.steps:
        Read the standards document from dispatch table and follow all steps in main context. Inline steps are not wrapped by the per-agent timeout block above — they execute under the host platform's standard per-call ceiling. `ci-verify` runs the deterministic `scripts/ci_verify.py` executor: the dispatcher threads the `consume-failures` precondition envelope (`ci_final_status` → `--final-status`, `wait_outcome` → `--wait-outcome`, `head_sha` → `--head-sha`) into the script, which marks the step done on green (zero dispatch) or returns a per-producer needs-triage signal on red CI so the dispatcher runs `verification-feedback` — see `standards/ci-verify.md`.
 
      - PROJECT/SKILL: Branch on the dispatched-vs-inline classification from the
-       "Dispatched workflows vs inline steps" section. A `project:` / `bundle:skill`
-       step is DISPATCHED when that section lists it as dispatched
-       (`project:finalize-step-plugin-doctor`, and any external step that section
-       marks dispatched); every other external step is INLINE.
+       "Dispatched workflows vs inline steps" section, which points at
+       [`standards/dispatch-inline-split.md`](standards/dispatch-inline-split.md)
+       as the single source of truth. A `project:` / `bundle:skill` step is
+       DISPATCHED when it appears under that document's `## Dispatched steps`
+       roster; every step under `## Inline steps` is INLINE. Look the step up in
+       the roster — do NOT infer the class from any example named in this branch,
+       and do NOT assume the dispatched class is a single member: the roster
+       carries multiple external dispatched steps and grows as steps are added.
 
        **DISPATCHED project/skill step** — route through the generic
        `execution-context-{level}` dispatcher exactly like an agent-suitable
@@ -871,9 +879,13 @@ FOR each step_id in manifest.phase_6.steps:
            target = python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
              effort resolve-target --phase phase-6-finalize [--role <subkey>]
            ```text
-           Use the step's resolved role from the "Dispatched workflows vs inline steps"
-           section (`project:finalize-step-plugin-doctor` → `phase-6-finalize --role
-           verification-feedback` with `producer=plugin-doctor` runtime input).
+           Use the step's own resolver lookup as declared on its row in
+           [`standards/dispatch-inline-split.md`](standards/dispatch-inline-split.md)
+           § "Dispatched steps" — that roster's resolver-lookup column is the
+           authoritative per-step source for the `--phase` value, the `--role`
+           sub-key (or its documented absence), and any `producer` runtime input.
+           Read the lookup off the step's row; do not generalise one step's role to
+           the rest of the dispatched class.
        (2) Emit the standardized `[DISPATCH]` work-log line (see
            [`../ref-workflow-architecture/standards/dispatch-logging.md`](../ref-workflow-architecture/standards/dispatch-logging.md)
            § Emission contract). Substitute `{role}` with `default` when no `--role`
@@ -883,6 +895,15 @@ FOR each step_id in manifest.phase_6.steps:
              work --plan-id {plan_id} --level INFO \
              --message "[DISPATCH] (plan-marshall:phase-6-finalize) target={target} level={level} role={role} workflow={step's own SKILL.md notation} plan_id={plan_id}"
            ```
+           **This emit and the item-(3) spawn are ONE indivisible pair.** The
+           `[DISPATCH]` write and the `Task:` spawn are two halves of a single
+           action, not an instruction followed by an optional adjacent one — the
+           same pairing item 5c states for its metrics row. Spawning the step
+           without having written the line is a **contract violation**, not a
+           cosmetic omission: the work-log then carries no record that the
+           dispatch happened, so the dispatch-audit chain cannot attribute the
+           step's cost, its target, or its role. Never emit the line after the
+           spawn, and never skip it because the dispatch "obviously" happened.
        (3) Dispatch via the Task tool. The workflow doc for a dispatched project/skill
            step is the project skill's own SKILL.md (e.g.
            `project:finalize-step-plugin-doctor/SKILL.md`):
@@ -1186,7 +1207,13 @@ FOR each step_id in manifest.phase_6.steps:
           python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
             effort resolve-target --phase phase-6-finalize --role verification-feedback
           ```
-      (2) Emit the standardized `[DISPATCH]` work-log line (see [`../ref-workflow-architecture/standards/dispatch-logging.md`](../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract).
+      (2) Emit the standardized `[DISPATCH]` work-log line (see [`../ref-workflow-architecture/standards/dispatch-logging.md`](../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract). This hook's `role` is `verification-feedback` and its `workflow` is the unified-triage workflow doc:
+          ```bash
+          python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+            work --plan-id {plan_id} --level INFO \
+            --message "[DISPATCH] (plan-marshall:phase-6-finalize) target={target} level={level} role=verification-feedback workflow=plan-marshall:plan-marshall/workflow/verification-feedback.md plan_id={plan_id}"
+          ```
+          The emit and the item-(3) `Task:` spawn below are ONE indivisible pair, exactly as at the two dispatch-branch emit sites: dispatching this hook without first writing the line is a contract violation, not a cosmetic omission.
       (3) Dispatch ONE `verification-feedback` envelope with `producer=finalize-feedback` over the union — by reference (the subagent issues its own union `manage-findings list` as its first workflow step):
           ```text
           Task: plan-marshall:{target}

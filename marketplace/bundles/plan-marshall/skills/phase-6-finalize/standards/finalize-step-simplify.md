@@ -179,7 +179,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
   --display-detail "Simplify: {applied_edits} edits, {findings_count} findings"
 ```
 
-The `display_detail` string appears in the renderer's per-step `[OK]` row. The `--head-at-completion` SHA is consulted by the dispatcher's HEAD-comparison on re-entry (see SKILL.md § HEAD-dependent steps).
+**Record before returning (binding).** The `mark-step-done` call above MUST complete BEFORE the return TOON below is composed — it is the step's terminal action, never a trailing formality after the payload is assembled. Composing and emitting the return TOON without having landed that record is a **contract violation**, not a cosmetic omission: the dispatcher's post-dispatch completion guard (`phase-6-finalize/SKILL.md` Step 3 item 5d) asserts the record via `assert-step-recorded --require-terminal`, raises `step_record_missing` attributed to this step, and halts the phase. A `status: done` payload is NOT a substitute for the record — the guard reads `status.metadata.phase_steps`, not the return. The governing invariant for every dispatched leaf is [`ref-workflow-architecture/standards/agents.md`](../../ref-workflow-architecture/standards/agents.md) § the record-before-return corollary.
 
 Return a `commit_message` element in this step's return TOON so the dispatcher's instrumentation uses it when committing the applied edits (when no edits were applied the porcelain check is empty and the dispatcher commits nothing, so the returned message is simply unused):
 
