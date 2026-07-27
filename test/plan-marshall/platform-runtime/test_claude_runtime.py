@@ -1310,7 +1310,7 @@ class TestCommandIsBuild:
     replaced it.
     """
 
-    @pytest.mark.parametrize("notation", list(_BUILD_WRAPPER_NOTATIONS))
+    @pytest.mark.parametrize("notation", sorted(_BUILD_WRAPPER_NOTATIONS))
     def test_each_wrapper_notation_matches(self, notation):
         """Every build-wrapper notation, in the executor's notation position, matches."""
         command = (
@@ -1502,7 +1502,7 @@ class TestSessionRenderTitleBuildBusy:
             "tool_input": {"command": command},
         }
 
-    @pytest.mark.parametrize("notation", list(_BUILD_WRAPPER_NOTATIONS))
+    @pytest.mark.parametrize("notation", sorted(_BUILD_WRAPPER_NOTATIONS))
     def test_build_command_renders_build_busy_icon(
         self, notation, rt, tmp_path, monkeypatch, capsys
     ):
