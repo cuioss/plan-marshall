@@ -11,14 +11,28 @@ notation (``plan-marshall:build-{maven,gradle,npm,pyproject_build}``),
 ``hint``). Non-build executables (Bucket A ``manage-*`` notations, raw
 shell invocations) keep today's shape verbatim.
 
-The five parametrised cases below cover the public surface:
+``bash_timeout_seconds`` is computed as ``max(timeout_get(key,
+DEFAULT_BUILD_TIMEOUT), config.min_timeout) + OUTER_TIMEOUT_BUFFER`` — the
+engine's OWN declared floor is applied, the same clamp ``execute_direct_base``
+enforces at build time. The tier follows that FLOORED value, never the raw
+learned value, so the engine's floor decides which verdicts are reachable:
+pyproject declares 600 (so ``600 + 30 = 630`` always exceeds the ceiling and
+every pyproject command is ``orchestrator``), while Maven / Gradle / npm
+declare 300 (so an unmeasured command yields ``330`` and stays ``per_task``).
 
-* Bucket B with short persisted duration -> ``per_task`` tier.
-* Bucket B with persisted duration above 600s -> ``orchestrator`` tier.
-* Bucket B with no persisted measurement -> ``per_task`` tier with the
-  ``DEFAULT_BUILD_TIMEOUT``-derived bash timeout.
+The cases below cover the public surface:
+
+* Bucket B pyproject, learned value BELOW the engine floor -> floor binds ->
+  ``orchestrator`` tier (the under-report the floor clamp fixes).
+* Bucket B pyproject, learned value ABOVE the ceiling -> learned value binds
+  (floor inert) -> ``orchestrator`` tier.
+* Bucket B pyproject with no persisted measurement -> floor binds ->
+  ``orchestrator`` tier (first-run truthfulness).
+* Bucket B Maven with no persisted measurement -> ``per_task`` tier, proving
+  the floor clamp does not collapse every engine onto the orchestrator tier.
 * Bucket A ``manage-*`` notation -> legacy TOON (no augmentation).
-* Pinned hint strings match exactly so an LLM can recognise them.
+* Pinned hint strings match exactly so an LLM can recognise them — seeded
+  across BOTH tiers so neither template's exact-match guard goes vacuous.
 
 A sixth case (``test_cmd_resolve_cache_tree_layout_emits_augmentation``)
 pins the cache-tree regression that PR #515 closed. ``cmd_resolve``'s
@@ -67,6 +81,19 @@ _PYPROJECT_VERIFY_EXECUTABLE = (
     'python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build '
     'run --command-args "verify plan-marshall"'
 )
+
+# Canonical Bucket B executable shape for a MAVEN command. Maven declares a
+# 300s outer floor (``MAVEN_OUTER_FLOOR_SECONDS``) against pyproject's 600s, so
+# ``max(learned, 300) + 30`` stays under the 600s ceiling for modest learned
+# values — this is the only engine family that still yields a ``per_task``
+# verdict, and therefore the only one that can keep the per_task hint template
+# under exact-match coverage. ``default_command_key_fn`` normalises the
+# ``--command-args`` value to the persisted key ``maven:test__pl_core``.
+_MAVEN_TEST_EXECUTABLE = (
+    'python3 .plan/execute-script.py plan-marshall:build-maven:maven '
+    'run --command-args "test -pl core"'
+)
+_MAVEN_TEST_COMMAND_KEY = 'maven:test__pl_core'
 
 # Bucket A manage-* notation — passes classification's filter and the four
 # augmentation fields MUST be absent from the resolve TOON.
@@ -126,16 +153,22 @@ def isolated_run_config(monkeypatch, tmp_path):
 
 
 # =============================================================================
-# Case (a): Bucket B notation, short duration -> per_task tier
+# Case (a): Bucket B notation, short duration -> floored to orchestrator tier
 # =============================================================================
 
 
-def test_cmd_resolve_bucket_b_short_duration_returns_per_task(isolated_run_config):
-    """Bucket B + persisted timeout below 600s ceiling -> per_task tier.
+def test_cmd_resolve_bucket_b_short_learned_value_is_raised_by_the_engine_floor(isolated_run_config):
+    """A learned value BELOW the engine floor is raised to the floor by the stamp.
 
-    persisted=400 -> inner=max(120, int(400*1.25))=500 -> bash=500+30=530.
-    530 <= 600 so execution_tier=per_task and the hint pins the value as
-    ``Bash timeout=530000ms``.
+    persisted=400 -> timeout_get=max(120, int(400*1.25))=500. The pyproject
+    engine declares ``PYTEST_OUTER_FLOOR_SECONDS = 600``, so the stamp applies
+    the same ``max(learned, min_timeout)`` clamp ``execute_direct_base``
+    enforces: inner=max(500, 600)=600 -> bash=600+30=630.
+
+    630 > 600 so the verdict is ``orchestrator``. This is the whole point of the
+    floor clamp: WITHOUT it the stamp reported 530/``per_task`` while the real
+    run measured against 600s, under-reporting the bound and mis-tiering the
+    command. The learned value never binds below the engine's own floor.
     """
     _set_persisted_timeout(isolated_run_config, 'python:verify_plan_marshall', 400)
 
@@ -147,10 +180,10 @@ def test_cmd_resolve_bucket_b_short_duration_returns_per_task(isolated_run_confi
 
     assert result['status'] == 'success'
     assert result['executable'] == _PYPROJECT_VERIFY_EXECUTABLE
-    assert result['bash_timeout_seconds'] == 530
-    assert result['exceeds_bash_ceiling'] is False
-    assert result['execution_tier'] == 'per_task'
-    assert result['hint'] == 'Bash timeout=530000ms'
+    assert result['bash_timeout_seconds'] == 630
+    assert result['exceeds_bash_ceiling'] is True
+    assert result['execution_tier'] == 'orchestrator'
+    assert result['hint'] == 'Exceeds Bash ceiling; orchestrator-tier only'
 
 
 # =============================================================================
@@ -181,19 +214,46 @@ def test_cmd_resolve_bucket_b_long_duration_returns_orchestrator(isolated_run_co
 
 
 # =============================================================================
-# Case (c): Bucket B notation, no persisted measurement -> DEFAULT_BUILD_TIMEOUT
+# Case (c): Bucket B notation, no persisted measurement -> engine floor binds
 # =============================================================================
 
 
-def test_cmd_resolve_bucket_b_no_measurement_uses_default(isolated_run_config):
-    """Bucket B without persisted measurement -> per_task with default-derived timeout.
+def test_cmd_resolve_bucket_b_no_measurement_uses_the_engine_floor(isolated_run_config):
+    """Without a measurement the ENGINE FLOOR binds, not ``DEFAULT_BUILD_TIMEOUT``.
 
-    No timeout_set call -> timeout_get falls back to DEFAULT_BUILD_TIMEOUT=300.
-    inner=max(120, 300)=300 -> bash=300+30=330. 330 <= 600 so per_task.
+    No timeout_set call -> timeout_get falls back to DEFAULT_BUILD_TIMEOUT=300
+    -> inner=max(120, 300)=300. The pyproject floor then raises it:
+    max(300, 600)=600 -> bash=600+30=630 -> orchestrator.
+
+    This is the first-run truthfulness property: a command that WILL measure
+    past the ceiling is no longer mis-tiered ``per_task`` merely because no
+    measurement exists yet. The floor makes the very first stamp honest.
     """
     # No call to _set_persisted_timeout. Empty run-config -> default path.
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_single_module(tmpdir, 'verify', _PYPROJECT_VERIFY_EXECUTABLE)
+
+        args = Namespace(project_dir=tmpdir, resolve_command='verify', module=None)
+        result = cmd_resolve(args)
+
+    assert result['status'] == 'success'
+    assert result['bash_timeout_seconds'] == 630
+    assert result['exceeds_bash_ceiling'] is True
+    assert result['execution_tier'] == 'orchestrator'
+    assert result['hint'] == 'Exceeds Bash ceiling; orchestrator-tier only'
+
+
+def test_cmd_resolve_maven_no_measurement_stays_per_task(isolated_run_config):
+    """An unmeasured MAVEN command still resolves ``per_task``.
+
+    Maven's declared floor is 300, so max(300, 300)=300 -> bash=330 < 600. The
+    floor clamp raises the pyproject stamp without dragging every engine to the
+    orchestrator tier — the per_task verdict remains reachable and is pinned
+    here so a future floor change cannot silently collapse the whole tier axis
+    to ``orchestrator``.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_single_module(tmpdir, 'verify', _MAVEN_TEST_EXECUTABLE)
 
         args = Namespace(project_dir=tmpdir, resolve_command='verify', module=None)
         result = cmd_resolve(args)
@@ -237,31 +297,51 @@ def test_cmd_resolve_bucket_a_manage_notation_returns_legacy_toon(isolated_run_c
 
 
 @pytest.mark.parametrize(
-    ('persisted_seconds', 'expected_bash_timeout', 'expected_hint'),
+    ('executable', 'command_key', 'persisted_seconds', 'expected_bash_timeout', 'expected_hint'),
     [
-        # per_task variants — hint pins the millisecond value.
-        (200, 280, 'Bash timeout=280000ms'),  # inner=max(120, 250)=250 -> 280
-        (400, 530, 'Bash timeout=530000ms'),  # inner=max(120, 500)=500 -> 530
-        # orchestrator variant — hint is the fixed overflow phrase.
-        (800, 1030, 'Exceeds Bash ceiling; orchestrator-tier only'),
-        (5000, 6280, 'Exceeds Bash ceiling; orchestrator-tier only'),
+        # per_task variants — MAVEN-seeded, because Maven's 300s floor leaves
+        # headroom under the 600s ceiling. Seeding these against pyproject would
+        # push every row past the ceiling and collapse the whole parametrisation
+        # onto the orchestrator phrase, silently making the per_task template's
+        # exact-match guard vacuous while still LOOKING like a four-row sweep.
+        # Row 1: the FLOOR binds (learned 250 < 300).
+        (_MAVEN_TEST_EXECUTABLE, _MAVEN_TEST_COMMAND_KEY, 200, 330, 'Bash timeout=330000ms'),
+        # Row 2: the LEARNED value binds (500 > 300) — proves the floor is a
+        # lower bound, not a replacement for the learned value.
+        (_MAVEN_TEST_EXECUTABLE, _MAVEN_TEST_COMMAND_KEY, 400, 530, 'Bash timeout=530000ms'),
+        # orchestrator variants — pyproject, learned value already above its
+        # 600s floor so the floor is inert here and the learned value binds.
+        (
+            _PYPROJECT_VERIFY_EXECUTABLE,
+            'python:verify_plan_marshall',
+            800,
+            1030,
+            'Exceeds Bash ceiling; orchestrator-tier only',
+        ),
+        (
+            _PYPROJECT_VERIFY_EXECUTABLE,
+            'python:verify_plan_marshall',
+            5000,
+            6280,
+            'Exceeds Bash ceiling; orchestrator-tier only',
+        ),
     ],
 )
 def test_cmd_resolve_hint_pins_recognition_token(
-    isolated_run_config, persisted_seconds, expected_bash_timeout, expected_hint
+    isolated_run_config, executable, command_key, persisted_seconds, expected_bash_timeout, expected_hint
 ):
     """Hint string is a pinned recognition token, NOT human prose.
 
-    Asserts exact-match equality on the hint string for both tiers, so a
+    Asserts exact-match equality on the hint string for BOTH tiers, so a
     future refactor that re-words either template (e.g., adds a period,
-    changes capitalisation) trips this guard.
+    changes capitalisation) trips this guard. Keeping at least one per_task row
+    and one orchestrator row is load-bearing: a parametrisation in which every
+    row renders the same phrase pins only one of the two templates.
     """
-    _set_persisted_timeout(
-        isolated_run_config, 'python:verify_plan_marshall', persisted_seconds
-    )
+    _set_persisted_timeout(isolated_run_config, command_key, persisted_seconds)
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        _seed_single_module(tmpdir, 'verify', _PYPROJECT_VERIFY_EXECUTABLE)
+        _seed_single_module(tmpdir, 'verify', executable)
 
         args = Namespace(project_dir=tmpdir, resolve_command='verify', module=None)
         result = cmd_resolve(args)

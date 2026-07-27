@@ -17,6 +17,16 @@ from _build_execute_factory import ExecuteConfig, create_execute_handlers, defau
 from _build_shared import DEFAULT_BUILD_TIMEOUT
 from _maven_cmd_parse import parse_log
 
+# Outer timeout floor (seconds) for Maven builds. Maven resolves dependencies
+# and downloads plugins on a cold local repository before a single module
+# compiles, so a learned duration measured against a warm repository
+# under-specifies the next cold run. This declared floor protects against that
+# under-specification: no learned value can drop the outer wrapper bound below
+# it, so a cold-cache resolve is never killed mid-download and reported as a
+# build failure. Peer of ``_pyproject_execute.PYTEST_OUTER_FLOOR_SECONDS`` —
+# every engine declares its own floor rather than inheriting ``MIN_TIMEOUT``.
+MAVEN_OUTER_FLOOR_SECONDS = 300
+
 
 def _maven_scope_fn(args: str) -> str:
     """Extract scope from Maven -pl argument.
@@ -46,6 +56,7 @@ _CONFIG = ExecuteConfig(
     scope_fn=_maven_scope_fn,
     command_key_fn=default_command_key_fn,
     default_timeout=DEFAULT_BUILD_TIMEOUT,
+    min_timeout=MAVEN_OUTER_FLOOR_SECONDS,
 )
 
 execute_direct, cmd_run = create_execute_handlers(_CONFIG, parse_log)

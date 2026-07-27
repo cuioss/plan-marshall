@@ -43,6 +43,35 @@ def test_config_default_timeout():
     assert _CONFIG.default_timeout == 300
 
 
+def test_config_declares_the_outer_floor_as_a_literal_300(tmp_path, monkeypatch):
+    """Maven declares its own outer floor explicitly, and it reaches the executor.
+
+    The floor is asserted as the LITERAL ``300`` rather than as an equality
+    against ``DEFAULT_BUILD_TIMEOUT``: the two happen to coincide today, so an
+    equality assertion would keep passing vacuously if that constant later
+    moved, silently un-pinning the declared floor this case exists to guard.
+
+    Both halves matter — declaring the constant is worthless if it never
+    reaches ``execute_direct_base``, so the second half proves the wiring by
+    capturing the ``min_timeout`` kwarg the executor actually receives.
+    """
+    assert _maven_execute_mod.MAVEN_OUTER_FLOOR_SECONDS == 300
+    assert _CONFIG.min_timeout == 300
+
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    calls = []
+
+    def _recorder(**kwargs):
+        calls.append(kwargs)
+        return {'status': 'success', 'exit_code': 0, 'duration_seconds': 0, 'log_file': '', 'command': 'mvn verify'}
+
+    monkeypatch.setattr(_factory, 'execute_direct_base', _recorder)
+
+    execute_direct(args='verify', command_key='maven:verify', project_dir=str(tmp_path))
+
+    assert calls[0]['min_timeout'] == 300
+
+
 def test_config_capture_strategy():
     """Config uses Maven log flag strategy."""
     from _build_execute import CaptureStrategy

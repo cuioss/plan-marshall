@@ -17,6 +17,17 @@ from _build_execute_factory import ExecuteConfig, create_execute_handlers, defau
 from _build_shared import DEFAULT_BUILD_TIMEOUT
 from _npm_cmd_parse import parse_log
 
+# Outer timeout floor (seconds) for npm/npx builds. An npm invocation on a cold
+# cache installs the dependency tree from the registry, and an npx invocation
+# may additionally fetch the tool itself, before the requested script runs — so
+# a learned duration measured against a warm ``node_modules`` under-specifies
+# the next cold run. This declared floor protects against that
+# under-specification: no learned value can drop the outer wrapper bound below
+# it, so a cold-cache install is never killed mid-fetch and reported as a build
+# failure. Peer of ``_pyproject_execute.PYTEST_OUTER_FLOOR_SECONDS`` — every
+# engine declares its own floor rather than inheriting ``MIN_TIMEOUT``.
+NPM_OUTER_FLOOR_SECONDS = 300
+
 # Commands that should use npx instead of npm (direct tool invocations)
 NPX_COMMANDS = [
     'playwright',
@@ -96,6 +107,7 @@ _CONFIG = ExecuteConfig(
     scope_fn=_npm_scope_fn,
     command_key_fn=default_command_key_fn,
     default_timeout=DEFAULT_BUILD_TIMEOUT,
+    min_timeout=NPM_OUTER_FLOOR_SECONDS,
     wrapper_resolve_fn=_npm_wrapper_resolve_fn,
     parser_needs_command=True,
     supports_env_vars=True,

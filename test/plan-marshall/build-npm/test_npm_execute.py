@@ -16,9 +16,12 @@ sys.modules.setdefault('run_config', MagicMock(timeout_get=MagicMock(return_valu
 
 _npm_execute_mod = load_script_module('plan-marshall', 'build-npm', '_npm_execute.py', '_npm_execute')
 
+import _build_execute_factory as _factory  # noqa: E402
+
 _CONFIG = _npm_execute_mod._CONFIG
 NPX_COMMANDS = _npm_execute_mod.NPX_COMMANDS
 detect_command_type = _npm_execute_mod.detect_command_type
+execute_direct = _npm_execute_mod.execute_direct
 
 
 def test_config_tool_name():
@@ -29,6 +32,41 @@ def test_config_tool_name():
 def test_config_default_timeout():
     """Config has 300s default timeout (unified across all build skills)."""
     assert _CONFIG.default_timeout == 300
+
+
+def test_config_declares_the_outer_floor_as_a_literal_300(tmp_path, monkeypatch):
+    """npm declares its own outer floor explicitly, and it reaches the executor.
+
+    The floor is asserted as the LITERAL ``300`` rather than as an equality
+    against ``DEFAULT_BUILD_TIMEOUT``: the two happen to coincide today, so an
+    equality assertion would keep passing vacuously if that constant later
+    moved, silently un-pinning the declared floor this case exists to guard.
+
+    Both halves matter — declaring the constant is worthless if it never
+    reaches ``execute_direct_base``, so the second half proves the wiring by
+    capturing the ``min_timeout`` kwarg the executor actually receives.
+    """
+    assert _npm_execute_mod.NPM_OUTER_FLOOR_SECONDS == 300
+    assert _CONFIG.min_timeout == 300
+
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    calls = []
+
+    def _recorder(**kwargs):
+        calls.append(kwargs)
+        return {
+            'status': 'success',
+            'exit_code': 0,
+            'duration_seconds': 0,
+            'log_file': '',
+            'command': 'npm run test',
+        }
+
+    monkeypatch.setattr(_factory, 'execute_direct_base', _recorder)
+
+    execute_direct(args='run test', command_key='npm:run_test', project_dir=str(tmp_path))
+
+    assert calls[0]['min_timeout'] == 300
 
 
 def test_config_capture_strategy():
