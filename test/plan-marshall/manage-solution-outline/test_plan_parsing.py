@@ -4,8 +4,9 @@
 """
 Tests for the shared `_plan_parsing` module.
 
-Focuses on the `_slugify_section_name()` helper algorithm and the
-`parse_document_sections()` round-trip behavior. The module lives at
+Focuses on the `_slugify_section_name()` helper algorithm, the
+`parse_document_sections()` round-trip behavior, and the deliverable-block
+parsing pair (`split_deliverable_blocks()` / `extract_deliverables()`). The module lives at
 `marketplace/bundles/plan-marshall/skills/manage-solution-outline/scripts/_plan_parsing.py`
 and is imported directly after a local `sys.path.insert` (matching the
 established pattern in `test/plan-marshall/plan-marshall/test_phase_handshake.py`)
@@ -35,7 +36,9 @@ from _plan_parsing import (  # noqa: E402
     _extract_affected_files,
     _extract_profiles,
     _slugify_section_name,
+    extract_deliverables,
     parse_document_sections,
+    split_deliverable_blocks,
 )
 
 
@@ -361,3 +364,194 @@ class TestExtractProfilesBucketComment:
     def test_no_profiles_section_returns_empty(self):
         result = _extract_profiles('No profiles section here.')
         assert result == []
+
+
+# =============================================================================
+# Deliverables-section fixtures shared by the block/deliverable parsing tests
+# =============================================================================
+
+# Two deliverables in ascending document order. Deliverable 1 deliberately
+# declares NEITHER a `**Metadata:**` block NOR `**Success Criteria:**`, while
+# deliverable 2 declares both — so a bounding failure (deliverable 1's content
+# running past its own heading into deliverable 2's) is directly observable as
+# deliverable 1 inheriting deliverable 2's metadata / success-criteria flag.
+TWO_DELIVERABLE_SECTION = """### 1. First deliverable
+
+**Profiles:**
+- implementation
+
+**Affected files:**
+- `src/first.py` (write-replace)
+
+**Verification:**
+- Command: verify one
+- Criteria: one passes
+
+### 2. Second deliverable
+
+**Metadata:**
+- change_type: bug_fix
+
+**Profiles:**
+- module_testing
+
+**Affected files:**
+- `test/second.py` (write-new)
+
+**Verification:**
+- Command: verify two
+- Criteria: two passes
+
+**Success Criteria:** the second deliverable alone declares this
+"""
+
+# The same three deliverables written OUT OF numeric order in the document.
+OUT_OF_ORDER_SECTION = """### 3. Third deliverable
+
+**Profiles:**
+- verification
+
+### 1. First deliverable
+
+**Profiles:**
+- implementation
+
+### 2. Second deliverable
+
+**Profiles:**
+- module_testing
+"""
+
+
+# =============================================================================
+# split_deliverable_blocks() — number/title/content triple
+# =============================================================================
+
+
+class TestSplitDeliverableBlocks:
+    """Direct coverage for the public `split_deliverable_blocks` helper.
+
+    The helper is named in the module docstring's Usage list and is the
+    extraction `extract_deliverables` is built on, so its number/title/content
+    triple is pinned directly rather than only through its caller.
+    """
+
+    def test_returns_number_title_content_triple_per_heading(self):
+        blocks = split_deliverable_blocks(TWO_DELIVERABLE_SECTION)
+
+        assert [block['number'] for block in blocks] == [1, 2]
+        assert [block['title'] for block in blocks] == ['First deliverable', 'Second deliverable']
+        # `number` is an int (parsed from the heading), not the raw string.
+        assert all(isinstance(block['number'], int) for block in blocks)
+        assert set(blocks[0]) == {'number', 'title', 'content'}
+
+    def test_content_is_bounded_by_the_next_heading(self):
+        blocks = split_deliverable_blocks(TWO_DELIVERABLE_SECTION)
+
+        first, second = blocks
+        # each block's content carries only its own body — the heading line
+        # itself is excluded (content starts after the heading's end) and the
+        # next deliverable's body is not absorbed.
+        assert 'verify one' in first['content']
+        assert 'verify two' not in first['content']
+        assert 'Second deliverable' not in first['content']
+        assert 'verify two' in second['content']
+        assert 'verify one' not in second['content']
+
+    def test_blocks_are_returned_in_document_order_not_sorted(self):
+        blocks = split_deliverable_blocks(OUT_OF_ORDER_SECTION)
+
+        # documented contract: blocks come back as written so callers
+        # that need per-deliverable attribution see the document order.
+        assert [block['number'] for block in blocks] == [3, 1, 2]
+
+    def test_section_without_headings_returns_empty_list(self):
+        assert split_deliverable_blocks('Prose with no ### headings at all.\n') == []
+
+    def test_empty_section_returns_empty_list(self):
+        assert split_deliverable_blocks('') == []
+
+
+# =============================================================================
+# extract_deliverables() — characterization of the post-extraction contract
+# =============================================================================
+
+
+class TestExtractDeliverables:
+    """Characterization tests pinning `extract_deliverables`' current contract.
+
+    These pin the behavior that the `split_deliverable_blocks` extraction had to
+    preserve: one entry per `### N. Title` heading with the documented dict
+    keys, entries sorted ascending by number, per-deliverable content bounded by
+    the next heading, and an empty list for a heading-less section.
+    """
+
+    def test_one_entry_per_heading_with_documented_keys(self):
+        deliverables = extract_deliverables(TWO_DELIVERABLE_SECTION)
+
+        assert len(deliverables) == 2
+        assert set(deliverables[0]) == {
+            'number',
+            'title',
+            'reference',
+            'metadata',
+            'profiles',
+            'affected_files',
+            'verification',
+            'has_success_criteria',
+        }
+
+    def test_first_deliverable_carries_its_own_parsed_values(self):
+        first = extract_deliverables(TWO_DELIVERABLE_SECTION)[0]
+
+        assert first['number'] == 1
+        assert first['title'] == 'First deliverable'
+        assert first['reference'] == '1. First deliverable'
+        assert first['profiles'] == ['implementation']
+        assert first['affected_files'] == [{'path': 'src/first.py', 'intent': 'write-replace'}]
+        assert first['verification'] == {'command': 'verify one', 'criteria': 'one passes'}
+
+    def test_second_deliverable_carries_its_own_parsed_values(self):
+        second = extract_deliverables(TWO_DELIVERABLE_SECTION)[1]
+
+        assert second['number'] == 2
+        assert second['reference'] == '2. Second deliverable'
+        assert second['metadata'] == {'change_type': 'bug_fix'}
+        assert second['profiles'] == ['module_testing']
+        assert second['affected_files'] == [{'path': 'test/second.py', 'intent': 'write-new'}]
+        assert second['verification'] == {'command': 'verify two', 'criteria': 'two passes'}
+        assert second['has_success_criteria'] is True
+
+    def test_later_deliverable_fields_do_not_leak_into_the_earlier_one(self):
+        first = extract_deliverables(TWO_DELIVERABLE_SECTION)[0]
+
+        # deliverable 1 declares neither a Metadata block nor Success
+        # Criteria; deliverable 2 declares both. A bounding regression (content
+        # not cut at the next `### ` heading) would show up here as deliverable
+        # 1 inheriting deliverable 2's values.
+        assert first['metadata'] == {}, (
+            'Deliverable 1 declares no **Metadata:** block; a non-empty value '
+            "means deliverable 2's block leaked across the heading boundary."
+        )
+        assert first['has_success_criteria'] is False, (
+            'Deliverable 1 declares no **Success Criteria:**; True here means '
+            "deliverable 2's declaration leaked across the heading boundary."
+        )
+
+    def test_entries_are_sorted_ascending_by_number(self):
+        deliverables = extract_deliverables(OUT_OF_ORDER_SECTION)
+
+        # the sorted-by-number tail is part of the contract even though
+        # `split_deliverable_blocks` yields document order (3, 1, 2).
+        assert [d['number'] for d in deliverables] == [1, 2, 3]
+        assert [d['profiles'] for d in deliverables] == [
+            ['implementation'],
+            ['module_testing'],
+            ['verification'],
+        ]
+
+    def test_section_without_headings_returns_empty_list(self):
+        assert extract_deliverables('Prose with no ### headings at all.\n') == []
+
+    def test_empty_section_returns_empty_list(self):
+        assert extract_deliverables('') == []
