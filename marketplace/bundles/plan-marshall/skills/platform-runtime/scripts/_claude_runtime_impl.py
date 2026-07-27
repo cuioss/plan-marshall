@@ -503,7 +503,18 @@ class ClaudeRuntime(Runtime):
                 if plan_id:
                     claude_runtime._manage_status_set_title_token(plan_id, "build-busy")
             else:
-                state.pop("title_token", None)
+                # Owner-scope the in-memory pop exactly as the persisted clear
+                # scopes itself (``_manage_status_clear_title_token`` passes
+                # ``--owner build-hook``). Popping unconditionally would drop a
+                # live ``merge-lock`` token from THIS render's composed title
+                # while its status.json record survives — the two halves of one
+                # clear disagreeing about ownership.
+                existing = state.get("title_token")
+                if (
+                    isinstance(existing, dict)
+                    and existing.get("owner") == claude_runtime._TITLE_TOKEN_OWNER_BUILD_HOOK
+                ):
+                    state.pop("title_token", None)
                 if plan_id:
                     claude_runtime._manage_status_clear_title_token(plan_id)
 

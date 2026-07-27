@@ -440,6 +440,9 @@ def cmd_archive(args: argparse.Namespace) -> dict[str, Any] | None:
     # lock-waiting/lock-owned/build-busy) before archiving. An archived plan
     # holds no live coordination state worth arbitrating over, so this pop is
     # owner-agnostic: a single pop covers every record regardless of its owner.
+    # ``preserve_title_token=False`` on the write below is what makes the pop
+    # stick — the default write path deliberately carries the live record over,
+    # and archive is the one writer that intends to discard it.
     status.pop('title_token', None)
     # Persist optional --reason into status.metadata.archived_reason before
     # write_status so the archived status.json carries the structured reason.
@@ -449,7 +452,7 @@ def cmd_archive(args: argparse.Namespace) -> dict[str, Any] | None:
     if reason is not None:
         metadata = status.setdefault('metadata', {})
         metadata['archived_reason'] = reason
-    write_status(args.plan_id, status)
+    write_status(args.plan_id, status, preserve_title_token=False)
 
     # This write makes the plan terminal and drops its token, so its RENDERED
     # projection changes — which obliges a paired delivery exactly as every other

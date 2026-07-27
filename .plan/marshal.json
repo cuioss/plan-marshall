@@ -222,7 +222,7 @@
     }
   },
   "credentials_config": {
-    "plan-marshall:workflow-integration-sonar": {
+    "workflow-integration-sonar": {
       "organization": "cuioss",
       "project_key": "cuioss_plan-marshall"
     }

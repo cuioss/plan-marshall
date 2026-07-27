@@ -176,6 +176,121 @@ def test_main_title_token_set_then_clear(plan_context, monkeypatch, capsys):
     assert 'title_token' not in cleared
 
 
+def _pin_stale_snapshot(monkeypatch, snapshot):
+    """Make every ``require_status`` read return *snapshot* verbatim.
+
+    Reproduces the interleaving deterministically: a full-document writer holds
+    a snapshot read taken BEFORE a concurrent ``title-token set`` committed, and
+    performs its own write AFTER. Without a guarded write seam the writer would
+    restore the snapshot's ``title_token`` (here, its absence) over the live
+    record. ``require_status`` resolves ``read_status`` through the module
+    global, so patching it there is what the phase writers actually see.
+    """
+    import _status_core
+
+    monkeypatch.setattr(
+        _status_core, 'read_status', lambda _plan_id: json.loads(json.dumps(snapshot))
+    )
+
+
+def test_main_phase_write_preserves_a_title_token_set_after_its_snapshot_read(
+    plan_context, monkeypatch, capsys
+):
+    """A ``title-token set`` landing inside a phase write's read→write window survives.
+
+    ``set-phase`` commits a WHOLE document assembled from a snapshot read, so a
+    concurrent set committed after that read would be clobbered by the snapshot
+    value — a last-writer-wins loss on the very field four independent writers
+    coordinate through. The phase delta must land AND the live record must
+    survive; asserting only the former would certify exactly the defect.
+    """
+    plan_id = 'ms-disp-race'
+    _run(monkeypatch, capsys, ['create', '--plan-id', plan_id, '--title', 'Race', '--phases', _PHASES])
+
+    status_file = plan_context.plan_dir_for(plan_id) / 'status.json'
+    stale_snapshot = json.loads(status_file.read_text(encoding='utf-8'))
+    assert 'title_token' not in stale_snapshot
+
+    # The concurrent writer commits its record in its own critical section.
+    code, _, _ = _run(
+        monkeypatch,
+        capsys,
+        ['title-token', 'set', '--plan-id', plan_id, '--state', 'build-busy', '--owner', 'build-hook'],
+    )
+    assert code == 0
+
+    _pin_stale_snapshot(monkeypatch, stale_snapshot)
+    code, out, _ = _run(monkeypatch, capsys, ['set-phase', '--plan-id', plan_id, '--phase', '5-execute'])
+
+    assert code == 0
+    assert _parse(out)['status'] == 'success'
+    persisted = json.loads(status_file.read_text(encoding='utf-8'))
+    assert persisted['current_phase'] == '5-execute'
+    assert persisted['title_token']['state'] == 'build-busy'
+    assert persisted['title_token']['owner'] == 'build-hook'
+
+
+def test_main_transition_preserves_a_title_token_set_after_its_snapshot_read(
+    plan_context, monkeypatch, capsys
+):
+    """``transition`` shares the same read→write window and the same protection.
+
+    Covered alongside ``set-phase`` because a per-call-site guard is the failure
+    mode here: fixing one phase writer and leaving its sibling unguarded looks
+    green on a single-writer test.
+    """
+    plan_id = 'ms-disp-race-tr'
+    _run(monkeypatch, capsys, ['create', '--plan-id', plan_id, '--title', 'RaceTr', '--phases', _PHASES])
+
+    status_file = plan_context.plan_dir_for(plan_id) / 'status.json'
+    stale_snapshot = json.loads(status_file.read_text(encoding='utf-8'))
+
+    code, _, _ = _run(
+        monkeypatch,
+        capsys,
+        ['title-token', 'set', '--plan-id', plan_id, '--state', 'lock-owned', '--owner', 'merge-lock'],
+    )
+    assert code == 0
+
+    _pin_stale_snapshot(monkeypatch, stale_snapshot)
+    code, out, _ = _run(monkeypatch, capsys, ['transition', '--plan-id', plan_id, '--completed', '1-init'])
+
+    assert code == 0
+    assert _parse(out)['status'] == 'success'
+    persisted = json.loads(status_file.read_text(encoding='utf-8'))
+    assert persisted['current_phase'] == '2-refine'
+    assert persisted['title_token']['state'] == 'lock-owned'
+    assert persisted['title_token']['owner'] == 'merge-lock'
+
+
+def test_main_archive_still_drops_the_title_token(plan_context, monkeypatch, capsys):
+    """``archive`` opts OUT of the preserve rule — its owner-agnostic pop must stick.
+
+    The preserve-by-default write seam would otherwise silently resurrect the
+    token an archive deliberately discards, turning a documented design decision
+    into a vacuous pop.
+    """
+    plan_id = 'ms-disp-archive-tt'
+    _run(monkeypatch, capsys, ['create', '--plan-id', plan_id, '--title', 'ArchTT', '--phases', _PHASES])
+
+    code, _, _ = _run(
+        monkeypatch,
+        capsys,
+        ['title-token', 'set', '--plan-id', plan_id, '--state', 'lock-owned', '--owner', 'merge-lock'],
+    )
+    assert code == 0
+
+    code, out, _ = _run(monkeypatch, capsys, ['archive', '--plan-id', plan_id])
+
+    assert code == 0
+    assert _parse(out)['status'] == 'success'
+    import _status_core
+
+    archived_status = next(_status_core.get_archive_dir().glob(f'*-{plan_id}/status.json'))
+    archived = json.loads(archived_status.read_text(encoding='utf-8'))
+    assert 'title_token' not in archived
+
+
 def test_main_title_token_rejects_unknown_state(plan_context, monkeypatch, capsys):
     """An out-of-enum --state is an argparse rejection (exit 2)."""
     code, _, _ = _run(

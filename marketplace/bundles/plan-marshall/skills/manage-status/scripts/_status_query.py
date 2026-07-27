@@ -263,6 +263,17 @@ def cmd_title_token(args: argparse.Namespace) -> dict[str, Any] | None:
     ``ref-code-quality/standards/code-organization.md`` § TOCTOU /
     Check-Then-Act Hazards.
 
+    Those four are the writers that TARGET this field, but they are not the
+    only processes that can destroy a record written here: every full-document
+    ``status.json`` writer (phase writes, transitions, create) commits a whole
+    document assembled from an earlier snapshot read, so one committing after a
+    set here would restore the snapshot's stale ``title_token``. That second
+    window is closed at the shared write seam rather than in this verb —
+    ``_status_core.write_status`` commits inside the SAME ``rmw_json`` guard
+    (same path, therefore the same guard file) and carries over the record read
+    inside the guard. Both windows are therefore closed for all writers, not
+    only for the four that name this field.
+
     The record shape, owner vocabulary, arbitration rule, and staleness
     threshold are specified once in
     ``manage-terminal-title/standards/terminal-title-architecture.md``

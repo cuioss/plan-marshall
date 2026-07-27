@@ -113,10 +113,49 @@ def read_status(plan_id: str) -> dict[Any, Any]:
     return cast(dict[Any, Any], read_json(get_status_path(plan_id)))
 
 
-def write_status(plan_id: str, status: dict[Any, Any]) -> None:
-    """Write status.json for a plan."""
-    status['updated'] = now_utc_iso()
-    write_json(get_status_path(plan_id), status)
+def write_status(plan_id: str, status: dict[Any, Any], *, preserve_title_token: bool = True) -> None:
+    """Write status.json for a plan inside the serialized ``rmw_json`` critical section.
+
+    Every caller commits a WHOLE document assembled from a snapshot read taken
+    before its own mutation. ``title_token`` is the one field four independent
+    writers (the build-hook render assist, merge_lock's two lock surfaces, and
+    merge_lock's clear) mutate from separate executor subprocesses, so a plain
+    full-document overwrite carries a last-writer-wins window: a ``title-token
+    set`` committing between a caller's snapshot read and its write is silently
+    clobbered by the stale snapshot value. Committing here closes that window on
+    both counts — the O_EXCL guard serializes against ``cmd_title_token``'s own
+    critical section (same guard file, because both resolve the path through
+    ``get_status_path``), and the ``title_token`` carried into the committed
+    document is the one read INSIDE the guard rather than the caller's snapshot.
+
+    Guarding at this single seam rather than at individual phase-write call
+    sites is deliberate: every full-document writer in this skill shares the
+    hazard, so a per-call-site guard would be one call site short by
+    construction the moment a new writer is added.
+
+    Args:
+        plan_id: Plan whose ``status.json`` is written.
+        status: The whole document to commit. Mutated in place with the
+            refreshed ``updated`` stamp and the live ``title_token`` so the
+            caller's in-memory view matches what was committed.
+        preserve_title_token: When False the caller's own ``title_token`` value
+            — including its absence — wins over the live record. ``cmd_archive``
+            is the sole intended user: its unconditional full clear is a
+            deliberate design decision (an archived plan holds no live
+            coordination state worth arbitrating over), not an instance of the
+            race above.
+    """
+    def _apply(current: dict[str, Any]) -> dict[str, Any]:
+        if preserve_title_token:
+            live = current.get('title_token')
+            if live is None:
+                status.pop('title_token', None)
+            else:
+                status['title_token'] = live
+        status['updated'] = now_utc_iso()
+        return cast(dict[str, Any], status)
+
+    rmw_json(get_status_path(plan_id), _apply)
 
 
 def normalize_metadata(status: dict[Any, Any]) -> dict[Any, Any]:

@@ -984,6 +984,115 @@ class TestSessionRenderTitleStateAwareIcon:
 
 
 # =============================================================================
+# 3c1b. PostToolUse:Bash build-bracket clear — owner scoping of BOTH halves
+# =============================================================================
+
+
+class TestBuildBracketClearOwnerScoping:
+    """The build-bracket clear's two halves agree about ownership.
+
+    ``PostToolUse:Bash`` on a build command clears the build-busy token twice
+    over: an in-memory pop that corrects THIS render's composed title, and a
+    persisted ``manage-status title-token clear --owner build-hook`` that
+    corrects status.json. The persisted half is owner-scoped by construction, so
+    the in-memory half must be too — an unconditional pop would drop a live
+    ``merge-lock`` glyph from the painted title while its status.json record
+    survived, leaving the two halves disagreeing for one paint.
+    """
+
+    _BUILD_COMMAND = (
+        "python3 .plan/execute-script.py "
+        "plan-marshall:build-pyproject:pyproject_build run "
+        '--command-args "verify plan-marshall"'
+    )
+    _GLYPH_LOCK_OWNED = "\U0001f512"  # 🔒
+    _GLYPH_BUILD_BUSY = "\U0001f528"  # 🔨
+
+    @staticmethod
+    def _arrange(tmp_path, monkeypatch, *, token, session_id, plan_id):
+        """Plant *token* in status.json and drive a PostToolUse:Bash build event.
+
+        Returns the list the stubbed persisted clear records its plan ids into,
+        so each leg can assert the persisted half fired independently of what
+        the in-memory half decided.
+        """
+        import claude_runtime as _cr
+
+        _write_status_json(
+            tmp_path,
+            session_id=session_id,
+            plan_id=plan_id,
+            current_phase="5-execute",
+            short_description="clear-task",
+            title_token=token,
+        )
+        _redirect_render_env(tmp_path, monkeypatch, session_id)
+        _stub_hook_stdin(
+            monkeypatch,
+            {
+                "hook_event_name": "PostToolUse",
+                "tool_name": "Bash",
+                "tool_input": {"command": TestBuildBracketClearOwnerScoping._BUILD_COMMAND},
+            },
+        )
+
+        cleared: list[str] = []
+        monkeypatch.setattr(
+            _cr,
+            "_manage_status_clear_title_token",
+            lambda plan_id: (cleared.append(plan_id), True)[1],
+        )
+        return cleared
+
+    def test_foreign_owned_token_survives_the_in_memory_clear(
+        self, rt, tmp_path, monkeypatch, capsys
+    ):
+        """A merge-lock-owned token keeps painting its 🔒 through a build-hook clear."""
+        cleared = self._arrange(
+            tmp_path,
+            monkeypatch,
+            token=_title_token("lock-owned", owner="merge-lock"),
+            session_id="sess-foreign-clear",
+            plan_id="foreign-clear-plan",
+        )
+
+        capsys.readouterr()
+        returned = rt.session_render_title(statusline=False)
+        captured = capsys.readouterr().out
+
+        assert returned == ""
+        envelope = json.loads(captured)
+        assert envelope["terminalSequence"] == (
+            f"\x1b]0;➤ {self._GLYPH_LOCK_OWNED} pm:5-execute:clear-task\x07"
+        )
+        # The persisted half still fires — it is owner-scoped on its own side
+        # (``--owner build-hook``), so it leaves the merge-lock record alone.
+        assert cleared == ["foreign-clear-plan"]
+
+    def test_build_hook_owned_token_is_dropped_by_the_in_memory_clear(
+        self, rt, tmp_path, monkeypatch, capsys
+    ):
+        """The hook's OWN build-busy token is popped, so 🔨 stops painting at once."""
+        cleared = self._arrange(
+            tmp_path,
+            monkeypatch,
+            token=_title_token("build-busy", owner="build-hook"),
+            session_id="sess-own-clear",
+            plan_id="own-clear-plan",
+        )
+
+        capsys.readouterr()
+        returned = rt.session_render_title(statusline=False)
+        captured = capsys.readouterr().out
+
+        assert returned == ""
+        envelope = json.loads(captured)
+        assert envelope["terminalSequence"] == "\x1b]0;➤ pm:5-execute:clear-task\x07"
+        assert self._GLYPH_BUILD_BUSY not in envelope["terminalSequence"]
+        assert cleared == ["own-clear-plan"]
+
+
+# =============================================================================
 # 3c2. session_render_title hook-mode conditional sessionTitle emit
 # =============================================================================
 
@@ -1864,6 +1973,14 @@ class TestSessionRenderTitleNamedOutcomes:
         _record(lambda: rt.session_render_title(statusline=False))
 
         # write_failed
+        #
+        # State the stdin precondition rather than inheriting it: without this
+        # reset the leg reaches write_failed only because the SessionStart:clear
+        # StringIO installed above happens to be drained by the preceding
+        # render (monkeypatch.undo() runs AFTER this leg, not before it). Any
+        # change to buffering or a re-seek of that StringIO would silently flip
+        # this leg to report session_teardown and collapse the outcome set.
+        monkeypatch.setattr("sys.stdin", StringIO(""))
         _write_status_json(tmp_path, session_id="sess-distinct-boom", plan_id="boom")
         _redirect_render_env(tmp_path, monkeypatch, "sess-distinct-boom")
 
