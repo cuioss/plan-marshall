@@ -1022,6 +1022,37 @@ def _read_title_state(plan_id: str) -> dict[str, Any] | None:
     return state
 
 
+def _mark_terminal_delivered(plan_id: str) -> bool:
+    """Record that *plan_id*'s archived terminal title has now been delivered.
+
+    The delivery obligation an archived plan carries is discharged the moment a
+    render event actually emits its terminal title. This writes the
+    :data:`session_binding._DELIVERED_MARKER` flag into the archived
+    ``status.json``, which is what flips
+    :func:`session_binding._terminal_delivery_pending` to False and releases the
+    plan's session slot to the next ``session doctor --fix`` sweep.
+
+    A plan with no archived ``status.json`` (a live or worktree-resident plan)
+    owes no archived delivery, so this is a no-op for it. Best-effort: returns
+    False on any resolution, read, or write failure and never raises — a missed
+    marker costs one extra GC cycle, never a lost title.
+    """
+    status_path = _resolve_archived_status_json(plan_id)
+    if status_path is None:
+        return False
+    status_data = _read_json(status_path)
+    if status_data is None:
+        return False
+    if status_data.get(session_binding._DELIVERED_MARKER) is True:
+        return True
+    status_data[session_binding._DELIVERED_MARKER] = True
+    try:
+        status_path.write_text(json.dumps(status_data, indent=2), encoding="utf-8")
+    except OSError:
+        return False
+    return True
+
+
 def _read_orchestrator_title_state(slug: str) -> dict[str, Any] | None:
     """Read the orchestrator title state for *slug*, or ``None``.
 

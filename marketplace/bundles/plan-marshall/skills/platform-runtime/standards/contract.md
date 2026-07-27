@@ -556,41 +556,35 @@ alternative: Use OpenCode's built-in TUI status surface for plan visibility
 
 ### `session push-title-token`
 
-Parse a store selector and an optional `--icon`, emit the OSC escape sequence directly to `/dev/tty` to repaint the current title in the terminal (Claude). No-op on OpenCode. This is the single repaint seam for blocking callers (lock/build acquire waits), for the `manage-status` phase-state-write drive seam, and for the `marshall-orchestrator` per-verb title repaint. When `--icon` is supplied it overrides the event-resolved icon for non-terminal phases; when omitted the composer applies its default active icon, so the push is a plain repaint of the current composed title. Router-dispatched in `platform_runtime.py`, abstract in `runtime_base.py`, concrete in `claude_runtime.py` (writes OSC sequence to `/dev/tty`) and `opencode_runtime.py` (returns no-op).
+Parse a store selector and an optional `--icon`, read the title state, and settle it for the next render event to deliver (Claude). No-op on OpenCode. **This seam binds and persists — it does not repaint.** The hook-written `terminalSequence` envelope from `session render-title` is the sole delivery channel and is event-driven rather than callable on demand, so a writer reaches the terminal by settling the state the *next* render reads. It is the seam the `manage-status` phase-state-write drive seam, the lock/build state writers, and the `marshall-orchestrator` per-verb call all share. When `--icon` is supplied it overrides the event-resolved icon for non-terminal phases; when omitted the composer applies its default active icon. Router-dispatched in `platform_runtime.py`, abstract in `runtime_base.py`, concrete in `claude_runtime.py` and `opencode_runtime.py` (returns no-op).
 
-**Arguments**: `--store plans|orchestrator` (optional, default `plans`), `--plan-id <id>` (required with the default `plans` store), `--slug <slug>` (required with `--store orchestrator`), `--icon <icon>` (optional — omit for a plain repaint of the current title)
+**Arguments**: `--store plans|orchestrator` (optional, default `plans`), `--plan-id <id>` (required with the default `plans` store), `--slug <slug>` (required with `--store orchestrator`), `--icon <icon>` (optional — omit for the default active icon)
 
 The two stores are mutually exclusive selectors for where the title state is read from: the default `plans` store resolves the plan's `status.json` by `--plan-id`, while `--store orchestrator` resolves the epic's `status.json` via `get_store_dir('orchestrator', slug)` by `--slug`. Supplying `--store orchestrator` without `--slug`, or the default store without `--plan-id`, returns `error: invalid_argument`.
 
-`/dev/tty` is the **FALLBACK** delivery channel — the hook-written
-`terminalSequence` envelope from `session render-title` is the primary one and
-needs no tty ownership. The `--store orchestrator` push additionally establishes
-the session→epic binding (best-effort, before any `/dev/tty` attempt) so the
-PRIMARY hook channel resolves the epic and delivers its title on subsequent
-renders, and it distinguishes a configured-OFF terminal-title feature
-(`pushed: false` with `reason: feature_inactive`) from the permanently-inert
-`/dev/tty` fallback (`reason: no_controlling_tty`), so a dead channel cannot
-masquerade as a configured-off one. A non-delivery is **reported**, not swallowed:
-`delivery` names the channel on every `/dev/tty` attempt, and `reason`
-distinguishes the three no-push outcomes (`no_title_state`, `feature_inactive`,
-`no_controlling_tty`).
+The `--store orchestrator` branch additionally establishes the session→epic
+binding (best-effort), which is what lets the render channel resolve the epic and
+deliver its title on subsequent events — the load-bearing reason this seam
+exists. It also reports a configured-OFF terminal-title feature as
+`reason: feature_inactive`. Two no-op outcomes are distinguished on the return:
+`no_title_state` (nothing renderable to settle) and `feature_inactive` (no
+channel is wired up). The return carries **no `pushed` and no `delivery` field**:
+both described a repaint this seam does not perform, and delivery is the next
+render event's outcome, not this seam's.
 
-**Success (Claude — push reached TTY, plans store)**:
+**Success (Claude — state settled, plans store)**:
 ```toon
 status: success
 operation: session push-title-token
 plan_id: my-plan
-pushed: true
-delivery: dev_tty_fallback
 ```
 
-**Success (Claude — push reached TTY, orchestrator store)**:
+**Success (Claude — state settled, orchestrator store)**:
 ```toon
 status: success
 operation: session push-title-token
+store: orchestrator
 slug: my-epic
-pushed: true
-delivery: dev_tty_fallback
 ```
 
 **Error (store selector missing its required identifier)**:
@@ -601,32 +595,20 @@ error: invalid_argument
 message: --slug is required with --store orchestrator
 ```
 
-**Success (Claude — no controlling terminal; the fallback channel could not land)**:
+**Success (Claude — nothing renderable to settle)**:
 ```toon
 status: success
 operation: session push-title-token
 plan_id: my-plan
-pushed: false
-reason: no_controlling_tty
-delivery: dev_tty_fallback
-```
-
-**Success (Claude — nothing to paint; the state read failed before any `/dev/tty` attempt)**:
-```toon
-status: success
-operation: session push-title-token
-plan_id: my-plan
-pushed: false
 reason: no_title_state
 ```
 
-**Success (Claude — orchestrator store, feature not activated; the epic binding is set but no `/dev/tty` attempt is made)**:
+**Success (Claude — orchestrator store, feature not activated; the epic binding is still established)**:
 ```toon
 status: success
 operation: session push-title-token
 store: orchestrator
 slug: my-epic
-pushed: false
 reason: feature_inactive
 ```
 
@@ -634,7 +616,7 @@ reason: feature_inactive
 ```toon
 status: no-op
 operation: session push-title-token
-reason: OpenCode has no plugin-driven terminal-title hook; OSC escape push not supported
+reason: OpenCode exposes no platform-provided session id to bind (issue #9292) and has no plugin-driven terminal-title render channel for a later event to deliver on (issue anomalyco/opencode#8619)
 alternative: Use OpenCode's built-in TUI status surface for plan visibility
 ```
 
@@ -701,37 +683,30 @@ alternative: Use OpenCode's built-in TUI status surface for plan visibility
 
 ### `session teardown`
 
-Reset the terminal title to the terminal's own default and release the caller
-session's plan binding — the end-of-session counterpart of `session bind` /
-`session render-title`. Fired by the `SessionStart:clear` render trigger and by
-`manage-status cmd_archive` after a plan directory is archived.
+Release the caller session's plan binding — the end-of-session counterpart of
+`session bind` / `session render-title`. Releasing the binding is the WHOLE of
+the teardown: the op writes no title reset, because a reset can only be delivered
+on the render channel and nothing may be reset on a channel that cannot deliver.
+
+Fired by the `SessionStart:clear` render trigger, which is the **sole**
+binding-release point. `manage-status cmd_archive` deliberately does NOT fire it:
+releasing at archive time would destroy the delivery route for the terminal state
+the archive just persisted, which the next render event still has to paint.
 
 **Activation-gated, order load-bearing**: the activation signal is read FIRST. When
 the terminal-title feature is not wired up (no render-hook entry on any
 render-trigger event AND no `statusLine` command in either `.claude/settings.json`
-or `.claude/settings.local.json`), the op writes NO title escape, opens NO
-`/dev/tty`, mutates NO binding, and raises nothing. `reset` and `unbound` are
-reported independently, so a landed title reset with a failed unbind (or the
-reverse) is visible. Best-effort throughout: never raises, never changes the
-caller's exit code. No-op on OpenCode.
+or `.claude/settings.local.json`), the op mutates NO binding and raises nothing.
+Best-effort throughout: never raises, never changes the caller's exit code. No-op
+on OpenCode.
 
 **Arguments**: _(none)_
 
-**Success (Claude — active, reset landed and slot dropped)**:
+**Success (Claude — active, slot dropped)**:
 ```toon
 status: success
 operation: session teardown
 active: true
-reset: true
-unbound: true
-```
-
-**Success (Claude — active but no controlling terminal; the unbind still lands)**:
-```toon
-status: success
-operation: session teardown
-active: true
-reset: false
 unbound: true
 ```
 
@@ -740,7 +715,6 @@ unbound: true
 status: success
 operation: session teardown
 active: false
-reset: false
 unbound: false
 reason: feature_inactive
 ```
@@ -749,15 +723,15 @@ reason: feature_inactive
 ```toon
 status: no-op
 operation: session teardown
-reason: OpenCode has no terminal-title channel (issue anomalyco/opencode#8619)
-alternative: Use OpenCode's built-in TUI status surface for plan visibility
+reason: OpenCode does not expose a platform-provided session id to the shell, so there is no per-session binding to release (issue #9292)
+alternative: Use OpenCode's built-in session mechanism for plan visibility
 ```
 
 ---
 
 ### `session doctor`
 
-Visit **every directory under the session-cache root** — not just the ones that yield a readable slot — build a plan→sessions reverse index from the live slots, flag any plan bound by more than one live session (a conflict), identify slots whose plan is archived/deleted (stale), and identify orphan directories that carry no binding at all (an absent, empty, or unreadable `active-plan` file). With `--fix`, GC each stale slot and prune each orphan directory. Keeps NO shared mutable index — the scan-then-GC is per-file and idempotent. `scanned` counts the live slots only and does NOT include orphan directories. No-op on OpenCode (no platform-provided session id).
+Visit **every directory under the session-cache root** — not just the ones that yield a readable slot — build a plan→sessions reverse index from the live slots, flag any plan bound by more than one live session (a conflict), identify slots whose plan is archived/deleted (stale), and identify orphan directories that carry no binding at all (an absent, empty, or unreadable `active-plan` file). An archived plan whose terminal title has not been delivered yet is EXEMPT from the stale classification — its binding is the pending render's only route to the plan — and becomes collectable once that state is delivered; the exemption is state-driven, never an elapsed-time grace period. With `--fix`, GC each stale slot and prune each orphan directory. Keeps NO shared mutable index — the scan-then-GC is per-file and idempotent. `scanned` counts the live slots only and does NOT include orphan directories. No-op on OpenCode (no platform-provided session id).
 
 **Arguments**: `--fix` (optional — GC stale slots whose plan is archived/deleted, and prune orphan directories)
 

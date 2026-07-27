@@ -276,37 +276,35 @@ class Runtime(ABC):
         store: str = "plans",
         slug: str | None = None,
     ) -> str:
-        """Push a live terminal title for *plan_id* directly to ``/dev/tty``.
+        """Bind the session and settle *plan_id*'s title state for the next render.
 
-        Resolves the plan's title state from ``status.json``, composes the
-        title string via the ``manage-terminal-title`` composer, and writes the
-        OSC escape (``\\x1b]0;{composed}\\x07``) directly to ``/dev/tty``.
+        This seam BINDS and PERSISTS — it does not repaint. Terminal titles are
+        delivered on the target's hook-driven render channel, which is
+        event-driven rather than callable on demand, so a writer reaches the
+        terminal by settling the state the *next* render will read.
+
+        Resolves the plan's title state from ``status.json`` and composes it via
+        the ``manage-terminal-title`` composer to establish that the state is
+        renderable. Nothing is written to any terminal device.
 
         With ``store="orchestrator"`` the state-read seam resolves the epic's
         ``status.json`` via ``get_store_dir('orchestrator', slug)`` (the
-        main-anchored orchestrator store) and repaints with the
-        ``Orchestrator-{SlugName}`` body composed by the same composer.
-        Gating is inherited: when the terminal-title setting is not
-        configured, the push is the existing no-op — no new config knob.
-
-        This is the single repaint seam for blocking callers (e.g. a lock/build
-        acquire wait) and for the ``manage-status`` phase-state-write drive seam
-        that need the title refreshed without a hook firing.
+        main-anchored orchestrator store) and composes the
+        ``Orchestrator-{SlugName}`` body. That branch also establishes the
+        session→epic binding, which is what lets the render channel resolve the
+        epic on subsequent events — the load-bearing reason this seam exists.
+        Gating is inherited: when the terminal-title setting is not configured
+        the seam reports ``reason: feature_inactive`` — no new config knob.
 
         ``icon`` is OPTIONAL. When supplied it overrides the event-resolved icon
         for non-terminal phases (push-mode glyph, e.g. the lock ⏳/🔒 or build
-        🔨). When omitted (``None``) the composer applies its default active icon,
-        so the push is a plain repaint of the current composed title — the shape
-        every persisted-title-state change fires.
+        🔨). When omitted (``None``) the composer applies its default active
+        icon — the shape every persisted-title-state change fires.
 
-        On Claude: best-effort — ``/dev/tty`` is the FALLBACK delivery channel
-        (the primary one is the hook-mode ``terminalSequence`` envelope). When
-        ``/dev/tty`` is not openable (CI / background / dispatched agent / no
-        controlling terminal) the non-delivery is REPORTED, not swallowed: the
-        return TOON carries ``pushed: false`` with
-        ``reason: no_controlling_tty``, and every ``/dev/tty`` attempt names its
-        channel via ``delivery: dev_tty_fallback``. Never raises, and never
-        changes the caller's status or exit code.
+        On Claude: best-effort — a no-op when the state is absent or unrenderable
+        (``reason: no_title_state``) or when the feature is configured off
+        (``reason: feature_inactive``). Never raises, and never changes the
+        caller's status or exit code.
 
         On OpenCode: returns ``no-op`` (no plugin-driven terminal-title channel).
 
@@ -315,7 +313,7 @@ class Runtime(ABC):
                 state (default ``plans`` store; ignored for the orchestrator
                 store).
             icon: Optional push-mode icon glyph that overrides the event-resolved
-                icon for non-terminal phases; ``None`` for a plain repaint.
+                icon for non-terminal phases; ``None`` for the default active icon.
             store: State store the title state is read from — ``"plans"``
                 (default, plan-scoped ``status.json``) or ``"orchestrator"``
                 (epic ``status.json`` under the main-anchored orchestrator
@@ -324,8 +322,10 @@ class Runtime(ABC):
                 when ``store="orchestrator"``.
 
         Returns:
-            Serialized TOON string (success or no-op) noting whether the push
-            reached a TTY.
+            Serialized TOON string (success or no-op) carrying the store entry
+            fields, plus ``reason`` when there was nothing to settle. It carries
+            no ``pushed`` and no ``delivery`` field: both described a repaint
+            this seam does not perform.
         """
 
     @abstractmethod
@@ -385,9 +385,12 @@ class Runtime(ABC):
         Builds a plan->sessions reverse index over all
         ``~/.cache/plan-marshall/sessions/*/active-plan`` slots, flags any plan
         bound by more than one live session (a conflict), and identifies slots
-        whose plan is archived/deleted (stale slots). When *fix* is True, GCs each
-        stale slot. Keeps NO shared mutable index — the scan-then-GC is per-file
-        and idempotent.
+        whose plan is archived/deleted (stale slots). An archived plan whose
+        terminal title has not been delivered yet is EXEMPT — its binding is the
+        pending render's only route to the plan — and becomes collectable once
+        that state is delivered. The exemption is state-driven, never an
+        elapsed-time grace period. When *fix* is True, GCs each stale slot. Keeps
+        NO shared mutable index — the scan-then-GC is per-file and idempotent.
 
         On Claude: delegates to the pure ``session_binding`` policy.
 
@@ -404,32 +407,34 @@ class Runtime(ABC):
 
     @abstractmethod
     def session_teardown(self) -> str:
-        """Reset the terminal title and release the session's plan binding.
+        """Release the session's plan binding at end of session.
 
         The end-of-session counterpart to :meth:`session_bind` /
-        :meth:`session_render_title`: it returns the tab title to the terminal's
-        own default and drops the caller session's ``active-plan`` slot, so a
-        finished or archived plan leaves no stale title and no stale binding
-        behind.
+        :meth:`session_render_title`: it drops the caller session's own binding
+        slots. Releasing the binding is the WHOLE of the teardown — the op writes
+        no title reset, because a reset can only be delivered on the render
+        channel and nothing may be reset on a channel that cannot deliver.
+
+        This is the SOLE binding-release point, reached only from the session's
+        own end-of-session signal. A plan's archive path must NOT call it:
+        releasing the binding there would destroy the delivery route for the
+        terminal state the archive just persisted, which the next render event
+        still has to paint.
 
         **Activation-gated.** The activation signal is read FIRST: when the
-        terminal-title feature is not wired up on this target, the op writes NO
-        title escape, opens NO ``/dev/tty``, mutates NO binding, and returns
-        ``active: false`` with ``reason: feature_inactive``. A project that never
-        opted into terminal titles is never touched by the teardown.
+        terminal-title feature is not wired up on this target, the op mutates NO
+        binding and returns ``active: false`` with ``reason: feature_inactive``.
+        A project that never opted into terminal titles is never touched by the
+        teardown.
 
         On Claude: when active, resolves the session id from
-        ``$CLAUDE_CODE_SESSION_ID``, writes the neutral-default reset escape
-        (``\\x1b]0;\\x07`` — a bare OSC-0 with an empty payload) to ``/dev/tty``
-        best-effort, then unbinds the session slot. ``reset`` and ``unbound`` are
-        reported independently, so a title reset that landed while the unbind
-        failed (or vice versa) is visible. Never raises.
+        ``$CLAUDE_CODE_SESSION_ID`` and unbinds the session slot. Never raises.
 
         On OpenCode: returns ``no-op`` (no terminal-title channel).
 
         Returns:
-            Serialized TOON string (success or no-op) carrying ``active``,
-            ``reset``, and ``unbound``, plus ``reason`` when inactive.
+            Serialized TOON string (success or no-op) carrying ``active`` and
+            ``unbound``, plus ``reason`` when inactive.
         """
 
     @abstractmethod

@@ -321,9 +321,8 @@ class ClaudeRuntime(Runtime):
 
         # Step 2: Resolve session_id → plan_id via the session cache. A plan
         # binding wins; when absent, an ORCHESTRATOR epic binding is the fallback
-        # (Step 3) so the orchestrator title reaches the PRIMARY hook channel —
-        # its /dev/tty push is only a blocking-window fallback, permanently inert
-        # in a tty-less runtime (which is every context here).
+        # (Step 3) so the orchestrator title reaches the hook channel, which is
+        # the sole channel that delivers.
         plan_id = claude_runtime._read_active_plan(session_id)
 
         # Step 3: Resolve the title state via status.json (the SINGLE source of
@@ -453,6 +452,14 @@ class ClaudeRuntime(Runtime):
             sys.stdout.flush()
         except OSError:
             pass
+
+        # The terminal title has now been DELIVERED on the hook envelope — the
+        # one channel that reaches the tab. Discharging that obligation is what
+        # releases an archived plan's session slot to the GC: until this mark
+        # lands, session_binding exempts the slot so the pending render still has
+        # a plan to resolve. Best-effort and a no-op for a non-archived plan.
+        if plan_id and state.get("current_phase") in session_binding._TERMINAL_PHASES:
+            claude_runtime._mark_terminal_delivered(plan_id)
         return ""
 
     def session_push_title_token(
@@ -462,68 +469,53 @@ class ClaudeRuntime(Runtime):
         store: str = "plans",
         slug: str | None = None,
     ) -> str:
-        """Push a live terminal title for *plan_id* directly to ``/dev/tty``.
+        """Bind the session and settle *plan_id*'s title state for the next render.
 
-        ``/dev/tty`` is the **FALLBACK** delivery channel, not the primary one.
-        The primary channel is the hook-mode ``terminalSequence`` envelope that
-        Claude Code itself writes on every render-trigger event (see
-        :meth:`session_render_title`); this push exists for the blocking windows
-        no hook event spans (a long build, a CI wait, a lock hold). Off a
-        controlling terminal — inside a dispatched agent, a CI runner, or a
-        backgrounded process — ``/dev/tty`` is not openable and the push cannot
-        land. That non-delivery is now **reported**, not swallowed: the return
-        TOON carries ``pushed: false`` with ``reason: no_controlling_tty``, and
-        every outcome names its channel via ``delivery: dev_tty_fallback`` so a
-        caller can tell the fallback path from the hook-delivered one.
+        This seam **binds and persists — it does not repaint.** The hook-mode
+        ``terminalSequence`` envelope that Claude Code writes on every
+        render-trigger event (see :meth:`session_render_title`) is the sole
+        delivery channel, and it is event-driven rather than callable on demand.
+        A writer therefore reaches the terminal by settling the state the *next*
+        render will read, and delivery is deferred to that event.
 
-        Reads the plan's title state from ``status.json`` via
-        :func:`_read_title_state`, composes the title string via
+        Reads the title state from ``status.json`` via
+        :func:`_read_title_state` and composes it via
         :func:`manage_terminal_title.compose` (with *icon* as the push-mode icon
-        override and ``event=None``), and writes the OSC escape
-        (``\\x1b]0;{composed}\\x07``) directly to ``/dev/tty``.
+        override and ``process_state=None``) to establish that the state is
+        renderable. Nothing is written to any terminal device.
 
         With ``store="orchestrator"`` the state read routes through
         :func:`claude_runtime._read_orchestrator_title_state` instead — the
         epic's ``status.json`` resolved via ``get_store_dir('orchestrator',
         slug)`` — and the composer renders the ``Orchestrator-{SlugName}``
-        body. The orchestrator push additionally establishes the session→epic
+        body. The orchestrator branch additionally establishes the session→epic
         binding via :func:`session_binding.bind_orchestrator` (best-effort, from
-        ``$CLAUDE_CODE_SESSION_ID``) BEFORE the ``/dev/tty`` attempt, so the
-        hook-driven PRIMARY channel (:meth:`session_render_title`) resolves the
-        epic and delivers its title on subsequent renders — the ``/dev/tty``
-        write is only the immediate blocking-window FALLBACK. The orchestrator
-        push also distinguishes a configured-OFF terminal-title feature
-        (``pushed: false`` with ``reason: feature_inactive``) from the
-        permanently-inert ``/dev/tty`` fallback (``reason: no_controlling_tty``),
-        so a dead channel cannot masquerade as a configured-off one — no new
-        config knob. Everything else downstream of the state read (compose,
-        ``/dev/tty`` write, best-effort gating) is shared with the plans-store
-        path: an absent / unrenderable state stays the existing no-op.
+        ``$CLAUDE_CODE_SESSION_ID``), which is what lets the hook-driven channel
+        (:meth:`session_render_title`) resolve the epic and deliver its title on
+        subsequent renders. That binding side effect is the load-bearing reason
+        this seam exists. The orchestrator branch also reports a configured-OFF
+        terminal-title feature as ``reason: feature_inactive``.
 
         ``icon`` is optional. When supplied it overrides the event-resolved icon
         for non-terminal phases (e.g. the lock ⏳/🔒 or build 🔨 glyph). When
-        omitted (``None``) the composer applies its default active icon, so the
-        push is a plain repaint of the current composed title — the shape the
-        ``manage-status`` phase-write drive seam fires on every persisted
-        title-state change.
+        omitted (``None``) the composer applies its default active icon — the
+        shape the ``manage-status`` phase-write drive seam fires on every
+        persisted title-state change.
 
-        Best-effort: a no-op (``pushed: false``) when the state is absent /
-        unrenderable (``reason: no_title_state``) or when ``/dev/tty`` is not
-        openable (``reason: no_controlling_tty``). Never raises, and never
-        changes the caller's status or exit code — only the observability of a
-        non-delivery differs between the two reasons.
+        Best-effort: a no-op when the state is absent / unrenderable
+        (``reason: no_title_state``) or when the feature is configured off
+        (``reason: feature_inactive``). Never raises, and never changes the
+        caller's status or exit code.
 
-        Returns a success TOON noting whether the push reached a TTY, the
-        ``reason`` when it did not, and the ``delivery`` channel on every
-        ``/dev/tty`` attempt.
+        Returns a success TOON carrying the store entry fields, plus ``reason``
+        when the seam had nothing to settle. It carries no ``pushed`` and no
+        ``delivery`` field: both described a repaint this seam does not perform,
+        and delivery is the next render event's outcome, not this seam's.
         """
         if store == "orchestrator":
             # Establish the session→epic binding as a best-effort side effect so
-            # the hook-driven PRIMARY channel (session render-title) resolves the
-            # epic and delivers its title on subsequent renders. Fired BEFORE the
-            # /dev/tty attempt so the primary channel takes over on the next
-            # render even when this fallback cannot land (which it never does in a
-            # tty-less runtime).
+            # the hook-driven delivery channel (session render-title) resolves the
+            # epic and delivers its title on the next render event.
             session_id = os.environ.get("CLAUDE_CODE_SESSION_ID")
             if session_id and slug:
                 session_binding.bind_orchestrator(session_id, slug)
@@ -535,48 +527,25 @@ class ClaudeRuntime(Runtime):
         if state is None:
             return toon_success(
                 "session push-title-token",
-                {**entry_fields, "pushed": False, "reason": "no_title_state"},
+                {**entry_fields, "reason": "no_title_state"},
             )
 
         composed = compose(state, None, icon_override=icon)
         if not composed:
             return toon_success(
                 "session push-title-token",
-                {**entry_fields, "pushed": False, "reason": "no_title_state"},
+                {**entry_fields, "reason": "no_title_state"},
             )
 
-        # For the orchestrator push, distinguish a configured-OFF terminal-title
-        # feature (reason: feature_inactive) from the permanently-inert /dev/tty
-        # fallback (reason: no_controlling_tty) reported below, so a caller can
-        # tell "not wired up" from "wired up but no controlling terminal". The
-        # epic binding was already established above, so the PRIMARY hook channel
-        # still delivers once the feature is active — this fallback outcome does
-        # not gate that.
+        # The epic binding above is established regardless; this gate only reports
+        # that a configured-OFF feature has no channel to deliver on.
         if store == "orchestrator" and not claude_runtime._terminal_title_active():
             return toon_success(
                 "session push-title-token",
-                {**entry_fields, "pushed": False, "reason": "feature_inactive"},
+                {**entry_fields, "reason": "feature_inactive"},
             )
 
-        try:
-            with open("/dev/tty", "w", encoding="utf-8") as tty:
-                tty.write(f"\x1b]0;{composed}\x07")
-                tty.flush()
-        except OSError:
-            return toon_success(
-                "session push-title-token",
-                {
-                    **entry_fields,
-                    "pushed": False,
-                    "reason": "no_controlling_tty",
-                    "delivery": "dev_tty_fallback",
-                },
-            )
-
-        return toon_success(
-            "session push-title-token",
-            {**entry_fields, "pushed": True, "delivery": "dev_tty_fallback"},
-        )
+        return toon_success("session push-title-token", dict(entry_fields))
 
     def session_bind(self, plan_id: str, session_id: str | None = None) -> str:
         """Bind the running session to *plan_id* (last-driven-wins).
@@ -671,54 +640,47 @@ class ClaudeRuntime(Runtime):
         )
 
     def session_teardown(self) -> str:
-        """Reset the terminal title and release this session's plan binding.
+        """Release this session's plan binding at end of session.
+
+        Releasing the binding is the whole of the teardown. The verb writes NO
+        title reset escape: the only channel such a reset could have used
+        (``/dev/tty``) is deleted, and nothing may be reset on a channel that
+        cannot deliver.
+
+        This is the SOLE binding-release point, reached only from the
+        ``SessionStart:clear`` render trigger. ``manage-status``'s archive path
+        deliberately does NOT call it — releasing at archive time would destroy
+        the delivery route for the terminal state the archive just persisted,
+        which the next render event still has to paint.
 
         Order is load-bearing: the ACTIVATION signal is read FIRST. When the
         terminal-title feature is not wired up (no render-hook entry on any
         render-trigger event and no ``statusLine`` command — see
         :func:`claude_runtime._terminal_title_active`), the op returns
-        ``active: false`` / ``reason: feature_inactive`` having written NO title
-        escape, opened NO ``/dev/tty``, mutated NO binding, and raised nothing.
-        A project that never opted into terminal titles is never touched.
+        ``active: false`` / ``reason: feature_inactive`` having mutated NO
+        binding and raised nothing. A project that never opted into terminal
+        titles is never touched.
 
-        When active: resolve the session id from ``$CLAUDE_CODE_SESSION_ID``,
-        write the neutral-default reset escape ``\\x1b]0;\\x07`` (a bare OSC-0
-        with an EMPTY payload, which returns the tab to the terminal's own
-        default rather than painting some other string) to ``/dev/tty``
-        best-effort, then drop the session's own ``active-plan`` slot via
-        :func:`session_binding.unbind`.
-
-        ``reset`` and ``unbound`` are reported INDEPENDENTLY: the title reset can
-        land while the unbind fails (or the reverse — e.g. off a controlling
-        terminal), and collapsing them into one flag would hide which half
-        happened. Best-effort throughout: never raises.
+        When active: resolve the session id from ``$CLAUDE_CODE_SESSION_ID`` and
+        drop the session's own slot via :func:`session_binding.unbind`.
+        Best-effort throughout: never raises.
         """
         if not claude_runtime._terminal_title_active():
             return toon_success(
                 "session teardown",
                 {
                     "active": False,
-                    "reset": False,
                     "unbound": False,
                     "reason": "feature_inactive",
                 },
             )
-
-        reset = False
-        try:
-            with open("/dev/tty", "w", encoding="utf-8") as tty:
-                tty.write("\x1b]0;\x07")
-                tty.flush()
-            reset = True
-        except OSError:
-            reset = False
 
         session_id = os.environ.get("CLAUDE_CODE_SESSION_ID")
         unbound = session_binding.unbind(session_id) if session_id else False
 
         return toon_success(
             "session teardown",
-            {"active": True, "reset": reset, "unbound": unbound},
+            {"active": True, "unbound": unbound},
         )
 
     def session_reload_directive(self) -> str:

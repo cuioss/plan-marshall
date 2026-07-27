@@ -407,21 +407,21 @@ def cmd_orchestrator_metadata(args: argparse.Namespace) -> dict[str, Any] | None
 # manage-status is the STATE layer: it writes status.json and composes/emits
 # NOTHING itself. On every persisted ``current_phase`` write the state layer
 # fires two best-effort, fire-and-forget delegations to ``platform-runtime`` —
-# a bind (session→plan, last-driven-wins; Defect 2) and a repaint (icon-optional
-# title push; Defect 1) — exactly mirroring how ``manage-locks/merge_lock.py``
+# a bind (session→plan, last-driven-wins) and a state settle (icon-optional
+# ``push-title-token``) — exactly mirroring how ``manage-locks/merge_lock.py``
 # delegates its title-token surface. Both are invoked through the executor as a
 # subprocess (the established merge_lock channel, not a fragile file-path import
 # across the multi-module platform-runtime layout) and fully swallow every
 # failure, so a delegation error NEVER alters the status-write outcome or exit
-# code. The single shared ``_surface_drive`` helper is the ONE home both phase
-# writers (``cmd_create`` / ``cmd_transition`` / ``cmd_set_phase``) share.
+# code. The single shared ``_surface_drive`` helper is the ONE home every phase
+# writer (``cmd_create`` / ``cmd_transition`` / ``cmd_set_phase`` /
+# ``cmd_archive``) shares.
 #
-# A third delegation rides the same channel at the OTHER end of the lifecycle:
-# ``_drive_teardown``, fired by ``cmd_archive`` once the plan directory has
-# moved. Where the repaint keeps a LIVE plan's title current, the teardown
-# retires a finished one — resetting the tab to the terminal's own default and
-# releasing the session's plan binding. It is activation-gated inside the
-# delegate, so a project without terminal-title wiring is never touched.
+# Neither delegation DELIVERS a title. The hook render channel is event-driven,
+# so a writer discharges its delivery obligation by settling the state the NEXT
+# render event reads — which is also why ``cmd_archive`` must keep the session
+# binding alive rather than releasing it: that binding is the pending render's
+# only route back to the archived plan.
 
 _PLATFORM_RUNTIME_NOTATION = 'plan-marshall:platform-runtime:platform_runtime'
 
@@ -497,81 +497,51 @@ def _parse_drive_reply(
     return reply if isinstance(reply, dict) else None
 
 
-def _repaint_non_delivery_reason(completed: 'subprocess.CompletedProcess[str] | None') -> str | None:
-    """Return the reportable non-delivery ``reason`` from a repaint reply, else None.
-
-    Reads the delegate's reply via :func:`_parse_drive_reply` and returns
-    ``reason`` only when the delegate reported ``pushed: false`` with a reason
-    OTHER than ``no_title_state``. A plan with no persisted title state is the
-    ordinary "nothing to paint" case and stays at DEBUG; ``no_controlling_tty`` —
-    the push channel genuinely failing to reach a terminal — is what the caller
-    surfaces.
-
-    Returns ``None`` whenever there is nothing to report: an unusable reply, a
-    successful push, or the ``no_title_state`` case.
-    """
-    reply = _parse_drive_reply(completed)
-    if reply is None or reply.get('pushed') is not False:
-        return None
-    reason = reply.get('reason')
-    if not isinstance(reason, str) or reason in ('', 'no_title_state'):
-        return None
-    return reason
-
-
 def _teardown_non_delivery_reason(completed: 'subprocess.CompletedProcess[str] | None') -> str | None:
-    """Return the reportable non-delivery reason from a teardown reply, else None.
+    """Return the reportable failure reason from a teardown reply, else None.
 
-    The teardown counterpart of :func:`_repaint_non_delivery_reason`, sharing its
-    parse half via :func:`_parse_drive_reply` and its filter shape. The teardown
-    delegate reports its two halves INDEPENDENTLY (``reset`` for the title reset,
-    ``unbound`` for the session-binding release), so either half failing is a
-    reportable non-delivery and both are named when both failed.
+    Releasing the binding is the whole of the teardown, so ``unbound`` is the one
+    outcome there is to report: an ACTIVE delegate that failed to drop the slot
+    left a stale binding behind, which is worth surfacing.
 
     An inactive delegate (``active: false`` — a project that never wired up
     terminal titles, reported as ``reason: feature_inactive``) is the ordinary
-    nothing-to-do case and returns ``None``, mirroring how the repaint side
-    treats ``no_title_state``.
+    nothing-to-do case and returns ``None``.
     """
     reply = _parse_drive_reply(completed)
     if reply is None or reply.get('active') is not True:
         return None
-    failures = []
-    if reply.get('reset') is False:
-        failures.append('title_reset_failed')
     if reply.get('unbound') is False:
-        failures.append('binding_release_failed')
-    return ', '.join(failures) or None
+        return 'binding_release_failed'
+    return None
 
 
 def _drive_teardown(plan_id: str) -> None:
-    """Best-effort ``session teardown`` — the live-surface counterpart of archive.
+    """Best-effort ``session teardown`` — release the caller session's binding.
 
-    Fired by ``cmd_archive`` after the plan directory has moved: the archived
-    plan has no live session driving its terminal title, so the title is reset to
-    the terminal's own default and the session's plan binding is released. Runs
-    through the SAME best-effort executor channel :func:`_drive_bind` /
+    Runs through the SAME best-effort executor channel :func:`_drive_bind` /
     :func:`_drive_repaint` use, and the delegate is itself activation-gated — a
     project that never wired up terminal titles is left untouched.
 
-    ``plan_id`` names the archived plan for the audit trail only — the teardown
-    operates on the CALLER SESSION's own binding, not on a plan-scoped slot, so
-    it takes no plan argument.
+    ``plan_id`` names the plan for the audit trail only — the teardown operates
+    on the CALLER SESSION's own binding, not on a plan-scoped slot, so it takes
+    no plan argument.
 
-    A non-delivery is OBSERVABLE rather than DEBUG-swallowed, exactly as in
-    :func:`_drive_repaint`: when the activated delegate reports a failed title
-    reset and/or a failed binding release (in practice off a controlling
-    terminal), one persisted ``log_entry`` (the manage-logging work log) names
-    the plan and the reason, so the dead channel reaches the plan record instead
-    of only subprocess stderr. An inactive delegate and every other failure path
-    keep their DEBUG level.
+    NOT fired by ``cmd_archive``: the archive path deliberately releases no
+    binding, because the terminal state it just persisted is delivered by the
+    next render event, which resolves the plan only through that binding.
+
+    A failed release is OBSERVABLE rather than DEBUG-swallowed: when the
+    activated delegate reports a failed binding release, one persisted
+    ``log_entry`` (the manage-logging work log) names the plan and the reason, so
+    the stale binding reaches the plan record instead of only subprocess stderr.
+    An inactive delegate and every other failure path keep their DEBUG level.
 
     Fully exception-swallowing, mirroring :func:`_surface_drive`: a delegation
-    failure never changes the archive command's status or exit code — only the
-    observability of a non-delivery changes.
+    failure never changes the calling command's status or exit code.
     """
     try:
-        logger.debug('drive-seam teardown fired after archiving %s', plan_id)
+        logger.debug('drive-seam teardown fired for %s', plan_id)
         completed = _run_executor(_PLATFORM_RUNTIME_NOTATION, 'session', 'teardown')
         reason = _teardown_non_delivery_reason(completed)
         if reason is not None:
@@ -581,38 +551,26 @@ def _drive_teardown(plan_id: str) -> None:
             # best-effort (it swallows every I/O error internally), and this call
             # sits inside the surrounding best-effort try/except, so a logging
             # failure never changes the archive command's status or exit code.
-            log_entry('work', plan_id, 'WARNING', f'title teardown not delivered for {plan_id}: {reason}')
+            log_entry('work', plan_id, 'WARNING', f'session teardown incomplete for {plan_id}: {reason}')
     except Exception as exc:  # noqa: BLE001 — drive seam is best-effort
         logger.debug('drive-seam teardown for %s failed: %s', plan_id, exc)
 
 
 def _drive_repaint(plan_id: str) -> None:
-    """Best-effort ``session push-title-token --plan-id {id}`` (no icon; Defect 1).
+    """Best-effort ``session push-title-token --plan-id {id}`` (no icon).
 
-    The push runs with no ``--icon`` — a plain repaint of the freshly composed
-    title with the default active icon, so the title bar reflects the new phase
-    immediately instead of freezing at the last-rendered phase.
+    The delegate runs with no ``--icon``, settling the freshly composed title
+    state with its default active icon so the NEXT render event paints the new
+    phase instead of the last-rendered one.
 
-    A non-delivery is OBSERVABLE rather than DEBUG-swallowed: when the delegate
-    replies ``pushed: false`` with a reason other than ``no_title_state`` (in
-    practice ``no_controlling_tty`` — the ``/dev/tty`` fallback channel could not
-    reach a terminal), one persisted ``log_entry`` (the manage-logging work log)
-    names the plan and the reason, so the dead channel reaches the plan record
-    instead of only subprocess stderr. Every other failure path keeps its DEBUG
-    level, and the seam still never alters the command's status or exit code.
+    The seam reports no delivery outcome, because it performs no delivery: the
+    hook render channel is event-driven, so the repaint this call enables happens
+    at the next render event, not here. There is consequently no non-delivery to
+    surface — a reply the delegate can only answer with ``no_title_state`` (the
+    ordinary "nothing to settle" case) stays at DEBUG. Never alters the command's
+    status or exit code.
     """
-    completed = _run_executor(
-        _PLATFORM_RUNTIME_NOTATION, 'session', 'push-title-token', '--plan-id', plan_id
-    )
-    reason = _repaint_non_delivery_reason(completed)
-    if reason is not None:
-        # Persist the non-delivery to the plan work log via manage-logging
-        # (log_entry) instead of a stderr-only logger.warning, so a dead title
-        # channel is OBSERVABLE in the plan record. log_entry is itself
-        # best-effort (it swallows every I/O error internally), and _drive_repaint
-        # already runs under _surface_drive's best-effort try/except, so a logging
-        # failure never changes the phase-write command's status or exit code.
-        log_entry('work', plan_id, 'WARNING', f'title repaint not delivered for {plan_id}: {reason}')
+    _run_executor(_PLATFORM_RUNTIME_NOTATION, 'session', 'push-title-token', '--plan-id', plan_id)
 
 
 def _surface_drive(plan_id: str) -> None:

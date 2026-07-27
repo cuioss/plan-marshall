@@ -44,11 +44,11 @@ Twenty-four operations covering the full platform lifecycle:
 | `permission web-analyze` | Read-only analysis of WebFetch/webfetch domain permissions |
 | `permission web-apply` | Add or remove web domain permissions |
 | `session render-title` | Emit OSC title sequence from writer artifact; no-op on OpenCode |
-| `session push-title-token` | Parse the store selector (`--plan-id` for the plan store, or `--store orchestrator --slug {slug}` for the orchestrator store) plus optional `--icon`, emit OSC escape to `/dev/tty` (Claude); no-op on OpenCode. This is the single repaint seam for blocking callers, the `manage-status` phase-state-write drive seam, and the `marshall-orchestrator` per-verb title repaint; `--icon` omitted composes a plain repaint of the current title. `/dev/tty` is the FALLBACK channel (the hook-written `terminalSequence` is primary), and a non-delivery is reported as `pushed: false` with `reason: no_controlling_tty` and `delivery: dev_tty_fallback` |
+| `session push-title-token` | Parse the store selector (`--plan-id` for the plan store, or `--store orchestrator --slug {slug}` for the orchestrator store) plus optional `--icon`, then bind and settle the title state for the next render event to deliver (Claude); no-op on OpenCode. This seam **binds and persists — it does not repaint**: the hook-written `terminalSequence` envelope is the sole delivery channel and is event-driven, so delivery is deferred to the next render. Shared by the `manage-status` phase-state-write drive seam, the lock/build state writers, and the `marshall-orchestrator` per-verb call, whose `bind_orchestrator` side effect is the load-bearing reason the seam exists. Two no-op reasons: `no_title_state` and `feature_inactive`; the return carries no `pushed` and no `delivery` field |
 | `session bind` | Bind the running session to `--plan-id` (last-driven-wins) so `render-title` / `resolve-plan` resolve it; no-op on OpenCode |
 | `session resolve-plan` | Read the running session's bound plan id (the read side of `session bind`); no-op on OpenCode |
 | `session doctor` | Visit every directory under the session-cache root, report plan-bound-by-multiple-sessions conflicts, stale slots, and orphan directories that yield no live slot, and (with `--fix`) GC the stale slots plus prune the orphan directories; no-op on OpenCode |
-| `session teardown` | Activation-gated end-of-session retire: reset the tab to the terminal's own default (bare OSC-0) and drop the session's plan binding; a project with no terminal-title wiring reports `active: false` / `reason: feature_inactive` and is left untouched. No arguments; no-op on OpenCode |
+| `session teardown` | Activation-gated end-of-session retire: drop the session's binding. Releasing the binding is the whole of the teardown — no title reset is written, because a reset can only be delivered on the render channel. Fired only by `SessionStart:clear`, the sole release point; the archive path deliberately does not call it. A project with no terminal-title wiring reports `active: false` / `reason: feature_inactive` and is left untouched. No arguments; no-op on OpenCode |
 | `session reload-directive` | Resolve + surface the harness-appropriate post-upgrade reload directive (Claude: `/reload-plugins` plus the monitor caveat); no-op (full-restart alternative) on OpenCode. RESOLVES + SURFACES only — a script cannot type a harness slash command |
 | `metrics capture` | Record token consumption for a planning phase |
 | `metrics normalized-tokens` | Resolve normalized transcript token totals for the active target |
@@ -148,8 +148,8 @@ Platform-runtime operations satisfy: "Would this differ between Claude Code and 
 The `session render-title` and `session push-title-token` operations are the
 resolve + emit layer of the terminal-title three-way split. They resolve
 session → plan, read the title state from `status.json` (live first, archived
-fallback), call the pure `manage-terminal-title` composer, and emit per platform
-(OSC / statusLine / web sessionTitle, plus the `/dev/tty` push). `status.json` is
+fallback), call the pure `manage-terminal-title` composer, and — on the render
+path — emit per platform (OSC / statusLine / web sessionTitle). `status.json` is
 the single source of persisted title state — there is no `title-body.txt`
 artifact. See `manage-terminal-title/standards/terminal-title-architecture.md` for
 the canonical end-to-end architecture: state (`manage-status`), composer

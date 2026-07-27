@@ -210,11 +210,12 @@ class OpenCodeRuntime(Runtime):
         store: str = "plans",
         slug: str | None = None,
     ) -> str:
-        """No-op: OpenCode has no plugin-driven terminal-title push channel."""
+        """No-op: OpenCode has neither a session id to bind nor a render channel."""
         return toon_noop(
             "session push-title-token",
-            "OpenCode has no plugin-driven terminal-title push channel"
-            " (issue anomalyco/opencode#8619)",
+            "OpenCode exposes no platform-provided session id to bind"
+            " (issue #9292) and has no plugin-driven terminal-title render channel"
+            " for a later event to deliver on (issue anomalyco/opencode#8619)",
             "Use OpenCode's built-in TUI status surface for plan visibility",
         )
 
@@ -246,12 +247,12 @@ class OpenCodeRuntime(Runtime):
         )
 
     def session_teardown(self) -> str:
-        """No-op: OpenCode has no terminal-title channel to tear down."""
+        """No-op: OpenCode exposes no session binding to release."""
         return toon_noop(
             "session teardown",
-            "OpenCode has no terminal-title channel"
-            " (issue anomalyco/opencode#8619)",
-            "Use OpenCode's built-in TUI status surface for plan visibility",
+            "OpenCode does not expose a platform-provided session id to the shell,"
+            " so there is no per-session binding to release (issue #9292)",
+            "Use OpenCode's built-in session mechanism for plan visibility",
         )
 
     def session_reload_directive(self) -> str:

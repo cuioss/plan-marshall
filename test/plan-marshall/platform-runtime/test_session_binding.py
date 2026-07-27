@@ -15,8 +15,13 @@ Covers:
     kind-disjoint epic binding, its mutual exclusion with the plan slot, the
     kind-agnostic unbind, and the doctor's recognition of an orchestrator-only
     session dir as live (never an orphan, never GC'd)
+  - terminal-delivery GC exemption: an archived plan whose terminal title has
+    not been delivered keeps its slot, and loses the exemption the moment the
+    delivery marker lands — a state-driven predicate, never a time window
 """
 from __future__ import annotations
+
+import json
 
 import pytest
 
@@ -48,6 +53,29 @@ def project(tmp_path, monkeypatch):
 def _make_live_plan(project_root, plan_id: str) -> None:
     """Create a live (non-archived) plan directory under the project root."""
     (project_root / ".plan" / "local" / "plans" / plan_id).mkdir(parents=True, exist_ok=True)
+
+
+def _make_archived_plan(
+    project_root,
+    plan_id: str,
+    *,
+    current_phase: str = "complete",
+    delivered: bool = False,
+    date_prefix: str = "2026-05-29",
+) -> None:
+    """Create an archived plan dir carrying a ``status.json`` title state.
+
+    ``delivered=True`` stamps the delivery marker, which is the ONLY thing that
+    lifts the GC exemption — there is deliberately no timestamp involved.
+    """
+    archived = (
+        project_root / ".plan" / "local" / "archived-plans" / f"{date_prefix}-{plan_id}"
+    )
+    archived.mkdir(parents=True, exist_ok=True)
+    status: dict[str, object] = {"current_phase": current_phase}
+    if delivered:
+        status[session_binding._DELIVERED_MARKER] = True
+    (archived / "status.json").write_text(json.dumps(status), encoding="utf-8")
 
 
 # =============================================================================
@@ -647,3 +675,72 @@ class TestOrchestratorSlot:
         assert report["scanned"] == 0
         assert report["conflicts"] == []
         assert report["stale"] == []
+
+
+# =============================================================================
+# Terminal-delivery GC exemption — state-driven, never time-windowed
+# =============================================================================
+
+
+class TestTerminalDeliveryGcExemption:
+    """An archived plan keeps its slot exactly while its terminal title is owed.
+
+    The archive path releases no binding, so the pending render's only route back
+    to the plan is that slot. Collecting it before the terminal state has been
+    painted would destroy the delivery route — hence the exemption. The predicate
+    is the delivery MARKER, never elapsed time.
+    """
+
+    def test_archived_plan_awaiting_delivery_is_not_stale(self, cache, project):
+        """Terminal phase + no delivery marker → the slot is exempt from the GC."""
+        _make_archived_plan(project, "owed-plan")
+        session_binding.bind(SID_A, "owed-plan")
+
+        assert session_binding._plan_is_live("owed-plan") is True
+
+        report = session_binding.doctor(fix=True)
+
+        assert report["stale"] == []
+        assert report["gc_removed"] == 0
+        assert session_binding.resolve_plan(SID_A) == "owed-plan"
+
+    def test_archived_plan_after_delivery_is_collected(self, cache, project):
+        """Once the delivery marker lands, the same slot becomes GC-eligible."""
+        _make_archived_plan(project, "paid-plan", delivered=True)
+        session_binding.bind(SID_A, "paid-plan")
+
+        assert session_binding._plan_is_live("paid-plan") is False
+
+        report = session_binding.doctor(fix=True)
+
+        assert report["stale"] == [{"session_id": SID_A, "plan_id": "paid-plan"}]
+        assert report["gc_removed"] == 1
+        assert session_binding.resolve_plan(SID_A) is None
+
+    def test_exemption_flips_on_the_marker_alone(self, cache, project):
+        """The ONLY input that lifts the exemption is the marker — not any clock.
+
+        The same archived plan is evaluated twice with nothing changed but the
+        marker, so a time-windowed implementation could not produce this result.
+        """
+        _make_archived_plan(project, "flip-plan")
+        assert session_binding._plan_is_live("flip-plan") is True
+
+        _make_archived_plan(project, "flip-plan", delivered=True)
+        assert session_binding._plan_is_live("flip-plan") is False
+
+    def test_non_terminal_archived_plan_owes_no_delivery(self, cache, project):
+        """An archived plan that never reached a terminal phase is not exempt."""
+        _make_archived_plan(project, "mid-plan", current_phase="5-execute")
+
+        assert session_binding._plan_is_live("mid-plan") is False
+
+    def test_deleted_plan_is_still_collectable(self, cache, project):
+        """A plan with neither a live dir nor an archived status is not exempt."""
+        session_binding.bind(SID_A, "vanished-plan")
+
+        assert session_binding._plan_is_live("vanished-plan") is False
+
+        report = session_binding.doctor(fix=True)
+
+        assert report["gc_removed"] == 1

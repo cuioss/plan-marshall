@@ -173,15 +173,14 @@ def _stub_hook_stdin(monkeypatch, payload: dict[str, Any]) -> None:
 class TestSessionTeardown:
     """Tests for the activation-gated ``session teardown`` operation.
 
-    Order is load-bearing: the activation signal is read FIRST, so an inactive
-    project is never touched — no title escape, no /dev/tty open, no binding
-    mutation. When active, the neutral-default reset escape is written and the
-    session's own slot is dropped, with ``reset`` and ``unbound`` reported
-    independently.
+    Releasing the binding is the WHOLE of the teardown: no title reset is
+    written, because the only channel such a reset could have used is gone.
+    Order is load-bearing — the activation signal is read FIRST, so an inactive
+    project is never touched at all.
     """
 
     def test_inactive_feature_touches_nothing(self, rt, tmp_path, monkeypatch):
-        """With the feature inactive: no tty write, no unbind, reason feature_inactive."""
+        """With the feature inactive: no unbind, no write, reason feature_inactive."""
         _redirect_render_env(tmp_path, monkeypatch, "sess-teardown-inactive")
         session_binding.bind("sess-teardown-inactive", "some-plan")
         writes = _patch_dev_tty(monkeypatch, openable=True)
@@ -198,16 +197,22 @@ class TestSessionTeardown:
 
         assert result["status"] == "success"
         assert result["active"] is False
-        assert result["reset"] is False
         assert result["unbound"] is False
         assert result["reason"] == "feature_inactive"
+        # The retired ``reset`` half is gone from the contract entirely.
+        assert "reset" not in result
         # Nothing was written and no binding was mutated.
         assert writes == []
         assert unbind_calls == []
         assert session_binding.resolve_plan("sess-teardown-inactive") == "some-plan"
 
-    def test_active_feature_writes_neutral_reset_and_unbinds(self, rt, tmp_path, monkeypatch):
-        """With the feature active: the bare OSC-0 reset lands and the slot is dropped."""
+    def test_active_feature_unbinds_and_writes_no_escape(self, rt, tmp_path, monkeypatch):
+        """With the feature active: the slot is dropped and NO escape is written.
+
+        ``openable=True`` deliberately makes a tty AVAILABLE, so a surviving
+        reset write would be captured. The empty capture is the assertion: the
+        teardown does not paint, even when it could.
+        """
         _redirect_render_env(tmp_path, monkeypatch, "sess-teardown-active")
         _activate_terminal_title(tmp_path)
         session_binding.bind("sess-teardown-active", "some-plan")
@@ -216,26 +221,10 @@ class TestSessionTeardown:
         result = parse_toon(rt.session_teardown())
 
         assert result["active"] is True
-        assert result["reset"] is True
         assert result["unbound"] is True
-        # EXACTLY the neutral-default reset escape — an empty OSC-0 payload,
-        # which returns the tab to the terminal's own default title.
-        assert writes == ["\x1b]0;\x07"]
+        assert "reset" not in result
+        assert writes == []
         assert session_binding.resolve_plan("sess-teardown-active") is None
-
-    def test_active_without_controlling_tty_still_unbinds(self, rt, tmp_path, monkeypatch):
-        """reset and unbound are independent: no tty still drops the binding."""
-        _redirect_render_env(tmp_path, monkeypatch, "sess-teardown-notty")
-        _activate_terminal_title(tmp_path)
-        session_binding.bind("sess-teardown-notty", "some-plan")
-        _patch_dev_tty(monkeypatch, openable=False)
-
-        result = parse_toon(rt.session_teardown())
-
-        assert result["active"] is True
-        assert result["reset"] is False
-        assert result["unbound"] is True
-        assert session_binding.resolve_plan("sess-teardown-notty") is None
 
 
 class TestSessionStartClearTeardown:
@@ -281,31 +270,82 @@ class TestSessionStartClearTeardown:
         assert session_binding.resolve_plan(session_id) == "active-plan"
 
 
-class TestSessionPushTitleTokenDelivery:
-    """Tests for the observable delivery outcome of session_push_title_token.
+class TestTerminalStateDeliveryOrdering:
+    """The binding outlives the archive until the terminal state is delivered.
 
-    The ``/dev/tty`` write is the FALLBACK delivery channel; off a controlling
-    terminal it cannot land. That non-delivery is reported rather than swallowed:
-    ``pushed: false`` with ``reason: no_controlling_tty``, and every ``/dev/tty``
-    attempt names its channel via ``delivery: dev_tty_fallback``. An absent title
-    state is a different outcome entirely and keeps ``reason: no_title_state``.
+    The ordering rule is *no binding release before the state it enables has been
+    delivered*. With the archive path releasing nothing, the only remaining way
+    to lose the route is GC — so the slot is exempt while the terminal state is
+    still owed, and collectable the moment it has been painted. These tests pin
+    that the release can never be observed BEFORE the emit.
     """
 
-    def test_unopenable_dev_tty_reports_no_controlling_tty(self, rt, tmp_path, monkeypatch):
-        """An unopenable /dev/tty yields pushed: false, reason: no_controlling_tty."""
-        plan_id = "push-no-tty"
-        _write_status_json(tmp_path, session_id="sess-push-no-tty", plan_id=plan_id)
-        _redirect_render_env(tmp_path, monkeypatch, "sess-push-no-tty")
-        _patch_dev_tty(monkeypatch, openable=False)
+    def test_archived_terminal_state_is_delivered_then_becomes_collectable(
+        self, rt, tmp_path, monkeypatch, capsys
+    ):
+        """Before the render the slot is exempt; the render emits ✅ and marks it delivered."""
+        session_id = "sess-terminal-delivery"
+        plan_id = "finished-plan"
+        _write_status_json(
+            tmp_path,
+            session_id=session_id,
+            plan_id=plan_id,
+            current_phase="complete",
+            archived=True,
+        )
+        _redirect_render_env(tmp_path, monkeypatch, session_id)
+        _activate_terminal_title(tmp_path)
+        _stub_hook_stdin(monkeypatch, {"hook_event_name": "UserPromptSubmit"})
 
-        result = parse_toon(rt.session_push_title_token(plan_id))
-        assert result["status"] == "success"
-        assert result["pushed"] is False
-        assert result["reason"] == "no_controlling_tty"
-        assert result["delivery"] == "dev_tty_fallback"
+        # The terminal state is still OWED, so the slot must not be collectable.
+        assert session_binding._plan_is_live(plan_id) is True
 
-    def test_successful_push_reports_dev_tty_fallback_channel(self, rt, tmp_path, monkeypatch):
-        """A landed push yields pushed: true, delivery: dev_tty_fallback, no reason."""
+        capsys.readouterr()
+        assert rt.session_render_title() == ""
+
+        envelope = json.loads(capsys.readouterr().out)
+        assert "pm:Completed" in envelope["terminalSequence"]
+        # The binding was never released by the render itself.
+        assert session_binding.resolve_plan(session_id) == plan_id
+        # Delivery discharged the obligation, so the slot is now collectable.
+        assert session_binding._plan_is_live(plan_id) is False
+
+    def test_undelivered_archived_slot_survives_a_doctor_fix_sweep(self, rt, tmp_path, monkeypatch):
+        """A doctor --fix sweep must not collect a slot whose terminal state is owed."""
+        session_id = "sess-terminal-exempt"
+        plan_id = "owed-plan"
+        _write_status_json(
+            tmp_path,
+            session_id=session_id,
+            plan_id=plan_id,
+            current_phase="complete",
+            archived=True,
+        )
+        _redirect_render_env(tmp_path, monkeypatch, session_id)
+
+        report = session_binding.doctor(fix=True)
+
+        assert report["stale"] == []
+        assert report["gc_removed"] == 0
+        assert session_binding.resolve_plan(session_id) == plan_id
+
+
+class TestSessionPushTitleTokenBindAndPersist:
+    """Tests for the observable outcome of session_push_title_token.
+
+    The seam binds and settles state — it does not repaint. The hook render
+    channel is event-driven, so delivery belongs to the NEXT render event, and
+    the seam's return therefore carries no ``pushed`` and no ``delivery`` field:
+    both described a repaint it does not perform. The one no-op reason it can
+    report on the plans store is ``no_title_state``.
+    """
+
+    def test_settling_state_writes_no_escape_anywhere(self, rt, tmp_path, monkeypatch):
+        """A renderable plan yields a bare success and writes NO terminal escape.
+
+        ``openable=True`` deliberately makes a tty AVAILABLE, so a surviving
+        write would be captured. The empty capture is the assertion.
+        """
         plan_id = "push-ok"
         _write_status_json(tmp_path, session_id="sess-push-ok", plan_id=plan_id)
         _redirect_render_env(tmp_path, monkeypatch, "sess-push-ok")
@@ -313,25 +353,22 @@ class TestSessionPushTitleTokenDelivery:
 
         result = parse_toon(rt.session_push_title_token(plan_id))
         assert result["status"] == "success"
-        assert result["pushed"] is True
-        assert result["delivery"] == "dev_tty_fallback"
+        assert result["plan_id"] == plan_id
+        assert writes == []
+        # The retired repaint-reporting fields are gone from the contract.
+        assert "pushed" not in result
+        assert "delivery" not in result
         assert "reason" not in result
-        # The OSC escape actually reached the (captured) terminal.
-        assert writes and writes[0].startswith("\x1b]0;")
 
-    def test_absent_title_state_keeps_no_title_state_reason(self, rt, tmp_path, monkeypatch):
-        """A plan with no status.json keeps reason: no_title_state and names no channel.
-
-        The state read fails BEFORE any /dev/tty attempt, so the outcome must not
-        be conflated with the delivery-channel failure above.
-        """
+    def test_absent_title_state_reports_no_title_state(self, rt, tmp_path, monkeypatch):
+        """A plan with no status.json reports reason: no_title_state and names no channel."""
         _redirect_render_env(tmp_path, monkeypatch, "sess-push-absent")
-        _patch_dev_tty(monkeypatch, openable=False)
+        _patch_dev_tty(monkeypatch, openable=True)
 
         result = parse_toon(rt.session_push_title_token("no-such-plan"))
         assert result["status"] == "success"
-        assert result["pushed"] is False
         assert result["reason"] == "no_title_state"
+        assert "pushed" not in result
         assert "delivery" not in result
 
 
@@ -1413,10 +1450,11 @@ class TestSessionRenderTitleOrchestratorFallback:
 
 
 class TestSessionPushTitleTokenOrchestrator:
-    """D3: the orchestrator-store push establishes the session→epic binding as a
-    best-effort side effect (so the PRIMARY hook channel takes over on the next
-    render) and distinguishes a configured-OFF feature (feature_inactive) from the
-    permanently-inert /dev/tty fallback (no_controlling_tty).
+    """The orchestrator-store call establishes the session→epic binding as a
+    best-effort side effect, so the hook render channel resolves the epic on the
+    next event. That binding IS the reason the seam survives the deletion of the
+    ``/dev/tty`` write — these tests fail if the verb is ever removed wholesale.
+    A configured-OFF feature is the one reportable no-op (``feature_inactive``).
     """
 
     @staticmethod
@@ -1444,9 +1482,8 @@ class TestSessionPushTitleTokenOrchestrator:
         assert session_binding.resolve_orchestrator("sess-orch-push") == "my-epic"
 
     def test_orchestrator_push_reports_feature_inactive_when_off(self, rt, tmp_path, monkeypatch):
-        """With the terminal-title feature configured OFF, the orchestrator push
-        returns pushed: false / reason: feature_inactive — the gate fires BEFORE
-        the /dev/tty attempt, distinct from the no_controlling_tty fallback."""
+        """With the terminal-title feature configured OFF, the orchestrator call
+        reports reason: feature_inactive — the one no-op outcome it can produce."""
         from toon_parser import parse_toon
 
         monkeypatch.setattr(session_binding, "_SESSION_CACHE_BASE", tmp_path / "sessions")
@@ -1454,33 +1491,34 @@ class TestSessionPushTitleTokenOrchestrator:
         monkeypatch.chdir(tmp_path)
         # NO _activate_terminal_title → _terminal_title_active() is False.
         self._stub_orch_state(monkeypatch)
-        # /dev/tty is openable, but the feature gate fires first.
         _patch_dev_tty(monkeypatch, openable=True)
 
         result = parse_toon(rt.session_push_title_token("", store="orchestrator", slug="my-epic"))
 
-        assert result["pushed"] is False
         assert result["reason"] == "feature_inactive"
+        assert "pushed" not in result
+        assert "delivery" not in result
 
-    def test_orchestrator_push_reports_no_controlling_tty_when_active_but_no_tty(
-        self, rt, tmp_path, monkeypatch
-    ):
-        """With the feature ACTIVE but no controlling terminal, the orchestrator
-        push clears the feature gate and reports no_controlling_tty."""
+    def test_orchestrator_push_writes_no_escape_when_active(self, rt, tmp_path, monkeypatch):
+        """With the feature ACTIVE the call settles state and still writes nothing.
+
+        A tty is deliberately available, so a surviving write would be captured.
+        """
         from toon_parser import parse_toon
 
         monkeypatch.setattr(session_binding, "_SESSION_CACHE_BASE", tmp_path / "sessions")
-        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "sess-orch-notty")
+        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "sess-orch-active")
         monkeypatch.chdir(tmp_path)
         _activate_terminal_title(tmp_path)
         self._stub_orch_state(monkeypatch)
-        _patch_dev_tty(monkeypatch, openable=False)
+        writes = _patch_dev_tty(monkeypatch, openable=True)
 
         result = parse_toon(rt.session_push_title_token("", store="orchestrator", slug="my-epic"))
 
-        assert result["pushed"] is False
-        assert result["reason"] == "no_controlling_tty"
-        assert result["delivery"] == "dev_tty_fallback"
+        assert result["status"] == "success"
+        assert result["slug"] == "my-epic"
+        assert writes == []
+        assert "reason" not in result
 
     def test_orchestrator_push_binds_even_when_feature_inactive(self, rt, tmp_path, monkeypatch):
         """The epic binding is established BEFORE the feature gate, so it lands
