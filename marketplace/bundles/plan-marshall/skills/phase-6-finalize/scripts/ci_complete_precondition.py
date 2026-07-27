@@ -199,11 +199,17 @@ def _clamp_wait_ceiling(inner_seconds: int) -> int:
     """Clamp a requested inner ceiling to fit under the harness Bash ceiling.
 
     The wait subprocess is invoked with ``timeout=inner +
-    CI_WAIT_OUTER_BUFFER_SECONDS``. Returning ``min(inner_seconds,
-    _MAX_INNER_WAIT_SECONDS)`` guarantees that outer bound stays STRICTLY
+    CI_WAIT_OUTER_BUFFER_SECONDS``. Bounding from above by
+    :data:`_MAX_INNER_WAIT_SECONDS` guarantees that outer bound stays STRICTLY
     below :data:`HARNESS_BASH_CEILING_SECONDS`, so the resolver always gets to
     return a structured envelope rather than being killed mid-call by the host
     platform.
+
+    The clamp also bounds from BELOW at one second. ``subprocess.run`` raises
+    an uncaught :class:`ValueError` on a zero or negative ``timeout`` (only
+    :class:`subprocess.TimeoutExpired` is handled at the call site), so an
+    explicit ``--timeout 0`` or a corrupt negative persisted ``ci:wait`` value
+    would crash the resolution instead of degrading to a bounded wait.
 
     Args:
         inner_seconds: The requested inner ceiling, from any origin — an
@@ -211,10 +217,10 @@ def _clamp_wait_ceiling(inner_seconds: int) -> int:
             :data:`DEFAULT_CI_WAIT_TIMEOUT_SECONDS`.
 
     Returns:
-        The requested value when it already fits, otherwise the largest
-        inner ceiling that does.
+        The requested value when it already fits within both bounds, otherwise
+        the nearest inner ceiling that does.
     """
-    return min(inner_seconds, _MAX_INNER_WAIT_SECONDS)
+    return max(1, min(inner_seconds, _MAX_INNER_WAIT_SECONDS))
 
 
 # ---------------------------------------------------------------------------
@@ -590,6 +596,15 @@ def resolve(
     # --timeout, persisted ci:wait learned value, DEFAULT_CI_WAIT_TIMEOUT_
     # SECONDS) passes through the same clamp, and the per-signal review /
     # sonar arms inherit it because they delegate here.
+    #
+    # The PRE-clamp value is kept as ``requested_ceiling``: it is the ceiling
+    # the caller/learned value actually asked for, and it — not the clamped
+    # value — is the ratchet's comparison base below. Comparing the measured
+    # elapsed against the CLAMPED ceiling would let every deadline-exceeded
+    # finalize record ~_MAX_INNER_WAIT_SECONDS while the persisted ci:wait
+    # value sits above the clamp, dragging the learned value DOWNWARD on
+    # every run — a learned value silently self-capping.
+    requested_ceiling = timeout_seconds
     timeout_seconds = _clamp_wait_ceiling(timeout_seconds)
 
     head_sha = head_fn(worktree_path)
@@ -673,14 +688,23 @@ def resolve(
     # UPWARD. This is the fix for the starved ratchet: when the ceiling is
     # below the true CI duration, every wait hits ``deadline_exceeded`` before
     # CI completes, so the success-path record never fires. By feeding the
-    # measured elapsed (which is ``≥`` the current ceiling, because the wait
-    # ran to the deadline) into the SAME ``timeout_set`` call, ``
+    # measured elapsed into the SAME ``timeout_set`` call, ``
     # compute_weighted_timeout`` (HIGHER_WEIGHT 0.80) lifts the persisted
     # ``ci:wait`` value each finalize and the next ceiling (``persisted ×
     # SAFETY_MARGIN 1.25``) grows with it, until it exceeds the true CI
     # duration and a real success records the exact value. When the wait
     # envelope surfaces the provider's true check-run duration (``duration_sec``)
     # prefer it — it collapses the geometric ratchet to a single step.
+    #
+    # The elapsed guard compares against ``requested_ceiling`` (the PRE-clamp
+    # value), never the clamped ``timeout_seconds``. Once the requested
+    # ceiling sits above the harness clamp, the wait can only ever consume the
+    # clamped window, so an elapsed-vs-clamped comparison would record a value
+    # strictly BELOW the persisted one on every single run and ratchet the
+    # learned value DOWN. Comparing against the requested ceiling makes the
+    # guard record only genuinely at-or-above-request observations, and stay
+    # silent (leaving the learned value untouched) when the clamp is what
+    # ended the wait.
     provider_duration = wait_result.get('duration_sec')
     try:
         provider_duration_int = int(provider_duration)  # type: ignore[arg-type]
@@ -688,10 +712,11 @@ def resolve(
         provider_duration_int = None
     if provider_duration_int is not None and provider_duration_int > 0:
         timeout_set_fn(provider_duration_int)
-    elif elapsed_at_deadline >= timeout_seconds and elapsed_at_deadline > 0:
-        # Only record when the wait actually consumed the full ceiling — a
-        # spurious immediate non-success envelope (e.g. an executor crash)
-        # must NOT pull the ratchet down with a sub-ceiling observation.
+    elif elapsed_at_deadline >= requested_ceiling and elapsed_at_deadline > 0:
+        # Only record when the wait actually consumed the full REQUESTED
+        # ceiling — a spurious immediate non-success envelope (e.g. an
+        # executor crash), or a wait cut short by the harness clamp, must NOT
+        # pull the ratchet down with a sub-request observation.
         timeout_set_fn(elapsed_at_deadline)
     return {
         'status': 'wait_failed',

@@ -456,7 +456,7 @@ The dispatcher resolves the value by mapping the consumer step id (`step.name` f
 ```bash
 python3 .plan/execute-script.py plan-marshall:phase-6-finalize:ci_complete_precondition \
   resolve --plan-id {plan_id} --worktree-path {worktree_path} --pr-number {pr_number} \
-  [--signal-arm {ci|review|sonar}] [--mode {strict|consume-failures}] [--timeout SECONDS]
+  [--signal-arm {ci|review|sonar}] [--mode {strict|consume-failures}] [--timeout TIMEOUT]
 ```
 
 The helper returns a TOON envelope whose shape depends on the resolution mode. For the **`ci` arm** (`--signal-arm ci` / absent) it returns `status` (`satisfied`\|`wait_succeeded`\|`wait_failed`), `head_sha`, `ci_final_status`, and (on `wait_failed`) `failing_checks`, `wait_outcome`, and `mode` (the value passed in). For a **per-signal producer arm** (`--signal-arm review|sonar`) it returns `status` (`arm_proceed`\|`arm_pending`), `signal_arm`, `arm_state` (`settled`\|`failed`\|`pending`), `head_sha`, and `ci_final_status`. The underlying `ci wait` envelope partitions GitHub check conclusions per the canonical table (`success | skipped | neutral` → non-failing; `failure | timed_out | cancelled | action_required | stale` → failing; `null | in_progress | queued` → wait); the previous `mixed` outcome is no longer returned by any github_ops function.

@@ -2300,6 +2300,42 @@ def test_below_bound_ceiling_passes_through_the_clamp_unchanged(plan_context):
     assert wait_stub.calls[0][2] == 120
 
 
+def test_zero_and_negative_ceilings_are_raised_to_the_positive_lower_bound(
+    plan_context,
+):
+    """The clamp bounds from BELOW as well as above.
+
+    ``subprocess.run`` raises an uncaught ``ValueError`` on a zero or negative
+    ``timeout``, and ``_run_ci_wait`` catches only ``TimeoutExpired`` — so an
+    explicit ``--timeout 0`` or a corrupt negative persisted ``ci:wait`` value
+    must resolve to a safe positive minimum rather than propagate.
+    """
+    for requested in (0, -1, -5000):
+        assert _resolver_mod._clamp_wait_ceiling(requested) == 1, (
+            f'A requested ceiling of {requested}s must clamp up to 1s — '
+            'a non-positive subprocess timeout raises an uncaught ValueError'
+        )
+
+    plan_id = 'ci-precond-clamp-lower-bound'
+    wait_stub = _StubCiWait(
+        [{'status': 'success', 'final_status': 'success'}]
+    )
+
+    resolve(
+        plan_id=plan_id,
+        worktree_path=_WORKTREE,
+        pr_number=_PR,
+        timeout_seconds=0,
+        ci_wait_runner=wait_stub,
+        git_head_resolver=_StubGitHead(_SHA_A),
+        timeout_set_runner=_StubTimeoutSet(),
+    )
+
+    assert wait_stub.calls[0][2] == 1, (
+        'The consumed ceiling reaching the wait seam must be positive'
+    )
+
+
 def test_outer_subprocess_timeout_is_strictly_below_the_harness_ceiling(
     plan_context, monkeypatch
 ):
@@ -2440,16 +2476,24 @@ def test_ratchet_records_true_provider_duration_despite_the_clamp(plan_context):
     )
 
 
-def test_ratchet_records_measured_elapsed_against_the_clamped_ceiling(plan_context):
-    """Without a provider duration, the elapsed-at-deadline fallback measures
-    against the CLAMPED ceiling — so a wait that consumed the clamped bound
-    still records, and the ratchet is not starved by the clamp.
+def test_ratchet_never_records_below_the_requested_ceiling(plan_context):
+    """The elapsed-at-deadline fallback measures against the REQUESTED
+    (pre-clamp) ceiling, never the clamped one.
+
+    When the persisted ``ci:wait`` value sits above the harness clamp, the
+    wait can only ever consume the clamped window, so an elapsed-vs-clamped
+    comparison would fire on every single deadline-exceeded finalize and feed
+    ``compute_weighted_timeout`` an observation strictly BELOW the persisted
+    value — the learned value silently self-capping back down to the clamp.
+    Comparing against the requested ceiling keeps the guard silent in exactly
+    that case, so the persisted value is never dragged downward.
     """
-    plan_id = 'ci-precond-clamp-ratchet-elapsed'
+    plan_id = 'ci-precond-ratchet-not-below-request'
     set_stub = _StubTimeoutSet()
     wait_stub = _StubCiWait(
         [{'status': 'timeout', 'wait_outcome': 'deadline_exceeded'}]
     )
+    requested = 5000
     elapsed = _MAX_INNER_WAIT_SECONDS + 2
 
     resolve(
@@ -2458,14 +2502,55 @@ def test_ratchet_records_measured_elapsed_against_the_clamped_ceiling(plan_conte
         pr_number=_PR,
         ci_wait_runner=wait_stub,
         git_head_resolver=_StubGitHead(_SHA_A),
-        timeout_get_runner=_StubTimeoutGetSeeded(seeded_value=5000),
+        timeout_get_runner=_StubTimeoutGetSeeded(seeded_value=requested),
         timeout_set_runner=set_stub,
         monotonic_clock=_StubClock([0.0, float(elapsed)]),
     )
 
+    # The wait itself is still clamped — the clamp is not what changed.
+    assert wait_stub.calls[0][2] == _MAX_INNER_WAIT_SECONDS
+    assert elapsed < requested, 'fixture precondition: the clamp cut the wait short'
+    assert not [d for d in set_stub.recorded if d < requested], (
+        f'The ratchet recorded {set_stub.recorded} — an observation below the '
+        f'requested ceiling of {requested}s drifts the learned value DOWNWARD '
+        'on every deadline-exceeded finalize. The elapsed fallback must '
+        'compare against the requested ceiling, not the clamped one.'
+    )
+
+
+def test_ratchet_records_measured_elapsed_when_request_fits_under_the_clamp(
+    plan_context,
+):
+    """The upward ratchet is NOT starved for a requested ceiling that fits
+    under the clamp: a wait that consumed the full requested window still
+    feeds the measured elapsed into ``timeout_set``.
+    """
+    plan_id = 'ci-precond-ratchet-elapsed-under-clamp'
+    set_stub = _StubTimeoutSet()
+    wait_stub = _StubCiWait(
+        [{'status': 'timeout', 'wait_outcome': 'deadline_exceeded'}]
+    )
+    requested = 300
+    elapsed = requested + 5
+
+    resolve(
+        plan_id=plan_id,
+        worktree_path=_WORKTREE,
+        pr_number=_PR,
+        ci_wait_runner=wait_stub,
+        git_head_resolver=_StubGitHead(_SHA_A),
+        timeout_get_runner=_StubTimeoutGetSeeded(seeded_value=requested),
+        timeout_set_runner=set_stub,
+        monotonic_clock=_StubClock([0.0, float(elapsed)]),
+    )
+
+    assert requested < _MAX_INNER_WAIT_SECONDS, (
+        'fixture precondition: the requested ceiling is consumed unclamped'
+    )
+    assert wait_stub.calls[0][2] == requested
     assert set_stub.recorded == [elapsed], (
-        'A wait that consumed the clamped ceiling must still feed the '
-        'upward ratchet — the clamp must not starve it'
+        'A wait that consumed the full requested ceiling must still feed the '
+        'upward ratchet'
     )
 
 
