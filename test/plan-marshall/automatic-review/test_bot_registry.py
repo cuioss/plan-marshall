@@ -96,6 +96,10 @@ def test_ignore_patterns_are_nonempty_literal_markers():
 
     pr_agent = bot_registry.ignore_patterns('pr-agent')
     assert '## PR Agent Walkthrough' in pr_agent
+    # The persistent-review update notice carries no review content, and is authored by the
+    # reviewer identity, so without this marker it reaches triage as a candidate finding.
+    # Markdown link syntax must survive the YAML round-trip verbatim.
+    assert '**[Persistent review]' in pr_agent
 
 
 def test_ignore_patterns_preserve_quoted_special_characters():
