@@ -37,64 +37,25 @@ from ci_base import (
 )
 
 # ---------------------------------------------------------------------------
-# CodeRabbit rate-limit status-notice detection (provider-scoped: GitHub/CodeRabbit)
+# CodeRabbit-authored comment selection (provider-scoped: GitHub/CodeRabbit)
 # ---------------------------------------------------------------------------
-#
-# When CodeRabbit is rate-limited it posts a status-notice comment in place of a
-# review. The notice carries a narrow, stable structure — a ``## Rate limit
-# exceeded`` heading (typically inside a ``> [!WARNING]`` callout) plus the
-# "exceeded the limit for the number of ..." body sentence. Detection is purely
-# additive — it surfaces a ``rate_limited`` discriminator on the wait-for-comments
-# return and never changes the poll behaviour or any existing field. Detection
-# requires BOTH markers (``all``): the ``## Rate limit exceeded`` heading marker
-# AND the specific body sentence must be present. Requiring both narrows detection
-# to the notice's actual two-part structure, so an ordinary CodeRabbit review
-# comment that merely mentions "rate limit exceeded" in prose — or that merely
-# discusses "exceeded the limit for the number of ..." parameters/lines — is not
-# misclassified as a status notice.
 _CODERABBIT_BOT_LOGINS = frozenset({'coderabbitai', 'coderabbitai[bot]'})
-_CODERABBIT_RATE_LIMIT_MARKERS: tuple[re.Pattern[str], ...] = (
-    # The notice's own heading: ``## Rate limit exceeded``. Matched by its
-    # markdown ``#`` heading markers rather than a bare phrase, so a prose
-    # mention of "rate limit exceeded" in a genuine review body does not match.
-    #
-    # Deliberately NO ``^``/``re.MULTILINE`` line-start anchor:
-    # ``fetch_pr_comments_data`` (in github_ops.py) flattens every comment body's
-    # newlines to spaces BEFORE this detector runs, collapsing the notice to a
-    # single line. A line-start anchor could therefore only ever match at offset
-    # 0 — never at the ``## Rate limit exceeded`` heading, which sits mid-body
-    # after the ``> [!WARNING]`` callout prefix — so the anchored form never
-    # fired in production. The heading markers are searched unanchored instead.
-    re.compile(r'#{1,6}\s+rate limit exceeded\b', re.IGNORECASE),
-    re.compile(r'exceeded the limit for the number of', re.IGNORECASE),
-)
-
-
-def _is_coderabbit_rate_limit_notice(body: str) -> bool:
-    """Return True when a single comment ``body`` is a CodeRabbit rate-limit notice.
-
-    Matches the body against the narrow rate-limit marker set, requiring ALL
-    markers (the ``## Rate limit exceeded`` heading marker AND the specific
-    "exceeded the limit for the number of ..." body sentence). Requiring both
-    narrows detection to the notice's actual two-part structure, so a genuine
-    review comment that merely mentions one marker in prose is not misclassified.
-
-    Exported for the ``github_pr.fetch_findings`` pre-filter to drop a
-    CodeRabbit-authored rate-limit notice as noise, sharing the one marker set
-    with the :func:`_detect_coderabbit_rate_limited` wait-return discriminator.
-    """
-    return all(marker.search(body) for marker in _CODERABBIT_RATE_LIMIT_MARKERS)
 
 
 def _detect_coderabbit_rate_limited(comments: list[dict]) -> bool:
     """Return True when the newest CodeRabbit-bot comment is a rate-limit notice.
 
     Scans the CodeRabbit-bot-authored comments only, picks the newest by
-    ``created_at``, and matches its body via :func:`_is_coderabbit_rate_limit_notice`
-    (which requires ALL markers — the heading marker AND the body sentence — so a
-    genuine review that merely mentions one of them in prose is not
-    misclassified). Any absent / malformed field degrades to ``False`` —
-    detection is best-effort and never raises into the poll return path.
+    ``created_at``, and classifies its body with the shared bot-agnostic
+    :func:`_is_rate_limit_notice` recognizer (which requires BOTH a
+    limit-exceeded statement AND a notice shape, so a genuine review that merely
+    mentions a rate limit in prose is not misclassified). Any absent / malformed
+    field degrades to ``False`` — detection is best-effort and never raises into
+    the poll return path.
+
+    Only the body classifier is shared: the author-scoped selection and the
+    newest-by-``created_at`` pick remain specific to this discriminator, which
+    feeds the additive ``rate_limited`` field on the wait-for-comments return.
     """
     bot_comments = [
         c
@@ -106,7 +67,7 @@ def _detect_coderabbit_rate_limited(comments: list[dict]) -> bool:
         return False
     newest = max(bot_comments, key=lambda c: str(c.get('created_at') or ''))
     body = str(newest.get('body') or '')
-    return _is_coderabbit_rate_limit_notice(body)
+    return _is_rate_limit_notice(body)
 
 
 # ---------------------------------------------------------------------------
@@ -144,8 +105,8 @@ _RATE_LIMIT_PHRASE = (
 
 # (a) LIMIT-EXCEEDED STATEMENT — the notice's "you hit a limit" sentence.
 _RATE_LIMIT_EXCEEDED_MARKERS: tuple[re.Pattern[str], ...] = (
-    # CodeRabbit's specific body sentence (retained verbatim so the bot-agnostic
-    # recognizer is a strict superset of the CodeRabbit-exact detection).
+    # A real observed notice phrasing: the limit statement spelled out as a
+    # sentence rather than as "<limit> exceeded", which the next marker catches.
     re.compile(r'exceeded the limit for the number of', re.IGNORECASE),
     # "<limit> [has been|is|was] exceeded/reached/hit" — the limit phrase bound
     # tightly to a notice-voiced past-tense verb. "exceeds" / "may exceed"
@@ -186,15 +147,23 @@ def _is_rate_limit_notice(body: str) -> bool:
     Detects a rate-limit / service notice a reviewer bot posts in place of a
     review, independent of author. Requires BOTH a LIMIT-EXCEEDED statement
     (:data:`_RATE_LIMIT_EXCEEDED_MARKERS`) AND a NOTICE-SHAPE signal
-    (:data:`_RATE_LIMIT_NOTICE_SHAPE_MARKERS`) — the same two-part precision as
-    :func:`_is_coderabbit_rate_limit_notice`, generalized so a CodeRabbit notice,
-    a Sourcery weekly-limit note, and an arbitrary unknown bot's notice are all
-    recognized by the same structural signature, with no author-specific literal.
+    (:data:`_RATE_LIMIT_NOTICE_SHAPE_MARKERS`), so a notice is recognized by its
+    structural signature with no author-specific literal.
+
+    **This is the LAST-RESORT layer of the refusal-recognition stack, not its
+    primary surface.** It covers an unknown / unregistered bot, or a phrasing not
+    yet captured in the data layer. A *registered* bot's OBSERVED refusal text
+    belongs in that bot's ``automatic-review/standards/{bot_kind}.md``
+    ``ignore_patterns`` — a data record, not a regex. Every refusal-recognition
+    site (``github_pr._is_obvious_noise``, ``github_re_review._match_bot_comment``,
+    and ``github_re_review._match_review``) is expected to pair this structural
+    fallback with that registry data layer; neither alone is a superset of the
+    other, and a refusal recognized here but absent from the registry is a signal
+    that the bot's ``ignore_patterns`` need the observed phrasing added.
 
     Precision is load-bearing: a genuine review comment that merely mentions a
     rate limit in prose (no limit-exceeded statement, no notice shape) is not
-    dropped. Used by the ``github_pr.fetch_findings`` pre-filter for any resolved
-    reviewer ``bot_kind``.
+    dropped.
     """
     if not body:
         return False

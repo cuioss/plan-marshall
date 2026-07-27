@@ -25,6 +25,7 @@ ignore_patterns:
   - "Sourcery is free for open source"                             # marketing footer
   - "Help me be more useful! Please click"                         # 👍/👎 feedback prompt
   - "found 0 issues"                                               # no-op review
+  - "your pull request is larger than the review limit of"         # #1014 refusal notice — handle-free and number-free so it survives a different account handle and a different character budget
 severity_map:
   issue_bug_risk: high      # **issue (bug_risk):**
   security: critical        # **security:**
@@ -83,6 +84,8 @@ The `ignore_patterns` above are whole-comment drops: the Reviewer's Guide issue 
 mermaid diagrams + File-Level-Changes table), Tips and commands, marketing / feedback, and no-op
 reviews (`found 0 issues` with no inline comments). Do NOT drop the review body when it contains
 **Overall Comments** or when inline `<issue_to_address>` comments exist — those are signal.
+The size-limit refusal notice (`your pull request is larger than the review limit of …`) is likewise
+a whole-comment drop: Sourcery posts it *in place of* a review, so it carries no finding to extract.
 
 ## Consumer stage — classify a surviving Sourcery finding
 

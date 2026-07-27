@@ -27,6 +27,7 @@ ignore_patterns:
   - "<!-- tips_start -->"                                                     # tips block
   - "@coderabbitai help"                                                      # command help echo
   - "✏️ Learnings added"                                                      # learnings-only reply
+  - "Review limit reached"                                                    # current refusal notice — posted in place of a review
 severity_map:
   potential_issue_critical: critical   # 🔴 potential_issue, or 🔒 with real impact
   potential_issue_major: high          # 🟠 Major potential_issue
@@ -67,6 +68,8 @@ finding: the walkthrough / summary issue comment, no-op reviews (`No actionable 
 generated`), marketing / tips, learnings-only replies, and bot self-acknowledgement replies (login
 `coderabbitai` + reply-to-human + no `cr-indicator-types` marker). Do **not** ignore inline review
 comments that carry a `cr-indicator-types` marker — those are the signal.
+The refusal notice (`Review limit reached`) is likewise a whole-comment drop: CodeRabbit posts it
+*in place of* a review, so it carries no finding to extract.
 
 ## Consumer stage — classify a surviving CodeRabbit finding
 
