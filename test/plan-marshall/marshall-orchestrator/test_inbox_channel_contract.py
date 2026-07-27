@@ -168,6 +168,20 @@ def _section(text: str, heading: str) -> str:
     return '\n'.join(collected)
 
 
+def _line(section: str, prefix: str) -> str:
+    """Return the first section line whose stripped form starts with ``prefix``.
+
+    Stripping before the prefix test matters: a bullet or table row nested under
+    a list item is indented to the item's continuation column, and a matcher
+    anchored at column zero would silently find nothing there — passing only by
+    the accident that the source happens to be unindented today.
+    """
+    stripped = (line.strip() for line in section.splitlines())
+    match = next((line for line in stripped if line.startswith(prefix)), None)
+    assert match is not None, f'no line starting with {prefix!r} in the section'
+    return match
+
+
 # =============================================================================
 # Well-formed message: round trip through the CLI
 # =============================================================================
@@ -517,7 +531,7 @@ class TestDocContract:
         section = _section(
             _ORCHESTRATION_MODEL.read_text(encoding='utf-8'), '## Dispatch Decision Rule'
         )
-        s2 = next(line for line in section.splitlines() if line.startswith('- **S2'))
+        s2 = _line(section, '- **S2')
 
         assert 'dispatched by an orchestrator verb' in s2
         assert 'Ledger Write-Boundary' in s2
@@ -526,7 +540,7 @@ class TestDocContract:
         section = _section(
             _ORCHESTRATION_MODEL.read_text(encoding='utf-8'), '## Dispatch Decision Rule'
         )
-        s2 = next(line for line in section.splitlines() if line.startswith('- **S2'))
+        s2 = _line(section, '- **S2')
 
         assert 'No dispatched leaf writes inside' not in s2
 
