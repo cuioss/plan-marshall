@@ -402,9 +402,9 @@ def test_finding_add_pr_comment_with_reviewed_commit_sha_and_bot_kind(plan_conte
 def test_finding_query_by_bot_kind(plan_context):
     """cmd_query filters pr-comment findings by bot_kind."""
     cmd_add(_add_ns(type='pr-comment', title='C1', detail='d', bot_kind='coderabbit'))
-    cmd_add(_add_ns(type='pr-comment', title='C2', detail='d', bot_kind='gemini'))
+    cmd_add(_add_ns(type='pr-comment', title='C2', detail='d', bot_kind='pr-agent'))
 
-    result = cmd_query(_query_ns(bot_kind='gemini'))
+    result = cmd_query(_query_ns(bot_kind='pr-agent'))
     assert result['filtered_count'] == 1
     assert result['findings'][0]['title'] == 'C2'
 

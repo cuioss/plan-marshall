@@ -694,7 +694,7 @@ def check_display_detail_violations(content: str) -> list:
     The contract is documented in ``phase-6-finalize/SKILL.md`` and
     ``phase-6-finalize/standards/output-template.md`` ("Plain ASCII - no
     unicode glyphs"). Without this rule, violations only surface in PR review
-    after gemini-code-assist or other bots flag them.
+    after CodeRabbit or the other review bots flag them.
 
     Each finding is returned as a dict with ``line`` (1-indexed line of the
     first ``mark-step-done`` line of the invocation), ``code`` (defect code),

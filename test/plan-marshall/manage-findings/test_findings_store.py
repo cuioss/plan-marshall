@@ -300,7 +300,7 @@ def test_add_finding_accepts_sourcery_bot_kind(plan_context):
 def test_query_findings_by_bot_kind(plan_context):
     """query_findings filters by exact bot_kind match."""
     add_finding('store-prc-bybotkind', 'pr-comment', 'C1', 'd', author='coderabbitai[bot]', bot_kind='coderabbit')
-    add_finding('store-prc-bybotkind', 'pr-comment', 'C2', 'd', author='gemini-code-assist[bot]', bot_kind='gemini')
+    add_finding('store-prc-bybotkind', 'pr-comment', 'C2', 'd', author='cuioss-review-bot[bot]', bot_kind='pr-agent')
     add_finding('store-prc-bybotkind', 'pr-comment', 'C3', 'd', author='coderabbitai[bot]', bot_kind='coderabbit')
 
     result = query_findings('store-prc-bybotkind', bot_kind='coderabbit')
@@ -312,9 +312,9 @@ def test_query_findings_by_bot_kind(plan_context):
 def test_query_findings_bot_kind_excludes_unfielded(plan_context):
     """The bot_kind filter excludes pr-comment findings that carry no bot_kind."""
     add_finding('store-prc-botkind-mix', 'pr-comment', 'Legacy', 'd', author='octocat', kind='inline')
-    add_finding('store-prc-botkind-mix', 'pr-comment', 'Bot', 'd', bot_kind='gemini')
+    add_finding('store-prc-botkind-mix', 'pr-comment', 'Bot', 'd', bot_kind='pr-agent')
 
-    result = query_findings('store-prc-botkind-mix', bot_kind='gemini')
+    result = query_findings('store-prc-botkind-mix', bot_kind='pr-agent')
     assert result['total_count'] == 2
     assert result['filtered_count'] == 1
     assert result['findings'][0]['title'] == 'Bot'
@@ -341,7 +341,7 @@ def test_query_findings_unified_carries_reviewed_commit_sha_and_bot_kind(plan_co
 def test_query_findings_unified_filters_by_bot_kind(plan_context):
     """The unified read narrows the merged result by bot_kind."""
     add_finding('store-prc-unified-bk', 'pr-comment', 'From coderabbit', 'd', bot_kind='coderabbit')
-    add_finding('store-prc-unified-bk', 'pr-comment', 'From gemini', 'd', bot_kind='gemini')
+    add_finding('store-prc-unified-bk', 'pr-comment', 'From pr-agent', 'd', bot_kind='pr-agent')
 
     unified = query_findings_unified('store-prc-unified-bk', bot_kind='coderabbit')
     assert unified['plan_count'] == 1

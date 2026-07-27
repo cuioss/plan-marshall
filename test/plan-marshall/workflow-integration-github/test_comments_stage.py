@@ -565,7 +565,7 @@ class TestCommentsStageAuthorKindFields:
             {
                 'id': 'K1',
                 'kind': kind,
-                'author': 'gemini-code-assist',
+                'author': 'cuioss-review-bot',
                 'body': 'A substantive review point about error propagation here.',
                 'path': 'src/Worker.java' if is_inline else '',
                 'line': 17 if is_inline else 0,
@@ -597,7 +597,7 @@ class TestCommentsStageAuthorKindFields:
         # First-class queryable field — equals the provider structure discriminator.
         assert stored['kind'] == kind
         # author is likewise first-class for the same finding.
-        assert stored['author'] == 'gemini-code-assist'
+        assert stored['author'] == 'cuioss-review-bot'
 
     def test_stored_finding_is_queryable_by_first_class_kind(self, plan_context):
         """The first-class ``kind`` field is an indexed query filter, not just stored.
@@ -753,7 +753,7 @@ class TestCommentsStageReviewedShaAndBotKind:
     (so re-review matching can tell whether HEAD has advanced past the reviewed
     commit), and ``bot_kind`` is derived from each comment's author login via the
     registry's ``bot_kind_for_author`` (coderabbitai -> coderabbit,
-    gemini-code-assist -> gemini; a human author leaves ``bot_kind`` unset).
+    cuioss-review-bot -> pr-agent; a human author leaves ``bot_kind`` unset).
     """
 
     def test_reviewed_commit_sha_stamped_from_pr_head(self, plan_context):
@@ -800,7 +800,8 @@ class TestCommentsStageReviewedShaAndBotKind:
         ('author', 'expected_bot_kind'),
         [
             pytest.param('coderabbitai', 'coderabbit', id='coderabbit'),
-            pytest.param('gemini-code-assist', 'gemini', id='gemini'),
+            pytest.param('cuioss-review-bot', 'pr-agent', id='pr-agent'),
+            pytest.param('sourcery-ai', 'sourcery', id='sourcery'),
         ],
     )
     def test_bot_kind_derived_from_author_login(self, author, expected_bot_kind, plan_context):
@@ -921,14 +922,34 @@ class TestPerBotIgnoreFilter:
         # Dropped for the owning bot.
         assert _is_obvious_noise(body, 'coderabbit')
         # NOT dropped for a different bot or a human — the marker is bot-scoped.
-        assert not _is_obvious_noise(body, 'gemini')
+        assert not _is_obvious_noise(body, 'pr-agent')
         assert not _is_obvious_noise(body, None)
 
-    def test_gemini_sunset_marker_drops_only_gemini(self):
-        """Gemini's ``being sunset`` banner marker drops a gemini comment only."""
-        body = 'This reviewer is being sunset on 2026-07-17.'
-        assert _is_obvious_noise(body, 'gemini')
+    def test_pr_agent_walkthrough_marker_drops_only_pr_agent(self):
+        """PR-Agent's ``## PR Agent Walkthrough`` marker drops a pr-agent comment only.
+
+        The two bots' markers are deliberately near-identical in shape
+        (``## Walkthrough`` vs ``## PR Agent Walkthrough``), which makes this the
+        sharpest available test of bot-scoping: a substring-based or unscoped
+        filter would cross-drop.
+        """
+        body = '## PR Agent Walkthrough\n\nAvailable commands: /review, /ask, /help.'
+        assert _is_obvious_noise(body, 'pr-agent')
         assert not _is_obvious_noise(body, 'coderabbit')
+        assert not _is_obvious_noise(body, None)
+
+    def test_marker_of_a_retired_bot_drops_nothing(self):
+        """A marker sourced from a DELETED registry doc drops no comment at all.
+
+        With the record gone the pre-filter has no per-bot layer to apply for that
+        kind, so a body carrying its former marker is treated as ordinary content.
+        This is the correct failure mode for retirement: comments stop being
+        filtered, never start being silently dropped by a phantom rule.
+        """
+        body = 'This reviewer is being sunset on 2026-07-17.'
+        assert not _is_obvious_noise(body, 'retired-bot')
+        assert not _is_obvious_noise(body, 'coderabbit')
+        assert not _is_obvious_noise(body, None)
 
     def test_substantive_bot_comment_is_not_noise(self):
         """A real finding from a bot survives the pre-filter."""
@@ -984,18 +1005,18 @@ class TestPerBotIgnoreFilter:
         assert 'comment_id: W2' in q['findings'][0]['detail']
 
     def test_fetch_findings_does_not_apply_one_bots_marker_to_another(self, plan_context):
-        """A gemini comment carrying CodeRabbit's ``## Walkthrough`` text is NOT dropped.
+        """A pr-agent comment carrying CodeRabbit's ``## Walkthrough`` text is NOT dropped.
 
         Proves the per-bot layer is scoped to the authoring bot: the walkthrough
-        marker belongs to coderabbit's registry entry, so a gemini-authored
+        marker belongs to coderabbit's registry entry, so a pr-agent-authored
         comment with the same heading survives and becomes a finding.
         """
         comments = [
             {
                 'id': 'G1',
                 'kind': 'issue_comment',
-                'author': 'gemini-code-assist',
-                'body': '## Walkthrough\n\nGemini would not normally emit this, but it must not be cross-dropped.',
+                'author': 'cuioss-review-bot',
+                'body': '## Walkthrough\n\nPR-Agent would not normally emit this, but it must not be cross-dropped.',
                 'path': '',
                 'line': 0,
                 'thread_id': '',
@@ -1100,9 +1121,11 @@ class TestPostResponses:
 
         assert result['status'] == 'success'
         assert result['count_responded'] == 1
-        assert result['count_failed'] == 0
+        assert result['count_untransmitted'] == 0
         assert result['responded'][0]['hash_id'] == hash_id
         assert result['responded'][0]['thread_id'] == 'PRRT_x'
+        assert result['responded'][0]['transmit_mode'] == 'thread_reply'
+        assert result['responded'][0]['resolved_on_provider'] is True
         # Two mutations fired: a thread-reply carrying the resolution_detail, then a resolve.
         assert len(calls) == 2
         reply_vars = calls[0][1]
@@ -1122,8 +1145,14 @@ class TestPostResponses:
         assert result['count_responded'] == 0
         mock_graphql.assert_not_called()
 
-    def test_resolved_finding_without_thread_id_is_skipped(self, plan_context):
-        """A terminal-disposition finding with no thread_id is skipped, never guessed at."""
+    def test_resolved_finding_without_thread_id_is_transmitted_as_a_pr_comment(self, plan_context):
+        """A thread-less disposition is transmitted as a PR comment, NOT skipped.
+
+        There is no thread to reply into, but the disposition still has something
+        to say — dropping it would lose a recorded decision. It goes out as a
+        PR-level comment and is reported with ``resolved_on_provider: false``,
+        because no thread exists to resolve.
+        """
         plan_context.plan_dir_for('gh-respond-nothread')
         hash_id = self._stage_one_finding('gh-respond-nothread', '')  # empty thread_id
 
@@ -1131,12 +1160,30 @@ class TestPostResponses:
 
         resolve_finding('gh-respond-nothread', hash_id, 'suppressed', detail='Suppressed with rationale.')
 
-        with patch('github_pr._github.run_graphql', return_value=(0, {}, '')) as mock_graphql:
+        posted = []
+
+        def _fake_post(pr_number, body):
+            posted.append((pr_number, body))
+            return {'status': 'success', 'operation': 'post_pr_comment', 'pr_number': pr_number}
+
+        with (
+            patch('github_pr._github.run_graphql', return_value=(0, {}, '')) as mock_graphql,
+            patch('github_pr._github.post_pr_comment', side_effect=_fake_post),
+        ):
             result = cmd_post_responses(_stage_make_args(300, 'gh-respond-nothread'))
 
         assert result['status'] == 'success'
-        assert result['count_responded'] == 0
-        assert result['count_skipped'] == 1
+        assert result['count_responded'] == 1
+        assert result['count_skipped'] == 0
+        assert result['count_untransmitted'] == 0
+        assert result['responded'][0]['hash_id'] == hash_id
+        assert result['responded'][0]['transmit_mode'] == 'batched_issue_comment'
+        assert result['responded'][0]['resolved_on_provider'] is False
+        # One PR-level comment carrying the disposition, anchored on the source comment.
+        assert len(posted) == 1
+        assert 'Suppressed with rationale.' in posted[0][1]
+        assert 'C1' in posted[0][1]
+        # No thread mutation fired — there is no thread.
         mock_graphql.assert_not_called()
 
 

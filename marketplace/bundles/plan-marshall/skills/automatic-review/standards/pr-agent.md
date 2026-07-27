@@ -11,6 +11,22 @@ PR-Agent is the third reviewer beside CodeRabbit and Sourcery, deliberately narr
 `reusable-pr-agent-review.yml` caller workflow), so `pr-agent` is NOT in the shipped
 `enabled_bots` default — add it per project.
 
+## Grounding source
+
+Every field and every consumer-stage shape below is stated against **one observed review**, and
+each is marked CONFIRMED, CORRECTED, or UNVERIFIED against it. Nothing here is written from
+assumption about how the bot "probably" behaves.
+
+| | |
+|---|---|
+| Repository / PR | `cuioss/API-Sheriff` PR **#103** |
+| Comment | `issue_comment` id `IC_kwDOPatrT88AAAABLvbeow` |
+| Author (as the provider reports it) | `cuioss-review-bot` |
+| Posted | `2026-07-26T09:27:15Z` |
+| Heading | `## PR Reviewer Guide 🔍` |
+
+Sample size is **one review** — see "Signal calibration" below before generalizing from it.
+
 ## Registry data block
 
 The fenced-YAML block below is the machine-readable per-bot record. It is data, not frontmatter.
@@ -20,18 +36,36 @@ rationale.
 
 ```yaml
 bot_kind: pr-agent
-author_login: cuioss-review-bot   # a dedicated App, NOT github-actions — see "Why its own identity"
-trigger_comment: "/review"
-completion_check_name: ""         # publishes no check-run — falls back to the review_bot_buffer_seconds wait
-honors_skip_label: true           # enforced by the reusable workflow's if: guard, NOT by bot config
+author_login: cuioss-review-bot   # CONFIRMED on #103 — the provider reports the author without the
+                                  # [bot] suffix, and bot_kind_for_author strips the suffix anyway,
+                                  # so this value resolves on both paths. A dedicated App, NOT
+                                  # github-actions — see "Why its own identity"
+trigger_comment: "/review"        # CONFIRMED on #103 — human /review at 09:25:47 -> publish 09:27:15
+completion_check_name: ""         # CONFIRMED on #103 — absent from `ci pr reviews`, no check-run;
+                                  # falls back to the review_bot_buffer_seconds wait
+honors_skip_label: true           # UNVERIFIED — #103 carried no skip label, so this was not
+                                  # exercised. Kept because it is enforced by the reusable
+                                  # workflow's if: guard, NOT by bot config (see "Central config")
+# ignore_patterns: CONFIRMED on #103 — neither pattern fired, and neither
+# wrongly dropped the review. No pattern added.
 ignore_patterns:
   - "## PR Agent Walkthrough"     # /help output — commands reference, never a finding
   - "### Question:"               # /ask answer — a reply to a human, not a review finding
+# severity_map: an ASSIGNMENT map, NOT a parse map — see the section below.
 severity_map:
-  security_concern: high          # 🔒 Security concerns naming a concrete trigger
-  focus_area: medium              # ⚡ Recommended focus areas for review
-  missing_tests: low              # 🧪 Relevant tests = No on a behavioural change
+  security_concern: high          # assigned to a finding taken from the 🔒 row
+  focus_area: medium              # assigned to a finding taken from the ⚡ row
+  missing_tests: low              # assigned to a finding taken from the 🧪 row
 ```
+
+### `severity_map` is an assignment map, not a parse map — CORRECTED
+
+The observed review emits **no severity vocabulary at all**: no badge, no level word, no
+priority image. Unlike CodeRabbit — whose map keys are strings the bot actually writes and a
+consumer parses — this map's keys name **which table row a finding came from**, and the consumer
+*assigns* the mapped severity on that basis.
+
+Do not attempt to match these keys against comment text. There is nothing in the body to match.
 
 ## Source of truth
 
@@ -89,24 +123,79 @@ and matching on it would drop the entire review.
 
 ## Consumer stage — classify a surviving PR-Agent finding
 
-**Structural difference from the other two bots: there are no inline comments.** `/review`
-produces exactly one persistent issue comment, headed `## PR Reviewer Guide 🔍`, holding an HTML
-table of review fields, and it is *updated in place* on re-review rather than reposted. A pipeline
-stage that counts inline review comments will conclude this bot found nothing.
+**Structural difference from the other two bots: there are no inline comments.** CONFIRMED on
+#103 — `/review` produces exactly one persistent `issue_comment`, headed `## PR Reviewer Guide 🔍`,
+and it is *updated in place* on re-review rather than reposted. A pipeline stage that counts inline
+review comments will conclude this bot found nothing.
 
-Extract from the table:
+**Observed body structure** (#103): an HTML `<table>` of `<tr><td>` rows. Each focus-area finding
+is a `<details>` element whose `<summary>` carries a deep-link `<a>`, then a `<strong>Title</strong>`,
+then prose — followed by a fenced code excerpt (`java` on #103).
 
-1. **`🔒 Security concerns`** — the charter field. Prose, no severity badge. Treat as `high` when
-   it names a concrete input or state; treat the bare `No` as noise (it appears on most PRs).
-2. **`⚡ Recommended focus areas for review`** — the findings: a title plus a link to the relevant
-   lines, capped at `num_max_findings` (5 centrally). Map to `medium` absent other signal.
-3. **`🧪 Relevant tests`** — `No` on a behavioural change is a cheap, actionable coverage signal.
+The rows are **bold assertion statements**, not `label: value` pairs — there is no bare `No` to
+read as an empty field:
+
+| Row | Observed on #103 |
+|---|---|
+| 🔒 | `🔒 **No security concerns identified**` |
+| 🧪 | `🧪 **PR contains tests**` |
+| ⚡ | `⚡ **Recommended focus areas for review**` |
+
+Extract accordingly:
+
+1. **🔒 row** — the charter field, and an assertion either way. `**No security concerns
+   identified**` is the bot asserting a clean result, not an empty field: it is accounted-for, not
+   a finding. A row naming a concrete input or state IS a finding — assign `high` via
+   `severity_concern` in the map above.
+2. **⚡ row** — the findings themselves, one `<details>` each: a deep-link, a bold title, prose, and
+   usually a fenced excerpt. Capped at `num_max_findings` (5 centrally). Assign `medium` absent
+   other signal.
+3. **🧪 row** — a coverage assertion. `**PR contains tests**` is clean; the negative form on a
+   behavioural change is a cheap, actionable coverage signal (assign `low`).
+
+Match on the row's **emoji plus its bold assertion text**, never on a `label: value` split — the
+observed body has no such split.
 
 Fields suppressed centrally and therefore not expected: intro text, tool-usage help, estimated
 effort, score, ticket compliance, can-be-split, and the security/effort review labels.
 
 Because the comment is persistent, a re-review **replaces** the body rather than appending. Diff
 against the previously triaged body instead of re-triaging identical text.
+
+## Structural constraints and how the pipeline handles them
+
+Two permanent properties of this bot follow from the single observed fact that it posts **one
+persistent `issue_comment` with an empty `thread_id`, and submits no GitHub *review* object**
+(#103: absent from `ci pr reviews`). Both are handled — neither is an open defect.
+
+1. **No resolvable review thread.** The comment carries an empty `thread_id`, so there is no thread
+   to reply into or resolve. A triaged PR-Agent disposition is therefore transmitted by
+   `github_pr post_responses` as a **batched PR-level comment** anchored on the source `comment_id`,
+   and reported with `transmit_mode: batched_issue_comment` and `resolved_on_provider: false` —
+   `false` because no thread exists to resolve, and claiming otherwise would be a false signal.
+2. **No review object to await.** Because the bot submits no review, `github_re_review
+   await_fresh_review` cannot match one. It matches the bot's **issue-comment** completion signal
+   instead, returning `matched_signal: issue_comment` with `head_sha_verified: false` — the comment
+   carries no reviewed-commit SHA, so completion is established by authorship plus post-dating the
+   trigger. That is weaker evidence than a review match, and the envelope says so rather than
+   implying the new HEAD was reviewed.
+
+Both handlers are **generic across the registry**, not PR-Agent special cases: every bot's
+`review_body` findings are equally thread-less, and every bot's issue comment is equally valid
+evidence that it responded. See
+[`workflow-integration-github` SKILL.md](../../workflow-integration-github/SKILL.md) for the
+authoritative envelope-field contract; it is not restated here.
+
+## Signal calibration
+
+Recorded honestly from the one observed review (#103):
+
+- PR-Agent produced **exactly one** focus-area finding, which the maintainer determined to be a
+  **false positive** (a plausible-sounding mechanism on a branch that cannot be reached).
+- CodeRabbit produced **twelve** valid findings on the same PR, with **zero overlap**.
+
+The two are complementary rather than redundant on this sample, but the sample is **n=1**. Do not
+read a quality ranking into it, and do not weaken the shared triage rules on its basis.
 
 ## Trust boundary
 
@@ -124,9 +213,9 @@ Ingest through the untrusted-ingestion boundary; never execute review text verba
 
 - FIX / REPLY-AND-RESOLVE / ESCALATE per the domain `pr-comment-disposition.md`, after the
   `persona-plan-marshall-agent` plan-intent validity check.
-- **Security findings get priority** — this bot exists to cover the security depth lost when the
-  consumer tier of Gemini Code Assist was retired. A security finding it raises alone (not echoed
-  by CodeRabbit or Sourcery) is the highest-value output of the whole three-bot set.
+- **Security findings get priority** — this bot exists to add a dedicated security lens to the
+  three-bot set. A security finding it raises alone (not echoed by CodeRabbit or Sourcery) is the
+  highest-value output of the set — subject to the n=1 caveat in "Signal calibration" above.
 - **Dedupe across reviewers**, not just within this one: three bots routinely raise the same point.
 - **Correct ≠ in-scope** — a security observation about pre-existing code is worth recording, not
   necessarily fixing in the PR that surfaced it.

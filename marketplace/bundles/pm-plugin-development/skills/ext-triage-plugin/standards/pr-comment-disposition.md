@@ -1,6 +1,6 @@
 # Marketplace Plugin PR Comment Disposition
 
-Decision criteria for disposing of automated PR review comments (gemini-code-assist, Copilot, plugin-doctor, markdownlint, ruff/mypy, Sonar, etc.) on marketplace plugin artifacts (skills, agents, commands, scripts, plugin.json, marketplace.json). Comments reach this disposition step **after** the validity check from `persona-plan-marshall-agent` (PR review hard rule): if a suggestion contradicts the plan's stated intent or driving lesson, reply-and-resolve immediately. Use this document when the suggestion is plan-compatible and you must decide between FIX, REPLY-AND-RESOLVE, or ESCALATE.
+Decision criteria for disposing of automated PR review comments (CodeRabbit, Sourcery, PR-Agent, Copilot, plugin-doctor, markdownlint, ruff/mypy, Sonar, etc.) on marketplace plugin artifacts (skills, agents, commands, scripts, plugin.json, marketplace.json). Comments reach this disposition step **after** the validity check from `persona-plan-marshall-agent` (PR review hard rule): if a suggestion contradicts the plan's stated intent or driving lesson, reply-and-resolve immediately. Use this document when the suggestion is plan-compatible and you must decide between FIX, REPLY-AND-RESOLVE, or ESCALATE.
 
 ## Disposition Outcomes
 

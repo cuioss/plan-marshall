@@ -10,7 +10,7 @@ mode: workflow
 GitHub provider for the findings-pipeline `pr-comment` producer. The provider surface is exactly THREE pure, zero-LLM verbs — no triage judgment lives here:
 
 - **`fetch_findings`** — fetch PR review comments, apply the pre-filter (`comment-patterns.json`), and file one `pr-comment` finding per surviving comment via `manage-findings add`. The untrusted comment body is quarantined under `raw_input.{body}` (never embedded raw in the top-level `detail`); the batched `manage-findings ingest` pass promotes it to top-level only after `validate_struct`.
-- **`post_responses`** — apply already-decided triage dispositions back to the PR (a thread-reply carrying the `resolution_detail`, then a resolve-thread), keyed by each finding's own `hash_id`.
+- **`post_responses`** — apply already-decided triage dispositions back to the PR, keyed by each finding's own `hash_id`, via a three-way transmit: thread-reply-then-resolve for a thread-bearing finding, ONE batched PR-level comment for the thread-less ones, and `skipped` only when there is genuinely nothing to say.
 - **`bot_completion`** — report a review bot's registry `completion_check_name` check-run state (`{status, in_progress, completed}`) for the PR HEAD, so the `automatic-review` completion-aware poll can wait for a slow bot to finish before fetching; a bot with no completion check-run reports `no_check_name` and the caller falls back to the `review_bot_buffer_seconds` wait.
 
 All three verbs FAIL LOUD when GitHub is not configured (a typed `unconfigured` status, never a silent no-op). Uses the `gh` CLI for all GitHub operations.
@@ -113,7 +113,7 @@ This skill is consumed by:
 | `thread-reply --thread-id` | Comment's `thread_id` field | GraphQL node ID | `PRRT_kwDO...` |
 | `resolve-thread --thread-id` | Comment's `thread_id` field | GraphQL node ID | `PRRT_kwDO...` |
 
-Both operations take the same `PRRT_` thread ID — pass the comment's `thread_id` field for either. The comment's `id` field (format `PRRC_...`) is never valid for `thread-reply` or `resolve-thread`. `post_responses` reads each finding's `thread_id` from its own `detail` block, keyed by `hash_id` — never a positional pairing.
+Both operations take the same `PRRT_` thread ID — pass the comment's `thread_id` field for either. The comment's `id` field (format `PRRC_...`) is never valid for `thread-reply` or `resolve-thread`. `post_responses` reads each finding's `thread_id` from its own `detail` block, keyed by `hash_id` — never a positional pairing. A finding whose `thread_id` is empty has no thread to reply into; its disposition goes out on the batched PR-comment path instead (see Workflow 2 step 4).
 
 **NEVER use numeric IDs** — GitHub GraphQL requires global node IDs.
 
@@ -136,7 +136,17 @@ Both operations take the same `PRRT_` thread ID — pass the comment's `thread_i
    ```bash
    python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr post_responses --pr-number {pr} --plan-id {plan_id}
    ```
-   For each terminal-disposition finding carrying a `thread_id` and `resolution_detail`, `post_responses` posts the `resolution_detail` as a thread-reply then resolves the thread. Findings without a `thread_id` or `resolution_detail` are skipped, never guessed at.
+   `post_responses` transmits every terminal-disposition finding through a three-way branch — no decision is lost and none is guessed at:
+
+   | Finding shape | Transmit | Recorded as |
+   |---------------|----------|-------------|
+   | no `resolution_detail` | nothing — there is genuinely nothing to say | `skipped[]`, reason `no_resolution_detail` |
+   | `thread_id` present | thread-reply carrying the `resolution_detail`, then resolve-thread | `responded[]`, `transmit_mode: thread_reply`, `resolved_on_provider: true` |
+   | `thread_id` empty, `resolution_detail` present | ONE batched PR-level comment for ALL such findings in the run, each section anchored on its source `comment_id` | `responded[]`, `transmit_mode: batched_issue_comment`, `resolved_on_provider: false` |
+
+   Batching is deliberate: `review_body` findings from every bot are thread-less, so a per-finding comment would spam the PR. `resolved_on_provider: false` on that path is truthful — an issue comment has no resolvable thread, and reporting `true` would be a false signal.
+
+   Any disposition that had something to say but could not be delivered — a failed thread-reply, a failed resolve-thread, or a failed batched post (which untransmits the WHOLE batch) — lands in `untransmitted[]` with a reason, drives `count_untransmitted`, and sets the envelope `status` to `partial`. The envelope reports `success` only when `count_untransmitted` is 0; it is never unconditionally `success`.
 
 ### Workflow 3: Re-Review After a HEAD-Advancing Branch Operation
 
@@ -149,24 +159,31 @@ The strategies differ **only** in the trigger comment `request_fresh_review` pos
 | `bot_kind` | `request_fresh_review` | Trigger time |
 |------------|------------------------|--------------|
 | `coderabbit` | Posts `@coderabbitai review`. CodeRabbit's incremental auto-review on push is not a reliable trigger for the new HEAD (it can be debounced or skipped on a force-push), so the explicit comment is the trigger that guarantees a fresh review lands. | The comment-post time. |
-| `gemini` | Posts `/gemini review` (Gemini does **not** auto-review on push). | The comment-post time. |
 | `sourcery` | Posts `@sourcery-ai review`. | The comment-post time. |
+| `pr-agent` | Posts `/review` (PR-Agent does **not** auto-review on push). | The comment-post time. |
 
-`await_fresh_review` is **identical** for every bot: poll the PR's reviews until one is found whose reviewed commit SHA equals `--head-sha` AND whose `submittedAt` strictly post-dates the trigger time.
+`await_fresh_review` is **identical** for every bot and is satisfied by **either** of two completion signals, checked in order of evidential strength:
+
+| Signal | Match condition | Envelope |
+|--------|-----------------|----------|
+| **review** (preferred) | a review whose reviewed commit SHA equals `--head-sha` AND whose `submittedAt` strictly post-dates the trigger time | `matched_signal: review`, `matched_review: {…}`, `head_sha_verified: true` |
+| **issue comment** (fallback) | a comment whose author resolves to the awaited `bot_kind`, whose later of `updated_at` / `created_at` strictly post-dates the trigger time, and which is not a rate-limit / service notice | `matched_signal: issue_comment`, `matched_comment: {…}`, `head_sha_verified: false` |
+
+`head_sha_verified: false` on the comment path is load-bearing: an issue comment carries no reviewed-commit SHA, so the match proves the bot **responded**, not that it reviewed the new HEAD. The caller learns the strength of the evidence, not just the fact of a match. The comment path uses the LATER of `updated_at` / `created_at` so a bot that edits ONE persistent comment in place still registers as fresh activity. No bot is named in code — both matchers are generic across the registry.
 
 **Steps:**
 
 1. **Invoke the registry** for the new HEAD:
 
    ```bash
-   python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_re_review re-review --pr-number {pr} --bot-kind {coderabbit|gemini|sourcery} --head-sha {new HEAD} --push-time {ISO8601 push time} [--timeout {seconds}] --plan-id {plan_id}
+   python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_re_review re-review --pr-number {pr} --bot-kind {coderabbit|sourcery|pr-agent} --head-sha {new HEAD} --push-time {ISO8601 push time} [--timeout {seconds}] --plan-id {plan_id}
    ```
 
-   The subcommand resolves the strategy by `bot_kind`, runs `request_fresh_review` (posts `@coderabbitai review` for CodeRabbit; posts `/gemini review` for Gemini; posts `@sourcery-ai review` for Sourcery — each uses the comment-post time as the trigger time), then awaits the fresh review. The await budget is configurable via `--timeout` (default `DEFAULT_CI_TIMEOUT`); the phase-6-finalize trigger sites pass their `re_review_await_timeout_seconds` step-param value. It emits a TOON envelope with `matched: true|false` AND `timed_out: true|false` plus the matched review's metadata.
+   The subcommand resolves the strategy by `bot_kind`, runs `request_fresh_review` (posts each bot's registry `trigger_comment` — `@coderabbitai review`, `@sourcery-ai review`, `/review` — each using the comment-post time as the trigger time), then awaits either completion signal. The await budget is configurable via `--timeout` (default `DEFAULT_CI_TIMEOUT`); the phase-6-finalize trigger sites pass their `re_review_await_timeout_seconds` step-param value. It emits a TOON envelope with `matched: true|false`, `timed_out: true|false`, `matched_signal` (`review` | `issue_comment`, empty when unmatched), the matched `matched_review` / `matched_comment` record, and `head_sha_verified`.
 
 2. **Consume the match outcome.** On `matched: true`, re-run `fetch_findings` to file the fresh review's comments, then re-run the consolidated ingest → triage → respond pass (Workflow 2). On `matched: false` / `timed_out: true`, the await budget expired with no fresh review — the consumer decides how to handle the timeout. This registry surfaces `timed_out` and does NOT decide policy itself; the timeout-handling responsibility (the `re_review_on_timeout` ask/defer/proceed branches) lives in the two trigger docs: trigger A in [`phase-6-finalize/standards/branch-cleanup.md`](../phase-6-finalize/standards/branch-cleanup.md) § "On re-review timeout (trigger A)" and trigger B in [`automatic-review`](../automatic-review/SKILL.md) § "On re-review timeout (trigger B)".
 
-**Registry extension pattern:** to support a new `bot_kind`, (1) add the value to `manage-findings/_findings_core.BOT_KINDS`, then (2) add a strategy subclass in `github_re_review.py` overriding only `request_fresh_review`. `await_fresh_review` is shared on the base class and is **not** re-implemented per bot.
+**Registry extension pattern:** to support a new `bot_kind`, add its `automatic-review/standards/{bot_kind}.md` registry doc and nothing else. `_findings_core.BOT_KINDS`, the login→`bot_kind` map, the `--bot-kind` `choices=` surface, and the strategy instance all DERIVE from that data. There is exactly ONE generic strategy class parameterized by the doc's `trigger_comment` — no per-bot subclass, and neither `request_fresh_review` nor `await_fresh_review` is re-implemented per bot.
 
 ## Comment Classification
 
@@ -449,7 +466,7 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr bot_completion \
-  --pr-number N --bot-kind {coderabbit|gemini|sourcery}
+  --pr-number N --bot-kind {coderabbit|sourcery|pr-agent}
 ```
 
 Pure provider read — reports the bot's registry `completion_check_name` check-run state as `{status, in_progress, completed}` for the PR HEAD. A bot with an empty `completion_check_name` reports status `no_check_name` (the caller falls back to the `review_bot_buffer_seconds` wait); the `automatic-review` completion-aware poll consumes this verb.
@@ -458,7 +475,7 @@ Pure provider read — reports the bot's registry `completion_check_name` check-
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_re_review re-review \
-  --pr-number N --bot-kind {coderabbit|gemini|sourcery} --head-sha SHA --push-time ISO8601 \
+  --pr-number N --bot-kind {coderabbit|sourcery|pr-agent} --head-sha SHA --push-time ISO8601 \
   [--timeout SECONDS] [--plan-id PLAN_ID]
 ```
 

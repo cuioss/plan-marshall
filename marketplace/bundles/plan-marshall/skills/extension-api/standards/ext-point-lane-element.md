@@ -111,7 +111,7 @@ carries only the project / meta overrides.
 ### Adversarial infra elements — the `ask` seed and the compose-time drop-when-no-provider safety net
 
 Two `adversarial` finalize elements depend on external infrastructure a project may or may not
-have: **`automatic-review`** (PR-review bots — CodeRabbit / Gemini / …) needs a CI provider, and
+have: **`automatic-review`** (PR-review bots — CodeRabbit / Sourcery / …) needs a CI provider, and
 **`sonar-roundtrip`** needs a Sonar provider. Both seed with a per-element **`lane: ask`** override
 rather than a concrete tier, so their inclusion is answered per-project rather than assumed.
 

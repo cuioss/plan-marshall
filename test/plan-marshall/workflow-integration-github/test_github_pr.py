@@ -36,9 +36,10 @@ query_findings = _findings_core.query_findings
 
 
 # Mixed-bot, mixed-thread comment set: coderabbit (thread-bearing), sourcery
-# (thread_id-less review_body), gemini (thread-bearing), and a human
-# (thread_id-less issue comment). Bodies are substantive so none is dropped by
-# the ``_is_obvious_noise`` pre-filter.
+# (thread_id-less review_body), pr-agent (thread-bearing — a third registered
+# bot_kind, which is all this fixture needs), and a human (thread_id-less issue
+# comment). Bodies are substantive so none is dropped by the
+# ``_is_obvious_noise`` pre-filter.
 _COMMENTS = [
     {
         'id': 'c1',
@@ -60,7 +61,7 @@ _COMMENTS = [
     },
     {
         'id': 'c3',
-        'author': 'gemini-code-assist',
+        'author': 'cuioss-review-bot',
         'thread_id': 'PRRT_3',
         'kind': 'inline',
         'body': 'This loop can be simplified into a comprehension.',
@@ -104,7 +105,7 @@ def _run_fetch(pr_number, plan_id):
 def test_second_fetch_dedupes_all_bot_kinds(plan_context, monkeypatch):
     """A re-fetch of an already-staged PR stores zero new findings for every bot kind.
 
-    Thread-bearing (coderabbit/gemini) AND thread_id-less (sourcery/human)
+    Thread-bearing (coderabbit/pr-agent) AND thread_id-less (sourcery/human)
     comments are all deduped on ``(bot_kind, comment_id)``, and the deduped
     comments — legitimate non-stores — do not trip the producer-mismatch Q-Gate.
     """
@@ -187,11 +188,11 @@ def _run_fetch_enabled(pr_number, plan_id, enabled_bots):
 
 
 def test_enabled_bots_filters_disabled_bot_comments(plan_context, monkeypatch):
-    """``--enabled-bots "coderabbit"`` files no sourcery/gemini findings.
+    """``--enabled-bots "coderabbit"`` files no sourcery/pr-agent findings.
 
     Over the mixed-bot comment set, only the coderabbit comment (enabled) and
     the human comment (``bot_kind`` None, never filtered — the gate is
-    bot-scoped) are stored; the sourcery (``review_body``) and gemini
+    bot-scoped) are stored; the sourcery (``review_body``) and pr-agent
     (``inline``) comments are skipped as disabled bots. The disabled skips are
     legitimate non-stores, so no producer-mismatch Q-Gate fires.
     """
@@ -200,7 +201,7 @@ def test_enabled_bots_filters_disabled_bot_comments(plan_context, monkeypatch):
 
     result = _run_fetch_enabled(101, plan_id, 'coderabbit')
     assert result['status'] == 'success'
-    # coderabbit (c1) + human (c4) survive; sourcery (c2) + gemini (c3) disabled.
+    # coderabbit (c1) + human (c4) survive; sourcery (c2) + pr-agent (c3) disabled.
     assert result['count_stored'] == 2
     assert result['count_skipped_disabled'] == 2
     assert result['producer_mismatch_hash_id'] is None
@@ -208,23 +209,23 @@ def test_enabled_bots_filters_disabled_bot_comments(plan_context, monkeypatch):
     stored = query_findings(plan_id, finding_type='pr-comment')['findings']
     bot_kinds = {f.get('bot_kind') for f in stored}
     assert 'sourcery' not in bot_kinds
-    assert 'gemini' not in bot_kinds
+    assert 'pr-agent' not in bot_kinds
     assert 'coderabbit' in bot_kinds
 
 
 def test_enabled_bots_multiple_enabled_pass_through(plan_context, monkeypatch):
     """A comma-joined enabled set passes each named bot; the unnamed one is filtered.
 
-    ``--enabled-bots "coderabbit,gemini"`` keeps coderabbit and gemini but
+    ``--enabled-bots "coderabbit,pr-agent"`` keeps coderabbit and pr-agent but
     filters sourcery, proving the split-at-read set membership rather than a
     single-value match.
     """
     plan_id = 'gh-pr-enabled-bots-multi'
     _patch_provider(monkeypatch, _COMMENTS)
 
-    result = _run_fetch_enabled(103, plan_id, 'coderabbit,gemini')
+    result = _run_fetch_enabled(103, plan_id, 'coderabbit,pr-agent')
     assert result['status'] == 'success'
-    # coderabbit (c1) + gemini (c3) + human (c4) survive; only sourcery (c2) disabled.
+    # coderabbit (c1) + pr-agent (c3) + human (c4) survive; only sourcery (c2) disabled.
     assert result['count_stored'] == 3
     assert result['count_skipped_disabled'] == 1
     assert result['producer_mismatch_hash_id'] is None
@@ -232,7 +233,7 @@ def test_enabled_bots_multiple_enabled_pass_through(plan_context, monkeypatch):
     stored = query_findings(plan_id, finding_type='pr-comment')['findings']
     bot_kinds = {f.get('bot_kind') for f in stored}
     assert 'sourcery' not in bot_kinds
-    assert {'coderabbit', 'gemini'} <= bot_kinds
+    assert {'coderabbit', 'pr-agent'} <= bot_kinds
 
 
 def test_enabled_bots_empty_disables_all_bots(plan_context, monkeypatch):
@@ -572,6 +573,272 @@ def test_fetch_findings_reports_responded_bots_including_all_noise_bot(plan_cont
     # Both bots posted, so both are responded — CodeRabbit despite storing zero;
     # the human author (bot_kind None) is excluded from responded_bots.
     assert result['responded_bots'] == ['coderabbit', 'sourcery']
+
+
+# =============================================================================
+# Unknown-bot contract — an unregistered login is FILED, never dropped
+# =============================================================================
+
+
+def test_unregistered_bot_login_is_filed_unattributed(plan_context, monkeypatch):
+    """A comment from a login absent from the registry is filed, never dropped.
+
+    The pipeline is fail-open by construction: ``bot_kind_for_author`` returns
+    ``None`` for an unregistered login, so the comment degrades to the
+    human-author path and is filed as a ``pr-comment`` finding with an empty
+    ``bot_kind``. Its feedback still reaches triage, unattributed.
+
+    This is the retirement-safety contract: a consumer project that still lists a
+    retired bot, or a bot renamed upstream, loses ATTRIBUTION — it does not lose
+    its review.
+    """
+    plan_id = 'gh-pr-unregistered-bot-filed'
+    comments = [
+        {
+            'id': 'retired-1',
+            'author': 'some-retired-bot',
+            'thread_id': 'PRRT_R',
+            'kind': 'inline',
+            'body': 'This comparison uses == on floats; use math.isclose with a tolerance.',
+            'path': 'src/r.py',
+            'line': 4,
+            'resolved': False,
+        },
+    ]
+    _patch_provider(monkeypatch, comments)
+
+    result = _run_fetch(107, plan_id)
+    assert result['status'] == 'success'
+    assert result['count_stored'] == 1
+
+    stored = query_findings(plan_id, finding_type='pr-comment')['findings']
+    assert len(stored) == 1
+    # Filed, but unattributed — no bot_kind was resolvable.
+    assert stored[0].get('bot_kind') in (None, '')
+    # The unregistered author is NOT counted as a responded bot.
+    assert result['responded_bots'] == []
+
+
+def test_unregistered_bot_login_survives_the_enabled_bots_gate(plan_context, monkeypatch):
+    """``--enabled-bots`` does NOT suppress an unregistered login's comment.
+
+    The producer gate reads ``enabled_bots_set is not None and bot_kind and ...``,
+    so a falsy ``bot_kind`` short-circuits it. Supplying a narrow enabled set that
+    names a DIFFERENT bot therefore still files the unregistered comment — the
+    gate is bot-scoped, and an unattributable comment is treated as human input.
+    """
+    plan_id = 'gh-pr-unregistered-bot-enabled-gate'
+    comments = [
+        {
+            'id': 'retired-2',
+            'author': 'some-retired-bot',
+            'thread_id': 'PRRT_R2',
+            'kind': 'inline',
+            'body': 'The retry loop has no ceiling; a persistent 500 will spin forever.',
+            'path': 'src/r.py',
+            'line': 8,
+            'resolved': False,
+        },
+    ]
+    _patch_provider(monkeypatch, comments)
+
+    result = _run_fetch_enabled(108, plan_id, 'coderabbit')
+    assert result['status'] == 'success'
+    assert result['count_stored'] == 1
+    assert result['count_skipped_disabled'] == 0
+
+    stored = query_findings(plan_id, finding_type='pr-comment')['findings']
+    assert len(stored) == 1
+    assert stored[0].get('bot_kind') in (None, '')
+
+
+# =============================================================================
+# post_responses — three-way transmit disposition
+# =============================================================================
+
+
+def _stage_respondable(plan_id, *, comment_id, thread_id, resolution_detail):
+    """Add a pr-comment finding already resolved by triage; return its ``hash_id``.
+
+    ``resolution_detail`` of ``None`` stages a finding whose disposition carries
+    no body — the ``skipped`` branch's input.
+    """
+    detail = f'comment_id: {comment_id}\nthread_id: {thread_id}\nkind: review_body'
+    add_result = _findings_core.add_finding(plan_id, 'pr-comment', f'Finding {comment_id}', detail)
+    hash_id = add_result['hash_id']
+    _findings_core.resolve_finding(plan_id, hash_id, 'accepted', detail=resolution_detail)
+    return hash_id
+
+
+def _run_post_responses(pr_number, plan_id):
+    args = argparse.Namespace(pr_number=pr_number, plan_id=plan_id)
+    return github_pr.cmd_post_responses(args)
+
+
+class _PostSpy:
+    """Records every ``post_pr_comment`` call and returns a fixed outcome."""
+
+    def __init__(self, *, succeed=True):
+        self.calls = []
+        self._succeed = succeed
+
+    def __call__(self, pr_number, body):
+        self.calls.append((pr_number, body))
+        if self._succeed:
+            return {'status': 'success', 'operation': 'post_pr_comment', 'pr_number': pr_number}
+        return {'status': 'error', 'operation': 'post_pr_comment', 'detail': 'gh rejected the comment'}
+
+
+def test_post_responses_batches_thread_less_dispositions_into_one_comment(plan_context, monkeypatch):
+    """Two thread-less dispositions are transmitted by exactly ONE batched PR comment.
+
+    Batching is the contract, not an optimization: ``review_body`` findings from
+    every bot are thread-less, so a per-finding comment would spam the PR. The
+    single posted body must carry BOTH source ``comment_id``s so each disposition
+    stays traceable to the comment it answers.
+    """
+    plan_id = 'gh-pr-respond-batched'
+    hash_a = _stage_respondable(plan_id, comment_id='ca', thread_id='', resolution_detail='Accepted: covered by TASK-3.')
+    hash_b = _stage_respondable(plan_id, comment_id='cb', thread_id='', resolution_detail='Accepted: out of scope here.')
+
+    monkeypatch.setattr(github_pr._github, 'check_auth', lambda: (True, ''))
+    spy = _PostSpy()
+    monkeypatch.setattr(github_pr._github, 'post_pr_comment', spy)
+
+    result = _run_post_responses(300, plan_id)
+
+    # Exactly ONE post for two thread-less dispositions.
+    assert len(spy.calls) == 1
+    posted_pr, posted_body = spy.calls[0]
+    assert posted_pr == 300
+    assert 'ca' in posted_body
+    assert 'cb' in posted_body
+    assert 'Accepted: covered by TASK-3.' in posted_body
+    assert 'Accepted: out of scope here.' in posted_body
+
+    assert result['status'] == 'success'
+    assert result['count_untransmitted'] == 0
+    assert result['count_responded'] == 2
+    by_hash = {entry['hash_id']: entry for entry in result['responded']}
+    for hash_id in (hash_a, hash_b):
+        assert by_hash[hash_id]['transmit_mode'] == 'batched_issue_comment'
+        # No thread exists on this path — claiming a resolve would be a false signal.
+        assert by_hash[hash_id]['resolved_on_provider'] is False
+
+
+def test_post_responses_missing_resolution_detail_is_skipped_not_untransmitted(plan_context, monkeypatch):
+    """A disposition with no body lands in ``skipped``, never in ``untransmitted``.
+
+    The two buckets mean different things and must not be conflated: ``skipped``
+    is "nothing to say" (honest), ``untransmitted`` is "had something to say and
+    could not deliver it" (a real failure).
+    """
+    plan_id = 'gh-pr-respond-skipped'
+    hash_id = _stage_respondable(plan_id, comment_id='cs', thread_id='', resolution_detail=None)
+
+    monkeypatch.setattr(github_pr._github, 'check_auth', lambda: (True, ''))
+    spy = _PostSpy()
+    monkeypatch.setattr(github_pr._github, 'post_pr_comment', spy)
+
+    result = _run_post_responses(301, plan_id)
+
+    # Nothing to transmit, so nothing is posted.
+    assert spy.calls == []
+    assert result['status'] == 'success'
+    assert result['count_skipped'] == 1
+    assert result['count_untransmitted'] == 0
+    assert result['skipped'] == [{'hash_id': hash_id, 'reason': 'no_resolution_detail'}]
+
+
+def test_post_responses_batch_post_failure_untransmits_whole_batch(plan_context, monkeypatch):
+    """When the single batched post fails, EVERY finding in it is reported untransmitted.
+
+    This is the regression guard against a silently-dropped disposition: the
+    envelope must report ``partial``, never an unconditional ``success``, and each
+    lost disposition must be enumerated with a reason.
+    """
+    plan_id = 'gh-pr-respond-batch-fails'
+    hash_a = _stage_respondable(plan_id, comment_id='fa', thread_id='', resolution_detail='Accepted: noted.')
+    hash_b = _stage_respondable(plan_id, comment_id='fb', thread_id='', resolution_detail='Accepted: also noted.')
+
+    monkeypatch.setattr(github_pr._github, 'check_auth', lambda: (True, ''))
+    spy = _PostSpy(succeed=False)
+    monkeypatch.setattr(github_pr._github, 'post_pr_comment', spy)
+
+    result = _run_post_responses(302, plan_id)
+
+    assert len(spy.calls) == 1
+    assert result['status'] == 'partial'
+    assert result['count_untransmitted'] == 2
+    assert result['count_responded'] == 0
+    untransmitted_hashes = {entry['hash_id'] for entry in result['untransmitted']}
+    assert untransmitted_hashes == {hash_a, hash_b}
+    for entry in result['untransmitted']:
+        assert 'batched-comment post failed' in entry['reason']
+
+
+def test_post_responses_all_thread_bearing_keeps_reply_then_resolve_sequence(plan_context, monkeypatch):
+    """A thread-bearing finding still gets thread-reply THEN resolve, and reports success.
+
+    The unchanged path must stay unchanged: two GraphQL mutations in that order,
+    ``transmit_mode: thread_reply``, ``resolved_on_provider: true``, and no
+    batched PR comment at all.
+    """
+    plan_id = 'gh-pr-respond-threaded'
+    hash_id = _stage_respondable(
+        plan_id, comment_id='ct', thread_id='PRRT_T', resolution_detail='Fixed in TASK-4.'
+    )
+
+    monkeypatch.setattr(github_pr._github, 'check_auth', lambda: (True, ''))
+    spy = _PostSpy()
+    monkeypatch.setattr(github_pr._github, 'post_pr_comment', spy)
+
+    mutations = []
+
+    def _run_graphql(query, variables):
+        mutations.append((query, variables))
+        return (0, {}, '')
+
+    monkeypatch.setattr(github_pr._github, 'run_graphql', _run_graphql)
+
+    result = _run_post_responses(303, plan_id)
+
+    # No batched comment — the thread path handled it.
+    assert spy.calls == []
+    assert len(mutations) == 2
+    assert mutations[0][0] == github_pr.THREAD_REPLY_MUTATION
+    assert mutations[0][1] == {'threadId': 'PRRT_T', 'body': 'Fixed in TASK-4.'}
+    assert mutations[1][0] == github_pr.RESOLVE_THREAD_MUTATION
+    assert mutations[1][1] == {'threadId': 'PRRT_T'}
+
+    assert result['status'] == 'success'
+    assert result['count_untransmitted'] == 0
+    assert result['responded'] == [
+        {
+            'hash_id': hash_id,
+            'thread_id': 'PRRT_T',
+            'transmit_mode': 'thread_reply',
+            'resolved_on_provider': True,
+        }
+    ]
+
+
+def test_post_responses_thread_reply_failure_is_untransmitted(plan_context, monkeypatch):
+    """A failed thread-reply is an UNTRANSMITTED disposition, not a silent skip."""
+    plan_id = 'gh-pr-respond-thread-fails'
+    hash_id = _stage_respondable(
+        plan_id, comment_id='cf', thread_id='PRRT_F', resolution_detail='Fixed in TASK-5.'
+    )
+
+    monkeypatch.setattr(github_pr._github, 'check_auth', lambda: (True, ''))
+    monkeypatch.setattr(github_pr._github, 'run_graphql', lambda query, variables: (1, None, 'permission denied'))
+
+    result = _run_post_responses(304, plan_id)
+
+    assert result['status'] == 'partial'
+    assert result['count_untransmitted'] == 1
+    assert result['untransmitted'][0]['hash_id'] == hash_id
+    assert 'thread-reply failed' in result['untransmitted'][0]['reason']
 
 
 # =============================================================================

@@ -18,9 +18,9 @@ implements: plan-marshall:extension-api/standards/ext-point-finalize-step
 
 ## Purpose
 
-After a plan finishes, compare the PR's reviewers — the two automated reviewers
-(CodeRabbit `coderabbitai`, Gemini Code Assist `gemini-code-assist`) plus any
-human reviewer — on review quality, reading THIS plan's `pr-comment` findings
+After a plan finishes, compare the PR's reviewers — the three automated reviewers
+(CodeRabbit `coderabbitai`, Sourcery `sourcery-ai`, PR-Agent `cuioss-review-bot`)
+plus any human reviewer — on review quality, reading THIS plan's `pr-comment` findings
 grouped by reviewer. The step is **HYBRID by construction**:
 
 - A **deterministic numbers pass** (the backing `review_retrospective.py`
@@ -65,17 +65,21 @@ this step consumes) and `default:sonar-roundtrip` (40), and **before**
 
 ## Reviewer comment-structure asymmetry
 
-CodeRabbit and Gemini post structurally different comment layers per PR, all under
-one login each, so a naive "every pr-comment finding = one actionable item" count
-over-counts CodeRabbit. The aggregator discriminates on the first-class `kind`
-field:
+The three automated reviewers post structurally different comment layers per PR,
+all under one login each, so a naive "every pr-comment finding = one actionable
+item" count over-counts CodeRabbit. The aggregator discriminates on the
+first-class `kind` field:
 
 - **CodeRabbit** (`coderabbitai`): inline actionable comments (`kind=inline`, each
   wrapping nested `<details>` blocks that are ONE comment); a `review_body` status
   summary ("Actionable comments posted: N") that is META; an `issue_comment`
   walkthrough/poem that is also META.
-- **Gemini** (`gemini-code-assist`): typically a single substantive `review_body`,
-  frequently zero inline comments.
+- **Sourcery** (`sourcery-ai`): inline `<issue_to_address>` comments plus an
+  **Overall Comments** `review_body`; its Reviewer's Guide `issue_comment` is META.
+- **PR-Agent** (`cuioss-review-bot`): no inline comments at all — exactly one
+  persistent `issue_comment` headed `## PR Reviewer Guide 🔍`, updated in place on
+  re-review. Its findings live inside that one record, so a stage that counts
+  inline comments will conclude this bot found nothing.
 
 So `kind=inline` is actionable, a substantive `review_body` is actionable, and
 CodeRabbit's status-summary `review_body` + walkthrough `issue_comment` are

@@ -1,6 +1,6 @@
 # JavaScript / Frontend PR Comment Disposition
 
-Decision criteria for disposing of automated PR review comments (gemini-code-assist, Copilot, Sonar, CodeRabbit, ESLint-bot, Stylelint-bot, etc.) on JavaScript and CSS code. Comments reach this disposition step **after** the validity check from `persona-plan-marshall-agent` (PR review hard rule): if a suggestion contradicts the plan's stated intent or driving lesson, reply-and-resolve immediately. Use this document when the suggestion is plan-compatible and you must decide between FIX, REPLY-AND-RESOLVE, or ESCALATE.
+Decision criteria for disposing of automated PR review comments (CodeRabbit, Sourcery, PR-Agent, Copilot, Sonar, ESLint-bot, Stylelint-bot, etc.) on JavaScript and CSS code. Comments reach this disposition step **after** the validity check from `persona-plan-marshall-agent` (PR review hard rule): if a suggestion contradicts the plan's stated intent or driving lesson, reply-and-resolve immediately. Use this document when the suggestion is plan-compatible and you must decide between FIX, REPLY-AND-RESOLVE, or ESCALATE.
 
 ## Disposition Outcomes
 
@@ -84,7 +84,7 @@ Use `AskUserQuestion` when the comment falls into any row below. Do NOT silently
 | Ambiguity | Why It Needs Escalation |
 |-----------|------------------------|
 | Suggestion changes a public component API (custom-element attribute, exported function signature) without deprecation declared in the plan | Breaking-API decisions require explicit user confirmation per compatibility strategy |
-| Suggestion conflicts between two automated reviewers (ESLint says A, Sonar says B; gemini vs Copilot) | Cannot satisfy both; user must pick a direction |
+| Suggestion conflicts between two automated reviewers (ESLint says A, Sonar says B; CodeRabbit vs Copilot) | Cannot satisfy both; user must pick a direction |
 | Suggestion proposes a security-sensitive change (CSP, sanitization, auth flow) outside this PR's stated scope | Security delta in unrelated code requires explicit go/no-go |
 | Suggestion swaps event delegation strategy or virtual-DOM library on hot-path code | Architectural change; affects bundle size and runtime, needs maintainer call |
 | Suggestion contradicts a project-specific lesson (CUI Quarkus DevUI, NiFi integration) but the lesson is not referenced in the plan | Verify the lesson still applies before accepting or rejecting |

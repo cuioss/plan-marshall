@@ -301,6 +301,7 @@ query($owner: String!, $repo: String!, $pr: Int!) {
           body
           author { login }
           createdAt
+          updatedAt
         }
       }
     }
@@ -314,6 +315,14 @@ def fetch_pr_comments_data(pr_number: int, unresolved_only: bool = False) -> dic
 
     Returns dict with 'status' key ('success' or 'error').
     Importable by other scripts for direct data access without subprocess.
+
+    Every comment record carries ``updated_at`` beside ``created_at`` — the
+    edit timestamp, or an empty string when the provider omits it (review
+    bodies and inline thread comments do not expose one). It is what makes a
+    persistent comment that is EDITED in place — rather than reposted — visible
+    as fresh activity to a consumer comparing against a trigger time; a
+    ``created_at``-only comparison would silently report no new activity from
+    the second edit onward.
     """
     # Check auth
     is_auth, err = check_auth()
@@ -368,6 +377,7 @@ def fetch_pr_comments_data(pr_number: int, unresolved_only: bool = False) -> dic
                         'line': line,
                         'resolved': is_resolved,
                         'created_at': comment.get('createdAt') or '',
+                        'updated_at': comment.get('updatedAt') or '',
                         'thread_id': thread_id,
                     }
                 )
@@ -389,6 +399,7 @@ def fetch_pr_comments_data(pr_number: int, unresolved_only: bool = False) -> dic
                     'line': 0,
                     'resolved': False,
                     'created_at': review.get('submittedAt') or '',
+                    'updated_at': review.get('updatedAt') or '',
                     'thread_id': '',
                 }
             )
@@ -410,6 +421,7 @@ def fetch_pr_comments_data(pr_number: int, unresolved_only: bool = False) -> dic
                     'line': 0,
                     'resolved': False,
                     'created_at': issue_comment.get('createdAt') or '',
+                    'updated_at': issue_comment.get('updatedAt') or '',
                     'thread_id': '',
                 }
             )
@@ -429,6 +441,7 @@ def fetch_pr_comments_data(pr_number: int, unresolved_only: bool = False) -> dic
             'line': c['line'],
             'resolved': c['resolved'],
             'created_at': c['created_at'],
+            'updated_at': c['updated_at'],
         }
         for c in comments
     ]

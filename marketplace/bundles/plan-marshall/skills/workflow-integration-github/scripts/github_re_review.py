@@ -23,9 +23,23 @@ explicit comment is the reliable trigger for the new HEAD — a bot's incrementa
 auto-review on push can be debounced or skipped on a force-push and does not
 auto-fire at all for some bots.
 
-``await_fresh_review`` is identical for every bot: poll the PR's reviews until
-one is found whose reviewed commit SHA matches ``head_sha`` AND whose
-``submittedAt > trigger_time``.
+``await_fresh_review`` is identical for every bot and is satisfied by EITHER of
+two completion signals, checked in that order of strength:
+
+1. A **review** whose reviewed commit SHA matches ``head_sha`` AND whose
+   ``submittedAt > trigger_time``. Preferred, and reported as
+   ``matched_signal: review`` with ``head_sha_verified: true``.
+2. An **issue comment** authored by the awaited ``bot_kind`` whose later of
+   ``updated_at`` / ``created_at`` post-dates ``trigger_time`` and which is not
+   a rate-limit / service notice. Reported as ``matched_signal: issue_comment``
+   with ``head_sha_verified: false`` — a comment carries no reviewed-commit SHA,
+   so it establishes that the bot responded, NOT that it reviewed the new HEAD.
+
+The second signal exists because a bot that posts its review as one persistent
+issue comment and submits no review object could otherwise only ever time out.
+It is generic: no bot is named in code, and every bot's comment is equally valid
+evidence that it responded. The envelope names which signal fired so the caller
+is never misled about the strength of the evidence.
 
 The bot-kind set, the login->bot_kind map, and each trigger comment are all
 DERIVED from the registry (``bot_registry``), whose data source is the per-bot
@@ -47,6 +61,7 @@ from datetime import UTC, datetime
 import bot_registry
 import github_ops as _github
 from _findings_core import BOT_KINDS
+from _github_pr import _is_rate_limit_notice
 from ci_base import (
     DEFAULT_CI_INTERVAL,
     DEFAULT_CI_TIMEOUT,
@@ -123,13 +138,27 @@ class _ReReviewStrategy:
         head_sha: str,
         trigger_time: str,
         *,
+        bot_kind: str | None = None,
         timeout: int = DEFAULT_CI_TIMEOUT,
         interval: int = DEFAULT_CI_INTERVAL,
     ) -> dict:
-        """Poll until a review matches ``head_sha`` and post-dates ``trigger_time``.
+        """Poll until either completion signal for ``bot_kind`` is observed.
 
-        Identical for every bot. Returns a TOON envelope with ``matched`` plus
-        the matched review's metadata when found.
+        Identical for every bot. The review match is checked first and wins when
+        both are present. Returns a TOON envelope carrying ``matched``,
+        ``matched_signal`` (``review`` | ``issue_comment`` | empty when
+        unmatched), the matched record, and ``head_sha_verified`` — ``true``
+        only on the review path.
+
+        Args:
+            pr_number: PR to poll.
+            head_sha: Commit the fresh review must have reviewed (review path).
+            trigger_time: ISO-8601 lower bound both signals must post-date.
+            bot_kind: The awaited bot. Required for the comment path — without
+                it there is no authorship to gate on, so only the review path
+                can match (fail-closed, never "any comment counts").
+            timeout: Poll budget in seconds.
+            interval: Seconds between polls.
         """
         trigger_dt = _parse_iso(trigger_time)
         if trigger_dt is None:
@@ -139,26 +168,45 @@ class _ReReviewStrategy:
             envelope = _github.fetch_pr_reviews_with_commits(pr_number)
             if envelope.get('status') != 'success':
                 return False, {'error': envelope.get('error', 'fetch failed')}
-            return True, envelope
+            comments: list[dict] = []
+            if bot_kind:
+                comment_envelope = _github.fetch_pr_comments_data(int(pr_number))
+                if comment_envelope.get('status') == 'success':
+                    comments = comment_envelope.get('comments') or []
+            return True, {**envelope, 'comments': comments}
+
+        def _resolve(data: dict) -> tuple[str, dict | None]:
+            """Return ``(matched_signal, record)`` for the strongest signal present."""
+            review = self._match_review(data.get('reviews') or [], head_sha, trigger_dt)
+            if review is not None:
+                return 'review', review
+            comment = self._match_bot_comment(data.get('comments') or [], bot_kind, trigger_dt)
+            if comment is not None:
+                return 'issue_comment', comment
+            return '', None
 
         def _is_complete(data: dict) -> bool:
-            return self._match_review(data.get('reviews') or [], head_sha, trigger_dt) is not None
+            return _resolve(data)[1] is not None
 
         poll_result = poll_until(_check, _is_complete, timeout=timeout, interval=interval)
 
         if poll_result.get('error'):
             return make_error('await_fresh_review', poll_result['error'])
 
-        reviews = (poll_result.get('last_data') or {}).get('reviews') or []
-        matched = self._match_review(reviews, head_sha, trigger_dt)
+        matched_signal, record = _resolve(poll_result.get('last_data') or {})
         return {
             'status': 'success',
             'operation': 'await_fresh_review',
             'pr_number': pr_number,
             'head_sha': head_sha,
             'trigger_time': trigger_time,
-            'matched': matched is not None,
-            'matched_review': matched or {},
+            'matched': record is not None,
+            'matched_signal': matched_signal,
+            'matched_review': record if matched_signal == 'review' else {},
+            'matched_comment': record if matched_signal == 'issue_comment' else {},
+            # An issue comment carries no reviewed-commit SHA, so it cannot prove
+            # the new HEAD was reviewed. Only the review path verifies that.
+            'head_sha_verified': matched_signal == 'review',
             'timed_out': poll_result.get('timed_out', False),
             'polls': poll_result.get('polls', 0),
             'duration_sec': poll_result.get('duration_sec', 0),
@@ -187,6 +235,43 @@ class _ReReviewStrategy:
                 return review
         return None
 
+    @staticmethod
+    def _match_bot_comment(comments: list[dict], bot_kind: str | None, trigger_dt: datetime | None) -> dict | None:
+        """Return the first comment from ``bot_kind`` post-dating ``trigger_dt``.
+
+        A comment matches when ALL of the following hold:
+
+        - ``bot_kind`` is set and the comment's author resolves through
+          :func:`bot_kind_for_author` to exactly that kind — a human author, or a
+          different bot, never matches;
+        - the LATER of its ``updated_at`` and ``created_at`` is strictly after
+          ``trigger_dt``. Taking the later of the two is what makes an EDITED
+          persistent comment count: such a bot updates one comment in place, so
+          ``created_at`` stops advancing after the first review;
+        - it is not a rate-limit / service notice — a "the bot is rate-limited"
+          comment is the bot talking about itself, not a completed review.
+
+        Fail-closed on every missing input: no ``bot_kind``, no ``trigger_dt``,
+        or an unparseable timestamp yields no match.
+        """
+        if not bot_kind or trigger_dt is None:
+            return None
+        for comment in comments:
+            if bot_kind_for_author(comment.get('author')) != bot_kind:
+                continue
+            if _is_rate_limit_notice(comment.get('body') or ''):
+                continue
+            stamps = [
+                dt
+                for dt in (_parse_iso(comment.get('updated_at') or ''), _parse_iso(comment.get('created_at') or ''))
+                if dt is not None
+            ]
+            if not stamps:
+                continue
+            if max(stamps) > trigger_dt:
+                return comment
+        return None
+
 
 # One generic strategy instance per registered bot_kind, each parameterized by
 # that bot's trigger comment loaded from the registry. Built from data — there is
@@ -198,7 +283,7 @@ _STRATEGIES: dict[str, _ReReviewStrategy] = {
 
 # Map a GitHub review-author login to its canonical ``bot_kind`` key, DERIVED
 # from the registry (each bot's ``author_login`` in its standards doc). The login
-# is the bot's account name (e.g. ``coderabbitai``, ``gemini-code-assist``); the
+# is the bot's account name (e.g. ``coderabbitai``, ``cuioss-review-bot``); the
 # ``bot_kind`` is the registry key those accounts resolve to. This is the single
 # source of truth for the login -> bot_kind correspondence — producers
 # (``github_pr.py`` comments-stage) import ``bot_kind_for_author`` rather than
@@ -278,7 +363,13 @@ def cmd_re_review(args: argparse.Namespace) -> dict:
         return request_result
 
     trigger_time = request_result['trigger_time']
-    await_result = strategy.await_fresh_review(args.pr_number, args.head_sha, trigger_time, timeout=args.timeout)
+    await_result = strategy.await_fresh_review(
+        args.pr_number,
+        args.head_sha,
+        trigger_time,
+        bot_kind=args.bot_kind,
+        timeout=args.timeout,
+    )
     if await_result.get('status') != 'success':
         return await_result
 
@@ -299,7 +390,7 @@ def main() -> int:
     re_review.add_argument('--pr-number', type=int, required=True, help='PR number')
     re_review.add_argument('--bot-kind', choices=BOT_KINDS, required=True, help='Reviewer bot identity key')
     re_review.add_argument('--head-sha', required=True, help='Current HEAD SHA the fresh review must match')
-    re_review.add_argument('--push-time', required=True, help='ISO-8601 push time (retained for routing uniformity; both bots now post an explicit trigger comment)')
+    re_review.add_argument('--push-time', required=True, help='ISO-8601 push time (retained for routing uniformity; every registered bot posts an explicit trigger comment)')
     re_review.add_argument(
         '--timeout',
         type=int,

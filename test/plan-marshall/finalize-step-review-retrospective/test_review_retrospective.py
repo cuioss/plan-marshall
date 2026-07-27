@@ -154,18 +154,18 @@ def test_inline_is_actionable():
 
 
 def test_substantive_review_body_is_actionable():
-    # Gemini's typical shape: a single substantive review_body, no status-summary
-    # signature, so it counts as actionable.
+    # Sourcery's Overall-Comments shape: a substantive review_body with no
+    # status-summary signature, so it counts as actionable.
     result = rr.aggregate([
         {
-            'author': 'gemini-code-assist',
+            'author': 'sourcery-ai',
             'kind': 'review_body',
             'title': 'Consider extracting the validation helper',
             'detail': 'The block at L40 duplicates L88.',
         }
     ])
 
-    row = _reviewer(result, 'gemini-code-assist')
+    row = _reviewer(result, 'sourcery-ai')
     assert row['raw_total'] == 1
     assert row['actionable_count'] == 1
     assert row['meta_count'] == 0
@@ -203,14 +203,14 @@ def test_status_summary_signature_only_meta_for_coderabbit_author():
     # title from another reviewer is a genuine substantive review_body.
     result = rr.aggregate([
         {
-            'author': 'gemini-code-assist',
+            'author': 'sourcery-ai',
             'kind': 'review_body',
             'title': 'Actionable comments posted: 5',
             'detail': '',
         }
     ])
 
-    row = _reviewer(result, 'gemini-code-assist')
+    row = _reviewer(result, 'sourcery-ai')
     assert row['actionable_count'] == 1
     assert row['meta_count'] == 0
 
@@ -416,9 +416,11 @@ def test_pr_726_coderabbit_shape():
     assert _kind_count(result, 'coderabbitai', 'issue_comment') == 1
 
 
-def test_multi_reviewer_coderabbit_vs_gemini():
-    # Comparative shape: CodeRabbit (inline-heavy + META layers) vs Gemini
-    # (single substantive review_body). Confirms per-reviewer isolation.
+def test_multi_reviewer_coderabbit_vs_sourcery_vs_pr_agent():
+    # Comparative shape across all three live reviewers, each with a structurally
+    # different layer mix: CodeRabbit (inline-heavy + a META status summary),
+    # Sourcery (a substantive Overall-Comments review_body), and PR-Agent (its one
+    # persistent issue_comment). Confirms per-reviewer isolation.
     records = [
         {'author': 'coderabbitai', 'kind': 'inline', 'resolution': 'fixed'},
         {'author': 'coderabbitai', 'kind': 'inline', 'resolution': 'accepted'},
@@ -428,16 +430,22 @@ def test_multi_reviewer_coderabbit_vs_gemini():
             'title': 'Actionable comments posted: 2',
         },
         {
-            'author': 'gemini-code-assist',
+            'author': 'sourcery-ai',
             'kind': 'review_body',
             'title': 'Overall the change is sound; one concern at L12.',
             'resolution': 'fixed',
+        },
+        {
+            'author': 'cuioss-review-bot',
+            'kind': 'issue_comment',
+            'title': 'PR Reviewer Guide',
+            'resolution': 'accepted',
         },
     ]
 
     result = rr.aggregate(records)
 
-    assert result['reviewer_count'] == 2
+    assert result['reviewer_count'] == 3
 
     cr = _reviewer(result, 'coderabbitai')
     assert cr['raw_total'] == 3
@@ -446,9 +454,19 @@ def test_multi_reviewer_coderabbit_vs_gemini():
     assert cr['positives_count'] == 1
     assert cr['false_positives_count'] == 1
 
-    gem = _reviewer(result, 'gemini-code-assist')
-    assert gem['raw_total'] == 1
-    assert gem['actionable_count'] == 1
-    assert gem['meta_count'] == 0
-    assert gem['positives_count'] == 1
-    assert gem['pct_resolved_as_fixed'] == 100.0
+    sourcery = _reviewer(result, 'sourcery-ai')
+    assert sourcery['raw_total'] == 1
+    assert sourcery['actionable_count'] == 1
+    assert sourcery['meta_count'] == 0
+    assert sourcery['positives_count'] == 1
+    assert sourcery['pct_resolved_as_fixed'] == 100.0
+
+    # PR-Agent posts no inline comments — its findings live in ONE persistent
+    # issue_comment, which the aggregator buckets as META. Its accepted
+    # disposition still counts as a false positive, so a reviewer whose whole
+    # output is one issue_comment is not silently invisible in the comparison.
+    pr_agent = _reviewer(result, 'cuioss-review-bot')
+    assert pr_agent['raw_total'] == 1
+    assert pr_agent['actionable_count'] == 0
+    assert pr_agent['meta_count'] == 1
+    assert pr_agent['false_positives_count'] == 1
