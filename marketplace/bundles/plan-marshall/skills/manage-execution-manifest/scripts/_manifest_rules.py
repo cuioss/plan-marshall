@@ -218,11 +218,11 @@ def _apply_security_audit_inactive(
 # prefixes are preserved verbatim, so the surgical set lists both forms. See
 # standards/decision-rules.md § Pre-Filter: scope_gated_finalize.
 #
-# ``automatic-review`` is deliberately NOT in either implicit set: its presence
-# is governed purely by its configured ``lane`` (seeded ``ask`` → resolved by
-# marshall-steward) and lane tier, so the implicit scope gate must not drop it.
-# The only path that suppresses ``automatic-review`` is the explicit
-# ``drop_review_on_scope_gate`` opt-in (see ``_apply_scope_gated_finalize``).
+# Membership in a set is NOT sufficient to drop: the implicit scope gate never
+# overrides an explicitly declared per-element ``lane`` (see
+# :func:`_has_declared_lane_override`). ``automatic-review`` needs no set-level
+# carve-out for that reason — the general declared-lane immunity rule covers it,
+# as it covers every other element the operator has spoken for.
 _SCOPE_GATED_SURGICAL_DROP = frozenset(
     {
         'plan-retrospective',
@@ -238,16 +238,14 @@ _SCOPE_GATED_SINGLE_MODULE_DROP = frozenset(
         'plan-marshall:plan-retrospective',
     }
 )
-_SCOPE_GATED_OVERRIDE_DROP = frozenset({'automatic-review', 'plan-marshall:automatic-review'})
 
 
-# Owning finalize step ids for the four ceremony gates and the escape-hatch knob.
-# Each ceremony gate is governed by its owning step's per-element ``lane`` override
+# Owning finalize step ids for the four ceremony gates. Each ceremony gate is
+# governed by its owning step's per-element ``lane`` override
 # (``off``/``minimal``/``auto``) stored nested under the owning step's param object
 # in marshal.json's ``phase-6-finalize.steps`` keyed map. There is no flat
 # phase-level ``qgate`` sibling — every ceremony gate rides its owning step's
-# ``lane``. ``drop_review_on_scope_gate`` remains a step-owned escape hatch under
-# the self-review step.
+# ``lane``.
 _QGATE_OWNER_STEP = 'default:pre-push-quality-gate'
 _SIMPLIFY_OWNER_STEP = 'default:finalize-step-simplify'
 _SECURITY_AUDIT_OWNER_STEP = 'default:finalize-step-security-audit'
@@ -257,8 +255,8 @@ _PRE_SUBMISSION_SELF_REVIEW_STEP = 'default:pre-submission-self-review'
 def _read_step_owned_knob(owner_step_id: str, knob: str) -> object | None:
     """Read a step-owned knob from ``phase-6-finalize.steps`` in marshal.json.
 
-    The step-owned knobs (each ceremony gate's ``lane`` override, plus the
-    ``drop_review_on_scope_gate`` escape hatch) live nested under their owning
+    The step-owned knobs (each ceremony gate's ``lane`` override, plus per-step
+    params such as ``final_merge_without_asking``) live nested under their owning
     finalize step's param object in the ``phase-6-finalize.steps`` keyed map. This
     reads ``steps[owner_step_id][knob]`` via :func:`_read_marshal_phase_step_map`
     (which
@@ -283,26 +281,42 @@ def _read_step_owned_knob(owner_step_id: str, knob: str) -> object | None:
     return params.get(knob)
 
 
-def _read_drop_review_on_scope_gate() -> bool:
-    """Read ``drop_review_on_scope_gate`` from its owning finalize step's params.
+def _has_declared_lane_override(step_id: str, marshal_phase_6_map: dict[str, dict] | None) -> bool:
+    """Return True when ``step_id`` carries an explicitly declared, non-``auto`` lane.
 
-    The knob is folded under
-    ``phase-6-finalize.steps['default:pre-submission-self-review']
-    .drop_review_on_scope_gate`` in marshal.json (its former flat-sibling
-    location is gone). Returns ``False`` when the file is missing, the owning step
-    is absent, the knob is absent, or the value is not a boolean ``True``. The
-    escape hatch defaults to off: only an explicit ``true`` activates the
-    additional ``automatic-review`` suppression in the scope_gated_finalize
-    pre-filter.
+    The declared-lane predicate the implicit scope gate consults before dropping
+    anything. A per-element ``lane`` override in marshal.json's
+    ``phase-6-finalize.steps`` map is the operator's DECLARATION about whether the
+    element runs; ``auto`` is the defer value that expresses no such declaration
+    and leaves the implicit machinery its say. Every other valid override
+    (``off`` / ``minimal`` / ``full`` / ``ask``) is a declaration, so the element
+    belongs to the lane machinery and the scope gate must not silently pre-empt
+    it — the lane-resolution pass (and, for an unresolved ``ask``, the
+    ``unresolved_ask_provider_drop`` pre-filter) decides.
+
+    ``ask`` counts as declared here only in the trivial sense that it is non-``auto``;
+    it is seeded on the two infra elements alone (``automatic-review`` /
+    ``sonar-roundtrip``), neither of which is a member of any scope-gate drop set,
+    so the classification is not load-bearing for this pre-filter.
+
+    Args:
+        step_id: The boundary-normalized candidate step id.
+        marshal_phase_6_map: The marshal.json ``phase-6-finalize`` keyed step map
+            (prefixes preserved), or ``None`` on the CSV-fallback compose path —
+            where no declaration can exist, so nothing is immune.
+
+    Returns:
+        ``True`` when a valid non-``auto`` ``lane`` override is declared for the step.
     """
-    return _read_step_owned_knob(_PRE_SUBMISSION_SELF_REVIEW_STEP, 'drop_review_on_scope_gate') is True
+    override = _lane_override_for(step_id, marshal_phase_6_map)
+    return override is not None and override != 'auto'
 
 
 def _apply_scope_gated_finalize(
     phase_6_candidates: list[str],
     scope_estimate: str,
-    drop_review_on_scope_gate: bool,
-) -> tuple[list[str], list[str]]:
+    marshal_phase_6_map: dict[str, dict] | None,
+) -> tuple[list[str], list[str], list[str]]:
     """Pre-filter: drop heavyweight phase-6 review/audit steps by scope.
 
     Subtractions:
@@ -315,23 +329,25 @@ def _apply_scope_gated_finalize(
       ``plan-marshall:plan-retrospective``.
     - Any other scope value → no implicit subtraction.
 
-    ``automatic-review`` is NEVER subtracted by the implicit scope gate — its
-    presence is governed purely by its configured ``lane`` and lane tier, so the
-    implicit scope gate must not drop it.
-    When ``drop_review_on_scope_gate`` is ``True`` AND the plan is itself
-    scope-gated (``scope_estimate in ('surgical', 'single_module')``), the gate
-    additionally drops ``automatic-review`` — the only path that suppresses the
-    bot-review gate, explicitly opted into via marshal.json. The override is
-    scoped, not global: on non-scope-gated plans (``multi_module`` / ``broad`` /
-    ``none``) the override is inert, so flipping the project-wide knob can never
-    silently disable bot review on a large plan.
+    **Declared-lane immunity.** A step that carries an explicitly declared,
+    non-``auto`` per-element ``lane`` override is NEVER dropped here, whatever the
+    scope estimate says (:func:`_has_declared_lane_override`). This gate is
+    IMPLICIT — it infers "you probably do not want this" from the scope estimate —
+    while a ``lane`` override is the operator stating what they do want. An
+    implicit inference must not silently override an explicit declaration. The
+    rule matters because this pre-filter runs at the candidate-narrowing stage,
+    BEFORE ceremony selection and BEFORE lane resolution: only the four
+    ``_CEREMONY_FINALIZE_GATES`` can be re-added downstream, so for any other step
+    a drop here makes its declared lane structurally unreachable rather than
+    merely outvoted.
 
     Consistent with the composer's "rows and pre-filters only ever narrow the
     candidate list" architecture, this pre-filter runs before the six-row
-    matrix. Returns the filtered candidate list
-    plus the list of step references that were dropped (for per-subtraction
-    decision-log emission). The dropped list preserves the candidate's verbatim
-    form so the decision log names exactly what was removed.
+    matrix. Returns ``(kept, dropped, immune)`` — the filtered candidate list, the
+    step references that were dropped, and the scope-gated step references that
+    were RETAINED by declared-lane immunity. Both reported lists preserve the
+    candidate's verbatim form so the decision log names exactly what happened; the
+    ``immune`` list keeps the retention visible rather than silent.
     """
     if scope_estimate == 'surgical':
         drop_set: frozenset[str] = _SCOPE_GATED_SURGICAL_DROP
@@ -340,20 +356,21 @@ def _apply_scope_gated_finalize(
     else:
         drop_set = frozenset()
 
-    if drop_review_on_scope_gate and scope_estimate in ('surgical', 'single_module'):
-        drop_set = drop_set | _SCOPE_GATED_OVERRIDE_DROP
-
     if not drop_set:
-        return phase_6_candidates, []
+        return phase_6_candidates, [], []
 
     kept: list[str] = []
     dropped: list[str] = []
+    immune: list[str] = []
     for step in phase_6_candidates:
-        if step in drop_set:
-            dropped.append(step)
-        else:
+        if step not in drop_set:
             kept.append(step)
-    return kept, dropped
+        elif _has_declared_lane_override(step, marshal_phase_6_map):
+            immune.append(step)
+            kept.append(step)
+        else:
+            dropped.append(step)
+    return kept, dropped, immune
 
 
 # Gate → (match-set, canonical insertion form). The match-set covers every

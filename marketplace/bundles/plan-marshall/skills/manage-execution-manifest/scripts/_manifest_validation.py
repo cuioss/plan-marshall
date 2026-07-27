@@ -311,34 +311,74 @@ def _read_frontmatter_order(path: Path) -> int | None:
     return None
 
 
-def _resolve_step_order(step_id: str) -> int | None:
-    """Resolve a step's frontmatter ``order`` integer from its source file.
+# Order-resolution verdicts. ``_resolve_step_order`` collapses all four into the
+# single ``int | None`` its existing callers consume; ``_resolve_step_order_verdict``
+# keeps them apart so a caller can tell an ORDERLESS step from an UNRESOLVABLE
+# one. The distinction is load-bearing: ``_sort_steps_by_frontmatter_order`` pins
+# every ``None``-resolving entry at its original index, so a step that SHOULD
+# carry an order but whose source could not be read is pinned exactly like a step
+# that legitimately has none — and the ascending-order walk then SKIPS it, so the
+# resulting inversion is reported by nobody. Only ``NOT_APPLICABLE`` is a
+# legitimate pin.
+_ORDER_RESOLVED = 'resolved'
+#: Source file resolved, but it declares no readable integer ``order:`` key.
+_ORDER_NOT_DECLARED = 'not_declared'
+#: A built-in / ``project:`` step whose source file does not exist.
+_ORDER_SOURCE_UNRESOLVABLE = 'source_unresolvable'
+#: A ``bundle:skill`` external step — orderless BY DESIGN (no project-local source).
+_ORDER_NOT_APPLICABLE = 'not_applicable'
+
+
+def _resolve_step_order_verdict(step_id: str) -> tuple[int | None, str]:
+    """Resolve a step's frontmatter ``order`` and say WHY when it is absent.
 
     Resolution is broader than loadability: it covers ``project:`` steps too,
     because real ordering inversions can occur among project-local steps.
 
     - Built-in steps (bare or ``default:``-prefixed): resolve the standards /
-      workflow doc via ``_resolve_standards_path`` and read its ``order:``
-      frontmatter.
+      workflow doc via ``_resolve_standards_path``.
     - ``project:``-prefixed steps: resolve the project-local-skill
       ``{bare-name}/SKILL.md`` via the target's layout roots (relative to the
-      working-tree root, ``_project_local_skills_root``) and read its ``order:``
-      frontmatter.
-    - Other external steps (``bundle:skill``): no resolvable project-local
-      source file — return ``None``.
+      working-tree root, ``_project_local_skills_root``).
+    - Other external steps (``bundle:skill``): no project-local source file
+      exists by design → :data:`_ORDER_NOT_APPLICABLE`.
 
-    Returns ``None`` when no source file exists or no ``order:`` key is
-    present. Steps that resolve to ``None`` are skipped by the ascending-order
-    check (they neither break nor satisfy ascending order).
+    Returns ``(order, verdict)``. ``order`` is the integer on
+    :data:`_ORDER_RESOLVED` and ``None`` on every other verdict. A source file
+    that exists but yields no integer ``order:`` (absent key, no frontmatter, a
+    non-integer value, or an unreadable file) is :data:`_ORDER_NOT_DECLARED`; a
+    source file that does not exist at all is
+    :data:`_ORDER_SOURCE_UNRESOLVABLE`.
     """
     if step_id.startswith('project:'):
         bare = step_id[len('project:') :]
-        skill_path = resolve_project_skill_path(f'{bare}/SKILL.md', base=_project_local_skills_root())
-        return _read_frontmatter_order(skill_path)
-    if _is_external_step(step_id):
-        # bundle:skill external steps have no project-local source file.
-        return None
-    return _read_frontmatter_order(_resolve_standards_path(step_id))
+        path = resolve_project_skill_path(f'{bare}/SKILL.md', base=_project_local_skills_root())
+    elif _is_external_step(step_id):
+        return None, _ORDER_NOT_APPLICABLE
+    else:
+        path = _resolve_standards_path(step_id)
+
+    if not path.is_file():
+        return None, _ORDER_SOURCE_UNRESOLVABLE
+    order = _read_frontmatter_order(path)
+    if order is None:
+        return None, _ORDER_NOT_DECLARED
+    return order, _ORDER_RESOLVED
+
+
+def _resolve_step_order(step_id: str) -> int | None:
+    """Resolve a step's frontmatter ``order`` integer from its source file.
+
+    The order-only projection of :func:`_resolve_step_order_verdict`: returns the
+    integer when it resolves and ``None`` for every non-resolving verdict. Steps
+    that resolve to ``None`` are pinned at their original index by
+    :func:`_sort_steps_by_frontmatter_order` and skipped by
+    :func:`_check_ascending_order`. Callers that must distinguish an ORDERLESS
+    step from an UNRESOLVABLE one — notably
+    :func:`check_emitted_steps_ascending_order`, which fails the compose rather
+    than tolerating a pin it cannot verify — call the verdict form directly.
+    """
+    return _resolve_step_order_verdict(step_id)[0]
 
 
 def _sort_steps_by_frontmatter_order(steps: list[Any]) -> list[Any]:
@@ -776,6 +816,85 @@ def check_emitted_steps_canonical(
                         'the compose boundary normalization should have stripped'
                     ),
                 }
+    return None
+
+
+def check_emitted_steps_ascending_order(phase_6_steps: list[Any]) -> dict[str, Any] | None:
+    """Assert the FINAL composed ``phase_6.steps`` is in ascending frontmatter order.
+
+    Post-compose ASSERTION and sibling of :func:`check_emitted_steps_canonical`
+    (pure, no logging, returns the first offender or ``None``). It runs over the
+    list that will actually be persisted, immediately after
+    :func:`_sort_steps_by_frontmatter_order` — the composer sorts so the barrier
+    invariant holds, this asserts the sort held.
+
+    Two offence kinds, both fail-closed per ADR-009 / ADR-010:
+
+    - ``order_inversion`` — a step whose resolved ``order`` is strictly less than
+      the maximum resolved ``order`` seen at an earlier list position. A
+      source-mutating step landing after the merge gate is the harm this catches.
+    - ``unresolvable_order`` — a built-in or ``project:`` step whose ``order``
+      does not resolve (:data:`_ORDER_NOT_DECLARED` /
+      :data:`_ORDER_SOURCE_UNRESOLVABLE`). This arm is why the assertion is not a
+      re-run of :func:`_check_ascending_order`, which SKIPS such a step: the sort
+      pins an unresolvable entry at its original index, so skipping it in the walk
+      is precisely how an inversion passes green. An entry the gate cannot verify
+      is an offence, not a pass.
+
+    A ``bundle:skill`` external step (:data:`_ORDER_NOT_APPLICABLE`) has no
+    project-local source by design; it is orderless legitimately, so it is pinned
+    by the sort and skipped here without complaint. Non-string entries are left to
+    the schema checks.
+
+    Args:
+        phase_6_steps: FINAL composed ``phase_6.steps``.
+
+    Returns:
+        ``None`` when the list is verifiably ascending, else a dict carrying
+        ``step_id``, ``reason`` (``order_inversion`` / ``unresolvable_order``) and
+        an actionable ``message``. The inversion message names BOTH steps of the
+        inverted pair.
+    """
+    max_order: int | None = None
+    max_step: str | None = None
+    for entry in phase_6_steps:
+        if not isinstance(entry, str):
+            continue
+        order, verdict = _resolve_step_order_verdict(entry)
+        if verdict == _ORDER_NOT_APPLICABLE:
+            continue
+        if order is None:
+            detail = (
+                'its source file could not be resolved'
+                if verdict == _ORDER_SOURCE_UNRESOLVABLE
+                else 'its source file declares no integer `order:` key'
+            )
+            return {
+                'step_id': entry,
+                'reason': 'unresolvable_order',
+                'message': (
+                    f'phase_6 step `{entry}` has no resolvable frontmatter `order` — '
+                    f'{detail}. The compose-time sort pins such a step at its original '
+                    'list position instead of ordering it, and the ascending walk cannot '
+                    'verify that position, so the step could silently land after a '
+                    'later-ordered step (a source-mutating step after the merge gate). '
+                    'Declare an integer `order:` in the step source, or remove the step '
+                    'from `marshal.json`'
+                ),
+            }
+        if max_order is not None and order < max_order:
+            return {
+                'step_id': entry,
+                'reason': 'order_inversion',
+                'message': (
+                    f'phase_6 step `{entry}` (order={order}) appears after step '
+                    f'`{max_step}` (order={max_order}) — the composed phase_6.steps '
+                    'must be in ascending frontmatter `order`'
+                ),
+            }
+        if max_order is None or order > max_order:
+            max_order = order
+            max_step = entry
     return None
 
 

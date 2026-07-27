@@ -584,6 +584,191 @@ _TOKEN_CONSUMING_FINALIZE_STEPS: list[str] = [
 ]
 
 
+# =============================================================================
+# Order-resolution verdicts + the post-compose ascending-order gate
+#
+# ``_sort_steps_by_frontmatter_order`` PINS every entry whose order resolves to
+# ``None`` at its original index, and ``_check_ascending_order`` SKIPS exactly
+# those entries. Composed, the two behaviours let a step that SHOULD carry an
+# order but whose source cannot be read sit wherever the seed put it while the
+# ascending walk declines to check that position — a green compose over a broken
+# barrier. ``check_emitted_steps_ascending_order`` closes it by treating an entry
+# it cannot verify as an offence. The empirical reproduction that established
+# this is recorded in the plan artifact ``work/defect-b-gate-reproduction.md``.
+# =============================================================================
+
+
+_EMITTER = 'finalize-step-preference-emitter'
+
+
+class TestResolveStepOrderVerdict:
+    """The tri-state resolver distinguishes ORDERLESS from UNRESOLVABLE."""
+
+    def test_resolved_builtin_returns_order_and_resolved_verdict(self):
+        assert _mem._resolve_step_order_verdict('push') == (10, _mem._ORDER_RESOLVED)
+
+    def test_resolved_builtin_accepts_default_prefix(self):
+        assert _mem._resolve_step_order_verdict('default:push') == (10, _mem._ORDER_RESOLVED)
+
+    def test_resolved_project_step(self):
+        order, verdict = _mem._resolve_step_order_verdict('project:finalize-step-deploy-target')
+        assert (order, verdict) == (81, _mem._ORDER_RESOLVED)
+
+    def test_missing_source_file_is_source_unresolvable(self):
+        order, verdict = _mem._resolve_step_order_verdict('ghost-step-that-does-not-exist')
+        assert order is None
+        assert verdict == _mem._ORDER_SOURCE_UNRESOLVABLE
+
+    def test_bundle_skill_step_is_not_applicable(self):
+        # A bundle:skill step has no project-local source BY DESIGN — orderless
+        # legitimately, so it must not be conflated with an unresolvable one.
+        order, verdict = _mem._resolve_step_order_verdict('plan-marshall:plan-retrospective')
+        assert order is None
+        assert verdict == _mem._ORDER_NOT_APPLICABLE
+
+    def test_source_without_order_key_is_not_declared(self, monkeypatch):
+        # The reachable trigger: the source file EXISTS (so the resolution gate
+        # passes it) but declares no readable integer `order:`.
+        import _manifest_validation as _mv
+
+        monkeypatch.setattr(_mv, '_read_frontmatter_order', lambda path: None)
+        order, verdict = _mv._resolve_step_order_verdict('push')
+        assert order is None
+        assert verdict == _mv._ORDER_NOT_DECLARED
+
+    def test_resolve_step_order_is_the_order_only_projection(self):
+        # The legacy accessor keeps its int|None contract for the sort and the
+        # seed-path check.
+        assert _mem._resolve_step_order('push') == 10
+        assert _mem._resolve_step_order('ghost-step-that-does-not-exist') is None
+        assert _mem._resolve_step_order('plan-marshall:plan-retrospective') is None
+
+
+class TestCheckEmittedStepsAscendingOrder:
+    """The post-compose gate over the FINAL composed ``phase_6.steps``."""
+
+    def test_ascending_list_returns_none(self):
+        assert _mem.check_emitted_steps_ascending_order(['push', 'create-pr', 'archive-plan']) is None
+
+    def test_inversion_names_both_steps_of_the_pair(self):
+        offender = _mem.check_emitted_steps_ascending_order(['create-pr', 'push'])
+        assert offender is not None
+        assert offender['reason'] == 'order_inversion'
+        assert offender['step_id'] == 'push'
+        assert 'push' in offender['message']
+        assert 'create-pr' in offender['message']
+
+    def test_bundle_skill_step_is_skipped_without_complaint(self):
+        # Orderless by design — it neither breaks nor satisfies ascending order.
+        assert _mem.check_emitted_steps_ascending_order(
+            ['push', 'plan-marshall:plan-retrospective', 'archive-plan']
+        ) is None
+
+    def test_non_string_entries_are_left_to_the_schema_checks(self):
+        assert _mem.check_emitted_steps_ascending_order(['push', 42, 'archive-plan']) is None
+
+    def test_unresolvable_order_builtin_is_an_offence(self, monkeypatch):
+        """The arm that closes the vacuous green.
+
+        With the emitter's ``order:`` unreadable, the sort pins it after
+        ``branch-cleanup`` and ``_check_ascending_order`` reports NO offender —
+        the exact silent pass. This gate must report it.
+        """
+        import _manifest_validation as _mv
+
+        real_read = _mv._read_frontmatter_order
+        monkeypatch.setattr(
+            _mv,
+            '_read_frontmatter_order',
+            lambda path: None if path.name == f'{_EMITTER}.md' else real_read(path),
+        )
+        pinned = _mv._sort_steps_by_frontmatter_order(['push', 'branch-cleanup', _EMITTER])
+        # Reproduce the silent-pass precondition: the entry is pinned after the
+        # merge gate AND the legacy walk sees nothing wrong.
+        assert pinned.index(_EMITTER) > pinned.index('branch-cleanup')
+        assert _mv._check_ascending_order(pinned) is None
+
+        offender = _mv.check_emitted_steps_ascending_order(pinned)
+        assert offender is not None
+        assert offender['reason'] == 'unresolvable_order'
+        assert offender['step_id'] == _EMITTER
+        assert 'no resolvable frontmatter `order`' in offender['message']
+        assert 'declares no integer `order:` key' in offender['message']
+
+    def test_unresolvable_source_reports_the_other_cause(self):
+        offender = _mem.check_emitted_steps_ascending_order(['push', 'ghost-step-that-does-not-exist'])
+        assert offender is not None
+        assert offender['reason'] == 'unresolvable_order'
+        assert 'source file could not be resolved' in offender['message']
+
+    def test_first_offender_wins_in_list_order(self):
+        offender = _mem.check_emitted_steps_ascending_order(
+            ['archive-plan', 'push', 'ghost-step-that-does-not-exist']
+        )
+        assert offender is not None
+        # The inversion at index 1 precedes the unresolvable entry at index 2.
+        assert offender['reason'] == 'order_inversion'
+        assert offender['step_id'] == 'push'
+
+
+class TestComposeAscendingOrderGateWiring:
+    """``cmd_compose`` consults the gate and fails loud without writing a manifest."""
+
+    def test_compose_fails_loud_on_an_unresolvable_order(self, plan_context, monkeypatch):
+        import _manifest_validation as _mv
+
+        real_read = _mv._read_frontmatter_order
+        monkeypatch.setattr(
+            _mv,
+            '_read_frontmatter_order',
+            lambda path: None if path.name == f'{_EMITTER}.md' else real_read(path),
+        )
+        candidates = ['push', 'create-pr', 'branch-cleanup', _EMITTER, 'archive-plan']
+        result = cmd_compose(_compose_ns('order-gate-unresolvable', phase_6_steps=','.join(candidates)))
+
+        assert result is not None
+        assert result['status'] == 'error'
+        assert result['error'] == 'phase_6_order_violation'
+        assert result['phase'] == 'phase_6'
+        assert result['step_id'] == _EMITTER
+        assert result['reason'] == 'unresolvable_order'
+        # Like its sibling gates, the fail-loud path writes no manifest.
+        assert _mem.read_manifest('order-gate-unresolvable') is None
+
+    def test_missing_source_is_reported_by_the_resolution_gate_not_this_one(self, plan_context):
+        """Gate ordering: a step with NO source file is a resolution defect.
+
+        ``unresolvable_step`` names the missing doc far more usefully than an
+        ordering error would, so it is given first refusal — this gate runs after
+        it and never steals that diagnostic.
+        """
+        candidates = ['push', 'ghost-builtin-step', 'archive-plan']
+        result = cmd_compose(_compose_ns('order-gate-defers', phase_6_steps=','.join(candidates)))
+
+        assert result is not None
+        assert result['status'] == 'error'
+        assert result['error'] == 'unresolvable_step'
+
+    def test_ordinary_compose_passes_the_gate(self, plan_context):
+        """Anti-vacuity: the gate must not reject an ordinary, correct compose."""
+        result = cmd_compose(_compose_ns('order-gate-clean'))
+
+        assert result is not None
+        assert result['status'] == 'success'
+        manifest = _mem.read_manifest('order-gate-clean')
+        assert manifest is not None
+        assert _mem.check_emitted_steps_ascending_order(manifest['phase_6']['steps']) is None
+
+    def test_emitter_is_composed_before_branch_cleanup(self, plan_context):
+        """The originating symptom: the emitter (61) must precede branch-cleanup (70)."""
+        candidates = ['push', 'create-pr', 'branch-cleanup', _EMITTER, 'archive-plan']
+        result = cmd_compose(_compose_ns('order-gate-emitter', phase_6_steps=','.join(candidates)))
+
+        assert result is not None and result['status'] == 'success'
+        steps = _mem.read_manifest('order-gate-emitter')['phase_6']['steps']
+        assert steps.index(_EMITTER) < steps.index('branch-cleanup')
+
+
 class TestRecordMetricsOrderAfterTokenConsumingSteps:
     def test_record_metrics_order_exceeds_every_token_consuming_step(self):
         """record-metrics order strictly trails every token-consuming step.
