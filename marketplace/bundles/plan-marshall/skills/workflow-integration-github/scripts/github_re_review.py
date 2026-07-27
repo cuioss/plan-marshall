@@ -225,6 +225,28 @@ class _ReReviewStrategy:
         }
 
     @staticmethod
+    def _is_refusal(body: str, bot_kind: str | None) -> bool:
+        """Return True when ``body`` is a refusal notice for the awaited ``bot_kind``.
+
+        The single TWO-LAYER rule shared by both discriminator paths (and by the
+        producer pre-filter): the awaited bot's registry ``ignore_patterns``
+        (case-sensitive substring containment) first, then the structural
+        ``_is_rate_limit_notice`` fallback for an unknown/unregistered bot or a
+        phrasing not yet captured as data. When ``bot_kind`` is ``None`` the data
+        layer cannot fire and only the structural test applies.
+
+        Accepted tradeoff: a genuine review or comment whose body happens to
+        contain an ``ignore_patterns`` substring is skipped and reported as a
+        timeout. That is deliberate — a truthful ``matched: false`` /
+        ``timed_out: true`` is recoverable, whereas a false ``head_sha_verified:
+        true`` / "the bot responded" silently asserts review coverage that never
+        happened.
+        """
+        if bot_kind and any(marker in body for marker in bot_registry.ignore_patterns(bot_kind)):
+            return True
+        return _is_rate_limit_notice(body)
+
+    @staticmethod
     def _match_review(
         reviews: list[dict], head_sha: str, trigger_dt: datetime | None, bot_kind: str | None
     ) -> dict | None:
@@ -232,24 +254,12 @@ class _ReReviewStrategy:
 
         A review matches when its reviewed commit SHA equals ``head_sha``, its
         ``submitted_at`` is strictly after ``trigger_dt``, AND its body is not a
-        refusal notice. A review with an unparseable ``submitted_at`` never
-        matches (fail-closed). When ``trigger_dt`` is ``None`` (invalid or
-        unparseable trigger time) the comparison is fail-closed — no review
-        matches, preventing stale reviews from being incorrectly accepted.
-
-        The refusal test is the same TWO-LAYER rule the producer pre-filter
-        applies: the awaited bot's registry ``ignore_patterns`` (case-sensitive
-        substring containment) first, then the structural ``_is_rate_limit_notice``
-        fallback for an unknown/unregistered bot or a phrasing not yet captured as
-        data. When ``bot_kind`` is ``None`` the data layer cannot fire and only the
-        structural test applies. There is deliberately NO author gate on this
-        path — the SHA match already establishes provenance.
-
-        Accepted tradeoff: a genuine review whose body happens to contain an
-        ``ignore_patterns`` substring is skipped and reported as a timeout. That
-        is deliberate — a truthful ``matched: false`` / ``timed_out: true`` is
-        recoverable, whereas a false ``head_sha_verified: true`` silently asserts
-        review coverage that never happened.
+        refusal notice (:meth:`_is_refusal`). A review with an unparseable
+        ``submitted_at`` never matches (fail-closed). When ``trigger_dt`` is
+        ``None`` (invalid or unparseable trigger time) the comparison is
+        fail-closed — no review matches, preventing stale reviews from being
+        incorrectly accepted. There is deliberately NO author gate on this path —
+        the SHA match already establishes provenance.
         """
         if trigger_dt is None:
             return None
@@ -261,10 +271,7 @@ class _ReReviewStrategy:
                 continue
             if submitted_dt <= trigger_dt:
                 continue
-            body = review.get('body') or ''
-            if bot_kind and any(marker in body for marker in bot_registry.ignore_patterns(bot_kind)):
-                continue
-            if _is_rate_limit_notice(body):
+            if _ReReviewStrategy._is_refusal(review.get('body') or '', bot_kind):
                 continue
             return review
         return None
@@ -282,15 +289,8 @@ class _ReReviewStrategy:
           ``trigger_dt``. Taking the later of the two is what makes an EDITED
           persistent comment count: such a bot updates one comment in place, so
           ``created_at`` stops advancing after the first review;
-        - it is not a refusal notice, tested with the same TWO-LAYER rule the
-          producer pre-filter applies: the bot's registry ``ignore_patterns``
-          (case-sensitive substring containment) first, then the structural
-          ``_is_rate_limit_notice`` fallback for a phrasing not yet captured as
-          data. A "the bot could not review" comment is the bot talking about
-          itself, not a completed review. Accepted tradeoff: a genuine comment
-          containing an ``ignore_patterns`` substring is skipped and reported as
-          a timeout — a truthful ``matched: false`` is recoverable, a false
-          "the bot responded" is not.
+        - it is not a refusal notice (:meth:`_is_refusal`) — a "the bot could not
+          review" comment is the bot talking about itself, not a completed review.
 
         Fail-closed on every missing input: no ``bot_kind``, no ``trigger_dt``,
         or an unparseable timestamp yields no match.
@@ -300,10 +300,7 @@ class _ReReviewStrategy:
         for comment in comments:
             if bot_kind_for_author(comment.get('author')) != bot_kind:
                 continue
-            body = comment.get('body') or ''
-            if any(marker in body for marker in bot_registry.ignore_patterns(bot_kind)):
-                continue
-            if _is_rate_limit_notice(body):
+            if _ReReviewStrategy._is_refusal(comment.get('body') or '', bot_kind):
                 continue
             stamps = [
                 dt
