@@ -147,6 +147,7 @@ def execute_direct_base(
     working_dir: str | None = None,
     extra_result_fields: dict | None = None,
     min_timeout: int = MIN_TIMEOUT,
+    explicit_timeout: int | None = None,
 ) -> DirectCommandResult:
     """Execute a build command with adaptive timeout learning.
 
@@ -154,10 +155,20 @@ def execute_direct_base(
     Handles log file creation, timeout management, subprocess execution, and
     structured result construction.
 
+    The timeout the subprocess is measured against resolves as::
+
+        explicit_timeout supplied     -> max(explicit_timeout,                        min_timeout)
+        explicit_timeout NOT supplied -> max(timeout_get(command_key, default_timeout), min_timeout)
+
+    An explicit bound is therefore a true OVERRIDE of the persisted learned
+    value — no learned value can reduce it — while the engine's declared floor
+    still binds, because the floor protects against under-specification.
+
     Args:
         args: Complete command arguments with all routing embedded.
         command_key: Command identifier for timeout learning (e.g., "maven:verify").
         default_timeout: Default timeout in seconds if no learned value exists.
+            Consulted only on the no-override path.
         project_dir: Project root directory.
         tool_name: Build system name for logging prefix (e.g., "MAVEN", "GRADLE").
         build_command_fn: Callable(wrapper, args, log_file) -> (cmd_parts, command_str).
@@ -177,6 +188,9 @@ def execute_direct_base(
             backstop — otherwise the outer timeout can fire first and kill the
             run before the inner backstop can report which step hung, leaving an
             opaque timeout instead of a diagnosable one.
+        explicit_timeout: Caller-supplied bound (seconds) that overrides the
+            persisted learned value. ``None`` means "not supplied" and selects
+            the learned path. It does NOT waive ``min_timeout``.
 
     Returns:
         DirectCommandResult with status, exit_code, duration_seconds,
@@ -200,8 +214,12 @@ def execute_direct_base(
             **extras,
         }
 
-    # Step 2: Get timeout from run-config, enforce the caller's minimum floor
-    timeout_seconds = max(timeout_get(command_key, default_timeout, project_dir), min_timeout)
+    # Step 2: Resolve the bound — an explicit override wins over the learned
+    # value; the caller's floor binds on either path (see the docstring).
+    timeout_seconds = max(
+        timeout_get(command_key, default_timeout, project_dir, explicit_timeout),
+        min_timeout,
+    )
 
     # Step 3: Build command using tool-specific function
     # log_file is passed so Maven can embed it via -l flag

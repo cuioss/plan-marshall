@@ -213,12 +213,12 @@ def read_run_config(config_path: Path) -> dict[str, Any]:
 
 
 def cmd_timeout_get(args: argparse.Namespace) -> dict:
-    """Get timeout for a command with default fallback and minimum bound."""
+    """Get timeout for a command; an explicit bound overrides the learned value."""
     try:
         return {
             'status': 'success',
             'command': args.command,
-            'timeout_seconds': timeout_get(args.command, args.default),
+            'timeout_seconds': timeout_get(args.command, args.default, explicit=args.explicit),
         }
     except Exception as e:
         return _output_error(str(e))
@@ -231,13 +231,33 @@ def compute_weighted_timeout(existing: int, new_duration: int) -> int:
     return int(HIGHER_WEIGHT * higher + (1 - HIGHER_WEIGHT) * lower)
 
 
-def timeout_get(command_key: str, default: int, project_dir: str = '.') -> int:
-    """Get timeout for a command.
+def timeout_get(command_key: str, default: int, project_dir: str = '.', explicit: int | None = None) -> int:
+    """Get the timeout (in seconds) for a command.
 
-    Returns max of MINIMUM_TIMEOUT_SECONDS and either default (if not persisted)
-    or persisted * SAFETY_MARGIN. This ensures timeouts never go below a reasonable
-    floor, preventing issues from cold/warm JVM timing differences.
+    An ``explicit`` bound is a true OVERRIDE of the persisted learned value: when
+    supplied it wins outright and no learned value can reduce it. When it is not
+    supplied, a persisted value (scaled by ``SAFETY_MARGIN``) is used, falling
+    back to ``default`` when nothing is persisted — so adaptive learning is
+    unchanged on that path.
+
+    ``MINIMUM_TIMEOUT_SECONDS`` is the unconditional floor on every path,
+    including the override path: the floor protects against under-specification
+    (cold/warm timing differences), so an explicit bound below it is raised to it
+    rather than waiving it.
+
+    Args:
+        command_key: Command identifier the learned value is keyed under.
+        default: Timeout (seconds) used when no value is persisted for the key.
+        project_dir: Kept for API compatibility; the config location is
+            main-anchored (see :func:`get_run_config_path`).
+        explicit: Caller-supplied bound (seconds) that overrides the learned
+            value. ``None`` means "not supplied" and selects the learned path.
+
+    Returns:
+        The resolved timeout in seconds.
     """
+    if explicit is not None:
+        return max(explicit, MINIMUM_TIMEOUT_SECONDS)
     config = read_run_config(get_run_config_path(project_dir))
     persisted = config.get('commands', {}).get(command_key, {}).get('timeout_seconds')
     timeout = default if persisted is None else int(persisted * SAFETY_MARGIN)
@@ -676,10 +696,13 @@ Examples:
   # Validate run configuration
   %(prog)s validate --file .plan/run-configuration.json
 
-  # Get timeout for a command (with default)
+  # Get timeout for a command (seconds; falls back to --default when unlearned)
   %(prog)s timeout get --command "ci:pr_checks" --default 300
 
-  # Set/update timeout for a command
+  # Override the learned value with an explicit bound (seconds; floored at 120)
+  %(prog)s timeout get --command "ci:pr_checks" --default 300 --explicit 1800
+
+  # Set/update timeout for a command (observed duration in seconds)
   %(prog)s timeout set --command "ci:pr_checks" --duration 180
 
   # Add acceptable warning pattern
@@ -750,6 +773,13 @@ Examples:
     p_timeout_get.add_argument('--command', required=True, help='Command identifier (e.g., "ci:pr_checks")')
     p_timeout_get.add_argument(
         '--default', type=int, required=True, help='Default timeout in seconds if no persisted value'
+    )
+    p_timeout_get.add_argument(
+        '--explicit',
+        type=int,
+        default=None,
+        help='Explicit timeout in seconds that overrides the persisted learned value '
+        f'(still floored at {MINIMUM_TIMEOUT_SECONDS}s)',
     )
     p_timeout_get.set_defaults(func=cmd_timeout_get)
 

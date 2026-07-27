@@ -17,6 +17,11 @@ the deliverable's Success Criteria:
    written.
 4. ``ci wait`` returns ``status: timeout`` → helper returns ``wait_failed``
    with ``ci_final_status: timeout``; no cache entry is written.
+5. The consumed inner ceiling is clamped so ``inner +
+   CI_WAIT_OUTER_BUFFER_SECONDS`` stays STRICTLY below
+   ``HARNESS_BASH_CEILING_SECONDS`` for every origin (explicit ``--timeout``,
+   the persisted ``ci:wait`` learned value, and the module default), while the
+   upward ratchet keeps recording the TRUE observed / provider duration.
 
 The tests use the injectable seams (``ci_wait_runner`` / ``git_head_resolver``)
 to avoid spawning real subprocesses or hitting live CI. Each test uses a
@@ -83,6 +88,9 @@ _resolver_mod = _load_module(
 )
 resolve = _resolver_mod.resolve
 DEFAULT_CI_WAIT_TIMEOUT_SECONDS = _resolver_mod.DEFAULT_CI_WAIT_TIMEOUT_SECONDS
+CI_WAIT_OUTER_BUFFER_SECONDS = _resolver_mod.CI_WAIT_OUTER_BUFFER_SECONDS
+HARNESS_BASH_CEILING_SECONDS = _resolver_mod.HARNESS_BASH_CEILING_SECONDS
+_MAX_INNER_WAIT_SECONDS = _resolver_mod._MAX_INNER_WAIT_SECONDS
 _cache_path = _resolver_mod._cache_path
 _read_cache = _resolver_mod._read_cache
 
@@ -868,9 +876,11 @@ class _CapturingSubprocessRun:
     def __init__(self, stdout: str) -> None:
         self.stdout = stdout
         self.captured_cmd: list[str] | None = None
+        self.captured_kwargs: dict | None = None
 
     def __call__(self, cmd, *args, **kwargs):  # noqa: ANN001, ANN002, ANN003
         self.captured_cmd = list(cmd)
+        self.captured_kwargs = dict(kwargs)
         return subprocess.CompletedProcess(
             args=cmd, returncode=0, stdout=self.stdout, stderr=''
         )
@@ -1097,7 +1107,10 @@ def test_resolve_reads_timeout_from_run_config_entry(plan_context):
 
 def test_resolve_uses_default_timeout_when_no_run_config_entry(plan_context):
     """(b) With no ci:wait entry, the run-config helper echoes the supplied
-    default, so resolve() falls back to DEFAULT_CI_WAIT_TIMEOUT_SECONDS.
+    default, so resolve() falls back to DEFAULT_CI_WAIT_TIMEOUT_SECONDS —
+    which the harness-ceiling clamp then reduces to _MAX_INNER_WAIT_SECONDS,
+    because the raw 600s default plus the outer buffer would reach the
+    harness's per-call Bash ceiling.
     """
     plan_id = 'ci-precond-runconfig-missing'
     get_stub = _StubTimeoutGetMissing()
@@ -1118,8 +1131,13 @@ def test_resolve_uses_default_timeout_when_no_run_config_entry(plan_context):
 
     assert result['status'] == 'wait_succeeded'
     assert get_stub.calls == [DEFAULT_CI_WAIT_TIMEOUT_SECONDS]
-    # The default propagated through to the ci wait runner unchanged.
-    assert wait_stub.calls[0][2] == DEFAULT_CI_WAIT_TIMEOUT_SECONDS
+    # The default reached the clamp, which reduced it to the largest inner
+    # ceiling that still leaves the outer call strictly under the harness.
+    assert wait_stub.calls[0][2] == _MAX_INNER_WAIT_SECONDS
+    assert (
+        wait_stub.calls[0][2] + CI_WAIT_OUTER_BUFFER_SECONDS
+        < HARNESS_BASH_CEILING_SECONDS
+    )
 
 
 def test_resolve_records_observed_duration_after_successful_wait(plan_context):
@@ -2161,6 +2179,379 @@ def test_build_parser_accepts_signal_arm():
         ]
     )
     assert args.signal_arm == 'sonar'
+
+
+# ---------------------------------------------------------------------------
+# Deliverable 3 — the harness-ceiling clamp on the consumed wait ceiling.
+#
+# The resolver's inner ``ci wait --timeout`` ceiling is clamped at the single
+# point where it is settled in ``resolve``, so ``inner +
+# CI_WAIT_OUTER_BUFFER_SECONDS`` stays STRICTLY below
+# ``HARNESS_BASH_CEILING_SECONDS`` whatever the value's origin. Past that
+# bound the resolver returns a structured ``deadline_exceeded`` envelope and
+# the dispatcher re-polls on re-entry, instead of the host platform killing
+# the call mid-flight and reporting a real CI outcome as an opaque kill.
+#
+# Only the CONSUMED ceiling is clamped — the upward-ratchet ``timeout set``
+# calls keep recording the true observed / provider duration, so the persisted
+# ``ci:wait`` value stays honest and can still grow past the clamp.
+# ---------------------------------------------------------------------------
+
+
+def test_clamp_constants_leave_the_outer_call_under_the_harness_ceiling():
+    """The derived maximum inner ceiling plus the outer buffer MUST be
+    strictly below the harness Bash ceiling — the invariant every other
+    clamp test depends on.
+    """
+    assert (
+        _MAX_INNER_WAIT_SECONDS + CI_WAIT_OUTER_BUFFER_SECONDS
+        < HARNESS_BASH_CEILING_SECONDS
+    ), (
+        f'{_MAX_INNER_WAIT_SECONDS} + {CI_WAIT_OUTER_BUFFER_SECONDS} must be '
+        f'strictly below {HARNESS_BASH_CEILING_SECONDS}'
+    )
+    # Strictly below, not merely at-or-below: the largest admissible inner
+    # ceiling is exactly one second short of the buffer-adjusted ceiling.
+    assert (
+        _MAX_INNER_WAIT_SECONDS
+        == HARNESS_BASH_CEILING_SECONDS - CI_WAIT_OUTER_BUFFER_SECONDS - 1
+    )
+
+
+def test_learned_ceiling_above_the_harness_bound_is_clamped(plan_context):
+    """A persisted ``ci:wait`` value that has ratcheted far above the harness
+    ceiling MUST be clamped before it reaches the wait subprocess.
+    """
+    plan_id = 'ci-precond-clamp-learned'
+    # The ratchet has grown the persisted ceiling well past the harness bound.
+    get_stub = _StubTimeoutGetSeeded(seeded_value=5000)
+    wait_stub = _StubCiWait(
+        [{'status': 'success', 'final_status': 'success'}]
+    )
+
+    result = resolve(
+        plan_id=plan_id,
+        worktree_path=_WORKTREE,
+        pr_number=_PR,
+        ci_wait_runner=wait_stub,
+        git_head_resolver=_StubGitHead(_SHA_A),
+        timeout_get_runner=get_stub,
+        timeout_set_runner=_StubTimeoutSet(),
+    )
+
+    assert result['status'] == 'wait_succeeded'
+    consumed = wait_stub.calls[0][2]
+    assert consumed == _MAX_INNER_WAIT_SECONDS, (
+        f'A learned ceiling of 5000s must be clamped to '
+        f'{_MAX_INNER_WAIT_SECONDS}s, got {consumed}s — an unclamped value '
+        'lets the harness kill the call before the resolver can return'
+    )
+    assert (
+        consumed + CI_WAIT_OUTER_BUFFER_SECONDS < HARNESS_BASH_CEILING_SECONDS
+    )
+
+
+def test_explicit_timeout_above_the_harness_bound_is_clamped(plan_context):
+    """An explicit ``--timeout`` overrides the learned value but does NOT
+    waive the clamp — the harness ceiling binds every origin.
+    """
+    plan_id = 'ci-precond-clamp-explicit'
+    get_stub = _StubTimeoutGetSeeded(seeded_value=120)
+    wait_stub = _StubCiWait(
+        [{'status': 'success', 'final_status': 'success'}]
+    )
+
+    resolve(
+        plan_id=plan_id,
+        worktree_path=_WORKTREE,
+        pr_number=_PR,
+        timeout_seconds=5000,
+        ci_wait_runner=wait_stub,
+        git_head_resolver=_StubGitHead(_SHA_A),
+        timeout_get_runner=get_stub,
+        timeout_set_runner=_StubTimeoutSet(),
+    )
+
+    # The explicit value still bypasses the run-config lookup entirely...
+    assert get_stub.calls == []
+    # ...but it is clamped exactly like a learned value.
+    assert wait_stub.calls[0][2] == _MAX_INNER_WAIT_SECONDS
+
+
+def test_below_bound_ceiling_passes_through_the_clamp_unchanged(plan_context):
+    """The clamp is a ceiling, not a rewrite: a value that already fits
+    reaches the wait subprocess verbatim.
+    """
+    plan_id = 'ci-precond-clamp-passthrough'
+    wait_stub = _StubCiWait(
+        [{'status': 'success', 'final_status': 'success'}]
+    )
+
+    resolve(
+        plan_id=plan_id,
+        worktree_path=_WORKTREE,
+        pr_number=_PR,
+        timeout_seconds=120,
+        ci_wait_runner=wait_stub,
+        git_head_resolver=_StubGitHead(_SHA_A),
+        timeout_set_runner=_StubTimeoutSet(),
+    )
+
+    assert wait_stub.calls[0][2] == 120
+
+
+def test_zero_and_negative_ceilings_are_raised_to_the_positive_lower_bound(
+    plan_context,
+):
+    """The clamp bounds from BELOW as well as above.
+
+    ``subprocess.run`` raises an uncaught ``ValueError`` on a zero or negative
+    ``timeout``, and ``_run_ci_wait`` catches only ``TimeoutExpired`` — so an
+    explicit ``--timeout 0`` or a corrupt negative persisted ``ci:wait`` value
+    must resolve to a safe positive minimum rather than propagate.
+    """
+    for requested in (0, -1, -5000):
+        assert _resolver_mod._clamp_wait_ceiling(requested) == 1, (
+            f'A requested ceiling of {requested}s must clamp up to 1s — '
+            'a non-positive subprocess timeout raises an uncaught ValueError'
+        )
+
+    plan_id = 'ci-precond-clamp-lower-bound'
+    wait_stub = _StubCiWait(
+        [{'status': 'success', 'final_status': 'success'}]
+    )
+
+    resolve(
+        plan_id=plan_id,
+        worktree_path=_WORKTREE,
+        pr_number=_PR,
+        timeout_seconds=0,
+        ci_wait_runner=wait_stub,
+        git_head_resolver=_StubGitHead(_SHA_A),
+        timeout_set_runner=_StubTimeoutSet(),
+    )
+
+    assert wait_stub.calls[0][2] == 1, (
+        'The consumed ceiling reaching the wait seam must be positive'
+    )
+
+
+def test_outer_subprocess_timeout_is_strictly_below_the_harness_ceiling(
+    plan_context, monkeypatch
+):
+    """End-to-end through the REAL ``_run_ci_wait``: the outer
+    ``subprocess.run(timeout=...)`` deadline the resolver actually consumes
+    MUST be strictly below ``HARNESS_BASH_CEILING_SECONDS``, even when the
+    persisted ceiling has ratcheted far above it.
+
+    This is the load-bearing assertion of the deliverable — the seam-injected
+    tests above pin the clamped INNER value, but only this one observes the
+    OUTER deadline the host platform measures against.
+    """
+    capturing = _CapturingSubprocessRun(
+        stdout='status: success\nfinal_status: success\n'
+    )
+    monkeypatch.setattr(_resolver_mod.subprocess, 'run', capturing)
+
+    result = resolve(
+        plan_id='ci-precond-clamp-outer-deadline',
+        worktree_path=str(_REPO_ROOT),
+        pr_number=_PR,
+        git_head_resolver=_StubGitHead(_SHA_A),
+        timeout_get_runner=_StubTimeoutGetSeeded(seeded_value=5000),
+        timeout_set_runner=_StubTimeoutSet(),
+    )
+
+    assert result['status'] == 'wait_succeeded'
+    assert capturing.captured_kwargs is not None
+    outer = capturing.captured_kwargs['timeout']
+    assert outer < HARNESS_BASH_CEILING_SECONDS, (
+        f'The outer subprocess deadline ({outer}s) must be STRICTLY below '
+        f'the harness per-call Bash ceiling '
+        f'({HARNESS_BASH_CEILING_SECONDS}s); otherwise the harness kills the '
+        'call before the resolver can return a structured envelope'
+    )
+    assert outer == _MAX_INNER_WAIT_SECONDS + CI_WAIT_OUTER_BUFFER_SECONDS
+
+
+def test_clamped_deadline_still_returns_structured_wait_failed(plan_context):
+    """A CI run genuinely longer than the CLAMPED ceiling must still produce
+    the structured ``wait_failed`` / ``deadline_exceeded`` envelope — the
+    whole point of clamping is that the resolver gets to return at all.
+    """
+    plan_id = 'ci-precond-clamp-structured-wait-failed'
+    wait_stub = _StubCiWait(
+        [
+            {
+                'status': 'timeout',
+                'wait_outcome': 'deadline_exceeded',
+                'failing_checks': [{'name': 'build', 'conclusion': 'PENDING'}],
+            }
+        ]
+    )
+
+    result = resolve(
+        plan_id=plan_id,
+        worktree_path=_WORKTREE,
+        pr_number=_PR,
+        ci_wait_runner=wait_stub,
+        git_head_resolver=_StubGitHead(_SHA_A),
+        timeout_get_runner=_StubTimeoutGetSeeded(seeded_value=5000),
+        timeout_set_runner=_StubTimeoutSet(),
+        monotonic_clock=_StubClock([0.0, float(_MAX_INNER_WAIT_SECONDS + 1)]),
+    )
+
+    assert wait_stub.calls[0][2] == _MAX_INNER_WAIT_SECONDS
+    assert result['status'] == 'wait_failed'
+    assert result['ci_final_status'] == 'timeout'
+    assert result['wait_outcome'] == 'deadline_exceeded'
+    assert [c['name'] for c in result['failing_checks']] == ['build']
+    # A clamped deadline is still a non-cacheable verdict.
+    assert not _cache_path(plan_id).exists()
+
+
+def test_clamped_deadline_still_returns_structured_arm_pending(plan_context):
+    """The per-signal arms inherit the clamp because they delegate to
+    ``resolve`` — a clamped deadline still yields the structured
+    ``arm_pending`` envelope rather than an opaque harness kill.
+    """
+    plan_id = 'ci-precond-clamp-structured-arm-pending'
+    wait_stub = _StubCiWait(
+        [{'status': 'timeout', 'wait_outcome': 'deadline_exceeded'}]
+    )
+
+    result = resolve(
+        plan_id=plan_id,
+        worktree_path=_WORKTREE,
+        pr_number=_PR,
+        ci_wait_runner=wait_stub,
+        git_head_resolver=_StubGitHead(_SHA_A),
+        timeout_get_runner=_StubTimeoutGetSeeded(seeded_value=5000),
+        timeout_set_runner=_StubTimeoutSet(),
+        monotonic_clock=_StubClock([0.0, float(_MAX_INNER_WAIT_SECONDS + 1)]),
+        signal_arm='review',
+    )
+
+    assert wait_stub.calls[0][2] == _MAX_INNER_WAIT_SECONDS
+    assert result['status'] == 'arm_pending'
+    assert result['arm_state'] == 'pending'
+    assert result['ci_final_status'] == 'timeout'
+    assert result['wait_outcome'] == 'deadline_exceeded'
+
+
+def test_ratchet_records_true_provider_duration_despite_the_clamp(plan_context):
+    """The clamp bounds only the CONSUMED ceiling. The provider's true
+    check-run duration is still recorded verbatim via ``timeout_set``, so the
+    persisted ``ci:wait`` value stays honest and is free to exceed the clamp.
+    """
+    plan_id = 'ci-precond-clamp-ratchet-provider'
+    set_stub = _StubTimeoutSet()
+    wait_stub = _StubCiWait(
+        [
+            {
+                'status': 'error',
+                'wait_outcome': 'deadline_exceeded',
+                'duration_sec': 4200,
+            }
+        ]
+    )
+
+    resolve(
+        plan_id=plan_id,
+        worktree_path=_WORKTREE,
+        pr_number=_PR,
+        ci_wait_runner=wait_stub,
+        git_head_resolver=_StubGitHead(_SHA_A),
+        timeout_get_runner=_StubTimeoutGetSeeded(seeded_value=5000),
+        timeout_set_runner=set_stub,
+        monotonic_clock=_StubClock([0.0, float(_MAX_INNER_WAIT_SECONDS + 1)]),
+    )
+
+    assert set_stub.recorded == [4200], (
+        'The clamp must not truncate the recorded observation — only the '
+        'consumed ceiling is clamped, the persisted value stays truthful'
+    )
+    assert set_stub.recorded[0] > _MAX_INNER_WAIT_SECONDS, (
+        'The recorded duration is deliberately allowed above the clamp'
+    )
+
+
+def test_ratchet_never_records_below_the_requested_ceiling(plan_context):
+    """The elapsed-at-deadline fallback measures against the REQUESTED
+    (pre-clamp) ceiling, never the clamped one.
+
+    When the persisted ``ci:wait`` value sits above the harness clamp, the
+    wait can only ever consume the clamped window, so an elapsed-vs-clamped
+    comparison would fire on every single deadline-exceeded finalize and feed
+    ``compute_weighted_timeout`` an observation strictly BELOW the persisted
+    value — the learned value silently self-capping back down to the clamp.
+    Comparing against the requested ceiling keeps the guard silent in exactly
+    that case, so the persisted value is never dragged downward.
+    """
+    plan_id = 'ci-precond-ratchet-not-below-request'
+    set_stub = _StubTimeoutSet()
+    wait_stub = _StubCiWait(
+        [{'status': 'timeout', 'wait_outcome': 'deadline_exceeded'}]
+    )
+    requested = 5000
+    elapsed = _MAX_INNER_WAIT_SECONDS + 2
+
+    resolve(
+        plan_id=plan_id,
+        worktree_path=_WORKTREE,
+        pr_number=_PR,
+        ci_wait_runner=wait_stub,
+        git_head_resolver=_StubGitHead(_SHA_A),
+        timeout_get_runner=_StubTimeoutGetSeeded(seeded_value=requested),
+        timeout_set_runner=set_stub,
+        monotonic_clock=_StubClock([0.0, float(elapsed)]),
+    )
+
+    # The wait itself is still clamped — the clamp is not what changed.
+    assert wait_stub.calls[0][2] == _MAX_INNER_WAIT_SECONDS
+    assert elapsed < requested, 'fixture precondition: the clamp cut the wait short'
+    assert not [d for d in set_stub.recorded if d < requested], (
+        f'The ratchet recorded {set_stub.recorded} — an observation below the '
+        f'requested ceiling of {requested}s drifts the learned value DOWNWARD '
+        'on every deadline-exceeded finalize. The elapsed fallback must '
+        'compare against the requested ceiling, not the clamped one.'
+    )
+
+
+def test_ratchet_records_measured_elapsed_when_request_fits_under_the_clamp(
+    plan_context,
+):
+    """The upward ratchet is NOT starved for a requested ceiling that fits
+    under the clamp: a wait that consumed the full requested window still
+    feeds the measured elapsed into ``timeout_set``.
+    """
+    plan_id = 'ci-precond-ratchet-elapsed-under-clamp'
+    set_stub = _StubTimeoutSet()
+    wait_stub = _StubCiWait(
+        [{'status': 'timeout', 'wait_outcome': 'deadline_exceeded'}]
+    )
+    requested = 300
+    elapsed = requested + 5
+
+    resolve(
+        plan_id=plan_id,
+        worktree_path=_WORKTREE,
+        pr_number=_PR,
+        ci_wait_runner=wait_stub,
+        git_head_resolver=_StubGitHead(_SHA_A),
+        timeout_get_runner=_StubTimeoutGetSeeded(seeded_value=requested),
+        timeout_set_runner=set_stub,
+        monotonic_clock=_StubClock([0.0, float(elapsed)]),
+    )
+
+    assert requested < _MAX_INNER_WAIT_SECONDS, (
+        'fixture precondition: the requested ceiling is consumed unclamped'
+    )
+    assert wait_stub.calls[0][2] == requested
+    assert set_stub.recorded == [elapsed], (
+        'A wait that consumed the full requested ceiling must still feed the '
+        'upward ratchet'
+    )
 
 
 def test_build_parser_signal_arm_defaults_none():

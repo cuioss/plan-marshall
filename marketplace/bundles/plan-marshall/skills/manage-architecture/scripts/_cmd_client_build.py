@@ -14,6 +14,7 @@ import shlex
 from pathlib import Path
 from typing import Any
 
+from constants import HARNESS_BASH_CEILING_SECONDS
 from marketplace_bundles import (
     resolve_bundle_path,
     resolve_bundles_root,
@@ -31,9 +32,18 @@ from marketplace_bundles import (
 # timeout and routing:
 #
 # * ``bash_timeout_seconds`` (int) — the recommended Bash-tool timeout in
-#   seconds, computed as ``timeout_get(key, DEFAULT_BUILD_TIMEOUT) +
-#   OUTER_TIMEOUT_BUFFER`` (the same arithmetic ``cmd_run`` performs).
-# * ``exceeds_bash_ceiling`` (bool) — ``bash_timeout_seconds > 600``.
+#   seconds, computed as ``max(timeout_get(key, DEFAULT_BUILD_TIMEOUT),
+#   config.min_timeout) + OUTER_TIMEOUT_BUFFER``. The ``config.min_timeout``
+#   clamp is the engine's own declared outer floor (``MAVEN_OUTER_FLOOR_SECONDS``
+#   / ``GRADLE_OUTER_FLOOR_SECONDS`` / ``NPM_OUTER_FLOOR_SECONDS`` = 300,
+#   ``PYTEST_OUTER_FLOOR_SECONDS`` = 600), and it is the SAME arithmetic
+#   ``execute_direct_base`` enforces at build time — so the stamp can never
+#   report a bound below what the real run will measure against.
+# * ``exceeds_bash_ceiling`` (bool) —
+#   ``bash_timeout_seconds > HARNESS_BASH_CEILING_SECONDS``. Because the tier is
+#   derived from the FLOORED value rather than the raw learned value, every
+#   pyproject build resolves ``orchestrator`` (600 + 30 > 600), while an
+#   unmeasured Maven / Gradle / npm build resolves ``per_task`` (300 + 30 < 600).
 # * ``execution_tier`` — ``"per_task"`` when ``exceeds_bash_ceiling`` is
 #   False, ``"orchestrator"`` when True.
 # * ``hint`` — short pinned recognition phrase for the LLM:
@@ -58,12 +68,12 @@ _BUILD_NOTATIONS: dict[str, str] = {
     'plan-marshall:build-pyproject:pyproject_build': 'python',
 }
 
-# Bash tool's ``timeout`` parameter is capped by the host platform at 600s
-# (10 minutes). Anything above this ceiling cannot be invoked synchronously
-# from a sub-agent's Bash call without auto-backgrounding; the manifest
-# composer routes such commands to phase_5.verification_steps (orchestrator
-# tier) instead of emitting them as per-task verification.
-_BASH_CEILING_SECONDS: int = 600
+# The host platform's per-call Bash ceiling is declared ONCE in
+# ``tools-file-ops/scripts/constants.py`` as ``HARNESS_BASH_CEILING_SECONDS``
+# and imported above. Anything above that ceiling cannot be invoked
+# synchronously from a sub-agent's Bash call without auto-backgrounding; the
+# manifest composer routes such commands to phase_5.verification_steps
+# (orchestrator tier) instead of emitting them as per-task verification.
 
 # Pinned recognition phrases — the numeric value the LLM needs is in
 # ``bash_timeout_seconds``; the hint is a recognition token, not human prose.
@@ -232,9 +242,12 @@ def _lookup_bash_timeout(tool_name: str, command_args: str, project_dir: str) ->
     """Resolve the Bash-tool timeout (in seconds) for a build invocation.
 
     Performs the round-trip ``compute_command_key`` -> ``timeout_get`` ->
-    ``get_bash_timeout`` lookup using the same primitives ``cmd_run`` uses
-    at execute time, guaranteeing the recommended timeout equals what the
-    next real run will measure against (modulo adaptive updates).
+    ``max(..., config.min_timeout)`` -> ``get_bash_timeout`` lookup using the
+    same primitives ``cmd_run`` uses at execute time, guaranteeing the
+    recommended timeout equals what the next real run will measure against
+    (modulo adaptive updates). The ``config.min_timeout`` clamp is the engine's
+    own declared outer floor; omitting it is what let the stamp under-report
+    the bound and mis-tier an orchestrator-tier command as ``per_task``.
 
     Returns the computed ``bash_timeout_seconds``, or ``None`` when any of
     the required modules cannot be imported (e.g., when the manage-architecture
@@ -272,6 +285,11 @@ def _lookup_bash_timeout(tool_name: str, command_args: str, project_dir: str) ->
         return None
 
     inner_timeout = timeout_get(command_key, DEFAULT_BUILD_TIMEOUT, project_dir)
+    # Apply the engine's own declared floor — the SAME clamp
+    # ``execute_direct_base`` applies at build time. Without it the stamp can
+    # report a bound strictly below what the real run measures against, and can
+    # classify an orchestrator-tier command as ``per_task``.
+    inner_timeout = max(inner_timeout, config.min_timeout)
     return get_bash_timeout(inner_timeout)
 
 
@@ -281,7 +299,7 @@ def _compute_execution_tier_fields(bash_timeout_seconds: int) -> dict[str, Any]:
     Returns the canonical shape consumed by ``cmd_resolve``. Hint strings are
     pinned recognition tokens — see module docstring.
     """
-    exceeds = bash_timeout_seconds > _BASH_CEILING_SECONDS
+    exceeds = bash_timeout_seconds > HARNESS_BASH_CEILING_SECONDS
     if exceeds:
         tier = 'orchestrator'
         hint = _HINT_ORCHESTRATOR

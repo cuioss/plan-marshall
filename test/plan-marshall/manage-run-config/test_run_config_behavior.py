@@ -226,13 +226,64 @@ def test_timeout_get_enforces_minimum_floor(rc_env):
     assert run_config.timeout_get('fast', 30) == 120
 
 
+def test_timeout_get_explicit_overrides_persisted_value(rc_env):
+    """An explicit bound wins outright over a persisted learned value.
+
+    The pre-change behaviour discarded the caller's bound whenever ANY value was
+    persisted; the persisted 240 (-> 300 after the safety margin) must NOT reduce
+    the explicit 1800.
+    """
+    _write_config({'version': 1, 'commands': {'ci:checks': {'timeout_seconds': 240}}})
+
+    assert run_config.timeout_get('ci:checks', 60, explicit=1800) == 1800
+
+
+def test_timeout_get_explicit_overrides_a_larger_persisted_value(rc_env):
+    """An explicit bound still binds when the persisted value is LARGER.
+
+    The override is not a `max(explicit, learned)` — no learned value may
+    displace the caller's request in either direction.
+    """
+    _write_config({'version': 1, 'commands': {'slow': {'timeout_seconds': 1200}}})
+
+    # Without the override this key resolves to 1200 * 1.25 = 1500.
+    assert run_config.timeout_get('slow', 60, explicit=300) == 300
+
+
+def test_timeout_get_floor_still_binds_a_below_floor_explicit_bound(rc_env):
+    """The 120 s floor is unconditional — an explicit bound does not waive it."""
+    assert run_config.timeout_get('ci:checks', 300, explicit=30) == 120
+
+
+def test_timeout_get_no_override_path_is_unchanged(rc_env):
+    """Passing explicit=None resolves exactly as the learned path does."""
+    _write_config({'version': 1, 'commands': {'ci:checks': {'timeout_seconds': 240}}})
+
+    assert run_config.timeout_get('ci:checks', 60, explicit=None) == 300
+    assert run_config.timeout_get('ci:checks', 60) == 300
+
+
 def test_cmd_timeout_get_wraps_value(rc_env):
     """cmd_timeout_get returns the resolved timeout in a success envelope."""
-    result = run_config.cmd_timeout_get(argparse.Namespace(command='ci:checks', default=300))
+    result = run_config.cmd_timeout_get(
+        argparse.Namespace(command='ci:checks', default=300, explicit=None)
+    )
 
     assert result['status'] == 'success'
     assert result['command'] == 'ci:checks'
     assert result['timeout_seconds'] == 300
+
+
+def test_cmd_timeout_get_forwards_explicit_override(rc_env):
+    """cmd_timeout_get forwards --explicit so it overrides the persisted value."""
+    _write_config({'version': 1, 'commands': {'ci:checks': {'timeout_seconds': 240}}})
+
+    result = run_config.cmd_timeout_get(
+        argparse.Namespace(command='ci:checks', default=300, explicit=1800)
+    )
+
+    assert result['status'] == 'success'
+    assert result['timeout_seconds'] == 1800
 
 
 def test_cmd_timeout_set_initial_then_weighted(rc_env):
@@ -576,6 +627,26 @@ def test_main_timeout_get_dispatch(rc_env, monkeypatch, capsys):
 
     assert rc == 0
     assert 'timeout_seconds: 300' in capsys.readouterr().out
+
+
+def test_main_timeout_get_accepts_explicit_flag(rc_env, monkeypatch, capsys):
+    """The CLI accepts --explicit and the override reaches the resolved value.
+
+    Driven through ``main()`` (the real argparse surface) rather than the handler,
+    so the flag declaration itself — the part most likely to lag the feature — is
+    the thing under test.
+    """
+    _write_config({'version': 1, 'commands': {'x': {'timeout_seconds': 240}}})
+    monkeypatch.setattr(
+        sys,
+        'argv',
+        ['run_config', 'timeout', 'get', '--command', 'x', '--default', '300', '--explicit', '1800'],
+    )
+
+    rc = run_config.main()
+
+    assert rc == 0
+    assert 'timeout_seconds: 1800' in capsys.readouterr().out
 
 
 def test_main_build_queue_limit_get_dispatch(rc_env, monkeypatch, capsys):

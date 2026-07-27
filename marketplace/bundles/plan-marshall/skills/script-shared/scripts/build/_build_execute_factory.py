@@ -535,7 +535,10 @@ def create_execute_handlers(
             retry) keeps the single shared routing ``cmd_run`` instead of
             forking a local one. The wrapper only applies to the in-process leg:
             a routed build runs inside the daemon child, which re-enters this
-            factory and applies the wrapper there.
+            factory and applies the wrapper there. A wrapper MUST accept and
+            forward the full inner signature — including ``explicit_timeout`` —
+            so a caller's explicit ``--timeout`` override survives the wrapped
+            leg instead of being dropped at the wrapper boundary.
 
     Returns:
         Tuple of (execute_direct, cmd_run) functions, where ``execute_direct``
@@ -563,6 +566,7 @@ def create_execute_handlers(
         project_dir: str = '.',
         env_vars: dict[str, str] | None = None,
         working_dir: str | None = None,
+        explicit_timeout: int | None = None,
     ) -> DirectCommandResult:
         wrapper = _resolve_wrapper(project_dir)
 
@@ -585,6 +589,7 @@ def create_execute_handlers(
             working_dir=working_dir,
             extra_result_fields=extras or None,
             min_timeout=config.min_timeout,
+            explicit_timeout=explicit_timeout,
         )
 
     # The callable the in-process leg of cmd_run invokes. Identical to
@@ -595,7 +600,13 @@ def create_execute_handlers(
         project_dir = getattr(args, 'project_dir', '.')
         command_args = args.command_args
         command_key = compute_command_key(config, command_args)
-        timeout_seconds = getattr(args, 'timeout', None) or config.default_timeout
+        # ``--timeout`` carries a ``None`` sentinel default (see
+        # ``_build_cli.add_run_subparser``), so an explicitly-supplied bound stays
+        # distinguishable from an unsupplied flag here. It is forwarded as a
+        # DISTINCT override rather than collapsed into ``default_timeout``:
+        # collapsing the two is what let ``timeout_get`` discard an explicit
+        # ``--timeout`` whenever a learned value existed.
+        explicit_timeout = getattr(args, 'timeout', None)
 
         # Optional env_vars support
         env_vars = None
@@ -707,10 +718,11 @@ def create_execute_handlers(
                 result = in_process_execute(
                     args=command_args,
                     command_key=command_key,
-                    default_timeout=timeout_seconds,
+                    default_timeout=config.default_timeout,
                     project_dir=project_dir,
                     env_vars=env_vars,
                     working_dir=working_dir,
+                    explicit_timeout=explicit_timeout,
                 )
         except BuildQueueTimeout as exc:
             return _emit_queue_timeout(config.tool_name, command_args, getattr(args, 'format', 'toon'), exc)

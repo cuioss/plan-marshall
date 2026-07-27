@@ -71,7 +71,10 @@ def add_run_subparser(
     Args:
         subparsers: argparse subparsers object.
         command_args_help: Help text for --command-args.
-        default_timeout: Default timeout in seconds.
+        default_timeout: The engine's fallback timeout in seconds, named in the
+            ``--timeout`` help text. It is NOT the argparse default — that is a
+            ``None`` sentinel so an explicit ``--timeout`` stays distinguishable
+            from an unsupplied one.
         extra_args_fn: Optional callable(run_parser) to add tool-specific args
             (e.g., --working-dir, --env for npm).
 
@@ -87,11 +90,18 @@ def add_run_subparser(
         required=True,
         help=command_args_help,
     )
+    # ``default=None`` is a load-bearing SENTINEL, not a missing default: it is
+    # the only way ``cmd_run`` can tell an explicitly-supplied ``--timeout N``
+    # from an unsupplied flag. An explicit value is a true override of the
+    # persisted learned value; when the flag is absent the engine's
+    # ``config.default_timeout`` supplies the fallback, exactly as before.
     run_parser.add_argument(
         '--timeout',
         type=int,
-        default=default_timeout,
-        help=f'Build timeout in seconds (default: {default_timeout})',
+        default=None,
+        help='Build timeout in seconds — an explicit value overrides the learned value '
+        '(no learned value can reduce it, though the engine floor still applies). '
+        f'When omitted, the learned value is used, falling back to {default_timeout}.',
     )
     run_parser.add_argument(
         '--mode',

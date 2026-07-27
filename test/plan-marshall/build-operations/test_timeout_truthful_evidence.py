@@ -17,6 +17,11 @@ it had actually proven:
    finished. The branch now parses and attaches the zero-failure ``tests``
    summary plus ``tool_duration_seconds``.
 
+The bound-ordering guard also covers the explicit-timeout override at the same
+seam: an explicit request above the floor binds unreduced, while one below the
+floor still resolves UP to the floor — the override wins over the learned value,
+never over the floor.
+
 The bound assertions read the inner backstop out of ``pyproject.toml`` at test
 time (authoritative, never edited here) and never encode a learned adaptive
 timeout figure — those are rewritten by the run-config weighted average after
@@ -149,15 +154,13 @@ def test_pyproject_config_wires_the_outer_floor():
     assert _pyproject_execute._CONFIG.min_timeout == _pyproject_execute.PYTEST_OUTER_FLOOR_SECONDS
 
 
-def test_learned_value_below_the_backstop_is_raised_to_the_floor(monkeypatch, tmp_path):
-    """A learned timeout under the inner backstop still yields a deadline at/above the floor.
+def _drive_execute_direct_base(monkeypatch, tmp_path, stub_learned, floor, explicit_timeout=None):
+    """Drive ``execute_direct_base`` against a stubbed subprocess and learner.
 
-    The learned value is stubbed with an arbitrary fixture figure below the
-    backstop — the shared run-configuration is never consulted, and no learned
-    figure is encoded here.
+    The learned value is stubbed with the caller's arbitrary fixture figure — the
+    shared run-configuration is never consulted, and no learned figure is encoded
+    in this module. Returns ``(observed_subprocess_timeout, result)``.
     """
-    floor = _pyproject_execute.PYTEST_OUTER_FLOOR_SECONDS
-    stub_learned = _inner_backstop_seconds() - 1
     observed: dict[str, int] = {}
 
     def _fake_run(cmd_parts, **kwargs):
@@ -165,7 +168,7 @@ def test_learned_value_below_the_backstop_is_raised_to_the_floor(monkeypatch, tm
         return types.SimpleNamespace(returncode=0)
 
     monkeypatch.setattr(_build_execute, 'create_log_file', lambda *a, **k: str(tmp_path / 'run.log'))
-    monkeypatch.setattr(_build_execute, 'timeout_get', lambda *a, **k: stub_learned)
+    monkeypatch.setattr(_build_execute, 'timeout_get', _stub_timeout_get(stub_learned))
     monkeypatch.setattr(_build_execute, 'timeout_set', lambda *a, **k: None)
     monkeypatch.setattr(
         _build_execute,
@@ -186,10 +189,72 @@ def test_learned_value_below_the_backstop_is_raised_to_the_floor(monkeypatch, tm
         build_command_fn=lambda wrapper, args, log_file: ([wrapper, args], f'{wrapper} {args}'),
         wrapper='./pw',
         min_timeout=floor,
+        explicit_timeout=explicit_timeout,
     )
 
-    assert observed['timeout'] >= floor
+    return observed['timeout'], result
+
+
+def _stub_timeout_get(stub_learned):
+    """A ``timeout_get`` stub honouring the explicit-override contract.
+
+    Mirrors the production resolution rule so the seam under test is
+    ``execute_direct_base``'s floor application, not the stub: an explicit bound
+    (4th positional / ``explicit`` kwarg) wins over the learned value, which is
+    otherwise returned verbatim.
+    """
+
+    def _stub(command_key, default, project_dir='.', explicit=None):
+        return stub_learned if explicit is None else explicit
+
+    return _stub
+
+
+def test_learned_value_below_the_backstop_is_raised_to_the_floor(monkeypatch, tmp_path):
+    """A learned timeout under the inner backstop still yields a deadline at/above the floor.
+
+    If the outer bound could sit below the floor it would fire before pytest's
+    inner backstop, turning a diagnosable hang into an opaque kill.
+    """
+    floor = _pyproject_execute.PYTEST_OUTER_FLOOR_SECONDS
+    stub_learned = _inner_backstop_seconds() - 1
+
+    observed_timeout, result = _drive_execute_direct_base(monkeypatch, tmp_path, stub_learned, floor)
+
+    assert observed_timeout >= floor
     assert result['timeout_used_seconds'] >= floor
+
+
+def test_below_floor_explicit_request_still_resolves_to_the_floor(monkeypatch, tmp_path):
+    """An explicit bound below the floor does NOT waive it.
+
+    The override wins over the learned value, never over the floor — the floor
+    protects against under-specification, which is exactly what a below-floor
+    explicit request is.
+    """
+    floor = _pyproject_execute.PYTEST_OUTER_FLOOR_SECONDS
+    stub_learned = _inner_backstop_seconds() - 1
+
+    observed_timeout, result = _drive_execute_direct_base(
+        monkeypatch, tmp_path, stub_learned, floor, explicit_timeout=floor - 1
+    )
+
+    assert observed_timeout == floor
+    assert result['timeout_used_seconds'] == floor
+
+
+def test_above_floor_explicit_request_binds(monkeypatch, tmp_path):
+    """An explicit bound above the floor binds, unreduced by the learned value."""
+    floor = _pyproject_execute.PYTEST_OUTER_FLOOR_SECONDS
+    stub_learned = _inner_backstop_seconds() - 1
+    requested = floor * 2
+
+    observed_timeout, result = _drive_execute_direct_base(
+        monkeypatch, tmp_path, stub_learned, floor, explicit_timeout=requested
+    )
+
+    assert observed_timeout == requested
+    assert result['timeout_used_seconds'] == requested
 
 
 # =============================================================================

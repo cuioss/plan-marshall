@@ -231,11 +231,12 @@ Adaptive timeout management for **synchronous command execution** (Maven, npm, G
 
 ### Timeout Behavior
 
-- **Safety margin on retrieval**: Persisted timeout values are multiplied by a safety buffer when read, accounting for execution variance
+- **Explicit override wins over the learned value**: An explicitly-supplied bound (`--explicit` on the CLI, `--timeout` on a build `run`) is a true override of the persisted learned value — it binds outright, and no learned value can reduce it. This is the only path that ignores the persisted value; it exists so a caller who knows a command needs longer cannot be silently capped by a shorter learned value.
+- **Safety margin on retrieval**: On the no-override path, persisted timeout values are multiplied by a safety buffer when read, accounting for execution variance. Adaptive learning is unchanged on this path.
 - **Adaptive learning on update**: When updating with a new duration, the algorithm weights towards the higher value for reliability
-- **Minimum floor**: A minimum timeout (currently 120s) prevents unreasonably short timeouts -- JVM-based tools have cold startup times (30-90s) that warm-run measurements miss
+- **Minimum floor**: A minimum timeout (currently 120s) prevents unreasonably short timeouts -- JVM-based tools have cold startup times (30-90s) that warm-run measurements miss. The floor binds on **both** paths: an explicit override does not waive it, because the floor protects against under-specification. Build engines layer their own, higher floor on top (see each engine's declared `min_timeout`).
 
-Implementation constants are defined in `manage_run_config.py`. See the script source for exact values.
+Implementation constants are defined in `run_config.py`. See the script source for exact values.
 
 **Flow**: `timeout get` -> execute with shell timeout -> record duration -> `timeout set` (adaptive learning)
 
@@ -243,12 +244,21 @@ Implementation constants are defined in `manage_run_config.py`. See the script s
 
 #### Get Timeout
 
-Retrieve timeout for a command with default fallback. Returns plain number (seconds).
+Retrieve timeout for a command, either from an explicit override or from the learned value with default fallback. Returns plain number (seconds).
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config timeout get \
   --command "build:maven_verify" \
   --default 300
+```
+
+Override the learned value with an explicit bound:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config timeout get \
+  --command "build:maven_verify" \
+  --default 300 \
+  --explicit 1800
 ```
 
 **Parameters**:
@@ -257,12 +267,14 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config timeo
 |-----------|----------|-------------|
 | `--command` | Yes | Command identifier (e.g., `build:maven_verify`) |
 | `--default` | Yes | Default timeout in seconds if no persisted value |
+| `--explicit` | No | Explicit timeout in seconds that overrides the persisted learned value |
 
 **Logic**:
-1. Look up `commands.<command>.timeout_seconds` in run-configuration.json
-2. If not found: use `--default` value
-3. If found: apply safety margin to persisted value
-4. Return the higher of the calculated value or the minimum floor
+1. If `--explicit` is supplied: return the higher of it and the minimum floor — the persisted value is not consulted
+2. Otherwise, look up `commands.<command>.timeout_seconds` in run-configuration.json
+3. If not found: use `--default` value
+4. If found: apply safety margin to persisted value
+5. Return the higher of the calculated value or the minimum floor
 
 **Output**: Plain number (e.g., `300`)
 

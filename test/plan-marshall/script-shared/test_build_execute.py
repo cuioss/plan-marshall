@@ -3,14 +3,16 @@
 """Tests for _build_execute.py shared execution module.
 
 Tests execute_direct_base() with various capture strategies, timeout handling,
-adaptive timeout learning, error conditions, and parameter injection.
+adaptive timeout learning, the explicit-timeout override (and the engine floor
+that still binds it), error conditions, and parameter injection.
 """
 
+import json
 import subprocess
 import tempfile
 from unittest.mock import MagicMock, mock_open, patch
 
-from _build_execute import CaptureStrategy, execute_direct_base
+from _build_execute import MIN_TIMEOUT, CaptureStrategy, execute_direct_base
 
 
 def _build_command_fn(wrapper, args, log_file):
@@ -36,6 +38,8 @@ def _call_execute(
     working_dir=None,
     extra_result_fields=None,
     project_dir=None,
+    explicit_timeout=None,
+    min_timeout=MIN_TIMEOUT,
 ):
     """Call execute_direct_base with sensible test defaults."""
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -53,6 +57,8 @@ def _call_execute(
             env_vars=env_vars,
             working_dir=working_dir,
             extra_result_fields=extra_result_fields,
+            explicit_timeout=explicit_timeout,
+            min_timeout=min_timeout,
         )
 
 
@@ -497,6 +503,139 @@ class TestMinTimeoutEnforcement:
 
         # Learned timeout 120 is above the floor of 60, so 120 is used.
         assert result['timeout_used_seconds'] == 120
+
+
+class TestExplicitTimeoutOverride:
+    """The ``explicit_timeout`` override at the ``execute_direct_base`` seam.
+
+    An explicitly-supplied bound is a true override of the persisted learned
+    value: it reaches the subprocess ``timeout=`` argument, and no learned value
+    may reduce it. It does NOT waive the engine's declared ``min_timeout`` floor.
+    """
+
+    @patch('_build_execute.timeout_set')
+    @patch('_build_execute.subprocess.run')
+    @patch('_build_execute.timeout_get', return_value=1800)
+    @patch('_build_execute.create_log_file')
+    def test_explicit_override_is_forwarded_to_timeout_get(
+        self, mock_log_file, mock_tget, mock_run, mock_tset
+    ):
+        """The explicit bound is handed to timeout_get as the override argument."""
+        mock_log_file.return_value = '/tmp/test.log'
+        mock_run.return_value = MagicMock(returncode=0)
+
+        _call_execute(command_key='test:verify', default_timeout=300, explicit_timeout=1800)
+
+        # (command_key, default, project_dir, explicit)
+        assert mock_tget.call_args[0][0] == 'test:verify'
+        assert mock_tget.call_args[0][1] == 300
+        assert mock_tget.call_args[0][3] == 1800
+
+    @patch('_build_execute.timeout_set')
+    @patch('_build_execute.subprocess.run')
+    @patch('_build_execute.timeout_get', return_value=1800)
+    @patch('_build_execute.create_log_file')
+    def test_explicit_override_reaches_the_subprocess_timeout_argument(
+        self, mock_log_file, mock_tget, mock_run, mock_tset
+    ):
+        """The resolved override is the value subprocess.run is bounded by."""
+        mock_log_file.return_value = '/tmp/test.log'
+        mock_run.return_value = MagicMock(returncode=0)
+
+        result = _call_execute(explicit_timeout=1800)
+
+        assert mock_run.call_args[1]['timeout'] == 1800
+        assert result['timeout_used_seconds'] == 1800
+
+    @patch('_build_execute.timeout_set')
+    @patch('_build_execute.subprocess.run')
+    @patch('_build_execute.timeout_get', return_value=300)
+    @patch('_build_execute.create_log_file')
+    def test_absent_override_still_consults_timeout_get(
+        self, mock_log_file, mock_tget, mock_run, mock_tset
+    ):
+        """Without an override the learned path is unchanged (explicit stays None)."""
+        mock_log_file.return_value = '/tmp/test.log'
+        mock_run.return_value = MagicMock(returncode=0)
+
+        result = _call_execute(command_key='test:verify', default_timeout=300)
+
+        mock_tget.assert_called_once()
+        assert mock_tget.call_args[0][3] is None
+        assert mock_run.call_args[1]['timeout'] == 300
+        assert result['timeout_used_seconds'] == 300
+
+    @patch('_build_execute.timeout_set')
+    @patch('_build_execute.subprocess.run')
+    @patch('_build_execute.timeout_get', return_value=120)
+    @patch('_build_execute.create_log_file')
+    def test_engine_floor_still_binds_a_below_floor_explicit_override(
+        self, mock_log_file, mock_tget, mock_run, mock_tset
+    ):
+        """A below-floor explicit request resolves UP to the engine floor.
+
+        The floor protects against under-specification, so the override wins over
+        the learned value but never below ``min_timeout``.
+        """
+        mock_log_file.return_value = '/tmp/test.log'
+        mock_run.return_value = MagicMock(returncode=0)
+
+        result = _call_execute(explicit_timeout=120, min_timeout=600)
+
+        assert mock_run.call_args[1]['timeout'] == 600
+        assert result['timeout_used_seconds'] == 600
+
+
+class TestExplicitOverrideAgainstRealRunConfig:
+    """End-to-end: the override beats a REAL persisted learned value.
+
+    ``timeout_get`` is NOT mocked here — the persisted value is written into an
+    isolated ``run-configuration.json`` so the property under test is the actual
+    resolution the production path performs. This is the case that is red against
+    the pre-change code, where a persisted value discarded the caller's bound.
+    """
+
+    @staticmethod
+    def _isolate_run_config(tmp_path, monkeypatch, persisted_seconds):
+        """Point run-configuration.json at ``tmp_path`` with one persisted value."""
+        monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+        monkeypatch.setenv('PLAN_DIR_NAME', '.plan')
+        import file_ops
+
+        monkeypatch.setattr(file_ops, '_BASE_DIR_OVERRIDE', None)
+        config = {'version': 1, 'commands': {'test:verify': {'timeout_seconds': persisted_seconds}}}
+        (tmp_path / 'run-configuration.json').write_text(json.dumps(config))
+
+    @patch('_build_execute.timeout_set')
+    @patch('_build_execute.subprocess.run')
+    @patch('_build_execute.create_log_file')
+    def test_explicit_override_beats_a_real_persisted_value(
+        self, mock_log_file, mock_run, mock_tset, tmp_path, monkeypatch
+    ):
+        mock_log_file.return_value = '/tmp/test.log'
+        mock_run.return_value = MagicMock(returncode=0)
+        # Persisted 240 resolves to 240 * 1.25 = 300 on the learned path.
+        self._isolate_run_config(tmp_path, monkeypatch, 240)
+
+        result = _call_execute(command_key='test:verify', default_timeout=300, explicit_timeout=1800)
+
+        assert mock_run.call_args[1]['timeout'] == 1800
+        assert result['timeout_used_seconds'] == 1800
+
+    @patch('_build_execute.timeout_set')
+    @patch('_build_execute.subprocess.run')
+    @patch('_build_execute.create_log_file')
+    def test_no_override_resolves_the_real_learned_value(
+        self, mock_log_file, mock_run, mock_tset, tmp_path, monkeypatch
+    ):
+        mock_log_file.return_value = '/tmp/test.log'
+        mock_run.return_value = MagicMock(returncode=0)
+        self._isolate_run_config(tmp_path, monkeypatch, 240)
+
+        result = _call_execute(command_key='test:verify', default_timeout=300)
+
+        # 240 * 1.25 = 300 — the learned path is unchanged.
+        assert result['timeout_used_seconds'] == 300
 
 
 class TestExtraResultFields:

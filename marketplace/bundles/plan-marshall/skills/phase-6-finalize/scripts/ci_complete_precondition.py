@@ -45,6 +45,22 @@ Outcome semantics:
   duration — the starved-ratchet fix (the success path never fired when the
   ceiling sat below the real CI duration).
 
+Harness-ceiling clamp:
+
+The resolver's *consumed* inner ceiling is clamped so that
+``inner + CI_WAIT_OUTER_BUFFER_SECONDS`` stays STRICTLY below
+``HARNESS_BASH_CEILING_SECONDS`` (declared once in the shared ``constants``
+module), whatever the inner value's origin — an explicit ``--timeout``, the
+persisted ``ci:wait`` learned value, or
+:data:`DEFAULT_CI_WAIT_TIMEOUT_SECONDS`. The script-side ceiling is therefore
+NOT unconditionally the binding one: a CI run genuinely longer than the
+clamped ceiling returns a structured ``deadline_exceeded`` envelope
+(``wait_failed`` / ``arm_pending``) and the dispatcher re-polls on re-entry,
+instead of the host platform killing the call mid-flight and reporting a real
+CI outcome as an opaque kill. Only the consumed ceiling is clamped — the
+upward-ratchet ``timeout set`` calls keep recording the true observed /
+provider duration, so the persisted ``ci:wait`` value stays honest.
+
 Per-signal FIND-gate mode (``--signal-arm {ci|review|sonar}``):
 
 The default (``--signal-arm`` absent, or ``ci``) resolves the global
@@ -125,6 +141,7 @@ import sys
 import time
 from pathlib import Path
 
+from constants import HARNESS_BASH_CEILING_SECONDS
 from file_ops import get_executor_path, get_plan_dir
 from toon_parser import parse_toon, serialize_toon
 
@@ -134,10 +151,26 @@ from toon_parser import parse_toon, serialize_toon
 
 #: Default ``ci wait --timeout`` ceiling — 600 s (10 minutes). Most CI
 #: runs complete inside 60-180 s; the larger ceiling is defensive against
-#: cold-start queues. The host platform's per-call Bash ceiling is set to
-#: match this value plus a small buffer (see ``_run_ci_wait`` below) so
-#: the script-side ceiling is the binding one.
+#: cold-start queues. This is the *requested* ceiling only: it is passed
+#: through :func:`_clamp_wait_ceiling` like every other origin, so the value
+#: actually consumed is the clamped one whenever the request plus
+#: :data:`CI_WAIT_OUTER_BUFFER_SECONDS` would reach the host platform's
+#: per-call Bash ceiling. The script-side ceiling is NOT unconditionally
+#: binding — see the module docstring's "Harness-ceiling clamp" section.
 DEFAULT_CI_WAIT_TIMEOUT_SECONDS: int = 600
+
+#: Outer buffer added to the inner ``ci wait --timeout`` ceiling when invoking
+#: the wait subprocess (see :func:`_run_ci_wait`). The inner ``ci wait`` poll
+#: loop self-bounds at the inner ceiling; the buffer gives it room to serialise
+#: and return its envelope before the outer ``subprocess.run`` deadline fires.
+CI_WAIT_OUTER_BUFFER_SECONDS: int = 30
+
+#: The largest inner ceiling for which ``inner + CI_WAIT_OUTER_BUFFER_SECONDS``
+#: is still STRICTLY below the host platform's per-call Bash ceiling. Derived,
+#: never hard-coded, so it tracks both source constants.
+_MAX_INNER_WAIT_SECONDS: int = (
+    HARNESS_BASH_CEILING_SECONDS - CI_WAIT_OUTER_BUFFER_SECONDS - 1
+)
 
 #: Cache file path relative to the plan directory.
 _CACHE_RELATIVE_PATH: str = 'work/ci-precondition-cache.toon'
@@ -155,6 +188,39 @@ _RUN_CONFIG_NOTATION: str = 'plan-marshall:manage-run-config:run_config'
 #: persisted. ``manage-run-config`` namespaces command timeouts by an
 #: arbitrary string key; ``ci:wait`` mirrors the ``checks wait`` primitive.
 _CI_WAIT_TIMEOUT_KEY: str = 'ci:wait'
+
+
+# ---------------------------------------------------------------------------
+# Harness-ceiling clamp
+# ---------------------------------------------------------------------------
+
+
+def _clamp_wait_ceiling(inner_seconds: int) -> int:
+    """Clamp a requested inner ceiling to fit under the harness Bash ceiling.
+
+    The wait subprocess is invoked with ``timeout=inner +
+    CI_WAIT_OUTER_BUFFER_SECONDS``. Bounding from above by
+    :data:`_MAX_INNER_WAIT_SECONDS` guarantees that outer bound stays STRICTLY
+    below :data:`HARNESS_BASH_CEILING_SECONDS`, so the resolver always gets to
+    return a structured envelope rather than being killed mid-call by the host
+    platform.
+
+    The clamp also bounds from BELOW at one second. ``subprocess.run`` raises
+    an uncaught :class:`ValueError` on a zero or negative ``timeout`` (only
+    :class:`subprocess.TimeoutExpired` is handled at the call site), so an
+    explicit ``--timeout 0`` or a corrupt negative persisted ``ci:wait`` value
+    would crash the resolution instead of degrading to a bounded wait.
+
+    Args:
+        inner_seconds: The requested inner ceiling, from any origin — an
+            explicit ``--timeout``, the persisted ``ci:wait`` learned value, or
+            :data:`DEFAULT_CI_WAIT_TIMEOUT_SECONDS`.
+
+    Returns:
+        The requested value when it already fits within both bounds, otherwise
+        the nearest inner ceiling that does.
+    """
+    return max(1, min(inner_seconds, _MAX_INNER_WAIT_SECONDS))
 
 
 # ---------------------------------------------------------------------------
@@ -201,11 +267,14 @@ def _run_ci_wait(
     ``final_status`` (on success) or ``status``/``error`` (on timeout) to
     decide the outcome.
 
-    The host platform's per-call ceiling is wider than ``timeout_seconds``
-    because ``ci wait`` enforces its own internal poll loop. We invoke
-    with ``--plan-id`` so the executor's two-state contract resolves the
-    worktree path itself; passing both ``--plan-id`` and
-    ``--project-dir`` would trigger ``mutually_exclusive_args``.
+    ``timeout_seconds`` MUST already be clamped by :func:`_clamp_wait_ceiling`
+    (``resolve`` does this at the single point where the ceiling is settled),
+    so the outer ``subprocess.run`` deadline of ``timeout_seconds +
+    CI_WAIT_OUTER_BUFFER_SECONDS`` stays strictly below the host platform's
+    per-call Bash ceiling. We invoke with ``--plan-id`` so the executor's
+    two-state contract resolves the worktree path itself; passing both
+    ``--plan-id`` and ``--project-dir`` would trigger
+    ``mutually_exclusive_args``.
     """
     try:
         executor = get_executor_path()
@@ -235,15 +304,17 @@ def _run_ci_wait(
             text=True,
             check=False,
             # The wait primitive's own --timeout enforces the inner ceiling.
-            # Give the host platform a small buffer beyond it so the inner
-            # ceiling is the binding one.
-            timeout=timeout_seconds + 30,
+            # The buffer gives it room to serialise and return its envelope
+            # before this outer deadline fires; the clamp in resolve() keeps
+            # the sum strictly below the harness's per-call Bash ceiling.
+            timeout=timeout_seconds + CI_WAIT_OUTER_BUFFER_SECONDS,
             cwd=worktree_path,
         )
     except subprocess.TimeoutExpired:
         # The wait subprocess blew past even the outer buffer ceiling
-        # (timeout_seconds + 30) without returning. The inner ``ci wait``
-        # poll loop should have self-bounded at ``timeout_seconds``, so
+        # (timeout_seconds + CI_WAIT_OUTER_BUFFER_SECONDS) without returning.
+        # The inner ``ci wait`` poll loop should have self-bounded at
+        # ``timeout_seconds``, so
         # reaching here means the subprocess wedged. Surface a synthetic
         # timeout-like envelope instead of letting subprocess.TimeoutExpired
         # propagate uncaught — resolve() routes any non-success envelope to
@@ -254,8 +325,9 @@ def _run_ci_wait(
             'status': 'timeout',
             'wait_outcome': 'deadline_exceeded',
             'error': (
-                f"ci wait subprocess exceeded the {timeout_seconds + 30}s "
-                f"host ceiling without returning"
+                'ci wait subprocess exceeded the '
+                f"{timeout_seconds + CI_WAIT_OUTER_BUFFER_SECONDS}s "
+                'outer ceiling without returning'
             ),
         }
     stdout = completed.stdout or ''
@@ -450,7 +522,10 @@ def resolve(
             the run-config ``timeout get`` helper, falling back to
             :data:`DEFAULT_CI_WAIT_TIMEOUT_SECONDS` (600s = 10 min) when
             no persisted value exists. An explicit integer overrides the
-            run-config lookup entirely.
+            run-config lookup entirely. Whatever the origin, the settled
+            value is clamped by :func:`_clamp_wait_ceiling` so the outer
+            wait deadline stays strictly below the harness Bash ceiling —
+            an explicit value does NOT waive the clamp.
         ci_wait_runner: Optional callable used as a test seam in place of
             :func:`_run_ci_wait`. Signature:
             ``(plan_id, pr_number, timeout_seconds, worktree_path) -> dict``.
@@ -516,6 +591,21 @@ def resolve(
     # on a missing/corrupt run-configuration.json.
     if timeout_seconds is None:
         timeout_seconds = timeout_get_fn(DEFAULT_CI_WAIT_TIMEOUT_SECONDS)
+
+    # Single settle point for the consumed ceiling: every origin (explicit
+    # --timeout, persisted ci:wait learned value, DEFAULT_CI_WAIT_TIMEOUT_
+    # SECONDS) passes through the same clamp, and the per-signal review /
+    # sonar arms inherit it because they delegate here.
+    #
+    # The PRE-clamp value is kept as ``requested_ceiling``: it is the ceiling
+    # the caller/learned value actually asked for, and it — not the clamped
+    # value — is the ratchet's comparison base below. Comparing the measured
+    # elapsed against the CLAMPED ceiling would let every deadline-exceeded
+    # finalize record ~_MAX_INNER_WAIT_SECONDS while the persisted ci:wait
+    # value sits above the clamp, dragging the learned value DOWNWARD on
+    # every run — a learned value silently self-capping.
+    requested_ceiling = timeout_seconds
+    timeout_seconds = _clamp_wait_ceiling(timeout_seconds)
 
     head_sha = head_fn(worktree_path)
 
@@ -598,14 +688,23 @@ def resolve(
     # UPWARD. This is the fix for the starved ratchet: when the ceiling is
     # below the true CI duration, every wait hits ``deadline_exceeded`` before
     # CI completes, so the success-path record never fires. By feeding the
-    # measured elapsed (which is ``≥`` the current ceiling, because the wait
-    # ran to the deadline) into the SAME ``timeout_set`` call, ``
+    # measured elapsed into the SAME ``timeout_set`` call, ``
     # compute_weighted_timeout`` (HIGHER_WEIGHT 0.80) lifts the persisted
     # ``ci:wait`` value each finalize and the next ceiling (``persisted ×
     # SAFETY_MARGIN 1.25``) grows with it, until it exceeds the true CI
     # duration and a real success records the exact value. When the wait
     # envelope surfaces the provider's true check-run duration (``duration_sec``)
     # prefer it — it collapses the geometric ratchet to a single step.
+    #
+    # The elapsed guard compares against ``requested_ceiling`` (the PRE-clamp
+    # value), never the clamped ``timeout_seconds``. Once the requested
+    # ceiling sits above the harness clamp, the wait can only ever consume the
+    # clamped window, so an elapsed-vs-clamped comparison would record a value
+    # strictly BELOW the persisted one on every single run and ratchet the
+    # learned value DOWN. Comparing against the requested ceiling makes the
+    # guard record only genuinely at-or-above-request observations, and stay
+    # silent (leaving the learned value untouched) when the clamp is what
+    # ended the wait.
     provider_duration = wait_result.get('duration_sec')
     try:
         provider_duration_int = int(provider_duration)  # type: ignore[arg-type]
@@ -613,10 +712,11 @@ def resolve(
         provider_duration_int = None
     if provider_duration_int is not None and provider_duration_int > 0:
         timeout_set_fn(provider_duration_int)
-    elif elapsed_at_deadline >= timeout_seconds and elapsed_at_deadline > 0:
-        # Only record when the wait actually consumed the full ceiling — a
-        # spurious immediate non-success envelope (e.g. an executor crash)
-        # must NOT pull the ratchet down with a sub-ceiling observation.
+    elif elapsed_at_deadline >= requested_ceiling and elapsed_at_deadline > 0:
+        # Only record when the wait actually consumed the full REQUESTED
+        # ceiling — a spurious immediate non-success envelope (e.g. an
+        # executor crash), or a wait cut short by the harness clamp, must NOT
+        # pull the ratchet down with a sub-request observation.
         timeout_set_fn(elapsed_at_deadline)
     return {
         'status': 'wait_failed',
@@ -801,7 +901,9 @@ def build_parser() -> argparse.ArgumentParser:
             'ceiling is sourced from run-configuration.json under the '
             f'command key {_CI_WAIT_TIMEOUT_KEY!r}, falling back to '
             f'{DEFAULT_CI_WAIT_TIMEOUT_SECONDS}s when no value is '
-            'persisted.'
+            'persisted. Any value — explicit or sourced — is clamped to at '
+            f'most {_MAX_INNER_WAIT_SECONDS}s so the outer wait deadline '
+            'stays strictly below the harness per-call Bash ceiling.'
         ),
     )
     resolve_parser.add_argument(
@@ -852,6 +954,7 @@ if __name__ == '__main__':
 # over TOON parsing of the CLI output (e.g., other Python scripts within
 # the same dispatcher process).
 __all__ = [
+    'CI_WAIT_OUTER_BUFFER_SECONDS',
     'DEFAULT_CI_WAIT_TIMEOUT_SECONDS',
     'resolve',
 ]

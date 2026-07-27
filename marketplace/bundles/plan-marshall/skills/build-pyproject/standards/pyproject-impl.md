@@ -87,6 +87,21 @@ The inner backstop is the diagnosable one — it names the test that hung and pr
 
 Changing either value requires re-checking the inequality. Raising the inner `timeout` at or above the outer floor silently disables attribution.
 
+### The outer floor is declared per engine, not owned by pyproject
+
+`PYTEST_OUTER_FLOOR_SECONDS` is pyproject's instance of a **uniform** declaration shape, not a pyproject-only mechanism. Every build engine declares its own named module-level outer floor constant and passes it as `ExecuteConfig.min_timeout`; none inherits the tool-agnostic `MIN_TIMEOUT` dataclass default silently:
+
+| Engine | Constant | Value | What the floor protects against |
+|--------|----------|-------|---------------------------------|
+| pyproject | `_pyproject_execute.PYTEST_OUTER_FLOOR_SECONDS` | 600 s | The outer kill pre-empting pytest's inner per-test backstop (the invariant above) |
+| maven | `_maven_execute.MAVEN_OUTER_FLOOR_SECONDS` | 300 s | A cold-repository dependency/plugin resolve being killed mid-download |
+| gradle | `_gradle_execute.GRADLE_OUTER_FLOOR_SECONDS` | 300 s | A cold-daemon start-up plus configuration phase being killed before the first task runs |
+| npm | `_npm_execute.NPM_OUTER_FLOOR_SECONDS` | 300 s | A cold-cache install (or an `npx` tool fetch) being killed mid-fetch |
+
+Only pyproject's floor is set by an inner-vs-outer ordering invariant; the other three are set by cold-start cost. The shared property is that each is *declared* rather than inherited, so the floor a run enforces is readable at the engine.
+
+**Resolve-stamp parity.** `architecture resolve` computes its `bash_timeout_seconds` stamp from the SAME declared floor the run enforces — `max(timeout_get(command_key, DEFAULT_BUILD_TIMEOUT), config.min_timeout) + OUTER_TIMEOUT_BUFFER` — so the recommended bound can never fall below what `execute_direct_base` will measure against. One declaration, two consumers, zero re-derivation. The derived `execution_tier` follows that floored value, which is why every pyproject build resolves `orchestrator`-tier: `600 + 30 = 630` exceeds `HARNESS_BASH_CEILING_SECONDS` (600) on the floor alone, before any learned value is consulted. See [`manage-architecture/standards/resolve-command.md`](../../manage-architecture/standards/resolve-command.md) § Augmented Fields for the stamp contract.
+
 ---
 
 ## Verification-Target Trust
