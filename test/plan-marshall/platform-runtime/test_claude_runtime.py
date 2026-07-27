@@ -1231,26 +1231,25 @@ class TestComposerImportWiring:
 class TestCommandIsBuild:
     """Unit tests for the ``_command_is_build`` detection predicate.
 
-    Detection anchors on the four build-wrapper executor notation substrings in
-    ``_BUILD_WRAPPER_NOTATIONS``. A match means the Bash call routes a
-    long-running build / orchestration command through the executor; an empty /
-    ``None`` command, a bare canonical verb word, or any command naming none of
-    the wrapper notations returns False.
+    Detection is STRUCTURAL: the command is parsed into argv, the executor
+    entry point is located, and the ``{bundle}:{skill}`` prefix of the notation
+    POSITIONAL that follows it must equal one of ``_BUILD_WRAPPER_NOTATIONS``.
+    A match means the Bash call INVOKES a build wrapper through the executor.
+
+    The retired contract matched the notation as a substring anywhere on the
+    line, which could not distinguish an invocation from a mention — see
+    ``TestCommandIsBuildMentionVsInvocation`` below for the regression that
+    replaced it.
     """
 
     @pytest.mark.parametrize("notation", list(_BUILD_WRAPPER_NOTATIONS))
     def test_each_wrapper_notation_matches(self, notation):
-        """Every build-wrapper notation, embedded in an executor invocation, matches."""
+        """Every build-wrapper notation, in the executor's notation position, matches."""
         command = (
             f"python3 .plan/execute-script.py {notation}:run_build run "
             '--command-args "verify plan-marshall"'
         )
         assert _command_is_build(command) is True
-
-    @pytest.mark.parametrize("notation", list(_BUILD_WRAPPER_NOTATIONS))
-    def test_notation_substring_anywhere_matches(self, notation):
-        """The notation substring matches anywhere in the command string."""
-        assert _command_is_build(f"some prefix {notation} trailing args") is True
 
     @pytest.mark.parametrize("command", [None, ""])
     def test_empty_or_none_command_is_false(self, command):
@@ -1287,6 +1286,98 @@ class TestCommandIsBuild:
             "python3 .plan/execute-script.py "
             "plan-marshall:build-pyproject:pyproject_build run "
             '--command-args "quality-gate plan-marshall"'
+        )
+        assert _command_is_build(command) is True
+
+
+class TestCommandIsBuildMentionVsInvocation:
+    """Regression: NAMING a build wrapper is not INVOKING one.
+
+    The retired substring match painted the 🔨 build glyph for the whole
+    duration of any command whose text happened to contain a wrapper notation.
+    Observed in the field: a command reading a solution outline that contained
+    the literal string ``plan-marshall:build-pyproject`` was treated as a
+    build.
+
+    Every mention case below is paired with a POSITIVE CONTROL — a genuine
+    invocation that must still return True — so a predicate that simply
+    returned False for everything cannot pass this class.
+    """
+
+    _INVOCATION = (
+        "python3 .plan/execute-script.py "
+        "plan-marshall:build-pyproject:pyproject_build run "
+        '--command-args "verify plan-marshall"'
+    )
+
+    def test_notation_as_a_quoted_argument_to_another_command_is_not_a_build(self):
+        """(a) The notation passed as an argument to an unrelated command."""
+        assert _command_is_build("echo 'plan-marshall:build-pyproject:pyproject_build'") is False
+        assert _command_is_build(self._INVOCATION) is True
+
+    def test_notation_in_a_file_path_or_file_content_is_not_a_build(self):
+        """(b) The shape actually observed: the notation inside a path, and
+        inside content the command reads or writes."""
+        assert _command_is_build("cat docs/plan-marshall:build-pyproject-notes.md") is False
+        assert (
+            _command_is_build(
+                "python3 .plan/execute-script.py plan-marshall:manage-files:manage-files "
+                "add --plan-id p --file plan-marshall:build-pyproject.md"
+            )
+            is False
+        )
+        assert _command_is_build(self._INVOCATION) is True
+
+    def test_notation_embedded_in_a_longer_token_is_not_a_build(self):
+        """(c) The notation as a substring of a larger token.
+
+        Equality on the parsed ``{bundle}:{skill}`` prefix is what rejects
+        this; a containment test cannot.
+        """
+        assert (
+            _command_is_build(
+                "python3 .plan/execute-script.py "
+                "not-plan-marshall:build-pyproject-shim:thing run"
+            )
+            is False
+        )
+        assert _command_is_build(self._INVOCATION) is True
+
+    def test_a_non_build_wrapper_in_the_notation_position_is_not_a_build(self):
+        """A real executor invocation of a NON-build skill must not match.
+
+        This is the discriminator the predicate exists for: the notation
+        position is occupied, so a positional-presence check would pass here.
+        Only the bundle:skill equality rejects it.
+        """
+        assert (
+            _command_is_build(
+                "python3 .plan/execute-script.py "
+                "plan-marshall:manage-status:manage-status read --plan-id p"
+            )
+            is False
+        )
+        assert _command_is_build(self._INVOCATION) is True
+
+    def test_an_unparseable_command_line_is_not_a_build(self):
+        """An unbalanced quote is not demonstrably an invocation, so: False.
+
+        Named explicitly because the parse can fail, and a predicate that let
+        the exception escape would break the render hook on any malformed
+        command line.
+        """
+        assert _command_is_build("python3 .plan/execute-script.py 'unterminated") is False
+
+    def test_an_executor_invocation_with_no_notation_is_not_a_build(self):
+        """The executor named with nothing after it must not index past argv."""
+        assert _command_is_build("python3 .plan/execute-script.py") is False
+
+    def test_an_absolute_executor_path_still_matches(self):
+        """The executor is commonly invoked by absolute path — the structural
+        match keys on the path SUFFIX, so that form must still be detected."""
+        command = (
+            "python3 /Users/x/repo/.plan/execute-script.py "
+            "plan-marshall:build-maven:maven run --targets verify"
         )
         assert _command_is_build(command) is True
 
@@ -1586,16 +1677,28 @@ class TestSessionRenderTitleArchivedFallback:
     ):
         """Materialize an archived plan (and optionally a live plan) on disk.
 
-        Always writes the session-cache pointer and the archived ``status.json``.
-        When ``write_live`` is True, also writes the live
+        Establishes the session→plan binding through **production's own
+        writer** (``session_binding.bind``) and writes the archived
+        ``status.json``. When ``write_live`` is True, also writes the live
         ``.plan/local/plans/{plan_id}/status.json`` so the live-path-wins
         precedence can be exercised.
+
+        Using the real binder is load-bearing. This helper previously
+        hand-wrote the ``active-plan`` slot file directly, which meant the
+        archived-title tests below would pass even if the binding surface they
+        depend on were broken — the fixture was manufacturing the very
+        precondition under test. Routing through ``bind`` means these tests can
+        only pass while the binding that the archive path must PRESERVE is
+        genuinely obtainable.
         """
         import claude_runtime as _cr
 
-        cache_dir = tmp_path / "sessions" / session_id
-        cache_dir.mkdir(parents=True)
-        (cache_dir / "active-plan").write_text(plan_id, encoding="utf-8")
+        monkeypatch.setattr(session_binding, "_SESSION_CACHE_BASE", tmp_path / "sessions")
+        session_binding.bind(session_id, plan_id)
+        assert session_binding.resolve_plan(session_id) == plan_id, (
+            "the production binder did not establish the session→plan binding "
+            "these archived-title tests depend on"
+        )
 
         archived_dir = (
             tmp_path / ".plan" / "local" / "archived-plans" / f"{date_prefix}-{plan_id}"
@@ -1618,7 +1721,6 @@ class TestSessionRenderTitleArchivedFallback:
                 encoding="utf-8",
             )
 
-        monkeypatch.setattr(session_binding, "_SESSION_CACHE_BASE", tmp_path / "sessions")
         monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
         monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", session_id)
         monkeypatch.chdir(tmp_path)

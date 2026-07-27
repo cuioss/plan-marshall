@@ -700,16 +700,24 @@ def _repaint_reply(**fields):
     )
 
 
-def test_archive_fires_teardown_exactly_once_after_the_move(plan_context, monkeypatch):
-    """``cmd_archive`` fires the live-surface teardown delegation exactly once.
+def test_archive_releases_no_session_binding(plan_context, monkeypatch):
+    """``cmd_archive`` fires NO teardown delegation at all.
 
-    The persisted-token pop and the live teardown are counterparts: the pop
-    clears ``status.title_token`` in the archived snapshot, the teardown retires
-    the live terminal title and the session's plan binding.
+    The retired test asserted the archive fired a teardown "exactly once" —
+    it asserted the SEAM FIRED, never that the terminal ever RECEIVED anything,
+    and the behaviour it pinned is now wrong outright. Archive must release no
+    binding: the terminal ✅ state it just persisted is delivered by the next
+    hook render, and that render can only resolve the plan while the binding
+    still exists. Releasing here would destroy the delivery route for the very
+    state the archive wrote.
+
+    The assertion is therefore inverted and made about the DELIVERED effect:
+    every executor delegation the archive makes is captured, and none of them
+    may be a session teardown.
     """
     calls: list[tuple[str, ...]] = []
     monkeypatch.setitem(
-        _lifecycle._drive_teardown.__globals__,
+        _lifecycle._surface_drive.__globals__,
         '_run_executor',
         lambda notation, *cli_args: calls.append((notation, *cli_args)),
     )
@@ -720,24 +728,11 @@ def test_archive_fires_teardown_exactly_once_after_the_move(plan_context, monkey
 
     assert result['status'] == 'success'
     teardown_calls = [c for c in calls if c[1:] == ('session', 'teardown')]
-    assert len(teardown_calls) == 1
-    # The plan directory really moved before the delegation fired.
-    assert Path(result['archived_to']).is_dir()
-
-
-def test_archive_succeeds_when_teardown_delegation_fails(plan_context, monkeypatch):
-    """A crashing teardown delegation leaves the archive result status: success."""
-
-    def _boom(*_args):
-        raise RuntimeError('teardown delegate exploded')
-
-    monkeypatch.setitem(_lifecycle._drive_teardown.__globals__, '_run_executor', _boom)
-
-    plan_id = 'tt-archive-teardown-fails'
-    cmd_create(Namespace(plan_id=plan_id, title='Test', phases='1-init', force=False))
-    result = cmd_archive(Namespace(plan_id=plan_id, dry_run=False))
-
-    assert result['status'] == 'success'
+    assert teardown_calls == [], (
+        'archive released a session binding — the terminal state it just '
+        'persisted can no longer be delivered'
+    )
+    # The plan directory really moved.
     assert Path(result['archived_to']).is_dir()
 
 
@@ -818,139 +813,32 @@ def test_transition_writes_no_repaint_non_delivery_entry(plan_context, monkeypat
 
 
 # =============================================================================
-# drive seam: a non-delivered title teardown is observable, not DEBUG-swallowed
+# drive seam: the archive-time teardown seam is GONE
 # =============================================================================
 #
-# ``_drive_teardown`` is the archive-time counterpart of ``_drive_repaint`` and
-# carries the same observable-fallback contract. The teardown delegate reports
-# its two halves independently (``reset`` for the title reset, ``unbound`` for
-# the session-binding release), so either half failing on an ACTIVATED delegate
-# PERSISTS ONE WARNING work-log entry (via ``plan_logging.log_entry``) naming the
-# plan and the reason. An inactive delegate (``active: false``) is the ordinary
-# nothing-to-do case and stays at DEBUG, and the seam never alters the archive
-# command's status or exit code.
+# ``_drive_teardown`` and its non-delivery reporting existed to release the
+# session binding at archive time. Archive now deliberately releases NO binding
+# (the terminal state it persists is delivered by the next hook render, which
+# resolves the plan only through that binding), so the seam has no caller and
+# was removed outright rather than left in place as an unreachable helper.
+#
+# The tests that certified its two-half ``reset`` / ``unbound`` reporting went
+# with it: they asserted a ``reset`` outcome that production can never produce
+# in this runtime, so they could only ever have passed against a mock.
 
 
-def _teardown_reply(**fields):
-    """Build a CompletedProcess carrying a session-teardown TOON reply."""
-    lines = ['status: success', 'operation: session teardown']
-    lines += [f'{key}: {value}' for key, value in fields.items()]
-    return subprocess.CompletedProcess(
-        args=[], returncode=0, stdout='\n'.join(lines) + '\n', stderr=''
-    )
+def test_teardown_drive_seam_is_removed():
+    """The dead teardown seam and its parse helpers are gone from the module.
 
-
-def test_teardown_persists_non_delivery_when_delegate_reports_failed_reset(monkeypatch):
-    """An activated delegate whose title reset did not land persists one WARNING
-    work-log entry naming the plan and the failed half."""
-    monkeypatch.setattr(
-        _core,
-        '_run_executor',
-        lambda *_args: _teardown_reply(active='true', reset='false', unbound='true'),
-    )
-    calls, spy = _log_entry_spy()
-    monkeypatch.setattr(_core, 'log_entry', spy)
-
-    _core._drive_teardown('tt-teardown-warn')
-
-    assert len(calls) == 1
-    log_type, plan_id, level, message = calls[0]
-    assert log_type == 'work'
-    assert plan_id == 'tt-teardown-warn'
-    assert level == 'WARNING'
-    assert 'tt-teardown-warn' in message
-    assert 'title_reset_failed' in message
-
-
-def test_teardown_persisted_entry_names_both_failed_halves(monkeypatch):
-    """Both halves failing are named in the single persisted entry — reset and
-    unbind are reported independently, so collapsing them would hide which half
-    happened."""
-    monkeypatch.setattr(
-        _core,
-        '_run_executor',
-        lambda *_args: _teardown_reply(active='true', reset='false', unbound='false'),
-    )
-    calls, spy = _log_entry_spy()
-    monkeypatch.setattr(_core, 'log_entry', spy)
-
-    _core._drive_teardown('tt-teardown-both')
-
-    assert len(calls) == 1
-    message = calls[0][3]
-    assert 'title_reset_failed' in message
-    assert 'binding_release_failed' in message
-
-
-def test_teardown_persists_nothing_when_feature_inactive(monkeypatch):
-    """``active: false`` is the ordinary nothing-to-do case — no persisted entry."""
-    monkeypatch.setattr(
-        _core,
-        '_run_executor',
-        lambda *_args: _teardown_reply(
-            active='false', reset='false', unbound='false', reason='feature_inactive'
-        ),
-    )
-    calls, spy = _log_entry_spy()
-    monkeypatch.setattr(_core, 'log_entry', spy)
-
-    _core._drive_teardown('tt-teardown-inactive')
-
-    assert calls == []
-
-
-def test_teardown_persists_nothing_on_successful_teardown(monkeypatch):
-    """A landed teardown (reset and unbind both true) persists no entry."""
-    monkeypatch.setattr(
-        _core,
-        '_run_executor',
-        lambda *_args: _teardown_reply(active='true', reset='true', unbound='true'),
-    )
-    calls, spy = _log_entry_spy()
-    monkeypatch.setattr(_core, 'log_entry', spy)
-
-    _core._drive_teardown('tt-teardown-ok')
-
-    assert calls == []
-
-
-def test_teardown_persists_nothing_when_delegate_was_skipped(monkeypatch):
-    """A skipped spawn (``_run_executor`` returned None) persists no entry."""
-    monkeypatch.setattr(_core, '_run_executor', lambda *_args: None)
-    calls, spy = _log_entry_spy()
-    monkeypatch.setattr(_core, 'log_entry', spy)
-
-    _core._drive_teardown('tt-teardown-skipped')
-
-    assert calls == []
-
-
-def test_archive_succeeds_when_teardown_reports_non_delivery(plan_context, monkeypatch):
-    """A reported teardown non-delivery persists a WARNING work-log entry but
-    leaves archive at status: success.
-
-    Only the observability changes — the archive command's status and the moved
-    plan directory are exactly what a landed teardown produces. The ``log_entry``
-    spy is installed in ``_drive_teardown``'s own module globals so it reaches the
-    instance ``cmd_archive`` calls into.
+    A dead private helper is invisible at its own call site — there is none —
+    so this names it explicitly. If a future change re-introduces an
+    archive-time binding release, it fails here first, next to the comment
+    explaining why archive must not release.
     """
-    monkeypatch.setitem(
-        _lifecycle._drive_teardown.__globals__,
-        '_run_executor',
-        lambda *_args: _teardown_reply(active='true', reset='false', unbound='true'),
-    )
-    calls, spy = _log_entry_spy()
-    monkeypatch.setitem(_lifecycle._drive_teardown.__globals__, 'log_entry', spy)
-
-    plan_id = 'tt-archive-teardown-nondelivery'
-    cmd_create(Namespace(plan_id=plan_id, title='Test', phases='1-init', force=False))
-    result = cmd_archive(Namespace(plan_id=plan_id, dry_run=False))
-
-    assert result['status'] == 'success'
-    assert Path(result['archived_to']).is_dir()
-    assert len(calls) == 1
-    assert calls[0][1] == plan_id
-    assert plan_id in calls[0][3]
+    for removed in ('_drive_teardown', '_teardown_non_delivery_reason', '_parse_drive_reply'):
+        assert not hasattr(_core, removed), (
+            f'{removed} is back — archive must release no session binding'
+        )
 
 
 def test_crashing_delegate_leaves_transition_outcome_unchanged(plan_context, monkeypatch):

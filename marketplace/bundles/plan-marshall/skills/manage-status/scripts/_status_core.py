@@ -26,7 +26,7 @@ from file_ops import (
     write_json,
 )
 from input_validation import require_valid_plan_id  # noqa: F401 - re-exported
-from plan_logging import log_entry
+from plan_logging import log_entry  # noqa: F401 - re-exported
 
 logger = logging.getLogger(__name__)
 
@@ -497,94 +497,6 @@ def _run_executor(notation: str, *cli_args: str) -> 'subprocess.CompletedProcess
 def _drive_bind(plan_id: str) -> None:
     """Best-effort ``session bind --plan-id {id}`` (last-driven-wins; Defect 2)."""
     _run_executor(_PLATFORM_RUNTIME_NOTATION, 'session', 'bind', '--plan-id', plan_id)
-
-
-def _parse_drive_reply(
-    completed: 'subprocess.CompletedProcess[str] | None',
-) -> dict[Any, Any] | None:
-    """Parse a drive-seam delegate's TOON stdout into a dict, else None.
-
-    The shared parse half of the observable-non-delivery pattern: both
-    :func:`_repaint_non_delivery_reason` and
-    :func:`_teardown_non_delivery_reason` read their delegate's reply through
-    this one helper, so the parse discipline (the shared ``toon_parser``, never
-    a hand-rolled scan) is stated once.
-
-    Returns ``None`` whenever the reply is unusable: no completed process, empty
-    stdout, an unavailable parser, a parse failure, or a non-dict payload.
-    """
-    if completed is None or not completed.stdout:
-        return None
-    try:
-        from toon_parser import parse_toon
-    except ImportError as exc:
-        logger.debug('drive-seam reply unparsed (toon_parser unavailable): %s', exc)
-        return None
-    try:
-        reply = parse_toon(completed.stdout)
-    except Exception as exc:  # noqa: BLE001 — drive seam is best-effort
-        logger.debug('drive-seam reply unparsed: %s', exc)
-        return None
-    return reply if isinstance(reply, dict) else None
-
-
-def _teardown_non_delivery_reason(completed: 'subprocess.CompletedProcess[str] | None') -> str | None:
-    """Return the reportable failure reason from a teardown reply, else None.
-
-    Releasing the binding is the whole of the teardown, so ``unbound`` is the one
-    outcome there is to report: an ACTIVE delegate that failed to drop the slot
-    left a stale binding behind, which is worth surfacing.
-
-    An inactive delegate (``active: false`` — a project that never wired up
-    terminal titles, reported as ``reason: feature_inactive``) is the ordinary
-    nothing-to-do case and returns ``None``.
-    """
-    reply = _parse_drive_reply(completed)
-    if reply is None or reply.get('active') is not True:
-        return None
-    if reply.get('unbound') is False:
-        return 'binding_release_failed'
-    return None
-
-
-def _drive_teardown(plan_id: str) -> None:
-    """Best-effort ``session teardown`` — release the caller session's binding.
-
-    Runs through the SAME best-effort executor channel :func:`_drive_bind` /
-    :func:`_drive_repaint` use, and the delegate is itself activation-gated — a
-    project that never wired up terminal titles is left untouched.
-
-    ``plan_id`` names the plan for the audit trail only — the teardown operates
-    on the CALLER SESSION's own binding, not on a plan-scoped slot, so it takes
-    no plan argument.
-
-    NOT fired by ``cmd_archive``: the archive path deliberately releases no
-    binding, because the terminal state it just persisted is delivered by the
-    next render event, which resolves the plan only through that binding.
-
-    A failed release is OBSERVABLE rather than DEBUG-swallowed: when the
-    activated delegate reports a failed binding release, one persisted
-    ``log_entry`` (the manage-logging work log) names the plan and the reason, so
-    the stale binding reaches the plan record instead of only subprocess stderr.
-    An inactive delegate and every other failure path keep their DEBUG level.
-
-    Fully exception-swallowing, mirroring :func:`_surface_drive`: a delegation
-    failure never changes the calling command's status or exit code.
-    """
-    try:
-        logger.debug('drive-seam teardown fired for %s', plan_id)
-        completed = _run_executor(_PLATFORM_RUNTIME_NOTATION, 'session', 'teardown')
-        reason = _teardown_non_delivery_reason(completed)
-        if reason is not None:
-            # Persist the non-delivery to the plan work log via manage-logging
-            # (log_entry) instead of a stderr-only logger.warning, so a dead
-            # title channel is OBSERVABLE in the plan record. log_entry is itself
-            # best-effort (it swallows every I/O error internally), and this call
-            # sits inside the surrounding best-effort try/except, so a logging
-            # failure never changes the archive command's status or exit code.
-            log_entry('work', plan_id, 'WARNING', f'session teardown incomplete for {plan_id}: {reason}')
-    except Exception as exc:  # noqa: BLE001 — drive seam is best-effort
-        logger.debug('drive-seam teardown for %s failed: %s', plan_id, exc)
 
 
 def _drive_repaint(plan_id: str) -> None:
