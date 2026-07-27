@@ -285,6 +285,38 @@ class TestArchiveOnConsume:
             'as an Open Defect — the validator error code would go unrecorded'
         )
 
+    def test_the_archive_trigger_covers_every_consuming_path(self):
+        """A Step-5-absorbed finding (the ``observed`` disposition) must archive too.
+
+        Regression guard for the gap where item 4 named only "Step 5b" and "Step
+        4" as archive triggers: a ``kind: finding`` message Step 5 fully absorbed
+        into a Watch or Open Defect (never escalated to Step 5b) matched neither
+        named trigger and was never archived, contradicting the ``## Output``
+        block's own ``observed`` disposition and its
+        ``messages_archived + messages_invalid == messages_scanned`` invariant.
+        """
+        section = _section(
+            _analyze_text(), '### Step 3: Classify the granularity', 'analyze.md'
+        )
+        match = re.search(r'\*\*Archive on consume\.\*\*(.*?)(?=```)', section, re.DOTALL)
+        assert match, (
+            'analyze.md: the "**Archive on consume.**" paragraph (item 4) was not '
+            'found — the archive-trigger rule cannot be verified'
+        )
+        paragraph = match.group(1)
+
+        assert 'observed' in paragraph, (
+            'analyze.md: the archive-on-consume trigger paragraph does not name '
+            'the Step 5 "observed" absorption path — a finding fully absorbed by '
+            'Step 5 (and never escalated to Step 5b) would match no archive '
+            'trigger and stay queued forever, re-processed on every drain'
+        )
+        for target in ('Step 4', 'Step 5b'):
+            assert target in paragraph, (
+                f'analyze.md: the archive-on-consume trigger paragraph does not '
+                f'name {target!r} as a consuming path'
+            )
+
 
 # =============================================================================
 # (6) The widened ## Output block
