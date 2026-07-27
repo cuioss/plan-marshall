@@ -31,6 +31,7 @@ import claude_runtime
 import session_binding
 from manage_terminal_title import _compose_body, compose
 from runtime_base import Runtime, toon_error, toon_noop, toon_success
+from toon_parser import serialize_toon
 
 
 class ClaudeRuntime(Runtime):
@@ -1784,10 +1785,45 @@ class ClaudeRuntime(Runtime):
             if not healthy:
                 all_healthy = False
 
+        # FAIL-CLOSED on the DISPLAY check specifically. An unhealthy display
+        # verdict means the installed render-hook set diverges from the
+        # expected set, which is a real, actionable misconfiguration — and
+        # reporting it as ``status: success`` with ``all_healthy: false`` made
+        # it invisible to every caller that branches on status, which is how a
+        # divergence could sit unnoticed indefinitely.
+        #
+        # The fail is deliberately NOT generalised to every check: an
+        # unreachable ``mcp-diagnostics`` port means "no JetBrains IDE is
+        # running", an ordinary environmental condition rather than a
+        # misconfiguration, so failing on it would train callers to ignore the
+        # verb's status. ``all_healthy`` continues to report the aggregate for
+        # those checks.
+        payload: dict[str, Any] = {
+            "operation": "health-check",
+            "checks_run": [r["check"] for r in results],
+            "all_healthy": all_healthy,
+            "results": results,
+        }
+
+        display_result = next((r for r in results if r["check"] == "display"), None)
+        if display_result is not None and not display_result["healthy"]:
+            # The failure carries the FULL per-check payload, not just an error
+            # code: a caller that fails closed should still get the same report
+            # it would have got on success, so failing costs it no diagnostic
+            # information and there is no incentive to ignore the status.
+            return serialize_toon(
+                {
+                    "status": "error",
+                    "error": "display_unhealthy",
+                    "message": f"display check failed — {display_result['detail']}",
+                    **payload,
+                }
+            )
+
         return toon_success(
             "health-check",
             {
-                "checks_run": [r["check"] for r in results],
+                "checks_run": payload["checks_run"],
                 "all_healthy": all_healthy,
                 "results": results,
             },

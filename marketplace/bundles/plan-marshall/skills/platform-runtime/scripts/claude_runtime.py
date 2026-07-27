@@ -312,16 +312,32 @@ def _command_is_build(command: str | None) -> bool:
 # report order. Each tuple is (label, hooks_block_key, matcher). The label is the
 # token the menu doc tells the user to read; it matches the ``installed_events``
 # naming from ``_install_terminal_title_hooks`` exactly, except SessionStart
-# carries the ``:matcher-less`` qualifier naming the one variant that is
-# installed.
+# carries qualifiers naming which of its two variants each row checks.
+#
+# This tuple is the EXPECTED set and must agree with the INSTALLED set. Two
+# rows were previously divergent, and a divergence here is not cosmetic — the
+# check reports against this tuple, so a wrong expectation makes the health
+# verdict wrong in one direction or the other:
+#
+#   * ``PostToolUse`` was expected matcher-less while the installed shape is
+#     matcher-SCOPED (AskUserQuestion + Bash). The expectation is corrected to
+#     the two scoped rows rather than the installed shape being widened —
+#     PostToolUse:Bash is precisely the entry the machine-owned build-busy
+#     clear rides, and the render cadence is among the largest recurring script
+#     costs in this project, so both considerations point at keeping it narrow.
+#   * ``SessionStart:clear`` is installed (it is what routes the session
+#     teardown) but was absent from the expected set, so its removal would have
+#     gone unreported.
 _DISPLAY_RENDER_ENTRIES: tuple[tuple[str, str, str], ...] = (
     ("SessionStart:matcher-less", "SessionStart", ""),
+    ("SessionStart:clear", "SessionStart", "clear"),
     ("UserPromptSubmit", "UserPromptSubmit", ""),
     ("Notification", "Notification", ""),
     ("Stop", "Stop", ""),
     ("PreToolUse:AskUserQuestion", "PreToolUse", "AskUserQuestion"),
     ("PreToolUse:Bash", "PreToolUse", "Bash"),
-    ("PostToolUse", "PostToolUse", ""),
+    ("PostToolUse:AskUserQuestion", "PostToolUse", "AskUserQuestion"),
+    ("PostToolUse:Bash", "PostToolUse", "Bash"),
 )
 
 
@@ -477,39 +493,6 @@ def _has_render_entry(entries: list[Any], matcher: str | None = None) -> bool:
     return False
 
 
-def _prune_matcher_scoped_render_entries(entries: list[Any]) -> bool:
-    """Remove matcher-scoped render entries from *entries* in place.
-
-    An entry is pruned when it carries a ``hooks[].command`` equal to
-    :data:`_RENDER_HOOK_COMMAND` AND its ``matcher`` field is a non-empty
-    string. This retires the two legacy ``hooks.PostToolUse`` render entries
-    (``matcher: "AskUserQuestion"`` and ``matcher: "Bash"``) that the
-    matcher-less PostToolUse entry now supersedes, so an already-installed
-    settings file converges to the single broadened entry on the next install
-    pass instead of accumulating three overlapping render triggers.
-
-    Mutates *entries* in place (the caller holds the live ``hooks`` block list)
-    and returns True when at least one entry was removed.
-    """
-    def _is_matcher_scoped_render(entry: Any) -> bool:
-        if not isinstance(entry, dict):
-            return False
-        if not entry.get("matcher", ""):
-            return False
-        hooks = entry.get("hooks", [])
-        if not isinstance(hooks, list):
-            return False
-        return any(
-            isinstance(h, dict) and h.get("command") == _RENDER_HOOK_COMMAND for h in hooks
-        )
-
-    survivors = [entry for entry in entries if not _is_matcher_scoped_render(entry)]
-    if len(survivors) == len(entries):
-        return False
-    entries[:] = survivors
-    return True
-
-
 def _has_capture_entry(entries: list[Any]) -> bool:
     """Return True when *entries* already contains the session-capture hook."""
     for entry in entries:
@@ -656,11 +639,13 @@ def _install_terminal_title_hooks(
       ``matcher: "AskUserQuestion"`` so the ``?`` icon flips BEFORE the prompt is
       answered, and one with ``matcher: "Bash"`` so the ⚙ busy icon flips BEFORE
       a long-running shell command runs.
-    - ``hooks.PostToolUse`` — ONE matcher-less render entry, so the title
-      refreshes after EVERY tool call rather than only after Bash /
-      AskUserQuestion calls. Any pre-existing matcher-scoped PostToolUse render
-      entry is pruned in the same pass (see
-      :func:`_prune_matcher_scoped_render_entries`).
+    - ``hooks.PostToolUse`` — TWO matcher-scoped render entries
+      (``matcher: "AskUserQuestion"`` and ``matcher: "Bash"``), deliberately
+      NOT widened to a matcher-less entry. The narrow shape is a standing
+      position: the render cadence is among the largest recurring script costs
+      in this project, and ``PostToolUse:Bash`` is the entry the machine-owned
+      ``build-busy`` clear rides, so a widen-and-prune pass would remove the
+      very entry that clear depends on.
     - ``statusLine`` — ``{"type": "command", "command": _STATUSLINE_COMMAND}``.
       Preserves a foreign existing value unless ``overwrite_statusline`` is True.
     - ``env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE`` — set to ``"1"``. Preserves a
@@ -726,15 +711,23 @@ def _install_terminal_title_hooks(
         if not _has_capture_entry(session_start):
             session_start.append(_capture_entry())
 
-        session_start_changed = False
         if not _has_render_entry(session_start, matcher=""):
             session_start.append(_render_entry(matcher=""))
-            session_start_changed = True
-
-        if session_start_changed:
-            installed_events.append("SessionStart")
+            installed_events.append("SessionStart:matcher-less")
         else:
-            already_present_events.append("SessionStart")
+            already_present_events.append("SessionStart:matcher-less")
+
+        # The matcher:"clear" variant is installed as its OWN entry: it is the
+        # trigger that routes a cleared session into the teardown, and the
+        # display health check expects it by label. Installing it here is what
+        # keeps the expected and installed sets in agreement — an expectation
+        # the installer never satisfies would make every fresh install report
+        # unhealthy.
+        if not _has_render_entry(session_start, matcher="clear"):
+            session_start.append(_render_entry(matcher="clear"))
+            installed_events.append("SessionStart:clear")
+        else:
+            already_present_events.append("SessionStart:clear")
 
         # --- Single matcher-less render-trigger events. ---
         for event_name in _RENDER_TRIGGER_EVENTS:
@@ -766,20 +759,23 @@ def _install_terminal_title_hooks(
         else:
             already_present_events.append("PreToolUse:Bash")
 
-        # --- PostToolUse: ONE matcher-less render entry (every tool call). ---
-        # The legacy matcher-scoped entries (AskUserQuestion / Bash) are pruned
-        # first so an already-installed settings file converges to the single
-        # broadened entry instead of accumulating overlapping render triggers.
+        # --- PostToolUse: TWO matcher-scoped render entries. ---
+        # Deliberately NOT widened to a matcher-less entry, and nothing is
+        # pruned: PostToolUse:Bash is the entry the machine-owned build-busy
+        # clear rides, so a widen-and-prune pass would remove the entry that
+        # clear depends on. Keeping the cadence narrow is also the cheaper
+        # shape — the render command is among the largest recurring script
+        # costs in this project.
         post_tool_use = hooks_block.setdefault("PostToolUse", [])
         if not isinstance(post_tool_use, list):
             post_tool_use = []
             hooks_block["PostToolUse"] = post_tool_use
-        _prune_matcher_scoped_render_entries(post_tool_use)
-        if not _has_render_entry(post_tool_use, matcher=""):
-            post_tool_use.append(_render_entry(matcher=""))
-            installed_events.append("PostToolUse")
-        else:
-            already_present_events.append("PostToolUse")
+        for matcher in ("AskUserQuestion", "Bash"):
+            if not _has_render_entry(post_tool_use, matcher=matcher):
+                post_tool_use.append(_render_entry(matcher=matcher))
+                installed_events.append(f"PostToolUse:{matcher}")
+            else:
+                already_present_events.append(f"PostToolUse:{matcher}")
 
         # --- statusLine: command entry with overwrite-on-request semantics. ---
         statusline_block: dict[str, Any] = {

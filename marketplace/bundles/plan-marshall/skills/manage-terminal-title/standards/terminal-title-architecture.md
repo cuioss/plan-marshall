@@ -203,13 +203,21 @@ this is a **standing joint position** that any future cadence work inherits
 without re-opening this contract:
 
 - Keep `PostToolUse` **matcher-scoped** — do not widen it to a matcher-less
-  entry.
-- Converge `_DISPLAY_RENDER_ENTRIES` to the live narrow shape
-  (`PostToolUse:Bash` + `PostToolUse:AskUserQuestion`), so the expected set and
-  the installed set agree.
-- **Retire `_prune_matcher_scoped_render_entries` as dead code** rather than
-  making it run. It exists to prune matcher-scoped entries back toward a
-  matcher-less shape this contract rejects.
+  entry. The installer writes the two scoped entries and prunes nothing.
+- `_DISPLAY_RENDER_ENTRIES` is converged to the live shape: the two
+  `PostToolUse` rows are matcher-scoped (`AskUserQuestion` + `Bash`), and the
+  installed `SessionStart:clear` entry — previously absent from the expected
+  set, so its removal would have gone unreported — is included.
+- **`_prune_matcher_scoped_render_entries` is deleted**, not left dormant. It
+  existed to prune matcher-scoped entries back toward a matcher-less shape this
+  contract rejects, so keeping it would have preserved a live path to the wrong
+  shape.
+- The `display` health check is **fail-closed**: an expected-vs-installed
+  divergence returns `status: error`. It previously returned `status: success`
+  with `all_healthy: false`, which is invisible to any caller that branches on
+  status. The fail is scoped to the `display` check — `mcp-diagnostics`
+  reporting an unreachable port is an environmental condition, not a
+  misconfiguration, and failing on it would train callers to ignore the status.
 
 Ruling (c)'s paired `build-busy` clear depends on this: the clear rides the
 already-installed `PostToolUse:Bash` entry, which is precisely the entry a
@@ -244,34 +252,41 @@ automated plan execution.
 ```text
 STATE (manage-status)            COMPOSER (manage-terminal-title)   RESOLVE+EMIT (platform-runtime)
 ┌──────────────────────────┐     ┌──────────────────────────────┐  ┌────────────────────────────────────┐
-│ title-token set {state}  │     │ compose(state, process_state)│  │ session render-title                 │
-│ title-token clear        │     │  1. _compose_body(state)     │  │  1. $CLAUDE_CODE_SESSION_ID          │
-│   writes status.title_   │     │     pm:{phase}[:{short}]     │  │  2. session cache → plan_id          │
-│   token (NO rendering)    │     │     pm:Completed[:{short}]   │  │  3. _read_title_state(plan_id):      │
-└────────────┬─────────────┘     │  2. TITLE_TOKEN_GLYPHS[state]│  │     live → worktree → archived     │
-             │ writes            │     ⏳/🔒 (active phase)      │  │     status.json (first hit wins)   │
-             ▼                   │  3. resolve_icon(process_st) │  │  4. compose(state, process_state) ───┤
-   status.json                  │     ➤/?/⚙/✓, ✅ terminal     │  │  5. emit per platform:               │
-   (current_phase,              │        override               │  │     OSC terminalSequence (every event)│
-    short_description,  ────────►│  → '{icon} {glyph} {body}'   ──►│     + sessionTitle (UI, gated)        │
-    title_token)                │     or None (no-op)          │  │     statusLine: plain '{icon} {body}' │
-             │                   └──────────────────────────────┘  │                                      │
-   cmd_archive moves the         (pure; imports neither side)      │ session push-title-token:            │
-   whole plan dir →                                                │  bind + persist state (NO repaint)   │
-   archived-plans/{date}-                                          │  next hook event delivers it         │
-   {plan_id}/status.json                                           │ session teardown (SessionStart:clear │
-   and releases no binding                                         │  only): session unbind               │
-                                                                   │ (OpenCode runtime: no-op)            │
+│ title-token set          │     │ compose(state, process_state)│  │ session render-title                 │
+│   --state --owner        │     │  1. _compose_body(state)     │  │  1. $CLAUDE_CODE_SESSION_ID          │
+│ title-token clear        │     │     pm:{phase}[:{short}]     │  │  2. session cache → plan_id          │
+│   --owner (owner-scoped) │     │     pm:Completed[:{short}]   │  │  3. _read_title_state(plan_id):      │
+│   writes status.title_   │     │  2. title_token_state(rec)   │  │     live → worktree → archived     │
+│   token (NO rendering)   │     │     → TITLE_TOKEN_GLYPHS     │  │     status.json (first hit wins),   │
+└────────────┬─────────────┘     │     ⏳/🔒 (active phase)      │  │     aged tokens dropped on read    │
+             │ writes            │  3. resolve_icon(process_st) │  │  4. compose(state, process_state) ───┤
+             ▼                   │     ➤/?/⚙/✓, ✅ terminal     │  │  5. emit per platform:               │
+   status.json                   │        override, 🔨 build     │  │     OSC terminalSequence (every event)│
+   (current_phase,               │  → '{icon} {glyph} {body}'   ──►│     + sessionTitle (UI, gated)        │
+    short_description,  ────────►│     or None (no-op)          │  │     statusLine: plain '{icon} {body}' │
+    title_token =                └──────────────────────────────┘  │  6. NAMED outcome on stderr (8 total)│
+     {owner,state,set_at})       (pure; imports neither side)      │                                      │
+             │                                                     │ session push-title-token:            │
+   cmd_archive moves the                                           │  bind + persist state (NO repaint)   │
+   whole plan dir →                                                │  next hook event delivers it         │
+   archived-plans/{date}-                                          │ session teardown (SessionStart:clear │
+   {plan_id}/status.json                                           │  only): session unbind               │
+   and releases no binding                                         │ (OpenCode runtime: no-op)            │
                                                                    └────────────────────────────────────┘
 ```
 
-Render triggers wired by `project install-hook`: `SessionStart` (ONE matcher-less
-entry — no separate `matcher: "clear"` render entry; the renderer branches on
-`source == "clear"` and performs a session teardown instead), `UserPromptSubmit`,
-`Notification`, `Stop`, `PreToolUse:AskUserQuestion`, `PreToolUse:Bash`,
-`PostToolUse:Bash`, and `PostToolUse:AskUserQuestion`. `PostToolUse` is
-**matcher-scoped**, not matcher-less — see Channel Delivery Contract ruling (d).
-Eight render-trigger labels in total, plus `statusLine`.
+Render triggers wired by `project install-hook`: `SessionStart:matcher-less`,
+`SessionStart:clear` (the entry that routes the session teardown — the renderer
+branches on `source == "clear"`, tears the session down, and writes nothing),
+`UserPromptSubmit`, `Notification`, `Stop`, `PreToolUse:AskUserQuestion`,
+`PreToolUse:Bash`, `PostToolUse:AskUserQuestion`, and `PostToolUse:Bash`.
+`PostToolUse` is **matcher-scoped**, not matcher-less — see Channel Delivery
+Contract ruling (d). Nine render-trigger labels in total, plus `statusLine`.
+
+That list is the `_DISPLAY_RENDER_ENTRIES` expected set the `display` health
+check reports against, and the check is **fail-closed**: a divergence between
+the expected and installed sets returns `status: error`, not a `success`
+carrying `all_healthy: false`.
 
 ## State — `manage-status`
 
@@ -621,10 +636,18 @@ independently removes the failure mode a guard would defend against:
   `marshall-orchestrator/workflow/archive.md` — both invoke it with **no
   `--session-id`**, resolving only their own caller session. A second session
   bound to the same plan is therefore invisible to every read path.
-- **(b) `unbind` is self-scoped.** `unbind` and `session teardown` remove only the
-  **calling** session's own slot. One session tearing down can never drop a
-  sibling session's binding, so coexistence cannot produce a cross-session
-  release.
+- **(b) `unbind` is self-scoped *on the teardown path*.** `session teardown`
+  resolves the session id from the environment and removes only the **calling**
+  session's own slot, so one session tearing down can never drop a sibling
+  session's binding, and coexistence cannot produce a cross-session release
+  there. The claim is scoped to that path deliberately: `session_binding`'s
+  stale-slot GC (`_gc_slot`, reached from `doctor(fix=True)`) calls the same
+  `unbind` primitive with **other** sessions' ids. That is the one sanctioned
+  cross-session release, and it is safe for a different reason than
+  self-scoping — the GC acts only on a slot it has already classified stale
+  (its plan is gone AND its terminal state has been delivered), never on a live
+  binding. Reading (b) as a system-wide invariant would misdescribe the GC;
+  reading it as the teardown path's guarantee is exact.
 - **(c) There is no `session close` verb.** The operations set is `capture` /
   `render-title` / `push-title-token` / `bind` / `resolve-plan` / `doctor` /
   `teardown` / `reload-directive`. No verb takes a plan id and acts on *whichever*

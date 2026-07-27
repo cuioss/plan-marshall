@@ -362,13 +362,16 @@ class TestInstallTerminalTitleHooks:
     """
 
     # ------------------------------------------------------------------
-    # (a) Fresh install wires all seven render-trigger entries + statusLine + env.
+    # (a) Fresh install wires all nine render-trigger entries + statusLine + env.
     # ------------------------------------------------------------------
 
     def test_fresh_install_creates_all_render_events(self, rt, tmp_path):
-        """Fresh install populates SessionStart (ONE matcher-less entry), UserPromptSubmit,
-        Notification, Stop, PreToolUse:AskUserQuestion, PreToolUse:Bash, and a
-        matcher-less PostToolUse entry with the renderer command."""
+        """Fresh install populates the nine converged render entries.
+
+        SessionStart carries BOTH the matcher-less entry and the
+        ``matcher: "clear"`` entry, and PostToolUse is matcher-SCOPED
+        (AskUserQuestion + Bash) rather than matcher-less.
+        """
         target = tmp_path / ".claude" / "settings.local.json"
         result = _parsed(rt.project_install_hook(str(target)))
         assert result["status"] == "success"
@@ -377,19 +380,20 @@ class TestInstallTerminalTitleHooks:
         settings = json.loads(target.read_text())
         hooks_block = settings["hooks"]
 
-        # SessionStart has BOTH the existing capture entry AND exactly ONE
-        # matcher-less render entry. The matcher-less entry already fires for
-        # every source (including "clear", which the renderer turns into a
-        # session teardown), so no matcher:"clear" variant is installed.
+        # SessionStart carries the capture entry plus TWO render entries: the
+        # matcher-less one and the matcher:"clear" one that routes the session
+        # teardown. The clear entry is installed rather than merely expected —
+        # an expectation the installer never satisfies would make every fresh
+        # install report unhealthy.
         session_start = hooks_block["SessionStart"]
-        assert _count_command(session_start, _RENDER_HOOK_COMMAND) == 1
-        matchers_with_render = [
+        assert _count_command(session_start, _RENDER_HOOK_COMMAND) == 2
+        matchers_with_render = {
             entry.get("matcher", "")
             for entry in session_start
             if isinstance(entry, dict)
             and any(h.get("command") == _RENDER_HOOK_COMMAND for h in entry.get("hooks", []))
-        ]
-        assert matchers_with_render == [""]
+        }
+        assert matchers_with_render == {"", "clear"}
 
         # UserPromptSubmit, Notification, Stop — each one matcher-less render entry.
         for event_name in ("UserPromptSubmit", "Notification", "Stop"):
@@ -409,16 +413,20 @@ class TestInstallTerminalTitleHooks:
         }
         assert pre_matchers == {"AskUserQuestion", "Bash"}
 
-        # PostToolUse: exactly ONE matcher-less render entry (every tool call).
+        # PostToolUse: TWO matcher-scoped render entries, never a matcher-less
+        # one. PostToolUse:Bash is the entry the machine-owned build-busy clear
+        # rides, so the absence of a matcher-less entry is asserted explicitly
+        # rather than implied by the count.
         post_tool_use = hooks_block["PostToolUse"]
-        assert _count_command(post_tool_use, _RENDER_HOOK_COMMAND) == 1
+        assert _count_command(post_tool_use, _RENDER_HOOK_COMMAND) == 2
         post_matchers = {
             entry.get("matcher", "")
             for entry in post_tool_use
             if isinstance(entry, dict)
             and any(h.get("command") == _RENDER_HOOK_COMMAND for h in entry.get("hooks", []))
         }
-        assert post_matchers == {""}
+        assert post_matchers == {"AskUserQuestion", "Bash"}
+        assert "" not in post_matchers
 
     def test_fresh_install_writes_statusline_command(self, rt, tmp_path):
         """Fresh install writes statusLine = {type: command, command: _STATUSLINE_COMMAND}."""
@@ -440,21 +448,44 @@ class TestInstallTerminalTitleHooks:
         assert settings["env"]["CLAUDE_CODE_DISABLE_TERMINAL_TITLE"] == "1"
 
     def test_fresh_install_response_lists_installed_events(self, rt, tmp_path):
-        """installed_events lists every event freshly wired (SessionStart counted once)."""
+        """installed_events lists every event freshly wired, by its check label.
+
+        The labels must be the SAME nine the display health check reports
+        against, so the installer's output and the check's expectation can be
+        compared directly. A label the installer emits but the check does not
+        expect (or vice versa) is exactly the class of divergence that let a
+        missing entry go unreported.
+        """
         target = tmp_path / ".claude" / "settings.local.json"
         result = _parsed(rt.project_install_hook(str(target)))
         installed = result["installed_events"]
-        # SessionStart appears once even though two render entries were added.
-        # The tool-scoped entries use matcher-qualified labels.
         assert set(installed) == {
-            "SessionStart",
+            "SessionStart:matcher-less",
+            "SessionStart:clear",
             "UserPromptSubmit",
             "Notification",
             "Stop",
             "PreToolUse:AskUserQuestion",
             "PreToolUse:Bash",
-            "PostToolUse",
+            "PostToolUse:AskUserQuestion",
+            "PostToolUse:Bash",
         }
+
+    def test_installer_labels_match_the_health_check_expected_set(self, rt, tmp_path):
+        """The installer's labels and _DISPLAY_RENDER_ENTRIES agree, exactly.
+
+        Derived from the constant rather than re-listed, so the two surfaces
+        cannot drift apart without this failing. The previous divergence was
+        invisible precisely because each side was asserted against its own
+        hard-coded list.
+        """
+        import claude_runtime as _cr
+
+        target = tmp_path / ".claude" / "settings.local.json"
+        result = _parsed(rt.project_install_hook(str(target)))
+
+        expected = {label for label, _block, _matcher in _cr._DISPLAY_RENDER_ENTRIES}
+        assert set(result["installed_events"]) == expected
 
     # ------------------------------------------------------------------
     # (b) Re-running is idempotent across all hook blocks.
@@ -477,40 +508,43 @@ class TestInstallTerminalTitleHooks:
         assert first_settings == second_settings
 
     def test_idempotent_render_commands_not_duplicated(self, rt, tmp_path):
-        """Across two installs, each render-hook event still contains exactly one render command
-        (SessionStart included — it carries a single matcher-less entry)."""
+        """Across two installs, each hook block keeps its exact render-entry count."""
         target = tmp_path / ".claude" / "settings.local.json"
         rt.project_install_hook(str(target))
         rt.project_install_hook(str(target))
 
         settings = json.loads(target.read_text())
         hooks_block = settings["hooks"]
-        assert _count_command(hooks_block["SessionStart"], _RENDER_HOOK_COMMAND) == 1
+        # SessionStart carries two render entries (matcher-less + clear).
+        assert _count_command(hooks_block["SessionStart"], _RENDER_HOOK_COMMAND) == 2
         for event_name in ("UserPromptSubmit", "Notification", "Stop"):
             assert _count_command(hooks_block[event_name], _RENDER_HOOK_COMMAND) == 1
         # PreToolUse carries two render entries (AskUserQuestion + Bash).
         assert _count_command(hooks_block["PreToolUse"], _RENDER_HOOK_COMMAND) == 2
-        # PostToolUse carries exactly one matcher-less render entry.
-        assert _count_command(hooks_block["PostToolUse"], _RENDER_HOOK_COMMAND) == 1
+        # PostToolUse likewise carries two, matcher-scoped.
+        assert _count_command(hooks_block["PostToolUse"], _RENDER_HOOK_COMMAND) == 2
 
     # ------------------------------------------------------------------
-    # (b2) Tool-scoped PreToolUse entries + the broadened PostToolUse entry.
+    # (b2) Tool-scoped PreToolUse and PostToolUse entries.
     # ------------------------------------------------------------------
 
-    def test_fresh_install_adds_pre_bash_and_broad_post_entries(self, rt, tmp_path):
-        """A fresh install adds the PreToolUse:AskUserQuestion and PreToolUse:Bash
-        render entries under matcher-qualified labels, and the matcher-less
-        PostToolUse entry under the single ``PostToolUse`` label."""
+    def test_fresh_install_adds_tool_scoped_pre_and_post_entries(self, rt, tmp_path):
+        """A fresh install adds all four tool-scoped render entries by label.
+
+        The matcher-less ``PostToolUse`` label is asserted ABSENT: it named the
+        widened shape this contract rejects, so its reappearance would mean the
+        cadence was broadened again and PostToolUse:Bash — the entry the
+        machine-owned build-busy clear rides — was pruned away.
+        """
         target = tmp_path / ".claude" / "settings.local.json"
         result = _parsed(rt.project_install_hook(str(target)))
         assert result["status"] == "success"
         installed = set(result["installed_events"])
         assert "PreToolUse:AskUserQuestion" in installed
         assert "PreToolUse:Bash" in installed
-        assert "PostToolUse" in installed
-        # The retired matcher-qualified PostToolUse labels are never reported.
-        assert "PostToolUse:AskUserQuestion" not in installed
-        assert "PostToolUse:Bash" not in installed
+        assert "PostToolUse:AskUserQuestion" in installed
+        assert "PostToolUse:Bash" in installed
+        assert "PostToolUse" not in installed
 
         settings = json.loads(target.read_text())
         hooks_block = settings["hooks"]
@@ -524,13 +558,19 @@ class TestInstallTerminalTitleHooks:
             and any(h.get("command") == _RENDER_HOOK_COMMAND for h in entry.get("hooks", []))
         }
         assert pre_matchers == {"AskUserQuestion", "Bash"}
-        # PostToolUse has exactly one matcher-less render entry.
-        assert _count_command(hooks_block["PostToolUse"], _RENDER_HOOK_COMMAND) == 1
+        # PostToolUse likewise has exactly two, and both are matcher-scoped.
+        post = hooks_block["PostToolUse"]
+        assert _count_command(post, _RENDER_HOOK_COMMAND) == 2
+        post_matchers = {
+            entry.get("matcher")
+            for entry in post
+            if isinstance(entry, dict)
+            and any(h.get("command") == _RENDER_HOOK_COMMAND for h in entry.get("hooks", []))
+        }
+        assert post_matchers == {"AskUserQuestion", "Bash"}
 
-    def test_pre_bash_and_broad_post_entries_dedup_idempotent(self, rt, tmp_path):
-        """Re-invoking after a fresh install reports the PreToolUse:AskUserQuestion,
-        PreToolUse:Bash, and PostToolUse render entries as already-present and does
-        not duplicate them."""
+    def test_tool_scoped_entries_dedup_idempotent(self, rt, tmp_path):
+        """Re-invoking reports all four tool-scoped entries already-present."""
         target = tmp_path / ".claude" / "settings.local.json"
         rt.project_install_hook(str(target))
 
@@ -538,65 +578,28 @@ class TestInstallTerminalTitleHooks:
         already = set(result["already_present_events"])
         assert "PreToolUse:AskUserQuestion" in already
         assert "PreToolUse:Bash" in already
-        assert "PostToolUse" in already
+        assert "PostToolUse:AskUserQuestion" in already
+        assert "PostToolUse:Bash" in already
         # Nothing fresh installed on the second run.
         assert result["installed_events"] == []
 
         settings = json.loads(target.read_text())
         hooks_block = settings["hooks"]
         assert _count_command(hooks_block["PreToolUse"], _RENDER_HOOK_COMMAND) == 2
-        assert _count_command(hooks_block["PostToolUse"], _RENDER_HOOK_COMMAND) == 1
+        assert _count_command(hooks_block["PostToolUse"], _RENDER_HOOK_COMMAND) == 2
 
     # ------------------------------------------------------------------
-    # (b3) Upgrade path — legacy matcher-scoped PostToolUse entries are pruned.
+    # (b3) The installer PRUNES NOTHING — matcher-scoped entries are the target.
     # ------------------------------------------------------------------
+    #
+    # The prune helper existed to converge matcher-scoped PostToolUse entries
+    # toward a matcher-less one. That direction is now rejected: PostToolUse:Bash
+    # is the entry the machine-owned build-busy clear rides, so pruning it would
+    # delete the mechanism. The helper is deleted, and these tests pin the
+    # absence of pruning rather than its behaviour.
 
-    def _seed_legacy_post_tool_use(self, target: Path) -> None:
-        """Write a settings file carrying the two legacy matcher-scoped PostToolUse
-        render entries (the pre-broadening wiring this install pass must retire)."""
-        target.parent.mkdir(parents=True, exist_ok=True)
-        legacy_entry = {
-            "matcher": "AskUserQuestion",
-            "hooks": [
-                {"type": "command", "command": _RENDER_HOOK_COMMAND, "timeout": 5000}
-            ],
-        }
-        legacy_bash_entry = {
-            "matcher": "Bash",
-            "hooks": [
-                {"type": "command", "command": _RENDER_HOOK_COMMAND, "timeout": 5000}
-            ],
-        }
-        target.write_text(
-            json.dumps({"hooks": {"PostToolUse": [legacy_entry, legacy_bash_entry]}}),
-            encoding="utf-8",
-        )
-
-    def test_upgrade_prunes_legacy_matcher_scoped_post_entries(self, rt, tmp_path):
-        """Installing over the two legacy matcher-scoped PostToolUse render entries
-        removes BOTH and leaves exactly one matcher-less render entry."""
-        target = tmp_path / ".claude" / "settings.local.json"
-        self._seed_legacy_post_tool_use(target)
-
-        result = _parsed(rt.project_install_hook(str(target)))
-        assert result["status"] == "success"
-        assert "PostToolUse" in set(result["installed_events"])
-
-        settings = json.loads(target.read_text())
-        post = settings["hooks"]["PostToolUse"]
-        assert _count_command(post, _RENDER_HOOK_COMMAND) == 1
-        post_matchers = [
-            entry.get("matcher", "")
-            for entry in post
-            if isinstance(entry, dict)
-            and any(h.get("command") == _RENDER_HOOK_COMMAND for h in entry.get("hooks", []))
-        ]
-        assert post_matchers == [""]
-
-    def test_prune_preserves_foreign_post_tool_use_entries(self, rt, tmp_path):
-        """The prune removes ONLY matcher-scoped render entries — a foreign
-        matcher-scoped PostToolUse hook belonging to someone else survives."""
-        target = tmp_path / ".claude" / "settings.local.json"
+    def _seed_scoped_post_tool_use(self, target: Path) -> None:
+        """Write a settings file already carrying both matcher-scoped entries."""
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(
             json.dumps(
@@ -604,7 +607,7 @@ class TestInstallTerminalTitleHooks:
                     "hooks": {
                         "PostToolUse": [
                             {
-                                "matcher": "Bash",
+                                "matcher": matcher,
                                 "hooks": [
                                     {
                                         "type": "command",
@@ -612,7 +615,57 @@ class TestInstallTerminalTitleHooks:
                                         "timeout": 5000,
                                     }
                                 ],
-                            },
+                            }
+                            for matcher in ("AskUserQuestion", "Bash")
+                        ]
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    def test_prune_helper_is_deleted(self):
+        """The prune helper is gone from the module, not merely unreferenced.
+
+        A dormant helper that converges the cadence toward the rejected shape
+        is one call site away from removing the entry the build-busy clear
+        depends on, so its absence is asserted by name.
+        """
+        import claude_runtime as _cr
+
+        assert not hasattr(_cr, "_prune_matcher_scoped_render_entries")
+
+    def test_install_over_existing_scoped_entries_preserves_both(self, rt, tmp_path):
+        """Installing over both matcher-scoped entries keeps BOTH, prunes neither."""
+        target = tmp_path / ".claude" / "settings.local.json"
+        self._seed_scoped_post_tool_use(target)
+
+        result = _parsed(rt.project_install_hook(str(target)))
+        assert result["status"] == "success"
+        already = set(result["already_present_events"])
+        assert "PostToolUse:AskUserQuestion" in already
+        assert "PostToolUse:Bash" in already
+
+        settings = json.loads(target.read_text())
+        post = settings["hooks"]["PostToolUse"]
+        assert _count_command(post, _RENDER_HOOK_COMMAND) == 2
+        post_matchers = {
+            entry.get("matcher", "")
+            for entry in post
+            if isinstance(entry, dict)
+            and any(h.get("command") == _RENDER_HOOK_COMMAND for h in entry.get("hooks", []))
+        }
+        assert post_matchers == {"AskUserQuestion", "Bash"}
+
+    def test_install_preserves_foreign_post_tool_use_entries(self, rt, tmp_path):
+        """A foreign PostToolUse hook belonging to someone else survives untouched."""
+        target = tmp_path / ".claude" / "settings.local.json"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(
+            json.dumps(
+                {
+                    "hooks": {
+                        "PostToolUse": [
                             {
                                 "matcher": "Edit",
                                 "hooks": [{"type": "command", "command": "echo foreign"}],
@@ -629,27 +682,15 @@ class TestInstallTerminalTitleHooks:
         settings = json.loads(target.read_text())
         post = settings["hooks"]["PostToolUse"]
         assert "echo foreign" in _collect_commands(post)
-        assert _count_command(post, _RENDER_HOOK_COMMAND) == 1
+        assert _count_command(post, _RENDER_HOOK_COMMAND) == 2
 
-    def test_prune_leaves_pre_tool_use_and_enforcement_untouched(self, rt, tmp_path):
-        """The PostToolUse prune never touches the matcher-scoped PreToolUse render
-        entries nor the matcher-less enforcement entry."""
+    def test_install_leaves_pre_tool_use_and_enforcement_untouched(self, rt, tmp_path):
+        """A re-install never disturbs the PreToolUse render or enforcement entries."""
         target = tmp_path / ".claude" / "settings.local.json"
-        # Wire terminal-title + enforcement, then seed the legacy PostToolUse pair.
         rt.project_install_hook(str(target))
         rt.project_install_hook(str(target), enforcement=True)
         settings = json.loads(target.read_text())
         pre_before = settings["hooks"]["PreToolUse"]
-        settings["hooks"]["PostToolUse"] = [
-            {
-                "matcher": matcher,
-                "hooks": [
-                    {"type": "command", "command": _RENDER_HOOK_COMMAND, "timeout": 5000}
-                ],
-            }
-            for matcher in ("AskUserQuestion", "Bash")
-        ]
-        target.write_text(json.dumps(settings), encoding="utf-8")
 
         rt.project_install_hook(str(target))
 
@@ -658,24 +699,51 @@ class TestInstallTerminalTitleHooks:
         assert after["hooks"]["PreToolUse"] == pre_before
         assert _count_command(after["hooks"]["PreToolUse"], _RENDER_HOOK_COMMAND) == 2
         assert _count_command(after["hooks"]["PreToolUse"], _ENFORCEMENT_HOOK_COMMAND) == 1
-        # PostToolUse converged to the single matcher-less entry.
-        assert _count_command(after["hooks"]["PostToolUse"], _RENDER_HOOK_COMMAND) == 1
+        # PostToolUse keeps its two matcher-scoped entries.
+        assert _count_command(after["hooks"]["PostToolUse"], _RENDER_HOOK_COMMAND) == 2
 
-    def test_second_install_after_prune_adds_no_further_post_entry(self, rt, tmp_path):
-        """After the upgrade prune, a second install writes no further PostToolUse
-        entry — the broadened wiring is idempotent."""
+    def test_a_pre_existing_matcher_less_post_entry_is_not_removed(self, rt, tmp_path):
+        """A matcher-less PostToolUse render entry someone else installed SURVIVES.
+
+        The installer prunes nothing, so it must not delete a matcher-less
+        entry either — it simply adds the two scoped entries alongside. The
+        distinction matters: "we no longer want this shape" is not a licence to
+        remove a hook the operator may have added deliberately.
+        """
         target = tmp_path / ".claude" / "settings.local.json"
-        self._seed_legacy_post_tool_use(target)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(
+            json.dumps(
+                {
+                    "hooks": {
+                        "PostToolUse": [
+                            {
+                                "matcher": "",
+                                "hooks": [
+                                    {
+                                        "type": "command",
+                                        "command": _RENDER_HOOK_COMMAND,
+                                        "timeout": 5000,
+                                    }
+                                ],
+                            }
+                        ]
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+
         rt.project_install_hook(str(target))
-        first = json.loads(target.read_text())
 
-        result = _parsed(rt.project_install_hook(str(target)))
-        assert "PostToolUse" in set(result["already_present_events"])
-        assert "PostToolUse" not in set(result["installed_events"])
-
-        second = json.loads(target.read_text())
-        assert first == second
-        assert _count_command(second["hooks"]["PostToolUse"], _RENDER_HOOK_COMMAND) == 1
+        post = json.loads(target.read_text())["hooks"]["PostToolUse"]
+        matchers = {
+            entry.get("matcher", "")
+            for entry in post
+            if isinstance(entry, dict)
+            and any(h.get("command") == _RENDER_HOOK_COMMAND for h in entry.get("hooks", []))
+        }
+        assert matchers == {"", "AskUserQuestion", "Bash"}
 
     # ------------------------------------------------------------------
     # (c) Existing foreign statusLine yields already_present_other (preserved).
@@ -957,9 +1025,9 @@ class TestInstallEnforcementHook:
 
         hooks = after["hooks"]
         # Existing render entries intact.
-        assert _count_command(hooks["SessionStart"], _RENDER_HOOK_COMMAND) == 1
+        assert _count_command(hooks["SessionStart"], _RENDER_HOOK_COMMAND) == 2
         assert _count_command(hooks["PreToolUse"], _RENDER_HOOK_COMMAND) == 2
-        assert _count_command(hooks["PostToolUse"], _RENDER_HOOK_COMMAND) == 1
+        assert _count_command(hooks["PostToolUse"], _RENDER_HOOK_COMMAND) == 2
         # statusLine + env preserved verbatim.
         assert after["statusLine"] == before["statusLine"]
         assert after["env"] == before["env"]
@@ -2927,7 +2995,12 @@ class TestHealthCheck:
         assert result["error"] == "invalid_check"
 
     def test_permissions_check_included_in_all(self, rt, tmp_path, monkeypatch):
-        """checks='all' includes permissions, display, mcp-diagnostics, and hook."""
+        """checks='all' includes permissions, display, mcp-diagnostics, and hook.
+
+        ``checks_run`` is asserted on the ERROR return: the display check is
+        unhealthy in a bare tmp_path, and the fail-closed error carries the full
+        payload, so the enumeration is still readable from a failing run.
+        """
         import claude_runtime as _cr
 
         # Ensure no real settings file is accessed.
@@ -2937,11 +3010,25 @@ class TestHealthCheck:
         monkeypatch.chdir(tmp_path)
 
         result = _parsed(rt.health_check("all"))
-        assert result["status"] == "success"
         assert "permissions" in result["checks_run"]
         assert "display" in result["checks_run"]
         assert "mcp-diagnostics" in result["checks_run"]
         assert "hook" in result["checks_run"]
+
+    def test_unhealthy_mcp_alone_does_not_fail_the_verb(self, rt, tmp_path, monkeypatch):
+        """The fail-closed behaviour is scoped to DISPLAY, not generalised.
+
+        An unreachable MCP port means "no JetBrains IDE is running" — an
+        environmental condition, not a misconfiguration. Failing the verb on it
+        would train callers to ignore the status, which would defeat the
+        display fail-closed guarantee this deliverable adds.
+        """
+        result = _parsed(rt.health_check("mcp-diagnostics"))
+        mcp_result = next(r for r in result["results"] if r["check"] == "mcp-diagnostics")
+        if mcp_result["healthy"]:
+            pytest.skip("an MCP server is reachable in this environment")
+        assert result["status"] == "success"
+        assert result["all_healthy"] is False
 
     def test_permissions_healthy_when_settings_present(self, rt, tmp_path, monkeypatch):
         """permissions check is healthy when project settings.json exists."""
@@ -2956,26 +3043,47 @@ class TestHealthCheck:
         perm_result = next(r for r in result["results"] if r["check"] == "permissions")
         assert perm_result["healthy"] is True
 
-    # Per-event labels reported by the display check, in order. Mirrors
-    # _DISPLAY_RENDER_ENTRIES plus statusLine + env in claude_runtime.
-    _DISPLAY_LABELS = (
-        "SessionStart:matcher-less",
-        "UserPromptSubmit",
-        "Notification",
-        "Stop",
-        "PreToolUse:AskUserQuestion",
-        "PreToolUse:Bash",
-        "PostToolUse",
-        "statusLine",
-        "env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE",
-    )
+    # Per-event labels reported by the display check, in order. Derived from
+    # _DISPLAY_RENDER_ENTRIES rather than re-listed, so the expected set and the
+    # checked set cannot drift apart — the divergence class this deliverable
+    # exists to close.
+    @staticmethod
+    def _display_labels() -> tuple[str, ...]:
+        import claude_runtime as _cr
+
+        return tuple(label for label, _block, _matcher in _cr._DISPLAY_RENDER_ENTRIES) + (
+            "statusLine",
+            "env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE",
+        )
+
+    def test_display_expected_set_matches_the_converged_shape(self):
+        """The expected set is the nine converged labels, in report order.
+
+        Pinned literally — the sole place in this class that does NOT derive
+        from the constant — so a change to the constant is a deliberate,
+        reviewed edit here rather than something the derived assertions absorb
+        silently.
+        """
+        assert self._display_labels()[:9] == (
+            "SessionStart:matcher-less",
+            "SessionStart:clear",
+            "UserPromptSubmit",
+            "Notification",
+            "Stop",
+            "PreToolUse:AskUserQuestion",
+            "PreToolUse:Bash",
+            "PostToolUse:AskUserQuestion",
+            "PostToolUse:Bash",
+        )
 
     def test_display_healthy_when_fully_wired(self, rt, tmp_path, monkeypatch):
         """display check is healthy when every required terminal-title entry is present.
 
         A fresh terminal-title project install-hook writes the complete render
         wiring; the display check must then report every terminal-title label as
-        ``present`` and ``healthy: true``. The orthogonal enforcement entry is
+        ``present`` and the verb must return ``status: success``. This is the
+        installer↔check agreement in its strongest form: the SAME install that
+        the check expects must satisfy it. The orthogonal enforcement entry is
         NOT installed by the terminal-title path, so it reports MISSING without
         making the display unhealthy.
         """
@@ -2984,28 +3092,44 @@ class TestHealthCheck:
         monkeypatch.chdir(tmp_path)
 
         result = _parsed(rt.health_check("display"))
+        assert result["status"] == "success"
         display_result = next(r for r in result["results"] if r["check"] == "display")
         assert display_result["healthy"] is True
         detail = display_result["detail"]
-        for label in self._DISPLAY_LABELS:
+        for label in self._display_labels():
             assert f"{label}: present" in detail
         # The enforcement entry is orthogonal — absent after a terminal-title
         # install — so it is the ONLY MISSING line and the display stays healthy.
         assert "PreToolUse:enforcement: MISSING" in detail
 
-    def test_display_unhealthy_when_render_hook_absent(self, rt, tmp_path, monkeypatch):
-        """display check is unhealthy when no render-title hook entry is present.
+    def test_display_unhealthy_returns_status_error(self, rt, tmp_path, monkeypatch):
+        """An unhealthy display FAILS the verb — it does not report at exit 0.
 
-        An empty settings file (no .claude/settings.local.json) reports every
-        required label as MISSING.
+        The retired contract returned ``status: success`` with
+        ``all_healthy: false``, which is invisible to every caller that branches
+        on status; that is how a missing render entry could sit unnoticed. The
+        status is the assertion here.
         """
         monkeypatch.chdir(tmp_path)
         result = _parsed(rt.health_check("display"))
+        assert result["status"] == "error"
+        assert result["error"] == "display_unhealthy"
+
+    def test_display_failure_preserves_the_full_report(self, rt, tmp_path, monkeypatch):
+        """Failing closed costs the caller NO diagnostic information.
+
+        The error carries the same ``results`` / ``all_healthy`` payload a
+        success would. A failure that stripped the report would push callers
+        back toward ignoring the status to keep the detail.
+        """
+        monkeypatch.chdir(tmp_path)
+        result = _parsed(rt.health_check("display"))
+        assert result["status"] == "error"
+        assert result["all_healthy"] is False
         display_result = next(r for r in result["results"] if r["check"] == "display")
         assert display_result["healthy"] is False
-        detail = display_result["detail"]
-        for label in self._DISPLAY_LABELS:
-            assert f"{label}: MISSING" in detail
+        for label in self._display_labels():
+            assert f"{label}: MISSING" in display_result["detail"]
 
     def test_display_partial_install_names_each_missing_entry(self, rt, tmp_path, monkeypatch):
         """A partial install (only SessionStart wired) reports the missing entries by label.
@@ -3032,23 +3156,45 @@ class TestHealthCheck:
         monkeypatch.chdir(tmp_path)
 
         result = _parsed(rt.health_check("display"))
+        assert result["status"] == "error"
         display_result = next(r for r in result["results"] if r["check"] == "display")
         assert display_result["healthy"] is False
         detail = display_result["detail"]
         # The one wired entry is present.
         assert "SessionStart:matcher-less: present" in detail
-        # Every other required entry is named MISSING.
-        for label in (
-            "UserPromptSubmit",
-            "Notification",
-            "Stop",
-            "PreToolUse:AskUserQuestion",
-            "PreToolUse:Bash",
-            "PostToolUse",
-            "statusLine",
-            "env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE",
-        ):
+        # Every other required entry is named MISSING — including
+        # SessionStart:clear, whose absence the retired expected set could not
+        # report at all.
+        for label in self._display_labels():
+            if label == "SessionStart:matcher-less":
+                continue
             assert f"{label}: MISSING" in detail
+
+    def test_removing_a_single_entry_flips_the_verdict_to_error(self, rt, tmp_path, monkeypatch):
+        """Removing ONE installed entry from a healthy install fails the check.
+
+        The paired positive control for the healthy case: without it, a check
+        that returned error unconditionally would satisfy every failure
+        assertion in this class.
+        """
+        target = tmp_path / ".claude" / "settings.local.json"
+        rt.project_install_hook(str(target))
+        monkeypatch.chdir(tmp_path)
+        assert _parsed(rt.health_check("display"))["status"] == "success"
+
+        settings = json.loads(target.read_text())
+        settings["hooks"]["PostToolUse"] = [
+            entry
+            for entry in settings["hooks"]["PostToolUse"]
+            if entry.get("matcher") != "Bash"
+        ]
+        target.write_text(json.dumps(settings), encoding="utf-8")
+
+        result = _parsed(rt.health_check("display"))
+        assert result["status"] == "error"
+        assert result["error"] == "display_unhealthy"
+        display_result = next(r for r in result["results"] if r["check"] == "display")
+        assert "PostToolUse:Bash: MISSING" in display_result["detail"]
 
     def test_display_detail_contains_missing_token_when_any_entry_absent(
         self, rt, tmp_path, monkeypatch

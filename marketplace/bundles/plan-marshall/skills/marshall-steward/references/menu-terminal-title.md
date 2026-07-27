@@ -11,18 +11,23 @@ the plan-marshall bundle:
 
 - **State** — `manage-status` persists `current_phase`, `short_description`, and
   the `title_token` field into `status.json` (the single source of persisted
-  title state) on the relevant mutation paths. No user configuration is required.
-  See
+  title state) on the relevant mutation paths. `title_token` is a structured
+  `{owner, state, set_at}` record: `owner` names the writer (`build-hook`,
+  `merge-lock`, or `cli`), and a record older than an hour reads as absent, so a
+  token stranded by a dead process self-heals with no operator action. No user
+  configuration is required. See
   [`../../manage-status/standards/status-lifecycle.md` § Title Token](../../manage-status/standards/status-lifecycle.md)
   for the state contract.
 - **Composer** — the pure `plan-marshall:manage-terminal-title` library owns the
-  `compose(state, event)` function plus the glyph and icon vocabulary; it is
-  imported by the resolve+emit layer.
+  `compose(state_dict, process_state, icon_override=None)` function plus the
+  glyph and icon vocabulary; it is imported by the resolve+emit layer.
 - **Resolve + emit** — the per-target `session render-title` operation
   (implemented in `plan-marshall:platform-runtime`) reads the title state from
-  `status.json`, composes `{icon} {glyph} {body}` via the composer, and forwards
-  the resulting OSC sequence (hook mode) or plain text (statusLine mode) to the
-  controlling terminal.
+  `status.json`, composes `{icon} {glyph} {body}` via the composer, and hands
+  the resulting OSC sequence to Claude Code in the hook `terminalSequence`
+  envelope (hook mode), or writes plain text to stdout (statusLine mode).
+  Claude Code writes the escape on the hook's behalf, so no controlling
+  terminal is required.
 
 See
 [`../../manage-terminal-title/standards/terminal-title-architecture.md`](../../manage-terminal-title/standards/terminal-title-architecture.md)
@@ -55,7 +60,7 @@ AskUserQuestion:
   header: "Terminal Title"
   options:
     - label: "Configure hook wiring"
-      description: "Install or repair the SessionStart (matcher-less), UserPromptSubmit, Notification, Stop, PreToolUse:AskUserQuestion, PreToolUse:Bash, PostToolUse render entries plus statusLine and env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE in ./.claude/settings.local.json (Action A)"
+      description: "Install or repair the SessionStart (matcher-less), SessionStart:clear, UserPromptSubmit, Notification, Stop, PreToolUse:AskUserQuestion, PreToolUse:Bash, PostToolUse:AskUserQuestion, PostToolUse:Bash render entries plus statusLine and env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE in ./.claude/settings.local.json (Action A)"
     - label: "Override active-plan for this session"
       description: "Write the cache mapping ${XDG_CACHE_HOME:-$HOME/.cache}/plan-marshall/sessions/$CLAUDE_CODE_SESSION_ID/active-plan so the next render trigger uses the selected plan (Action B)"
   multiSelect: false
@@ -104,29 +109,38 @@ python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime 
 The `detail` field enumerates all of these labels, in order:
 
 - `SessionStart:matcher-less`
+- `SessionStart:clear`
 - `UserPromptSubmit`
 - `Notification`
 - `Stop`
 - `PreToolUse:AskUserQuestion`
 - `PreToolUse:Bash`
-- `PostToolUse`
+- `PostToolUse:AskUserQuestion`
+- `PostToolUse:Bash`
 - `statusLine`
 - `env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE`
 
-`PostToolUse` is a single matcher-less entry, so the title refreshes after every
-tool call rather than only after Bash / AskUserQuestion calls. There is no
-`SessionStart:clear` entry — the matcher-less `SessionStart` entry already fires
-for every source, and the renderer turns `source == "clear"` into a session
-teardown.
+`PostToolUse` is **matcher-scoped** — two entries, `AskUserQuestion` and `Bash`,
+never a matcher-less one. The narrow shape is deliberate: the render command is
+among the largest recurring script costs in this project, and `PostToolUse:Bash`
+is the entry the machine-owned `build-busy` clear rides, so widening and pruning
+would delete the entry that clear depends on.
 
-When `display` reports `healthy: true` (no line contains `MISSING`), everything
-is wired up. Print an "already configured" message and return to the
+`SessionStart:clear` **is** installed as its own entry — it is what routes the
+session teardown when a session is cleared.
+
+**The check is fail-closed.** A divergence between the expected and installed
+sets returns `status: error` with `error: display_unhealthy`, not a `success`
+carrying `all_healthy: false`. Branch on the status, not on the text.
+
+When `display` reports `status: success` (no line contains `MISSING`),
+everything is wired up. Print an "already configured" message and return to the
 Configuration menu WITHOUT prompting:
 
 ```text
 Terminal title is already configured.
 
-All seven render-trigger hook entries, the statusLine command, and the
+All nine render-trigger hook entries, the statusLine command, and the
 CLAUDE_CODE_DISABLE_TERMINAL_TITLE env entry are present in
 ./.claude/settings.local.json. A fresh Claude Code session will drive the live
 tab title and statusline automatically.
@@ -140,11 +154,11 @@ Prompt the user before writing anything:
 
 ```text
 AskUserQuestion:
-  question: "Enable the dynamic terminal title and statusLine? This installs seven render-trigger hook entries, a statusLine command, and an env entry into ./.claude/settings.local.json."
+  question: "Enable the dynamic terminal title and statusLine? This installs nine render-trigger hook entries, a statusLine command, and an env entry into ./.claude/settings.local.json."
   header: "Terminal Title"
   options:
     - label: "Enable"
-      description: "Install the SessionStart (matcher-less), UserPromptSubmit, Notification, Stop, PreToolUse:AskUserQuestion, PreToolUse:Bash, PostToolUse hook entries plus statusLine and env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE"
+      description: "Install the SessionStart (matcher-less), SessionStart:clear, UserPromptSubmit, Notification, Stop, PreToolUse:AskUserQuestion, PreToolUse:Bash, PostToolUse:AskUserQuestion, PostToolUse:Bash hook entries plus statusLine and env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE"
     - label: "Skip"
       description: "Make no changes; the terminal title stays disabled"
   multiSelect: false
@@ -180,10 +194,12 @@ present:
 - `already_present_events` — the events where our render entry was already
   installed (no write was needed).
 
-The union of the two lists is always `["SessionStart", "UserPromptSubmit",
-"Notification", "Stop", "PreToolUse:AskUserQuestion", "PreToolUse:Bash",
-"PostToolUse"]`. Report the breakdown so the
-user can see exactly which entries were added:
+The union of the two lists is always `["SessionStart:matcher-less",
+"SessionStart:clear", "UserPromptSubmit", "Notification", "Stop",
+"PreToolUse:AskUserQuestion", "PreToolUse:Bash", "PostToolUse:AskUserQuestion",
+"PostToolUse:Bash"]` — the same nine labels the `display` check reports, so the
+installer's output and the health check's expectation can be compared directly.
+Report the breakdown so the user can see exactly which entries were added:
 
 ```text
 Installed render entries: <installed_events>
