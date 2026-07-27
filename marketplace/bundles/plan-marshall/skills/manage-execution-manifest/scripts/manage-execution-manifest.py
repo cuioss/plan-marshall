@@ -84,7 +84,6 @@ from _manifest_rules import (
     _CEREMONY_FINALIZE_STEP_MAP,  # noqa: F401
     _FOOTPRINT_GATED_CANONICAL_ROLES,  # noqa: F401
     _PRE_SUBMISSION_SELF_REVIEW_STEP,  # noqa: F401
-    _SCOPE_GATED_OVERRIDE_DROP,  # noqa: F401
     _SCOPE_GATED_SINGLE_MODULE_DROP,  # noqa: F401
     _SCOPE_GATED_SURGICAL_DROP,  # noqa: F401
     _SECURITY_AUDIT_OWNER_STEP,  # noqa: F401
@@ -100,9 +99,9 @@ from _manifest_rules import (
     _apply_unresolved_ask_provider_drop,  # noqa: F401
     _ceremony_finalize_insert_index,  # noqa: F401
     _footprint_has_role,  # noqa: F401
+    _has_declared_lane_override,  # noqa: F401
     _parse_verification_command,  # noqa: F401
     _read_ci_provider,  # noqa: F401
-    _read_drop_review_on_scope_gate,  # noqa: F401
     _read_finalize_gates,  # noqa: F401
     _read_marshal_phase_step_map,  # noqa: F401
     _read_sonar_provider,  # noqa: F401
@@ -111,6 +110,10 @@ from _manifest_rules import (
     _verb_to_phase_5_step,  # noqa: F401
 )
 from _manifest_validation import (
+    _ORDER_NOT_APPLICABLE,  # noqa: F401
+    _ORDER_NOT_DECLARED,  # noqa: F401
+    _ORDER_RESOLVED,  # noqa: F401
+    _ORDER_SOURCE_UNRESOLVABLE,  # noqa: F401
     _PHASE_6_SKILL_DIR,  # noqa: F401
     _PHASE_6_STANDARDS_DIR,  # noqa: F401
     _PHASE_6_WORKFLOW_DIR,  # noqa: F401
@@ -125,8 +128,10 @@ from _manifest_validation import (
     _render_standards_rel_path,  # noqa: F401
     _resolve_standards_path,  # noqa: F401
     _resolve_step_order,  # noqa: F401
+    _resolve_step_order_verdict,  # noqa: F401
     _sort_steps_by_frontmatter_order,  # noqa: F401
     check_build_verdict_consistent,
+    check_emitted_steps_ascending_order,
     check_emitted_steps_canonical,
     check_emitted_steps_resolvable,  # noqa: F401
     cmd_step_params_get,  # noqa: F401
@@ -1336,14 +1341,54 @@ def _sum_lane_cost(steps: list[str], table: dict[str, str]) -> int:
     return total
 
 
+#: Phase-6 steps whose membership `cmd_compose` decides from PLAN inputs the
+#: preview does not have (``change_type`` / ``scope_estimate`` / ``track`` /
+#: ``affected_files_count`` / ``commit_and_push`` / the live footprint / the
+#: six-row matrix / ceremony selection). The preview cannot reach the composer's
+#: verdict for these, so it names them rather than implying certainty it lacks —
+#: the "refuse diagnosably when it cannot agree" half of the preview/compose
+#: agreement contract. Every OTHER emitted step's membership is settled by
+#: marshal configuration alone, which the preview applies in full, so preview and
+#: compose agree on it. Bare (boundary-normalized) ids, matching the candidate
+#: list the preview builds. See standards/decision-rules.md § Preview/compose
+#: agreement contract.
+_PLAN_INPUT_DEPENDENT_PHASE_6_STEPS = frozenset(
+    {
+        'push',
+        'pre-push-quality-gate',
+        'pre-submission-self-review',
+        'finalize-step-simplify',
+        'finalize-step-security-audit',
+        'plan-retrospective',
+        'plan-marshall:plan-retrospective',
+        'finalize-step-plugin-doctor',
+        'project:finalize-step-plugin-doctor',
+    }
+)
+
+
 def cmd_lanes_preview(args: argparse.Namespace) -> dict[str, Any] | None:
     """Resolve all three posture step sets + cost sums in ONE TOON.
 
-    The preview is the same lane projection ``compose`` applies, so the init
-    dialogue preview and the executed flow cannot diverge: ``full``/``minimal``
-    are pure config projections (the lane cutoff over the configured phase-6
-    candidate list); ``auto`` additionally drops every ``full``-tier element. The
-    cost sum for each posture is ``Σ(resolved element cost_size → table)``.
+    Preview/compose agreement contract: the preview renders the SAME membership
+    and the SAME order ``compose`` reaches for every step whose fate marshal
+    configuration alone decides, and NAMES the steps whose fate it cannot know.
+    Concretely it applies, in composer order, the marshal-config-only
+    ``unresolved_ask_provider_drop`` pre-filter, the posture lane cutoff, and the
+    composer's frontmatter-order sort — the last one because the composer sorts
+    the final list, so an unsorted preview would report a different ORDER for an
+    identical membership.
+
+    It cannot apply the pre-filters, the six-row matrix, or ceremony selection:
+    those read plan inputs (``change_type`` / ``scope_estimate`` / ``track`` /
+    ``affected_files_count`` / ``commit_and_push`` / the live footprint) that do
+    not exist at preview time. Rather than silently rendering a membership the
+    composer may not reach, the preview returns
+    ``plan_input_dependent_steps[]`` — the emitted steps still subject to such a
+    decision. An empty list means preview and compose agree on membership
+    outright.
+
+    The cost sum for each posture is ``Σ(resolved element cost_size → table)``.
     """
     plan_id = require_valid_plan_id(args)
 
@@ -1356,9 +1401,19 @@ def cmd_lanes_preview(args: argparse.Namespace) -> dict[str, Any] | None:
     marshal_phase_6_map = _read_marshal_phase_step_map('phase-6-finalize')
     table = _read_cost_size_token_table()
 
+    # Composer pre-filter 6 — decided by marshal config plus provider presence
+    # alone, so the preview reaches the composer's verdict exactly.
+    candidates, _ask_dropped = _apply_unresolved_ask_provider_drop(
+        candidates, marshal_phase_6_map, _read_ci_provider(), _read_sonar_provider()
+    )
+
     lanes: dict[str, Any] = {}
+    plan_input_dependent: set[str] = set()
     for posture in LANE_TIERS:
         kept, _dropped, _warnings = _apply_lane_resolution(candidates, posture, marshal_phase_6_map, plan_id)
+        # Same ordering authority the composer applies to its final list.
+        kept = _sort_steps_by_frontmatter_order(kept)
+        plan_input_dependent.update(s for s in kept if s in _PLAN_INPUT_DEPENDENT_PHASE_6_STEPS)
         lanes[posture] = {
             'phase_6_steps': kept,
             'phase_6_steps_count': len(kept),
@@ -1369,6 +1424,7 @@ def cmd_lanes_preview(args: argparse.Namespace) -> dict[str, Any] | None:
         'status': 'success',
         'plan_id': plan_id,
         'lanes': lanes,
+        'plan_input_dependent_steps': sorted(plan_input_dependent),
     }
 
 
@@ -1478,8 +1534,8 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     #   4b. security_audit_inactive — drop finalize-step-security-audit on the
     #      same change_type + affected_files_count gate as simplify_inactive.
     #   5. scope_gated_finalize — drop heavyweight phase-6 review/audit steps by
-    #      scope_estimate; automatic-review suppressed ONLY via the explicit
-    #      drop_review_on_scope_gate opt-in.
+    #      scope_estimate; a step carrying an explicitly declared, non-auto
+    #      per-element `lane` override is immune (declared-lane immunity).
     # Each pre-filter returns (filtered_candidates, fired_flag); we log a
     # dedicated decision-log line per fired pre-filter in addition to the row
     # log line emitted by _log_decision below.
@@ -1519,15 +1575,19 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
 
     # Pre-filter 5 (scope_gated_finalize) drops heavyweight phase-6 review/audit
     # steps by scope: surgical drops the three review/audit steps, single_module
-    # drops only plan-retrospective, and the drop_review_on_scope_gate escape
-    # hatch additionally drops automatic-review. It runs after the other
-    # pre-filters and before the six-row matrix, so it only ever narrows the
-    # candidate list. automatic-review is dropped ONLY via the explicit override —
-    # never by the implicit scope gate — so the bot-review invariant stays intact
-    # by default. See standards/decision-rules.md § Pre-Filter: scope_gated_finalize.
-    drop_review_on_scope_gate = _read_drop_review_on_scope_gate()
-    phase_6_candidates, scope_gated_dropped = _apply_scope_gated_finalize(
-        phase_6_candidates, args.scope_estimate, drop_review_on_scope_gate
+    # drops only plan-retrospective. It runs after the other pre-filters and
+    # before the six-row matrix, so it only ever narrows the candidate list.
+    #
+    # Declared-lane immunity: a step carrying an explicitly declared, non-auto
+    # per-element `lane` override is never dropped here. This gate is IMPLICIT
+    # (it infers intent from the scope estimate) and it runs BEFORE ceremony
+    # selection and lane resolution, where only the four ceremony gates can be
+    # re-added — so for any other step a drop here makes the operator's declared
+    # lane structurally unreachable rather than merely outvoted. The marshal
+    # phase-6 map is passed in as the declaration source. See
+    # standards/decision-rules.md § Pre-Filter: scope_gated_finalize.
+    phase_6_candidates, scope_gated_dropped, scope_gated_immune = _apply_scope_gated_finalize(
+        phase_6_candidates, args.scope_estimate, marshal_phase_6_map
     )
 
     # Pre-filter 6 (unresolved_ask_provider_drop, D6): drop an UNRESOLVED
@@ -1812,6 +1872,41 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
             'canonical': canonical_error['canonical'],
         }
 
+    # Post-compose ascending-order gate (fail-loud): the sort above is the sole
+    # ordering authority, and this asserts the sort actually held over the FINAL
+    # `phase_6.steps`. It is NOT a re-run of the seed-path `_check_ascending_order`:
+    # that walk SKIPS any step whose order does not resolve, which is exactly how
+    # an inversion passed green — the sort PINS an order-unresolvable entry at its
+    # original index and the walk then declines to check the position it was pinned
+    # at. This gate treats an entry it cannot verify as an offence, so an
+    # unresolvable-order built-in can no longer ride through as a vacuous green.
+    #
+    # Placed AFTER the resolution and canonical gates on purpose: a step whose
+    # SOURCE FILE is missing is a resolution defect, and `unresolvable_step` names
+    # it far more usefully than an ordering error would. What survives to here is
+    # the case those gates cannot see — a step whose source resolves but declares
+    # no readable integer `order:`, the reachable trigger recorded in the plan
+    # artifact `work/defect-b-gate-reproduction.md`. Like its siblings it returns
+    # before the step-params snapshot and `write_manifest`, so a failing compose
+    # never writes a partial manifest. See
+    # _manifest_validation.check_emitted_steps_ascending_order.
+    ascending_error = check_emitted_steps_ascending_order(list(body['phase_6'].get('steps', [])))
+    if ascending_error is not None:
+        _emit_decision_log(
+            plan_id,
+            '(plan-marshall:manage-execution-manifest:compose) phase_6_order_violation — '
+            f'{ascending_error["message"]}',
+        )
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'phase_6_order_violation',
+            'message': ascending_error['message'],
+            'phase': 'phase_6',
+            'step_id': ascending_error['step_id'],
+            'reason': ascending_error['reason'],
+        }
+
     # Build-verdict consistency assertion (fail-loud): the third sibling of the
     # two structural gates above, run on the SAME FINAL emitted step lists. It
     # rejects a manifest that CONTRADICTS the sole build/no-build authority —
@@ -1886,6 +1981,14 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         _log_prefilter_omitted(plan_id, 'finalize-step-security-audit', args.change_type, affected_files_count)
     for dropped_step in scope_gated_dropped:
         _log_scope_gated_finalize_subtraction(plan_id, args.scope_estimate, dropped_step)
+    for immune_step in scope_gated_immune:
+        _emit_decision_log(
+            plan_id,
+            '(plan-marshall:manage-execution-manifest:compose) scope_gated_finalize immunity — '
+            f'kept {immune_step} despite scope_estimate={args.scope_estimate}: the step declares an '
+            'explicit non-auto lane override, which the implicit scope gate must not silently '
+            'override',
+        )
     for dropped_step in unresolved_ask_dropped:
         _emit_decision_log(
             plan_id,
@@ -1934,8 +2037,8 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         'simplify_omitted': simplify_omitted,
         'security_audit_omitted': security_audit_omitted,
         'scope_gated_finalize_dropped': scope_gated_dropped,
+        'scope_gated_finalize_immune': scope_gated_immune,
         'unresolved_ask_provider_dropped': unresolved_ask_dropped,
-        'drop_review_on_scope_gate': drop_review_on_scope_gate,
         'ceremony_finalize_gates': ceremony_finalize_gates,
         'ceremony_finalize_forced_in': [c['step'] for c in ceremony_forced_in],
         'ceremony_finalize_forced_out': [c['step'] for c in ceremony_forced_out],

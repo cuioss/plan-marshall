@@ -3760,8 +3760,15 @@ class TestScopeGatedFinalizePreFilter:
         # Baseline steps survive.
         assert 'push' in steps
 
-    def test_drop_review_additionally_drops_automated_review(self, plan_context):
-        """drop_review_on_scope_gate=true additionally drops automatic-review."""
+    def test_scope_gated_automatic_review_survives_without_drop_hatch(self, plan_context):
+        """automatic-review survives a scope-gated compose — the drop hatch is gone.
+
+        ``drop_review_on_scope_gate`` was removed: declared-lane immunity, not an
+        ad-hoc project-wide opt-in hatch, is what governs which scope-gated steps
+        are retained. The legacy knob is written here deliberately to prove it is
+        now INERT — no reader consumes it, so automatic-review is retained exactly
+        as it is without the knob.
+        """
         _write_drop_review_marshal(plan_context.fixture_dir, override=True)
         result = cmd_compose(
             _compose_ns(
@@ -3777,8 +3784,8 @@ class TestScopeGatedFinalizePreFilter:
         manifest = read_manifest('scope-surgical-override')
         assert manifest is not None
         steps = manifest['phase_6']['steps']
-        # automatic-review dropped under the explicit override.
-        assert 'automatic-review' not in steps
+        # automatic-review RETAINED — the removed knob no longer drops it.
+        assert 'automatic-review' in steps
         # Three non-guarded steps still dropped.
         assert 'plan-marshall:plan-retrospective' not in steps
         assert 'pre-submission-self-review' not in steps
@@ -3917,7 +3924,7 @@ class TestScopeGatedFinalizePreFilter:
 
     def test_result_carries_scope_gated_observability_fields(self, plan_context):
         """The compose result exposes scope_gated_finalize_dropped and
-        drop_review_on_scope_gate for observability."""
+        scope_gated_finalize_immune for observability."""
         result = cmd_compose(
             _compose_ns(
                 plan_id='scope-observability',
@@ -3929,7 +3936,9 @@ class TestScopeGatedFinalizePreFilter:
             )
         )
         assert result is not None and result['status'] == 'success'
-        assert result['drop_review_on_scope_gate'] is False
+        # No candidate declares an explicit non-auto per-element lane override, so
+        # nothing is immune to the surgical scope gate.
+        assert result['scope_gated_finalize_immune'] == []
         dropped = result['scope_gated_finalize_dropped']
         assert 'plan-marshall:plan-retrospective' in dropped
         assert 'project:finalize-step-plugin-doctor' in dropped
@@ -4325,32 +4334,108 @@ def _lanes_preview_ns(plan_id: str, steps: list[str]) -> Namespace:
 
 
 def test_lanes_preview_resolves_all_three_postures(plan_context, monkeypatch):
-    """lanes preview returns the minimal/auto/full step sets + cost sums in one result."""
+    """lanes preview returns the minimal/auto/full step MEMBERSHIP + cost sums in one result."""
     _patch_element_lane(monkeypatch)
     result = cmd_lanes_preview(_lanes_preview_ns('lanes-preview', _LANE_STEPS))
 
     assert result is not None and result['status'] == 'success'
     lanes = result['lanes']
-    assert lanes['full']['phase_6_steps'] == _LANE_STEPS
-    assert lanes['minimal']['phase_6_steps'] == ['push', 'archive-plan', 'project:finalize-step-deploy-target']
+    # Membership is asserted as a set: the preview now applies the composer's
+    # frontmatter-order sort (see the ordering test below), so the emitted
+    # sequence is the sorted one, not the candidate-list sequence.
+    assert set(lanes['full']['phase_6_steps']) == set(_LANE_STEPS)
+    assert set(lanes['minimal']['phase_6_steps']) == {
+        'push', 'archive-plan', 'project:finalize-step-deploy-target',
+    }
     assert set(lanes['auto']['phase_6_steps']) == {
         'push', 'archive-plan', 'sonar-roundtrip', 'project:finalize-step-deploy-target',
     }
-    # Cost sums: XS=5K, L=130K → full=405K, auto=145K, minimal=15K.
+    # Cost sums are order-independent: XS=5K, L=130K → full=405K, auto=145K, minimal=15K.
     assert lanes['full']['cost_sum_tokens'] == 405000
     assert lanes['auto']['cost_sum_tokens'] == 145000
     assert lanes['minimal']['cost_sum_tokens'] == 15000
 
 
-def test_lanes_preview_agrees_with_apply_lane_resolution(plan_context, monkeypatch):
-    """The preview projection is the SAME one compose applies (one projection feeds both)."""
+def test_lanes_preview_membership_agrees_with_apply_lane_resolution(plan_context, monkeypatch):
+    """The preview MEMBERSHIP is the same projection compose applies.
+
+    The preview shares ``_apply_lane_resolution`` with the composer, so for every
+    posture it keeps exactly the same set of steps. The preview additionally
+    applies the composer's ordering authority — asserted separately below — so
+    this agreement is stated over membership, not sequence.
+    """
     _patch_element_lane(monkeypatch)
     result = cmd_lanes_preview(_lanes_preview_ns('lanes-agree', _LANE_STEPS))
     assert result is not None
 
     for posture in ('minimal', 'auto', 'full'):
         kept, _dropped, _warnings = _apply_lane_resolution(_LANE_STEPS, posture, None, 'lanes-agree')
-        assert result['lanes'][posture]['phase_6_steps'] == kept
+        assert set(result['lanes'][posture]['phase_6_steps']) == set(kept)
+
+
+def test_lanes_preview_applies_the_composer_ordering_authority(plan_context, monkeypatch):
+    """The preview emits each posture in the composer's frontmatter-order sequence.
+
+    Preview/compose agreement covers ORDER, not just membership: ``cmd_compose``
+    sorts its final ``phase_6.steps`` via ``_sort_steps_by_frontmatter_order``, so
+    an unsorted preview would report a different sequence for an identical
+    membership — the divergence this reconciliation closes. The candidate list is
+    deliberately fed in its unsorted fixture order.
+    """
+    _patch_element_lane(monkeypatch)
+    result = cmd_lanes_preview(_lanes_preview_ns('lanes-order', _LANE_STEPS))
+    assert result is not None
+
+    for posture in ('minimal', 'auto', 'full'):
+        kept, _dropped, _warnings = _apply_lane_resolution(_LANE_STEPS, posture, None, 'lanes-order')
+        assert result['lanes'][posture]['phase_6_steps'] == _mem._sort_steps_by_frontmatter_order(kept)
+
+    # Concretely, for the full posture the sort places the order-resolvable steps
+    # ascending — deploy-target (81) before archive-plan (1000) — where the
+    # candidate list had archive-plan second.
+    full_steps = result['lanes']['full']['phase_6_steps']
+    assert full_steps.index('project:finalize-step-deploy-target') < full_steps.index('archive-plan')
+
+
+def test_lanes_preview_names_plan_input_dependent_steps(plan_context, monkeypatch):
+    """The preview refuses diagnosably for steps whose fate needs plan inputs.
+
+    ``finalize-step-security-audit`` survives the lane cutoff at the ``full``
+    posture, but its membership in a composed manifest is decided by the
+    ``security_audit_inactive`` pre-filter, which reads ``change_type`` /
+    ``affected_files_count`` — inputs that do not exist at preview time. The
+    preview names it rather than implying the composer will agree.
+    """
+    _patch_element_lane(monkeypatch)
+    result = cmd_lanes_preview(_lanes_preview_ns('lanes-plan-input', _LANE_STEPS))
+
+    assert result is not None
+    assert 'finalize-step-security-audit' in result['plan_input_dependent_steps']
+    # ``push`` is named too: its final compose-time membership is decided by the
+    # ``commit_and_push`` PLAN INPUT (via ``_apply_commit_push_disabled``), not by
+    # marshal config alone — exactly the class of step the advisory exists to name.
+    assert 'push' in result['plan_input_dependent_steps']
+    # Steps whose fate marshal config alone decides are NOT named — naming them
+    # would make the advisory meaningless.
+    assert 'archive-plan' not in result['plan_input_dependent_steps']
+    assert 'sonar-roundtrip' not in result['plan_input_dependent_steps']
+
+
+def test_lanes_preview_reports_empty_advisory_when_nothing_is_plan_input_dependent(
+    plan_context, monkeypatch
+):
+    """An empty ``plan_input_dependent_steps`` means preview and compose agree outright.
+
+    The fixture deliberately excludes ``push``: its membership IS plan-input
+    dependent (``commit_and_push``), so including it would make this the
+    something-is-plan-input-dependent scenario the sibling test already covers.
+    """
+    steps = ['archive-plan']
+    _patch_element_lane(monkeypatch)
+    result = cmd_lanes_preview(_lanes_preview_ns('lanes-no-advisory', steps))
+
+    assert result is not None
+    assert result['plan_input_dependent_steps'] == []
 
 
 # --- compose integration -----------------------------------------------------

@@ -140,8 +140,8 @@ pre_push_quality_gate_omitted: false
 pre_submission_self_review_omitted: false
 simplify_omitted: true
 scope_gated_finalize_dropped[0]:
+scope_gated_finalize_immune[0]:
 unresolved_ask_provider_dropped[0]:
-drop_review_on_scope_gate: false
 ceremony_finalize_gates:
   self_review: auto
   qgate: auto
@@ -200,7 +200,9 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
 
 ### lanes preview
 
-Resolve all three execution-profile postures (`minimal` / `auto` / `full`) over the configured phase-6 candidate step list and return them — with per-posture step counts and summed token costs — in **one TOON**. This is the single projection the `phase-1-init` posture dialogue reads to show each posture's concrete kept-step set and cost preview; because it shares `_apply_lane_resolution` with `compose`, the dialogue preview and the executed flow cannot diverge. The lane contract (the closed `class` enum, the class→default-tier table, the resolution lattice) is owned by [`extension-api/standards/ext-point-lane-element.md`](../extension-api/standards/ext-point-lane-element.md).
+Resolve all three execution-profile postures (`minimal` / `auto` / `full`) over the configured phase-6 candidate step list and return them — with per-posture step counts and summed token costs — in **one TOON**. This is the single projection the `phase-1-init` posture dialogue reads to show each posture's concrete kept-step set and cost preview. The lane contract (the closed `class` enum, the class→default-tier table, the resolution lattice) is owned by [`extension-api/standards/ext-point-lane-element.md`](../extension-api/standards/ext-point-lane-element.md).
+
+**Preview/compose agreement contract.** The preview renders the same membership and the same ORDER `compose` reaches for every step whose fate marshal configuration alone decides, and names the steps whose fate it cannot know. It shares `_apply_unresolved_ask_provider_drop`, `_apply_lane_resolution`, and `_sort_steps_by_frontmatter_order` with `compose` — the sort included because `compose` sorts its final list, so an unsorted preview would report a different order for an identical membership. It cannot apply the remaining pre-filters, the six-row matrix, or `ceremony_finalize_selection`: those read PLAN inputs (`change_type` / `scope_estimate` / `track` / `affected_files_count` / `commit_and_push` / the live footprint) that do not exist at preview time. Rather than silently rendering a membership `compose` may not reach, the preview returns `plan_input_dependent_steps[]` naming the emitted steps still subject to such a decision — an empty list means preview and compose agree outright. See [standards/decision-rules.md](standards/decision-rules.md) § "Preview/Compose Agreement Contract".
 
 `full` and `minimal` are pure config projections (the lane cutoff over the configured candidates); `auto` additionally drops every `full`-tier element. Each posture's `cost_sum_tokens` is `Σ(resolved element cost_size → cost_size_token_table)` (the six-size table, default `{XS:5K, S:25K, M:60K, L:130K, XL:260K, XXL:520K}`, overridable at `plan.phase-5-execute.cost_size_token_table`).
 
@@ -226,6 +228,7 @@ lanes:
     phase_6_steps[14]: [ ... ]
     phase_6_steps_count: 14
     cost_sum_tokens: 960000
+plan_input_dependent_steps[2]: [ pre-submission-self-review, finalize-step-simplify ]
 ```
 
 ### record-step
@@ -436,6 +439,7 @@ The bulk form requires the manifest to exist on disk; if it does not, the script
 | `invalid_outcome` | `record-step` --outcome not `executed`, `skipped`, or `error` |
 | `invalid_manifest` | Manifest schema invalid or step IDs unknown; or `step-params set` target section malformed |
 | `unresolvable_step` | `compose` — a FINAL emitted phase-5/6 step id resolves to no built-in doc, project-local skill, or bundle discovery-registry entry (fail-loud; names the offending `marshal.json` key and phase) |
+| `phase_6_order_violation` | `compose` — the FINAL composed `phase_6.steps` is not verifiably in ascending frontmatter `order`: either an `order_inversion` (a step precedes one with a lower `order`) or an `unresolvable_order` (a built-in / `project:` step whose `order` does not resolve, so its pinned position cannot be verified). Fail-loud; names the offending `step_id`, the `reason`, and `phase`; writes no partial manifest |
 | `non_canonical_step` | `compose` — a FINAL emitted phase-5/6 step id is not in canonical form (`canonicalize_step_key(step_id) != step_id`; a `default:` prefix or promoted-alias bundle spelling slipped past intake normalization). Fail-loud; names the offending `step_id`, its `canonical` form, and phase; writes no partial manifest |
 | `invalid_arguments` | `validate-loadable` invoked without exactly one of `--step-id` / `--all` |
 | `step_not_found` | `step-params get`/`set` `--step-id` has no snapshotted params in the manifest for the given phase |
@@ -544,11 +548,9 @@ Before the six-row matrix, the composer applies a scope-gated pre-filter that dr
 - **`single_module`** — drops only `plan-marshall:plan-retrospective`.
 - **`multi_module` / `broad` / `none`** — no implicit subtraction; the full candidate set is retained.
 
-`automatic-review` is NEVER dropped by the implicit scope gate: its presence is governed purely by its configured `lane` and lane tier, so the implicit scope gate must not drop it. The only path that suppresses `automatic-review` at the scope gate is the explicit `drop_review_on_scope_gate` escape hatch.
+**Declared-lane immunity** — membership in a drop set is not sufficient to drop. A step declaring an explicit non-`auto` per-element `lane` override in `marshal.json::plan.phase-6-finalize.steps[<step>].lane` is immune and is kept whatever the `scope_estimate` says. This gate is IMPLICIT (it infers intent from the scope estimate) while a `lane` override is the operator stating what they want, and an implicit inference must not silently override an explicit declaration. The immunity is load-bearing because the pre-filter runs BEFORE ceremony selection and lane resolution, and the ceremony `always` re-add path covers only the four ceremony gates — so for any other step (canonically `plan-marshall:plan-retrospective`) a drop here makes the declared lane structurally unreachable rather than merely outvoted. `automatic-review` therefore needs no carve-out of its own: the general rule already keeps it governed purely by its configured `lane` and lane tier.
 
-**`drop_review_on_scope_gate`** — a step-owned param of `default:pre-submission-self-review`, read from `marshal.json` at `plan.phase-6-finalize.steps['default:pre-submission-self-review'].drop_review_on_scope_gate` (default `false`). When `true` **and** the plan is itself scope-gated (`scope_estimate ∈ {surgical, single_module}`), the scope gate additionally drops `automatic-review` — the single deliberate path that suppresses the bot-review gate at the scope stage, explicitly opted into. The override is scoped, not global: on `multi_module` / `broad` / `none` plans it is inert, so flipping the project-wide knob can never silently disable bot review on a large plan. The default (`false`) keeps `automatic-review` governed by its `lane` alone.
-
-The composer emits one `decision.log` line per scope-gated subtraction (canonical prefix `(plan-marshall:manage-execution-manifest:compose) scope_gated_finalize subtraction`) and surfaces `scope_gated_finalize_dropped` and `drop_review_on_scope_gate` in the `compose` result for observability.
+The composer emits one `decision.log` line per scope-gated subtraction (canonical prefix `(plan-marshall:manage-execution-manifest:compose) scope_gated_finalize subtraction`) and one per immunity retention (`… scope_gated_finalize immunity`), and surfaces `scope_gated_finalize_dropped` and `scope_gated_finalize_immune` in the `compose` result for observability — a retention is made as visible as a subtraction, since a step surviving a gate that names it is otherwise indistinguishable from a gate that never ran.
 
 ### Generic footprint pre-filter for canonical-verify steps (`canonical_verify_inactive`)
 
@@ -599,7 +601,15 @@ An element with no `lane:` block is not lane-participating and is always kept. A
 
 ### Frontmatter-order sort (`frontmatter_order_sort`)
 
-After the execution-profile lane resolution (the last transform to add or drop a step) and before manifest persistence, the composer reorders the final `phase_6.steps` into ascending frontmatter `order` via `_sort_steps_by_frontmatter_order` (`_manifest_validation.py`). The stable sort reorders every order-resolvable step while entries whose `_resolve_step_order` is `None` (external `bundle:skill` steps, non-string entries) keep their original index, so `archive-plan` (order 1000) is the terminal barrier regardless of the marshal.json seed order — the single choke-point correcting the sync-defaults append misordering and any other upstream seed corruption. It is also the sole ordering authority for `automatic-review` (order 30, sorted before the plan-mutating tail), so no separate placement validator is required. The transform is unconditional, emits no dedicated `decision.log` line, and is the compose-time companion of the `_check_ascending_order` validator. The full rule (pin semantics, barrier consequence, insertion-helper interaction) is documented in [standards/decision-rules.md](standards/decision-rules.md) § "Frontmatter-Order Sort".
+After the execution-profile lane resolution (the last transform to add or drop a step) and before manifest persistence, the composer reorders the final `phase_6.steps` into ascending frontmatter `order` via `_sort_steps_by_frontmatter_order` (`_manifest_validation.py`). The stable sort reorders every order-resolvable step while entries whose `_resolve_step_order` is `None` (external `bundle:skill` steps, non-string entries) keep their original index, so `archive-plan` (order 1000) is the terminal barrier regardless of the marshal.json seed order — the single choke-point correcting the sync-defaults append misordering and any other upstream seed corruption. It is also the sole ordering authority for `automatic-review` (order 30, sorted before the plan-mutating tail), so no separate placement validator is required. The transform is unconditional and emits no dedicated `decision.log` line. The full rule (pin semantics, barrier consequence, insertion-helper interaction) is documented in [standards/decision-rules.md](standards/decision-rules.md) § "Frontmatter-Order Sort".
+
+### Post-compose ascending-order gate (`phase_6_order_violation`)
+
+`check_emitted_steps_ascending_order` asserts over the FINAL `phase_6.steps` that the sort actually held, and fails the compose loud otherwise — the assertion half of "the composer sorts so the barrier invariant holds, the validator asserts the sort held". It rejects two shapes: an `order_inversion` (a step whose resolved `order` is less than the maximum seen at an earlier position — the message names both steps of the pair) and an `unresolvable_order` (a built-in or `project:` step whose `order` does not resolve, because its source declares no integer `order:` key or its source file could not be resolved).
+
+Treating an unresolvable order as an offence rather than a skip is the point of the gate. The sort PINS an order-unresolvable entry at its original index, and the seed-path `_check_ascending_order` SKIPS exactly such an entry — so before this gate, a step that should carry an order but whose source could not be read was pinned wherever the seed put it and then went unchecked, letting a source-mutating step land after the merge gate with a green compose. A `bundle:skill` external step is orderless by design and is still skipped without complaint.
+
+Backing this, `_resolve_step_order_verdict` distinguishes `resolved` / `not_declared` / `source_unresolvable` / `not_applicable`; `_resolve_step_order` remains the order-only projection the sort and the seed check consume. The gate runs AFTER the `unresolvable_step` / `non_canonical_step` gates so a missing source file is reported as the resolution defect it is, leaving this gate the case those cannot see — a source that resolves but declares no readable `order:`. It asserts the COMPOSED list, while `validate-loadable --check-seed` asserts the pre-composition seed; neither disturbs the array-authority contract on `validate-loadable --all`. Like its sibling gates it returns before the step-params snapshot and `write_manifest`, so a failing compose never writes a partial manifest. The full rule is documented in [standards/decision-rules.md](standards/decision-rules.md) § "Post-Compose Assertion: `phase_6_order_violation`".
 
 ---
 

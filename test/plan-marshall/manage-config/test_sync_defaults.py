@@ -343,9 +343,10 @@ def test_sync_defaults_materializes_all_finalize_steps_as_keyed_map_form(plan_co
     override, never absence, and the two adversarial infra elements
     (`default:sonar-roundtrip` / `plan-marshall:automatic-review`) seed a
     `lane: ask` override. The four ceremony gates (qgate / self_review / simplify /
-    security_audit) no longer ride a run-at-all param — `finalize-step-simplify`
-    and `finalize-step-security-audit` are config-less, and
-    `pre-submission-self-review` retains only its `drop_review_on_scope_gate` param.
+    security_audit) no longer ride a run-at-all param — `finalize-step-simplify`,
+    `finalize-step-security-audit` and `pre-submission-self-review` are all
+    config-less (the last one also lost its `drop_review_on_scope_gate` escape
+    hatch to declared-lane immunity).
     """
     from extension_discovery import find_implementors
 
@@ -393,12 +394,12 @@ def test_sync_defaults_materializes_all_finalize_steps_as_keyed_map_form(plan_co
         )
 
     # The retired ceremony run-at-all params are gone from their owning steps;
-    # simplify / security-audit are config-less, self-review keeps only its
-    # escape-hatch param.
+    # simplify / security-audit / self-review are all config-less (self-review's
+    # drop_review_on_scope_gate escape hatch went with declared-lane immunity).
     assert 'simplify' not in steps.get('default:finalize-step-simplify', {})
     assert 'security_audit' not in steps.get('default:finalize-step-security-audit', {})
     assert 'self_review' not in steps.get('default:pre-submission-self-review', {})
-    assert 'drop_review_on_scope_gate' in steps.get('default:pre-submission-self-review', {})
+    assert 'drop_review_on_scope_gate' not in steps.get('default:pre-submission-self-review', {})
 
 
 def test_sync_defaults_preserves_present_steps_map_untouched(plan_context):

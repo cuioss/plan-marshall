@@ -11,10 +11,6 @@ presets: []
 implements:
   - plan-marshall:extension-api/standards/ext-point-execution-context-workflow
   - plan-marshall:extension-api/standards/ext-point-finalize-step
-configurable:
-  - key: drop_review_on_scope_gate
-    default: false
-    description: Escape hatch for the manifest composer's scope_gated_finalize pre-filter — false keeps the bot-review invariant intact; true additionally drops automated-review on scope-gated (surgical / single_module) plans.
 ---
 
 # Pre-Submission Self-Review

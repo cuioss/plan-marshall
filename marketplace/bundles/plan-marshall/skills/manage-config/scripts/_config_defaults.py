@@ -912,12 +912,12 @@ def validate_sonar_touched_file_cleanup(value: str) -> None:
 #                                      `steps.<step>.lane` override)
 #   - default:finalize-step-preference-emitter → preference_min_recurrence
 #                                      (per-plan disposition recurrence threshold)
-#   - default:pre-submission-self-review → drop_review_on_scope_gate (a default-on
-#                                      built-in step, so the seed DOES include it
-#                                      and its param — false — directly; the
-#                                      retired `self_review` run-at-all param is
-#                                      gone, replaced by the step's
-#                                      `steps.<step>.lane` override)
+#   - default:pre-submission-self-review → (config-less; the `self_review`
+#                                      ceremony gate rides the step's
+#                                      `steps.<step>.lane` override, and the
+#                                      composer's scope_gated_finalize
+#                                      pre-filter is governed by declared-lane
+#                                      immunity, not a step-owned knob)
 # The four finalize ceremony gates (qgate, self_review, simplify, security_audit)
 # no longer ride a run-at-all param: each is governed by its owning step's
 # `steps.<step>.lane` override (`off`/`minimal`/`auto`). Phase-level knobs with no
@@ -1027,10 +1027,9 @@ DEFAULT_PLAN_FINALIZE = {
     # body-doc `configurable:` frontmatter and read by `configurable_contract.py`.
     # The four finalize ceremony gates (`qgate`, `self_review`, `simplify`,
     # `security_audit`) no longer ride a run-at-all param — each is governed by
-    # its owning step's `steps.<step>.lane` override. `default:finalize-step-simplify`
-    # and `default:finalize-step-security-audit` are now config-less; the
-    # `default:pre-submission-self-review` step retains only its
-    # `drop_review_on_scope_gate: false` param. ALL finalize-step implementors are
+    # its owning step's `steps.<step>.lane` override. `default:finalize-step-simplify`,
+    # `default:finalize-step-security-audit` and `default:pre-submission-self-review`
+    # are now config-less. ALL finalize-step implementors are
     # materialized into this map (exclusion is a `lane: off` override, never
     # absence); the two adversarial infra elements
     # (`plan-marshall:automatic-review`, `default:sonar-roundtrip`) seed a
