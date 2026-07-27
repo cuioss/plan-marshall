@@ -182,9 +182,17 @@ def test_all_legs_agree_newest_marked(tmp_path):
 
 
 def test_all_legs_agree_all_marked(tmp_path):
+    """Saturation: every candidate is marked, so no marker carries a currency
+    signal and all three legs fall back to the retention-pinned NEWEST dir.
+
+    The assertion pins WHICH dir they agree on, not merely that they agree — a
+    bare cross-leg comparison also passes when all three regress together to
+    OLDER, so it cannot fail in the direction that matters. The tuple form still
+    proves agreement as a side effect.
+    """
     cache_root = _build_cache(tmp_path, newest_marked=True, older_marked=True)
     mappings_version, shared_version, scripts_version = _leg_versions(cache_root)
-    assert mappings_version == shared_version == scripts_version
+    assert (mappings_version, shared_version, scripts_version) == (NEWEST, NEWEST, NEWEST)
 
 
 # ============================================================================
