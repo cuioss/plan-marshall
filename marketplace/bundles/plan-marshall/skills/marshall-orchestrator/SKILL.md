@@ -84,7 +84,7 @@ Authoring templates for the ledger documents live in `templates/` and mirror the
 
 | Script | Notation | Purpose |
 |--------|----------|---------|
-| orchestrator | `plan-marshall:marshall-orchestrator:orchestrator` | Thin scaffolding: `scaffold` (create the epic tree), `queue` (read the plan queue, transition a plan's status, or set one plan row's result field), `resume-summary` (generate the START-HERE block from status.json), `archive` (relocate a closed epic tree to `archived-orchestrators/`), `inbox` (append/validate a plan-written OUTBOX message, or detect orchestration context from a plan's `source_id`) |
+| orchestrator | `plan-marshall:marshall-orchestrator:orchestrator` | Thin scaffolding: `scaffold` (create the epic tree), `queue` (read the plan queue, transition a plan's status, or set one plan row's result field), `resume-summary` (generate the START-HERE block from status.json), `archive` (relocate a closed epic tree to `archived-orchestrators/`), `inbox` (append/validate a plan-written OUTBOX message, list the queued messages, archive a consumed one, or detect orchestration context from a plan's `source_id`) |
 
 ## Canonical invocations
 
@@ -139,6 +139,24 @@ python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator
 ```
 
 Validates one existing message against the envelope schema. `--message` is a bare filename inside the epic's `inbox/` directory (a path is refused with `invalid_message_name`). Returns the parsed header on success; on rejection returns the distinct error code for the failing class — `missing_header_field`, `unknown_envelope_version`, `invalid_sender_type`, `invalid_kind`, `empty_payload`, `epic_mismatch`, or `filename_sender_mismatch` (checked in that order; see the validator error-code table in [`standards/inbox-envelope.md`](standards/inbox-envelope.md)).
+
+### inbox list
+
+```bash
+python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator inbox list \
+  --slug SLUG
+```
+
+Enumerates the epic's queued inbox messages — the drain's enumeration seam. Returns `count`, `invalid_count`, and a `messages[]` table carrying `name`, `sender_id`, `kind`, `created`, `valid`, and `error` per row, in deterministic (sender, sequence) order. Every message is validated through the same `validate_envelope` seam `inbox validate` uses, so a malformed message is REPORTED with its distinct error code (`error` non-empty, `valid: false`) rather than dropped or aborting the enumeration. Messages already retired under `inbox/archive/` are not enumerated, which is what makes a re-scan of a completed drain a no-op. Refuses an unsafe slug (`invalid_slug`) and an unscaffolded epic (`epic_not_found`).
+
+### inbox archive
+
+```bash
+python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator inbox archive \
+  --slug SLUG --message MESSAGE
+```
+
+Retires one consumed message from `inbox/{name}` to `inbox/archive/{name}`, creating the archive directory on first use. `--message` is a bare filename inside the epic's `inbox/` directory (a path is refused with `invalid_message_name`, matching `inbox validate`). Archival is the consume marker, and it relocates rather than edits, so the append-only invariant is unbroken. A message already at the archive destination with no source returns idempotent success (`already_archived: true`), so a resumed or repeated drain is safe. Refuses an unsafe slug (`invalid_slug`), a path-shaped name (`invalid_message_name`), a message present at neither path (`file_not_found`), and a source-present-plus-destination-present collision (`archive_conflict`) rather than clobbering the retired audit record.
 
 ### inbox detect
 

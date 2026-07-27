@@ -21,11 +21,14 @@ operations against the main-anchored orchestrator store
 - ``archive --slug S`` — relocate a *closed* epic tree to
   ``.plan/local/archived-orchestrators/{slug}/`` (a mechanical, post-close
   directory move that requires no judgement; refuses a non-closed epic).
-- ``inbox {write,validate,detect}`` — the epic's plan-writable OUTBOX: append
-  one ``inbox/{sender_id}-{NNN}.md`` message, validate an existing message
-  against the envelope schema, or classify a plan's ``source_id`` pointer as
-  orchestrated. Backed by :mod:`_orchestrator_inbox`; the write boundary is
-  enforced by construction there (no caller-supplied output path exists).
+- ``inbox {write,validate,list,archive,detect}`` — the epic's plan-writable
+  OUTBOX and its orchestrator-side drain: append one
+  ``inbox/{sender_id}-{NNN}.md`` message, validate an existing message against
+  the envelope schema, enumerate the queued messages with their validation
+  verdicts, retire a consumed message to ``inbox/archive/``, or classify a
+  plan's ``source_id`` pointer as orchestrated. Backed by
+  :mod:`_orchestrator_inbox`; the write boundary is enforced by construction
+  there (no caller-supplied output path exists).
 
 The ``kind=orchestrator`` ``status.json`` schema is owned by
 ``manage-status/standards/status-lifecycle.md``; ``status.json`` is created
@@ -44,7 +47,9 @@ from _orchestrator_inbox import (
     INBOX_SUBDIR,
     KINDS,
     SENDER_TYPES,
+    cmd_inbox_archive,
     cmd_inbox_detect,
+    cmd_inbox_list,
     cmd_inbox_validate,
     cmd_inbox_write,
 )
@@ -476,7 +481,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
             'Thin scaffolding for marshall-orchestrator epics: scaffold the '
             'epic tree, read/transition/stamp the plan queue, generate the '
             'START-HERE resume summary, archive a closed epic, and drive the '
-            'plan-writable inbox OUTBOX.'
+            'plan-writable inbox OUTBOX and its drain.'
         ),
         allow_abbrev=False,
     )
@@ -556,17 +561,22 @@ def _build_arg_parser() -> argparse.ArgumentParser:
 
 
 def _add_inbox_group(subparsers: Any) -> None:
-    """Register the ``inbox`` verb group (``write``, ``validate``, ``detect``).
+    """Register the ``inbox`` verb group.
 
-    The handlers live in :mod:`_orchestrator_inbox`; this function only wires
-    argv to them. Note what the surface deliberately does NOT expose: no output
+    Sub-verbs: ``write``, ``validate``, ``list``, ``archive``, ``detect``. The
+    handlers live in :mod:`_orchestrator_inbox`; this function only wires argv
+    to them. Note what the surface deliberately does NOT expose: no output
     path, no sequence number, and no inbox directory — the write target is
-    derived from ``--slug`` and ``--sender-id`` alone, which is what makes the
-    ledger write-boundary carve-out enforced by construction.
+    derived from ``--slug`` and ``--sender-id`` alone, and the drain verbs take
+    a bare message filename, which is what makes the ledger write-boundary
+    carve-out enforced by construction.
     """
     inbox = subparsers.add_parser(
         'inbox',
-        help="Epic inbox OUTBOX: append, validate, or detect a plan's messages.",
+        help=(
+            'Epic inbox OUTBOX and drain: append, validate, list, or archive a '
+            "message, or detect a plan's orchestration context."
+        ),
         allow_abbrev=False,
     )
     actions = inbox.add_subparsers(dest='inbox_action', required=True)
@@ -610,6 +620,28 @@ def _add_inbox_group(subparsers: Any) -> None:
         help='Bare message filename inside the epic inbox/ directory.',
     )
     validate.set_defaults(handler=cmd_inbox_validate)
+
+    list_messages = actions.add_parser(
+        'list',
+        help='Enumerate the queued inbox messages with their validation verdicts.',
+        allow_abbrev=False,
+    )
+    _add_slug_arg(list_messages)
+    list_messages.set_defaults(handler=cmd_inbox_list)
+
+    archive_message = actions.add_parser(
+        'archive',
+        help='Retire one consumed message to inbox/archive/ (idempotent).',
+        allow_abbrev=False,
+    )
+    _add_slug_arg(archive_message)
+    archive_message.add_argument(
+        '--message',
+        required=True,
+        metavar='NAME',
+        help='Bare message filename inside the epic inbox/ directory.',
+    )
+    archive_message.set_defaults(handler=cmd_inbox_archive)
 
     detect = actions.add_parser(
         'detect',

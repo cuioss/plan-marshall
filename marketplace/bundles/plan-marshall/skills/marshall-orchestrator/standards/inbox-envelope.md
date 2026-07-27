@@ -5,10 +5,22 @@ The message format of the epic's plan-writable OUTBOX. An executing plan appends
 ## Storage location
 
 ```text
-.plan/local/orchestrator/{epic}/inbox/{sender_id}-{NNN}.md
+.plan/local/orchestrator/{epic}/inbox/{sender_id}-{NNN}.md          # queued
+.plan/local/orchestrator/{epic}/inbox/archive/{sender_id}-{NNN}.md  # retired
 ```
 
 `inbox/` is created by `orchestrator scaffold` alongside `workstreams/`, `plans/`, `landings/`, and `logs/`. Messages are written ONLY by the `orchestrator inbox write` verb (see [`../SKILL.md`](../SKILL.md) § Canonical invocations), which derives the path from the validated epic slug and `--sender-id` and accepts no caller-supplied output path. There is no argument value that reaches any other path in the epic tree.
+
+`inbox/archive/` is the retired-message path a consumed message is moved to. It is NOT scaffolded — it is created on first use by `orchestrator inbox archive`, so no existing scaffold constant changes value.
+
+## Drain semantics
+
+The orchestrator drains the queue; the two drain verbs are mechanical and carry no judgement.
+
+- **`inbox list` is the enumeration seam.** It returns the queued messages in deterministic (sender, sequence) order, each with its header context and its validation verdict. Nothing under `inbox/archive/` is enumerated.
+- **A malformed message is reported, never skipped.** Each row carries either `valid: true` or the validator's distinct error code from the table below, so a broken message stays visible to the drain instead of disappearing from it, and one bad message never aborts the enumeration.
+- **Archival is the consume marker.** A message leaves the queue only by being archived, so a re-scan of an already-drained message is a no-op and a repeated `inbox archive` of the same message is idempotent success.
+- **The append-only invariant is unbroken.** Archival RELOCATES the file; it never edits or deletes it. The message body at the archived path is byte-identical to the one the sender wrote.
 
 ## File naming and sequence semantics
 
@@ -70,7 +82,7 @@ The payload is free markdown; the kind tells the orchestrator-side pickup how to
 
 ## Validator error codes
 
-The named validation seam is `validate_envelope(text, expected_epic, filename)` in `scripts/_orchestrator_inbox.py`, surfaced as `orchestrator inbox validate`. Checks run in the fixed order below, so a given malformed message always yields the same code.
+The named validation seam is `validate_envelope(text, expected_epic, filename)` in `scripts/_orchestrator_inbox.py`, surfaced as `orchestrator inbox validate` for one message and as the per-row verdict of `orchestrator inbox list` for the whole queue. Checks run in the fixed order below, so a given malformed message always yields the same code.
 
 | Order | `error` | Rejection condition |
 |:-----:|---------|---------------------|
@@ -89,5 +101,5 @@ The named validation seam is `validate_envelope(text, expected_epic, filename)` 
 ## Related
 
 - [`persona-marshall-orchestrator/standards/orchestration-model.md`](../../persona-marshall-orchestrator/standards/orchestration-model.md) — § Ledger Write-Boundary, the contract that sanctions this channel
-- [`../SKILL.md`](../SKILL.md) § Canonical invocations — the `inbox write` / `inbox validate` / `inbox detect` argument surfaces
+- [`../SKILL.md`](../SKILL.md) § Canonical invocations — the `inbox write` / `inbox validate` / `inbox list` / `inbox archive` / `inbox detect` argument surfaces
 - [`manage-lessons/standards/file-format.md`](../../manage-lessons/standards/file-format.md) — the lesson body shape a `candidate-lesson` payload carries

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Inbox envelope schema, validation seam, and epic-store write surface.
+"""Inbox envelope schema, validation seam, and epic-store write/drain surface.
 
 Backs ``orchestrator.py``'s ``inbox`` verb group. The inbox is the epic tree's
 single plan-writable OUTBOX: an executing plan appends
@@ -10,6 +10,11 @@ enforced here **by construction** — :func:`cmd_inbox_write` derives the target
 path solely from the validated slug and ``--sender-id`` and accepts no
 caller-supplied output path, so no argument value can reach ``status.json``,
 ``epic.md``, ``workstreams/``, ``plans/``, or ``landings/``.
+
+The orchestrator-side drain surface (:func:`cmd_inbox_list`,
+:func:`cmd_inbox_archive`) is bounded by the same construction: both derive
+their target from the validated slug plus a bare message filename, and the only
+path they ever write is ``inbox/archive/{name}``.
 
 The message format is markdown with the repo's existing ``key=value`` metadata
 header (``file_ops.parse_markdown_metadata`` /
@@ -21,6 +26,7 @@ schema itself is documented in
 
 import os
 import re
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -61,6 +67,11 @@ HEADER_FIELDS = (
 #: The inbox subdirectory of an epic tree.
 INBOX_SUBDIR = 'inbox'
 
+#: Where a consumed message is retired to, relative to ``inbox/``. Created on
+#: first use — deliberately NOT a member of ``orchestrator.py``'s
+#: ``EPIC_SUBDIRS``, so no existing scaffold assertion moves.
+INBOX_ARCHIVE_SUBDIR = 'archive'
+
 #: ``{sender_id}-{NNN}.md`` — the one message-file shape the channel allocates.
 #: The sender group is non-greedy so the LAST dash-separated all-digit run is
 #: the sequence: a four-digit sequence, or a sender id that itself ends in
@@ -99,6 +110,31 @@ def _validate_identifier(value: str) -> str | None:
     except ValueError as exc:
         return str(exc)
     return None
+
+
+def _is_bare_filename(name: str) -> bool:
+    """Whether ``name`` is a bare filename safe to join onto ``inbox/``.
+
+    The shared guard behind every ``--message`` argument: a value carrying a
+    path separator, a traversal segment, or a directory reference is refused
+    with ``invalid_message_name`` before it can reach a filesystem join.
+    """
+    return name == Path(name).name and name not in ('.', '..')
+
+
+def _read_epic_root(slug: str) -> Path:
+    """Resolve the epic's store root for a READ-side verb.
+
+    Uses :func:`file_ops.get_store_dir`'s ``allow_archived=True`` read-fallback
+    so an archived epic resolves transparently when its active tree is gone —
+    the same resolution ``inbox validate`` uses.
+    """
+    return get_store_dir(ORCHESTRATOR_STORE, slug, allow_archived=True)
+
+
+def _inbox_dir(slug: str) -> Path:
+    """Resolve the epic's ``inbox/`` directory for a READ-side verb."""
+    return _read_epic_root(slug) / INBOX_SUBDIR
 
 
 def compose_envelope(
@@ -210,6 +246,36 @@ def next_sequence(inbox_dir: Path, sender_id: str) -> int:
         if match is not None and match.group('sender') == sender_id:
             highest = max(highest, int(match.group('seq')))
     return highest + 1
+
+
+def list_messages(inbox_dir: Path) -> list[Path]:
+    """Return ``inbox_dir``'s message files in deterministic (sender, sequence) order.
+
+    The enumeration seam behind ``inbox list``. Only direct children matching
+    :data:`_MESSAGE_NAME_RE` are returned: the scan is non-recursive, so nothing
+    under the ``archive/`` subdirectory is ever enumerated, and the subdirectory
+    entry itself is filtered out by the file check along with any other
+    off-shape name.
+
+    Args:
+        inbox_dir: The epic's ``inbox/`` directory; an absent directory yields
+            an empty list.
+
+    Returns:
+        The message paths, sorted by sender id then numeric sequence.
+    """
+    if not inbox_dir.is_dir():
+        return []
+    entries: list[tuple[str, int, Path]] = []
+    for entry in inbox_dir.iterdir():
+        if not entry.is_file():
+            continue
+        match = _MESSAGE_NAME_RE.match(entry.name)
+        if match is None:
+            continue
+        entries.append((match.group('sender'), int(match.group('seq')), entry))
+    entries.sort(key=lambda item: (item[0], item[1]))
+    return [path for _, _, path in entries]
 
 
 def allocate_message_path(inbox_dir: Path, sender_id: str, text: str) -> Path:
@@ -344,17 +410,13 @@ def cmd_inbox_validate(args: Any) -> dict[str, Any]:
     if invalid:
         return _error('invalid_slug', invalid, slug=args.slug)
     name = args.message
-    if name != Path(name).name or name in ('.', '..'):
+    if not _is_bare_filename(name):
         return _error(
             'invalid_message_name',
             f'--message must be a bare filename inside inbox/, got: {name}',
             slug=args.slug,
         )
-    path = (
-        get_store_dir(ORCHESTRATOR_STORE, args.slug, allow_archived=True)
-        / INBOX_SUBDIR
-        / name
-    )
+    path = _inbox_dir(args.slug) / name
     if not path.is_file():
         return _error(
             'file_not_found', f'inbox message not found: {path}', slug=args.slug
@@ -380,6 +442,125 @@ def cmd_inbox_validate(args: Any) -> dict[str, Any]:
         'sender_id': header['sender_id'],
         'kind': header['kind'],
         'created': header['created'],
+    }
+
+
+def cmd_inbox_list(args: Any) -> dict[str, Any]:
+    """Enumerate and validate every message queued in the epic's inbox.
+
+    The drain's enumeration seam: one row per message, in deterministic
+    (sender, sequence) order, each row carrying the header context the
+    orchestrator routes on plus the validation verdict. A malformed message is
+    REPORTED with the validator's distinct error code — never silently dropped,
+    and never aborting the enumeration — so a broken message stays visible to
+    the drain instead of disappearing from it. Consumed messages already moved
+    under ``inbox/archive/`` are not enumerated, which is what makes a re-scan
+    of a completed drain a no-op.
+    """
+    invalid = _validate_identifier(args.slug)
+    if invalid:
+        return _error('invalid_slug', invalid, slug=args.slug)
+    root = _read_epic_root(args.slug)
+    if not root.is_dir():
+        return _error(
+            'epic_not_found',
+            f'epic {args.slug!r} has no tree at {root}; run scaffold first',
+            slug=args.slug,
+        )
+    inbox_dir = root / INBOX_SUBDIR
+    messages: list[dict[str, Any]] = []
+    for path in list_messages(inbox_dir):
+        ok, error_code, header = validate_envelope(
+            path.read_text(encoding='utf-8'),
+            expected_epic=args.slug,
+            filename=path.name,
+        )
+        messages.append(
+            {
+                'name': path.name,
+                'sender_id': header.get('sender_id', ''),
+                'kind': header.get('kind', ''),
+                'created': header.get('created', ''),
+                'valid': ok,
+                'error': '' if ok else (error_code or 'invalid_envelope'),
+            }
+        )
+    return {
+        'status': 'success',
+        'operation': 'inbox-list',
+        'slug': args.slug,
+        'store': ORCHESTRATOR_STORE,
+        'count': len(messages),
+        'invalid_count': sum(1 for row in messages if not row['valid']),
+        'messages': messages,
+    }
+
+
+def cmd_inbox_archive(args: Any) -> dict[str, Any]:
+    """Retire one consumed message to ``inbox/archive/{name}``.
+
+    Archival is the consume marker: the message leaves the enumeration
+    :func:`cmd_inbox_list` returns while its audit record survives at the
+    archived path, so the append-only invariant is unbroken — the file is
+    relocated, never edited or deleted. Check order mirrors ``cmd_archive``'s
+    three-way epic-tree ordering:
+
+    - source absent, destination present → idempotent success
+      (``already_archived``), so a resumed or repeated drain is safe.
+    - source absent, destination absent → ``error: file_not_found``.
+    - source present AND destination present → ``error: archive_conflict``
+      (never clobber the retired audit record).
+    - otherwise → create ``inbox/archive/`` on demand and move.
+    """
+    invalid = _validate_identifier(args.slug)
+    if invalid:
+        return _error('invalid_slug', invalid, slug=args.slug)
+    name = args.message
+    if not _is_bare_filename(name):
+        return _error(
+            'invalid_message_name',
+            f'--message must be a bare filename inside inbox/, got: {name}',
+            slug=args.slug,
+        )
+    inbox_dir = _inbox_dir(args.slug)
+    source = inbox_dir / name
+    dest = inbox_dir / INBOX_ARCHIVE_SUBDIR / name
+    if not source.is_file():
+        if dest.is_file():
+            return {
+                'status': 'success',
+                'operation': 'inbox-archive',
+                'slug': args.slug,
+                'store': ORCHESTRATOR_STORE,
+                'message': name,
+                'already_archived': True,
+                'archived_to': str(dest),
+            }
+        return _error(
+            'file_not_found',
+            f'inbox message not found: {source}',
+            slug=args.slug,
+            message_name=name,
+        )
+    if dest.exists():
+        return _error(
+            'archive_conflict',
+            f'inbox message {name} is already archived at {dest}; '
+            'refusing to clobber the audit record',
+            slug=args.slug,
+            message_name=name,
+            archived_to=str(dest),
+        )
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(source), str(dest))
+    return {
+        'status': 'success',
+        'operation': 'inbox-archive',
+        'slug': args.slug,
+        'store': ORCHESTRATOR_STORE,
+        'message': name,
+        'already_archived': False,
+        'archived_to': str(dest),
     }
 
 
