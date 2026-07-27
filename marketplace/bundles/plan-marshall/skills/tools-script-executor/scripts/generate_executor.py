@@ -703,22 +703,34 @@ _UNSUBSTITUTED_PLACEHOLDER_RE = re.compile(r'\{\{[^{}]*\}\}')
 _VERSION_DIR_NAME_RE = re.compile(r'^\d+\.\d+')
 
 
-def _split_bundle_version(path: str) -> tuple[str, str] | None:
+def _split_bundle_version(path: str, base_path: Path) -> tuple[str, str] | None:
     """Return ``(bundle, version_dir)`` for a path inside a versioned cache layout.
 
-    A plugin-cache path is ``{base}/{bundle}/{version}/skills/...``, so the owning
-    bundle is the segment immediately preceding the first version-shaped segment.
-    Returns ``None`` for a path carrying no version-dir segment — the marketplace
-    layout, where the provenance guard has nothing to compare.
+    A plugin-cache path is ``{base}/{bundle}/{version}/skills/...``, so the split is
+    anchored on the known cache root: the path is relativized against ``base_path``
+    and the first two segments ARE the bundle and its version dir. Anchoring is
+    load-bearing — scanning for the first version-shaped segment anywhere in the
+    path mis-splits on two real inputs: a version-shaped ANCESTOR directory above
+    the cache root (``/srv/1.0-workspace/cache/{bundle}/{version}/…``) and a bundle
+    whose own name starts with ``N.N`` (``1.0-my-bundle``, the supported naming
+    convention ``find_bundles`` gates on ``bundle_dir.parent != base_path``). Either
+    returns the wrong key and silently defeats the provenance guard.
+
+    Returns ``None`` when the path lies outside ``base_path`` (a project-local
+    ``.claude/skills`` script) or when its bundle segment carries no version dir —
+    the marketplace layout, where the provenance guard has nothing to compare.
     """
-    parts = Path(path).parts
-    for index, part in enumerate(parts):
-        if index > 0 and _VERSION_DIR_NAME_RE.match(part):
-            return parts[index - 1], part
-    return None
+    try:
+        relative = Path(path).resolve().relative_to(Path(base_path).resolve())
+    except ValueError:
+        return None
+    parts = relative.parts
+    if len(parts) < 2 or not _VERSION_DIR_NAME_RE.match(parts[1]):
+        return None
+    return parts[0], parts[1]
 
 
-def _check_emitted_path_provenance(emitted_paths: list[str]) -> dict | None:
+def _check_emitted_path_provenance(emitted_paths: list[str], base_path: Path) -> dict | None:
     """Return an error dict when any bundle's emitted paths span >1 version dir.
 
     Guard 4. The generator composes the executor from two independently-resolved
@@ -735,6 +747,8 @@ def _check_emitted_path_provenance(emitted_paths: list[str]) -> dict | None:
 
     Args:
         emitted_paths: Every path the generated executor will embed.
+        base_path: The cache root the emitted paths are anchored on — the same
+            bundles directory the generation resolved every path family from.
 
     Returns:
         ``None`` when every bundle contributes exactly one version dir, else a
@@ -743,7 +757,7 @@ def _check_emitted_path_provenance(emitted_paths: list[str]) -> dict | None:
     """
     by_bundle: dict[str, set[str]] = {}
     for path in emitted_paths:
-        split = _split_bundle_version(path)
+        split = _split_bundle_version(path, base_path)
         if split is None:
             continue
         bundle, version = split
@@ -809,7 +823,8 @@ def generate_executor(
        executor byte-identical.
     4. **Provenance guard + atomic write** — every emitted path (the ``mappings``
        values, the shared-module dirs, the logging dir, and the collected script
-       dirs) is grouped by owning bundle; a bundle contributing paths from more
+       dirs) is grouped by owning bundle, splitting each path against the known
+       ``base_path`` cache root; a bundle contributing paths from more
        than one plugin-cache version dir returns a ``status: error`` dict naming
        the bundle and the conflicting version dirs, again leaving any pre-existing
        executor byte-identical. The guard no-ops in the version-less marketplace
@@ -944,7 +959,7 @@ def generate_executor(
         logging_dir,
         *all_script_dirs,
     ]
-    provenance_error = _check_emitted_path_provenance(emitted_paths)
+    provenance_error = _check_emitted_path_provenance(emitted_paths, base_path)
     if provenance_error is not None:
         return provenance_error
 

@@ -2199,9 +2199,14 @@ def test_generate_executor_py_compile_failure_refuses_write_and_preserves_existi
 # status: error, nothing written, any pre-existing executor byte-identical.
 
 
-def _cache_script_path(bundle: str, version: str, script: str) -> str:
-    """Return a plugin-cache-shaped emitted path for ``bundle`` at ``version``."""
-    return f'/cache/{bundle}/{version}/skills/skill-x/scripts/{script}.py'
+def _cache_script_path(cache_root: Path, bundle: str, version: str, script: str) -> str:
+    """Return a plugin-cache-shaped emitted path for ``bundle`` at ``version``.
+
+    The path is rooted at ``cache_root`` because the provenance split is anchored
+    on the known cache root — a path outside it carries no comparable provenance
+    and is skipped by the guard.
+    """
+    return str(cache_root / bundle / version / 'skills' / 'skill-x' / 'scripts' / f'{script}.py')
 
 
 def test_guard4_two_version_dirs_for_one_bundle_refuses_write_and_preserves_existing(tmp_path, monkeypatch):
@@ -2215,8 +2220,8 @@ def test_guard4_two_version_dirs_for_one_bundle_refuses_write_and_preserves_exis
     monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path / '.plan'))
 
     mappings = {
-        'split-bundle:skill-x:one': _cache_script_path('split-bundle', '1.0.0', 'one'),
-        'split-bundle:skill-x:two': _cache_script_path('split-bundle', '1.0.10', 'two'),
+        'split-bundle:skill-x:one': _cache_script_path(bundles_root, 'split-bundle', '1.0.0', 'one'),
+        'split-bundle:skill-x:two': _cache_script_path(bundles_root, 'split-bundle', '1.0.10', 'two'),
     }
     result = module.generate_executor(mappings, bundles_root, dry_run=False, target='claude')
 
@@ -2241,8 +2246,8 @@ def test_guard4_single_version_mapping_set_still_writes(tmp_path, monkeypatch):
     monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
 
     mappings = {
-        'one-bundle:skill-x:one': _cache_script_path('one-bundle', '1.0.10', 'one'),
-        'one-bundle:skill-x:two': _cache_script_path('one-bundle', '1.0.10', 'two'),
+        'one-bundle:skill-x:one': _cache_script_path(bundles_root, 'one-bundle', '1.0.10', 'one'),
+        'one-bundle:skill-x:two': _cache_script_path(bundles_root, 'one-bundle', '1.0.10', 'two'),
     }
     result = module.generate_executor(mappings, bundles_root, dry_run=False, target='claude')
 
@@ -2283,12 +2288,151 @@ def test_guard4_allows_different_version_dirs_across_different_bundles(tmp_path,
     monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
 
     mappings = {
-        'bundle-a:skill-x:one': _cache_script_path('bundle-a', '1.0.0', 'one'),
-        'bundle-b:skill-x:two': _cache_script_path('bundle-b', '2.5.3', 'two'),
+        'bundle-a:skill-x:one': _cache_script_path(bundles_root, 'bundle-a', '1.0.0', 'one'),
+        'bundle-b:skill-x:two': _cache_script_path(bundles_root, 'bundle-b', '2.5.3', 'two'),
     }
     result = module.generate_executor(mappings, bundles_root, dry_run=False, target='claude')
 
     assert result['status'] == 'success', f'per-bundle single-version must permit this, got {result}'
+
+
+# ============================================================================
+# Guard 4 anchoring: the split is taken against the KNOWN cache root
+# ============================================================================
+# PR #1013 review findings. Selecting the FIRST version-shaped path segment
+# anywhere in the path (instead of relativizing against base_path) mis-splits on
+# two real inputs: (a) a version-shaped ANCESTOR directory above the cache root,
+# and (b) a bundle whose own name starts with ``N.N`` — the supported naming
+# convention pinned by
+# test_marketplace_bundles.py::test_non_versioned_bundle_starting_with_digits and
+# gated in find_bundles by ``bundle_dir.parent != base_path``. Either trigger
+# returns the wrong (bundle, version) key, so Guard 4 compares the wrong thing
+# and silently misses a genuine version split — a vacuous guard inside the guard.
+
+
+def test_split_bundle_version_anchors_on_base_path_for_digit_prefixed_bundle():
+    """(b) A bundle whose NAME is version-shaped still splits into
+    (bundle, version dir) — never (cache root, bundle name)."""
+    module = load_module()
+
+    split = module._split_bundle_version(
+        '/cache/1.0-my-bundle/0.1.1194/skills/skill-x/scripts/x.py', Path('/cache')
+    )
+
+    assert split == ('1.0-my-bundle', '0.1.1194'), (
+        f'the version dir is the segment AFTER the bundle segment, got {split}'
+    )
+
+
+def test_split_bundle_version_ignores_version_shaped_ancestor_directory():
+    """(a) A version-shaped ANCESTOR above the cache root is not the version dir."""
+    module = load_module()
+
+    split = module._split_bundle_version(
+        '/srv/1.0-workspace/cache/my-bundle/0.1.1194/skills/skill-x/scripts/x.py',
+        Path('/srv/1.0-workspace/cache'),
+    )
+
+    assert split == ('my-bundle', '0.1.1194'), (
+        f'the ancestor segment must not be mistaken for the cache version dir, got {split}'
+    )
+
+
+def test_split_bundle_version_returns_none_outside_base_path():
+    """A path that is not under the cache root carries no comparable provenance
+    (e.g. a project-local .claude/skills script)."""
+    module = load_module()
+
+    assert module._split_bundle_version('/repo/.claude/skills/s/scripts/x.py', Path('/cache')) is None
+
+
+def test_split_bundle_version_returns_none_for_marketplace_layout():
+    """The version-less marketplace layout has nothing for the guard to compare."""
+    module = load_module()
+
+    split = module._split_bundle_version(
+        '/repo/marketplace/bundles/my-bundle/skills/skill-x/scripts/x.py',
+        Path('/repo/marketplace/bundles'),
+    )
+
+    assert split is None, f'marketplace-layout paths carry no version dir, got {split}'
+
+
+def test_guard4_detects_split_for_digit_prefixed_bundle_name(tmp_path, monkeypatch):
+    """(b) end-to-end: a genuine version split of a digit-prefixed bundle is
+    still refused — the bundle-name segment never masquerades as the version."""
+    monkeypatch.delenv('PM_DIST_MANIFEST', raising=False)
+    module = load_module()
+    bundles_root = _fake_bundles_root(tmp_path)
+
+    executor, sentinel = _seed_pre_existing_executor(tmp_path)
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path / '.plan'))
+
+    mappings = {
+        '1.0-my-bundle:skill-x:one': _cache_script_path(bundles_root, '1.0-my-bundle', '0.1.100', 'one'),
+        '1.0-my-bundle:skill-x:two': _cache_script_path(bundles_root, '1.0-my-bundle', '0.1.200', 'two'),
+    }
+    result = module.generate_executor(mappings, bundles_root, dry_run=False, target='claude')
+
+    assert result['status'] == 'error', f'a version-split digit-prefixed bundle must be refused, got {result}'
+    assert '1.0-my-bundle' in result['error'], 'the error must name the digit-prefixed bundle'
+    assert '0.1.100' in result['error'] and '0.1.200' in result['error'], (
+        'the error must name the conflicting version dirs, not the bundle-name segment'
+    )
+    assert executor.read_text(encoding='utf-8') == sentinel, 'pre-existing executor must survive the refusal'
+
+
+def test_guard4_digit_prefixed_bundles_in_marketplace_layout_are_not_a_split(tmp_path, monkeypatch):
+    """(b) false-positive direction: two sibling digit-prefixed bundles in the
+    version-less marketplace layout are distinct bundles, not one bundle at two
+    versions — generation must proceed."""
+    monkeypatch.delenv('PM_DIST_MANIFEST', raising=False)
+    module = load_module()
+    bundles_root = _fake_bundles_root(tmp_path)
+
+    plan_dir = tmp_path / '.plan'
+    plan_dir.mkdir()
+    monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
+
+    mappings = {
+        '1.0-bundle-a:skill-x:one': str(bundles_root / '1.0-bundle-a' / 'skills' / 'skill-x' / 'scripts' / 'one.py'),
+        '1.0-bundle-b:skill-x:two': str(bundles_root / '1.0-bundle-b' / 'skills' / 'skill-x' / 'scripts' / 'two.py'),
+    }
+    result = module.generate_executor(mappings, bundles_root, dry_run=False, target='claude')
+
+    assert result['status'] == 'success', (
+        f'digit-prefixed marketplace bundles are not a version split, got {result}'
+    )
+    assert (plan_dir / 'execute-script.py').is_file()
+
+
+def test_guard4_detects_split_under_version_shaped_ancestor_directory(tmp_path, monkeypatch):
+    """(a) end-to-end: with a version-shaped ancestor ABOVE the cache root, a
+    genuine per-bundle version split is still detected — the ancestor segment is
+    relativized away instead of being read as the version dir for every path."""
+    monkeypatch.delenv('PM_DIST_MANIFEST', raising=False)
+    module = load_module()
+    ancestor = tmp_path / '1.0-workspace'
+    ancestor.mkdir()
+    bundles_root = _fake_bundles_root(ancestor)
+
+    executor, sentinel = _seed_pre_existing_executor(tmp_path)
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path / '.plan'))
+
+    mappings = {
+        'split-bundle:skill-x:one': _cache_script_path(bundles_root, 'split-bundle', '0.1.100', 'one'),
+        'split-bundle:skill-x:two': _cache_script_path(bundles_root, 'split-bundle', '0.1.200', 'two'),
+    }
+    result = module.generate_executor(mappings, bundles_root, dry_run=False, target='claude')
+
+    assert result['status'] == 'error', (
+        f'a version-shaped ancestor must not mask a genuine split, got {result}'
+    )
+    assert 'split-bundle' in result['error'], 'the error must name the offending bundle'
+    assert '1.0-workspace' not in result['error'], (
+        'the ancestor directory must never be reported as a version dir'
+    )
+    assert executor.read_text(encoding='utf-8') == sentinel, 'pre-existing executor must survive the refusal'
 
 
 # ============================================================================
