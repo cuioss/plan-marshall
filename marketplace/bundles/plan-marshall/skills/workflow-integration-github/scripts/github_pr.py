@@ -291,9 +291,15 @@ def _unconfigured_result(operation: str, detail: str) -> dict[str, Any]:
 # trailing space) as a spurious truthy id, so ``post_responses`` would try to
 # resolve a non-existent thread instead of correctly skipping the finding. The
 # ``\S``-anchored, line-bounded value class yields no match for an empty value, so
-# ``_thread_id_from_detail`` returns ``''`` and the finding is skipped.
+# ``_detail_field`` returns ``''`` and the finding is skipped.
 _COMMENT_ID_DETAIL = re.compile(r'^comment_id:[ \t]*(?P<id>\S[^\n]*?)[ \t]*$', re.MULTILINE)
 _THREAD_ID_DETAIL = re.compile(r'^thread_id:[ \t]*(?P<id>\S[^\n]*?)[ \t]*$', re.MULTILINE)
+
+
+def _detail_field(detail: str | None, pattern: re.Pattern) -> str:
+    """Extract a labelled value (``comment_id`` / ``thread_id``) from a pr-comment finding's detail block."""
+    match = pattern.search(detail or '')
+    return match.group('id') if match else ''
 
 
 def _existing_pr_comment_keys(query_findings, plan_id: str) -> set[tuple[str, str]]:
@@ -323,9 +329,9 @@ def _existing_pr_comment_keys(query_findings, plan_id: str) -> set[tuple[str, st
     result = query_findings(plan_id, finding_type='pr-comment')
     keys: set[tuple[str, str]] = set()
     for finding in result.get('findings') or []:
-        match = _COMMENT_ID_DETAIL.search(finding.get('detail') or '')
-        if match:
-            keys.add((finding.get('bot_kind') or '', match.group('id')))
+        comment_id = _detail_field(finding.get('detail'), _COMMENT_ID_DETAIL)
+        if comment_id:
+            keys.add((finding.get('bot_kind') or '', comment_id))
     return keys
 
 
@@ -679,18 +685,6 @@ def cmd_bot_completion(args):
 # ============================================================================
 
 
-def _thread_id_from_detail(detail: str | None) -> str:
-    """Extract the ``thread_id`` value from a pr-comment finding's detail block."""
-    match = _THREAD_ID_DETAIL.search(detail or '')
-    return match.group('id') if match else ''
-
-
-def _comment_id_from_detail(detail: str | None) -> str:
-    """Extract the ``comment_id`` value from a pr-comment finding's detail block."""
-    match = _COMMENT_ID_DETAIL.search(detail or '')
-    return match.group('id') if match else ''
-
-
 def _build_batched_response_body(entries: list[tuple[str, str]]) -> str:
     """Render the single batched PR comment carrying every thread-less disposition.
 
@@ -772,9 +766,9 @@ def cmd_post_responses(args):
             skipped.append({'hash_id': hash_id, 'reason': 'no_resolution_detail'})
             continue
 
-        thread_id = _thread_id_from_detail(finding.get('detail'))
+        thread_id = _detail_field(finding.get('detail'), _THREAD_ID_DETAIL)
         if not thread_id:
-            batch.append((hash_id, _comment_id_from_detail(finding.get('detail')), reply_body))
+            batch.append((hash_id, _detail_field(finding.get('detail'), _COMMENT_ID_DETAIL), reply_body))
             continue
 
         # Reply carrying the recorded disposition, then resolve — keyed by this
