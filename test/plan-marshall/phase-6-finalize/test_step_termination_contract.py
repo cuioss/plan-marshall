@@ -27,7 +27,11 @@ These tests pin both corrections plus the detector/authoring-rule pairing:
     ``step_record_mismatched_key``) are referenced by the contract, so the
     dispatcher-side detector and the authoring-side rule stay paired.
 (d) The invariant is scoped to every dispatched leaf, not external steps only,
-    and is reachable from every DISPATCHED roster entry's governing contract.
+    and is reachable from every DISPATCHED roster entry's governing contract —
+    asserted per PARTITION, not merely centrally: external (``project:`` /
+    ``bundle:skill``) entries reach it through ``external-step-contract.md``,
+    built-in (``default:``) entries through the ``phase-6-finalize/SKILL.md``
+    reach-point, and a roster row matching neither partition fails the test.
 (e) ``agents.md``'s corollary ordinal and its corollary enumeration agree with
     the number of corollary sections actually present, so a one-site drift
     fails instead of silently desynchronising.
@@ -36,7 +40,10 @@ The mutation guards are what keep the sweeps honest:
 ``test_stale_instruction_patterns_detect_the_pre_fix_prose`` asserts the
 stale-form patterns fire on the exact pre-fix sentence (guarding (a)),
 ``test_external_only_scoping_detector_fires_on_the_pre_fix_shape`` asserts the
-scoping detector rejects the pre-fix external-only phrasing (guarding (d)), and
+scoping detector rejects the pre-fix external-only phrasing (guarding (d)),
+``test_builtin_reach_point_detector_fires_only_on_a_real_binding`` asserts the
+built-in reach-point detector rejects both the pre-fix no-binding text and an
+external-only near-miss (guarding the built-in half of (d)), and
 ``test_ordinal_enumeration_detectors_fire_on_the_pre_fix_three_item_shape``
 asserts the lock-step detectors fire on the pre-fix three-item ordinal and
 enumeration (guarding (e)). Without them a regex typo would make the
@@ -56,6 +63,7 @@ from __future__ import annotations
 
 import re
 
+from _dispatch_roster import parse_roster, section_lines
 from conftest import MARKETPLACE_ROOT
 
 _SKILL_DIR = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize'
@@ -79,9 +87,6 @@ _DISPATCHED_HEADING = '## Dispatched steps'
 _RECORD_COROLLARY_HEADING = (
     '### Leaf must record its terminal outcome BEFORE composing its return'
 )
-
-#: A roster row names its step as the first backticked token of a list item.
-_ROSTER_ROW = re.compile(r'^-\s+`([^`]+)`')
 
 #: Corollary sections carry a ``### Leaf ...`` heading. The leaf/dispatch-topology
 #: invariant itself ("a leaf cannot spawn a subagent") is the FIRST corollary but
@@ -119,6 +124,17 @@ _EXTERNAL_ONLY_SCOPING = re.compile(
 #: The two error codes the dispatcher-side guard distinguishes.
 _GUARD_ERROR_CODES = ('step_record_missing', 'step_record_mismatched_key')
 
+#: The reach-point that binds BUILT-IN (``default:``) dispatched step bodies to
+#: the agents.md record-before-return invariant. External steps reach it via
+#: ``external-step-contract.md``; built-ins have no shared authoring contract, so
+#: the dispatcher SKILL.md must carry the binding for them. Matches the binding
+#: sentence irrespective of its surrounding prose.
+_BUILTIN_REACH_POINT = re.compile(
+    r'[Rr]ecord-before-return\s+binds\s+every\s+dispatched\s+step\s+body'
+    r'[^.]{0,80}?built-in',
+    re.IGNORECASE,
+)
+
 #: Stale key-form instructions removed by this deliverable. Each pattern matched
 #: the pre-fix sentence: "Must match the fully-qualified step name as listed in
 #: `marshal.json` (e.g. `default:push`, ...)".
@@ -141,23 +157,14 @@ def _contract_text() -> str:
 
 
 def _termination_section() -> str:
-    """Return the '## Required termination' section body."""
-    lines = _contract_text().splitlines()
-    try:
-        start = next(
-            i for i, line in enumerate(lines) if line.strip() == _TERMINATION_HEADING
-        )
-    except StopIteration:  # pragma: no cover — guarded by its own test
-        raise AssertionError(
-            f'Heading not found in external-step-contract.md: '
-            f'{_TERMINATION_HEADING!r}'
-        ) from None
-    collected: list[str] = []
-    for line in lines[start + 1 :]:
-        if line.startswith('## '):
-            break
-        collected.append(line)
-    return '\n'.join(collected)
+    """Return the '## Required termination' section body.
+
+    Delegates to the shared ``_dispatch_roster.section_lines`` heading-bounded
+    walk (``test/_shared/``) — the same walk
+    ``test_dispatch_roster_closure.py``'s roster parse and this file's own
+    ``_section_body`` both need.
+    """
+    return '\n'.join(section_lines(_contract_text(), _TERMINATION_HEADING))
 
 
 def _stale_hits(text: str) -> list[str]:
@@ -175,17 +182,7 @@ def _agents_text() -> str:
 
 def _section_body(text: str, heading: str, stop_prefixes: tuple[str, ...]) -> str:
     """Return the body between ``heading`` and the next heading at/above its level."""
-    lines = text.splitlines()
-    try:
-        start = next(i for i, line in enumerate(lines) if line.strip() == heading)
-    except StopIteration:  # pragma: no cover — guarded by its own test
-        raise AssertionError(f'Heading not found: {heading!r}') from None
-    collected: list[str] = []
-    for line in lines[start + 1 :]:
-        if line.startswith(stop_prefixes):
-            break
-        collected.append(line)
-    return '\n'.join(collected)
+    return '\n'.join(section_lines(text, heading, stop_prefixes))
 
 
 def _record_corollary_section() -> str:
@@ -196,20 +193,15 @@ def _record_corollary_section() -> str:
 
 
 def _dispatched_roster() -> list[str]:
-    """Parse the DISPATCHED step keys from the roster document."""
+    """Parse the DISPATCHED step keys from the roster document.
+
+    Delegates to the shared ``_dispatch_roster.parse_roster``
+    (``test/_shared/``) — the same parser
+    ``test_dispatch_roster_closure.py``'s closure assertions read, so the two
+    suites cannot read a divergent roster population.
+    """
     text = _ROSTER_DOC.read_text(encoding='utf-8')
-    lines = text.splitlines()
-    start = next(
-        i for i, line in enumerate(lines) if line.strip() == _DISPATCHED_HEADING
-    )
-    keys: list[str] = []
-    for line in lines[start + 1 :]:
-        if line.startswith('## '):
-            break
-        match = _ROSTER_ROW.match(line)
-        if match:
-            keys.append(match.group(1))
-    return keys
+    return parse_roster(text, _DISPATCHED_HEADING)
 
 
 def _corollary_section_count(text: str) -> int:
@@ -381,9 +373,11 @@ def test_record_invariant_is_scoped_to_every_dispatched_leaf():
 
 
 def test_invariant_is_reachable_from_every_dispatched_roster_entry():
-    # Population derived from the roster: every DISPATCHED step is governed by
-    # the shared invariant, so the roster must be non-empty and the governing
-    # section must exist for all of them to reach.
+    # Population derived from the roster AND load-bearing: the roster is
+    # partitioned, and EACH partition must have its own reach-point. Asserting
+    # only that the invariant exists centrally is what let a built-in
+    # dispatched step ship a skippable trailing return while this test stayed
+    # green — the roster was parsed and then discarded.
     roster = _dispatched_roster()
     assert roster, 'Dispatched roster parsed empty — the assertion would be vacuous'
 
@@ -391,13 +385,33 @@ def test_invariant_is_reachable_from_every_dispatched_roster_entry():
         f'The governing record-before-return invariant must exist in agents.md '
         f'for all {len(roster)} dispatched roster entries to reach it'
     )
-    # External steps reach it via the contract's cross-reference; the roster's
-    # external entries are exactly the ones that used to be scoped separately.
+
     external = [key for key in roster if key.startswith(('project:', 'plan-marshall:'))]
+    builtin = [key for key in roster if key.startswith('default:')]
+
+    # Every roster row must fall in exactly one partition, or a row shape was
+    # added that neither reach-point covers.
+    unpartitioned = [key for key in roster if key not in external and key not in builtin]
+    assert not unpartitioned, (
+        f'Dispatched roster rows {unpartitioned} match neither the external '
+        f'(project:/bundle:skill) nor the built-in (default:) partition, so no '
+        f'reach-point binds them to the record-before-return invariant'
+    )
+
     if external:
         assert 'agents.md' in _termination_section(), (
             f'External dispatched steps {external} reach the invariant through '
             f'external-step-contract.md, which must cross-reference agents.md'
+        )
+
+    if builtin:
+        skill_text = _SKILL_DOC.read_text(encoding='utf-8')
+        assert _BUILTIN_REACH_POINT.search(skill_text), (
+            f'Built-in dispatched steps {builtin} have no shared authoring '
+            f'contract of their own, so phase-6-finalize/SKILL.md must carry '
+            f'the reach-point binding them to the agents.md record-before-return '
+            f'invariant. Without it a built-in step body can ship a trailing '
+            f'mark-step-done a leaf skips while still returning success.'
         )
 
 
@@ -498,6 +512,45 @@ def test_external_only_scoping_detector_fires_on_the_pre_fix_shape():
         'the external finalize steps.'
     )
     assert not _EXTERNAL_ONLY_SCOPING.search(post_fix)
+
+
+def test_builtin_reach_point_detector_fires_only_on_a_real_binding():
+    # Mutation guard for the built-in partition of (d). Before this correction
+    # the dispatcher SKILL.md carried NO binding for built-in dispatched steps —
+    # the invariant existed centrally and external steps cross-referenced it,
+    # but a `default:` step body could ship a trailing mark-step-done unbound.
+    # The detector must reject that pre-fix state and accept only a real binding.
+    pre_fix = (
+        'The full per-step dispatched/inline classification, the step->role map, '
+        'and the rationale live in standards/dispatch-inline-split.md — the '
+        'single source of truth the Execute Step Pipeline dispatch branch '
+        'consumes.'
+    )
+    assert not _BUILTIN_REACH_POINT.search(pre_fix), (
+        'Built-in reach-point detector fired on the pre-fix text that carried no '
+        'binding — the built-in half of assertion (d) would be vacuous'
+    )
+
+    # A near-miss that names the invariant but scopes it to external steps only
+    # must ALSO be rejected, or the detector would accept the very gap it exists
+    # to close.
+    external_only = (
+        'Record-before-return binds every external step body, which reaches the '
+        'agents.md invariant through external-step-contract.md.'
+    )
+    assert not _BUILTIN_REACH_POINT.search(external_only), (
+        'Built-in reach-point detector accepted an external-only binding — it '
+        'must require the built-in partition to be named'
+    )
+
+    post_fix = (
+        '**Record-before-return binds every dispatched step body — built-in '
+        'included.** A dispatched step body MUST land its terminal '
+        'mark-step-done call BEFORE it composes its return TOON.'
+    )
+    assert _BUILTIN_REACH_POINT.search(post_fix), (
+        'Built-in reach-point detector failed to fire on a real binding'
+    )
 
 
 def test_ordinal_enumeration_detectors_fire_on_the_pre_fix_three_item_shape():

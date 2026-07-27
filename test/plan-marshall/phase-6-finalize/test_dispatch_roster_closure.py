@@ -43,6 +43,7 @@ from __future__ import annotations
 import json
 import re
 
+from _dispatch_roster import parse_roster, parse_roster_rows, section_lines
 from conftest import MARKETPLACE_ROOT, PROJECT_ROOT
 
 _SKILL_DIR = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize'
@@ -53,9 +54,6 @@ _MARSHAL_JSON = PROJECT_ROOT / '.plan' / 'marshal.json'
 _DISPATCHED_HEADING = '## Dispatched steps'
 _INLINE_HEADING = '## Inline steps'
 _SKILL_SECTION_HEADING = '## Dispatched workflows vs inline steps'
-
-#: A roster row names its step as the first backticked token of a list item.
-_ROSTER_ROW = re.compile(r'^-\s+`([^`]+)`')
 
 #: Count-bearing prose patterns. Each matched the pre-fix text:
 #:   "Of the 17 default + project finalize steps"  -> _COUNT_BEFORE_STEPS
@@ -112,32 +110,16 @@ def _registered_steps() -> set[str]:
     return set(steps.keys())
 
 
-def _section_lines(text: str, heading: str) -> list[str]:
-    """Return the lines between ``heading`` and the next ``## `` heading."""
-    lines = text.splitlines()
-    try:
-        start = next(i for i, line in enumerate(lines) if line.strip() == heading)
-    except StopIteration:  # pragma: no cover — guarded by its own test
-        raise AssertionError(
-            f'Heading not found: {heading!r} in the document'
-        ) from None
-    collected: list[str] = []
-    for line in lines[start + 1 :]:
-        if line.startswith('## '):
-            break
-        collected.append(line)
-    return collected
-
-
 def _roster(heading: str) -> list[str]:
-    """Parse the step keys out of one roster section, preserving order."""
+    """Parse the step keys out of one roster section, preserving order.
+
+    Delegates to the shared ``_dispatch_roster`` parser (``test/_shared/``) so
+    the row population is identical to the one
+    ``test_step_termination_contract.py``'s reachability check reads — the
+    two suites cannot silently drift apart one heading-walk at a time.
+    """
     text = _ROSTER_DOC.read_text(encoding='utf-8')
-    keys: list[str] = []
-    for line in _section_lines(text, heading):
-        match = _ROSTER_ROW.match(line)
-        if match:
-            keys.append(match.group(1))
-    return keys
+    return parse_roster(text, heading)
 
 
 def _count_claims(text: str) -> list[str]:
@@ -152,16 +134,11 @@ def _count_claims(text: str) -> list[str]:
 def _roster_rows(heading: str) -> list[tuple[str, str]]:
     """Return ``(step_key, full_row_line)`` for one roster section.
 
-    Shares the ``_section_lines`` + ``_ROSTER_ROW`` machinery ``_roster`` uses,
-    so the row population is identical to the one the closure assertions read.
+    Delegates to the shared ``_dispatch_roster`` parser, so the row
+    population is identical to the one ``_roster`` reads.
     """
     text = _ROSTER_DOC.read_text(encoding='utf-8')
-    rows: list[tuple[str, str]] = []
-    for line in _section_lines(text, heading):
-        match = _ROSTER_ROW.match(line)
-        if match:
-            rows.append((match.group(1), line))
-    return rows
+    return parse_roster_rows(text, heading)
 
 
 def _row_declares_resolver_lookup(row: str) -> bool:
@@ -282,7 +259,7 @@ def test_roster_document_carries_no_step_count_claim():
 
 def test_skill_dispatch_section_carries_no_step_count_claim():
     text = _SKILL_DOC.read_text(encoding='utf-8')
-    section = '\n'.join(_section_lines(text, _SKILL_SECTION_HEADING))
+    section = '\n'.join(section_lines(text, _SKILL_SECTION_HEADING))
 
     hits = _count_claims(section)
 
