@@ -16,10 +16,21 @@ Covers:
 """
 
 import json
+from datetime import UTC, datetime
 
 import claude_runtime
 import platform_runtime
 from manage_terminal_title import compose
+
+
+def _token(state: str, owner: str) -> dict:
+    """Build a ``{owner, state, set_at}`` title_token record for test input.
+
+    ``compose()`` is called with ``now=None`` in every path exercised by this
+    file, so staleness is never evaluated — ``set_at`` only needs to be a
+    well-formed timestamp, not a specific instant.
+    """
+    return {"owner": owner, "state": state, "set_at": datetime.now(UTC).isoformat()}
 
 
 def _write_orchestrator_status(tmp_path, slug: str, extra: dict | None = None) -> None:
@@ -94,12 +105,18 @@ class TestPlanStateRegression:
         assert compose({'short_description': 'demo'}, 'active') is None
 
     def test_should_prepend_lock_glyph_for_active_plan(self):
-        state = {'current_phase': '5-execute', 'title_token': 'lock-owned'}
+        state = {
+            'current_phase': '5-execute',
+            'title_token': _token('lock-owned', owner='merge-lock'),
+        }
 
         assert compose(state, 'active') == '➤ 🔒 pm:5-execute'
 
     def test_should_force_build_icon_for_build_busy_plan(self):
-        state = {'current_phase': '5-execute', 'title_token': 'build-busy'}
+        state = {
+            'current_phase': '5-execute',
+            'title_token': _token('build-busy', owner='build-hook'),
+        }
 
         assert compose(state, 'active') == '🔨 pm:5-execute'
 
@@ -111,12 +128,20 @@ class TestPlanStateRegression:
 
 class TestOrchestratorIconGlyphPrecedence:
     def test_should_force_build_icon_for_build_busy_orchestrator(self):
-        state = {'kind': 'orchestrator', 'slug': 'my-epic', 'title_token': 'build-busy'}
+        state = {
+            'kind': 'orchestrator',
+            'slug': 'my-epic',
+            'title_token': _token('build-busy', owner='build-hook'),
+        }
 
         assert compose(state, 'active') == '🔨 Orchestrator-my-epic'
 
     def test_should_prepend_lock_waiting_glyph_on_orchestrator_body(self):
-        state = {'kind': 'orchestrator', 'slug': 'my-epic', 'title_token': 'lock-waiting'}
+        state = {
+            'kind': 'orchestrator',
+            'slug': 'my-epic',
+            'title_token': _token('lock-waiting', owner='merge-lock'),
+        }
 
         assert compose(state, None) == '➤ ⏳ Orchestrator-my-epic'
 
@@ -126,7 +151,11 @@ class TestOrchestratorIconGlyphPrecedence:
         assert compose(state, None, icon_override='🔒') == '🔒 Orchestrator-my-epic'
 
     def test_should_let_build_busy_win_over_icon_override(self):
-        state = {'kind': 'orchestrator', 'slug': 'my-epic', 'title_token': 'build-busy'}
+        state = {
+            'kind': 'orchestrator',
+            'slug': 'my-epic',
+            'title_token': _token('build-busy', owner='build-hook'),
+        }
 
         assert compose(state, None, icon_override='🔒') == '🔨 Orchestrator-my-epic'
 
@@ -147,7 +176,11 @@ class TestOrchestratorStateRead:
 
     def test_should_carry_title_token_through(self, monkeypatch, tmp_path):
         monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
-        _write_orchestrator_status(tmp_path, 'my-epic', extra={'title_token': 'build-busy'})
+        _write_orchestrator_status(
+            tmp_path,
+            'my-epic',
+            extra={'title_token': _token('build-busy', owner='build-hook')},
+        )
 
         state = claude_runtime._read_orchestrator_title_state('my-epic')
 
@@ -166,7 +199,13 @@ class TestOrchestratorStateRead:
 
 
 class TestPushTitleTokenSeam:
-    """The state-absent path stays the existing no-op (title-disabled parity)."""
+    """The state-absent path stays the existing no-op (title-disabled parity).
+
+    The seam BINDS AND PERSISTS — it never repaints — so its return carries a
+    ``reason`` discriminator and NO ``pushed`` flag: a seam that performs no
+    delivery has no delivery result to report. Delivery is the next render
+    event's outcome.
+    """
 
     def test_should_noop_when_orchestrator_state_absent(self, monkeypatch, tmp_path):
         monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
@@ -177,9 +216,9 @@ class TestPushTitleTokenSeam:
         )
 
         assert 'status: success' in result
-        assert 'pushed: false' in result
         assert 'no_title_state' in result
         assert 'slug: missing-epic' in result
+        assert 'pushed' not in result
 
     def test_should_noop_when_plan_state_absent_via_default_store(
         self, monkeypatch, tmp_path
@@ -191,8 +230,9 @@ class TestPushTitleTokenSeam:
         result = runtime.session_push_title_token('no-such-plan')
 
         assert 'status: success' in result
-        assert 'pushed: false' in result
+        assert 'no_title_state' in result
         assert 'plan_id: no-such-plan' in result
+        assert 'pushed' not in result
 
 
 class TestPushTitleTokenCliBoundary:
@@ -231,5 +271,5 @@ class TestPushTitleTokenCliBoundary:
         )
 
         assert 'status: success' in result
-        assert 'pushed: false' in result
         assert 'no_title_state' in result
+        assert 'pushed' not in result

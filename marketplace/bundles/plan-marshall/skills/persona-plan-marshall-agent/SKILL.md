@@ -79,7 +79,7 @@ The floor for ad-hoc build/verify invocations outside the architecture-resolved 
 
 The recurrence signature and orchestrator-tier rationale are documented in the adaptive-timeout infrastructure design.
 
-**Bracket a long-running orchestration call with the `build-busy` title-token** (set + live `/dev/tty` push BEFORE, clear + push AFTER on either success or failure; best-effort — a set/clear/push failure never aborts the wrapped call). This is the only mechanism that repaints the terminal 🔨 during a blocking build / push / CI-wait window. The full bracketing procedure — the exact `title-token set/clear` and `session push-title-token` seam calls, the backgrounded-build agent-driven clear (fire-exactly-once, state-gated), and the shared title-surface seam — lives in [`agent-behavior-rules.md` § Build-busy bracketing of long-running orchestration calls](standards/agent-behavior-rules.md#build-busy-bracketing-of-long-running-orchestration-calls). Orchestrator-tier long-running calls route through the [`await-long-running`](../plan-marshall/workflow/await-long-running.md) seam, which reuses that same bracketing.
+The 🔨 `build-busy` terminal-title bracket around such a call is **machine-owned and carries no agent obligation**: the `PreToolUse:Bash` render hook sets the token when a build-wrapper invocation enters and the paired `PostToolUse:Bash` hook clears it when the call exits, both on render events that deliver the repaint. Do NOT hand-write a `title-token set`/`clear` pair or a `session push-title-token` call around a build — see `manage-terminal-title/standards/terminal-title-architecture.md` § Channel Delivery Contract.
 
 ### Bash: No file operations
 

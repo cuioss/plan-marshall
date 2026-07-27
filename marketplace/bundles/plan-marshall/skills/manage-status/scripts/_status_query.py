@@ -7,15 +7,19 @@ Query command handlers for manage-status: read, progress, metadata, get-context,
 import argparse
 from typing import Any
 
+from _locks_core import rmw_json
 from _status_core import (
+    TITLE_TOKEN_OWNER_CLI,
+    TITLE_TOKEN_OWNERS,
     TITLE_TOKEN_STATES,
     _surface_drive,
     _try_read_status_json,
-    drop_stale_build_busy,
     get_plans_dir,
+    get_status_path,
     log_entry,
     normalize_metadata,
     require_status,
+    title_token_is_stale,
     write_status,
 )
 from constants import (
@@ -101,13 +105,10 @@ def cmd_set_phase(args: argparse.Namespace) -> dict[str, Any] | None:
         if phase['name'] == args.phase:
             phase['status'] = PHASE_STATUS_IN_PROGRESS
 
-    # Clear a stale build-busy title-token before persisting the phase write.
-    # Covers both forward transitions and backward loop-back re-entry: an
-    # interrupted long-running orchestration call can leave a build-busy token
-    # behind that would otherwise freeze a 🔨 in the title bar. Scoped to
-    # build-busy only — lock-coordination tokens are left untouched.
-    drop_stale_build_busy(status)
-
+    # No title-token sweep here: staleness is a READ-side property resolved by
+    # the aged-token predicate (_status_core.title_token_is_stale), so a
+    # stranded token self-heals on the next read rather than waiting for a
+    # phase to happen to change.
     write_status(args.plan_id, status)
     # Persisted-title-state-write drive seam (best-effort, fire-and-forget):
     # cmd_set_phase is a current_phase write, so bind + repaint fire here so the
@@ -236,22 +237,61 @@ def cmd_metadata(args: argparse.Namespace) -> dict[str, Any] | None:
 
 
 def cmd_title_token(args: argparse.Namespace) -> dict[str, Any] | None:
-    """Set or clear the field-only ``title_token`` marker in status.json.
+    """Set or clear the structured ``title_token`` record in status.json.
 
-    The title token is a bare state string (one of ``TITLE_TOKEN_STATES``)
-    written into ``status.title_token``. manage-status performs NO rendering
-    — the composition (glyph vocabulary + ``{icon} {body}`` assembly) lives in
-    ``manage-terminal-title``. This verb only persists the state so the
+    The title token is a ``{owner, state, set_at}`` record written into
+    ``status.title_token``. manage-status performs NO rendering — the
+    composition (glyph vocabulary + ``{icon} {body}`` assembly) lives in
+    ``manage-terminal-title``. This verb only persists the record so the
     per-target renderer can read it.
 
-    - ``set`` writes ``status.title_token = {state}`` (``--state`` required,
-      validated against ``TITLE_TOKEN_STATES``).
-    - ``clear`` removes the ``title_token`` field when present (idempotent —
-      a no-op when already absent).
+    - ``set`` writes the record with the caller's ``--owner`` and a fresh
+      ``set_at``. ``--state`` is validated against ``TITLE_TOKEN_STATES``.
+      A set from ANY owner replaces the record wholesale (last-writer wins),
+      so the record always names its current owner.
+    - ``clear`` is OWNER-SCOPED: it removes the field only when the caller
+      owns the live record, or when the live record is stale. A foreign clear
+      is a reported no-op, so a lock glyph cannot be clobbered by an unrelated
+      build bracket. Clearing an already-absent token is idempotent.
+
+    Both verbs mutate ``status.json`` inside a single ``rmw_json`` critical
+    section. Four independent writers (the build-hook render assist,
+    merge_lock's two lock surfaces, and merge_lock's clear) mutate this one
+    field from separate executor subprocesses, so a plain read-modify-write
+    carries a check-then-act window in which a concurrent set is silently
+    dropped. The O_EXCL guard-file mutex closes it — see
+    ``ref-code-quality/standards/code-organization.md`` § TOCTOU /
+    Check-Then-Act Hazards.
+
+    Those four are the writers that TARGET this field, but they are not the
+    only processes that can destroy a record written here: every full-document
+    ``status.json`` writer (phase writes, transitions, create) commits a whole
+    document assembled from an earlier snapshot read, so one committing after a
+    set here would restore the snapshot's stale ``title_token``. That second
+    window is closed at the shared write seam rather than in this verb —
+    ``_status_core.write_status`` commits inside the SAME ``rmw_json`` guard
+    (same path, therefore the same guard file) and carries over the record read
+    inside the guard. Both windows are therefore closed for all writers, not
+    only for the four that name this field.
+
+    The record shape, owner vocabulary, arbitration rule, and staleness
+    threshold are specified once in
+    ``manage-terminal-title/standards/terminal-title-architecture.md``
+    § Channel Delivery Contract ruling (c).
     """
     status = require_status(args)
     if status is None:
         return None
+
+    owner = getattr(args, 'owner', None) or TITLE_TOKEN_OWNER_CLI
+    if owner not in TITLE_TOKEN_OWNERS:
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'invalid_title_token_owner',
+            'message': f'Invalid title-token owner: {owner}',
+            'valid_owners': sorted(TITLE_TOKEN_OWNERS),
+        }
 
     if args.token_verb == 'set':
         state = args.state
@@ -263,25 +303,57 @@ def cmd_title_token(args: argparse.Namespace) -> dict[str, Any] | None:
                 'message': f'Invalid title-token state: {state}',
                 'valid_states': sorted(TITLE_TOKEN_STATES),
             }
-        status['title_token'] = state
-        write_status(args.plan_id, status)
-        log_entry('work', args.plan_id, 'INFO', f'[MANAGE-STATUS] Title token: {state}')
+        record: dict[str, Any] = {'owner': owner, 'state': state, 'set_at': now_utc_iso()}
+
+        def _apply_set(current: dict[str, Any]) -> dict[str, Any]:
+            current['title_token'] = record
+            current['updated'] = now_utc_iso()
+            return current
+
+        rmw_json(get_status_path(args.plan_id), _apply_set)
+        log_entry('work', args.plan_id, 'INFO', f'[MANAGE-STATUS] Title token: {state} (owner={owner})')
         return {
             'status': 'success',
             'plan_id': args.plan_id,
-            'title_token': state,
+            'title_token': record,
         }
 
-    # clear
-    previous = status.pop('title_token', None)
-    if previous is not None:
-        write_status(args.plan_id, status)
-        log_entry('work', args.plan_id, 'INFO', f'[MANAGE-STATUS] Title token cleared (was: {previous})')
+    # clear — owner-scoped. The arbitration decision is taken INSIDE the
+    # critical section against the freshly-read record, never against the
+    # copy read before the guard was acquired.
+    outcome: dict[str, Any] = {'cleared': False, 'previous': None, 'reason': None}
+
+    def _apply_clear(current: dict[str, Any]) -> dict[str, Any]:
+        previous = current.get('title_token')
+        outcome['previous'] = previous
+        if previous is None:
+            outcome['reason'] = 'absent'
+            return current
+        stale = title_token_is_stale(previous)
+        record_owner = previous.get('owner') if isinstance(previous, dict) else None
+        if not stale and record_owner != owner:
+            outcome['reason'] = 'foreign_owner'
+            return current
+        current.pop('title_token', None)
+        current['updated'] = now_utc_iso()
+        outcome['cleared'] = True
+        outcome['reason'] = 'stale' if stale else 'owned'
+        return current
+
+    rmw_json(get_status_path(args.plan_id), _apply_clear)
+    if outcome['cleared']:
+        log_entry(
+            'work',
+            args.plan_id,
+            'INFO',
+            f'[MANAGE-STATUS] Title token cleared by {owner} (was: {outcome["previous"]})',
+        )
     return {
         'status': 'success',
         'plan_id': args.plan_id,
-        'title_token': None,
-        'cleared': previous is not None,
+        'title_token': None if outcome['cleared'] else outcome['previous'],
+        'cleared': outcome['cleared'],
+        'reason': outcome['reason'],
     }
 
 

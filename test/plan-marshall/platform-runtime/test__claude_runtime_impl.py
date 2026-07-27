@@ -68,6 +68,21 @@ def rt(tmp_path, monkeypatch):
 # title_token, the composed title is ``{icon} pm:X:Y`` (no glyph).
 
 
+def _title_token(state: str, owner: str = "cli") -> dict[str, str]:
+    """Build a ``{owner, state, set_at}`` title-token record stamped now.
+
+    ``status.title_token`` is a structured record, not a bare state string, so
+    every fixture that plants a token builds it through here.
+    """
+    from datetime import UTC, datetime
+
+    return {
+        "owner": owner,
+        "state": state,
+        "set_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }
+
+
 def _write_status_json(
     tmp_path: Path,
     *,
@@ -75,7 +90,7 @@ def _write_status_json(
     plan_id: str,
     current_phase: str | None = "5-execute",
     short_description: str | None = "my-task",
-    title_token: str | None = None,
+    title_token: dict[str, str] | None = None,
     archived: bool = False,
     date_prefix: str = "2026-05-29",
 ) -> None:
@@ -173,15 +188,14 @@ def _stub_hook_stdin(monkeypatch, payload: dict[str, Any]) -> None:
 class TestSessionTeardown:
     """Tests for the activation-gated ``session teardown`` operation.
 
-    Order is load-bearing: the activation signal is read FIRST, so an inactive
-    project is never touched — no title escape, no /dev/tty open, no binding
-    mutation. When active, the neutral-default reset escape is written and the
-    session's own slot is dropped, with ``reset`` and ``unbound`` reported
-    independently.
+    Releasing the binding is the WHOLE of the teardown: no title reset is
+    written, because the only channel such a reset could have used is gone.
+    Order is load-bearing — the activation signal is read FIRST, so an inactive
+    project is never touched at all.
     """
 
     def test_inactive_feature_touches_nothing(self, rt, tmp_path, monkeypatch):
-        """With the feature inactive: no tty write, no unbind, reason feature_inactive."""
+        """With the feature inactive: no unbind, no write, reason feature_inactive."""
         _redirect_render_env(tmp_path, monkeypatch, "sess-teardown-inactive")
         session_binding.bind("sess-teardown-inactive", "some-plan")
         writes = _patch_dev_tty(monkeypatch, openable=True)
@@ -198,16 +212,22 @@ class TestSessionTeardown:
 
         assert result["status"] == "success"
         assert result["active"] is False
-        assert result["reset"] is False
         assert result["unbound"] is False
         assert result["reason"] == "feature_inactive"
+        # The retired ``reset`` half is gone from the contract entirely.
+        assert "reset" not in result
         # Nothing was written and no binding was mutated.
         assert writes == []
         assert unbind_calls == []
         assert session_binding.resolve_plan("sess-teardown-inactive") == "some-plan"
 
-    def test_active_feature_writes_neutral_reset_and_unbinds(self, rt, tmp_path, monkeypatch):
-        """With the feature active: the bare OSC-0 reset lands and the slot is dropped."""
+    def test_active_feature_unbinds_and_writes_no_escape(self, rt, tmp_path, monkeypatch):
+        """With the feature active: the slot is dropped and NO escape is written.
+
+        ``openable=True`` deliberately makes a tty AVAILABLE, so a surviving
+        reset write would be captured. The empty capture is the assertion: the
+        teardown does not paint, even when it could.
+        """
         _redirect_render_env(tmp_path, monkeypatch, "sess-teardown-active")
         _activate_terminal_title(tmp_path)
         session_binding.bind("sess-teardown-active", "some-plan")
@@ -216,26 +236,10 @@ class TestSessionTeardown:
         result = parse_toon(rt.session_teardown())
 
         assert result["active"] is True
-        assert result["reset"] is True
         assert result["unbound"] is True
-        # EXACTLY the neutral-default reset escape — an empty OSC-0 payload,
-        # which returns the tab to the terminal's own default title.
-        assert writes == ["\x1b]0;\x07"]
+        assert "reset" not in result
+        assert writes == []
         assert session_binding.resolve_plan("sess-teardown-active") is None
-
-    def test_active_without_controlling_tty_still_unbinds(self, rt, tmp_path, monkeypatch):
-        """reset and unbound are independent: no tty still drops the binding."""
-        _redirect_render_env(tmp_path, monkeypatch, "sess-teardown-notty")
-        _activate_terminal_title(tmp_path)
-        session_binding.bind("sess-teardown-notty", "some-plan")
-        _patch_dev_tty(monkeypatch, openable=False)
-
-        result = parse_toon(rt.session_teardown())
-
-        assert result["active"] is True
-        assert result["reset"] is False
-        assert result["unbound"] is True
-        assert session_binding.resolve_plan("sess-teardown-notty") is None
 
 
 class TestSessionStartClearTeardown:
@@ -281,31 +285,82 @@ class TestSessionStartClearTeardown:
         assert session_binding.resolve_plan(session_id) == "active-plan"
 
 
-class TestSessionPushTitleTokenDelivery:
-    """Tests for the observable delivery outcome of session_push_title_token.
+class TestTerminalStateDeliveryOrdering:
+    """The binding outlives the archive until the terminal state is delivered.
 
-    The ``/dev/tty`` write is the FALLBACK delivery channel; off a controlling
-    terminal it cannot land. That non-delivery is reported rather than swallowed:
-    ``pushed: false`` with ``reason: no_controlling_tty``, and every ``/dev/tty``
-    attempt names its channel via ``delivery: dev_tty_fallback``. An absent title
-    state is a different outcome entirely and keeps ``reason: no_title_state``.
+    The ordering rule is *no binding release before the state it enables has been
+    delivered*. With the archive path releasing nothing, the only remaining way
+    to lose the route is GC — so the slot is exempt while the terminal state is
+    still owed, and collectable the moment it has been painted. These tests pin
+    that the release can never be observed BEFORE the emit.
     """
 
-    def test_unopenable_dev_tty_reports_no_controlling_tty(self, rt, tmp_path, monkeypatch):
-        """An unopenable /dev/tty yields pushed: false, reason: no_controlling_tty."""
-        plan_id = "push-no-tty"
-        _write_status_json(tmp_path, session_id="sess-push-no-tty", plan_id=plan_id)
-        _redirect_render_env(tmp_path, monkeypatch, "sess-push-no-tty")
-        _patch_dev_tty(monkeypatch, openable=False)
+    def test_archived_terminal_state_is_delivered_then_becomes_collectable(
+        self, rt, tmp_path, monkeypatch, capsys
+    ):
+        """Before the render the slot is exempt; the render emits ✅ and marks it delivered."""
+        session_id = "sess-terminal-delivery"
+        plan_id = "finished-plan"
+        _write_status_json(
+            tmp_path,
+            session_id=session_id,
+            plan_id=plan_id,
+            current_phase="complete",
+            archived=True,
+        )
+        _redirect_render_env(tmp_path, monkeypatch, session_id)
+        _activate_terminal_title(tmp_path)
+        _stub_hook_stdin(monkeypatch, {"hook_event_name": "UserPromptSubmit"})
 
-        result = parse_toon(rt.session_push_title_token(plan_id))
-        assert result["status"] == "success"
-        assert result["pushed"] is False
-        assert result["reason"] == "no_controlling_tty"
-        assert result["delivery"] == "dev_tty_fallback"
+        # The terminal state is still OWED, so the slot must not be collectable.
+        assert session_binding._plan_is_live(plan_id) is True
 
-    def test_successful_push_reports_dev_tty_fallback_channel(self, rt, tmp_path, monkeypatch):
-        """A landed push yields pushed: true, delivery: dev_tty_fallback, no reason."""
+        capsys.readouterr()
+        assert rt.session_render_title() == ""
+
+        envelope = json.loads(capsys.readouterr().out)
+        assert "pm:Completed" in envelope["terminalSequence"]
+        # The binding was never released by the render itself.
+        assert session_binding.resolve_plan(session_id) == plan_id
+        # Delivery discharged the obligation, so the slot is now collectable.
+        assert session_binding._plan_is_live(plan_id) is False
+
+    def test_undelivered_archived_slot_survives_a_doctor_fix_sweep(self, rt, tmp_path, monkeypatch):
+        """A doctor --fix sweep must not collect a slot whose terminal state is owed."""
+        session_id = "sess-terminal-exempt"
+        plan_id = "owed-plan"
+        _write_status_json(
+            tmp_path,
+            session_id=session_id,
+            plan_id=plan_id,
+            current_phase="complete",
+            archived=True,
+        )
+        _redirect_render_env(tmp_path, monkeypatch, session_id)
+
+        report = session_binding.doctor(fix=True)
+
+        assert report["stale"] == []
+        assert report["gc_removed"] == 0
+        assert session_binding.resolve_plan(session_id) == plan_id
+
+
+class TestSessionPushTitleTokenBindAndPersist:
+    """Tests for the observable outcome of session_push_title_token.
+
+    The seam binds and settles state — it does not repaint. The hook render
+    channel is event-driven, so delivery belongs to the NEXT render event, and
+    the seam's return therefore carries no ``pushed`` and no ``delivery`` field:
+    both described a repaint it does not perform. The one no-op reason it can
+    report on the plans store is ``no_title_state``.
+    """
+
+    def test_settling_state_writes_no_escape_anywhere(self, rt, tmp_path, monkeypatch):
+        """A renderable plan yields a bare success and writes NO terminal escape.
+
+        ``openable=True`` deliberately makes a tty AVAILABLE, so a surviving
+        write would be captured. The empty capture is the assertion.
+        """
         plan_id = "push-ok"
         _write_status_json(tmp_path, session_id="sess-push-ok", plan_id=plan_id)
         _redirect_render_env(tmp_path, monkeypatch, "sess-push-ok")
@@ -313,25 +368,22 @@ class TestSessionPushTitleTokenDelivery:
 
         result = parse_toon(rt.session_push_title_token(plan_id))
         assert result["status"] == "success"
-        assert result["pushed"] is True
-        assert result["delivery"] == "dev_tty_fallback"
+        assert result["plan_id"] == plan_id
+        assert writes == []
+        # The retired repaint-reporting fields are gone from the contract.
+        assert "pushed" not in result
+        assert "delivery" not in result
         assert "reason" not in result
-        # The OSC escape actually reached the (captured) terminal.
-        assert writes and writes[0].startswith("\x1b]0;")
 
-    def test_absent_title_state_keeps_no_title_state_reason(self, rt, tmp_path, monkeypatch):
-        """A plan with no status.json keeps reason: no_title_state and names no channel.
-
-        The state read fails BEFORE any /dev/tty attempt, so the outcome must not
-        be conflated with the delivery-channel failure above.
-        """
+    def test_absent_title_state_reports_no_title_state(self, rt, tmp_path, monkeypatch):
+        """A plan with no status.json reports reason: no_title_state and names no channel."""
         _redirect_render_env(tmp_path, monkeypatch, "sess-push-absent")
-        _patch_dev_tty(monkeypatch, openable=False)
+        _patch_dev_tty(monkeypatch, openable=True)
 
         result = parse_toon(rt.session_push_title_token("no-such-plan"))
         assert result["status"] == "success"
-        assert result["pushed"] is False
         assert result["reason"] == "no_title_state"
+        assert "pushed" not in result
         assert "delivery" not in result
 
 
@@ -399,7 +451,7 @@ class TestSessionRenderTitleStatusline:
         _write_status_json(
             tmp_path, session_id=session_id, plan_id=plan_id,
             current_phase="5-execute", short_description="locked-task",
-            title_token="lock-owned",
+            title_token=_title_token("lock-owned", owner="merge-lock"),
         )
         _redirect_render_env(tmp_path, monkeypatch, session_id)
 
@@ -932,6 +984,115 @@ class TestSessionRenderTitleStateAwareIcon:
 
 
 # =============================================================================
+# 3c1b. PostToolUse:Bash build-bracket clear — owner scoping of BOTH halves
+# =============================================================================
+
+
+class TestBuildBracketClearOwnerScoping:
+    """The build-bracket clear's two halves agree about ownership.
+
+    ``PostToolUse:Bash`` on a build command clears the build-busy token twice
+    over: an in-memory pop that corrects THIS render's composed title, and a
+    persisted ``manage-status title-token clear --owner build-hook`` that
+    corrects status.json. The persisted half is owner-scoped by construction, so
+    the in-memory half must be too — an unconditional pop would drop a live
+    ``merge-lock`` glyph from the painted title while its status.json record
+    survived, leaving the two halves disagreeing for one paint.
+    """
+
+    _BUILD_COMMAND = (
+        "python3 .plan/execute-script.py "
+        "plan-marshall:build-pyproject:pyproject_build run "
+        '--command-args "verify plan-marshall"'
+    )
+    _GLYPH_LOCK_OWNED = "\U0001f512"  # 🔒
+    _GLYPH_BUILD_BUSY = "\U0001f528"  # 🔨
+
+    @staticmethod
+    def _arrange(tmp_path, monkeypatch, *, token, session_id, plan_id):
+        """Plant *token* in status.json and drive a PostToolUse:Bash build event.
+
+        Returns the list the stubbed persisted clear records its plan ids into,
+        so each leg can assert the persisted half fired independently of what
+        the in-memory half decided.
+        """
+        import claude_runtime as _cr
+
+        _write_status_json(
+            tmp_path,
+            session_id=session_id,
+            plan_id=plan_id,
+            current_phase="5-execute",
+            short_description="clear-task",
+            title_token=token,
+        )
+        _redirect_render_env(tmp_path, monkeypatch, session_id)
+        _stub_hook_stdin(
+            monkeypatch,
+            {
+                "hook_event_name": "PostToolUse",
+                "tool_name": "Bash",
+                "tool_input": {"command": TestBuildBracketClearOwnerScoping._BUILD_COMMAND},
+            },
+        )
+
+        cleared: list[str] = []
+        monkeypatch.setattr(
+            _cr,
+            "_manage_status_clear_title_token",
+            lambda plan_id: (cleared.append(plan_id), True)[1],
+        )
+        return cleared
+
+    def test_foreign_owned_token_survives_the_in_memory_clear(
+        self, rt, tmp_path, monkeypatch, capsys
+    ):
+        """A merge-lock-owned token keeps painting its 🔒 through a build-hook clear."""
+        cleared = self._arrange(
+            tmp_path,
+            monkeypatch,
+            token=_title_token("lock-owned", owner="merge-lock"),
+            session_id="sess-foreign-clear",
+            plan_id="foreign-clear-plan",
+        )
+
+        capsys.readouterr()
+        returned = rt.session_render_title(statusline=False)
+        captured = capsys.readouterr().out
+
+        assert returned == ""
+        envelope = json.loads(captured)
+        assert envelope["terminalSequence"] == (
+            f"\x1b]0;➤ {self._GLYPH_LOCK_OWNED} pm:5-execute:clear-task\x07"
+        )
+        # The persisted half still fires — it is owner-scoped on its own side
+        # (``--owner build-hook``), so it leaves the merge-lock record alone.
+        assert cleared == ["foreign-clear-plan"]
+
+    def test_build_hook_owned_token_is_dropped_by_the_in_memory_clear(
+        self, rt, tmp_path, monkeypatch, capsys
+    ):
+        """The hook's OWN build-busy token is popped, so 🔨 stops painting at once."""
+        cleared = self._arrange(
+            tmp_path,
+            monkeypatch,
+            token=_title_token("build-busy", owner="build-hook"),
+            session_id="sess-own-clear",
+            plan_id="own-clear-plan",
+        )
+
+        capsys.readouterr()
+        returned = rt.session_render_title(statusline=False)
+        captured = capsys.readouterr().out
+
+        assert returned == ""
+        envelope = json.loads(captured)
+        assert envelope["terminalSequence"] == "\x1b]0;➤ pm:5-execute:clear-task\x07"
+        assert self._GLYPH_BUILD_BUSY not in envelope["terminalSequence"]
+        assert cleared == ["own-clear-plan"]
+
+
+# =============================================================================
 # 3c2. session_render_title hook-mode conditional sessionTitle emit
 # =============================================================================
 
@@ -1311,14 +1472,20 @@ class TestSessionPushTitleTokenOptionalIcon:
         rt.session_push_title_token("push-plan")
         assert captured["icon_override"] is None
 
-    def test_no_title_state_reports_not_pushed(self, rt, tmp_path, monkeypatch):
-        """Missing state is a best-effort no-op (pushed=False), with or without an icon."""
+    def test_no_title_state_reports_the_reason_and_no_pushed_flag(self, rt, tmp_path, monkeypatch):
+        """Missing state is a best-effort no-op reported as ``reason: no_title_state``.
+
+        The seam settles state and never repaints, so it has no delivery verdict
+        to report — the return carries no ``pushed`` flag at all. Delivery is
+        the next hook render event's outcome.
+        """
         from toon_parser import parse_toon
 
         monkeypatch.setattr(session_binding, "_SESSION_CACHE_BASE", tmp_path / "sessions")
         monkeypatch.chdir(tmp_path)
         parsed = parse_toon(rt.session_push_title_token("no-such-plan"))
-        assert parsed["pushed"] is False
+        assert parsed["reason"] == "no_title_state"
+        assert "pushed" not in parsed
 
 
 # =============================================================================
@@ -1413,10 +1580,11 @@ class TestSessionRenderTitleOrchestratorFallback:
 
 
 class TestSessionPushTitleTokenOrchestrator:
-    """D3: the orchestrator-store push establishes the session→epic binding as a
-    best-effort side effect (so the PRIMARY hook channel takes over on the next
-    render) and distinguishes a configured-OFF feature (feature_inactive) from the
-    permanently-inert /dev/tty fallback (no_controlling_tty).
+    """The orchestrator-store call establishes the session→epic binding as a
+    best-effort side effect, so the hook render channel resolves the epic on the
+    next event. That binding IS the reason the seam survives the deletion of the
+    ``/dev/tty`` write — these tests fail if the verb is ever removed wholesale.
+    A configured-OFF feature is the one reportable no-op (``feature_inactive``).
     """
 
     @staticmethod
@@ -1444,9 +1612,8 @@ class TestSessionPushTitleTokenOrchestrator:
         assert session_binding.resolve_orchestrator("sess-orch-push") == "my-epic"
 
     def test_orchestrator_push_reports_feature_inactive_when_off(self, rt, tmp_path, monkeypatch):
-        """With the terminal-title feature configured OFF, the orchestrator push
-        returns pushed: false / reason: feature_inactive — the gate fires BEFORE
-        the /dev/tty attempt, distinct from the no_controlling_tty fallback."""
+        """With the terminal-title feature configured OFF, the orchestrator call
+        reports reason: feature_inactive — the one no-op outcome it can produce."""
         from toon_parser import parse_toon
 
         monkeypatch.setattr(session_binding, "_SESSION_CACHE_BASE", tmp_path / "sessions")
@@ -1454,33 +1621,34 @@ class TestSessionPushTitleTokenOrchestrator:
         monkeypatch.chdir(tmp_path)
         # NO _activate_terminal_title → _terminal_title_active() is False.
         self._stub_orch_state(monkeypatch)
-        # /dev/tty is openable, but the feature gate fires first.
         _patch_dev_tty(monkeypatch, openable=True)
 
         result = parse_toon(rt.session_push_title_token("", store="orchestrator", slug="my-epic"))
 
-        assert result["pushed"] is False
         assert result["reason"] == "feature_inactive"
+        assert "pushed" not in result
+        assert "delivery" not in result
 
-    def test_orchestrator_push_reports_no_controlling_tty_when_active_but_no_tty(
-        self, rt, tmp_path, monkeypatch
-    ):
-        """With the feature ACTIVE but no controlling terminal, the orchestrator
-        push clears the feature gate and reports no_controlling_tty."""
+    def test_orchestrator_push_writes_no_escape_when_active(self, rt, tmp_path, monkeypatch):
+        """With the feature ACTIVE the call settles state and still writes nothing.
+
+        A tty is deliberately available, so a surviving write would be captured.
+        """
         from toon_parser import parse_toon
 
         monkeypatch.setattr(session_binding, "_SESSION_CACHE_BASE", tmp_path / "sessions")
-        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "sess-orch-notty")
+        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "sess-orch-active")
         monkeypatch.chdir(tmp_path)
         _activate_terminal_title(tmp_path)
         self._stub_orch_state(monkeypatch)
-        _patch_dev_tty(monkeypatch, openable=False)
+        writes = _patch_dev_tty(monkeypatch, openable=True)
 
         result = parse_toon(rt.session_push_title_token("", store="orchestrator", slug="my-epic"))
 
-        assert result["pushed"] is False
-        assert result["reason"] == "no_controlling_tty"
-        assert result["delivery"] == "dev_tty_fallback"
+        assert result["status"] == "success"
+        assert result["slug"] == "my-epic"
+        assert writes == []
+        assert "reason" not in result
 
     def test_orchestrator_push_binds_even_when_feature_inactive(self, rt, tmp_path, monkeypatch):
         """The epic binding is established BEFORE the feature gate, so it lands
@@ -1495,3 +1663,332 @@ class TestSessionPushTitleTokenOrchestrator:
         rt.session_push_title_token("", store="orchestrator", slug="my-epic")
 
         assert session_binding.resolve_orchestrator("sess-orch-bind-inactive") == "my-epic"
+
+
+# =============================================================================
+# session_render_title — every exit is a NAMED outcome (observability)
+# =============================================================================
+
+
+class _RaisingStdout:
+    """A stdout stand-in whose ``write`` always raises ``OSError``.
+
+    Substituted for ``sys.stdout`` wholesale rather than patching ``write`` on
+    the capture object, so the failure is produced by the stream itself and the
+    test does not depend on capsys internals. ``sys.stderr`` is untouched, so
+    the named outcome is still captured.
+    """
+
+    def write(self, _text: str) -> int:
+        raise OSError("stdout is closed")
+
+    def flush(self) -> None:
+        raise OSError("stdout is closed")
+
+
+def _outcome_name(capsys) -> str:
+    """Read and parse the named-outcome TOON row from STDERR."""
+    err = capsys.readouterr().err
+    assert err.strip(), "the render wrote no named outcome to stderr"
+    return cast(str, cast(dict[str, Any], parse_toon(err))["outcome"])
+
+
+class TestSessionRenderTitleNamedOutcomes:
+    """Every exit from ``session_render_title`` names its outcome on stderr.
+
+    Before this contract every path returned a bare ``""``, so a render that
+    silently produced no title was indistinguishable from one that produced the
+    correct title — at every layer, including the two SUCCESS paths, which
+    returned the same value as the six no-ops. These tests pin each outcome as
+    DISTINCT, which is the property that makes the observability real; a test
+    that only asserted "some reason was reported" would pass even if every path
+    collapsed onto one name.
+
+    The stdout contract is asserted alongside every case: the named outcome
+    rides stderr, so stdout still carries exactly the host-parsed bytes and
+    nothing else.
+    """
+
+    def test_no_session_id_is_named_and_writes_no_stdout(self, rt, monkeypatch, capsys):
+        monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
+        capsys.readouterr()
+
+        assert rt.session_render_title(statusline=False) == ""
+
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert parse_toon(captured.err)["outcome"] == "no_session_id"
+
+    def test_no_binding_is_named(self, rt, tmp_path, monkeypatch, capsys):
+        """A session bound to neither a plan nor an epic names ``no_binding``."""
+        _redirect_render_env(tmp_path, monkeypatch, "sess-unbound")
+        capsys.readouterr()
+
+        assert rt.session_render_title(statusline=False) == ""
+
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert parse_toon(captured.err)["outcome"] == "no_binding"
+
+    def test_no_title_state_is_named(self, rt, tmp_path, monkeypatch, capsys):
+        """A resolved binding whose status.json is absent names ``no_title_state``.
+
+        Distinct from ``no_binding``: the session DID resolve a plan, so the
+        two failures point at different broken things (an unbound session vs a
+        missing plan directory) and must not share a name.
+        """
+        cache_dir = tmp_path / "sessions" / "sess-ghost"
+        cache_dir.mkdir(parents=True)
+        (cache_dir / "active-plan").write_text("ghost-plan", encoding="utf-8")
+        _redirect_render_env(tmp_path, monkeypatch, "sess-ghost")
+        capsys.readouterr()
+
+        assert rt.session_render_title(statusline=False) == ""
+
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        outcome = parse_toon(captured.err)
+        assert outcome["outcome"] == "no_title_state"
+        assert outcome["plan_id"] == "ghost-plan"
+
+    def test_session_teardown_is_named_as_a_deliberate_noop(self, rt, tmp_path, monkeypatch, capsys):
+        """``SessionStart:clear`` names ``session_teardown`` — writing no title is
+        CORRECT here, and the name is what distinguishes it from a failure."""
+        from io import StringIO
+
+        session_id = "sess-clear-named"
+        _write_status_json(tmp_path, session_id=session_id, plan_id="clear-plan")
+        _redirect_render_env(tmp_path, monkeypatch, session_id)
+        monkeypatch.setattr(
+            "sys.stdin",
+            StringIO(json.dumps({"hook_event_name": "SessionStart", "source": "clear"})),
+        )
+        capsys.readouterr()
+
+        assert rt.session_render_title(statusline=False) == ""
+
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert parse_toon(captured.err)["outcome"] == "session_teardown"
+
+    def test_unrenderable_state_is_named(self, rt, tmp_path, monkeypatch, capsys):
+        """State that reads but does not compose names ``unrenderable_state``.
+
+        Distinct from ``no_title_state``: the file WAS read, so the fault is in
+        its contents (no ``current_phase``) rather than its absence.
+        """
+        session_id = "sess-unrenderable"
+        _write_status_json(
+            tmp_path, session_id=session_id, plan_id="phaseless-plan",
+            current_phase=None, short_description="orphan",
+        )
+        _redirect_render_env(tmp_path, monkeypatch, session_id)
+        capsys.readouterr()
+
+        assert rt.session_render_title(statusline=False) == ""
+
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert parse_toon(captured.err)["outcome"] == "unrenderable_state"
+
+    def test_hook_envelope_success_is_named_distinctly(self, rt, tmp_path, monkeypatch, capsys):
+        """A SUCCESSFUL hook render names ``hook_envelope_written``.
+
+        The success paths previously returned the same bare ``""`` as the six
+        no-ops, which is exactly what made the observability vacuous. Asserting
+        the success name here is what proves success is distinguishable.
+        """
+        session_id = "sess-hook-ok"
+        _write_status_json(tmp_path, session_id=session_id, plan_id="ok-plan")
+        _redirect_render_env(tmp_path, monkeypatch, session_id)
+        capsys.readouterr()
+
+        assert rt.session_render_title(statusline=False) == ""
+
+        captured = capsys.readouterr()
+        # stdout still carries EXACTLY the host envelope and nothing else.
+        assert json.loads(captured.out)["terminalSequence"]
+        assert parse_toon(captured.err)["outcome"] == "hook_envelope_written"
+
+    def test_statusline_success_is_named_distinctly(self, rt, tmp_path, monkeypatch, capsys):
+        """A SUCCESSFUL statusLine render names ``statusline_written`` — its own
+        name, not the hook channel's, so the two delivering channels stay
+        separable in the record."""
+        session_id = "sess-sl-ok"
+        _write_status_json(tmp_path, session_id=session_id, plan_id="sl-plan")
+        _redirect_render_env(tmp_path, monkeypatch, session_id)
+        capsys.readouterr()
+
+        assert rt.session_render_title(statusline=True) == ""
+
+        captured = capsys.readouterr()
+        assert captured.out == "➤ pm:5-execute:my-task"
+        assert parse_toon(captured.err)["outcome"] == "statusline_written"
+
+    def test_swallowed_write_failure_on_the_delivering_channel_is_named(
+        self, rt, tmp_path, monkeypatch, capsys
+    ):
+        """THE regression this deliverable exists for.
+
+        A failed stdout write on the hook envelope — the delivering channel —
+        is the one case where the system believes it painted and did not. It
+        previously fell into a bare ``except OSError: pass`` and returned the
+        SAME value as a successful render. It must now report ``write_failed``,
+        naming the channel.
+        """
+        session_id = "sess-write-fail"
+        _write_status_json(tmp_path, session_id=session_id, plan_id="fail-plan")
+        _redirect_render_env(tmp_path, monkeypatch, session_id)
+
+        capsys.readouterr()
+        monkeypatch.setattr("sys.stdout", _RaisingStdout())
+
+        assert rt.session_render_title(statusline=False) == ""
+
+        monkeypatch.undo()
+        outcome = cast(dict[str, Any], parse_toon(capsys.readouterr().err))
+        assert outcome["outcome"] == "write_failed"
+        assert outcome["channel"] == "hook_envelope"
+
+    def test_write_failure_does_not_mark_terminal_state_delivered(
+        self, rt, tmp_path, monkeypatch, capsys
+    ):
+        """A failed write must NOT discharge the terminal-delivery obligation.
+
+        The mark releases an archived plan's session slot to the GC. Firing it
+        on a write that did not land would collect the binding the still-owed
+        render needs — the exact damage a swallowed failure caused.
+        """
+        import claude_runtime as _cr
+
+        session_id = "sess-write-fail-terminal"
+        _write_status_json(
+            tmp_path, session_id=session_id, plan_id="terminal-plan", current_phase="complete"
+        )
+        _redirect_render_env(tmp_path, monkeypatch, session_id)
+
+        marked: list[str] = []
+        monkeypatch.setattr(_cr, "_mark_terminal_delivered", lambda pid: marked.append(pid))
+
+        capsys.readouterr()
+        monkeypatch.setattr("sys.stdout", _RaisingStdout())
+
+        rt.session_render_title(statusline=False)
+
+        monkeypatch.undo()
+        assert _outcome_name(capsys) == "write_failed"
+        assert marked == []
+
+    def test_statusline_write_failure_names_its_own_channel(
+        self, rt, tmp_path, monkeypatch, capsys
+    ):
+        """The statusLine write failure is named too, and names ITS channel — so
+        a broken footer is not mistaken for a broken tab title."""
+        session_id = "sess-sl-write-fail"
+        _write_status_json(tmp_path, session_id=session_id, plan_id="sl-fail-plan")
+        _redirect_render_env(tmp_path, monkeypatch, session_id)
+
+        capsys.readouterr()
+        monkeypatch.setattr("sys.stdout", _RaisingStdout())
+
+        assert rt.session_render_title(statusline=True) == ""
+
+        monkeypatch.undo()
+        outcome = cast(dict[str, Any], parse_toon(capsys.readouterr().err))
+        assert outcome["outcome"] == "write_failed"
+        assert outcome["channel"] == "statusline"
+
+    def test_statusline_noop_substitutes_no_rendered_state(self, rt, tmp_path, monkeypatch, capsys):
+        """DEFERRAL guard: a statusLine no-op writes NOTHING to stdout.
+
+        The rendered-state substitution for this channel is deferred pending a
+        confirmed host fact (what the host shows for an empty statusLine
+        output). This test fails the moment someone invents a placeholder title
+        here on an assumption, which is the failure mode the deferral exists to
+        prevent.
+        """
+        cache_dir = tmp_path / "sessions" / "sess-sl-noop"
+        cache_dir.mkdir(parents=True)
+        (cache_dir / "active-plan").write_text("ghost-sl", encoding="utf-8")
+        _redirect_render_env(tmp_path, monkeypatch, "sess-sl-noop")
+        capsys.readouterr()
+
+        assert rt.session_render_title(statusline=True) == ""
+
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert parse_toon(captured.err)["outcome"] == "no_title_state"
+
+    def test_the_eight_outcome_names_are_pairwise_distinct(self, rt, tmp_path, monkeypatch, capsys):
+        """The whole point, asserted directly: no two paths share a name.
+
+        Collecting the names into a set and comparing its cardinality is what
+        catches a future refactor that collapses two outcomes onto one string —
+        a per-test assertion cannot see that, because each test would still
+        pass against the collapsed name.
+        """
+        from io import StringIO
+
+        names: list[str] = []
+
+        def _record(fn):
+            capsys.readouterr()
+            fn()
+            names.append(_outcome_name(capsys))
+
+        # no_session_id
+        monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
+        _record(lambda: rt.session_render_title(statusline=False))
+
+        # no_binding
+        _redirect_render_env(tmp_path, monkeypatch, "sess-distinct-unbound")
+        _record(lambda: rt.session_render_title(statusline=False))
+
+        # no_title_state
+        cache_dir = tmp_path / "sessions" / "sess-distinct-ghost"
+        cache_dir.mkdir(parents=True)
+        (cache_dir / "active-plan").write_text("ghost", encoding="utf-8")
+        _redirect_render_env(tmp_path, monkeypatch, "sess-distinct-ghost")
+        _record(lambda: rt.session_render_title(statusline=False))
+
+        # unrenderable_state
+        _write_status_json(
+            tmp_path, session_id="sess-distinct-phaseless", plan_id="phaseless",
+            current_phase=None, short_description="x",
+        )
+        _redirect_render_env(tmp_path, monkeypatch, "sess-distinct-phaseless")
+        _record(lambda: rt.session_render_title(statusline=False))
+
+        # hook_envelope_written + statusline_written
+        _write_status_json(tmp_path, session_id="sess-distinct-ok", plan_id="ok")
+        _redirect_render_env(tmp_path, monkeypatch, "sess-distinct-ok")
+        _record(lambda: rt.session_render_title(statusline=False))
+        _record(lambda: rt.session_render_title(statusline=True))
+
+        # session_teardown
+        monkeypatch.setattr(
+            "sys.stdin",
+            StringIO(json.dumps({"hook_event_name": "SessionStart", "source": "clear"})),
+        )
+        _record(lambda: rt.session_render_title(statusline=False))
+
+        # write_failed
+        #
+        # State the stdin precondition rather than inheriting it: without this
+        # reset the leg reaches write_failed only because the SessionStart:clear
+        # StringIO installed above happens to be drained by the preceding
+        # render (monkeypatch.undo() runs AFTER this leg, not before it). Any
+        # change to buffering or a re-seek of that StringIO would silently flip
+        # this leg to report session_teardown and collapse the outcome set.
+        monkeypatch.setattr("sys.stdin", StringIO(""))
+        _write_status_json(tmp_path, session_id="sess-distinct-boom", plan_id="boom")
+        _redirect_render_env(tmp_path, monkeypatch, "sess-distinct-boom")
+
+        capsys.readouterr()
+        monkeypatch.setattr("sys.stdout", _RaisingStdout())
+        rt.session_render_title(statusline=False)
+        monkeypatch.undo()
+        names.append(_outcome_name(capsys))
+
+        assert len(names) == 8
+        assert len(set(names)) == 8, f"outcome names collapsed: {names}"

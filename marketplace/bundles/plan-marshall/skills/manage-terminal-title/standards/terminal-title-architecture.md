@@ -15,26 +15,21 @@ owning exactly one concern:
   a pure function of the passed state dict and hook event.
 - **`platform-runtime` (resolve + emit)** — resolves session → plan, reads
   `status.json` (live first, worktree next, archived fallback), calls
-  `compose()`, and **emits**
-  the result per platform (OSC sequence / statusLine / web-desktop sessionTitle,
-  plus a direct `/dev/tty` push). The OpenCode runtime is a no-op.
+  `compose()`, and **emits** the result per platform (OSC sequence / statusLine /
+  web-desktop sessionTitle). The OpenCode runtime is a no-op.
 
-**Two delivery channels, one primary.** The hook-mode `terminalSequence` envelope
-is the **PRIMARY** delivery channel: Claude Code itself writes those bytes to the
-terminal, so it needs no tty ownership and works from any process the hook fires
-in. **It is the only channel that reliably lands in this runtime.** No context here
-holds a controlling terminal, so the direct `/dev/tty` push is a
-**permanently-inert FALLBACK**, not an occasional edge — the hook channel is the
-one that delivers, and both plan titles and orchestrator-epic titles ride it (see
-Session-Plan Binding → the orchestrator epic slot below). The push is still fired
-for the blocking windows no hook event spans (a long build, a CI wait, a lock
-hold), but off a controlling terminal it cannot land, and that non-delivery is
-**reported** rather than silently swallowed. Two distinct no-delivery reasons are
-kept apart so a dead channel cannot masquerade as a switched-off feature:
+**One delivering channel.** The hook-mode `terminalSequence` envelope is the
+**sole** delivery channel for the terminal tab title: Claude Code itself writes
+those bytes to the terminal, so it needs no tty ownership and works from any
+process the hook fires in. Both plan titles and orchestrator-epic titles ride it
+(see Session-Plan Binding → the orchestrator epic slot below). The channel is
+**event-driven, not callable on demand** — a writer reaches the terminal only by
+writing state that the *next* render event will read and paint. The normative
+consequences of that single-channel shape are the Channel Delivery Contract
+below, which is the governing section of this document.
 
-- `reason: no_controlling_tty` — the feature is wired up but the `/dev/tty`
-  fallback found no controlling terminal (the permanently-inert case here). Every
-  `/dev/tty` attempt also names its channel via `delivery: dev_tty_fallback`.
+One no-delivery reason survives on the emit surface:
+
 - `reason: feature_inactive` — the terminal-title feature is configured off (no
   render-hook entry and no `statusLine`), so nothing was attempted at all.
 
@@ -42,39 +37,256 @@ kept apart so a dead channel cannot masquerade as a switched-off feature:
 read+emit side. There is no `title-body.txt` artifact — the title state lives
 inline in `status.json` and is composed on demand by the reader.
 
+## Channel Delivery Contract
+
+This section is **normative**. It records the reconciled channel inventory and
+the delivery obligations every title writer owes. Where a descriptive section
+below and this contract disagree, this contract governs.
+
+### Channel inventory
+
+| Channel | Title states it may carry | Observable in this runtime? |
+|---------|---------------------------|------------------------------|
+| Hook `terminalSequence` (OSC-0) | Every composed state — `{icon} {glyph} {body}`, including the ✅ terminal state and the 🔨 `build-busy` icon-slot override | **Yes — the only channel that lands.** Claude Code writes the bytes; no tty ownership required |
+| Hook `hookSpecificOutput.sessionTitle` | The bare `pm:{phase}[:{short}]` body only — no icon, no glyph | Yes, but **UI-only** (web / desktop session picker) and emitted on `UserPromptSubmit` and `SessionStart{startup,resume}` only |
+| `statusLine` | `{icon} {body}` | Yes, in the footer. Carries no glyph and drives no tab title |
+| Direct `/dev/tty` OSC push | **None — the write is deleted** (ruling (a)) | No. No context in this runtime holds a controlling terminal, so the write provably never landed |
+
+**Binding rule:** *nothing may be cleared, reset, or repainted on a channel that
+cannot deliver.* A writer that targets a non-delivering channel has not
+discharged its obligation, however clean its return value looks.
+
+### (a) `/dev/tty` — delete the write, keep the seam
+
+The direct `/dev/tty` OSC write is **removed outright** — not demoted to a debug
+or diagnostic path. The rationale is the load-bearing part: **a fallback that
+provably never lands is worse than none, because it makes the reset look
+implemented.** An untested never-landing path is exactly the false-implementation
+signal this contract removes; keeping it as a demoted path would preserve that
+signal under a quieter name.
+
+`session push-title-token` itself **survives**. Its orchestrator branch carries
+the load-bearing `session_binding.bind_orchestrator` side effect, and its state
+writes are what the next render reads. Both are retained; **only the `/dev/tty`
+OSC write is removed from it.** The seam's post-change contract is therefore
+**"bind + persist state"**, never "repaint". Its return value describes what it
+bound and persisted, and carries neither a `pushed` flag, a
+`delivery: dev_tty_fallback` field, nor a `reason: no_controlling_tty` value —
+all three described a channel that no longer exists.
+
+Artifacts this ruling edits: `platform-runtime/scripts/_claude_runtime_impl.py`
+(the OSC writes in `session_push_title_token` and `session_teardown`),
+`platform-runtime/standards/contract.md`, `platform-runtime/SKILL.md`,
+`platform-runtime/scripts/runtime_base.py` (abstract docstring),
+`platform-runtime/scripts/opencode_runtime.py` (no-op reason text),
+`plan-marshall/references/hook-authoring-guide.md`,
+`persona-marshall-orchestrator/standards/orchestration-model.md`,
+`persona-plan-marshall-agent/SKILL.md` and
+`persona-plan-marshall-agent/standards/agent-behavior-rules.md`,
+`plan-marshall/workflow/await-long-running.md`, and this document.
+
+### (b) Terminal-state delivery — `SessionStart:clear` is the sole release point
+
+`✅ pm:Completed` reaches the tab by **rendering the archived state on the next
+hook event**: the archived-status reader in `claude_runtime.py` (the
+`archived-plans/*-{plan_id}/status.json` fallback arm) already resolves a moved
+plan directory, so the state is readable after the archive move. Delivery
+therefore requires only that the session→plan binding still exist when that next
+event fires.
+
+The hard ordering rule: **no binding release before the state it enables has been
+delivered.** The ruling that satisfies it: **the archive path performs no binding
+release at all.** Unbinding is not how "done" is expressed, and
+`SessionStart:clear` already routes to `session_teardown`
+(`_claude_runtime_impl.py`), so the genuine session-end release point already
+exists and needs no new machinery. Archive drops the release; the session
+releases when the session ends. `SessionStart:clear` is consequently the **sole**
+binding-release point.
+
+Both writers of `current_phase = 'complete'` are in scope for this ruling and
+neither may release a binding: `cmd_transition` (`_cmd_lifecycle.py:375`) and
+`cmd_archive` (`_cmd_lifecycle.py:443`).
+
+Artifacts this ruling edits: `manage-status/scripts/_cmd_lifecycle.py`
+(`cmd_archive`, `cmd_transition`),
+`platform-runtime/scripts/_claude_runtime_impl.py` (`session_teardown`),
+`platform-runtime/scripts/session_binding.py`, and this document.
+
+### (b2) The delivery obligation covers every rendered-state transition
+
+Ruling (b) is one instance of a general rule, not the rule itself:
+
+> **A state write whose rendered projection changes MUST be paired with a
+> delivered repaint on the delivering channel, or it is not a completed
+> transition.**
+
+"Clear the state" and "clear the title" are two obligations. Discharging only the
+first leaves the terminal asserting something false: a `status.json` write fires
+no render event, so a token cleared in state alone can keep painting its glyph
+indefinitely. This is not archive-specific — it applies equally to a `build-busy`
+clear at a mid-plan phase boundary, where the persisted state is correct and the
+tab still shows 🔨. **The archive case is one instance of this rule, not the
+rule itself**, and a reader who comes away believing the obligation is
+archive-scoped has misread it.
+
+**Delivery consequence of ruling (a).** With the `/dev/tty` write deleted, the
+hook `terminalSequence` envelope is the only channel that can satisfy this
+obligation, and that channel is event-driven rather than callable on demand.
+**The paired repaint is therefore necessarily DEFERRED to the next hook event.**
+A writer discharges its delivery obligation by writing state the renderer will
+read — ensuring the *next* render paints the corrected title — not by pushing
+bytes at write time. This is the positive mechanism, stated so that "deliver a
+repaint" is never read as an instruction to re-introduce a live push.
+
+The gap this leaves is named and accepted: between the state write and the next
+hook event the terminal is **knowingly stale**. That window is bounded by render
+cadence (ruling (d) keeps the cadence live and narrow), is accepted as the cost
+of a single honest channel, and **is not to be closed by resurrecting the
+`/dev/tty` write.**
+
+### (c) `title_token` ownership — structured record, arbitration, state-driven GC exemption
+
+`title_token` is a **structured record**, not a bare state string:
+
+```json
+{"owner": "merge-lock", "state": "lock-owned", "set_at": "2026-01-01T00:00:00Z"}
+```
+
+- **`owner`** — the writer that set the token. Vocabulary: `build-hook` (the
+  `PreToolUse:Bash` / `PostToolUse:Bash` render-hook assist that brackets a build
+  window), `merge-lock` (`manage-locks/merge_lock.py`), and `cli` (an explicit
+  `manage-status title-token set` invocation from the orchestration layer).
+- **`state`** — the bare state marker, validated against `TITLE_TOKEN_STATES`
+  (`lock-waiting`, `lock-owned`, `build-busy`) exactly as before.
+- **`set_at`** — the UTC ISO-8601 instant of the set, the input to the staleness
+  rule below.
+
+**Last-writer arbitration.** A `set` from any owner replaces the record
+wholesale — last writer wins, and the record always names its current owner. A
+`clear` is **owner-scoped**: only the recorded `owner` may clear its own token.
+A foreign clear is a no-op, so a lock glyph owned by `merge-lock` cannot be
+clobbered by an unrelated build bracket, and the asymmetry (open SET, scoped
+CLEAR) is what makes ownership meaningful.
+
+**Aged-token staleness.** A token whose `set_at` is older than **3600 seconds**
+is stale and may be cleared or replaced by **any** writer. The threshold is
+derived, not arbitrary: it comfortably exceeds the longest architecture-resolved
+build ceiling in this project (~1926 s for an unscoped whole-tree verify), so a
+live bracket can never age out mid-call, while any process death that strands a
+token self-heals within the hour without operator action.
+
+**GC exemption.** An archived plan's session slot is **exempt from
+`session doctor --fix` GC exactly while it still has an undelivered terminal
+state, and becomes collectable once that state has been delivered.** This is a
+**state-driven exemption, not a time window** — the predicate is "terminal state
+still owed", never an elapsed-time grace period. `session_binding._plan_is_live`,
+which today classifies an archived plan stale unconditionally, therefore gains a
+**delivery-pending arm** rather than a timeout.
+
+Artifacts this ruling edits: `manage-status/scripts/_status_core.py`,
+`manage-status/scripts/_status_query.py` (`cmd_title_token`, `cmd_set_phase`),
+`manage-status/scripts/manage-status.py` (the `title-token` argparse surface),
+`manage-status/standards/status-lifecycle.md`, `manage-status/SKILL.md`,
+`manage-locks/scripts/merge_lock.py`, `manage-locks/SKILL.md`,
+`manage-terminal-title/scripts/manage_terminal_title.py` (reads the structured
+record), `platform-runtime/scripts/session_binding.py` (`_plan_is_live`),
+`platform-runtime/scripts/claude_runtime.py` (the build-command predicate that
+sets the token), `marshall-steward/references/menu-terminal-title.md`, and this
+document.
+
+### (d) Render cadence — keep the live, narrow shape
+
+The installed render configuration already scopes `PostToolUse` to the
+`Bash` and `AskUserQuestion` matchers, and the render cadence is among the
+largest recurring script costs in the project. Both facts point the same way, so
+this is a **standing joint position** that any future cadence work inherits
+without re-opening this contract:
+
+- Keep `PostToolUse` **matcher-scoped** — do not widen it to a matcher-less
+  entry. The installer writes the two scoped entries and prunes nothing.
+- `_DISPLAY_RENDER_ENTRIES` is converged to the live shape: the two
+  `PostToolUse` rows are matcher-scoped (`AskUserQuestion` + `Bash`), and the
+  installed `SessionStart:clear` entry — previously absent from the expected
+  set, so its removal would have gone unreported — is included.
+- **`_prune_matcher_scoped_render_entries` is deleted**, not left dormant. It
+  existed to prune matcher-scoped entries back toward a matcher-less shape this
+  contract rejects, so keeping it would have preserved a live path to the wrong
+  shape.
+- The `display` health check is **fail-closed**: an expected-vs-installed
+  divergence returns `status: error`. It previously returned `status: success`
+  with `all_healthy: false`, which is invisible to any caller that branches on
+  status. The fail is scoped to the `display` check — `mcp-diagnostics`
+  reporting an unreachable port is an environmental condition, not a
+  misconfiguration, and failing on it would train callers to ignore the status.
+
+Ruling (c)'s paired `build-busy` clear depends on this: the clear rides the
+already-installed `PostToolUse:Bash` entry, which is precisely the entry a
+widening-and-pruning cadence would remove.
+
+Artifacts this ruling edits:
+`platform-runtime/scripts/_claude_runtime_impl.py` (`_DISPLAY_RENDER_ENTRIES`,
+`_prune_matcher_scoped_render_entries`),
+`plan-marshall/references/hook-authoring-guide.md`,
+`marshall-steward/references/menu-terminal-title.md`, and this document.
+
+### Deferred — the statusLine rendered-state substitution
+
+The host behaviour of an **empty statusLine output** is an **open fact and is
+NOT assumed here**: whether the host preserves the previous footer, blanks it, or
+falls back to its own default has not been confirmed. The rendered-state
+substitution for statusLine mode is therefore **deferred** pending a confirmed
+host check; only the named-no-op observability half of the render path is in
+scope now. This contract asserts no host behaviour it has not confirmed.
+
+### Hook configuration is human-gated
+
+This contract **records** decisions about the `.claude/settings.json` /
+`.claude/settings.local.json` render-hook shape (ruling (d)) but is not itself a
+license to write those files. The settings surface is human-gated — it carries a
+permission prompt and a startup-reload latency — so any settings change is
+surfaced to the operator as a separate manual step and is never written by
+automated plan execution.
+
 ## Component Map
 
 ```text
 STATE (manage-status)            COMPOSER (manage-terminal-title)   RESOLVE+EMIT (platform-runtime)
 ┌──────────────────────────┐     ┌──────────────────────────────┐  ┌────────────────────────────────────┐
-│ title-token set {state}  │     │ compose(state, event, …)     │  │ session render-title                 │
-│ title-token clear        │     │  1. _compose_body(state)     │  │  1. $CLAUDE_CODE_SESSION_ID          │
-│   writes status.title_   │     │     pm:{phase}[:{short}]     │  │  2. session cache → plan_id          │
-│   token (NO rendering)    │     │     pm:Completed[:{short}]   │  │  3. _read_title_state(plan_id):      │
-└────────────┬─────────────┘     │  2. TITLE_TOKEN_GLYPHS[token]│  │     live → worktree → archived     │
-             │ writes            │     ⏳/🔒 (active phase)      │  │     status.json (first hit wins)   │
-             ▼                   │  3. resolve_icon(event,tool) │  │  4. compose(state, event)  ──────────┤
-   status.json                  │     ➤/?/⚙/✓, ✅ terminal     │  │  5. emit per platform:               │
-   (current_phase,              │        override               │  │     OSC terminalSequence (every event)│
-    short_description,  ────────►│  → '{icon} {glyph} {body}'   ──►│     + sessionTitle (UI, gated)        │
-    title_token)                │     or None (no-op)          │  │     statusLine: plain '{icon} {body}' │
-             │                   └──────────────────────────────┘  │                                      │
-   cmd_archive moves the         (pure; imports neither side)      │ session push-title-token (FALLBACK): │
-   whole plan dir →                                                │  compose(state, None, icon_override) │
-   archived-plans/{date}-                                          │  → /dev/tty OSC push                  │
-   {plan_id}/status.json                                           │ session teardown (activation-gated): │
-   then fires session teardown                                     │  → OSC-0 reset + session unbind      │
-                                                                   │ (OpenCode runtime: no-op)            │
+│ title-token set          │     │ compose(state, process_state)│  │ session render-title                 │
+│   --state --owner        │     │  1. _compose_body(state)     │  │  1. $CLAUDE_CODE_SESSION_ID          │
+│ title-token clear        │     │     pm:{phase}[:{short}]     │  │  2. session cache → plan_id          │
+│   --owner (owner-scoped) │     │     pm:Completed[:{short}]   │  │  3. _read_title_state(plan_id):      │
+│   writes status.title_   │     │  2. title_token_state(rec)   │  │     live → worktree → archived     │
+│   token (NO rendering)   │     │     → TITLE_TOKEN_GLYPHS     │  │     status.json (first hit wins),   │
+└────────────┬─────────────┘     │     ⏳/🔒 (active phase)      │  │     aged tokens dropped on read    │
+             │ writes            │  3. resolve_icon(process_st) │  │  4. compose(state, process_state) ───┤
+             ▼                   │     ➤/?/⚙/✓, ✅ terminal     │  │  5. emit per platform:               │
+   status.json                   │        override, 🔨 build     │  │     OSC terminalSequence (every event)│
+   (current_phase,               │  → '{icon} {glyph} {body}'   ──►│     + sessionTitle (UI, gated)        │
+    short_description,  ────────►│     or None (no-op)          │  │     statusLine: plain '{icon} {body}' │
+    title_token =                └──────────────────────────────┘  │  6. NAMED outcome on stderr (8 total)│
+     {owner,state,set_at})       (pure; imports neither side)      │                                      │
+             │                                                     │ session push-title-token:            │
+   cmd_archive moves the                                           │  bind + persist state (NO repaint)   │
+   whole plan dir →                                                │  next hook event delivers it         │
+   archived-plans/{date}-                                          │ session teardown (SessionStart:clear │
+   {plan_id}/status.json                                           │  only): session unbind               │
+   and releases no binding                                         │ (OpenCode runtime: no-op)            │
                                                                    └────────────────────────────────────┘
 ```
 
-Render triggers wired by `project install-hook`: `SessionStart` (ONE matcher-less
-entry — no separate `matcher: "clear"` render entry; the renderer branches on
-`source == "clear"` and performs a session teardown instead), `UserPromptSubmit`,
-`Notification`, `Stop`, `PreToolUse:AskUserQuestion`, `PreToolUse:Bash`, and
-`PostToolUse` (ONE matcher-less entry, so the title refreshes after **every** tool
-call at the same cadence as the statusLine footer). Seven render-trigger labels in
-total, plus `statusLine`.
+Render triggers wired by `project install-hook`: `SessionStart:matcher-less`,
+`SessionStart:clear` (the entry that routes the session teardown — the renderer
+branches on `source == "clear"`, tears the session down, and writes nothing),
+`UserPromptSubmit`, `Notification`, `Stop`, `PreToolUse:AskUserQuestion`,
+`PreToolUse:Bash`, `PostToolUse:AskUserQuestion`, and `PostToolUse:Bash`.
+`PostToolUse` is **matcher-scoped**, not matcher-less — see Channel Delivery
+Contract ruling (d). Nine render-trigger labels in total, plus `statusLine`.
+
+That list is the `_DISPLAY_RENDER_ENTRIES` expected set the `display` health
+check reports against, and the check is **fail-closed**: a divergence between
+the expected and installed sets returns `status: error`, not a `success`
+carrying `all_healthy: false`.
 
 ## State — `manage-status`
 
@@ -86,57 +298,61 @@ belongs entirely to the composer.
 |-------|------------|------|
 | `current_phase` | the plan lifecycle commands (`transition`, etc.) | The active phase name (`5-execute`, `complete`, `archived`, …) |
 | `short_description` | plan metadata setters | The optional short title-body name token |
-| `title_token` | `manage-status title-token set\|clear` (the explicit writer); `transition`/`set-phase` additionally pop a stale `build-busy` token and `archive` pops any token before persisting | The bare lock-coordination (`lock-waiting`/`lock-owned`) or orchestration-busy (`build-busy`) state string (no glyph/icon) |
+| `title_token` | `manage-status title-token set\|clear` (the CLI writer), the `build-hook` render assist, and `merge-lock`; `archive` pops any token before persisting | The structured `{owner, state, set_at}` record carrying the lock-coordination (`lock-waiting`/`lock-owned`) or orchestration-busy (`build-busy`) state (no glyph/icon) |
 
 ### The `title-token` verb
 
-The `title-token` subcommand is the single writer of the `title_token` field:
+The `title-token` subcommand is the CLI writer of the `title_token` field:
 
-- `title-token set --plan-id {id} --state {state}` writes `status.title_token`
-  to the bare state string. `{state}` is validated against `TITLE_TOKEN_STATES`
+- `title-token set --plan-id {id} --state {state}` writes the structured record
+  with `owner: cli`. `{state}` is validated against `TITLE_TOKEN_STATES`
   = `{lock-waiting, lock-owned, build-busy}`.
-- `title-token clear --plan-id {id}` removes the `title_token` field
-  (idempotent).
+- `title-token clear --plan-id {id}` removes the `title_token` field when the
+  caller owns it or the record is stale (idempotent).
 
-`manage-status` persists **only the bare state string** — it never renders the
+The record shape, the owner vocabulary, the last-writer arbitration rule, and the
+aged-token staleness threshold are specified once in Channel Delivery Contract
+ruling (c) and are not restated here.
+
+`manage-status` persists **only the state record** — it never renders the
 glyph or icon. The state → display rendering is owned exclusively by the composer:
 `lock-waiting`/`lock-owned` map to ⏳/🔒 glyphs via the `TITLE_TOKEN_GLYPHS` map,
 and `build-busy` maps to the 🔨 icon-slot override (see Composer below).
 `build-busy` is deliberately absent from `TITLE_TOKEN_GLYPHS` — it is an
 icon-slot override, not a glyph. This keeps `manage-status` free of any display
-vocabulary. `build-busy` is set/cleared by the orchestration layer to bracket a
-long-running call — see
-[`persona-plan-marshall-agent`](../../persona-plan-marshall-agent/SKILL.md) for
-the normative orchestration requirement.
+vocabulary. `build-busy` is set and cleared by the **machine-owned** render-hook
+bracket (`PreToolUse:Bash` / `PostToolUse:Bash`, owner `build-hook`) around a
+foreground build, and by the orchestrator wait seam (owner `cli`) around a
+detached one — see Channel Delivery Contract ruling (c) above.
 
 ### Persisted-title-state-write drive seam
 
 Every persisted `current_phase` write fires a single best-effort **drive seam**
-immediately after `write_status`, so the title reflects a phase change the moment
-it is persisted instead of freezing at the last-rendered phase. The three phase
-writers — `cmd_create` (first-phase seed), `cmd_transition` (phase advance), and
-`cmd_set_phase` — call one shared `_surface_drive(plan_id)` helper that fires two
-fire-and-forget delegations to `platform-runtime` through the executor subprocess
-channel (the same channel `manage-locks/merge_lock.py` uses):
+immediately after `write_status`, so the session binding stays current and the
+freshly persisted phase is the state the **next** hook event renders. Delivery is
+deferred to that event by construction — see Channel Delivery Contract ruling
+(b2). The three phase writers — `cmd_create` (first-phase seed), `cmd_transition`
+(phase advance), and `cmd_set_phase` — call one shared `_surface_drive(plan_id)`
+helper that fires two fire-and-forget delegations to `platform-runtime` through
+the executor subprocess channel (the same channel `manage-locks/merge_lock.py`
+uses):
 
-- a **repaint** — `session push-title-token --plan-id {id}` with no icon, a plain
-  re-render of the freshly composed title; and
+- a **state persist** — `session push-title-token --plan-id {id}` with no icon,
+  which composes and persists the current title state for the next render; and
 - a **bind** — `session bind --plan-id {id}`, the last-driven-wins session→plan
   binding (see Session-Plan Binding below).
 
 The seam is fully exception-swallowing: a delegation failure never changes the
 status-write outcome or the command's exit code. `manage-status` still composes
-and emits nothing itself — it delegates the repaint and the bind to
-`platform-runtime`, preserving the state-layer's render-free contract (exactly as
-`merge_lock.py` delegates its own title-token surface).
+and emits nothing itself — it delegates both halves to `platform-runtime`,
+preserving the state-layer's render-free contract (exactly as `merge_lock.py`
+delegates its own title-token surface).
 
-Additionally, `cmd_transition` and `cmd_set_phase` call `drop_stale_build_busy(status)`
-**before** `write_status` — the phase-boundary safety-net that clears a stale
-`build-busy` token (left behind by an interrupted long-running orchestration call)
-so it cannot leak the 🔨 hammer icon across the phase change. The clear is scoped
-to `build-busy` only; the live lock-coordination tokens (`lock-waiting` /
-`lock-owned`) are left untouched. `cmd_create` performs no such clear (a freshly
-seeded plan holds no in-flight token).
+A stale `build-busy` token cannot leak the 🔨 hammer icon across a phase change,
+because staleness is resolved by the aged-token rule in Channel Delivery Contract
+ruling (c) rather than by a phase-boundary sweep. The live lock-coordination
+tokens (`lock-waiting` / `lock-owned`) are owner-scoped and are never cleared by
+a foreign writer.
 
 ### Archive interaction
 
@@ -149,13 +365,10 @@ before moving the plan directory:
    archived plan has no live session driving its terminal title, so any
    in-flight token (`lock-waiting` / `lock-owned` / `build-busy`) left behind
    would persist a stale glyph or icon-slot override in the archived snapshot.
-   The pop is token-agnostic: it covers every `TITLE_TOKEN_STATES` value with a
-   single operation. This is distinct from the `transition` / `set-phase`
-   phase-writer clear (`drop_stale_build_busy`, see Persisted-title-state-write
-   drive seam above), which is scoped to `build-busy` **only** and leaves the
-   live lock tokens intact — `archive` unconditionally clears every token because
-   the plan is going dormant, whereas the phase writers preserve a live lock
-   state that is still meaningful on the ongoing plan.
+   The pop is owner- and token-agnostic: it covers every record regardless of
+   `owner` or `state` with a single operation, because a plan going dormant holds
+   no live coordination state worth arbitrating over. This is the one sanctioned
+   exception to the owner-scoped clear of Channel Delivery Contract ruling (c).
 
 After writing the mutated `status.json` back to the live plan directory,
 `cmd_archive` moves the **entire plan directory** to
@@ -166,27 +379,19 @@ inside the moved directory, the archived `status.json` carries the terminal
 separate body artifact to preserve. The archive name is built from
 `date_prefix = now_utc_iso()[:10]` and `archive_name = f'{date_prefix}-{plan_id}'`.
 
-Immediately **after** the move, `cmd_archive` fires `_drive_teardown(plan_id)` —
-a best-effort `session teardown` delegation through the same executor channel as
-the bind/repaint seam. This is the **live-surface counterpart** of the persisted
-`title_token` pop above: the pop retires the persisted token in the archived
-snapshot, the teardown retires the LIVE terminal title (reset to the terminal's
-own default) and the session's plan binding, so a finished plan leaves neither a
-stale title nor a stale binding behind. It is activation-gated inside the
-delegate and fully exception-swallowing — a delegation failure never changes the
-archive command's status or exit code.
+`cmd_archive` **releases no session binding.** This is the direct consequence of
+Channel Delivery Contract ruling (b): the terminal `✅ pm:Completed` state is
+delivered by the next hook event rendering the archived `status.json`, and that
+render can only resolve the plan while the session→plan binding still exists.
+Releasing at archive time would destroy the delivery route for the very state the
+archive just persisted, violating the ordering rule *no binding release before
+the state it enables has been delivered.* The binding survives the archive and is
+released at session end by `SessionStart:clear`, the sole release point.
 
-The teardown carries the same **observable-non-delivery** contract as the repaint
-seam: when an *activated* delegate reports a failed title reset (`reset: false`)
-and/or a failed binding release (`unbound: false`), the seam writes one persisted
-`log_entry` to the plan work log (via `manage-logging`) naming the plan and the
-failed half (both halves are named when both failed, matching the delegate's
-independent reporting), so the dead channel reaches the plan record instead of only
-subprocess stderr. An inactive delegate (`active: false` / `reason:
-feature_inactive`) is the ordinary nothing-to-do case and stays at DEBUG, as does
-every other failure path. `log_entry` is itself best-effort (it swallows every I/O
-error) and sits inside the seam's best-effort try/except, so only the observability
-of a non-delivery changes — never the archive command's status or exit code.
+The retained binding is protected from garbage collection for exactly as long as
+it is needed: `session doctor --fix` exempts an archived plan's slot **while its
+terminal state is undelivered**, and collects it once delivered — the
+state-driven exemption specified in ruling (c).
 
 ## Composer — `manage-terminal-title`
 
@@ -206,7 +411,7 @@ and the icon-resolution table — those tables are not duplicated here.
 
 ### Composition summary
 
-`compose(state_dict, event, icon_override=None, tool_name=None) -> str | None`
+`compose(state_dict, process_state, icon_override=None) -> str | None`
 composes `'{icon} {glyph} {body}'` from three independent inputs:
 
 - **Body** — `pm:{phase}[:{short}]` for active phases; `pm:Completed[:{short}]`
@@ -231,12 +436,12 @@ composes `'{icon} {glyph} {body}'` from three independent inputs:
   is **terminal ✅ > build-busy 🔨 > `icon_override` > process icon** — the
   terminal ✅ override still wins, so 🔨 never appears for a finished plan. The ⚙
   busy icon (`_ICON_BUSY`, U+2699) is surfaced on the `PreToolUse:Bash` render
-  trigger while a long-running Bash tool call executes; `PreToolUse:Bash` and the
-  matcher-less `PostToolUse` trigger bracket the busy window (busy on enter, back
-  to ➤ active on exit). The process icons ➤ and ? MUST NOT appear for a finished plan. The
-  `build-busy` state is set/cleared by the orchestration layer — see
-  [`persona-plan-marshall-agent`](../../persona-plan-marshall-agent/SKILL.md) for
-  the normative orchestration requirement.
+  trigger while a long-running Bash tool call executes; `PreToolUse:Bash` and
+  `PostToolUse:Bash` bracket the busy window (busy on enter, back to ➤ active on
+  exit). The process icons ➤ and ? MUST NOT appear for a finished plan. The
+  `build-busy` state is set and cleared by the **machine-owned** render-hook
+  bracket — the `PreToolUse:Bash` / `PostToolUse:Bash` render assist, no LLM turn
+  owns either half — see Channel Delivery Contract ruling (c).
 
 ## Resolve + Emit — `platform-runtime`
 
@@ -280,66 +485,62 @@ body format (both live in the composer it imports).
    `session_teardown()` and writes **nothing** to stdout. A render here would
    repaint a title for a session that no longer drives a plan. Every other source
    falls through to compose + emit.
-4. **Compose** via `compose(state, hook_event_name, tool_name=tool_name)`.
-   statusLine mode receives no hook stdin payload and composes with `event=None`
-   (the composer applies the active icon for non-terminal phases and the ✅
-   override for terminal ones); hook mode parses the JSON payload Claude Code
-   writes to stdin (best-effort — missing/malformed input yields `event=None`
-   and never raises).
+4. **Compose** via `compose(state, process_state)`, where the reader maps the
+   hook event and tool name to the target-neutral process state.
+   statusLine mode receives no hook stdin payload and composes with
+   `process_state=None` (the composer applies the active icon for non-terminal
+   phases and the ✅ override for terminal ones); hook mode parses the JSON
+   payload Claude Code writes to stdin (best-effort — missing/malformed input
+   yields `process_state=None` and never raises).
 5. **Emit the title** on the appropriate output channel (see Output Channels).
    `None`/empty composed string → no-op.
 
-### `session push-title-token` — direct `/dev/tty` push
+### `session push-title-token` — bind + persist state
 
-`session_push_title_token(plan_id, icon=None)` is the single canonical **repaint
-seam** — the live-push path shared by every persisted-title-state change. It reads
-the plan's title state from `status.json` via `_read_title_state`, composes via
-`compose(state, None, icon_override=icon)`, and writes the OSC escape
-(`\x1b]0;{composed}\x07`) directly to `/dev/tty`. The `--icon` argument is
-**optional**: a glyph push (⏳/🔒 from the lock machinery) supplies it, while a
-plain repaint omits it (`icon=None`) to re-render the current title with its
-default active icon. Three consumers drive this one seam:
+`session_push_title_token(plan_id, icon=None)` is the canonical **bind + persist
+seam** shared by every persisted-title-state change. It reads the plan's title
+state from `status.json` via `_read_title_state`, composes via
+`compose(state, None, icon_override=icon)`, and persists the composed state for
+the next render event to deliver. It **writes no escape sequence and repaints
+nothing** — per Channel Delivery Contract ruling (a) the `/dev/tty` write is
+deleted, and per ruling (b2) the paired repaint is deferred to the next hook
+event. The `--icon` argument is **optional**: a glyph state (⏳/🔒 from the lock
+machinery) supplies it, while a plain state refresh omits it (`icon=None`) to
+keep the default active icon. Two consumers drive this one seam:
 
-- **`manage-status`'s phase-write drive seam** — an icon-less repaint on every
-  `current_phase` write (see State above);
-- **`manage-locks/merge_lock.py`** — the ⏳/🔒 lock-state pushes on acquire/block,
-  AND a plain icon-less repaint on the release/clear path so the lock glyph
-  disappears live once the lock is released; and
-- the orchestration-layer `build-busy` bracketing (see
-  [`persona-plan-marshall-agent`](../../persona-plan-marshall-agent/SKILL.md)).
+- **`manage-status`'s phase-write drive seam** — an icon-less state persist on
+  every `current_phase` write (see State above); and
+- **`manage-locks/merge_lock.py`** — the ⏳/🔒 lock-state writes on
+  acquire/block, AND a plain icon-less write on the release/clear path so the
+  next render drops the lock glyph.
 
-This is the **FALLBACK** delivery channel — the primary one is the hook-written
-`terminalSequence` envelope (see Output Channels below), which needs no tty
-ownership. In this runtime no context holds a controlling terminal, so the
-`/dev/tty` push is **permanently inert** and the hook channel is the only one that
-lands; the push is still fired for the blocking windows no hook event spans, but
-its non-delivery is the expected case, not an exception.
+`build-busy` is NOT a consumer of this seam. The render-hook bracket
+(`PreToolUse:Bash` / `PostToolUse:Bash`) mutates the in-memory state dict
+directly and persists through `manage-status title-token set/clear --owner
+build-hook`, and the orchestrator wait seam persists through `title-token set
+--owner cli` (see [`await-long-running`](../../plan-marshall/workflow/await-long-running.md)
+§ step (b)) — neither calls `session push-title-token`.
 
 With `store="orchestrator"` (the orchestrator-epic variant driven by the
-orchestrator's per-verb repaint call) the push additionally **establishes the
-session→epic binding** (`bind_orchestrator`) BEFORE the `/dev/tty` attempt, so the
-next hook render resolves the epic and delivers its title on the PRIMARY channel —
-the `/dev/tty` write remains only the immediate blocking-window fallback. The
-orchestrator push also gates on the feature-activation signal, returning
-`reason: feature_inactive` when the terminal-title feature is configured off
-(distinct from the permanently-inert `no_controlling_tty` below).
+orchestrator's per-verb call) the seam additionally **establishes the
+session→epic binding** (`bind_orchestrator`), so the next hook render resolves
+the epic and delivers its title. That binding side effect is the load-bearing
+reason the seam survives ruling (a) at all. The orchestrator variant also gates
+on the feature-activation signal, returning `reason: feature_inactive` when the
+terminal-title feature is configured off.
 
-It is best-effort and never raises, but the outcome is **observable** rather than
-silently swallowed. The two no-push outcomes are distinguished on the return TOON:
+It is best-effort and never raises, and its outcome is **observable** rather than
+silently swallowed. The no-op outcomes are distinguished on the return TOON:
 
-| Outcome | `pushed` | `reason` | `delivery` |
-|---------|----------|----------|------------|
-| State absent / unrenderable | `false` | `no_title_state` | _(absent — no channel was attempted)_ |
-| Feature configured off (`store="orchestrator"` push) | `false` | `feature_inactive` | _(absent — the gate fired before any tty attempt)_ |
-| `/dev/tty` not openable (CI, background, dispatched agent) | `false` | `no_controlling_tty` | `dev_tty_fallback` |
-| Push landed | `true` | _(absent)_ | `dev_tty_fallback` |
+| Outcome | `reason` |
+|---------|----------|
+| State absent / unrenderable | `no_title_state` |
+| Feature configured off (`store="orchestrator"` variant) | `feature_inactive` |
+| State composed and persisted | _(absent)_ |
 
-The `manage-status` drive seam consumes that distinction: a repaint reported as
-non-delivered for any reason **other** than `no_title_state` writes one persisted
-`log_entry` to the plan work log (via `manage-logging`), so a silently-dead title
-channel is observable in the plan record instead of hidden at DEBUG on subprocess
-stderr. Every other failure path keeps its DEBUG level, and the seam still never
-alters the command's status or exit code.
+The return carries no `pushed` flag and no `delivery` field: both described the
+deleted `/dev/tty` channel, and a seam that never repaints has no delivery result
+to report. Delivery is the next render event's outcome, not this seam's.
 
 ### Session-Plan Binding
 
@@ -376,9 +577,9 @@ prevent path traversal and glob injection.
 | `session bind --plan-id {id} [--session-id {id}]` | `session_binding.bind` | **Last-driven-wins** unconditional write of the caller's OWN slot — NO protect-active, NO stale-slot reclaim, NO plan-dir-exists check. |
 | `session resolve-plan [--session-id {id}]` | `session_binding.resolve_plan` | Read side — returns the bound `plan_id` (or empty). `session render-title` resolves session→plan through it. |
 | `session doctor [--fix]` | `session_binding.doctor` | Reverse-index conflict scan + stale-slot GC + orphan-directory prune (see below). |
-| `session teardown` | `session_binding.unbind` | **Activation-gated** end-of-session retire: resets the tab to the terminal's own default and drops the caller's OWN slot (see below). |
+| `session teardown` | `session_binding.unbind` | **Activation-gated** end-of-session retire: drops the caller's OWN slot (see below). |
 
-#### `session teardown` — activation-gated title reset + unbind
+#### `session teardown` — activation-gated unbind
 
 `session teardown` is the end-of-session counterpart of `session bind` /
 `session render-title`. Order is load-bearing — the **activation signal is read
@@ -387,22 +588,23 @@ FIRST**:
 - **Inactive** (`_terminal_title_active()` is False — no render-hook entry on any
   render-trigger event AND no `statusLine` command in either
   `.claude/settings.json` or `.claude/settings.local.json`): the verb returns
-  `active: false` / `reason: feature_inactive` having written no title escape,
-  opened no `/dev/tty`, mutated no binding, and raised nothing. A project that
-  never opted into terminal titles is never touched. Any settings read failure
-  also reports inactive (fail-safe, not a guess).
-- **Active**: the session id is resolved from `$CLAUDE_CODE_SESSION_ID`, the
-  neutral-default reset escape `\x1b]0;\x07` — a bare OSC-0 with an **empty**
-  payload, which returns the tab to the terminal's own default rather than
-  painting some other string — is written to `/dev/tty` best-effort, and then
+  `active: false` / `reason: feature_inactive` having mutated no binding and
+  raised nothing. A project that never opted into terminal titles is never
+  touched. Any settings read failure also reports inactive (fail-safe, not a
+  guess).
+- **Active**: the session id is resolved from `$CLAUDE_CODE_SESSION_ID` and
   `session_binding.unbind` drops the caller's own slot (pruning the now-empty
-  session directory). `reset` and `unbound` are reported **independently**, so a
-  title reset that landed while the unbind failed (or the reverse, off a
-  controlling terminal) is visible rather than collapsed into one flag.
+  session directory), reporting `unbound`.
 
-Two call sites drive it: the `SessionStart:clear` render trigger (the renderer
-branches on `source == "clear"`, performs the teardown, and writes nothing to
-stdout) and `manage-status cmd_archive` (see Archive interaction above).
+The verb writes **no title reset escape**. Per Channel Delivery Contract ruling
+(a) the only channel it could have written that reset on — `/dev/tty` — is
+deleted, and per the binding rule *nothing may be reset on a channel that cannot
+deliver*. Releasing the binding is the whole of the teardown.
+
+**One call site drives it**: the `SessionStart:clear` render trigger (the
+renderer branches on `source == "clear"`, performs the teardown, and writes
+nothing to stdout). This is the **sole** binding-release point — ruling (b).
+`manage-status cmd_archive` does **not** call it (see Archive interaction above).
 
 #### Binding ownership — bind-on-drive, last-driven-wins
 
@@ -439,10 +641,18 @@ independently removes the failure mode a guard would defend against:
   `marshall-orchestrator/workflow/archive.md` — both invoke it with **no
   `--session-id`**, resolving only their own caller session. A second session
   bound to the same plan is therefore invisible to every read path.
-- **(b) `unbind` is self-scoped.** `unbind` and `session teardown` remove only the
-  **calling** session's own slot. One session tearing down can never drop a
-  sibling session's binding, so coexistence cannot produce a cross-session
-  release.
+- **(b) `unbind` is self-scoped *on the teardown path*.** `session teardown`
+  resolves the session id from the environment and removes only the **calling**
+  session's own slot, so one session tearing down can never drop a sibling
+  session's binding, and coexistence cannot produce a cross-session release
+  there. The claim is scoped to that path deliberately: `session_binding`'s
+  stale-slot GC (`_gc_slot`, reached from `doctor(fix=True)`) calls the same
+  `unbind` primitive with **other** sessions' ids. That is the one sanctioned
+  cross-session release, and it is safe for a different reason than
+  self-scoping — the GC acts only on a slot it has already classified stale
+  (its plan is gone AND its terminal state has been delivered), never on a live
+  binding. Reading (b) as a system-wide invariant would misdescribe the GC;
+  reading it as the teardown path's guarantee is exact.
 - **(c) There is no `session close` verb.** The operations set is `capture` /
   `render-title` / `push-title-token` / `bind` / `resolve-plan` / `doctor` /
   `teardown` / `reload-directive`. No verb takes a plan id and acts on *whichever*
@@ -466,7 +676,10 @@ and reports a **three-way** health picture:
 - **conflicts** — any plan bound by more than one session (two sessions driving
   the same plan);
 - **stale** slots — a slot whose bound plan is archived or deleted (its live plan
-  dir, on main OR in its phase-5+ worktree, is gone); and
+  dir, on main OR in its phase-5+ worktree, is gone) **and whose terminal state
+  has already been delivered**. A slot whose archived plan still owes an
+  undelivered terminal state is **exempt** and is not reported stale — the
+  state-driven exemption of Channel Delivery Contract ruling (c); and
 - **orphans** — a session directory that carries no binding at all, because its
   `active-plan` file is absent, empty, or unreadable. These are the residue the
   `unbind` prune could not remove, and the all-directories scan is what makes
@@ -486,8 +699,9 @@ from `gc_removed`.
 
 The scan keeps **NO shared mutable index** (no `index.json`) — it is per-file and
 idempotent, so it introduces no new shared-file TOCTOU hazard. Stale GC delivers
-release-on-exit implicitly: an archived plan's slot becomes GC-eligible, so no
-separate `session release` verb is needed.
+release-on-exit implicitly: an archived plan's slot becomes GC-eligible **once
+its terminal state has been delivered**, so no separate `session release` verb is
+needed.
 
 ##### Automatic caller and the main-anchored-caller invariant
 
@@ -555,7 +769,7 @@ fed from the one composed title:
 ## Platform Abstraction
 
 The Claude Code implementation (`claude_runtime.py`) emits the OSC sequence /
-statusLine text / sessionTitle described above and performs the `/dev/tty` push.
+statusLine text / sessionTitle described above.
 The OpenCode implementation is a **no-op** — OpenCode has no equivalent
 terminal-title channel, so the operation returns without emitting. The state side
 (`manage-status`) and the composer (`manage-terminal-title`) are

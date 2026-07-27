@@ -9,6 +9,7 @@ import json
 import logging
 import subprocess
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, NotRequired, TypedDict, cast
 
@@ -25,7 +26,7 @@ from file_ops import (
     write_json,
 )
 from input_validation import require_valid_plan_id  # noqa: F401 - re-exported
-from plan_logging import log_entry
+from plan_logging import log_entry  # noqa: F401 - re-exported
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,18 @@ class PhaseData(TypedDict):
     status: str  # pending | in_progress | done
 
 
+class TitleTokenRecord(TypedDict):
+    """The structured ``status.title_token`` record.
+
+    Specified once in ``manage-terminal-title/standards/terminal-title-architecture.md``
+    § Channel Delivery Contract ruling (c); this TypedDict is its Python shape.
+    """
+
+    owner: str
+    state: str
+    set_at: str
+
+
 class StatusData(TypedDict):
     """Type definition for status data structure."""
 
@@ -48,23 +61,41 @@ class StatusData(TypedDict):
     current_phase: str
     phases: list[PhaseData]
     metadata: NotRequired[dict[str, Any]]
-    title_token: NotRequired[str]
+    title_token: NotRequired[TitleTokenRecord]
     created: str
     updated: str
 
 
 # Valid title-token states — the two lock-coordination states (lock-waiting /
 # lock-owned) plus the orchestration-busy state (build-busy). The token is a
-# field-only marker written into status.json by the ``title-token set`` verb;
+# field-only record written into status.json by the ``title-token set`` verb;
 # manage-status performs NO rendering. The composition (glyph vocabulary +
 # ``{icon} {body}`` assembly) lives in ``manage-terminal-title`` — manage-status
-# only persists the bare state string so the per-target renderer can read it.
-# build-busy is written/cleared by the orchestration layer (not the lock
+# only persists the state record so the per-target renderer can read it.
+# build-busy is written/cleared by the build-hook render assist (not the lock
 # machinery) to surface a 🔨 build symbol for the duration of a long-running
 # orchestration Bash call; manage-terminal-title renders it as a token-keyed
 # icon-slot override, not a glyph.
 TITLE_TOKEN_BUILD_BUSY = 'build-busy'
 TITLE_TOKEN_STATES = frozenset({'lock-waiting', 'lock-owned', TITLE_TOKEN_BUILD_BUSY})
+
+# Owner vocabulary — the writer that set the token. ``build-hook`` is the
+# PreToolUse:Bash / PostToolUse:Bash render assist that brackets a build window,
+# ``merge-lock`` is manage-locks/merge_lock.py, and ``cli`` is an explicit
+# ``manage-status title-token set`` invocation from the orchestration layer.
+TITLE_TOKEN_OWNER_BUILD_HOOK = 'build-hook'
+TITLE_TOKEN_OWNER_MERGE_LOCK = 'merge-lock'
+TITLE_TOKEN_OWNER_CLI = 'cli'
+TITLE_TOKEN_OWNERS = frozenset(
+    {TITLE_TOKEN_OWNER_BUILD_HOOK, TITLE_TOKEN_OWNER_MERGE_LOCK, TITLE_TOKEN_OWNER_CLI}
+)
+
+# Aged-token staleness threshold, in seconds. Derived, not arbitrary: it
+# comfortably exceeds the longest architecture-resolved build ceiling in this
+# project (~1926 s for an unscoped whole-tree verify), so a live bracket can
+# never age out mid-call, while any process death that strands a token
+# self-heals within the hour without operator action.
+TITLE_TOKEN_STALE_AFTER_SECONDS = 3600
 
 
 # =============================================================================
@@ -82,10 +113,49 @@ def read_status(plan_id: str) -> dict[Any, Any]:
     return cast(dict[Any, Any], read_json(get_status_path(plan_id)))
 
 
-def write_status(plan_id: str, status: dict[Any, Any]) -> None:
-    """Write status.json for a plan."""
-    status['updated'] = now_utc_iso()
-    write_json(get_status_path(plan_id), status)
+def write_status(plan_id: str, status: dict[Any, Any], *, preserve_title_token: bool = True) -> None:
+    """Write status.json for a plan inside the serialized ``rmw_json`` critical section.
+
+    Every caller commits a WHOLE document assembled from a snapshot read taken
+    before its own mutation. ``title_token`` is the one field four independent
+    writers (the build-hook render assist, merge_lock's two lock surfaces, and
+    merge_lock's clear) mutate from separate executor subprocesses, so a plain
+    full-document overwrite carries a last-writer-wins window: a ``title-token
+    set`` committing between a caller's snapshot read and its write is silently
+    clobbered by the stale snapshot value. Committing here closes that window on
+    both counts — the O_EXCL guard serializes against ``cmd_title_token``'s own
+    critical section (same guard file, because both resolve the path through
+    ``get_status_path``), and the ``title_token`` carried into the committed
+    document is the one read INSIDE the guard rather than the caller's snapshot.
+
+    Guarding at this single seam rather than at individual phase-write call
+    sites is deliberate: every full-document writer in this skill shares the
+    hazard, so a per-call-site guard would be one call site short by
+    construction the moment a new writer is added.
+
+    Args:
+        plan_id: Plan whose ``status.json`` is written.
+        status: The whole document to commit. Mutated in place with the
+            refreshed ``updated`` stamp and the live ``title_token`` so the
+            caller's in-memory view matches what was committed.
+        preserve_title_token: When False the caller's own ``title_token`` value
+            — including its absence — wins over the live record. ``cmd_archive``
+            is the sole intended user: its unconditional full clear is a
+            deliberate design decision (an archived plan holds no live
+            coordination state worth arbitrating over), not an instance of the
+            race above.
+    """
+    def _apply(current: dict[str, Any]) -> dict[str, Any]:
+        if preserve_title_token:
+            live = current.get('title_token')
+            if live is None:
+                status.pop('title_token', None)
+            else:
+                status['title_token'] = live
+        status['updated'] = now_utc_iso()
+        return cast(dict[str, Any], status)
+
+    rmw_json(get_status_path(plan_id), _apply)
 
 
 def normalize_metadata(status: dict[Any, Any]) -> dict[Any, Any]:
@@ -407,21 +477,21 @@ def cmd_orchestrator_metadata(args: argparse.Namespace) -> dict[str, Any] | None
 # manage-status is the STATE layer: it writes status.json and composes/emits
 # NOTHING itself. On every persisted ``current_phase`` write the state layer
 # fires two best-effort, fire-and-forget delegations to ``platform-runtime`` —
-# a bind (session→plan, last-driven-wins; Defect 2) and a repaint (icon-optional
-# title push; Defect 1) — exactly mirroring how ``manage-locks/merge_lock.py``
+# a bind (session→plan, last-driven-wins) and a state settle (icon-optional
+# ``push-title-token``) — exactly mirroring how ``manage-locks/merge_lock.py``
 # delegates its title-token surface. Both are invoked through the executor as a
 # subprocess (the established merge_lock channel, not a fragile file-path import
 # across the multi-module platform-runtime layout) and fully swallow every
 # failure, so a delegation error NEVER alters the status-write outcome or exit
-# code. The single shared ``_surface_drive`` helper is the ONE home both phase
-# writers (``cmd_create`` / ``cmd_transition`` / ``cmd_set_phase``) share.
+# code. The single shared ``_surface_drive`` helper is the ONE home every phase
+# writer (``cmd_create`` / ``cmd_transition`` / ``cmd_set_phase`` /
+# ``cmd_archive``) shares.
 #
-# A third delegation rides the same channel at the OTHER end of the lifecycle:
-# ``_drive_teardown``, fired by ``cmd_archive`` once the plan directory has
-# moved. Where the repaint keeps a LIVE plan's title current, the teardown
-# retires a finished one — resetting the tab to the terminal's own default and
-# releasing the session's plan binding. It is activation-gated inside the
-# delegate, so a project without terminal-title wiring is never touched.
+# Neither delegation DELIVERS a title. The hook render channel is event-driven,
+# so a writer discharges its delivery obligation by settling the state the NEXT
+# render event reads — which is also why ``cmd_archive`` must keep the session
+# binding alive rather than releasing it: that binding is the pending render's
+# only route back to the archived plan.
 
 _PLATFORM_RUNTIME_NOTATION = 'plan-marshall:platform-runtime:platform_runtime'
 
@@ -468,151 +538,21 @@ def _drive_bind(plan_id: str) -> None:
     _run_executor(_PLATFORM_RUNTIME_NOTATION, 'session', 'bind', '--plan-id', plan_id)
 
 
-def _parse_drive_reply(
-    completed: 'subprocess.CompletedProcess[str] | None',
-) -> dict[Any, Any] | None:
-    """Parse a drive-seam delegate's TOON stdout into a dict, else None.
-
-    The shared parse half of the observable-non-delivery pattern: both
-    :func:`_repaint_non_delivery_reason` and
-    :func:`_teardown_non_delivery_reason` read their delegate's reply through
-    this one helper, so the parse discipline (the shared ``toon_parser``, never
-    a hand-rolled scan) is stated once.
-
-    Returns ``None`` whenever the reply is unusable: no completed process, empty
-    stdout, an unavailable parser, a parse failure, or a non-dict payload.
-    """
-    if completed is None or not completed.stdout:
-        return None
-    try:
-        from toon_parser import parse_toon
-    except ImportError as exc:
-        logger.debug('drive-seam reply unparsed (toon_parser unavailable): %s', exc)
-        return None
-    try:
-        reply = parse_toon(completed.stdout)
-    except Exception as exc:  # noqa: BLE001 — drive seam is best-effort
-        logger.debug('drive-seam reply unparsed: %s', exc)
-        return None
-    return reply if isinstance(reply, dict) else None
-
-
-def _repaint_non_delivery_reason(completed: 'subprocess.CompletedProcess[str] | None') -> str | None:
-    """Return the reportable non-delivery ``reason`` from a repaint reply, else None.
-
-    Reads the delegate's reply via :func:`_parse_drive_reply` and returns
-    ``reason`` only when the delegate reported ``pushed: false`` with a reason
-    OTHER than ``no_title_state``. A plan with no persisted title state is the
-    ordinary "nothing to paint" case and stays at DEBUG; ``no_controlling_tty`` —
-    the push channel genuinely failing to reach a terminal — is what the caller
-    surfaces.
-
-    Returns ``None`` whenever there is nothing to report: an unusable reply, a
-    successful push, or the ``no_title_state`` case.
-    """
-    reply = _parse_drive_reply(completed)
-    if reply is None or reply.get('pushed') is not False:
-        return None
-    reason = reply.get('reason')
-    if not isinstance(reason, str) or reason in ('', 'no_title_state'):
-        return None
-    return reason
-
-
-def _teardown_non_delivery_reason(completed: 'subprocess.CompletedProcess[str] | None') -> str | None:
-    """Return the reportable non-delivery reason from a teardown reply, else None.
-
-    The teardown counterpart of :func:`_repaint_non_delivery_reason`, sharing its
-    parse half via :func:`_parse_drive_reply` and its filter shape. The teardown
-    delegate reports its two halves INDEPENDENTLY (``reset`` for the title reset,
-    ``unbound`` for the session-binding release), so either half failing is a
-    reportable non-delivery and both are named when both failed.
-
-    An inactive delegate (``active: false`` — a project that never wired up
-    terminal titles, reported as ``reason: feature_inactive``) is the ordinary
-    nothing-to-do case and returns ``None``, mirroring how the repaint side
-    treats ``no_title_state``.
-    """
-    reply = _parse_drive_reply(completed)
-    if reply is None or reply.get('active') is not True:
-        return None
-    failures = []
-    if reply.get('reset') is False:
-        failures.append('title_reset_failed')
-    if reply.get('unbound') is False:
-        failures.append('binding_release_failed')
-    return ', '.join(failures) or None
-
-
-def _drive_teardown(plan_id: str) -> None:
-    """Best-effort ``session teardown`` — the live-surface counterpart of archive.
-
-    Fired by ``cmd_archive`` after the plan directory has moved: the archived
-    plan has no live session driving its terminal title, so the title is reset to
-    the terminal's own default and the session's plan binding is released. Runs
-    through the SAME best-effort executor channel :func:`_drive_bind` /
-    :func:`_drive_repaint` use, and the delegate is itself activation-gated — a
-    project that never wired up terminal titles is left untouched.
-
-    ``plan_id`` names the archived plan for the audit trail only — the teardown
-    operates on the CALLER SESSION's own binding, not on a plan-scoped slot, so
-    it takes no plan argument.
-
-    A non-delivery is OBSERVABLE rather than DEBUG-swallowed, exactly as in
-    :func:`_drive_repaint`: when the activated delegate reports a failed title
-    reset and/or a failed binding release (in practice off a controlling
-    terminal), one persisted ``log_entry`` (the manage-logging work log) names
-    the plan and the reason, so the dead channel reaches the plan record instead
-    of only subprocess stderr. An inactive delegate and every other failure path
-    keep their DEBUG level.
-
-    Fully exception-swallowing, mirroring :func:`_surface_drive`: a delegation
-    failure never changes the archive command's status or exit code — only the
-    observability of a non-delivery changes.
-    """
-    try:
-        logger.debug('drive-seam teardown fired after archiving %s', plan_id)
-        completed = _run_executor(_PLATFORM_RUNTIME_NOTATION, 'session', 'teardown')
-        reason = _teardown_non_delivery_reason(completed)
-        if reason is not None:
-            # Persist the non-delivery to the plan work log via manage-logging
-            # (log_entry) instead of a stderr-only logger.warning, so a dead
-            # title channel is OBSERVABLE in the plan record. log_entry is itself
-            # best-effort (it swallows every I/O error internally), and this call
-            # sits inside the surrounding best-effort try/except, so a logging
-            # failure never changes the archive command's status or exit code.
-            log_entry('work', plan_id, 'WARNING', f'title teardown not delivered for {plan_id}: {reason}')
-    except Exception as exc:  # noqa: BLE001 — drive seam is best-effort
-        logger.debug('drive-seam teardown for %s failed: %s', plan_id, exc)
-
-
 def _drive_repaint(plan_id: str) -> None:
-    """Best-effort ``session push-title-token --plan-id {id}`` (no icon; Defect 1).
+    """Best-effort ``session push-title-token --plan-id {id}`` (no icon).
 
-    The push runs with no ``--icon`` — a plain repaint of the freshly composed
-    title with the default active icon, so the title bar reflects the new phase
-    immediately instead of freezing at the last-rendered phase.
+    The delegate runs with no ``--icon``, settling the freshly composed title
+    state with its default active icon so the NEXT render event paints the new
+    phase instead of the last-rendered one.
 
-    A non-delivery is OBSERVABLE rather than DEBUG-swallowed: when the delegate
-    replies ``pushed: false`` with a reason other than ``no_title_state`` (in
-    practice ``no_controlling_tty`` — the ``/dev/tty`` fallback channel could not
-    reach a terminal), one persisted ``log_entry`` (the manage-logging work log)
-    names the plan and the reason, so the dead channel reaches the plan record
-    instead of only subprocess stderr. Every other failure path keeps its DEBUG
-    level, and the seam still never alters the command's status or exit code.
+    The seam reports no delivery outcome, because it performs no delivery: the
+    hook render channel is event-driven, so the repaint this call enables happens
+    at the next render event, not here. There is consequently no non-delivery to
+    surface — a reply the delegate can only answer with ``no_title_state`` (the
+    ordinary "nothing to settle" case) stays at DEBUG. Never alters the command's
+    status or exit code.
     """
-    completed = _run_executor(
-        _PLATFORM_RUNTIME_NOTATION, 'session', 'push-title-token', '--plan-id', plan_id
-    )
-    reason = _repaint_non_delivery_reason(completed)
-    if reason is not None:
-        # Persist the non-delivery to the plan work log via manage-logging
-        # (log_entry) instead of a stderr-only logger.warning, so a dead title
-        # channel is OBSERVABLE in the plan record. log_entry is itself
-        # best-effort (it swallows every I/O error internally), and _drive_repaint
-        # already runs under _surface_drive's best-effort try/except, so a logging
-        # failure never changes the phase-write command's status or exit code.
-        log_entry('work', plan_id, 'WARNING', f'title repaint not delivered for {plan_id}: {reason}')
+    _run_executor(_PLATFORM_RUNTIME_NOTATION, 'session', 'push-title-token', '--plan-id', plan_id)
 
 
 def _surface_drive(plan_id: str) -> None:
@@ -631,22 +571,58 @@ def _surface_drive(plan_id: str) -> None:
         logger.debug('drive-seam surface for %s failed: %s', plan_id, exc)
 
 
-def drop_stale_build_busy(status: dict[Any, Any]) -> bool:
-    """Clear a stale ``build-busy`` title-token from ``status`` in place.
+def _parse_set_at(set_at: Any) -> datetime | None:
+    """Parse a ``set_at`` field into an aware UTC datetime, or ``None``.
 
-    Pops ``status['title_token']`` iff its value equals
-    :data:`TITLE_TOKEN_BUILD_BUSY`, returning ``True`` when it popped and
-    ``False`` otherwise. Called by the phase writers (``cmd_transition`` /
-    ``cmd_set_phase``) immediately before ``write_status`` so a ``build-busy``
-    token left behind by an interrupted long-running orchestration call does not
-    survive the phase transition and freeze a stale 🔨 in the title bar. The
-    lock-coordination tokens (``lock-waiting`` / ``lock-owned``) are deliberately
-    left untouched — the clear is scoped to ``build-busy`` only.
+    Tolerates every malformed shape (absent, non-string, unparseable) by
+    returning ``None`` — an unreadable timestamp is treated as "age unknown"
+    by :func:`title_token_is_stale`, never as an exception.
     """
-    if status.get('title_token') == TITLE_TOKEN_BUILD_BUSY:
-        status.pop('title_token', None)
+    if not isinstance(set_at, str) or not set_at:
+        return None
+    try:
+        parsed = datetime.fromisoformat(set_at.replace('Z', '+00:00'))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
+
+
+def title_token_is_stale(record: Any, *, now: datetime | None = None) -> bool:
+    """Age-based staleness predicate for a ``title_token`` record.
+
+    A record is stale when it is structurally unusable (not a mapping, or
+    carrying a ``state`` outside :data:`TITLE_TOKEN_STATES`), when its
+    ``set_at`` cannot be parsed, or when its ``set_at`` is older than
+    :data:`TITLE_TOKEN_STALE_AFTER_SECONDS`. A stale token may be cleared or
+    replaced by ANY writer, which is what lets a stranded token self-heal
+    without operator action.
+
+    The predicate is applied on every READ of the token rather than swept at a
+    phase boundary: a phase-boundary sweep only fires when a phase happens to
+    change, so a stranded token could outlive it indefinitely.
+    """
+    if not isinstance(record, dict):
         return True
-    return False
+    if record.get('state') not in TITLE_TOKEN_STATES:
+        return True
+    parsed = _parse_set_at(record.get('set_at'))
+    if parsed is None:
+        return True
+    reference = now if now is not None else datetime.now(UTC)
+    return (reference - parsed).total_seconds() > TITLE_TOKEN_STALE_AFTER_SECONDS
+
+
+def read_title_token(status: dict[Any, Any], *, now: datetime | None = None) -> dict[str, Any] | None:
+    """Return the live ``title_token`` record from ``status``, or ``None``.
+
+    The single read-side accessor: it applies :func:`title_token_is_stale` so
+    every consumer sees a stale token as absent. It does NOT mutate ``status``
+    — staleness is a read-side property, so no writer has to sweep.
+    """
+    record = status.get('title_token')
+    if title_token_is_stale(record, now=now):
+        return None
+    return cast(dict[str, Any], record)
 
 
 # Phase routing maps phase names to skills (for route command).

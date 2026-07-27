@@ -52,6 +52,8 @@ from _cmd_routing import cmd_get_routing_context, cmd_route, cmd_self_test
 from _cmd_sibling_collision import cmd_sibling_collision
 from _status_core import (
     ORCHESTRATOR_STORE,
+    TITLE_TOKEN_OWNER_CLI,
+    TITLE_TOKEN_OWNERS,
     TITLE_TOKEN_STATES,
     cmd_orchestrator_create,
     cmd_orchestrator_metadata,
@@ -212,12 +214,15 @@ def main() -> int:
     # title-token (set | clear)
     title_token_parser = subparsers.add_parser(
         'title-token',
-        help='Set or clear the field-only title_token marker in status.json (no rendering)',
+        help='Set or clear the owner-scoped title_token record in status.json (no rendering)',
         description=(
-            'Write or remove the bare title_token state string in '
-            'status.title_token. manage-status performs NO rendering — the '
-            'composition (glyph vocabulary + {icon} {body} assembly) lives in '
-            'manage-terminal-title. This verb only persists the state so the '
+            'Write or remove the structured {owner, state, set_at} title_token '
+            'record in status.title_token. A set from any owner replaces the '
+            'record wholesale (last writer wins); a clear is owner-scoped and '
+            'succeeds only for the recorded owner or a stale record. '
+            'manage-status performs NO rendering — the composition (glyph '
+            'vocabulary + {icon} {body} assembly) lives in '
+            'manage-terminal-title. This verb only persists the record so the '
             'per-target renderer can read it.'
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -227,7 +232,7 @@ def main() -> int:
 
     title_token_set_parser = title_token_subparsers.add_parser(
         'set',
-        help='Write status.title_token = {state}',
+        help='Write the {owner, state, set_at} record into status.title_token',
         allow_abbrev=False,
     )
     add_plan_id_arg(title_token_set_parser)
@@ -237,14 +242,26 @@ def main() -> int:
         choices=sorted(TITLE_TOKEN_STATES),
         help='Title-token state to persist into status.title_token.',
     )
+    title_token_set_parser.add_argument(
+        '--owner',
+        default=TITLE_TOKEN_OWNER_CLI,
+        choices=sorted(TITLE_TOKEN_OWNERS),
+        help='Writer that owns the token. Only this owner may later clear it.',
+    )
     title_token_set_parser.set_defaults(func=cmd_title_token)
 
     title_token_clear_parser = title_token_subparsers.add_parser(
         'clear',
-        help='Remove the status.title_token field (idempotent)',
+        help='Remove status.title_token when owned by --owner or stale (idempotent)',
         allow_abbrev=False,
     )
     add_plan_id_arg(title_token_clear_parser)
+    title_token_clear_parser.add_argument(
+        '--owner',
+        default=TITLE_TOKEN_OWNER_CLI,
+        choices=sorted(TITLE_TOKEN_OWNERS),
+        help='Writer requesting the clear. A foreign-owned live token is not cleared.',
+    )
     title_token_clear_parser.set_defaults(func=cmd_title_token)
 
     # get-context

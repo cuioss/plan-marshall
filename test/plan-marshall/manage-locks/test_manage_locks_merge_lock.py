@@ -86,6 +86,12 @@ merge_lock = load_script_module('plan-marshall', 'manage-locks', 'merge_lock.py'
 # global, so a monkeypatch on merge_lock._run_executor still takes effect).
 _REAL_PUSH_TITLE_TOKEN = merge_lock._push_title_token
 
+# Same rationale for the set/clear wrappers: the owner-scoping tests below must
+# exercise the REAL wrappers to observe the constructed argv, not the autouse
+# _TokenRecorder stubs that replace them for every other test.
+_REAL_SET_TITLE_TOKEN = merge_lock._set_title_token
+_REAL_CLEAR_TITLE_TOKEN = merge_lock._clear_title_token
+
 # The shared core owns the [LOCK]-log resolver and the best-effort emission
 # swallow. ``merge_lock`` does ``from _locks_core import log_lock_event``, so the
 # function closes over the _locks_core module that ``merge_lock`` imported — that
@@ -1939,6 +1945,64 @@ class TestLiveWorktreeReclaimGuard:
         assert merge_lock._ICON_LOCK_WAITING == '⏳'
         assert merge_lock._STATE_LOCK_OWNED == 'lock-owned'
         assert merge_lock._STATE_LOCK_WAITING == 'lock-waiting'
+
+
+class TestTitleTokenOwnerScoping:
+    """The lock title surface writes and clears under the ``merge-lock`` owner.
+
+    Ownership is what keeps this surface and a concurrent build bracket from
+    clobbering each other: the lock's writes are stamped, and its clear is
+    owner-scoped so a foreign live token survives it. Because the arbitration
+    itself lives in ``manage-status``, the contract this surface owes is the
+    constructed ARGV — the owner flag must actually reach the wire, which is why
+    these assertions are made at the lowest subprocess primitive
+    (``_run_executor``) rather than against a higher-level stub.
+    """
+
+    def test_set_stamps_the_merge_lock_owner_on_the_wire(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        calls: list[tuple] = []
+        monkeypatch.setattr(
+            merge_lock, '_run_executor', lambda notation, *args: calls.append((notation, args))
+        )
+
+        _REAL_SET_TITLE_TOKEN('plan-a', merge_lock._STATE_LOCK_OWNED)
+
+        assert calls[0][1] == (
+            'title-token', 'set', '--plan-id', 'plan-a',
+            '--state', 'lock-owned', '--owner', 'merge-lock',
+        )
+
+    def test_clear_is_scoped_to_the_merge_lock_owner_on_the_wire(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The clear carries ``--owner merge-lock``, so manage-status refuses it
+        against a live ``build-hook``-owned token.
+
+        Without the flag the clear would default to the ``cli`` owner and could
+        neither retire this surface's own token nor be refused correctly — the
+        flag's presence is the whole mechanism, so it is asserted explicitly.
+        """
+        calls: list[tuple] = []
+        monkeypatch.setattr(
+            merge_lock, '_run_executor', lambda notation, *args: calls.append((notation, args))
+        )
+
+        _REAL_CLEAR_TITLE_TOKEN('plan-a')
+
+        assert calls[0][1] == (
+            'title-token', 'clear', '--plan-id', 'plan-a', '--owner', 'merge-lock',
+        )
+
+    def test_owner_constant_is_in_the_manage_status_vocabulary(self) -> None:
+        """The owner this surface stamps must be a member of the closed
+        ``TITLE_TOKEN_OWNERS`` vocabulary manage-status validates against — an
+        out-of-vocabulary owner would be argparse-rejected at every write."""
+        core = load_script_module(
+            'plan-marshall', 'manage-status', '_status_core.py', '_status_core_for_lock_owner'
+        )
+        assert merge_lock._TITLE_TOKEN_OWNER in core.TITLE_TOKEN_OWNERS
 
 
 # =============================================================================

@@ -19,10 +19,11 @@ Composition has three independent inputs:
   ``Orchestrator-{SlugName}`` when the passed state dict carries
   ``kind: orchestrator`` (the slug comes from the state's ``slug`` field).
   See :func:`_compose_body`.
-* **Glyph** — the ``title_token`` lock-state glyph (⏳/🔒), prepended when set
-  for an active phase. Suppressed for terminal phases regardless of the
-  persisted token state — a finished plan holds no live lock state. See
-  :data:`TITLE_TOKEN_GLYPHS`.
+* **Glyph** — the lock-state glyph (⏳/🔒) read from the structured
+  ``{owner, state, set_at}`` ``title_token`` record via
+  :func:`title_token_state`, prepended when set for an active phase. Suppressed
+  for terminal phases regardless of the persisted token state — a finished plan
+  holds no live lock state. See :data:`TITLE_TOKEN_GLYPHS`.
 * **Icon** — the process icon resolved from a target-neutral process state (➤
   active / ? waiting / ⚙ busy / ✓ done), with two token/phase-keyed overrides
   layered on top by :func:`compose`: a terminal-state override to ✅
@@ -38,6 +39,8 @@ passes that neutral state in.
 """
 
 from __future__ import annotations
+
+from datetime import UTC, datetime
 
 # --- Process-state enum (target-neutral) ------------------------------------
 #
@@ -87,12 +90,58 @@ _PROCESS_STATE_ICONS: dict[str, str] = {
 # --- Title-token glyph vocabulary (lock state → glyph) ----------------------
 #
 # The two lock-coordination states surfaced inline in the terminal title.
-# ``manage-status`` persists only the bare state string in the ``title_token``
-# field; this map is the single owner of the state → glyph rendering.
+# ``manage-status`` persists a ``{owner, state, set_at}`` record in the
+# ``title_token`` field; this map is the single owner of the state → glyph
+# rendering and is keyed on the record's ``state``.
 TITLE_TOKEN_GLYPHS: dict[str, str] = {
     "lock-waiting": "⏳",  # ⏳
     "lock-owned": "\U0001f512",  # 🔒
 }
+
+# Aged-token staleness threshold in seconds — mirrors
+# ``manage-status/scripts/_status_core.TITLE_TOKEN_STALE_AFTER_SECONDS``. The
+# two constants are duplicated across a deliberate module boundary: this
+# composer is a pure leaf library that imports neither manage-status nor
+# platform-runtime, and importing one to share a scalar would break that.
+TITLE_TOKEN_STALE_AFTER_SECONDS = 3600
+
+
+def title_token_state(
+    state_dict: dict[str, object], *, now: datetime | None = None
+) -> str | None:
+    """Extract the live ``title_token`` state marker from *state_dict*.
+
+    Reads the structured ``{owner, state, set_at}`` record and returns its
+    ``state`` marker, or ``None`` when no usable token is present. A record that
+    is not a mapping, or that carries no string ``state``, reads as absent.
+
+    Staleness is OPT-IN via *now*: when an instant is supplied, a record whose
+    ``set_at`` is older than :data:`TITLE_TOKEN_STALE_AFTER_SECONDS` also reads
+    as absent. This keeps the function pure — the clock is an argument, never a
+    read — so :func:`compose` can call it with ``now=None`` and stay free of any
+    clock read. The reader that loaded ``status.json`` is the layer that already
+    touches the outside world, so it is the layer that supplies ``now``.
+    """
+    record = state_dict.get("title_token")
+    if not isinstance(record, dict):
+        return None
+    marker = record.get("state")
+    if not isinstance(marker, str) or not marker:
+        return None
+    if now is None:
+        return marker
+    raw_set_at = record.get("set_at")
+    if not isinstance(raw_set_at, str) or not raw_set_at:
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw_set_at.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    if (now - parsed).total_seconds() > TITLE_TOKEN_STALE_AFTER_SECONDS:
+        return None
+    return marker
 
 # The orchestration-busy title-token. Deliberately ABSENT from
 # ``TITLE_TOKEN_GLYPHS``: ``build-busy`` is rendered as a token-keyed **icon-slot
@@ -148,8 +197,40 @@ def resolve_icon(process_state: str | None) -> str:
     return _PROCESS_STATE_ICONS.get(process_state, _ICON_ACTIVE)  # type: ignore[arg-type]
 
 
+_CONTROL_CHAR_MAP = dict.fromkeys(range(0x20)) | {0x7F: None}
+"""``str.translate`` deletion map for the ASCII C0 control range (0x00-0x1F)
+plus DEL (0x7F). Applied to every externally-derived text segment
+:func:`_compose_body` interpolates into the title body — see
+:func:`_strip_control_chars`."""
+
+
+def _strip_control_chars(text: str) -> str:
+    """Strip ASCII control characters (C0 range + DEL) from *text*.
+
+    ``_compose_body`` is the single point where plan-derived free text
+    (``short_description``, the orchestrator ``slug``) enters the title body
+    that :func:`compose` returns. Both the Claude runtime's OSC-0 terminal
+    title-set escape (``ESC ]0;{body} BEL``) and the ``hookSpecificOutput``
+    ``sessionTitle`` / ``statusLine`` channels embed that body verbatim, so an
+    unstripped ESC (0x1B) or BEL (0x07) byte in the source text would let the
+    body terminate the escape sequence early and splice in attacker-controlled
+    follow-on terminal escapes (OSC/terminal-escape injection). Stripping the
+    full C0 control range (not just ESC/BEL) here — at composition, the single
+    shared point every render/push channel consumes — closes the sink without
+    each channel having to duplicate the guard. Whitespace-collapsing upstream
+    (``derive_short_description``) does not cover this: its ``\\s+`` regex
+    does not match ESC/BEL.
+    """
+    return text.translate(_CONTROL_CHAR_MAP)
+
+
 def _compose_body(state_dict: dict[str, object]) -> str | None:
     """Render the title body from the passed state dict.
+
+    Every externally-derived text segment (``short_description``, the
+    orchestrator ``slug``) is passed through :func:`_strip_control_chars`
+    before interpolation, so the returned body can never smuggle a raw ESC/BEL
+    byte into a consumer that embeds it in a terminal escape sequence.
 
     Returns:
 
@@ -170,7 +251,7 @@ def _compose_body(state_dict: dict[str, object]) -> str | None:
     """
     if state_dict.get("kind") == _KIND_ORCHESTRATOR:
         slug = state_dict.get("slug")
-        slug_str = slug.strip() if isinstance(slug, str) else ""
+        slug_str = _strip_control_chars(slug.strip()) if isinstance(slug, str) else ""
         if not slug_str:
             return None
         return f"{_ORCHESTRATOR_BODY_PREFIX}-{slug_str}"
@@ -180,7 +261,7 @@ def _compose_body(state_dict: dict[str, object]) -> str | None:
         return None
 
     short = state_dict.get("short_description")
-    short_str = short.strip() if isinstance(short, str) else ""
+    short_str = _strip_control_chars(short.strip()) if isinstance(short, str) else ""
 
     if phase in _TERMINAL_PHASES:
         label = _COMPLETED_PHASE_LABEL
@@ -204,9 +285,13 @@ def compose(
 
     Args:
         state_dict: The plan state — ``current_phase`` (str), optional
-            ``short_description`` (str), and optional ``title_token`` (one of
-            the :data:`TITLE_TOKEN_GLYPHS` keys for a glyph state, or
-            :data:`_TITLE_TOKEN_BUILD_BUSY` for the 🔨 icon-slot override).
+            ``short_description`` (str), and optional ``title_token`` (the
+            ``{owner, state, set_at}`` record, whose ``state`` is one of the
+            :data:`TITLE_TOKEN_GLYPHS` keys for a glyph state, or
+            :data:`_TITLE_TOKEN_BUILD_BUSY` for the 🔨 icon-slot override). The
+            record is read through :func:`title_token_state`; staleness is
+            resolved by the reader that loaded the state, so ``compose``
+            performs no clock read and stays pure.
             Alternatively an orchestrator state — ``kind: orchestrator`` plus
             ``slug`` (str) — which composes the ``Orchestrator-{SlugName}``
             body; icon and glyph slots keep their existing semantics.
@@ -261,7 +346,7 @@ def compose(
 
     phase = state_dict.get("current_phase")
     is_terminal = isinstance(phase, str) and phase in _TERMINAL_PHASES
-    token = state_dict.get("title_token")
+    token = title_token_state(state_dict)
     is_build_busy = token == _TITLE_TOKEN_BUILD_BUSY
     if is_terminal:
         icon = _ICON_TERMINAL
@@ -278,7 +363,7 @@ def compose(
     # uniformly suppressed for a terminal plan. The glyph only renders for
     # active phases.
     if not is_terminal:
-        glyph = TITLE_TOKEN_GLYPHS.get(token) if isinstance(token, str) else None
+        glyph = TITLE_TOKEN_GLYPHS.get(token) if token is not None else None
         if glyph:
             return f"{icon} {glyph} {body}"
 

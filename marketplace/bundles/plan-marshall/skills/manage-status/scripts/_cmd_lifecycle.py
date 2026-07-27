@@ -14,9 +14,7 @@ from _handshake_commands import cmd_capture, cmd_verify
 from _invariants import _BLOCKING_BOUNDARIES
 from _short_description import derive_short_description
 from _status_core import (
-    _drive_teardown,
     _surface_drive,
-    drop_stale_build_busy,
     get_archive_dir,
     get_status_path,
     log_entry,
@@ -374,13 +372,10 @@ def cmd_transition(args: argparse.Namespace) -> dict[str, Any] | None:
         # produce the same end-state.
         status['current_phase'] = 'complete'
 
-    # Clear a stale build-busy title-token before persisting the phase advance:
-    # a long-running orchestration call that was interrupted before its own
-    # clear can leave a build-busy token behind, which would otherwise freeze a
-    # 🔨 in the title bar across the transition. Scoped to build-busy only —
-    # lock-coordination tokens are left untouched.
-    drop_stale_build_busy(status)
-
+    # No title-token sweep here: staleness is a READ-side property resolved by
+    # the aged-token predicate (_status_core.title_token_is_stale), not a
+    # transition-side one. A transition-side sweep only fires when a phase
+    # happens to change, so a stranded token could outlive it indefinitely.
     write_status(args.plan_id, status)
     # Persisted-title-state-write drive seam (best-effort, fire-and-forget):
     # a phase advance is a current_phase write, so bind + repaint fire here so
@@ -442,13 +437,12 @@ def cmd_archive(args: argparse.Namespace) -> dict[str, Any] | None:
     if all(p.get('status') == PHASE_STATUS_DONE for p in phases):
         status['current_phase'] = 'complete'
     # Drop any in-flight terminal-title token (any TITLE_TOKEN_STATES value —
-    # lock-waiting/lock-owned/build-busy) before archiving. An archived plan has
-    # no live session driving its terminal title, so a token left behind would
-    # persist a stale glyph in the archived snapshot. Token-agnostic: a single
-    # pop covers every TITLE_TOKEN_STATES value. Its live-surface counterpart is
-    # the ``_drive_teardown`` call after the move below: the pop retires the
-    # PERSISTED token, the teardown retires the LIVE terminal title and the
-    # session's plan binding.
+    # lock-waiting/lock-owned/build-busy) before archiving. An archived plan
+    # holds no live coordination state worth arbitrating over, so this pop is
+    # owner-agnostic: a single pop covers every record regardless of its owner.
+    # ``preserve_title_token=False`` on the write below is what makes the pop
+    # stick — the default write path deliberately carries the live record over,
+    # and archive is the one writer that intends to discard it.
     status.pop('title_token', None)
     # Persist optional --reason into status.metadata.archived_reason before
     # write_status so the archived status.json carries the structured reason.
@@ -458,18 +452,25 @@ def cmd_archive(args: argparse.Namespace) -> dict[str, Any] | None:
     if reason is not None:
         metadata = status.setdefault('metadata', {})
         metadata['archived_reason'] = reason
-    write_status(args.plan_id, status)
+    write_status(args.plan_id, status, preserve_title_token=False)
+
+    # This write makes the plan terminal and drops its token, so its RENDERED
+    # projection changes — which obliges a paired delivery exactly as every other
+    # current_phase write does. Fired here, BEFORE the move, while the live plan
+    # path still resolves. The seam binds and settles the state; the repaint is
+    # deferred to the next hook event, which reads the archived status.json
+    # through this very binding.
+    _surface_drive(args.plan_id)
 
     archive_dir.mkdir(parents=True, exist_ok=True)
     shutil.move(str(plan_dir), str(archive_path))
 
-    # Live-surface teardown (best-effort, fire-and-forget): the title_token pop
-    # above retires the PERSISTED token; this retires the LIVE surface — it
-    # resets the terminal tab to its own default and releases the session's plan
-    # binding, so the finished plan leaves neither a stale title nor a stale
-    # binding behind. Activation-gated inside the delegate, and never able to
-    # change this command's status or exit code.
-    _drive_teardown(args.plan_id)
+    # NO binding release here, deliberately. The terminal title this archive just
+    # persisted is painted by the NEXT hook event, which can only resolve the plan
+    # while the session binding survives — releasing it here would destroy the
+    # delivery route for the state we just wrote. SessionStart:clear is the sole
+    # release point, and `session doctor` exempts this slot from GC until the
+    # terminal state has actually been delivered.
 
     return {'status': 'success', 'plan_id': args.plan_id, 'archived_to': str(archive_path)}
 

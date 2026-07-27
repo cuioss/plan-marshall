@@ -2,23 +2,36 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the field-only ``title-token`` verb of manage-status.py.
 
-The ``title-token`` verb persists a bare state string into
-``status.title_token`` and performs NO rendering — the composition (glyph
-vocabulary + ``{icon} {body}`` assembly) lives in ``manage-terminal-title``.
-These tests cover:
+The ``title-token`` verb persists a structured ``{owner, state, set_at}``
+record into ``status.title_token`` and performs NO rendering — the composition
+(glyph vocabulary + ``{icon} {body}`` assembly) lives in
+``manage-terminal-title``. These tests cover:
 
-- ``set`` writes each of the three ``TITLE_TOKEN_STATES`` into status.json.
+- ``set`` writes the record for each of the three ``TITLE_TOKEN_STATES``,
+  stamped with the caller's owner and a fresh ``set_at``.
+- Last-writer arbitration: a ``set`` from ANY owner replaces the record
+  wholesale, while ``clear`` is OWNER-SCOPED — a foreign clear is a reported
+  no-op.
+- Aged-token staleness: a record older than
+  ``TITLE_TOKEN_STALE_AFTER_SECONDS`` reads as absent and may be cleared by
+  ANY owner. Staleness is READ-side — the phase writers perform no sweep.
 - ``clear`` removes the ``title_token`` field, and is idempotent when the
   field is already absent.
-- An invalid ``--state`` is rejected by argparse (exit code 2) before the
-  command body runs.
+- An invalid ``--state`` / ``--owner`` is rejected by argparse (exit code 2)
+  before the command body runs.
 - The verb writes NO ``title-body.txt`` rendering artifact — manage-status is
   field-only.
+
+The record shape, owner vocabulary, arbitration rule, and staleness threshold
+are specified in
+``manage-terminal-title/standards/terminal-title-architecture.md``
+§ Channel Delivery Contract ruling (c).
 """
 
 import json
 import subprocess
 from argparse import Namespace
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from conftest import get_script_path, load_script_module, run_script
@@ -36,10 +49,14 @@ cmd_transition = _lifecycle.cmd_transition
 cmd_title_token = _query.cmd_title_token
 cmd_set_phase = _query.cmd_set_phase
 TITLE_TOKEN_STATES = _core.TITLE_TOKEN_STATES
+TITLE_TOKEN_OWNERS = _core.TITLE_TOKEN_OWNERS
+TITLE_TOKEN_STALE_AFTER_SECONDS = _core.TITLE_TOKEN_STALE_AFTER_SECONDS
+title_token_is_stale = _core.title_token_is_stale
+read_title_token = _core.read_title_token
 
 # A multi-phase plan whose adjacent transitions never reach the 6-finalize
 # blocking boundary, so cmd_transition performs a plain phase advance (no
-# strict-verify guard) — the surface these build-busy clearing tests exercise.
+# strict-verify guard) — the surface the phase-writer tests exercise.
 _PHASES = '1-init,2-refine,3-outline'
 
 # The three canonical title-token states: the two lock-coordination phases
@@ -48,6 +65,9 @@ _PHASES = '1-init,2-refine,3-outline'
 # as a test failure rather than passing vacuously.
 EXPECTED_STATES = frozenset({'lock-waiting', 'lock-owned', 'build-busy'})
 
+# The three owners that may write a title token, likewise asserted explicitly.
+EXPECTED_OWNERS = frozenset({'build-hook', 'merge-lock', 'cli'})
+
 
 def _read_status(plan_context, plan_id):
     """Read the on-disk status.json for ``plan_id`` as a dict."""
@@ -55,8 +75,29 @@ def _read_status(plan_context, plan_id):
     return json.loads(status_file.read_text(encoding='utf-8'))
 
 
+def _set(plan_id, state, owner='cli'):
+    """Invoke ``title-token set`` for ``plan_id`` as ``owner``."""
+    return cmd_title_token(
+        Namespace(plan_id=plan_id, token_verb='set', state=state, owner=owner)
+    )
+
+
+def _clear(plan_id, owner='cli'):
+    """Invoke ``title-token clear`` for ``plan_id`` as ``owner``."""
+    return cmd_title_token(Namespace(plan_id=plan_id, token_verb='clear', owner=owner))
+
+
+def _age_token(plan_context, plan_id, seconds):
+    """Backdate the stored token's ``set_at`` by ``seconds``, in place."""
+    status_file = plan_context.plan_dir_for(plan_id) / 'status.json'
+    status = json.loads(status_file.read_text(encoding='utf-8'))
+    aged = datetime.now(UTC) - timedelta(seconds=seconds)
+    status['title_token']['set_at'] = aged.strftime('%Y-%m-%dT%H:%M:%SZ')
+    status_file.write_text(json.dumps(status), encoding='utf-8')
+
+
 # =============================================================================
-# Guard: the state vocabulary is exactly the two documented states
+# Guard: the state and owner vocabularies are exactly the documented sets
 # =============================================================================
 
 
@@ -66,62 +107,226 @@ def test_title_token_states_are_the_three_documented_states():
     assert TITLE_TOKEN_STATES == EXPECTED_STATES
 
 
+def test_title_token_owners_are_the_three_documented_owners():
+    """``TITLE_TOKEN_OWNERS`` is exactly the three writers of the token: the
+    build-hook render assist, the merge-lock machinery, and an explicit CLI
+    invocation."""
+    assert TITLE_TOKEN_OWNERS == EXPECTED_OWNERS
+
+
 # =============================================================================
 # set: each of the two states writes status.title_token
 # =============================================================================
 
 
-def test_set_lock_waiting_writes_title_token(plan_context):
-    """``title-token set --state lock-waiting`` persists the bare state string."""
+def test_set_lock_waiting_writes_structured_record(plan_context):
+    """``title-token set --state lock-waiting`` persists the structured record."""
     cmd_create(Namespace(plan_id='tt-lock-waiting', title='Test', phases='1-init', force=False))
-    result = cmd_title_token(Namespace(plan_id='tt-lock-waiting', token_verb='set', state='lock-waiting'))
+    result = _set('tt-lock-waiting', 'lock-waiting', owner='merge-lock')
 
     assert result['status'] == 'success'
-    assert result['title_token'] == 'lock-waiting'
+    assert result['title_token']['state'] == 'lock-waiting'
+    assert result['title_token']['owner'] == 'merge-lock'
 
-    stored = _read_status(plan_context, 'tt-lock-waiting')
-    assert stored['title_token'] == 'lock-waiting'
+    stored = _read_status(plan_context, 'tt-lock-waiting')['title_token']
+    assert stored['state'] == 'lock-waiting'
+    assert stored['owner'] == 'merge-lock'
 
 
-def test_set_lock_owned_writes_title_token(plan_context):
-    """``title-token set --state lock-owned`` persists the bare state string."""
+def test_set_lock_owned_writes_structured_record(plan_context):
+    """``title-token set --state lock-owned`` persists the structured record."""
     cmd_create(Namespace(plan_id='tt-lock-owned', title='Test', phases='1-init', force=False))
-    result = cmd_title_token(Namespace(plan_id='tt-lock-owned', token_verb='set', state='lock-owned'))
+    result = _set('tt-lock-owned', 'lock-owned', owner='merge-lock')
 
     assert result['status'] == 'success'
-    assert result['title_token'] == 'lock-owned'
+    assert result['title_token']['state'] == 'lock-owned'
 
-    stored = _read_status(plan_context, 'tt-lock-owned')
-    assert stored['title_token'] == 'lock-owned'
+    stored = _read_status(plan_context, 'tt-lock-owned')['title_token']
+    assert stored['state'] == 'lock-owned'
+    assert stored['owner'] == 'merge-lock'
 
 
-def test_set_build_busy_writes_title_token(plan_context):
-    """``title-token set --state build-busy`` persists the bare state string.
+def test_set_build_busy_writes_structured_record(plan_context):
+    """``title-token set --state build-busy`` persists the structured record.
 
-    build-busy is the orchestration-busy state — written by the orchestration
-    layer (not the lock machinery) for the duration of a long-running build
-    Bash call. manage-status persists it field-only, identically to the lock
-    states; the 🔨 icon-slot override is applied downstream by
-    ``manage-terminal-title``.
+    build-busy is the orchestration-busy state — written by the build-hook
+    render assist for the duration of a build Bash call. manage-status persists
+    it field-only, identically to the lock states; the 🔨 icon-slot override is
+    applied downstream by ``manage-terminal-title``.
     """
     cmd_create(Namespace(plan_id='tt-build-busy', title='Test', phases='1-init', force=False))
-    result = cmd_title_token(Namespace(plan_id='tt-build-busy', token_verb='set', state='build-busy'))
+    result = _set('tt-build-busy', 'build-busy', owner='build-hook')
 
     assert result['status'] == 'success'
-    assert result['title_token'] == 'build-busy'
+    assert result['title_token']['state'] == 'build-busy'
+    assert result['title_token']['owner'] == 'build-hook'
 
-    stored = _read_status(plan_context, 'tt-build-busy')
-    assert stored['title_token'] == 'build-busy'
+    stored = _read_status(plan_context, 'tt-build-busy')['title_token']
+    assert stored['state'] == 'build-busy'
+    assert stored['owner'] == 'build-hook'
 
 
-def test_set_overwrites_existing_token(plan_context):
-    """A second ``set`` overwrites the prior title_token value."""
-    cmd_create(Namespace(plan_id='tt-overwrite', title='Test', phases='1-init', force=False))
-    cmd_title_token(Namespace(plan_id='tt-overwrite', token_verb='set', state='lock-waiting'))
-    cmd_title_token(Namespace(plan_id='tt-overwrite', token_verb='set', state='lock-owned'))
+def test_set_record_carries_the_three_documented_keys(plan_context):
+    """The persisted record carries exactly ``owner`` / ``state`` / ``set_at``.
 
-    stored = _read_status(plan_context, 'tt-overwrite')
-    assert stored['title_token'] == 'lock-owned'
+    Pinning the key SET (not just individual reads) is what makes a silent
+    shape drift — a dropped ``set_at``, a renamed ``owner`` — fail here rather
+    than surface later as an un-ageable token.
+    """
+    cmd_create(Namespace(plan_id='tt-record-keys', title='Test', phases='1-init', force=False))
+    _set('tt-record-keys', 'build-busy', owner='build-hook')
+
+    stored = _read_status(plan_context, 'tt-record-keys')['title_token']
+    assert set(stored) == {'owner', 'state', 'set_at'}
+    # set_at is a parseable UTC instant, which is what the staleness rule reads.
+    parsed = datetime.fromisoformat(stored['set_at'].replace('Z', '+00:00'))
+    assert abs((datetime.now(UTC) - parsed).total_seconds()) < 120
+
+
+def test_set_defaults_to_the_cli_owner(plan_context):
+    """A ``set`` with no explicit owner is recorded as the ``cli`` writer."""
+    cmd_create(Namespace(plan_id='tt-default-owner', title='Test', phases='1-init', force=False))
+    cmd_title_token(Namespace(plan_id='tt-default-owner', token_verb='set', state='lock-owned'))
+
+    stored = _read_status(plan_context, 'tt-default-owner')['title_token']
+    assert stored['owner'] == 'cli'
+
+
+# =============================================================================
+# arbitration: open SET (last writer wins), owner-scoped CLEAR
+# =============================================================================
+
+
+def test_set_from_a_foreign_owner_replaces_the_record_wholesale(plan_context):
+    """A ``set`` from ANY owner replaces the record — last writer wins, and the
+    record always names its CURRENT owner (never the previous one)."""
+    cmd_create(Namespace(plan_id='tt-arb-set', title='Test', phases='1-init', force=False))
+    _set('tt-arb-set', 'lock-waiting', owner='merge-lock')
+    _set('tt-arb-set', 'build-busy', owner='build-hook')
+
+    stored = _read_status(plan_context, 'tt-arb-set')['title_token']
+    assert stored['state'] == 'build-busy'
+    assert stored['owner'] == 'build-hook'
+
+
+def test_clear_from_a_foreign_owner_is_a_reported_no_op(plan_context):
+    """A ``clear`` from an owner that does not own the live record leaves it
+    intact and reports the refusal — this is what stops a lock release from
+    clobbering a live build bracket."""
+    cmd_create(Namespace(plan_id='tt-arb-foreign', title='Test', phases='1-init', force=False))
+    _set('tt-arb-foreign', 'build-busy', owner='build-hook')
+
+    result = _clear('tt-arb-foreign', owner='merge-lock')
+
+    assert result['status'] == 'success'
+    assert result['cleared'] is False
+    assert result['reason'] == 'foreign_owner'
+    stored = _read_status(plan_context, 'tt-arb-foreign')['title_token']
+    assert stored['state'] == 'build-busy'
+    assert stored['owner'] == 'build-hook'
+
+
+def test_clear_from_the_recording_owner_removes_the_record(plan_context):
+    """The recorded owner CAN clear its own token."""
+    cmd_create(Namespace(plan_id='tt-arb-own', title='Test', phases='1-init', force=False))
+    _set('tt-arb-own', 'build-busy', owner='build-hook')
+
+    result = _clear('tt-arb-own', owner='build-hook')
+
+    assert result['cleared'] is True
+    assert result['reason'] == 'owned'
+    assert 'title_token' not in _read_status(plan_context, 'tt-arb-own')
+
+
+def test_lock_clear_does_not_clear_a_foreign_build_busy_but_does_clear_its_own(plan_context):
+    """The asymmetry end to end: a merge-lock clear leaves a build-hook token
+    alone, and the same clear removes a merge-lock-owned token."""
+    plan_id = 'tt-arb-asymmetry'
+    cmd_create(Namespace(plan_id=plan_id, title='Test', phases='1-init', force=False))
+
+    _set(plan_id, 'build-busy', owner='build-hook')
+    _clear(plan_id, owner='merge-lock')
+    assert _read_status(plan_context, plan_id)['title_token']['owner'] == 'build-hook'
+
+    _set(plan_id, 'lock-owned', owner='merge-lock')
+    _clear(plan_id, owner='merge-lock')
+    assert 'title_token' not in _read_status(plan_context, plan_id)
+
+
+# =============================================================================
+# staleness: read-side, age-based, clearable by ANY owner
+# =============================================================================
+
+
+def test_title_token_is_stale_predicate_boundaries():
+    """The predicate is age-based with the documented threshold, and treats
+    every structurally-unusable record as stale (fail-safe)."""
+    now = datetime.now(UTC)
+    fresh = {
+        'owner': 'cli',
+        'state': 'build-busy',
+        'set_at': (now - timedelta(seconds=TITLE_TOKEN_STALE_AFTER_SECONDS - 60)).strftime(
+            '%Y-%m-%dT%H:%M:%SZ'
+        ),
+    }
+    aged = {
+        'owner': 'cli',
+        'state': 'build-busy',
+        'set_at': (now - timedelta(seconds=TITLE_TOKEN_STALE_AFTER_SECONDS + 60)).strftime(
+            '%Y-%m-%dT%H:%M:%SZ'
+        ),
+    }
+
+    assert title_token_is_stale(fresh, now=now) is False
+    assert title_token_is_stale(aged, now=now) is True
+    # Structurally unusable records read as stale rather than raising.
+    assert title_token_is_stale(None, now=now) is True
+    assert title_token_is_stale('build-busy', now=now) is True
+    assert title_token_is_stale({'owner': 'cli', 'state': 'build-busy'}, now=now) is True
+    assert title_token_is_stale({'owner': 'cli', 'state': 'nonsense', 'set_at': fresh['set_at']}, now=now) is True
+    assert title_token_is_stale({'owner': 'cli', 'state': 'build-busy', 'set_at': 'not-a-date'}, now=now) is True
+
+
+def test_read_title_token_hides_a_stale_record_without_mutating_it():
+    """``read_title_token`` is the read-side accessor: a stale record reads as
+    absent, and the underlying status dict is left UNTOUCHED (staleness is a
+    read-side property, so no writer has to sweep)."""
+    aged_at = (datetime.now(UTC) - timedelta(seconds=TITLE_TOKEN_STALE_AFTER_SECONDS + 60)).strftime(
+        '%Y-%m-%dT%H:%M:%SZ'
+    )
+    status = {'title_token': {'owner': 'cli', 'state': 'build-busy', 'set_at': aged_at}}
+
+    assert read_title_token(status) is None
+    assert status['title_token']['state'] == 'build-busy'
+
+
+def test_any_owner_may_clear_a_stale_token(plan_context):
+    """A stranded token self-heals: once aged past the threshold, ANY owner may
+    clear it, so a dead process cannot leak a glyph indefinitely."""
+    plan_id = 'tt-stale-clear'
+    cmd_create(Namespace(plan_id=plan_id, title='Test', phases='1-init', force=False))
+    _set(plan_id, 'build-busy', owner='build-hook')
+    _age_token(plan_context, plan_id, TITLE_TOKEN_STALE_AFTER_SECONDS + 60)
+
+    result = _clear(plan_id, owner='merge-lock')
+
+    assert result['cleared'] is True
+    assert result['reason'] == 'stale'
+    assert 'title_token' not in _read_status(plan_context, plan_id)
+
+
+def test_a_fresh_foreign_token_is_still_protected(plan_context):
+    """The staleness escape hatch does NOT weaken ownership while the token is
+    live — the positive control for the stale-clear case above."""
+    plan_id = 'tt-stale-fresh-control'
+    cmd_create(Namespace(plan_id=plan_id, title='Test', phases='1-init', force=False))
+    _set(plan_id, 'build-busy', owner='build-hook')
+    _age_token(plan_context, plan_id, TITLE_TOKEN_STALE_AFTER_SECONDS - 60)
+
+    result = _clear(plan_id, owner='merge-lock')
+
+    assert result['cleared'] is False
+    assert result['reason'] == 'foreign_owner'
 
 
 # =============================================================================
@@ -132,9 +337,9 @@ def test_set_overwrites_existing_token(plan_context):
 def test_clear_removes_title_token_field(plan_context):
     """``title-token clear`` removes a previously-set title_token field."""
     cmd_create(Namespace(plan_id='tt-clear', title='Test', phases='1-init', force=False))
-    cmd_title_token(Namespace(plan_id='tt-clear', token_verb='set', state='lock-owned'))
+    _set('tt-clear', 'lock-owned')
 
-    result = cmd_title_token(Namespace(plan_id='tt-clear', token_verb='clear'))
+    result = _clear('tt-clear')
 
     assert result['status'] == 'success'
     assert result['title_token'] is None
@@ -148,11 +353,12 @@ def test_clear_is_idempotent_when_unset(plan_context):
     """``title-token clear`` is a no-op when no title_token field exists."""
     cmd_create(Namespace(plan_id='tt-clear-noop', title='Test', phases='1-init', force=False))
 
-    result = cmd_title_token(Namespace(plan_id='tt-clear-noop', token_verb='clear'))
+    result = _clear('tt-clear-noop')
 
     assert result['status'] == 'success'
     assert result['title_token'] is None
     assert result['cleared'] is False
+    assert result['reason'] == 'absent'
 
     stored = _read_status(plan_context, 'tt-clear-noop')
     assert 'title_token' not in stored
@@ -161,10 +367,10 @@ def test_clear_is_idempotent_when_unset(plan_context):
 def test_clear_twice_is_idempotent(plan_context):
     """Clearing twice in a row leaves the field absent and reports cleared=False."""
     cmd_create(Namespace(plan_id='tt-clear-twice', title='Test', phases='1-init', force=False))
-    cmd_title_token(Namespace(plan_id='tt-clear-twice', token_verb='set', state='lock-waiting'))
+    _set('tt-clear-twice', 'lock-waiting')
 
-    first = cmd_title_token(Namespace(plan_id='tt-clear-twice', token_verb='clear'))
-    second = cmd_title_token(Namespace(plan_id='tt-clear-twice', token_verb='clear'))
+    first = _clear('tt-clear-twice')
+    second = _clear('tt-clear-twice')
 
     assert first['cleared'] is True
     assert second['cleared'] is False
@@ -175,7 +381,7 @@ def test_clear_twice_is_idempotent(plan_context):
 
 
 # =============================================================================
-# argparse: invalid --state is rejected with exit code 2
+# argparse: invalid --state / --owner is rejected with exit code 2
 # =============================================================================
 
 
@@ -193,14 +399,50 @@ def test_set_invalid_state_rejected_by_argparse():
     assert result.returncode == 2
 
 
-def test_set_build_busy_accepted_by_argparse(plan_context):
-    """``title-token set --state build-busy`` is accepted by argparse.
+def test_set_invalid_owner_rejected_by_argparse():
+    """``title-token set --owner <bad>`` is rejected by argparse (exit code 2).
 
-    The ``--state`` choices are derived from ``sorted(TITLE_TOKEN_STATES)``, so
-    this end-to-end CLI run proves build-busy reaches the choices list — the
-    positive counterpart to the invalid-state rejection above. A created plan
-    is required so the command body runs to a clean (exit 0) success rather
-    than aborting on a missing status.json.
+    The owner vocabulary is a closed set exactly as the state vocabulary is, so
+    an out-of-enum owner must be refused at parse time rather than silently
+    recorded and later un-clearable.
+    """
+    result = run_script(
+        SCRIPT_PATH,
+        'title-token',
+        'set',
+        '--plan-id',
+        'tt-argparse-owner',
+        '--state',
+        'build-busy',
+        '--owner',
+        'not-a-valid-owner',
+    )
+    assert result.returncode == 2
+
+
+def test_clear_invalid_owner_rejected_by_argparse():
+    """``title-token clear --owner <bad>`` is likewise rejected at parse time."""
+    result = run_script(
+        SCRIPT_PATH,
+        'title-token',
+        'clear',
+        '--plan-id',
+        'tt-argparse-clear-owner',
+        '--owner',
+        'not-a-valid-owner',
+    )
+    assert result.returncode == 2
+
+
+def test_set_build_busy_accepted_by_argparse(plan_context):
+    """``title-token set --state build-busy --owner build-hook`` is accepted.
+
+    The ``--state`` / ``--owner`` choices are derived from
+    ``sorted(TITLE_TOKEN_STATES)`` / ``sorted(TITLE_TOKEN_OWNERS)``, so this
+    end-to-end CLI run proves both values reach their choices lists — the
+    positive counterpart to the rejection cases above. A created plan is
+    required so the command body runs to a clean (exit 0) success rather than
+    aborting on a missing status.json.
     """
     cmd_create(Namespace(plan_id='tt-argparse-build-busy', title='Test', phases='1-init', force=False))
     result = run_script(
@@ -211,11 +453,14 @@ def test_set_build_busy_accepted_by_argparse(plan_context):
         'tt-argparse-build-busy',
         '--state',
         'build-busy',
+        '--owner',
+        'build-hook',
     )
     assert result.returncode == 0
 
-    stored = _read_status(plan_context, 'tt-argparse-build-busy')
-    assert stored['title_token'] == 'build-busy'
+    stored = _read_status(plan_context, 'tt-argparse-build-busy')['title_token']
+    assert stored['state'] == 'build-busy'
+    assert stored['owner'] == 'build-hook'
 
 
 # =============================================================================
@@ -226,7 +471,7 @@ def test_set_build_busy_accepted_by_argparse(plan_context):
 def test_set_writes_no_title_body_artifact(plan_context):
     """``set`` persists only status.title_token — no title-body.txt rendering."""
     cmd_create(Namespace(plan_id='tt-no-render', title='Test', phases='1-init', force=False))
-    cmd_title_token(Namespace(plan_id='tt-no-render', token_verb='set', state='lock-waiting'))
+    _set('tt-no-render', 'lock-waiting')
 
     plan_dir = plan_context.plan_dir_for('tt-no-render')
     assert not (plan_dir / 'title-body.txt').exists()
@@ -235,8 +480,8 @@ def test_set_writes_no_title_body_artifact(plan_context):
 def test_clear_writes_no_title_body_artifact(plan_context):
     """``clear`` persists only status.json — no title-body.txt rendering."""
     cmd_create(Namespace(plan_id='tt-no-render-clear', title='Test', phases='1-init', force=False))
-    cmd_title_token(Namespace(plan_id='tt-no-render-clear', token_verb='set', state='lock-owned'))
-    cmd_title_token(Namespace(plan_id='tt-no-render-clear', token_verb='clear'))
+    _set('tt-no-render-clear', 'lock-owned')
+    _clear('tt-no-render-clear')
 
     plan_dir = plan_context.plan_dir_for('tt-no-render-clear')
     assert not (plan_dir / 'title-body.txt').exists()
@@ -270,7 +515,7 @@ def test_archive_pops_merge_lock_title_token(plan_context):
     cmd_create(Namespace(plan_id=plan_id, title='Test', phases='1-init', force=False))
     # A merge-lock token represents an in-flight lock state held by the now-gone
     # live session.
-    cmd_title_token(Namespace(plan_id=plan_id, token_verb='set', state='lock-owned'))
+    _set(plan_id, 'lock-owned', owner='merge-lock')
 
     result = cmd_archive(Namespace(plan_id=plan_id, dry_run=False))
 
@@ -289,15 +534,17 @@ def test_archive_pops_build_busy_title_token(plan_context):
 
     A build-busy token left behind on an archived plan would persist a stale
     🔨 build glyph in the archived snapshot — the same stale-glyph hazard the
-    lock-token variant guards against. cmd_archive pops the field
-    token-agnostically, so a single pop covers every TITLE_TOKEN_STATES value
-    including the orchestration-busy state.
+    lock-token variant guards against. cmd_archive's pop is owner- AND
+    token-agnostic, so a single pop covers every record regardless of which
+    writer owns it: an archived plan holds no live coordination state worth
+    arbitrating over. This is the one sanctioned exception to the owner-scoped
+    clear.
     """
     plan_id = 'tt-archive-build-busy-token'
     cmd_create(Namespace(plan_id=plan_id, title='Test', phases='1-init', force=False))
     # An in-flight build-busy token represents an orchestration build state held
-    # by the now-gone live session.
-    cmd_title_token(Namespace(plan_id=plan_id, token_verb='set', state='build-busy'))
+    # by the now-gone live session, owned by a writer that is NOT the archiver.
+    _set(plan_id, 'build-busy', owner='build-hook')
 
     result = cmd_archive(Namespace(plan_id=plan_id, dry_run=False))
 
@@ -312,121 +559,109 @@ def test_archive_pops_build_busy_title_token(plan_context):
 
 
 # =============================================================================
-# phase writers: cmd_transition / cmd_set_phase clear a stale build-busy token
+# phase writers: NO title-token sweep — staleness is resolved read-side
 # =============================================================================
 #
-# build-busy is armed by the orchestration layer for the duration of a
-# long-running build/push/CI-wait Bash call and is meant to be cleared when
-# that call returns. If the call is interrupted (a killed detached build whose
-# completion never arrives), the token is left armed and would otherwise freeze
-# a stale 🔨 in the title bar across the next phase transition. The phase
-# writers therefore clear a stale build-busy token before persisting each
-# current_phase write. The clear is scoped to build-busy only — the live
-# lock-coordination tokens (lock-waiting / lock-owned) must survive untouched.
+# The phase writers deliberately clear NOTHING. A transition-side sweep only
+# fires when a phase happens to change, so a token stranded by a killed process
+# could outlive it indefinitely — the sweep looked like a safety net while
+# leaving the actual hazard open. Staleness is therefore a READ-side property:
+# every reader resolves it through the aged-token predicate, so a stranded
+# token self-heals on the next read regardless of whether any phase moves.
 
 
-def test_transition_clears_stale_build_busy_token(plan_context):
-    """``cmd_transition`` pops a stale build-busy token before the phase write."""
+def test_transition_performs_no_title_token_sweep(plan_context):
+    """``cmd_transition`` leaves a live build-busy token exactly as it found it.
+
+    A transition is not a title-token event. The token survives the phase write
+    unmodified; it is the aged-token READ predicate, not this writer, that
+    retires a stranded token.
+    """
     plan_id = 'tt-transition-build-busy'
     cmd_create(Namespace(plan_id=plan_id, title='Test', phases=_PHASES, force=False))
-    cmd_title_token(Namespace(plan_id=plan_id, token_verb='set', state='build-busy'))
+    _set(plan_id, 'build-busy', owner='build-hook')
 
     result = cmd_transition(Namespace(plan_id=plan_id, completed='1-init'))
 
     assert result['status'] == 'success', f'transition failed: {result}'
     stored = _read_status(plan_context, plan_id)
     assert stored['current_phase'] == '2-refine'
-    assert 'title_token' not in stored, (
-        f"Expected build-busy title_token cleared after transition, but found "
-        f"{stored.get('title_token')!r}."
-    )
+    assert stored['title_token']['state'] == 'build-busy'
+    assert stored['title_token']['owner'] == 'build-hook'
 
 
-def test_set_phase_forward_and_loopback_clear_build_busy(plan_context):
-    """``cmd_set_phase`` clears build-busy on both a forward move and a
-    backward loop-back re-entry."""
+def test_set_phase_performs_no_title_token_sweep(plan_context):
+    """``cmd_set_phase`` sweeps nothing on either a forward move or a backward
+    loop-back re-entry — same contract as ``cmd_transition``."""
     plan_id = 'tt-set-phase-build-busy'
     cmd_create(Namespace(plan_id=plan_id, title='Test', phases=_PHASES, force=False))
 
     # Forward move: 1-init -> 3-outline.
-    cmd_title_token(Namespace(plan_id=plan_id, token_verb='set', state='build-busy'))
+    _set(plan_id, 'build-busy', owner='build-hook')
     cmd_set_phase(Namespace(plan_id=plan_id, phase='3-outline'))
     stored = _read_status(plan_context, plan_id)
     assert stored['current_phase'] == '3-outline'
-    assert 'title_token' not in stored, (
-        f"Expected build-busy cleared after forward set-phase, found "
-        f"{stored.get('title_token')!r}."
-    )
+    assert stored['title_token']['state'] == 'build-busy'
 
     # Backward loop-back: 3-outline -> 2-refine.
-    cmd_title_token(Namespace(plan_id=plan_id, token_verb='set', state='build-busy'))
     cmd_set_phase(Namespace(plan_id=plan_id, phase='2-refine'))
     stored = _read_status(plan_context, plan_id)
     assert stored['current_phase'] == '2-refine'
-    assert 'title_token' not in stored, (
-        f"Expected build-busy cleared after loop-back set-phase, found "
-        f"{stored.get('title_token')!r}."
-    )
+    assert stored['title_token']['state'] == 'build-busy'
 
 
 def test_lock_tokens_preserved_across_transition_and_set_phase(plan_context):
-    """The clear is scoped to build-busy — a live lock token survives both
-    phase writers untouched (the live coordination signal is not weakened)."""
+    """A live lock token survives both phase writers untouched — the live
+    coordination signal is not weakened by a phase change."""
     # lock-owned survives cmd_transition.
     plan_id = 'tt-lock-owned-preserved'
     cmd_create(Namespace(plan_id=plan_id, title='Test', phases=_PHASES, force=False))
-    cmd_title_token(Namespace(plan_id=plan_id, token_verb='set', state='lock-owned'))
+    _set(plan_id, 'lock-owned', owner='merge-lock')
     cmd_transition(Namespace(plan_id=plan_id, completed='1-init'))
     stored = _read_status(plan_context, plan_id)
-    assert stored['title_token'] == 'lock-owned', (
-        f"Expected lock-owned preserved across transition, found "
-        f"{stored.get('title_token')!r}."
-    )
+    assert stored['title_token']['state'] == 'lock-owned'
 
     # lock-waiting survives cmd_set_phase.
     plan_id = 'tt-lock-waiting-preserved'
     cmd_create(Namespace(plan_id=plan_id, title='Test', phases=_PHASES, force=False))
-    cmd_title_token(Namespace(plan_id=plan_id, token_verb='set', state='lock-waiting'))
+    _set(plan_id, 'lock-waiting', owner='merge-lock')
     cmd_set_phase(Namespace(plan_id=plan_id, phase='2-refine'))
     stored = _read_status(plan_context, plan_id)
-    assert stored['title_token'] == 'lock-waiting', (
-        f"Expected lock-waiting preserved across set-phase, found "
-        f"{stored.get('title_token')!r}."
-    )
+    assert stored['title_token']['state'] == 'lock-waiting'
 
 
-def test_killed_detached_build_busy_token_does_not_stay_armed(plan_context):
-    """Killed-detached-build repro: arm build-busy, take no clear action (the
-    orchestration call whose completion never arrives), then transition — the
-    token must not stay armed indefinitely."""
+def test_killed_detached_build_busy_token_ages_out_without_any_phase_change(plan_context):
+    """Killed-detached-build repro, re-pinned to the mechanism that actually
+    closes it: arm build-busy, let the clear never fire, and take NO phase
+    action at all. The token must still read as absent once it ages past the
+    threshold — which is precisely what the retired phase-boundary sweep could
+    not deliver, because a plan that never transitions never swept.
+    """
     plan_id = 'tt-killed-detached-build'
     cmd_create(Namespace(plan_id=plan_id, title='Test', phases=_PHASES, force=False))
-    # Arm build-busy as the orchestration layer would before a long-running
-    # build, then simulate the killed detached build: no clear ever fires.
-    cmd_title_token(Namespace(plan_id=plan_id, token_verb='set', state='build-busy'))
+    _set(plan_id, 'build-busy', owner='build-hook')
     armed = _read_status(plan_context, plan_id)
-    assert armed['title_token'] == 'build-busy'
+    assert armed['title_token']['state'] == 'build-busy'
 
-    # The next phase transition must not carry the stale token forward.
-    cmd_transition(Namespace(plan_id=plan_id, completed='1-init'))
-    stored = _read_status(plan_context, plan_id)
-    assert 'title_token' not in stored, (
-        f"A killed detached build left build-busy armed and the transition "
-        f"failed to clear it — found {stored.get('title_token')!r}."
+    _age_token(plan_context, plan_id, TITLE_TOKEN_STALE_AFTER_SECONDS + 60)
+
+    stranded = _read_status(plan_context, plan_id)
+    assert read_title_token(stranded) is None, (
+        'A killed detached build left build-busy armed and the aged-token read '
+        'predicate failed to retire it.'
     )
 
 
 # =============================================================================
-# drive seam: a non-delivered title repaint is observable, not DEBUG-swallowed
+# drive seam: the state settle reports no delivery, because it delivers nothing
 # =============================================================================
 #
-# ``_drive_repaint`` delegates the push to platform-runtime through the executor.
-# When the delegate reports ``pushed: false`` with a reason OTHER than
-# ``no_title_state`` — in practice ``no_controlling_tty``, the /dev/tty fallback
-# channel failing to reach a terminal — the seam PERSISTS ONE WARNING entry to
-# the plan work log via ``plan_logging.log_entry`` (manage-logging), naming the
-# plan and the reason, so a dead title channel is observable in the plan record
-# instead of only subprocess stderr. Every other path stays at DEBUG, and the
+# ``_drive_repaint`` delegates a ``session push-title-token`` to platform-runtime
+# through the executor. That seam BINDS AND PERSISTS — it does not repaint: the
+# direct /dev/tty write is deleted, so the paired repaint is deferred to the next
+# hook render event. The seam consequently has NO delivery outcome to report and
+# writes NO non-delivery work-log entry: the only reply it can receive is the
+# ordinary ``no_title_state`` nothing-to-settle case, which stays at DEBUG. The
 # seam never alters the command's status or exit code.
 
 
@@ -465,16 +700,24 @@ def _repaint_reply(**fields):
     )
 
 
-def test_archive_fires_teardown_exactly_once_after_the_move(plan_context, monkeypatch):
-    """``cmd_archive`` fires the live-surface teardown delegation exactly once.
+def test_archive_releases_no_session_binding(plan_context, monkeypatch):
+    """``cmd_archive`` fires NO teardown delegation at all.
 
-    The persisted-token pop and the live teardown are counterparts: the pop
-    clears ``status.title_token`` in the archived snapshot, the teardown retires
-    the live terminal title and the session's plan binding.
+    The retired test asserted the archive fired a teardown "exactly once" —
+    it asserted the SEAM FIRED, never that the terminal ever RECEIVED anything,
+    and the behaviour it pinned is now wrong outright. Archive must release no
+    binding: the terminal ✅ state it just persisted is delivered by the next
+    hook render, and that render can only resolve the plan while the binding
+    still exists. Releasing here would destroy the delivery route for the very
+    state the archive wrote.
+
+    The assertion is therefore inverted and made about the DELIVERED effect:
+    every executor delegation the archive makes is captured, and none of them
+    may be a session teardown.
     """
     calls: list[tuple[str, ...]] = []
     monkeypatch.setitem(
-        _lifecycle._drive_teardown.__globals__,
+        _lifecycle._surface_drive.__globals__,
         '_run_executor',
         lambda notation, *cli_args: calls.append((notation, *cli_args)),
     )
@@ -485,60 +728,20 @@ def test_archive_fires_teardown_exactly_once_after_the_move(plan_context, monkey
 
     assert result['status'] == 'success'
     teardown_calls = [c for c in calls if c[1:] == ('session', 'teardown')]
-    assert len(teardown_calls) == 1
-    # The plan directory really moved before the delegation fired.
-    assert Path(result['archived_to']).is_dir()
-
-
-def test_archive_succeeds_when_teardown_delegation_fails(plan_context, monkeypatch):
-    """A crashing teardown delegation leaves the archive result status: success."""
-
-    def _boom(*_args):
-        raise RuntimeError('teardown delegate exploded')
-
-    monkeypatch.setitem(_lifecycle._drive_teardown.__globals__, '_run_executor', _boom)
-
-    plan_id = 'tt-archive-teardown-fails'
-    cmd_create(Namespace(plan_id=plan_id, title='Test', phases='1-init', force=False))
-    result = cmd_archive(Namespace(plan_id=plan_id, dry_run=False))
-
-    assert result['status'] == 'success'
-    assert Path(result['archived_to']).is_dir()
-
-
-def test_repaint_persists_non_delivery_when_delegate_reports_no_controlling_tty(monkeypatch):
-    """A ``no_controlling_tty`` reply persists exactly one WARNING work-log entry
-    naming the plan and the reason (not a swallowed stderr warning)."""
-    monkeypatch.setattr(
-        _core,
-        '_run_executor',
-        lambda *_args: _repaint_reply(
-            plan_id='tt-repaint-warn',
-            pushed='false',
-            reason='no_controlling_tty',
-            delivery='dev_tty_fallback',
-        ),
+    assert teardown_calls == [], (
+        'archive released a session binding — the terminal state it just '
+        'persisted can no longer be delivered'
     )
-    calls, spy = _log_entry_spy()
-    monkeypatch.setattr(_core, 'log_entry', spy)
-
-    _core._drive_repaint('tt-repaint-warn')
-
-    assert len(calls) == 1
-    log_type, plan_id, level, message = calls[0]
-    assert log_type == 'work'
-    assert plan_id == 'tt-repaint-warn'
-    assert level == 'WARNING'
-    assert 'tt-repaint-warn' in message
-    assert 'no_controlling_tty' in message
+    # The plan directory really moved.
+    assert Path(result['archived_to']).is_dir()
 
 
 def test_repaint_persists_nothing_when_delegate_reports_no_title_state(monkeypatch):
-    """``no_title_state`` is the ordinary nothing-to-paint case — no persisted entry."""
+    """``no_title_state`` is the ordinary nothing-to-settle case — no persisted entry."""
     monkeypatch.setattr(
         _core,
         '_run_executor',
-        lambda *_args: _repaint_reply(plan_id='tt-repaint-nostate', pushed='false', reason='no_title_state'),
+        lambda *_args: _repaint_reply(plan_id='tt-repaint-nostate', reason='no_title_state'),
     )
     calls, spy = _log_entry_spy()
     monkeypatch.setattr(_core, 'log_entry', spy)
@@ -548,14 +751,17 @@ def test_repaint_persists_nothing_when_delegate_reports_no_title_state(monkeypat
     assert calls == []
 
 
-def test_repaint_persists_nothing_on_successful_push(monkeypatch):
-    """A landed push (``pushed: true``) persists no entry."""
+def test_repaint_persists_nothing_on_a_settled_state(monkeypatch):
+    """A settled state (no ``reason``) persists no entry either.
+
+    Together with the ``no_title_state`` case above this pins the seam's whole
+    reply space: it has no delivery verdict to report, so NO reply shape can
+    make it write a non-delivery entry.
+    """
     monkeypatch.setattr(
         _core,
         '_run_executor',
-        lambda *_args: _repaint_reply(
-            plan_id='tt-repaint-ok', pushed='true', delivery='dev_tty_fallback'
-        ),
+        lambda *_args: _repaint_reply(plan_id='tt-repaint-ok'),
     )
     calls, spy = _log_entry_spy()
     monkeypatch.setattr(_core, 'log_entry', spy)
@@ -576,174 +782,63 @@ def test_repaint_persists_nothing_when_delegate_was_skipped(monkeypatch):
     assert calls == []
 
 
-def test_transition_persists_repaint_non_delivery_to_work_log(plan_context, monkeypatch):
-    """D5(b): a real ``current_phase`` transition whose repaint delegate reports
-    ``no_controlling_tty`` writes a PERSISTED non-delivery entry to the plan work
-    log — the dead title channel is observable in the plan record, not swallowed
-    to stderr — while the transition itself still returns status: success.
+def test_transition_writes_no_repaint_non_delivery_entry(plan_context, monkeypatch):
+    """A real ``current_phase`` transition writes NO title non-delivery entry.
 
-    This is the end-to-end counterpart of the unit tests above: it exercises the
-    real ``log_entry`` file write through ``cmd_transition`` -> ``_surface_drive``
-    -> ``_drive_repaint`` rather than a spy, so it proves the entry lands on disk.
+    The end-to-end counterpart of the unit tests above, exercising the real
+    ``log_entry`` file write through ``cmd_transition`` -> ``_surface_drive`` ->
+    ``_drive_repaint``. The seam settles state and defers the repaint to the
+    next render event, so it has no delivery verdict to report — a persisted
+    "not delivered" entry would be asserting a channel outcome this layer
+    cannot observe.
     """
     plan_id = 'tt-transition-nondelivery'
     cmd_create(Namespace(plan_id=plan_id, title='Test', phases=_PHASES, force=False))
 
-    # Both drive-seam delegates (bind, then repaint) route through this executor
-    # stub; the repaint half reports the /dev/tty fallback could not reach a
-    # terminal, which is the reportable non-delivery. Patched AFTER cmd_create so
-    # the creation-time drive seam does not write a spurious entry.
+    # Both drive-seam delegates (bind, then settle) route through this executor
+    # stub. Patched AFTER cmd_create so the creation-time drive seam does not
+    # write a spurious entry.
     monkeypatch.setitem(
         _lifecycle._surface_drive.__globals__,
         '_run_executor',
-        lambda *_args: _repaint_reply(
-            plan_id=plan_id, pushed='false', reason='no_controlling_tty', delivery='dev_tty_fallback'
-        ),
+        lambda *_args: _repaint_reply(plan_id=plan_id, reason='no_title_state'),
     )
 
     result = cmd_transition(Namespace(plan_id=plan_id, completed='1-init'))
 
     assert result['status'] == 'success'
     work_log = _read_work_log(plan_context, plan_id)
-    assert 'title repaint not delivered' in work_log
-    assert plan_id in work_log
-    assert 'no_controlling_tty' in work_log
+    assert 'not delivered' not in work_log
+    assert 'no_controlling_tty' not in work_log
 
 
 # =============================================================================
-# drive seam: a non-delivered title teardown is observable, not DEBUG-swallowed
+# drive seam: the archive-time teardown seam is GONE
 # =============================================================================
 #
-# ``_drive_teardown`` is the archive-time counterpart of ``_drive_repaint`` and
-# carries the same observable-fallback contract. The teardown delegate reports
-# its two halves independently (``reset`` for the title reset, ``unbound`` for
-# the session-binding release), so either half failing on an ACTIVATED delegate
-# PERSISTS ONE WARNING work-log entry (via ``plan_logging.log_entry``) naming the
-# plan and the reason. An inactive delegate (``active: false``) is the ordinary
-# nothing-to-do case and stays at DEBUG, and the seam never alters the archive
-# command's status or exit code.
+# ``_drive_teardown`` and its non-delivery reporting existed to release the
+# session binding at archive time. Archive now deliberately releases NO binding
+# (the terminal state it persists is delivered by the next hook render, which
+# resolves the plan only through that binding), so the seam has no caller and
+# was removed outright rather than left in place as an unreachable helper.
+#
+# The tests that certified its two-half ``reset`` / ``unbound`` reporting went
+# with it: they asserted a ``reset`` outcome that production can never produce
+# in this runtime, so they could only ever have passed against a mock.
 
 
-def _teardown_reply(**fields):
-    """Build a CompletedProcess carrying a session-teardown TOON reply."""
-    lines = ['status: success', 'operation: session teardown']
-    lines += [f'{key}: {value}' for key, value in fields.items()]
-    return subprocess.CompletedProcess(
-        args=[], returncode=0, stdout='\n'.join(lines) + '\n', stderr=''
-    )
+def test_teardown_drive_seam_is_removed():
+    """The dead teardown seam and its parse helpers are gone from the module.
 
-
-def test_teardown_persists_non_delivery_when_delegate_reports_failed_reset(monkeypatch):
-    """An activated delegate whose title reset did not land persists one WARNING
-    work-log entry naming the plan and the failed half."""
-    monkeypatch.setattr(
-        _core,
-        '_run_executor',
-        lambda *_args: _teardown_reply(active='true', reset='false', unbound='true'),
-    )
-    calls, spy = _log_entry_spy()
-    monkeypatch.setattr(_core, 'log_entry', spy)
-
-    _core._drive_teardown('tt-teardown-warn')
-
-    assert len(calls) == 1
-    log_type, plan_id, level, message = calls[0]
-    assert log_type == 'work'
-    assert plan_id == 'tt-teardown-warn'
-    assert level == 'WARNING'
-    assert 'tt-teardown-warn' in message
-    assert 'title_reset_failed' in message
-
-
-def test_teardown_persisted_entry_names_both_failed_halves(monkeypatch):
-    """Both halves failing are named in the single persisted entry — reset and
-    unbind are reported independently, so collapsing them would hide which half
-    happened."""
-    monkeypatch.setattr(
-        _core,
-        '_run_executor',
-        lambda *_args: _teardown_reply(active='true', reset='false', unbound='false'),
-    )
-    calls, spy = _log_entry_spy()
-    monkeypatch.setattr(_core, 'log_entry', spy)
-
-    _core._drive_teardown('tt-teardown-both')
-
-    assert len(calls) == 1
-    message = calls[0][3]
-    assert 'title_reset_failed' in message
-    assert 'binding_release_failed' in message
-
-
-def test_teardown_persists_nothing_when_feature_inactive(monkeypatch):
-    """``active: false`` is the ordinary nothing-to-do case — no persisted entry."""
-    monkeypatch.setattr(
-        _core,
-        '_run_executor',
-        lambda *_args: _teardown_reply(
-            active='false', reset='false', unbound='false', reason='feature_inactive'
-        ),
-    )
-    calls, spy = _log_entry_spy()
-    monkeypatch.setattr(_core, 'log_entry', spy)
-
-    _core._drive_teardown('tt-teardown-inactive')
-
-    assert calls == []
-
-
-def test_teardown_persists_nothing_on_successful_teardown(monkeypatch):
-    """A landed teardown (reset and unbind both true) persists no entry."""
-    monkeypatch.setattr(
-        _core,
-        '_run_executor',
-        lambda *_args: _teardown_reply(active='true', reset='true', unbound='true'),
-    )
-    calls, spy = _log_entry_spy()
-    monkeypatch.setattr(_core, 'log_entry', spy)
-
-    _core._drive_teardown('tt-teardown-ok')
-
-    assert calls == []
-
-
-def test_teardown_persists_nothing_when_delegate_was_skipped(monkeypatch):
-    """A skipped spawn (``_run_executor`` returned None) persists no entry."""
-    monkeypatch.setattr(_core, '_run_executor', lambda *_args: None)
-    calls, spy = _log_entry_spy()
-    monkeypatch.setattr(_core, 'log_entry', spy)
-
-    _core._drive_teardown('tt-teardown-skipped')
-
-    assert calls == []
-
-
-def test_archive_succeeds_when_teardown_reports_non_delivery(plan_context, monkeypatch):
-    """A reported teardown non-delivery persists a WARNING work-log entry but
-    leaves archive at status: success.
-
-    Only the observability changes — the archive command's status and the moved
-    plan directory are exactly what a landed teardown produces. The ``log_entry``
-    spy is installed in ``_drive_teardown``'s own module globals so it reaches the
-    instance ``cmd_archive`` calls into.
+    A dead private helper is invisible at its own call site — there is none —
+    so this names it explicitly. If a future change re-introduces an
+    archive-time binding release, it fails here first, next to the comment
+    explaining why archive must not release.
     """
-    monkeypatch.setitem(
-        _lifecycle._drive_teardown.__globals__,
-        '_run_executor',
-        lambda *_args: _teardown_reply(active='true', reset='false', unbound='true'),
-    )
-    calls, spy = _log_entry_spy()
-    monkeypatch.setitem(_lifecycle._drive_teardown.__globals__, 'log_entry', spy)
-
-    plan_id = 'tt-archive-teardown-nondelivery'
-    cmd_create(Namespace(plan_id=plan_id, title='Test', phases='1-init', force=False))
-    result = cmd_archive(Namespace(plan_id=plan_id, dry_run=False))
-
-    assert result['status'] == 'success'
-    assert Path(result['archived_to']).is_dir()
-    assert len(calls) == 1
-    assert calls[0][1] == plan_id
-    assert plan_id in calls[0][3]
+    for removed in ('_drive_teardown', '_teardown_non_delivery_reason', '_parse_drive_reply'):
+        assert not hasattr(_core, removed), (
+            f'{removed} is back — archive must release no session binding'
+        )
 
 
 def test_crashing_delegate_leaves_transition_outcome_unchanged(plan_context, monkeypatch):

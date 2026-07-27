@@ -45,6 +45,7 @@ introduced. Every path is best-effort / no-raise.
 """
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 from typing import Any
@@ -73,6 +74,17 @@ _PLAN_DIR_NAME = os.environ.get("PLAN_DIR_NAME", ".plan")
 # UUID match (that stricter shape is only needed for transcript-path globbing,
 # which lives in claude_runtime).
 _SEGMENT_MAX_LEN = 120
+
+# Phases whose composed title is the terminal ✅ state. A plan that reaches one of
+# these still owes a DELIVERED repaint, because the hook render channel is
+# event-driven rather than callable on demand — so its binding must outlive the
+# archive. Mirrors the composer's terminal-phase vocabulary.
+_TERMINAL_PHASES: frozenset[str] = frozenset({"complete", "archived"})
+
+# Marker the renderer writes into an archived ``status.json`` once it has emitted
+# that plan's terminal title. Its PRESENCE is the delivery predicate — the
+# exemption below is state-driven and must never be expressed as elapsed time.
+_DELIVERED_MARKER = "title_delivered"
 
 
 # ---------------------------------------------------------------------------
@@ -291,18 +303,78 @@ def unbind(session_id: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
+def _archived_status_json(plan_id: str) -> Path | None:
+    """Resolve the archived ``status.json`` for *plan_id*, or ``None``.
+
+    Globs ``{PLAN_DIR_NAME}/local/archived-plans/*-{plan_id}/status.json`` (the
+    ``*`` matches the ``YYYY-MM-DD`` archive-name prefix), requiring the parent
+    directory name to end with the exact ``-{plan_id}`` suffix so a similarly
+    named plan cannot collide on a shared prefix. Best-effort: any resolution
+    error yields ``None``.
+    """
+    try:
+        archived_base = Path(_PLAN_DIR_NAME) / "local" / "archived-plans"
+        if not archived_base.is_dir():
+            return None
+        suffix = f"-{plan_id}"
+        for candidate in sorted(archived_base.glob(f"*-{plan_id}/status.json"), reverse=True):
+            if candidate.is_file() and candidate.parent.name.endswith(suffix):
+                return candidate
+    except (OSError, ValueError):
+        return None
+    return None
+
+
+def _terminal_delivery_pending(plan_id: str) -> bool:
+    """Return True when an archived *plan_id* still owes a delivered terminal title.
+
+    The delivery obligation is **state-driven, never time-windowed**: the
+    predicate is "the terminal state has not been rendered yet", read from the
+    archived ``status.json`` itself. An archived plan whose ``current_phase`` is
+    terminal and which carries no :data:`_DELIVERED_MARKER` has a pending render
+    that can only resolve while its session binding still exists — so the slot
+    must survive. Once the renderer marks the state delivered, the predicate goes
+    False and the slot becomes collectable on the very next scan.
+
+    Best-effort: an absent, unreadable, or malformed archived status yields False
+    (nothing is owed, so nothing is exempt).
+    """
+    status_path = _archived_status_json(plan_id)
+    if status_path is None:
+        return False
+    try:
+        status_data = json.loads(status_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    if not isinstance(status_data, dict):
+        return False
+    if status_data.get(_DELIVERED_MARKER) is True:
+        return False
+    current_phase = status_data.get("current_phase")
+    return isinstance(current_phase, str) and current_phase in _TERMINAL_PHASES
+
+
 def _plan_is_live(plan_id: str) -> bool:
-    """Return True when ``plan_id`` names a live (non-archived, non-deleted) plan.
+    """Return True when ``plan_id``'s session slot is still needed.
 
-    A plan is live when its main-checkout plan dir
-    (``{PLAN_DIR_NAME}/local/plans/{plan_id}``) exists, OR its phase-5+ worktree
-    copy
-    (``{PLAN_DIR_NAME}/local/worktrees/{plan_id}/{PLAN_DIR_NAME}/local/plans/{plan_id}``)
-    exists. Resolved relative to cwd (the project root). Archived plans (moved to
-    ``archived-plans/``) and deleted plans are NOT live and their session slots
-    are GC-eligible.
+    Two arms, either of which keeps the slot out of the GC:
 
-    Best-effort: any resolution error yields False (treated as not-live).
+    1. **The plan is live** — its main-checkout plan dir
+       (``{PLAN_DIR_NAME}/local/plans/{plan_id}``) exists, OR its phase-5+
+       worktree copy
+       (``{PLAN_DIR_NAME}/local/worktrees/{plan_id}/{PLAN_DIR_NAME}/local/plans/{plan_id}``)
+       exists. Resolved relative to cwd (the project root).
+    2. **The plan is archived but its terminal state is undelivered** — see
+       :func:`_terminal_delivery_pending`. The archived title is painted by the
+       next hook render, which resolves the plan only through this binding, so
+       collecting the slot first would destroy the delivery route. The exemption
+       is state-driven ("terminal state still owed"), never an elapsed-time
+       grace period, and it lapses the moment the state is delivered.
+
+    A deleted plan, or an archived plan whose terminal state has been delivered,
+    satisfies neither arm and its slot is GC-eligible.
+
+    Best-effort: any resolution error yields False (treated as not-needed).
     """
     if not _valid_plan_id(plan_id):
         return False
@@ -313,9 +385,11 @@ def _plan_is_live(plan_id: str) -> bool:
         worktree = (
             base / "worktrees" / plan_id / _PLAN_DIR_NAME / "local" / "plans" / plan_id
         )
-        return worktree.is_dir()
+        if worktree.is_dir():
+            return True
     except (OSError, ValueError):
         return False
+    return _terminal_delivery_pending(plan_id)
 
 
 def _scan_session_dirs() -> tuple[list[tuple[str, str]], list[str]]:

@@ -16,9 +16,10 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -44,7 +45,7 @@ for _ancestor in Path(__file__).resolve().parents:
         break
 
 import session_binding  # noqa: E402
-from manage_terminal_title import _compose_body, compose  # noqa: E402,F401
+from manage_terminal_title import _compose_body, compose, title_token_state  # noqa: E402,F401
 from runtime_base import Runtime, toon_error, toon_noop, toon_success  # noqa: E402,F401
 from toon_parser import parse_toon  # noqa: E402
 
@@ -235,55 +236,108 @@ def _claude_event_to_process_state(
     return "active"
 
 
-# The four build-wrapper executor notations that route a long-running
-# build/orchestration command through the executor. The ``PreToolUse:Bash``
-# render hook anchors its build-command detection on these substrings: the
-# canonical ``verify`` / ``coverage`` / ``quality-gate`` / ``module-tests`` verbs
-# are passed AS ``--command-args`` to these same wrappers, so a wrapper-notation
-# match already covers them without matching a bare verb word.
-_BUILD_WRAPPER_NOTATIONS: tuple[str, ...] = (
-    "plan-marshall:build-pyproject",
-    "plan-marshall:build-maven",
-    "plan-marshall:build-gradle",
-    "plan-marshall:build-npm",
+# Owner recorded on every title-token the render-hook build bracket writes. Must
+# stay in the ``TITLE_TOKEN_OWNERS`` vocabulary owned by
+# ``manage-status/scripts/_status_core.py``.
+_TITLE_TOKEN_OWNER_BUILD_HOOK = "build-hook"
+
+# The four build-wrapper skills whose scripts route a long-running
+# build/orchestration command through the executor, as ``{bundle}:{skill}``
+# pairs. An executor notation is three-part (``{bundle}:{skill}:{script}``), so
+# the predicate below compares the first two segments of the notation
+# POSITIONAL against this set — the same bundle:skill oracle the generated
+# executor itself uses to classify a build-class invocation. The canonical
+# ``verify`` / ``coverage`` / ``quality-gate`` / ``module-tests`` verbs are
+# passed AS ``--command-args`` to these same wrappers, so a wrapper match
+# already covers them without matching a bare verb word.
+_BUILD_WRAPPER_NOTATIONS: frozenset[str] = frozenset(
+    {
+        "plan-marshall:build-pyproject",
+        "plan-marshall:build-maven",
+        "plan-marshall:build-gradle",
+        "plan-marshall:build-npm",
+    }
 )
+
+# The executor entry point. A build invocation names its wrapper notation in the
+# argument position immediately following it.
+_EXECUTOR_SCRIPT_PATH = ".plan/execute-script.py"
 
 
 def _command_is_build(command: str | None) -> bool:
-    """Return True when *command* routes a long-running build through the executor.
+    """Return True when *command* INVOKES a build wrapper through the executor.
 
-    Detection anchors on the four build-wrapper executor notation substrings in
-    :data:`_BUILD_WRAPPER_NOTATIONS`. A match means the Bash call is a build /
-    orchestration invocation that should surface the persistent 🔨 ``build-busy``
-    terminal-title state for its duration. An empty / ``None`` command, or any
-    command that names none of the wrapper notations, returns False (the existing
-    ``PreToolUse:Bash`` → ⚙ busy mapping remains the fallback).
+    The match is STRUCTURAL, not textual. The command is parsed into argv with
+    :func:`shlex.split`, the executor entry point is located, and the token in
+    the notation position immediately after it is split on ``:``; its
+    ``{bundle}:{skill}`` prefix must be EQUAL to a member of
+    :data:`_BUILD_WRAPPER_NOTATIONS`. Equality on that one parsed positional —
+    never containment anywhere on the line — is what separates an invocation
+    from a mention.
 
-    Never matches on a bare verb word alone (e.g. ``echo verify``): the canonical
-    ``verify`` / ``coverage`` / ``quality-gate`` / ``module-tests`` verbs are
-    passed as ``--command-args`` to the wrappers, so a wrapper-notation match
-    already covers them — anchoring on the notation keeps the predicate precise
-    and low-false-positive.
+    The mention case is the thing this predicate excludes, and it is not
+    hypothetical: a command that merely NAMES a wrapper notation — as a quoted
+    argument to some other command, as part of a file path, or as content of a
+    file the command reads or writes (a solution outline containing the literal
+    string ``plan-marshall:build-pyproject`` is the shape actually observed in
+    the field) — is not a build and must not paint 🔨 for the duration of an
+    unrelated call. A substring test cannot tell those apart, so it is not used.
+
+    An empty / ``None`` command, a command shlex cannot parse (unbalanced
+    quotes), a command with no executor entry point, and a command whose
+    notation positional is absent or names a non-build skill all return False —
+    the existing ``PreToolUse:Bash`` → ⚙ busy mapping remains the fallback.
     """
     if not command:
         return False
-    return any(notation in command for notation in _BUILD_WRAPPER_NOTATIONS)
+    try:
+        argv = shlex.split(command)
+    except ValueError:
+        # Unbalanced quotes — not parseable as a command line, so not
+        # demonstrably a build invocation.
+        return False
+    for index, token in enumerate(argv):
+        if token != _EXECUTOR_SCRIPT_PATH and not token.endswith(f"/{_EXECUTOR_SCRIPT_PATH}"):
+            continue
+        if index + 1 >= len(argv):
+            return False
+        segments = argv[index + 1].split(":")
+        if len(segments) < 2:
+            return False
+        return f"{segments[0]}:{segments[1]}" in _BUILD_WRAPPER_NOTATIONS
+    return False
 
 
 # Required render-trigger entries inspected by the ``display`` health check, in
 # report order. Each tuple is (label, hooks_block_key, matcher). The label is the
 # token the menu doc tells the user to read; it matches the ``installed_events``
 # naming from ``_install_terminal_title_hooks`` exactly, except SessionStart
-# carries the ``:matcher-less`` qualifier naming the one variant that is
-# installed.
+# carries qualifiers naming which of its two variants each row checks.
+#
+# This tuple is the EXPECTED set and must agree with the INSTALLED set. Two
+# rows were previously divergent, and a divergence here is not cosmetic — the
+# check reports against this tuple, so a wrong expectation makes the health
+# verdict wrong in one direction or the other:
+#
+#   * ``PostToolUse`` was expected matcher-less while the installed shape is
+#     matcher-SCOPED (AskUserQuestion + Bash). The expectation is corrected to
+#     the two scoped rows rather than the installed shape being widened —
+#     PostToolUse:Bash is precisely the entry the machine-owned build-busy
+#     clear rides, and the render cadence is among the largest recurring script
+#     costs in this project, so both considerations point at keeping it narrow.
+#   * ``SessionStart:clear`` is installed (it is what routes the session
+#     teardown) but was absent from the expected set, so its removal would have
+#     gone unreported.
 _DISPLAY_RENDER_ENTRIES: tuple[tuple[str, str, str], ...] = (
     ("SessionStart:matcher-less", "SessionStart", ""),
+    ("SessionStart:clear", "SessionStart", "clear"),
     ("UserPromptSubmit", "UserPromptSubmit", ""),
     ("Notification", "Notification", ""),
     ("Stop", "Stop", ""),
     ("PreToolUse:AskUserQuestion", "PreToolUse", "AskUserQuestion"),
     ("PreToolUse:Bash", "PreToolUse", "Bash"),
-    ("PostToolUse", "PostToolUse", ""),
+    ("PostToolUse:AskUserQuestion", "PostToolUse", "AskUserQuestion"),
+    ("PostToolUse:Bash", "PostToolUse", "Bash"),
 )
 
 
@@ -439,39 +493,6 @@ def _has_render_entry(entries: list[Any], matcher: str | None = None) -> bool:
     return False
 
 
-def _prune_matcher_scoped_render_entries(entries: list[Any]) -> bool:
-    """Remove matcher-scoped render entries from *entries* in place.
-
-    An entry is pruned when it carries a ``hooks[].command`` equal to
-    :data:`_RENDER_HOOK_COMMAND` AND its ``matcher`` field is a non-empty
-    string. This retires the two legacy ``hooks.PostToolUse`` render entries
-    (``matcher: "AskUserQuestion"`` and ``matcher: "Bash"``) that the
-    matcher-less PostToolUse entry now supersedes, so an already-installed
-    settings file converges to the single broadened entry on the next install
-    pass instead of accumulating three overlapping render triggers.
-
-    Mutates *entries* in place (the caller holds the live ``hooks`` block list)
-    and returns True when at least one entry was removed.
-    """
-    def _is_matcher_scoped_render(entry: Any) -> bool:
-        if not isinstance(entry, dict):
-            return False
-        if not entry.get("matcher", ""):
-            return False
-        hooks = entry.get("hooks", [])
-        if not isinstance(hooks, list):
-            return False
-        return any(
-            isinstance(h, dict) and h.get("command") == _RENDER_HOOK_COMMAND for h in hooks
-        )
-
-    survivors = [entry for entry in entries if not _is_matcher_scoped_render(entry)]
-    if len(survivors) == len(entries):
-        return False
-    entries[:] = survivors
-    return True
-
-
 def _has_capture_entry(entries: list[Any]) -> bool:
     """Return True when *entries* already contains the session-capture hook."""
     for entry in entries:
@@ -618,11 +639,13 @@ def _install_terminal_title_hooks(
       ``matcher: "AskUserQuestion"`` so the ``?`` icon flips BEFORE the prompt is
       answered, and one with ``matcher: "Bash"`` so the ⚙ busy icon flips BEFORE
       a long-running shell command runs.
-    - ``hooks.PostToolUse`` — ONE matcher-less render entry, so the title
-      refreshes after EVERY tool call rather than only after Bash /
-      AskUserQuestion calls. Any pre-existing matcher-scoped PostToolUse render
-      entry is pruned in the same pass (see
-      :func:`_prune_matcher_scoped_render_entries`).
+    - ``hooks.PostToolUse`` — TWO matcher-scoped render entries
+      (``matcher: "AskUserQuestion"`` and ``matcher: "Bash"``), deliberately
+      NOT widened to a matcher-less entry. The narrow shape is a standing
+      position: the render cadence is among the largest recurring script costs
+      in this project, and ``PostToolUse:Bash`` is the entry the machine-owned
+      ``build-busy`` clear rides, so a widen-and-prune pass would remove the
+      very entry that clear depends on.
     - ``statusLine`` — ``{"type": "command", "command": _STATUSLINE_COMMAND}``.
       Preserves a foreign existing value unless ``overwrite_statusline`` is True.
     - ``env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE`` — set to ``"1"``. Preserves a
@@ -688,15 +711,23 @@ def _install_terminal_title_hooks(
         if not _has_capture_entry(session_start):
             session_start.append(_capture_entry())
 
-        session_start_changed = False
         if not _has_render_entry(session_start, matcher=""):
             session_start.append(_render_entry(matcher=""))
-            session_start_changed = True
-
-        if session_start_changed:
-            installed_events.append("SessionStart")
+            installed_events.append("SessionStart:matcher-less")
         else:
-            already_present_events.append("SessionStart")
+            already_present_events.append("SessionStart:matcher-less")
+
+        # The matcher:"clear" variant is installed as its OWN entry: it is the
+        # trigger that routes a cleared session into the teardown, and the
+        # display health check expects it by label. Installing it here is what
+        # keeps the expected and installed sets in agreement — an expectation
+        # the installer never satisfies would make every fresh install report
+        # unhealthy.
+        if not _has_render_entry(session_start, matcher="clear"):
+            session_start.append(_render_entry(matcher="clear"))
+            installed_events.append("SessionStart:clear")
+        else:
+            already_present_events.append("SessionStart:clear")
 
         # --- Single matcher-less render-trigger events. ---
         for event_name in _RENDER_TRIGGER_EVENTS:
@@ -728,20 +759,23 @@ def _install_terminal_title_hooks(
         else:
             already_present_events.append("PreToolUse:Bash")
 
-        # --- PostToolUse: ONE matcher-less render entry (every tool call). ---
-        # The legacy matcher-scoped entries (AskUserQuestion / Bash) are pruned
-        # first so an already-installed settings file converges to the single
-        # broadened entry instead of accumulating overlapping render triggers.
+        # --- PostToolUse: TWO matcher-scoped render entries. ---
+        # Deliberately NOT widened to a matcher-less entry, and nothing is
+        # pruned: PostToolUse:Bash is the entry the machine-owned build-busy
+        # clear rides, so a widen-and-prune pass would remove the entry that
+        # clear depends on. Keeping the cadence narrow is also the cheaper
+        # shape — the render command is among the largest recurring script
+        # costs in this project.
         post_tool_use = hooks_block.setdefault("PostToolUse", [])
         if not isinstance(post_tool_use, list):
             post_tool_use = []
             hooks_block["PostToolUse"] = post_tool_use
-        _prune_matcher_scoped_render_entries(post_tool_use)
-        if not _has_render_entry(post_tool_use, matcher=""):
-            post_tool_use.append(_render_entry(matcher=""))
-            installed_events.append("PostToolUse")
-        else:
-            already_present_events.append("PostToolUse")
+        for matcher in ("AskUserQuestion", "Bash"):
+            if not _has_render_entry(post_tool_use, matcher=matcher):
+                post_tool_use.append(_render_entry(matcher=matcher))
+                installed_events.append(f"PostToolUse:{matcher}")
+            else:
+                already_present_events.append(f"PostToolUse:{matcher}")
 
         # --- statusLine: command entry with overwrite-on-request semantics. ---
         statusline_block: dict[str, Any] = {
@@ -973,6 +1007,25 @@ def _resolve_worktree_status_json(plan_id: str) -> Path | None:
     return None
 
 
+def _live_title_token(status_data: dict[str, Any]) -> dict[str, Any] | None:
+    """Return *status_data*'s ``title_token`` record when live, else ``None``.
+
+    The aged-token predicate is applied HERE, on every read of ``status.json``:
+    this is the layer that touches the outside world, so it is the layer that
+    reads the clock and hands it to the composer's pure
+    :func:`manage_terminal_title.title_token_state` predicate. A stale record is
+    dropped from the state the reader returns, so every downstream consumer sees
+    it as absent and a stranded token self-heals without any writer sweeping for
+    it.
+    """
+    record = status_data.get("title_token")
+    if not isinstance(record, dict):
+        return None
+    if title_token_state({"title_token": record}, now=datetime.now(UTC)) is None:
+        return None
+    return record
+
+
 def _read_title_state(plan_id: str) -> dict[str, Any] | None:
     """Read the title state for *plan_id* from ``status.json``, or ``None``.
 
@@ -1016,10 +1069,41 @@ def _read_title_state(plan_id: str) -> dict[str, Any] | None:
     short_description = status_data.get("short_description")
     if isinstance(short_description, str):
         state["short_description"] = short_description
-    title_token = status_data.get("title_token")
-    if isinstance(title_token, str):
+    title_token = _live_title_token(status_data)
+    if title_token is not None:
         state["title_token"] = title_token
     return state
+
+
+def _mark_terminal_delivered(plan_id: str) -> bool:
+    """Record that *plan_id*'s archived terminal title has now been delivered.
+
+    The delivery obligation an archived plan carries is discharged the moment a
+    render event actually emits its terminal title. This writes the
+    :data:`session_binding._DELIVERED_MARKER` flag into the archived
+    ``status.json``, which is what flips
+    :func:`session_binding._terminal_delivery_pending` to False and releases the
+    plan's session slot to the next ``session doctor --fix`` sweep.
+
+    A plan with no archived ``status.json`` (a live or worktree-resident plan)
+    owes no archived delivery, so this is a no-op for it. Best-effort: returns
+    False on any resolution, read, or write failure and never raises — a missed
+    marker costs one extra GC cycle, never a lost title.
+    """
+    status_path = _resolve_archived_status_json(plan_id)
+    if status_path is None:
+        return False
+    status_data = _read_json(status_path)
+    if status_data is None:
+        return False
+    if status_data.get(session_binding._DELIVERED_MARKER) is True:
+        return True
+    status_data[session_binding._DELIVERED_MARKER] = True
+    try:
+        status_path.write_text(json.dumps(status_data, indent=2), encoding="utf-8")
+    except OSError:
+        return False
+    return True
 
 
 def _read_orchestrator_title_state(slug: str) -> dict[str, Any] | None:
@@ -1052,8 +1136,8 @@ def _read_orchestrator_title_state(slug: str) -> dict[str, Any] | None:
     if status_data is None:
         return None
     state: dict[str, Any] = {"kind": "orchestrator", "slug": slug}
-    title_token = status_data.get("title_token")
-    if isinstance(title_token, str):
+    title_token = _live_title_token(status_data)
+    if title_token is not None:
         state["title_token"] = title_token
     return state
 
@@ -1116,15 +1200,35 @@ def _manage_status_read_session(plan_id: str) -> str | None:
 
 
 def _manage_status_set_title_token(plan_id: str, state: str) -> bool:
-    """Best-effort ``manage-status title-token set --state {state}``.
+    """Best-effort ``manage-status title-token set --state {state} --owner build-hook``.
 
     Persists *state* into the plan's ``status.json`` so the ``build-busy``
     title-token set by the ``PreToolUse:Bash`` render hook survives to subsequent
-    renders and is available for the agent's D3 clear. Best-effort: returns False
-    on any failure and never raises — a persist failure must never break the
-    render hook. The bare STATE NAME is passed; the render path never hard-codes a
-    glyph. The timeout stays inside the render hook's own budget.
+    renders and is clearable by the paired ``PostToolUse:Bash`` half. The token is
+    written under the ``build-hook`` owner, so only that same hook (or the
+    aged-token staleness rule) can clear it — an unrelated writer cannot clobber a
+    live build bracket. Best-effort: returns False on any failure and never raises
+    — a persist failure must never break the render hook. The bare STATE NAME is
+    passed; the render path never hard-codes a glyph. The timeout stays inside the
+    render hook's own budget.
     """
+    return _manage_status_title_token(plan_id, "set", "--state", state)
+
+
+def _manage_status_clear_title_token(plan_id: str) -> bool:
+    """Best-effort ``manage-status title-token clear --owner build-hook``.
+
+    The machine-owned other half of the build bracket, fired from the
+    ``PostToolUse:Bash`` render event. The clear is owner-scoped to
+    ``build-hook``, so it removes only a token this hook set and leaves a live
+    ``merge-lock`` glyph intact. Best-effort: returns False on any failure and
+    never raises.
+    """
+    return _manage_status_title_token(plan_id, "clear")
+
+
+def _manage_status_title_token(plan_id: str, verb: str, *extra: str) -> bool:
+    """Shared best-effort driver for the ``build-hook``-owned title-token verbs."""
     try:
         result = subprocess.run(
             [
@@ -1132,11 +1236,12 @@ def _manage_status_set_title_token(plan_id: str, state: str) -> bool:
                 ".plan/execute-script.py",
                 "plan-marshall:manage-status:manage-status",
                 "title-token",
-                "set",
+                verb,
                 "--plan-id",
                 plan_id,
-                "--state",
-                state,
+                "--owner",
+                _TITLE_TOKEN_OWNER_BUILD_HOOK,
+                *extra,
             ],
             capture_output=True,
             text=True,

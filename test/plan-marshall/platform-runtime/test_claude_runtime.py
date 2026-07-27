@@ -6,7 +6,8 @@ Covers every method defined by the Runtime ABC:
   1.  project_initial_setup       — creates dirs, writes marshal.json, installs hook
   2.  session_capture             — reads $CLAUDE_CODE_SESSION_ID, stores via manage-status
   3.  session_render_title        — resolves session → plan → OSC emit
-  4.  session_push_title_token    — live /dev/tty repaint (icon now optional)
+  4.  session_push_title_token    — binds the session and persists the token state for
+      the next render event (icon optional); it performs no terminal write of its own
   4b. session_bind / resolve-plan / doctor — the relocated last-driven-wins binding
       policy (covered in depth by test__claude_runtime_impl.py)
   5.  permission_configure        — overwrites allow list in settings
@@ -362,13 +363,16 @@ class TestInstallTerminalTitleHooks:
     """
 
     # ------------------------------------------------------------------
-    # (a) Fresh install wires all seven render-trigger entries + statusLine + env.
+    # (a) Fresh install wires all nine render-trigger entries + statusLine + env.
     # ------------------------------------------------------------------
 
     def test_fresh_install_creates_all_render_events(self, rt, tmp_path):
-        """Fresh install populates SessionStart (ONE matcher-less entry), UserPromptSubmit,
-        Notification, Stop, PreToolUse:AskUserQuestion, PreToolUse:Bash, and a
-        matcher-less PostToolUse entry with the renderer command."""
+        """Fresh install populates the nine converged render entries.
+
+        SessionStart carries BOTH the matcher-less entry and the
+        ``matcher: "clear"`` entry, and PostToolUse is matcher-SCOPED
+        (AskUserQuestion + Bash) rather than matcher-less.
+        """
         target = tmp_path / ".claude" / "settings.local.json"
         result = _parsed(rt.project_install_hook(str(target)))
         assert result["status"] == "success"
@@ -377,19 +381,20 @@ class TestInstallTerminalTitleHooks:
         settings = json.loads(target.read_text())
         hooks_block = settings["hooks"]
 
-        # SessionStart has BOTH the existing capture entry AND exactly ONE
-        # matcher-less render entry. The matcher-less entry already fires for
-        # every source (including "clear", which the renderer turns into a
-        # session teardown), so no matcher:"clear" variant is installed.
+        # SessionStart carries the capture entry plus TWO render entries: the
+        # matcher-less one and the matcher:"clear" one that routes the session
+        # teardown. The clear entry is installed rather than merely expected —
+        # an expectation the installer never satisfies would make every fresh
+        # install report unhealthy.
         session_start = hooks_block["SessionStart"]
-        assert _count_command(session_start, _RENDER_HOOK_COMMAND) == 1
-        matchers_with_render = [
+        assert _count_command(session_start, _RENDER_HOOK_COMMAND) == 2
+        matchers_with_render = {
             entry.get("matcher", "")
             for entry in session_start
             if isinstance(entry, dict)
             and any(h.get("command") == _RENDER_HOOK_COMMAND for h in entry.get("hooks", []))
-        ]
-        assert matchers_with_render == [""]
+        }
+        assert matchers_with_render == {"", "clear"}
 
         # UserPromptSubmit, Notification, Stop — each one matcher-less render entry.
         for event_name in ("UserPromptSubmit", "Notification", "Stop"):
@@ -409,16 +414,20 @@ class TestInstallTerminalTitleHooks:
         }
         assert pre_matchers == {"AskUserQuestion", "Bash"}
 
-        # PostToolUse: exactly ONE matcher-less render entry (every tool call).
+        # PostToolUse: TWO matcher-scoped render entries, never a matcher-less
+        # one. PostToolUse:Bash is the entry the machine-owned build-busy clear
+        # rides, so the absence of a matcher-less entry is asserted explicitly
+        # rather than implied by the count.
         post_tool_use = hooks_block["PostToolUse"]
-        assert _count_command(post_tool_use, _RENDER_HOOK_COMMAND) == 1
+        assert _count_command(post_tool_use, _RENDER_HOOK_COMMAND) == 2
         post_matchers = {
             entry.get("matcher", "")
             for entry in post_tool_use
             if isinstance(entry, dict)
             and any(h.get("command") == _RENDER_HOOK_COMMAND for h in entry.get("hooks", []))
         }
-        assert post_matchers == {""}
+        assert post_matchers == {"AskUserQuestion", "Bash"}
+        assert "" not in post_matchers
 
     def test_fresh_install_writes_statusline_command(self, rt, tmp_path):
         """Fresh install writes statusLine = {type: command, command: _STATUSLINE_COMMAND}."""
@@ -440,21 +449,44 @@ class TestInstallTerminalTitleHooks:
         assert settings["env"]["CLAUDE_CODE_DISABLE_TERMINAL_TITLE"] == "1"
 
     def test_fresh_install_response_lists_installed_events(self, rt, tmp_path):
-        """installed_events lists every event freshly wired (SessionStart counted once)."""
+        """installed_events lists every event freshly wired, by its check label.
+
+        The labels must be the SAME nine the display health check reports
+        against, so the installer's output and the check's expectation can be
+        compared directly. A label the installer emits but the check does not
+        expect (or vice versa) is exactly the class of divergence that let a
+        missing entry go unreported.
+        """
         target = tmp_path / ".claude" / "settings.local.json"
         result = _parsed(rt.project_install_hook(str(target)))
         installed = result["installed_events"]
-        # SessionStart appears once even though two render entries were added.
-        # The tool-scoped entries use matcher-qualified labels.
         assert set(installed) == {
-            "SessionStart",
+            "SessionStart:matcher-less",
+            "SessionStart:clear",
             "UserPromptSubmit",
             "Notification",
             "Stop",
             "PreToolUse:AskUserQuestion",
             "PreToolUse:Bash",
-            "PostToolUse",
+            "PostToolUse:AskUserQuestion",
+            "PostToolUse:Bash",
         }
+
+    def test_installer_labels_match_the_health_check_expected_set(self, rt, tmp_path):
+        """The installer's labels and _DISPLAY_RENDER_ENTRIES agree, exactly.
+
+        Derived from the constant rather than re-listed, so the two surfaces
+        cannot drift apart without this failing. The previous divergence was
+        invisible precisely because each side was asserted against its own
+        hard-coded list.
+        """
+        import claude_runtime as _cr
+
+        target = tmp_path / ".claude" / "settings.local.json"
+        result = _parsed(rt.project_install_hook(str(target)))
+
+        expected = {label for label, _block, _matcher in _cr._DISPLAY_RENDER_ENTRIES}
+        assert set(result["installed_events"]) == expected
 
     # ------------------------------------------------------------------
     # (b) Re-running is idempotent across all hook blocks.
@@ -477,40 +509,43 @@ class TestInstallTerminalTitleHooks:
         assert first_settings == second_settings
 
     def test_idempotent_render_commands_not_duplicated(self, rt, tmp_path):
-        """Across two installs, each render-hook event still contains exactly one render command
-        (SessionStart included — it carries a single matcher-less entry)."""
+        """Across two installs, each hook block keeps its exact render-entry count."""
         target = tmp_path / ".claude" / "settings.local.json"
         rt.project_install_hook(str(target))
         rt.project_install_hook(str(target))
 
         settings = json.loads(target.read_text())
         hooks_block = settings["hooks"]
-        assert _count_command(hooks_block["SessionStart"], _RENDER_HOOK_COMMAND) == 1
+        # SessionStart carries two render entries (matcher-less + clear).
+        assert _count_command(hooks_block["SessionStart"], _RENDER_HOOK_COMMAND) == 2
         for event_name in ("UserPromptSubmit", "Notification", "Stop"):
             assert _count_command(hooks_block[event_name], _RENDER_HOOK_COMMAND) == 1
         # PreToolUse carries two render entries (AskUserQuestion + Bash).
         assert _count_command(hooks_block["PreToolUse"], _RENDER_HOOK_COMMAND) == 2
-        # PostToolUse carries exactly one matcher-less render entry.
-        assert _count_command(hooks_block["PostToolUse"], _RENDER_HOOK_COMMAND) == 1
+        # PostToolUse likewise carries two, matcher-scoped.
+        assert _count_command(hooks_block["PostToolUse"], _RENDER_HOOK_COMMAND) == 2
 
     # ------------------------------------------------------------------
-    # (b2) Tool-scoped PreToolUse entries + the broadened PostToolUse entry.
+    # (b2) Tool-scoped PreToolUse and PostToolUse entries.
     # ------------------------------------------------------------------
 
-    def test_fresh_install_adds_pre_bash_and_broad_post_entries(self, rt, tmp_path):
-        """A fresh install adds the PreToolUse:AskUserQuestion and PreToolUse:Bash
-        render entries under matcher-qualified labels, and the matcher-less
-        PostToolUse entry under the single ``PostToolUse`` label."""
+    def test_fresh_install_adds_tool_scoped_pre_and_post_entries(self, rt, tmp_path):
+        """A fresh install adds all four tool-scoped render entries by label.
+
+        The matcher-less ``PostToolUse`` label is asserted ABSENT: it named the
+        widened shape this contract rejects, so its reappearance would mean the
+        cadence was broadened again and PostToolUse:Bash — the entry the
+        machine-owned build-busy clear rides — was pruned away.
+        """
         target = tmp_path / ".claude" / "settings.local.json"
         result = _parsed(rt.project_install_hook(str(target)))
         assert result["status"] == "success"
         installed = set(result["installed_events"])
         assert "PreToolUse:AskUserQuestion" in installed
         assert "PreToolUse:Bash" in installed
-        assert "PostToolUse" in installed
-        # The retired matcher-qualified PostToolUse labels are never reported.
-        assert "PostToolUse:AskUserQuestion" not in installed
-        assert "PostToolUse:Bash" not in installed
+        assert "PostToolUse:AskUserQuestion" in installed
+        assert "PostToolUse:Bash" in installed
+        assert "PostToolUse" not in installed
 
         settings = json.loads(target.read_text())
         hooks_block = settings["hooks"]
@@ -524,13 +559,19 @@ class TestInstallTerminalTitleHooks:
             and any(h.get("command") == _RENDER_HOOK_COMMAND for h in entry.get("hooks", []))
         }
         assert pre_matchers == {"AskUserQuestion", "Bash"}
-        # PostToolUse has exactly one matcher-less render entry.
-        assert _count_command(hooks_block["PostToolUse"], _RENDER_HOOK_COMMAND) == 1
+        # PostToolUse likewise has exactly two, and both are matcher-scoped.
+        post = hooks_block["PostToolUse"]
+        assert _count_command(post, _RENDER_HOOK_COMMAND) == 2
+        post_matchers = {
+            entry.get("matcher")
+            for entry in post
+            if isinstance(entry, dict)
+            and any(h.get("command") == _RENDER_HOOK_COMMAND for h in entry.get("hooks", []))
+        }
+        assert post_matchers == {"AskUserQuestion", "Bash"}
 
-    def test_pre_bash_and_broad_post_entries_dedup_idempotent(self, rt, tmp_path):
-        """Re-invoking after a fresh install reports the PreToolUse:AskUserQuestion,
-        PreToolUse:Bash, and PostToolUse render entries as already-present and does
-        not duplicate them."""
+    def test_tool_scoped_entries_dedup_idempotent(self, rt, tmp_path):
+        """Re-invoking reports all four tool-scoped entries already-present."""
         target = tmp_path / ".claude" / "settings.local.json"
         rt.project_install_hook(str(target))
 
@@ -538,65 +579,28 @@ class TestInstallTerminalTitleHooks:
         already = set(result["already_present_events"])
         assert "PreToolUse:AskUserQuestion" in already
         assert "PreToolUse:Bash" in already
-        assert "PostToolUse" in already
+        assert "PostToolUse:AskUserQuestion" in already
+        assert "PostToolUse:Bash" in already
         # Nothing fresh installed on the second run.
         assert result["installed_events"] == []
 
         settings = json.loads(target.read_text())
         hooks_block = settings["hooks"]
         assert _count_command(hooks_block["PreToolUse"], _RENDER_HOOK_COMMAND) == 2
-        assert _count_command(hooks_block["PostToolUse"], _RENDER_HOOK_COMMAND) == 1
+        assert _count_command(hooks_block["PostToolUse"], _RENDER_HOOK_COMMAND) == 2
 
     # ------------------------------------------------------------------
-    # (b3) Upgrade path — legacy matcher-scoped PostToolUse entries are pruned.
+    # (b3) The installer PRUNES NOTHING — matcher-scoped entries are the target.
     # ------------------------------------------------------------------
+    #
+    # The prune helper existed to converge matcher-scoped PostToolUse entries
+    # toward a matcher-less one. That direction is now rejected: PostToolUse:Bash
+    # is the entry the machine-owned build-busy clear rides, so pruning it would
+    # delete the mechanism. The helper is deleted, and these tests pin the
+    # absence of pruning rather than its behaviour.
 
-    def _seed_legacy_post_tool_use(self, target: Path) -> None:
-        """Write a settings file carrying the two legacy matcher-scoped PostToolUse
-        render entries (the pre-broadening wiring this install pass must retire)."""
-        target.parent.mkdir(parents=True, exist_ok=True)
-        legacy_entry = {
-            "matcher": "AskUserQuestion",
-            "hooks": [
-                {"type": "command", "command": _RENDER_HOOK_COMMAND, "timeout": 5000}
-            ],
-        }
-        legacy_bash_entry = {
-            "matcher": "Bash",
-            "hooks": [
-                {"type": "command", "command": _RENDER_HOOK_COMMAND, "timeout": 5000}
-            ],
-        }
-        target.write_text(
-            json.dumps({"hooks": {"PostToolUse": [legacy_entry, legacy_bash_entry]}}),
-            encoding="utf-8",
-        )
-
-    def test_upgrade_prunes_legacy_matcher_scoped_post_entries(self, rt, tmp_path):
-        """Installing over the two legacy matcher-scoped PostToolUse render entries
-        removes BOTH and leaves exactly one matcher-less render entry."""
-        target = tmp_path / ".claude" / "settings.local.json"
-        self._seed_legacy_post_tool_use(target)
-
-        result = _parsed(rt.project_install_hook(str(target)))
-        assert result["status"] == "success"
-        assert "PostToolUse" in set(result["installed_events"])
-
-        settings = json.loads(target.read_text())
-        post = settings["hooks"]["PostToolUse"]
-        assert _count_command(post, _RENDER_HOOK_COMMAND) == 1
-        post_matchers = [
-            entry.get("matcher", "")
-            for entry in post
-            if isinstance(entry, dict)
-            and any(h.get("command") == _RENDER_HOOK_COMMAND for h in entry.get("hooks", []))
-        ]
-        assert post_matchers == [""]
-
-    def test_prune_preserves_foreign_post_tool_use_entries(self, rt, tmp_path):
-        """The prune removes ONLY matcher-scoped render entries — a foreign
-        matcher-scoped PostToolUse hook belonging to someone else survives."""
-        target = tmp_path / ".claude" / "settings.local.json"
+    def _seed_scoped_post_tool_use(self, target: Path) -> None:
+        """Write a settings file already carrying both matcher-scoped entries."""
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(
             json.dumps(
@@ -604,7 +608,7 @@ class TestInstallTerminalTitleHooks:
                     "hooks": {
                         "PostToolUse": [
                             {
-                                "matcher": "Bash",
+                                "matcher": matcher,
                                 "hooks": [
                                     {
                                         "type": "command",
@@ -612,7 +616,57 @@ class TestInstallTerminalTitleHooks:
                                         "timeout": 5000,
                                     }
                                 ],
-                            },
+                            }
+                            for matcher in ("AskUserQuestion", "Bash")
+                        ]
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    def test_prune_helper_is_deleted(self):
+        """The prune helper is gone from the module, not merely unreferenced.
+
+        A dormant helper that converges the cadence toward the rejected shape
+        is one call site away from removing the entry the build-busy clear
+        depends on, so its absence is asserted by name.
+        """
+        import claude_runtime as _cr
+
+        assert not hasattr(_cr, "_prune_matcher_scoped_render_entries")
+
+    def test_install_over_existing_scoped_entries_preserves_both(self, rt, tmp_path):
+        """Installing over both matcher-scoped entries keeps BOTH, prunes neither."""
+        target = tmp_path / ".claude" / "settings.local.json"
+        self._seed_scoped_post_tool_use(target)
+
+        result = _parsed(rt.project_install_hook(str(target)))
+        assert result["status"] == "success"
+        already = set(result["already_present_events"])
+        assert "PostToolUse:AskUserQuestion" in already
+        assert "PostToolUse:Bash" in already
+
+        settings = json.loads(target.read_text())
+        post = settings["hooks"]["PostToolUse"]
+        assert _count_command(post, _RENDER_HOOK_COMMAND) == 2
+        post_matchers = {
+            entry.get("matcher", "")
+            for entry in post
+            if isinstance(entry, dict)
+            and any(h.get("command") == _RENDER_HOOK_COMMAND for h in entry.get("hooks", []))
+        }
+        assert post_matchers == {"AskUserQuestion", "Bash"}
+
+    def test_install_preserves_foreign_post_tool_use_entries(self, rt, tmp_path):
+        """A foreign PostToolUse hook belonging to someone else survives untouched."""
+        target = tmp_path / ".claude" / "settings.local.json"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(
+            json.dumps(
+                {
+                    "hooks": {
+                        "PostToolUse": [
                             {
                                 "matcher": "Edit",
                                 "hooks": [{"type": "command", "command": "echo foreign"}],
@@ -629,27 +683,15 @@ class TestInstallTerminalTitleHooks:
         settings = json.loads(target.read_text())
         post = settings["hooks"]["PostToolUse"]
         assert "echo foreign" in _collect_commands(post)
-        assert _count_command(post, _RENDER_HOOK_COMMAND) == 1
+        assert _count_command(post, _RENDER_HOOK_COMMAND) == 2
 
-    def test_prune_leaves_pre_tool_use_and_enforcement_untouched(self, rt, tmp_path):
-        """The PostToolUse prune never touches the matcher-scoped PreToolUse render
-        entries nor the matcher-less enforcement entry."""
+    def test_install_leaves_pre_tool_use_and_enforcement_untouched(self, rt, tmp_path):
+        """A re-install never disturbs the PreToolUse render or enforcement entries."""
         target = tmp_path / ".claude" / "settings.local.json"
-        # Wire terminal-title + enforcement, then seed the legacy PostToolUse pair.
         rt.project_install_hook(str(target))
         rt.project_install_hook(str(target), enforcement=True)
         settings = json.loads(target.read_text())
         pre_before = settings["hooks"]["PreToolUse"]
-        settings["hooks"]["PostToolUse"] = [
-            {
-                "matcher": matcher,
-                "hooks": [
-                    {"type": "command", "command": _RENDER_HOOK_COMMAND, "timeout": 5000}
-                ],
-            }
-            for matcher in ("AskUserQuestion", "Bash")
-        ]
-        target.write_text(json.dumps(settings), encoding="utf-8")
 
         rt.project_install_hook(str(target))
 
@@ -658,24 +700,51 @@ class TestInstallTerminalTitleHooks:
         assert after["hooks"]["PreToolUse"] == pre_before
         assert _count_command(after["hooks"]["PreToolUse"], _RENDER_HOOK_COMMAND) == 2
         assert _count_command(after["hooks"]["PreToolUse"], _ENFORCEMENT_HOOK_COMMAND) == 1
-        # PostToolUse converged to the single matcher-less entry.
-        assert _count_command(after["hooks"]["PostToolUse"], _RENDER_HOOK_COMMAND) == 1
+        # PostToolUse keeps its two matcher-scoped entries.
+        assert _count_command(after["hooks"]["PostToolUse"], _RENDER_HOOK_COMMAND) == 2
 
-    def test_second_install_after_prune_adds_no_further_post_entry(self, rt, tmp_path):
-        """After the upgrade prune, a second install writes no further PostToolUse
-        entry — the broadened wiring is idempotent."""
+    def test_a_pre_existing_matcher_less_post_entry_is_not_removed(self, rt, tmp_path):
+        """A matcher-less PostToolUse render entry someone else installed SURVIVES.
+
+        The installer prunes nothing, so it must not delete a matcher-less
+        entry either — it simply adds the two scoped entries alongside. The
+        distinction matters: "we no longer want this shape" is not a licence to
+        remove a hook the operator may have added deliberately.
+        """
         target = tmp_path / ".claude" / "settings.local.json"
-        self._seed_legacy_post_tool_use(target)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(
+            json.dumps(
+                {
+                    "hooks": {
+                        "PostToolUse": [
+                            {
+                                "matcher": "",
+                                "hooks": [
+                                    {
+                                        "type": "command",
+                                        "command": _RENDER_HOOK_COMMAND,
+                                        "timeout": 5000,
+                                    }
+                                ],
+                            }
+                        ]
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+
         rt.project_install_hook(str(target))
-        first = json.loads(target.read_text())
 
-        result = _parsed(rt.project_install_hook(str(target)))
-        assert "PostToolUse" in set(result["already_present_events"])
-        assert "PostToolUse" not in set(result["installed_events"])
-
-        second = json.loads(target.read_text())
-        assert first == second
-        assert _count_command(second["hooks"]["PostToolUse"], _RENDER_HOOK_COMMAND) == 1
+        post = json.loads(target.read_text())["hooks"]["PostToolUse"]
+        matchers = {
+            entry.get("matcher", "")
+            for entry in post
+            if isinstance(entry, dict)
+            and any(h.get("command") == _RENDER_HOOK_COMMAND for h in entry.get("hooks", []))
+        }
+        assert matchers == {"", "AskUserQuestion", "Bash"}
 
     # ------------------------------------------------------------------
     # (c) Existing foreign statusLine yields already_present_other (preserved).
@@ -754,7 +823,13 @@ class TestInstallTerminalTitleHooks:
     # ------------------------------------------------------------------
 
     def test_existing_claude_hook_session_start_preserved(self, rt, tmp_path):
-        """A pre-existing claude_hook capture entry is preserved when render entries are added."""
+        """A pre-existing claude_hook capture entry is preserved when render entries are added.
+
+        SessionStart carries BOTH the matcher-less render entry and the
+        ``matcher: "clear"`` one (D6) — the pre-existing foreign capture entry
+        must survive alongside both, and each render entry must appear exactly
+        once (never duplicated by the insert).
+        """
         target = tmp_path / ".claude" / "settings.local.json"
         target.parent.mkdir(parents=True)
         existing = {
@@ -774,10 +849,18 @@ class TestInstallTerminalTitleHooks:
 
         settings = json.loads(target.read_text())
         session_start = settings["hooks"]["SessionStart"]
-        # Capture entry still present.
+        # Foreign capture entry still present, undisturbed.
         assert _count_command(session_start, _HOOK_COMMAND) == 1
-        # The matcher-less render entry was added without disturbing the capture entry.
-        assert _count_command(session_start, _RENDER_HOOK_COMMAND) == 1
+        # Both render entries were added: matcher-less and matcher:"clear",
+        # each exactly once — no duplication of either.
+        assert _count_command(session_start, _RENDER_HOOK_COMMAND) == 2
+        matchers_with_render = {
+            entry.get("matcher", "")
+            for entry in session_start
+            if isinstance(entry, dict)
+            and any(h.get("command") == _RENDER_HOOK_COMMAND for h in entry.get("hooks", []))
+        }
+        assert matchers_with_render == {"", "clear"}
 
     def test_preserves_unrelated_existing_hooks_block(self, rt, tmp_path):
         """Existing unrelated hooks (e.g. UserPromptSubmit with a foreign command) are preserved
@@ -957,9 +1040,9 @@ class TestInstallEnforcementHook:
 
         hooks = after["hooks"]
         # Existing render entries intact.
-        assert _count_command(hooks["SessionStart"], _RENDER_HOOK_COMMAND) == 1
+        assert _count_command(hooks["SessionStart"], _RENDER_HOOK_COMMAND) == 2
         assert _count_command(hooks["PreToolUse"], _RENDER_HOOK_COMMAND) == 2
-        assert _count_command(hooks["PostToolUse"], _RENDER_HOOK_COMMAND) == 1
+        assert _count_command(hooks["PostToolUse"], _RENDER_HOOK_COMMAND) == 2
         # statusLine + env preserved verbatim.
         assert after["statusLine"] == before["statusLine"]
         assert after["env"] == before["env"]
@@ -1086,6 +1169,19 @@ class TestDisplayEnforcementLabel:
 # title_token, the composed title is ``{icon} pm:X:Y`` (no glyph).
 
 
+def _title_token(state: str, owner: str = "cli", age_seconds: int = 0) -> dict[str, str]:
+    """Build a ``{owner, state, set_at}`` title-token record.
+
+    ``status.title_token`` is a structured record, not a bare state string, so
+    every fixture that plants a token builds it through here. ``age_seconds``
+    backdates ``set_at`` for the aged-token staleness paths.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    set_at = datetime.now(UTC) - timedelta(seconds=age_seconds)
+    return {"owner": owner, "state": state, "set_at": set_at.strftime("%Y-%m-%dT%H:%M:%SZ")}
+
+
 def _write_status_json(
     tmp_path: Path,
     *,
@@ -1093,7 +1189,7 @@ def _write_status_json(
     plan_id: str,
     current_phase: str | None = "5-execute",
     short_description: str | None = "my-task",
-    title_token: str | None = None,
+    title_token: dict[str, str] | None = None,
     archived: bool = False,
     date_prefix: str = "2026-05-29",
 ) -> None:
@@ -1218,26 +1314,25 @@ class TestComposerImportWiring:
 class TestCommandIsBuild:
     """Unit tests for the ``_command_is_build`` detection predicate.
 
-    Detection anchors on the four build-wrapper executor notation substrings in
-    ``_BUILD_WRAPPER_NOTATIONS``. A match means the Bash call routes a
-    long-running build / orchestration command through the executor; an empty /
-    ``None`` command, a bare canonical verb word, or any command naming none of
-    the wrapper notations returns False.
+    Detection is STRUCTURAL: the command is parsed into argv, the executor
+    entry point is located, and the ``{bundle}:{skill}`` prefix of the notation
+    POSITIONAL that follows it must equal one of ``_BUILD_WRAPPER_NOTATIONS``.
+    A match means the Bash call INVOKES a build wrapper through the executor.
+
+    The retired contract matched the notation as a substring anywhere on the
+    line, which could not distinguish an invocation from a mention — see
+    ``TestCommandIsBuildMentionVsInvocation`` below for the regression that
+    replaced it.
     """
 
-    @pytest.mark.parametrize("notation", list(_BUILD_WRAPPER_NOTATIONS))
+    @pytest.mark.parametrize("notation", sorted(_BUILD_WRAPPER_NOTATIONS))
     def test_each_wrapper_notation_matches(self, notation):
-        """Every build-wrapper notation, embedded in an executor invocation, matches."""
+        """Every build-wrapper notation, in the executor's notation position, matches."""
         command = (
             f"python3 .plan/execute-script.py {notation}:run_build run "
             '--command-args "verify plan-marshall"'
         )
         assert _command_is_build(command) is True
-
-    @pytest.mark.parametrize("notation", list(_BUILD_WRAPPER_NOTATIONS))
-    def test_notation_substring_anywhere_matches(self, notation):
-        """The notation substring matches anywhere in the command string."""
-        assert _command_is_build(f"some prefix {notation} trailing args") is True
 
     @pytest.mark.parametrize("command", [None, ""])
     def test_empty_or_none_command_is_false(self, command):
@@ -1274,6 +1369,98 @@ class TestCommandIsBuild:
             "python3 .plan/execute-script.py "
             "plan-marshall:build-pyproject:pyproject_build run "
             '--command-args "quality-gate plan-marshall"'
+        )
+        assert _command_is_build(command) is True
+
+
+class TestCommandIsBuildMentionVsInvocation:
+    """Regression: NAMING a build wrapper is not INVOKING one.
+
+    The retired substring match painted the 🔨 build glyph for the whole
+    duration of any command whose text happened to contain a wrapper notation.
+    Observed in the field: a command reading a solution outline that contained
+    the literal string ``plan-marshall:build-pyproject`` was treated as a
+    build.
+
+    Every mention case below is paired with a POSITIVE CONTROL — a genuine
+    invocation that must still return True — so a predicate that simply
+    returned False for everything cannot pass this class.
+    """
+
+    _INVOCATION = (
+        "python3 .plan/execute-script.py "
+        "plan-marshall:build-pyproject:pyproject_build run "
+        '--command-args "verify plan-marshall"'
+    )
+
+    def test_notation_as_a_quoted_argument_to_another_command_is_not_a_build(self):
+        """(a) The notation passed as an argument to an unrelated command."""
+        assert _command_is_build("echo 'plan-marshall:build-pyproject:pyproject_build'") is False
+        assert _command_is_build(self._INVOCATION) is True
+
+    def test_notation_in_a_file_path_or_file_content_is_not_a_build(self):
+        """(b) The shape actually observed: the notation inside a path, and
+        inside content the command reads or writes."""
+        assert _command_is_build("cat docs/plan-marshall:build-pyproject-notes.md") is False
+        assert (
+            _command_is_build(
+                "python3 .plan/execute-script.py plan-marshall:manage-files:manage-files "
+                "add --plan-id p --file plan-marshall:build-pyproject.md"
+            )
+            is False
+        )
+        assert _command_is_build(self._INVOCATION) is True
+
+    def test_notation_embedded_in_a_longer_token_is_not_a_build(self):
+        """(c) The notation as a substring of a larger token.
+
+        Equality on the parsed ``{bundle}:{skill}`` prefix is what rejects
+        this; a containment test cannot.
+        """
+        assert (
+            _command_is_build(
+                "python3 .plan/execute-script.py "
+                "not-plan-marshall:build-pyproject-shim:thing run"
+            )
+            is False
+        )
+        assert _command_is_build(self._INVOCATION) is True
+
+    def test_a_non_build_wrapper_in_the_notation_position_is_not_a_build(self):
+        """A real executor invocation of a NON-build skill must not match.
+
+        This is the discriminator the predicate exists for: the notation
+        position is occupied, so a positional-presence check would pass here.
+        Only the bundle:skill equality rejects it.
+        """
+        assert (
+            _command_is_build(
+                "python3 .plan/execute-script.py "
+                "plan-marshall:manage-status:manage-status read --plan-id p"
+            )
+            is False
+        )
+        assert _command_is_build(self._INVOCATION) is True
+
+    def test_an_unparseable_command_line_is_not_a_build(self):
+        """An unbalanced quote is not demonstrably an invocation, so: False.
+
+        Named explicitly because the parse can fail, and a predicate that let
+        the exception escape would break the render hook on any malformed
+        command line.
+        """
+        assert _command_is_build("python3 .plan/execute-script.py 'unterminated") is False
+
+    def test_an_executor_invocation_with_no_notation_is_not_a_build(self):
+        """The executor named with nothing after it must not index past argv."""
+        assert _command_is_build("python3 .plan/execute-script.py") is False
+
+    def test_an_absolute_executor_path_still_matches(self):
+        """The executor is commonly invoked by absolute path — the structural
+        match keys on the path SUFFIX, so that form must still be detected."""
+        command = (
+            "python3 /Users/x/repo/.plan/execute-script.py "
+            "plan-marshall:build-maven:maven run --targets verify"
         )
         assert _command_is_build(command) is True
 
@@ -1322,15 +1509,15 @@ class TestSessionRenderTitleBuildBusy:
         return f"pm:{current_phase}:{short_description}"
 
     @staticmethod
-    def _bash_payload(command):
-        """Build a PreToolUse:Bash hook payload carrying *command*."""
+    def _bash_payload(command, event="PreToolUse"):
+        """Build a ``{event}:Bash`` hook payload carrying *command*."""
         return {
-            "hook_event_name": "PreToolUse",
+            "hook_event_name": event,
             "tool_name": "Bash",
             "tool_input": {"command": command},
         }
 
-    @pytest.mark.parametrize("notation", list(_BUILD_WRAPPER_NOTATIONS))
+    @pytest.mark.parametrize("notation", sorted(_BUILD_WRAPPER_NOTATIONS))
     def test_build_command_renders_build_busy_icon(
         self, notation, rt, tmp_path, monkeypatch, capsys
     ):
@@ -1353,10 +1540,17 @@ class TestSessionRenderTitleBuildBusy:
         envelope = json.loads(captured)
         assert envelope["terminalSequence"] == f"\x1b]0;{self._ICON_BUILD} {body}\x07"
 
-    def test_build_command_persists_build_busy_token(
+    def test_build_command_sets_and_pairs_a_clear_on_the_bash_bracket(
         self, rt, tmp_path, monkeypatch, capsys
     ):
-        """A build command persists the token via _manage_status_set_title_token(plan_id, 'build-busy')."""
+        """The bracket is a SET on enter and a paired CLEAR on exit.
+
+        A set with no paired clear is the defect this asserts against: it leaves
+        the token owned by a writer that never retires it, so the 🔨 persists
+        past the build. Asserting only the set half would certify exactly that
+        defect, so both halves are driven here in one test — the same command,
+        first through ``PreToolUse:Bash`` and then through ``PostToolUse:Bash``.
+        """
         from io import StringIO
 
         self._arrange(tmp_path, monkeypatch, plan_id="persist-plan")
@@ -1365,15 +1559,32 @@ class TestSessionRenderTitleBuildBusy:
             "plan-marshall:build-pyproject:pyproject_build run "
             '--command-args "verify plan-marshall"'
         )
+
+        # Enter the build window.
         monkeypatch.setattr("sys.stdin", StringIO(json.dumps(self._bash_payload(command))))
-
         capsys.readouterr()
-        with patch(
-            "claude_runtime._manage_status_set_title_token", return_value=True
-        ) as mock_set:
+        with (
+            patch("claude_runtime._manage_status_set_title_token", return_value=True) as mock_set,
+            patch("claude_runtime._manage_status_clear_title_token", return_value=True) as mock_clear,
+        ):
             rt.session_render_title(statusline=False)
-
         mock_set.assert_called_once_with("persist-plan", "build-busy")
+        mock_clear.assert_not_called()
+
+        # Exit the build window: the paired clear fires on the SAME render event
+        # family, which is what delivers the corrected title.
+        monkeypatch.setattr(
+            "sys.stdin",
+            StringIO(json.dumps(self._bash_payload(command, event="PostToolUse"))),
+        )
+        capsys.readouterr()
+        with (
+            patch("claude_runtime._manage_status_set_title_token", return_value=True) as mock_set,
+            patch("claude_runtime._manage_status_clear_title_token", return_value=True) as mock_clear,
+        ):
+            rt.session_render_title(statusline=False)
+        mock_clear.assert_called_once_with("persist-plan")
+        mock_set.assert_not_called()
 
     @pytest.mark.parametrize(
         "command",
@@ -1429,41 +1640,66 @@ class TestSessionRenderTitleBuildBusy:
         assert envelope["terminalSequence"] == f"\x1b]0;{self._ICON_BUSY} {body}\x07"
         mock_set.assert_not_called()
 
-    def test_build_command_on_post_tool_use_does_not_trigger_build_busy(
+    def test_build_command_on_post_tool_use_clears_and_repaints_in_the_same_render(
         self, rt, tmp_path, monkeypatch, capsys
     ):
-        """A build command on PostToolUse:Bash does NOT trigger build-busy (only PreToolUse:Bash does)."""
+        """PostToolUse:Bash CLEARS the token and delivers the corrected title now.
+
+        The clear is applied to the in-memory state BEFORE compose, so THIS
+        render's envelope already paints ➤ active rather than 🔨. That
+        co-location is the delivery mechanism: a clear that only wrote state
+        would leave the tab showing 🔨 until some unrelated event happened to
+        fire.
+        """
         from io import StringIO
 
-        body = self._arrange(tmp_path, monkeypatch)
+        body = self._arrange(tmp_path, monkeypatch, plan_id="clear-plan")
         command = (
             "python3 .plan/execute-script.py "
             "plan-marshall:build-maven:maven run --targets verify"
         )
         monkeypatch.setattr(
             "sys.stdin",
-            StringIO(
-                json.dumps(
-                    {
-                        "hook_event_name": "PostToolUse",
-                        "tool_name": "Bash",
-                        "tool_input": {"command": command},
-                    }
-                )
-            ),
+            StringIO(json.dumps(self._bash_payload(command, event="PostToolUse"))),
         )
 
         capsys.readouterr()
-        with patch(
-            "claude_runtime._manage_status_set_title_token", return_value=True
-        ) as mock_set:
+        with (
+            patch("claude_runtime._manage_status_set_title_token", return_value=True) as mock_set,
+            patch("claude_runtime._manage_status_clear_title_token", return_value=True) as mock_clear,
+        ):
             rt.session_render_title(statusline=False)
         captured = capsys.readouterr().out
 
         envelope = json.loads(captured)
-        # PostToolUse:Bash → ➤ active (existing mapping), never build-busy.
+        # The corrected title is DELIVERED on this very render, not merely persisted.
         assert envelope["terminalSequence"] == f"\x1b]0;{self._ICON_ACTIVE} {body}\x07"
+        mock_clear.assert_called_once_with("clear-plan")
         mock_set.assert_not_called()
+
+    def test_non_build_command_on_post_tool_use_clears_nothing(
+        self, rt, tmp_path, monkeypatch, capsys
+    ):
+        """The clear half is gated on the build predicate exactly as the set half.
+
+        An ordinary Bash call exiting must not retire a token — including a live
+        ``merge-lock`` glyph — merely because a PostToolUse event fired.
+        """
+        from io import StringIO
+
+        self._arrange(tmp_path, monkeypatch)
+        monkeypatch.setattr(
+            "sys.stdin",
+            StringIO(json.dumps(self._bash_payload("git status", event="PostToolUse"))),
+        )
+
+        capsys.readouterr()
+        with patch(
+            "claude_runtime._manage_status_clear_title_token", return_value=True
+        ) as mock_clear:
+            rt.session_render_title(statusline=False)
+
+        mock_clear.assert_not_called()
 
     def test_statusline_mode_never_triggers_build_busy(
         self, rt, tmp_path, monkeypatch, capsys
@@ -1524,16 +1760,28 @@ class TestSessionRenderTitleArchivedFallback:
     ):
         """Materialize an archived plan (and optionally a live plan) on disk.
 
-        Always writes the session-cache pointer and the archived ``status.json``.
-        When ``write_live`` is True, also writes the live
+        Establishes the session→plan binding through **production's own
+        writer** (``session_binding.bind``) and writes the archived
+        ``status.json``. When ``write_live`` is True, also writes the live
         ``.plan/local/plans/{plan_id}/status.json`` so the live-path-wins
         precedence can be exercised.
+
+        Using the real binder is load-bearing. This helper previously
+        hand-wrote the ``active-plan`` slot file directly, which meant the
+        archived-title tests below would pass even if the binding surface they
+        depend on were broken — the fixture was manufacturing the very
+        precondition under test. Routing through ``bind`` means these tests can
+        only pass while the binding that the archive path must PRESERVE is
+        genuinely obtainable.
         """
         import claude_runtime as _cr
 
-        cache_dir = tmp_path / "sessions" / session_id
-        cache_dir.mkdir(parents=True)
-        (cache_dir / "active-plan").write_text(plan_id, encoding="utf-8")
+        monkeypatch.setattr(session_binding, "_SESSION_CACHE_BASE", tmp_path / "sessions")
+        session_binding.bind(session_id, plan_id)
+        assert session_binding.resolve_plan(session_id) == plan_id, (
+            "the production binder did not establish the session→plan binding "
+            "these archived-title tests depend on"
+        )
 
         archived_dir = (
             tmp_path / ".plan" / "local" / "archived-plans" / f"{date_prefix}-{plan_id}"
@@ -1556,7 +1804,6 @@ class TestSessionRenderTitleArchivedFallback:
                 encoding="utf-8",
             )
 
-        monkeypatch.setattr(session_binding, "_SESSION_CACHE_BASE", tmp_path / "sessions")
         monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
         monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", session_id)
         monkeypatch.chdir(tmp_path)
@@ -1775,6 +2022,7 @@ class TestReadTitleState:
         import claude_runtime as _cr
 
         plan_id = "live-plan"
+        record = _title_token("lock-owned", owner="merge-lock")
         live_dir = tmp_path / ".plan" / "local" / "plans" / plan_id
         live_dir.mkdir(parents=True)
         (live_dir / "status.json").write_text(
@@ -1782,7 +2030,7 @@ class TestReadTitleState:
                 {
                     "current_phase": "5-execute",
                     "short_description": "do-work",
-                    "title_token": "lock-owned",
+                    "title_token": record,
                 }
             ),
             encoding="utf-8",
@@ -1795,8 +2043,83 @@ class TestReadTitleState:
         assert state == {
             "current_phase": "5-execute",
             "short_description": "do-work",
-            "title_token": "lock-owned",
+            "title_token": record,
         }
+
+    def test_drops_an_aged_token_from_the_returned_state(self, tmp_path, monkeypatch):
+        """The aged-token predicate is applied on EVERY read.
+
+        A record past the staleness threshold is omitted from the state the
+        reader returns, so a stranded token self-heals for every downstream
+        consumer without any writer sweeping for it. The rest of the state is
+        unaffected.
+        """
+        import claude_runtime as _cr
+        from manage_terminal_title import TITLE_TOKEN_STALE_AFTER_SECONDS
+
+        plan_id = "aged-plan"
+        live_dir = tmp_path / ".plan" / "local" / "plans" / plan_id
+        live_dir.mkdir(parents=True)
+        (live_dir / "status.json").write_text(
+            json.dumps(
+                {
+                    "current_phase": "5-execute",
+                    "short_description": "do-work",
+                    "title_token": _title_token(
+                        "build-busy",
+                        owner="build-hook",
+                        age_seconds=TITLE_TOKEN_STALE_AFTER_SECONDS + 60,
+                    ),
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
+        monkeypatch.chdir(tmp_path)
+
+        state = _cr._read_title_state(plan_id)
+        assert state == {"current_phase": "5-execute", "short_description": "do-work"}
+
+    def test_keeps_a_fresh_token_in_the_returned_state(self, tmp_path, monkeypatch):
+        """Positive control for the aged-token drop above: a record just inside
+        the threshold survives the read, so the drop is age-driven rather than
+        an unconditional strip."""
+        import claude_runtime as _cr
+        from manage_terminal_title import TITLE_TOKEN_STALE_AFTER_SECONDS
+
+        plan_id = "fresh-plan"
+        record = _title_token(
+            "build-busy", owner="build-hook", age_seconds=TITLE_TOKEN_STALE_AFTER_SECONDS - 60
+        )
+        live_dir = tmp_path / ".plan" / "local" / "plans" / plan_id
+        live_dir.mkdir(parents=True)
+        (live_dir / "status.json").write_text(
+            json.dumps({"current_phase": "5-execute", "title_token": record}), encoding="utf-8"
+        )
+
+        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
+        monkeypatch.chdir(tmp_path)
+
+        assert _cr._read_title_state(plan_id)["title_token"] == record
+
+    def test_drops_a_legacy_bare_string_token(self, tmp_path, monkeypatch):
+        """A status.json still carrying the retired bare-string shape reads as
+        having no token, rather than propagating an unusable value downstream."""
+        import claude_runtime as _cr
+
+        plan_id = "legacy-plan"
+        live_dir = tmp_path / ".plan" / "local" / "plans" / plan_id
+        live_dir.mkdir(parents=True)
+        (live_dir / "status.json").write_text(
+            json.dumps({"current_phase": "5-execute", "title_token": "lock-owned"}),
+            encoding="utf-8",
+        )
+
+        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
+        monkeypatch.chdir(tmp_path)
+
+        assert "title_token" not in _cr._read_title_state(plan_id)
 
     def test_falls_back_to_archived_status(self, tmp_path, monkeypatch):
         """Live status.json absent → reads the archived status.json."""
@@ -1844,17 +2167,23 @@ class TestReadTitleState:
 
 
 # =============================================================================
-# 3f. session_push_title_token — live /dev/tty push (push-mode)
+# 3f. session_push_title_token — bind + persist state (no repaint)
 # =============================================================================
 
 
 class TestSessionPushTitleToken:
     """Tests for ClaudeRuntime.session_push_title_token.
 
-    Reads the plan's status.json, composes via the manage-terminal-title
-    composer with the push icon override, and writes the OSC escape to
-    ``/dev/tty``. Best-effort: a silent no-op when state is absent or
-    ``/dev/tty`` is not openable; never raises.
+    The seam BINDS AND PERSISTS — it does NOT repaint. It reads the plan's
+    status.json and composes via the manage-terminal-title composer to
+    establish that the state is renderable, and writes nothing to any terminal
+    device: the direct ``/dev/tty`` OSC write is deleted, and the paired
+    repaint is deferred to the next hook render event.
+
+    The return consequently carries neither a ``pushed`` flag nor a
+    ``delivery`` field — a seam that performs no delivery has no delivery
+    result to report — only a ``reason`` when it had nothing to settle.
+    Best-effort throughout: never raises.
     """
 
     @staticmethod
@@ -1874,14 +2203,48 @@ class TestSessionPushTitleToken:
         monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
         monkeypatch.chdir(tmp_path)
 
-    def test_push_with_tty_writes_osc_escape(self, rt, tmp_path, monkeypatch):
-        """When /dev/tty is openable, the composed OSC escape is written and pushed: true is reported."""
+    def test_push_with_renderable_state_writes_no_terminal_bytes(self, rt, tmp_path, monkeypatch):
+        """A renderable state settles cleanly and touches NO terminal device.
+
+        This is the load-bearing assertion of ruling (a): even with a fully
+        renderable state and an openable ``/dev/tty``, the seam must not open
+        it. Delivery is the next hook render event's job.
+        """
         plan_id = "push-plan"
         self._write_live_status(
             tmp_path, monkeypatch, plan_id,
             current_phase="5-execute", short_description="push-task",
-            title_token="lock-owned",
+            title_token=_title_token("lock-owned", owner="merge-lock"),
         )
+
+        opened: list[str] = []
+        real_open = open
+
+        def _fake_open(path, *args, **kwargs):
+            opened.append(str(path))
+            return real_open(path, *args, **kwargs)
+
+        monkeypatch.setattr("builtins.open", _fake_open)
+
+        result = _parsed(rt.session_push_title_token(plan_id, "⏳"))
+        assert result["status"] == "success"
+        assert result["plan_id"] == plan_id
+        # Nothing to report as un-settled, and no delivery verdict at all.
+        assert "reason" not in result
+        assert "pushed" not in result
+        assert "delivery" not in result
+        assert "/dev/tty" not in opened
+
+    def test_push_never_opens_dev_tty_even_when_it_would_succeed(self, rt, tmp_path, monkeypatch):
+        """Negative control with an openable fake tty: no bytes are ever written.
+
+        A fake ``/dev/tty`` that WOULD accept a write is installed. Asserting
+        the collector stays empty proves the write path is gone, not merely
+        that the environment lacks a terminal — a test run in a tty-less CI
+        would pass vacuously otherwise.
+        """
+        plan_id = "push-no-tty"
+        self._write_live_status(tmp_path, monkeypatch, plan_id)
 
         written: list[str] = []
 
@@ -1909,30 +2272,10 @@ class TestSessionPushTitleToken:
 
         result = _parsed(rt.session_push_title_token(plan_id, "⏳"))
         assert result["status"] == "success"
-        assert result["pushed"] is True
-        # The push icon override + lock-owned glyph (🔒) + body, composed by D12.
-        assert written == ["\x1b]0;⏳ \U0001f512 pm:5-execute:push-task\x07"]
+        assert written == []
 
-    def test_push_without_tty_is_silent_noop(self, rt, tmp_path, monkeypatch):
-        """When /dev/tty cannot be opened, the push is a silent no-op (pushed: false) and never raises."""
-        plan_id = "push-no-tty"
-        self._write_live_status(tmp_path, monkeypatch, plan_id)
-
-        real_open = open
-
-        def _fake_open(path, *args, **kwargs):
-            if path == "/dev/tty":
-                raise OSError("no controlling terminal")
-            return real_open(path, *args, **kwargs)
-
-        monkeypatch.setattr("builtins.open", _fake_open)
-
-        result = _parsed(rt.session_push_title_token(plan_id, "⏳"))
-        assert result["status"] == "success"
-        assert result["pushed"] is False
-
-    def test_push_with_no_status_state_is_noop(self, rt, tmp_path, monkeypatch):
-        """No status.json for the plan → pushed: false, /dev/tty never touched."""
+    def test_push_with_no_status_state_reports_no_title_state(self, rt, tmp_path, monkeypatch):
+        """No status.json for the plan → reason: no_title_state, /dev/tty untouched."""
         import claude_runtime as _cr
 
         monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
@@ -1949,17 +2292,18 @@ class TestSessionPushTitleToken:
 
         result = _parsed(rt.session_push_title_token("ghost-plan", "⏳"))
         assert result["status"] == "success"
-        assert result["pushed"] is False
+        assert result["reason"] == "no_title_state"
+        assert "pushed" not in result
         assert "/dev/tty" not in opened
 
-    def test_push_with_unrenderable_state_is_noop(self, rt, tmp_path, monkeypatch):
+    def test_push_with_unrenderable_state_reports_no_title_state(self, rt, tmp_path, monkeypatch):
         """status.json present but with no current_phase → composer returns None →
-        pushed: false, /dev/tty never touched.
+        reason: no_title_state, /dev/tty never touched.
 
         This exercises the second falsy-guard branch in session_push_title_token:
         _read_title_state returns a non-None dict (it carries short_description),
-        but compose() returns None because current_phase is absent. The push must
-        be a silent no-op without ever opening /dev/tty (distinct from the
+        but compose() returns None because current_phase is absent. The seam must
+        settle nothing without ever opening /dev/tty (distinct from the
         state-is-None branch, where _read_title_state itself returns None).
         """
         import claude_runtime as _cr
@@ -1987,11 +2331,19 @@ class TestSessionPushTitleToken:
 
         result = _parsed(rt.session_push_title_token(plan_id, "⏳"))
         assert result["status"] == "success"
-        assert result["pushed"] is False
+        assert result["reason"] == "no_title_state"
+        assert "pushed" not in result
         assert "/dev/tty" not in opened
 
-    def test_push_osc_format_correctness(self, rt, tmp_path, monkeypatch):
-        """The pushed bytes are exactly ``\\x1b]0;{composed}\\x07`` (no extra framing)."""
+    def test_push_emits_no_osc_bytes_on_any_channel(self, rt, tmp_path, monkeypatch):
+        """The seam emits NO OSC escape at all — not to /dev/tty, not to stdout.
+
+        The retired contract asserted the exact ``\\x1b]0;{composed}\\x07``
+        framing this seam wrote. That framing now belongs solely to the hook
+        ``terminalSequence`` envelope, so the assertion is inverted: the seam
+        writes no escape anywhere. Checking stdout too closes the obvious
+        wrong-fix (relocating the write rather than deleting it).
+        """
         plan_id = "push-fmt"
         self._write_live_status(
             tmp_path, monkeypatch, plan_id,
@@ -2022,13 +2374,10 @@ class TestSessionPushTitleToken:
 
         monkeypatch.setattr("builtins.open", _fake_open)
 
-        rt.session_push_title_token(plan_id, "🔨")
-        assert len(written) == 1
-        out = written[0]
-        assert out.startswith("\x1b]0;")
-        assert out.endswith("\x07")
-        # No glyph (no title_token) → ``{icon} {body}`` only.
-        assert out == "\x1b]0;🔨 pm:3-outline:fmt\x07"
+        returned = rt.session_push_title_token(plan_id, "🔨")
+
+        assert written == []
+        assert "\x1b]0;" not in returned
 
 
 # =============================================================================
@@ -2661,7 +3010,12 @@ class TestHealthCheck:
         assert result["error"] == "invalid_check"
 
     def test_permissions_check_included_in_all(self, rt, tmp_path, monkeypatch):
-        """checks='all' includes permissions, display, mcp-diagnostics, and hook."""
+        """checks='all' includes permissions, display, mcp-diagnostics, and hook.
+
+        ``checks_run`` is asserted on the ERROR return: the display check is
+        unhealthy in a bare tmp_path, and the fail-closed error carries the full
+        payload, so the enumeration is still readable from a failing run.
+        """
         import claude_runtime as _cr
 
         # Ensure no real settings file is accessed.
@@ -2671,11 +3025,25 @@ class TestHealthCheck:
         monkeypatch.chdir(tmp_path)
 
         result = _parsed(rt.health_check("all"))
-        assert result["status"] == "success"
         assert "permissions" in result["checks_run"]
         assert "display" in result["checks_run"]
         assert "mcp-diagnostics" in result["checks_run"]
         assert "hook" in result["checks_run"]
+
+    def test_unhealthy_mcp_alone_does_not_fail_the_verb(self, rt, tmp_path, monkeypatch):
+        """The fail-closed behaviour is scoped to DISPLAY, not generalised.
+
+        An unreachable MCP port means "no JetBrains IDE is running" — an
+        environmental condition, not a misconfiguration. Failing the verb on it
+        would train callers to ignore the status, which would defeat the
+        display fail-closed guarantee this deliverable adds.
+        """
+        result = _parsed(rt.health_check("mcp-diagnostics"))
+        mcp_result = next(r for r in result["results"] if r["check"] == "mcp-diagnostics")
+        if mcp_result["healthy"]:
+            pytest.skip("an MCP server is reachable in this environment")
+        assert result["status"] == "success"
+        assert result["all_healthy"] is False
 
     def test_permissions_healthy_when_settings_present(self, rt, tmp_path, monkeypatch):
         """permissions check is healthy when project settings.json exists."""
@@ -2690,26 +3058,47 @@ class TestHealthCheck:
         perm_result = next(r for r in result["results"] if r["check"] == "permissions")
         assert perm_result["healthy"] is True
 
-    # Per-event labels reported by the display check, in order. Mirrors
-    # _DISPLAY_RENDER_ENTRIES plus statusLine + env in claude_runtime.
-    _DISPLAY_LABELS = (
-        "SessionStart:matcher-less",
-        "UserPromptSubmit",
-        "Notification",
-        "Stop",
-        "PreToolUse:AskUserQuestion",
-        "PreToolUse:Bash",
-        "PostToolUse",
-        "statusLine",
-        "env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE",
-    )
+    # Per-event labels reported by the display check, in order. Derived from
+    # _DISPLAY_RENDER_ENTRIES rather than re-listed, so the expected set and the
+    # checked set cannot drift apart — the divergence class this deliverable
+    # exists to close.
+    @staticmethod
+    def _display_labels() -> tuple[str, ...]:
+        import claude_runtime as _cr
+
+        return tuple(label for label, _block, _matcher in _cr._DISPLAY_RENDER_ENTRIES) + (
+            "statusLine",
+            "env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE",
+        )
+
+    def test_display_expected_set_matches_the_converged_shape(self):
+        """The expected set is the nine converged labels, in report order.
+
+        Pinned literally — the sole place in this class that does NOT derive
+        from the constant — so a change to the constant is a deliberate,
+        reviewed edit here rather than something the derived assertions absorb
+        silently.
+        """
+        assert self._display_labels()[:9] == (
+            "SessionStart:matcher-less",
+            "SessionStart:clear",
+            "UserPromptSubmit",
+            "Notification",
+            "Stop",
+            "PreToolUse:AskUserQuestion",
+            "PreToolUse:Bash",
+            "PostToolUse:AskUserQuestion",
+            "PostToolUse:Bash",
+        )
 
     def test_display_healthy_when_fully_wired(self, rt, tmp_path, monkeypatch):
         """display check is healthy when every required terminal-title entry is present.
 
         A fresh terminal-title project install-hook writes the complete render
         wiring; the display check must then report every terminal-title label as
-        ``present`` and ``healthy: true``. The orthogonal enforcement entry is
+        ``present`` and the verb must return ``status: success``. This is the
+        installer↔check agreement in its strongest form: the SAME install that
+        the check expects must satisfy it. The orthogonal enforcement entry is
         NOT installed by the terminal-title path, so it reports MISSING without
         making the display unhealthy.
         """
@@ -2718,28 +3107,44 @@ class TestHealthCheck:
         monkeypatch.chdir(tmp_path)
 
         result = _parsed(rt.health_check("display"))
+        assert result["status"] == "success"
         display_result = next(r for r in result["results"] if r["check"] == "display")
         assert display_result["healthy"] is True
         detail = display_result["detail"]
-        for label in self._DISPLAY_LABELS:
+        for label in self._display_labels():
             assert f"{label}: present" in detail
         # The enforcement entry is orthogonal — absent after a terminal-title
         # install — so it is the ONLY MISSING line and the display stays healthy.
         assert "PreToolUse:enforcement: MISSING" in detail
 
-    def test_display_unhealthy_when_render_hook_absent(self, rt, tmp_path, monkeypatch):
-        """display check is unhealthy when no render-title hook entry is present.
+    def test_display_unhealthy_returns_status_error(self, rt, tmp_path, monkeypatch):
+        """An unhealthy display FAILS the verb — it does not report at exit 0.
 
-        An empty settings file (no .claude/settings.local.json) reports every
-        required label as MISSING.
+        The retired contract returned ``status: success`` with
+        ``all_healthy: false``, which is invisible to every caller that branches
+        on status; that is how a missing render entry could sit unnoticed. The
+        status is the assertion here.
         """
         monkeypatch.chdir(tmp_path)
         result = _parsed(rt.health_check("display"))
+        assert result["status"] == "error"
+        assert result["error"] == "display_unhealthy"
+
+    def test_display_failure_preserves_the_full_report(self, rt, tmp_path, monkeypatch):
+        """Failing closed costs the caller NO diagnostic information.
+
+        The error carries the same ``results`` / ``all_healthy`` payload a
+        success would. A failure that stripped the report would push callers
+        back toward ignoring the status to keep the detail.
+        """
+        monkeypatch.chdir(tmp_path)
+        result = _parsed(rt.health_check("display"))
+        assert result["status"] == "error"
+        assert result["all_healthy"] is False
         display_result = next(r for r in result["results"] if r["check"] == "display")
         assert display_result["healthy"] is False
-        detail = display_result["detail"]
-        for label in self._DISPLAY_LABELS:
-            assert f"{label}: MISSING" in detail
+        for label in self._display_labels():
+            assert f"{label}: MISSING" in display_result["detail"]
 
     def test_display_partial_install_names_each_missing_entry(self, rt, tmp_path, monkeypatch):
         """A partial install (only SessionStart wired) reports the missing entries by label.
@@ -2766,23 +3171,45 @@ class TestHealthCheck:
         monkeypatch.chdir(tmp_path)
 
         result = _parsed(rt.health_check("display"))
+        assert result["status"] == "error"
         display_result = next(r for r in result["results"] if r["check"] == "display")
         assert display_result["healthy"] is False
         detail = display_result["detail"]
         # The one wired entry is present.
         assert "SessionStart:matcher-less: present" in detail
-        # Every other required entry is named MISSING.
-        for label in (
-            "UserPromptSubmit",
-            "Notification",
-            "Stop",
-            "PreToolUse:AskUserQuestion",
-            "PreToolUse:Bash",
-            "PostToolUse",
-            "statusLine",
-            "env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE",
-        ):
+        # Every other required entry is named MISSING — including
+        # SessionStart:clear, whose absence the retired expected set could not
+        # report at all.
+        for label in self._display_labels():
+            if label == "SessionStart:matcher-less":
+                continue
             assert f"{label}: MISSING" in detail
+
+    def test_removing_a_single_entry_flips_the_verdict_to_error(self, rt, tmp_path, monkeypatch):
+        """Removing ONE installed entry from a healthy install fails the check.
+
+        The paired positive control for the healthy case: without it, a check
+        that returned error unconditionally would satisfy every failure
+        assertion in this class.
+        """
+        target = tmp_path / ".claude" / "settings.local.json"
+        rt.project_install_hook(str(target))
+        monkeypatch.chdir(tmp_path)
+        assert _parsed(rt.health_check("display"))["status"] == "success"
+
+        settings = json.loads(target.read_text())
+        settings["hooks"]["PostToolUse"] = [
+            entry
+            for entry in settings["hooks"]["PostToolUse"]
+            if entry.get("matcher") != "Bash"
+        ]
+        target.write_text(json.dumps(settings), encoding="utf-8")
+
+        result = _parsed(rt.health_check("display"))
+        assert result["status"] == "error"
+        assert result["error"] == "display_unhealthy"
+        display_result = next(r for r in result["results"] if r["check"] == "display")
+        assert "PostToolUse:Bash: MISSING" in display_result["detail"]
 
     def test_display_detail_contains_missing_token_when_any_entry_absent(
         self, rt, tmp_path, monkeypatch
