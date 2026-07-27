@@ -19,6 +19,7 @@ The orchestrator drains the queue; the two drain verbs are mechanical and carry 
 
 - **`inbox list` is the enumeration seam.** It returns the queued messages in deterministic (sender, sequence) order, each with its header context and its validation verdict. Nothing under `inbox/archive/` is enumerated.
 - **A malformed message is reported, never skipped.** Each row carries either `valid: true` or the validator's distinct error code from the table below, so a broken message stays visible to the drain instead of disappearing from it, and one bad message never aborts the enumeration.
+- **An unreadable message is reported the same way.** A message file that cannot even be read — non-UTF-8 bytes, or the file vanishing mid-drain under a concurrent writer — is reported as one row with `valid: false` and the distinct `error: unreadable` code, not confusable with any envelope-validation code below, and enumeration continues to the next message.
 - **Archival is the consume marker.** A message leaves the queue only by being archived, so a re-scan of an already-drained message is a no-op and a repeated `inbox archive` of the same message is idempotent success.
 - **The append-only invariant is unbroken.** Archival RELOCATES the file; it never edits or deletes it. The message body at the archived path is byte-identical to the one the sender wrote.
 
@@ -93,6 +94,8 @@ The named validation seam is `validate_envelope(text, expected_epic, filename)` 
 | 5 | `empty_payload` | No payload body follows the header's blank line. |
 | 6 | `epic_mismatch` | The `epic` header disagrees with the epic tree the message sits in. Checked only when an expected epic is supplied. |
 | 7 | `filename_sender_mismatch` | The filename's `{sender}` segment disagrees with the `sender_id` header. Checked only when a filename is supplied. |
+
+`unreadable` is a separate, non-numbered code: it is raised by `cmd_inbox_list` itself, before a message's text ever reaches `validate_envelope`, when the message file cannot be read at all (non-UTF-8 bytes, or the file vanishing mid-drain under a concurrent writer). It is deliberately distinct from every code above so a read failure is never confused with an envelope-validation failure.
 
 ## Forward compatibility
 

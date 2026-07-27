@@ -147,7 +147,7 @@ python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator
   --slug SLUG
 ```
 
-Enumerates the epic's queued inbox messages — the drain's enumeration seam. Returns `count`, `invalid_count`, and a `messages[]` table carrying `name`, `sender_id`, `kind`, `created`, `valid`, and `error` per row, in deterministic (sender, sequence) order. Every message is validated through the same `validate_envelope` seam `inbox validate` uses, so a malformed message is REPORTED with its distinct error code (`error` non-empty, `valid: false`) rather than dropped or aborting the enumeration. Messages already retired under `inbox/archive/` are not enumerated, which is what makes a re-scan of a completed drain a no-op. Refuses an unsafe slug (`invalid_slug`) and an unscaffolded epic (`epic_not_found`).
+Enumerates the epic's queued inbox messages — the drain's enumeration seam. Returns `count`, `invalid_count`, and a `messages[]` table carrying `name`, `sender_id`, `kind`, `created`, `valid`, and `error` per row, in deterministic (sender, sequence) order. Every message is validated through the same `validate_envelope` seam `inbox validate` uses, so a malformed message is REPORTED with its distinct error code (`error` non-empty, `valid: false`) rather than dropped or aborting the enumeration. A message that cannot even be read (non-UTF-8 bytes, or the file vanishing mid-drain under a concurrent writer) is reported the same way with the distinct `unreadable` code, also without aborting the enumeration. Messages already retired under `inbox/archive/` are not enumerated, which is what makes a re-scan of a completed drain a no-op. Refuses an unsafe slug (`invalid_slug`) and an unscaffolded epic (`epic_not_found`).
 
 ### inbox archive
 

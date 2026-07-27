@@ -334,6 +334,34 @@ class TestInboxList:
         assert [row['name'] for row in parsed['messages']] == [f'{SENDER}-001.md']
         assert parsed['count'] == 1
 
+    def test_should_report_an_unreadable_message_and_still_return_the_rest(
+        self, plan_context, tmp_path
+    ):
+        _scaffold(plan_context)
+        _write(plan_context, _payload(tmp_path, 'first', 'a.md'), kind='landing')
+        (_epic_dir(plan_context) / 'inbox' / f'{OTHER_SENDER}-001.md').write_bytes(
+            b'\xff\xfe not valid utf-8 \xff'
+        )
+        _write(
+            plan_context,
+            _payload(tmp_path, 'third', 'c.md'),
+            kind='candidate-lesson',
+            sender=OTHER_SENDER,
+        )
+
+        parsed = _list(plan_context).toon()
+
+        rows = {row['name']: row for row in parsed['messages']}
+        assert parsed['count'] == 3
+        assert parsed['invalid_count'] == 1
+        bad = rows[f'{OTHER_SENDER}-001.md']
+        assert bad['valid'] is False
+        assert bad['error'] == 'unreadable'
+        assert rows[f'{SENDER}-001.md']['valid'] is True
+        assert rows[f'{SENDER}-001.md']['error'] == ''
+        assert rows[f'{OTHER_SENDER}-002.md']['valid'] is True
+        assert rows[f'{OTHER_SENDER}-002.md']['error'] == ''
+
     def test_should_refuse_an_unscaffolded_epic(self, plan_context):
         result = _list(plan_context, slug='never-scaffolded')
 

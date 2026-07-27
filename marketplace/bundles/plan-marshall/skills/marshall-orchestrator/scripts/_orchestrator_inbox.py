@@ -453,9 +453,12 @@ def cmd_inbox_list(args: Any) -> dict[str, Any]:
     orchestrator routes on plus the validation verdict. A malformed message is
     REPORTED with the validator's distinct error code — never silently dropped,
     and never aborting the enumeration — so a broken message stays visible to
-    the drain instead of disappearing from it. Consumed messages already moved
-    under ``inbox/archive/`` are not enumerated, which is what makes a re-scan
-    of a completed drain a no-op.
+    the drain instead of disappearing from it. A message that cannot even be
+    READ (non-UTF-8 bytes, or the file vanishing mid-drain under a concurrent
+    writer) is reported the same way, with the distinct ``unreadable`` code, so
+    a read failure never aborts the rest of the enumeration either. Consumed
+    messages already moved under ``inbox/archive/`` are not enumerated, which
+    is what makes a re-scan of a completed drain a no-op.
     """
     invalid = _validate_identifier(args.slug)
     if invalid:
@@ -470,8 +473,22 @@ def cmd_inbox_list(args: Any) -> dict[str, Any]:
     inbox_dir = root / INBOX_SUBDIR
     messages: list[dict[str, Any]] = []
     for path in list_messages(inbox_dir):
+        try:
+            text = path.read_text(encoding='utf-8')
+        except (OSError, UnicodeDecodeError):
+            messages.append(
+                {
+                    'name': path.name,
+                    'sender_id': '',
+                    'kind': '',
+                    'created': '',
+                    'valid': False,
+                    'error': 'unreadable',
+                }
+            )
+            continue
         ok, error_code, header = validate_envelope(
-            path.read_text(encoding='utf-8'),
+            text,
             expected_epic=args.slug,
             filename=path.name,
         )
