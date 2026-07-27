@@ -46,11 +46,16 @@ completion_check_name: ""         # CONFIRMED on #103 — absent from `ci pr rev
 honors_skip_label: true           # UNVERIFIED — #103 carried no skip label, so this was not
                                   # exercised. Kept because it is enforced by the reusable
                                   # workflow's if: guard, NOT by bot config (see "Central config")
-# ignore_patterns: CONFIRMED on #103 — neither pattern fired, and neither
-# wrongly dropped the review. No pattern added.
+# ignore_patterns: CONFIRMED on #103 — the first two did not fire, and neither
+# wrongly dropped the review.
 ignore_patterns:
   - "## PR Agent Walkthrough"     # /help output — commands reference, never a finding
   - "### Question:"               # /ask answer — a reply to a human, not a review finding
+  - "**[Persistent review]"       # contentless "updated to latest commit" notice, authored by the
+                                  # reviewer identity so it reaches this pipeline as a candidate
+                                  # finding. Suppressed at source by final_update_message = false
+                                  # in cuioss/pr-agent-settings; this pattern covers the ones
+                                  # already posted and any recurrence if that setting is lost.
 # severity_map: an ASSIGNMENT map, NOT a parse map — see the section below.
 severity_map:
   security_concern: high          # assigned to a finding taken from the 🔒 row
