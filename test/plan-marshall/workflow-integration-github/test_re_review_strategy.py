@@ -13,11 +13,16 @@ Covers the three concerns of the post-merge re-review registry:
          pr-agent:   posts ``/review``.
     3. Two-signal completion matching — ``await_fresh_review`` is satisfied by
        EITHER ``_match_review`` (a review whose reviewed commit SHA matches the
-       pushed HEAD AND whose ``submitted_at`` post-dates the trigger time,
-       reported with ``head_sha_verified: true``) OR ``_match_bot_comment`` (an
-       issue comment from the awaited bot post-dating the trigger, reported with
-       ``head_sha_verified: false``). The review signal wins when both are
-       present. Fail-closed on every missing or unparseable input.
+       pushed HEAD, whose ``submitted_at`` post-dates the trigger time, AND whose
+       body is not a refusal notice; reported with ``head_sha_verified: true``)
+       OR ``_match_bot_comment`` (an issue comment from the awaited bot
+       post-dating the trigger and likewise not a refusal notice; reported with
+       ``head_sha_verified: false``). BOTH paths apply the same two-layer refusal
+       test — the awaited bot's registry ``ignore_patterns`` first, then the
+       structural ``_is_rate_limit_notice`` fallback — so a bot that answers the
+       trigger by declining to review is a timeout, never a completed review. The
+       review signal wins when both are present. Fail-closed on every missing or
+       unparseable input.
 
 Plus the ``cmd_re_review`` CLI handler that wires request → await together.
 
@@ -71,13 +76,20 @@ def _noop_sleep(monkeypatch):
     monkeypatch.setattr(time, 'sleep', lambda *_a, **_kw: None)
 
 
-def _review(commit_sha, submitted_at, *, user='coderabbit[bot]', state='COMMENTED'):
-    """Build a review row in the shape fetch_pr_reviews_with_commits returns."""
+def _review(commit_sha, submitted_at, *, user='coderabbit[bot]', state='COMMENTED', body=''):
+    """Build a review row in the shape fetch_pr_reviews_with_commits returns.
+
+    ``body`` mirrors the widened projection: a review row now carries its body so
+    the completion discriminator can tell a genuine review from a refusal notice
+    submitted as a review object. It defaults to empty, which no refusal layer
+    matches, so a fixture that does not care about the body behaves as before.
+    """
     return {
         'user': user,
         'state': state,
         'submitted_at': submitted_at,
         'commit_sha': commit_sha,
+        'body': body,
     }
 
 
@@ -364,7 +376,7 @@ def test_match_review_matches_when_sha_and_time_satisfy():
     reviews = [_review('headsha', '2026-01-01T00:05:00Z')]
     trigger_dt = _parse('2026-01-01T00:00:00Z')
 
-    matched = github_re_review._ReReviewStrategy._match_review(reviews, 'headsha', trigger_dt)
+    matched = github_re_review._ReReviewStrategy._match_review(reviews, 'headsha', trigger_dt, 'coderabbit')
 
     assert matched is not None
     assert matched['commit_sha'] == 'headsha'
@@ -375,7 +387,9 @@ def test_match_review_rejects_wrong_commit_sha():
     reviews = [_review('oldsha', '2026-01-01T00:05:00Z')]
     trigger_dt = _parse('2026-01-01T00:00:00Z')
 
-    assert github_re_review._ReReviewStrategy._match_review(reviews, 'headsha', trigger_dt) is None
+    assert (
+        github_re_review._ReReviewStrategy._match_review(reviews, 'headsha', trigger_dt, 'coderabbit') is None
+    )
 
 
 def test_match_review_rejects_review_at_or_before_trigger_time():
@@ -383,7 +397,9 @@ def test_match_review_rejects_review_at_or_before_trigger_time():
     reviews = [_review('headsha', '2026-01-01T00:00:00Z')]
     trigger_dt = _parse('2026-01-01T00:05:00Z')
 
-    assert github_re_review._ReReviewStrategy._match_review(reviews, 'headsha', trigger_dt) is None
+    assert (
+        github_re_review._ReReviewStrategy._match_review(reviews, 'headsha', trigger_dt, 'coderabbit') is None
+    )
 
 
 def test_match_review_fail_closed_on_unparseable_submitted_at():
@@ -391,7 +407,9 @@ def test_match_review_fail_closed_on_unparseable_submitted_at():
     reviews = [_review('headsha', 'not-a-timestamp')]
     trigger_dt = _parse('2026-01-01T00:00:00Z')
 
-    assert github_re_review._ReReviewStrategy._match_review(reviews, 'headsha', trigger_dt) is None
+    assert (
+        github_re_review._ReReviewStrategy._match_review(reviews, 'headsha', trigger_dt, 'coderabbit') is None
+    )
 
 
 def test_match_review_returns_first_eligible_among_many():
@@ -403,7 +421,7 @@ def test_match_review_returns_first_eligible_among_many():
     ]
     trigger_dt = _parse('2026-01-01T00:00:00Z')
 
-    matched = github_re_review._ReReviewStrategy._match_review(reviews, 'headsha', trigger_dt)
+    matched = github_re_review._ReReviewStrategy._match_review(reviews, 'headsha', trigger_dt, 'coderabbit')
 
     assert matched is not None
     assert matched['submitted_at'] == '2026-01-01T00:06:00Z'
@@ -658,6 +676,202 @@ def test_match_bot_comment_fail_closed_on_missing_trigger_time():
     comments = [_comment(_PR_AGENT_LOGIN, created_at='2026-01-01T00:05:00Z')]
 
     assert github_re_review._ReReviewStrategy._match_bot_comment(comments, 'pr-agent', None) is None
+
+
+# =============================================================================
+# Refusal notices are NOT a completed review — on BOTH discriminator paths
+# =============================================================================
+#
+# A bot can answer the re-review trigger by DECLINING to review. That answer
+# arrives on either path — as an issue comment, or as a REVIEW object whose body
+# is the refusal — and on the review path it would otherwise satisfy the
+# commit_sha + submitted_at gates and be reported with
+# ``head_sha_verified: true``. That is the false-green this section pins shut:
+# the envelope would assert the new HEAD was reviewed when the bot explicitly
+# said it was not.
+#
+# Both paths apply the same TWO-LAYER refusal test as the producer pre-filter:
+# the awaited bot's registry ``ignore_patterns`` (case-sensitive substring
+# containment) first, then the structural ``_is_rate_limit_notice`` fallback.
+# Every fixture body uses the FLATTENED single-line shape.
+
+_SOURCERY_LOGIN = 'sourcery-ai'
+
+# Sourcery's OBSERVED #1014 refusal. Recognized ONLY by the registry data layer:
+# "larger than the review limit of" is a comparison, not an exceeded/reached/hit
+# statement, so the structural recognizer does not see it.
+_SOURCERY_REFUSAL = (
+    'Sourcery was unable to review this pull request because '
+    'your pull request is larger than the review limit of 150000 characters. '
+    'Reduce the size of the pull request and request another review.'
+)
+
+# A structurally-shaped refusal matched by NO registry ignore_patterns entry —
+# only the structural fallback can recognize it.
+_UNCAPTURED_SHAPED_REFUSAL = (
+    '> [!WARNING] > ## Usage limit reached > '
+    'This reviewer has reached its monthly usage limit. '
+    'Reviews will resume after the limit resets.'
+)
+
+_GENUINE_REVIEW_BODY = (
+    'Reviewed the new HEAD. One issue: the retry loop can spin forever when the '
+    'backoff cap is zero — guard the cap before entering the loop.'
+)
+
+
+def test_await_does_not_match_a_refusal_delivered_as_a_review(monkeypatch):
+    """#1014 regression: a refusal submitted as a REVIEW object is not a completed review.
+
+    This is the observed case and the sharpest false-green: the refusal review
+    satisfies both the commit_sha and submitted_at gates, so before the fix it
+    matched and reported ``head_sha_verified: true`` — asserting HEAD coverage the
+    bot had explicitly declined to provide. The correct outcome is a truthful
+    timeout.
+    """
+    result = _await_with_comments(
+        monkeypatch,
+        [],
+        reviews=[
+            _review(
+                'headsha',
+                '2026-01-01T00:05:00Z',
+                user='sourcery-ai[bot]',
+                body=_SOURCERY_REFUSAL,
+            )
+        ],
+        bot_kind='sourcery',
+    )
+
+    assert result['status'] == 'success'
+    assert result['matched'] is False
+    assert result['matched_signal'] == ''
+    assert result['head_sha_verified'] is False
+    assert result['timed_out'] is True
+
+
+def test_await_does_not_match_a_refusal_delivered_as_a_comment(monkeypatch):
+    """The same #1014 refusal delivered as an issue comment is likewise not a response."""
+    result = _await_with_comments(
+        monkeypatch,
+        [_comment(_SOURCERY_LOGIN, created_at='2026-01-01T00:05:00Z', body=_SOURCERY_REFUSAL)],
+        bot_kind='sourcery',
+    )
+
+    assert result['matched'] is False
+    assert result['matched_signal'] == ''
+    assert result['timed_out'] is True
+
+
+def test_await_still_matches_a_genuine_review(monkeypatch):
+    """Precision guard: a real review still completes the await on the strong signal."""
+    result = _await_with_comments(
+        monkeypatch,
+        [],
+        reviews=[
+            _review(
+                'headsha',
+                '2026-01-01T00:05:00Z',
+                user='sourcery-ai[bot]',
+                body=_GENUINE_REVIEW_BODY,
+            )
+        ],
+        bot_kind='sourcery',
+    )
+
+    assert result['matched'] is True
+    assert result['matched_signal'] == 'review'
+    assert result['head_sha_verified'] is True
+    assert result['timed_out'] is False
+
+
+def test_await_still_matches_a_genuine_comment(monkeypatch):
+    """Precision guard: a real comment still completes the await on the weaker signal."""
+    result = _await_with_comments(
+        monkeypatch,
+        [
+            _comment(
+                _SOURCERY_LOGIN,
+                created_at='2026-01-01T00:05:00Z',
+                body='Overall comments: consider extracting the retry helper.',
+            )
+        ],
+        bot_kind='sourcery',
+    )
+
+    assert result['matched'] is True
+    assert result['matched_signal'] == 'issue_comment'
+    assert result['head_sha_verified'] is False
+
+
+def test_structural_fallback_rejects_an_uncaptured_refusal_on_the_review_path(monkeypatch):
+    """A shaped refusal that no ignore_patterns entry matches is still rejected."""
+    result = _await_with_comments(
+        monkeypatch,
+        [],
+        reviews=[
+            _review(
+                'headsha',
+                '2026-01-01T00:05:00Z',
+                user='sourcery-ai[bot]',
+                body=_UNCAPTURED_SHAPED_REFUSAL,
+            )
+        ],
+        bot_kind='sourcery',
+    )
+
+    assert result['matched'] is False
+    assert result['matched_signal'] == ''
+    assert result['head_sha_verified'] is False
+
+
+def test_structural_fallback_rejects_an_uncaptured_refusal_on_the_comment_path(monkeypatch):
+    """The same uncaptured refusal is rejected when it arrives as a comment."""
+    result = _await_with_comments(
+        monkeypatch,
+        [
+            _comment(
+                _SOURCERY_LOGIN,
+                created_at='2026-01-01T00:05:00Z',
+                body=_UNCAPTURED_SHAPED_REFUSAL,
+            )
+        ],
+        bot_kind='sourcery',
+    )
+
+    assert result['matched'] is False
+    assert result['matched_signal'] == ''
+
+
+def test_match_review_without_bot_kind_applies_only_the_structural_layer():
+    """With no ``bot_kind`` the data layer cannot fire — the review still matches.
+
+    Pins the bot-scoping of the registry layer: Sourcery's refusal marker must not
+    leak into a review being matched for an unknown/unregistered bot. Only the
+    structural test applies there, and it does not recognize this phrasing.
+    """
+    trigger_dt = _parse('2026-01-01T00:00:00Z')
+
+    genuine = [_review('headsha', '2026-01-01T00:05:00Z', body=_GENUINE_REVIEW_BODY)]
+    assert (
+        github_re_review._ReReviewStrategy._match_review(genuine, 'headsha', trigger_dt, None)
+        is not None
+    )
+
+    # The Sourcery marker is bot-scoped data: with bot_kind None it cannot fire,
+    # and the structural layer does not match this phrasing, so the review matches.
+    marker_bearing = [_review('headsha', '2026-01-01T00:05:00Z', body=_SOURCERY_REFUSAL)]
+    assert (
+        github_re_review._ReReviewStrategy._match_review(marker_bearing, 'headsha', trigger_dt, None)
+        is not None
+    )
+    # ...and the SAME body IS rejected once the awaited bot is known.
+    assert (
+        github_re_review._ReReviewStrategy._match_review(
+            marker_bearing, 'headsha', trigger_dt, 'sourcery'
+        )
+        is None
+    )
 
 
 # =============================================================================

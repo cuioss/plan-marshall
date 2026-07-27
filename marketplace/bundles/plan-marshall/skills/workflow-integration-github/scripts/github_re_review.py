@@ -30,10 +30,22 @@ two completion signals, checked in that order of strength:
    ``submittedAt > trigger_time``. Preferred, and reported as
    ``matched_signal: review`` with ``head_sha_verified: true``.
 2. An **issue comment** authored by the awaited ``bot_kind`` whose later of
-   ``updated_at`` / ``created_at`` post-dates ``trigger_time`` and which is not
-   a rate-limit / service notice. Reported as ``matched_signal: issue_comment``
-   with ``head_sha_verified: false`` — a comment carries no reviewed-commit SHA,
-   so it establishes that the bot responded, NOT that it reviewed the new HEAD.
+   ``updated_at`` / ``created_at`` post-dates ``trigger_time``. Reported as
+   ``matched_signal: issue_comment`` with ``head_sha_verified: false`` — a
+   comment carries no reviewed-commit SHA, so it establishes that the bot
+   responded, NOT that it reviewed the new HEAD.
+
+BOTH discriminators additionally reject a **refusal notice** — a comment or a
+review body a bot posts to say it could NOT review — using the same TWO-LAYER
+rule the producer pre-filter applies: the awaited bot's registry
+``ignore_patterns`` (case-sensitive substring containment) first, then the
+structural ``_is_rate_limit_notice`` fallback for an unknown/unregistered bot or
+a phrasing not yet captured as data. A refusal is the bot talking about itself,
+never evidence that the new HEAD was reviewed. Accepted tradeoff: a genuine
+review or comment whose body happens to contain an ``ignore_patterns`` substring
+is skipped and surfaces as a timeout — deliberate, because a truthful
+``matched: false`` / ``timed_out: true`` is recoverable, whereas a false
+``head_sha_verified: true`` silently asserts review coverage that never happened.
 
 The second signal exists because a bot that posts its review as one persistent
 issue comment and submits no review object could otherwise only ever time out.
@@ -177,7 +189,7 @@ class _ReReviewStrategy:
 
         def _resolve(data: dict) -> tuple[str, dict | None]:
             """Return ``(matched_signal, record)`` for the strongest signal present."""
-            review = self._match_review(data.get('reviews') or [], head_sha, trigger_dt)
+            review = self._match_review(data.get('reviews') or [], head_sha, trigger_dt, bot_kind)
             if review is not None:
                 return 'review', review
             comment = self._match_bot_comment(data.get('comments') or [], bot_kind, trigger_dt)
@@ -213,15 +225,31 @@ class _ReReviewStrategy:
         }
 
     @staticmethod
-    def _match_review(reviews: list[dict], head_sha: str, trigger_dt: datetime | None) -> dict | None:
-        """Return the first review matching ``head_sha`` and post-dating ``trigger_dt``.
+    def _match_review(
+        reviews: list[dict], head_sha: str, trigger_dt: datetime | None, bot_kind: str | None
+    ) -> dict | None:
+        """Return the first genuine review matching ``head_sha`` and post-dating ``trigger_dt``.
 
-        A review matches when its reviewed commit SHA equals ``head_sha`` AND its
-        ``submitted_at`` is strictly after ``trigger_dt``. A review with an
-        unparseable ``submitted_at`` never matches (fail-closed). When
-        ``trigger_dt`` is ``None`` (invalid or unparseable trigger time) the
-        comparison is fail-closed — no review matches, preventing stale reviews
-        from being incorrectly accepted.
+        A review matches when its reviewed commit SHA equals ``head_sha``, its
+        ``submitted_at`` is strictly after ``trigger_dt``, AND its body is not a
+        refusal notice. A review with an unparseable ``submitted_at`` never
+        matches (fail-closed). When ``trigger_dt`` is ``None`` (invalid or
+        unparseable trigger time) the comparison is fail-closed — no review
+        matches, preventing stale reviews from being incorrectly accepted.
+
+        The refusal test is the same TWO-LAYER rule the producer pre-filter
+        applies: the awaited bot's registry ``ignore_patterns`` (case-sensitive
+        substring containment) first, then the structural ``_is_rate_limit_notice``
+        fallback for an unknown/unregistered bot or a phrasing not yet captured as
+        data. When ``bot_kind`` is ``None`` the data layer cannot fire and only the
+        structural test applies. There is deliberately NO author gate on this
+        path — the SHA match already establishes provenance.
+
+        Accepted tradeoff: a genuine review whose body happens to contain an
+        ``ignore_patterns`` substring is skipped and reported as a timeout. That
+        is deliberate — a truthful ``matched: false`` / ``timed_out: true`` is
+        recoverable, whereas a false ``head_sha_verified: true`` silently asserts
+        review coverage that never happened.
         """
         if trigger_dt is None:
             return None
@@ -231,8 +259,14 @@ class _ReReviewStrategy:
             submitted_dt = _parse_iso(review.get('submitted_at') or '')
             if submitted_dt is None:
                 continue
-            if submitted_dt > trigger_dt:
-                return review
+            if submitted_dt <= trigger_dt:
+                continue
+            body = review.get('body') or ''
+            if bot_kind and any(marker in body for marker in bot_registry.ignore_patterns(bot_kind)):
+                continue
+            if _is_rate_limit_notice(body):
+                continue
+            return review
         return None
 
     @staticmethod
@@ -248,8 +282,15 @@ class _ReReviewStrategy:
           ``trigger_dt``. Taking the later of the two is what makes an EDITED
           persistent comment count: such a bot updates one comment in place, so
           ``created_at`` stops advancing after the first review;
-        - it is not a rate-limit / service notice — a "the bot is rate-limited"
-          comment is the bot talking about itself, not a completed review.
+        - it is not a refusal notice, tested with the same TWO-LAYER rule the
+          producer pre-filter applies: the bot's registry ``ignore_patterns``
+          (case-sensitive substring containment) first, then the structural
+          ``_is_rate_limit_notice`` fallback for a phrasing not yet captured as
+          data. A "the bot could not review" comment is the bot talking about
+          itself, not a completed review. Accepted tradeoff: a genuine comment
+          containing an ``ignore_patterns`` substring is skipped and reported as
+          a timeout — a truthful ``matched: false`` is recoverable, a false
+          "the bot responded" is not.
 
         Fail-closed on every missing input: no ``bot_kind``, no ``trigger_dt``,
         or an unparseable timestamp yields no match.
@@ -259,7 +300,10 @@ class _ReReviewStrategy:
         for comment in comments:
             if bot_kind_for_author(comment.get('author')) != bot_kind:
                 continue
-            if _is_rate_limit_notice(comment.get('body') or ''):
+            body = comment.get('body') or ''
+            if any(marker in body for marker in bot_registry.ignore_patterns(bot_kind)):
+                continue
+            if _is_rate_limit_notice(body):
                 continue
             stamps = [
                 dt

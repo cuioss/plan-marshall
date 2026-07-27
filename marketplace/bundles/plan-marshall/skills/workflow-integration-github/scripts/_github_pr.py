@@ -1212,7 +1212,11 @@ def fetch_pr_reviews_with_commits(pr_number: int | str) -> dict:
     the REST ``/reviews`` payload carries ``commit_id`` directly.
 
     Returns a structured envelope. On success ``reviews`` is a list of
-    ``{user, state, submitted_at, commit_sha}`` dicts.
+    ``{user, state, submitted_at, commit_sha, body}`` dicts. ``body`` is carried
+    because a bot can submit a REVIEW object whose body is a refusal notice
+    ("I could not review this") rather than feedback; the re-review wait must be
+    able to classify that body and decline to count it as a completed review,
+    which it cannot do from the SHA and timestamp alone.
     """
 
     owner, repo = github_ops.get_repo_info()
@@ -1246,6 +1250,7 @@ def fetch_pr_reviews_with_commits(pr_number: int | str) -> dict:
             'state': r.get('state', 'UNKNOWN'),
             'submitted_at': r.get('submitted_at') or '',
             'commit_sha': r.get('commit_id') or '',
+            'body': r.get('body') or '',
         }
         for r in raw_reviews
     ]
