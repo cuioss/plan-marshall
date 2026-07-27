@@ -107,7 +107,7 @@
         "plan-marshall:automatic-review": {
           "enabled_bots": "coderabbit,sourcery,pr-agent",
           "review_bot_buffer_seconds": 180,
-          "re_review_on_loopback": false,
+          "re_review_on_loopback": true,
           "re_review_on_branch_cleanup": true,
           "re_review_await_timeout_seconds": 600,
           "re_review_on_timeout": "ask",
