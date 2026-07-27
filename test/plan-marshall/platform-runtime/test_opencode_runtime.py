@@ -48,11 +48,18 @@ def _parse(toon_str: str) -> dict:
 
 
 def test_session_teardown_returns_honest_noop(runtime: OpenCodeRuntime) -> None:
-    """session_teardown is an honest no-op naming the missing channel."""
+    """session_teardown is an honest no-op naming what is actually missing.
+
+    Teardown is now a session-BINDING release and writes no title reset, so the
+    honest reason names the absent session binding rather than an absent
+    terminal-title channel — naming the wrong missing thing would misdescribe
+    why the verb cannot act.
+    """
     result = _parse(runtime.session_teardown())
     assert result["status"] == "no-op"
     assert result["operation"] == "session teardown"
-    assert "terminal-title channel" in result["reason"]
+    assert "session" in result["reason"]
+    assert "binding to release" in result["reason"]
     assert result["alternative"]
 
 

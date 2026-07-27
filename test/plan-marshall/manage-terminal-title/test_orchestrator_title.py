@@ -166,7 +166,13 @@ class TestOrchestratorStateRead:
 
 
 class TestPushTitleTokenSeam:
-    """The state-absent path stays the existing no-op (title-disabled parity)."""
+    """The state-absent path stays the existing no-op (title-disabled parity).
+
+    The seam BINDS AND PERSISTS — it never repaints — so its return carries a
+    ``reason`` discriminator and NO ``pushed`` flag: a seam that performs no
+    delivery has no delivery result to report. Delivery is the next render
+    event's outcome.
+    """
 
     def test_should_noop_when_orchestrator_state_absent(self, monkeypatch, tmp_path):
         monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
@@ -177,9 +183,9 @@ class TestPushTitleTokenSeam:
         )
 
         assert 'status: success' in result
-        assert 'pushed: false' in result
         assert 'no_title_state' in result
         assert 'slug: missing-epic' in result
+        assert 'pushed' not in result
 
     def test_should_noop_when_plan_state_absent_via_default_store(
         self, monkeypatch, tmp_path
@@ -191,8 +197,9 @@ class TestPushTitleTokenSeam:
         result = runtime.session_push_title_token('no-such-plan')
 
         assert 'status: success' in result
-        assert 'pushed: false' in result
+        assert 'no_title_state' in result
         assert 'plan_id: no-such-plan' in result
+        assert 'pushed' not in result
 
 
 class TestPushTitleTokenCliBoundary:
@@ -231,5 +238,5 @@ class TestPushTitleTokenCliBoundary:
         )
 
         assert 'status: success' in result
-        assert 'pushed: false' in result
         assert 'no_title_state' in result
+        assert 'pushed' not in result

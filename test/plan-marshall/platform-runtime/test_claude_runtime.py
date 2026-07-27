@@ -1086,6 +1086,19 @@ class TestDisplayEnforcementLabel:
 # title_token, the composed title is ``{icon} pm:X:Y`` (no glyph).
 
 
+def _title_token(state: str, owner: str = "cli", age_seconds: int = 0) -> dict[str, str]:
+    """Build a ``{owner, state, set_at}`` title-token record.
+
+    ``status.title_token`` is a structured record, not a bare state string, so
+    every fixture that plants a token builds it through here. ``age_seconds``
+    backdates ``set_at`` for the aged-token staleness paths.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    set_at = datetime.now(UTC) - timedelta(seconds=age_seconds)
+    return {"owner": owner, "state": state, "set_at": set_at.strftime("%Y-%m-%dT%H:%M:%SZ")}
+
+
 def _write_status_json(
     tmp_path: Path,
     *,
@@ -1093,7 +1106,7 @@ def _write_status_json(
     plan_id: str,
     current_phase: str | None = "5-execute",
     short_description: str | None = "my-task",
-    title_token: str | None = None,
+    title_token: dict[str, str] | None = None,
     archived: bool = False,
     date_prefix: str = "2026-05-29",
 ) -> None:
@@ -1322,10 +1335,10 @@ class TestSessionRenderTitleBuildBusy:
         return f"pm:{current_phase}:{short_description}"
 
     @staticmethod
-    def _bash_payload(command):
-        """Build a PreToolUse:Bash hook payload carrying *command*."""
+    def _bash_payload(command, event="PreToolUse"):
+        """Build a ``{event}:Bash`` hook payload carrying *command*."""
         return {
-            "hook_event_name": "PreToolUse",
+            "hook_event_name": event,
             "tool_name": "Bash",
             "tool_input": {"command": command},
         }
@@ -1353,10 +1366,17 @@ class TestSessionRenderTitleBuildBusy:
         envelope = json.loads(captured)
         assert envelope["terminalSequence"] == f"\x1b]0;{self._ICON_BUILD} {body}\x07"
 
-    def test_build_command_persists_build_busy_token(
+    def test_build_command_sets_and_pairs_a_clear_on_the_bash_bracket(
         self, rt, tmp_path, monkeypatch, capsys
     ):
-        """A build command persists the token via _manage_status_set_title_token(plan_id, 'build-busy')."""
+        """The bracket is a SET on enter and a paired CLEAR on exit.
+
+        A set with no paired clear is the defect this asserts against: it leaves
+        the token owned by a writer that never retires it, so the 🔨 persists
+        past the build. Asserting only the set half would certify exactly that
+        defect, so both halves are driven here in one test — the same command,
+        first through ``PreToolUse:Bash`` and then through ``PostToolUse:Bash``.
+        """
         from io import StringIO
 
         self._arrange(tmp_path, monkeypatch, plan_id="persist-plan")
@@ -1365,15 +1385,32 @@ class TestSessionRenderTitleBuildBusy:
             "plan-marshall:build-pyproject:pyproject_build run "
             '--command-args "verify plan-marshall"'
         )
+
+        # Enter the build window.
         monkeypatch.setattr("sys.stdin", StringIO(json.dumps(self._bash_payload(command))))
-
         capsys.readouterr()
-        with patch(
-            "claude_runtime._manage_status_set_title_token", return_value=True
-        ) as mock_set:
+        with (
+            patch("claude_runtime._manage_status_set_title_token", return_value=True) as mock_set,
+            patch("claude_runtime._manage_status_clear_title_token", return_value=True) as mock_clear,
+        ):
             rt.session_render_title(statusline=False)
-
         mock_set.assert_called_once_with("persist-plan", "build-busy")
+        mock_clear.assert_not_called()
+
+        # Exit the build window: the paired clear fires on the SAME render event
+        # family, which is what delivers the corrected title.
+        monkeypatch.setattr(
+            "sys.stdin",
+            StringIO(json.dumps(self._bash_payload(command, event="PostToolUse"))),
+        )
+        capsys.readouterr()
+        with (
+            patch("claude_runtime._manage_status_set_title_token", return_value=True) as mock_set,
+            patch("claude_runtime._manage_status_clear_title_token", return_value=True) as mock_clear,
+        ):
+            rt.session_render_title(statusline=False)
+        mock_clear.assert_called_once_with("persist-plan")
+        mock_set.assert_not_called()
 
     @pytest.mark.parametrize(
         "command",
@@ -1429,41 +1466,66 @@ class TestSessionRenderTitleBuildBusy:
         assert envelope["terminalSequence"] == f"\x1b]0;{self._ICON_BUSY} {body}\x07"
         mock_set.assert_not_called()
 
-    def test_build_command_on_post_tool_use_does_not_trigger_build_busy(
+    def test_build_command_on_post_tool_use_clears_and_repaints_in_the_same_render(
         self, rt, tmp_path, monkeypatch, capsys
     ):
-        """A build command on PostToolUse:Bash does NOT trigger build-busy (only PreToolUse:Bash does)."""
+        """PostToolUse:Bash CLEARS the token and delivers the corrected title now.
+
+        The clear is applied to the in-memory state BEFORE compose, so THIS
+        render's envelope already paints ➤ active rather than 🔨. That
+        co-location is the delivery mechanism: a clear that only wrote state
+        would leave the tab showing 🔨 until some unrelated event happened to
+        fire.
+        """
         from io import StringIO
 
-        body = self._arrange(tmp_path, monkeypatch)
+        body = self._arrange(tmp_path, monkeypatch, plan_id="clear-plan")
         command = (
             "python3 .plan/execute-script.py "
             "plan-marshall:build-maven:maven run --targets verify"
         )
         monkeypatch.setattr(
             "sys.stdin",
-            StringIO(
-                json.dumps(
-                    {
-                        "hook_event_name": "PostToolUse",
-                        "tool_name": "Bash",
-                        "tool_input": {"command": command},
-                    }
-                )
-            ),
+            StringIO(json.dumps(self._bash_payload(command, event="PostToolUse"))),
         )
 
         capsys.readouterr()
-        with patch(
-            "claude_runtime._manage_status_set_title_token", return_value=True
-        ) as mock_set:
+        with (
+            patch("claude_runtime._manage_status_set_title_token", return_value=True) as mock_set,
+            patch("claude_runtime._manage_status_clear_title_token", return_value=True) as mock_clear,
+        ):
             rt.session_render_title(statusline=False)
         captured = capsys.readouterr().out
 
         envelope = json.loads(captured)
-        # PostToolUse:Bash → ➤ active (existing mapping), never build-busy.
+        # The corrected title is DELIVERED on this very render, not merely persisted.
         assert envelope["terminalSequence"] == f"\x1b]0;{self._ICON_ACTIVE} {body}\x07"
+        mock_clear.assert_called_once_with("clear-plan")
         mock_set.assert_not_called()
+
+    def test_non_build_command_on_post_tool_use_clears_nothing(
+        self, rt, tmp_path, monkeypatch, capsys
+    ):
+        """The clear half is gated on the build predicate exactly as the set half.
+
+        An ordinary Bash call exiting must not retire a token — including a live
+        ``merge-lock`` glyph — merely because a PostToolUse event fired.
+        """
+        from io import StringIO
+
+        self._arrange(tmp_path, monkeypatch)
+        monkeypatch.setattr(
+            "sys.stdin",
+            StringIO(json.dumps(self._bash_payload("git status", event="PostToolUse"))),
+        )
+
+        capsys.readouterr()
+        with patch(
+            "claude_runtime._manage_status_clear_title_token", return_value=True
+        ) as mock_clear:
+            rt.session_render_title(statusline=False)
+
+        mock_clear.assert_not_called()
 
     def test_statusline_mode_never_triggers_build_busy(
         self, rt, tmp_path, monkeypatch, capsys
@@ -1775,6 +1837,7 @@ class TestReadTitleState:
         import claude_runtime as _cr
 
         plan_id = "live-plan"
+        record = _title_token("lock-owned", owner="merge-lock")
         live_dir = tmp_path / ".plan" / "local" / "plans" / plan_id
         live_dir.mkdir(parents=True)
         (live_dir / "status.json").write_text(
@@ -1782,7 +1845,7 @@ class TestReadTitleState:
                 {
                     "current_phase": "5-execute",
                     "short_description": "do-work",
-                    "title_token": "lock-owned",
+                    "title_token": record,
                 }
             ),
             encoding="utf-8",
@@ -1795,8 +1858,83 @@ class TestReadTitleState:
         assert state == {
             "current_phase": "5-execute",
             "short_description": "do-work",
-            "title_token": "lock-owned",
+            "title_token": record,
         }
+
+    def test_drops_an_aged_token_from_the_returned_state(self, tmp_path, monkeypatch):
+        """The aged-token predicate is applied on EVERY read.
+
+        A record past the staleness threshold is omitted from the state the
+        reader returns, so a stranded token self-heals for every downstream
+        consumer without any writer sweeping for it. The rest of the state is
+        unaffected.
+        """
+        import claude_runtime as _cr
+        from manage_terminal_title import TITLE_TOKEN_STALE_AFTER_SECONDS
+
+        plan_id = "aged-plan"
+        live_dir = tmp_path / ".plan" / "local" / "plans" / plan_id
+        live_dir.mkdir(parents=True)
+        (live_dir / "status.json").write_text(
+            json.dumps(
+                {
+                    "current_phase": "5-execute",
+                    "short_description": "do-work",
+                    "title_token": _title_token(
+                        "build-busy",
+                        owner="build-hook",
+                        age_seconds=TITLE_TOKEN_STALE_AFTER_SECONDS + 60,
+                    ),
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
+        monkeypatch.chdir(tmp_path)
+
+        state = _cr._read_title_state(plan_id)
+        assert state == {"current_phase": "5-execute", "short_description": "do-work"}
+
+    def test_keeps_a_fresh_token_in_the_returned_state(self, tmp_path, monkeypatch):
+        """Positive control for the aged-token drop above: a record just inside
+        the threshold survives the read, so the drop is age-driven rather than
+        an unconditional strip."""
+        import claude_runtime as _cr
+        from manage_terminal_title import TITLE_TOKEN_STALE_AFTER_SECONDS
+
+        plan_id = "fresh-plan"
+        record = _title_token(
+            "build-busy", owner="build-hook", age_seconds=TITLE_TOKEN_STALE_AFTER_SECONDS - 60
+        )
+        live_dir = tmp_path / ".plan" / "local" / "plans" / plan_id
+        live_dir.mkdir(parents=True)
+        (live_dir / "status.json").write_text(
+            json.dumps({"current_phase": "5-execute", "title_token": record}), encoding="utf-8"
+        )
+
+        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
+        monkeypatch.chdir(tmp_path)
+
+        assert _cr._read_title_state(plan_id)["title_token"] == record
+
+    def test_drops_a_legacy_bare_string_token(self, tmp_path, monkeypatch):
+        """A status.json still carrying the retired bare-string shape reads as
+        having no token, rather than propagating an unusable value downstream."""
+        import claude_runtime as _cr
+
+        plan_id = "legacy-plan"
+        live_dir = tmp_path / ".plan" / "local" / "plans" / plan_id
+        live_dir.mkdir(parents=True)
+        (live_dir / "status.json").write_text(
+            json.dumps({"current_phase": "5-execute", "title_token": "lock-owned"}),
+            encoding="utf-8",
+        )
+
+        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
+        monkeypatch.chdir(tmp_path)
+
+        assert "title_token" not in _cr._read_title_state(plan_id)
 
     def test_falls_back_to_archived_status(self, tmp_path, monkeypatch):
         """Live status.json absent → reads the archived status.json."""
@@ -1844,17 +1982,23 @@ class TestReadTitleState:
 
 
 # =============================================================================
-# 3f. session_push_title_token — live /dev/tty push (push-mode)
+# 3f. session_push_title_token — bind + persist state (no repaint)
 # =============================================================================
 
 
 class TestSessionPushTitleToken:
     """Tests for ClaudeRuntime.session_push_title_token.
 
-    Reads the plan's status.json, composes via the manage-terminal-title
-    composer with the push icon override, and writes the OSC escape to
-    ``/dev/tty``. Best-effort: a silent no-op when state is absent or
-    ``/dev/tty`` is not openable; never raises.
+    The seam BINDS AND PERSISTS — it does NOT repaint. It reads the plan's
+    status.json and composes via the manage-terminal-title composer to
+    establish that the state is renderable, and writes nothing to any terminal
+    device: the direct ``/dev/tty`` OSC write is deleted, and the paired
+    repaint is deferred to the next hook render event.
+
+    The return consequently carries neither a ``pushed`` flag nor a
+    ``delivery`` field — a seam that performs no delivery has no delivery
+    result to report — only a ``reason`` when it had nothing to settle.
+    Best-effort throughout: never raises.
     """
 
     @staticmethod
@@ -1874,14 +2018,48 @@ class TestSessionPushTitleToken:
         monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
         monkeypatch.chdir(tmp_path)
 
-    def test_push_with_tty_writes_osc_escape(self, rt, tmp_path, monkeypatch):
-        """When /dev/tty is openable, the composed OSC escape is written and pushed: true is reported."""
+    def test_push_with_renderable_state_writes_no_terminal_bytes(self, rt, tmp_path, monkeypatch):
+        """A renderable state settles cleanly and touches NO terminal device.
+
+        This is the load-bearing assertion of ruling (a): even with a fully
+        renderable state and an openable ``/dev/tty``, the seam must not open
+        it. Delivery is the next hook render event's job.
+        """
         plan_id = "push-plan"
         self._write_live_status(
             tmp_path, monkeypatch, plan_id,
             current_phase="5-execute", short_description="push-task",
-            title_token="lock-owned",
+            title_token=_title_token("lock-owned", owner="merge-lock"),
         )
+
+        opened: list[str] = []
+        real_open = open
+
+        def _fake_open(path, *args, **kwargs):
+            opened.append(str(path))
+            return real_open(path, *args, **kwargs)
+
+        monkeypatch.setattr("builtins.open", _fake_open)
+
+        result = _parsed(rt.session_push_title_token(plan_id, "⏳"))
+        assert result["status"] == "success"
+        assert result["plan_id"] == plan_id
+        # Nothing to report as un-settled, and no delivery verdict at all.
+        assert "reason" not in result
+        assert "pushed" not in result
+        assert "delivery" not in result
+        assert "/dev/tty" not in opened
+
+    def test_push_never_opens_dev_tty_even_when_it_would_succeed(self, rt, tmp_path, monkeypatch):
+        """Negative control with an openable fake tty: no bytes are ever written.
+
+        A fake ``/dev/tty`` that WOULD accept a write is installed. Asserting
+        the collector stays empty proves the write path is gone, not merely
+        that the environment lacks a terminal — a test run in a tty-less CI
+        would pass vacuously otherwise.
+        """
+        plan_id = "push-no-tty"
+        self._write_live_status(tmp_path, monkeypatch, plan_id)
 
         written: list[str] = []
 
@@ -1909,30 +2087,10 @@ class TestSessionPushTitleToken:
 
         result = _parsed(rt.session_push_title_token(plan_id, "⏳"))
         assert result["status"] == "success"
-        assert result["pushed"] is True
-        # The push icon override + lock-owned glyph (🔒) + body, composed by D12.
-        assert written == ["\x1b]0;⏳ \U0001f512 pm:5-execute:push-task\x07"]
+        assert written == []
 
-    def test_push_without_tty_is_silent_noop(self, rt, tmp_path, monkeypatch):
-        """When /dev/tty cannot be opened, the push is a silent no-op (pushed: false) and never raises."""
-        plan_id = "push-no-tty"
-        self._write_live_status(tmp_path, monkeypatch, plan_id)
-
-        real_open = open
-
-        def _fake_open(path, *args, **kwargs):
-            if path == "/dev/tty":
-                raise OSError("no controlling terminal")
-            return real_open(path, *args, **kwargs)
-
-        monkeypatch.setattr("builtins.open", _fake_open)
-
-        result = _parsed(rt.session_push_title_token(plan_id, "⏳"))
-        assert result["status"] == "success"
-        assert result["pushed"] is False
-
-    def test_push_with_no_status_state_is_noop(self, rt, tmp_path, monkeypatch):
-        """No status.json for the plan → pushed: false, /dev/tty never touched."""
+    def test_push_with_no_status_state_reports_no_title_state(self, rt, tmp_path, monkeypatch):
+        """No status.json for the plan → reason: no_title_state, /dev/tty untouched."""
         import claude_runtime as _cr
 
         monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
@@ -1949,17 +2107,18 @@ class TestSessionPushTitleToken:
 
         result = _parsed(rt.session_push_title_token("ghost-plan", "⏳"))
         assert result["status"] == "success"
-        assert result["pushed"] is False
+        assert result["reason"] == "no_title_state"
+        assert "pushed" not in result
         assert "/dev/tty" not in opened
 
-    def test_push_with_unrenderable_state_is_noop(self, rt, tmp_path, monkeypatch):
+    def test_push_with_unrenderable_state_reports_no_title_state(self, rt, tmp_path, monkeypatch):
         """status.json present but with no current_phase → composer returns None →
-        pushed: false, /dev/tty never touched.
+        reason: no_title_state, /dev/tty never touched.
 
         This exercises the second falsy-guard branch in session_push_title_token:
         _read_title_state returns a non-None dict (it carries short_description),
-        but compose() returns None because current_phase is absent. The push must
-        be a silent no-op without ever opening /dev/tty (distinct from the
+        but compose() returns None because current_phase is absent. The seam must
+        settle nothing without ever opening /dev/tty (distinct from the
         state-is-None branch, where _read_title_state itself returns None).
         """
         import claude_runtime as _cr
@@ -1987,11 +2146,19 @@ class TestSessionPushTitleToken:
 
         result = _parsed(rt.session_push_title_token(plan_id, "⏳"))
         assert result["status"] == "success"
-        assert result["pushed"] is False
+        assert result["reason"] == "no_title_state"
+        assert "pushed" not in result
         assert "/dev/tty" not in opened
 
-    def test_push_osc_format_correctness(self, rt, tmp_path, monkeypatch):
-        """The pushed bytes are exactly ``\\x1b]0;{composed}\\x07`` (no extra framing)."""
+    def test_push_emits_no_osc_bytes_on_any_channel(self, rt, tmp_path, monkeypatch):
+        """The seam emits NO OSC escape at all — not to /dev/tty, not to stdout.
+
+        The retired contract asserted the exact ``\\x1b]0;{composed}\\x07``
+        framing this seam wrote. That framing now belongs solely to the hook
+        ``terminalSequence`` envelope, so the assertion is inverted: the seam
+        writes no escape anywhere. Checking stdout too closes the obvious
+        wrong-fix (relocating the write rather than deleting it).
+        """
         plan_id = "push-fmt"
         self._write_live_status(
             tmp_path, monkeypatch, plan_id,
@@ -2022,13 +2189,10 @@ class TestSessionPushTitleToken:
 
         monkeypatch.setattr("builtins.open", _fake_open)
 
-        rt.session_push_title_token(plan_id, "🔨")
-        assert len(written) == 1
-        out = written[0]
-        assert out.startswith("\x1b]0;")
-        assert out.endswith("\x07")
-        # No glyph (no title_token) → ``{icon} {body}`` only.
-        assert out == "\x1b]0;🔨 pm:3-outline:fmt\x07"
+        returned = rt.session_push_title_token(plan_id, "🔨")
+
+        assert written == []
+        assert "\x1b]0;" not in returned
 
 
 # =============================================================================

@@ -1348,14 +1348,20 @@ class TestSessionPushTitleTokenOptionalIcon:
         rt.session_push_title_token("push-plan")
         assert captured["icon_override"] is None
 
-    def test_no_title_state_reports_not_pushed(self, rt, tmp_path, monkeypatch):
-        """Missing state is a best-effort no-op (pushed=False), with or without an icon."""
+    def test_no_title_state_reports_the_reason_and_no_pushed_flag(self, rt, tmp_path, monkeypatch):
+        """Missing state is a best-effort no-op reported as ``reason: no_title_state``.
+
+        The seam settles state and never repaints, so it has no delivery verdict
+        to report — the return carries no ``pushed`` flag at all. Delivery is
+        the next hook render event's outcome.
+        """
         from toon_parser import parse_toon
 
         monkeypatch.setattr(session_binding, "_SESSION_CACHE_BASE", tmp_path / "sessions")
         monkeypatch.chdir(tmp_path)
         parsed = parse_toon(rt.session_push_title_token("no-such-plan"))
-        assert parsed["pushed"] is False
+        assert parsed["reason"] == "no_title_state"
+        assert "pushed" not in parsed
 
 
 # =============================================================================

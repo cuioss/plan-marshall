@@ -157,13 +157,19 @@ create has already succeeded (the lock is held, so the TOCTOU window is closed),
 and ``lock-waiting`` is set on the ``blocked`` admission return (it never runs
 inside the FIFO mutation or between the holder-read and the re-create). This
 guarantees the token surface does not widen the kernel race the lock's correctness
-depends on. The release path clears the ``lock-owned`` state AND fires a plain,
-icon-less repaint through the SAME canonical ``session push-title-token`` seam
-(``_push_title_token`` with no icon) so the glyph disappears LIVE instead of
-lingering until the next render event; that repaint runs only after the real
-``os.unlink``, so it too stays outside the ``O_EXCL`` window. All three surfaces
-(``_surface_lock_owned`` / ``_surface_lock_waiting`` / ``_surface_lock_cleared``)
-are consumers of that one repaint seam.
+depends on. The release path clears the ``lock-owned`` state AND settles the
+state through the SAME canonical ``session push-title-token`` seam
+(``_push_title_token`` with no icon) so the NEXT render event drops the glyph;
+that settle runs only after the real ``os.unlink``, so it too stays outside the
+``O_EXCL`` window. All three surfaces (``_surface_lock_owned`` /
+``_surface_lock_waiting`` / ``_surface_lock_cleared``) are consumers of that one
+seam.
+
+Every write this surface makes is stamped with the ``merge-lock`` owner, and its
+clear is owner-scoped: a lock release retires only a token this surface set, so
+it can neither clobber a concurrent build bracket's ``build-busy`` token nor be
+clobbered by one. See ``manage-terminal-title/standards/terminal-title-architecture.md``
+§ Channel Delivery Contract ruling (c) for the arbitration rule.
 
 **[LOCK] observability (best-effort, OUTSIDE the atomic window).** Each merge-lock
 lifecycle point emits a ``[LOCK]`` event through the shared
@@ -248,6 +254,12 @@ _STATE_LOCK_OWNED = 'lock-owned'
 # re-literalled here (mirrors _build_queue_slot.py's build-phase pair).
 _ICON_LOCK_WAITING = TITLE_TOKEN_GLYPHS[_STATE_LOCK_WAITING]
 _ICON_LOCK_OWNED = TITLE_TOKEN_GLYPHS[_STATE_LOCK_OWNED]
+
+# Owner stamped on every title-token this surface writes. Must stay in the
+# ``TITLE_TOKEN_OWNERS`` vocabulary owned by
+# ``manage-status/scripts/_status_core.py``. Owner-scoping is what keeps a lock
+# glyph and a concurrent build bracket from clobbering each other.
+_TITLE_TOKEN_OWNER = 'merge-lock'
 
 _TITLE_TOKEN_NOTATION = 'plan-marshall:manage-status:manage-status'
 _PUSH_TOKEN_NOTATION = 'plan-marshall:platform-runtime:platform_runtime'
@@ -614,62 +626,89 @@ def _run_executor(notation: str, *cli_args: str) -> dict[str, Any]:
 
 
 def _set_title_token(plan_id: str, state: str) -> None:
-    """Best-effort ``manage-status title-token set --state {state}``.
+    """Best-effort ``manage-status title-token set --state {state} --owner merge-lock``.
 
     Wrapped so any failure (script error, parse error, missing plan) is swallowed
     at DEBUG — the title token is a display affordance and MUST NOT influence the
     lock acquire/release outcome. The bare STATE NAME is passed; the lock
     branching never hard-codes a glyph.
+
+    The write is stamped with the ``merge-lock`` owner, which is what makes the
+    paired clear below owner-scoped: only this surface can retire its own lock
+    glyph.
     """
     try:
         _run_executor(
-            _TITLE_TOKEN_NOTATION, 'title-token', 'set', '--plan-id', plan_id, '--state', state
+            _TITLE_TOKEN_NOTATION,
+            'title-token',
+            'set',
+            '--plan-id',
+            plan_id,
+            '--state',
+            state,
+            '--owner',
+            _TITLE_TOKEN_OWNER,
         )
     except Exception as exc:  # noqa: BLE001 — token writes are best-effort
         logger.debug('title-token set(%s) for %s failed: %s', state, plan_id, exc)
 
 
 def _clear_title_token(plan_id: str) -> None:
-    """Best-effort ``manage-status title-token clear`` (every release path)."""
+    """Best-effort owner-scoped ``title-token clear`` (every release path).
+
+    Scoped to the ``merge-lock`` owner, so a lock release cannot clobber a live
+    ``build-busy`` token a concurrent build bracket owns — that clear is a
+    reported no-op on the manage-status side, and the build bracket retires its
+    own token on its own ``PostToolUse:Bash`` event.
+    """
     try:
-        _run_executor(_TITLE_TOKEN_NOTATION, 'title-token', 'clear', '--plan-id', plan_id)
+        _run_executor(
+            _TITLE_TOKEN_NOTATION,
+            'title-token',
+            'clear',
+            '--plan-id',
+            plan_id,
+            '--owner',
+            _TITLE_TOKEN_OWNER,
+        )
     except Exception as exc:  # noqa: BLE001 — token writes are best-effort
         logger.debug('title-token clear for %s failed: %s', plan_id, exc)
 
 
 def _surface_lock_cleared(plan_id: str, set_title_token: bool = True) -> None:
-    """Best-effort: clear the merge-lock title token for ``plan_id`` AND repaint.
+    """Best-effort: clear the merge-lock title token for ``plan_id`` AND settle.
 
-    Clears the persisted ``title_token`` state (manage-status) and then fires a
-    plain, icon-less repaint through the canonical ``session push-title-token``
-    seam so the ⏳/🔒 glyph disappears LIVE instead of lingering until the next
-    render event. Both writes run only AFTER the real ``os.unlink`` (the release
-    branch), so they stay OUTSIDE the ``O_EXCL`` check-then-act window and
-    cannot widen the kernel race.
+    Clears the persisted ``title_token`` state (owner-scoped to ``merge-lock``,
+    so a foreign live token is left intact) and then settles the state through
+    the canonical ``session push-title-token`` seam so the NEXT render event
+    paints without the ⏳/🔒 glyph. Both writes run only AFTER the real
+    ``os.unlink`` (the release branch), so they stay OUTSIDE the ``O_EXCL``
+    check-then-act window and cannot widen the kernel race.
 
     When ``set_title_token`` is False the surface is suppressed entirely — the
     move-back merge lock never set a token, so there is nothing to clear and no
-    repaint should fire. Mirrors the gating in :func:`_surface_lock_owned` /
+    settle should fire. Mirrors the gating in :func:`_surface_lock_owned` /
     :func:`_surface_lock_waiting` so all three title surfaces share one
     suppression contract.
     """
     if not set_title_token:
         return
     _clear_title_token(plan_id)
-    # Plain, icon-less repaint through the canonical seam so the lock glyph
-    # disappears live once the state has been cleared.
+    # Settle the state through the canonical seam so the next render event
+    # paints without the lock glyph.
     _push_title_token(plan_id)
 
 
 def _push_title_token(plan_id: str, icon: str | None = None) -> None:
-    """Best-effort push through the canonical ``session push-title-token`` seam.
+    """Best-effort state settle through the canonical ``session push-title-token`` seam.
 
-    The single repaint seam shared by every merge-lock title surface. When
-    ``icon`` is supplied it pushes that glyph (⏳ waiting / 🔒 owned); when
-    ``icon`` is None it is a PLAIN repaint (no ``--icon``) that re-renders the
-    title with the default active icon — the icon-optional push the clear path
-    uses to drop the lock glyph live. Best-effort: any failure is swallowed at
-    DEBUG so it never affects lock acquire/release.
+    The single seam shared by every merge-lock title surface. When ``icon`` is
+    supplied it settles that glyph (⏳ waiting / 🔒 owned); when ``icon`` is None
+    it is a plain settle (no ``--icon``) that leaves the default active icon —
+    the icon-optional form the clear path uses to drop the lock glyph. The seam
+    binds and persists, it does not repaint: delivery is the next render event's
+    outcome (Channel Delivery Contract ruling (b2)). Best-effort: any failure is
+    swallowed at DEBUG so it never affects lock acquire/release.
     """
     args = ['session', 'push-title-token', '--plan-id', plan_id]
     if icon is not None:

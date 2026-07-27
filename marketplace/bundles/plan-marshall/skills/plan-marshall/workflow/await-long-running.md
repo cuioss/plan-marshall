@@ -60,18 +60,18 @@ The **synchronous-blocking fallback (step (g))** applies unchanged: when the bac
 
 The seam is a fixed sequence applied by the two wait-class consumers. Neither consumes a local build slot.
 
-### (b) Set and live-push the `build-busy` title-token
+### (b) Arm the `build-busy` state gate
 
-Persist the `build-busy` state AND live-push the 🔨 glyph to the terminal so the title surfaces the busy symbol for the whole detached window. Both calls are **best-effort** — a failure never aborts the detached call.
+Persist the `build-busy` state under the `cli` owner. It serves two purposes at once: it is the **"not-yet-handled" idempotency gate** step (d) reads, and it is the state the *next* render event composes into the title as 🔨. The call is **best-effort** — a failure never aborts the detached call.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status title-token set \
-  --state build-busy --plan-id {plan_id}
-python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime session push-title-token \
-  --plan-id {plan_id} --icon 🔨
+  --state build-busy --plan-id {plan_id} --owner cli
 ```
 
-The live `/dev/tty` OSC write is the only mechanism that repaints the terminal during a blocking/detached window — the bare `title-token set` alone writes `status.json` and is invisible until the next repaint. See [`persona-plan-marshall-agent` § build-busy bracketing](../../persona-plan-marshall-agent/SKILL.md#hard-rules-never-override) for the shared title-surface seam contract.
+There is **no live push**. Per `manage-terminal-title/standards/terminal-title-architecture.md` § Channel Delivery Contract ruling (a) the direct `/dev/tty` OSC write is deleted, and per ruling (b2) the paired repaint is necessarily **deferred to the next hook render event** — a writer reaches the terminal by settling state the renderer will read, never by pushing bytes at write time. During a detached wait the render cadence keeps firing on the orchestrator's own tool calls, so the 🔨 lands on the next one. The window between the state write and that event is knowingly stale and accepted.
+
+The owner matters: `cli` keeps this gate disjoint from the `build-hook`-owned token that the `PreToolUse:Bash` / `PostToolUse:Bash` bracket writes around a *foreground* build wrapper, so neither surface clears the other's token.
 
 ### (c) Invoke the command detached (background primitive)
 
@@ -98,7 +98,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read \
 
 Read `title_token` from the returned TOON, then branch:
 
-- **`title_token == build-busy` (state present → not yet handled)** — this is the first handling of the completion. Proceed to step (e): handle the outcome exactly once, clear the state, and push the restored repaint.
+- **`title_token.state == build-busy` (state present → not yet handled)** — this is the first handling of the completion. Proceed to step (e): handle the outcome exactly once and clear the state.
 - **`title_token` absent (state already cleared → already handled)** — this is a **repeated "still running" reminder**, not a fresh completion. **No-op**: do NOT read any TOON, do NOT re-clear. Gating BEFORE the handling is what makes the repeat a true no-op. An un-gated reminder that re-runs the handling on every repeat is the failure mode behind Claude Code issue #11190, where a leaked reminder re-fired thousands of tokens. The title-token-state gate is the idempotency mechanism that makes the handling fire exactly once regardless of how many reminders arrive.
 
 ### (e) Handle the outcome once (state-present branch only), then clear
@@ -109,18 +109,16 @@ This step runs ONLY on the state-present branch of step (d). The outcome handlin
 
 - **`finalize-barrier`** — read the `ci barrier` decision TOON directly: `barrier_status` and the `proceed` / `pending` / `failed` / `affected` buckets, applying the per-arm handled-set gating from § "Finalize-wait barrier consumer specifics" (re-arm while `pending` is non-empty; final clear only at a terminal `barrier_status` with an empty `pending` bucket).
 
-After the consumer-specific handling, clear the state and push the restored repaint:
+After the consumer-specific handling, clear the state:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status title-token clear \
-  --plan-id {plan_id}
-python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime session push-title-token \
-  --plan-id {plan_id}
+  --plan-id {plan_id} --owner cli
 ```
 
-The plain `session push-title-token` (no `--icon`) repaints to the current process icon (e.g. ➤ active).
+The clear is owner-scoped to `cli`, matching step (b)'s set. As with the set there is **no push**: the next hook render event reads the cleared state and paints the current process icon (e.g. ➤ active). Even without this explicit clear the token cannot leak indefinitely — a `build-busy` record older than the 3600-second staleness threshold reads as absent to every consumer.
 
-All four title-surface operations (set / clear / both pushes) are **best-effort**, mirroring `merge_lock` — a failure of any one never aborts the wrapped operation.
+Both title-surface operations (set / clear) are **best-effort**, mirroring `merge_lock` — a failure of either never aborts the wrapped operation.
 
 ### (g) Fallback — synchronous blocking call
 
@@ -131,7 +129,7 @@ The synchronous fallback is behaviourally identical to the pre-detach model; it 
 ## Related
 
 - [`build-server-client` SKILL.md](../../build-server-client/SKILL.md) — the submit/wait/ping/preflight client contract the build consumer routes through (replacing the build arm's former detach on this seam).
-- [`persona-plan-marshall-agent` SKILL.md](../../persona-plan-marshall-agent/SKILL.md) — the build-busy bracketing contract that routes orchestrator-tier long-running calls through this seam (cross-reference, not duplication) and owns the shared title-surface seam semantics.
+- [`manage-terminal-title/standards/terminal-title-architecture.md`](../../manage-terminal-title/standards/terminal-title-architecture.md) — the Channel Delivery Contract that governs the title-state writes this seam makes: ruling (a) (the `/dev/tty` write is deleted), ruling (b2) (the paired repaint is deferred to the next render event), and ruling (c) (the owner-scoped record and its staleness threshold).
 - [`phase-5-execute/standards/canonical_verify.md`](../../phase-5-execute/standards/canonical_verify.md) — the `execution_tier=orchestrator` bullet names the orchestrator-tier build consumer, preserving the "not run inline by the step body" invariant.
 - [`tools-integration-ci/standards/blocking-wait-pattern.md`](../../tools-integration-ci/standards/blocking-wait-pattern.md) — the remote-CI wait's seed-then-watch pattern; the orchestrator detaches the whole CI wait behind this seam.
 
@@ -147,4 +145,4 @@ mechanism: seed_only | watch_tail | poll_fallback
 
 The orchestrator emits this shape when the seam is wrapped in a `Task: execution-context-{level}` dispatch; it carries the `ci-wait` arm's `mechanism` stamp back on the return so the orchestrator can reconcile which mechanism the detached wait actually ran on.
 
-The mechanism-selection evidence is the `[WAIT]` work-log record written by the `ci-wait` handler itself — on **every resolved wait**, on both the inline (step g) and the detached (step c) path — NOT by this seam's own prose transitions. The record names `consumer`, the resolved `mechanism` (`seed_only` / `watch_tail` / `poll_fallback`), the caller-declared `dispatch` (`detached` / `inline` / `undeclared`), the `target`, and the `outcome`; a degrade to `poll_fallback` is recorded at `WARNING` so a silent fallback from the terminal-state watch tail is greppable. The seam's detach/wake/clear steps are NOT themselves a log source — the wait handler's record is the single mechanism-selection evidence, and the live `/dev/tty` title repaints remain the visual signal only.
+The mechanism-selection evidence is the `[WAIT]` work-log record written by the `ci-wait` handler itself — on **every resolved wait**, on both the inline (step g) and the detached (step c) path — NOT by this seam's own prose transitions. The record names `consumer`, the resolved `mechanism` (`seed_only` / `watch_tail` / `poll_fallback`), the caller-declared `dispatch` (`detached` / `inline` / `undeclared`), the `target`, and the `outcome`; a degrade to `poll_fallback` is recorded at `WARNING` so a silent fallback from the terminal-state watch tail is greppable. The seam's detach/wake/clear steps are NOT themselves a log source — the wait handler's record is the single mechanism-selection evidence, and the title-state transitions the next render event paints remain the visual signal only.

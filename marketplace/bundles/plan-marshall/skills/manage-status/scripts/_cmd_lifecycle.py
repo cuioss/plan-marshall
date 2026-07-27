@@ -15,7 +15,6 @@ from _invariants import _BLOCKING_BOUNDARIES
 from _short_description import derive_short_description
 from _status_core import (
     _surface_drive,
-    drop_stale_build_busy,
     get_archive_dir,
     get_status_path,
     log_entry,
@@ -373,13 +372,10 @@ def cmd_transition(args: argparse.Namespace) -> dict[str, Any] | None:
         # produce the same end-state.
         status['current_phase'] = 'complete'
 
-    # Clear a stale build-busy title-token before persisting the phase advance:
-    # a long-running orchestration call that was interrupted before its own
-    # clear can leave a build-busy token behind, which would otherwise freeze a
-    # 🔨 in the title bar across the transition. Scoped to build-busy only —
-    # lock-coordination tokens are left untouched.
-    drop_stale_build_busy(status)
-
+    # No title-token sweep here: staleness is a READ-side property resolved by
+    # the aged-token predicate (_status_core.title_token_is_stale), not a
+    # transition-side one. A transition-side sweep only fires when a phase
+    # happens to change, so a stranded token could outlive it indefinitely.
     write_status(args.plan_id, status)
     # Persisted-title-state-write drive seam (best-effort, fire-and-forget):
     # a phase advance is a current_phase write, so bind + repaint fire here so

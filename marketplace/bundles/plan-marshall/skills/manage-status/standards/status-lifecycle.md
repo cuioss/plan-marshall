@@ -60,26 +60,34 @@ The `route` command maps phases to workflow skills. This is a fallback mapping �
 
 ## Title Token
 
-`manage-status` performs **no terminal-title rendering**. It stores a bare state marker — `status.title_token` — alongside `current_phase` and `short_description` in `status.json`, which is the single source of persisted title state. The `manage-terminal-title` composer renders the title from those fields, and `platform-runtime` reads `status.json` and emits the result per platform. manage-status writes only the state string; the glyph/icon vocabulary and the `{icon} {glyph} {body}` assembly live entirely in `manage-terminal-title`.
+`manage-status` performs **no terminal-title rendering**. It stores a structured state record — `status.title_token` — alongside `current_phase` and `short_description` in `status.json`, which is the single source of persisted title state. The `manage-terminal-title` composer renders the title from those fields, and `platform-runtime` reads `status.json` and emits the result per platform. manage-status writes only the state record; the glyph/icon vocabulary and the `{icon} {glyph} {body}` assembly live entirely in `manage-terminal-title`.
 
 | Property | Value |
 |----------|-------|
 | Location | `status.title_token` field in `status.json` |
-| Content shape | One of `lock-waiting`, `lock-owned`, `build-busy` |
-| Writer | `manage-status title-token set/clear` (the only explicit writer); additionally `archive` pops the token unconditionally, and `transition`/`set-phase` pop a stale `build-busy` token only (a phase-boundary safety-net that leaves lock tokens untouched) |
+| Content shape | `{"owner": …, "state": …, "set_at": …}` — `state` is one of `lock-waiting`, `lock-owned`, `build-busy`; `owner` is one of `build-hook`, `merge-lock`, `cli`; `set_at` is a UTC ISO-8601 instant |
+| Writer | `manage-status title-token set/clear` (the CLI writer, `owner: cli` by default), the `build-hook` render assist, and `merge-lock`; additionally `archive` pops the record unconditionally |
 | Consumer | `manage-terminal-title` composer (owns the state → glyph/icon rendering), invoked by `platform-runtime` after it reads `status.json` |
 
-The `title-token set --state {state}` verb writes the field; `title-token clear` removes it (idempotent). Both validate against the closed state set (`TITLE_TOKEN_STATES`) and emit a `[MANAGE-STATUS]` work-log line. `title-token set/clear` is the only explicit writer of `title_token`. In addition, three phase-mutation paths clear it defensively: `archive` pops the token unconditionally — an archived plan has no live session to render it, so any leftover token would freeze a stale glyph in the archived snapshot — while `transition` and `set-phase` pop a stale `build-busy` token only, the phase-boundary safety-net that keeps a missed clear from leaking the 🔨 build icon across a phase change. The live lock-coordination tokens (`lock-waiting`, `lock-owned`) survive `transition`/`set-phase` untouched, and `create` never touches `title_token`.
+The `title-token set --state {state} [--owner {owner}]` verb writes the record with a fresh `set_at`; `title-token clear [--owner {owner}]` removes it. `set` validates `{state}` against the closed state set (`TITLE_TOKEN_STATES`) and `{owner}` against the owner vocabulary (`TITLE_TOKEN_OWNERS`), and both verbs emit a `[MANAGE-STATUS]` work-log line.
+
+**Arbitration.** A `set` from any owner replaces the record wholesale — last writer wins, and the record always names its current owner. A `clear` is **owner-scoped**: only the recorded `owner` may clear its own token, and a foreign clear is a reported no-op (`cleared: false`, `reason: foreign_owner`). That asymmetry — open SET, scoped CLEAR — is what makes ownership meaningful: a lock glyph owned by `merge-lock` cannot be clobbered by an unrelated build bracket.
+
+**Staleness is a read-side property.** A record whose `set_at` is older than `TITLE_TOKEN_STALE_AFTER_SECONDS` (3600 s) is stale and may be cleared or replaced by **any** writer. There is no phase-boundary sweep: `transition` and `set-phase` clear nothing, because a sweep only fires when a phase happens to change and would leave a stranded token alive indefinitely otherwise. Every reader resolves staleness through `_status_core.title_token_is_stale` / `read_title_token`, so a stranded token self-heals on the next read. `archive` remains the one owner-agnostic pop — an archived plan holds no live coordination state worth arbitrating over — and `create` never touches `title_token`.
+
+**Concurrency.** Four independent writers (the `build-hook` `PreToolUse:Bash`/`PostToolUse:Bash` assist, `merge-lock`'s two lock surfaces, and `merge-lock`'s clear) mutate this one field from separate executor subprocesses. Both verbs therefore run their read-modify-write inside a single `rmw_json` critical section, and the clear takes its arbitration decision against the record read *inside* the guard — closing the check-then-act window a plain read-then-write would leave open.
 
 The three states split into two rendering classes, both owned by the composer:
 
 | State | Set/cleared by | Composer rendering |
 |-------|----------------|--------------------|
-| `lock-waiting` | the merge-lock coordination machinery | ⏳ glyph, prepended to the body |
-| `lock-owned` | the merge-lock coordination machinery | 🔒 glyph, prepended to the body |
-| `build-busy` | the orchestration layer (bracketing a long-running call) | 🔨 **icon-slot override** — forced into the icon slot, NOT a prepended glyph |
+| `lock-waiting` | the merge-lock coordination machinery (`owner: merge-lock`) | ⏳ glyph, prepended to the body |
+| `lock-owned` | the merge-lock coordination machinery (`owner: merge-lock`) | 🔒 glyph, prepended to the body |
+| `build-busy` | the `build-hook` render assist bracketing a Bash build window (`owner: build-hook`) | 🔨 **icon-slot override** — forced into the icon slot, NOT a prepended glyph |
 
-`build-busy` is the orchestration-busy state: it is set before, and cleared after, a long-running orchestration Bash call (a resolved build / verify / coverage command, a `git push`, a CI-wait) so the title surfaces the 🔨 build symbol for the whole blocking window. `manage-status` only persists the bare `build-busy` string; the icon-slot-override rendering and the precedence against the lock glyphs and process icons live entirely in `manage-terminal-title`. For the normative orchestration requirement — when the state is set/cleared and the live-push mechanics — see [`persona-plan-marshall-agent`](../../persona-plan-marshall-agent/SKILL.md).
+`build-busy` is the orchestration-busy state: the `PreToolUse:Bash` render assist sets it when a build-wrapper invocation enters, and the paired `PostToolUse:Bash` assist clears it when that Bash call exits, so the title surfaces the 🔨 build symbol for the whole blocking window. Both halves are machine-driven — no LLM turn owns the clear. `manage-status` only persists the record; the icon-slot-override rendering and the precedence against the lock glyphs and process icons live entirely in `manage-terminal-title`.
+
+The record shape, the owner vocabulary, the arbitration rule, and the staleness threshold are specified once in `manage-terminal-title/standards/terminal-title-architecture.md` § Channel Delivery Contract ruling (c) and are not restated in normative form here.
 
 For the full three-way split (state / composer / resolve+emit), the glyph and icon vocabulary, and the read-from-`status.json` (live + archived fallback) emit path, see `manage-terminal-title/standards/terminal-title-architecture.md`.
 

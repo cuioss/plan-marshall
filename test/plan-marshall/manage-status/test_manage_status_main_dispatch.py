@@ -16,6 +16,7 @@ every dispatch therefore raises ``SystemExit`` whose ``.code`` is the script's
 integer return.
 """
 
+import json
 import sys
 
 import pytest
@@ -141,24 +142,62 @@ def test_main_metadata_set_then_get(plan_context, monkeypatch, capsys):
 
 
 def test_main_title_token_set_then_clear(plan_context, monkeypatch, capsys):
-    """title-token set persists a state; title-token clear removes it idempotently."""
+    """title-token set persists the structured record through the real CLI
+    dispatch; the matching owner-scoped clear removes it.
+
+    The round trip is driven through ``main`` so the argparse surface (including
+    the ``--owner`` flag on BOTH verbs) is exercised, not just the command body.
+    """
     _run(monkeypatch, capsys, ['create', '--plan-id', 'ms-disp-tt', '--title', 'TT', '--phases', _PHASES])
 
     code, out, _ = _run(
-        monkeypatch, capsys, ['title-token', 'set', '--plan-id', 'ms-disp-tt', '--state', 'build-busy']
+        monkeypatch,
+        capsys,
+        [
+            'title-token', 'set', '--plan-id', 'ms-disp-tt',
+            '--state', 'build-busy', '--owner', 'build-hook',
+        ],
+    )
+    assert code == 0
+    status_file = plan_context.plan_dir_for('ms-disp-tt') / 'status.json'
+    stored = json.loads(status_file.read_text(encoding='utf-8'))['title_token']
+    assert stored['state'] == 'build-busy'
+    assert stored['owner'] == 'build-hook'
+    assert stored['set_at']
+
+    code, out, _ = _run(
+        monkeypatch,
+        capsys,
+        ['title-token', 'clear', '--plan-id', 'ms-disp-tt', '--owner', 'build-hook'],
     )
     assert code == 0
     assert _parse(out)['status'] == 'success'
-
-    code, out, _ = _run(monkeypatch, capsys, ['title-token', 'clear', '--plan-id', 'ms-disp-tt'])
-    assert code == 0
-    assert _parse(out)['status'] == 'success'
+    cleared = json.loads(status_file.read_text(encoding='utf-8'))
+    assert 'title_token' not in cleared
 
 
 def test_main_title_token_rejects_unknown_state(plan_context, monkeypatch, capsys):
     """An out-of-enum --state is an argparse rejection (exit 2)."""
     code, _, _ = _run(
         monkeypatch, capsys, ['title-token', 'set', '--plan-id', 'ms-disp-tt2', '--state', 'not-a-state']
+    )
+
+    assert code == 2
+
+
+def test_main_title_token_rejects_unknown_owner(plan_context, monkeypatch, capsys):
+    """An out-of-enum --owner is likewise an argparse rejection (exit 2).
+
+    The owner vocabulary is as closed as the state vocabulary: an unrecognised
+    owner recorded on the token would produce a record no writer could clear.
+    """
+    code, _, _ = _run(
+        monkeypatch,
+        capsys,
+        [
+            'title-token', 'set', '--plan-id', 'ms-disp-tt3',
+            '--state', 'build-busy', '--owner', 'not-an-owner',
+        ],
     )
 
     assert code == 2

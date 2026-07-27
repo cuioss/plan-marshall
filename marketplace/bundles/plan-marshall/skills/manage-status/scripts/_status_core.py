@@ -9,6 +9,7 @@ import json
 import logging
 import subprocess
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, NotRequired, TypedDict, cast
 
@@ -41,6 +42,18 @@ class PhaseData(TypedDict):
     status: str  # pending | in_progress | done
 
 
+class TitleTokenRecord(TypedDict):
+    """The structured ``status.title_token`` record.
+
+    Specified once in ``manage-terminal-title/standards/terminal-title-architecture.md``
+    § Channel Delivery Contract ruling (c); this TypedDict is its Python shape.
+    """
+
+    owner: str
+    state: str
+    set_at: str
+
+
 class StatusData(TypedDict):
     """Type definition for status data structure."""
 
@@ -48,23 +61,41 @@ class StatusData(TypedDict):
     current_phase: str
     phases: list[PhaseData]
     metadata: NotRequired[dict[str, Any]]
-    title_token: NotRequired[str]
+    title_token: NotRequired[TitleTokenRecord]
     created: str
     updated: str
 
 
 # Valid title-token states — the two lock-coordination states (lock-waiting /
 # lock-owned) plus the orchestration-busy state (build-busy). The token is a
-# field-only marker written into status.json by the ``title-token set`` verb;
+# field-only record written into status.json by the ``title-token set`` verb;
 # manage-status performs NO rendering. The composition (glyph vocabulary +
 # ``{icon} {body}`` assembly) lives in ``manage-terminal-title`` — manage-status
-# only persists the bare state string so the per-target renderer can read it.
-# build-busy is written/cleared by the orchestration layer (not the lock
+# only persists the state record so the per-target renderer can read it.
+# build-busy is written/cleared by the build-hook render assist (not the lock
 # machinery) to surface a 🔨 build symbol for the duration of a long-running
 # orchestration Bash call; manage-terminal-title renders it as a token-keyed
 # icon-slot override, not a glyph.
 TITLE_TOKEN_BUILD_BUSY = 'build-busy'
 TITLE_TOKEN_STATES = frozenset({'lock-waiting', 'lock-owned', TITLE_TOKEN_BUILD_BUSY})
+
+# Owner vocabulary — the writer that set the token. ``build-hook`` is the
+# PreToolUse:Bash / PostToolUse:Bash render assist that brackets a build window,
+# ``merge-lock`` is manage-locks/merge_lock.py, and ``cli`` is an explicit
+# ``manage-status title-token set`` invocation from the orchestration layer.
+TITLE_TOKEN_OWNER_BUILD_HOOK = 'build-hook'
+TITLE_TOKEN_OWNER_MERGE_LOCK = 'merge-lock'
+TITLE_TOKEN_OWNER_CLI = 'cli'
+TITLE_TOKEN_OWNERS = frozenset(
+    {TITLE_TOKEN_OWNER_BUILD_HOOK, TITLE_TOKEN_OWNER_MERGE_LOCK, TITLE_TOKEN_OWNER_CLI}
+)
+
+# Aged-token staleness threshold, in seconds. Derived, not arbitrary: it
+# comfortably exceeds the longest architecture-resolved build ceiling in this
+# project (~1926 s for an unscoped whole-tree verify), so a live bracket can
+# never age out mid-call, while any process death that strands a token
+# self-heals within the hour without operator action.
+TITLE_TOKEN_STALE_AFTER_SECONDS = 3600
 
 
 # =============================================================================
@@ -589,22 +620,58 @@ def _surface_drive(plan_id: str) -> None:
         logger.debug('drive-seam surface for %s failed: %s', plan_id, exc)
 
 
-def drop_stale_build_busy(status: dict[Any, Any]) -> bool:
-    """Clear a stale ``build-busy`` title-token from ``status`` in place.
+def _parse_set_at(set_at: Any) -> datetime | None:
+    """Parse a ``set_at`` field into an aware UTC datetime, or ``None``.
 
-    Pops ``status['title_token']`` iff its value equals
-    :data:`TITLE_TOKEN_BUILD_BUSY`, returning ``True`` when it popped and
-    ``False`` otherwise. Called by the phase writers (``cmd_transition`` /
-    ``cmd_set_phase``) immediately before ``write_status`` so a ``build-busy``
-    token left behind by an interrupted long-running orchestration call does not
-    survive the phase transition and freeze a stale 🔨 in the title bar. The
-    lock-coordination tokens (``lock-waiting`` / ``lock-owned``) are deliberately
-    left untouched — the clear is scoped to ``build-busy`` only.
+    Tolerates every malformed shape (absent, non-string, unparseable) by
+    returning ``None`` — an unreadable timestamp is treated as "age unknown"
+    by :func:`title_token_is_stale`, never as an exception.
     """
-    if status.get('title_token') == TITLE_TOKEN_BUILD_BUSY:
-        status.pop('title_token', None)
+    if not isinstance(set_at, str) or not set_at:
+        return None
+    try:
+        parsed = datetime.fromisoformat(set_at.replace('Z', '+00:00'))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
+
+
+def title_token_is_stale(record: Any, *, now: datetime | None = None) -> bool:
+    """Age-based staleness predicate for a ``title_token`` record.
+
+    A record is stale when it is structurally unusable (not a mapping, or
+    carrying a ``state`` outside :data:`TITLE_TOKEN_STATES`), when its
+    ``set_at`` cannot be parsed, or when its ``set_at`` is older than
+    :data:`TITLE_TOKEN_STALE_AFTER_SECONDS`. A stale token may be cleared or
+    replaced by ANY writer, which is what lets a stranded token self-heal
+    without operator action.
+
+    The predicate is applied on every READ of the token rather than swept at a
+    phase boundary: a phase-boundary sweep only fires when a phase happens to
+    change, so a stranded token could outlive it indefinitely.
+    """
+    if not isinstance(record, dict):
         return True
-    return False
+    if record.get('state') not in TITLE_TOKEN_STATES:
+        return True
+    parsed = _parse_set_at(record.get('set_at'))
+    if parsed is None:
+        return True
+    reference = now if now is not None else datetime.now(UTC)
+    return (reference - parsed).total_seconds() > TITLE_TOKEN_STALE_AFTER_SECONDS
+
+
+def read_title_token(status: dict[Any, Any], *, now: datetime | None = None) -> dict[str, Any] | None:
+    """Return the live ``title_token`` record from ``status``, or ``None``.
+
+    The single read-side accessor: it applies :func:`title_token_is_stale` so
+    every consumer sees a stale token as absent. It does NOT mutate ``status``
+    — staleness is a read-side property, so no writer has to sweep.
+    """
+    record = status.get('title_token')
+    if title_token_is_stale(record, now=now):
+        return None
+    return cast(dict[str, Any], record)
 
 
 # Phase routing maps phase names to skills (for route command).

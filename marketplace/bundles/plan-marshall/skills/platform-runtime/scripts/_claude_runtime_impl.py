@@ -23,6 +23,7 @@ import json
 import os
 import re
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -388,30 +389,46 @@ class ClaudeRuntime(Runtime):
             self.session_teardown()
             return ""
 
-        # Build-busy hook assist (D5): when a PreToolUse:Bash event carries a
-        # build-wrapper command, force the persistent 🔨 build-busy title-token
-        # for this render — set it in the in-memory state dict BEFORE compose so
-        # this render paints ``🔨 pm:{phase}`` via the composer's icon-slot
-        # override, AND persist it best-effort so the state survives to subsequent
-        # renders and for the agent's D3 clear. The hook only SETs — it never
-        # CLEARs, because a backgrounded build's PostToolUse:Bash fires
-        # immediately (not at job end), so the clear is necessarily the agent's
-        # D3 obligation. A non-build command / missing tool_input is a silent
-        # no-op (the existing PreToolUse:Bash → ⚙ busy mapping remains the
-        # fallback).
+        # Build-busy hook assist — the MACHINE-OWNED bracket around a Bash build
+        # window. Both halves live on render events, which is what makes the
+        # bracket machine-driven rather than an LLM-turn obligation:
+        #
+        #   PreToolUse:Bash  → SET   build-busy (owner: build-hook)
+        #   PostToolUse:Bash → CLEAR build-busy (owner-scoped to build-hook)
+        #
+        # The mutation is applied to the in-memory state dict BEFORE compose, so
+        # THIS render paints the corrected title. That co-location is the whole
+        # design: per Channel Delivery Contract ruling (b2) a state write owes a
+        # delivered repaint, and the hook envelope is event-driven rather than
+        # callable on demand — so the clear MUST ride a render event to deliver
+        # at all. Do NOT relocate either half to a non-rendering call site (a
+        # plain status write, a wrapper script, an agent turn): the state would
+        # be correct and the tab would keep painting 🔨 until some unrelated
+        # event happened to fire.
+        #
+        # A non-build command / missing tool_input is a silent no-op on both
+        # halves (the existing PreToolUse:Bash → ⚙ busy mapping remains the
+        # fallback). The persist is skipped for an orchestrator-bound render,
+        # which has no plan status.json to write (plan_id is empty) — the
+        # in-memory mutation still paints this render.
         if (
             not statusline
-            and hook_event_name == "PreToolUse"
             and tool_name == "Bash"
+            and hook_event_name in ("PreToolUse", "PostToolUse")
             and claude_runtime._command_is_build(tool_command)
         ):
-            state["title_token"] = "build-busy"
-            # Paint 🔨 for this render via the in-memory token above; persist it
-            # only for a plan-bound render. An orchestrator-bound render has no
-            # plan status.json to write (plan_id is empty), so the persist is
-            # skipped — the in-memory token still paints this render.
-            if plan_id:
-                claude_runtime._manage_status_set_title_token(plan_id, "build-busy")
+            if hook_event_name == "PreToolUse":
+                state["title_token"] = {
+                    "owner": claude_runtime._TITLE_TOKEN_OWNER_BUILD_HOOK,
+                    "state": "build-busy",
+                    "set_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                }
+                if plan_id:
+                    claude_runtime._manage_status_set_title_token(plan_id, "build-busy")
+            else:
+                state.pop("title_token", None)
+                if plan_id:
+                    claude_runtime._manage_status_clear_title_token(plan_id)
 
         # Map the Claude hook event → the composer's target-neutral process
         # state, then compose. The composer no longer knows any Claude event

@@ -245,6 +245,15 @@ call-site compatibility but no longer drives an internal wait. Output carries an
     explicit confirmation. No new force-release CLI verb exists — the acquire
     surface is unchanged apart from this added discriminator.
 
+`--no-title-token` suppresses the terminal-title surface for this call (the
+move-back merge lock passes it so no spurious glyph appears). Otherwise `acquire`
+writes a ⏳ `lock-waiting` / 🔒 `lock-owned` title token stamped with the
+`merge-lock` **owner**; the paired `release` clear is owner-scoped, so a lock
+surface can neither clobber a concurrent build bracket's `build-busy` token nor
+be clobbered by one. See
+[`manage-terminal-title/standards/terminal-title-architecture.md`](../manage-terminal-title/standards/terminal-title-architecture.md)
+§ Channel Delivery Contract ruling (c) for the record shape and arbitration rule.
+
 ### merge_lock — check
 
 ```bash
@@ -274,6 +283,10 @@ provably `stale` holder (through the observed-file eviction arbitration, never a
 blind unlink) and REFUSES (`status: refused`, `reason: holder_not_provably_dead`)
 on a `fresh` or `unknown` verdict, so a holder live in a sibling worktree (the #948
 shape) is never force-released.
+
+`--no-title-token` matches the acquire-side suppression: the caller never set a
+token, so there is nothing to clear. Otherwise the release path issues an
+owner-scoped `merge-lock` clear and settles the state for the next render event.
 
 ### build_queue — acquire
 
