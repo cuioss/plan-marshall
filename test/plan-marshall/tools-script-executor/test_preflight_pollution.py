@@ -10,11 +10,17 @@ synthetic cache fixtures, with the heavy manifest/generate dependencies mocked
 so only the pollution branch is exercised.
 
 They also cover the marking predicate ``_mark_superseded_version_dirs``, whose
-contract is that a retention-pinned version — the newest-on-disk, the
-``marshal.json``-provisioned, or the manifest-named one — is NEVER marked. That
-pin is what makes marker saturation (every dir marked, zero live) structurally
-impossible, and therefore what keeps the pollution detector non-vacuous and
-``marketplace_bundles.find_bundles`` out of its degraded all-orphaned fallback.
+contract is that a retention-pinned version — the dir the shared selector
+resolves to, the ``marshal.json``-provisioned one, or the manifest-named one —
+is NEVER marked.
+
+The structural owner of the "marker saturation is impossible" guarantee is the
+shared selector ``marketplace_bundles.select_live_version_dir``: it ignores a
+``.orphaned_at`` mark on the retention-pinned dir on READ, so that dir stays live
+even when a legacy pass already marked it. The write-side pin here is the
+complementary postcondition — it stops the marker spreading — but it is not what
+makes the guarantee hold over time, since nothing clears a marker when pruning
+later promotes an already-marked dir to newest-on-disk.
 """
 
 import types
@@ -86,7 +92,11 @@ def _marked(root, bundle: str) -> set[str]:
 
 
 def _live(root, bundle: str) -> set[str]:
-    """Return the names of ``bundle``'s LIVE (unmarked) version dirs."""
+    """Return the names of ``bundle``'s LIVE version dirs.
+
+    Live means "unmarked, OR the retention-pinned newest-on-disk dir whose mark
+    the shared selector ignores" — the policy, not a plain unmarked filter.
+    """
     return {d.name for d in gen._live_version_dirs(root / bundle)}
 
 
@@ -151,15 +161,17 @@ class TestMarkSupersededVersionDirs:
 
     def test_a_pre_marked_newest_does_not_cascade_to_zero_live(self, tmp_path, monkeypatch):
         # The saturation seed: the newest dir arrives already marked (a legacy
-        # pre-fix state). Marking must still leave a live dir behind rather than
-        # promoting an older dir and marking everything else.
+        # pre-fix state). The shared selector ignores a mark on the retention pin,
+        # so 0.1.300 stays live and is the EXACT surviving live set — the
+        # observable form of the read-side rule. Asserting mere non-emptiness
+        # would also pass if an older dir had been promoted instead.
         _make_version_bundle(tmp_path, 'plan-marshall', ['0.1.100', '0.1.200', '0.1.300'])
         (tmp_path / 'plan-marshall' / '0.1.300' / '.orphaned_at').write_text('2026-01-01T00:00:00Z')
         _stub_pins(monkeypatch)
 
         gen._mark_superseded_version_dirs(tmp_path, ['plan-marshall'])
 
-        assert _live(tmp_path, 'plan-marshall')
+        assert _live(tmp_path, 'plan-marshall') == {'0.1.300'}
 
 
 class TestPreflightPollution:
