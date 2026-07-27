@@ -4,7 +4,10 @@
 
 Covers per-extension dispatch, longest-glob-wins overlap resolution, the
 alphabetical tie-break on domain key, the six-bucket plan-wide vocabulary,
-the unclaimed-path ``unknown`` branch, and the empty-input default.
+the unclaimed-path ``unknown`` branch, the empty-input default, and the
+stage-3 generic owner-less infrastructure-config fallback (its family
+membership, its never-steal-a-claim ordering, and the D3(b) Q-Gate-outcome
+assertion against the real discovered build-extension set).
 
 ``_classify_paths_via_extensions`` is the seed-source aggregator consumed by the
 build_map seeding path; the advisory docs-only compose branch that previously
@@ -42,6 +45,7 @@ def _load_module(name: str, filename: str):
 
 _manifest_mod = _load_module('manage_execution_manifest', 'manage-execution-manifest.py')
 _classify_paths_via_extensions = _manifest_mod._classify_paths_via_extensions
+_is_infrastructure_config_path = _manifest_mod._is_infrastructure_config_path
 
 # Silence the best-effort decision-log subprocess in the aggregator tests.
 _manifest_mod._emit_decision_log = lambda *a, **kw: None
@@ -419,3 +423,162 @@ def test_specificity_raising_is_treated_as_zero():
     bucket, _ = _classify_paths_via_extensions([path], extensions=[bad, good])
     # zulu specificity=3 beats bad specificity=0 → documentation_only
     assert bucket == 'documentation_only'
+
+
+# =============================================================================
+# Stage 3 — generic owner-less infrastructure-config recognition (fallback)
+# =============================================================================
+
+# One representative of each of the three infrastructure-config glob families.
+_CI_WORKFLOW_YAML = '.github/workflows/python-verify.yml'
+_COMPOSE_YAML = 'docker-compose.yml'
+_CONTAINER_SERVICE_YAML = 'src/main/docker/application.yaml'
+
+# A footprint consisting exclusively of infrastructure-config paths, spanning
+# every family the table declares. Used by the D3(b) Q-Gate-outcome assertion.
+_INFRA_ONLY_FOOTPRINT = (
+    _CI_WORKFLOW_YAML,
+    '.github/dependabot.yml',
+    '.circleci/config.yml',
+    _COMPOSE_YAML,
+    'compose.yaml',
+    '.gitlab-ci.yml',
+    _CONTAINER_SERVICE_YAML,
+    '.hadolint.yaml',
+    '.trivyignore',
+    '.dockerignore',
+)
+
+
+def _real_build_extensions() -> list:
+    """Return the REAL discovered build-extension instances (not fakes).
+
+    Mirrors the aggregator's own lazy-import discovery path so an assertion
+    made against this list is an assertion about the SHIPPED extension set —
+    a fake-extension assertion could pass while the real extensions still
+    leave the paths unclaimed.
+    """
+    from extension_discovery import discover_build_extensions
+
+    discovered = discover_build_extensions()
+    return [entry.get('module') for entry in discovered if entry.get('module') is not None]
+
+
+def test_infra_config_family_is_location_or_basename_anchored_never_bare_suffix():
+    """Family membership is anchored on location or basename, never on ``.yml``.
+
+    The predicate backs the stage-3 fallback; a bare-suffix rule would sweep in
+    build-owned resources, so the negative cases are as load-bearing as the
+    positive ones.
+    """
+    for path in (
+        '.github/workflows/python-verify.yml',
+        '.github/dependabot.yml',
+        '.circleci/config.yml',
+        'docker-compose.yml',
+        'docker-compose.override.yaml',
+        'compose.yaml',
+        '.gitlab-ci.yml',
+        'src/main/docker/application.yaml',
+        'docker/entrypoint.sh',
+        '.hadolint.yaml',
+        '.trivyignore',
+        '.dockerignore',
+    ):
+        assert _is_infrastructure_config_path(path), path
+
+    for path in (
+        'conf/application.yml',
+        'src/main/resources/application.yml',
+        'marketplace/bundles/foo/skills/bar/scripts/thing.py',
+        'mystery.xyz',
+    ):
+        assert not _is_infrastructure_config_path(path), path
+
+
+def test_each_infra_config_family_resolves_to_a_non_unknown_bucket():
+    """Each of the three families is recognized generically — no extension needed."""
+    for path in (_CI_WORKFLOW_YAML, _COMPOSE_YAML, _CONTAINER_SERVICE_YAML):
+        bucket, unclaimed = _classify_paths_via_extensions([path], extensions=[])
+        assert bucket != 'unknown', path
+        assert unclaimed == [], path
+
+
+def test_infra_only_footprint_resolves_documentation_only():
+    """An infra-only footprint collapses to documentation_only.
+
+    The stage-3 rule assigns the ``config`` role, and ``config`` is excluded
+    from the plan-wide bucket collapse — so infra config never warrants
+    holistic Python verification on its own.
+    """
+    bucket, unclaimed = _classify_paths_via_extensions(
+        [_CI_WORKFLOW_YAML, _COMPOSE_YAML, _CONTAINER_SERVICE_YAML], extensions=[]
+    )
+    assert bucket == 'documentation_only'
+    assert unclaimed == []
+
+
+def test_infra_config_neither_inflates_nor_dilutes_the_code_bucket():
+    """An infra path riding alongside production code leaves the bucket at production_only."""
+    py_ext = _FakeExtension(
+        'python',
+        claims={
+            'production': ['scripts/foo.py'],
+            'test': [], 'documentation': [], 'config': [],
+        },
+    )
+    bucket, unclaimed = _classify_paths_via_extensions(
+        ['scripts/foo.py', _CI_WORKFLOW_YAML], extensions=[py_ext]
+    )
+    assert bucket == 'production_only'
+    assert unclaimed == []
+
+
+def test_maven_production_resource_is_never_stolen_by_the_infra_fallback():
+    """``src/main/resources/application.yml`` stays ``production`` via build-maven.
+
+    The never-steal-a-claim assertion. The stage-3 rule runs only over paths no
+    build extension claimed, so a Maven production resource keeps its claim even
+    though it is a YAML file. Asserted against the REAL discovered extension set
+    because the claim being protected is build-maven's shipped route.
+    """
+    extensions = _real_build_extensions()
+    assert extensions, 'discover_build_extensions() returned no build extensions'
+
+    bucket, unclaimed = _classify_paths_via_extensions(
+        ['src/main/resources/application.yml'], extensions=extensions
+    )
+    assert bucket == 'production_only'
+    assert unclaimed == []
+
+
+def test_infra_fallback_narrows_unknown_without_eliminating_it():
+    """A genuinely undeclared file type still resolves to ``unknown``."""
+    bucket, unclaimed = _classify_paths_via_extensions(['mystery.xyz'], extensions=[])
+    assert bucket == 'unknown'
+    assert unclaimed == ['mystery.xyz']
+
+
+def test_d3b_infra_only_footprint_falsifies_the_phase_4_qgate_blocking_predicate():
+    """D3(b): an infra-only plan clears the phase-4 Q-Gate without an operator override.
+
+    The Q-Gate's blocking predicate is exactly ``bucket == 'unknown'``
+    (equivalently: a non-empty ``unclaimed`` list) — that is the sole condition
+    under which the ``unknown`` remedy fires and an operator override is
+    demanded. Falsifying BOTH halves of that predicate here IS the Q-Gate
+    outcome, not a proxy for it.
+
+    The run uses the REAL discovered extension set rather than the
+    ``_FakeExtension`` fixtures the sibling cases use: a fake-extension
+    assertion could pass while the shipped extension set still leaves these
+    paths unclaimed. The non-empty-extensions assertion keeps the case from
+    passing vacuously if discovery ever returns nothing.
+    """
+    extensions = _real_build_extensions()
+    assert extensions, 'discover_build_extensions() returned no build extensions'
+
+    bucket, unclaimed = _classify_paths_via_extensions(
+        list(_INFRA_ONLY_FOOTPRINT), extensions=extensions
+    )
+    assert bucket != 'unknown'
+    assert unclaimed == []
