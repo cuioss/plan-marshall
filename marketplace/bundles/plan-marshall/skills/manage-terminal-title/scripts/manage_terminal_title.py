@@ -197,8 +197,40 @@ def resolve_icon(process_state: str | None) -> str:
     return _PROCESS_STATE_ICONS.get(process_state, _ICON_ACTIVE)  # type: ignore[arg-type]
 
 
+_CONTROL_CHAR_MAP = dict.fromkeys(range(0x20)) | {0x7F: None}
+"""``str.translate`` deletion map for the ASCII C0 control range (0x00-0x1F)
+plus DEL (0x7F). Applied to every externally-derived text segment
+:func:`_compose_body` interpolates into the title body — see
+:func:`_strip_control_chars`."""
+
+
+def _strip_control_chars(text: str) -> str:
+    """Strip ASCII control characters (C0 range + DEL) from *text*.
+
+    ``_compose_body`` is the single point where plan-derived free text
+    (``short_description``, the orchestrator ``slug``) enters the title body
+    that :func:`compose` returns. Both the Claude runtime's OSC-0 terminal
+    title-set escape (``ESC ]0;{body} BEL``) and the ``hookSpecificOutput``
+    ``sessionTitle`` / ``statusLine`` channels embed that body verbatim, so an
+    unstripped ESC (0x1B) or BEL (0x07) byte in the source text would let the
+    body terminate the escape sequence early and splice in attacker-controlled
+    follow-on terminal escapes (OSC/terminal-escape injection). Stripping the
+    full C0 control range (not just ESC/BEL) here — at composition, the single
+    shared point every render/push channel consumes — closes the sink without
+    each channel having to duplicate the guard. Whitespace-collapsing upstream
+    (``derive_short_description``) does not cover this: its ``\\s+`` regex
+    does not match ESC/BEL.
+    """
+    return text.translate(_CONTROL_CHAR_MAP)
+
+
 def _compose_body(state_dict: dict[str, object]) -> str | None:
     """Render the title body from the passed state dict.
+
+    Every externally-derived text segment (``short_description``, the
+    orchestrator ``slug``) is passed through :func:`_strip_control_chars`
+    before interpolation, so the returned body can never smuggle a raw ESC/BEL
+    byte into a consumer that embeds it in a terminal escape sequence.
 
     Returns:
 
@@ -219,7 +251,7 @@ def _compose_body(state_dict: dict[str, object]) -> str | None:
     """
     if state_dict.get("kind") == _KIND_ORCHESTRATOR:
         slug = state_dict.get("slug")
-        slug_str = slug.strip() if isinstance(slug, str) else ""
+        slug_str = _strip_control_chars(slug.strip()) if isinstance(slug, str) else ""
         if not slug_str:
             return None
         return f"{_ORCHESTRATOR_BODY_PREFIX}-{slug_str}"
@@ -229,7 +261,7 @@ def _compose_body(state_dict: dict[str, object]) -> str | None:
         return None
 
     short = state_dict.get("short_description")
-    short_str = short.strip() if isinstance(short, str) else ""
+    short_str = _strip_control_chars(short.strip()) if isinstance(short, str) else ""
 
     if phase in _TERMINAL_PHASES:
         label = _COMPLETED_PHASE_LABEL
