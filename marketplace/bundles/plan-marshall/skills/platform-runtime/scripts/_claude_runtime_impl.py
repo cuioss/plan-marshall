@@ -266,6 +266,35 @@ class ClaudeRuntime(Runtime):
             },
         )
 
+    @staticmethod
+    def _render_outcome(outcome: str, **fields: Any) -> str:
+        """Name this render's terminal outcome on stderr, and return "".
+
+        Every exit from :meth:`session_render_title` routes through here, so
+        "the render produced no title" is always distinguishable from "the
+        render produced the correct title" — and each distinct no-op reason is
+        distinguishable from the others. Before this seam every path returned
+        a bare ``""``, which made a silently-dead render indistinguishable
+        from a healthy one at every layer.
+
+        The named outcome goes to **stderr**, never stdout. The stdout
+        contract is load-bearing: stdout carries exactly the bytes the host
+        parser consumes and nothing else, so the reason is surfaced beside the
+        payload, never glued to it. The return value stays ``""`` for the same
+        reason — the wrapper ``main()`` skips ``print()`` on an empty result,
+        so a non-empty return would append a TOON tail to the host's stdout.
+
+        Writing the row is itself best-effort: a stderr failure must not break
+        a render that otherwise succeeded.
+        """
+        try:
+            sys.stderr.write(
+                toon_success("session render-title", {"outcome": outcome, **fields}) + "\n"
+            )
+        except OSError:
+            pass
+        return ""
+
     def session_render_title(self, statusline: bool = False) -> str:
         """Resolve session → plan, read ``status.json``, compose, and emit.
 
@@ -275,6 +304,44 @@ class ClaudeRuntime(Runtime):
         it, or TOON noop instead of empty output — violate the contract and
         are dropped by the host parser (see ``hook-authoring-guide.md`` §
         "Hook output contract").
+
+        **Every exit is a NAMED outcome** reported on stderr via
+        :meth:`_render_outcome` (stdout is untouched by it). The eight
+        outcomes are:
+
+        ============================ =========================================
+        ``outcome``                  Meaning
+        ============================ =========================================
+        ``no_session_id``            ``$CLAUDE_CODE_SESSION_ID`` unset — the
+                                     hook is not installed or not firing.
+        ``no_binding``               Neither a plan nor an orchestrator epic is
+                                     bound to this session.
+        ``no_title_state``           A binding resolved but its ``status.json``
+                                     is absent or unreadable.
+        ``session_teardown``         ``SessionStart:clear`` — a deliberate
+                                     terminal no-op, not a failed render.
+        ``unrenderable_state``       State read but ``compose`` returned None
+                                     (empty/missing ``current_phase``).
+        ``statusline_written``       SUCCESS on the statusLine channel.
+        ``hook_envelope_written``    SUCCESS on the delivering hook channel.
+        ``write_failed``             The stdout write raised — the system
+                                     believed it painted and did NOT. The most
+                                     consequential outcome of the eight, which
+                                     is exactly why it is named rather than
+                                     swallowed.
+        ============================ =========================================
+
+        Two of these (``no_session_id``, ``session_teardown``) are *deliberate*
+        terminal no-ops rather than failures; they are named so the distinction
+        is visible, not so they read as errors.
+
+        **Deferred — the statusLine rendered-state substitution.** A no-op on
+        the statusLine channel writes nothing, and what the host then shows
+        (the previous footer, a blank line, or its own default) is an
+        UNCONFIRMED host fact. Substituting a rendered state here would require
+        assuming that behaviour, so this ships the observability half only: the
+        statusLine no-op paths are named, and no placeholder title is invented.
+        Re-open only against a confirmed host check.
 
         Hook mode (``statusline=False``):
           - Success: write the JSON envelope to stdout, return "".
@@ -312,13 +379,18 @@ class ClaudeRuntime(Runtime):
         (best-effort/no-raise contract).
 
         Every return is the empty string so the wrapper ``main()`` (which
-        skips ``print()`` on empty results) cannot append a TOON tail.
+        skips ``print()`` on empty results) cannot append a TOON tail — the
+        named outcome above rides stderr precisely so this stays true.
         """
 
         # Step 1: Read $CLAUDE_CODE_SESSION_ID.
         session_id = os.environ.get("CLAUDE_CODE_SESSION_ID")
         if not session_id:
-            return ""
+            # A deliberate terminal no-op, not a failure: without a session id
+            # there is nothing to resolve. Named so an uninstalled or
+            # non-firing hook is visible instead of looking like a quiet
+            # success.
+            return self._render_outcome("no_session_id", statusline=statusline)
 
         # Step 2: Resolve session_id → plan_id via the session cache. A plan
         # binding wins; when absent, an ORCHESTRATOR epic binding is the fallback
@@ -338,10 +410,12 @@ class ClaudeRuntime(Runtime):
         else:
             slug = claude_runtime._read_active_orchestrator(session_id)
             if not slug:
-                return ""
+                return self._render_outcome("no_binding", session_id=session_id)
             state = claude_runtime._read_orchestrator_title_state(slug)
         if state is None:
-            return ""
+            return self._render_outcome(
+                "no_title_state", plan_id=plan_id or "", session_id=session_id
+            )
 
         # Step 4: Parse the hook event (hook mode only) and compose the title.
         #
@@ -387,7 +461,9 @@ class ClaudeRuntime(Runtime):
         # that no longer drives a plan.
         if not statusline and hook_event_name == "SessionStart" and source == "clear":
             self.session_teardown()
-            return ""
+            # A deliberate terminal no-op: this event RETIRES the session, so
+            # writing no title is the correct behaviour, not a failed render.
+            return self._render_outcome("session_teardown", plan_id=plan_id or "")
 
         # Build-busy hook assist — the MACHINE-OWNED bracket around a Bash build
         # window. Both halves live on render events, which is what makes the
@@ -436,16 +512,22 @@ class ClaudeRuntime(Runtime):
         process_state = claude_runtime._claude_event_to_process_state(hook_event_name, tool_name)
         composed = compose(state, process_state)
         if not composed:
-            return ""
+            return self._render_outcome("unrenderable_state", plan_id=plan_id or "")
 
         # Step 5: Emit the title. Both modes write to stdout and return "".
         if statusline:
+            # DEFERRED (see the docstring): a no-op on this channel writes
+            # nothing, and the host's response to an empty statusLine output is
+            # an unconfirmed fact. No rendered-state substitution and no
+            # placeholder title is invented here — only the outcome is named.
             try:
                 sys.stdout.write(composed)
                 sys.stdout.flush()
-            except OSError:
-                pass
-            return ""
+            except OSError as exc:
+                return self._render_outcome(
+                    "write_failed", channel="statusline", plan_id=plan_id or "", detail=str(exc)
+                )
+            return self._render_outcome("statusline_written", plan_id=plan_id or "")
 
         try:
             osc_seq = f"\x1b]0;{composed}\x07"
@@ -467,8 +549,16 @@ class ClaudeRuntime(Runtime):
                     }
             sys.stdout.write(json.dumps(envelope))
             sys.stdout.flush()
-        except OSError:
-            pass
+        except OSError as exc:
+            # The MOST consequential of the eight outcomes: this is the
+            # delivering channel, so a swallowed failure here is the one case
+            # where the system believes it painted and did not. It must not
+            # return the same value a successful render returns — and the
+            # terminal-delivered mark below MUST NOT fire, because nothing was
+            # delivered.
+            return self._render_outcome(
+                "write_failed", channel="hook_envelope", plan_id=plan_id or "", detail=str(exc)
+            )
 
         # The terminal title has now been DELIVERED on the hook envelope — the
         # one channel that reaches the tab. Discharging that obligation is what
@@ -477,7 +567,7 @@ class ClaudeRuntime(Runtime):
         # a plan to resolve. Best-effort and a no-op for a non-archived plan.
         if plan_id and state.get("current_phase") in session_binding._TERMINAL_PHASES:
             claude_runtime._mark_terminal_delivered(plan_id)
-        return ""
+        return self._render_outcome("hook_envelope_written", plan_id=plan_id or "")
 
     def session_push_title_token(
         self,

@@ -68,6 +68,21 @@ def rt(tmp_path, monkeypatch):
 # title_token, the composed title is ``{icon} pm:X:Y`` (no glyph).
 
 
+def _title_token(state: str, owner: str = "cli") -> dict[str, str]:
+    """Build a ``{owner, state, set_at}`` title-token record stamped now.
+
+    ``status.title_token`` is a structured record, not a bare state string, so
+    every fixture that plants a token builds it through here.
+    """
+    from datetime import UTC, datetime
+
+    return {
+        "owner": owner,
+        "state": state,
+        "set_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }
+
+
 def _write_status_json(
     tmp_path: Path,
     *,
@@ -75,7 +90,7 @@ def _write_status_json(
     plan_id: str,
     current_phase: str | None = "5-execute",
     short_description: str | None = "my-task",
-    title_token: str | None = None,
+    title_token: dict[str, str] | None = None,
     archived: bool = False,
     date_prefix: str = "2026-05-29",
 ) -> None:
@@ -436,7 +451,7 @@ class TestSessionRenderTitleStatusline:
         _write_status_json(
             tmp_path, session_id=session_id, plan_id=plan_id,
             current_phase="5-execute", short_description="locked-task",
-            title_token="lock-owned",
+            title_token=_title_token("lock-owned", owner="merge-lock"),
         )
         _redirect_render_env(tmp_path, monkeypatch, session_id)
 
@@ -1539,3 +1554,324 @@ class TestSessionPushTitleTokenOrchestrator:
         rt.session_push_title_token("", store="orchestrator", slug="my-epic")
 
         assert session_binding.resolve_orchestrator("sess-orch-bind-inactive") == "my-epic"
+
+
+# =============================================================================
+# session_render_title — every exit is a NAMED outcome (observability)
+# =============================================================================
+
+
+class _RaisingStdout:
+    """A stdout stand-in whose ``write`` always raises ``OSError``.
+
+    Substituted for ``sys.stdout`` wholesale rather than patching ``write`` on
+    the capture object, so the failure is produced by the stream itself and the
+    test does not depend on capsys internals. ``sys.stderr`` is untouched, so
+    the named outcome is still captured.
+    """
+
+    def write(self, _text: str) -> int:
+        raise OSError("stdout is closed")
+
+    def flush(self) -> None:
+        raise OSError("stdout is closed")
+
+
+def _outcome_name(capsys) -> str:
+    """Read and parse the named-outcome TOON row from STDERR."""
+    err = capsys.readouterr().err
+    assert err.strip(), "the render wrote no named outcome to stderr"
+    return cast(str, cast(dict[str, Any], parse_toon(err))["outcome"])
+
+
+class TestSessionRenderTitleNamedOutcomes:
+    """Every exit from ``session_render_title`` names its outcome on stderr.
+
+    Before this contract every path returned a bare ``""``, so a render that
+    silently produced no title was indistinguishable from one that produced the
+    correct title — at every layer, including the two SUCCESS paths, which
+    returned the same value as the six no-ops. These tests pin each outcome as
+    DISTINCT, which is the property that makes the observability real; a test
+    that only asserted "some reason was reported" would pass even if every path
+    collapsed onto one name.
+
+    The stdout contract is asserted alongside every case: the named outcome
+    rides stderr, so stdout still carries exactly the host-parsed bytes and
+    nothing else.
+    """
+
+    def test_no_session_id_is_named_and_writes_no_stdout(self, rt, monkeypatch, capsys):
+        monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
+        capsys.readouterr()
+
+        assert rt.session_render_title(statusline=False) == ""
+
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert parse_toon(captured.err)["outcome"] == "no_session_id"
+
+    def test_no_binding_is_named(self, rt, tmp_path, monkeypatch, capsys):
+        """A session bound to neither a plan nor an epic names ``no_binding``."""
+        _redirect_render_env(tmp_path, monkeypatch, "sess-unbound")
+        capsys.readouterr()
+
+        assert rt.session_render_title(statusline=False) == ""
+
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert parse_toon(captured.err)["outcome"] == "no_binding"
+
+    def test_no_title_state_is_named(self, rt, tmp_path, monkeypatch, capsys):
+        """A resolved binding whose status.json is absent names ``no_title_state``.
+
+        Distinct from ``no_binding``: the session DID resolve a plan, so the
+        two failures point at different broken things (an unbound session vs a
+        missing plan directory) and must not share a name.
+        """
+        cache_dir = tmp_path / "sessions" / "sess-ghost"
+        cache_dir.mkdir(parents=True)
+        (cache_dir / "active-plan").write_text("ghost-plan", encoding="utf-8")
+        _redirect_render_env(tmp_path, monkeypatch, "sess-ghost")
+        capsys.readouterr()
+
+        assert rt.session_render_title(statusline=False) == ""
+
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        outcome = parse_toon(captured.err)
+        assert outcome["outcome"] == "no_title_state"
+        assert outcome["plan_id"] == "ghost-plan"
+
+    def test_session_teardown_is_named_as_a_deliberate_noop(self, rt, tmp_path, monkeypatch, capsys):
+        """``SessionStart:clear`` names ``session_teardown`` — writing no title is
+        CORRECT here, and the name is what distinguishes it from a failure."""
+        from io import StringIO
+
+        session_id = "sess-clear-named"
+        _write_status_json(tmp_path, session_id=session_id, plan_id="clear-plan")
+        _redirect_render_env(tmp_path, monkeypatch, session_id)
+        monkeypatch.setattr(
+            "sys.stdin",
+            StringIO(json.dumps({"hook_event_name": "SessionStart", "source": "clear"})),
+        )
+        capsys.readouterr()
+
+        assert rt.session_render_title(statusline=False) == ""
+
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert parse_toon(captured.err)["outcome"] == "session_teardown"
+
+    def test_unrenderable_state_is_named(self, rt, tmp_path, monkeypatch, capsys):
+        """State that reads but does not compose names ``unrenderable_state``.
+
+        Distinct from ``no_title_state``: the file WAS read, so the fault is in
+        its contents (no ``current_phase``) rather than its absence.
+        """
+        session_id = "sess-unrenderable"
+        _write_status_json(
+            tmp_path, session_id=session_id, plan_id="phaseless-plan",
+            current_phase=None, short_description="orphan",
+        )
+        _redirect_render_env(tmp_path, monkeypatch, session_id)
+        capsys.readouterr()
+
+        assert rt.session_render_title(statusline=False) == ""
+
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert parse_toon(captured.err)["outcome"] == "unrenderable_state"
+
+    def test_hook_envelope_success_is_named_distinctly(self, rt, tmp_path, monkeypatch, capsys):
+        """A SUCCESSFUL hook render names ``hook_envelope_written``.
+
+        The success paths previously returned the same bare ``""`` as the six
+        no-ops, which is exactly what made the observability vacuous. Asserting
+        the success name here is what proves success is distinguishable.
+        """
+        session_id = "sess-hook-ok"
+        _write_status_json(tmp_path, session_id=session_id, plan_id="ok-plan")
+        _redirect_render_env(tmp_path, monkeypatch, session_id)
+        capsys.readouterr()
+
+        assert rt.session_render_title(statusline=False) == ""
+
+        captured = capsys.readouterr()
+        # stdout still carries EXACTLY the host envelope and nothing else.
+        assert json.loads(captured.out)["terminalSequence"]
+        assert parse_toon(captured.err)["outcome"] == "hook_envelope_written"
+
+    def test_statusline_success_is_named_distinctly(self, rt, tmp_path, monkeypatch, capsys):
+        """A SUCCESSFUL statusLine render names ``statusline_written`` — its own
+        name, not the hook channel's, so the two delivering channels stay
+        separable in the record."""
+        session_id = "sess-sl-ok"
+        _write_status_json(tmp_path, session_id=session_id, plan_id="sl-plan")
+        _redirect_render_env(tmp_path, monkeypatch, session_id)
+        capsys.readouterr()
+
+        assert rt.session_render_title(statusline=True) == ""
+
+        captured = capsys.readouterr()
+        assert captured.out == "➤ pm:5-execute:my-task"
+        assert parse_toon(captured.err)["outcome"] == "statusline_written"
+
+    def test_swallowed_write_failure_on_the_delivering_channel_is_named(
+        self, rt, tmp_path, monkeypatch, capsys
+    ):
+        """THE regression this deliverable exists for.
+
+        A failed stdout write on the hook envelope — the delivering channel —
+        is the one case where the system believes it painted and did not. It
+        previously fell into a bare ``except OSError: pass`` and returned the
+        SAME value as a successful render. It must now report ``write_failed``,
+        naming the channel.
+        """
+        session_id = "sess-write-fail"
+        _write_status_json(tmp_path, session_id=session_id, plan_id="fail-plan")
+        _redirect_render_env(tmp_path, monkeypatch, session_id)
+
+        capsys.readouterr()
+        monkeypatch.setattr("sys.stdout", _RaisingStdout())
+
+        assert rt.session_render_title(statusline=False) == ""
+
+        monkeypatch.undo()
+        outcome = cast(dict[str, Any], parse_toon(capsys.readouterr().err))
+        assert outcome["outcome"] == "write_failed"
+        assert outcome["channel"] == "hook_envelope"
+
+    def test_write_failure_does_not_mark_terminal_state_delivered(
+        self, rt, tmp_path, monkeypatch, capsys
+    ):
+        """A failed write must NOT discharge the terminal-delivery obligation.
+
+        The mark releases an archived plan's session slot to the GC. Firing it
+        on a write that did not land would collect the binding the still-owed
+        render needs — the exact damage a swallowed failure caused.
+        """
+        import claude_runtime as _cr
+
+        session_id = "sess-write-fail-terminal"
+        _write_status_json(
+            tmp_path, session_id=session_id, plan_id="terminal-plan", current_phase="complete"
+        )
+        _redirect_render_env(tmp_path, monkeypatch, session_id)
+
+        marked: list[str] = []
+        monkeypatch.setattr(_cr, "_mark_terminal_delivered", lambda pid: marked.append(pid))
+
+        capsys.readouterr()
+        monkeypatch.setattr("sys.stdout", _RaisingStdout())
+
+        rt.session_render_title(statusline=False)
+
+        monkeypatch.undo()
+        assert _outcome_name(capsys) == "write_failed"
+        assert marked == []
+
+    def test_statusline_write_failure_names_its_own_channel(
+        self, rt, tmp_path, monkeypatch, capsys
+    ):
+        """The statusLine write failure is named too, and names ITS channel — so
+        a broken footer is not mistaken for a broken tab title."""
+        session_id = "sess-sl-write-fail"
+        _write_status_json(tmp_path, session_id=session_id, plan_id="sl-fail-plan")
+        _redirect_render_env(tmp_path, monkeypatch, session_id)
+
+        capsys.readouterr()
+        monkeypatch.setattr("sys.stdout", _RaisingStdout())
+
+        assert rt.session_render_title(statusline=True) == ""
+
+        monkeypatch.undo()
+        outcome = cast(dict[str, Any], parse_toon(capsys.readouterr().err))
+        assert outcome["outcome"] == "write_failed"
+        assert outcome["channel"] == "statusline"
+
+    def test_statusline_noop_substitutes_no_rendered_state(self, rt, tmp_path, monkeypatch, capsys):
+        """DEFERRAL guard: a statusLine no-op writes NOTHING to stdout.
+
+        The rendered-state substitution for this channel is deferred pending a
+        confirmed host fact (what the host shows for an empty statusLine
+        output). This test fails the moment someone invents a placeholder title
+        here on an assumption, which is the failure mode the deferral exists to
+        prevent.
+        """
+        cache_dir = tmp_path / "sessions" / "sess-sl-noop"
+        cache_dir.mkdir(parents=True)
+        (cache_dir / "active-plan").write_text("ghost-sl", encoding="utf-8")
+        _redirect_render_env(tmp_path, monkeypatch, "sess-sl-noop")
+        capsys.readouterr()
+
+        assert rt.session_render_title(statusline=True) == ""
+
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert parse_toon(captured.err)["outcome"] == "no_title_state"
+
+    def test_the_eight_outcome_names_are_pairwise_distinct(self, rt, tmp_path, monkeypatch, capsys):
+        """The whole point, asserted directly: no two paths share a name.
+
+        Collecting the names into a set and comparing its cardinality is what
+        catches a future refactor that collapses two outcomes onto one string —
+        a per-test assertion cannot see that, because each test would still
+        pass against the collapsed name.
+        """
+        from io import StringIO
+
+        names: list[str] = []
+
+        def _record(fn):
+            capsys.readouterr()
+            fn()
+            names.append(_outcome_name(capsys))
+
+        # no_session_id
+        monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
+        _record(lambda: rt.session_render_title(statusline=False))
+
+        # no_binding
+        _redirect_render_env(tmp_path, monkeypatch, "sess-distinct-unbound")
+        _record(lambda: rt.session_render_title(statusline=False))
+
+        # no_title_state
+        cache_dir = tmp_path / "sessions" / "sess-distinct-ghost"
+        cache_dir.mkdir(parents=True)
+        (cache_dir / "active-plan").write_text("ghost", encoding="utf-8")
+        _redirect_render_env(tmp_path, monkeypatch, "sess-distinct-ghost")
+        _record(lambda: rt.session_render_title(statusline=False))
+
+        # unrenderable_state
+        _write_status_json(
+            tmp_path, session_id="sess-distinct-phaseless", plan_id="phaseless",
+            current_phase=None, short_description="x",
+        )
+        _redirect_render_env(tmp_path, monkeypatch, "sess-distinct-phaseless")
+        _record(lambda: rt.session_render_title(statusline=False))
+
+        # hook_envelope_written + statusline_written
+        _write_status_json(tmp_path, session_id="sess-distinct-ok", plan_id="ok")
+        _redirect_render_env(tmp_path, monkeypatch, "sess-distinct-ok")
+        _record(lambda: rt.session_render_title(statusline=False))
+        _record(lambda: rt.session_render_title(statusline=True))
+
+        # session_teardown
+        monkeypatch.setattr(
+            "sys.stdin",
+            StringIO(json.dumps({"hook_event_name": "SessionStart", "source": "clear"})),
+        )
+        _record(lambda: rt.session_render_title(statusline=False))
+
+        # write_failed
+        _write_status_json(tmp_path, session_id="sess-distinct-boom", plan_id="boom")
+        _redirect_render_env(tmp_path, monkeypatch, "sess-distinct-boom")
+
+        capsys.readouterr()
+        monkeypatch.setattr("sys.stdout", _RaisingStdout())
+        rt.session_render_title(statusline=False)
+        monkeypatch.undo()
+        names.append(_outcome_name(capsys))
+
+        assert len(names) == 8
+        assert len(set(names)) == 8, f"outcome names collapsed: {names}"
