@@ -5,18 +5,25 @@
 ``cmd_pr_wait_for_comments`` (in ``_github_pr.py``, dispatched via
 ``github_ops``) surfaces an additive ``rate_limited: true|false`` field: after
 the poll settles it inspects the newest CodeRabbit-bot comment for a rate-limit
-status notice. The discriminator is provider-scoped (GitHub/CodeRabbit) and must
-never alter the pre-existing poll fields (``timed_out`` / ``new_count`` / …).
+status notice. Comment SELECTION stays provider-scoped (GitHub/CodeRabbit —
+author-scoped, newest by ``created_at``); the body CLASSIFIER is the shared
+bot-agnostic ``_is_rate_limit_notice``, which requires BOTH a limit-exceeded
+statement AND a notice shape (callout / limit heading / service tail). The
+discriminator must never alter the pre-existing poll fields (``timed_out`` /
+``new_count`` / …).
 
 Scope (AAA against fixture comment payloads):
     - newest bot comment is a rate-limit status notice → rate_limited: true
       (fixture uses the FLATTENED production body shape — see _RATE_LIMIT_NOTICE)
+    - CodeRabbit's CURRENT ``Review limit reached`` refusal → rate_limited: true
+      (the phrasing the retired CodeRabbit-exact marker island missed)
     - newest bot comment is a genuine review          → rate_limited: false
     - no bot comment / empty comment list             → rate_limited: false
     - a newer genuine review supersedes an older notice → rate_limited: false
-    - a bot review carrying only the body sentence (no heading) → rate_limited:
-      false (detection requires BOTH markers via ``all``)
-    - the pre-existing timed_out / new_count fields are unchanged
+    - a bot review carrying only the body sentence (no notice shape) →
+      rate_limited: false
+    - author-scoped newest-comment selection and the pre-existing
+      timed_out / new_count fields are unchanged by the re-pointing
 
 Tests never shell out to the real ``gh`` CLI: ``check_auth``,
 ``fetch_pr_comments_data``, and ``poll_until`` are monkeypatched so the handler
@@ -46,6 +53,21 @@ _RATE_LIMIT_NOTICE = {
         '> [!WARNING] > ## Rate limit exceeded > '
         '@octocat has exceeded the limit for the number of commits or files '
         'that can be reviewed per hour. Please wait before requesting another review.'
+    ),
+    'created_at': '2026-01-02T00:00:00Z',
+}
+
+# CodeRabbit's CURRENT refusal notice — the phrasing the retired CodeRabbit-exact
+# marker island MISSED. It carries neither the old ``## Rate limit exceeded``
+# heading nor the ``exceeded the limit for the number of`` body sentence, so the
+# two-marker island scored it False. The shared recognizer matches it on a
+# limit-exceeded statement (``Review limit reached``) paired with a notice shape.
+_REVIEW_LIMIT_REACHED_NOTICE = {
+    'author': 'coderabbitai[bot]',
+    'body': (
+        '> [!WARNING] > ## Review limit reached > '
+        'You have reached your review limit for the current billing cycle. '
+        'Reviews will resume once the limit resets.'
     ),
     'created_at': '2026-01-02T00:00:00Z',
 }
@@ -105,6 +127,46 @@ def test_rate_limit_notice_sets_rate_limited_true(monkeypatch):
     assert result['new_count'] == 1
     assert result['final_count'] == 2
     assert result['baseline_count'] == 1
+
+
+def test_current_review_limit_reached_notice_sets_rate_limited_true(monkeypatch):
+    # Regression pin for the collapse: CodeRabbit's CURRENT refusal phrasing.
+    # The retired two-marker island required the "## Rate limit exceeded" heading
+    # AND the "exceeded the limit for the number of" sentence — this notice has
+    # NEITHER (asserted below), so the island silently scored it False. The shared
+    # recognizer classifies it on structure instead, and the discriminator fires.
+    assert 'exceeded the limit for the number of' not in _REVIEW_LIMIT_REACHED_NOTICE['body']
+    assert '## Rate limit exceeded' not in _REVIEW_LIMIT_REACHED_NOTICE['body']
+
+    _wire(monkeypatch, post_comments=[_HUMAN_COMMENT, _REVIEW_LIMIT_REACHED_NOTICE])
+
+    result = github_ops.cmd_pr_wait_for_comments(_wait_comments_args())
+
+    assert result['status'] == 'success'
+    assert result['rate_limited'] is True
+
+
+def test_newest_bot_selection_and_human_exclusion_survive_repointing(monkeypatch):
+    # The re-pointing changed ONLY the body classifier. This pins the three
+    # behaviours that must be unchanged by it:
+    #   1. human-author exclusion — the newest comment overall is human-authored
+    #      and must not be considered at all;
+    #   2. newest-by-created_at selection AMONG bot comments — an older genuine
+    #      bot review must not displace the newer bot notice;
+    #   3. the additive contract — every pre-existing poll field is untouched.
+    newest_human = dict(_HUMAN_COMMENT, created_at='2026-01-09T00:00:00Z')
+    older_bot_review = dict(_GENUINE_REVIEW, created_at='2026-01-01T00:00:00Z')
+    _wire(monkeypatch, post_comments=[newest_human, older_bot_review, _REVIEW_LIMIT_REACHED_NOTICE])
+
+    result = github_ops.cmd_pr_wait_for_comments(_wait_comments_args())
+
+    assert result['rate_limited'] is True
+    assert result['timed_out'] is False
+    assert result['new_count'] == 1
+    assert result['baseline_count'] == 1
+    assert result['final_count'] == 2
+    assert result['duration_sec'] == 1
+    assert result['polls'] == 1
 
 
 def test_genuine_review_sets_rate_limited_false(monkeypatch):
@@ -175,9 +237,10 @@ def test_bot_review_quoting_rate_limit_prose_not_flagged(monkeypatch):
 def test_bot_body_sentence_without_heading_not_flagged(monkeypatch):
     # gemini-code-assist false-positive guard: a genuine CodeRabbit review whose
     # flattened body merely contains the "exceeded the limit for the number of"
-    # body sentence (e.g. discussing a parameter/line limit) WITHOUT the
-    # "## Rate limit exceeded" heading must not be flagged. Detection now requires
-    # BOTH markers via ``all`` — the body sentence alone is insufficient.
+    # body sentence (e.g. discussing a parameter/line limit) in plain prose must
+    # not be flagged. The shared recognizer requires a limit-exceeded statement
+    # AND a notice shape — with no callout, no limit heading and no service tail,
+    # the body sentence alone is insufficient.
     body_only = {
         'author': 'coderabbitai[bot]',
         'body': (

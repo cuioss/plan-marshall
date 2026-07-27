@@ -166,8 +166,10 @@ The strategies differ **only** in the trigger comment `request_fresh_review` pos
 
 | Signal | Match condition | Envelope |
 |--------|-----------------|----------|
-| **review** (preferred) | a review whose reviewed commit SHA equals `--head-sha` AND whose `submittedAt` strictly post-dates the trigger time | `matched_signal: review`, `matched_review: {…}`, `head_sha_verified: true` |
-| **issue comment** (fallback) | a comment whose author resolves to the awaited `bot_kind`, whose later of `updated_at` / `created_at` strictly post-dates the trigger time, and which is not a rate-limit / service notice | `matched_signal: issue_comment`, `matched_comment: {…}`, `head_sha_verified: false` |
+| **review** (preferred) | a review whose reviewed commit SHA equals `--head-sha` AND whose `submittedAt` strictly post-dates the trigger time, and which is not a refusal notice | `matched_signal: review`, `matched_review: {…}`, `head_sha_verified: true` |
+| **issue comment** (fallback) | a comment whose author resolves to the awaited `bot_kind`, whose later of `updated_at` / `created_at` strictly post-dates the trigger time, and which is not a refusal notice | `matched_signal: issue_comment`, `matched_comment: {…}`, `head_sha_verified: false` |
+
+**Both** signals additionally reject a **refusal notice** — a bot declining to review (rate-limit, diff-size, quota). The rejection is two-layer and identical on both paths: the awaited bot's registry `ignore_patterns` (its OBSERVED refusal strings) are matched first, with the author-independent structural `_is_rate_limit_notice` as the last-resort fallback for an unknown or renamed bot. A refusal carries no review, so counting it as a completion signal would assert review coverage that never happened. This applies to the review path as much as the comment path: a bot may submit its refusal as a **review object** rather than an issue comment, and the review path resolves first — so without the check the strongest signal (`head_sha_verified: true`) would be the one most likely to be false.
 
 `head_sha_verified: false` on the comment path is load-bearing: an issue comment carries no reviewed-commit SHA, so the match proves the bot **responded**, not that it reviewed the new HEAD. The caller learns the strength of the evidence, not just the fact of a match. The comment path uses the LATER of `updated_at` / `created_at` so a bot that edits ONE persistent comment in place still registers as fresh activity. No bot is named in code — both matchers are generic across the registry.
 

@@ -365,7 +365,7 @@ def test_post_pr_comment_gh_failure_returns_error(monkeypatch):
 
 
 def test_fetch_pr_reviews_with_commits_success(monkeypatch):
-    """Reviews are projected to {user, state, submitted_at, commit_sha} rows."""
+    """Reviews are projected to {user, state, submitted_at, commit_sha, body} rows."""
     captured: list[list[str]] = []
 
     def run_gh_stub(args, capture_json=False, timeout=60):
@@ -373,7 +373,8 @@ def test_fetch_pr_reviews_with_commits_success(monkeypatch):
         # --slurp wraps all pages into an outer array; simulate a single page.
         payload = (
             '[[{"user": {"login": "coderabbitai"}, "state": "COMMENTED", '
-            '"submitted_at": "2026-01-01T00:05:00Z", "commit_id": "headsha"}]]'
+            '"submitted_at": "2026-01-01T00:05:00Z", "commit_id": "headsha", '
+            '"body": "Actionable comments posted: 2"}]]'
         )
         return 0, payload, ''
 
@@ -391,6 +392,7 @@ def test_fetch_pr_reviews_with_commits_success(monkeypatch):
             'state': 'COMMENTED',
             'submitted_at': '2026-01-01T00:05:00Z',
             'commit_sha': 'headsha',
+            'body': 'Actionable comments posted: 2',
         }
     ]
     # REST /reviews endpoint is consulted with --paginate --slurp.
@@ -398,7 +400,7 @@ def test_fetch_pr_reviews_with_commits_success(monkeypatch):
 
 
 def test_fetch_pr_reviews_with_commits_defaults_missing_fields(monkeypatch):
-    """Reviews missing user/state/submitted_at/commit_id get safe defaults."""
+    """Reviews missing user/state/submitted_at/commit_id/body get safe defaults."""
     monkeypatch.setattr(github_ops, 'get_repo_info', lambda: ('octo', 'repo'))
     # --slurp wraps pages in an outer array; simulate a single page with one empty review.
     monkeypatch.setattr(github_ops, 'run_gh', lambda *_a, **_kw: (0, '[[{}]]', ''))
@@ -407,7 +409,7 @@ def test_fetch_pr_reviews_with_commits_defaults_missing_fields(monkeypatch):
 
     assert result['status'] == 'success'
     assert result['reviews'] == [
-        {'user': 'unknown', 'state': 'UNKNOWN', 'submitted_at': '', 'commit_sha': ''}
+        {'user': 'unknown', 'state': 'UNKNOWN', 'submitted_at': '', 'commit_sha': '', 'body': ''}
     ]
 
 
