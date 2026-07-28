@@ -904,6 +904,22 @@ def cmd_generate(args: argparse.Namespace) -> dict:
                 'cache_read sums context re-reads across turns)'
             )
 
+        # Exploration-share counters. RENDER-GUARD DIVERGENCE, deliberate: these
+        # are guarded on PRESENCE (`field in phase`), not on the truthiness test
+        # the four-field bullets above use. A stored 0 is a MEASURED zero here and
+        # must render as `0`, while an absent counter (a runtime that declined the
+        # transcript primitive) must render nothing — the truthiness guard would
+        # collapse those two into the same blank output, destroying exactly the
+        # distinction the persistence rule, the platform-runtime contract, and the
+        # `exploration-share` corpus-exclusion rule are all built on. Do NOT
+        # "harmonize" this back to the neighbouring truthiness form. The four-field
+        # bullets keep theirs because for those fields zero and absent carry no
+        # meaningful difference.
+        for field in _EXPLORATION_COUNTER_FIELDS:
+            if field in phase:
+                label = field.replace('_', ' ').capitalize()
+                lines.append(f'- **{label}**: {int(phase[field]):,}')
+
         lines.append('')
 
     md_content = '\n'.join(lines)
@@ -1610,6 +1626,10 @@ def _run_normalized_tokens_op(
                 'subagent_calls_attributed',
                 'subagent_transcripts_walked',
                 'four_field_phases_attributed',
+                # Run-level count of tool names outside the classifier's
+                # population-derived domain — non-zero means a new tool name was
+                # counted rather than dropped, and the classifier needs extending.
+                'unclassified_tool_calls',
             )
             if isinstance(parsed.get(key), (int, str)) and str(parsed.get(key)).isdigit()
         }
@@ -1617,6 +1637,21 @@ def _run_normalized_tokens_op(
 
 
 _INLINE_MAIN_CONTEXT_FIELDS = ('input_tokens', 'output_tokens', 'cache_creation_input_tokens')
+
+# Exploration-share buckets, in report order. ``exploration + work + execute`` is
+# the share denominator; ``orchestration`` and ``unclassified`` are carried so the
+# buckets partition the observed tool-call population and the exclusion from the
+# ratio stays auditable.
+_EXPLORATION_BUCKETS = ('exploration', 'work', 'execute', 'orchestration', 'unclassified')
+
+# The per-phase counter fields the platform-runtime transcript engine supplies.
+# Persisted and rendered on a PRESENCE test, never a truthiness test — see the
+# render-guard divergence note at the per-phase render.
+_EXPLORATION_COUNTER_FIELDS = tuple(
+    f'{bucket}_{measure}'
+    for bucket in _EXPLORATION_BUCKETS
+    for measure in ('tool_calls', 'result_bytes')
+)
 
 
 def _inline_main_context_sum(phase_row: dict) -> int:
@@ -1689,6 +1724,15 @@ def cmd_enrich(args: argparse.Namespace) -> dict:
             phase_row['subagent_tool_uses'] = bucket.get('subagent_tool_uses', 0)
             phase_row['subagent_duration_ms'] = bucket.get('subagent_duration_ms', 0)
             phase_row['subagent_samples'] = bucket.get('subagent_samples', 0)
+
+        # Exploration-share counters, written on a PRESENCE test. A runtime that
+        # declines the transcript primitive supplies no counter at all, and
+        # defaulting an absent counter to 0 would assert a measurement that was
+        # never taken — making "never measured" indistinguishable from "measured,
+        # and it explored nothing". A MEASURED zero IS persisted, as 0.
+        for field in _EXPLORATION_COUNTER_FIELDS:
+            if field in bucket:
+                phase_row[field] = bucket[field]
 
         # Surface an inline phase's main-context tokens into total_tokens. A phase
         # that ran inline in the main context (phase-1-init, and the recipe-inline

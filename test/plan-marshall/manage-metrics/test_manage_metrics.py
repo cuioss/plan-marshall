@@ -1598,6 +1598,90 @@ def _recorded_phase_row() -> dict:
     }
 
 
+class TestExplorationCountersAbsentVsMeasuredZero:
+    """An absent counter and a measured-zero counter stay distinguishable everywhere.
+
+    This is the pair that would go red if the persistence or the render reused the
+    truthiness guard the four-field bullets use: under a truthiness test a stored
+    ``0`` and an absent field produce byte-identical output, collapsing "measured,
+    and it explored nothing" into "never measured". Both halves assert against
+    ``metrics.toon`` (persistence) and ``metrics.md`` (render).
+    """
+
+    def test_absent_counters_are_not_persisted_as_zero_and_render_nothing(
+        self, plan_context, monkeypatch
+    ):
+        """A runtime that supplies no counters leaves the fields absent, not zeroed."""
+        plan_dir = plan_context.plan_dir_for('expl-absent')
+        manage_metrics.write_metrics('expl-absent', {'plan_id': 'expl-absent'})
+        (plan_dir / 'work' / 'metrics.toon').write_text(
+            _ENRICH_TWO_PHASE_METRICS.format(plan_id='expl-absent'), encoding='utf-8'
+        )
+        # A per-phase bucket carrying the four-field view but NO counters — the
+        # shape a target that declines the transcript primitive produces.
+        _patch_runtime_op(
+            monkeypatch,
+            status='success',
+            per_phase={'5-execute': {'input_tokens': 10, 'output_tokens': 2}},
+            counters={'message_count': 1},
+        )
+
+        assert cmd_enrich(_ns_enrich('expl-absent', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'))[
+            'status'
+        ] == 'success'
+
+        five = manage_metrics.read_metrics_raw('expl-absent')['phases']['5-execute']
+        for field in manage_metrics._EXPLORATION_COUNTER_FIELDS:
+            assert field not in five, f'absent counter {field} must not be persisted as 0'
+
+        cmd_generate(_ns_generate('expl-absent'))
+        md = (plan_dir / 'metrics.md').read_text()
+        assert '- **Exploration tool calls**' not in md
+        assert '- **Exploration result bytes**' not in md
+
+    def test_measured_zero_counter_is_persisted_and_rendered_as_zero(
+        self, plan_context, monkeypatch
+    ):
+        """A counter supplied as 0 is a measurement: it is written and rendered as 0."""
+        plan_dir = plan_context.plan_dir_for('expl-zero')
+        manage_metrics.write_metrics('expl-zero', {'plan_id': 'expl-zero'})
+        (plan_dir / 'work' / 'metrics.toon').write_text(
+            _ENRICH_TWO_PHASE_METRICS.format(plan_id='expl-zero'), encoding='utf-8'
+        )
+        _patch_runtime_op(
+            monkeypatch,
+            status='success',
+            per_phase={
+                '5-execute': {
+                    'input_tokens': 10,
+                    'output_tokens': 2,
+                    'exploration_tool_calls': 0,
+                    'exploration_result_bytes': 0,
+                    'work_tool_calls': 3,
+                }
+            },
+            counters={'message_count': 1, 'unclassified_tool_calls': 0},
+        )
+
+        assert cmd_enrich(_ns_enrich('expl-zero', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'))[
+            'status'
+        ] == 'success'
+
+        five = manage_metrics.read_metrics_raw('expl-zero')['phases']['5-execute']
+        assert five['exploration_tool_calls'] == 0
+        assert five['exploration_result_bytes'] == 0
+        assert five['work_tool_calls'] == 3
+        # Counters the runtime did not supply stay absent even in this bucket.
+        assert 'execute_tool_calls' not in five
+
+        cmd_generate(_ns_generate('expl-zero'))
+        md = (plan_dir / 'metrics.md').read_text()
+        assert '- **Exploration tool calls**: 0' in md
+        assert '- **Exploration result bytes**: 0' in md
+        assert '- **Work tool calls**: 3' in md
+        assert '- **Execute tool calls**' not in md
+
+
 class TestGeneratePartialityFields:
     """generate emits a first-class partiality verdict across all three surfaces.
 

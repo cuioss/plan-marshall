@@ -122,6 +122,96 @@ _USAGE_FOUR_FIELDS = (
 _BILLING_WEIGHT_CACHE_READ = 0.1
 _BILLING_WEIGHT_CACHE_CREATION = 1.25
 
+# Exploration-share buckets. The DOMAIN of this map is population-derived: it was
+# read out of the live transcript corpus rather than recalled from memory, which
+# is what surfaced the three shapes an invented list gets wrong — a lowercase
+# ``bash`` alongside ``Bash``, the retired ``Task`` spelling coexisting with its
+# ``Agent`` rename, and a non-tool ``result`` name. Names are matched casefolded
+# so a casing variant cannot open a second bucket. ``_classify_tool_name`` fails
+# open into ``unclassified``, so a name outside this domain is COUNTED and
+# surfaced, never silently dropped; extend the map only after a name has actually
+# been observed in a transcript.
+_TOOL_BUCKETS: dict[str, str] = {
+    # exploration — locate or inspect existing state, no repo mutation
+    "read": "exploration",
+    "grep": "exploration",
+    "glob": "exploration",
+    "webfetch": "exploration",
+    "websearch": "exploration",
+    "toolsearch": "exploration",
+    "explore": "exploration",
+    "mcp__sonarqube__search_sonar_issues_in_projects": "exploration",
+    "mcp__sonarqube__get_project_quality_gate_status": "exploration",
+    "mcp__sonarqube__get_component_measures": "exploration",
+    "mcp__sonarqube__show_rule": "exploration",
+    "mcp__sonarqube__search_my_sonarqube_projects": "exploration",
+    "mcp__claude-in-chrome__read_page": "exploration",
+    "mcp__claude-in-chrome__find": "exploration",
+    "mcp__claude-in-chrome__tabs_context_mcp": "exploration",
+    "mcp__claude-in-chrome__navigate": "exploration",
+    "mcp__jetbrains__open_file_in_editor": "exploration",
+    # work — produce or mutate state
+    "write": "work",
+    "edit": "work",
+    "mcp__claude-in-chrome__form_input": "work",
+    "mcp__claude-in-chrome__computer": "work",
+    # execute — shell invocation; the intent is not recoverable from the name
+    # alone (``git status`` explores, ``pytest`` works), so it stays its own
+    # bucket rather than inflating either side of the ratio.
+    "bash": "execute",
+    # orchestration — control plane, scales with the workflow not the change
+    "skill": "orchestration",
+    "agent": "orchestration",
+    "task": "orchestration",
+    "taskcreate": "orchestration",
+    "taskupdate": "orchestration",
+    "tasklist": "orchestration",
+    "taskget": "orchestration",
+    "taskstop": "orchestration",
+    "taskoutput": "orchestration",
+    "askuserquestion": "orchestration",
+    "sendmessage": "orchestration",
+    "pushnotification": "orchestration",
+    "schedulewakeup": "orchestration",
+    "monitor": "orchestration",
+    "exitplanmode": "orchestration",
+    "workflow": "orchestration",
+    "reportfindings": "orchestration",
+}
+
+# Every bucket the per-phase counters carry. ``exploration`` / ``work`` /
+# ``execute`` form the exploration-share denominator; ``orchestration`` and
+# ``unclassified`` are emitted but excluded from the ratio, so the five buckets
+# partition the observed tool-call population and the exclusion stays auditable.
+_TOOL_BUCKET_NAMES = ("exploration", "work", "execute", "orchestration", "unclassified")
+
+
+def _classify_tool_name(name: object) -> str:
+    """Return the exploration-share bucket for a ``tool_use`` item's ``name``.
+
+    Fails open: a name outside the population-derived ``_TOOL_BUCKETS`` domain
+    returns ``"unclassified"`` so a newly-introduced tool surfaces as a non-zero
+    counter instead of vanishing from the totals.
+    """
+    if not isinstance(name, str):
+        return "unclassified"
+    return _TOOL_BUCKETS.get(name.strip().casefold(), "unclassified")
+
+
+def _empty_tool_counters() -> dict[str, int]:
+    """Return a zeroed per-phase tool-counter bucket (two measures per bucket).
+
+    ``{bucket}_tool_calls`` supports the turn-share denominator and
+    ``{bucket}_result_bytes`` the payload-byte share. Both are emitted for every
+    bucket because neither denominator alone separates "many cheap probes" from
+    "a few very large reads".
+    """
+    counters: dict[str, int] = {}
+    for bucket in _TOOL_BUCKET_NAMES:
+        counters[f"{bucket}_tool_calls"] = 0
+        counters[f"{bucket}_result_bytes"] = 0
+    return counters
+
 # Missing-executor guard. While a worktree-backed plan sits mid-phase-5 the
 # executor can be absent from the main checkout's cwd. Each executor-invoking
 # hook command is wrapped so an absent ``.plan/execute-script.py`` is a silent
@@ -1414,13 +1504,66 @@ def _add_usage_four_fields(usage: dict[str, Any], bucket: dict[str, int]) -> Non
             bucket[field] = bucket.get(field, 0) + raw
 
 
-def _sum_subagent_transcript(path: Path) -> tuple[dict[str, int], str | None]:
-    """Sum the four ``message.usage`` fields across one subagent transcript JSONL.
+# Phase key used while walking a subagent transcript, whose entries all attribute
+# to the single phase the caller resolves from the transcript's first timestamp.
+_PENDING_PHASE = ""
 
-    Returns ``(four_field_bucket, first_timestamp_iso)``. ``first_timestamp_iso``
-    is ``None`` when no line carried a timestamp.
+
+def _count_tool_use(
+    item: dict[str, Any],
+    phase: str,
+    per_phase_counters: dict[str, dict[str, int]],
+    call_index: dict[str, tuple[str, str]],
+) -> None:
+    """Count one ``tool_use`` item into *phase*'s bucket and index it by ``id``.
+
+    The matching ``tool_result`` arrives in a LATER transcript entry, so the
+    call's ``id`` -> ``(phase, bucket)`` association is recorded in *call_index*
+    to keep a result payload attributed to the same phase and bucket as the call
+    that produced it.
+    """
+    bucket = _classify_tool_name(item.get("name"))
+    counters = per_phase_counters.setdefault(phase, _empty_tool_counters())
+    counters[f"{bucket}_tool_calls"] += 1
+    tool_id = item.get("id")
+    if isinstance(tool_id, str) and tool_id:
+        call_index[tool_id] = (phase, bucket)
+
+
+def _count_tool_result_bytes(
+    tool_use_id: object,
+    payload_text: str,
+    per_phase_counters: dict[str, dict[str, int]],
+    call_index: dict[str, tuple[str, str]],
+) -> None:
+    """Add a ``tool_result`` payload's UTF-8 byte length to its call's bucket.
+
+    A result whose originating call was never seen (a truncated or partial
+    transcript) is skipped rather than guessed at.
+    """
+    if not isinstance(tool_use_id, str):
+        return
+    located = call_index.get(tool_use_id)
+    if located is None:
+        return
+    phase, bucket = located
+    counters = per_phase_counters.setdefault(phase, _empty_tool_counters())
+    counters[f"{bucket}_result_bytes"] += len(payload_text.encode("utf-8", "replace"))
+
+
+def _sum_subagent_transcript(path: Path) -> tuple[dict[str, int], str | None, dict[str, int]]:
+    """Sum usage and tool-call counters across one subagent transcript JSONL.
+
+    Returns ``(four_field_bucket, first_timestamp_iso, tool_counters)``.
+    ``first_timestamp_iso`` is ``None`` when no line carried a timestamp. The
+    whole transcript's ``tool_counters`` attribute to the single phase that
+    timestamp resolves to — the dispatched envelope's exploration belongs to the
+    phase that spawned it, and reusing the existing first-timestamp attribution
+    keeps one attribution path rather than introducing a second.
     """
     bucket: dict[str, int] = dict.fromkeys(_USAGE_FOUR_FIELDS, 0)
+    per_phase_tools: dict[str, dict[str, int]] = {}
+    call_index: dict[str, tuple[str, str]] = {}
     first_timestamp: str | None = None
     try:
         with open(path, encoding="utf-8", errors="replace") as f:
@@ -1442,9 +1585,24 @@ def _sum_subagent_transcript(path: Path) -> tuple[dict[str, int], str | None]:
                 usage = msg.get("usage", {}) if isinstance(msg, dict) else {}
                 if isinstance(usage, dict) and usage:
                     _add_usage_four_fields(usage, bucket)
+                content = msg.get("content") if isinstance(msg, dict) else None
+                if not isinstance(content, list):
+                    continue
+                for item in content:
+                    if not isinstance(item, dict):
+                        continue
+                    if item.get("type") == "tool_use":
+                        _count_tool_use(item, _PENDING_PHASE, per_phase_tools, call_index)
+                    elif item.get("type") == "tool_result":
+                        _count_tool_result_bytes(
+                            item.get("tool_use_id"),
+                            _extract_text_payload(item.get("content")),
+                            per_phase_tools,
+                            call_index,
+                        )
     except OSError:
-        return dict.fromkeys(_USAGE_FOUR_FIELDS, 0), None
-    return bucket, first_timestamp
+        return dict.fromkeys(_USAGE_FOUR_FIELDS, 0), None, _empty_tool_counters()
+    return bucket, first_timestamp, per_phase_tools.get(_PENDING_PHASE, _empty_tool_counters())
 
 
 def _window_for_timestamp(
@@ -1583,9 +1741,16 @@ def _compute_normalized_tokens(
 
     Returns ``(per_phase, counters)`` where ``per_phase`` maps each attributed
     phase to a normalized bucket carrying the four ``message.usage`` fields, the
-    billing-weighted total, and the subagent ``<usage>`` attribution
+    billing-weighted total, the subagent ``<usage>`` attribution
     (``subagent_total_tokens`` / ``subagent_tool_uses`` / ``subagent_duration_ms``
-    / ``subagent_samples``). ``counters`` carries the attribution counters.
+    / ``subagent_samples``), and the exploration-share counters
+    (``{exploration,work,execute,orchestration,unclassified}_tool_calls`` and the
+    matching ``_result_bytes``). ``counters`` carries the attribution counters.
+
+    Because this walk always runs on the Claude target, every composed phase
+    bucket carries the full counter key set — a phase with no tool calls reports
+    a MEASURED zero. Counters are ABSENT only where no bucket is produced at all
+    (no transcript, or a target that declines the primitive).
 
     Returns ``None`` when no parent transcript can be located (the caller maps
     this to a ``transcript_not_found`` no-op).
@@ -1600,6 +1765,8 @@ def _compute_normalized_tokens(
     per_phase_subagent: dict[str, dict[str, int]] = {}
     subagent_calls_attributed = 0
     per_phase_four_fields: dict[str, dict[str, int]] = {}
+    per_phase_tools: dict[str, dict[str, int]] = {}
+    call_index: dict[str, tuple[str, str]] = {}
 
     def _four_field_bucket(phase_name: str) -> dict[str, int]:
         return per_phase_four_fields.setdefault(phase_name, dict.fromkeys(_USAGE_FOUR_FIELDS, 0))
@@ -1616,35 +1783,40 @@ def _compute_normalized_tokens(
                     continue
 
                 msg = entry.get("message", {}) if isinstance(entry, dict) else {}
+                timestamp = entry.get("timestamp") if isinstance(entry, dict) else None
                 usage = msg.get("usage", {}) if isinstance(msg, dict) else {}
                 if isinstance(usage, dict) and usage:
                     if usage.get("total_tokens") or usage.get("input_tokens") or usage.get("output_tokens"):
                         message_count += 1
-                        if parsed_windows:
-                            timestamp = entry.get("timestamp") if isinstance(entry, dict) else None
-                            if isinstance(timestamp, str):
-                                parent_phase = _window_for_timestamp(timestamp, parsed_windows)
-                                if parent_phase is not None:
-                                    _add_usage_four_fields(usage, _four_field_bucket(parent_phase))
+                        if parsed_windows and isinstance(timestamp, str):
+                            parent_phase = _window_for_timestamp(timestamp, parsed_windows)
+                            if parent_phase is not None:
+                                _add_usage_four_fields(usage, _four_field_bucket(parent_phase))
 
                 if not parsed_windows:
                     continue
                 content = msg.get("content") if isinstance(msg, dict) else None
                 payloads: list[str] = []
                 if isinstance(content, list):
+                    entry_phase = _window_for_timestamp(timestamp, parsed_windows)
                     for item in content:
                         if not isinstance(item, dict):
                             continue
                         if item.get("type") == "tool_result":
-                            payloads.append(_extract_text_payload(item.get("content")))
+                            payload_text = _extract_text_payload(item.get("content"))
+                            payloads.append(payload_text)
+                            _count_tool_result_bytes(
+                                item.get("tool_use_id"), payload_text, per_phase_tools, call_index
+                            )
                         elif item.get("type") == "text":
                             text = item.get("text")
                             if isinstance(text, str):
                                 payloads.append(text)
+                        elif item.get("type") == "tool_use" and entry_phase is not None:
+                            _count_tool_use(item, entry_phase, per_phase_tools, call_index)
                 elif isinstance(content, str):
                     payloads.append(content)
 
-                timestamp = entry.get("timestamp") if isinstance(entry, dict) else None
                 for payload in payloads:
                     if not payload or "<usage>" not in payload:
                         continue
@@ -1660,18 +1832,22 @@ def _compute_normalized_tokens(
     if parsed_windows:
         for sub_path in _resolve_subagent_transcripts(session_id, transcript_path):
             subagent_transcripts_walked += 1
-            sub_fields, sub_ts = _sum_subagent_transcript(sub_path)
+            sub_fields, sub_ts, sub_tools = _sum_subagent_transcript(sub_path)
             sub_phase = _window_for_timestamp(sub_ts, parsed_windows)
             if sub_phase is None:
                 continue
             bucket = _four_field_bucket(sub_phase)
             for field in _USAGE_FOUR_FIELDS:
                 bucket[field] += sub_fields.get(field, 0)
+            sub_counters = per_phase_tools.setdefault(sub_phase, _empty_tool_counters())
+            for key, value in sub_tools.items():
+                sub_counters[key] += value
 
     # Compose the per-phase normalized result. Each phase carries the four-field
-    # view, the billing-weighted total, and the subagent <usage> attribution.
+    # view, the billing-weighted total, the subagent <usage> attribution, and the
+    # exploration-share counters.
     per_phase: dict[str, dict[str, int]] = {}
-    phase_names = set(per_phase_four_fields) | set(per_phase_subagent)
+    phase_names = set(per_phase_four_fields) | set(per_phase_subagent) | set(per_phase_tools)
     for phase_name in phase_names:
         four = per_phase_four_fields.get(phase_name, dict.fromkeys(_USAGE_FOUR_FIELDS, 0))
         sub = per_phase_subagent.get(phase_name)
@@ -1701,6 +1877,10 @@ def _compute_normalized_tokens(
             phase_bucket["subagent_tool_uses"] = sub["tool_uses"]
             phase_bucket["subagent_duration_ms"] = sub["duration_ms"]
             phase_bucket["subagent_samples"] = sub["samples"]
+        # The walk always ran, so every composed phase carries the full counter
+        # key set: a phase with no tool calls reports a MEASURED zero rather than
+        # an absent counter.
+        phase_bucket.update(per_phase_tools.get(phase_name) or _empty_tool_counters())
         per_phase[phase_name] = phase_bucket
 
     counters = {
@@ -1709,6 +1889,12 @@ def _compute_normalized_tokens(
         "subagent_calls_attributed": subagent_calls_attributed,
         "subagent_transcripts_walked": subagent_transcripts_walked,
         "four_field_phases_attributed": len(per_phase_four_fields),
+        # Run-level surfacing of tool names outside the population-derived
+        # domain. A non-zero value means the classifier met a name it has never
+        # seen — the signal that _TOOL_BUCKETS needs extending.
+        "unclassified_tool_calls": sum(
+            phase.get("unclassified_tool_calls", 0) for phase in per_phase_tools.values()
+        ),
     }
     return per_phase, counters
 

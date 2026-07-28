@@ -63,6 +63,22 @@ session_message_count: 127
 | `dispatch_boundary_total` | int | Derived by `generate` — the sum of the `total_tokens` column across the phase's `work/metrics-dispatch-boundaries-{phase}.toon` rows. Persisted as a DISTINCT field (it never overwrites `total_tokens`); present only when the boundary file exists and sums to a truthy value. See Dispatch-Boundary Reconciliation below |
 | `inline_main_context_tokens` | int | Derived by `enrich` — `input_tokens + output_tokens + cache_creation_input_tokens` (EXCLUDING `cache_read_input_tokens`) surfaced when a phase carries BOTH a dispatched `total_tokens` AND non-zero four-field usage (the inline-step signature). Persisted as a DISTINCT field (it never overwrites `total_tokens`). See Inline Main-Context Attribution below |
 | `boundary_non_monotonic` | `true` token | Derived by `generate` — set on a phase whose `start_time` precedes the maximum `end_time` of earlier phases in canonical order (a finalize loop-back re-entry). Read-only annotation; the recorded `start_time` / `end_time` are never rewritten. See Boundary Monotonicity below |
+| `exploration_tool_calls` | int | `enrich` tool-call walk — count of tool calls in this phase's window classified as *exploration* (locate or inspect existing state) |
+| `work_tool_calls` | int | `enrich` tool-call walk — count classified as *work* (produce or mutate state) |
+| `execute_tool_calls` | int | `enrich` tool-call walk — count classified as *execute* (shell invocation, whose intent the tool name alone does not carry) |
+| `orchestration_tool_calls` | int | `enrich` tool-call walk — count classified as *orchestration* (control plane). Emitted but EXCLUDED from the exploration-share denominator |
+| `unclassified_tool_calls` | int | `enrich` tool-call walk — count of tool names outside the classifier's population-derived domain. Non-zero means a new tool name was counted rather than dropped. Emitted but EXCLUDED from the denominator |
+| `exploration_result_bytes` | int | `enrich` tool-call walk — UTF-8 byte length of the `tool_result` payloads returned by this phase's *exploration* calls |
+| `work_result_bytes` | int | `enrich` tool-call walk — same measure for *work* calls |
+| `execute_result_bytes` | int | `enrich` tool-call walk — same measure for *execute* calls |
+| `orchestration_result_bytes` | int | `enrich` tool-call walk — same measure for *orchestration* calls. Excluded from the denominator |
+| `unclassified_result_bytes` | int | `enrich` tool-call walk — same measure for *unclassified* calls. Excluded from the denominator |
+
+#### Exploration-share counters (absent is not zero)
+
+The ten counters above are the inputs to the `exploration-share` audit check. Each observed tool call is classified by its tool name into one of five buckets, and both the call itself (turn share) and its result payload's byte length (payload-byte share) are accumulated into the phase window containing the call's timestamp. `exploration + work + execute` is the share denominator; `orchestration` and `unclassified` are emitted so the five buckets partition the observed population and the exclusion from the ratio stays auditable.
+
+**A counter is written only when the runtime supplied it.** An absent counter is NEVER persisted as `0`, and a *measured* zero IS persisted as `0`. The two are different facts: absent means the target declined the transcript primitive and measured nothing (OpenCode exposes no transcript, so it emits no bucket at all); zero means the walk ran and found no calls in that bucket. Collapsing them would let an unmeasured plan enter the `exploration-share` corpus as a maximally-efficient one. For the same reason `generate` renders these bullets on a **presence** test rather than the truthiness test the four-field bullets use — see the render-guard divergence comment at the per-phase render in `manage-metrics.py`.
 
 The four-field usage view (`input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`) lives only in the raw `message.usage` dicts inside the transcripts — the single-figure `<usage>` return tag carries no input/output split and no cache fields. `enrich` accumulates these four fields per phase from BOTH the parent orchestrator turns and every discovered subagent transcript, then records `billing_weighted_total` per phase. These fields exist independently of `total_tokens`, which `enrich` leaves untouched.
 
@@ -345,6 +361,7 @@ generate status in `generate_status` / `generate_message` instead of
 | `accumulate-agent-usage` per-phase accumulator file | Phases that dispatch multiple agents (`5-execute`, `6-finalize`) | Per-phase, summed across agent returns |
 | JSONL session transcript (`enrich` subagent `<usage>`-tag attribution) | Any phase whose timestamp window contains Task tool calls | Per-phase (`subagent_*` fields) |
 | Raw `message.usage` dicts in the parent + subagent transcripts (`enrich` four-field walk) | Any phase whose window contains a parent turn or a spawned subagent transcript | Per-phase (`input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`, `billing_weighted_total`) |
+| `tool_use` / `tool_result` content items in the parent + subagent transcripts (`enrich` tool-call walk) | Any phase whose window contains a tool call, on a target that exposes a transcript | Per-phase (`{exploration,work,execute,orchestration,unclassified}_tool_calls` and the matching `_result_bytes`). ABSENT — never zero — on a target that declines the transcript primitive |
 
 ## Per-Phase Subagent Accumulator (`work/metrics-accumulator-{phase}.toon`)
 
