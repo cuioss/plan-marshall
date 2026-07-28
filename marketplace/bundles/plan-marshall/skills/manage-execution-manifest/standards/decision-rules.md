@@ -253,15 +253,24 @@ When neither infra element is an unresolved ask with an absent provider, the pre
 
 The element-classification rationale (why these two elements seed `lane: ask`, and the steward always-prompt resolution flow) is owned by [`extension-api/standards/ext-point-lane-element.md`](../../extension-api/standards/ext-point-lane-element.md) § "Adversarial infra elements"; this section documents only the composer's pre-filter mechanics.
 
-## Generic documentation recognition (no build owner)
+## Owner-less recognition (no build owner)
 
-Documentation is **not** a build-system concern and has **no build-extension owner**. Doc-change recognition is therefore a generic, extension-agnostic file-suffix fact owned by the aggregator itself, not a build-extension claim. Before any build-extension iteration, the aggregator tags every path ending in one of `_DOC_SUFFIXES` (`.md` / `.adoc` / `.asciidoc`) with the `documentation` footprint role and removes it from the set handed to the build extensions. A documentation path is therefore:
+Some content is **not** a build-system concern and has **no build-extension owner**. Recognizing it is therefore a generic, extension-agnostic fact owned by the aggregator itself, not a build-extension claim — and no build owner is invented to restore one. That absence of a build owner is authoritative for `build.map` and carries no information for file-role classification; see [ADR-004](../../../../../../doc/adr/004-The_file-to-build_contract_is_owned_by_build-system_extensions_not_languagecontent_domains.adoc) § "Amendment: absence from Axis-B does not imply absence from file-role classification" for the settled boundary.
 
-- never claimed or contested by a build extension (it is split out before they run),
-- never subject to longest-glob-wins overlap resolution (no extension competes for it),
-- never tagged `unknown` (the generic suffix rule always recognizes it).
+Two owner-less rules exist, and their **stage ordering relative to the build extensions differs**:
 
-The build extensions (`build-pyproject` / `build-maven` / `build-gradle` / `build-npm`) supply only the production / test / config roles; documentation is sourced exclusively by the generic suffix rule. This keeps the `documentation_only` / `mixed_with_docs` bucket vocabulary unchanged — only the SOURCE of doc recognition is the generic inline rule rather than an extension.
+| Rule | Recognized by | Stage | Assigned role |
+|------|---------------|-------|---------------|
+| Documentation | suffix — `_DOC_SUFFIXES` (`.md` / `.adoc` / `.asciidoc`) | 1 — **before** the build extensions | `documentation` |
+| Infrastructure config | family — `_is_infrastructure_config_path` | 3 — **fallback after** the build extensions, over the residual unclaimed set only | `config` |
+
+**Documentation (stage 1).** Before any build-extension iteration, the aggregator tags every path ending in a `_DOC_SUFFIXES` suffix with the `documentation` role and removes it from the set handed to the build extensions. A documentation path is therefore never claimed or contested by a build extension (it is split out before they run), never subject to longest-glob-wins overlap resolution, and never tagged `unknown`. Pre-emptive placement is safe here because no build extension declares a route for a doc suffix.
+
+**Infrastructure config (stage 3).** After the build extensions have claimed what they own, every still-unclaimed path is tested against the infrastructure-config family and, on a match, tagged `config`. The family is anchored on **location** (CI/automation definition trees — `.github/workflows/`, YAML descriptors directly under `.github/`, `.circleci/`; container service-config trees — `docker/`, including nested forms such as `src/main/docker/`) or on **basename** (container-orchestration manifests — `docker-compose*.yml|.yaml`, `compose*.yml|.yaml`, `.gitlab-ci.yml|.yaml`; container lint/scan descriptors — `.hadolint.yml|.yaml`, `.trivyignore`, `.dockerignore`). Membership is deliberately **not** "any `.yml`". The table lives beside `_DOC_SUFFIXES` in `_manifest_core.py`; it is not restated in full here.
+
+**The never-steal-a-claim invariant.** The infrastructure-config rule is a fallback, never a pre-filter. Running it over the residual unclaimed set — rather than ahead of the build extensions — makes stealing structurally impossible: `build-maven` legitimately claims `src/main/resources/application.yml` as `production`, and a stage-1 placement would strip that path from the extensions' view and silently downgrade a Maven production resource to `config`. This is why the two owner-less rules sit on opposite sides of the build-extension stage.
+
+Neither rule ever assigns `production` or `test`. No route is added anywhere: `build.map` is byte-identical for every project, and an owner-less path triggers no build gate. The build extensions (`build-pyproject` / `build-maven` / `build-gradle` / `build-npm`) remain the sole source of production / test / config **claims**; the generic rules are the sole source of owner-less recognition. The six-bucket vocabulary is unchanged — `config` never influences the plan-wide bucket, so an infra-only footprint collapses to `documentation_only` and an infra-plus-code footprint keeps the code bucket.
 
 ## Overlap resolution policy
 
@@ -275,7 +284,7 @@ Order-independence is structural: the aggregator collects every build extension'
 
 ## Unclaimed paths
 
-A **non-documentation** path no build extension claims is tagged `unknown` by the aggregator AND surfaces as a `[STATUS]` decision-log warning naming each unclaimed path. Documentation paths are never unclaimed — the generic suffix rule always recognizes them. The aggregator **never** silently falls back to `documentation_only` for unclaimed code paths. The `unknown` tag forces the plan-wide bucket to `unknown`, which downstream guards (e.g., the `phase-3-outline` File-type classifier section) treat as a hard error requiring user resolution.
+A **non-documentation, non-infrastructure-config** path no build extension claims is tagged `unknown` by the aggregator AND surfaces as a `[STATUS]` decision-log warning naming each unclaimed path. Documentation and infrastructure-config paths are never unclaimed — the two generic owner-less rules always recognize them (see [Owner-less recognition (no build owner)](#owner-less-recognition-no-build-owner)). Those rules **narrow** the `unknown` population; they do not eliminate the state, and a genuinely undeclared file type still reaches it. The aggregator **never** silently falls back to `documentation_only` for unclaimed code paths. The `unknown` tag forces the plan-wide bucket to `unknown`, which downstream guards (e.g., the `phase-3-outline` File-type classifier section) treat as a hard error requiring user resolution.
 
 **Decision log line** (emitted at most once per compose call when at least one path is unclaimed):
 
@@ -283,7 +292,7 @@ A **non-documentation** path no build extension claims is tagged `unknown` by th
 (plan-marshall:manage-execution-manifest:classify) [STATUS] Unclaimed paths tagged unknown: [<list of paths>]
 ```
 
-The never-silently-drop policy is load-bearing: an unclassified path indicates either a missing domain extension OR a brand-new file type the project has not yet declared, and silently routing it to `documentation_only` would suppress the holistic Python verification that the path may actually need. Surfacing `unknown` forces the user (or the future Q-Gate finding) to declare the path's role explicitly.
+The never-silently-drop policy is load-bearing: an unclassified path indicates either a missing build-extension route OR a brand-new file type the project has not yet declared, and silently routing it to `documentation_only` would suppress the holistic Python verification that the path may actually need. Surfacing `unknown` forces the user (or the future Q-Gate finding) to declare the path's role explicitly.
 
 ## The classifier / build-decision boundary
 

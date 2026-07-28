@@ -5,6 +5,21 @@
 :sectnums:
 :source-highlighter: highlight.js
 
+// adr-metadata
+// Progressive-disclosure metadata block (see manage-adr SKILL.md → "ADR Template
+// Structure"). Read by `manage-adr.py scan` so a caller can assess an ADR's
+// relevance without reading the full file. List fields are comma-separated.
+// summary: The file-to-build contract is owned by build-system extensions (BuildExtensionBase), not by language/content domains; content no build system builds is deliberately absent from the build_map, and that absence never propagates into six-bucket file-role classification.
+// tags: extension-point, build-map, ownership, classification, single-owner, build-decision
+// affects: plan-marshall, script-shared, extension-api, manage-config, manage-execution-manifest, build-pyproject
+// supersedes:
+// end-adr-metadata
+
+// Authoring discipline (see manage-adr SKILL.md → "Authoring Discipline"):
+// ADRs are durable architectural statements, not incident write-ups. No PR numbers,
+// commit SHAs, dates, or lesson IDs anywhere in the body. CLAUDE.md's "current state
+// only" rule applies — describe the architecture, not the chronology.
+
 == Status
 
 Accepted
@@ -95,10 +110,41 @@ The contract this fixes: *`canonical_command` is an optional label on the build-
 
 No consumer may synthesize a plan-wide answer by picking an arbitrary representative command. The hardcoded `'quality-gate'` argument at the former `_apply_pre_push_quality_gate_inactive` call site is exactly that anti-pattern, and is retired. An any-command or union quantifier over the composed canonicals is equally forbidden — it would be degenerate, since the verdict does not vary by command.
 
+== Amendment: absence from Axis-B does not imply absence from file-role classification
+
+The original decision settled that content no code build system produces has no `BuildExtensionBase` owner and is therefore deliberately absent from `build.map` — § Consequences → Negative states that disposition for documentation and for the container manifests, and § Risks records the standing warning against re-adding domain-based routes to "repair" the absence. This amendment restates none of that. It settles the boundary that ruling left open: *how far the absence is entitled to travel*.
+
+=== The absence is a build-map fact, not a classification fact
+
+The six-bucket file-role classifier (`_classify_paths_via_extensions`) draws its recognition population from the build-extension set. That coupling let "this path has no build owner" leak into "this path is unclassifiable": a single owner-less path collapsed a whole plan's bucket to `unknown` and demanded an operator override before any deliverable could proceed.
+
+Closing that leak is what this amendment settles. The classifier's question is `profiles[]` assignment — which profiles a deliverable needs — and never build necessity; § "The surviving classifier boundary" of the `build-decision` amendment already fixes that the two concerns share a word, not a meaning. Axis-B absence is authoritative for `build.map` and carries *no* information for file-role classification. Content with no build owner is fully classifiable; it simply has no build.
+
+=== Owner-less content is recognised generically, never by inventing a build owner
+
+Owner-less content is recognised by generic, extension-agnostic rules that live in the aggregator itself, beside the build-extension dispatch rather than inside any extension:
+
+* documentation, recognised by suffix;
+* infrastructure config — CI/automation definitions, container-orchestration manifests, container service-config trees, and container lint/scan descriptors — recognised by a named location- and basename-anchored family.
+
+These rules assign the `documentation` and `config` roles only, never `production` and never `test`, and the infrastructure-config rule runs strictly as a fallback over the paths no build extension claimed, so it cannot take a path a build system legitimately owns. No route is added anywhere: `build.map` is unchanged, and touching an owner-less file still triggers no build gate, exactly as § Consequences → Negative requires. The stage ordering and the never-steal-a-claim invariant are contracted in `manage-execution-manifest` `standards/decision-rules.md`.
+
+A path that neither a build extension claims nor a generic rule recognises still resolves to `unknown`. Narrowing that population is the point; eliminating the state is not.
+
+=== Granting a language/content domain the Axis-B contract stays rejected
+
+Reparenting a language/content domain extension onto `BuildExtensionBase` so it could claim owner-less content is rejected, on two independent grounds:
+
+* It re-creates the exact single-owner regression § Risks names. A domain that owns no build would once more stamp build classification on files, and every route it declared would enter `build.map` and re-gate builds on content this ADR decided is not build-gated.
+* It is structurally blocked besides. `discover_build_extensions()` resolves a fixed skill-name set against *plan-marshall's own* skills root, so an Axis-B class resident in a domain bundle is never discovered at all. Honouring such a claim would additionally require widening build-extension discovery across bundles — a far wider change than the reparenting it is meant to enable.
+
+The rule this amendment records: an owner-less content type earns recognition from a generic aggregator rule, never from a fabricated build owner.
+
 == References
 
 * `marketplace/bundles/plan-marshall/skills/extension-api/standards/extension-contract.md` — the `ExtensionBase` / `BuildExtensionBase` contract.
 * `marketplace/bundles/plan-marshall/skills/manage-config/` — build_map seed and the `build-decision` verb (`SKILL.md`, `standards/data-model.md`).
 * `marketplace/bundles/plan-marshall/skills/build-pyproject/scripts/extension.py` (and the `build-maven` / `build-gradle` / `build-npm` siblings) — the build-system-owned route declarations.
 * `marketplace/bundles/plan-marshall/skills/script-shared/scripts/extension/extension_base.py` — `BuildExtensionBase`, `should_execute_build`, `validate_tree_completeness`.
+* `marketplace/bundles/plan-marshall/skills/manage-execution-manifest/standards/decision-rules.md` — the six-bucket classifier's owner-less recognition rules, their stage ordering, and the never-steal-a-claim invariant.
 * ADR-001 — sibling ownership-boundary decision (skills as the source of truth).

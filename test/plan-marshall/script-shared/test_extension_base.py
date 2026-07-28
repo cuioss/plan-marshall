@@ -19,6 +19,7 @@ from extension_base import (
     derive_globs_from_tree,
     route_matches,
     should_execute_build,
+    validate_tree_completeness,
 )
 
 _SCRIPTS_DIR = (
@@ -949,3 +950,137 @@ def test_command_free_empty_footprint_is_not_necessary(monkeypatch):
     assert verdict['decision'] == 'not_necessary'
     assert 'footprint is empty' in verdict['reason']
     assert 'canonical_command' not in verdict
+
+
+# =============================================================================
+# Axis-B non-regression: the route table and the completeness denominator are
+# provably unmoved by the aggregator's owner-less infrastructure-config
+# recognition.
+#
+# That recognition is deliberately NOT a build_map route — it assigns a
+# file-ROLE inside manage-execution-manifest and adds no glob here (ADR-004
+# § "Amendment: absence from Axis-B does not imply absence from file-role
+# classification"). The two surfaces below are the ones a reader might expect
+# to have moved, so each is asserted unmoved rather than assumed unmoved. Both
+# assertions also fail if a future change re-introduces a domain-based or
+# infra-based Axis-B route, guarding the ADR-004 single-owner model.
+# =============================================================================
+
+# One representative of each infrastructure-config family the aggregator
+# recognizes generically. No build extension may declare a route matching any of
+# them.
+_INFRA_CONFIG_PATHS = (
+    '.github/workflows/python-verify.yml',
+    '.github/dependabot.yml',
+    '.circleci/config.yml',
+    'docker-compose.yml',
+    'compose.yaml',
+    '.gitlab-ci.yml',
+    'src/main/docker/application.yaml',
+    '.hadolint.yaml',
+    '.trivyignore',
+    '.dockerignore',
+)
+
+
+def _real_build_extensions() -> list:
+    """Return the REAL discovered build-extension instances (not fakes).
+
+    A route-set assertion is only meaningful against the SHIPPED extension set —
+    a stub extension could satisfy it while a real one still declares an
+    infrastructure-config route.
+    """
+    from extension_discovery import discover_build_extensions
+
+    discovered = discover_build_extensions()
+    return [entry.get('module') for entry in discovered if entry.get('module') is not None]
+
+
+def test_no_build_extension_declares_an_infrastructure_config_route():
+    """D3(c): the union of `classify_globs()` matches no infrastructure-config path.
+
+    The aggregator's new recognition is a file-role rule, not a route, so
+    `build.map` must stay byte-identical for a project that contains none of
+    these files. Asserted over the real discovered extension set, and
+    non-vacuously — the declared-route union is asserted non-empty first, so a
+    discovery failure fails the test instead of silently satisfying it.
+    """
+    extensions = _real_build_extensions()
+    assert extensions, 'discover_build_extensions() returned no build extensions'
+
+    declared = [
+        route
+        for ext in extensions
+        for route in (ext.classify_globs() or [])
+    ]
+    assert declared, 'the real build extensions declared no routes at all'
+
+    for path in _INFRA_CONFIG_PATHS:
+        matching = [route for route in declared if route_matches(path, route[0])]
+        assert not matching, f'{path} is matched by build_map route(s) {matching}'
+
+
+def test_deriver_route_mapping_is_unmoved_over_a_tree_without_infra_config(tmp_path):
+    """D3(c): `derive_globs_from_tree` over an infra-free tree yields the declared routes.
+
+    The seed is pinned rather than assumed: a tree carrying no infrastructure-config
+    file derives exactly the routes the extension declared, so the owner-less
+    recognition provably contributes nothing to the build_map seed.
+    """
+    _git_init_and_track(tmp_path, ['scripts/foo.py', 'test/bar.py', 'pyproject.toml'])
+
+    derived = derive_globs_from_tree(str(tmp_path), [_DeriverRouteExtension()])
+
+    assert derived == {
+        'minimal': [
+            ('pyproject.toml', 'config'),
+            ('scripts/*.py', 'production'),
+            ('test/*.py', 'test'),
+        ]
+    }
+
+
+def test_completeness_denominator_is_unaffected_by_infra_config_files(tmp_path):
+    """D3(d): `validate_tree_completeness` returns the same uncovered list with and without infra YAML.
+
+    The structural reason is pinned by the assertion: the validator collects only
+    `production`/`test` routes and filters candidates on `_SOURCE_SUFFIXES ==
+    ('.py',)`, so a `config`-role recognition can never enlarge the buildable-file
+    denominator. The uncovered list is also asserted non-empty, so the equality
+    cannot be satisfied by two empty lists.
+    """
+    class _NarrowRouteExtension(BuildExtensionBase):
+        """Declares a production route narrower than its own buildable root.
+
+        ``scripts/*/generated.py`` claims only the generated module inside each
+        ``scripts`` subpackage, while its buildable root is ``scripts/`` — so a
+        sibling ``.py`` directly under ``scripts/`` is a buildable unit no route
+        covers. That is exactly the "forgotten production module" the validator
+        exists to surface, and it gives this test a non-empty uncovered list.
+        """
+
+        def get_skill_domains(self) -> list[dict]:
+            return [{
+                'domain': {'key': 'minimal', 'name': 'Minimal', 'description': 'Test only'},
+                'profiles': {},
+            }]
+
+        def classify_globs(self) -> list[tuple[str, str]]:
+            return [('scripts/*/generated.py', ROLE_PRODUCTION)]
+
+    # Arrange — two trees differing ONLY by the presence of infra-config YAML.
+    source_files = ['scripts/pkg/generated.py', 'scripts/forgotten.py', 'README.md']
+    with_infra = tmp_path / 'with_infra'
+    without_infra = tmp_path / 'without_infra'
+    with_infra.mkdir()
+    without_infra.mkdir()
+    _git_init_and_track(with_infra, [*source_files, *_INFRA_CONFIG_PATHS])
+    _git_init_and_track(without_infra, source_files)
+
+    # Act
+    uncovered_with = validate_tree_completeness(str(with_infra), [_NarrowRouteExtension()])
+    uncovered_without = validate_tree_completeness(str(without_infra), [_NarrowRouteExtension()])
+
+    # Assert
+    assert uncovered_with == uncovered_without
+    assert uncovered_with == ['scripts/forgotten.py']

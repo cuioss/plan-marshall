@@ -8,9 +8,29 @@ step sets, canonical-verify role table) and the TOON read/write boundary
 (:func:`read_manifest` / :func:`write_manifest` plus their step-params
 normalization). Pure, log-free, and patched by no test; the hyphenated entry
 re-exports every name it and the test suite reference.
+
+This module also owns the two **owner-less recognition** rules the six-bucket
+classifier applies to content no ``BuildExtensionBase`` claims: documentation by
+suffix (:data:`_DOC_SUFFIXES` / :func:`_is_documentation_path`) and
+infrastructure config by family (:data:`_INFRA_CONFIG_BASENAME_GLOBS` /
+:data:`_INFRA_CONFIG_DIR_TREES` / :data:`_INFRA_CONFIG_PARENT_DIRS` /
+:func:`_is_infrastructure_config_path`).
+
+The infrastructure-config table names an owner-less **family**, not a suffix.
+Membership is deliberately NOT "any ``.yml``": it is anchored either on a
+location (a CI/automation definition tree, a container service-config tree) or
+on a basename (a container-orchestration or container lint/scan descriptor), so
+an arbitrary YAML file elsewhere in a tree is not swept in. The predicate is
+consumed **only as a fallback over the paths no build extension claimed** — it
+never runs ahead of the build extensions, so it can never take a path a build
+system legitimately owns (``src/main/resources/application.yml`` stays
+``build-maven``'s production claim). See ADR-004 § "Amendment: absence from
+Axis-B does not imply absence from file-role classification" and
+``standards/decision-rules.md`` § "Owner-less recognition (no build owner)".
 """
 
-from pathlib import Path
+from fnmatch import fnmatch
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from _step_key_canonical import (
@@ -79,6 +99,92 @@ def _is_documentation_path(path: str) -> bool:
     documentation iff it ends in one of :data:`_DOC_SUFFIXES`.
     """
     return path.endswith(_DOC_SUFFIXES)
+
+
+# Infrastructure-config family recognized generically by the change-footprint
+# classifier. Like documentation, infrastructure config has NO build-system owner
+# — no ``BuildExtensionBase`` declares a route for it, and none is invented (see
+# ADR-004 § "Amendment: absence from Axis-B does not imply absence from file-role
+# classification"). Unlike documentation, membership is NOT a suffix fact: a bare
+# ``*.yml`` rule would sweep in build-owned resources, so the family is anchored
+# on location or on basename.
+#
+# Directory trees whose contents are CI/automation definitions or container
+# service config. Matched as a consecutive run of path segments anywhere in the
+# path's directory part, so both a repo-root ``docker/`` tree and a nested
+# ``src/main/docker/`` tree are members.
+_INFRA_CONFIG_DIR_TREES: tuple[tuple[str, ...], ...] = (
+    ('.github', 'workflows'),
+    ('.circleci',),
+    ('docker',),
+)
+
+# Directory trees that hold automation descriptors alongside non-infra content:
+# only a YAML file whose IMMEDIATE parent is one of these trees is a member
+# (``.github/dependabot.yml`` is infra config; ``.github/ISSUE_TEMPLATE/bug.md``
+# is documentation and never reaches this predicate).
+_INFRA_CONFIG_PARENT_DIRS: tuple[tuple[str, ...], ...] = (('.github',),)
+
+# The YAML suffixes qualifying a file under an :data:`_INFRA_CONFIG_PARENT_DIRS`
+# tree. Deliberately narrow — this pair is the only place a suffix participates.
+_INFRA_CONFIG_PARENT_DIR_SUFFIXES: tuple[str, ...] = ('.yml', '.yaml')
+
+# Container-orchestration manifests and container lint/scan descriptors,
+# recognized by basename regardless of where in the tree they sit.
+_INFRA_CONFIG_BASENAME_GLOBS: tuple[str, ...] = (
+    'docker-compose*.yml',
+    'docker-compose*.yaml',
+    'compose*.yml',
+    'compose*.yaml',
+    '.gitlab-ci.yml',
+    '.gitlab-ci.yaml',
+    '.hadolint.yml',
+    '.hadolint.yaml',
+    '.trivyignore',
+    '.dockerignore',
+)
+
+
+def _has_segment_run(segments: tuple[str, ...], run: tuple[str, ...]) -> bool:
+    """Return True when ``run`` appears as a consecutive sub-sequence of ``segments``."""
+    if not run or len(run) > len(segments):
+        return False
+    return any(
+        segments[index : index + len(run)] == run for index in range(len(segments) - len(run) + 1)
+    )
+
+
+def _is_infrastructure_config_path(path: str) -> bool:
+    """Return True when ``path`` belongs to the owner-less infrastructure-config family.
+
+    The generic, extension-agnostic infrastructure-config predicate consumed by
+    :func:`_classify_paths_via_extensions` as a **fallback over the paths no
+    build extension claimed**. Membership is location-anchored
+    (:data:`_INFRA_CONFIG_DIR_TREES`, :data:`_INFRA_CONFIG_PARENT_DIRS`) or
+    basename-anchored (:data:`_INFRA_CONFIG_BASENAME_GLOBS`) — never a bare
+    suffix rule, so a YAML file a build system owns is not a member.
+
+    Because the predicate runs only over the residual unclaimed set, it cannot
+    take a path a build extension claimed even when the path would match here.
+    """
+    segments = PurePosixPath(path).parts
+    if not segments:
+        return False
+    basename = segments[-1]
+    directories = segments[:-1]
+
+    if any(fnmatch(basename, glob) for glob in _INFRA_CONFIG_BASENAME_GLOBS):
+        return True
+    if any(_has_segment_run(directories, tree) for tree in _INFRA_CONFIG_DIR_TREES):
+        return True
+    if basename.endswith(_INFRA_CONFIG_PARENT_DIR_SUFFIXES):
+        return any(
+            directories[-len(parent) :] == parent
+            for parent in _INFRA_CONFIG_PARENT_DIRS
+            if len(directories) >= len(parent)
+        )
+    return False
+
 
 # record-step contract. The execution log records per-step execution outcome
 # plus token attribution into a new ``execution_log[]`` section of the

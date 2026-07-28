@@ -37,6 +37,10 @@ from _manifest_core import (
     _CANONICAL_TO_ROLE,  # noqa: F401
     _CANONICAL_VERIFY_PREFIX,  # noqa: F401
     _DOC_SUFFIXES,  # noqa: F401
+    _INFRA_CONFIG_BASENAME_GLOBS,  # noqa: F401
+    _INFRA_CONFIG_DIR_TREES,  # noqa: F401
+    _INFRA_CONFIG_PARENT_DIR_SUFFIXES,  # noqa: F401
+    _INFRA_CONFIG_PARENT_DIRS,  # noqa: F401
     DEFAULT_ENVELOPE_COUNT,  # noqa: F401
     DEFAULT_PHASE_5_STEPS,  # noqa: F401
     DEFAULT_PHASE_6_STEPS,  # noqa: F401
@@ -50,6 +54,7 @@ from _manifest_core import (
     VALID_TRACKS,  # noqa: F401
     _denormalize_step_params_for_write,  # noqa: F401
     _is_documentation_path,  # noqa: F401
+    _is_infrastructure_config_path,  # noqa: F401
     _normalize_step_params_block,  # noqa: F401
     _role_of,  # noqa: F401
     get_manifest_path,  # noqa: F401
@@ -175,7 +180,7 @@ def _classify_paths_via_extensions(
 ) -> tuple[str, list[str]]:
     """Classify a path list into a plan-wide change-footprint bucket.
 
-    Two-stage classifier:
+    Four-stage classifier:
 
     1. **Generic documentation recognition (extension-agnostic).** Any path
        ending in a :data:`_DOC_SUFFIXES` suffix (``.md`` / ``.adoc`` /
@@ -193,18 +198,35 @@ def _classify_paths_via_extensions(
        ``build-pyproject`` / ``build-maven`` / ``build-gradle`` / ``build-npm``)
        via ``classify_paths()``. Multi-extension overlap is resolved by
        longest-glob-wins (highest ``classify_path_specificity`` wins; alphabetical
-       domain-key tie-break). Non-doc paths no build extension claims are tagged
-       ``unknown`` and emit a ``[STATUS]`` decision-log warning.
+       domain-key tie-break).
 
-    The per-path roles (the generic ``documentation`` tags plus the build
-    extensions' production / test / config claims) are then collapsed into one of
-    six plan-wide bucket values.
+    3. **Generic infrastructure-config recognition (extension-agnostic,
+       FALLBACK).** Every path still unclaimed after stage 2 is tested against
+       :func:`_is_infrastructure_config_path` and, on a match, tagged with the
+       ``config`` footprint role. Like documentation, infrastructure config has
+       no build-system owner and none is invented; unlike documentation, it is
+       recognized by a location- and basename-anchored family rather than by
+       suffix. This stage runs strictly AFTER the build extensions so it can
+       never steal a claimed path — ``build-maven`` legitimately claims
+       ``src/main/resources/application.yml`` as ``production``, and running the
+       family rule pre-emptively would silently downgrade it to ``config``.
+       Running only over the residual unclaimed set makes that stealing
+       structurally impossible.
+
+    4. **Remaining unclaimed → ``unknown``.** A path that no build extension
+       claimed and neither generic rule recognized is tagged ``unknown`` and
+       emits a ``[STATUS]`` decision-log warning. The stage-3 fallback narrows
+       this population without eliminating the state.
+
+    The per-path roles (the generic ``documentation`` and ``config`` tags plus
+    the build extensions' production / test / config claims) are then collapsed
+    into one of six plan-wide bucket values.
 
     File classification for production / test / config flows from the
     build-system-owned ``BuildExtensionBase`` subclasses, NOT the language domain
     extensions — the latter own Axis-A (skill-loading) only and expose no
-    ``classify_paths``. Documentation recognition flows from neither: it is the
-    generic suffix rule above.
+    ``classify_paths``. Documentation and infrastructure-config recognition flow
+    from neither: they are the generic owner-less rules above.
 
     Args:
         paths: Plan-wide union of every deliverable's ``affected_files``.
@@ -223,16 +245,17 @@ def _classify_paths_via_extensions(
         the six plan-wide vocabulary values
         (``production_only`` / ``test_only`` / ``documentation_only`` /
         ``mixed_code`` / ``mixed_with_docs`` / ``unknown``) and
-        ``unclaimed_paths`` is the list of paths no extension claimed (empty
-        when bucket is anything other than ``unknown``).
+        ``unclaimed_paths`` is the list of paths no build extension claimed and
+        neither generic owner-less rule recognized (empty when bucket is
+        anything other than ``unknown``).
 
     The aggregator returns ``documentation_only`` for an empty path list as
     the conservative default (no affected files means no holistic Python
     verification is needed).
 
     See ``manage-execution-manifest/standards/decision-rules.md`` §
-    "Overlap resolution policy" and § "Unclaimed paths" for the full
-    contract documentation. See
+    "Owner-less recognition (no build owner)", § "Overlap resolution policy" and
+    § "Unclaimed paths" for the full contract documentation. See
     ``extension-api/standards/extension-contract.md`` § classify_paths()
     for the per-extension contract.
     """
@@ -298,8 +321,18 @@ def _classify_paths_via_extensions(
         scored.sort(key=lambda item: (-item[0], item[1]))
         per_path_role[path] = scored[0][2]
 
-    # Identify unclaimed paths (non-doc paths no build extension claimed) and
-    # emit a warning when the caller passed plan_id.
+    # Stage 3 — generic, extension-agnostic infrastructure-config recognition,
+    # run ONLY over the paths still unclaimed after the build extensions. The
+    # fallback placement is load-bearing: ``build-maven`` legitimately claims
+    # ``src/main/resources/application.yml`` as ``production``, so a pre-emptive
+    # rule would strip that path from the extensions' view and silently downgrade
+    # it. Running over the residual set makes stealing structurally impossible.
+    for path in code_paths:
+        if path not in per_path_role and _is_infrastructure_config_path(path):
+            per_path_role[path] = 'config'
+
+    # Stage 4 — identify the paths neither the build extensions nor either
+    # generic rule recognized, and emit a warning when the caller passed plan_id.
     unclaimed = [p for p in code_paths if p not in per_path_role]
     if unclaimed:
         if plan_id:

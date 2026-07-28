@@ -301,7 +301,7 @@ For localized changes where targets are already known from module_mapping. The l
 
 ### File-type classifier (normative)
 
-Before assigning `profiles[]` to any deliverable, every author MUST classify the deliverable's `**Affected files:**` list against the six-bucket file-type classifier. The buckets, predicates, and profile assignments are documented in [`standards/outline-workflow-detail.md` § File-type classifier](standards/outline-workflow-detail.md#file-type-classifier). The rule is normative — a `documentation_only` deliverable MUST carry the `implementation` profile only and never `module_testing`. The aggregator that produces the bucket lives in `manage-execution-manifest._classify_paths_via_extensions`; per-domain predicates are owned by each bundle's `ExtensionBase.classify_paths()` override.
+Before assigning `profiles[]` to any deliverable, every author MUST classify the deliverable's `**Affected files:**` list against the six-bucket file-type classifier. The buckets, predicates, and profile assignments are documented in [`standards/outline-workflow-detail.md` § File-type classifier](standards/outline-workflow-detail.md#file-type-classifier). The rule is normative — a `documentation_only` deliverable MUST carry the `implementation` profile only and never `module_testing`. The aggregator that produces the bucket lives in `manage-execution-manifest._classify_paths_via_extensions`; the path predicates are owned by each **build** system's `BuildExtensionBase.classify_paths()` override, and owner-less content (documentation, infrastructure config) is recognized by the aggregator's own generic rules. See the detail standard for the stage ordering — do not restate it here.
 
 ### Value-change test-sweep rule (normative)
 
@@ -471,7 +471,7 @@ The `<!-- bucket: ... -->` comment on the `**Profiles:**` line is REQUIRED as th
 - `test_only` → `module_testing` only (test-only deliverable).
 - `mixed_code` → `implementation` + `module_testing` (production + test paths, no documentation).
 - `mixed_with_docs` → `implementation` + `module_testing`, with `module_testing` scope narrowed to the production/test paths only (declare the narrowed scope in a `**Module_testing scope:**` block above `**Affected files:**`).
-- `unknown` → BLOCKS the deliverable. Phase-4-plan emits a Q-Gate finding requiring the user to add a domain-extension claim for the unclaimed path(s) or correct the affected-files list. Never silently route to `documentation_only`.
+- `unknown` → BLOCKS the deliverable. Because owner-less content (documentation, infrastructure config) is now recognized generically, a surviving `unknown` means a genuinely undeclared file type. Phase-4-plan emits a Q-Gate finding requiring the user to correct the affected-files list, or to have the owning build system's `BuildExtensionBase` declare a route for the unclaimed path(s). See the [File-type classifier](standards/outline-workflow-detail.md#file-type-classifier) for the remedy contract. Never silently route to `documentation_only`.
 
 #### Per-file intent marker (REQUIRED)
 

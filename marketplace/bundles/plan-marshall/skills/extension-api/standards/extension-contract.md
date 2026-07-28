@@ -1,6 +1,8 @@
 # Extension API Contract
 
-Complete specification for `extension.py` files that domain bundles implement. All extensions **must** inherit from `ExtensionBase`.
+Complete specification for `extension.py` files that domain bundles implement. Every domain-bundle extension **must** inherit from `ExtensionBase`, which owns Axis-A (skill-loading and the `provides_*` workflow hooks).
+
+The four **Axis-B** file-to-build classification methods — `classify_paths`, `classify_path_specificity`, `classify_globs`, `classify_build_class` — are **not** part of `ExtensionBase`. They belong to `BuildExtensionBase`, the separate ABC each code build system's extension (`build-pyproject` / `build-maven` / `build-gradle` / `build-npm`) subclasses. A language/content domain bundle cannot override them and contributes no build routes. That split is settled in [ADR-004](../../../../../../doc/adr/004-The_file-to-build_contract_is_owned_by_build-system_extensions_not_languagecontent_domains.adoc); see § [BuildExtensionBase Methods (Axis-B)](#buildextensionbase-methods-axis-b) below.
 
 ## File Location
 
@@ -201,7 +203,7 @@ The `bundle` field is a **reverse mapping** added automatically by `skill-domain
 
 ## Optional Methods (With Defaults)
 
-These methods have default implementations in `ExtensionBase`. Override only when needed.
+These methods have default implementations in `ExtensionBase` — the Axis-A hooks any domain-bundle extension may override. Override only when needed. The four Axis-B classification methods are **not** in this set; they live on `BuildExtensionBase` and are contracted in § [BuildExtensionBase Methods (Axis-B)](#buildextensionbase-methods-axis-b).
 
 ### config_defaults
 
@@ -388,15 +390,23 @@ def applies_to_module(self, module_data: dict,
     """
 ```
 
+---
+
+## BuildExtensionBase Methods (Axis-B)
+
+The four methods below form the **complete Axis-B contract** — the file-to-build classification surface. They are declared on `BuildExtensionBase`, **not** on `ExtensionBase`, and only a code build system's extension (`build-pyproject` / `build-maven` / `build-gradle` / `build-npm`) subclasses that ABC and overrides them.
+
+A language/content domain bundle (`pm-dev-python`, `pm-dev-java`, `pm-documents`, `pm-dev-oci`, `pm-plugin-development`, …) owns Axis-A only: it declares skill domains and applicability, and it neither implements nor may override any method in this section. Content no build system builds — documentation, infrastructure config — is therefore deliberately absent from `build.map` and is recognized instead by generic, extension-agnostic rules in the aggregator. Both halves of that boundary are settled in [ADR-004](../../../../../../doc/adr/004-The_file-to-build_contract_is_owned_by_build-system_extensions_not_languagecontent_domains.adoc) — the ownership split in the core decision, and the classification consequence in § "Amendment: absence from Axis-B does not imply absence from file-role classification".
+
 ### classify_paths
 
-Classifies each repo-relative path into a file-role bucket owned by this extension. Extensions own the predicates that decide which paths they claim and the role each claimed path plays; the aggregator in `manage-execution-manifest._classify_paths_via_extensions` collects every extension's claims and resolves overlaps. The default implementation is a no-op — extensions that do not own any file types simply do not override this method.
+Classifies each repo-relative path into a file-role bucket owned by this **build** extension. A build extension owns the predicates that decide which paths its build system claims and the role each claimed path plays; the aggregator in `manage-execution-manifest._classify_paths_via_extensions` collects every build extension's claims and resolves overlaps. The default implementation is a no-op — a build extension whose build system owns no file types simply does not override this method.
 
-**Lifecycle**: Called by `manage-execution-manifest` during `phase-4-plan` Step 8b (manifest composition). The aggregator iterates every registered extension over the plan's `references.affected_files` union and uses the resolved per-path claims to derive the plan-wide bucket value.
+**Lifecycle**: Called by `manage-execution-manifest` during `phase-4-plan` Step 8b (manifest composition). The aggregator iterates every extension returned by `discover_build_extensions()` over the plan's `references.affected_files` union and uses the resolved per-path claims to derive the plan-wide bucket value.
 
 ```python
 def classify_paths(self, paths: list[str]) -> dict[str, list[str]]:
-    """Classify each path into a file-role bucket owned by this extension.
+    """Classify each path into a file-role bucket owned by this build extension.
 
     Args:
         paths: Repo-relative paths to classify. Extensions ignore paths
@@ -425,7 +435,7 @@ The return dict MUST contain all four keys; extensions that own only some roles 
 
 #### Default No-Op Behavior
 
-The default returns `{'production': [], 'test': [], 'documentation': [], 'config': []}`. This is interpreted by the aggregator as "this extension claims nothing" and contributes no per-path claims. The default is intentionally NOT `NotImplementedError` — opting out is the common case. Extensions that own no file types (e.g., a recipe-only bundle) MAY simply not override this method.
+The default returns `{'production': [], 'test': [], 'documentation': [], 'config': []}`. This is interpreted by the aggregator as "this build extension claims nothing" and contributes no per-path claims. The default is intentionally NOT `NotImplementedError` — opting out is the common case. A `BuildExtensionBase` subclass whose build system owns no file types MAY simply not override this method.
 
 #### Longest-Glob-Wins Overlap Resolution (Aggregator Responsibility)
 
@@ -441,7 +451,7 @@ Extensions therefore return their own claims naively (i.e., based on their own p
 
 #### Unclaimed-Path Policy (Aggregator Responsibility)
 
-A **non-documentation** path no build extension claims is tagged `unknown` by the aggregator AND surfaces as a `[STATUS]` warning naming each unclaimed path. Documentation paths are never unclaimed — the generic suffix rule always recognizes them. The aggregator **never** silently falls back to `documentation_only` or any other bucket for unclaimed code paths. The `unknown` tag forces the plan-wide bucket value to `unknown`, which downstream guards (e.g., `phase-3-outline` File-type classifier section) treat as a hard error requiring user resolution.
+A path is tagged `unknown` by the aggregator only when **no build extension claims it AND neither generic owner-less rule recognizes it** — the documentation suffix rule (`.md` / `.adoc` / `.asciidoc`) and the infrastructure-config family rule (CI/automation definition trees, container-orchestration manifests, container service-config trees, container lint/scan descriptors). Documentation and infrastructure-config paths are therefore never unclaimed. Each surviving `unknown` path surfaces as a `[STATUS]` warning naming it. The aggregator **never** silently falls back to `documentation_only` or any other bucket for unclaimed code paths. The `unknown` tag forces the plan-wide bucket value to `unknown`, which downstream guards (e.g., `phase-3-outline` File-type classifier section) treat as a hard error requiring user resolution. The two generic rules, their stage ordering, and the never-steal-a-claim invariant are contracted in `manage-execution-manifest/standards/decision-rules.md` § "Owner-less recognition (no build owner)" — the family table is not duplicated here.
 
 #### Six-Bucket Plan-Wide Output
 
@@ -454,7 +464,7 @@ The aggregator collapses per-path claims into one of six plan-wide bucket values
 | `documentation_only` | All claimed paths are `documentation`. |
 | `mixed_code` | Claimed paths include both `production` AND `test` but NO `documentation`. |
 | `mixed_with_docs` | Claimed paths include `production` and/or `test` AND `documentation`. |
-| `unknown` | At least one path was unclaimed by every registered extension. |
+| `unknown` | At least one path was claimed by no build extension AND recognized by neither generic owner-less rule. |
 
 The `config` role does NOT influence the plan-wide bucket — config changes ride with whatever production/test/docs surface they accompany.
 
@@ -467,14 +477,14 @@ def classify_path_specificity(self, path: str, role: str) -> int:
     """Non-wildcard segment count of the matched glob.
 
     Returns:
-        Non-negative integer. Default ``0``. Extensions that override
+        Non-negative integer. Default ``0``. Build extensions that override
         ``classify_paths()`` are expected to override this too, returning
         the count of explicit (non-wildcard) path-segment tokens in the
         glob that matched ``path`` for ``role``.
     """
 ```
 
-The aggregator calls this method on every extension that claimed a contested path; the highest return value wins. Ties break alphabetically on the domain key. Extensions that never participate in overlap (e.g., `pm-dev-python` claiming `scripts/*.py` for `production` — no other extension owns that pattern) may leave the default `0` return in place.
+The aggregator calls this method on every build extension that claimed a contested path; the highest return value wins. Ties break alphabetically on the domain key. A build extension that never participates in overlap (e.g., `build-pyproject` claiming `marketplace/bundles/*.py` for `production` — no other build system owns that pattern) may leave the default `0` return in place.
 
 #### Worked Example
 
@@ -497,9 +507,9 @@ Plan-wide bucket: `mixed_with_docs` (production + test + documentation present).
 
 ### classify_globs (build_map routes)
 
-Declares this extension's contribution to the `build_map` file-to-build contract as a list of explicit **`(pattern, role)` routes**. Each route pairs a concrete glob pattern with one of the four resolved file roles, declaring both WHAT the domain owns and WHERE it lives. The seed aggregator consumes the routes verbatim — no tree scan enumerates one glob per directory. The default implementation is an empty list — extensions that contribute no buildable file types simply do not override this method.
+Declares this **build** extension's contribution to the `build_map` file-to-build contract as a list of explicit **`(pattern, role)` routes**. Each route pairs a concrete glob pattern with one of the four resolved file roles, declaring both WHAT the build system owns and WHERE it lives. The seed aggregator consumes the routes verbatim — no tree scan enumerates one glob per directory. The default implementation is an empty list — a build extension that contributes no buildable file types simply does not override this method. A language/content domain bundle declares no routes at all, because it does not subclass `BuildExtensionBase`.
 
-**Lifecycle**: Called by `manage-config`'s `aggregate_build_map()` during `init` / `sync-defaults` / `build-map seed`. The aggregator collects every extension's routes via `derive_globs_from_tree(project_root, extensions)` (the `script-shared` route collector), stamps each `(pattern, role)` with `classify_build_class`, and writes the result into `build.map`.
+**Lifecycle**: Called by `manage-config`'s `aggregate_build_map()` during `init` / `sync-defaults` / `build-map seed`. The aggregator collects every build extension's routes via `derive_globs_from_tree(project_root, extensions)` (the `script-shared` route collector), stamps each `(pattern, role)` with `classify_build_class`, and writes the result into `build.map`.
 
 ```python
 def classify_globs(self) -> list[tuple[str, str]]:
@@ -551,7 +561,7 @@ The risk an explicit-route contract carries is the inverse of an over-broad glob
 
 The build_map route role is one of the three resolved roles (`production` / `test` / `config`) — documentation is **not** a build_map route role (no build owner for docs), so `BUILD_MAP_ROLES` excludes it and a `documentation` route is dropped by the deriver. The role maps straight through to a `classify_build_class` build_class with no name-to-name indirection. Only `production` and `test` routes participate in the completeness validator's coverage check.
 
-Documentation recognition is owned generically by `manage-execution-manifest`'s change-footprint classifier (a `.md` / `.adoc` / `.asciidoc` suffix rule), NOT by a build extension. See `manage-execution-manifest/standards/decision-rules.md` § "Generic documentation recognition (no build owner)".
+Documentation and infrastructure config are recognized generically by `manage-execution-manifest`'s change-footprint classifier (a `.md` / `.adoc` / `.asciidoc` suffix rule and an infrastructure-config family rule respectively), NOT by a build extension — neither declares a `build.map` route. See `manage-execution-manifest/standards/decision-rules.md` § "Owner-less recognition (no build owner)".
 
 ### classify_build_class (canonical command per entry)
 
@@ -586,7 +596,7 @@ def classify_build_class(self, glob: str, role: str) -> str:
 
 #### Canonical build_class values
 
-The single source of truth for the closed set is `BUILD_CLASSES` in `script-shared`'s extension constants, shared by `ExtensionBase.classify_build_class()`, the domain extensions, and their tests.
+The single source of truth for the closed set is `BUILD_CLASSES` in `script-shared`'s extension constants, shared by `BuildExtensionBase.classify_build_class()`, the build extensions that override it, and their tests.
 
 | `build_class` | Role it attaches to | Derived verification |
 |---------------|---------------------|----------------------|
