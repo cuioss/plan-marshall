@@ -304,7 +304,7 @@
       "plugin_cache_keep_versions": 5,
       "plugin_cache_keep_days": 3
     },
-    "provisioned_version": "0.1.1228",
-    "config_seed_fingerprint": "4e859c03"
+    "provisioned_version": "0.1.1240",
+    "config_seed_fingerprint": "120d376a"
   }
 }
