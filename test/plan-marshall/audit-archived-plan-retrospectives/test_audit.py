@@ -943,7 +943,7 @@ def test_exploration_share_carries_this_plan_pr_boundary():
     # project:finalize-step-era-stamp-fill resolves it to the real PR at finalize.
     # This is the co-changing mirror of the audit.py CHECK_ERA constant — the pair
     # is rewritten in lock-step by that step.
-    assert audit.CHECK_ERA["exploration-share"] == "PR-PENDING"
+    assert audit.CHECK_ERA["exploration-share"] == "#1043"
 
 
 def test_exploration_share_registered_and_ordered_before_synthesis():

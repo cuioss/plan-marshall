@@ -371,7 +371,7 @@ CHECK_ERA: dict[str, str] = {
     # emitted for the first time by that same plan, so plans archived before its
     # boundary carry no counters at all and are excluded from the corpus rather
     # than read as zero-exploration.
-    "exploration-share": "PR-PENDING",
+    "exploration-share": "#1043",
     "cross-check-synthesis": "plan-10",
 }
 
