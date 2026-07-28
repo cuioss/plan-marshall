@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Audit archived plans across twenty-two retrospective checks.
+"""Audit archived plans across twenty-three retrospective checks.
 
 Walks `.plan/local/archived-plans/{plan_id}/` directories and, per plan, runs a
 suite of deterministic checks:
@@ -127,6 +127,18 @@ suite of deterministic checks:
   `within`/`over`/`unclassed`/`no_metrics` checkpoint verdict, the corpus lever-
   engagement counts, and an `estimated_avoided_tokens` scope-gated subtraction.
   `checkpoint_over` is the genuine overspend signal.
+- `exploration-share` (cross-plan) — reports how much of each plan's tool-call
+  spend went to EXPLORATION (locating/inspecting existing state) rather than to
+  producing or mutating it. Sums the ten per-phase exploration counters from
+  `metrics.toon` (five buckets × turn count and `tool_result` payload bytes),
+  computes each plan's payload-byte share (headline) and turn share (companion)
+  over the productive `exploration + work + execute` denominator, derives every
+  cut-point from the live corpus (median / percentile, never hard-coded, with a
+  degenerate-corpus spread guard), and flags `exploration_byte_heavy`,
+  `exploration_turn_heavy`, `many_cheap_probes` (the groping-around signature
+  `architecture-lookup-ratio` cannot see), and `unclassified_tools`. A plan whose
+  counters are ABSENT is EXCLUDED from the corpus and named, never counted as
+  zero exploration.
 - `cross-check-synthesis` (cross-plan, runs LAST) — the facet-completeness
   critic. It consumes the OTHER checks' retained structured results (not their
   emitted strings) and reports the cross-check couplings that single-check rows
@@ -206,6 +218,7 @@ CHECK_NAMES = [
     "finalize-flow-conformance",
     "merge-window-accounting",
     "lane-lever-effectiveness",
+    "exploration-share",
     # cross-check-synthesis is the facet-completeness critic; it consumes the
     # other checks' computed results, so it MUST be last in this list (run_checks
     # dispatches in CHECK_NAMES order and synthesis reads the retained results).
@@ -233,6 +246,9 @@ CROSS_PLAN_CHECKS = {
     # lane-lever-effectiveness aggregates the whole corpus into per-checkpoint-class
     # spend verdicts + corpus-wide lever-engagement counts, so it is cross-plan.
     "lane-lever-effectiveness",
+    # exploration-share aggregates the corpus into per-plan exploration shares plus
+    # corpus-wide share aggregates and corpus-derived cut-points, so it is cross-plan.
+    "exploration-share",
     # cross-check-synthesis is cross-plan: it joins the other checks' corpus-level
     # results into coupling verdicts rather than emitting one row per plan.
     "cross-check-synthesis",
@@ -349,6 +365,13 @@ CHECK_ERA: dict[str, str] = {
     # posture, so the checkpoint measurement arm (per-scope-class token spend vs
     # armed targets) re-arms at this plan's PR.
     "lane-lever-effectiveness": "#875",
+    # exploration-share — PR-PENDING (this check's introducing plan, a placeholder
+    # resolved to the real PR at finalize by project:finalize-step-era-stamp-fill
+    # AFTER create-pr): the per-phase exploration counters this check reads are
+    # emitted for the first time by that same plan, so plans archived before its
+    # boundary carry no counters at all and are excluded from the corpus rather
+    # than read as zero-exploration.
+    "exploration-share": "PR-PENDING",
     "cross-check-synthesis": "plan-10",
 }
 
@@ -5279,6 +5302,360 @@ def emit_architecture_lookup_ratio_block(result: dict[str, Any]) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Cross-plan: exploration-share
+# ---------------------------------------------------------------------------
+#
+# Reports how much of each plan's tool-call spend went to EXPLORATION — locating
+# and inspecting existing state — rather than to producing or mutating it. The
+# measured counterpart to `architecture-lookup-ratio`: that check counts calls to
+# the structured-navigation LEVER, this one measures the navigation COST itself,
+# whichever tool paid it.
+#
+# The inputs are the ten per-phase counters `manage-metrics enrich` writes from
+# the transcript engine's tool-call walk (see
+# `manage-metrics/standards/data-format.md` § Per-Phase Fields). The five buckets
+# partition the observed tool-call population; `exploration + work + execute` is
+# the productive denominator, and `orchestration` / `unclassified` are read but
+# excluded from it — orchestration scales with the workflow machinery rather than
+# with exploration behaviour, and unclassified is of unknown composition by
+# construction. Both are still surfaced so the exclusion stays auditable.
+#
+# ABSENT IS NOT ZERO. A plan carrying no counters at all (archived before the
+# counters existed, or run on a target that declines the transcript primitive)
+# measured nothing, and admitting it at zero would enter it as a maximally
+# efficient plan — inventing the strongest possible signal out of the absence of
+# a measurement. Such a plan is EXCLUDED from the corpus and named in
+# `excluded_plan_ids`. A MEASURED zero is a real observation and stays in.
+#
+# Every cut-point floats with the live corpus (`median` / `percentile`), each
+# behind a degenerate-corpus spread guard, exactly as in `token-economics`: there
+# is no defensible universal "too much exploration" fraction, only "more than
+# this corpus's peers".
+
+# The five classifier buckets, and the subset forming the productive denominator.
+_ES_BUCKETS = ("exploration", "work", "execute", "orchestration", "unclassified")
+_ES_DENOMINATOR_BUCKETS = ("exploration", "work", "execute")
+
+# The ten per-phase counter field names, derived from the buckets rather than
+# spelled out, so a bucket change cannot leave a half-updated literal list.
+_ES_MEASURES = ("tool_calls", "result_bytes")
+_ES_COUNTER_FIELDS = frozenset(
+    f"{bucket}_{measure}" for bucket in _ES_BUCKETS for measure in _ES_MEASURES
+)
+
+
+def _parse_exploration_counters(path: Path) -> tuple[dict[str, int], int]:
+    """Sum a plan's per-phase exploration counters from `metrics.toon`.
+
+    Returns `(totals, phases_measured)` where `totals` maps each counter field to
+    its sum across the plan's phase sections and `phases_measured` counts the
+    phases carrying at least one counter. Only counters PRESENT in the file
+    appear in `totals` — an absent counter is omitted, never defaulted to 0, so
+    the caller can distinguish "measured nothing" from "never measured" (see the
+    corpus-exclusion rule in `checks/exploration-share.md`).
+
+    Reads the same `[phase]`-sectioned shape `parse_metrics_toon` reads; kept
+    separate because that parser captures a fixed field set on a dataclass and
+    these ten counters are presence-sensitive.
+    """
+    if not path.is_file():
+        return {}, 0
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return {}, 0
+    totals: dict[str, int] = {}
+    phases_measured = 0
+    in_phase = False
+    phase_has_counter = False
+    for raw in text.splitlines():
+        stripped = raw.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("[") and stripped.endswith("]"):
+            if phase_has_counter:
+                phases_measured += 1
+            in_phase = True
+            phase_has_counter = False
+            continue
+        if not in_phase or ":" not in stripped:
+            continue
+        key, _, value = stripped.partition(":")
+        key = key.strip()
+        if key not in _ES_COUNTER_FIELDS:
+            continue
+        totals[key] = totals.get(key, 0) + _to_int(value.strip())
+        phase_has_counter = True
+    if phase_has_counter:
+        phases_measured += 1
+    return totals, phases_measured
+
+
+@dataclass
+class _ExplorationShareRow:
+    plan_id: str
+    change_type: str
+    phases_measured: int
+    counters: dict[str, int]
+
+    def bucket(self, bucket: str, measure: str) -> int:
+        return self.counters.get(f"{bucket}_{measure}", 0)
+
+    def denominator(self, measure: str) -> int:
+        """Productive denominator: exploration + work + execute."""
+        return sum(self.bucket(b, measure) for b in _ES_DENOMINATOR_BUCKETS)
+
+    def share(self, measure: str) -> float | None:
+        """Exploration share for one measure, or None when the denominator is 0."""
+        denom = self.denominator(measure)
+        if denom <= 0:
+            return None
+        return self.bucket("exploration", measure) / denom
+
+    @property
+    def unclassified_calls(self) -> int:
+        return self.bucket("unclassified", "tool_calls")
+
+
+def _collect_exploration_share_rows(
+    all_inputs: list[PlanInputs],
+) -> tuple[list[_ExplorationShareRow], list[str]]:
+    """Build the per-plan row for every plan carrying at least one counter.
+
+    Returns `(rows, excluded_plan_ids)`. A plan with NO present counter is
+    excluded from the corpus and named in the second element — never admitted at
+    zero exploration (see the absent-is-not-zero rule above).
+    """
+    rows: list[_ExplorationShareRow] = []
+    excluded: list[str] = []
+    for inputs in all_inputs:
+        counters, phases_measured = _parse_exploration_counters(
+            inputs.plan_dir / "work" / "metrics.toon"
+        )
+        if not counters:
+            excluded.append(inputs.plan_id)
+            continue
+        rows.append(
+            _ExplorationShareRow(
+                plan_id=inputs.plan_id,
+                change_type=inputs.change_type or "",
+                phases_measured=phases_measured,
+                counters=counters,
+            )
+        )
+    return rows, excluded
+
+
+def _derive_exploration_share_thresholds(
+    rows: list[_ExplorationShareRow],
+) -> dict[str, float]:
+    """Derive every cut-point from the LIVE corpus distribution.
+
+    Returns corpus-relative thresholds — NONE hard-coded. The two `*_has_spread`
+    entries are the degenerate-corpus guards: an outlier flag fires only when the
+    relevant share distribution has a genuine high tail (`max > median`). In a
+    near-uniform corpus the band collapses (`p75 == median == max`) and a naive
+    `share >= p75` test would catch EVERY plan — the "fire on everything"
+    degeneracy the dynamic thresholds exist to avoid. A single-plan corpus is
+    degenerate by construction and flags nobody.
+    """
+    byte_shares = [s for s in (r.share("result_bytes") for r in rows) if s is not None]
+    turn_shares = [s for s in (r.share("tool_calls") for r in rows) if s is not None]
+
+    def _corpus_share(measure: str) -> float:
+        numerator = sum(r.bucket("exploration", measure) for r in rows)
+        denominator = sum(r.denominator(measure) for r in rows)
+        return numerator / denominator if denominator else 0.0
+
+    byte_median = median(byte_shares)
+    turn_median = median(turn_shares)
+    return {
+        "byte_share_p75": percentile(byte_shares, 75),
+        "byte_share_median": byte_median,
+        "turn_share_p75": percentile(turn_shares, 75),
+        "turn_share_median": turn_median,
+        "corpus_byte_share": _corpus_share("result_bytes"),
+        "corpus_turn_share": _corpus_share("tool_calls"),
+        "byte_share_has_spread": 1.0 if byte_shares and max(byte_shares) > byte_median else 0.0,
+        "turn_share_has_spread": 1.0 if turn_shares and max(turn_shares) > turn_median else 0.0,
+    }
+
+
+def _exploration_share_flags(
+    row: _ExplorationShareRow, thr: dict[str, float]
+) -> list[str]:
+    """Compute the corpus-relative flags for one plan.
+
+    Every comparison is against a `thr[...]` cut-point measured from the live
+    corpus on this run — no literal cut-point appears here. Each flag annotates
+    the plan's value AND the floating cut-point so the read-out is
+    self-describing.
+    """
+    flags: list[str] = []
+    byte_share = row.share("result_bytes")
+    turn_share = row.share("tool_calls")
+
+    byte_heavy = (
+        byte_share is not None
+        and thr["byte_share_has_spread"] > 0
+        and thr["byte_share_p75"] > 0
+        and byte_share >= thr["byte_share_p75"]
+    )
+    turn_heavy = (
+        turn_share is not None
+        and thr["turn_share_has_spread"] > 0
+        and thr["turn_share_p75"] > 0
+        and turn_share >= thr["turn_share_p75"]
+    )
+
+    if byte_heavy:
+        flags.append(
+            f"exploration_byte_heavy({byte_share:.0%}>=p75={thr['byte_share_p75']:.0%})"
+        )
+    if turn_heavy:
+        flags.append(
+            f"exploration_turn_heavy({turn_share:.0%}>=p75={thr['turn_share_p75']:.0%})"
+        )
+
+    # many_cheap_probes — an unusual share of DECISIONS went to lookup while the
+    # context those lookups returned stayed below the corpus middle: many small
+    # probes rather than few large reads. This is the groping-around signature
+    # `architecture-lookup-ratio` structurally cannot see, because those probes
+    # may never have touched the architecture lever at all.
+    if (
+        turn_heavy
+        and byte_share is not None
+        and thr["byte_share_median"] > 0
+        and byte_share < thr["byte_share_median"]
+    ):
+        flags.append(
+            f"many_cheap_probes(turn={turn_share:.0%}>=p75={thr['turn_share_p75']:.0%}"
+            f";bytes={byte_share:.0%}<median={thr['byte_share_median']:.0%})"
+        )
+
+    # unclassified_tools — a classifier-maintenance signal, not a plan defect. The
+    # classifier fails OPEN, so the call was counted rather than dropped; the
+    # bucket map needs extending against the now-observed name.
+    if row.unclassified_calls > 0:
+        flags.append(f"unclassified_tools(n={row.unclassified_calls})")
+
+    return flags
+
+
+def cross_exploration_share(all_inputs: list[PlanInputs]) -> dict[str, Any]:
+    """Compute per-plan exploration shares + corpus aggregates with dynamic flags.
+
+    Returns a result dict consumed by `emit_exploration_share_block`. Best-effort:
+    a corpus where every plan lacks counters yields zero rows, all-zero
+    thresholds, and the full excluded-plan list rather than raising.
+    """
+    rows, excluded = _collect_exploration_share_rows(all_inputs)
+    thresholds = _derive_exploration_share_thresholds(rows)
+
+    plan_rows: list[dict[str, Any]] = []
+    for r in sorted(rows, key=lambda x: -(x.share("result_bytes") or 0.0)):
+        plan_rows.append(
+            {
+                "plan_id": r.plan_id,
+                "change_type": r.change_type,
+                "phases": r.phases_measured,
+                "exploration_calls": r.bucket("exploration", "tool_calls"),
+                "denom_calls": r.denominator("tool_calls"),
+                "turn_share": r.share("tool_calls"),
+                "exploration_bytes": r.bucket("exploration", "result_bytes"),
+                "denom_bytes": r.denominator("result_bytes"),
+                "byte_share": r.share("result_bytes"),
+                "unclassified": r.unclassified_calls,
+                "flags": _exploration_share_flags(r, thresholds),
+            }
+        )
+
+    return {
+        "plans_in_corpus": len(rows),
+        "plans_excluded_no_counters": len(excluded),
+        "excluded_plan_ids": excluded,
+        "rows": plan_rows,
+        "thresholds": thresholds,
+    }
+
+
+def _es_share_cell(share: float | None) -> str:
+    """Render a share as a percentage, or `n/a` when the denominator was 0."""
+    return "n/a" if share is None else f"{share:.1%}"
+
+
+def emit_exploration_share_block(result: dict[str, Any]) -> str:
+    """Emit the cross-plan exploration-share block with the severity column.
+
+    Leads with the corpus shares and the derived (floating) cut-points so every
+    flagged row is self-describing, and with the corpus-exclusion read-out
+    (`plans_excluded_no_counters` / `excluded_plan_ids`) so unmeasured plans are
+    visible rather than silently absent — the same floor discipline
+    `input-integrity` imposes for blind plans. A row is `genuine` when it carries
+    at least one flag, `informational` otherwise.
+    """
+    thr = result["thresholds"]
+
+    plan_rows = result["rows"]
+    for r in plan_rows:
+        r["flags_str"] = ";".join(r["flags"])
+        r["turn_share_str"] = _es_share_cell(r["turn_share"])
+        r["byte_share_str"] = _es_share_cell(r["byte_share"])
+    plan_rows, genuine_signal_count = _severity_summary(
+        plan_rows, lambda r: bool(r["flags"])
+    )
+
+    out = [
+        "check: exploration-share",
+        "status: success",
+        # ABSENT IS NOT ZERO: a plan carrying no counters measured nothing and is
+        # EXCLUDED from the corpus, never admitted at zero exploration. When the
+        # excluded count outweighs the included one the honest corpus verdict is
+        # "not yet measurable" — neither a pass nor a regression.
+        "exclusion_rule: absent counters exclude a plan from the corpus (never counted as zero exploration); a measured zero stays in",
+        f"plans_in_corpus: {result['plans_in_corpus']}",
+        f"plans_excluded_no_counters: {result['plans_excluded_no_counters']}",
+        f"excluded_plan_ids: {_cell(';'.join(result['excluded_plan_ids']))}",
+        # Corpus shape, over the productive `exploration + work + execute`
+        # denominator (orchestration and unclassified are emitted per row but
+        # excluded from every share).
+        f"corpus_byte_share: {thr['corpus_byte_share']:.3f}",
+        f"corpus_turn_share: {thr['corpus_turn_share']:.3f}",
+        # Derived (floating) cut-points — measured from THIS run's corpus.
+        f"byte_share_p75: {thr['byte_share_p75']:.3f}",
+        f"byte_share_median: {thr['byte_share_median']:.3f}",
+        f"turn_share_p75: {thr['turn_share_p75']:.3f}",
+        f"turn_share_median: {thr['turn_share_median']:.3f}",
+        f"genuine_signal_count: {genuine_signal_count}",
+        f"rows[{len(plan_rows)}]{{plan_id,change_type,phases,exploration_calls,"
+        f"denom_calls,turn_share,exploration_bytes,denom_bytes,byte_share,"
+        f"unclassified,flags,severity}}:",
+    ]
+    for r in plan_rows:
+        out.append(
+            "  "
+            + ",".join(
+                _cell(c)
+                for c in [
+                    r["plan_id"],
+                    r["change_type"],
+                    r["phases"],
+                    r["exploration_calls"],
+                    r["denom_calls"],
+                    r["turn_share_str"],
+                    r["exploration_bytes"],
+                    r["denom_bytes"],
+                    r["byte_share_str"],
+                    r["unclassified"],
+                    r["flags_str"],
+                    r["severity"],
+                ]
+            )
+        )
+    return "\n".join(out) + "\n"
+
+
+# ---------------------------------------------------------------------------
 # Cross-plan: cross-check-synthesis (facet-completeness critic, runs LAST)
 # ---------------------------------------------------------------------------
 #
@@ -6598,6 +6975,19 @@ def run_checks(all_inputs: list[PlanInputs], selected: list[str], repo_root: Pat
                 "corpus"
             ]["checkpoint_over_count"]
 
+    # exploration-share is a standalone cross-plan check (not consumed by
+    # synthesis), so it is gated only on explicit selection.
+    if "exploration-share" in selected:
+        es_result = cross_exploration_share(all_inputs)
+        all_results["exploration-share"] = es_result
+        blocks.append(emit_exploration_share_block(es_result))
+        summary_metrics["exploration-share_flagged"] = sum(
+            1 for r in es_result["rows"] if r["flags"]
+        )
+        summary_metrics["exploration-share_excluded"] = es_result[
+            "plans_excluded_no_counters"
+        ]
+
     # cross-check-synthesis MUST run LAST — it reads every upstream result the
     # blocks above retained into `all_results`.
     if synth_needed:
@@ -6628,7 +7018,7 @@ def run_checks(all_inputs: list[PlanInputs], selected: list[str], repo_root: Pat
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
-        description="Audit archived plans across twenty-two retrospective checks."
+        description="Audit archived plans across twenty-three retrospective checks."
     )
     parser.add_argument(
         "--plan-dir",
