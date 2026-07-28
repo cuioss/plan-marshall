@@ -3,14 +3,14 @@
 """Deterministic candidate surfacing for the pre-submission-self-review finalize step.
 
 Reads the worktree's diff against the base branch, scans added lines in modified
-files, and emits eighteen candidate lists (regexes, user-facing strings, markdown
+files, and emits nineteen candidate lists (regexes, user-facing strings, markdown
 sections, symmetric-pair functions, flag-guard pairs, contract sources,
 schema-bearing files, keep-identifier markers, protected identifiers,
 producer-consumer pairs,
 source-of-truth duplicates, same-document normative directives, description-vs-body
 frontmatter, lone-unguarded-boundary calls, stale count-prose, near-identical-hunk
-touched claims, advertised-form help strings, same-document ordinal references) as
-TOON for the LLM cognitive review pass to consume.
+touched claims, advertised-form help strings, same-document ordinal references,
+scan-derived keys) as TOON for the LLM cognitive review pass to consume.
 
 Storage: stateless — reads the worktree diff and derives the plan footprint
 live from the worktree (``compute-footprint``: ``{base}...HEAD`` ∪ porcelain).
@@ -35,6 +35,7 @@ from _self_review_detectors import (
     _detect_producer_consumer,
     _detect_regexes,
     _detect_same_document_consistency,
+    _detect_scan_derived_keys,
     _detect_source_of_truth,
     _detect_symmetric_pairs,
     _detect_touched_claims,
@@ -152,6 +153,7 @@ def _cmd_surface(args: argparse.Namespace) -> int:
         added, project_dir
     )
     ordinal_references = _detect_ordinal_references(added, project_dir)
+    scan_derived_keys = _detect_scan_derived_keys(added, project_dir)
 
     output = {
         'status': 'success',
@@ -177,11 +179,15 @@ def _cmd_surface(args: argparse.Namespace) -> int:
             'touched_claims': len(touched_claims),
             'advertised_form_help_strings': len(advertised_form_help_strings),
             'ordinal_references': len(ordinal_references),
+            'scan_derived_keys': len(scan_derived_keys),
             # ``count_prose`` and ``advertised_form_help_strings`` are
             # review-anchor lists (like ``contract_sources`` and
             # ``schema_bearing_files``) and are excluded from ``total``; the
-            # line-level lists ``unguarded_boundaries``, ``touched_claims``, and
-            # ``ordinal_references`` flag a specific added line and are included.
+            # line-level lists ``unguarded_boundaries``, ``touched_claims``,
+            # ``ordinal_references``, and ``scan_derived_keys`` flag a specific
+            # added line and are included. ``scan_derived_keys`` flags the scan
+            # loop's own line, which is the criterion that puts it on the
+            # line-level side — see standards/unreachable-guard-detection.md § 1.
             'total': (
                 len(regexes)
                 + len(user_facing)
@@ -196,6 +202,7 @@ def _cmd_surface(args: argparse.Namespace) -> int:
                 + len(unguarded_boundaries)
                 + len(touched_claims)
                 + len(ordinal_references)
+                + len(scan_derived_keys)
             ),
         },
         'regexes': regexes,
@@ -216,6 +223,7 @@ def _cmd_surface(args: argparse.Namespace) -> int:
         'touched_claims': touched_claims,
         'advertised_form_help_strings': advertised_form_help_strings,
         'ordinal_references': ordinal_references,
+        'scan_derived_keys': scan_derived_keys,
     }
     output_toon(output)
     return 0
@@ -235,7 +243,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p_surface = sub.add_parser(
         'surface',
-        help='Emit eighteen candidate lists (regexes, user-facing strings, markdown sections, symmetric pairs, flag-guard pairs, contract sources, schema-bearing files, keep markers, protected identifiers, producer-consumer pairs, source-of-truth duplicates, same-document normative directives, description-vs-body frontmatter, lone-unguarded-boundary calls, stale count-prose, near-identical-hunk touched claims, advertised-form help strings, same-document ordinal references) from the worktree diff as TOON.',
+        help='Emit nineteen candidate lists (regexes, user-facing strings, markdown sections, symmetric pairs, flag-guard pairs, contract sources, schema-bearing files, keep markers, protected identifiers, producer-consumer pairs, source-of-truth duplicates, same-document normative directives, description-vs-body frontmatter, lone-unguarded-boundary calls, stale count-prose, near-identical-hunk touched claims, advertised-form help strings, same-document ordinal references, scan-derived keys) from the worktree diff as TOON.',
         allow_abbrev=False,
     )
     add_plan_id_arg(p_surface)

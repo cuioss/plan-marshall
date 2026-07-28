@@ -18,6 +18,7 @@ from self_review import (
     _detect_producer_consumer,
     _detect_regexes,
     _detect_same_document_consistency,
+    _detect_scan_derived_keys,
     _detect_source_of_truth,
     _detect_symmetric_pairs,
     _detect_touched_claims,
@@ -2026,6 +2027,108 @@ class TestDetectAdvertisedFormHelpStrings:
 
 
 # =============================================================================
+# Test: _detect_scan_derived_keys
+# =============================================================================
+
+
+class TestDetectScanDerivedKeys:
+    """The scan-versus-anchor shape behind the unreachable-guard candidate list.
+
+    Fires on the conjunction of a sequence decomposition and a first-match scan
+    over that same sequence. See
+    ``standards/unreachable-guard-detection.md`` for the gate verdict.
+    """
+
+    # The PR #1013 pre-fix scanning derivation, in added-line-tuple form.
+    _SCANNING_FORM = [
+        ('gen.py', 1, 'def _split_bundle_version(path):'),
+        ('gen.py', 2, '    parts = Path(path).parts'),
+        ('gen.py', 3, '    for index, part in enumerate(parts):'),
+        ('gen.py', 4, '        if index > 0 and _VERSION_DIR_NAME_RE.match(part):'),
+        ('gen.py', 5, '            return parts[index - 1], part'),
+        ('gen.py', 6, '    return None'),
+    ]
+
+    def test_scanning_derivation_surfaces_candidate(self):
+        out = _detect_scan_derived_keys(list(self._SCANNING_FORM))
+        assert len(out) == 1
+        assert out[0]['file'] == 'gen.py'
+        assert out[0]['line'] == 3
+        assert out[0]['name'] == '_split_bundle_version'
+        assert out[0]['sequence'] == 'parts'
+
+    def test_no_caller_in_diff_yields_key_consumed_false(self):
+        out = _detect_scan_derived_keys(list(self._SCANNING_FORM))
+        assert out[0]['key_consumed'] is False
+
+    def test_identity_consuming_caller_yields_key_consumed_true(self):
+        added = list(self._SCANNING_FORM) + [
+            ('gen.py', 8, 'def _check_provenance(paths):'),
+            ('gen.py', 9, '    by_bundle = {}'),
+            ('gen.py', 10, '    for p in paths:'),
+            ('gen.py', 11, '        bundle, version = _split_bundle_version(p)'),
+            ('gen.py', 12, '        by_bundle.setdefault(bundle, set()).add(version)'),
+            ('gen.py', 13, '    return any(len(v) > 1 for v in by_bundle.values())'),
+        ]
+        out = _detect_scan_derived_keys(added)
+        surfaced = [e for e in out if e['name'] == '_split_bundle_version']
+        assert len(surfaced) == 1
+        assert surfaced[0]['key_consumed'] is True
+
+    def test_anchored_derivation_surfaces_nothing(self):
+        # The shipped post-fix form indexes the decomposition at a fixed
+        # position anchored on a known root — no scan loop, no candidate.
+        added = [
+            ('gen.py', 1, 'def _split_bundle_version(path, base_path):'),
+            ('gen.py', 2, '    relative = Path(path).relative_to(base_path)'),
+            ('gen.py', 3, '    parts = relative.parts'),
+            ('gen.py', 4, '    if len(parts) < 2 or not _VERSION_DIR_NAME_RE.match(parts[1]):'),
+            ('gen.py', 5, '        return None'),
+            ('gen.py', 6, '    return parts[0], parts[1]'),
+        ]
+        assert _detect_scan_derived_keys(added) == []
+
+    def test_full_traversal_without_first_match_exit_surfaces_nothing(self):
+        # A loop that collects every match is a traversal, not a first-match
+        # selection — the collapse-to-one-key failure mode does not arise.
+        added = [
+            ('scan.py', 1, 'def collect(path):'),
+            ('scan.py', 2, "    parts = path.split('/')"),
+            ('scan.py', 3, '    found = []'),
+            ('scan.py', 4, '    for part in parts:'),
+            ('scan.py', 5, '        if _NAME_RE.match(part):'),
+            ('scan.py', 6, '            found.append(part)'),
+            ('scan.py', 7, '    return found'),
+        ]
+        assert _detect_scan_derived_keys(added) == []
+
+    def test_loop_over_undecomposed_sequence_surfaces_nothing(self):
+        # An ordinary search over a caller-supplied list is not the shape: the
+        # sequence was never derived by decomposing a single value.
+        added = [
+            ('scan.py', 1, 'def pick(names):'),
+            ('scan.py', 2, '    for name in names:'),
+            ('scan.py', 3, '        if _NAME_RE.match(name):'),
+            ('scan.py', 4, '            return name'),
+            ('scan.py', 5, '    return None'),
+        ]
+        assert _detect_scan_derived_keys(added) == []
+
+    def test_non_python_file_surfaces_nothing(self):
+        added = [
+            ('guide.md', 1, 'def _split_bundle_version(path):'),
+            ('guide.md', 2, '    parts = Path(path).parts'),
+            ('guide.md', 3, '    for part in parts:'),
+            ('guide.md', 4, '        if _RE.match(part):'),
+            ('guide.md', 5, '            return part'),
+        ]
+        assert _detect_scan_derived_keys(added) == []
+
+    def test_empty_added_surfaces_nothing(self):
+        assert _detect_scan_derived_keys([]) == []
+
+
+# =============================================================================
 # Test: counts.total invariant (review-anchor lists excluded from total)
 # =============================================================================
 
@@ -2158,3 +2261,61 @@ class TestCountsTotalInvariant:
         )
         assert int(counts['total']) == included_sum
         assert 'ordinal_references' not in self._REVIEW_ANCHOR_LISTS
+
+    def test_scan_derived_keys_included_in_total(self, tmp_path):
+        # An uncommitted .py diff carrying the scan-versus-anchor derivation
+        # triggers the scan_derived_keys detector, which IS summed into
+        # counts.total (unlike the review-anchor lists).
+        repo = tmp_path / 'repo'
+        _init_repo(repo)
+        _commit(repo, 'base', {'base.txt': 'base\n'})
+        _git(repo, 'checkout', '-b', 'feature')
+        (repo / 'gen.py').write_text(
+            'import re\n'
+            'from pathlib import Path\n'
+            '\n'
+            "_VERSION_DIR_NAME_RE = re.compile(r'^0-9')\n"
+            '\n'
+            'def split_bundle_version(path):\n'
+            '    parts = Path(path).parts\n'
+            '    for index, part in enumerate(parts):\n'
+            '        if index > 0 and _VERSION_DIR_NAME_RE.match(part):\n'
+            '            return parts[index - 1], part\n'
+            '    return None\n'
+        )
+        _git(repo, 'add', 'gen.py')
+
+        data = self._surface(repo)
+
+        # The new detector fired and populated its own list.
+        assert int(data['counts']['scan_derived_keys']) >= 1
+        assert len(data['scan_derived_keys']) >= 1
+
+        counts = data['counts']
+        included_sum = sum(
+            int(v)
+            for k, v in counts.items()
+            if k != 'total' and k not in self._REVIEW_ANCHOR_LISTS
+        )
+        assert int(counts['total']) == included_sum
+        assert 'scan_derived_keys' not in self._REVIEW_ANCHOR_LISTS
+
+    def test_scan_derived_keys_invariant_holds_when_list_is_empty(self, tmp_path):
+        # The inclusion invariant must hold whether or not the list fires.
+        repo = tmp_path / 'repo'
+        _init_repo(repo)
+        _commit(repo, 'base', {'base.txt': 'base\n'})
+        _git(repo, 'checkout', '-b', 'feature')
+        (repo / 'plain.py').write_text('x = 1\ny = x + 1\n')
+        _git(repo, 'add', 'plain.py')
+
+        data = self._surface(repo)
+
+        assert int(data['counts']['scan_derived_keys']) == 0
+        counts = data['counts']
+        included_sum = sum(
+            int(v)
+            for k, v in counts.items()
+            if k != 'total' and k not in self._REVIEW_ANCHOR_LISTS
+        )
+        assert int(counts['total']) == included_sum

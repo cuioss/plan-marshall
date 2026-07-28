@@ -243,3 +243,43 @@ _NORMALIZATION_TOKENS = re.compile(
     r'\b(?:normali[sz]e|parse|resolve|canonical|extract|to_url|to_id|'
     r'from_url|split|strip|rstrip|lstrip|replace|urlparse|sub)\b'
 )
+
+# Scan-derived-key (unreachable-guard) detection.
+# The scan-versus-anchor shape: a key derived by first-match over an unbounded
+# decomposition instead of by indexing that decomposition at a position anchored
+# on a known root. See standards/unreachable-guard-detection.md for the gate
+# verdict that selected this framing, the two rejected framings, and the
+# reachability argument — the rationale is NOT restated here.
+
+# A sequence decomposition binding: ``NAME = <expr>.parts`` or
+# ``NAME = <expr>.split(...)``. Group ``name`` captures the bound sequence
+# variable, which the scan loop below must iterate for the shape to hold.
+_SEQUENCE_DECOMPOSITION = re.compile(
+    r'^\s*(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*.*?(?:\.parts\b|\.split\s*\()'
+)
+# A scan loop over a decomposed sequence: ``for part in parts:`` or
+# ``for index, part in enumerate(parts):``. Group ``seq`` captures the iterated
+# sequence name so it can be matched against a decomposition binding.
+_SCAN_LOOP = re.compile(
+    r'^\s*for\s+[A-Za-z_][A-Za-z0-9_,\s]*?\s+in\s+(?:enumerate\s*\(\s*)?'
+    r'(?P<seq>[A-Za-z_][A-Za-z0-9_]*)'
+)
+# A pattern-match test inside the scan loop — either a bare ``re.match``/
+# ``re.search``/``re.fullmatch`` or the same method on a module-level compiled
+# pattern constant (``_VERSION_DIR_NAME_RE.match(...)``). This is what makes the
+# selection a *pattern* first-match rather than an ordinary sequence search.
+_PATTERN_MATCH_TEST = re.compile(
+    r'\b(?:re|_?[A-Z][A-Z0-9_]*)\s*\.\s*(?:match|search|fullmatch)\s*\('
+)
+# The first-match exit: a ``return`` or ``break`` inside the loop body. Without
+# it the loop is a full traversal, not a first-match selection, and the
+# collapse-to-one-key failure mode does not arise.
+_FIRST_MATCH_EXIT = re.compile(r'^\s*(?:return\b|break\b)')
+# Identity consumption of a derived key — the three shapes that treat a value as
+# an identity rather than as data: grouping it into a keyed map
+# (``setdefault``), testing the cardinality of the resulting key set (``len``),
+# or comparing it for equality. Used only to compute the ``key_consumed`` flag
+# that rides on a surfaced candidate; it never gates the candidate.
+_IDENTITY_CONSUMPTION = re.compile(
+    r'\.setdefault\s*\(|\blen\s*\(|==|!='
+)
