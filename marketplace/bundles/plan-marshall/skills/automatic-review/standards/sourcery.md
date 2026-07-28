@@ -10,8 +10,8 @@ present in the step's `enabled_bots`.
 
 The fenced-YAML block below is the machine-readable per-bot record. It is data, not frontmatter.
 Consumers read `bot_kind`, `author_login`, `trigger_comment`, `completion_check_name`,
-`honors_skip_label`, `ignore_patterns`, and `severity_map` from it; the prose sections carry the
-rationale.
+`honors_skip_label`, `ignore_patterns`, `rate_limit_class`, `rate_limit_eta_patterns`, and
+`severity_map` from it; the prose sections carry the rationale.
 
 ```yaml
 bot_kind: sourcery
@@ -26,6 +26,8 @@ ignore_patterns:
   - "Help me be more useful! Please click"                         # 👍/👎 feedback prompt
   - "found 0 issues"                                               # no-op review
   - "your pull request is larger than the review limit of"         # #1014 refusal notice — handle-free and number-free so it survives a different account handle and a different character budget
+rate_limit_class: hard_quota   # the observed refusal is a per-PR size limit, not a window that reopens
+rate_limit_eta_patterns:
 severity_map:
   issue_bug_risk: high      # **issue (bug_risk):**
   security: critical        # **security:**
@@ -86,6 +88,18 @@ reviews (`found 0 issues` with no inline comments). Do NOT drop the review body 
 **Overall Comments** or when inline `<issue_to_address>` comments exist — those are signal.
 The size-limit refusal notice (`your pull request is larger than the review limit of …`) is likewise
 a whole-comment drop: Sourcery posts it *in place of* a review, so it carries no finding to extract.
+
+## Rate-limit class — `hard_quota`
+
+The one observed Sourcery refusal is a **per-PR size limit**, not a rolling window: the same PR is
+over the limit a minute later and an hour later alike, so nothing reopens by waiting. `rate_limit_class`
+is therefore `hard_quota`, and `rate_limit_eta_patterns` is empty — there is no reset time to extract
+because there is no reset. A caller that reads this class should NOT enter a rate-window await for
+Sourcery; the productive responses are to split the PR or to accept the bot's non-participation, and
+the required-versus-optional classification is what decides whether that non-participation blocks.
+
+This is exactly the distinction the class exists to carry: treating every bot's refusal as awaitable
+would burn the full `review_rate_window_timeout_seconds` budget here and still time out.
 
 ## Consumer stage — classify a surviving Sourcery finding
 

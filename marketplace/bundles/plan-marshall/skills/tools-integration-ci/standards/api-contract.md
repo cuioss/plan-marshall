@@ -140,7 +140,7 @@ Every PR subcommand returns the standard envelope: success shape (`status: succe
 | `pr thread-reply` | `--pr-number`, `--thread-id`, `--body` | — | `pr_number`, `thread_id` |
 | `pr reviews` | `--pr-number` | — | `pr_number`, `review_count`, `reviews[N]{user,state,submitted_at}` |
 | `pr comments` | `--pr-number` | `--unresolved-only` | `provider`, `pr_number`, `total`, `unresolved`, `comments[N]{id,author,body,path,line,resolved,created_at}` |
-| `pr wait-for-comments` | `--pr-number` | `--timeout` (default 300), `--interval` (default 30) | `pr_number`, `timed_out`, `duration_sec`, `polls`, `baseline_count`, `final_count`, `new_count`, `rate_limited` |
+| `pr wait-for-comments` | `--pr-number` | `--timeout` (default 300), `--interval` (default 30) | `pr_number`, `timed_out`, `duration_sec`, `polls`, `baseline_count`, `final_count`, `new_count`, `rate_limited_bots[N]{bot_kind,rate_limit_class,eta}` |
 | `pr update-branch` | `--pr-number` | — | `pr_number` |
 
 ### Provider Field Mapping
@@ -152,7 +152,15 @@ The PR operations normalize responses from `gh` (JSON) and `glab` (JSON) into th
 - **`pr resolve-thread`**: GitHub uses the GraphQL `resolveReviewThread` mutation with a self-contained thread node id (e.g. `PRRT_kwDO...`), so `--pr-number` is ignored; GitLab uses REST `PUT discussions/:id` and requires both `--pr-number` and the discussion id.
 - **`pr thread-reply`**: GitHub uses GraphQL `addPullRequestReviewComment` with `inReplyTo` set to the comment node id (the PR node id is fetched internally); GitLab uses REST `POST discussions/:id/notes` and does not require a PR node id.
 - **`pr comments` field mapping**: `id` ← `comments.nodes[].id` / `notes[].id`; `author` ← `author.login` / `author.username`; `body` ← `body`; `path` ← `reviewThreads.nodes[].path` / `position.new_path`; `line` ← `reviewThreads.nodes[].line` / `position.new_line`; `resolved` ← `isResolved` / `resolved`.
-- **`pr wait-for-comments` field mapping**: the poll counters (`baseline_count` / `final_count` / `new_count`) are provider-agnostic — derived from the `pr comments --unresolved-only` unresolved count. `rate_limited` is GitHub/CodeRabbit-scoped and additive (default `false`): `true` when the newest CodeRabbit-bot comment (`author.login ∈ {coderabbitai, coderabbitai[bot]}`) is a rate-limit status notice (a "rate limit exceeded" notice CodeRabbit posts in place of a review) rather than actual review feedback. GitLab has no CodeRabbit equivalent, so `rate_limited` is always `false` there.
+- **`pr wait-for-comments` field mapping**: the poll counters (`baseline_count` / `final_count` / `new_count`) are provider-agnostic — derived from the `pr comments --unresolved-only` unresolved count. `rate_limited_bots[]` is additive and bot-agnostic: it carries one `{bot_kind, rate_limit_class, eta}` record per REGISTERED reviewer bot whose newest comment on the PR is a rate-limit / service notice posted in place of a review, and is empty (the default) when no registered bot is rate-limited. No bot is named in the detection path — the bot set and each bot's author login are derived from the per-bot registry docs under `automatic-review/standards/{bot_kind}.md`, and the notice itself is recognised by a structural two-part recogniser (a limit-exceeded statement AND a notice shape) paired with that bot's registry `ignore_patterns`.
+
+  | Field | Meaning |
+  |-------|---------|
+  | `bot_kind` | Registry key of the refusing bot. |
+  | `rate_limit_class` | That bot's registry `rate_limit_class`: `awaitable_window` (a rolling window that reopens on its own — awaiting the reset is productive), `hard_quota` (a budget that does not reopen on a useful timescale — awaiting only burns budget), or `unknown` (no refusal observed for this bot). `unknown` is the FAIL-CLOSED default: a caller MUST NOT await a bot whose refusal shape has never been observed. |
+  | `eta` | The reset time the notice itself stated, extracted via that bot's registry `rate_limit_eta_patterns`, or `""` when the notice stated none. An empty `eta` means *unknown*, never *reopens now*. |
+
+  The list is per-bot and class-bearing by design: a single boolean can say neither WHICH bot refused nor whether waiting for it is worth anything, and those answers differ per bot. Detection is best-effort and never alters poll behaviour — a failed post-poll comment fetch leaves the list empty. On GitLab no registered-bot detection runs, so the list is always empty there.
 
 ---
 

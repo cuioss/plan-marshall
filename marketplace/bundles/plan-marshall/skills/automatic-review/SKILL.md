@@ -41,7 +41,7 @@ configurable:
     description: "Timeout policy applied at both re-review triggers (A and B) when the await budget expires with no fresh bot review (timed_out: true, matched: false). One of ask|defer|proceed. ask halts and asks the operator (interactive); defer auto-skips the merge without prompting (safe default-action); proceed is the explicit opt-in to advance the unreviewed HEAD, decision-logged at WARNING."
   - key: review_rate_window_await
     default: false
-    description: Opt-in bool (default-off) that, when enabled, awaits a bot rate-window reset instead of proceeding on a rate-limit status-notice. When the pr wait-for-comments return carries rate_limited: true (the discriminator), the step re-polls in a bounded await loop until a non-rate-limited bot review lands or review_rate_window_timeout_seconds is exhausted. When false, a rate-limit notice is treated as an ordinary settle and the step proceeds without awaiting.
+    description: Opt-in bool (default-off) that, when enabled, awaits a bot rate-window reset instead of proceeding on a rate-limit status-notice. When the pr wait-for-comments return carries a non-empty rate_limited_bots[] (the per-bot discriminator) AND at least one listed bot has rate_limit_class awaitable_window, the step re-polls in a bounded await loop until a non-rate-limited bot review lands or review_rate_window_timeout_seconds is exhausted. When every listed bot is hard_quota or unknown the await is skipped as unproductive. When false, a rate-limit notice is treated as an ordinary settle and the step proceeds without awaiting.
   - key: review_rate_window_timeout_seconds
     default: 3600
     description: Await budget (seconds) capping the rate-window await loop, defaulting to 3600 to match CodeRabbit's ~hourly rate-window reset. On exhaustion the step returns escalate_ask with reason rate_window_timeout. Only consulted when review_rate_window_await is true.
@@ -112,16 +112,17 @@ The bots this step drives are selected by the `enabled_bots` config knob. Each e
 one-to-one to a machine-readable registry doc at `standards/{bot_kind}.md` under this skill's
 `standards/` directory — there is no hard-coded bot list in the pipeline. Each registry doc carries
 a fenced-YAML data block (`bot_kind`, `author_login`, `trigger_comment`, `completion_check_name`,
-`honors_skip_label`, `ignore_patterns[]`, `severity_map`) plus the producer / consumer / trust
-boundary / disposition rationale for that bot, and links to the org signal/noise source-of-truth
-rather than duplicating it.
+`honors_skip_label`, `ignore_patterns[]`, `rate_limit_class`, `rate_limit_eta_patterns[]`,
+`severity_map`) plus the producer / consumer / trust boundary / disposition rationale for that bot,
+and links to the org signal/noise source-of-truth rather than duplicating it.
 
 The single generic loader `scripts/bot_registry.py` parses every `standards/{bot_kind}.md` data
 block at runtime and exposes the derived registry (`bot_kinds()`, the login→bot_kind map, each
-bot's `trigger_comment`, `completion_check_name`, `honors_skip_label`, `ignore_patterns`, and
-`severity_map`). The producer
-(`github_pr.py` noise pre-filter), the finding store (`_findings_core.BOT_KINDS`), and the re-review
-strategy registry (`github_re_review.py`) all DERIVE from this loader — adding, removing, or
+bot's `trigger_comment`, `completion_check_name`, `honors_skip_label`, `ignore_patterns`,
+`rate_limit_class`, `rate_limit_eta_patterns`, and `severity_map`). The producer
+(`github_pr.py` noise pre-filter), the finding store (`_findings_core.BOT_KINDS`), the re-review
+strategy registry (`github_re_review.py`), and the per-bot rate-limit detector
+(`_github_pr._detect_rate_limited_bots`) all DERIVE from this loader — adding, removing, or
 re-configuring a bot is a pure `standards/{bot_kind}.md` edit with no code change.
 
 Dropping a bot from `enabled_bots` removes it from re-review triggering and triage entirely — the
@@ -272,6 +273,10 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-
 | `status: success`, `timed_out: true` | No new comment within timeout — proceed to the completion-aware poll anyway (the producer will surface whatever is on the PR) |
 | `status: error` | Treat as warning, log, proceed to the completion-aware poll best-effort |
 
+`rate_limited_bots[]` is orthogonal to the rows above: it is an additive per-bot discriminator, not a
+poll outcome, so a non-empty list never changes which row fires. It is consumed by the "Rate-window
+await (opt-in)" subsection below.
+
 #### Completion-aware poll (per enabled bot)
 
 A fixed buffer out-races a slow bot: a review-bot whose pass is still IN_PROGRESS when the buffer elapses posts its comments AFTER this step moved on, so they are never fetched here (the gap the D1 pre-merge comment barrier is the final net for). To close it at the source, for each enabled bot that publishes an in-progress check-run — a non-empty registry `completion_check_name` — additionally poll that bot's check to completion. The bound is the `review_completion_poll_timeout_seconds` param, read off the SAME one-stop `params` object above (default: `600`). A bot with an empty `completion_check_name` publishes no completion check-run and relied on the `review_bot_buffer_seconds` settle above — it is NOT polled here.
@@ -304,13 +309,37 @@ Once every enabled bot is completed, markerless (buffer-settled), or logged-at-b
 
 > **GitLab provider asymmetry:** `bot_completion` is a GitHub-only read verb — the GitLab provider (`gitlab_pr`) has no completion-check-run equivalent (the same asymmetry the FIND stage's `--enabled-bots` note documents). On a GitLab host, skip the completion-aware poll entirely; every bot relies on the `review_bot_buffer_seconds` settle.
 
-The `pr wait-for-comments` return carries a `rate_limited` discriminator: `rate_limited: true` signals the wait ended because the review bot's rate window was exhausted (a rate-limit status-notice was posted) rather than because a genuine review landed or the buffer timed out cleanly. The "Rate-window await" subsection below acts on this discriminator when the opt-in is enabled; when the opt-in is off, `rate_limited: true` is treated as an ordinary settle by the table above.
+The `pr wait-for-comments` return carries a **`rate_limited_bots[]`** discriminator — one
+`{bot_kind, rate_limit_class, eta}` record per REGISTERED bot whose newest comment is a rate-limit
+status notice posted in place of a review. A non-empty list signals that those specific bots did not
+review because their limit was hit, rather than that a genuine review landed or the buffer timed out
+cleanly. An empty list means no registered bot is rate-limited. See
+[`../workflow-integration-github/SKILL.md`](../workflow-integration-github/SKILL.md) § Canonical
+invocations → `github_ops pr wait-for-comments` for the authoritative field contract.
+
+The list is per-bot and class-bearing because the correct response differs per bot: an
+`awaitable_window` refusal reopens on its own and is worth awaiting, a `hard_quota` refusal does not
+reopen on a useful timescale so awaiting it only burns budget, and `unknown` is the fail-closed value
+for a bot whose refusal shape has never been observed. The "Rate-window await" subsection below acts
+on this discriminator when the opt-in is enabled; when the opt-in is off, a non-empty
+`rate_limited_bots[]` is treated as an ordinary settle by the table above.
 
 ### Rate-window await (opt-in)
 
-Read `review_rate_window_await` and `review_rate_window_timeout_seconds` off the same `params` object returned by the one-stop `manage-execution-manifest step-params get --plan-id {plan_id} --phase 6-finalize --step-id plan-marshall:automatic-review` call used for `review_bot_buffer_seconds` (defaults: `false` and `3600`). **When `review_rate_window_await == false`**, skip this entire subsection and proceed directly to "Producer: FIND" below — a `rate_limited: true` return is treated as an ordinary settle.
+Read `review_rate_window_await` and `review_rate_window_timeout_seconds` off the same `params` object returned by the one-stop `manage-execution-manifest step-params get --plan-id {plan_id} --phase 6-finalize --step-id plan-marshall:automatic-review` call used for `review_bot_buffer_seconds` (defaults: `false` and `3600`). **When `review_rate_window_await == false`**, skip this entire subsection and proceed directly to "Producer: FIND" below — a non-empty `rate_limited_bots[]` return is treated as an ordinary settle.
 
-**When `review_rate_window_await == true` AND the "Wait for review-bot comments" return carried `rate_limited: true`**, the bot's rate window was exhausted before a review landed. Rather than proceeding on the rate-limit notice, re-poll in a bounded await loop until a non-rate-limited bot review lands OR the `review_rate_window_timeout_seconds` budget is exhausted. The loop is driven across tool calls — **no shell loop**: each poll is exactly one `pr wait-for-comments` Bash call, and pacing between polls is a single standalone `sleep {interval}` Bash call (`{interval}` = 60s). Track elapsed wall-clock against `review_rate_window_timeout_seconds`; stop issuing new polls once the budget would be exceeded.
+**When `review_rate_window_await == true` AND the "Wait for review-bot comments" return carried a non-empty `rate_limited_bots[]`**, at least one bot's limit was hit before a review landed. Branch on the `rate_limit_class` of the listed bots BEFORE entering any await — the await is only productive for a window that actually reopens:
+
+- **At least one listed bot has `rate_limit_class: awaitable_window`** — its window reopens on its own, so the await below is productive. Enter the loop. When that bot's record carries a non-empty `eta`, surface it in the decision log so the operator sees the stated reset rather than an opaque wait.
+- **Every listed bot has `rate_limit_class: hard_quota` or `unknown`** — nothing reopens on a useful timescale (`hard_quota`), or the refusal shape has never been observed for that bot (`unknown`, the fail-closed value). Do NOT enter the await loop: it would burn the full `review_rate_window_timeout_seconds` budget and still time out. Skip this subsection, decision-log the skip naming each bot and its class, and proceed directly to "Producer: FIND" — whether the non-participation is tolerable is a required-versus-optional classification question, not a waiting question.
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    decision --plan-id {plan_id} --level INFO \
+    --message "(plan-marshall:automatic-review) rate-window await SKIPPED — no listed bot is awaitable: {bot_kind}={rate_limit_class} ... — awaiting a non-reopening limit would exhaust review_rate_window_timeout_seconds without effect"
+  ```
+
+Once an `awaitable_window` bot is present, re-poll in a bounded await loop until a non-rate-limited bot review lands OR the `review_rate_window_timeout_seconds` budget is exhausted. The loop is driven across tool calls — **no shell loop**: each poll is exactly one `pr wait-for-comments` Bash call, and pacing between polls is a single standalone `sleep {interval}` Bash call (`{interval}` = 60s). Track elapsed wall-clock against `review_rate_window_timeout_seconds`; stop issuing new polls once the budget would be exceeded.
 
 Each poll:
 
@@ -319,8 +348,8 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-
   --pr-number {pr_number} --timeout {review_bot_buffer_seconds}
 ```
 
-- **`rate_limited: false` with new comment(s)** (`status: success`, `timed_out: false`) — a non-rate-limited bot review has landed; exit the await loop and proceed to "Producer: FIND" below.
-- **`rate_limited: true` again** — the rate window is still exhausted. If the elapsed budget is not yet spent, pace with a single standalone `sleep` call, then re-poll:
+- **Empty `rate_limited_bots[]` with new comment(s)** (`status: success`, `timed_out: false`) — a non-rate-limited bot review has landed; exit the await loop and proceed to "Producer: FIND" below.
+- **The awaited bot still listed in `rate_limited_bots[]`** — its rate window is still exhausted. If the elapsed budget is not yet spent, pace with a single standalone `sleep` call, then re-poll:
 
   ```bash
   sleep 60

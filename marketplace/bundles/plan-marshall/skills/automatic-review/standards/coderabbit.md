@@ -11,7 +11,8 @@ lives. The machine-readable registry block below is the single per-bot data reco
 The fenced-YAML block below is the machine-readable per-bot record. It is data, not frontmatter —
 a fenced code block that plugin-doctor treats as an example, not an executable directive. Consumers
 read `bot_kind`, `author_login`, `trigger_comment`, `completion_check_name`, `honors_skip_label`,
-`ignore_patterns`, and `severity_map` from it; the prose sections that follow carry the rationale.
+`ignore_patterns`, `rate_limit_class`, `rate_limit_eta_patterns`, and `severity_map` from it; the
+prose sections that follow carry the rationale.
 
 ```yaml
 bot_kind: coderabbit
@@ -28,6 +29,11 @@ ignore_patterns:
   - "@coderabbitai help"                                                      # command help echo
   - "✏️ Learnings added"                                                      # learnings-only reply
   - "Review limit reached"                                                    # current refusal notice — posted in place of a review
+rate_limit_class: awaitable_window   # the review limit is a rolling window that reopens on its own
+rate_limit_eta_patterns:
+  - "wait ([0-9]+ minutes? and [0-9]+ seconds?) before requesting another review"
+  - "wait ([0-9]+ (?:minutes?|seconds?|hours?)) before requesting another review"
+  - "([0-9]+ (?:minutes?|hours?)) before (?:the )?(?:rate )?limit resets"
 severity_map:
   potential_issue_critical: critical   # 🔴 potential_issue, or 🔒 with real impact
   potential_issue_major: high          # 🟠 Major potential_issue
@@ -70,6 +76,21 @@ generated`), marketing / tips, learnings-only replies, and bot self-acknowledgem
 comments that carry a `cr-indicator-types` marker — those are the signal.
 The refusal notice (`Review limit reached`) is likewise a whole-comment drop: CodeRabbit posts it
 *in place of* a review, so it carries no finding to extract.
+
+## Rate-limit class — `awaitable_window`
+
+CodeRabbit's review limit is a **rolling window that reopens on its own**, so `rate_limit_class` is
+`awaitable_window`: awaiting the reset is productive work, not a stall. This is what makes the
+`automatic-review` opt-in rate-window await (`review_rate_window_await`, bounded by
+`review_rate_window_timeout_seconds`, defaulted to 3600 to match the roughly hourly reset) worth
+enabling for this bot — and it is the field the await decision reads, rather than assuming every
+bot's refusal is waitable.
+
+The notice usually states its own reset time; `rate_limit_eta_patterns` extracts it so the caller
+can report a concrete ETA instead of an opaque "rate-limited". The patterns are *extraction* regexes,
+not detection regexes — detection is the bot-agnostic recogniser in `_github_pr._is_rate_limit_notice`
+paired with the `ignore_patterns` data layer above. A notice that states no ETA simply yields an empty
+`eta`, which the caller reports as unknown rather than as "reopens now".
 
 ## Consumer stage — classify a surviving CodeRabbit finding
 

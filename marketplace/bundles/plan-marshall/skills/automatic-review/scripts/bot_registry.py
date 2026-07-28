@@ -6,10 +6,11 @@ Every reviewer bot the ``plan-marshall:automatic-review`` finalize step drives
 ships one machine-readable record — a fenced-YAML data block embedded in its
 ``standards/{bot_kind}.md`` doc. This module parses those blocks ONCE at import
 time and exposes stable accessors so the finding store, the re-review strategy
-registry, and the producer pre-filter DERIVE what they need (the bot-kind set,
-the login->bot_kind map, each bot's re-review trigger comment, its
-skip-label-honoring flag, its ignore patterns, and its severity map) instead of
-hard-coding three bots across three code files.
+registry, the producer pre-filter, and the rate-limit detector DERIVE what they
+need (the bot-kind set, the login->bot_kind map, each bot's re-review trigger
+comment, its skip-label-honoring flag, its ignore patterns, its severity map,
+its rate-limit class, and its rate-limit ETA patterns) instead of hard-coding
+three bots across several code files.
 
 The loader is deliberately generic — there is no per-bot branch anywhere in it.
 Adding, removing, or re-configuring a bot is a pure data edit to a
@@ -22,17 +23,20 @@ Data-block shape (one per ``standards/{bot_kind}.md``)::
     author_login: coderabbitai
     trigger_comment: "@coderabbitai review"
     honors_skip_label: true
+    rate_limit_class: awaitable_window
     ignore_patterns:
       - "## Walkthrough"
       - "No actionable comments were generated"
+    rate_limit_eta_patterns:
+      - "wait ([0-9]+ minutes)"
     severity_map:
       potential_issue_critical: critical
       nitpick: low
     ```
 
 Stdlib-only (no PyYAML): the block is a tightly-constrained subset — top-level
-scalars, one list (``ignore_patterns``), and one nested map (``severity_map``) —
-parsed by a small deterministic reader below. Load order is the sorted
+scalars, lists (``ignore_patterns``, ``rate_limit_eta_patterns``), and one
+nested map (``severity_map``) — parsed by a small deterministic reader below. Load order is the sorted
 ``standards/*.md`` filename order, so ``bot_kinds()`` is stable across runs.
 """
 
@@ -249,6 +253,40 @@ class BotRegistry:
         value = self._by_kind.get(bot_kind, {}).get('ignore_patterns', [])
         return list(value) if isinstance(value, list) else []
 
+    def rate_limit_class(self, bot_kind: str) -> str:
+        """Return the rate-limit class for ``bot_kind``, fail-closed to ``'unknown'``.
+
+        Distinguishes a refusal the caller can usefully WAIT OUT from one it
+        cannot, so an await decision is grounded in the bot's actual quota shape
+        rather than assumed uniform across bots:
+
+        - ``awaitable_window`` — a rolling window that reopens on its own, so
+          awaiting the reset is productive.
+        - ``hard_quota`` — a budget that does not reopen on a useful timescale
+          (a per-PR size limit, a plan-level cap); awaiting it just burns budget.
+        - ``unknown`` — no refusal has been observed for this bot, or the field
+          is absent/malformed.
+
+        ``unknown`` is the FAIL-CLOSED default (ADR-009): a bot whose record does
+        not declare the field is never silently treated as awaitable, because
+        awaiting a quota that never reopens is the expensive failure. A present
+        but non-string value is treated the same as absent.
+        """
+        value = self._by_kind.get(bot_kind, {}).get('rate_limit_class', '')
+        return value if isinstance(value, str) and value else 'unknown'
+
+    def rate_limit_eta_patterns(self, bot_kind: str) -> list[str]:
+        """Return the per-bot ETA-extraction regexes (``[]`` if unknown/absent).
+
+        Each entry is a regex applied to a detected rate-limit notice body to
+        pull out the reset time the notice itself states. A pattern that declares
+        a capturing group yields that group as the ETA; otherwise the whole match
+        is used. An empty list means the bot states no machine-readable ETA — the
+        consumer then reports an absent ETA rather than inventing one.
+        """
+        value = self._by_kind.get(bot_kind, {}).get('rate_limit_eta_patterns', [])
+        return list(value) if isinstance(value, list) else []
+
     def severity_map(self, bot_kind: str) -> dict[str, str]:
         """Return the per-bot marker->severity map (``{}`` if unknown)."""
         value = self._by_kind.get(bot_kind, {}).get('severity_map', {})
@@ -289,6 +327,16 @@ def honors_skip_label(bot_kind: str) -> bool:
 def ignore_patterns(bot_kind: str) -> list[str]:
     """The per-bot whole-comment ignore patterns for ``bot_kind`` (``[]`` if unknown)."""
     return REGISTRY.ignore_patterns(bot_kind)
+
+
+def rate_limit_class(bot_kind: str) -> str:
+    """The rate-limit class for ``bot_kind``, fail-closed to ``'unknown'``."""
+    return REGISTRY.rate_limit_class(bot_kind)
+
+
+def rate_limit_eta_patterns(bot_kind: str) -> list[str]:
+    """The per-bot ETA-extraction regexes for ``bot_kind`` (``[]`` if absent)."""
+    return REGISTRY.rate_limit_eta_patterns(bot_kind)
 
 
 def severity_map(bot_kind: str) -> dict[str, str]:

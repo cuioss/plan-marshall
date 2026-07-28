@@ -293,6 +293,30 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github
   --pr-number N [--timeout SECS] [--interval SECS]
 ```
 
+Alongside the poll fields (`timed_out`, `duration_sec`, `polls`, `baseline_count`, `final_count`,
+`new_count`) the return carries **`rate_limited_bots[]`** — one record per REGISTERED bot whose newest
+comment on the PR is a rate-limit / service notice posted in place of a review:
+
+```toon
+rate_limited_bots[N]{bot_kind,rate_limit_class,eta}:
+```
+
+- `bot_kind` — the registry key of the refusing bot. The bot set, and each bot's login, are derived
+  from `automatic-review/standards/{bot_kind}.md`; no bot is named in the detection path.
+- `rate_limit_class` — that bot's registry `rate_limit_class`: `awaitable_window` (a rolling window
+  that reopens, so awaiting the reset is productive), `hard_quota` (a budget that does not reopen on
+  a useful timescale, so awaiting it only burns budget), or `unknown` (no refusal observed for this
+  bot). `unknown` is the fail-closed default — a caller MUST NOT await a bot whose refusal shape has
+  never been observed.
+- `eta` — the reset time the notice itself stated, extracted via that bot's registry
+  `rate_limit_eta_patterns`, or `""` when the notice stated none. An empty `eta` means *unknown*,
+  never *reopens now*.
+
+An **empty list means no registered bot is rate-limited**. The list is per-bot by design: a single
+boolean cannot say WHICH bot refused, and — because the classes differ per bot — cannot say whether
+awaiting is worth anything. Detection is best-effort and never alters poll behaviour: a failed
+post-poll fetch leaves the list empty.
+
 ### github_ops pr merge
 
 ```bash

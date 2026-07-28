@@ -4,16 +4,17 @@
 
 The registry parses each ``automatic-review/standards/{bot_kind}.md`` fenced-YAML
 data block ONCE and exposes stable accessors so the finding store, the re-review
-strategy registry, and the producer pre-filter DERIVE what they need instead of
-hard-coding the shipped bot set across three code files. Three bots ship today
+strategy registry, the producer pre-filter, and the rate-limit detector DERIVE
+what they need instead of hard-coding the shipped bot set across several code
+files. Three bots ship today
 (``coderabbit``, ``pr-agent``, ``sourcery``), and that count is asserted from
 :data:`_SHIPPED_BOTS` rather than restated per test.
 
 Coverage:
 
 1. Shipped-standards contract — the real ``standards/*.md`` docs parse into the
-   expected bot set, login map, triggers, skip-label flags, ignore patterns, and
-   severity maps.
+   expected bot set, login map, triggers, skip-label flags, ignore patterns,
+   rate-limit classes, rate-limit ETA patterns, and severity maps.
 2. Derived ``BOT_KINDS`` — ``_findings_core.BOT_KINDS`` equals the registry's
    ``bot_kinds()`` (proving it is derived, not a literal).
 3. Constrained-YAML reader units — the scalar/comment/block parsers over
@@ -124,6 +125,65 @@ def test_severity_map_per_bot():
     assert pr_agent == {'security_concern': 'high', 'focus_area': 'medium', 'missing_tests': 'low'}
 
 
+def test_rate_limit_class_per_bot():
+    """Each bot's rate-limit class is read from its data block, per OBSERVED evidence.
+
+    The class is what a caller branches on before deciding to wait out a refusal:
+    an ``awaitable_window`` reopens on its own, a ``hard_quota`` does not reopen on
+    a useful timescale, and ``unknown`` records that no refusal has ever been seen
+    for that bot. The three shipped bots deliberately span all three values.
+    """
+    assert bot_registry.rate_limit_class('coderabbit') == 'awaitable_window'
+    assert bot_registry.rate_limit_class('sourcery') == 'hard_quota'
+    assert bot_registry.rate_limit_class('pr-agent') == 'unknown'
+
+
+def test_rate_limit_class_fails_closed_for_absent_field(tmp_path):
+    """A record that declares no class reads as ``unknown``, never as awaitable.
+
+    ADR-009 fail-closed: assuming an undeclared refusal is waitable is the
+    expensive failure — the caller burns its whole await budget and still times
+    out. The default must therefore be the value that suppresses the await.
+    """
+    (tmp_path / 'demo.md').write_text(
+        '```yaml\nbot_kind: demo\nauthor_login: demo-bot\n```\n', encoding='utf-8'
+    )
+    reg = bot_registry.BotRegistry(standards_dir=tmp_path)
+
+    assert reg.rate_limit_class('demo') == 'unknown'
+
+
+def test_rate_limit_eta_patterns_per_bot():
+    """Only a bot whose notice states a reset time declares extraction patterns.
+
+    CodeRabbit's window notice states when it reopens, so its patterns pull that
+    ETA out. Sourcery and PR-Agent declare none — Sourcery because a hard quota has
+    no reset to state, PR-Agent because no refusal has been observed at all — and
+    an empty list is the signal to report an absent ETA rather than invent one.
+    """
+    coderabbit = bot_registry.rate_limit_eta_patterns('coderabbit')
+    assert coderabbit
+    assert all(isinstance(pattern, str) and pattern for pattern in coderabbit)
+    assert 'wait ([0-9]+ minutes? and [0-9]+ seconds?) before requesting another review' in coderabbit
+
+    assert bot_registry.rate_limit_eta_patterns('sourcery') == []
+    assert bot_registry.rate_limit_eta_patterns('pr-agent') == []
+
+
+def test_rate_limit_eta_patterns_are_valid_regexes():
+    """Every declared ETA pattern compiles — a bad data edit is caught here, not at runtime.
+
+    The consumer skips an uncompilable pattern rather than raising into the poll
+    return path, so a malformed pattern would otherwise degrade silently to "no ETA
+    stated" instead of surfacing as a defect.
+    """
+    import re
+
+    for bot_kind in bot_registry.bot_kinds():
+        for pattern in bot_registry.rate_limit_eta_patterns(bot_kind):
+            re.compile(pattern)
+
+
 def test_module_functions_match_registry_singleton():
     """The module-level functions delegate to the ``REGISTRY`` singleton."""
     assert bot_registry.bot_kinds() == bot_registry.REGISTRY.bot_kinds()
@@ -132,6 +192,10 @@ def test_module_functions_match_registry_singleton():
         assert bot_registry.trigger_comment(bot_kind) == bot_registry.REGISTRY.trigger_comment(bot_kind)
         assert bot_registry.completion_check_name(bot_kind) == bot_registry.REGISTRY.completion_check_name(bot_kind)
         assert bot_registry.ignore_patterns(bot_kind) == bot_registry.REGISTRY.ignore_patterns(bot_kind)
+        assert bot_registry.rate_limit_class(bot_kind) == bot_registry.REGISTRY.rate_limit_class(bot_kind)
+        assert bot_registry.rate_limit_eta_patterns(bot_kind) == bot_registry.REGISTRY.rate_limit_eta_patterns(
+            bot_kind
+        )
 
 
 # =============================================================================
@@ -286,3 +350,6 @@ def test_unknown_bot_kind_returns_empty_defaults():
     assert bot_registry.honors_skip_label('nope') is False
     assert bot_registry.ignore_patterns('nope') == []
     assert bot_registry.severity_map('nope') == {}
+    # The rate-limit accessors fail closed for an unregistered kind too.
+    assert bot_registry.rate_limit_class('nope') == 'unknown'
+    assert bot_registry.rate_limit_eta_patterns('nope') == []

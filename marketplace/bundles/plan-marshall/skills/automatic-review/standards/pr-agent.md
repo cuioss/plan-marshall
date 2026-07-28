@@ -31,8 +31,8 @@ Sample size is **one review** — see "Signal calibration" below before generali
 
 The fenced-YAML block below is the machine-readable per-bot record. It is data, not frontmatter.
 Consumers read `bot_kind`, `author_login`, `trigger_comment`, `completion_check_name`,
-`honors_skip_label`, `ignore_patterns`, and `severity_map` from it; the prose sections carry the
-rationale.
+`honors_skip_label`, `ignore_patterns`, `rate_limit_class`, `rate_limit_eta_patterns`, and
+`severity_map` from it; the prose sections carry the rationale.
 
 ```yaml
 bot_kind: pr-agent
@@ -56,6 +56,9 @@ ignore_patterns:
                                   # finding. Suppressed at source by final_update_message = false
                                   # in cuioss/pr-agent-settings; this pattern covers the ones
                                   # already posted and any recurrence if that setting is lost.
+rate_limit_class: unknown         # UNVERIFIED — no refusal of any kind observed on #103. Fail-closed
+                                  # per ADR-009: never assume a refusal is awaitable without evidence.
+rate_limit_eta_patterns:
 # severity_map: an ASSIGNMENT map, NOT a parse map — see the section below.
 severity_map:
   security_concern: high          # assigned to a finding taken from the 🔒 row
@@ -125,6 +128,22 @@ commands reference and `/ask` answers.
 Note what is deliberately **not** dropped: the `## PR Reviewer Guide 🔍` comment itself. That
 header identifies the review and carries every finding — PR-Agent has no separate marker comment,
 and matching on it would drop the entire review.
+
+## Rate-limit class — `unknown` (UNVERIFIED)
+
+**No refusal of any kind has been observed for this bot.** #103 produced a normal review, so nothing
+in the grounding source exercises a rate-limit, quota, or diff-size decline. `rate_limit_class` is
+therefore `unknown` and `rate_limit_eta_patterns` is empty — both recorded as an honest absence of
+evidence, not as a claim that this bot never refuses.
+
+`unknown` is the FAIL-CLOSED value (ADR-009): a caller must NOT enter a rate-window await for a bot
+whose refusal shape has never been seen, because awaiting a quota that does not reopen burns the full
+budget and still times out. Should a refusal ever be observed, record its OBSERVED text in
+`ignore_patterns` and reclassify this field against that evidence — do not promote it to
+`awaitable_window` on the assumption that it behaves like CodeRabbit's window.
+
+The `ignore_patterns` entry `**[Persistent review]` is NOT a refusal: it is a contentless
+"updated to latest commit" notice, which is a different class of non-finding.
 
 ## Consumer stage — classify a surviving PR-Agent finding
 

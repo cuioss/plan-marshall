@@ -671,10 +671,11 @@ def test_pr_wait_for_comments_returns_when_new_comment_arrives(monkeypatch):
     def fake_fetch(pr_number, unresolved_only=False):
         assert pr_number == 42
         # After the poll settles the handler makes ONE additional all-comments
-        # fetch (unresolved_only defaults to False) to compute the rate_limited
-        # discriminator. Tolerate that extra call: return a genuine (non
-        # rate-limit) CodeRabbit review payload so the discriminator resolves
-        # False without touching the poll-path baseline/new counting.
+        # fetch (unresolved_only defaults to False) to compute the per-bot
+        # rate_limited_bots[] discriminator. Tolerate that extra call: return a
+        # genuine (non rate-limit) bot review payload so the discriminator
+        # resolves to an empty list without touching the poll-path baseline/new
+        # counting.
         if not unresolved_only:
             return {
                 'status': 'success',
@@ -706,9 +707,11 @@ def test_pr_wait_for_comments_returns_when_new_comment_arrives(monkeypatch):
     assert result['polls'] >= 1
     # baseline + at least one poll (post-poll rate-limit fetch is not counted)
     assert call_counts['fetch'] >= 2
-    # the rate-limit discriminator is present and False for a genuine review
-    assert 'rate_limited' in result
-    assert result['rate_limited'] is False
+    # the per-bot rate-limit discriminator is present and EMPTY for a genuine
+    # review — an empty list is the positive "no registered bot is rate-limited"
+    # signal, and the key is always present so consumers can rely on it
+    assert 'rate_limited_bots' in result
+    assert result['rate_limited_bots'] == []
 
 
 def test_pr_wait_for_comments_times_out_when_no_new_comments(monkeypatch):

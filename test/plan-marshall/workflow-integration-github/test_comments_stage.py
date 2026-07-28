@@ -1081,6 +1081,16 @@ _CODERABBIT_REVIEW_LIMIT_REFUSAL = (
     'Reviews will resume once the limit resets.'
 )
 
+# Sourcery's size-limit refusal in a NOTICE-SHAPED phrasing. The OBSERVED #1014
+# wording above is deliberately invisible to the structural recognizer (asserted
+# in test_sourcery_1014_refusal_dropped_via_registry_data_layer), and the per-bot
+# rate-limit detector on the wait-return classifies on shape alone — so a body
+# the structural layer can actually see is what exercises that detector.
+_SOURCERY_SHAPED_REFUSAL = (
+    '> [!WARNING] Sourcery has reached your review limit for this pull request. '
+    'Reviews will resume once the limit resets.'
+)
+
 # An unknown / renamed bot's refusal — no registry record exists for its author,
 # so only the structural last-resort layer can recognize it.
 _UNKNOWN_BOT_REFUSAL = (
@@ -1199,14 +1209,17 @@ class TestRefusalNoticeProducerFilter:
         # The surviving finding is the genuine review (R2), never the refusal (R1).
         assert 'comment_id: R2' in q['findings'][0]['detail']
 
-    def test_detect_coderabbit_rate_limited_stays_author_scoped(self):
-        """The wait-return discriminator still considers CodeRabbit comments only.
+    def test_detect_rate_limited_bots_answers_per_registered_bot(self):
+        """The wait-return discriminator answers per REGISTERED bot, not per one bot.
 
-        Re-pointing the body classifier must not widen the SELECTION. A Sourcery
-        refusal that is the newest comment overall is ignored, because the newest
-        CODERABBIT comment is a genuine review.
+        The retired discriminator selected CodeRabbit-authored comments only, so a
+        refusing Sourcery scored negative whenever CodeRabbit's own newest comment
+        was a genuine review — the two bots' states were collapsed into one answer.
+        The registry-driven detector reports each bot independently: CodeRabbit is
+        absent because its newest comment is real feedback, while Sourcery appears
+        with the class its own registry record declares.
         """
-        from _github_pr import _detect_coderabbit_rate_limited
+        from _github_pr import _detect_rate_limited_bots
 
         comments = [
             {
@@ -1216,16 +1229,23 @@ class TestRefusalNoticeProducerFilter:
             },
             {
                 'author': 'sourcery-ai[bot]',
-                'body': _SOURCERY_1014_REFUSAL,
+                'body': _SOURCERY_SHAPED_REFUSAL,
                 'created_at': '2026-01-09T00:00:00Z',
             },
         ]
 
-        assert _detect_coderabbit_rate_limited(comments) is False
+        assert _detect_rate_limited_bots(comments) == [
+            {'bot_kind': 'sourcery', 'rate_limit_class': 'hard_quota', 'eta': ''}
+        ]
 
-    def test_detect_coderabbit_rate_limited_false_for_human_quoting_refusal(self):
-        """A human quoting a full refusal notice never trips the discriminator."""
-        from _github_pr import _detect_coderabbit_rate_limited
+    def test_detect_rate_limited_bots_ignores_human_quoting_refusal(self):
+        """A human quoting a full refusal notice never trips the discriminator.
+
+        Authorship is resolved through the registry login map, so a human author
+        belongs to no ``bot_kind`` and contributes no record no matter what their
+        comment quotes.
+        """
+        from _github_pr import _detect_rate_limited_bots
 
         comments = [
             {
@@ -1235,7 +1255,7 @@ class TestRefusalNoticeProducerFilter:
             },
         ]
 
-        assert _detect_coderabbit_rate_limited(comments) is False
+        assert _detect_rate_limited_bots(comments) == []
 
 
 # =============================================================================

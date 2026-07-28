@@ -219,9 +219,13 @@ polls: 2
 baseline_count: 1
 final_count: 2
 new_count: 1
-rate_limited: false
+
+rate_limited_bots[1]{bot_kind,rate_limit_class,eta}:
+coderabbit	awaitable_window	18 minutes
 ```
 
 `status: success` is returned even when `timed_out: true` — the caller should still proceed to fetch comments (`pr comments --unresolved-only`) and triage whatever did arrive. `status: error` is reserved for fetch/auth failures.
 
-`rate_limited` (GitHub/CodeRabbit-scoped, default `false`) is `true` when the newest CodeRabbit-bot comment on the PR is a rate-limit status notice (CodeRabbit posted a "rate limit exceeded" notice in place of a review) rather than an actual review. It is an additive discriminator — the poll behaviour and every other field are unchanged; a caller that ignores it sees identical semantics. When `true`, the just-observed comment growth is a status notice, not reviewable feedback, so the caller should wait out CodeRabbit's window rather than triaging the notice as a finding.
+`rate_limited_bots[]` (bot-agnostic, default empty) carries one `{bot_kind, rate_limit_class, eta}` record per REGISTERED reviewer bot whose newest comment on the PR is a rate-limit / service notice posted in place of a review, rather than an actual review. An empty list means no registered bot is rate-limited. It is an additive discriminator — the poll behaviour and every other field are unchanged; a caller that ignores it sees identical semantics. See [api-contract.md](api-contract.md) § "Provider Field Mapping" → `pr wait-for-comments` for the authoritative per-field contract, which this section does not restate.
+
+When the list is non-empty, the just-observed comment growth is a status notice from those bots, not reviewable feedback, so the caller should not triage the notice as a finding. Whether to WAIT for the limit to lift is decided per record by `rate_limit_class`, never uniformly: `awaitable_window` reopens on its own so awaiting the reset is productive, `hard_quota` does not reopen on a useful timescale so awaiting only burns budget, and `unknown` is the fail-closed value for a bot whose refusal shape has never been observed and MUST NOT be awaited. The example row above is illustrative of the shape — the bot set and every per-bot value are registry data, not literals in this contract.
