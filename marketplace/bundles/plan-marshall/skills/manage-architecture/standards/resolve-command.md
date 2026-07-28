@@ -187,10 +187,10 @@ command_count: 2
 unclaimed[0]:
 commands[2]{build_class,path,module,command,executable,resolution_level,bash_timeout_seconds,exceeds_bash_ceiling,execution_tier,hint}:
   compile,marketplace/bundles/plan-marshall/skills/manage-architecture/scripts/architecture.py,plan-marshall,compile,"python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args ""compile plan-marshall""",module,360,false,per_task,"Bash timeout=360000ms"
-  module-tests,test/plan-marshall/manage-architecture/test_derive_verification.py,plan-marshall,module-tests,"python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args ""module-tests plan-marshall""",module,284,false,per_task,"Bash timeout=284000ms"
+  module-tests,test/plan-marshall/manage-architecture/test_derive_verification.py,plan-marshall,module-tests,"python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args ""module-tests plan-marshall""",module,360,false,per_task,"Bash timeout=360000ms"
 ```
 
-Both rows resolve `per_task` because both keys are MEASURED and their buffered bounds stay under the ceiling — `compile` at 120 s is raised to the 330 s pyproject floor (`360` buffered), while `module-tests` at 203 s binds its own learned value (`203 × 1.25 = 254`, `284` buffered). The same two rows would resolve `orchestrator` while either key is still unmeasured — see the `execution_tier` row in [Augmented Fields](#augmented-fields).
+Both rows resolve `per_task` because both keys are MEASURED and their buffered bounds stay under the ceiling. Both also land on the same `360`, because the `max(inner_timeout, config.min_timeout)` floor clamp dominates each one's learned value: `compile` at 120 s and `module-tests` at 203 s (`203 × 1.25 = 254`) are both below the 330 s pyproject floor, so both clamp to 330 and buffer to `360`. A learned value only binds the bound once it exceeds the floor — `coverage` at 1897 s is the canonical that does, and it buffers to `1927`, above the ceiling, so it resolves `orchestrator`. The same two rows would resolve `orchestrator` while either key is still unmeasured — see the `execution_tier` row in [Augmented Fields](#augmented-fields).
 
 The `unclaimed` array lists changed paths that no `build_map` glob matched (they derive no build).
 
