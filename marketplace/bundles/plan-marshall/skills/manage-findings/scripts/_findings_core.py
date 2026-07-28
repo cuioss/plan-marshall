@@ -659,6 +659,38 @@ def add_qgate_finding(
     return {'status': 'success', 'hash_id': hash_id, 'phase': phase}
 
 
+def add_qgate_finding_checked(
+    plan_id: str,
+    phase: str,
+    source: str,
+    finding_type: str,
+    title: str,
+    detail: str,
+    **kwargs: Any,
+) -> tuple[str | None, dict[str, str] | None]:
+    """Call :func:`add_qgate_finding` and partition its outcome for a caller whose
+    finding IS the primary output — one that must never fold a rejected persist
+    into a benign-looking zero.
+
+    Every ``fetch_findings`` producer (``github_pr``, ``gitlab_pr``, ``sonar``)
+    files a producer-mismatch finding through this exact shape: call, then check
+    membership in :data:`QGATE_PERSIST_OK`, then build a ``{title, detail,
+    message}`` descriptor on rejection. Centralizing that check here removes the
+    duplicated branch from each of the three callers.
+
+    Returns ``(hash_id, None)`` when the finding reached the store, and
+    ``(None, failure)`` when the primitive REJECTED it, where ``failure`` is
+    ``{'title', 'detail', 'message'}`` carrying the finding's own content plus
+    the primitive's rejection message.
+    """
+    result = add_qgate_finding(
+        plan_id, phase, source, finding_type, title, detail, **kwargs
+    )
+    if result.get('status') not in QGATE_PERSIST_OK:
+        return None, {'title': title, 'detail': detail, 'message': str(result.get('message', ''))}
+    return result.get('hash_id'), None
+
+
 def query_qgate_findings(
     plan_id: str,
     phase: str,

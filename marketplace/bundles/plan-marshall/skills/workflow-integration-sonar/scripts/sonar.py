@@ -489,9 +489,8 @@ def cmd_fetch_findings(args):
     ``success`` — it reports the fetch, which did succeed.
     """
     from _findings_core import (
-        QGATE_PERSIST_OK,
         add_finding,
-        add_qgate_finding,
+        add_qgate_finding_checked,
     )
 
     plan_id: str = args.plan_id
@@ -638,7 +637,13 @@ def cmd_fetch_findings(args):
             f'failed_issue_keys={store_failures}'
         )
         mismatch_title = f'(producer-mismatch) sonar fetch_findings project={project}'
-        qgate_result = add_qgate_finding(
+        # The mismatch finding's whole purpose is to report that findings were
+        # lost — a rejected persist would lose it in turn, so
+        # ``add_qgate_finding_checked`` surfaces the rejection on the returned
+        # tuple instead of leaving it inferable only from ``hash_id``. The
+        # enclosing status stays ``success``: the fetch itself succeeded, and
+        # the persist failure travels as its own field.
+        qgate_hash, qgate_persist_failure = add_qgate_finding_checked(
             plan_id=plan_id,
             phase='5-execute',
             source='qgate',
@@ -646,19 +651,6 @@ def cmd_fetch_findings(args):
             title=mismatch_title,
             detail=mismatch_detail,
         )
-        # The mismatch finding's whole purpose is to report that findings were
-        # lost — a rejected persist would lose it in turn, so the rejection is
-        # surfaced on the returned dict instead of being inferred from
-        # ``hash_id`` alone. The enclosing status stays ``success``: the fetch
-        # itself succeeded, and the persist failure travels as its own field.
-        if qgate_result.get('status') not in QGATE_PERSIST_OK:
-            qgate_persist_failure = {
-                'title': mismatch_title,
-                'detail': mismatch_detail,
-                'message': str(qgate_result.get('message', '')),
-            }
-        else:
-            qgate_hash = qgate_result.get('hash_id')
 
     # 4. Verified count: the confirmed PR-scoped new-code issue total. The
     #    authoritative count is over the fetched new-code issues (the REST
