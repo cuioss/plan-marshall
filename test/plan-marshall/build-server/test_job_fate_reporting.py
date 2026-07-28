@@ -63,7 +63,7 @@ def home(tmp_path, monkeypatch) -> Path:
 
 
 @pytest.fixture
-def project(home) -> Path:
+def project(home: Path) -> Path:
     """A distinct project root the logs verb can scope to."""
     root = home / 'proj'
     root.mkdir()
@@ -89,7 +89,7 @@ def _spec(project_root: Path) -> JobSpec:
     )
 
 
-def _submit(daemon, spec: JobSpec) -> str:
+def _submit(daemon: marshalld.Daemon, spec: JobSpec) -> str:
     """Drive the submit seam synchronously — assign a job_id, journal it, audit it."""
     request = {'op': 'submit', 'job': spec.to_dict()}
     result = daemon._scheduler.submit(spec, 'root')  # enqueue only — no admit, no subprocess
@@ -142,7 +142,8 @@ def _serve_until_bind(daemon, monkeypatch) -> None:
 
 
 def _logs(project_root: Path) -> list[dict]:
-    return mbs.run_logs(Namespace(root=str(project_root), limit=None))['records']
+    records: list[dict] = mbs.run_logs(Namespace(root=str(project_root), limit=None))['records']
+    return records
 
 
 def _fate_by_job(records: list[dict]) -> dict[str, str]:
