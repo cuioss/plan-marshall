@@ -1495,12 +1495,19 @@ def _run_rate_window_check(args: Namespace) -> dict[str, Any]:
 
     record = _rate_windows(_read_store()).get(bot_kind)
     if record is None:
+        # An unclaimed window carries the SAME field set as a claimed one — a
+        # consumer polling `expired` / `seconds_remaining` must not have to
+        # branch on whether the record exists yet. `expires_at` is None (no
+        # window), matching the sibling absent-value fields above it.
         return {
             'status': 'free',
             'plan_id': plan_id,
             'bot_kind': bot_kind,
             'holder': None,
             'pr_number': None,
+            'expires_at': None,
+            'seconds_remaining': 0.0,
+            'expired': True,
             'attempts': 0,
             'attempt_cap': _RECOVERY_ATTEMPT_CAP,
             'attempts_remaining': _RECOVERY_ATTEMPT_CAP,

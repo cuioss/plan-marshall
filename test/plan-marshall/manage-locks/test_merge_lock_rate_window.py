@@ -284,6 +284,23 @@ class TestRateWindowCheck:
         assert result['attempts'] == 0
         assert not isolated_base['queue_path'].exists()
 
+    def test_unclaimed_check_carries_the_same_field_set_as_a_claimed_one(
+        self, isolated_base: dict
+    ) -> None:
+        """Schema parity, derived from the claimed-branch population rather than a
+        hand-listed key set: a consumer polling ``expired`` / ``seconds_remaining``
+        must not KeyError just because the window was never claimed. The
+        SKILL.md ``rate-window check`` contract lists those fields
+        unconditionally."""
+        unclaimed = _check('plan-a')
+        _claim('plan-a')
+        claimed = _check('plan-a')
+
+        assert set(unclaimed) == set(claimed), unclaimed
+        assert unclaimed['expired'] is True
+        assert unclaimed['seconds_remaining'] == 0.0
+        assert unclaimed['expires_at'] is None
+
     def test_check_does_not_mutate_the_store(self, isolated_base: dict) -> None:
         _claim('plan-a')
         before = _read_store(isolated_base['queue_path'])
