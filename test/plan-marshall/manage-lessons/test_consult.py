@@ -27,9 +27,10 @@ from argparse import Namespace
 from unittest.mock import patch
 
 from _lessons_helpers import SCRIPT_PATH, cmd_consult
-from conftest import run_script
 from constants import DIR_LESSONS
 from toon_parser import parse_toon
+
+from conftest import run_script
 
 # Real lesson IDs, taken verbatim from live ``manage-lessons list --component
 # plan-marshall:phase-3-outline`` output.
