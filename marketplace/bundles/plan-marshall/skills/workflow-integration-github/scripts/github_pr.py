@@ -199,10 +199,17 @@ def _is_obvious_noise(body: str, bot_kind: str | None = None) -> bool:
     1. SHARED — the bot-agnostic ``ignore`` regexes (lgtm, approved, ``[bot]``
        signatures, …) matched case-insensitively against the lowered body.
     2. PER-BOT — when ``bot_kind`` is a known reviewer bot, that bot's registry
-       ``ignore_patterns`` (literal whole-comment markers) matched as
-       case-sensitive substrings against the raw body. These markers are exact
-       fragments the bot emits (a walkthrough heading, a marketing footer, a
-       no-op review line), so only that bot's own comments are dropped.
+       ``ignore_patterns`` and ``refusal_patterns`` (literal whole-comment
+       markers) matched as case-sensitive substrings against the raw body. These
+       markers are exact fragments the bot emits, so only that bot's own comments
+       are dropped. Both lists drop the comment, but they answer DIFFERENT
+       questions and are deliberately separate fields: ``ignore_patterns`` names
+       routine sections of a *successful* review (a walkthrough heading, a
+       marketing footer, a no-op review line), while ``refusal_patterns`` names
+       the notices a bot posts when it DECLINES to review — positive evidence of
+       non-participation that ``_detect_rate_limited_bots`` also reads. Reusing
+       ``ignore_patterns`` for refusal detection would classify every ordinary
+       successful review as a refusal, which is why the split exists.
 
     Two further pipeline-noise classes are folded in ahead of the two layers,
     both reusing existing data sources rather than new patterns:
@@ -250,7 +257,8 @@ def _is_obvious_noise(body: str, bot_kind: str | None = None) -> bool:
     if any(p.search(body_lower) for p in _COMPILED_IGNORE):
         return True
     if bot_kind:
-        return any(marker in body for marker in bot_registry.ignore_patterns(bot_kind))
+        markers = bot_registry.ignore_patterns(bot_kind) + bot_registry.refusal_patterns(bot_kind)
+        return any(marker in body for marker in markers)
     return False
 
 
@@ -352,6 +360,34 @@ def _existing_pr_comment_keys(query_findings, plan_id: str) -> set[tuple[str, st
     return keys
 
 
+def _has_update_movement(comment: dict, existing_keys: set[tuple[str, str]], bot_kind: str) -> bool:
+    """Return True when ``comment`` shows first presence or ``updated_at`` movement.
+
+    The evidence qualifier for a bot that re-reviews by EDITING one persistent
+    comment in place instead of posting a new one. Such a comment's continued
+    existence proves only that the bot reviewed at some earlier HEAD, so crediting
+    it on presence alone would silently score a stale review as a fresh one after a
+    force-push. Movement is established two ways, either of which suffices:
+
+    - **First presence** — the comment is not yet in the plan's recorded
+      ``(bot_kind, comment_id)`` key set, so this run is observing it for the first
+      time. The bot posted it during this review cycle.
+    - **``updated_at`` movement** — the comment carries an ``updated_at`` that
+      differs from its ``created_at``, so it has been edited since it was posted.
+
+    A comment the store already knows about, whose ``updated_at`` has not moved,
+    yields False: no new review was observed. An absent ``updated_at`` degrades to
+    "no movement" rather than being read as movement — the fail-closed direction,
+    since crediting an unverified review is the expensive error.
+    """
+    comment_id = str(comment.get('id') or 'unknown')
+    if (bot_kind, comment_id) not in existing_keys:
+        return True
+    updated_at = str(comment.get('updated_at') or '')
+    created_at = str(comment.get('created_at') or '')
+    return bool(updated_at) and updated_at != created_at
+
+
 def cmd_fetch_findings(args):
     """Producer-side FIND verb: fetch + pre-filter + file one finding per surviving comment.
 
@@ -377,12 +413,21 @@ def cmd_fetch_findings(args):
     The enclosing ``status`` stays ``success`` — it reports the fetch, which did
     succeed.
 
-    ``responded_bots``: the sorted, de-duplicated list of non-None ``bot_kind``
-    values derived (via ``bot_kind_for_author``) from EVERY raw fetched comment —
-    computed BEFORE any noise / duplicate / resolved filtering. A bot whose
-    comments were entirely filtered as noise (so ``count_stored`` is 0 for it) or
-    entirely already-resolved still appears here, so the completeness guard can
-    treat it as a *settled* (heard-from) bot rather than an ``unfetched`` one.
+    ``participated_bots``: the EVIDENCE-TYPED participation set — one
+    ``{bot_kind, evidence_kind}`` record per bot proven to have reviewed this diff,
+    computed BEFORE any noise / duplicate / resolved filtering (so a bot whose
+    comments were entirely noise-filtered or entirely already-resolved is still
+    credited). A bot qualifies only when an observed comment's ``kind`` is one of
+    the publish shapes its registry record declares in ``participation_evidence``
+    — the mere presence of some comment resolving to its login is NOT evidence.
+    For a bot whose record sets ``participation_requires_update`` (it re-reviews by
+    editing one persistent comment in place) the record additionally requires first
+    presence or observed ``updated_at`` movement, so a stale unchanged comment
+    cannot credit it with reviewing code it never saw.
+
+    A bot declaring no evidence shape resolves FAIL-CLOSED — it can never be proven
+    a participant. This proves PARTICIPATION only, never review QUALITY: the
+    consumer must not read a satisfied participation set as a reviewed diff.
 
     ``unclassified_bots``: the sorted list of bot_kinds that participated but
     appear in NEITHER ``--required-bots`` nor ``--optional-bots``. Per the
@@ -424,18 +469,6 @@ def cmd_fetch_findings(args):
     raw_comments: list[dict] = fetch_result.get('comments') or []
     count_fetched = len(raw_comments)
 
-    # Responded-bots signal for the completeness guard: the distinct non-None
-    # bot_kinds present across EVERY raw fetched comment, derived BEFORE any
-    # noise / duplicate / resolved filtering. A bot whose comments were all
-    # noise-filtered (count_stored 0) or all already-resolved still appears here,
-    # so the guard can treat it as heard-from (settled) rather than unfetched.
-    # Human comments (bot_kind None) are excluded.
-    responded_set: set[str] = set()
-    for _comment in raw_comments:
-        _bot_kind = bot_kind_for_author(_comment.get('author') or 'unknown')
-        if _bot_kind:
-            responded_set.add(_bot_kind)
-
     # Cross-iteration phantom-loop guard: a resolution from a prior finalize
     # iteration cannot always be matched back to the comment on the next fetch
     # (``review_body`` comments carry no ``thread_id``, and even thread-bearing
@@ -446,6 +479,37 @@ def cmd_fetch_findings(args):
     # findings (regardless of resolution state) and skip any comment — from any
     # bot kind, thread-bearing or not — whose key is already present.
     existing_comment_keys = _existing_pr_comment_keys(query_findings, plan_id)
+
+    # Participation signal for the completeness guard, derived BEFORE any noise /
+    # duplicate / resolved filtering so a bot whose comments were all
+    # noise-filtered (count_stored 0) or all already-resolved is still credited.
+    #
+    # Participation is EVIDENCE-TYPED, not presence-typed: the mere existence of
+    # some comment resolving to a bot's login proves nothing about whether that
+    # bot reviewed this diff. A bot is recorded as a participant only when an
+    # observed comment's ``kind`` is one of the publish shapes that bot's registry
+    # record declares in ``participation_evidence``, and — for a bot that
+    # re-reviews by editing one persistent comment in place
+    # (``participation_requires_update``) — only when first presence or
+    # ``updated_at`` movement is actually observed, since a stale unchanged
+    # comment proves only that the bot reviewed some EARLIER HEAD.
+    #
+    # A bot declaring no evidence shape resolves fail-closed: it can never be
+    # proven a participant. There is no bot-name literal here — the evidence
+    # shapes and the update requirement are registry data.
+    participated: dict[str, str] = {}
+    for _comment in raw_comments:
+        _bot_kind = bot_kind_for_author(_comment.get('author') or 'unknown')
+        if not _bot_kind or _bot_kind in participated:
+            continue
+        _kind = _comment.get('kind') or 'inline'
+        if _kind not in bot_registry.participation_evidence(_bot_kind):
+            continue
+        if bot_registry.participation_requires_update(_bot_kind) and not _has_update_movement(
+            _comment, existing_comment_keys, _bot_kind
+        ):
+            continue
+        participated[_bot_kind] = _kind
 
     # Stamp every finding with the PR HEAD SHA at ingestion time so re-review
     # matching can tell whether HEAD has advanced past the reviewed commit.
@@ -602,7 +666,9 @@ def cmd_fetch_findings(args):
         'count_skipped_noise': skipped_noise,
         'count_skipped_duplicate': skipped_duplicate,
         'count_stored': count_stored,
-        'responded_bots': sorted(responded_set),
+        'participated_bots': [
+            {'bot_kind': bot, 'evidence_kind': participated[bot]} for bot in sorted(participated)
+        ],
         'unclassified_bots': sorted(unclassified_set),
         'stored_hash_ids': stored_hashes,
         'producer_mismatch_hash_id': qgate_hash,

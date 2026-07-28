@@ -15,8 +15,9 @@ bot appears in neither list, with a warning recorded. See
 The fenced-YAML block below is the machine-readable per-bot record. It is data, not frontmatter —
 a fenced code block that plugin-doctor treats as an example, not an executable directive. Consumers
 read `bot_kind`, `author_login`, `trigger_comment`, `completion_check_name`, `honors_skip_label`,
-`ignore_patterns`, `rate_limit_class`, `rate_limit_eta_patterns`, and `severity_map` from it; the
-prose sections that follow carry the rationale.
+`participation_evidence`, `participation_requires_update`, `ignore_patterns`, `refusal_patterns`,
+`rate_limit_class`, `rate_limit_eta_patterns`, and `severity_map` from it; the prose sections that
+follow carry the rationale.
 
 ```yaml
 bot_kind: coderabbit
@@ -24,6 +25,10 @@ author_login: coderabbitai
 trigger_comment: "@coderabbitai review"
 completion_check_name: "CodeRabbit"   # in-progress check-run polled to completion by the wait step
 honors_skip_label: true          # central cuioss/coderabbit config skips PRs labelled skip-bot-review
+participation_evidence:          # the publish shapes that prove THIS bot reviewed
+  - review_body                  # its review summary comment
+  - inline                       # its per-line review comments
+participation_requires_update: false   # each review appends new comments; presence IS the movement
 ignore_patterns:
   - "<!-- This is an auto-generated comment: summarize by coderabbit.ai -->"  # walkthrough / summary
   - "## Walkthrough"                                                          # walkthrough heading
@@ -32,6 +37,7 @@ ignore_patterns:
   - "<!-- tips_start -->"                                                     # tips block
   - "@coderabbitai help"                                                      # command help echo
   - "✏️ Learnings added"                                                      # learnings-only reply
+refusal_patterns:
   - "Review limit reached"                                                    # current refusal notice — posted in place of a review
 rate_limit_class: awaitable_window   # the review limit is a rolling window that reopens on its own
 rate_limit_eta_patterns:
@@ -78,8 +84,21 @@ finding: the walkthrough / summary issue comment, no-op reviews (`No actionable 
 generated`), marketing / tips, learnings-only replies, and bot self-acknowledgement replies (login
 `coderabbitai` + reply-to-human + no `cr-indicator-types` marker). Do **not** ignore inline review
 comments that carry a `cr-indicator-types` marker — those are the signal.
-The refusal notice (`Review limit reached`) is likewise a whole-comment drop: CodeRabbit posts it
-*in place of* a review, so it carries no finding to extract.
+The refusal notice (`Review limit reached`) is likewise a whole-comment drop, but it is declared in
+the separate `refusal_patterns` list rather than in `ignore_patterns`: CodeRabbit posts it *in place
+of* a review, so it carries no finding to extract AND it is positive evidence the bot declined. The
+two lists must stay distinct — `ignore_patterns` here lists sections of a *successful* review
+(`## Walkthrough`, `✏️ Learnings added`), so reusing it for refusal detection would classify
+CodeRabbit's ordinary successful reviews as refusals.
+
+## Participation evidence — `review_body`, `inline`
+
+CodeRabbit publishes both a review summary and per-line comments, so either shape is evidence it
+reviewed this diff. Each review appends new comments rather than editing one in place, which is why
+`participation_requires_update` is `false` — a newly-observed comment of either kind is itself the
+movement. Note the ceiling this evidence carries: it proves CodeRabbit *participated*, never that
+the review was good. See [`bot-participation-contract.md`](bot-participation-contract.md) §
+"Evidence taxonomy".
 
 ## Rate-limit class — `awaitable_window`
 
@@ -94,7 +113,7 @@ then generates a fresh trigger event; see `../SKILL.md` § "Rate-limit refusal r
 The notice usually states its own reset time; `rate_limit_eta_patterns` extracts it so the caller
 can report a concrete ETA instead of an opaque "rate-limited". The patterns are *extraction* regexes,
 not detection regexes — detection is the bot-agnostic recogniser in `_github_pr._is_rate_limit_notice`
-paired with the `ignore_patterns` data layer above. A notice that states no ETA simply yields an empty
+paired with the `refusal_patterns` data layer above. A notice that states no ETA simply yields an empty
 `eta`, which the caller reports as unknown rather than as "reopens now".
 
 ## Consumer stage — classify a surviving CodeRabbit finding

@@ -181,10 +181,23 @@ def _detect_rate_limited_bots(comments: list[dict]) -> list[dict]:
     authored (resolving each comment's author through
     :func:`github_re_review.bot_kind_for_author`, which owns the ``[bot]``-suffix
     stripping and case-insensitive matching), pick that bot's newest comment by
-    ``created_at``, and classify its body with the bot-agnostic
-    :func:`_is_rate_limit_notice` recognizer. No bot-name literal appears in this
-    path — the bot set, each bot's login, its rate-limit class, and its ETA
-    phrasings are all registry data.
+    ``created_at``, and classify its body through BOTH refusal-recognition layers.
+    No bot-name literal appears in this path — the bot set, each bot's login, its
+    refusal markers, its rate-limit class, and its ETA phrasings are all registry
+    data.
+
+    **Both layers, because neither is a superset of the other.** A body is that
+    bot's refusal when EITHER its registry ``refusal_patterns`` match (the data
+    layer — the bot's own OBSERVED refusal text) OR the bot-agnostic
+    :func:`_is_rate_limit_notice` recognizer matches (the structural last-resort
+    layer). The data layer is load-bearing here, not redundant: Sourcery's only
+    observed refusal ("your pull request is larger than the review limit of …") is
+    invisible to the structural recognizer, because "larger than the review limit
+    of" is a comparison rather than an "exceeded / reached / hit" statement. The
+    structural layer in turn covers an unregistered bot or a phrasing not yet filed
+    in the registry. ``refusal_patterns`` is deliberately NOT ``ignore_patterns``:
+    the latter lists routine sections of a *successful* review, so reading it here
+    would report every reviewing bot as refusing.
 
     Each detected bot yields ``{bot_kind, rate_limit_class, eta}``:
 
@@ -218,7 +231,8 @@ def _detect_rate_limited_bots(comments: list[dict]) -> list[dict]:
             continue
         newest = max(bot_comments, key=lambda c: str(c.get('created_at') or ''))
         body = str(newest.get('body') or '')
-        if not _is_rate_limit_notice(body):
+        matched_registry = any(marker in body for marker in bot_registry.refusal_patterns(bot_kind))
+        if not matched_registry and not _is_rate_limit_notice(body):
             continue
         detected.append(
             {

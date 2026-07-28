@@ -74,6 +74,99 @@ it matters*:
 - An **optional** bot resolving to any member never blocks.
 - Any bot resolving to `participated_but_empty` is accounted-for regardless of classification.
 
+## Evidence taxonomy
+
+Participation is **evidence-typed, not presence-typed.** The mere existence of a comment resolving to
+a bot's login proves nothing about whether that bot reviewed *this diff* — it may be a help reply, a
+stale comment from an earlier HEAD, or a marketing footer. A bot counts as a participant only when an
+observed comment's `kind` is one of the publish shapes its own registry doc declares in
+`participation_evidence`.
+
+### What counts as evidence, per publish shape
+
+| Publish shape | Counts as evidence because | Declared by |
+|---------------|---------------------------|-------------|
+| `inline` | A per-line comment can only be produced by reading the diff at that line. | CodeRabbit |
+| `review_body` | The bot's review summary is emitted by a completed review pass over the diff. | CodeRabbit, Sourcery |
+| `issue_comment` | For a bot whose ONLY publish shape is a PR-level comment, that comment *is* its review artifact. | PR-Agent |
+
+The vocabulary is **closed to publish shapes**, and that closure is what enforces the diff-derived
+rule below: a publish shape is an artifact the bot produced against the diff, so anything without one
+has no admissible evidence kind at all.
+
+A bot whose `participation_evidence` is **empty resolves fail-closed** — it can never be *proven* a
+participant, and is reported as `absent` rather than silently credited.
+
+### Why a check-run state is not evidence
+
+A check-run reports that a *job ran*, not that a *review was published*. The two come apart in both
+directions, so reading check state as participation is wrong regardless of which way it errs:
+
+- **False negative.** PR-Agent posts **no check-run at all** and submits **no review object** — it
+  publishes exactly one persistent Guide comment. Scoring it on check state would mark it absent on
+  every run no matter how well it reviewed.
+- **False positive.** A check-run can conclude successfully having posted nothing, or having posted
+  only a refusal. A green check is not a published review.
+
+Evidence is therefore taken from observed publish shapes only. Check state remains useful for the
+*orthogonal* question of whether a bot's review window is still open (`in_progress` in the failure
+taxonomy above) — that is a timing signal, not participation evidence.
+
+### Evidence for a bot that edits one comment in place
+
+A bot that re-reviews by **editing its single persistent comment** rather than posting a new one
+declares `participation_requires_update: true`. For such a bot the comment's continued existence
+proves only that it reviewed **once, at some earlier HEAD** — after a force-push the unchanged
+comment would silently credit it with reviewing code it never saw. Its evidence therefore requires
+either **first presence** (the comment is newly observed) or observed **`updated_at` movement`**.
+
+## Participation is not review quality
+
+The quorum proves that every required bot **participated**. It never proves the diff was **reviewed
+well**, or reviewed meaningfully at all. This ceiling is measured, not theoretical: on #1027 PR-Agent
+published its Guide — valid participation under its record — while reporting "no major issues" on a
+diff in which CodeRabbit found two Major defects.
+
+**A satisfied quorum MUST NOT be rendered as a reviewed diff.** Every consumer of the participation
+verdict is bound by that: the predicate's own envelope carries `proves: participation_only` so the
+claim is machine-readable and cannot be read as a quality statement by accident.
+
+Three obligations follow, and they are **normative**, not advisory. They exist because the PR body
+carries a distilled **Intent** section, and an Intent section is precisely the kind of input that can
+make a shallow review *look* like a real one.
+
+### Obligation 1 — classify intent-echo as participation, not review
+
+A review whose content only **restates or endorses the stated intent** — "this correctly implements
+the described change", "looks consistent with the stated goal" — resolves to
+`participated_but_empty`. It is participation: the bot ran and said something. It is **never a
+satisfied review obligation**, because echoing the intent demonstrates no engagement with the diff.
+Crediting an intent-echo as a review would let a PR pass the gate on the strength of its own
+description.
+
+### Obligation 2 — an Intent section must never make a review read cleaner
+
+The participation predicate MUST NOT become **more permissive** on a PR whose body carries an Intent
+section. An empty review, or a conformance-only review ("matches the stated intent"), must resolve to
+exactly the same state it would resolve to on a PR with no Intent section at all.
+
+This is a **parity requirement, discharged by a parity test**: the predicate's verdict for a given
+set of observed review artifacts must be **identical-or-stricter** with the Intent section present
+than without it. A prose assurance does not discharge it — the test is what proves the predicate did
+not quietly soften.
+
+### Obligation 3 — only diff-derived evidence discharges a review obligation
+
+Evidence must be **diff-derived**. A **body-derived signal — anything a reviewer could have produced
+by reading the PR description alone** — cannot discharge a review obligation, no matter how confident
+or well-formed it is.
+
+This is enforced structurally rather than asserted in prose: the admissible evidence vocabulary is
+closed to the publish shapes in the table above, and the PR body is not a publish shape. A
+body-derived signal therefore carries **no admissible evidence kind** and cannot be laundered into
+the participation set. Unqualified presence (a bare `bot_kind` with no evidence kind) is rejected for
+the same reason.
+
 ## Detecting a refusal
 
 A refusal is recognised from each bot's own registry doc (`standards/{bot_kind}.md`), via that doc's
@@ -94,8 +187,8 @@ default — a refusal is only ever claimed on positive evidence.
 | Consumer | What it reads |
 |----------|---------------|
 | `automatic-review/SKILL.md` | Both lists, to drive the completion-aware poll, the re-review trigger set, and the step-done guard. |
-| `github_pr fetch_findings` | Both lists, to classify each ingested comment and emit the unclassified-bot warning. |
-| `review_completeness check` | `required_bots` for the quorum; `optional_bots` for reporting only. |
+| `github_pr fetch_findings` | Both lists, to classify each ingested comment and emit the unclassified-bot warning; each bot's `participation_evidence` / `participation_requires_update`, to derive the evidence-typed `participated_bots[]`. |
+| `review_completeness check` | `required_bots` for the quorum; `optional_bots` for reporting only; `participation_evidence` to admit each evidence pair; `rate_limit_class` to split the two refusal states. |
 | `marshall-steward` | Both lists, to ask the wizard question and record the provenance. |
 
 See [`../SKILL.md`](../SKILL.md) for the step body that applies this contract and

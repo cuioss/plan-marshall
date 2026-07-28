@@ -35,8 +35,9 @@ Sample size is **one review** — see "Signal calibration" below before generali
 
 The fenced-YAML block below is the machine-readable per-bot record. It is data, not frontmatter.
 Consumers read `bot_kind`, `author_login`, `trigger_comment`, `completion_check_name`,
-`honors_skip_label`, `ignore_patterns`, `rate_limit_class`, `rate_limit_eta_patterns`, and
-`severity_map` from it; the prose sections carry the rationale.
+`honors_skip_label`, `participation_evidence`, `participation_requires_update`, `ignore_patterns`,
+`refusal_patterns`, `rate_limit_class`, `rate_limit_eta_patterns`, and `severity_map` from it; the
+prose sections carry the rationale.
 
 ```yaml
 bot_kind: pr-agent
@@ -50,6 +51,15 @@ completion_check_name: ""         # CONFIRMED on #103 — absent from `ci pr rev
 honors_skip_label: true           # UNVERIFIED — #103 carried no skip label, so this was not
                                   # exercised. Kept because it is enforced by the reusable
                                   # workflow's if: guard, NOT by bot config (see "Central config")
+# participation_evidence: issue_comment ONLY. CONFIRMED on #103 — this bot publishes exactly one
+# persistent Guide comment, submits NO review object, and posts NO check-run. Neither an
+# inline-comment count nor a check-run state is evidence for this bot: it produces neither, so
+# reading either would score it absent on every run. See "Participation evidence" below.
+participation_evidence:
+  - issue_comment                 # the single persistent `## PR Reviewer Guide 🔍` comment
+participation_requires_update: true   # a re-review EDITS that same comment in place, so continued
+                                  # presence proves only that it reviewed once, at some earlier HEAD.
+                                  # Evidence therefore requires first presence OR updated_at movement.
 # ignore_patterns: CONFIRMED on #103 — the first two did not fire, and neither
 # wrongly dropped the review.
 ignore_patterns:
@@ -60,6 +70,9 @@ ignore_patterns:
                                   # finding. Suppressed at source by final_update_message = false
                                   # in cuioss/pr-agent-settings; this pattern covers the ones
                                   # already posted and any recurrence if that setting is lost.
+refusal_patterns:                 # EMPTY — no refusal of any kind observed on #103. Fail-closed: a
+                                  # refusal is never claimed without positive evidence, so this bot's
+                                  # non-participation resolves to absent / in_progress, never refused.
 rate_limit_class: unknown         # UNVERIFIED — no refusal of any kind observed on #103. Fail-closed
                                   # per ADR-009: never assume a refusal is awaitable without evidence.
 rate_limit_eta_patterns:
@@ -215,7 +228,30 @@ persistent comment of kind `issue_comment`, and submits no GitHub *review* objec
    trigger. That is weaker evidence than a review match, and the envelope says so rather than
    implying the new HEAD was reviewed.
 
-Both handlers are **generic across the registry**, not PR-Agent special cases: every bot's
+## Participation evidence — `issue_comment` ONLY, plus update movement
+
+This bot's publish shape is the narrowest in the registry, and getting its evidence wrong is
+consequential in both directions:
+
+- **`issue_comment` is the only evidence.** PR-Agent publishes exactly one persistent
+  `## PR Reviewer Guide 🔍` comment. It submits **no review object** and posts **no check-run**, so
+  **neither an inline-comment count nor a check-run state is evidence for this bot** — it produces
+  neither, and reading either would score it absent on every single run no matter how well it
+  reviewed. That is the false-negative direction.
+- **Presence alone is not enough — the update must move.** A re-review **edits that same comment in
+  place** rather than posting a new one. Its continued existence therefore proves only that PR-Agent
+  reviewed *once*, at some earlier HEAD; after a force-push the stale Guide would silently credit
+  the bot with reviewing code it never saw. That is the false-positive direction, and
+  `participation_requires_update: true` closes it: evidence requires either **first presence** (the
+  comment is newly observed) or observed **`updated_at` movement**.
+
+The evidence proves PR-Agent *participated*, never that its review was good. This bot is the
+motivating case for that ceiling: on #1027 it posted its Guide — valid participation under this
+record — while reporting "no major issues" on a diff in which CodeRabbit found two Major defects. A
+satisfied quorum is not a reviewed diff. See
+[`bot-participation-contract.md`](bot-participation-contract.md) § "Evidence taxonomy".
+
+Both handlers above are **generic across the registry**, not PR-Agent special cases: every bot's
 `review_body` findings are equally thread-less, and every bot's issue comment is equally valid
 evidence that it responded. See
 [`workflow-integration-github` SKILL.md](../../workflow-integration-github/SKILL.md) for the
