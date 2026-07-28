@@ -674,7 +674,7 @@ def test_qgate_mechanical_emit_writes_findings(plan_context):
 
 def _seed_one_coverage_failure(plan_context, slug: str) -> Path:
     """Seed a plan whose only mechanical failure is one uncovered deliverable."""
-    plan_dir = plan_context.plan_dir_for(slug)
+    plan_dir: Path = plan_context.plan_dir_for(slug)
     _write_outline(
         plan_dir,
         [

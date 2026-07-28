@@ -68,7 +68,7 @@ _EXCESS_FILES = [f'extra/{i}.py' for i in range(6)]
 
 def _seed_plan(plan_context, plan_id: str) -> Path:
     """Seed a plan whose residual file-set exceeds the default threshold."""
-    plan_dir = plan_context.plan_dir_for(plan_id)
+    plan_dir: Path = plan_context.plan_dir_for(plan_id)
     (plan_dir / 'references.json').write_text(
         json.dumps({'plan_creation_sha': 'deadbeef', 'affected_files': ['src/a.py']}),
         encoding='utf-8',
