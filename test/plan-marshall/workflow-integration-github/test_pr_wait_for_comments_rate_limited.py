@@ -1,29 +1,36 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the ``rate_limited`` discriminator on ``pr wait-for-comments``.
+"""Tests for the ``rate_limited_bots[]`` discriminator on ``pr wait-for-comments``.
 
-``cmd_pr_wait_for_comments`` (in ``_github_pr.py``, dispatched via
-``github_ops``) surfaces an additive ``rate_limited: true|false`` field: after
-the poll settles it inspects the newest CodeRabbit-bot comment for a rate-limit
-status notice. Comment SELECTION stays provider-scoped (GitHub/CodeRabbit —
-author-scoped, newest by ``created_at``); the body CLASSIFIER is the shared
-bot-agnostic ``_is_rate_limit_notice``, which requires BOTH a limit-exceeded
-statement AND a notice shape (callout / limit heading / service tail). The
-discriminator must never alter the pre-existing poll fields (``timed_out`` /
-``new_count`` / …).
+``cmd_pr_wait_for_comments`` (in ``_github_pr.py``, dispatched via ``github_ops``)
+surfaces a ``rate_limited_bots[]`` field: after the poll settles it inspects EVERY
+REGISTERED bot's newest comment for a rate-limit status notice and returns one
+``{bot_kind, rate_limit_class, eta}`` record per detected bot. A single boolean
+cannot carry that answer: it collapses a three-bot pipeline into one
+CodeRabbit-shaped verdict, leaving a rate-limited Sourcery or PR-Agent invisible.
+
+The generalization is registry-driven end to end and carries NO bot-name literal
+in the detection path:
+
+- the bot set and each bot's login come from ``bot_registry`` (resolved through
+  ``github_re_review.bot_kind_for_author``, which owns ``[bot]``-suffix stripping);
+- ``rate_limit_class`` is registry data (``awaitable_window`` / ``hard_quota``),
+  fail-closed to ``unknown`` for a bot that declares none (ADR-009);
+- ``eta`` is extracted with that bot's registry ``rate_limit_eta_patterns``, and is
+  ``''`` when the bot declares none or its notice states none;
+- body CLASSIFICATION stays the shared bot-agnostic ``_is_rate_limit_notice``,
+  which requires BOTH a limit-exceeded statement AND a notice shape.
 
 Scope (AAA against fixture comment payloads):
-    - newest bot comment is a rate-limit status notice → rate_limited: true
-      (fixture uses the FLATTENED production body shape — see _RATE_LIMIT_NOTICE)
-    - CodeRabbit's CURRENT ``Review limit reached`` refusal → rate_limited: true
-      (the phrasing the retired CodeRabbit-exact marker island missed)
-    - newest bot comment is a genuine review          → rate_limited: false
-    - no bot comment / empty comment list             → rate_limited: false
-    - a newer genuine review supersedes an older notice → rate_limited: false
-    - a bot review carrying only the body sentence (no notice shape) →
-      rate_limited: false
-    - author-scoped newest-comment selection and the pre-existing
-      timed_out / new_count fields are unchanged by the re-pointing
+    - a NON-CodeRabbit bot's rate-limit notice is detected, with its own class
+    - a bot whose registry record declares no class fails closed to ``unknown``
+    - CodeRabbit's notice yields its registry-extracted ``eta``
+    - several bots rate-limited at once each yield their own record
+    - per-bot newest-by-``created_at`` selection: a newer genuine review from the
+      SAME bot supersedes that bot's older notice, without hiding another bot
+    - a genuine review merely mentioning a rate limit in prose is NOT a notice
+    - human comments never contribute a record
+    - the pre-existing poll fields (``timed_out`` / ``new_count`` / …) are unchanged
 
 Tests never shell out to the real ``gh`` CLI: ``check_auth``,
 ``fetch_pr_comments_data``, and ``poll_until`` are monkeypatched so the handler
@@ -39,30 +46,28 @@ def _ok_auth():
     return True, ''
 
 
-# A CodeRabbit rate-limit status notice (posted in place of a review), in the
-# FLATTENED shape the detector actually sees. ``fetch_pr_comments_data`` collapses
-# every comment body's newlines to spaces before ``_detect_coderabbit_rate_limited``
-# inspects it, so the ``## Rate limit exceeded`` heading no longer sits at a line
-# start — it appears mid-body after the ``> [!WARNING]`` callout prefix. Using the
-# flattened production shape here proves the heading marker fires WITHOUT relying
-# on a ``^``/``re.MULTILINE`` line-start anchor (which could only match at offset 0
-# on a single-line body and therefore never fired against a real notice).
-_RATE_LIMIT_NOTICE = {
+# --- CodeRabbit (registry class: awaitable_window, declares ETA patterns) ----
+#
+# The FLATTENED body shape the detector actually sees: ``fetch_pr_comments_data``
+# collapses every comment body's newlines to spaces before classification, so the
+# ``## Rate limit exceeded`` heading sits mid-body after the ``> [!WARNING]``
+# callout prefix rather than at a line start. The trailing "Please wait N minutes
+# and M seconds before requesting another review" sentence is what CodeRabbit's
+# registry ``rate_limit_eta_patterns`` extract.
+_CODERABBIT_NOTICE = {
     'author': 'coderabbitai[bot]',
     'body': (
         '> [!WARNING] > ## Rate limit exceeded > '
         '@octocat has exceeded the limit for the number of commits or files '
-        'that can be reviewed per hour. Please wait before requesting another review.'
+        'that can be reviewed per hour. Please wait 12 minutes and 30 seconds '
+        'before requesting another review.'
     ),
     'created_at': '2026-01-02T00:00:00Z',
 }
 
-# CodeRabbit's CURRENT refusal notice — the phrasing the retired CodeRabbit-exact
-# marker island MISSED. It carries neither the old ``## Rate limit exceeded``
-# heading nor the ``exceeded the limit for the number of`` body sentence, so the
-# two-marker island scored it False. The shared recognizer matches it on a
-# limit-exceeded statement (``Review limit reached``) paired with a notice shape.
-_REVIEW_LIMIT_REACHED_NOTICE = {
+# CodeRabbit's CURRENT refusal phrasing — no ``## Rate limit exceeded`` heading and
+# no ``exceeded the limit for the number of`` sentence, and no stated reset time.
+_CODERABBIT_REVIEW_LIMIT_REACHED = {
     'author': 'coderabbitai[bot]',
     'body': (
         '> [!WARNING] > ## Review limit reached > '
@@ -73,9 +78,30 @@ _REVIEW_LIMIT_REACHED_NOTICE = {
 }
 
 # A genuine CodeRabbit review comment (actual feedback, not a status notice).
-_GENUINE_REVIEW = {
+_CODERABBIT_GENUINE_REVIEW = {
     'author': 'coderabbitai[bot]',
     'body': 'Actionable comments posted: 2. Consider extracting the helper in foo().',
+    'created_at': '2026-01-02T00:00:00Z',
+}
+
+# --- Sourcery (registry class: hard_quota, declares NO ETA patterns) ---------
+_SOURCERY_NOTICE = {
+    'author': 'sourcery-ai[bot]',
+    'body': (
+        '> [!WARNING] Sourcery has reached your review limit for this pull request. '
+        'Reviews will resume once the limit resets.'
+    ),
+    'created_at': '2026-01-02T00:00:00Z',
+}
+
+# --- PR-Agent (registry class: absent -> fail-closed ``unknown``) ------------
+_PR_AGENT_NOTICE = {
+    'author': 'cuioss-review-bot',
+    'body': (
+        '> [!WARNING] The review request could not be served: this account has '
+        'exceeded the limit for the number of commits or files that can be '
+        'reviewed. Please try again later.'
+    ),
     'created_at': '2026-01-02T00:00:00Z',
 }
 
@@ -115,109 +141,163 @@ def _wire(monkeypatch, *, post_comments):
     monkeypatch.setattr(github_ops, 'poll_until', fake_poll)
 
 
-def test_rate_limit_notice_sets_rate_limited_true(monkeypatch):
-    _wire(monkeypatch, post_comments=[_HUMAN_COMMENT, _RATE_LIMIT_NOTICE])
+def _records_by_kind(result):
+    return {record['bot_kind']: record for record in result['rate_limited_bots']}
+
+
+def test_non_coderabbit_bot_rate_limit_is_detected(monkeypatch):
+    # THE generalization pin. Pre-fix, detection was author-scoped to the two
+    # CodeRabbit logins, so a rate-limited Sourcery scored negative — the bot's
+    # non-participation was silently indistinguishable from a clean run.
+    # The registry-driven detector reports it as its own record, carrying the class
+    # Sourcery's registry record declares (hard_quota: a per-PR size budget that
+    # does NOT reopen, so awaiting it would burn the full budget and still fail).
+    _wire(monkeypatch, post_comments=[_HUMAN_COMMENT, _SOURCERY_NOTICE])
 
     result = github_ops.cmd_pr_wait_for_comments(_wait_comments_args())
 
     assert result['status'] == 'success'
-    assert result['rate_limited'] is True
-    # Pre-existing poll fields are unchanged by the additive discriminator.
+    assert result['rate_limited_bots'] == [
+        {'bot_kind': 'sourcery', 'rate_limit_class': 'hard_quota', 'eta': ''}
+    ]
+    # Pre-existing poll fields are unchanged by the discriminator.
     assert result['timed_out'] is False
     assert result['new_count'] == 1
     assert result['final_count'] == 2
     assert result['baseline_count'] == 1
 
 
-def test_current_review_limit_reached_notice_sets_rate_limited_true(monkeypatch):
-    # Regression pin for the collapse: CodeRabbit's CURRENT refusal phrasing.
-    # The retired two-marker island required the "## Rate limit exceeded" heading
-    # AND the "exceeded the limit for the number of" sentence — this notice has
-    # NEITHER (asserted below), so the island silently scored it False. The shared
-    # recognizer classifies it on structure instead, and the discriminator fires.
-    assert 'exceeded the limit for the number of' not in _REVIEW_LIMIT_REACHED_NOTICE['body']
-    assert '## Rate limit exceeded' not in _REVIEW_LIMIT_REACHED_NOTICE['body']
+def test_bot_without_declared_class_fails_closed_to_unknown(monkeypatch):
+    # ADR-009 fail-closed default: PR-Agent's registry record declares
+    # rate_limit_class: unknown because no refusal has ever been OBSERVED for it.
+    # A bot whose refusal shape is unknown must never be reported as awaitable —
+    # awaiting a quota that does not reopen is the expensive failure mode.
+    _wire(monkeypatch, post_comments=[_PR_AGENT_NOTICE])
 
-    _wire(monkeypatch, post_comments=[_HUMAN_COMMENT, _REVIEW_LIMIT_REACHED_NOTICE])
+    result = github_ops.cmd_pr_wait_for_comments(_wait_comments_args())
+
+    assert result['rate_limited_bots'] == [
+        {'bot_kind': 'pr-agent', 'rate_limit_class': 'unknown', 'eta': ''}
+    ]
+
+
+def test_coderabbit_notice_yields_registry_extracted_eta(monkeypatch):
+    # The ETA phrasings are registry data (rate_limit_eta_patterns), not a literal
+    # in the detection path: the notice's own stated reset time is surfaced so a
+    # caller can report a concrete wait instead of an opaque "rate-limited".
+    _wire(monkeypatch, post_comments=[_HUMAN_COMMENT, _CODERABBIT_NOTICE])
+
+    result = github_ops.cmd_pr_wait_for_comments(_wait_comments_args())
+
+    assert result['rate_limited_bots'] == [
+        {
+            'bot_kind': 'coderabbit',
+            'rate_limit_class': 'awaitable_window',
+            'eta': '12 minutes and 30 seconds',
+        }
+    ]
+
+
+def test_notice_stating_no_eta_yields_empty_eta(monkeypatch):
+    # CodeRabbit's CURRENT refusal phrasing carries neither the old heading nor the
+    # old body sentence (asserted here so the fixture cannot silently drift back to
+    # the retired shape) and states no reset time. An absent ETA is reported as
+    # absent — never invented, and never read as "reopens now".
+    assert 'exceeded the limit for the number of' not in _CODERABBIT_REVIEW_LIMIT_REACHED['body']
+    assert '## Rate limit exceeded' not in _CODERABBIT_REVIEW_LIMIT_REACHED['body']
+
+    _wire(monkeypatch, post_comments=[_CODERABBIT_REVIEW_LIMIT_REACHED])
+
+    result = github_ops.cmd_pr_wait_for_comments(_wait_comments_args())
+
+    assert result['rate_limited_bots'] == [
+        {'bot_kind': 'coderabbit', 'rate_limit_class': 'awaitable_window', 'eta': ''}
+    ]
+
+
+def test_several_rate_limited_bots_each_yield_their_own_record(monkeypatch):
+    # The scalar could only ever answer for one bot. The list answers per bot, and
+    # each record carries that bot's own class — which is the whole point: the
+    # await decision differs between an awaitable_window and a hard_quota.
+    _wire(
+        monkeypatch,
+        post_comments=[_HUMAN_COMMENT, _CODERABBIT_NOTICE, _SOURCERY_NOTICE, _PR_AGENT_NOTICE],
+    )
+
+    result = github_ops.cmd_pr_wait_for_comments(_wait_comments_args())
+
+    records = _records_by_kind(result)
+    assert set(records) == {'coderabbit', 'sourcery', 'pr-agent'}
+    assert records['coderabbit']['rate_limit_class'] == 'awaitable_window'
+    assert records['sourcery']['rate_limit_class'] == 'hard_quota'
+    assert records['pr-agent']['rate_limit_class'] == 'unknown'
+
+
+def test_no_rate_limited_bot_yields_empty_list(monkeypatch):
+    _wire(monkeypatch, post_comments=[_HUMAN_COMMENT, _CODERABBIT_GENUINE_REVIEW])
 
     result = github_ops.cmd_pr_wait_for_comments(_wait_comments_args())
 
     assert result['status'] == 'success'
-    assert result['rate_limited'] is True
-
-
-def test_newest_bot_selection_and_human_exclusion_survive_repointing(monkeypatch):
-    # The re-pointing changed ONLY the body classifier. This pins the three
-    # behaviours that must be unchanged by it:
-    #   1. human-author exclusion — the newest comment overall is human-authored
-    #      and must not be considered at all;
-    #   2. newest-by-created_at selection AMONG bot comments — an older genuine
-    #      bot review must not displace the newer bot notice;
-    #   3. the additive contract — every pre-existing poll field is untouched.
-    newest_human = dict(_HUMAN_COMMENT, created_at='2026-01-09T00:00:00Z')
-    older_bot_review = dict(_GENUINE_REVIEW, created_at='2026-01-01T00:00:00Z')
-    _wire(monkeypatch, post_comments=[newest_human, older_bot_review, _REVIEW_LIMIT_REACHED_NOTICE])
-
-    result = github_ops.cmd_pr_wait_for_comments(_wait_comments_args())
-
-    assert result['rate_limited'] is True
-    assert result['timed_out'] is False
-    assert result['new_count'] == 1
-    assert result['baseline_count'] == 1
-    assert result['final_count'] == 2
-    assert result['duration_sec'] == 1
-    assert result['polls'] == 1
-
-
-def test_genuine_review_sets_rate_limited_false(monkeypatch):
-    _wire(monkeypatch, post_comments=[_HUMAN_COMMENT, _GENUINE_REVIEW])
-
-    result = github_ops.cmd_pr_wait_for_comments(_wait_comments_args())
-
-    assert result['status'] == 'success'
-    assert result['rate_limited'] is False
-    assert result['timed_out'] is False
+    # Field is present (not merely absent) so consumers can rely on it: an empty
+    # list is the positive "no registered bot is rate-limited" signal.
+    assert 'rate_limited_bots' in result
+    assert result['rate_limited_bots'] == []
     assert result['new_count'] == 1
 
 
-def test_no_bot_comment_sets_rate_limited_false(monkeypatch):
+def test_empty_comment_list_yields_empty_list(monkeypatch):
     _wire(monkeypatch, post_comments=[])
 
     result = github_ops.cmd_pr_wait_for_comments(_wait_comments_args())
 
-    assert result['status'] == 'success'
-    assert result['rate_limited'] is False
-    # Field is present (not merely absent) so consumers can rely on it.
-    assert 'rate_limited' in result
-    assert result['new_count'] == 1
+    assert result['rate_limited_bots'] == []
 
 
-def test_newer_review_supersedes_older_rate_limit_notice(monkeypatch):
-    # An older rate-limit notice followed by a NEWER genuine review — the newest
-    # bot comment wins, so the poll observed real feedback, not a status notice.
-    older_notice = dict(_RATE_LIMIT_NOTICE, created_at='2026-01-01T00:00:00Z')
-    newer_review = dict(_GENUINE_REVIEW, created_at='2026-01-03T00:00:00Z')
-    _wire(monkeypatch, post_comments=[older_notice, newer_review])
+def test_newer_review_supersedes_that_bots_older_notice_only(monkeypatch):
+    # Selection is newest-by-created_at PER BOT, not globally. CodeRabbit's older
+    # notice is superseded by its own newer genuine review, while Sourcery — whose
+    # newest comment is still a notice — remains detected. A global "newest
+    # comment" pick would have hidden Sourcery behind CodeRabbit's recovery.
+    older_coderabbit_notice = dict(_CODERABBIT_NOTICE, created_at='2026-01-01T00:00:00Z')
+    newer_coderabbit_review = dict(_CODERABBIT_GENUINE_REVIEW, created_at='2026-01-03T00:00:00Z')
+    newest_human = dict(_HUMAN_COMMENT, created_at='2026-01-09T00:00:00Z')
+    _wire(
+        monkeypatch,
+        post_comments=[
+            older_coderabbit_notice,
+            newer_coderabbit_review,
+            _SOURCERY_NOTICE,
+            newest_human,
+        ],
+    )
 
     result = github_ops.cmd_pr_wait_for_comments(_wait_comments_args())
 
-    assert result['rate_limited'] is False
+    assert [record['bot_kind'] for record in result['rate_limited_bots']] == ['sourcery']
+    # The additive contract: every pre-existing poll field is untouched.
+    assert result['timed_out'] is False
+    assert result['baseline_count'] == 1
+    assert result['final_count'] == 2
+    assert result['new_count'] == 1
+    assert result['duration_sec'] == 1
+    assert result['polls'] == 1
 
 
-def test_human_comment_with_rate_limit_prose_not_flagged(monkeypatch):
-    # A human comment quoting "rate limit exceeded" is not a CodeRabbit notice.
+def test_human_comment_quoting_a_refusal_is_not_a_notice(monkeypatch):
+    # A human quoting "rate limit exceeded" resolves to no bot_kind at all, so it
+    # can never contribute a record regardless of its body.
     _wire(monkeypatch, post_comments=[_HUMAN_COMMENT])
 
     result = github_ops.cmd_pr_wait_for_comments(_wait_comments_args())
 
-    assert result['rate_limited'] is False
+    assert result['rate_limited_bots'] == []
 
 
-def test_bot_review_quoting_rate_limit_prose_not_flagged(monkeypatch):
-    # A GENUINE CodeRabbit review whose body merely QUOTES the phrase "rate limit
-    # exceeded" in prose (not the ``## Rate limit exceeded`` notice heading) must
-    # not be misclassified as a status notice — the markers are anchored to the
-    # notice's heading/body structure, not a bare phrase match.
+def test_genuine_review_mentioning_a_rate_limit_in_prose_is_not_a_notice(monkeypatch):
+    # Precision guard on the shared classifier, unchanged by the generalization: a
+    # GENUINE review whose body merely QUOTES the phrase in prose — no notice shape
+    # — is real feedback, and must not be reported as the bot refusing to review.
     bot_prose = {
         'author': 'coderabbitai[bot]',
         'body': (
@@ -231,16 +311,14 @@ def test_bot_review_quoting_rate_limit_prose_not_flagged(monkeypatch):
 
     result = github_ops.cmd_pr_wait_for_comments(_wait_comments_args())
 
-    assert result['rate_limited'] is False
+    assert result['rate_limited_bots'] == []
 
 
-def test_bot_body_sentence_without_heading_not_flagged(monkeypatch):
-    # gemini-code-assist false-positive guard: a genuine CodeRabbit review whose
-    # flattened body merely contains the "exceeded the limit for the number of"
-    # body sentence (e.g. discussing a parameter/line limit) in plain prose must
-    # not be flagged. The shared recognizer requires a limit-exceeded statement
-    # AND a notice shape — with no callout, no limit heading and no service tail,
-    # the body sentence alone is insufficient.
+def test_bot_body_sentence_without_notice_shape_is_not_a_notice(monkeypatch):
+    # gemini-code-assist false-positive guard: a genuine review whose flattened
+    # body contains the "exceeded the limit for the number of" sentence (discussing
+    # a parameter limit) but carries no callout, no limit heading and no service
+    # tail is insufficient — the recognizer requires BOTH signals conjunctively.
     body_only = {
         'author': 'coderabbitai[bot]',
         'body': (
@@ -254,4 +332,4 @@ def test_bot_body_sentence_without_heading_not_flagged(monkeypatch):
 
     result = github_ops.cmd_pr_wait_for_comments(_wait_comments_args())
 
-    assert result['rate_limited'] is False
+    assert result['rate_limited_bots'] == []

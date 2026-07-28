@@ -1612,12 +1612,13 @@ def test_default_plan_finalize_steps_nests_step_owned_params():
     # no sonar_-prefixed key survives inside the scoped object
     assert not any(k.startswith('sonar_') for k in sonar)
 
-    # enabled-bots list + review buffer + completion-poll bound + re-review gates
-    # + re-review timeout + rate-window await knobs nest under
-    # plan-marshall:automatic-review; the adversarial infra element additionally
-    # seeds a lane:ask override.
+    # the two participation-classification lists + review buffer + completion-poll
+    # bound + re-review gates + re-review timeout + rate-window await knobs nest
+    # under plan-marshall:automatic-review; the adversarial infra element
+    # additionally seeds a lane:ask override.
     assert _params_for(steps, 'plan-marshall:automatic-review') == {
-        'enabled_bots': 'coderabbit,sourcery',
+        'required_bots': '',
+        'optional_bots': '',
         'review_bot_buffer_seconds': 180,
         'review_completion_poll_timeout_seconds': 600,
         're_review_on_loopback': False,
@@ -1645,6 +1646,25 @@ def test_default_plan_finalize_steps_nests_step_owned_params():
     # a step that owns no params maps to an empty {} param object.
     assert 'default:create-pr' in steps
     assert _params_for(steps, 'default:create-pr') == {}
+
+
+def test_fresh_project_bot_lists_default_empty_and_unanswered():
+    """A fresh project seeds both bot lists empty, with no provenance recorded.
+
+    The emptiness is load-bearing: it keeps a *never-asked* key distinguishable
+    from an *answered-empty* value, which warrant opposite handling (a
+    never-asked posture must not suppress review). Provenance is recorded only
+    when the wizard asks or the legacy migration seeds, so its ABSENCE from the
+    seeded defaults is the never-asked state — the seed must not pre-answer it.
+    The retired ``enabled_bots`` key must not survive anywhere in the seed.
+    """
+    config = _config_defaults_mod.get_default_config()
+    params = _params_for(config['plan']['phase-6-finalize']['steps'], 'plan-marshall:automatic-review')
+
+    assert params['required_bots'] == ''
+    assert params['optional_bots'] == ''
+    assert 'bot_lists_provenance' not in params
+    assert 'enabled_bots' not in params
 
 
 def test_default_plan_finalize_config_less_steps_map_to_empty_dict():

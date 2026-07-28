@@ -4,14 +4,20 @@ CodeRabbit-specific triage rule for the plan-marshall `pr-comment` findings pipe
 producer (what to drop before a comment becomes a finding), the consumer (how to classify and
 dispose of a surviving CodeRabbit finding), and where the authoritative CodeRabbit configuration
 lives. The machine-readable registry block below is the single per-bot data record the
-`automatic-review` step consumes when `coderabbit` is present in the step's `enabled_bots`.
+`automatic-review` step consumes when `coderabbit` is classified in the step's `required_bots` or
+`optional_bots`. Classification decides whether CodeRabbit's silence is a failure (required) or
+tolerable (optional); it does NOT decide admission — a CodeRabbit comment is ingested even when the
+bot appears in neither list, with a warning recorded. See
+[`bot-participation-contract.md`](bot-participation-contract.md).
 
 ## Registry data block
 
 The fenced-YAML block below is the machine-readable per-bot record. It is data, not frontmatter —
 a fenced code block that plugin-doctor treats as an example, not an executable directive. Consumers
 read `bot_kind`, `author_login`, `trigger_comment`, `completion_check_name`, `honors_skip_label`,
-`ignore_patterns`, and `severity_map` from it; the prose sections that follow carry the rationale.
+`participation_evidence`, `participation_requires_update`, `ignore_patterns`, `refusal_patterns`,
+`rate_limit_class`, `rate_limit_eta_patterns`, and `severity_map` from it; the prose sections that
+follow carry the rationale.
 
 ```yaml
 bot_kind: coderabbit
@@ -19,6 +25,10 @@ author_login: coderabbitai
 trigger_comment: "@coderabbitai review"
 completion_check_name: "CodeRabbit"   # in-progress check-run polled to completion by the wait step
 honors_skip_label: true          # central cuioss/coderabbit config skips PRs labelled skip-bot-review
+participation_evidence:          # the publish shapes that prove THIS bot reviewed
+  - review_body                  # its review summary comment
+  - inline                       # its per-line review comments
+participation_requires_update: false   # each review appends new comments; presence IS the movement
 ignore_patterns:
   - "<!-- This is an auto-generated comment: summarize by coderabbit.ai -->"  # walkthrough / summary
   - "## Walkthrough"                                                          # walkthrough heading
@@ -27,7 +37,13 @@ ignore_patterns:
   - "<!-- tips_start -->"                                                     # tips block
   - "@coderabbitai help"                                                      # command help echo
   - "✏️ Learnings added"                                                      # learnings-only reply
+refusal_patterns:
   - "Review limit reached"                                                    # current refusal notice — posted in place of a review
+rate_limit_class: awaitable_window   # the review limit is a rolling window that reopens on its own
+rate_limit_eta_patterns:
+  - "wait ([0-9]+ minutes? and [0-9]+ seconds?) before requesting another review"
+  - "wait ([0-9]+ (?:minutes?|seconds?|hours?)) before requesting another review"
+  - "([0-9]+ (?:minutes?|hours?)) before (?:the )?(?:rate )?limit resets"
 severity_map:
   potential_issue_critical: critical   # 🔴 potential_issue, or 🔒 with real impact
   potential_issue_major: high          # 🟠 Major potential_issue
@@ -68,8 +84,41 @@ finding: the walkthrough / summary issue comment, no-op reviews (`No actionable 
 generated`), marketing / tips, learnings-only replies, and bot self-acknowledgement replies (login
 `coderabbitai` + reply-to-human + no `cr-indicator-types` marker). Do **not** ignore inline review
 comments that carry a `cr-indicator-types` marker — those are the signal.
-The refusal notice (`Review limit reached`) is likewise a whole-comment drop: CodeRabbit posts it
-*in place of* a review, so it carries no finding to extract.
+The refusal notice (`Review limit reached`) also files no finding, but it is **not** a noise drop and
+is declared in the separate `refusal_patterns` list rather than in `ignore_patterns`: CodeRabbit posts
+it *in place of* a review, so it carries no finding to extract AND it is positive evidence the bot
+declined. `fetch_findings` therefore branches on it — counting it in `count_skipped_refusal` and
+naming `coderabbit` in `refused_bots[]` — instead of folding it into `count_skipped_noise`. The two
+lists must stay distinct: `ignore_patterns` here lists sections of a *successful* review
+(`## Walkthrough`, `✏️ Learnings added`), so reusing it for refusal detection would classify
+CodeRabbit's ordinary successful reviews as refusals, and unioning the two collapses the distinction
+in the other direction. See [`bot-participation-contract.md`](bot-participation-contract.md) §
+"A refusal is never noise — it is a branch".
+
+## Participation evidence — `review_body`, `inline`
+
+CodeRabbit publishes both a review summary and per-line comments, so either shape is evidence it
+reviewed this diff. Each review appends new comments rather than editing one in place, which is why
+`participation_requires_update` is `false` — a newly-observed comment of either kind is itself the
+movement. Note the ceiling this evidence carries: it proves CodeRabbit *participated*, never that
+the review was good. See [`bot-participation-contract.md`](bot-participation-contract.md) §
+"Evidence taxonomy".
+
+## Rate-limit class — `awaitable_window`
+
+CodeRabbit's review limit is a **rolling window that reopens on its own**, so `rate_limit_class` is
+`awaitable_window`: awaiting the reset is productive work, not a stall. This is what makes the
+`automatic-review` opt-in rate-limit refusal recovery (`review_rate_window_await`, bounded by
+`review_rate_window_timeout_seconds`, defaulted to 3600 to match the roughly hourly reset) worth
+enabling for this bot — the class is the field the recovery decision reads, rather than assuming
+every bot's refusal is waitable. For this bot the recovery claims the window, polls it to expiry, and
+then generates a fresh trigger event; see `../SKILL.md` § "Rate-limit refusal recovery (opt-in)".
+
+The notice usually states its own reset time; `rate_limit_eta_patterns` extracts it so the caller
+can report a concrete ETA instead of an opaque "rate-limited". The patterns are *extraction* regexes,
+not detection regexes — detection is the bot-agnostic recogniser in `_github_pr._is_rate_limit_notice`
+paired with the `refusal_patterns` data layer above. A notice that states no ETA simply yields an empty
+`eta`, which the caller reports as unknown rather than as "reopens now".
 
 ## Consumer stage — classify a surviving CodeRabbit finding
 

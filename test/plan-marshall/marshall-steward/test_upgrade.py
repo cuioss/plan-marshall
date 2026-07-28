@@ -54,13 +54,13 @@ _STAGE_ROW_KEYS = {'order', 'key', 'name', 'mutating', 'top_level_gate', 'nested
 _EXPECTED_SUB_STEPS = {
     'meta': {
         'regenerate-targets': ['regenerate-target-tree', 'regenerate-executor', 'cache-retention-sweep'],
-        'reconcile-config': ['reconcile-marshal-json'],
+        'reconcile-config': ['reconcile-marshal-json', 'migrate-bot-lists'],
         'verify': ['executor-preflight', 'content-drift-report'],
         'land': ['run-landing-cycle'],
     },
     'consumer': {
         'regenerate-targets': ['cache-freshness-check', 'regenerate-executor', 'cache-retention-sweep'],
-        'reconcile-config': ['reconcile-marshal-json'],
+        'reconcile-config': ['reconcile-marshal-json', 'migrate-bot-lists'],
         'verify': ['executor-preflight'],
         'land': ['run-landing-cycle'],
     },
@@ -291,3 +291,107 @@ def test_project_kind_auto_invokes_detector(monkeypatch, capsys: pytest.CaptureF
     assert parsed['project_kind'] == 'consumer'
     by_key = {stage['key']: stage['sub_steps'] for stage in parsed['stages']}
     assert by_key['regenerate-targets'] == _EXPECTED_SUB_STEPS['consumer']['regenerate-targets']
+
+
+# =============================================================================
+# migrate-bot-lists — the one-shot legacy auto-map, over its four input states
+# =============================================================================
+#
+# The four states are exhaustive over the presence/absence cross-product of the
+# retired ``enabled_bots`` key and the two replacement keys. States (3) and (4)
+# are deliberately indistinguishable once the legacy key is gone — that
+# collapse is what makes the migration self-disarming and safe to re-run.
+
+
+def test_migrate_bot_lists_seeds_required_from_legacy_verbatim():
+    """State 1 — legacy alone seeds required_bots VERBATIM and empties optional.
+
+    Seeding REQUIRED (not optional) preserves the legacy semantics: every bot on
+    the retired list was awaited, and awaiting is precisely what ``required``
+    means. Splitting the list across the two new knobs would silently demote a
+    previously-awaited bot to a non-blocking one.
+    """
+    params = {'enabled_bots': 'coderabbit,sourcery', 'review_bot_buffer_seconds': 180}
+
+    report = upgrade.migrate_bot_lists(params)
+
+    assert report['state'] == 'migrated'
+    assert params['required_bots'] == 'coderabbit,sourcery'
+    assert params['optional_bots'] == ''
+    # The legacy key is consumed, and the unrelated knob is untouched.
+    assert 'enabled_bots' not in params
+    assert params['review_bot_buffer_seconds'] == 180
+
+
+def test_migrate_bot_lists_records_migrated_provenance_not_answered():
+    """State 1 records provenance ``migrated`` — the value was NOT operator-answered.
+
+    The distinction is load-bearing downstream: an auto-mapped value is a
+    best-effort guess at the operator's intent, and marking it ``answered`` would
+    let the wizard treat a guess as a settled decision and never re-ask.
+    """
+    params = {'enabled_bots': 'coderabbit'}
+
+    upgrade.migrate_bot_lists(params)
+
+    assert params['bot_lists_provenance'] == 'migrated'
+
+
+def test_migrate_bot_lists_operator_answer_wins_over_legacy():
+    """State 2 — an already-answered new key wins; only the stale legacy is dropped.
+
+    The operator's explicit answer is never overwritten by the auto-map, and the
+    provenance is not downgraded from ``answered`` to ``migrated``. The discarded
+    legacy value is reported so the operator can see what was dropped.
+    """
+    params = {
+        'enabled_bots': 'coderabbit,sourcery',
+        'required_bots': 'pr-agent',
+        'optional_bots': 'sourcery',
+        'bot_lists_provenance': 'answered',
+    }
+
+    report = upgrade.migrate_bot_lists(params)
+
+    assert report['state'] == 'operator_answer_kept'
+    assert report['discarded_legacy'] == 'coderabbit,sourcery'
+    assert params['required_bots'] == 'pr-agent'
+    assert params['optional_bots'] == 'sourcery'
+    assert params['bot_lists_provenance'] == 'answered'
+    assert 'enabled_bots' not in params
+
+
+def test_migrate_bot_lists_absent_legacy_leaves_never_asked_posture_intact():
+    """State 3 — no legacy key: a no-op that must NOT fabricate an answer.
+
+    Writing empty values here would convert a never-asked posture into an
+    answered-empty one, which downstream reads as "the operator chose no bots"
+    and suppresses review. The no-op must leave the params untouched.
+    """
+    params = {'review_bot_buffer_seconds': 180}
+
+    report = upgrade.migrate_bot_lists(params)
+
+    assert report['state'] == 'noop'
+    assert params == {'review_bot_buffer_seconds': 180}
+    assert 'bot_lists_provenance' not in params
+
+
+def test_migrate_bot_lists_is_self_disarming_on_second_run():
+    """State 4 — a second run over already-migrated params changes nothing.
+
+    Once the legacy key is consumed, state (4) collapses onto state (3), so the
+    verb can sit permanently in the Stage 2 sub-step list without re-migrating
+    or clobbering the values it produced on the first run.
+    """
+    params = {'enabled_bots': 'coderabbit,sourcery'}
+
+    first = upgrade.migrate_bot_lists(params)
+    after_first = dict(params)
+    second = upgrade.migrate_bot_lists(params)
+
+    assert first['state'] == 'migrated'
+    assert second['state'] == 'noop'
+    assert params == after_first
+    assert second['required_bots'] == 'coderabbit,sourcery'
+    assert second['optional_bots'] == ''

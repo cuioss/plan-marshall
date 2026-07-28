@@ -242,6 +242,63 @@ class TestAcquire:
 
 
 # =============================================================================
+# Sibling-key preservation — the FIFO mutators share the store with co-tenants
+# =============================================================================
+
+
+class TestSiblingKeyPreservation:
+    """``merge-queue.json`` is a SHARED store, not a single-purpose queue file: the
+    rate-window claim co-tenants a ``rate_windows`` top-level key alongside
+    ``waiting``.
+
+    The pre-fix ``_enqueue_fifo`` / ``_dequeue_fifo`` mutators returned a
+    freshly-constructed ``{'waiting': waiting}``, which DISCARDS every other
+    top-level key — so a co-tenant key would be silently erased by the very next
+    merge acquire or release. Every assertion in this class is RED against that
+    wholesale-replace behaviour and green only once both mutators merge into the
+    state they were handed. This is what makes the store reuse verified rather than
+    merely plausible."""
+
+    def test_acquire_preserves_an_unrelated_top_level_key(self, isolated_base: dict) -> None:
+        isolated_base['queue_path'].write_text(
+            json.dumps({'waiting': [], 'rate_windows': {'coderabbit': {'holder': 'plan-x'}}}),
+            encoding='utf-8',
+        )
+
+        merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
+
+        store = _read_queue(isolated_base['queue_path'])
+        assert store['rate_windows'] == {'coderabbit': {'holder': 'plan-x'}}
+        assert _waiting_plan_ids(isolated_base['queue_path']) == ['plan-a']
+
+    def test_release_preserves_an_unrelated_top_level_key(self, isolated_base: dict) -> None:
+        isolated_base['queue_path'].write_text(
+            json.dumps({'waiting': [], 'rate_windows': {'coderabbit': {'holder': 'plan-x'}}}),
+            encoding='utf-8',
+        )
+        merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
+
+        merge_lock.run_release(Namespace(plan_id='plan-a'))
+
+        store = _read_queue(isolated_base['queue_path'])
+        assert store['rate_windows'] == {'coderabbit': {'holder': 'plan-x'}}
+        assert _waiting_plan_ids(isolated_base['queue_path']) == []
+
+    def test_full_acquire_release_round_trip_preserves_the_co_tenant(self, isolated_base: dict) -> None:
+        """The round-trip is the real exposure: an acquire followed by a release is
+        two wholesale replaces, either of which would drop the co-tenant."""
+        co_tenant = {'coderabbit': {'holder': 'plan-x', 'pr_number': 7, 'expires_at': 1.0, 'attempts': 2}}
+        isolated_base['queue_path'].write_text(
+            json.dumps({'waiting': [], 'rate_windows': co_tenant}), encoding='utf-8'
+        )
+
+        merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
+        merge_lock.run_release(Namespace(plan_id='plan-a'))
+
+        assert _read_queue(isolated_base['queue_path'])['rate_windows'] == co_tenant
+
+
+# =============================================================================
 # FIFO admission — only the FIFO front may attempt the O_EXCL create
 # =============================================================================
 

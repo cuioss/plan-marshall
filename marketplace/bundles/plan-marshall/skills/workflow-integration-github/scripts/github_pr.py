@@ -64,7 +64,7 @@ from typing import Any
 
 import bot_registry
 import github_ops as _github
-from _github_pr import RESOLVE_THREAD_MUTATION, THREAD_REPLY_MUTATION, _is_rate_limit_notice
+from _github_pr import RESOLVE_THREAD_MUTATION, THREAD_REPLY_MUTATION, _is_refusal_notice
 from ci_base import extract_routing_args, register_subcommands, set_default_cwd
 from github_re_review import bot_kind_for_author, is_registered_trigger_comment
 from triage_helpers import (
@@ -201,50 +201,42 @@ def _is_obvious_noise(body: str, bot_kind: str | None = None) -> bool:
     2. PER-BOT — when ``bot_kind`` is a known reviewer bot, that bot's registry
        ``ignore_patterns`` (literal whole-comment markers) matched as
        case-sensitive substrings against the raw body. These markers are exact
-       fragments the bot emits (a walkthrough heading, a marketing footer, a
-       no-op review line), so only that bot's own comments are dropped.
+       fragments the bot emits on a *successful* review (a walkthrough heading, a
+       marketing footer, a no-op review line), so only that bot's own comments are
+       dropped.
 
-    Two further pipeline-noise classes are folded in ahead of the two layers,
-    both reusing existing data sources rather than new patterns:
+    One further pipeline-noise class is folded in ahead of the two layers, reusing
+    an existing data source rather than new patterns:
 
     - REGISTERED TRIGGER — a comment whose whitespace-stripped body EQUALS a
       registered bot re-review trigger (``github_re_review.is_registered_trigger_comment``,
       derived from ``bot_registry``) is a pipeline-authored re-review request this
       workflow itself posted, not reviewer feedback. Checked for every comment
       (bot- or human-authored), since the pipeline may post under either account.
-    - RATE-LIMIT / SERVICE NOTICE — a comment that is a rate-limit status notice
-      (``_github_pr._is_rate_limit_notice``) posted in place of a review carries
-      no actionable feedback. Bot-agnostic and author-ungated: the recognizer
-      matches any notice by its structural signature (a limit-exceeded statement
-      paired with a notice shape — callout / limit-heading / service tail), so a
-      CodeRabbit, Sourcery, or unknown/renamed bot's notice is dropped with no
-      code change naming the bot and no dependence on the author resolving to a
-      known ``bot_kind``. Checked for every comment; the recognizer's two-part
-      precision keeps a genuine comment that merely mentions a rate limit from
-      matching.
+
+    **A REFUSAL IS NOT NOISE AND IS DELIBERATELY ABSENT FROM THIS PREDICATE.**
+    Neither ``bot_registry.refusal_patterns`` nor the structural
+    ``_github_pr._is_rate_limit_notice`` recognizer is consulted here. A refusal is
+    positive evidence that a bot DECLINED to review, so it is classified one layer
+    up by ``cmd_fetch_findings`` through ``_github_pr._is_refusal_notice`` and
+    surfaced in ``refused_bots[]`` — the completeness / quorum layer must SEE the
+    refusal, not infer absence from silence. Folding ``refusal_patterns`` into this
+    drop set collapsed exactly the distinction the two-field split was created for,
+    and let a PR whose every required reviewer refused report a clean, complete
+    review. ``ignore_patterns`` alone belongs here.
 
     Used by ``fetch_findings`` to drop obvious automated/acknowledgment noise
     before each surviving comment is persisted as a ``pr-comment`` finding. This
     is intentionally permissive — the goal is only to skip the most obvious
     noise, not to make the final classification decision (that belongs to the LLM
     consumer). Human comments (``bot_kind is None``) are checked against the
-    shared layer, the registered-trigger recognizer, and the author-ungated
-    rate-limit / service-notice recognizer; the per-bot literal-marker layer
-    stays reviewer-bot-scoped.
+    shared layer and the registered-trigger recognizer; the per-bot literal-marker
+    layer stays reviewer-bot-scoped.
     """
     if not body:
         return True
     # Pipeline-authored re-review trigger comment (exact stripped-body match).
     if is_registered_trigger_comment(body):
-        return True
-    # Rate-limit / service notice posted in place of a review — bot-agnostic.
-    # Ungated by author: the recognizer's two-part precision (a limit-exceeded
-    # statement paired with a notice shape — callout / limit-heading / service
-    # tail) is what drops a CodeRabbit, Sourcery, or unknown/renamed bot's
-    # rate-limit notice by structural signature alone, with no per-bot hardcoding.
-    # The same precision keeps a genuine comment that merely mentions a rate limit
-    # in prose from being dropped, so the check is safe to apply to every comment.
-    if _is_rate_limit_notice(body):
         return True
     body_lower = body.lower()
     if any(p.search(body_lower) for p in _COMPILED_IGNORE):
@@ -280,8 +272,9 @@ def _unconfigured_result(operation: str, detail: str) -> dict[str, Any]:
 # FETCH_FINDINGS SUBCOMMAND (producer-side fetch + filter + file to ledger)
 # ============================================================================
 
-# Matches the ``comment_id: <value>`` and ``thread_id: <value>`` lines written
-# into every pr-comment finding's ``detail`` block by cmd_fetch_findings.
+# Matches the ``comment_id: <value>``, ``thread_id: <value>`` and ``kind: <value>``
+# lines written into every pr-comment finding's ``detail`` block by
+# cmd_fetch_findings.
 #
 # The value class requires a leading non-whitespace character (``\S``) and matches
 # only horizontal whitespace around it (``[ \t]``), never ``\s`` (which spans
@@ -289,11 +282,27 @@ def _unconfigured_result(operation: str, detail: str) -> dict[str, Any]:
 # written as the literal line ``thread_id: `` (empty value, trailing space). A
 # newline-spanning ``\s*(?P<id>.+?)`` would capture the *next* detail line (or the
 # trailing space) as a spurious truthy id, so ``post_responses`` would try to
-# resolve a non-existent thread instead of correctly skipping the finding. The
-# ``\S``-anchored, line-bounded value class yields no match for an empty value, so
-# ``_detail_field`` returns ``''`` and the finding is skipped.
+# resolve a non-existent thread instead of correctly reporting the finding as
+# undeliverable. The ``\S``-anchored, line-bounded value class yields no match for
+# an empty value, so ``_detail_field`` returns ``''``.
 _COMMENT_ID_DETAIL = re.compile(r'^comment_id:[ \t]*(?P<id>\S[^\n]*?)[ \t]*$', re.MULTILINE)
 _THREAD_ID_DETAIL = re.compile(r'^thread_id:[ \t]*(?P<id>\S[^\n]*?)[ \t]*$', re.MULTILINE)
+_KIND_DETAIL = re.compile(r'^kind:[ \t]*(?P<id>\S[^\n]*?)[ \t]*$', re.MULTILINE)
+
+# The comment kinds that are GENUINELY threadless — GitHub gives them no
+# resolvable review thread, so the only way to transmit their disposition is the
+# batched PR-level comment. This is the ONLY admission predicate for the batch:
+# ``post_responses`` routes on thread-BEARING-ness (the comment's kind), never on
+# whether a ``thread_id`` happened to be extractable. An ``inline`` finding whose
+# ``thread_id`` is missing is undeliverable, NOT threadless, and is reported in
+# ``untransmitted`` rather than silently downgraded into the batch.
+#
+# The set is deliberately CLOSED rather than derived as ``PR_COMMENT_KINDS -
+# {'inline'}``: a kind added to the vocabulary later must be classified by hand,
+# because auto-inheriting the threadless side is exactly the silent-batching
+# failure this predicate exists to prevent. An unrecognised or unrecorded kind
+# therefore takes the thread-bearing path and surfaces as untransmitted.
+_THREADLESS_KINDS = frozenset({'review_body', 'issue_comment'})
 
 
 def _detail_field(detail: str | None, pattern: re.Pattern) -> str:
@@ -335,12 +344,47 @@ def _existing_pr_comment_keys(query_findings, plan_id: str) -> set[tuple[str, st
     return keys
 
 
+def _has_update_movement(comment: dict, existing_keys: set[tuple[str, str]], bot_kind: str) -> bool:
+    """Return True when ``comment`` shows first presence or ``updated_at`` movement.
+
+    The evidence qualifier for a bot that re-reviews by EDITING one persistent
+    comment in place instead of posting a new one. Such a comment's continued
+    existence proves only that the bot reviewed at some earlier HEAD, so crediting
+    it on presence alone would silently score a stale review as a fresh one after a
+    force-push. Movement is established two ways, either of which suffices:
+
+    - **First presence** — the comment is not yet in the plan's recorded
+      ``(bot_kind, comment_id)`` key set, so this run is observing it for the first
+      time. The bot posted it during this review cycle.
+    - **``updated_at`` movement** — the comment carries an ``updated_at`` that
+      differs from its ``created_at``, so it has been edited since it was posted.
+
+    A comment the store already knows about, whose ``updated_at`` has not moved,
+    yields False: no new review was observed. An absent ``updated_at`` degrades to
+    "no movement" rather than being read as movement — the fail-closed direction,
+    since crediting an unverified review is the expensive error.
+    """
+    comment_id = str(comment.get('id') or 'unknown')
+    if (bot_kind, comment_id) not in existing_keys:
+        return True
+    updated_at = str(comment.get('updated_at') or '')
+    created_at = str(comment.get('created_at') or '')
+    return bool(updated_at) and updated_at != created_at
+
+
 def cmd_fetch_findings(args):
     """Producer-side FIND verb: fetch + pre-filter + file one finding per surviving comment.
 
-    Pre-filters applied in order (both contribute to ``count_skipped_noise``):
-    1. Already-resolved threads — skipped silently; the thread owner addressed them.
-    2. Obvious text noise — matched via ``_is_obvious_noise`` (lgtm, bot sigs, etc.).
+    Pre-filters applied in order:
+    1. Already-resolved threads — skipped silently (``count_skipped_noise``); the
+       thread owner addressed them.
+    2. REFUSALS — a comment recognized by ``_github_pr._is_refusal_notice`` as the
+       bot DECLINING to review. Counted in ``count_skipped_refusal``, NEVER in
+       ``count_skipped_noise``, and the refusing bot is named in ``refused_bots``.
+       It files no ``pr-comment`` finding: a refusal is a signal ABOUT the review,
+       not feedback about the code, so the operator is never asked to triage it.
+    3. Obvious text noise — matched via ``_is_obvious_noise`` (lgtm, bot sigs, etc.),
+       counted in ``count_skipped_noise``.
 
     Containment: the untrusted comment ``body`` is quarantined under
     ``raw_input.{body}`` — never embedded raw in the top-level ``detail``. The
@@ -360,12 +404,41 @@ def cmd_fetch_findings(args):
     The enclosing ``status`` stays ``success`` — it reports the fetch, which did
     succeed.
 
-    ``responded_bots``: the sorted, de-duplicated list of non-None ``bot_kind``
-    values derived (via ``bot_kind_for_author``) from EVERY raw fetched comment —
-    computed BEFORE any noise / duplicate / disabled / resolved filtering. A bot
-    whose comments were entirely filtered as noise (so ``count_stored`` is 0 for
-    it) or entirely already-resolved still appears here, so the completeness guard
-    can treat it as a *settled* (heard-from) bot rather than an ``unfetched`` one.
+    ``participated_bots``: the EVIDENCE-TYPED participation set — one
+    ``{bot_kind, evidence_kind}`` record per bot proven to have reviewed this diff,
+    computed BEFORE any noise / duplicate / resolved filtering (so a bot whose
+    comments were entirely noise-filtered or entirely already-resolved is still
+    credited). A bot qualifies only when an observed comment's ``kind`` is one of
+    the publish shapes its registry record declares in ``participation_evidence``
+    — the mere presence of some comment resolving to its login is NOT evidence.
+    For a bot whose record sets ``participation_requires_update`` (it re-reviews by
+    editing one persistent comment in place) the record additionally requires first
+    presence or observed ``updated_at`` movement, so a stale unchanged comment
+    cannot credit it with reviewing code it never saw.
+
+    A bot declaring no evidence shape resolves FAIL-CLOSED — it can never be proven
+    a participant. This proves PARTICIPATION only, never review QUALITY: the
+    consumer must not read a satisfied participation set as a reviewed diff.
+
+    ``refused_bots``: the sorted list of bot_kinds observed publishing a REFUSAL —
+    a rate-limit / quota / size-ceiling notice posted in place of a review,
+    recognized through ``_github_pr._is_refusal_notice`` (the bot's registry
+    ``refusal_patterns`` OR the structural last-resort recognizer). This is the
+    producer-side refusal channel the completeness / quorum layer consumes as
+    ``--refused-bots``, so it can classify the bot as ``refused_awaitable`` /
+    ``refused_hard`` instead of inferring absence from silence. A refusing comment
+    is excluded from ``participated_bots`` — a refusal is positive evidence the bot
+    did NOT review — and files no finding, so it never reaches operator triage. A
+    refusal from an unregistered login is still dropped from the store but cannot
+    be attributed, so it contributes to ``count_skipped_refusal`` without naming a
+    bot here.
+
+    ``unclassified_bots``: the sorted list of bot_kinds that participated but
+    appear in NEITHER ``--required-bots`` nor ``--optional-bots``. Per the
+    warn-but-ingest rule these comments are **still ingested** — the two lists
+    carry classification, not admission — and the bot is named here so the caller
+    can surface the configuration gap. Dropping them would let a configuration
+    omission silently destroy real review signal.
     """
     from _findings_core import (
         add_finding,
@@ -376,17 +449,16 @@ def cmd_fetch_findings(args):
     pr_number: int = args.pr_number
     plan_id: str = args.plan_id
 
-    # enabled-bots producer filter: --enabled-bots carries a comma-joined set of
-    # enabled bot_kinds, split at read time. When the flag is omitted the value
-    # is None and the filter is disabled (every comment is considered). When
-    # supplied — even as an empty string, which yields an empty enabled set and
-    # thus disables ALL bots — a comment whose derived bot_kind is non-empty and
-    # NOT in the set files no finding. Human comments (bot_kind is None) are
-    # never filtered; the gate is bot-scoped.
-    enabled_bots_raw = getattr(args, 'enabled_bots', None)
-    enabled_bots_set: set[str] | None = None
-    if enabled_bots_raw is not None:
-        enabled_bots_set = {b.strip() for b in enabled_bots_raw.split(',') if b.strip()}
+    # Participation classification: --required-bots / --optional-bots each carry a
+    # comma-joined set of bot_kinds, split at read time. Their union is the set of
+    # CLASSIFIED bots. Neither list admits or drops anything — a comment whose
+    # derived bot_kind is outside the union is still ingested and its bot is
+    # reported in ``unclassified_bots`` (the warn-but-ingest rule). Human comments
+    # (bot_kind is None) are never classified; the notion is bot-scoped.
+    classified_bots: set[str] = set()
+    for _raw in (getattr(args, 'required_bots', None), getattr(args, 'optional_bots', None)):
+        if _raw:
+            classified_bots.update(b.strip() for b in _raw.split(',') if b.strip())
 
     # Fail-loud config guard — an unconfigured provider must NOT report a silent
     # zero-findings success.
@@ -401,18 +473,6 @@ def cmd_fetch_findings(args):
     raw_comments: list[dict] = fetch_result.get('comments') or []
     count_fetched = len(raw_comments)
 
-    # Responded-bots signal for the completeness guard: the distinct non-None
-    # bot_kinds present across EVERY raw fetched comment, derived BEFORE any
-    # noise / duplicate / disabled / resolved filtering. A bot whose comments
-    # were all noise-filtered (count_stored 0) or all already-resolved still
-    # appears here, so the guard can treat it as heard-from (settled) rather than
-    # unfetched. Human comments (bot_kind None) are excluded.
-    responded_set: set[str] = set()
-    for _comment in raw_comments:
-        _bot_kind = bot_kind_for_author(_comment.get('author') or 'unknown')
-        if _bot_kind:
-            responded_set.add(_bot_kind)
-
     # Cross-iteration phantom-loop guard: a resolution from a prior finalize
     # iteration cannot always be matched back to the comment on the next fetch
     # (``review_body`` comments carry no ``thread_id``, and even thread-bearing
@@ -424,6 +484,44 @@ def cmd_fetch_findings(args):
     # bot kind, thread-bearing or not — whose key is already present.
     existing_comment_keys = _existing_pr_comment_keys(query_findings, plan_id)
 
+    # Participation signal for the completeness guard, derived BEFORE any noise /
+    # duplicate / resolved filtering so a bot whose comments were all
+    # noise-filtered (count_stored 0) or all already-resolved is still credited.
+    #
+    # Participation is EVIDENCE-TYPED, not presence-typed: the mere existence of
+    # some comment resolving to a bot's login proves nothing about whether that
+    # bot reviewed this diff. A bot is recorded as a participant only when an
+    # observed comment's ``kind`` is one of the publish shapes that bot's registry
+    # record declares in ``participation_evidence``, and — for a bot that
+    # re-reviews by editing one persistent comment in place
+    # (``participation_requires_update``) — only when first presence or
+    # ``updated_at`` movement is actually observed, since a stale unchanged
+    # comment proves only that the bot reviewed some EARLIER HEAD.
+    #
+    # A bot declaring no evidence shape resolves fail-closed: it can never be
+    # proven a participant. There is no bot-name literal here — the evidence
+    # shapes and the update requirement are registry data.
+    participated: dict[str, str] = {}
+    for _comment in raw_comments:
+        _bot_kind = bot_kind_for_author(_comment.get('author') or 'unknown')
+        if not _bot_kind or _bot_kind in participated:
+            continue
+        # A refusal is positive evidence the bot did NOT review, so it can never
+        # be its own participation evidence — even though a refusal is published in
+        # one of the bot's declared publish shapes. Without this exclusion a bot
+        # that posted nothing but "review limit reached" would be credited as a
+        # proven participant and satisfy the quorum on zero review coverage.
+        if _is_refusal_notice(str(_comment.get('body') or ''), _bot_kind):
+            continue
+        _kind = _comment.get('kind') or 'inline'
+        if _kind not in bot_registry.participation_evidence(_bot_kind):
+            continue
+        if bot_registry.participation_requires_update(_bot_kind) and not _has_update_movement(
+            _comment, existing_comment_keys, _bot_kind
+        ):
+            continue
+        participated[_bot_kind] = _kind
+
     # Stamp every finding with the PR HEAD SHA at ingestion time so re-review
     # matching can tell whether HEAD has advanced past the reviewed commit.
     # Fetched once for the whole batch (empty string on any failure path — the
@@ -433,7 +531,9 @@ def cmd_fetch_findings(args):
     stored_hashes: list[str] = []
     skipped_noise = 0
     skipped_duplicate = 0
-    skipped_disabled = 0
+    skipped_refusal = 0
+    refused_set: set[str] = set()
+    unclassified_set: set[str] = set()
     store_failures: list[str] = []
 
     for comment in raw_comments:
@@ -452,10 +552,26 @@ def cmd_fetch_findings(args):
         # on (bot_kind, comment_id)).
         bot_kind = bot_kind_for_author(author)
 
-        # Pre-filter 2: obvious noise — the shared acknowledgment/automation
+        body = comment.get('body') or ''
+
+        # Pre-filter 2: REFUSAL — the bot declined to review. This is a BRANCH, not
+        # a drop-as-noise: the comment files no finding (a refusal is a signal
+        # about the review, not feedback about the code, so it must never reach
+        # operator triage), but the refusing bot is SURFACED in ``refused_bots`` so
+        # the completeness / quorum layer classifies it as refused_awaitable /
+        # refused_hard rather than inferring absence from silence. Checked BEFORE
+        # the noise filter so a refusal can never be swallowed by a shared ignore
+        # regex on its way past. An unregistered login's refusal is still
+        # recognized structurally and skipped, but cannot be attributed to a bot.
+        if _is_refusal_notice(body, bot_kind):
+            skipped_refusal += 1
+            if bot_kind:
+                refused_set.add(bot_kind)
+            continue
+
+        # Pre-filter 3: obvious noise — the shared acknowledgment/automation
         # regexes plus, for a known reviewer bot, that bot's per-registry literal
         # ignore markers (walkthrough headings, marketing footers, no-op reviews).
-        body = comment.get('body') or ''
         if _is_obvious_noise(body, bot_kind):
             skipped_noise += 1
             continue
@@ -466,17 +582,16 @@ def cmd_fetch_findings(args):
         line = comment.get('line') or None
         comment_id = comment.get('id') or 'unknown'
 
-        # Pre-filter 2b: enabled-bots producer filter. When --enabled-bots was
-        # supplied, a comment whose bot_kind is non-empty and NOT in the enabled
-        # set files no finding (its bot is disabled for this plan/flow). Human
-        # comments (bot_kind is None) always pass — the gate is bot-scoped. A
-        # disabled bot files nothing, so its re-review is transitively
-        # suppressed (no findings -> no re-review trigger).
-        if enabled_bots_set is not None and bot_kind and bot_kind not in enabled_bots_set:
-            skipped_disabled += 1
-            continue
+        # Participation classification (warn-but-ingest, NOT a filter). A comment
+        # whose bot_kind falls outside required ∪ optional is still stored — the
+        # bot is merely recorded as unclassified so the caller can surface the
+        # configuration gap. This is deliberately NOT a `continue`: dropping the
+        # comment would make a configuration omission silently destroy real review
+        # signal, precisely when the operator had not yet considered that bot.
+        if bot_kind and bot_kind not in classified_bots:
+            unclassified_set.add(bot_kind)
 
-        # Pre-filter 3: cross-iteration dedup keyed on (bot_kind, comment_id)
+        # Pre-filter 4: cross-iteration dedup keyed on (bot_kind, comment_id)
         # for ALL bot kinds, thread-bearing and thread_id-less alike. A comment
         # already staged in a prior iteration MUST NOT re-surface as a new
         # pending finding when HEAD advances. Dropping the earlier
@@ -534,11 +649,14 @@ def cmd_fetch_findings(args):
             store_failures.append(comment_id)
 
     count_stored = len(stored_hashes)
-    # Duplicates skipped by the cross-iteration guard and comments skipped by the
-    # enabled-bots filter are both legitimate non-stores, so they drop out of
-    # expected_stored alongside the noise skips — otherwise every deduped or
-    # disabled-bot comment would spuriously trip the producer-mismatch Q-Gate.
-    expected_stored = count_fetched - skipped_noise - skipped_duplicate - skipped_disabled
+    # Duplicates skipped by the cross-iteration guard and refusals surfaced through
+    # ``refused_bots`` are both legitimate non-stores, so they drop out of
+    # expected_stored alongside the noise skips — otherwise every deduped comment
+    # and every surfaced refusal would spuriously trip the producer-mismatch
+    # Q-Gate. An unclassified bot's comments are NOT subtracted: under the
+    # warn-but-ingest rule they are stored like any other, so they belong in
+    # expected_stored.
+    expected_stored = count_fetched - skipped_noise - skipped_duplicate - skipped_refusal
 
     qgate_hash: str | None = None
     qgate_persist_failure: dict[str, str] | None = None
@@ -549,6 +667,7 @@ def cmd_fetch_findings(args):
         mismatch_detail = (
             f'count_fetched={count_fetched}, '
             f'count_skipped_noise={skipped_noise}, '
+            f'count_skipped_refusal={skipped_refusal}, '
             f'count_stored={count_stored}, '
             f'expected_stored={expected_stored}, '
             f'failed_comment_ids={store_failures}'
@@ -578,9 +697,13 @@ def cmd_fetch_findings(args):
         'count_fetched': count_fetched,
         'count_skipped_noise': skipped_noise,
         'count_skipped_duplicate': skipped_duplicate,
-        'count_skipped_disabled': skipped_disabled,
+        'count_skipped_refusal': skipped_refusal,
         'count_stored': count_stored,
-        'responded_bots': sorted(responded_set),
+        'participated_bots': [
+            {'bot_kind': bot, 'evidence_kind': participated[bot]} for bot in sorted(participated)
+        ],
+        'refused_bots': sorted(refused_set),
+        'unclassified_bots': sorted(unclassified_set),
         'stored_hash_ids': stored_hashes,
         'producer_mismatch_hash_id': qgate_hash,
     }
@@ -732,25 +855,38 @@ def cmd_post_responses(args):
     disposition. This verb makes NO triage decision; it only transmits decisions
     the triage pass already recorded.
 
+    The routing predicate is the finding's **kind** — its thread-BEARING-ness,
+    recorded in the detail block by ``cmd_fetch_findings`` — never the mere
+    presence of an extractable ``thread_id``:
+
     1. **No ``resolution_detail``** — recorded in ``skipped`` with reason
        ``no_resolution_detail``. There is genuinely nothing to transmit.
-    2. **``thread_id`` present** — thread-reply carrying the disposition, then
-       resolve-thread. Recorded in ``responded`` with ``transmit_mode:
-       thread_reply`` and ``resolved_on_provider: true``.
-    3. **``thread_id`` empty, disposition body present** — collected across the
-       whole loop and transmitted as ONE batched PR-level comment, each section
-       anchored on its source ``comment_id``. Recorded in ``responded`` with
-       ``transmit_mode: batched_issue_comment`` and ``resolved_on_provider:
-       false`` — an issue comment has no resolvable thread, and reporting
-       ``true`` would be a false signal. Batching is deliberate: ``review_body``
-       findings from every bot are thread-less, so a per-finding comment would
-       spam the PR.
+    2. **Genuinely threadless kind** (``review_body`` / ``issue_comment``, see
+       ``_THREADLESS_KINDS``) — collected across the whole loop and transmitted
+       as ONE batched PR-level comment, each section anchored on its source
+       ``comment_id``. Recorded in ``responded`` with ``transmit_mode:
+       batched_issue_comment`` and ``resolved_on_provider: false`` — an issue
+       comment has no resolvable thread, and reporting ``true`` would be a false
+       signal. Batching is deliberate: ``review_body`` findings from every bot
+       are thread-less, so a per-finding comment would spam the PR.
+    3. **Thread-bearing kind** (``inline``, and any unrecognised or unrecorded
+       kind) — thread-reply carrying the disposition, then resolve-thread.
+       Recorded in ``responded`` with ``transmit_mode: thread_reply`` and
+       ``resolved_on_provider: true``.
+
+    A thread-bearing finding whose ``thread_id`` is empty or whose thread reply
+    fails is **undeliverable, not threadless**: it lands in ``untransmitted``
+    with a reason naming the missing or unusable thread and the run reports
+    ``status: partial``. It is NEVER re-routed into the batch — a silent
+    downgrade would report a disposition as delivered while the reviewer's own
+    thread stays unanswered and unresolved.
 
     Every disposition that had something to say but could not be delivered — a
-    failed thread-reply, a failed resolve-thread, or a failed batched post —
-    lands in ``untransmitted`` and drives ``count_untransmitted`` and a top-level
-    ``status`` of ``partial``. Nothing is folded into a generic skip and nothing
-    is masked by an unconditional ``success``.
+    missing thread on a thread-bearing finding, a failed thread-reply, a failed
+    resolve-thread, or a failed batched post — lands in ``untransmitted`` and
+    drives ``count_untransmitted`` and a top-level ``status`` of ``partial``.
+    Nothing is folded into a generic skip and nothing is masked by an
+    unconditional ``success``.
 
     Fail-loud: returns a typed ``unconfigured`` status when GitHub is not
     authenticated.
@@ -783,9 +919,31 @@ def cmd_post_responses(args):
             skipped.append({'hash_id': hash_id, 'reason': 'no_resolution_detail'})
             continue
 
-        thread_id = _detail_field(finding.get('detail'), _THREAD_ID_DETAIL)
+        detail = finding.get('detail')
+        kind = _detail_field(detail, _KIND_DETAIL)
+
+        # Disposition 2 — genuinely threadless kind: the ONLY path into the
+        # batch. Admission is decided by the kind alone, so a thread-bearing
+        # finding can never reach the batch by losing its thread_id.
+        if kind in _THREADLESS_KINDS:
+            batch.append((hash_id, _detail_field(detail, _COMMENT_ID_DETAIL), reply_body))
+            continue
+
+        # Disposition 3 — thread-bearing kind (inline, or an unrecognised kind
+        # that must not be assumed threadless). Its disposition belongs in the
+        # reviewer's own thread; without a usable thread it is undeliverable and
+        # is reported as such, never downgraded into the batch.
+        thread_id = _detail_field(detail, _THREAD_ID_DETAIL)
         if not thread_id:
-            batch.append((hash_id, _detail_field(finding.get('detail'), _COMMENT_ID_DETAIL), reply_body))
+            untransmitted.append(
+                {
+                    'hash_id': hash_id,
+                    'reason': (
+                        f'thread-bearing finding (kind: {kind or "unrecorded"}) has no thread_id — '
+                        'its in-thread reply is undeliverable and is not batched'
+                    ),
+                }
+            )
             continue
 
         # Reply carrying the recorded disposition, then resolve — keyed by this
@@ -885,14 +1043,24 @@ Examples:
                     {'flags': ['--pr-number'], 'dest': 'pr_number', 'type': int, 'required': True, 'help': 'PR number'},
                     {'flags': ['--plan-id'], 'dest': 'plan_id', 'required': True, 'help': 'Plan ID for finding store'},
                     {
-                        'flags': ['--enabled-bots'],
-                        'dest': 'enabled_bots',
+                        'flags': ['--required-bots'],
+                        'dest': 'required_bots',
                         'help': (
-                            'Comma-joined enabled bot_kinds (e.g. "coderabbit,sourcery,pr-agent"). When '
-                            'supplied, a comment whose derived bot_kind is non-empty and NOT in this set '
-                            'files no finding — its bot is disabled for this plan/flow, so its re-review is '
-                            'transitively suppressed. Human comments (bot_kind is None) always pass. Omit '
-                            'the flag to disable the filter entirely (all comments considered).'
+                            'Comma-joined bot_kinds whose participation is REQUIRED (e.g. '
+                            '"coderabbit,pr-agent"). A required bot\'s silence is a failure and gates the '
+                            'review-completeness quorum. This list classifies, it does NOT admit: a comment '
+                            'from a bot outside both lists is still ingested and its bot is reported in '
+                            'unclassified_bots.'
+                        ),
+                    },
+                    {
+                        'flags': ['--optional-bots'],
+                        'dest': 'optional_bots',
+                        'help': (
+                            'Comma-joined bot_kinds whose participation is OPTIONAL (e.g. "sourcery"). An '
+                            "optional bot's silence is not a failure and never gates mark-done. Like "
+                            '--required-bots this classifies rather than admits; see '
+                            'automatic-review/standards/bot-participation-contract.md.'
                         ),
                     },
                 ],

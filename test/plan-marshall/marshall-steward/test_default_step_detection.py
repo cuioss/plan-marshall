@@ -147,3 +147,10 @@ def test_malformed_marshal_returns_empty_list(tmp_path: Path):
     plan_dir.mkdir()
     (plan_dir / 'marshal.json').write_text('{not valid json', encoding='utf-8')
     assert detect_missing_default_finalize_steps(plan_dir) == []
+
+
+# NOTE: the pin on THIS repository's operative bot-participation lists lives in
+# ``test/plan-marshall/automatic-review/test_bot_participation_contract.py``
+# (``TestThisRepositorysSettledConfiguration``), the contract-level home for the
+# participation model. It was moved out of this default-step-detection suite
+# rather than duplicated, so the roster is asserted in exactly one place.

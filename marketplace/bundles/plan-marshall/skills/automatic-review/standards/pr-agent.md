@@ -4,12 +4,16 @@ PR-Agent-specific triage rule for the plan-marshall `pr-comment` findings pipeli
 [`coderabbit.md`](coderabbit.md); read that first for the shared pipeline mechanics — this file
 only carries what differs for PR-Agent (`cuioss-review-bot[bot]`). The machine-readable registry
 block below is the single per-bot data record the `automatic-review` step consumes when `pr-agent`
-is present in the step's `enabled_bots`.
+is classified in the step's `required_bots` or `optional_bots`. Classification decides whether
+PR-Agent's silence is a failure (required) or tolerable (optional); it does NOT decide admission — a
+PR-Agent comment is ingested even when the bot appears in neither list, with a warning recorded. See
+[`bot-participation-contract.md`](bot-participation-contract.md).
 
 PR-Agent is the third reviewer beside CodeRabbit and Sourcery, deliberately narrowed to a
 **security-weighted** charter. It is opt-in per repository (the repo must carry the
-`reusable-pr-agent-review.yml` caller workflow), so `pr-agent` is NOT in the shipped
-`enabled_bots` default — add it per project.
+`reusable-pr-agent-review.yml` caller workflow). Both `required_bots` and `optional_bots` ship
+EMPTY, so `pr-agent` — like every other bot — is classified per project rather than by a shipped
+default.
 
 ## Grounding source
 
@@ -31,8 +35,9 @@ Sample size is **one review** — see "Signal calibration" below before generali
 
 The fenced-YAML block below is the machine-readable per-bot record. It is data, not frontmatter.
 Consumers read `bot_kind`, `author_login`, `trigger_comment`, `completion_check_name`,
-`honors_skip_label`, `ignore_patterns`, and `severity_map` from it; the prose sections carry the
-rationale.
+`honors_skip_label`, `participation_evidence`, `participation_requires_update`, `ignore_patterns`,
+`refusal_patterns`, `rate_limit_class`, `rate_limit_eta_patterns`, and `severity_map` from it; the
+prose sections carry the rationale.
 
 ```yaml
 bot_kind: pr-agent
@@ -46,6 +51,15 @@ completion_check_name: ""         # CONFIRMED on #103 — absent from `ci pr rev
 honors_skip_label: true           # UNVERIFIED — #103 carried no skip label, so this was not
                                   # exercised. Kept because it is enforced by the reusable
                                   # workflow's if: guard, NOT by bot config (see "Central config")
+# participation_evidence: issue_comment ONLY. CONFIRMED on #103 — this bot publishes exactly one
+# persistent Guide comment, submits NO review object, and posts NO check-run. Neither an
+# inline-comment count nor a check-run state is evidence for this bot: it produces neither, so
+# reading either would score it absent on every run. See "Participation evidence" below.
+participation_evidence:
+  - issue_comment                 # the single persistent `## PR Reviewer Guide 🔍` comment
+participation_requires_update: true   # a re-review EDITS that same comment in place, so continued
+                                  # presence proves only that it reviewed once, at some earlier HEAD.
+                                  # Evidence therefore requires first presence OR updated_at movement.
 # ignore_patterns: CONFIRMED on #103 — the first two did not fire, and neither
 # wrongly dropped the review.
 ignore_patterns:
@@ -56,6 +70,12 @@ ignore_patterns:
                                   # finding. Suppressed at source by final_update_message = false
                                   # in cuioss/pr-agent-settings; this pattern covers the ones
                                   # already posted and any recurrence if that setting is lost.
+refusal_patterns:                 # EMPTY — no refusal of any kind observed on #103. Fail-closed: a
+                                  # refusal is never claimed without positive evidence, so this bot's
+                                  # non-participation resolves to absent / in_progress, never refused.
+rate_limit_class: unknown         # UNVERIFIED — no refusal of any kind observed on #103. Fail-closed
+                                  # per ADR-009: never assume a refusal is awaitable without evidence.
+rate_limit_eta_patterns:
 # severity_map: an ASSIGNMENT map, NOT a parse map — see the section below.
 severity_map:
   security_concern: high          # assigned to a finding taken from the 🔒 row
@@ -126,6 +146,25 @@ Note what is deliberately **not** dropped: the `## PR Reviewer Guide 🔍` comme
 header identifies the review and carries every finding — PR-Agent has no separate marker comment,
 and matching on it would drop the entire review.
 
+## Rate-limit class — `unknown` (UNVERIFIED)
+
+**No refusal of any kind has been observed for this bot.** #103 produced a normal review, so nothing
+in the grounding source exercises a rate-limit, quota, or diff-size decline. `rate_limit_class` is
+therefore `unknown` and `rate_limit_eta_patterns` is empty — both recorded as an honest absence of
+evidence, not as a claim that this bot never refuses.
+
+`unknown` is the FAIL-CLOSED value (ADR-009): a caller must NOT claim this bot's rate window, await
+it, or generate a recovery event for a bot whose refusal shape has never been seen — awaiting a quota
+that does not reopen burns the full budget and still times out, and re-triggering a bot that cannot
+answer spends a capped recovery attempt for nothing. The recovery sequence therefore escalates
+immediately for this class (`escalate_ask{reason: rate_window_not_awaitable}`); see `../SKILL.md`
+§ "Rate-limit refusal recovery (opt-in)". Should a refusal ever be observed, record its OBSERVED text in
+`ignore_patterns` and reclassify this field against that evidence — do not promote it to
+`awaitable_window` on the assumption that it behaves like CodeRabbit's window.
+
+The `ignore_patterns` entry `**[Persistent review]` is NOT a refusal: it is a contentless
+"updated to latest commit" notice, which is a different class of non-finding.
+
 ## Consumer stage — classify a surviving PR-Agent finding
 
 **Structural difference from the other two bots: there are no inline comments.** CONFIRMED on
@@ -170,14 +209,18 @@ against the previously triaged body instead of re-triaging identical text.
 ## Structural constraints and how the pipeline handles them
 
 Two permanent properties of this bot follow from the single observed fact that it posts **one
-persistent `issue_comment` with an empty `thread_id`, and submits no GitHub *review* object**
+persistent comment of kind `issue_comment`, and submits no GitHub *review* object**
 (#103: absent from `ci pr reviews`). Both are handled — neither is an open defect.
 
-1. **No resolvable review thread.** The comment carries an empty `thread_id`, so there is no thread
-   to reply into or resolve. A triaged PR-Agent disposition is therefore transmitted by
-   `github_pr post_responses` as a **batched PR-level comment** anchored on the source `comment_id`,
-   and reported with `transmit_mode: batched_issue_comment` and `resolved_on_provider: false` —
-   `false` because no thread exists to resolve, and claiming otherwise would be a false signal.
+1. **No resolvable review thread.** Its comment's `kind` is `issue_comment` — one of the two
+   genuinely threadless kinds — so GitHub gives it no review thread to reply into or resolve. A
+   triaged PR-Agent disposition is therefore transmitted by `github_pr post_responses` as a
+   **batched PR-level comment** anchored on the source `comment_id`, and reported with
+   `transmit_mode: batched_issue_comment` and `resolved_on_provider: false` — `false` because no
+   thread exists to resolve, and claiming otherwise would be a false signal. The batch admission is
+   justified by the *kind*, not by an empty `thread_id`: `post_responses` routes on thread-bearing-ness,
+   so a thread-bearing comment that merely lost its `thread_id` is reported as untransmitted rather
+   than batched here.
 2. **No review object to await.** Because the bot submits no review, `github_re_review
    await_fresh_review` cannot match one. It matches the bot's **issue-comment** completion signal
    instead, returning `matched_signal: issue_comment` with `head_sha_verified: false` — the comment
@@ -185,7 +228,30 @@ persistent `issue_comment` with an empty `thread_id`, and submits no GitHub *rev
    trigger. That is weaker evidence than a review match, and the envelope says so rather than
    implying the new HEAD was reviewed.
 
-Both handlers are **generic across the registry**, not PR-Agent special cases: every bot's
+## Participation evidence — `issue_comment` ONLY, plus update movement
+
+This bot's publish shape is the narrowest in the registry, and getting its evidence wrong is
+consequential in both directions:
+
+- **`issue_comment` is the only evidence.** PR-Agent publishes exactly one persistent
+  `## PR Reviewer Guide 🔍` comment. It submits **no review object** and posts **no check-run**, so
+  **neither an inline-comment count nor a check-run state is evidence for this bot** — it produces
+  neither, and reading either would score it absent on every single run no matter how well it
+  reviewed. That is the false-negative direction.
+- **Presence alone is not enough — the update must move.** A re-review **edits that same comment in
+  place** rather than posting a new one. Its continued existence therefore proves only that PR-Agent
+  reviewed *once*, at some earlier HEAD; after a force-push the stale Guide would silently credit
+  the bot with reviewing code it never saw. That is the false-positive direction, and
+  `participation_requires_update: true` closes it: evidence requires either **first presence** (the
+  comment is newly observed) or observed **`updated_at` movement**.
+
+The evidence proves PR-Agent *participated*, never that its review was good. This bot is the
+motivating case for that ceiling: on #1027 it posted its Guide — valid participation under this
+record — while reporting "no major issues" on a diff in which CodeRabbit found two Major defects. A
+satisfied quorum is not a reviewed diff. See
+[`bot-participation-contract.md`](bot-participation-contract.md) § "Evidence taxonomy".
+
+Both handlers above are **generic across the registry**, not PR-Agent special cases: every bot's
 `review_body` findings are equally thread-less, and every bot's issue comment is equally valid
 evidence that it responded. See
 [`workflow-integration-github` SKILL.md](../../workflow-integration-github/SKILL.md) for the

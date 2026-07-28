@@ -262,9 +262,14 @@ def cmd_pr_create(args: argparse.Namespace) -> dict:
     if getattr(args, 'head', None):
         glab_args.extend(['--source-branch', args.head])
     # Optional --label passthrough (repeatable), mirroring the GitHub provider's
-    # cmd_pr_create. create-pr applies `--label skip-bot-review` when the
-    # enabled_bots set is empty; without this forward the label would be silently
-    # dropped on GitLab MRs.
+    # cmd_pr_create. create-pr applies `--label skip-bot-review` when required_bots
+    # and optional_bots are both empty AND the operator actually answered; without
+    # this forward the label would be silently dropped on GitLab MRs.
+    #
+    # Provider asymmetry: gitlab_pr fetch_findings declares NEITHER --required-bots
+    # nor --optional-bots — the review-bot participation classification is a
+    # GitHub-only capability, so on GitLab every comment is considered and none is
+    # classified.
     for label in getattr(args, 'label', None) or []:
         glab_args.extend(['--label', label])
 

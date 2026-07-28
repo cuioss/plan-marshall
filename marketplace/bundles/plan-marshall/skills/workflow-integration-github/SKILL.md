@@ -10,7 +10,7 @@ mode: workflow
 GitHub provider for the findings-pipeline `pr-comment` producer. The provider surface is exactly THREE pure, zero-LLM verbs — no triage judgment lives here:
 
 - **`fetch_findings`** — fetch PR review comments, apply the pre-filter (`comment-patterns.json`), and file one `pr-comment` finding per surviving comment via `manage-findings add`. The untrusted comment body is quarantined under `raw_input.{body}` (never embedded raw in the top-level `detail`); the batched `manage-findings ingest` pass promotes it to top-level only after `validate_struct`.
-- **`post_responses`** — apply already-decided triage dispositions back to the PR, keyed by each finding's own `hash_id`, via a three-way transmit: thread-reply-then-resolve for a thread-bearing finding, ONE batched PR-level comment for the thread-less ones, and `skipped` only when there is genuinely nothing to say.
+- **`post_responses`** — apply already-decided triage dispositions back to the PR, keyed by each finding's own `hash_id`, via a three-way transmit keyed on the finding's `kind`: thread-reply-then-resolve for a thread-bearing finding (untransmitted, never batched, when its thread is missing), ONE batched PR-level comment for the genuinely threadless kinds, and `skipped` only when there is genuinely nothing to say.
 - **`bot_completion`** — report a review bot's registry `completion_check_name` check-run state (`{status, in_progress, completed}`) for the PR HEAD, so the `automatic-review` completion-aware poll can wait for a slow bot to finish before fetching; a bot with no completion check-run reports `no_check_name` and the caller falls back to the `review_bot_buffer_seconds` wait.
 
 All three verbs FAIL LOUD when GitHub is not configured (a typed `unconfigured` status, never a silent no-op). Uses the `gh` CLI for all GitHub operations.
@@ -113,7 +113,7 @@ This skill is consumed by:
 | `thread-reply --thread-id` | Comment's `thread_id` field | GraphQL node ID | `PRRT_kwDO...` |
 | `resolve-thread --thread-id` | Comment's `thread_id` field | GraphQL node ID | `PRRT_kwDO...` |
 
-Both operations take the same `PRRT_` thread ID — pass the comment's `thread_id` field for either. The comment's `id` field (format `PRRC_...`) is never valid for `thread-reply` or `resolve-thread`. `post_responses` reads each finding's `thread_id` from its own `detail` block, keyed by `hash_id` — never a positional pairing. A finding whose `thread_id` is empty has no thread to reply into; its disposition goes out on the batched PR-comment path instead (see Workflow 2 step 4).
+Both operations take the same `PRRT_` thread ID — pass the comment's `thread_id` field for either. The comment's `id` field (format `PRRC_...`) is never valid for `thread-reply` or `resolve-thread`. `post_responses` reads each finding's `thread_id` from its own `detail` block, keyed by `hash_id` — never a positional pairing. Which path a finding takes is decided by its `kind`, not by whether a `thread_id` was extractable: a genuinely threadless kind (`review_body`, `issue_comment`) goes out on the batched PR-comment path, while a thread-bearing kind with no usable `thread_id` is reported as untransmitted rather than batched (see Workflow 2 step 4).
 
 **NEVER use numeric IDs** — GitHub GraphQL requires global node IDs.
 
@@ -123,7 +123,9 @@ Both operations take the same `PRRT_` thread ID — pass the comment's `thread_i
    ```bash
    python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr fetch_findings --pr-number {pr} --plan-id {plan_id}
    ```
-   Output reports `count_fetched`, `count_skipped_noise`, `count_stored`, and `producer_mismatch_hash_id` (set when count_stored ≠ count_fetched − count_skipped_noise; the mismatch is also persisted as a Q-Gate finding under phase `5-execute` with title prefix `(producer-mismatch)`). When that mismatch finding's own persist is REJECTED, `producer_mismatch_hash_id` stays `null` and the output carries `qgate_persist_failed: true` plus `qgate_persist_failure{title, detail, message}` — the mismatch content that never reached the store, with the primitive's rejection message. Both fields are absent when the mismatch finding landed (or when there was no mismatch). Read `qgate_persist_failed`, not a `null` hash id, to tell a lost mismatch finding from no mismatch at all; `status` stays `success` because the fetch itself succeeded. A `status: unconfigured` return means GitHub is not authenticated — never a silent zero-findings success.
+   Output reports `count_fetched`, `count_skipped_noise`, `count_skipped_duplicate`, `count_skipped_refusal`, `count_stored`, `participated_bots[]`, `refused_bots[]`, `unclassified_bots[]`, and `producer_mismatch_hash_id` (set when count_stored ≠ count_fetched − count_skipped_noise − count_skipped_duplicate − count_skipped_refusal; the mismatch is also persisted as a Q-Gate finding under phase `5-execute` with title prefix `(producer-mismatch)`). An unclassified bot's comments are stored like any other, so they are NOT subtracted from the expected count. When that mismatch finding's own persist is REJECTED, `producer_mismatch_hash_id` stays `null` and the output carries `qgate_persist_failed: true` plus `qgate_persist_failure{title, detail, message}` — the mismatch content that never reached the store, with the primitive's rejection message. Both fields are absent when the mismatch finding landed (or when there was no mismatch). Read `qgate_persist_failed`, not a `null` hash id, to tell a lost mismatch finding from no mismatch at all; `status` stays `success` because the fetch itself succeeded. A `status: unconfigured` return means GitHub is not authenticated — never a silent zero-findings success.
+
+   **A refusal is a branch, never a noise drop.** A comment recognized as a bot DECLINING to review (its registry `refusal_patterns`, or the structural `_is_rate_limit_notice` recognizer for an unregistered bot) files no `pr-comment` finding — it is a signal *about* the review, not feedback about the code, so the operator is never asked to triage it — but it is counted in `count_skipped_refusal` and its bot is named in `refused_bots[]`, and it is excluded from `participated_bots[]`. Forward `refused_bots[]` to `review_completeness check --refused-bots` so the quorum layer classifies the bot as `refused_awaitable` / `refused_hard`. Folding a refusal into `count_skipped_noise` instead is what let a PR whose every required reviewer refused report a clean, complete review; `count_skipped_noise` and `count_skipped_refusal` are deliberately separate counters for that reason.
 
 2. **INGEST — promote validated free-text to top-level** (one batched deterministic pass over the whole ledger):
    ```bash
@@ -136,17 +138,19 @@ Both operations take the same `PRRT_` thread ID — pass the comment's `thread_i
    ```bash
    python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr post_responses --pr-number {pr} --plan-id {plan_id}
    ```
-   `post_responses` transmits every terminal-disposition finding through a three-way branch — no decision is lost and none is guessed at:
+   `post_responses` transmits every terminal-disposition finding through a three-way branch — no decision is lost and none is guessed at. **The routing predicate is the finding's `kind` — its thread-BEARING-ness — never the presence of an extractable `thread_id`:**
 
    | Finding shape | Transmit | Recorded as |
    |---------------|----------|-------------|
    | no `resolution_detail` | nothing — there is genuinely nothing to say | `skipped[]`, reason `no_resolution_detail` |
-   | `thread_id` present | thread-reply carrying the `resolution_detail`, then resolve-thread | `responded[]`, `transmit_mode: thread_reply`, `resolved_on_provider: true` |
-   | `thread_id` empty, `resolution_detail` present | ONE batched PR-level comment for ALL such findings in the run, each section anchored on its source `comment_id` | `responded[]`, `transmit_mode: batched_issue_comment`, `resolved_on_provider: false` |
+   | genuinely threadless `kind` (`review_body`, `issue_comment`) | ONE batched PR-level comment for ALL such findings in the run, each section anchored on its source `comment_id` | `responded[]`, `transmit_mode: batched_issue_comment`, `resolved_on_provider: false` |
+   | thread-bearing `kind` (`inline`, and any unrecognised kind) | thread-reply carrying the `resolution_detail`, then resolve-thread | `responded[]`, `transmit_mode: thread_reply`, `resolved_on_provider: true` |
 
    Batching is deliberate: `review_body` findings from every bot are thread-less, so a per-finding comment would spam the PR. `resolved_on_provider: false` on that path is truthful — an issue comment has no resolvable thread, and reporting `true` would be a false signal.
 
-   Any disposition that had something to say but could not be delivered — a failed thread-reply, a failed resolve-thread, or a failed batched post (which untransmits the WHOLE batch) — lands in `untransmitted[]` with a reason, drives `count_untransmitted`, and sets the envelope `status` to `partial`. The envelope reports `success` only when `count_untransmitted` is 0; it is never unconditionally `success`.
+   **An undeliverable in-thread reply is untransmitted, never silently batched.** A thread-bearing finding whose `thread_id` is empty or unextractable is *undeliverable*, not threadless: it lands in `untransmitted[]` with a reason naming the missing thread and the run reports `status: partial`. It is NEVER re-routed into the batch — a silent downgrade would report the disposition as delivered while the reviewer's own thread stays unanswered and unresolved. Only genuinely threadless kinds enter the batch, so the batch membership is decided by the kind alone and cannot be reached by losing a `thread_id`.
+
+   Any disposition that had something to say but could not be delivered — a missing thread on a thread-bearing finding, a failed thread-reply, a failed resolve-thread, or a failed batched post (which untransmits the WHOLE batch) — lands in `untransmitted[]` with a reason, drives `count_untransmitted`, and sets the envelope `status` to `partial`. The envelope reports `success` only when `count_untransmitted` is 0; it is never unconditionally `success`.
 
 ### Workflow 3: Re-Review After a HEAD-Advancing Branch Operation
 
@@ -169,7 +173,7 @@ The strategies differ **only** in the trigger comment `request_fresh_review` pos
 | **review** (preferred) | a review whose reviewed commit SHA equals `--head-sha` AND whose `submittedAt` strictly post-dates the trigger time, and which is not a refusal notice | `matched_signal: review`, `matched_review: {…}`, `head_sha_verified: true` |
 | **issue comment** (fallback) | a comment whose author resolves to the awaited `bot_kind`, whose later of `updated_at` / `created_at` strictly post-dates the trigger time, and which is not a refusal notice | `matched_signal: issue_comment`, `matched_comment: {…}`, `head_sha_verified: false` |
 
-**Both** signals additionally reject a **refusal notice** — a bot declining to review (rate-limit, diff-size, quota). The rejection is two-layer and identical on both paths: the awaited bot's registry `ignore_patterns` (its OBSERVED refusal strings) are matched first, with the author-independent structural `_is_rate_limit_notice` as the last-resort fallback for an unknown or renamed bot. A refusal carries no review, so counting it as a completion signal would assert review coverage that never happened. This applies to the review path as much as the comment path: a bot may submit its refusal as a **review object** rather than an issue comment, and the review path resolves first — so without the check the strongest signal (`head_sha_verified: true`) would be the one most likely to be false.
+**Both** signals additionally reject a **refusal notice** — a bot declining to review (rate-limit, diff-size, quota). The rejection is two-layer and identical on both paths: the awaited bot's registry `refusal_patterns` (its OBSERVED refusal strings — a DEDICATED field, never `ignore_patterns`, which lists the routine sections a bot emits on a *successful* review and would therefore over-match) are checked first, with the author-independent structural `_is_rate_limit_notice` as the last-resort fallback for an unknown or renamed bot. A refusal carries no review, so counting it as a completion signal would assert review coverage that never happened. This applies to the review path as much as the comment path: a bot may submit its refusal as a **review object** rather than an issue comment, and the review path resolves first — so without the check the strongest signal (`head_sha_verified: true`) would be the one most likely to be false.
 
 `head_sha_verified: false` on the comment path is load-bearing: an issue comment carries no reviewed-commit SHA, so the match proves the bot **responded**, not that it reviewed the new HEAD. The caller learns the strength of the evidence, not just the fact of a match. The comment path uses the LATER of `updated_at` / `created_at` so a bot that edits ONE persistent comment in place still registers as fresh activity. No bot is named in code — both matchers are generic across the registry.
 
@@ -292,6 +296,30 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github
 python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops pr wait-for-comments \
   --pr-number N [--timeout SECS] [--interval SECS]
 ```
+
+Alongside the poll fields (`timed_out`, `duration_sec`, `polls`, `baseline_count`, `final_count`,
+`new_count`) the return carries **`rate_limited_bots[]`** — one record per REGISTERED bot whose newest
+comment on the PR is a rate-limit / service notice posted in place of a review:
+
+```toon
+rate_limited_bots[N]{bot_kind,rate_limit_class,eta}:
+```
+
+- `bot_kind` — the registry key of the refusing bot. The bot set, and each bot's login, are derived
+  from `automatic-review/standards/{bot_kind}.md`; no bot is named in the detection path.
+- `rate_limit_class` — that bot's registry `rate_limit_class`: `awaitable_window` (a rolling window
+  that reopens, so awaiting the reset is productive), `hard_quota` (a budget that does not reopen on
+  a useful timescale, so awaiting it only burns budget), or `unknown` (no refusal observed for this
+  bot). `unknown` is the fail-closed default — a caller MUST NOT await a bot whose refusal shape has
+  never been observed.
+- `eta` — the reset time the notice itself stated, extracted via that bot's registry
+  `rate_limit_eta_patterns`, or `""` when the notice stated none. An empty `eta` means *unknown*,
+  never *reopens now*.
+
+An **empty list means no registered bot is rate-limited**. The list is per-bot by design: a single
+boolean cannot say WHICH bot refused, and — because the classes differ per bot — cannot say whether
+awaiting is worth anything. Detection is best-effort and never alters poll behaviour: a failed
+post-poll fetch leaves the list empty.
 
 ### github_ops pr merge
 
@@ -454,8 +482,16 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr fetch_findings \
-  --pr-number N --plan-id PLAN_ID
+  --pr-number N --plan-id PLAN_ID \
+  [--required-bots CSV] [--optional-bots CSV]
 ```
+
+`--required-bots` / `--optional-bots` carry the review-bot participation CLASSIFICATION, not an
+admission filter. A comment whose derived `bot_kind` is in NEITHER list is **still ingested**, and
+the bot is reported in the return's `unclassified_bots[]` so the caller can surface the configuration
+gap (the warn-but-ingest rule). A required bot's silence is a failure that gates the completeness
+quorum; an optional bot's silence never gates. See
+[`automatic-review/standards/bot-participation-contract.md`](../automatic-review/standards/bot-participation-contract.md).
 
 ### github_pr post_responses
 

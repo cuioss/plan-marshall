@@ -1327,7 +1327,9 @@ def add_pr_create_args(
         metavar='LABEL',
         help='Label to apply to the created PR (repeatable). Passed through verbatim to '
         '`gh pr create --label`. The create-pr finalize step applies `--label skip-bot-review` '
-        'when the enabled_bots set is empty (all reviewer bots disabled for this plan).',
+        'when required_bots and optional_bots are BOTH empty AND the operator actually answered '
+        '(bot_lists_provenance is answered or migrated) — a never_asked posture is never treated '
+        'as a request to skip review.',
     )
 
 

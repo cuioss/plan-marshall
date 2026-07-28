@@ -2,6 +2,19 @@
 
 {summary_from_task_md}
 
+## Intent
+
+<!--
+Rendered by `pr_intent_section render`, NOT hand-written — do not author this
+section in the body Write. The renderer owns the character budget and its
+truncation deterministically (see workflow/create-pr.md § Step 3.4).
+
+ABSENT ENTIRELY, heading included, when the plan has no solution_outline.md (or
+its summary and overview sections are both empty). An empty `## Intent` would
+imply the intent was considered and found vacuous, which tells a reviewer less
+than no section at all.
+-->
+
 ## Changes
 
 {list_of_changes}

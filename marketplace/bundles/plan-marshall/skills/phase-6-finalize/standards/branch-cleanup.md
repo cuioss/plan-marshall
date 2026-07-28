@@ -576,7 +576,7 @@ Set `{merge_consent} = deferred`. Skip the **Merge PR**, **Wait for Merge CI**, 
 
 **Only if `state == open` AND `{merge_consent} == explicit_yes`** (the `final_merge_without_asking == true` bypass and the interactive "Yes, merge" both set `{merge_consent} = explicit_yes`). This fail-closed barrier fires AFTER the pre-merge gate authorized the merge and BEFORE the **Merge PR (if not yet merged)** routing below, so it gates BOTH the `use_merge_queue == false` safe-merge path and the `use_merge_queue == true` merge-queue path (both live inside **Merge PR**). It re-fetches bot comments from the provider against the current HEAD and refuses to merge while any `pr-comment` finding is still unhandled — closing the window where a comment that lands after `automatic-review` (order 30) marked done is never re-fetched by the time `branch-cleanup` (order 70) merges. The existing `phase_handshake findings-check` gate only re-reads the findings *store*; this barrier re-reads the *provider*, so a comment that was never fetched is visible to it.
 
-#### Read the barrier knob and the enabled-bot set
+#### Read the barrier knob and the bot participation lists
 
 Read `pre_merge_comment_barrier` off the `default:branch-cleanup` step's param object — the same one-stop `step-params get` `params` object resolved in the **Conflict-Severity Classifier** section above (re-issue the call if the value was not retained):
 
@@ -587,14 +587,14 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
 
 Extract `pre_merge_comment_barrier` from the returned `params` object as `{barrier_mode}` (default: `fail_into_loopback`). Valid values: `fail_into_loopback`, `ask`.
 
-Read `enabled_bots` off the `plan-marshall:automatic-review` step's param object (the set of `bot_kind`s this plan reviews with):
+Read `required_bots` and `optional_bots` off the `plan-marshall:automatic-review` step's param object (the review-bot participation classification for this plan):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest \
   step-params get --plan-id {plan_id} --phase 6-finalize --step-id plan-marshall:automatic-review
 ```
 
-Extract `enabled_bots` from the returned `params` object as `{enabled_bots}` (e.g. `coderabbit,sourcery,pr-agent`).
+Extract `required_bots` and `optional_bots` from the returned `params` object as `{required_bots}` (e.g. `coderabbit,pr-agent`) and `{optional_bots}` (e.g. `sourcery`). Both default EMPTY. The two lists classify rather than admit — see [`../../automatic-review/standards/bot-participation-contract.md`](../../automatic-review/standards/bot-participation-contract.md).
 
 #### Re-fetch bot comments against the current HEAD
 
@@ -602,10 +602,11 @@ Re-run the `github_pr fetch_findings` producer. It dedups against the already-st
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr \
-  fetch_findings --pr-number {pr_number} --plan-id {plan_id} --enabled-bots {enabled_bots}
+  fetch_findings --pr-number {pr_number} --plan-id {plan_id} \
+  --required-bots {required_bots} --optional-bots {optional_bots}
 ```
 
-> **GitLab provider asymmetry**: the GitLab producer `gitlab_pr fetch_findings` has NO `--enabled-bots` flag (the same asymmetry the FIND stage already documents). On GitLab, invoke it without the flag; every comment is considered.
+> **GitLab provider asymmetry**: the GitLab producer `gitlab_pr fetch_findings` has NEITHER a `--required-bots` nor an `--optional-bots` flag (the same asymmetry the FIND stage already documents). On GitLab, invoke it without them; every comment is considered and none is classified.
 
 #### Query for unhandled comments
 

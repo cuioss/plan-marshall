@@ -560,7 +560,7 @@ def test_sync_defaults_migrates_retired_review_key_preserving_knob_block(plan_co
                     'steps': {
                         'default:push': {},
                         'default:automated-review': {
-                            'enabled_bots': 'coderabbit',
+                            'required_bots': 'coderabbit',
                             'review_bot_buffer_seconds': 42,
                         },
                         'default:archive-plan': {},
@@ -581,7 +581,7 @@ def test_sync_defaults_migrates_retired_review_key_preserving_knob_block(plan_co
     assert _CANONICAL_REVIEW in steps
     # the user's custom knob values survive byte-identically (no double step)
     canonical_params = _params_for(steps, _CANONICAL_REVIEW)
-    assert canonical_params['enabled_bots'] == 'coderabbit'
+    assert canonical_params['required_bots'] == 'coderabbit'
     assert canonical_params['review_bot_buffer_seconds'] == 42
     # the migration is reported
     assert result['renamed_count'] == 1
@@ -596,7 +596,7 @@ def test_sync_defaults_migrates_bare_retired_review_key(plan_context):
             'plan': {
                 'phase-6-finalize': {
                     'steps': {
-                        'automated-review': {'enabled_bots': 'sourcery'},
+                        'automated-review': {'required_bots': 'sourcery'},
                     }
                 }
             }
@@ -610,7 +610,7 @@ def test_sync_defaults_migrates_bare_retired_review_key(plan_context):
     steps = config['plan']['phase-6-finalize']['steps']
     assert 'automated-review' not in steps
     assert _CANONICAL_REVIEW in steps
-    assert _params_for(steps, _CANONICAL_REVIEW)['enabled_bots'] == 'sourcery'
+    assert _params_for(steps, _CANONICAL_REVIEW)['required_bots'] == 'sourcery'
     assert result['renamed_count'] == 1
 
 
@@ -628,7 +628,7 @@ def test_sync_defaults_retired_key_migration_preserves_position(plan_context):
                 'phase-6-finalize': {
                     'steps': {
                         'default:push': {},
-                        'default:automated-review': {'enabled_bots': 'coderabbit'},
+                        'default:automated-review': {'required_bots': 'coderabbit'},
                         'default:archive-plan': {},
                     }
                 }
@@ -659,8 +659,8 @@ def test_sync_defaults_drops_retired_duplicate_when_canonical_present(plan_conte
             'plan': {
                 'phase-6-finalize': {
                     'steps': {
-                        'default:automated-review': {'enabled_bots': 'RETIRED'},
-                        _CANONICAL_REVIEW: {'enabled_bots': 'CANONICAL'},
+                        'default:automated-review': {'required_bots': 'RETIRED'},
+                        _CANONICAL_REVIEW: {'required_bots': 'CANONICAL'},
                     }
                 }
             }
@@ -674,7 +674,7 @@ def test_sync_defaults_drops_retired_duplicate_when_canonical_present(plan_conte
     steps = config['plan']['phase-6-finalize']['steps']
     # the retired duplicate is dropped; the canonical's own block wins
     assert 'default:automated-review' not in steps
-    assert _params_for(steps, _CANONICAL_REVIEW)['enabled_bots'] == 'CANONICAL'
+    assert _params_for(steps, _CANONICAL_REVIEW)['required_bots'] == 'CANONICAL'
     # the drop is reported as a rename entry
     assert result['renamed_count'] == 1
     assert any('dropped duplicate' in entry for entry in result['renamed'])
@@ -688,7 +688,7 @@ def test_sync_defaults_retired_key_migration_is_idempotent(plan_context):
             'plan': {
                 'phase-6-finalize': {
                     'steps': {
-                        'default:automated-review': {'enabled_bots': 'coderabbit'},
+                        'default:automated-review': {'required_bots': 'coderabbit'},
                     }
                 }
             }
@@ -720,7 +720,7 @@ def test_sync_defaults_migrates_retired_key_in_verification_steps_container(plan
             'plan': {
                 'phase-5-execute': {
                     'verification_steps': {
-                        'default:automated-review': {'enabled_bots': 'coderabbit'},
+                        'default:automated-review': {'required_bots': 'coderabbit'},
                     }
                 }
             }

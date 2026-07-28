@@ -6,10 +6,12 @@ Every reviewer bot the ``plan-marshall:automatic-review`` finalize step drives
 ships one machine-readable record — a fenced-YAML data block embedded in its
 ``standards/{bot_kind}.md`` doc. This module parses those blocks ONCE at import
 time and exposes stable accessors so the finding store, the re-review strategy
-registry, and the producer pre-filter DERIVE what they need (the bot-kind set,
-the login->bot_kind map, each bot's re-review trigger comment, its
-skip-label-honoring flag, its ignore patterns, and its severity map) instead of
-hard-coding three bots across three code files.
+registry, the producer pre-filter, and the rate-limit detector DERIVE what they
+need (the bot-kind set, the login->bot_kind map, each bot's re-review trigger
+comment, its skip-label-honoring flag, its ignore patterns, its refusal patterns,
+its participation-evidence publish shapes, its severity map, its rate-limit
+class, and its rate-limit ETA patterns) instead of hard-coding three bots across
+several code files.
 
 The loader is deliberately generic — there is no per-bot branch anywhere in it.
 Adding, removing, or re-configuring a bot is a pure data edit to a
@@ -22,17 +24,27 @@ Data-block shape (one per ``standards/{bot_kind}.md``)::
     author_login: coderabbitai
     trigger_comment: "@coderabbitai review"
     honors_skip_label: true
+    rate_limit_class: awaitable_window
+    participation_evidence:
+      - review_body
+      - inline
+    participation_requires_update: false
     ignore_patterns:
       - "## Walkthrough"
       - "No actionable comments were generated"
+    refusal_patterns:
+      - "Review limit reached"
+    rate_limit_eta_patterns:
+      - "wait ([0-9]+ minutes)"
     severity_map:
       potential_issue_critical: critical
       nitpick: low
     ```
 
 Stdlib-only (no PyYAML): the block is a tightly-constrained subset — top-level
-scalars, one list (``ignore_patterns``), and one nested map (``severity_map``) —
-parsed by a small deterministic reader below. Load order is the sorted
+scalars, lists (``ignore_patterns``, ``refusal_patterns``,
+``participation_evidence``, ``rate_limit_eta_patterns``), and one nested map
+(``severity_map``) — parsed by a small deterministic reader below. Load order is the sorted
 ``standards/*.md`` filename order, so ``bot_kinds()`` is stable across runs.
 """
 
@@ -119,12 +131,19 @@ def _parse_block(block: str) -> dict[str, Any]:
             if not sep:
                 continue
             key = key.strip()
-            if not rest.strip():
-                # Empty raw remainder opens a nested block (list or map); its
-                # kind is decided by the first child line encountered below.
-                # Test the raw ``rest`` BEFORE scalar-parsing so a legitimately
-                # quoted empty-string scalar (``key: ""``) stays a scalar rather
-                # than being misclassified as a block opener.
+            if not _strip_inline_comment(rest).strip():
+                # A remainder that is empty once its trailing ``#`` comment is
+                # removed opens a nested block (list or map); its kind is decided
+                # by the first child line encountered below. Stripping the comment
+                # first is load-bearing: the data blocks annotate block-opening
+                # keys inline (``participation_evidence:  # the publish shapes``),
+                # and testing the RAW remainder would read that comment as a
+                # scalar value, silently discarding every child item. For a
+                # fail-closed list such as ``participation_evidence`` the loss is
+                # invisible — it degrades to the same empty list an absent field
+                # yields. Comment-stripping still keeps a legitimately quoted
+                # empty-string scalar (``key: ""``) a scalar, because its
+                # remainder survives the strip as ``""``.
                 data[key] = None
                 current_key = key
             else:
@@ -249,6 +268,103 @@ class BotRegistry:
         value = self._by_kind.get(bot_kind, {}).get('ignore_patterns', [])
         return list(value) if isinstance(value, list) else []
 
+    def refusal_patterns(self, bot_kind: str) -> list[str]:
+        """Return the per-bot literal REFUSAL notice markers (``[]`` if unknown/absent).
+
+        Each entry is an exact substring the bot emits when it DECLINES to review —
+        a size-ceiling notice, a quota notice, a "posted in place of a review"
+        banner. A body carrying one of these markers is that bot's refusal.
+
+        This is deliberately a DEDICATED field, never a reuse of
+        :meth:`ignore_patterns`. ``ignore_patterns`` lists the routine sections a
+        bot emits on a *successful* review (CodeRabbit's ``## Walkthrough`` and
+        ``✏️ Learnings added``, Sourcery's Reviewer's-Guide marker), so matching
+        refusals against it would classify ordinary successful reviews as refusals.
+        The two lists answer different questions and must stay distinct — see
+        ``automatic-review/standards/bot-participation-contract.md`` § "Detecting a
+        refusal".
+
+        An empty list is the FAIL-CLOSED default: a bot with no declared refusal
+        shape is never *claimed* to have refused. Its non-participation resolves to
+        ``absent`` / ``in_progress`` instead, because a refusal verdict is only ever
+        asserted on positive evidence. The structural last-resort recognizer
+        (``_github_pr._is_rate_limit_notice``) still covers an unregistered bot or a
+        phrasing not yet filed here; neither layer is a superset of the other.
+        """
+        value = self._by_kind.get(bot_kind, {}).get('refusal_patterns', [])
+        return list(value) if isinstance(value, list) else []
+
+    def participation_evidence(self, bot_kind: str) -> list[str]:
+        """Return the publish shapes that are EVIDENCE ``bot_kind`` participated.
+
+        Each entry is a comment ``kind`` (``review_body`` / ``inline`` /
+        ``issue_comment``) that this bot actually publishes when it reviews. A bot
+        is recorded as a participant only when an observed comment's kind is in
+        this list — participation is grounded in the bot's real publish shape
+        rather than in the mere existence of some comment resolving to its login.
+
+        The admissible vocabulary is CLOSED to publish shapes, and that closure is
+        the structural guard behind the diff-derived-evidence rule: a publish shape
+        is a review artifact the bot produced against the diff, whereas a
+        body-derived signal — anything a reviewer could have produced by reading the
+        PR description alone — has no publish shape at all and therefore no
+        admissible evidence kind. It can never discharge a review obligation.
+
+        An empty list resolves FAIL-CLOSED: a bot that declares no evidence shape
+        can never be PROVEN to have participated, so it is reported as not-proven
+        rather than silently credited.
+        """
+        value = self._by_kind.get(bot_kind, {}).get('participation_evidence', [])
+        return list(value) if isinstance(value, list) else []
+
+    def participation_requires_update(self, bot_kind: str) -> bool:
+        """Return whether ``bot_kind``'s evidence additionally requires update movement.
+
+        True for a bot that re-reviews by EDITING its single persistent comment in
+        place rather than posting a new one (PR-Agent's Guide comment). For such a
+        bot the mere continued existence of the comment proves only that it reviewed
+        ONCE, at some earlier HEAD — so evidence requires either first presence (the
+        comment is newly observed) or observed ``updated_at`` movement.
+
+        False (the default) for a bot whose every review appends a new comment, where
+        presence of a newly-observed comment is itself the movement.
+        """
+        return bool(self._by_kind.get(bot_kind, {}).get('participation_requires_update', False))
+
+    def rate_limit_class(self, bot_kind: str) -> str:
+        """Return the rate-limit class for ``bot_kind``, fail-closed to ``'unknown'``.
+
+        Distinguishes a refusal the caller can usefully WAIT OUT from one it
+        cannot, so an await decision is grounded in the bot's actual quota shape
+        rather than assumed uniform across bots:
+
+        - ``awaitable_window`` — a rolling window that reopens on its own, so
+          awaiting the reset is productive.
+        - ``hard_quota`` — a budget that does not reopen on a useful timescale
+          (a per-PR size limit, a plan-level cap); awaiting it just burns budget.
+        - ``unknown`` — no refusal has been observed for this bot, or the field
+          is absent/malformed.
+
+        ``unknown`` is the FAIL-CLOSED default (ADR-009): a bot whose record does
+        not declare the field is never silently treated as awaitable, because
+        awaiting a quota that never reopens is the expensive failure. A present
+        but non-string value is treated the same as absent.
+        """
+        value = self._by_kind.get(bot_kind, {}).get('rate_limit_class', '')
+        return value if isinstance(value, str) and value else 'unknown'
+
+    def rate_limit_eta_patterns(self, bot_kind: str) -> list[str]:
+        """Return the per-bot ETA-extraction regexes (``[]`` if unknown/absent).
+
+        Each entry is a regex applied to a detected rate-limit notice body to
+        pull out the reset time the notice itself states. A pattern that declares
+        a capturing group yields that group as the ETA; otherwise the whole match
+        is used. An empty list means the bot states no machine-readable ETA — the
+        consumer then reports an absent ETA rather than inventing one.
+        """
+        value = self._by_kind.get(bot_kind, {}).get('rate_limit_eta_patterns', [])
+        return list(value) if isinstance(value, list) else []
+
     def severity_map(self, bot_kind: str) -> dict[str, str]:
         """Return the per-bot marker->severity map (``{}`` if unknown)."""
         value = self._by_kind.get(bot_kind, {}).get('severity_map', {})
@@ -289,6 +405,31 @@ def honors_skip_label(bot_kind: str) -> bool:
 def ignore_patterns(bot_kind: str) -> list[str]:
     """The per-bot whole-comment ignore patterns for ``bot_kind`` (``[]`` if unknown)."""
     return REGISTRY.ignore_patterns(bot_kind)
+
+
+def refusal_patterns(bot_kind: str) -> list[str]:
+    """The per-bot literal refusal-notice markers for ``bot_kind`` (``[]`` if absent)."""
+    return REGISTRY.refusal_patterns(bot_kind)
+
+
+def participation_evidence(bot_kind: str) -> list[str]:
+    """The publish shapes that are evidence ``bot_kind`` participated (``[]`` = fail-closed)."""
+    return REGISTRY.participation_evidence(bot_kind)
+
+
+def participation_requires_update(bot_kind: str) -> bool:
+    """Whether ``bot_kind``'s participation evidence requires observed update movement."""
+    return REGISTRY.participation_requires_update(bot_kind)
+
+
+def rate_limit_class(bot_kind: str) -> str:
+    """The rate-limit class for ``bot_kind``, fail-closed to ``'unknown'``."""
+    return REGISTRY.rate_limit_class(bot_kind)
+
+
+def rate_limit_eta_patterns(bot_kind: str) -> list[str]:
+    """The per-bot ETA-extraction regexes for ``bot_kind`` (``[]`` if absent)."""
+    return REGISTRY.rate_limit_eta_patterns(bot_kind)
 
 
 def severity_map(bot_kind: str) -> dict[str, str]:

@@ -63,7 +63,7 @@ configure · verify · maintain
 |--------|----------|---------|
 | determine_mode | `plan-marshall:marshall-steward:determine_mode` | Determine wizard vs menu mode; also exposes `check-working-prefixes` (project.working_prefixes presence/drift) and `check-staleness` (health-menu executor/config staleness preflight) |
 | gitignore_setup | `plan-marshall:marshall-steward:gitignore_setup` | Configure .gitignore for .plan/ |
-| upgrade | `plan-marshall:marshall-steward:upgrade` | Emit the four-stage `upgrade` verb plan (pure function of `(integrate, project_kind)`) |
+| upgrade | `plan-marshall:marshall-steward:upgrade` | Emit the four-stage `upgrade` verb plan (pure function of `(integrate, project_kind)`); also exposes `migrate-bot-lists`, the idempotent one-shot auto-map of the retired `enabled_bots` knob onto `required_bots` / `optional_bots` driven as the Stage-2 `migrate-bot-lists` sub-step |
 | cache_freshness | `plan-marshall:marshall-steward:cache_freshness` | Fail-closed three-valued plugin-cache freshness verdict (`fresh\|stale\|unknown`) driving the consumer Stage-1 `cache-freshness-check` sub-step |
 | cache_retention | `plan-marshall:marshall-steward:cache_retention` | Union-keep plugin-cache retention sweep (dry run unless `--apply`) driving the Stage-1 `cache-retention-sweep` sub-step behind the `cache-retention-prune` nested gate |
 | bootstrap_plugin | _(direct Python call)_ | Detect plugin root, cache in `.plan/local/marshall-state.toon` |
@@ -317,6 +317,86 @@ newly-materialized `default_on: false` step arrives `lane: off`, growing the ste
 count while leaving the effective running set unchanged (opt-in preserved). See
 [`references/wizard-flow.md`](references/wizard-flow.md) Step 16 for the
 materialize-then-sort sequencing.
+
+## Review-Bot Participation (required_bots / optional_bots)
+
+The `plan-marshall:automatic-review` step classifies review bots into two lists —
+`required_bots` (silence is a failure; gates the completeness quorum) and
+`optional_bots` (silence is tolerable; never gates). A bot in NEITHER list is warned about but
+still ingested. The semantics, the ask posture, and the five-member failure taxonomy are owned by
+[`../automatic-review/standards/bot-participation-contract.md`](../automatic-review/standards/bot-participation-contract.md);
+the knob storage shape and the three-valued provenance are documented in
+[`../manage-config/standards/data-model.md`](../manage-config/standards/data-model.md).
+
+**Wizard question.** Both lists ship EMPTY, so the wizard MUST ask rather than assume. Build the
+option set from the live registry — `bot_registry.bot_kinds()` — never a hardcoded bot list, so a
+newly-registered bot appears automatically. Ask in two passes (required first, then optional over
+the bots not already chosen as required):
+
+```text
+AskUserQuestion:
+  question: "Which review bots MUST participate? A required bot's silence blocks the merge gate."
+  header: "Required bots"
+  options:                        # one per bot_registry.bot_kinds(), plus the none escape
+    - label: "{bot_kind}"
+      description: "Require {bot_kind} to review before the step may complete"
+    - label: "None"
+      description: "No bot is required — record an explicit empty answer"
+  multiSelect: true
+```
+
+```text
+AskUserQuestion:
+  question: "Which remaining bots MAY participate? An optional bot's silence never blocks."
+  header: "Optional bots"
+  options:                        # bot_registry.bot_kinds() minus the required selections
+    - label: "{bot_kind}"
+      description: "Ingest and report {bot_kind}, but never gate on it"
+    - label: "None"
+      description: "No optional bots — record an explicit empty answer"
+  multiSelect: true
+```
+
+**Record an explicit answer even when the operator selects "None".** Write the (possibly empty)
+value AND set `bot_lists_provenance` to `answered`:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config plan phase-6-finalize step set \
+  --step-id plan-marshall:automatic-review --param required_bots --value "{csv_or_empty}"
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config plan phase-6-finalize step set \
+  --step-id plan-marshall:automatic-review --param bot_lists_provenance --value answered
+```
+
+Recording `answered` is load-bearing: it is what keeps an operator's deliberate "no required bots"
+distinguishable from a `never_asked` key the wizard has simply not reached yet. Never collapse the
+two — a never-asked key is re-asked, an answered-empty one is not.
+
+**`migrate-bot-lists` (upgrade Stage 2).** A project whose `marshal.json` still carries the retired
+`enabled_bots` key is auto-mapped by the `migrate-bot-lists` sub_step of Stage 2
+(`reconcile-config`) in the `upgrade` flow:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:marshall-steward:upgrade migrate-bot-lists
+```
+
+It seeds `required_bots` from the legacy value VERBATIM (every bot on the old list was awaited, and
+awaiting is exactly what `required` means), leaves `optional_bots` empty, removes `enabled_bots`,
+and records provenance `migrated`. When the operator has ALREADY answered either new key, their
+answer WINS — only the stale legacy key is removed and both values are reported. The verb is
+idempotent and self-disarming: once the legacy key is gone it is a no-op success, so re-running
+`upgrade` is always safe.
+
+When the wizard asks the question above on a project that was just migrated, **pre-fill the migrated
+value as the default selection** so the operator confirms or adjusts a real starting point rather
+than re-deriving it. Read the current value first:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config plan phase-6-finalize step get \
+  --step-id plan-marshall:automatic-review
+```
 
 ## Blocking-Finding Classification (fixed rule — no wizard seed)
 

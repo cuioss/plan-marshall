@@ -105,7 +105,6 @@
           "lane": "minimal"
         },
         "plan-marshall:automatic-review": {
-          "enabled_bots": "coderabbit,sourcery,pr-agent",
           "review_bot_buffer_seconds": 180,
           "re_review_on_loopback": false,
           "re_review_on_branch_cleanup": true,
@@ -114,7 +113,10 @@
           "review_rate_window_await": false,
           "review_rate_window_timeout_seconds": 3600,
           "review_completion_poll_timeout_seconds": 600,
-          "lane": "minimal"
+          "lane": "minimal",
+          "required_bots": "coderabbit,pr-agent",
+          "optional_bots": "sourcery",
+          "bot_lists_provenance": "answered"
         },
         "default:ci-verify": {
           "lane": "minimal"

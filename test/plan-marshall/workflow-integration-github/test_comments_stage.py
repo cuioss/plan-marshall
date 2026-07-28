@@ -1046,20 +1046,28 @@ class TestPerBotIgnoreFilter:
 # =============================================================================
 #
 # A refusal notice is a comment a reviewer bot posts IN PLACE OF a review. It
-# carries no actionable feedback, so the producer pre-filter must classify it as
-# noise for every bot. Two layers cooperate, and the split is the whole point of
-# this section:
+# carries no actionable feedback — so it files no finding — but it is NOT noise:
+# it is positive evidence the bot DECLINED to review, and the producer must SURFACE
+# it (``count_skipped_refusal`` + ``refused_bots[]``) so the completeness / quorum
+# layer classifies the bot as refused rather than inferring absence from silence.
+# Treating a refusal as noise is what let a PR whose every required reviewer refused
+# report a clean, complete review with zero review coverage.
+#
+# Recognition goes through ``_github_pr._is_refusal_notice``, where two layers
+# cooperate — the split is the whole point of this section:
 #
 #   - DATA LAYER (primary) — a REGISTERED bot's OBSERVED refusal text is a
 #     literal marker in that bot's ``automatic-review/standards/{bot_kind}.md``
-#     ``ignore_patterns``, applied bot-scoped via the resolved ``bot_kind``.
+#     ``refusal_patterns``, applied bot-scoped via the resolved ``bot_kind``.
+#     Deliberately NOT ``ignore_patterns``, which lists the routine sections of a
+#     *successful* review.
 #   - STRUCTURAL LAYER (last resort) — ``_is_rate_limit_notice`` recognizes an
 #     unknown/unregistered bot's notice, or a phrasing not yet captured as data,
 #     by its shape (a limit-exceeded statement paired with a notice shape).
 #
 # Neither layer is a superset of the other. The #1014 Sourcery refusal below is
 # the proof: it is invisible to the structural recognizer (asserted), so ONLY the
-# registry marker drops it.
+# registry marker recognizes it.
 #
 # Every fixture body uses the FLATTENED single-line shape — ``fetch_pr_comments_data``
 # collapses each body's newlines to spaces before any detector runs (the same
@@ -1081,6 +1089,25 @@ _CODERABBIT_REVIEW_LIMIT_REFUSAL = (
     'Reviews will resume once the limit resets.'
 )
 
+# Sourcery's size-limit refusal in a NOTICE-SHAPED phrasing. The OBSERVED #1014
+# wording above is deliberately invisible to the structural recognizer (asserted
+# in test_sourcery_1014_refusal_dropped_via_registry_data_layer), and the per-bot
+# rate-limit detector on the wait-return classifies on shape alone — so a body
+# the structural layer can actually see is what exercises that detector.
+_SOURCERY_SHAPED_REFUSAL = (
+    '> [!WARNING] Sourcery has reached your review limit for this pull request. '
+    'Reviews will resume once the limit resets.'
+)
+
+# Sourcery's SECOND observed refusal mode (#1034 / #1037): the account-level weekly
+# diff-character quota, distinct from the per-PR size ceiling of #1014. Two observed
+# phrasings is the point — "the generic structural recogniser covers Sourcery" is
+# REFUTED, so each observed mode must be filed as registry data.
+_SOURCERY_WEEKLY_QUOTA_REFUSAL = (
+    'Sourcery has not reviewed this pull request because '
+    'you have reached your weekly rate limit of 500000 diff characters.'
+)
+
 # An unknown / renamed bot's refusal — no registry record exists for its author,
 # so only the structural last-resort layer can recognize it.
 _UNKNOWN_BOT_REFUSAL = (
@@ -1098,61 +1125,118 @@ _GENUINE_REVIEW_MENTIONING_A_LIMIT = (
 
 
 class TestRefusalNoticeProducerFilter:
-    """Every reviewer bot's refusal notice is producer-side noise, by data or by shape."""
+    """Every reviewer bot's refusal is RECOGNIZED as a refusal — by data or by shape.
 
-    def test_sourcery_1014_refusal_dropped_via_registry_data_layer(self):
-        """#1014 regression: the Sourcery refusal is noise ONLY because it is filed as data.
+    The recognizer under test is ``_is_refusal_notice``, never ``_is_obvious_noise``.
+    That separation is the contract: ``_is_obvious_noise`` must NOT recognize a
+    refusal, because a refusal it swallows is a declined review the quorum layer
+    never sees.
+    """
+
+    def test_sourcery_1014_refusal_recognized_via_registry_data_layer(self):
+        """#1014 regression: the Sourcery refusal is seen ONLY because it is filed as data.
 
         This is the case that regressed. The structural recognizer does not match
         this phrasing (no limit-EXCEEDED statement — "larger than the review limit
         of" is a comparison, not an "exceeded/reached/hit" statement), which is
-        asserted explicitly below. So the drop can only come from the registry
+        asserted explicitly below. So recognition can only come from the registry
         marker resolved through ``bot_kind='sourcery'`` — which is exactly what
         makes this a proof that the data layer fired, not the fallback.
         """
-        from _github_pr import _is_rate_limit_notice
+        from _github_pr import _is_rate_limit_notice, _is_refusal_notice
 
         # The structural last-resort layer is BLIND to this phrasing...
         assert not _is_rate_limit_notice(_SOURCERY_1014_REFUSAL)
-        # ...so the registry data layer is what drops it, bot-scoped.
-        assert _is_obvious_noise(_SOURCERY_1014_REFUSAL, 'sourcery')
+        # ...so the registry data layer is what recognizes it, bot-scoped.
+        assert _is_refusal_notice(_SOURCERY_1014_REFUSAL, 'sourcery')
         # And it stays bot-scoped: the same text from another bot or a human is
-        # not cross-dropped by Sourcery's marker.
-        assert not _is_obvious_noise(_SOURCERY_1014_REFUSAL, 'coderabbit')
-        assert not _is_obvious_noise(_SOURCERY_1014_REFUSAL, None)
+        # not cross-matched by Sourcery's marker.
+        assert not _is_refusal_notice(_SOURCERY_1014_REFUSAL, 'coderabbit')
+        assert not _is_refusal_notice(_SOURCERY_1014_REFUSAL, None)
 
-    def test_coderabbit_review_limit_refusal_dropped(self):
-        """CodeRabbit's current ``Review limit reached`` notice is noise."""
-        assert _is_obvious_noise(_CODERABBIT_REVIEW_LIMIT_REFUSAL, 'coderabbit')
+    def test_coderabbit_review_limit_refusal_recognized(self):
+        """CodeRabbit's current ``Review limit reached`` notice is a refusal."""
+        from _github_pr import _is_refusal_notice
 
-    def test_genuine_review_mentioning_a_limit_survives(self):
-        """A substantive review that merely mentions a limit is NOT dropped.
+        assert _is_refusal_notice(_CODERABBIT_REVIEW_LIMIT_REFUSAL, 'coderabbit')
+
+    def test_sourcery_has_two_distinct_registered_refusal_modes(self):
+        """Both observed Sourcery refusal phrasings are filed as registry data.
+
+        #1034 / #1037 refuted the assumption that one recogniser covers this bot:
+        the weekly diff-character QUOTA is a different mode from the per-PR SIZE
+        ceiling of #1014, and neither marker matches the other's text. Each observed
+        mode must therefore have its own ``refusal_patterns`` entry — filing only one
+        leaves the other invisible, which is how a refused review reached the merge
+        gate as a clean one.
+        """
+        import bot_registry
+        from _github_pr import _is_refusal_notice
+
+        assert _is_refusal_notice(_SOURCERY_WEEKLY_QUOTA_REFUSAL, 'sourcery')
+        # The two modes are genuinely distinct: neither registry marker spans both.
+        markers = bot_registry.refusal_patterns('sourcery')
+        matched_by_size_ceiling = [m for m in markers if m in _SOURCERY_1014_REFUSAL]
+        matched_by_weekly_quota = [m for m in markers if m in _SOURCERY_WEEKLY_QUOTA_REFUSAL]
+        assert matched_by_size_ceiling, 'the #1014 size-ceiling refusal must stay registered'
+        assert matched_by_weekly_quota, 'the weekly-quota refusal must be registered too'
+        assert not set(matched_by_size_ceiling) & set(matched_by_weekly_quota)
+
+    @pytest.mark.parametrize(
+        'bot_kind', [None, 'coderabbit', 'sourcery', 'pr-agent'], ids=['human', 'cr', 'sr', 'pra']
+    )
+    def test_a_refusal_is_never_classified_as_noise(self, bot_kind):
+        """``_is_obvious_noise`` must not recognize ANY refusal, for ANY bot.
+
+        The pre-filter defect this pins: unioning ``refusal_patterns`` into the noise
+        drop set — and short-circuiting on the structural rate-limit recognizer —
+        made ``_is_obvious_noise`` discard the very evidence the dedicated
+        ``refusal_patterns`` field exists to identify. Against that behaviour the
+        registry-recognized bodies below returned True here.
+        """
+        for body in (
+            _SOURCERY_1014_REFUSAL,
+            _SOURCERY_WEEKLY_QUOTA_REFUSAL,
+            _CODERABBIT_REVIEW_LIMIT_REFUSAL,
+            _SOURCERY_SHAPED_REFUSAL,
+            _UNKNOWN_BOT_REFUSAL,
+        ):
+            assert not _is_obvious_noise(body, bot_kind), (bot_kind, body[:40])
+
+    def test_genuine_review_mentioning_a_limit_is_neither_refusal_nor_noise(self):
+        """A substantive review that merely mentions a limit survives both predicates.
 
         Precision guard for both layers: no registry marker matches, and the
         structural recognizer sees a review-voiced "exceeds" with no notice shape,
         so the comment survives the pre-filter and becomes a finding.
         """
-        from _github_pr import _is_rate_limit_notice
+        from _github_pr import _is_rate_limit_notice, _is_refusal_notice
 
         assert not _is_rate_limit_notice(_GENUINE_REVIEW_MENTIONING_A_LIMIT)
-        assert not _is_obvious_noise(_GENUINE_REVIEW_MENTIONING_A_LIMIT, 'sourcery')
-        assert not _is_obvious_noise(_GENUINE_REVIEW_MENTIONING_A_LIMIT, 'coderabbit')
-        assert not _is_obvious_noise(_GENUINE_REVIEW_MENTIONING_A_LIMIT, None)
+        for bot_kind in ('sourcery', 'coderabbit', None):
+            assert not _is_refusal_notice(_GENUINE_REVIEW_MENTIONING_A_LIMIT, bot_kind)
+            assert not _is_obvious_noise(_GENUINE_REVIEW_MENTIONING_A_LIMIT, bot_kind)
 
-    def test_unknown_bot_refusal_dropped_by_structural_fallback(self):
-        """An unregistered bot's refusal is still noise — via the structural layer.
+    def test_unknown_bot_refusal_recognized_by_structural_fallback(self):
+        """An unregistered bot's refusal is still recognized — via the structural layer.
 
         The author resolves to no ``bot_kind``, so no registry marker can apply.
         The notice is recognized by shape alone (limit-exceeded statement + alert
         callout), which is precisely the last-resort layer's job.
         """
-        from _github_pr import _is_rate_limit_notice
+        from _github_pr import _is_rate_limit_notice, _is_refusal_notice
 
         assert _is_rate_limit_notice(_UNKNOWN_BOT_REFUSAL)
-        assert _is_obvious_noise(_UNKNOWN_BOT_REFUSAL, None)
+        assert _is_refusal_notice(_UNKNOWN_BOT_REFUSAL, None)
 
-    def test_fetch_findings_drops_sourcery_refusal_and_keeps_genuine_review(self, plan_context):
-        """End-to-end producer path: the refusal counts as skipped noise and files no finding."""
+    def test_fetch_findings_surfaces_sourcery_refusal_and_keeps_genuine_review(self, plan_context):
+        """End-to-end producer path: the refusal is surfaced, files no finding, is not noise.
+
+        Against the pre-fix drop-as-noise behaviour the refusal landed in
+        ``count_skipped_noise``, ``count_skipped_refusal`` and ``refused_bots`` did
+        not exist, and the quorum layer had no way to tell a declined review from a
+        bot that simply had not answered yet.
+        """
         comments = [
             {
                 'id': 'R1',
@@ -1187,8 +1271,11 @@ class TestRefusalNoticeProducerFilter:
 
         assert result['status'] == 'success'
         assert result['count_fetched'] == 2
-        # The refusal is the ONLY drop; the genuine review is stored.
-        assert result['count_skipped_noise'] == 1
+        # The refusal is the ONLY non-store, and it is accounted for as a REFUSAL...
+        assert result['count_skipped_refusal'] == 1
+        assert result['refused_bots'] == ['sourcery']
+        # ...never as noise.
+        assert result['count_skipped_noise'] == 0
         assert result['count_stored'] == 1
         assert result['producer_mismatch_hash_id'] is None
 
@@ -1196,17 +1283,21 @@ class TestRefusalNoticeProducerFilter:
 
         q = query_findings('gh-pr-refusal-sourcery', finding_type='pr-comment')
         assert q['filtered_count'] == 1
-        # The surviving finding is the genuine review (R2), never the refusal (R1).
+        # The surviving finding is the genuine review (R2), never the refusal (R1) —
+        # a refusal is a signal about the review, not something to triage.
         assert 'comment_id: R2' in q['findings'][0]['detail']
 
-    def test_detect_coderabbit_rate_limited_stays_author_scoped(self):
-        """The wait-return discriminator still considers CodeRabbit comments only.
+    def test_detect_rate_limited_bots_answers_per_registered_bot(self):
+        """The wait-return discriminator answers per REGISTERED bot, not per one bot.
 
-        Re-pointing the body classifier must not widen the SELECTION. A Sourcery
-        refusal that is the newest comment overall is ignored, because the newest
-        CODERABBIT comment is a genuine review.
+        The retired discriminator selected CodeRabbit-authored comments only, so a
+        refusing Sourcery scored negative whenever CodeRabbit's own newest comment
+        was a genuine review — the two bots' states were collapsed into one answer.
+        The registry-driven detector reports each bot independently: CodeRabbit is
+        absent because its newest comment is real feedback, while Sourcery appears
+        with the class its own registry record declares.
         """
-        from _github_pr import _detect_coderabbit_rate_limited
+        from _github_pr import _detect_rate_limited_bots
 
         comments = [
             {
@@ -1216,16 +1307,23 @@ class TestRefusalNoticeProducerFilter:
             },
             {
                 'author': 'sourcery-ai[bot]',
-                'body': _SOURCERY_1014_REFUSAL,
+                'body': _SOURCERY_SHAPED_REFUSAL,
                 'created_at': '2026-01-09T00:00:00Z',
             },
         ]
 
-        assert _detect_coderabbit_rate_limited(comments) is False
+        assert _detect_rate_limited_bots(comments) == [
+            {'bot_kind': 'sourcery', 'rate_limit_class': 'hard_quota', 'eta': ''}
+        ]
 
-    def test_detect_coderabbit_rate_limited_false_for_human_quoting_refusal(self):
-        """A human quoting a full refusal notice never trips the discriminator."""
-        from _github_pr import _detect_coderabbit_rate_limited
+    def test_detect_rate_limited_bots_ignores_human_quoting_refusal(self):
+        """A human quoting a full refusal notice never trips the discriminator.
+
+        Authorship is resolved through the registry login map, so a human author
+        belongs to no ``bot_kind`` and contributes no record no matter what their
+        comment quotes.
+        """
+        from _github_pr import _detect_rate_limited_bots
 
         comments = [
             {
@@ -1235,7 +1333,7 @@ class TestRefusalNoticeProducerFilter:
             },
         ]
 
-        assert _detect_coderabbit_rate_limited(comments) is False
+        assert _detect_rate_limited_bots(comments) == []
 
 
 # =============================================================================
@@ -1274,14 +1372,25 @@ class TestFailLoudUnconfigured:
 
 
 class TestPostResponses:
-    """post_responses transmits each finding's disposition to its own thread, keyed by hash_id."""
+    """post_responses transmits each finding's disposition to its own thread, keyed by hash_id.
 
-    def _stage_one_finding(self, plan_id, thread_id, body='A substantive concern about null handling.'):
+    Routing contract (``workflow-integration-github`` SKILL.md § Workflow 2 step 4):
+    the disposition path is chosen by the finding's ``kind`` — its thread-BEARING-ness
+    — never by whether a ``thread_id`` happened to be extractable. Only the genuinely
+    threadless kinds (``review_body``, ``issue_comment``) enter the batched PR-level
+    comment; a thread-bearing (``inline``) finding whose thread is missing or unusable
+    is UNDELIVERABLE and lands in ``untransmitted[]`` with ``status: partial``, never
+    silently downgraded into the batch.
+    """
+
+    def _stage_one_finding(
+        self, plan_id, thread_id, body='A substantive concern about null handling.', kind='inline'
+    ):
         """File one pr-comment finding via fetch_findings and return its hash_id."""
         comments = [
             {
                 'id': 'C1',
-                'kind': 'inline',
+                'kind': kind,
                 'author': 'reviewer',
                 'body': body,
                 'path': 'src/Main.java',
@@ -1344,20 +1453,23 @@ class TestPostResponses:
         assert result['count_responded'] == 0
         mock_graphql.assert_not_called()
 
-    def test_resolved_finding_without_thread_id_is_transmitted_as_a_pr_comment(self, plan_context):
-        """A thread-less disposition is transmitted as a PR comment, NOT skipped.
+    @pytest.mark.parametrize('kind', ['review_body', 'issue_comment'])
+    def test_genuinely_threadless_kind_is_transmitted_as_a_batched_pr_comment(self, kind, plan_context):
+        """A genuinely threadless kind is transmitted as a PR comment, NOT skipped.
 
-        There is no thread to reply into, but the disposition still has something
-        to say — dropping it would lose a recorded decision. It goes out as a
-        PR-level comment and is reported with ``resolved_on_provider: false``,
-        because no thread exists to resolve.
+        GitHub gives ``review_body`` / ``issue_comment`` no review thread to reply
+        into, but the disposition still has something to say — dropping it would
+        lose a recorded decision. It goes out as a batched PR-level comment and is
+        reported with ``resolved_on_provider: false``, because no thread exists to
+        resolve.
         """
-        plan_context.plan_dir_for('gh-respond-nothread')
-        hash_id = self._stage_one_finding('gh-respond-nothread', '')  # empty thread_id
+        plan_id = f'gh-respond-threadless-{kind.replace("_", "-")}'
+        plan_context.plan_dir_for(plan_id)
+        hash_id = self._stage_one_finding(plan_id, '', kind=kind)
 
         from _findings_core import resolve_finding
 
-        resolve_finding('gh-respond-nothread', hash_id, 'suppressed', detail='Suppressed with rationale.')
+        resolve_finding(plan_id, hash_id, 'suppressed', detail='Suppressed with rationale.')
 
         posted = []
 
@@ -1369,7 +1481,7 @@ class TestPostResponses:
             patch('github_pr._github.run_graphql', return_value=(0, {}, '')) as mock_graphql,
             patch('github_pr._github.post_pr_comment', side_effect=_fake_post),
         ):
-            result = cmd_post_responses(_stage_make_args(300, 'gh-respond-nothread'))
+            result = cmd_post_responses(_stage_make_args(300, plan_id))
 
         assert result['status'] == 'success'
         assert result['count_responded'] == 1
@@ -1384,6 +1496,74 @@ class TestPostResponses:
         assert 'C1' in posted[0][1]
         # No thread mutation fired — there is no thread.
         mock_graphql.assert_not_called()
+
+    def test_inline_finding_without_thread_id_is_untransmitted_never_batched(self, plan_context):
+        """A thread-BEARING finding with no thread_id is undeliverable, NOT threadless.
+
+        This is the routing predicate under test: an ``inline`` comment always has a
+        review thread on the provider, so an empty ``thread_id`` means the thread is
+        unrecoverable HERE — not that the disposition belongs on the PR-level batch.
+        Batching it would report the decision as delivered while the reviewer's own
+        thread stays unanswered and unresolved, so it lands in ``untransmitted[]``
+        and drives ``status: partial``.
+        """
+        plan_context.plan_dir_for('gh-respond-inline-nothread')
+        hash_id = self._stage_one_finding('gh-respond-inline-nothread', '')  # inline, empty thread_id
+
+        from _findings_core import resolve_finding
+
+        resolve_finding(
+            'gh-respond-inline-nothread', hash_id, 'suppressed', detail='Suppressed with rationale.'
+        )
+
+        with (
+            patch('github_pr._github.run_graphql', return_value=(0, {}, '')) as mock_graphql,
+            patch('github_pr._github.post_pr_comment') as mock_post,
+        ):
+            result = cmd_post_responses(_stage_make_args(300, 'gh-respond-inline-nothread'))
+
+        assert result['status'] == 'partial'
+        assert result['count_responded'] == 0
+        assert result['count_skipped'] == 0
+        assert result['count_untransmitted'] == 1
+        assert result['untransmitted'][0]['hash_id'] == hash_id
+        # The reason names the missing thread, so the failure is diagnosable.
+        reason = result['untransmitted'][0]['reason']
+        assert 'thread_id' in reason
+        assert 'inline' in reason
+        # NEVER re-routed into the batch — no PR-level comment was posted at all.
+        mock_post.assert_not_called()
+        # And no thread mutation was attempted against a non-existent thread.
+        mock_graphql.assert_not_called()
+
+    def test_inline_finding_whose_thread_reply_fails_is_untransmitted_never_batched(self, plan_context):
+        """A failed in-thread reply is untransmitted — it does not fall back to the batch.
+
+        The batch is not a fallback channel for a thread-bearing disposition. When the
+        reply mutation fails, the disposition is reported undelivered with the provider
+        error, and no PR-level comment is posted in its place.
+        """
+        plan_context.plan_dir_for('gh-respond-inline-replyfail')
+        hash_id = self._stage_one_finding('gh-respond-inline-replyfail', 'PRRT_boom')
+
+        from _findings_core import resolve_finding
+
+        resolve_finding('gh-respond-inline-replyfail', hash_id, 'fixed', detail='Fixed in commit abc.')
+
+        with (
+            patch('github_pr._github.run_graphql', return_value=(1, {}, 'thread not found')),
+            patch('github_pr._github.post_pr_comment') as mock_post,
+        ):
+            result = cmd_post_responses(_stage_make_args(300, 'gh-respond-inline-replyfail'))
+
+        assert result['status'] == 'partial'
+        assert result['count_responded'] == 0
+        assert result['count_untransmitted'] == 1
+        assert result['untransmitted'][0]['hash_id'] == hash_id
+        assert 'thread-reply failed' in result['untransmitted'][0]['reason']
+        assert 'thread not found' in result['untransmitted'][0]['reason']
+        # NEVER re-routed into the batch.
+        mock_post.assert_not_called()
 
 
 # =============================================================================

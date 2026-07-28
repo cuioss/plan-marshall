@@ -22,6 +22,7 @@ import re
 from pathlib import Path
 from urllib.parse import quote
 
+import bot_registry
 import github_ops
 from ci_base import (
     BODY_KIND_PR_CREATE,
@@ -37,60 +38,27 @@ from ci_base import (
 )
 
 # ---------------------------------------------------------------------------
-# CodeRabbit-authored comment selection (provider-scoped: GitHub/CodeRabbit)
-# ---------------------------------------------------------------------------
-_CODERABBIT_BOT_LOGINS = frozenset({'coderabbitai', 'coderabbitai[bot]'})
-
-
-def _detect_coderabbit_rate_limited(comments: list[dict]) -> bool:
-    """Return True when the newest CodeRabbit-bot comment is a rate-limit notice.
-
-    Scans the CodeRabbit-bot-authored comments only, picks the newest by
-    ``created_at``, and classifies its body with the shared bot-agnostic
-    :func:`_is_rate_limit_notice` recognizer (which requires BOTH a
-    limit-exceeded statement AND a notice shape, so a genuine review that merely
-    mentions a rate limit in prose is not misclassified). Any absent / malformed
-    field degrades to ``False`` — detection is best-effort and never raises into
-    the poll return path.
-
-    Only the body classifier is shared: the author-scoped selection and the
-    newest-by-``created_at`` pick remain specific to this discriminator, which
-    feeds the additive ``rate_limited`` field on the wait-for-comments return.
-    """
-    bot_comments = [
-        c
-        for c in comments
-        if isinstance(c, dict)
-        and str(c.get('author') or '').lower() in _CODERABBIT_BOT_LOGINS
-    ]
-    if not bot_comments:
-        return False
-    newest = max(bot_comments, key=lambda c: str(c.get('created_at') or ''))
-    body = str(newest.get('body') or '')
-    return _is_rate_limit_notice(body)
-
-
-# ---------------------------------------------------------------------------
 # Bot-agnostic rate-limit / service-notice detection (any reviewer bot)
 # ---------------------------------------------------------------------------
 #
 # When a reviewer bot is rate-limited (or otherwise cannot review) it posts a
-# short status notice IN PLACE OF a review — CodeRabbit's ``## Rate limit
-# exceeded`` callout, a Sourcery weekly-review-limit note, or an arbitrary
-# unknown/renamed bot's equivalent. Such a notice carries no actionable feedback
-# and must be dropped by the ``fetch_findings`` pre-filter regardless of author,
-# so noise classification does not hardcode a single bot's comment shape.
+# short status notice IN PLACE OF a review — CodeRabbit's ``Review limit
+# reached`` notice, a Sourcery size-limit note, or an arbitrary unknown/renamed
+# bot's equivalent. Such a notice carries no actionable feedback, so it files no
+# finding — but it is NOT noise: it is positive evidence the bot DECLINED, and
+# every consumer must branch on it (see :func:`_is_refusal_notice`). Recognition is
+# author-agnostic so it does not hardcode a single bot's comment shape.
 #
-# The recognizer generalizes the CodeRabbit two-part precision to any bot: it
+# The recognizer is two-part for precision, applied uniformly to any bot: it
 # requires BOTH (a) a LIMIT-EXCEEDED STATEMENT — an explicit "<limit>
 # exceeded/reached/hit" or "exceeded the limit for the number of ..." body
 # sentence — AND (b) a NOTICE SHAPE — a status-notice presentation (a GitHub
 # alert callout, a markdown heading whose leading text IS the limit phrase, or a
 # "review will resume / try again / posted in place of a review" service tail).
-# Requiring both (mirroring the CodeRabbit ``all`` requirement) is load-bearing
+# Requiring both signals conjunctively is load-bearing
 # for precision: a genuine review comment that merely mentions "rate limit" in
 # prose — without a limit-EXCEEDED statement AND without a notice shape — is
-# never misclassified as noise. The verbs are notice-voiced ("exceeded",
+# never misclassified as a refusal. The verbs are notice-voiced ("exceeded",
 # "reached") rather than review-voiced ("exceeds", "may exceed"), so a review
 # discussing a rate limit stays a finding.
 #
@@ -154,22 +122,152 @@ def _is_rate_limit_notice(body: str) -> bool:
     primary surface.** It covers an unknown / unregistered bot, or a phrasing not
     yet captured in the data layer. A *registered* bot's OBSERVED refusal text
     belongs in that bot's ``automatic-review/standards/{bot_kind}.md``
-    ``ignore_patterns`` — a data record, not a regex. Every refusal-recognition
-    site (``github_pr._is_obvious_noise``, ``github_re_review._match_bot_comment``,
-    and ``github_re_review._match_review``) is expected to pair this structural
-    fallback with that registry data layer; neither alone is a superset of the
-    other, and a refusal recognized here but absent from the registry is a signal
-    that the bot's ``ignore_patterns`` need the observed phrasing added.
+    ``refusal_patterns`` — a data record, not a regex.
+
+    ``refusal_patterns`` is deliberately a DEDICATED field, never a reuse of
+    ``ignore_patterns``: ``ignore_patterns`` lists the routine sections a bot emits
+    on a *successful* review (walkthrough headings, learning notices), so matching
+    refusals against it would classify ordinary successful reviews as refusals. The
+    two lists answer different questions. See
+    ``automatic-review/standards/bot-participation-contract.md``.
+
+    Every refusal-recognition site (``_is_refusal_notice``, which
+    ``github_pr.cmd_fetch_findings`` and :func:`_detect_rate_limited_bots` both read,
+    plus ``github_re_review._match_bot_comment`` and
+    ``github_re_review._match_review``) is expected to pair this structural fallback
+    with that registry data layer; neither alone is a superset of the other, and a
+    refusal recognized here but absent from the registry is a signal that the bot's
+    ``refusal_patterns`` need the observed phrasing added.
 
     Precision is load-bearing: a genuine review comment that merely mentions a
     rate limit in prose (no limit-exceeded statement, no notice shape) is not
-    dropped.
+    matched.
     """
     if not body:
         return False
     has_exceeded = any(marker.search(body) for marker in _RATE_LIMIT_EXCEEDED_MARKERS)
     has_shape = any(marker.search(body) for marker in _RATE_LIMIT_NOTICE_SHAPE_MARKERS)
     return has_exceeded and has_shape
+
+
+def _is_refusal_notice(body: str, bot_kind: str | None = None) -> bool:
+    """Return True when ``body`` is a REFUSAL to review — by registry data or by shape.
+
+    The single recognition seam every refusal consumer reads, pairing the two
+    layers because neither is a superset of the other:
+
+    - **Registry data layer** — the bot's own ``refusal_patterns`` from
+      ``automatic-review/standards/{bot_kind}.md``. Load-bearing rather than
+      redundant: Sourcery's observed refusal ("your pull request is larger than the
+      review limit of …") is invisible to the structural layer, because "larger
+      than the review limit of" is a comparison, not an "exceeded / reached / hit"
+      statement.
+    - **Structural last-resort layer** — :func:`_is_rate_limit_notice`, recognizing
+      a notice by shape alone, which is what covers an unregistered or renamed bot
+      and a phrasing not yet filed in the registry.
+
+    ``refusal_patterns`` is deliberately NOT ``ignore_patterns``: the latter lists
+    the routine sections of a *successful* review, so reading it here would report
+    every reviewing bot as refusing.
+
+    **A refusal is positive evidence of NON-participation, never noise.** Callers
+    MUST branch on it — surfacing the refusing bot so the completeness / quorum
+    layer sees ``refused_awaitable`` / ``refused_hard`` — rather than drop it.
+    Dropping it is precisely what let a PR whose every required reviewer refused
+    report a clean, complete review with substantively zero review coverage.
+    """
+    if not body:
+        return False
+    if bot_kind and any(marker in body for marker in bot_registry.refusal_patterns(bot_kind)):
+        return True
+    return _is_rate_limit_notice(body)
+
+
+def _extract_rate_limit_eta(body: str, bot_kind: str) -> str:
+    """Return the reset ETA ``bot_kind`` stated in ``body``, or ``''`` when none.
+
+    The ETA phrasings are registry data — each bot's ``rate_limit_eta_patterns``
+    in its ``automatic-review/standards/{bot_kind}.md`` block — so no bot-name
+    literal and no per-bot branch appears here. The first pattern that matches
+    wins; its first capturing group is the ETA when the pattern declares one,
+    otherwise the whole match is returned. A bot that declares no ETA patterns
+    (or whose notice states no ETA) yields ``''`` — the caller treats an absent
+    ETA as "unknown when the window reopens", never as "reopens now".
+
+    A malformed pattern in the data layer is skipped rather than raised: a bad
+    registry edit must not break the poll return path.
+    """
+    for pattern in bot_registry.rate_limit_eta_patterns(bot_kind):
+        try:
+            match = re.search(pattern, body, re.IGNORECASE)
+        except re.error:
+            continue
+        if match is None:
+            continue
+        return (match.group(1) if match.groups() else match.group(0)).strip()
+    return ''
+
+
+def _detect_rate_limited_bots(comments: list[dict]) -> list[dict]:
+    """Return one record per registered bot whose newest comment is a rate-limit notice.
+
+    Generalizes the former single-bot discriminator to every registered
+    ``bot_kind``: for each bot in the registry, select the comments that bot
+    authored (resolving each comment's author through
+    :func:`github_re_review.bot_kind_for_author`, which owns the ``[bot]``-suffix
+    stripping and case-insensitive matching), pick that bot's newest comment by
+    ``created_at``, and classify its body through BOTH refusal-recognition layers.
+    No bot-name literal appears in this path — the bot set, each bot's login, its
+    refusal markers, its rate-limit class, and its ETA phrasings are all registry
+    data.
+
+    Classification goes through the shared :func:`_is_refusal_notice` seam, so this
+    detector and the ``fetch_findings`` producer recognize a refusal identically —
+    both layers, in one place. See that function for why neither layer alone
+    suffices.
+
+    Each detected bot yields ``{bot_kind, rate_limit_class, eta}``:
+
+    - ``rate_limit_class`` distinguishes a window the caller can usefully await
+      from a quota it cannot; it is registry data and fails closed to ``unknown``
+      for a bot that declares none.
+    - ``eta`` is the reset time the notice itself stated, or ``''`` when the
+      notice stated none.
+
+    Bots that are NOT rate-limited are simply absent from the list, so an empty
+    list means "no registered bot is rate-limited" — the same signal the removed
+    scalar carried, without collapsing a three-bot pipeline into one boolean.
+    Detection is best-effort: any absent or malformed field degrades to "not
+    rate-limited" for that bot and never raises into the poll return path.
+    """
+    # Deferred import: ``github_re_review`` imports ``_is_rate_limit_notice``
+    # from this module at import time, so a module-level import here would close
+    # a cycle. Resolving the login map through ``bot_kind_for_author`` (rather
+    # than re-deriving it locally) keeps the single source of truth for the
+    # login -> bot_kind correspondence.
+    import github_re_review
+
+    detected: list[dict] = []
+    for bot_kind in bot_registry.bot_kinds():
+        bot_comments = [
+            c
+            for c in comments
+            if isinstance(c, dict) and github_re_review.bot_kind_for_author(c.get('author')) == bot_kind
+        ]
+        if not bot_comments:
+            continue
+        newest = max(bot_comments, key=lambda c: str(c.get('created_at') or ''))
+        body = str(newest.get('body') or '')
+        if not _is_refusal_notice(body, bot_kind):
+            continue
+        detected.append(
+            {
+                'bot_kind': bot_kind,
+                'rate_limit_class': bot_registry.rate_limit_class(bot_kind),
+                'eta': _extract_rate_limit_eta(body, bot_kind),
+            }
+        )
+    return detected
 
 
 def cmd_pr_create(args: argparse.Namespace) -> dict:
@@ -238,9 +336,11 @@ def cmd_pr_create(args: argparse.Namespace) -> dict:
     if getattr(args, 'head', None):
         gh_args.extend(['--head', args.head])
     # Optional --label passthrough (repeatable). create-pr applies
-    # `--label skip-bot-review` when the enabled_bots set is empty; the label is
-    # a best-effort suppression signal layered on top of the real gate (the
-    # producer enabled_bots filter that files no findings for disabled bots).
+    # `--label skip-bot-review` when the required_bots/optional_bots union is
+    # empty AND the operator actually answered that way. Under the two-list model
+    # the producer classifies rather than admits (warn-but-ingest), so the label
+    # is the only suppression signal on that path — and the bots honor it
+    # asymmetrically, so it is best-effort.
     for label in getattr(args, 'label', None) or []:
         gh_args.extend(['--label', label])
 
@@ -621,13 +721,14 @@ def cmd_pr_wait_for_comments(args: argparse.Namespace) -> dict:
 
     final_count = int(result['last_data'].get('unresolved', baseline))
 
-    # Additive rate-limit discriminator: after the poll settles, inspect the
-    # newest CodeRabbit-bot comment for a rate-limit status notice. Best-effort —
-    # a failed fetch leaves the default ``False`` and never alters poll behaviour.
-    rate_limited = False
+    # Per-bot rate-limit discriminator: after the poll settles, inspect each
+    # REGISTERED bot's newest comment for a rate-limit status notice. Best-effort
+    # — a failed fetch leaves the default empty list and never alters poll
+    # behaviour. An empty list means no registered bot is rate-limited.
+    rate_limited_bots: list[dict] = []
     post = github_ops.fetch_pr_comments_data(args.pr_number)
     if post.get('status') == 'success':
-        rate_limited = _detect_coderabbit_rate_limited(post.get('comments') or [])
+        rate_limited_bots = _detect_rate_limited_bots(post.get('comments') or [])
 
     return {
         'status': 'success',
@@ -639,7 +740,7 @@ def cmd_pr_wait_for_comments(args: argparse.Namespace) -> dict:
         'baseline_count': baseline,
         'final_count': final_count,
         'new_count': max(final_count - baseline, 0),
-        'rate_limited': rate_limited,
+        'rate_limited_bots': rate_limited_bots,
     }
 
 
