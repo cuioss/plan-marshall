@@ -59,8 +59,10 @@ def _model_text() -> str:
 def _section(text: str, heading_prefix: str, source: str) -> str:
     """Return the body under the first heading starting with ``heading_prefix``.
 
-    Collection stops at the next heading of the SAME level, so a nested
-    subsection (``####`` under a ``###``) stays inside the returned body.
+    Collection stops at the next heading of the SAME level OR SHALLOWER (e.g. a
+    ``##`` terminates a ``###`` section), so a nested subsection (``####`` under
+    a ``###``) stays inside the returned body while a sibling or parent heading
+    of the target does not bleed in.
     """
     level = heading_prefix.split(' ', 1)[0]
     lines = text.splitlines()
@@ -73,7 +75,9 @@ def _section(text: str, heading_prefix: str, source: str) -> str:
         ) from None
     collected: list[str] = []
     for line in lines[start + 1 :]:
-        if line.startswith(f'{level} '):
+        stripped = line.lstrip()
+        hashes = len(stripped) - len(stripped.lstrip('#'))
+        if 0 < hashes <= len(level) and stripped[hashes : hashes + 1] == ' ':
             break
         collected.append(line)
     return '\n'.join(collected)

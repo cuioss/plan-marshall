@@ -606,7 +606,21 @@ def cmd_inbox_archive(args: Any) -> dict[str, Any]:
     dest = inbox_dir / INBOX_ARCHIVE_SUBDIR / name
     # Created before the claim so a FileNotFoundError from os.link below can
     # only mean "the source is gone", never "the archive directory is missing".
-    dest.parent.mkdir(parents=True, exist_ok=True)
+    # Guarded in its OWN try/except (never folded into the os.link try block
+    # below) so a genuine filesystem failure here (permission denied, disk
+    # full, read-only filesystem) returns its own precise error code instead
+    # of either propagating uncaught or being mislabelled as the unrelated
+    # `invalid_message_name` the broader `except OSError` below reports for
+    # `os.link`.
+    try:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        return _error(
+            'archive_dir_unavailable',
+            f'could not create the inbox archive directory {dest.parent}: {exc}',
+            slug=args.slug,
+            message_name=name,
+        )
     try:
         os.link(source, dest)
     except FileNotFoundError:
