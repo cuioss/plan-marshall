@@ -149,26 +149,8 @@ def test_malformed_marshal_returns_empty_list(tmp_path: Path):
     assert detect_missing_default_finalize_steps(plan_dir) == []
 
 
-def test_this_repository_pins_its_bot_participation_lists():
-    """THIS repository's tracked marshal.json pins the operative bot lists.
-
-    The seeded defaults are both empty by design (never-asked), so the operative
-    classification lives only in each project's own ``marshal.json``. Pinning it
-    here closes the enabled-bots-vs-operative drift gap: a documented reviewer
-    roster that silently disagrees with the config the pipeline actually reads is
-    invisible at every other surface. CodeRabbit and PR-Agent are REQUIRED (their
-    silence is a completeness failure); Sourcery is OPTIONAL (a bonus reviewer
-    whose silence never blocks mark-done).
-    """
-    marshal = json.loads(
-        (PROJECT_ROOT / PLAN_DIR_NAME / 'marshal.json').read_text(encoding='utf-8')
-    )
-    params = marshal['plan']['phase-6-finalize']['steps']['plan-marshall:automatic-review']
-
-    assert params['required_bots'] == 'coderabbit,pr-agent'
-    assert params['optional_bots'] == 'sourcery'
-    # The value was migrated/answered, not left as the never-asked placeholder —
-    # otherwise create-pr would read it as an unanswered posture.
-    assert params['bot_lists_provenance'] in ('answered', 'migrated')
-    # The retired single-list key must not survive in the operative config.
-    assert 'enabled_bots' not in params
+# NOTE: the pin on THIS repository's operative bot-participation lists lives in
+# ``test/plan-marshall/automatic-review/test_bot_participation_contract.py``
+# (``TestThisRepositorysSettledConfiguration``), the contract-level home for the
+# participation model. It was moved out of this default-step-detection suite
+# rather than duplicated, so the roster is asserted in exactly one place.
