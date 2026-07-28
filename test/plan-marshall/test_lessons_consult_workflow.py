@@ -40,9 +40,10 @@ import os
 import subprocess
 import sys
 
-from conftest import PLAN_DIR_NAME, PROJECT_ROOT
 from constants import DIR_LESSONS
 from toon_parser import parse_toon
+
+from conftest import PLAN_DIR_NAME, PROJECT_ROOT
 
 EXECUTOR = PROJECT_ROOT / PLAN_DIR_NAME / 'execute-script.py'
 NOTATION = 'plan-marshall:manage-lessons:manage-lessons'
