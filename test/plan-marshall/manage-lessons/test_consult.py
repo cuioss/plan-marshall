@@ -307,6 +307,23 @@ class TestCapDisclosure:
         assert result['total_matched'] == 3
         assert result['truncated'] is True
 
+    def test_negative_cap_is_rejected_fail_closed(self, tmp_path):
+        """A negative cap is a structured error, never a silently-clamped run.
+
+        Without the guard, ``len(rows) > -1`` is true for an empty list (so
+        ``truncated`` is set spuriously) and ``rows[:-1]`` drops the trailing
+        row instead of capping from the front — a green-looking result that
+        silently under-reports. Fail closed instead (ADR-009).
+        """
+        _seed_lesson(tmp_path, OUTLINE_LESSON_IDS[0], OUTLINE_COMPONENT)
+        _write_outline(tmp_path, [OUTLINE_SKILL_PATH])
+
+        result = _consult(tmp_path, max_per_component=-1)
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_cap'
+        assert 'surfaced' not in result
+
 
 class TestArtifactWrite:
     """The machine record is written and distinguishes 'no match' from 'no consult'."""

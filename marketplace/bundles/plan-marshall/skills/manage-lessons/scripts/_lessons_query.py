@@ -224,6 +224,16 @@ def cmd_consult(args: argparse.Namespace) -> dict:
             'message': 'Identifiers must not contain path separators or traversal sequences',
         }
 
+    if args.max_per_component < 0:
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'invalid_cap',
+            'message': (
+                f'--max-per-component must be >= 0, got {args.max_per_component}'
+            ),
+        }
+
     plan_dir = resolve_main_anchored_path('plans') / args.plan_id
     outline_path = plan_dir / 'solution_outline.md'
 

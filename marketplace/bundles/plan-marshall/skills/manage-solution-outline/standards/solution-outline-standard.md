@@ -183,13 +183,7 @@ surfaced_count: {N}
 | {lesson_id} | {bundle}:{skill} | heeded \| not_applicable \| stale | {one line} |
 ```
 
-**Row shape**: exactly one row per surfaced lesson — no lesson omitted, none listed twice. `Disposition` is a closed three-member enum:
-
-| Disposition | Meaning |
-|-------------|---------|
-| `heeded` | The lesson names a real risk on this plan's path; the deliverables were revised to account for it. |
-| `not_applicable` | The lesson names the component but does not bear on what this plan does to it; the rationale says why. |
-| `stale` | The lesson is wrong, obsolete, or describes a mechanism that no longer exists. |
+**Row shape**: exactly one row per surfaced lesson — no lesson omitted, none listed twice. `Disposition` is a closed three-member enum (`heeded` / `not_applicable` / `stale`). This document owns the row shape and structural spec only; the authoritative per-disposition meanings live in [`phase-3-outline` standards/outline-workflow-detail.md § Record exactly one disposition per surfaced lesson](../../phase-3-outline/standards/outline-workflow-detail.md#record-exactly-one-disposition-per-surfaced-lesson) — do NOT restate them here.
 
 **Zero-match form**: when the consult matched nothing, the section is still emitted, with the count and no table:
 
