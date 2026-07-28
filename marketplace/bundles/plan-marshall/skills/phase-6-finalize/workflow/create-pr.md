@@ -133,6 +133,73 @@ reviewer trust model that the rest of the finalize pipeline is built on. If a
 template section calls for a file that is not in `{changed_files}`, omit the
 section rather than invent a reference.
 
+#### Step 3.4: Compose the Intent section
+
+Automated reviewers judge the diff on generic correctness plus this repo's `CLAUDE.md` rules. None of
+them knows **what the change was supposed to do** — and implementation-vs-intent divergence
+(doc-contract drift, vacuous guards, a predicate that does not do what the outline specified) is this
+project's most recurring defect archetype. The PR description is the only channel that reaches every
+reviewer, so the plan's intent goes there.
+
+**Distil, do not paste.** Write a short statement covering exactly three things:
+
+1. **The problem** — what was wrong, in the reviewer's terms.
+2. **The chosen approach** — the shape of the fix and why that shape.
+3. **Explicit non-goals** — what this change deliberately does NOT do, so a reviewer does not report
+   a scoped-out concern as a gap.
+
+**OMIT the deliverable list and the task breakdown.** Both are already visible in the diff and the
+commit series; restating them spends the budget on what the reviewer can already see, at the cost of
+the intent they cannot.
+
+Write the distillation to a scratch draft path with the `Write` tool, then invoke the renderer:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:phase-6-finalize:pr_intent_section render \
+  --plan-id {plan_id} --draft-path {draft_path} --body-path {path from prepare-body}
+```
+
+**You MUST NOT count characters, measure the draft against a budget, or truncate the draft
+yourself.** The character budget and its truncation are owned by the script, deterministically —
+that is what makes the outcome reproducible and keeps a clip from happening silently. Write the
+distillation at its natural length and let the renderer decide.
+
+Read `omitted`, `truncated`, and `chars_written` from the returned TOON and branch:
+
+- **`omitted: true`** — the plan has no outline intent (no `solution_outline.md`, or its `summary`
+  and `overview` sections are both absent or empty). The body file is left byte-identical, with **no
+  heading and no placeholder** — an empty `## Intent` would imply the intent was considered and found
+  vacuous. This is a normal outcome for outline-less plans, not a failure. Record it:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    decision --plan-id {plan_id} --level INFO \
+    --message "(plan-marshall:phase-6-finalize:create-pr) Intent section omitted — {reason}"
+  ```
+
+- **`truncated: true`** — the draft exceeded the budget and was cut at a word boundary, with the
+  truncation marker rendered INSIDE the budget so the loss is visible to the reviewer. Record it so
+  a recurring truncation is visible as a signal that the distillations are running long:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    decision --plan-id {plan_id} --level INFO \
+    --message "(plan-marshall:phase-6-finalize:create-pr) Intent section truncated to {chars_written} of {budget} chars — distillation ran long"
+  ```
+
+- **`truncated: false`, `omitted: false`** — the section was rendered whole. No decision entry needed.
+
+On `status: error` (`draft_unreadable` / `empty_draft`) the renderer refused rather than emitting an
+empty heading. Fix the draft and re-invoke; do not proceed with a body carrying a hollow section.
+
+> **What this section is NOT.** A stated intent makes a fluent, agreeable, diff-blind review *cheaper*
+> to reach — a reviewer can now echo the intent back without reading the diff. That is why the
+> participation predicate treats an intent-echoing review as `participated_but_empty` rather than a
+> discharged review obligation, and why its verdict must be identical-or-stricter on an
+> Intent-bearing PR. See
+> [`../../automatic-review/standards/bot-participation-contract.md`](../../automatic-review/standards/bot-participation-contract.md)
+> § "Participation is not review quality".
+
 #### Step 3.5: Resolve the PR title from the persisted status field
 
 Ground the PR title against the deterministic source authored at phase-2-refine Step 13 and persisted to `status.metadata.pr_title` — mirroring the `{base_branch}` grounding bind above. Do NOT improvise a title from `request.md` or the commit log:

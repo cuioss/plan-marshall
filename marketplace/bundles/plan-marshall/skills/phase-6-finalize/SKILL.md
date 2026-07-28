@@ -1585,16 +1585,32 @@ In-step state checks (consulted by individual standards docs after dispatch — 
 
 ---
 
+## Scripts
+
+| Script | Notation | Purpose |
+|--------|----------|---------|
+| `scripts/ci_verify.py` | `plan-marshall:phase-6-finalize:ci_verify` | Inline deterministic `default:ci-verify` executor — green CI marks the step done with zero dispatch; red CI classifies failures and returns a per-producer needs-triage signal |
+| `scripts/ci_complete_precondition.py` | `plan-marshall:phase-6-finalize:ci_complete_precondition` | Resolver for the `requires: [ci-complete]` frontmatter precondition, with a per-HEAD cache and a harness-ceiling clamp |
+| `scripts/derive_gate_bundles.py` | `plan-marshall:phase-6-finalize:derive_gate_bundles` | Derives the unique bundle set the pre-push quality gate runs over, from the live footprint |
+| `scripts/pr_intent_section.py` | `plan-marshall:phase-6-finalize:pr_intent_section` | Renders the distilled `## Intent` section into the generated PR body — owns the character budget and its visible truncation, and omits the section entirely (heading included) when the plan has no outline intent |
+
 ## Canonical invocations
 
-The canonical argparse surface for `ci_complete_precondition.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
+The canonical argparse surface for `ci_complete_precondition.py` and `pr_intent_section.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
 
-### resolve
+### ci_complete_precondition — resolve
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:phase-6-finalize:ci_complete_precondition resolve \
   --plan-id PLAN_ID --worktree-path WORKTREE_PATH --pr-number PR_NUMBER \
   [--timeout TIMEOUT] [--mode {strict,consume-failures}] [--signal-arm {ci,review,sonar}]
+```
+
+### pr_intent_section — render
+
+```bash
+python3 .plan/execute-script.py plan-marshall:phase-6-finalize:pr_intent_section render \
+  --plan-id PLAN_ID --draft-path DRAFT_PATH --body-path BODY_PATH
 ```
 
 ## Related

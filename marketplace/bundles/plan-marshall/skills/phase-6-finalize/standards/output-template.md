@@ -84,7 +84,7 @@ Placeholder glossary:
 - `{N}` / `{N_done}` / `{N_total}` — integer counts
 - `{branch}` — the feature branch name pushed by `push`
 - `{archive_path}` — relative path returned by `default:archive-plan`
-- `{summary}` — the 2-3 sentence Summary body from `solution_outline.md`, wrapped to ~78 chars with a 2-space indent. When the Summary is missing or empty, the renderer substitutes the literal placeholder `(no summary recorded)`.
+- `{summary}` — the 2-3 sentence Summary body from `solution_outline.md`, wrapped to ~78 chars with a 2-space indent. When the Summary is missing or empty, the renderer substitutes the literal placeholder `(no summary recorded)`. **Deliberate divergence from the PR body's `## Intent` section**, which omits itself entirely (heading included) on the same missing-outline input: this terminal template renders a fixed-shape report to the operator, where a labelled placeholder keeps the layout readable and says plainly that nothing was recorded, whereas the PR body is read by reviewers, for whom an empty heading would imply the intent was considered and found vacuous. Two surfaces, two audiences, two correct answers — this is not an inconsistency to reconcile, and neither behaviour changes.
 - All remaining `{...}` values come verbatim from each step's `display_detail`
 
 ## Headline Token Rules
