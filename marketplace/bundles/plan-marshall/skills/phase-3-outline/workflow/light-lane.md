@@ -17,7 +17,7 @@ This workflow reuses the existing [Deliverable Template](../SKILL.md#deliverable
 | `plan_id` | Yes | Plan identifier. |
 | `WORKTREE` | Yes | Repo-relative working directory (`.` for main checkout). |
 
-Skills the caller MUST forward in `skills[]`: `plan-marshall:manage-plan-documents` (request read), `plan-marshall:manage-solution-outline` (outline write), `plan-marshall:manage-references` (scope/track persist), `plan-marshall:manage-status` (metadata read + escalation), `plan-marshall:manage-architecture` (bounded neighbour resolution), `plan-marshall:manage-logging` (decision + work entries).
+Skills the caller MUST forward in `skills[]`: `plan-marshall:manage-plan-documents` (request read), `plan-marshall:manage-solution-outline` (outline write), `plan-marshall:manage-references` (scope/track persist), `plan-marshall:manage-status` (metadata read + escalation), `plan-marshall:manage-architecture` (bounded neighbour resolution), `plan-marshall:manage-lessons` (prospective lessons consult), `plan-marshall:manage-logging` (decision + work entries).
 
 ## Constants
 
@@ -133,6 +133,19 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO \
   --message "[STATUS] (plan-marshall:phase-3-outline:light-lane) Derived {deliverable_count} deliverable(s) from bounded read set — light lane, no escalation"
 ```
+
+### Step 5b: Prospective Lessons Consult
+
+The light lane is **not exempt** from the consult obligation — the consult is lane-agnostic by design, and exempting the light lane would make it vacuous for the majority of plans. Fire it here, after the outline is written and validated and before the phase transitions:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons consult \
+  --plan-id {plan_id}
+```
+
+Record exactly one disposition (`heeded` / `not_applicable` / `stale`) plus a one-line rationale for every surfaced lesson in the outline's `## Lessons Consulted` section, emit that section even when `surfaced_count: 0`, and never auto-apply a surfaced lesson. On a `heeded` lesson, revise the deliverables and re-validate with `manage-solution-outline update` within this same envelope.
+
+The authoritative procedure lives in [`standards/outline-workflow-detail.md` § Prospective lessons consult](../standards/outline-workflow-detail.md#prospective-lessons-consult); the section's structural spec is owned by [`manage-solution-outline` standards/solution-outline-standard.md](../../manage-solution-outline/standards/solution-outline-standard.md) § Lessons Consulted. Do NOT restate either here.
 
 ### Step 6: Transition Phase
 

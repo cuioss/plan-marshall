@@ -33,6 +33,7 @@ _mod = load_script_module('plan-marshall', 'manage-lessons', 'manage-lessons.py'
 
 # Re-exports — the per-subcommand test files import these names.
 cmd_add = _mod.cmd_add
+cmd_consult = _mod.cmd_consult
 cmd_get = _mod.cmd_get
 cmd_list = _mod.cmd_list
 cmd_update = _mod.cmd_update

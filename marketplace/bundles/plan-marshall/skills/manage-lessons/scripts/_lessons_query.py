@@ -24,6 +24,7 @@ from pathlib import Path
 
 from _lessons_crud import set_body
 from _lessons_io import get_lessons_dir, read_lesson
+from _plan_parsing import extract_deliverables, parse_document_sections
 from file_ops import (
     atomic_write_file,
     parse_markdown_metadata,
@@ -31,6 +32,7 @@ from file_ops import (
 from marketplace_paths import (
     resolve_main_anchored_path,
 )
+from toon_parser import serialize_toon
 
 
 def cmd_get(args: argparse.Namespace) -> dict:
@@ -61,6 +63,17 @@ def cmd_get(args: argparse.Namespace) -> dict:
     return result
 
 
+def _extract_h1_title(content: str) -> str:
+    """Return the text of the first ``# `` line in a lesson markdown body.
+
+    Returns the empty string when the file carries no H1 line.
+    """
+    for line in content.split('\n'):
+        if line.startswith('# '):
+            return line[2:].strip()
+    return ''
+
+
 def cmd_list(args: argparse.Namespace) -> dict:
     """List lessons with filtering."""
     lessons_dir = get_lessons_dir()
@@ -89,12 +102,7 @@ def cmd_list(args: argparse.Namespace) -> dict:
         if args.category and metadata.get('category') != args.category:
             continue
 
-        # Get title
-        title = ''
-        for line in content.split('\n'):
-            if line.startswith('# '):
-                title = line[2:].strip()
-                break
+        title = _extract_h1_title(content)
 
         entry = {
             'id': metadata.get('id', path.stem),
@@ -115,6 +123,155 @@ def cmd_list(args: argparse.Namespace) -> dict:
         lessons.append(entry)
 
     return {'status': 'success', 'total': total, 'filtered': len(lessons), 'lessons': lessons}
+
+
+# Default per-component cap for ``consult``. Deliberately set above the largest
+# per-component lesson count observed on the live corpus, so it does not bind in
+# practice and exists purely as a runaway guard for future corpus growth.
+DEFAULT_CONSULT_MAX_PER_COMPONENT = 25
+
+# An affected-file path maps to a ``{bundle}:{skill}`` lesson component only when
+# it lives under ``marketplace/bundles/{bundle}/skills/{skill}/`` AND names
+# something inside that skill directory. Paths outside this shape (tests, docs,
+# repo-root files) are reported in ``unmapped_paths[]`` rather than dropped.
+_COMPONENT_PATH_REGEX = re.compile(r'^marketplace/bundles/([^/]+)/skills/([^/]+)/.+$')
+
+
+def _derive_components(deliverables: list[dict]) -> tuple[list[str], list[str]]:
+    """Split every deliverable's affected-file paths into components and leftovers.
+
+    Returns ``(components, unmapped_paths)`` — both deduplicated and sorted, so
+    the derivation is deterministic regardless of document order.
+    """
+    components: set[str] = set()
+    unmapped: set[str] = set()
+
+    for deliverable in deliverables:
+        for entry in deliverable.get('affected_files', []):
+            path = entry.get('path', '')
+            if not path:
+                continue
+            match = _COMPONENT_PATH_REGEX.match(path)
+            if match:
+                components.add(f'{match.group(1)}:{match.group(2)}')
+            else:
+                unmapped.add(path)
+
+    return sorted(components), sorted(unmapped)
+
+
+def _active_lessons_by_component(components: set[str]) -> dict[str, list[dict]]:
+    """Group active lessons whose ``component`` exactly equals a requested one.
+
+    Applies the same exact-string-equality predicate ``cmd_list`` uses for
+    ``--component``; there is no fuzzy or prefix expansion. Lessons are appended
+    in lesson-id order within each component.
+    """
+    lessons_dir = get_lessons_dir()
+    if not lessons_dir.exists():
+        return {}
+
+    by_component: dict[str, list[dict]] = {}
+
+    for path in sorted(lessons_dir.glob('*.md')):
+        content = path.read_text(encoding='utf-8')
+        metadata = parse_markdown_metadata(content)
+
+        if metadata.get('status', 'active') != 'active':
+            continue
+
+        component = metadata.get('component', '')
+        if component not in components:
+            continue
+
+        by_component.setdefault(component, []).append(
+            {
+                'lesson_id': metadata.get('id', path.stem),
+                'component': component,
+                'category': metadata.get('category', ''),
+                'title': _extract_h1_title(content),
+            }
+        )
+
+    for rows in by_component.values():
+        rows.sort(key=lambda row: row['lesson_id'])
+
+    return by_component
+
+
+def cmd_consult(args: argparse.Namespace) -> dict:
+    """Surface the active lessons that name the components a plan is editing.
+
+    Read-only prospective query fired by ``phase-3-outline`` once the plan's
+    ``solution_outline.md`` has been written and validated. It derives the
+    plan's ``{bundle}:{skill}`` component set from the deliverables' affected-file
+    paths, returns every active lesson whose ``component`` exactly equals one of
+    them, and writes the machine record to ``work/lessons-consult.toon``.
+
+    The verb never mutates a lesson, never emits a Q-Gate finding, and never
+    applies a surfaced lesson — the outline author judges the returned set and
+    records a per-lesson disposition in the outline's ``## Lessons Consulted``
+    section. A present artifact with ``surfaced_count: 0`` means the consult
+    fired and matched nothing; an absent artifact means it never fired.
+
+    A missing ``solution_outline.md`` is a structured ``error: outline_not_found``
+    — never ``status: success`` with an empty surfaced set.
+    """
+    if any(sep in args.plan_id for sep in ('/', '\\', '..')):
+        return {
+            'status': 'error',
+            'error': 'invalid_id',
+            'message': 'Identifiers must not contain path separators or traversal sequences',
+        }
+
+    plan_dir = resolve_main_anchored_path('plans') / args.plan_id
+    outline_path = plan_dir / 'solution_outline.md'
+
+    if not outline_path.exists():
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'outline_not_found',
+            'message': f'No solution_outline.md at {outline_path}',
+        }
+
+    sections = parse_document_sections(outline_path.read_text(encoding='utf-8'))
+    deliverables = extract_deliverables(sections.get('deliverables', ''))
+    components, unmapped_paths = _derive_components(deliverables)
+
+    by_component = _active_lessons_by_component(set(components))
+
+    max_per_component = args.max_per_component
+    surfaced: list[dict] = []
+    total_matched = 0
+    truncated = False
+
+    # Iterate the derived component list (already sorted) so the union is
+    # ordered by (component, lesson_id) with no filesystem order leaking through.
+    for component in components:
+        rows = by_component.get(component, [])
+        total_matched += len(rows)
+        if len(rows) > max_per_component:
+            truncated = True
+        surfaced.extend(rows[:max_per_component])
+
+    result = {
+        'status': 'success',
+        'plan_id': args.plan_id,
+        'components': components,
+        'unmapped_paths': unmapped_paths,
+        'surfaced': surfaced,
+        'surfaced_count': len(surfaced),
+        'total_matched': total_matched,
+        'truncated': truncated,
+    }
+
+    artifact_path = plan_dir / 'work' / 'lessons-consult.toon'
+    artifact_path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_file(artifact_path, serialize_toon(result))
+
+    result['artifact_path'] = str(artifact_path.resolve())
+    return result
 
 
 def cmd_restore_from_plan(args: argparse.Namespace) -> dict:

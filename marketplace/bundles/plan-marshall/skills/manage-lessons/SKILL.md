@@ -277,6 +277,51 @@ lessons:
     title: Add validation for plan_id format
 ```
 
+### consult
+
+Read-only **prospective** query: surface the active lessons that name the components a plan is about to edit. This is the corpus's read side — every other read verb is retrospective (dedup, housekeeping) or referential-integrity. Fired by `phase-3-outline` once `solution_outline.md` has been written and validated, on every authoring lane.
+
+The derivation is entirely script-side — no component notation is supplied by, or inferable from, agent narrative:
+
+1. Resolve `.plan/local/plans/{plan_id}/solution_outline.md`; a missing outline is a structured `error: outline_not_found`, never `status: success` with an empty surfaced set.
+2. Extract every deliverable's `**Affected files:**` paths via the shared plan-document parser.
+3. Map each path under `marketplace/bundles/{bundle}/skills/{skill}/**` to the component notation `{bundle}:{skill}`. Every path that does not match appears in `unmapped_paths[]`, so narrowing is visible rather than silent.
+4. Query active lessons by **exact** `component` string equality — the same predicate `list --component` applies. There is no fuzzy or prefix expansion, so every surfaced lesson genuinely names a component the plan is editing.
+5. Union and order deterministically by `(component, lesson_id)`.
+6. Apply `--max-per-component`; when the cap binds, report `truncated: true` together with the untruncated `total_matched`. No code path returns a trimmed set that presents itself as complete.
+7. Write the machine record to `.plan/local/plans/{plan_id}/work/lessons-consult.toon`.
+
+**Never auto-applies.** The verb mutates no lesson file, alters no deliverable, and emits no Q-Gate finding; its only write is the artifact. The outline author judges the returned set and records one disposition per surfaced lesson in the outline's `## Lessons Consulted` section (see [`phase-3-outline` standards/outline-workflow-detail.md](../phase-3-outline/standards/outline-workflow-detail.md) for the authoritative procedure).
+
+The artifact is deliberately separate from the outline section: a present `work/lessons-consult.toon` with `surfaced_count: 0` means *the consult fired and matched nothing*, while an absent file means *the consult never fired*. A single artifact could not distinguish those.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons consult \
+  --plan-id EXAMPLE-PLAN \
+  [--max-per-component 25]
+```
+
+**Parameters**:
+- `--plan-id` (required): Plan whose `solution_outline.md` supplies the affected-file set
+- `--max-per-component` (optional, default `25`): Per-component cap on surfaced lessons. A runaway guard for corpus growth, not a routine trim — when it binds, truncation is always disclosed.
+
+**Output** (TOON):
+```toon
+status: success
+plan_id: EXAMPLE-PLAN
+components[2]:
+  - plan-marshall:manage-lessons
+  - plan-marshall:phase-3-outline
+unmapped_paths[1]:
+  - test/plan-marshall/manage-lessons/test_consult.py
+surfaced[1]{lesson_id,component,category,title}:
+  2025-12-02-15-001,plan-marshall:phase-3-outline,improvement,Outline omitted the doc-contract surface
+surfaced_count: 1
+total_matched: 1
+truncated: false
+artifact_path: /abs/path/to/.plan/local/plans/EXAMPLE-PLAN/work/lessons-consult.toon
+```
+
 ### convert-to-plan
 
 Move a lesson out of the global lessons-learned directory and into a plan directory as `lesson-{id}.md`. This is how a lesson transitions from "unapplied" to "applied" — the lifecycle state is encoded in the file's location, not in metadata.
@@ -510,6 +555,7 @@ The classification logic for the read-side corpus operations lives under `refere
 | `update` | `--lesson-id [--component] [--category]` | Update lesson metadata |
 | `get` | `--lesson-id` | Get single lesson |
 | `list` | `[--component] [--category] [--full]` | List with filtering. `--full` includes lesson body content. |
+| `consult` | `--plan-id [--max-per-component N]` | Read-only prospective query for `phase-3-outline`: derive the plan's `{bundle}:{skill}` component set from its `solution_outline.md` affected files and surface every active lesson whose `component` exactly equals one of them. Writes the machine record `work/lessons-consult.toon`; mutates no lesson, alters no deliverable, emits no finding. A binding `--max-per-component` (default 25) always discloses `truncated: true` plus the untruncated `total_matched`. |
 | `aggregate` | `[--top-n N]` | Read-only classifier: group active lessons that would land in one plan. Returns groups + headline commands. See [`references/aggregate-analysis.md`](references/aggregate-analysis.md). |
 | `from-error` | `--context` | Create from JSON error context (programmatic; body synthesized from context) |
 | `convert-to-plan` | `--lesson-id --plan-id` | Move lesson into a plan directory as `lesson-{id}.md`. This is the move-semantics replacement for marking a lesson "applied". |
@@ -592,6 +638,13 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons get 
 python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons list \
   [--component COMPONENT] [--category {bug|improvement|anti-pattern|arch-constraint}] \
   [--status {active|superseded|removed|all}] [--full]
+```
+
+### consult
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons consult \
+  --plan-id PLAN_ID [--max-per-component N]
 ```
 
 ### convert-to-plan
@@ -701,6 +754,7 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons rest
 | Client | Operation | Purpose |
 |--------|-----------|---------|
 | `plugin-apply-lessons-learned` | list, convert-to-plan | Apply lessons to marketplace components by moving them into a plan directory |
+| `phase-3-outline` | consult | Prospective risk surfacing at outline time — surface the active lessons naming the components the plan is about to edit, for the author to judge |
 | `phase-6-finalize` | list | Query unapplied lessons (those still in `.plan/local/lessons-learned/`) for promotion |
 
 ## Related
