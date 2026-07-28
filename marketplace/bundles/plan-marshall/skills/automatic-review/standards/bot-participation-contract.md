@@ -78,7 +78,7 @@ it matters*:
 
 Participation is **evidence-typed, not presence-typed.** The mere existence of a comment resolving to
 a bot's login proves nothing about whether that bot reviewed *this diff* — it may be a help reply, a
-stale comment from an earlier HEAD, or a marketing footer. A bot counts as a participant only when an
+stale comment tied to a prior HEAD, or a marketing footer. A bot counts as a participant only when an
 observed comment's `kind` is one of the publish shapes its own registry doc declares in
 `participation_evidence`.
 
