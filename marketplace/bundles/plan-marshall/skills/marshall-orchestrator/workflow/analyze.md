@@ -131,11 +131,11 @@ The drain semantics — enumeration order, the report-never-skip rule for a malf
 
 ### Step 5b: Candidate-lesson message — per-item disposition
 
-Applies to each `kind: candidate-lesson` message, and to each `kind: finding` message Step 5 did not absorb into a Watch or Open Defect. Exactly one of the four dispositions below is applied per message:
+Applies to each `kind: candidate-lesson` message, and to each `kind: finding` message Step 5 did not absorb into a Watch or Open Defect. Exactly one of the four dispositions below is applied per message — **`Promote` is restricted to `kind: candidate-lesson`**; a `kind: finding` message carries no corpus body shape and may take only Fold, Stage, or Discard.
 
 | Disposition | Action |
 |-------------|--------|
-| **Promote** | Lift the payload into the global lessons corpus via the path-allocate flow — `manage-lessons add` to allocate, then `manage-lessons set-body` with the body staged to a file by the Write tool (see `manage-lessons` Canonical invocations → `add` and → `set-body`). The `candidate-lesson` payload already carries the corpus body shape, so no transcoding is needed. |
+| **Promote** (`candidate-lesson` only) | Lift the payload into the global lessons corpus via the path-allocate flow — `manage-lessons add` to allocate, then `manage-lessons set-body` with the body staged to a file by the Write tool (see `manage-lessons` Canonical invocations → `add` and → `set-body`). The `candidate-lesson` payload already carries the corpus body shape, so no transcoding is needed. A `kind: finding` payload does NOT carry that shape, so `Promote` is never a valid disposition for it. |
 | **Fold** | Fold the signal into an existing staged `plans/PLAN-NN-{plan_slug}.md` spec. |
 | **Stage** | Stage a NEW spec plus its queue entry, via the [`decompose.md`](decompose.md) Step 5 queue-write shape. |
 | **Discard** | The signal is already shipped, refuted, or out of the epic's scope — no corpus entry, no spec, no queue item. |
