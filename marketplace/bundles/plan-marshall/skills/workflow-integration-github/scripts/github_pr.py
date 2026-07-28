@@ -64,7 +64,7 @@ from typing import Any
 
 import bot_registry
 import github_ops as _github
-from _github_pr import RESOLVE_THREAD_MUTATION, THREAD_REPLY_MUTATION, _is_rate_limit_notice
+from _github_pr import RESOLVE_THREAD_MUTATION, THREAD_REPLY_MUTATION, _is_refusal_notice
 from ci_base import extract_routing_args, register_subcommands, set_default_cwd
 from github_re_review import bot_kind_for_author, is_registered_trigger_comment
 from triage_helpers import (
@@ -199,66 +199,50 @@ def _is_obvious_noise(body: str, bot_kind: str | None = None) -> bool:
     1. SHARED — the bot-agnostic ``ignore`` regexes (lgtm, approved, ``[bot]``
        signatures, …) matched case-insensitively against the lowered body.
     2. PER-BOT — when ``bot_kind`` is a known reviewer bot, that bot's registry
-       ``ignore_patterns`` and ``refusal_patterns`` (literal whole-comment
-       markers) matched as case-sensitive substrings against the raw body. These
-       markers are exact fragments the bot emits, so only that bot's own comments
-       are dropped. Both lists drop the comment, but they answer DIFFERENT
-       questions and are deliberately separate fields: ``ignore_patterns`` names
-       routine sections of a *successful* review (a walkthrough heading, a
-       marketing footer, a no-op review line), while ``refusal_patterns`` names
-       the notices a bot posts when it DECLINES to review — positive evidence of
-       non-participation that ``_detect_rate_limited_bots`` also reads. Reusing
-       ``ignore_patterns`` for refusal detection would classify every ordinary
-       successful review as a refusal, which is why the split exists.
+       ``ignore_patterns`` (literal whole-comment markers) matched as
+       case-sensitive substrings against the raw body. These markers are exact
+       fragments the bot emits on a *successful* review (a walkthrough heading, a
+       marketing footer, a no-op review line), so only that bot's own comments are
+       dropped.
 
-    Two further pipeline-noise classes are folded in ahead of the two layers,
-    both reusing existing data sources rather than new patterns:
+    One further pipeline-noise class is folded in ahead of the two layers, reusing
+    an existing data source rather than new patterns:
 
     - REGISTERED TRIGGER — a comment whose whitespace-stripped body EQUALS a
       registered bot re-review trigger (``github_re_review.is_registered_trigger_comment``,
       derived from ``bot_registry``) is a pipeline-authored re-review request this
       workflow itself posted, not reviewer feedback. Checked for every comment
       (bot- or human-authored), since the pipeline may post under either account.
-    - RATE-LIMIT / SERVICE NOTICE — a comment that is a rate-limit status notice
-      (``_github_pr._is_rate_limit_notice``) posted in place of a review carries
-      no actionable feedback. Bot-agnostic and author-ungated: the recognizer
-      matches any notice by its structural signature (a limit-exceeded statement
-      paired with a notice shape — callout / limit-heading / service tail), so a
-      CodeRabbit, Sourcery, or unknown/renamed bot's notice is dropped with no
-      code change naming the bot and no dependence on the author resolving to a
-      known ``bot_kind``. Checked for every comment; the recognizer's two-part
-      precision keeps a genuine comment that merely mentions a rate limit from
-      matching.
+
+    **A REFUSAL IS NOT NOISE AND IS DELIBERATELY ABSENT FROM THIS PREDICATE.**
+    Neither ``bot_registry.refusal_patterns`` nor the structural
+    ``_github_pr._is_rate_limit_notice`` recognizer is consulted here. A refusal is
+    positive evidence that a bot DECLINED to review, so it is classified one layer
+    up by ``cmd_fetch_findings`` through ``_github_pr._is_refusal_notice`` and
+    surfaced in ``refused_bots[]`` — the completeness / quorum layer must SEE the
+    refusal, not infer absence from silence. Folding ``refusal_patterns`` into this
+    drop set collapsed exactly the distinction the two-field split was created for,
+    and let a PR whose every required reviewer refused report a clean, complete
+    review. ``ignore_patterns`` alone belongs here.
 
     Used by ``fetch_findings`` to drop obvious automated/acknowledgment noise
     before each surviving comment is persisted as a ``pr-comment`` finding. This
     is intentionally permissive — the goal is only to skip the most obvious
     noise, not to make the final classification decision (that belongs to the LLM
     consumer). Human comments (``bot_kind is None``) are checked against the
-    shared layer, the registered-trigger recognizer, and the author-ungated
-    rate-limit / service-notice recognizer; the per-bot literal-marker layer
-    stays reviewer-bot-scoped.
+    shared layer and the registered-trigger recognizer; the per-bot literal-marker
+    layer stays reviewer-bot-scoped.
     """
     if not body:
         return True
     # Pipeline-authored re-review trigger comment (exact stripped-body match).
     if is_registered_trigger_comment(body):
         return True
-    # Rate-limit / service notice posted in place of a review — bot-agnostic.
-    # Ungated by author: the recognizer's two-part precision (a limit-exceeded
-    # statement paired with a notice shape — callout / limit-heading / service
-    # tail) is what drops a CodeRabbit, Sourcery, or unknown/renamed bot's
-    # rate-limit notice by structural signature alone, with no per-bot hardcoding.
-    # The same precision keeps a genuine comment that merely mentions a rate limit
-    # in prose from being dropped, so the check is safe to apply to every comment.
-    if _is_rate_limit_notice(body):
-        return True
     body_lower = body.lower()
     if any(p.search(body_lower) for p in _COMPILED_IGNORE):
         return True
     if bot_kind:
-        markers = bot_registry.ignore_patterns(bot_kind) + bot_registry.refusal_patterns(bot_kind)
-        return any(marker in body for marker in markers)
+        return any(marker in body for marker in bot_registry.ignore_patterns(bot_kind))
     return False
 
 
@@ -391,9 +375,16 @@ def _has_update_movement(comment: dict, existing_keys: set[tuple[str, str]], bot
 def cmd_fetch_findings(args):
     """Producer-side FIND verb: fetch + pre-filter + file one finding per surviving comment.
 
-    Pre-filters applied in order (both contribute to ``count_skipped_noise``):
-    1. Already-resolved threads — skipped silently; the thread owner addressed them.
-    2. Obvious text noise — matched via ``_is_obvious_noise`` (lgtm, bot sigs, etc.).
+    Pre-filters applied in order:
+    1. Already-resolved threads — skipped silently (``count_skipped_noise``); the
+       thread owner addressed them.
+    2. REFUSALS — a comment recognized by ``_github_pr._is_refusal_notice`` as the
+       bot DECLINING to review. Counted in ``count_skipped_refusal``, NEVER in
+       ``count_skipped_noise``, and the refusing bot is named in ``refused_bots``.
+       It files no ``pr-comment`` finding: a refusal is a signal ABOUT the review,
+       not feedback about the code, so the operator is never asked to triage it.
+    3. Obvious text noise — matched via ``_is_obvious_noise`` (lgtm, bot sigs, etc.),
+       counted in ``count_skipped_noise``.
 
     Containment: the untrusted comment ``body`` is quarantined under
     ``raw_input.{body}`` — never embedded raw in the top-level ``detail``. The
@@ -428,6 +419,19 @@ def cmd_fetch_findings(args):
     A bot declaring no evidence shape resolves FAIL-CLOSED — it can never be proven
     a participant. This proves PARTICIPATION only, never review QUALITY: the
     consumer must not read a satisfied participation set as a reviewed diff.
+
+    ``refused_bots``: the sorted list of bot_kinds observed publishing a REFUSAL —
+    a rate-limit / quota / size-ceiling notice posted in place of a review,
+    recognized through ``_github_pr._is_refusal_notice`` (the bot's registry
+    ``refusal_patterns`` OR the structural last-resort recognizer). This is the
+    producer-side refusal channel the completeness / quorum layer consumes as
+    ``--refused-bots``, so it can classify the bot as ``refused_awaitable`` /
+    ``refused_hard`` instead of inferring absence from silence. A refusing comment
+    is excluded from ``participated_bots`` — a refusal is positive evidence the bot
+    did NOT review — and files no finding, so it never reaches operator triage. A
+    refusal from an unregistered login is still dropped from the store but cannot
+    be attributed, so it contributes to ``count_skipped_refusal`` without naming a
+    bot here.
 
     ``unclassified_bots``: the sorted list of bot_kinds that participated but
     appear in NEITHER ``--required-bots`` nor ``--optional-bots``. Per the
@@ -502,6 +506,13 @@ def cmd_fetch_findings(args):
         _bot_kind = bot_kind_for_author(_comment.get('author') or 'unknown')
         if not _bot_kind or _bot_kind in participated:
             continue
+        # A refusal is positive evidence the bot did NOT review, so it can never
+        # be its own participation evidence — even though a refusal is published in
+        # one of the bot's declared publish shapes. Without this exclusion a bot
+        # that posted nothing but "review limit reached" would be credited as a
+        # proven participant and satisfy the quorum on zero review coverage.
+        if _is_refusal_notice(str(_comment.get('body') or ''), _bot_kind):
+            continue
         _kind = _comment.get('kind') or 'inline'
         if _kind not in bot_registry.participation_evidence(_bot_kind):
             continue
@@ -520,6 +531,8 @@ def cmd_fetch_findings(args):
     stored_hashes: list[str] = []
     skipped_noise = 0
     skipped_duplicate = 0
+    skipped_refusal = 0
+    refused_set: set[str] = set()
     unclassified_set: set[str] = set()
     store_failures: list[str] = []
 
@@ -539,10 +552,26 @@ def cmd_fetch_findings(args):
         # on (bot_kind, comment_id)).
         bot_kind = bot_kind_for_author(author)
 
-        # Pre-filter 2: obvious noise — the shared acknowledgment/automation
+        body = comment.get('body') or ''
+
+        # Pre-filter 2: REFUSAL — the bot declined to review. This is a BRANCH, not
+        # a drop-as-noise: the comment files no finding (a refusal is a signal
+        # about the review, not feedback about the code, so it must never reach
+        # operator triage), but the refusing bot is SURFACED in ``refused_bots`` so
+        # the completeness / quorum layer classifies it as refused_awaitable /
+        # refused_hard rather than inferring absence from silence. Checked BEFORE
+        # the noise filter so a refusal can never be swallowed by a shared ignore
+        # regex on its way past. An unregistered login's refusal is still
+        # recognized structurally and skipped, but cannot be attributed to a bot.
+        if _is_refusal_notice(body, bot_kind):
+            skipped_refusal += 1
+            if bot_kind:
+                refused_set.add(bot_kind)
+            continue
+
+        # Pre-filter 3: obvious noise — the shared acknowledgment/automation
         # regexes plus, for a known reviewer bot, that bot's per-registry literal
         # ignore markers (walkthrough headings, marketing footers, no-op reviews).
-        body = comment.get('body') or ''
         if _is_obvious_noise(body, bot_kind):
             skipped_noise += 1
             continue
@@ -562,7 +591,7 @@ def cmd_fetch_findings(args):
         if bot_kind and bot_kind not in classified_bots:
             unclassified_set.add(bot_kind)
 
-        # Pre-filter 3: cross-iteration dedup keyed on (bot_kind, comment_id)
+        # Pre-filter 4: cross-iteration dedup keyed on (bot_kind, comment_id)
         # for ALL bot kinds, thread-bearing and thread_id-less alike. A comment
         # already staged in a prior iteration MUST NOT re-surface as a new
         # pending finding when HEAD advances. Dropping the earlier
@@ -620,12 +649,14 @@ def cmd_fetch_findings(args):
             store_failures.append(comment_id)
 
     count_stored = len(stored_hashes)
-    # Duplicates skipped by the cross-iteration guard are legitimate non-stores, so
-    # they drop out of expected_stored alongside the noise skips — otherwise every
-    # deduped comment would spuriously trip the producer-mismatch Q-Gate. An
-    # unclassified bot's comments are NOT subtracted: under the warn-but-ingest
-    # rule they are stored like any other, so they belong in expected_stored.
-    expected_stored = count_fetched - skipped_noise - skipped_duplicate
+    # Duplicates skipped by the cross-iteration guard and refusals surfaced through
+    # ``refused_bots`` are both legitimate non-stores, so they drop out of
+    # expected_stored alongside the noise skips — otherwise every deduped comment
+    # and every surfaced refusal would spuriously trip the producer-mismatch
+    # Q-Gate. An unclassified bot's comments are NOT subtracted: under the
+    # warn-but-ingest rule they are stored like any other, so they belong in
+    # expected_stored.
+    expected_stored = count_fetched - skipped_noise - skipped_duplicate - skipped_refusal
 
     qgate_hash: str | None = None
     qgate_persist_failure: dict[str, str] | None = None
@@ -636,6 +667,7 @@ def cmd_fetch_findings(args):
         mismatch_detail = (
             f'count_fetched={count_fetched}, '
             f'count_skipped_noise={skipped_noise}, '
+            f'count_skipped_refusal={skipped_refusal}, '
             f'count_stored={count_stored}, '
             f'expected_stored={expected_stored}, '
             f'failed_comment_ids={store_failures}'
@@ -665,10 +697,12 @@ def cmd_fetch_findings(args):
         'count_fetched': count_fetched,
         'count_skipped_noise': skipped_noise,
         'count_skipped_duplicate': skipped_duplicate,
+        'count_skipped_refusal': skipped_refusal,
         'count_stored': count_stored,
         'participated_bots': [
             {'bot_kind': bot, 'evidence_kind': participated[bot]} for bot in sorted(participated)
         ],
+        'refused_bots': sorted(refused_set),
         'unclassified_bots': sorted(unclassified_set),
         'stored_hash_ids': stored_hashes,
         'producer_mismatch_hash_id': qgate_hash,

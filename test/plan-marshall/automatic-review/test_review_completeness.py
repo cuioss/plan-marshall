@@ -81,7 +81,8 @@ def _state_of(result: dict, bot_kind: str) -> str:
     """Return the single state ``bot_kind`` was classified into."""
     matches = [r['state'] for r in result['bot_states'] if r['bot_kind'] == bot_kind]
     assert len(matches) == 1, f'{bot_kind} must be classified exactly once: {result["bot_states"]}'
-    return matches[0]
+    state: str = matches[0]
+    return state
 
 
 # =============================================================================

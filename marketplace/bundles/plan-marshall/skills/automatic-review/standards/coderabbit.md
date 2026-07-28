@@ -84,12 +84,16 @@ finding: the walkthrough / summary issue comment, no-op reviews (`No actionable 
 generated`), marketing / tips, learnings-only replies, and bot self-acknowledgement replies (login
 `coderabbitai` + reply-to-human + no `cr-indicator-types` marker). Do **not** ignore inline review
 comments that carry a `cr-indicator-types` marker — those are the signal.
-The refusal notice (`Review limit reached`) is likewise a whole-comment drop, but it is declared in
-the separate `refusal_patterns` list rather than in `ignore_patterns`: CodeRabbit posts it *in place
-of* a review, so it carries no finding to extract AND it is positive evidence the bot declined. The
-two lists must stay distinct — `ignore_patterns` here lists sections of a *successful* review
+The refusal notice (`Review limit reached`) also files no finding, but it is **not** a noise drop and
+is declared in the separate `refusal_patterns` list rather than in `ignore_patterns`: CodeRabbit posts
+it *in place of* a review, so it carries no finding to extract AND it is positive evidence the bot
+declined. `fetch_findings` therefore branches on it — counting it in `count_skipped_refusal` and
+naming `coderabbit` in `refused_bots[]` — instead of folding it into `count_skipped_noise`. The two
+lists must stay distinct: `ignore_patterns` here lists sections of a *successful* review
 (`## Walkthrough`, `✏️ Learnings added`), so reusing it for refusal detection would classify
-CodeRabbit's ordinary successful reviews as refusals.
+CodeRabbit's ordinary successful reviews as refusals, and unioning the two collapses the distinction
+in the other direction. See [`bot-participation-contract.md`](bot-participation-contract.md) §
+"A refusal is never noise — it is a branch".
 
 ## Participation evidence — `review_body`, `inline`
 

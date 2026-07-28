@@ -317,8 +317,22 @@ def cmd_migrate_bot_lists(_args: argparse.Namespace) -> dict:
     back only when the migration actually changed something. A project with no
     such step configured is a no-op success — the verb never fails merely because
     the automatic-review step is absent.
+
+    A project with NO marshal.json at all is likewise a no-op success rather than a
+    ``FileNotFoundError`` escaping the verb: this migration runs as a sub-step of
+    the steward upgrade flow, and an un-initialized project has no legacy
+    ``enabled_bots`` value to migrate. The guard is on a real filesystem boundary
+    the caller can genuinely present, not a speculative one.
     """
-    from _config_core import load_config, save_config
+    from _config_core import is_initialized, load_config, save_config
+
+    if not is_initialized():
+        return {
+            'status': 'success',
+            'operation': 'migrate-bot-lists',
+            'state': 'noop',
+            'detail': 'no marshal.json — project not initialized, nothing to migrate',
+        }
 
     config = load_config()
     steps = (config.get('plan', {}).get('phase-6-finalize', {}) or {}).get('steps') or {}

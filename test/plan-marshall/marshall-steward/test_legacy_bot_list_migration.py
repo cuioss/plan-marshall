@@ -73,7 +73,8 @@ def _expected_required() -> list[str]:
 
 
 def _step_params(config: dict) -> dict:
-    return config['plan']['phase-6-finalize']['steps'][_AUTOMATIC_REVIEW_STEP_ID]
+    params: dict = config['plan']['phase-6-finalize']['steps'][_AUTOMATIC_REVIEW_STEP_ID]
+    return params
 
 
 class TestLegacySemanticsSurviveTheMigration:
@@ -239,15 +240,28 @@ class TestSelfDisarming:
 class TestLiveConfigVerb:
     """The CLI verb against a real marshal.json on disk."""
 
+    @staticmethod
+    def _stage_marshal_json(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, config: dict) -> Path:
+        """Write ``config`` to a sandbox marshal.json and point the loader at it.
+
+        ``_config_core.MARSHAL_PATH`` is resolved ONCE at import time, so a bare
+        ``chdir`` into a staged project does not redirect the loader — the verb
+        would keep reading (and writing) whatever path the process started with.
+        Re-binding the module attribute is what makes this an end-to-end test of the
+        real read-modify-write rather than a test of a path that is never read.
+        """
+        import _config_core
+
+        marshal = tmp_path / '.plan' / 'marshal.json'
+        marshal.parent.mkdir(parents=True, exist_ok=True)
+        marshal.write_text(json.dumps(config), encoding='utf-8')
+        monkeypatch.setattr(_config_core, 'MARSHAL_PATH', marshal)
+        return marshal
+
     @pytest.fixture
     def legacy_project(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         """Stage a project whose marshal.json carries only the legacy knob."""
-        plan_dir = tmp_path / '.plan'
-        plan_dir.mkdir()
-        marshal = plan_dir / 'marshal.json'
-        marshal.write_text(json.dumps(_legacy_project_config()), encoding='utf-8')
-        monkeypatch.chdir(tmp_path)
-        return marshal
+        return self._stage_marshal_json(tmp_path, monkeypatch, _legacy_project_config())
 
     def test_verb_writes_the_migrated_config_back_to_disk(self, legacy_project: Path):
         """The end-to-end landing: the file on disk carries the two-list model."""
@@ -269,12 +283,31 @@ class TestLiveConfigVerb:
         """A project with no automatic-review step configured is not a failure."""
         import argparse
 
-        plan_dir = tmp_path / '.plan'
-        plan_dir.mkdir()
-        (plan_dir / 'marshal.json').write_text(json.dumps({'plan': {}}), encoding='utf-8')
-        monkeypatch.chdir(tmp_path)
+        self._stage_marshal_json(tmp_path, monkeypatch, {'plan': {}})
 
         result = upgrade.cmd_migrate_bot_lists(argparse.Namespace())
 
         assert result['status'] == 'success'
         assert result['state'] == 'noop'
+
+    def test_verb_is_a_noop_success_on_an_uninitialized_project(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """No marshal.json at all is a typed no-op, never an escaping FileNotFoundError.
+
+        The migration runs as a sub-step of the steward upgrade flow, which can be
+        pointed at a project that was never initialized. An un-initialized project
+        has no legacy ``enabled_bots`` value to migrate, so the honest answer is a
+        no-op success — not a traceback out of a CLI verb.
+        """
+        import argparse
+
+        import _config_core
+
+        monkeypatch.setattr(_config_core, 'MARSHAL_PATH', tmp_path / '.plan' / 'marshal.json')
+
+        result = upgrade.cmd_migrate_bot_lists(argparse.Namespace())
+
+        assert result['status'] == 'success'
+        assert result['state'] == 'noop'
+        assert 'marshal.json' in result['detail']

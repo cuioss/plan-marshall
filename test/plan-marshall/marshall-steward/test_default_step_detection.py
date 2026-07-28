@@ -26,7 +26,7 @@ import json
 import sys
 from pathlib import Path
 
-from conftest import MARKETPLACE_ROOT, PLAN_DIR_NAME, PROJECT_ROOT
+from conftest import MARKETPLACE_ROOT
 
 _SCRIPTS_DIR = (
     MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'marshall-steward' / 'scripts'

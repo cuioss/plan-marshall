@@ -58,7 +58,8 @@ _AUTOMATIC_REVIEW_STEP_ID = 'plan-marshall:automatic-review'
 def _live_step_params() -> dict:
     """Return this repository's tracked ``plan-marshall:automatic-review`` params."""
     config = json.loads(_MARSHAL_JSON.read_text(encoding='utf-8'))
-    return config['plan']['phase-6-finalize']['steps'][_AUTOMATIC_REVIEW_STEP_ID]
+    params: dict = config['plan']['phase-6-finalize']['steps'][_AUTOMATIC_REVIEW_STEP_ID]
+    return params
 
 # The three provenance values the contract declares. Sourced from the contract doc
 # itself rather than restated as a convenience literal.
@@ -289,7 +290,11 @@ class TestFailureTaxonomyIsExhaustive:
         standards doc is swept automatically. The assertion is totality and
         mutual exclusivity — never a spot-check of one bot.
         """
-        plan_id = f'bpc-taxonomy-{observation}'
+        # ``_`` is not admissible in a plan_id (``^[a-z][a-z0-9-]*$``), and the
+        # observation labels carry them. Derive the id through the same character
+        # class the real store enforces, so the sweep exercises the predicate rather
+        # than tripping plan-id validation inside the findings store.
+        plan_id = f'bpc-taxonomy-{observation.replace("_", "-")}'
         plan_context.plan_dir_for(plan_id)
         bots = _registered_bots()
 

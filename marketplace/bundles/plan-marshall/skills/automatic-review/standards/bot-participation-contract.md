@@ -182,12 +182,31 @@ A bot whose `refusal_patterns[]` is empty has no observed refusal shape; its non
 resolves to `absent` or `in_progress` rather than to either refusal member. This is the fail-closed
 default — a refusal is only ever claimed on positive evidence.
 
+### A refusal is never noise — it is a branch
+
+Recognising a refusal and then **discarding** it is the same failure as not recognising it. A refusal
+that never reaches the quorum layer leaves the bot classified `absent`, which reads as "not heard from
+yet" rather than "declined" — so a PR on which every required reviewer refused reports a complete
+review with substantively zero review coverage.
+
+The producer therefore treats a recognised refusal as a **three-way branch**, not a drop:
+
+| Aspect | Behaviour | Why |
+|--------|-----------|-----|
+| Filed as a `pr-comment` finding? | **No.** | A refusal is a signal *about the review*, not feedback about the code. Handing it to triage would ask the operator to dispose of a notice with nothing to fix. |
+| Counted as noise? | **No** — it has its own `count_skipped_refusal` counter. | Sharing `count_skipped_noise` is exactly the conflation that hid it. The two counters answer different questions. |
+| Surfaced? | **Yes** — the bot is named in `fetch_findings`'s `refused_bots[]` and forwarded to `review_completeness check --refused-bots`. | This is what lets the taxonomy assign `refused_awaitable` / `refused_hard` instead of inferring absence from silence. |
+| Counted as participation? | **No** — the refusing comment is excluded from `participated_bots[]`. | A refusal is published in one of the bot's declared publish shapes, so without an explicit exclusion the shape alone would credit it as a proven participant. |
+
+This is also why `refusal_patterns` must never be unioned into the producer's `ignore_patterns` drop
+set: doing so collapses the very distinction the two-field split exists to carry.
+
 ## Consumers
 
 | Consumer | What it reads |
 |----------|---------------|
 | `automatic-review/SKILL.md` | Both lists, to drive the completion-aware poll, the re-review trigger set, and the step-done guard. |
-| `github_pr fetch_findings` | Both lists, to classify each ingested comment and emit the unclassified-bot warning; each bot's `participation_evidence` / `participation_requires_update`, to derive the evidence-typed `participated_bots[]`. |
+| `github_pr fetch_findings` | Both lists, to classify each ingested comment and emit the unclassified-bot warning; each bot's `participation_evidence` / `participation_requires_update`, to derive the evidence-typed `participated_bots[]`; each bot's `refusal_patterns`, to branch a refusal into `refused_bots[]` rather than drop it. |
 | `review_completeness check` | `required_bots` for the quorum; `optional_bots` for reporting only; `participation_evidence` to admit each evidence pair; `rate_limit_class` to split the two refusal states. |
 | `marshall-steward` | Both lists, to ask the wizard question and record the provenance. |
 

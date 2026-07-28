@@ -277,12 +277,15 @@ class _ReReviewStrategy:
     def _refusal_record(body: str, bot_kind: str | None, source: str) -> dict | None:
         """Return a refusal RECORD when ``body`` is a refusal notice, else ``None``.
 
-        The single TWO-LAYER rule shared by both discriminator paths (and by the
-        producer pre-filter): the awaited bot's registry ``refusal_patterns``
-        (case-sensitive substring containment) first, then the structural
-        :func:`_is_rate_limit_notice` fallback for an unknown/unregistered bot or a
-        phrasing not yet captured as data. When ``bot_kind`` is ``None`` the data
-        layer cannot fire and only the structural test applies.
+        The same TWO-LAYER rule the producer applies through
+        ``_github_pr._is_refusal_notice``: the awaited bot's registry
+        ``refusal_patterns`` (case-sensitive substring containment) first, then the
+        structural :func:`_is_rate_limit_notice` fallback for an unknown/unregistered
+        bot or a phrasing not yet captured as data. When ``bot_kind`` is ``None`` the
+        data layer cannot fire and only the structural test applies. This path keeps
+        the layers open rather than calling that boolean seam, because it must REPORT
+        which layer fired (the ``layer`` field below); the recognition rule is
+        identical.
 
         The data layer reads ``refusal_patterns``, NEVER ``ignore_patterns``. The
         two lists answer different questions: ``ignore_patterns`` names routine

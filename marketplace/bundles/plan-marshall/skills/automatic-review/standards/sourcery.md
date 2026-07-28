@@ -34,7 +34,8 @@ ignore_patterns:
   - "found 0 issues"                                               # no-op review
 refusal_patterns:
   - "your pull request is larger than the review limit of"         # #1014 refusal notice — handle-free and number-free so it survives a different account handle and a different character budget
-rate_limit_class: hard_quota   # the observed refusal is a per-PR size limit, not a window that reopens
+  - "reached your weekly rate limit of"                            # #1034 / #1037 refusal notice — the account-level weekly diff-character quota, a DIFFERENT mode from the per-PR size ceiling above
+rate_limit_class: hard_quota   # both observed refusals are quotas, not windows that reopen usefully
 rate_limit_eta_patterns:
 severity_map:
   issue_bug_risk: high      # **issue (bug_risk):**
@@ -95,15 +96,25 @@ mermaid diagrams + File-Level-Changes table), Tips and commands, marketing / fee
 reviews (`found 0 issues` with no inline comments). Do NOT drop the review body when it contains
 **Overall Comments** or when inline `<issue_to_address>` comments exist — those are signal.
 
-The size-limit refusal notice (`your pull request is larger than the review limit of …`) is likewise
-a whole-comment drop, but it lives in the separate `refusal_patterns` list, not in `ignore_patterns`:
-Sourcery posts it *in place of* a review, so it carries no finding to extract AND it is positive
-evidence the bot declined. This marker is load-bearing — it is the ONLY thing that recognises this
+The size-limit refusal notice (`your pull request is larger than the review limit of …`) also files
+no finding, but it is **not** a noise drop and lives in the separate `refusal_patterns` list, not in
+`ignore_patterns`: Sourcery posts it *in place of* a review, so it carries no finding to extract AND
+it is positive evidence the bot declined. `fetch_findings` branches on it — counting it in
+`count_skipped_refusal` and naming `sourcery` in `refused_bots[]` — instead of folding it into
+`count_skipped_noise`. This marker is load-bearing: it is the ONLY thing that recognises this
 refusal, because the structural last-resort recogniser
 (`_github_pr._is_rate_limit_notice`) is blind to the phrasing ("larger than the review limit of" is
 a comparison, not an "exceeded / reached / hit" statement). Keeping it out of `ignore_patterns`
 matters for the same reason it matters for CodeRabbit: `ignore_patterns` lists sections of a
-*successful* review, so refusal detection must not read from it.
+*successful* review, so refusal detection must not read from it — and unioning the two lists into one
+drop set discards the refusal the field exists to identify. See
+[`bot-participation-contract.md`](bot-participation-contract.md) § "A refusal is never noise — it is
+a branch".
+
+**Sourcery has at least TWO observed refusal phrasings**, so the structural recogniser must not be
+assumed to cover this bot: the #1014 per-PR size ceiling above, and a weekly diff-character quota
+("you have reached your weekly rate limit of … diff characters"). The second is notice-voiced and the
+structural layer does see it; the first it cannot. Both are `hard_quota`.
 
 ## Participation evidence — `review_body`
 

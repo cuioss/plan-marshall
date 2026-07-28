@@ -281,17 +281,18 @@ def test_empty_classification_lists_still_ingest_every_bot(plan_context, monkeyp
     assert len(stored) == len(_COMMENTS)
 
 
-def test_pipeline_trigger_and_rate_limit_notice_dropped(plan_context, monkeypatch):
-    """Pipeline-authored re-review triggers and CodeRabbit rate-limit notices are dropped.
+def test_pipeline_trigger_is_noise_while_a_rate_limit_notice_is_a_refusal(plan_context, monkeypatch):
+    """A pipeline trigger is noise; a rate-limit notice is a REFUSAL, and the two differ.
 
     Over a comment set carrying (a) a ``@coderabbitai review`` re-review trigger
     comment this workflow itself posts, (b) a CodeRabbit rate-limit status notice
     posted in place of a review, and (c) a genuine substantive reviewer comment,
-    ``fetch_findings`` stores ONLY the genuine comment. The trigger and the
-    rate-limit notice are both counted as skipped noise (breaking the re-review
-    feedback loop) and raise no ``(producer-mismatch)`` Q-Gate false-positive —
-    the barrier's real purpose (surfacing actionable reviewer feedback) is
-    preserved.
+    ``fetch_findings`` stores ONLY the genuine comment — but the two non-stores are
+    accounted for DIFFERENTLY. The trigger is noise (breaking the re-review feedback
+    loop). The rate-limit notice is positive evidence CodeRabbit declined to review,
+    so it lands in ``count_skipped_refusal`` and names the bot in ``refused_bots``
+    instead of vanishing into the noise count. Neither raises a
+    ``(producer-mismatch)`` Q-Gate false-positive.
     """
     plan_id = 'gh-pr-barrier-noise'
     comments = [
@@ -308,7 +309,8 @@ def test_pipeline_trigger_and_rate_limit_notice_dropped(plan_context, monkeypatc
         },
         # (b) CodeRabbit rate-limit status notice — carries BOTH markers (the
         # ``## Rate limit exceeded`` heading AND the body sentence). Authored by
-        # the coderabbit bot, so bot_kind resolves to 'coderabbit'.
+        # the coderabbit bot, so bot_kind resolves to 'coderabbit' and the refusal
+        # is attributable.
         {
             'id': 'ratelimit-1',
             'author': 'coderabbitai',
@@ -341,8 +343,12 @@ def test_pipeline_trigger_and_rate_limit_notice_dropped(plan_context, monkeypatc
     assert result['status'] == 'success'
     # Only the genuine reviewer comment survives.
     assert result['count_stored'] == 1
-    # Both the trigger comment and the rate-limit notice are dropped as noise.
-    assert result['count_skipped_noise'] == 2
+    # The pipeline-authored trigger is noise...
+    assert result['count_skipped_noise'] == 1
+    # ...but the rate-limit notice is a REFUSAL, counted and attributed separately.
+    # Collapsing it into count_skipped_noise is what hid a declined review.
+    assert result['count_skipped_refusal'] == 1
+    assert result['refused_bots'] == ['coderabbit']
     # Legitimate non-stores — no producer-mismatch Q-Gate false-positive.
     assert result['producer_mismatch_hash_id'] is None
 
@@ -356,12 +362,18 @@ def test_pipeline_trigger_and_rate_limit_notice_dropped(plan_context, monkeypatc
 
 
 # =============================================================================
-# Bot-agnostic rate-limit / service-notice recognizer (github_pr._is_rate_limit_notice)
+# Bot-agnostic rate-limit / service-notice recognizer (github_pr._is_refusal_notice)
 # =============================================================================
 #
+# Exercised with NO bot_kind, which is exactly the structural last-resort layer of
+# the refusal seam (an unregistered / renamed bot, or a phrasing not yet filed in
+# the registry): with no bot_kind there is no registry data layer to consult, so a
+# match here is a match by structural signature alone.
+#
 # Both directions are covered per bot shape. The false-negative direction — a
-# genuine reviewer comment that merely MENTIONS a rate limit must NOT be dropped —
-# is the real hazard, so it is asserted per bot shape alongside the drop cases.
+# genuine reviewer comment that merely MENTIONS a rate limit must NOT be
+# misclassified — is the real hazard, so it is asserted per bot shape alongside
+# the recognized cases.
 
 # Rate-limit / service notices from three distinct bot shapes. Each carries a
 # LIMIT-EXCEEDED statement (notice-voiced "exceeded" / "reached" / "hit") paired
@@ -424,42 +436,50 @@ _GENUINE_RATE_LIMIT_MENTIONS = {
 
 
 @pytest.mark.parametrize('shape', sorted(_RATE_LIMIT_NOTICES))
-def test_is_rate_limit_notice_recognizes_every_bot_shape(shape):
-    """A rate-limit / service notice from any bot shape is recognized as noise.
+def test_refusal_notice_recognizes_every_bot_shape(shape):
+    """A rate-limit / service notice from any bot shape is recognized as a refusal.
 
     CodeRabbit, Sourcery, and an arbitrary unknown/renamed bot's notice are each
     matched by the same structural signature — no author-specific literal, so
     adding a future bot needs no recognizer edit.
     """
-    assert github_pr._is_rate_limit_notice(_RATE_LIMIT_NOTICES[shape]) is True
+    assert github_pr._is_refusal_notice(_RATE_LIMIT_NOTICES[shape]) is True
 
 
 @pytest.mark.parametrize('shape', sorted(_GENUINE_RATE_LIMIT_MENTIONS))
-def test_is_rate_limit_notice_keeps_genuine_rate_limit_mentions(shape):
-    """A genuine reviewer comment that merely mentions a rate limit is NOT dropped.
+def test_refusal_notice_keeps_genuine_rate_limit_mentions(shape):
+    """A genuine reviewer comment that merely mentions a rate limit is NOT a refusal.
 
     The false-negative direction is the real hazard: review-voiced phrasing
     ("exceeds" / "can exceed" / "does not exceed"), with or without a heading or
     callout, must survive the recognizer's two-part precision (a limit-EXCEEDED
     statement AND a notice shape are BOTH required).
     """
-    assert github_pr._is_rate_limit_notice(_GENUINE_RATE_LIMIT_MENTIONS[shape]) is False
+    assert github_pr._is_refusal_notice(_GENUINE_RATE_LIMIT_MENTIONS[shape]) is False
 
 
-def test_is_rate_limit_notice_empty_body_is_not_notice():
-    """An empty body is not a rate-limit notice (the recognizer returns False)."""
-    assert github_pr._is_rate_limit_notice('') is False
+def test_refusal_notice_empty_body_is_not_a_refusal():
+    """An empty body is not a refusal (the recognizer returns False)."""
+    assert github_pr._is_refusal_notice('') is False
 
 
-def test_fetch_findings_drops_rate_limit_notices_bot_agnostically(plan_context, monkeypatch):
-    """fetch_findings drops rate-limit notices from every bot — including an unknown one.
+def test_fetch_findings_surfaces_rate_limit_refusals_bot_agnostically(plan_context, monkeypatch):
+    """fetch_findings SURFACES rate-limit refusals from every bot — including an unknown one.
 
     Over a mixed set carrying a rate-limit notice AND a genuine comment from each
     of CodeRabbit, Sourcery, and an unregistered ``randombot[bot]`` (bot_kind
-    resolves to None), only the three genuine comments are stored; all three
-    notices are dropped as noise. The unknown bot's notice being dropped proves
-    the pre-filter is author-ungated (no resolved bot_kind is required), and no
-    ``(producer-mismatch)`` Q-Gate fires on the legitimate noise skips.
+    resolves to None), only the three genuine comments are stored — a refusal is
+    never handed to the operator as an actionable ``pr-comment`` finding, because it
+    is a signal ABOUT the review, not feedback about the code.
+
+    But the three notices are **refusals, not noise**: they are counted in
+    ``count_skipped_refusal`` and the two ATTRIBUTABLE ones name their bot in
+    ``refused_bots``, so the completeness / quorum layer sees a declined review
+    rather than inferring absence from silence. The unknown bot's notice being
+    recognized at all proves the recognizer is author-ungated (no resolved
+    ``bot_kind`` is required); it cannot be attributed, so it contributes to the
+    count without naming a bot. No ``(producer-mismatch)`` Q-Gate fires on the
+    legitimate non-stores.
     """
     plan_id = 'gh-pr-rate-limit-bot-agnostic'
     comments = [
@@ -522,9 +542,19 @@ def test_fetch_findings_drops_rate_limit_notices_bot_agnostically(plan_context, 
 
     result = _run_fetch(105, plan_id)
     assert result['status'] == 'success'
-    # Three genuine comments stored; three rate-limit notices dropped as noise.
+    # Three genuine comments stored; three rate-limit notices recognized as refusals.
     assert result['count_stored'] == 3
-    assert result['count_skipped_noise'] == 3
+    assert result['count_skipped_refusal'] == 3
+    # NONE of them is noise — that conflation is the defect this pins.
+    assert result['count_skipped_noise'] == 0
+    # Only the two notices whose author resolves to a registered bot are attributable.
+    assert result['refused_bots'] == ['coderabbit', 'sourcery']
+    # Participation is unaffected by the refusal it also posted: CodeRabbit's
+    # genuine inline comment is one of its declared publish shapes, so positive
+    # diff-derived evidence still outranks the refusal observation. Sourcery's
+    # genuine comment is `inline`, which is NOT its declared shape (`review_body`),
+    # so it is not credited — the evidence-typed contract, not a refusal effect.
+    assert result['participated_bots'] == [{'bot_kind': 'coderabbit', 'evidence_kind': 'inline'}]
     assert result['producer_mismatch_hash_id'] is None
 
     stored = query_findings(plan_id, finding_type='pr-comment')['findings']
@@ -542,20 +572,26 @@ def _stored_comment_id(finding):
     return ''
 
 
-def test_fetch_findings_reports_responded_bots_including_all_noise_bot(plan_context, monkeypatch):
-    """D4: ``responded_bots`` names every bot that posted, even one filed all-noise.
+def test_fetch_findings_splits_a_refusing_bot_from_a_participating_one(plan_context, monkeypatch):
+    """A bot that only refused lands in ``refused_bots``, never in ``participated_bots``.
 
-    Over a set where CodeRabbit posts ONLY a rate-limit notice (dropped as noise,
-    so it stores zero findings), Sourcery posts a genuine comment (stored), and a
-    human posts a comment (``bot_kind`` None, excluded), ``fetch_findings`` returns
-    ``responded_bots == ['coderabbit', 'sourcery']`` — the distinct non-None
-    bot_kinds present in the RAW fetched comments, computed before noise filtering,
-    so the completeness guard can treat the all-noise bot as settled rather than
-    unfetched. CodeRabbit stores nothing yet still appears.
+    This is the #1037 signature, pinned: over a set where CodeRabbit posts ONLY a
+    rate-limit notice, Sourcery posts a genuine review comment in its declared
+    publish shape, and a human comments, the producer must report the two bots
+    DIFFERENTLY.
+
+    The retired ``responded_bots`` field could not: it named every bot whose login
+    appeared on any comment, so a bot that did nothing but decline was reported
+    identically to one that reviewed. ``participated_bots`` is evidence-typed and
+    excludes a refusal (a refusal is positive evidence the bot did NOT review, even
+    though it is published in one of the bot's declared shapes), while
+    ``refused_bots`` carries the refusal so the quorum layer can classify it as
+    ``refused_awaitable`` / ``refused_hard``. The human author (``bot_kind`` None)
+    appears in neither.
     """
-    plan_id = 'gh-pr-responded-bots'
+    plan_id = 'gh-pr-refusal-vs-participation'
     comments = [
-        # CodeRabbit posts ONLY a rate-limit notice — dropped as noise (stores 0).
+        # CodeRabbit posts ONLY a rate-limit notice — a refusal, not a review.
         {
             'id': 'cr-notice',
             'author': 'coderabbitai',
@@ -564,18 +600,17 @@ def test_fetch_findings_reports_responded_bots_including_all_noise_bot(plan_cont
             'body': _RATE_LIMIT_NOTICES['coderabbit'],
             'resolved': False,
         },
-        # Sourcery posts a genuine substantive comment — stored.
+        # Sourcery posts a genuine substantive review body — its declared publish
+        # shape, so it is stored AND proves participation.
         {
             'id': 'sr-genuine',
             'author': 'sourcery-ai',
-            'thread_id': 'PRRT_S',
-            'kind': 'inline',
+            'thread_id': '',
+            'kind': 'review_body',
             'body': 'Extract this duplicated branch into a helper for clarity.',
-            'path': 'src/s.py',
-            'line': 12,
             'resolved': False,
         },
-        # Human comment — bot_kind None, excluded from responded_bots.
+        # Human comment — bot_kind None, in neither bot list.
         {
             'id': 'human-1',
             'author': 'alice',
@@ -589,13 +624,14 @@ def test_fetch_findings_reports_responded_bots_including_all_noise_bot(plan_cont
 
     result = _run_fetch(106, plan_id)
     assert result['status'] == 'success'
-    # Sourcery's genuine comment and the human comment are stored; CodeRabbit's
-    # notice is dropped as noise (it stores zero).
+    # Sourcery's review and the human comment are stored; the refusal files nothing.
     assert result['count_stored'] == 2
-    assert result['count_skipped_noise'] == 1
-    # Both bots posted, so both are responded — CodeRabbit despite storing zero;
-    # the human author (bot_kind None) is excluded from responded_bots.
-    assert result['responded_bots'] == ['coderabbit', 'sourcery']
+    assert result['count_skipped_refusal'] == 1
+    assert result['count_skipped_noise'] == 0
+    # The refusing bot is SURFACED, not silently absent.
+    assert result['refused_bots'] == ['coderabbit']
+    # ...and is NOT laundered into the participation set by its publish shape.
+    assert result['participated_bots'] == [{'bot_kind': 'sourcery', 'evidence_kind': 'review_body'}]
 
 
 # =============================================================================
@@ -638,8 +674,10 @@ def test_unregistered_bot_login_is_filed_unattributed(plan_context, monkeypatch)
     assert len(stored) == 1
     # Filed, but unattributed — no bot_kind was resolvable.
     assert stored[0].get('bot_kind') in (None, '')
-    # The unregistered author is NOT counted as a responded bot.
-    assert result['responded_bots'] == []
+    # The unregistered author is NOT credited as a proven participant, and it did
+    # not refuse — an unattributable login contributes to neither observation set.
+    assert result['participated_bots'] == []
+    assert result['refused_bots'] == []
 
 
 def test_unregistered_bot_login_is_not_reported_unclassified(plan_context, monkeypatch):
@@ -681,13 +719,21 @@ def test_unregistered_bot_login_is_not_reported_unclassified(plan_context, monke
 # =============================================================================
 
 
-def _stage_respondable(plan_id, *, comment_id, thread_id, resolution_detail):
+def _stage_respondable(plan_id, *, comment_id, thread_id, resolution_detail, kind='review_body'):
     """Add a pr-comment finding already resolved by triage; return its ``hash_id``.
 
     ``resolution_detail`` of ``None`` stages a finding whose disposition carries
     no body — the ``skipped`` branch's input.
+
+    ``kind`` is the finding's recorded publish shape and is LOAD-BEARING, because it
+    is the routing predicate ``post_responses`` reads: a genuinely threadless kind
+    (``review_body`` / ``issue_comment``) is the only admission into the batched
+    PR-level comment, while a thread-bearing kind (``inline``) must reach the
+    reviewer's own thread or be reported untransmitted. A test must therefore stage
+    the kind its scenario is about — staging ``review_body`` for a thread-bearing
+    scenario would silently assert the batch path under a thread-bearing name.
     """
-    detail = f'comment_id: {comment_id}\nthread_id: {thread_id}\nkind: review_body'
+    detail = f'comment_id: {comment_id}\nthread_id: {thread_id}\nkind: {kind}'
     add_result = _findings_core.add_finding(plan_id, 'pr-comment', f'Finding {comment_id}', detail)
     hash_id = add_result['hash_id']
     _findings_core.resolve_finding(plan_id, hash_id, 'accepted', detail=resolution_detail)
@@ -810,7 +856,7 @@ def test_post_responses_all_thread_bearing_keeps_reply_then_resolve_sequence(pla
     """
     plan_id = 'gh-pr-respond-threaded'
     hash_id = _stage_respondable(
-        plan_id, comment_id='ct', thread_id='PRRT_T', resolution_detail='Fixed in TASK-4.'
+        plan_id, comment_id='ct', thread_id='PRRT_T', resolution_detail='Fixed in TASK-4.', kind='inline'
     )
 
     monkeypatch.setattr(github_pr._github, 'check_auth', lambda: (True, ''))
@@ -851,7 +897,7 @@ def test_post_responses_thread_reply_failure_is_untransmitted(plan_context, monk
     """A failed thread-reply is an UNTRANSMITTED disposition, not a silent skip."""
     plan_id = 'gh-pr-respond-thread-fails'
     hash_id = _stage_respondable(
-        plan_id, comment_id='cf', thread_id='PRRT_F', resolution_detail='Fixed in TASK-5.'
+        plan_id, comment_id='cf', thread_id='PRRT_F', resolution_detail='Fixed in TASK-5.', kind='inline'
     )
 
     monkeypatch.setattr(github_pr._github, 'check_auth', lambda: (True, ''))

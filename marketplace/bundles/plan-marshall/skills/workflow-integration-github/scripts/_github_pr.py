@@ -44,9 +44,10 @@ from ci_base import (
 # When a reviewer bot is rate-limited (or otherwise cannot review) it posts a
 # short status notice IN PLACE OF a review — CodeRabbit's ``Review limit
 # reached`` notice, a Sourcery size-limit note, or an arbitrary unknown/renamed
-# bot's equivalent. Such a notice carries no actionable feedback and must be
-# dropped by the ``fetch_findings`` pre-filter regardless of author, so noise
-# classification does not hardcode a single bot's comment shape.
+# bot's equivalent. Such a notice carries no actionable feedback, so it files no
+# finding — but it is NOT noise: it is positive evidence the bot DECLINED, and
+# every consumer must branch on it (see :func:`_is_refusal_notice`). Recognition is
+# author-agnostic so it does not hardcode a single bot's comment shape.
 #
 # The recognizer is two-part for precision, applied uniformly to any bot: it
 # requires BOTH (a) a LIMIT-EXCEEDED STATEMENT — an explicit "<limit>
@@ -57,7 +58,7 @@ from ci_base import (
 # Requiring both signals conjunctively is load-bearing
 # for precision: a genuine review comment that merely mentions "rate limit" in
 # prose — without a limit-EXCEEDED statement AND without a notice shape — is
-# never misclassified as noise. The verbs are notice-voiced ("exceeded",
+# never misclassified as a refusal. The verbs are notice-voiced ("exceeded",
 # "reached") rather than review-voiced ("exceeds", "may exceed"), so a review
 # discussing a rate limit stays a finding.
 #
@@ -130,22 +131,56 @@ def _is_rate_limit_notice(body: str) -> bool:
     two lists answer different questions. See
     ``automatic-review/standards/bot-participation-contract.md``.
 
-    Every refusal-recognition site (``github_pr._is_obvious_noise``,
-    ``github_re_review._match_bot_comment``, and ``github_re_review._match_review``)
-    is expected to pair this structural fallback with that registry data layer;
-    neither alone is a superset of the other, and a refusal recognized here but
-    absent from the registry is a signal that the bot's ``refusal_patterns`` need
-    the observed phrasing added.
+    Every refusal-recognition site (``_is_refusal_notice``, which
+    ``github_pr.cmd_fetch_findings`` and :func:`_detect_rate_limited_bots` both read,
+    plus ``github_re_review._match_bot_comment`` and
+    ``github_re_review._match_review``) is expected to pair this structural fallback
+    with that registry data layer; neither alone is a superset of the other, and a
+    refusal recognized here but absent from the registry is a signal that the bot's
+    ``refusal_patterns`` need the observed phrasing added.
 
     Precision is load-bearing: a genuine review comment that merely mentions a
     rate limit in prose (no limit-exceeded statement, no notice shape) is not
-    dropped.
+    matched.
     """
     if not body:
         return False
     has_exceeded = any(marker.search(body) for marker in _RATE_LIMIT_EXCEEDED_MARKERS)
     has_shape = any(marker.search(body) for marker in _RATE_LIMIT_NOTICE_SHAPE_MARKERS)
     return has_exceeded and has_shape
+
+
+def _is_refusal_notice(body: str, bot_kind: str | None = None) -> bool:
+    """Return True when ``body`` is a REFUSAL to review — by registry data or by shape.
+
+    The single recognition seam every refusal consumer reads, pairing the two
+    layers because neither is a superset of the other:
+
+    - **Registry data layer** — the bot's own ``refusal_patterns`` from
+      ``automatic-review/standards/{bot_kind}.md``. Load-bearing rather than
+      redundant: Sourcery's observed refusal ("your pull request is larger than the
+      review limit of …") is invisible to the structural layer, because "larger
+      than the review limit of" is a comparison, not an "exceeded / reached / hit"
+      statement.
+    - **Structural last-resort layer** — :func:`_is_rate_limit_notice`, recognizing
+      a notice by shape alone, which is what covers an unregistered or renamed bot
+      and a phrasing not yet filed in the registry.
+
+    ``refusal_patterns`` is deliberately NOT ``ignore_patterns``: the latter lists
+    the routine sections of a *successful* review, so reading it here would report
+    every reviewing bot as refusing.
+
+    **A refusal is positive evidence of NON-participation, never noise.** Callers
+    MUST branch on it — surfacing the refusing bot so the completeness / quorum
+    layer sees ``refused_awaitable`` / ``refused_hard`` — rather than drop it.
+    Dropping it is precisely what let a PR whose every required reviewer refused
+    report a clean, complete review with substantively zero review coverage.
+    """
+    if not body:
+        return False
+    if bot_kind and any(marker in body for marker in bot_registry.refusal_patterns(bot_kind)):
+        return True
+    return _is_rate_limit_notice(body)
 
 
 def _extract_rate_limit_eta(body: str, bot_kind: str) -> str:
@@ -186,18 +221,10 @@ def _detect_rate_limited_bots(comments: list[dict]) -> list[dict]:
     refusal markers, its rate-limit class, and its ETA phrasings are all registry
     data.
 
-    **Both layers, because neither is a superset of the other.** A body is that
-    bot's refusal when EITHER its registry ``refusal_patterns`` match (the data
-    layer — the bot's own OBSERVED refusal text) OR the bot-agnostic
-    :func:`_is_rate_limit_notice` recognizer matches (the structural last-resort
-    layer). The data layer is load-bearing here, not redundant: Sourcery's only
-    observed refusal ("your pull request is larger than the review limit of …") is
-    invisible to the structural recognizer, because "larger than the review limit
-    of" is a comparison rather than an "exceeded / reached / hit" statement. The
-    structural layer in turn covers an unregistered bot or a phrasing not yet filed
-    in the registry. ``refusal_patterns`` is deliberately NOT ``ignore_patterns``:
-    the latter lists routine sections of a *successful* review, so reading it here
-    would report every reviewing bot as refusing.
+    Classification goes through the shared :func:`_is_refusal_notice` seam, so this
+    detector and the ``fetch_findings`` producer recognize a refusal identically —
+    both layers, in one place. See that function for why neither layer alone
+    suffices.
 
     Each detected bot yields ``{bot_kind, rate_limit_class, eta}``:
 
@@ -231,8 +258,7 @@ def _detect_rate_limited_bots(comments: list[dict]) -> list[dict]:
             continue
         newest = max(bot_comments, key=lambda c: str(c.get('created_at') or ''))
         body = str(newest.get('body') or '')
-        matched_registry = any(marker in body for marker in bot_registry.refusal_patterns(bot_kind))
-        if not matched_registry and not _is_rate_limit_notice(body):
+        if not _is_refusal_notice(body, bot_kind):
             continue
         detected.append(
             {
