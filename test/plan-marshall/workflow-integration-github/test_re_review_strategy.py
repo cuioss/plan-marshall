@@ -18,7 +18,7 @@ Covers the three concerns of the post-merge re-review registry:
        OR ``_match_bot_comment`` (an issue comment from the awaited bot
        post-dating the trigger and likewise not a refusal notice; reported with
        ``head_sha_verified: false``). BOTH paths apply the same two-layer refusal
-       test — the awaited bot's registry ``ignore_patterns`` first, then the
+       test — the awaited bot's registry ``refusal_patterns`` first, then the
        structural ``_is_rate_limit_notice`` fallback — so a bot that answers the
        trigger by declining to review is never a completed review. The review
        signal wins when both are present. Fail-closed on every missing or
@@ -709,8 +709,11 @@ def test_match_bot_comment_fail_closed_on_missing_trigger_time():
 # said it was not.
 #
 # Both paths apply the same TWO-LAYER refusal test as the producer pre-filter:
-# the awaited bot's registry ``ignore_patterns`` (case-sensitive substring
+# the awaited bot's registry ``refusal_patterns`` (case-sensitive substring
 # containment) first, then the structural ``_is_rate_limit_notice`` fallback.
+# The data layer is ``refusal_patterns``, NOT ``ignore_patterns`` — the latter
+# names sections of a SUCCESSFUL review, so reading it here would report a bot
+# that reviewed fine as having declined.
 # Every fixture body uses the FLATTENED single-line shape.
 
 _SOURCERY_LOGIN = 'sourcery-ai'
@@ -724,7 +727,7 @@ _SOURCERY_REFUSAL = (
     'Reduce the size of the pull request and request another review.'
 )
 
-# A structurally-shaped refusal matched by NO registry ignore_patterns entry —
+# A structurally-shaped refusal matched by NO registry refusal_patterns entry —
 # only the structural fallback can recognize it.
 _UNCAPTURED_SHAPED_REFUSAL = (
     '> [!WARNING] > ## Usage limit reached > '
@@ -823,7 +826,7 @@ def test_await_still_matches_a_genuine_comment(monkeypatch):
 
 
 def test_structural_fallback_rejects_an_uncaptured_refusal_on_the_review_path(monkeypatch):
-    """A shaped refusal that no ignore_patterns entry matches is still rejected."""
+    """A shaped refusal that no refusal_patterns entry matches is still rejected."""
     result = _await_with_comments(
         monkeypatch,
         [],
@@ -910,7 +913,7 @@ def test_refusal_delivered_as_a_review_is_recorded_not_swallowed(monkeypatch):
     assert len(result['refusals']) == 1
     assert result['refusals'][0]['source'] == 'review'
     assert result['refusals'][0]['bot_kind'] == 'sourcery'
-    assert result['refusals'][0]['layer'] == 'registry_ignore_patterns'
+    assert result['refusals'][0]['layer'] == 'registry_refusal_patterns'
 
 
 def test_refusal_delivered_as_a_comment_is_recorded_not_swallowed(monkeypatch):

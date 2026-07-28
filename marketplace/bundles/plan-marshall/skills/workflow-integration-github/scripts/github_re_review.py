@@ -38,10 +38,14 @@ two completion signals, checked in that order of strength:
 BOTH discriminators additionally reject a **refusal notice** — a comment or a
 review body a bot posts to say it could NOT review — using the same TWO-LAYER
 rule the producer pre-filter applies: the awaited bot's registry
-``ignore_patterns`` (case-sensitive substring containment) first, then the
+``refusal_patterns`` (case-sensitive substring containment) first, then the
 structural ``_is_rate_limit_notice`` fallback for an unknown/unregistered bot or
 a phrasing not yet captured as data. A refusal is the bot talking about itself,
 never evidence that the new HEAD was reviewed.
+
+The data layer reads ``refusal_patterns``, never ``ignore_patterns`` — the latter
+names sections of a *successful* review, so reading it here would report a bot
+that reviewed fine as having declined.
 
 **A rejected refusal is RECORDED, never silently dropped.** Both discriminators
 append every refusal they skip to a per-poll accumulator, and the envelope
@@ -56,8 +60,8 @@ distinguish "the bot refused, and here is the recovery this arms" from "the bot
 never responded". Without the record the two were the same bare
 ``matched: false`` / ``timed_out: true``, and the refusal vanished.
 
-Accepted tradeoff: a genuine review or comment whose body happens to contain an
-``ignore_patterns`` substring is skipped — deliberate, because a truthful
+Accepted tradeoff: a genuine review or comment whose body happens to quote a
+``refusal_patterns`` substring is skipped — deliberate, because a truthful
 non-match is recoverable, whereas a false ``head_sha_verified: true`` silently
 asserts review coverage that never happened. That skip is now VISIBLE in
 ``refusals`` rather than swallowed.
@@ -274,11 +278,19 @@ class _ReReviewStrategy:
         """Return a refusal RECORD when ``body`` is a refusal notice, else ``None``.
 
         The single TWO-LAYER rule shared by both discriminator paths (and by the
-        producer pre-filter): the awaited bot's registry ``ignore_patterns``
+        producer pre-filter): the awaited bot's registry ``refusal_patterns``
         (case-sensitive substring containment) first, then the structural
         :func:`_is_rate_limit_notice` fallback for an unknown/unregistered bot or a
         phrasing not yet captured as data. When ``bot_kind`` is ``None`` the data
         layer cannot fire and only the structural test applies.
+
+        The data layer reads ``refusal_patterns``, NEVER ``ignore_patterns``. The
+        two lists answer different questions: ``ignore_patterns`` names routine
+        sections of a *successful* review (CodeRabbit's ``## Walkthrough`` and
+        ``✏️ Learnings added``), so reading it here would classify ordinary
+        successful reviews as refusals and let a bot that reviewed fine be reported
+        as having declined. ``refusal_patterns`` names only what a bot publishes
+        when it DECLINES, so a match is positive evidence of non-participation.
 
         A detected refusal is RECORDED rather than merely reported as a boolean.
         A refusal still does NOT count as a completed review — that behaviour is
@@ -288,24 +300,27 @@ class _ReReviewStrategy:
 
         - ``source`` — which discriminator saw it (``review`` / ``issue_comment``);
         - ``bot_kind`` — the awaited bot (``''`` when none was supplied);
-        - ``layer`` — which layer fired, ``registry_ignore_patterns`` (the bot's
-          own declared phrasing) or ``structural_fallback`` (the bot-agnostic
-          notice shape). The distinction tells a reader whether the refusal was
-          recognized as DATA or merely inferred from shape;
+        - ``layer`` — which layer fired, ``registry_refusal_patterns`` (the bot's
+          own declared refusal phrasing) or ``structural_fallback`` (the
+          bot-agnostic notice shape). The distinction tells a reader whether the
+          refusal was recognized as DATA or merely inferred from shape;
         - ``eta`` — the reset time the notice itself stated, parsed through the
           bot's registry ``rate_limit_eta_patterns``, or ``''`` when the bot
           declares no patterns or the notice states no ETA;
         - ``body`` — a whitespace-collapsed, truncated excerpt (see
           :func:`_body_excerpt`).
 
-        Accepted tradeoff: a genuine review or comment whose body happens to
-        contain an ``ignore_patterns`` substring is skipped as a refusal. That is
+        Accepted tradeoff: a genuine review or comment whose body happens to quote
+        a ``refusal_patterns`` substring is skipped as a refusal. That is
         deliberate — a truthful non-match is recoverable, whereas a false
         ``head_sha_verified: true`` silently asserts review coverage that never
-        happened. It is now also VISIBLE: the skip is recorded, not swallowed.
+        happened. It is now also VISIBLE: the skip is recorded, not swallowed. The
+        tradeoff is far narrower than it was when this layer read
+        ``ignore_patterns``, since a refusal marker is rare phrasing rather than a
+        heading every successful review emits.
         """
-        if bot_kind and any(marker in body for marker in bot_registry.ignore_patterns(bot_kind)):
-            layer = 'registry_ignore_patterns'
+        if bot_kind and any(marker in body for marker in bot_registry.refusal_patterns(bot_kind)):
+            layer = 'registry_refusal_patterns'
         elif _is_rate_limit_notice(body):
             layer = 'structural_fallback'
         else:
