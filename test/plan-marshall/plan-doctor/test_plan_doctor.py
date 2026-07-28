@@ -63,6 +63,7 @@ from _doctor_fixtures import (  # noqa: E402
 
 from conftest import (
     get_script_path,
+    load_script_module,
     run_script,
 )
 
@@ -601,3 +602,100 @@ def test_single_plan_scan_skips_directory_rules(plan_context):
     assert _findings_by_reason(payload, 'orphan_plan_directory') == []
     assert _findings_by_reason(payload, 'dangling_worktree') == []
     assert _findings_by_reason(payload, 'stuck_low_confidence_archive') == []
+
+
+# =============================================================================
+# Rejected Q-Gate persist (P9) — a doctor run cannot report findings it lost
+# =============================================================================
+#
+# These cases run the emitter IN-PROCESS (the surrounding suite drives the CLI
+# via subprocess) because the rejection is driven by the real ``_findings_core``
+# validator, patched in this process — not by a synthetic persist mock.
+
+_plan_doctor = load_script_module('plan-marshall', 'plan-doctor', 'plan_doctor.py', 'plan_doctor')
+
+
+def _phantom_finding(plan_id: str) -> dict:
+    """One phantom-lesson-ID finding, the shape ``_emit_finding_to_qgate`` routes."""
+    return {
+        'plan_id': plan_id,
+        'rule': _plan_doctor.REASON_PHANTOM,
+        'reason': _plan_doctor.REASON_PHANTOM,
+        'token': '2099-01-01-00-001',
+        'task_file': 'TASK-001.json',
+    }
+
+
+def test_landed_qgate_persist_returns_none(plan_context):
+    """A finding that reached the store yields no failure descriptor."""
+    plan_id = 'doctor-persist-ok'
+    plan_context.plan_dir_for(plan_id)
+
+    assert _plan_doctor._emit_finding_to_qgate(_phantom_finding(plan_id)) is None
+
+
+def test_deduplicated_qgate_persist_stays_benign(plan_context):
+    """A ``deduplicated`` re-persist is still in the store — still ``None``."""
+    plan_id = 'doctor-persist-dedup'
+    plan_context.plan_dir_for(plan_id)
+
+    assert _plan_doctor._emit_finding_to_qgate(_phantom_finding(plan_id)) is None
+    assert _plan_doctor._emit_finding_to_qgate(_phantom_finding(plan_id)) is None
+
+
+def test_rejected_qgate_persist_returns_failure_descriptor(plan_context, monkeypatch):
+    """A REJECTED persist returns the finding content plus the primitive's message."""
+    import _findings_core
+
+    plan_id = 'doctor-persist-reject'
+    plan_context.plan_dir_for(plan_id)
+    monkeypatch.setattr(
+        _findings_core,
+        'FINDING_TYPES',
+        tuple(t for t in _findings_core.FINDING_TYPES if t != 'bug'),
+    )
+
+    failure = _plan_doctor._emit_finding_to_qgate(_phantom_finding(plan_id))
+
+    assert failure is not None
+    assert 'Phantom lesson-ID reference' in failure['title']
+    assert '2099-01-01-00-001' in failure['detail']
+    assert 'Invalid finding type' in failure['message']
+
+
+def test_scan_aggregates_rejected_persists_into_summary(plan_context, monkeypatch):
+    """The enclosing scan surfaces ``qgate_persist_failed`` for rejected persists.
+
+    A doctor run must not report findings it failed to file — the aggregated
+    flag plus the per-finding failure list is what makes the loss visible.
+    """
+    import _findings_core
+
+    plan_id = 'doctor-persist-scan'
+    plan_dir = plan_context.plan_dir_for(plan_id)
+    seed_lesson_inventory(plan_context.fixture_dir)
+    make_plan_with_tasks(
+        plan_dir,
+        [
+            {
+                'title': 'Refactor token store',
+                'description': 'Apply lesson 2099-01-01-00-001 to the token store.',
+            },
+        ],
+    )
+
+    clean = _plan_doctor._scan_plans([plan_id], emit_to_qgate=True)
+    assert clean['findings_count'] == 1
+    assert 'qgate_persist_failed' not in clean
+
+    monkeypatch.setattr(
+        _findings_core,
+        'FINDING_TYPES',
+        tuple(t for t in _findings_core.FINDING_TYPES if t != 'bug'),
+    )
+    rejected = _plan_doctor._scan_plans([plan_id], emit_to_qgate=True)
+
+    assert rejected['findings_count'] == 1
+    assert rejected['qgate_persist_failed'] is True
+    assert len(rejected['qgate_persist_failures']) == 1
+    assert 'Invalid finding type' in rejected['qgate_persist_failures'][0]['message']

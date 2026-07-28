@@ -24,6 +24,7 @@ via the root conftest's marketplace PYTHONPATH setup.
 
 import argparse
 import json
+import sys
 
 import pytest
 
@@ -100,6 +101,22 @@ def _patch_provider(monkeypatch, comments):
 def _run_fetch(pr_number, plan_id):
     args = argparse.Namespace(pr_number=pr_number, plan_id=plan_id)
     return github_pr.cmd_fetch_findings(args)
+
+
+def _live_findings_core():
+    """Return the ``_findings_core`` module object the SUT will actually import.
+
+    ``cmd_fetch_findings`` imports ``_findings_core`` lazily, inside the function
+    body, so the module object it binds is whatever ``sys.modules`` holds at CALL
+    time. ``load_script_module`` re-registers ``sys.modules['_findings_core']``
+    with a *fresh* object on every call, and several test modules load it — so
+    the object this module captured at import time is not necessarily the one the
+    SUT resolves when the test runs. Monkeypatching the import-time capture is
+    then a silent no-op: the validator keeps reading the unpatched globals of a
+    different module object. Resolving the live ``sys.modules`` entry at call
+    time targets the very globals ``add_finding`` reads.
+    """
+    return sys.modules['_findings_core']
 
 
 def test_second_fetch_dedupes_all_bot_kinds(plan_context, monkeypatch):
@@ -943,3 +960,83 @@ def test_bot_completion_unconfigured_fails_loud(monkeypatch):
 
     result = _run_bot_completion(200, 'coderabbit')
     assert result['status'] == 'unconfigured'
+
+
+# =============================================================================
+# Rejected producer-mismatch persist (P5) — FIELD_ONLY loudness
+# =============================================================================
+#
+# The producer-mismatch finding exists to report that findings were lost. When
+# its OWN persist is rejected, the loss must surface on the returned dict — but
+# the enclosing ``status`` stays truthful about the fetch, which did succeed.
+
+# A comment whose ``kind`` is outside PR_COMMENT_KINDS, so the real ``add_finding``
+# validator rejects it and the producer-mismatch guard fires for real.
+_BAD_KIND_COMMENT = {
+    'id': 'cbad',
+    'author': 'coderabbitai',
+    'thread_id': 'PRRT_BAD',
+    'kind': 'not-a-comment-kind',
+    'body': 'This comment cannot be stored because its kind is invalid.',
+    'path': 'src/z.py',
+    'line': 3,
+    'resolved': False,
+}
+
+
+def test_rejected_mismatch_persist_surfaces_field_without_flipping_status(plan_context, monkeypatch):
+    """A rejected mismatch persist sets qgate_persist_failed and leaves status success.
+
+    Driven by the real validator: ``pr-comment`` is removed from the live
+    ``FINDING_TYPES``, so both the per-comment stores AND the mismatch finding
+    are rejected by ``_findings_core`` itself — no synthetic persist mock. The
+    patch targets the LIVE module object (see ``_live_findings_core``), because
+    that is the one ``cmd_fetch_findings`` imports at call time.
+    """
+    plan_id = 'gh-pr-persist-reject'
+    _patch_provider(monkeypatch, _COMMENTS)
+    live_core = _live_findings_core()
+    monkeypatch.setattr(
+        live_core,
+        'FINDING_TYPES',
+        tuple(t for t in live_core.FINDING_TYPES if t != 'pr-comment'),
+    )
+
+    result = _run_fetch(105, plan_id)
+
+    # FIELD_ONLY loudness: the fetch itself succeeded, so its status is unchanged.
+    assert result['status'] == 'success'
+    assert result['count_fetched'] == len(_COMMENTS)
+    assert result['count_stored'] == 0
+    # The lost mismatch finding travels as a first-class field, never as a
+    # ``producer_mismatch_hash_id`` a caller could read as "filed".
+    assert result['qgate_persist_failed'] is True
+    assert result['producer_mismatch_hash_id'] is None
+    failure = result['qgate_persist_failure']
+    assert '(producer-mismatch)' in failure['title']
+    assert 'count_stored=0' in failure['detail']
+    assert 'Invalid finding type' in failure['message']
+
+
+def test_deduplicated_mismatch_persist_stays_benign(plan_context, monkeypatch):
+    """A ``deduplicated`` mismatch persist is benign — it never reads as a rejection.
+
+    The same unstorable comment is fetched twice, so the second run re-detects an
+    identical mismatch and the primitive dedups it. The record is in the store,
+    so the result reports a hash id and no persist failure.
+    """
+    plan_id = 'gh-pr-persist-dedup'
+    _patch_provider(monkeypatch, [_BAD_KIND_COMMENT])
+
+    first = _run_fetch(106, plan_id)
+    assert first['status'] == 'success'
+    assert first['count_stored'] == 0
+    assert first['producer_mismatch_hash_id']
+    assert 'qgate_persist_failed' not in first
+
+    second = _run_fetch(106, plan_id)
+
+    assert second['status'] == 'success'
+    assert 'qgate_persist_failed' not in second
+    # Dedup returns the SAME record — still in the store, so still a hash id.
+    assert second['producer_mismatch_hash_id'] == first['producer_mismatch_hash_id']

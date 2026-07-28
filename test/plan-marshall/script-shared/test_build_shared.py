@@ -193,3 +193,59 @@ class TestCmdRunCommonSafetyNet:
         assert len(errors) == 1
         assert errors[0]['file'] == 'tests/test_foo.py'
         assert errors[0]['category'] == 'test_failure'
+
+
+class TestRecordProducerMismatchPersist:
+    """``_record_producer_mismatch`` reports a REJECTED persist to its caller.
+
+    The emitter's whole purpose is to report findings that were lost, so its own
+    persist can never be fire-and-forget. It returns ``None`` on an in-store
+    outcome and a failure descriptor on a rejection — the signature change from
+    ``-> None`` that lets the caller propagate ``qgate_persist_failed``.
+    """
+
+    @staticmethod
+    def _record(plan_id):
+        return _build_shared._record_producer_mismatch(
+            plan_id=plan_id,
+            tool_name='python',
+            command_str='./pw module-tests plan-marshall',
+            count_seen=3,
+            count_stored=1,
+            store_failures=['assert 1 == 2'],
+        )
+
+    def test_landed_persist_returns_none(self, plan_context):
+        """A finding that reached the store yields no failure descriptor."""
+        assert self._record('build-shared-persist-ok') is None
+
+    def test_deduplicated_persist_stays_benign(self, plan_context):
+        """A ``deduplicated`` re-persist is still in the store — still ``None``.
+
+        The benign no-op must never collapse onto the rejection signal.
+        """
+        plan_id = 'build-shared-persist-dedup'
+        assert self._record(plan_id) is None
+        assert self._record(plan_id) is None
+
+    def test_rejected_persist_returns_failure_descriptor(self, plan_context, monkeypatch):
+        """A REJECTED persist returns the finding content plus the primitive's message.
+
+        Driven by the real validator — ``build-error`` removed from the live
+        ``FINDING_TYPES`` — not a synthetic persist mock.
+        """
+        import _findings_core
+
+        monkeypatch.setattr(
+            _findings_core,
+            'FINDING_TYPES',
+            tuple(t for t in _findings_core.FINDING_TYPES if t != 'build-error'),
+        )
+
+        failure = self._record('build-shared-persist-reject')
+
+        assert failure is not None
+        assert '(producer-mismatch)' in failure['title']
+        assert 'count_stored=1' in failure['detail']
+        assert './pw module-tests plan-marshall' in failure['detail']
+        assert 'Invalid finding type' in failure['message']

@@ -480,10 +480,17 @@ def cmd_fetch_findings(args):
     is configured. On CE-timeout OR auth/REST failure the returned dict carries
     ``new_code_issue_count: null`` and ``count_status: undecidable`` with a
     ``count_status_reason`` — NEVER a false ``0``.
+
+    When the producer-mismatch finding is itself REJECTED by the persist
+    primitive (status outside ``QGATE_PERSIST_OK``), the result carries
+    ``qgate_persist_failed: true`` plus the rejected finding's content and the
+    primitive's message, so no caller can read a clean ``fetch_findings`` result
+    while the mismatch finding was lost. The enclosing ``status`` stays
+    ``success`` — it reports the fetch, which did succeed.
     """
     from _findings_core import (
         add_finding,
-        add_qgate_finding,
+        add_qgate_finding_checked,
     )
 
     plan_id: str = args.plan_id
@@ -620,6 +627,7 @@ def cmd_fetch_findings(args):
     expected_stored = count_fetched - skipped_suppressable
 
     qgate_hash: str | None = None
+    qgate_persist_failure: dict[str, str] | None = None
     if count_stored != expected_stored:
         mismatch_detail = (
             f'count_fetched={count_fetched}, '
@@ -628,15 +636,21 @@ def cmd_fetch_findings(args):
             f'expected_stored={expected_stored}, '
             f'failed_issue_keys={store_failures}'
         )
-        qgate_result = add_qgate_finding(
+        mismatch_title = f'(producer-mismatch) sonar fetch_findings project={project}'
+        # The mismatch finding's whole purpose is to report that findings were
+        # lost — a rejected persist would lose it in turn, so
+        # ``add_qgate_finding_checked`` surfaces the rejection on the returned
+        # tuple instead of leaving it inferable only from ``hash_id``. The
+        # enclosing status stays ``success``: the fetch itself succeeded, and
+        # the persist failure travels as its own field.
+        qgate_hash, qgate_persist_failure = add_qgate_finding_checked(
             plan_id=plan_id,
             phase='5-execute',
             source='qgate',
             finding_type='sonar-issue',
-            title=f'(producer-mismatch) sonar fetch_findings project={project}',
+            title=mismatch_title,
             detail=mismatch_detail,
         )
-        qgate_hash = qgate_result.get('hash_id')
 
     # 4. Verified count: the confirmed PR-scoped new-code issue total. The
     #    authoritative count is over the fetched new-code issues (the REST
@@ -654,7 +668,7 @@ def cmd_fetch_findings(args):
         count_status_reason=None,
     )
 
-    return {
+    result: dict[str, Any] = {
         'status': 'success',
         'plan_id': plan_id,
         'project': project,
@@ -668,6 +682,10 @@ def cmd_fetch_findings(args):
         'count_status': 'confirmed',
         'scan_summary_path': marker_path,
     }
+    if qgate_persist_failure is not None:
+        result['qgate_persist_failed'] = True
+        result['qgate_persist_failure'] = qgate_persist_failure
+    return result
 
 
 # ============================================================================

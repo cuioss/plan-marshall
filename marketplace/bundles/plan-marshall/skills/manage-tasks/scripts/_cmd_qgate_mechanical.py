@@ -26,7 +26,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-from _findings_core import add_qgate_finding
+from _findings_core import QGATE_PERSIST_OK, add_qgate_finding
 from _plan_parsing import (
     extract_deliverables,
     parse_document_sections,
@@ -62,6 +62,7 @@ def _emit_finding(
     plan_id: str,
     title: str,
     detail: str,
+    persist_failures: list[dict[str, str]],
     file_path: str | None = None,
     emit: bool = True,
 ) -> int:
@@ -69,6 +70,12 @@ def _emit_finding(
 
     Returns 1 when a record is appended (status: success), 0 when the call
     is a no-op (dedup, or --no-emit).
+
+    A persist the primitive REJECTS (status outside ``QGATE_PERSIST_OK``) is not
+    a no-op — the finding never reached the store. Such a rejection is appended
+    to ``persist_failures`` as a ``{'title', 'message'}`` record, which
+    ``cmd_qgate_mechanical`` surfaces as ``qgate_persist_failed`` plus the
+    failure list, so it can never be read as a benign zero.
     """
     if not emit:
         return 0
@@ -84,7 +91,11 @@ def _emit_finding(
         severity='warning',
         iteration=None,
     )
-    return 1 if result.get('status') == 'success' else 0
+    status = result.get('status')
+    if status not in QGATE_PERSIST_OK:
+        persist_failures.append({'title': title, 'message': str(result.get('message', ''))})
+        return 0
+    return 1 if status == 'success' else 0
 
 
 def _load_deliverables(plan_id: str) -> tuple[list[dict[str, Any]], bool]:
@@ -116,6 +127,7 @@ def _check_coverage(
     plan_id: str,
     tasks: list[dict[str, Any]],
     deliverables: list[dict[str, Any]],
+    persist_failures: list[dict[str, str]],
     emit: bool,
 ) -> tuple[int, int]:
     """Coverage: every deliverable has >= 1 task; tasks reference real deliverables.
@@ -141,6 +153,7 @@ def _check_coverage(
                     f'tasks. Phase-4-plan must create at least one task per '
                     f'deliverable (multi-profile deliverables produce N tasks).'
                 ),
+                persist_failures=persist_failures,
                 emit=emit,
             )
 
@@ -160,6 +173,7 @@ def _check_coverage(
                     f'such deliverable. Either fix the task\'s deliverable field '
                     f'or add the missing deliverable to solution_outline.md.'
                 ),
+                persist_failures=persist_failures,
                 emit=emit,
             )
 
@@ -169,6 +183,7 @@ def _check_coverage(
 def _check_skill_resolution(
     plan_id: str,
     tasks: list[dict[str, Any]],
+    persist_failures: list[dict[str, str]],
     emit: bool,
 ) -> tuple[int, int]:
     """Skill resolution: non-verification tasks have ``domain`` + ``bundle:skill`` shape.
@@ -193,6 +208,7 @@ def _check_skill_resolution(
                     f'has no domain. Domain is required for non-verification tasks '
                     f'so the executor can resolve workflow skills.'
                 ),
+                persist_failures=persist_failures,
                 emit=emit,
             )
 
@@ -209,6 +225,7 @@ def _check_skill_resolution(
                         f'around a single colon). Fix the task definition or '
                         f'rename the skill before phase-5-execute consumes it.'
                     ),
+                    persist_failures=persist_failures,
                     emit=emit,
                 )
 
@@ -218,6 +235,7 @@ def _check_skill_resolution(
 def _check_acyclic(
     plan_id: str,
     tasks: list[dict[str, Any]],
+    persist_failures: list[dict[str, str]],
     emit: bool,
 ) -> tuple[int, int]:
     """Acyclic: depends_on across all tasks forms a DAG.
@@ -270,6 +288,7 @@ def _check_acyclic(
                 f'indefinitely; break the cycle in task definitions before '
                 f'phase-4-plan transitions.'
             ),
+            persist_failures=persist_failures,
             emit=emit,
         )
 
@@ -280,6 +299,7 @@ def _check_files_exist(
     plan_id: str,
     tasks: list[dict[str, Any]],
     repo_root: Path,
+    persist_failures: list[dict[str, str]],
     emit: bool,
 ) -> tuple[int, int]:
     """Files exist: intent-aware existence expectations per step.
@@ -334,6 +354,7 @@ def _check_files_exist(
                             f'fresh file; either correct the intent to write-replace '
                             f'or remove the pre-existing file before phase-5-execute.'
                         ),
+                        persist_failures=persist_failures,
                         file_path=target,
                         emit=emit,
                     )
@@ -364,6 +385,7 @@ def _check_files_exist(
                     plan_id,
                     title=title,
                     detail=detail,
+                    persist_failures=persist_failures,
                     file_path=target,
                     emit=emit,
                 )
@@ -401,6 +423,7 @@ def _check_keyword_drift(
     plan_id: str,
     tasks: list[dict[str, Any]],
     deliverables: list[dict[str, Any]],
+    persist_failures: list[dict[str, str]],
     emit: bool,
 ) -> tuple[int, int]:
     """Keyword drift: planning-domain keywords appear in description but not in haystack."""
@@ -443,6 +466,7 @@ def _check_keyword_drift(
                         f'{excerpt}; deliverable {d_num} '
                         f'outline does not mention {keyword!r}'
                     ),
+                    persist_failures=persist_failures,
                     emit=emit,
                 )
 
@@ -452,6 +476,7 @@ def _check_keyword_drift(
 def _check_structural_token_drift(
     plan_id: str,
     task_dir: Path,
+    persist_failures: list[dict[str, str]],
     emit: bool,
 ) -> tuple[int, int]:
     """Structural token drift: TASK-NNN file numbering monotonic, no gaps."""
@@ -482,6 +507,7 @@ def _check_structural_token_drift(
                 f'TASK numbering must be monotonic with no gaps so consumers can '
                 f'iterate the directory deterministically.'
             ),
+            persist_failures=persist_failures,
             emit=emit,
         )
     if numbers[0] != 1:
@@ -494,6 +520,7 @@ def _check_structural_token_drift(
                 f'at TASK-001 so phase-5-execute and phase-6-finalize iteration '
                 f'remains deterministic.'
             ),
+            persist_failures=persist_failures,
             emit=emit,
         )
 
@@ -534,28 +561,40 @@ def cmd_qgate_mechanical(args) -> dict[str, Any]:
 
     findings_emitted = 0
     checks: dict[str, dict[str, int]] = {}
+    # Rejected persists collected across every check — a rejection means the
+    # finding never reached the store, so it is surfaced rather than folded
+    # into the ``findings_emitted`` zero bucket.
+    persist_failures: list[dict[str, str]] = []
 
-    coverage_failed, e = _check_coverage(plan_id, all_tasks, deliverables, emit=emit)
+    coverage_failed, e = _check_coverage(
+        plan_id, all_tasks, deliverables, persist_failures, emit=emit
+    )
     findings_emitted += e
     checks['coverage'] = {'failed': coverage_failed}
 
-    skill_failed, e = _check_skill_resolution(plan_id, all_tasks, emit=emit)
+    skill_failed, e = _check_skill_resolution(plan_id, all_tasks, persist_failures, emit=emit)
     findings_emitted += e
     checks['skill_resolution'] = {'failed': skill_failed}
 
-    acyclic_failed, e = _check_acyclic(plan_id, all_tasks, emit=emit)
+    acyclic_failed, e = _check_acyclic(plan_id, all_tasks, persist_failures, emit=emit)
     findings_emitted += e
     checks['acyclic'] = {'failed': acyclic_failed}
 
-    files_failed, e = _check_files_exist(plan_id, all_tasks, repo_root, emit=emit)
+    files_failed, e = _check_files_exist(
+        plan_id, all_tasks, repo_root, persist_failures, emit=emit
+    )
     findings_emitted += e
     checks['files_exist'] = {'failed': files_failed}
 
-    keyword_failed, e = _check_keyword_drift(plan_id, all_tasks, deliverables, emit=emit)
+    keyword_failed, e = _check_keyword_drift(
+        plan_id, all_tasks, deliverables, persist_failures, emit=emit
+    )
     findings_emitted += e
     checks['keyword_drift'] = {'failed': keyword_failed}
 
-    structural_failed, e = _check_structural_token_drift(plan_id, task_dir, emit=emit)
+    structural_failed, e = _check_structural_token_drift(
+        plan_id, task_dir, persist_failures, emit=emit
+    )
     findings_emitted += e
     checks['structural_token_drift'] = {'failed': structural_failed}
 
@@ -577,4 +616,6 @@ def cmd_qgate_mechanical(args) -> dict[str, Any]:
         'findings_emitted': findings_emitted,
         'ambiguous': ambiguous,
         'emit': emit,
+        'qgate_persist_failed': bool(persist_failures),
+        'qgate_persist_failures': persist_failures,
     }

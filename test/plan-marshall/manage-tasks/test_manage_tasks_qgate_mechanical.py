@@ -662,6 +662,77 @@ def test_qgate_mechanical_emit_writes_findings(plan_context):
     assert records[0]['source'] == 'qgate'
     assert records[0]['type'] == 'triage'
     assert 'coverage' in records[0]['title']
+    # A clean emit run reports no persist failure.
+    assert result['qgate_persist_failed'] is False
+    assert result['qgate_persist_failures'] == []
+
+
+# =============================================================================
+# Rejected persist (P3) — a rejection never lands in the no-op bucket
+# =============================================================================
+
+
+def _seed_one_coverage_failure(plan_context, slug: str) -> Path:
+    """Seed a plan whose only mechanical failure is one uncovered deliverable."""
+    plan_dir: Path = plan_context.plan_dir_for(slug)
+    _write_outline(
+        plan_dir,
+        [
+            {'number': 1, 'title': 'Has tasks', 'affected_files': ['src/A.java']},
+            {'number': 2, 'title': 'No tasks', 'affected_files': ['src/B.java']},
+        ],
+    )
+    _write_task(
+        plan_dir / 'tasks',
+        1,
+        deliverable=1,
+        skills=['plan-marshall:manage-tasks'],
+        steps=[{'number': 1, 'target': _EXISTING_FILE, 'status': 'pending'}],
+    )
+    return plan_dir
+
+
+def test_qgate_mechanical_rejected_persist_surfaces_failure(plan_context, monkeypatch):
+    """A REJECTED persist surfaces qgate_persist_failed plus the primitive's message.
+
+    Driven by the live failure mode — a finding type outside ``FINDING_TYPES``,
+    which the real ``add_qgate_finding`` validator rejects — not a synthetic mock.
+    """
+    plan_dir = _seed_one_coverage_failure(plan_context, 'qgate-persist-reject')
+    monkeypatch.setattr(_qgate_mod, '_FINDING_TYPE', 'not-a-finding-type')
+
+    result = cmd_qgate_mechanical(_ns('qgate-persist-reject', no_emit=False))
+
+    assert result['qgate_persist_failed'] is True
+    assert len(result['qgate_persist_failures']) == 1
+    failure = result['qgate_persist_failures'][0]
+    assert 'coverage' in failure['title']
+    assert 'Invalid finding type' in failure['message']
+    # The rejection must NOT be reported as a benign no-op.
+    assert result['findings_emitted'] == 0
+    findings_path = plan_dir / 'artifacts' / 'findings' / 'qgate-4-plan.jsonl'
+    assert not findings_path.exists(), 'a rejected persist must leave no stored record'
+
+
+def test_qgate_mechanical_deduplicated_persist_stays_benign(plan_context):
+    """A ``deduplicated`` outcome is benign — it must not collapse onto a rejection.
+
+    The second emit run re-detects the same failure, so the primitive dedups it.
+    The record is still in the store, so no persist failure is reported.
+    """
+    _seed_one_coverage_failure(plan_context, 'qgate-persist-dedup')
+
+    first = cmd_qgate_mechanical(_ns('qgate-persist-dedup', no_emit=False))
+    assert first['findings_emitted'] == 1
+    assert first['qgate_persist_failed'] is False
+
+    second = cmd_qgate_mechanical(_ns('qgate-persist-dedup', no_emit=False))
+
+    assert second['qgate_persist_failed'] is False
+    assert second['qgate_persist_failures'] == []
+    # ``findings_emitted`` counts appends, and a dedup appends nothing — but that
+    # zero means "already in the store", never "rejected".
+    assert second['findings_emitted'] == 0
 
 
 # =============================================================================

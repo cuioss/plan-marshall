@@ -353,6 +353,12 @@ def cmd_fetch_findings(args):
     when GitHub is not authenticated. ``count_fetched`` vs ``count_stored``
     mismatches are recorded as a ``qgate`` finding with title prefix
     ``(producer-mismatch)`` so the LLM sees them in ``manage-findings qgate list``.
+    When that mismatch finding is itself REJECTED by the persist primitive (status
+    outside ``QGATE_PERSIST_OK``), the result carries ``qgate_persist_failed: true``
+    plus the rejected finding's content and the primitive's message, so no caller
+    can read a clean ``fetch_findings`` result while the mismatch finding was lost.
+    The enclosing ``status`` stays ``success`` — it reports the fetch, which did
+    succeed.
 
     ``responded_bots``: the sorted, de-duplicated list of non-None ``bot_kind``
     values derived (via ``bot_kind_for_author``) from EVERY raw fetched comment —
@@ -363,7 +369,7 @@ def cmd_fetch_findings(args):
     """
     from _findings_core import (
         add_finding,
-        add_qgate_finding,
+        add_qgate_finding_checked,
         query_findings,
     )
 
@@ -535,6 +541,7 @@ def cmd_fetch_findings(args):
     expected_stored = count_fetched - skipped_noise - skipped_duplicate - skipped_disabled
 
     qgate_hash: str | None = None
+    qgate_persist_failure: dict[str, str] | None = None
     if count_stored != expected_stored:
         # Producer-side mismatch — surfaced as a Q-Gate finding so the LLM
         # picks it up in the standard query path. Phase ``5-execute`` is the
@@ -546,17 +553,23 @@ def cmd_fetch_findings(args):
             f'expected_stored={expected_stored}, '
             f'failed_comment_ids={store_failures}'
         )
-        qgate_result = add_qgate_finding(
+        mismatch_title = f'(producer-mismatch) github_pr fetch_findings PR #{pr_number}'
+        # The mismatch finding's whole purpose is to report that findings were
+        # lost — a rejected persist would lose it in turn, so
+        # ``add_qgate_finding_checked`` surfaces the rejection on the returned
+        # tuple instead of leaving it inferable only from ``hash_id``. The
+        # enclosing status stays ``success``: the fetch itself succeeded, and
+        # the persist failure travels as its own field.
+        qgate_hash, qgate_persist_failure = add_qgate_finding_checked(
             plan_id=plan_id,
             phase='5-execute',
             source='qgate',
             finding_type='pr-comment',
-            title=f'(producer-mismatch) github_pr fetch_findings PR #{pr_number}',
+            title=mismatch_title,
             detail=mismatch_detail,
         )
-        qgate_hash = qgate_result.get('hash_id')
 
-    return {
+    result: dict[str, Any] = {
         'status': 'success',
         'operation': 'fetch_findings',
         'provider': 'github',
@@ -571,6 +584,10 @@ def cmd_fetch_findings(args):
         'stored_hash_ids': stored_hashes,
         'producer_mismatch_hash_id': qgate_hash,
     }
+    if qgate_persist_failure is not None:
+        result['qgate_persist_failed'] = True
+        result['qgate_persist_failure'] = qgate_persist_failure
+    return result
 
 
 # ============================================================================

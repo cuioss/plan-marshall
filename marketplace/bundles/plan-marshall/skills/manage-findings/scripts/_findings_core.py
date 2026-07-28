@@ -55,6 +55,17 @@ SEVERITIES = FINDING_SEVERITIES
 RESOLUTIONS = VALID_RESOLUTIONS
 CERTAINTY_VALUES = VALID_CERTAINTIES
 
+# The published partition of ``add_qgate_finding``'s four-valued ``status`` into
+# "the record is in the store" versus "the record was rejected".
+#
+# ``success`` (freshly appended), ``deduplicated`` (an identical pending record
+# already exists) and ``reopened`` (a matching resolved record was returned to
+# pending) all mean the finding IS in the store. The remaining value, ``error``,
+# means it is NOT — and callers MUST NOT fold it into the two benign no-op
+# outcomes. Every caller consults this set rather than re-deriving the partition
+# inline with ``status == 'success'``.
+QGATE_PERSIST_OK = frozenset({'success', 'deduplicated', 'reopened'})
+
 # Valid kind discriminator values for pr-comment findings.
 PR_COMMENT_KINDS = ['inline', 'review_body', 'issue_comment']
 
@@ -572,6 +583,13 @@ def add_qgate_finding(
     iterations (same title AND same discriminator) still collapses. Untrusted free-text
     supplied via ``raw_input`` is quarantined under ``raw_input.{field}`` with a per-field
     byte cap.
+
+    Returns a dict whose ``status`` is one of ``success``, ``deduplicated``,
+    ``reopened`` or ``error``. A ``status`` outside :data:`QGATE_PERSIST_OK` (i.e.
+    ``error``) means **the record is not in the store** and MUST NOT be conflated
+    with the two benign no-op outcomes ``deduplicated`` and ``reopened``, both of
+    which do leave the finding present. Callers test membership in
+    :data:`QGATE_PERSIST_OK`, never ``status == 'success'``.
     """
     if phase not in QGATE_PHASES:
         return {'status': 'error', 'message': f'Invalid Q-Gate phase: {phase}. Must be one of {QGATE_PHASES}'}
@@ -639,6 +657,38 @@ def add_qgate_finding(
     append_jsonl(qgate_path, record)
 
     return {'status': 'success', 'hash_id': hash_id, 'phase': phase}
+
+
+def add_qgate_finding_checked(
+    plan_id: str,
+    phase: str,
+    source: str,
+    finding_type: str,
+    title: str,
+    detail: str,
+    **kwargs: Any,
+) -> tuple[str | None, dict[str, str] | None]:
+    """Call :func:`add_qgate_finding` and partition its outcome for a caller whose
+    finding IS the primary output — one that must never fold a rejected persist
+    into a benign-looking zero.
+
+    Every ``fetch_findings`` producer (``github_pr``, ``gitlab_pr``, ``sonar``)
+    files a producer-mismatch finding through this exact shape: call, then check
+    membership in :data:`QGATE_PERSIST_OK`, then build a ``{title, detail,
+    message}`` descriptor on rejection. Centralizing that check here removes the
+    duplicated branch from each of the three callers.
+
+    Returns ``(hash_id, None)`` when the finding reached the store, and
+    ``(None, failure)`` when the primitive REJECTED it, where ``failure`` is
+    ``{'title', 'detail', 'message'}`` carrying the finding's own content plus
+    the primitive's rejection message.
+    """
+    result = add_qgate_finding(
+        plan_id, phase, source, finding_type, title, detail, **kwargs
+    )
+    if result.get('status') not in QGATE_PERSIST_OK:
+        return None, {'title': title, 'detail': detail, 'message': str(result.get('message', ''))}
+    return result.get('hash_id'), None
 
 
 def query_qgate_findings(

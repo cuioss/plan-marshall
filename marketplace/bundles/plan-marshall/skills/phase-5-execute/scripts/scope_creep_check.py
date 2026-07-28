@@ -16,8 +16,11 @@ Subcommands:
 
 The script reads `plan_creation_sha` from references.json, computes the file
 diff between that sha and the current worktree HEAD, subtracts the union of
-each deliverable's `affected_files`, and emits a scope_creep_warning finding
-via manage-findings qgate add when the residual exceeds threshold.
+each deliverable's `affected_files`, and persists a scope_creep_warning finding
+through the in-process `add_qgate_finding` primitive when the residual exceeds
+threshold. A persist the primitive REJECTS is reported as `status: error` with
+`error: finding_persist_failed` and a non-zero return code — never as a success
+carrying `finding_emitted: false`, which is indistinguishable from "no creep".
 
 Threshold sources (precedence):
     1. --threshold CLI flag
@@ -33,6 +36,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from _findings_core import QGATE_PERSIST_OK, add_qgate_finding
 from file_ops import get_plan_dir
 
 DEFAULT_THRESHOLD = 5
@@ -98,33 +102,36 @@ def _resolve_worktree(plan_id: str) -> Path:
     return Path.cwd()
 
 
-def _emit_finding(plan_id: str, residual: list[str], threshold: int) -> bool:
-    """Emit a scope_creep_warning finding via manage-findings qgate add."""
+def _emit_finding(plan_id: str, residual: list[str], threshold: int) -> dict[str, str] | None:
+    """Persist a scope_creep_warning finding via the in-process Q-Gate primitive.
+
+    Calls ``add_qgate_finding`` directly — the same primitive nine peer callers
+    use — so there is no argv to construct and no return code to misread. The
+    outcome is tested against the published ``QGATE_PERSIST_OK`` partition.
+
+    Returns ``None`` when the finding reached the store, and a failure descriptor
+    — ``{'title', 'detail', 'message'}`` — when the primitive REJECTED it, so
+    ``cmd_check`` can fail loud with the rejected content inline.
+    """
+    title = f'Scope creep detected: {", ".join(sorted(residual)[:10])}'
     detail = f'{len(residual)} file(s) outside declared scope (threshold={threshold})'
-    message = f'Scope creep detected: {", ".join(sorted(residual)[:10])}'
-    cmd = [
-        'python3',
-        '.plan/execute-script.py',
-        'plan-marshall:manage-findings:manage-findings',
-        'qgate',
-        'add',
-        '--plan-id',
-        plan_id,
-        '--phase',
-        '5-execute',
-        '--source',
-        'qgate',
-        '--type',
-        'scope_creep_warning',
-        '--severity',
-        'warning',
-        '--message',
-        message,
-        '--detail',
-        detail,
-    ]
-    result = subprocess.run(cmd, check=False, capture_output=True, text=True)
-    return result.returncode == 0
+    result = add_qgate_finding(
+        plan_id=plan_id,
+        phase='5-execute',
+        source='qgate',
+        finding_type='scope_creep_warning',
+        title=title,
+        detail=detail,
+        component='plan-marshall:phase-5-execute:scope_creep_check',
+        severity='warning',
+    )
+    if result.get('status') not in QGATE_PERSIST_OK:
+        return {
+            'title': title,
+            'detail': detail,
+            'message': str(result.get('message', '')),
+        }
+    return None
 
 
 def cmd_check(args: argparse.Namespace) -> int:
@@ -163,7 +170,21 @@ def cmd_check(args: argparse.Namespace) -> int:
     residual = sorted(set(changed) - declared)
     emitted = False
     if len(residual) > threshold:
-        emitted = _emit_finding(plan_id, residual, threshold)
+        failure = _emit_finding(plan_id, residual, threshold)
+        if failure is not None:
+            # A lost finding is never absorbed: reporting `status: success` with
+            # `finding_emitted: false` here would be indistinguishable from "no
+            # scope creep". Fail loud with the rejected finding's content inline.
+            print('status: error')
+            print('error: finding_persist_failed')
+            print(f'message: {failure["message"]}')
+            print(f'finding_title: {failure["title"]}')
+            print(f'finding_detail: {failure["detail"]}')
+            print(f'residual_count: {len(residual)}')
+            print(f'threshold: {threshold}')
+            print(f'residual_files[{len(residual)}]: {residual}')
+            return 1
+        emitted = True
 
     print('status: success')
     print(f'residual_count: {len(residual)}')

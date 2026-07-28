@@ -228,7 +228,7 @@ def _scan_one_file(plan_id: str, task_path: Path) -> tuple[bool, list[dict[str, 
 # ---------------------------------------------------------------------------
 
 
-def _emit_finding_to_qgate(finding: dict[str, Any]) -> None:
+def _emit_finding_to_qgate(finding: dict[str, Any]) -> dict[str, str] | None:
     """Append a single finding to the plan-scoped Q-Gate store.
 
     Done in-process via the same ``_findings_core`` API that
@@ -239,10 +239,15 @@ def _emit_finding_to_qgate(finding: dict[str, Any]) -> None:
     Routes by ``finding['reason']`` so the four rules each produce a
     title/detail that is meaningful in the Q-Gate triage UI without
     forcing the caller to pre-format.
+
+    Returns ``None`` when the finding reached the store (status in
+    ``QGATE_PERSIST_OK``), and a failure descriptor — ``{'title', 'detail',
+    'message'}`` — when the primitive REJECTED it, so the enclosing scan can
+    aggregate rejections rather than report findings it failed to file.
     """
     # Local import — keeps the manage-findings dependency lazy so the
     # ``--no-emit`` path doesn't pay for it.
-    from _findings_core import add_qgate_finding
+    from _findings_core import QGATE_PERSIST_OK, add_qgate_finding
 
     reason = finding.get('reason')
     severity: str = 'warning'
@@ -288,7 +293,7 @@ def _emit_finding_to_qgate(finding: dict[str, Any]) -> None:
         title = f'plan-doctor finding ({reason}): {finding.get("plan_id", "<unknown>")}'
         detail = str(finding)
 
-    add_qgate_finding(
+    result = add_qgate_finding(
         plan_id=finding['plan_id'],
         phase=QGATE_PHASE,
         source='qgate',
@@ -300,6 +305,13 @@ def _emit_finding_to_qgate(finding: dict[str, Any]) -> None:
         severity=severity,
         iteration=None,
     )
+    if result.get('status') not in QGATE_PERSIST_OK:
+        return {
+            'title': title,
+            'detail': detail,
+            'message': str(result.get('message', '')),
+        }
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -592,6 +604,7 @@ def _scan_plans(
         findings.extend(_scan_stuck_low_confidence_archives())
         findings.extend(_scan_dangling_worktrees())
 
+    persist_failures: list[dict[str, str]] = []
     if emit_to_qgate:
         plans_root = _plans_root()
         for finding in findings:
@@ -599,13 +612,16 @@ def _scan_plans(
             # findings whose plan does not exist under plans/.
             finding_plan_id = finding.get('plan_id')
             if finding_plan_id and (plans_root / finding_plan_id).is_dir():
-                _emit_finding_to_qgate(finding)
+                failure = _emit_finding_to_qgate(finding)
+                if failure is not None:
+                    persist_failures.append(failure)
 
     return _build_summary(
         checked_files=checked_files,
         plans_scanned=plans_scanned,
         findings=findings,
         emit_to_qgate=emit_to_qgate,
+        persist_failures=persist_failures,
     )
 
 
@@ -614,15 +630,19 @@ def _scan_single_file(plan_id: str, task_file: Path, emit_to_qgate: bool) -> dic
     was_readable, findings = _scan_one_file(plan_id, task_file)
     checked_files = 1 if was_readable else 0
 
+    persist_failures: list[dict[str, str]] = []
     if emit_to_qgate:
         for finding in findings:
-            _emit_finding_to_qgate(finding)
+            failure = _emit_finding_to_qgate(finding)
+            if failure is not None:
+                persist_failures.append(failure)
 
     return _build_summary(
         checked_files=checked_files,
         plans_scanned=1,
         findings=findings,
         emit_to_qgate=emit_to_qgate,
+        persist_failures=persist_failures,
     )
 
 
@@ -632,9 +652,15 @@ def _build_summary(
     plans_scanned: int,
     findings: list[dict[str, Any]],
     emit_to_qgate: bool,
+    persist_failures: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
-    """Assemble the canonical TOON-shaped summary dict."""
-    return {
+    """Assemble the canonical TOON-shaped summary dict.
+
+    ``persist_failures`` carries the findings the Q-Gate primitive REJECTED. A
+    non-empty list sets ``qgate_persist_failed`` so a doctor run can never report
+    findings it failed to file.
+    """
+    summary: dict[str, Any] = {
         'status': 'success',
         'checked_files': checked_files,
         'findings_count': len(findings),
@@ -644,6 +670,10 @@ def _build_summary(
             'emit_to_qgate': emit_to_qgate,
         },
     }
+    if persist_failures:
+        summary['qgate_persist_failed'] = True
+        summary['qgate_persist_failures'] = persist_failures
+    return summary
 
 
 # ---------------------------------------------------------------------------
