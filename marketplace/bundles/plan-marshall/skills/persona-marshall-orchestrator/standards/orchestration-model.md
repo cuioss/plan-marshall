@@ -79,16 +79,18 @@ Orchestration is resumable by construction: any session can stop at any point an
 
 Two bounded carve-outs define what the orchestrator may do directly. Everything outside them is delegated.
 
-### Direct-file-access carve-out
+### Direct-file-write carve-out
 
-The orchestrator MAY use Read/Write/Edit directly — but ONLY within its own `.plan/local/orchestrator/{slug}/` tree. This is a deliberate, bounded exception to the ".plan/ access via manage-* scripts only" rule: the orchestrator's ledger documents (`epic.md`, workstream charters, plan specs, landing records, `history.md`, `references.json`) are free-form authored artifacts with no owning manage-* script.
+The orchestrator MAY use Write/Edit directly — but ONLY within its own `.plan/local/orchestrator/{slug}/` tree. This is a deliberate, bounded exception to the ".plan/ access via manage-* scripts only" rule: the orchestrator's ledger documents (`epic.md`, workstream charters, plan specs, landing records, `history.md`, `references.json`) are free-form authored artifacts with no owning manage-* script.
 
 Two state surfaces stay script-mediated even inside the tree:
 
 - **Logging** — `logs/` entries are written via `manage-logging --store orchestrator` (`decision` / `work` verbs), never by direct file writes.
 - **Status transitions** — `status.json` is created, read, and mutated via `manage-status --store orchestrator` (and the `orchestrator.py queue` verb), never by direct file writes.
 
-Any Read/Write/Edit outside the epic's own `{slug}/` tree — repository source, another epic's tree, `.plan/local/plans/` — is out of bounds for the orchestrator.
+A Write or Edit outside the epic's own `{slug}/` tree — repository source, another epic's tree, `.plan/local/plans/` — is out of bounds for the orchestrator.
+
+**This carve-out governs writes only.** Reads are governed by the small-ops carve-out's read-only-analysis clause below, not by this one.
 
 ### Small-ops carve-out
 
@@ -96,9 +98,11 @@ The orchestrator MAY perform small operations inline, without spawning a plan:
 
 - **git** — read-side commands, and small bounded mutations within the carve-out's spirit (e.g. the cross-repo lesson removal below), using plain `git` or `git -C {path}` per the git-targeting rule.
 - **CI abstraction** — read-side `plan-marshall:tools-integration-ci:ci` calls (PR state, checks, review threads); never `gh`/`glab` directly.
-- **Read-only analysis** — reading code, artifacts, PRs, logs, and pasted content to verify claims and reconcile the ledger.
+- **Read-only analysis** — reading code, artifacts, PRs, logs, and pasted content to verify claims and reconcile the ledger. **Reads are unrestricted in location** — repository source, plan artifacts under `.plan/local/plans/`, other epics' trees, PRs, and logs are all readable — precisely because reading mutates nothing. The countervailing bound is the category threshold below, never a path boundary: a read that turns into a build, a verify run, or any mutation has left analysis and become plan work.
 
 **Anything larger becomes a plan.** The threshold is not a line count but a category boundary: any production-code change, any test change, any build/verify run against repository source, any multi-file repository mutation — these are plan work. When an inline operation starts growing past "small and bounded", stop, stage it as a `plans/PLAN-NN-{slug}.md` spec, and emit the `/plan-marshall` command.
+
+**Residual risk accepted.** An unrestricted read surface lets the orchestrator pull large amounts of repository context into its own session, so the category threshold above and the prime directive are the only things preventing an orchestrator session from drifting into implementation. That is a deliberate, recorded trade in favour of making `analyze` performable: a path-bounded read rule would make the `analyze` verb's own mandatory ground-truth corroboration and its on-disk-plan-artifacts input mode unperformable, which is the strictly worse failure.
 
 ## Ledger Write-Boundary
 
@@ -112,7 +116,7 @@ The orchestrator MAY perform small operations inline, without spawning a plan:
 
 The envelope schema is owned by [`marshall-orchestrator/standards/inbox-envelope.md`](../../marshall-orchestrator/standards/inbox-envelope.md), and the `orchestrator inbox write` canonical invocation ([`marshall-orchestrator/SKILL.md`](../../marshall-orchestrator/SKILL.md) § Canonical invocations) is the sole sanctioned write mechanism — it derives the target path from the epic slug and sender id alone, so the carve-out is enforced by construction rather than by this prose.
 
-The boundary is the outward-facing complement of the inward-facing [direct-file-access carve-out](#carve-outs): that carve-out bounds what the orchestrator may write inside its own tree; this one bounds what a plan may write into it — its own inbox messages, and nothing else.
+The boundary is the outward-facing complement of the inward-facing [direct-file-write carve-out](#carve-outs): that carve-out bounds what the orchestrator may write inside its own tree; this one bounds what a plan may write into it — its own inbox messages, and nothing else.
 
 ## Dispatch Decision Rule
 
@@ -131,7 +135,7 @@ The boundary is the outward-facing complement of the inward-facing [direct-file-
 
   The prompt body carries `name: orchestrator-{verb}-{substep}`, `plan_id: none` (an epic is not a plan — and write-freedom means the leaf performs no plan-scoped logging), an empty `skills: []`, exactly one of `workflow` / `instructions`, and `WORKTREE: .`. The list is empty because `execution-context.md`'s prompt-body contract declares that `plan-marshall:persona-plan-marshall-agent` **MUST NOT** appear in `skills[]` — the agent loads it unconditionally and ignores a duplicate — so naming it is a contract violation, not a redundancy. A sub-step that genuinely needs an extra skill (a domain reference the leaf must apply) names that skill and only that skill; the foundational persona is never named.
 - **S1 — read-only by instruction.** No read-only-with-Bash agent variant exists: `execution-context-{level}` declares Write/Edit/Bash, and `execution-context-reader-{level}` declares no Bash at all. When the write-capable variant is the required vehicle, the prompt body MUST state the read-only constraint explicitly, and the orchestrator MUST treat the return as data, never as an applied change. Containment is enforced at the consuming end by S2, not by trusting the leaf.
-- **S2 — ledger writes stay in the orchestrator.** No leaf dispatched by an orchestrator verb writes inside `.plan/local/orchestrator/{slug}/**`, and none invokes `manage-status` / `manage-logging --store orchestrator`. This is the [direct-file-access carve-out](#carve-outs) extended across the dispatch edge, and it stays absolute for the class it governs: a sub-step leaf of an orchestrator verb has no inbox business — the orchestrator records its findings itself. It does NOT govern the plan-lifecycle leaves of an executing plan, whose `inbox/{sender}-{seq}` OUTBOX carve-out is stated in [§ Ledger Write-Boundary](#ledger-write-boundary) with its three qualifiers.
+- **S2 — ledger writes stay in the orchestrator.** No leaf dispatched by an orchestrator verb writes inside `.plan/local/orchestrator/{slug}/**`, and none invokes `manage-status` / `manage-logging --store orchestrator`. This is the [direct-file-write carve-out](#carve-outs) extended across the dispatch edge, and it stays absolute for the class it governs: a sub-step leaf of an orchestrator verb has no inbox business — the orchestrator records its findings itself. It does NOT govern the plan-lifecycle leaves of an executing plan, whose `inbox/{sender}-{seq}` OUTBOX carve-out is stated in [§ Ledger Write-Boundary](#ledger-write-boundary) with its three qualifiers.
 - **Effort dimension — read-only analysis runs at a config-resolved, bounded tier.** The read-only analysis dispatches this rule sanctions — `analyze.md` Step 2 landing ground-truth corroboration, `analyze.md` Step 2 untrusted-text reader ingestion, and `decompose.md` Step 2 on-disk-corpus / prior-art research — resolve their effort from the `orchestrator.effort` config block rather than always taking the `effort resolve-target --default` tier. Each surface resolves through `orchestrator.effort.{surface}` → `orchestrator.effort.default` → `plan.effort` → `inherit`, and the resolved level is then deterministically clamped by the `orchestrator.effort.max` uplift ceiling. This replaces the former free-prose discretion ("MAY run at a higher tier") with a config-resolved bound: the per-surface value carries the uplift, `max` bounds it, and no per-dispatch judgement picks the tier. **Unset resolves to exactly today's behaviour** — with `orchestrator.effort` unset every surface falls through to `plan.effort` (the tier `effort resolve-target --default` returns), and an unset `max` is a no-op (no clamp). The boundary is what makes a higher tier safe: **orchestrator = high-level plus analyze, plan = fine-grained.** A higher-effort analysis dispatch gathers and verifies, returns a structured verdict, and never reproduces the plan lifecycle's fine-grained implementation work — reproducing it is mechanism duplication, the exact anti-pattern the tier boundary exists to prevent. The tier is the only thing that moves: the three tests, the canonical dispatch form, and S1 / S2 apply unchanged at every effort level. The role registry and the block schema live in [`effort-roles.md` § Orchestrator role group](../../plan-marshall/standards/effort-roles.md) and [`marshal-json-reference.md` § Orchestrator Configuration](../../extension-api/standards/marshal-json-reference.md).
 - **Fall back to inline.** A dispatch that does not return — stream-idle timeout, harness cancellation, an empty return — is never blind-retried. The orchestrator verifies disk state and completes the sub-step inline. Dispatch is an optimization, never a dependency: a sub-step that cannot be completed inline is not dispatchable.
 - **Placement and gating.** A verb doc that has a dispatchable sub-step carries a thin pointer to this section AT that step, naming only (a) which sub-steps are dispatchable and (b) which are inline-only. Verb docs do NOT restate the tests, the safety constraints, or the fall-back clause. A verb with no dispatchable sub-step carries no pointer.

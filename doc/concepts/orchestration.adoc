@@ -28,8 +28,8 @@ The tier vocabulary is closed and the mid-tier name is *workstream* — no synon
 
 The orchestrator sits *above* the six-phase lifecycle and only ever hands work down to it. Its prime directive: it writes no production code, edits no repository source, authors no tests, and runs no implementation builds. Its outputs are exactly ledger state, emitted `/plan-marshall` commands, decisions, and reconciliations. Two bounded carve-outs define what it may do directly:
 
-* **Direct file access** — Read/Write/Edit only within its own `.plan/local/orchestrator/{slug}/` tree (the ledger documents are free-form authored artifacts); logging and status transitions stay script-mediated even inside the tree.
-* **Small ops** — read-side git and CI-abstraction calls (through the xref:tools-and-scripts.adoc[scripted integration layer], never `gh`/`glab` directly) and read-only analysis to verify claims against ground truth.
+* **Direct file writes** — Write/Edit only within its own `.plan/local/orchestrator/{slug}/` tree (the ledger documents are free-form authored artifacts); logging and status transitions stay script-mediated even inside the tree.
+* **Small ops** — read-side git and CI-abstraction calls (through the xref:tools-and-scripts.adoc[scripted integration layer], never `gh`/`glab` directly) and read-only analysis to verify claims against ground truth. Reads are unrestricted in location — repository source, plan artifacts, other epics' trees, PRs, and logs — because reading mutates nothing; the bound is the category threshold below, not a path.
 
 Anything larger becomes a plan. The `next` verb *emits* the ready-to-run command — it never launches a plan inline; implementation happens exclusively inside plan sessions. Plans are parallelized by surface disjointness, never by count (the same contention discipline xref:parallelism-and-locking.adoc[Parallelism and Locking] serializes at the merge boundary), and a staged spec approaching six or more deliverables is presumptively split.
 
