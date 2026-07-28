@@ -196,14 +196,18 @@ against the previously triaged body instead of re-triaging identical text.
 ## Structural constraints and how the pipeline handles them
 
 Two permanent properties of this bot follow from the single observed fact that it posts **one
-persistent `issue_comment` with an empty `thread_id`, and submits no GitHub *review* object**
+persistent comment of kind `issue_comment`, and submits no GitHub *review* object**
 (#103: absent from `ci pr reviews`). Both are handled — neither is an open defect.
 
-1. **No resolvable review thread.** The comment carries an empty `thread_id`, so there is no thread
-   to reply into or resolve. A triaged PR-Agent disposition is therefore transmitted by
-   `github_pr post_responses` as a **batched PR-level comment** anchored on the source `comment_id`,
-   and reported with `transmit_mode: batched_issue_comment` and `resolved_on_provider: false` —
-   `false` because no thread exists to resolve, and claiming otherwise would be a false signal.
+1. **No resolvable review thread.** Its comment's `kind` is `issue_comment` — one of the two
+   genuinely threadless kinds — so GitHub gives it no review thread to reply into or resolve. A
+   triaged PR-Agent disposition is therefore transmitted by `github_pr post_responses` as a
+   **batched PR-level comment** anchored on the source `comment_id`, and reported with
+   `transmit_mode: batched_issue_comment` and `resolved_on_provider: false` — `false` because no
+   thread exists to resolve, and claiming otherwise would be a false signal. The batch admission is
+   justified by the *kind*, not by an empty `thread_id`: `post_responses` routes on thread-bearing-ness,
+   so a thread-bearing comment that merely lost its `thread_id` is reported as untransmitted rather
+   than batched here.
 2. **No review object to await.** Because the bot submits no review, `github_re_review
    await_fresh_review` cannot match one. It matches the bot's **issue-comment** completion signal
    instead, returning `matched_signal: issue_comment` with `head_sha_verified: false` — the comment

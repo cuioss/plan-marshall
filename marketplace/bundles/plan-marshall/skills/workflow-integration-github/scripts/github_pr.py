@@ -280,8 +280,9 @@ def _unconfigured_result(operation: str, detail: str) -> dict[str, Any]:
 # FETCH_FINDINGS SUBCOMMAND (producer-side fetch + filter + file to ledger)
 # ============================================================================
 
-# Matches the ``comment_id: <value>`` and ``thread_id: <value>`` lines written
-# into every pr-comment finding's ``detail`` block by cmd_fetch_findings.
+# Matches the ``comment_id: <value>``, ``thread_id: <value>`` and ``kind: <value>``
+# lines written into every pr-comment finding's ``detail`` block by
+# cmd_fetch_findings.
 #
 # The value class requires a leading non-whitespace character (``\S``) and matches
 # only horizontal whitespace around it (``[ \t]``), never ``\s`` (which spans
@@ -289,11 +290,27 @@ def _unconfigured_result(operation: str, detail: str) -> dict[str, Any]:
 # written as the literal line ``thread_id: `` (empty value, trailing space). A
 # newline-spanning ``\s*(?P<id>.+?)`` would capture the *next* detail line (or the
 # trailing space) as a spurious truthy id, so ``post_responses`` would try to
-# resolve a non-existent thread instead of correctly skipping the finding. The
-# ``\S``-anchored, line-bounded value class yields no match for an empty value, so
-# ``_detail_field`` returns ``''`` and the finding is skipped.
+# resolve a non-existent thread instead of correctly reporting the finding as
+# undeliverable. The ``\S``-anchored, line-bounded value class yields no match for
+# an empty value, so ``_detail_field`` returns ``''``.
 _COMMENT_ID_DETAIL = re.compile(r'^comment_id:[ \t]*(?P<id>\S[^\n]*?)[ \t]*$', re.MULTILINE)
 _THREAD_ID_DETAIL = re.compile(r'^thread_id:[ \t]*(?P<id>\S[^\n]*?)[ \t]*$', re.MULTILINE)
+_KIND_DETAIL = re.compile(r'^kind:[ \t]*(?P<id>\S[^\n]*?)[ \t]*$', re.MULTILINE)
+
+# The comment kinds that are GENUINELY threadless — GitHub gives them no
+# resolvable review thread, so the only way to transmit their disposition is the
+# batched PR-level comment. This is the ONLY admission predicate for the batch:
+# ``post_responses`` routes on thread-BEARING-ness (the comment's kind), never on
+# whether a ``thread_id`` happened to be extractable. An ``inline`` finding whose
+# ``thread_id`` is missing is undeliverable, NOT threadless, and is reported in
+# ``untransmitted`` rather than silently downgraded into the batch.
+#
+# The set is deliberately CLOSED rather than derived as ``PR_COMMENT_KINDS -
+# {'inline'}``: a kind added to the vocabulary later must be classified by hand,
+# because auto-inheriting the threadless side is exactly the silent-batching
+# failure this predicate exists to prevent. An unrecognised or unrecorded kind
+# therefore takes the thread-bearing path and surfaces as untransmitted.
+_THREADLESS_KINDS = frozenset({'review_body', 'issue_comment'})
 
 
 def _detail_field(detail: str | None, pattern: re.Pattern) -> str:
@@ -738,25 +755,38 @@ def cmd_post_responses(args):
     disposition. This verb makes NO triage decision; it only transmits decisions
     the triage pass already recorded.
 
+    The routing predicate is the finding's **kind** — its thread-BEARING-ness,
+    recorded in the detail block by ``cmd_fetch_findings`` — never the mere
+    presence of an extractable ``thread_id``:
+
     1. **No ``resolution_detail``** — recorded in ``skipped`` with reason
        ``no_resolution_detail``. There is genuinely nothing to transmit.
-    2. **``thread_id`` present** — thread-reply carrying the disposition, then
-       resolve-thread. Recorded in ``responded`` with ``transmit_mode:
-       thread_reply`` and ``resolved_on_provider: true``.
-    3. **``thread_id`` empty, disposition body present** — collected across the
-       whole loop and transmitted as ONE batched PR-level comment, each section
-       anchored on its source ``comment_id``. Recorded in ``responded`` with
-       ``transmit_mode: batched_issue_comment`` and ``resolved_on_provider:
-       false`` — an issue comment has no resolvable thread, and reporting
-       ``true`` would be a false signal. Batching is deliberate: ``review_body``
-       findings from every bot are thread-less, so a per-finding comment would
-       spam the PR.
+    2. **Genuinely threadless kind** (``review_body`` / ``issue_comment``, see
+       ``_THREADLESS_KINDS``) — collected across the whole loop and transmitted
+       as ONE batched PR-level comment, each section anchored on its source
+       ``comment_id``. Recorded in ``responded`` with ``transmit_mode:
+       batched_issue_comment`` and ``resolved_on_provider: false`` — an issue
+       comment has no resolvable thread, and reporting ``true`` would be a false
+       signal. Batching is deliberate: ``review_body`` findings from every bot
+       are thread-less, so a per-finding comment would spam the PR.
+    3. **Thread-bearing kind** (``inline``, and any unrecognised or unrecorded
+       kind) — thread-reply carrying the disposition, then resolve-thread.
+       Recorded in ``responded`` with ``transmit_mode: thread_reply`` and
+       ``resolved_on_provider: true``.
+
+    A thread-bearing finding whose ``thread_id`` is empty or whose thread reply
+    fails is **undeliverable, not threadless**: it lands in ``untransmitted``
+    with a reason naming the missing or unusable thread and the run reports
+    ``status: partial``. It is NEVER re-routed into the batch — a silent
+    downgrade would report a disposition as delivered while the reviewer's own
+    thread stays unanswered and unresolved.
 
     Every disposition that had something to say but could not be delivered — a
-    failed thread-reply, a failed resolve-thread, or a failed batched post —
-    lands in ``untransmitted`` and drives ``count_untransmitted`` and a top-level
-    ``status`` of ``partial``. Nothing is folded into a generic skip and nothing
-    is masked by an unconditional ``success``.
+    missing thread on a thread-bearing finding, a failed thread-reply, a failed
+    resolve-thread, or a failed batched post — lands in ``untransmitted`` and
+    drives ``count_untransmitted`` and a top-level ``status`` of ``partial``.
+    Nothing is folded into a generic skip and nothing is masked by an
+    unconditional ``success``.
 
     Fail-loud: returns a typed ``unconfigured`` status when GitHub is not
     authenticated.
@@ -789,9 +819,31 @@ def cmd_post_responses(args):
             skipped.append({'hash_id': hash_id, 'reason': 'no_resolution_detail'})
             continue
 
-        thread_id = _detail_field(finding.get('detail'), _THREAD_ID_DETAIL)
+        detail = finding.get('detail')
+        kind = _detail_field(detail, _KIND_DETAIL)
+
+        # Disposition 2 — genuinely threadless kind: the ONLY path into the
+        # batch. Admission is decided by the kind alone, so a thread-bearing
+        # finding can never reach the batch by losing its thread_id.
+        if kind in _THREADLESS_KINDS:
+            batch.append((hash_id, _detail_field(detail, _COMMENT_ID_DETAIL), reply_body))
+            continue
+
+        # Disposition 3 — thread-bearing kind (inline, or an unrecognised kind
+        # that must not be assumed threadless). Its disposition belongs in the
+        # reviewer's own thread; without a usable thread it is undeliverable and
+        # is reported as such, never downgraded into the batch.
+        thread_id = _detail_field(detail, _THREAD_ID_DETAIL)
         if not thread_id:
-            batch.append((hash_id, _detail_field(finding.get('detail'), _COMMENT_ID_DETAIL), reply_body))
+            untransmitted.append(
+                {
+                    'hash_id': hash_id,
+                    'reason': (
+                        f'thread-bearing finding (kind: {kind or "unrecorded"}) has no thread_id — '
+                        'its in-thread reply is undeliverable and is not batched'
+                    ),
+                }
+            )
             continue
 
         # Reply carrying the recorded disposition, then resolve — keyed by this

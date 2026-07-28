@@ -1294,14 +1294,25 @@ class TestFailLoudUnconfigured:
 
 
 class TestPostResponses:
-    """post_responses transmits each finding's disposition to its own thread, keyed by hash_id."""
+    """post_responses transmits each finding's disposition to its own thread, keyed by hash_id.
 
-    def _stage_one_finding(self, plan_id, thread_id, body='A substantive concern about null handling.'):
+    Routing contract (``workflow-integration-github`` SKILL.md § Workflow 2 step 4):
+    the disposition path is chosen by the finding's ``kind`` — its thread-BEARING-ness
+    — never by whether a ``thread_id`` happened to be extractable. Only the genuinely
+    threadless kinds (``review_body``, ``issue_comment``) enter the batched PR-level
+    comment; a thread-bearing (``inline``) finding whose thread is missing or unusable
+    is UNDELIVERABLE and lands in ``untransmitted[]`` with ``status: partial``, never
+    silently downgraded into the batch.
+    """
+
+    def _stage_one_finding(
+        self, plan_id, thread_id, body='A substantive concern about null handling.', kind='inline'
+    ):
         """File one pr-comment finding via fetch_findings and return its hash_id."""
         comments = [
             {
                 'id': 'C1',
-                'kind': 'inline',
+                'kind': kind,
                 'author': 'reviewer',
                 'body': body,
                 'path': 'src/Main.java',
@@ -1364,20 +1375,23 @@ class TestPostResponses:
         assert result['count_responded'] == 0
         mock_graphql.assert_not_called()
 
-    def test_resolved_finding_without_thread_id_is_transmitted_as_a_pr_comment(self, plan_context):
-        """A thread-less disposition is transmitted as a PR comment, NOT skipped.
+    @pytest.mark.parametrize('kind', ['review_body', 'issue_comment'])
+    def test_genuinely_threadless_kind_is_transmitted_as_a_batched_pr_comment(self, kind, plan_context):
+        """A genuinely threadless kind is transmitted as a PR comment, NOT skipped.
 
-        There is no thread to reply into, but the disposition still has something
-        to say — dropping it would lose a recorded decision. It goes out as a
-        PR-level comment and is reported with ``resolved_on_provider: false``,
-        because no thread exists to resolve.
+        GitHub gives ``review_body`` / ``issue_comment`` no review thread to reply
+        into, but the disposition still has something to say — dropping it would
+        lose a recorded decision. It goes out as a batched PR-level comment and is
+        reported with ``resolved_on_provider: false``, because no thread exists to
+        resolve.
         """
-        plan_context.plan_dir_for('gh-respond-nothread')
-        hash_id = self._stage_one_finding('gh-respond-nothread', '')  # empty thread_id
+        plan_id = f'gh-respond-threadless-{kind.replace("_", "-")}'
+        plan_context.plan_dir_for(plan_id)
+        hash_id = self._stage_one_finding(plan_id, '', kind=kind)
 
         from _findings_core import resolve_finding
 
-        resolve_finding('gh-respond-nothread', hash_id, 'suppressed', detail='Suppressed with rationale.')
+        resolve_finding(plan_id, hash_id, 'suppressed', detail='Suppressed with rationale.')
 
         posted = []
 
@@ -1389,7 +1403,7 @@ class TestPostResponses:
             patch('github_pr._github.run_graphql', return_value=(0, {}, '')) as mock_graphql,
             patch('github_pr._github.post_pr_comment', side_effect=_fake_post),
         ):
-            result = cmd_post_responses(_stage_make_args(300, 'gh-respond-nothread'))
+            result = cmd_post_responses(_stage_make_args(300, plan_id))
 
         assert result['status'] == 'success'
         assert result['count_responded'] == 1
@@ -1404,6 +1418,74 @@ class TestPostResponses:
         assert 'C1' in posted[0][1]
         # No thread mutation fired — there is no thread.
         mock_graphql.assert_not_called()
+
+    def test_inline_finding_without_thread_id_is_untransmitted_never_batched(self, plan_context):
+        """A thread-BEARING finding with no thread_id is undeliverable, NOT threadless.
+
+        This is the routing predicate under test: an ``inline`` comment always has a
+        review thread on the provider, so an empty ``thread_id`` means the thread is
+        unrecoverable HERE — not that the disposition belongs on the PR-level batch.
+        Batching it would report the decision as delivered while the reviewer's own
+        thread stays unanswered and unresolved, so it lands in ``untransmitted[]``
+        and drives ``status: partial``.
+        """
+        plan_context.plan_dir_for('gh-respond-inline-nothread')
+        hash_id = self._stage_one_finding('gh-respond-inline-nothread', '')  # inline, empty thread_id
+
+        from _findings_core import resolve_finding
+
+        resolve_finding(
+            'gh-respond-inline-nothread', hash_id, 'suppressed', detail='Suppressed with rationale.'
+        )
+
+        with (
+            patch('github_pr._github.run_graphql', return_value=(0, {}, '')) as mock_graphql,
+            patch('github_pr._github.post_pr_comment') as mock_post,
+        ):
+            result = cmd_post_responses(_stage_make_args(300, 'gh-respond-inline-nothread'))
+
+        assert result['status'] == 'partial'
+        assert result['count_responded'] == 0
+        assert result['count_skipped'] == 0
+        assert result['count_untransmitted'] == 1
+        assert result['untransmitted'][0]['hash_id'] == hash_id
+        # The reason names the missing thread, so the failure is diagnosable.
+        reason = result['untransmitted'][0]['reason']
+        assert 'thread_id' in reason
+        assert 'inline' in reason
+        # NEVER re-routed into the batch — no PR-level comment was posted at all.
+        mock_post.assert_not_called()
+        # And no thread mutation was attempted against a non-existent thread.
+        mock_graphql.assert_not_called()
+
+    def test_inline_finding_whose_thread_reply_fails_is_untransmitted_never_batched(self, plan_context):
+        """A failed in-thread reply is untransmitted — it does not fall back to the batch.
+
+        The batch is not a fallback channel for a thread-bearing disposition. When the
+        reply mutation fails, the disposition is reported undelivered with the provider
+        error, and no PR-level comment is posted in its place.
+        """
+        plan_context.plan_dir_for('gh-respond-inline-replyfail')
+        hash_id = self._stage_one_finding('gh-respond-inline-replyfail', 'PRRT_boom')
+
+        from _findings_core import resolve_finding
+
+        resolve_finding('gh-respond-inline-replyfail', hash_id, 'fixed', detail='Fixed in commit abc.')
+
+        with (
+            patch('github_pr._github.run_graphql', return_value=(1, {}, 'thread not found')),
+            patch('github_pr._github.post_pr_comment') as mock_post,
+        ):
+            result = cmd_post_responses(_stage_make_args(300, 'gh-respond-inline-replyfail'))
+
+        assert result['status'] == 'partial'
+        assert result['count_responded'] == 0
+        assert result['count_untransmitted'] == 1
+        assert result['untransmitted'][0]['hash_id'] == hash_id
+        assert 'thread-reply failed' in result['untransmitted'][0]['reason']
+        assert 'thread not found' in result['untransmitted'][0]['reason']
+        # NEVER re-routed into the batch.
+        mock_post.assert_not_called()
 
 
 # =============================================================================

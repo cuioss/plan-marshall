@@ -10,7 +10,7 @@ mode: workflow
 GitHub provider for the findings-pipeline `pr-comment` producer. The provider surface is exactly THREE pure, zero-LLM verbs — no triage judgment lives here:
 
 - **`fetch_findings`** — fetch PR review comments, apply the pre-filter (`comment-patterns.json`), and file one `pr-comment` finding per surviving comment via `manage-findings add`. The untrusted comment body is quarantined under `raw_input.{body}` (never embedded raw in the top-level `detail`); the batched `manage-findings ingest` pass promotes it to top-level only after `validate_struct`.
-- **`post_responses`** — apply already-decided triage dispositions back to the PR, keyed by each finding's own `hash_id`, via a three-way transmit: thread-reply-then-resolve for a thread-bearing finding, ONE batched PR-level comment for the thread-less ones, and `skipped` only when there is genuinely nothing to say.
+- **`post_responses`** — apply already-decided triage dispositions back to the PR, keyed by each finding's own `hash_id`, via a three-way transmit keyed on the finding's `kind`: thread-reply-then-resolve for a thread-bearing finding (untransmitted, never batched, when its thread is missing), ONE batched PR-level comment for the genuinely threadless kinds, and `skipped` only when there is genuinely nothing to say.
 - **`bot_completion`** — report a review bot's registry `completion_check_name` check-run state (`{status, in_progress, completed}`) for the PR HEAD, so the `automatic-review` completion-aware poll can wait for a slow bot to finish before fetching; a bot with no completion check-run reports `no_check_name` and the caller falls back to the `review_bot_buffer_seconds` wait.
 
 All three verbs FAIL LOUD when GitHub is not configured (a typed `unconfigured` status, never a silent no-op). Uses the `gh` CLI for all GitHub operations.
@@ -113,7 +113,7 @@ This skill is consumed by:
 | `thread-reply --thread-id` | Comment's `thread_id` field | GraphQL node ID | `PRRT_kwDO...` |
 | `resolve-thread --thread-id` | Comment's `thread_id` field | GraphQL node ID | `PRRT_kwDO...` |
 
-Both operations take the same `PRRT_` thread ID — pass the comment's `thread_id` field for either. The comment's `id` field (format `PRRC_...`) is never valid for `thread-reply` or `resolve-thread`. `post_responses` reads each finding's `thread_id` from its own `detail` block, keyed by `hash_id` — never a positional pairing. A finding whose `thread_id` is empty has no thread to reply into; its disposition goes out on the batched PR-comment path instead (see Workflow 2 step 4).
+Both operations take the same `PRRT_` thread ID — pass the comment's `thread_id` field for either. The comment's `id` field (format `PRRC_...`) is never valid for `thread-reply` or `resolve-thread`. `post_responses` reads each finding's `thread_id` from its own `detail` block, keyed by `hash_id` — never a positional pairing. Which path a finding takes is decided by its `kind`, not by whether a `thread_id` was extractable: a genuinely threadless kind (`review_body`, `issue_comment`) goes out on the batched PR-comment path, while a thread-bearing kind with no usable `thread_id` is reported as untransmitted rather than batched (see Workflow 2 step 4).
 
 **NEVER use numeric IDs** — GitHub GraphQL requires global node IDs.
 
@@ -136,17 +136,19 @@ Both operations take the same `PRRT_` thread ID — pass the comment's `thread_i
    ```bash
    python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr post_responses --pr-number {pr} --plan-id {plan_id}
    ```
-   `post_responses` transmits every terminal-disposition finding through a three-way branch — no decision is lost and none is guessed at:
+   `post_responses` transmits every terminal-disposition finding through a three-way branch — no decision is lost and none is guessed at. **The routing predicate is the finding's `kind` — its thread-BEARING-ness — never the presence of an extractable `thread_id`:**
 
    | Finding shape | Transmit | Recorded as |
    |---------------|----------|-------------|
    | no `resolution_detail` | nothing — there is genuinely nothing to say | `skipped[]`, reason `no_resolution_detail` |
-   | `thread_id` present | thread-reply carrying the `resolution_detail`, then resolve-thread | `responded[]`, `transmit_mode: thread_reply`, `resolved_on_provider: true` |
-   | `thread_id` empty, `resolution_detail` present | ONE batched PR-level comment for ALL such findings in the run, each section anchored on its source `comment_id` | `responded[]`, `transmit_mode: batched_issue_comment`, `resolved_on_provider: false` |
+   | genuinely threadless `kind` (`review_body`, `issue_comment`) | ONE batched PR-level comment for ALL such findings in the run, each section anchored on its source `comment_id` | `responded[]`, `transmit_mode: batched_issue_comment`, `resolved_on_provider: false` |
+   | thread-bearing `kind` (`inline`, and any unrecognised kind) | thread-reply carrying the `resolution_detail`, then resolve-thread | `responded[]`, `transmit_mode: thread_reply`, `resolved_on_provider: true` |
 
    Batching is deliberate: `review_body` findings from every bot are thread-less, so a per-finding comment would spam the PR. `resolved_on_provider: false` on that path is truthful — an issue comment has no resolvable thread, and reporting `true` would be a false signal.
 
-   Any disposition that had something to say but could not be delivered — a failed thread-reply, a failed resolve-thread, or a failed batched post (which untransmits the WHOLE batch) — lands in `untransmitted[]` with a reason, drives `count_untransmitted`, and sets the envelope `status` to `partial`. The envelope reports `success` only when `count_untransmitted` is 0; it is never unconditionally `success`.
+   **An undeliverable in-thread reply is untransmitted, never silently batched.** A thread-bearing finding whose `thread_id` is empty or unextractable is *undeliverable*, not threadless: it lands in `untransmitted[]` with a reason naming the missing thread and the run reports `status: partial`. It is NEVER re-routed into the batch — a silent downgrade would report the disposition as delivered while the reviewer's own thread stays unanswered and unresolved. Only genuinely threadless kinds enter the batch, so the batch membership is decided by the kind alone and cannot be reached by losing a `thread_id`.
+
+   Any disposition that had something to say but could not be delivered — a missing thread on a thread-bearing finding, a failed thread-reply, a failed resolve-thread, or a failed batched post (which untransmits the WHOLE batch) — lands in `untransmitted[]` with a reason, drives `count_untransmitted`, and sets the envelope `status` to `partial`. The envelope reports `success` only when `count_untransmitted` is 0; it is never unconditionally `success`.
 
 ### Workflow 3: Re-Review After a HEAD-Advancing Branch Operation
 
