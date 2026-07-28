@@ -71,7 +71,7 @@ The drain semantics — enumeration order, the report-never-skip rule for a malf
 
 3. **A message the enumeration reported as invalid is NOT processed.** Record it as an Open Defect in `epic.md` naming the validator error code the row carried, and **leave it in `inbox/` un-archived** so it stays visible to the next drain. An invalid message never routes to a branch and never counts as consumed. **Apply the same dedup discipline Step 5b carries**: because the message deliberately survives the drain, every subsequent scan re-enumerates it — a message already tracked by an existing Open Defect FOLDS into that entry (record the recurrence on it) and never becomes a second one.
 
-4. **Archive on consume.** Archive every message immediately after its disposition is **persisted** — a Step 4 landing reconciliation, a Step 5b disposition, or a Step 5 absorption into a Watch or Open Defect (the `observed` disposition). This covers every consuming disposition `drained[]` enumerates (`reconciled`, `observed`, the four Step 5b outcomes); `invalid` is excluded — item 3 leaves it un-archived by design. Retire the message:
+4. **Archive on consume.** Archive every message immediately after its disposition is **persisted** — a Step 4 landing reconciliation, a Step 5b disposition, or a Step 5 absorption into a Watch or Open Defect (the `observed` disposition). This covers every consuming disposition `drained[]` enumerates (`reconciled`, `observed`, the four Step 5b outcomes). TWO dispositions are excluded, for distinct reasons: `invalid` — item 3 leaves it un-archived by design and never routes it to a branch — and `archive_failed` — its disposition WAS persisted, but the archival that would have consumed it was refused, so sub-item 4a records it as an Open Defect and sub-item 4b forbids re-applying the disposition. Retire the message:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator inbox archive \
@@ -79,6 +79,10 @@ The drain semantics — enumeration order, the report-never-skip rule for a malf
    ```
 
    The order is **persist-then-archive, never the reverse**. An interrupted drain therefore re-processes at most the one in-flight message, and a completed drain is a no-op on re-scan.
+
+   4a. **Read the returned TOON `status`. On `status: error` the message is NOT counted as archived.** Record it as an Open Defect in `epic.md` naming the message filename and the returned `error` code (one of `archive_conflict`, `archive_dir_unavailable`, `file_not_found`, `invalid_message_name`), and log the disposition through the same `manage-logging decision --store orchestrator` line Step 5b uses, naming the filename and the `archive_failed` disposition. **Apply the same dedup discipline items 3 and 5b carry**: a message already tracked by an existing Open Defect FOLDS into that entry as a recurrence rather than becoming a second one.
+
+   4b. **A message whose archival failed retains its already-persisted disposition, and that disposition MUST NOT be re-applied on a later drain.** The Open Defect is the record that the message is awaiting operator recovery — `inbox archive --as-name` retires it under a non-colliding, sender-preserving archived name — not a signal to re-consume it. Without this rule the message stays schema-valid in `inbox/`, item 3's leave-un-archived path does not catch it, and every subsequent drain re-runs its full branch.
 
 ### Step 4: Full ship — landing report + full reconciliation
 
@@ -178,6 +182,7 @@ landing_report: landings/PLAN-NN.md | -
 messages_scanned: {N}
 messages_archived: {N}
 messages_invalid: {N}
+messages_archive_failed: {N}
 drained[D]{message,kind,disposition}:
   orchestration-inbox-channel-001.md,landing,reconciled
   orchestration-inbox-channel-002.md,candidate-lesson,promoted
@@ -196,7 +201,7 @@ resume_anchor: "{next action}"
 The block carries a singular half and a plural half, and `mode` says which half is live:
 
 - **Single-item modes** (`paste` / `on_disk` / `cross_repo`) — `granularity`, `plan`, and `landing_report` carry the analysis result exactly as before (`plan` and `landing_report` carry `-` for the observation granularity). The drain fields carry `0` and `drained[]` is empty.
-- **Inbox scan** (`inbox_scan`) — the singular fields `granularity`, `plan`, and `landing_report` carry `-`, and the per-message outcomes ride `drained[]`. `messages_scanned` counts every enumerated message, `messages_archived` counts those consumed and retired, and `messages_invalid` counts those reported invalid and deliberately left un-archived. `messages_archived + messages_invalid == messages_scanned` at a clean exit; a gap means a message was neither consumed nor recorded as a defect, and the epic ledger carries the discrepancy as an open defect. Each `drained[]` row's `disposition` is the recorded Step 5b disposition (`promoted` / `folded` / `staged` / `discarded`), `reconciled` for a landing, `observed` for a finding absorbed by Step 5, or `invalid` for an unprocessed message.
+- **Inbox scan** (`inbox_scan`) — the singular fields `granularity`, `plan`, and `landing_report` carry `-`, and the per-message outcomes ride `drained[]`. `messages_scanned` counts every enumerated message, `messages_archived` counts those consumed and retired, `messages_invalid` counts those reported invalid and deliberately left un-archived, and `messages_archive_failed` counts those whose disposition was persisted but whose archival was refused (item 4a). `messages_archived + messages_invalid + messages_archive_failed == messages_scanned` at a clean exit; a gap means a message was neither consumed nor recorded as a defect, and the epic ledger carries the discrepancy as an open defect. Each `drained[]` row's `disposition` is the recorded Step 5b disposition (`promoted` / `folded` / `staged` / `discarded`), `reconciled` for a landing, `observed` for a finding absorbed by Step 5, `invalid` for an unprocessed message, or `archive_failed` for a processed message whose archival was refused.
 
 This is a clean break, not a shim: there is one Output block, and a consumer reads `mode` to know which half to trust.
 

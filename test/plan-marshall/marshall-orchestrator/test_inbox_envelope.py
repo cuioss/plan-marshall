@@ -11,16 +11,20 @@ Covers, under ``PLAN_BASE_DIR`` isolation (via ``plan_context``):
 
 - ``compose_envelope`` / ``validate_envelope``: header round-trip and every
   validator error code, in the fixed check order.
-- ``next_sequence`` / ``allocate_message_path``: per-sender allocation,
-  zero-padding, and the ``O_EXCL`` concurrent-claim retry.
+- ``next_sequence`` / ``allocate_message_path``: per-sender allocation across
+  BOTH the live queue and ``inbox/archive/`` (so a drained sender never re-uses
+  a retired number), zero-padding, and the ``O_EXCL`` concurrent-claim retry
+  that stays scoped to ``inbox/``.
 - ``classify_source_id``: positive, negative, and traversal cases.
 - ``cmd_inbox_write`` / ``cmd_inbox_validate`` / ``cmd_inbox_detect``: the
   handler surface, including every refusal class.
 - ``cmd_inbox_archive``'s atomic destination claim, driven through a
-  deterministically-opened check-to-claim window. These live here rather than
-  in the CLI contract module because forcing the interleaving requires an
-  in-process seam; a real concurrent race reproduces the same states only
-  sporadically and would make the assertion flaky.
+  deterministically-opened check-to-claim window, plus the sender-constrained
+  ``--as-name`` recovery override for a message stranded by a pre-fix sequence
+  collision. These live here rather than in the CLI contract module because
+  forcing the interleaving requires an in-process seam; a real concurrent race
+  reproduces the same states only sporadically and would make the assertion
+  flaky.
 """
 
 import os
@@ -96,6 +100,11 @@ def _write_args(
         kind=kind,
         payload_file=payload_file,
     )
+
+
+def _archive_args(message: str, as_name: str | None = None, slug: str = EPIC) -> Namespace:
+    """Build the ``inbox archive`` argument namespace, override included."""
+    return Namespace(slug=slug, message=message, as_name=as_name)
 
 
 def _payload(tmp_path: Path, body: str = 'the landing narrative') -> str:
@@ -663,6 +672,236 @@ class TestInboxArchiveRace:
 
         assert result['status'] == 'error'
         assert result['error'] == 'file_not_found'
+
+
+# =============================================================================
+# Archive-aware sequence allocation — the collision the fix removes
+# =============================================================================
+
+
+class TestArchiveAwareAllocation:
+    def test_should_advance_past_an_archived_message(self, tmp_path):
+        # (a) The sender's only message has been retired to archive/. A
+        # live-only scan proposes 001 and hands back a number whose archived
+        # twin already exists.
+        archive = tmp_path / 'archive'
+        archive.mkdir()
+        (archive / f'{SENDER}-001.md').write_text('x', encoding='utf-8')
+
+        assert next_sequence(tmp_path, SENDER) == 2
+
+    def test_should_take_the_max_across_the_live_queue_and_the_archive(self, tmp_path):
+        (tmp_path / f'{SENDER}-002.md').write_text('x', encoding='utf-8')
+        archive = tmp_path / 'archive'
+        archive.mkdir()
+        (archive / f'{SENDER}-007.md').write_text('x', encoding='utf-8')
+
+        assert next_sequence(tmp_path, SENDER) == 8
+
+    def test_should_consult_the_archive_when_the_live_inbox_is_absent(self, tmp_path):
+        inbox = tmp_path / 'inbox'
+        archive = inbox / 'archive'
+        archive.mkdir(parents=True)
+        (archive / f'{SENDER}-003.md').write_text('x', encoding='utf-8')
+
+        assert next_sequence(inbox, SENDER) == 4
+
+    def test_should_count_only_the_named_senders_archived_messages(self, tmp_path):
+        archive = tmp_path / 'archive'
+        archive.mkdir()
+        (archive / 'other-plan-009.md').write_text('x', encoding='utf-8')
+
+        assert next_sequence(tmp_path, SENDER) == 1
+
+    def test_should_allocate_unchanged_for_a_sender_with_no_archive(self, tmp_path):
+        # (c) Regression pin that the fix is ADDITIVE: a sender whose messages
+        # have never been drained allocates exactly as it did before.
+        (tmp_path / f'{SENDER}-001.md').write_text('x', encoding='utf-8')
+        (tmp_path / f'{SENDER}-002.md').write_text('x', encoding='utf-8')
+
+        assert next_sequence(tmp_path, SENDER) == 3
+
+    def test_should_tolerate_a_missing_archive_directory(self, tmp_path):
+        # (d) archive/ is created on first use, so it is routinely absent.
+        (tmp_path / f'{SENDER}-004.md').write_text('x', encoding='utf-8')
+
+        assert next_sequence(tmp_path, SENDER) == 5
+
+    def test_should_claim_only_inside_the_live_inbox(self, tmp_path):
+        # The proposal widens; the O_EXCL claim does not. The archive is never
+        # a claim target.
+        inbox = tmp_path / 'inbox'
+        archive = inbox / 'archive'
+        archive.mkdir(parents=True)
+        (archive / f'{SENDER}-001.md').write_text('retired\n', encoding='utf-8')
+
+        path = allocate_message_path(inbox, SENDER, 'fresh\n')
+
+        assert path == inbox / f'{SENDER}-002.md'
+        assert sorted(p.name for p in archive.iterdir()) == [f'{SENDER}-001.md']
+
+    def test_should_archive_cleanly_after_a_drained_sender_writes_again(
+        self, plan_context, tmp_path
+    ):
+        # (b) The full write -> drain -> write -> drain cycle: the second write
+        # lands at -002 and its archival succeeds instead of colliding with the
+        # retired -001 record.
+        cmd_scaffold(Namespace(slug=EPIC))
+        first = cmd_inbox_write(_write_args(payload_file=_payload(tmp_path, 'first')))
+        cmd_inbox_archive(_archive_args(first['message']))
+
+        second = cmd_inbox_write(_write_args(payload_file=_payload(tmp_path, 'second')))
+        result = cmd_inbox_archive(_archive_args(second['message']))
+
+        assert second['message'] == f'{SENDER}-002.md'
+        assert result['status'] == 'success'
+        assert result['already_archived'] is False
+        archive = _inbox_dir(plan_context) / 'archive'
+        assert sorted(p.name for p in archive.iterdir()) == [
+            f'{SENDER}-001.md',
+            f'{SENDER}-002.md',
+        ]
+
+
+# =============================================================================
+# cmd_inbox_archive — refusal / idempotence pins that must survive the fix
+# =============================================================================
+
+
+class TestInboxArchiveClaimPins:
+    def _seed(self, plan_context, tmp_path) -> tuple[Path, Path]:
+        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_inbox_write(_write_args(payload_file=_payload(tmp_path, 'my body')))
+        inbox = _inbox_dir(plan_context)
+        source = inbox / f'{SENDER}-001.md'
+        dest = inbox / 'archive' / f'{SENDER}-001.md'
+        return source, dest
+
+    def test_should_refuse_a_distinct_archived_record(self, plan_context, tmp_path):
+        # (e) A genuinely DISTINCT destination inode — the stranded-message
+        # state a pre-fix collision produces — is still refused fail-closed,
+        # and the refusal leaves the source in place.
+        source, dest = self._seed(plan_context, tmp_path)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text('the earlier audit record\n', encoding='utf-8')
+
+        result = cmd_inbox_archive(_archive_args(source.name))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'archive_conflict'
+        assert source.is_file()
+        assert dest.read_text(encoding='utf-8') == 'the earlier audit record\n'
+
+    def test_should_report_already_archived_for_the_same_inode(
+        self, plan_context, tmp_path
+    ):
+        # (f) The same-inode window: a concurrent winner has linked but not yet
+        # unlinked. Inode identity, not source presence, is the discriminator.
+        source, dest = self._seed(plan_context, tmp_path)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        os.link(source, dest)
+
+        result = cmd_inbox_archive(_archive_args(source.name))
+
+        assert result['status'] == 'success'
+        assert result['already_archived'] is True
+        assert source.is_file()
+
+
+# =============================================================================
+# cmd_inbox_archive --as-name — the sender-constrained recovery override
+# =============================================================================
+
+
+class TestInboxArchiveAsName:
+    def _strand(self, plan_context, tmp_path) -> tuple[Path, Path]:
+        """Reproduce the pre-fix stranded state: source and a distinct twin."""
+        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_inbox_write(_write_args(payload_file=_payload(tmp_path, 'stranded body')))
+        inbox = _inbox_dir(plan_context)
+        source = inbox / f'{SENDER}-001.md'
+        archive = inbox / 'archive'
+        archive.mkdir(parents=True, exist_ok=True)
+        (archive / source.name).write_text('the earlier audit record\n', encoding='utf-8')
+        return source, archive
+
+    def test_should_accept_an_override_that_preserves_the_sender(
+        self, plan_context, tmp_path
+    ):
+        # (g) Positive arm. The accepted name is asserted to be the
+        # sender-matching one, so the constraint cannot pass vacuously via a
+        # rule that accepts everything.
+        source, archive = self._strand(plan_context, tmp_path)
+        recovery_name = f'{SENDER}-001.dup1.md'
+        assert recovery_name.startswith(f'{SENDER}-')
+
+        result = cmd_inbox_archive(_archive_args(source.name, as_name=recovery_name))
+
+        assert result['status'] == 'success'
+        assert result['already_archived'] is False
+        assert result['archived_to'].endswith(recovery_name)
+        assert not source.exists()
+        assert (archive / recovery_name).read_text(encoding='utf-8').endswith(
+            'stranded body\n'
+        )
+        # The pre-existing audit record was never clobbered.
+        assert (archive / source.name).read_text(
+            encoding='utf-8'
+        ) == 'the earlier audit record\n'
+
+    def test_should_refuse_an_override_that_drops_the_sender(
+        self, plan_context, tmp_path
+    ):
+        # (h) Negative arm, distinct code.
+        source, archive = self._strand(plan_context, tmp_path)
+
+        result = cmd_inbox_archive(_archive_args(source.name, as_name='other-001.md'))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'as_name_sender_mismatch'
+        assert source.is_file()
+        assert sorted(p.name for p in archive.iterdir()) == [source.name]
+
+    def test_should_refuse_a_path_shaped_override(self, plan_context, tmp_path):
+        # The retained bare-filename guard is LIVE and distinct from the sender
+        # rule — neither validation shadows the other.
+        source, archive = self._strand(plan_context, tmp_path)
+
+        result = cmd_inbox_archive(
+            _archive_args(source.name, as_name=f'../{SENDER}-001.md')
+        )
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_message_name'
+        assert source.is_file()
+        assert sorted(p.name for p in archive.iterdir()) == [source.name]
+
+    def test_should_refuse_an_override_when_no_sender_is_derivable(
+        self, plan_context, tmp_path
+    ):
+        cmd_scaffold(Namespace(slug=EPIC))
+        inbox = _inbox_dir(plan_context)
+        off_shape = inbox / 'notes.md'
+        off_shape.write_text('not a message\n', encoding='utf-8')
+
+        result = cmd_inbox_archive(
+            _archive_args(off_shape.name, as_name=f'{SENDER}-001.md')
+        )
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'as_name_sender_mismatch'
+        assert off_shape.is_file()
+
+    def test_should_leave_the_default_destination_path_unchanged(
+        self, plan_context, tmp_path
+    ):
+        cmd_scaffold(Namespace(slug=EPIC))
+        written = cmd_inbox_write(_write_args(payload_file=_payload(tmp_path)))
+
+        result = cmd_inbox_archive(_archive_args(written['message'], as_name=None))
+
+        assert result['status'] == 'success'
+        assert result['archived_to'].endswith(f'archive/{written["message"]}')
 
 
 # =============================================================================

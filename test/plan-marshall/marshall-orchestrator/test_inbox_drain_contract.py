@@ -6,8 +6,9 @@ The contract sources are read-only for this module — it never writes them:
 
 - ``marshall-orchestrator/workflow/analyze.md`` — the fourth input mode, the
   per-kind routing map, the landing branch's undiluted corroboration
-  obligation, the four Step 5b dispositions, archive-on-consume, and the
-  widened ``## Output`` block.
+  obligation, the four Step 5b dispositions, archive-on-consume (including the
+  archive-FAILURE branch and its no-re-apply rule), and the widened
+  ``## Output`` block.
 - ``persona-marshall-orchestrator/standards/orchestration-model.md`` — the
   Ledger Write-Boundary's drain-surface anchor, plus the ordinal-drift guard
   over its ``analyze.md`` Step-N citations.
@@ -97,6 +98,43 @@ def _rows(section: str, prefix: str) -> list[str]:
         for stripped in (line.strip() for line in section.splitlines())
         if stripped.startswith(prefix)
     ]
+
+
+def _drain_loop_section() -> str:
+    return _section(_analyze_text(), '### Step 3: Classify the granularity', 'analyze.md')
+
+
+def _archive_on_consume_item() -> str:
+    """Return ALL of item 4, from its bolded label to the end of the Step 3 body.
+
+    Wider than :func:`_archive_trigger_paragraph` on purpose: the archive-failure
+    branch and its no-re-apply rule live in sub-items BELOW item 4's command
+    fence, so a scope that stops at the fence cannot see them.
+    """
+    section = _drain_loop_section()
+    marker = '**Archive on consume.**'
+    start = section.find(marker)
+    assert start != -1, (
+        'analyze.md: the "**Archive on consume.**" item (item 4) was not found — '
+        'the archive contract cannot be verified'
+    )
+    return section[start:]
+
+
+def _archive_trigger_paragraph() -> str:
+    """Return item 4's opening paragraph only — the label up to its command fence.
+
+    This is the in-line index of the consuming/excluded disposition sets, so it
+    is deliberately scoped ABOVE the fence and away from the sub-items.
+    """
+    match = re.search(
+        r'\*\*Archive on consume\.\*\*(.*?)(?=```)', _drain_loop_section(), re.DOTALL
+    )
+    assert match, (
+        'analyze.md: the "**Archive on consume.**" paragraph (item 4) was not '
+        'found — the archive-trigger rule cannot be verified'
+    )
+    return match.group(1)
 
 
 # =============================================================================
@@ -299,15 +337,7 @@ class TestArchiveOnConsume:
         block's own ``observed`` disposition and its
         ``messages_archived + messages_invalid == messages_scanned`` invariant.
         """
-        section = _section(
-            _analyze_text(), '### Step 3: Classify the granularity', 'analyze.md'
-        )
-        match = re.search(r'\*\*Archive on consume\.\*\*(.*?)(?=```)', section, re.DOTALL)
-        assert match, (
-            'analyze.md: the "**Archive on consume.**" paragraph (item 4) was not '
-            'found — the archive-trigger rule cannot be verified'
-        )
-        paragraph = match.group(1)
+        paragraph = _archive_trigger_paragraph()
 
         assert 'observed' in paragraph, (
             'analyze.md: the archive-on-consume trigger paragraph does not name '
@@ -320,6 +350,59 @@ class TestArchiveOnConsume:
                 f'analyze.md: the archive-on-consume trigger paragraph does not '
                 f'name {target!r} as a consuming path'
             )
+
+    def test_the_excluded_disposition_list_names_both_exclusions(self):
+        """Item 4's in-line enumeration indexes the non-consuming dispositions.
+
+        Once ``archive_failed`` joined ``drained[]`` it became a SECOND
+        non-consuming disposition, so a list naming only ``invalid`` is an
+        incomplete index of the set it indexes.
+        """
+        paragraph = _archive_trigger_paragraph()
+
+        for excluded in ('invalid', 'archive_failed'):
+            assert excluded in paragraph, (
+                f'analyze.md: the archive-on-consume paragraph\'s excluded-'
+                f'disposition list does not name {excluded!r} — the in-line '
+                f'enumeration under-counts the non-consuming dispositions'
+            )
+
+    def test_the_archive_failure_branch_is_declared(self):
+        item = _archive_on_consume_item()
+
+        assert 'status: error' in item, (
+            'analyze.md: item 4 declares no "status: error" branch for the '
+            '"inbox archive" call — a refused archival would be indistinguishable '
+            'from a successful one and the message silently re-processed'
+        )
+        assert 'Open Defect' in item, (
+            'analyze.md: item 4\'s archive-failure branch does not record the '
+            'failure as an Open Defect — the refusal would leave no ledger record'
+        )
+        for code in (
+            'archive_conflict',
+            'archive_dir_unavailable',
+            'file_not_found',
+            'invalid_message_name',
+        ):
+            assert code in item, (
+                f'analyze.md: item 4\'s archive-failure branch does not name the '
+                f'{code!r} error code among the refusals it records'
+            )
+
+    def test_a_failed_archival_is_never_re_applied_on_a_later_drain(self):
+        item = _archive_on_consume_item()
+
+        assert 'MUST NOT be re-applied' in item, (
+            'analyze.md: item 4 does not forbid re-applying the persisted '
+            'disposition of a message whose archival failed — every later drain '
+            'would re-run its full branch'
+        )
+        assert '--as-name' in item, (
+            'analyze.md: item 4 does not name the "inbox archive --as-name" '
+            'recovery path the Open Defect is waiting on — the defect names no '
+            'route out'
+        )
 
 
 # =============================================================================
@@ -355,6 +438,35 @@ class TestOutputBlock:
         assert 'drained[' in section, (
             'analyze.md: the ## Output block declares no "drained[" table — the '
             'per-message outcomes have nowhere to ride under inbox scan'
+        )
+
+    def test_output_declares_the_archive_failed_counter(self):
+        section = _section(_analyze_text(), '## Output', 'analyze.md')
+
+        assert 'messages_archive_failed' in section, (
+            'analyze.md: the ## Output block declares no "messages_archive_failed" '
+            'counter — a refused archival is unreportable, so the accounting '
+            'invariant stays a prose claim with no enforcing number'
+        )
+
+    def test_output_declares_the_archive_failed_disposition(self):
+        section = _section(_analyze_text(), '## Output', 'analyze.md')
+
+        assert '`archive_failed`' in section, (
+            'analyze.md: the ## Output block does not declare "archive_failed" as a '
+            'drained[] disposition — the per-message row cannot carry the outcome'
+        )
+
+    def test_output_states_the_widened_three_term_invariant(self):
+        section = _section(_analyze_text(), '## Output', 'analyze.md')
+
+        assert (
+            'messages_archived + messages_invalid + messages_archive_failed '
+            '== messages_scanned'
+        ) in section, (
+            'analyze.md: the ## Output block still states the two-term accounting '
+            'invariant — a message left un-archived by a refused archival would '
+            'read as an unexplained gap'
         )
 
 
