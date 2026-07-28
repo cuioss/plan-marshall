@@ -1132,11 +1132,12 @@ FOR each step_id in manifest.phase_6.steps:
      omission: the work-log then carries no record that the step settled, so per-step completion
      coverage cannot be reconstructed and the retrospective reads the step as never having run.
      The pairing holds on EVERY path a step's outcome is recorded on — not only this happy path:
-     the item-4b.b and item-4c.b Signal-Gate skips (`outcome=skipped`, then CONTINUE) and the
+     the item-4b.b and item-4c.b Signal-Gate skips (`outcome=skipped`, then CONTINUE), the
+     item-5 dispatch-timeout path (`outcome=failed`, then CONTINUE to the next step), and the
      item-5d.c post-dispatch-guard halt (`outcome=failed`, then HALT) each emit the line at their
-     own recording site, and the item-1 re-entry SKIP carries a named exemption. Emit the line
-     immediately after the recording call, never before it, and never omit it because the step
-     "obviously" completed.
+     own recording site, and the item-1 re-entry SKIP and item-7a continuation hook each carry a
+     named exemption. Emit the line immediately after the recording call, never before it, and
+     never omit it because the step "obviously" completed.
 
   7a. Escalate-ask continuation hook (consult the dispatched step's return status):
 
