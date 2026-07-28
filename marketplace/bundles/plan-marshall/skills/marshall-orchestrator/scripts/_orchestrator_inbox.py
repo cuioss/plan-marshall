@@ -14,7 +14,9 @@ caller-supplied output path, so no argument value can reach ``status.json``,
 The orchestrator-side drain surface (:func:`cmd_inbox_list`,
 :func:`cmd_inbox_archive`) is bounded by the same construction: both derive
 their target from the validated slug plus a bare message filename, and the only
-path they ever write is ``inbox/archive/{name}``.
+path they ever write is ``inbox/archive/`` joined with either the source
+message's own bare filename or the bare, sender-constrained ``--as-name``
+override — never a caller-supplied path.
 
 The message format is markdown with the repo's existing ``key=value`` metadata
 header (``file_ops.parse_markdown_metadata`` /
@@ -250,18 +252,29 @@ def validate_envelope(
 def next_sequence(inbox_dir: Path, sender_id: str) -> int:
     """Return the next unused sequence number for ``sender_id`` in ``inbox_dir``.
 
-    A pure scan of the existing ``{sender_id}-{NNN}.md`` files. On its own this
-    is a check-then-act read — :func:`allocate_message_path` turns it into a
-    safe claim by making the ``O_EXCL`` create the atomic step and retrying the
-    next free sequence on collision.
+    The scan spans BOTH the live queue (``inbox_dir``) and the archive
+    (``inbox_dir / archive``), taking the highest ``{sender_id}-{NNN}.md``
+    sequence across the two. Consulting the archive is load-bearing: a drain
+    retires a sender's messages out of the live queue, so a live-only scan
+    would reset the proposal to ``001`` and hand the sender a number whose
+    archived twin already exists. Each directory is scanned only when it
+    exists, so an absent ``inbox/`` or a not-yet-created ``archive/``
+    contributes nothing rather than raising.
+
+    Only the PROPOSAL widens. On its own this is still a check-then-act read —
+    :func:`allocate_message_path` turns it into a safe claim by making the
+    ``O_EXCL`` create the atomic step and retrying the next free sequence on
+    collision, and that claim stays scoped to ``inbox/`` alone: no archived
+    path is ever a claim target.
     """
-    if not inbox_dir.is_dir():
-        return 1
     highest = 0
-    for entry in inbox_dir.iterdir():
-        match = _MESSAGE_NAME_RE.match(entry.name)
-        if match is not None and match.group('sender') == sender_id:
-            highest = max(highest, int(match.group('seq')))
+    for directory in (inbox_dir, inbox_dir / INBOX_ARCHIVE_SUBDIR):
+        if not directory.is_dir():
+            continue
+        for entry in directory.iterdir():
+            match = _MESSAGE_NAME_RE.match(entry.name)
+            if match is not None and match.group('sender') == sender_id:
+                highest = max(highest, int(match.group('seq')))
     return highest + 1
 
 
@@ -272,7 +285,9 @@ def list_messages(inbox_dir: Path) -> list[Path]:
     :data:`_MESSAGE_NAME_RE` are returned: the scan is non-recursive, so nothing
     under the ``archive/`` subdirectory is ever enumerated, and the subdirectory
     entry itself is filtered out by the file check along with any other
-    off-shape name.
+    off-shape name. That non-recursive scan is specific to ENUMERATION and is
+    no longer a module-wide invariant — :func:`next_sequence` does consult the
+    archive.
 
     Args:
         inbox_dir: The epic's ``inbox/`` directory; an absent directory yields
@@ -546,7 +561,15 @@ def _archive_success(
 
 
 def cmd_inbox_archive(args: Any) -> dict[str, Any]:
-    """Retire one consumed message to ``inbox/archive/{name}``.
+    """Retire one consumed message under ``inbox/archive/``.
+
+    The destination filename is the source ``--message`` name by default, and
+    the ``--as-name`` override when one is supplied — the recovery path for a
+    message stranded by a pre-fix sequence collision. An override is subject to
+    two separate rules: the retained :func:`_is_bare_filename` guard still
+    yields ``invalid_message_name`` for a path-shaped value, and the
+    sender-provenance constraint requires the override to keep the source
+    message's ``{sender}-`` segment.
 
     Archival is the consume marker: the message leaves the enumeration
     :func:`cmd_inbox_list` returns while its audit record survives at the
@@ -582,6 +605,12 @@ def cmd_inbox_archive(args: Any) -> dict[str, Any]:
       DIRECTORY under ``inbox/`` makes ``os.link`` raise a plain ``OSError``)
       → ``error: invalid_message_name``.
     - claim succeeded → unlink the source and report the relocation.
+    - refused BEFORE the claim because a supplied ``--as-name`` override does
+      not preserve the source message's ``{sender}-`` segment — or because the
+      source ``--message`` name yields no sender segment at all — →
+      ``error: as_name_sender_mismatch``. Distinct from the retained
+      ``invalid_message_name`` bare-filename refusal, so the two rules are
+      separately assertable.
     """
     invalid = _validate_identifier(args.slug)
     if invalid:
@@ -593,6 +622,27 @@ def cmd_inbox_archive(args: Any) -> dict[str, Any]:
             f'--message must be a bare filename inside inbox/, got: {name}',
             slug=args.slug,
         )
+    dest_name = getattr(args, 'as_name', None) or name
+    if dest_name != name:
+        if not _is_bare_filename(dest_name):
+            return _error(
+                'invalid_message_name',
+                '--as-name must be a bare filename inside inbox/archive/, '
+                f'got: {dest_name}',
+                slug=args.slug,
+                message_name=name,
+            )
+        source_match = _MESSAGE_NAME_RE.match(name)
+        sender = source_match.group('sender') if source_match is not None else None
+        if sender is None or not dest_name.startswith(f'{sender}-'):
+            required = f'{sender}-' if sender else f'(none derivable from {name})'
+            return _error(
+                'as_name_sender_mismatch',
+                "--as-name must preserve the source message's sender segment; "
+                f'required prefix {required}, got: {dest_name}',
+                slug=args.slug,
+                message_name=name,
+            )
     root = _mutate_epic_root(args.slug)
     if not root.is_dir():
         return _error(
@@ -603,7 +653,7 @@ def cmd_inbox_archive(args: Any) -> dict[str, Any]:
         )
     inbox_dir = root / INBOX_SUBDIR
     source = inbox_dir / name
-    dest = inbox_dir / INBOX_ARCHIVE_SUBDIR / name
+    dest = inbox_dir / INBOX_ARCHIVE_SUBDIR / dest_name
     # Created before the claim so a FileNotFoundError from os.link below can
     # only mean "the source is gone", never "the archive directory is missing".
     # Guarded in its OWN try/except (never folded into the os.link try block

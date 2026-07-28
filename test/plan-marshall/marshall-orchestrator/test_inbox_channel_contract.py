@@ -23,7 +23,15 @@ point with constructed argv at the subprocess boundary (``run_script``), under
   idempotent on repeat, refuses a path-shaped or empty name, refuses to clobber
   an existing archived copy, and — being a MUTATING verb — refuses an unsafe
   slug, an unscaffolded epic, and an archived-only epic rather than resolving
-  through the archived read-fallback the read-side verbs use.
+  through the archived read-fallback the read-side verbs use. The
+  ``--as-name`` RECOVERY flow retires a message stranded by a pre-fix sequence
+  collision under a non-colliding archived name, and is refused at the argv
+  boundary by two distinct rules: ``invalid_message_name`` for a path-shaped
+  override and ``as_name_sender_mismatch`` for one that drops the source
+  message's sender segment.
+- **Archive-aware allocation**: a ``write`` -> ``archive`` -> ``write`` round
+  trip lands the second message at ``-002`` rather than re-using the retired
+  ``-001``, and that second message archives cleanly.
 - **Boundary still holds on every non-inbox path**: after a write, and again
   after a ``list`` + ``archive`` pair, every non-inbox path in a pre-populated
   epic tree is byte-identical, and an unsafe slug is refused.
@@ -122,17 +130,17 @@ def _list(plan_context, slug: str = EPIC):
     )
 
 
-def _archive(plan_context, message: str, slug: str = EPIC):
-    return run_script(
-        SCRIPT_PATH,
-        'inbox',
-        'archive',
-        '--slug',
-        slug,
-        '--message',
-        message,
-        env_overrides=_env(plan_context),
-    )
+def _archive(plan_context, message: str, slug: str = EPIC, as_name: str | None = None):
+    """Run ``inbox archive``, appending ``--as-name`` only when one is supplied.
+
+    The flag is omitted rather than passed as an empty value on the default
+    path, so the default-destination behaviour is exercised through the same
+    argv shape a caller that never heard of the override produces.
+    """
+    argv = ['inbox', 'archive', '--slug', slug, '--message', message]
+    if as_name is not None:
+        argv += ['--as-name', as_name]
+    return run_script(SCRIPT_PATH, *argv, env_overrides=_env(plan_context))
 
 
 def _malformed(sender: str = OTHER_SENDER) -> str:
@@ -489,6 +497,108 @@ class TestInboxArchive:
         assert 'error: epic_not_found' in result.stdout
         assert (archived / 'inbox' / f'{SENDER}-001.md').is_file()
         assert not (archived / 'inbox' / 'archive').exists()
+
+
+# =============================================================================
+# Archive-aware allocation and the --as-name recovery, through real argv
+# =============================================================================
+
+
+class TestArchiveAwareAllocationCli:
+    def test_should_allocate_above_the_archive_after_a_drain(self, plan_context, tmp_path):
+        """(i) write -> archive -> write lands at -002, not back at -001.
+
+        The end-to-end proof that the widened proposal survives the subprocess
+        boundary: before the fix the second write re-used ``-001`` and its
+        archival was then refused forever.
+        """
+        _scaffold(plan_context)
+        _write(plan_context, _payload(tmp_path, 'first body', 'a.md'))
+        _archive(plan_context, f'{SENDER}-001.md')
+
+        second = _write(plan_context, _payload(tmp_path, 'second body', 'b.md'))
+
+        assert f'message: {SENDER}-002.md' in second.stdout
+        inbox = _epic_dir(plan_context) / 'inbox'
+        assert (inbox / f'{SENDER}-002.md').is_file()
+        assert (inbox / 'archive' / f'{SENDER}-001.md').is_file()
+
+    def test_should_archive_the_second_write_without_a_conflict(
+        self, plan_context, tmp_path
+    ):
+        _scaffold(plan_context)
+        _write(plan_context, _payload(tmp_path, 'first body', 'a.md'))
+        _archive(plan_context, f'{SENDER}-001.md')
+        _write(plan_context, _payload(tmp_path, 'second body', 'b.md'))
+
+        result = _archive(plan_context, f'{SENDER}-002.md')
+
+        assert 'status: success' in result.stdout
+        assert 'already_archived: false' in result.stdout
+
+
+class TestInboxArchiveAsNameCli:
+    def _strand(self, plan_context, tmp_path) -> Path:
+        """Hand-construct the pre-fix stranded state through the CLI surface."""
+        _scaffold(plan_context)
+        _write(plan_context, _payload(tmp_path, 'stranded body', 'a.md'))
+        archive_dir = _epic_dir(plan_context) / 'inbox' / 'archive'
+        archive_dir.mkdir(parents=True, exist_ok=True)
+        (archive_dir / f'{SENDER}-001.md').write_text(
+            'the earlier audit record\n', encoding='utf-8'
+        )
+        return archive_dir
+
+    def test_should_strand_the_message_without_the_override(self, plan_context, tmp_path):
+        # Non-vacuity anchor for the recovery cases below: the default
+        # destination genuinely IS refused in this state.
+        self._strand(plan_context, tmp_path)
+
+        result = _archive(plan_context, f'{SENDER}-001.md')
+
+        assert 'error: archive_conflict' in result.stdout
+
+    def test_should_recover_a_stranded_message_under_a_sender_preserving_name(
+        self, plan_context, tmp_path
+    ):
+        """(ii) The recovery round trip, through constructed argv."""
+        archive_dir = self._strand(plan_context, tmp_path)
+        recovery_name = f'{SENDER}-001.dup1.md'
+
+        result = _archive(plan_context, f'{SENDER}-001.md', as_name=recovery_name)
+
+        assert 'status: success' in result.stdout
+        assert result.toon()['archived_to'] == str(archive_dir / recovery_name)
+        assert (archive_dir / recovery_name).read_text(encoding='utf-8').endswith(
+            'stranded body\n'
+        )
+        assert (archive_dir / f'{SENDER}-001.md').read_text(
+            encoding='utf-8'
+        ) == 'the earlier audit record\n'
+        assert not (_epic_dir(plan_context) / 'inbox' / f'{SENDER}-001.md').exists()
+
+    def test_should_refuse_a_path_shaped_override(self, plan_context, tmp_path):
+        """(iii) The retained bare-filename guard survives the CLI boundary."""
+        archive_dir = self._strand(plan_context, tmp_path)
+
+        result = _archive(
+            plan_context, f'{SENDER}-001.md', as_name=f'../{SENDER}-001.dup1.md'
+        )
+
+        assert 'error: invalid_message_name' in result.stdout
+        assert (_epic_dir(plan_context) / 'inbox' / f'{SENDER}-001.md').is_file()
+        assert sorted(p.name for p in archive_dir.iterdir()) == [f'{SENDER}-001.md']
+
+    def test_should_refuse_a_sender_dropping_override(self, plan_context, tmp_path):
+        """(iv) The sender constraint is a DISTINCT code at the argv boundary."""
+        archive_dir = self._strand(plan_context, tmp_path)
+
+        result = _archive(plan_context, f'{SENDER}-001.md', as_name='other-001.md')
+
+        assert 'error: as_name_sender_mismatch' in result.stdout
+        assert sorted(p.name for p in archive_dir.iterdir()) == [f'{SENDER}-001.md']
+        remaining = _list(plan_context).toon()['messages']
+        assert [row['name'] for row in remaining] == [f'{SENDER}-001.md']
 
 
 # =============================================================================

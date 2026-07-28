@@ -569,7 +569,10 @@ def _add_inbox_group(subparsers: Any) -> None:
     path, no sequence number, and no inbox directory — the write target is
     derived from ``--slug`` and ``--sender-id`` alone, and the drain verbs take
     a bare message filename, which is what makes the ledger write-boundary
-    carve-out enforced by construction.
+    carve-out enforced by construction. ``archive --as-name`` does not widen
+    that carve-out: it is still a bare filename joined onto ``inbox/archive/``,
+    never a caller-supplied path, and it is additionally sender-constrained, so
+    the archived name's sender provenance is preserved.
     """
     inbox = subparsers.add_parser(
         'inbox',
@@ -640,6 +643,17 @@ def _add_inbox_group(subparsers: Any) -> None:
         required=True,
         metavar='NAME',
         help='Bare message filename inside the epic inbox/ directory.',
+    )
+    archive_message.add_argument(
+        '--as-name',
+        default=None,
+        metavar='NAME',
+        help=(
+            'Recovery override for the archived destination filename, for a '
+            'message stranded by a pre-fix sequence collision. Must still '
+            "match {sender_id}-* for the source message's sender, or the "
+            'call is refused with as_name_sender_mismatch.'
+        ),
     )
     archive_message.set_defaults(handler=cmd_inbox_archive)
 
