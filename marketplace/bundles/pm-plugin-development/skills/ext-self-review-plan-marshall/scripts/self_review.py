@@ -19,6 +19,7 @@ Usage:
 """
 
 import argparse
+import textwrap
 from pathlib import Path
 from typing import Any
 
@@ -234,10 +235,30 @@ def _cmd_surface(args: argparse.Namespace) -> int:
 # =============================================================================
 
 
+class _TermPreservingHelpFormatter(argparse.HelpFormatter):
+    """Wrap help text without splitting a term across a line break.
+
+    The candidate-list labels the ``surface`` help enumerates are hyphenated
+    terms of art derived from ``CANDIDATE_LISTS`` (``same-document normative
+    directives``, ``near-identical-hunk touched claims``). ``textwrap``'s
+    defaults break on hyphens and inside over-long words, which renders a label
+    that no reader — and no derivation check — can match verbatim against the
+    registry. Both break modes are disabled so a label always reaches the
+    rendered help intact; an over-long term simply overflows its column.
+    """
+
+    def _split_lines(self, text: str, width: int) -> list[str]:
+        collapsed = self._whitespace_matcher.sub(' ', text).strip()
+        return textwrap.wrap(
+            collapsed, width, break_on_hyphens=False, break_long_words=False
+        )
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description='Surface candidate lists for pre-submission self-review.',
         allow_abbrev=False,
+        formatter_class=_TermPreservingHelpFormatter,
     )
     sub = parser.add_subparsers(dest='command', required=True)
 
@@ -248,6 +269,7 @@ def _build_parser() -> argparse.ArgumentParser:
             f'({candidate_list_prose()}) from the worktree diff as TOON.'
         ),
         allow_abbrev=False,
+        formatter_class=_TermPreservingHelpFormatter,
     )
     add_plan_id_arg(p_surface)
     p_surface.add_argument(
