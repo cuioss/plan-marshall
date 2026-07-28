@@ -4,13 +4,20 @@
 """Tests for scope_creep_check.py.
 
 Drive ``cmd_check`` directly by inserting the scripts dir on sys.path and
-patching the git-diff / finding-emit subprocess helpers. Verifies the four
-contract cases from solution_outline.md deliverable 4:
+patching the git-diff helper. Verifies the four residual/threshold contract
+cases from solution_outline.md deliverable 4:
 
     (a) empty residual           -> no finding
     (b) residual <= threshold    -> no finding
-    (c) residual >  threshold    -> finding emitted with correct list
+    (c) residual >  threshold    -> finding persisted with correct list
     (d) configurable override    -> threshold flag honoured
+
+plus the persist-outcome contract: the stub sits at the ``add_qgate_finding``
+seam (NOT over ``_emit_finding`` wholesale), so every test exercises the real
+``_emit_finding`` body and the stub can return each of the four real status
+values — ``success``, ``deduplicated``, ``reopened`` and ``error``. Stubbing
+``_emit_finding`` itself is what hid the original defect: the function and its
+argv were never executed by any test.
 """
 
 from __future__ import annotations
@@ -63,13 +70,24 @@ def plan_with_refs(plan_context):
 # ---------------------------------------------------------------------------
 
 
-class _Recorder:
-    def __init__(self):
-        self.emitted_calls = []
+class _PersistStub:
+    """Stub at the ``add_qgate_finding`` seam — the real persist boundary.
 
-    def emit_ok(self, plan_id, residual, threshold):
-        self.emitted_calls.append((plan_id, list(residual), threshold))
-        return True
+    Records the keyword arguments the production ``_emit_finding`` body builds
+    and returns the configured primitive outcome, so a test can express any of
+    the four real status values without stubbing ``_emit_finding`` itself.
+    """
+
+    def __init__(self, status: str = 'success', message: str = ''):
+        self.status = status
+        self.message = message
+        self.calls: list[dict] = []
+
+    def __call__(self, **kwargs):
+        self.calls.append(kwargs)
+        if self.status == 'error':
+            return {'status': 'error', 'message': self.message}
+        return {'status': self.status, 'hash_id': 'abc123', 'phase': kwargs.get('phase')}
 
 
 def _patch_diff(monkeypatch, files):
@@ -87,8 +105,9 @@ def _patch_resolve(monkeypatch, plan_dir):
     monkeypatch.setattr(scc, '_resolve_worktree', lambda plan_id: Path.cwd())
 
 
-def _patch_emit(monkeypatch, recorder):
-    monkeypatch.setattr(scc, '_emit_finding', recorder.emit_ok)
+def _patch_persist(monkeypatch, stub):
+    """Stub the persist primitive, leaving the real ``_emit_finding`` in place."""
+    monkeypatch.setattr(scc, 'add_qgate_finding', stub)
 
 
 # ---------------------------------------------------------------------------
@@ -100,8 +119,8 @@ def test_empty_residual_no_finding(plan_with_refs, monkeypatch, capsys):
     """Case (a): all changed files declared -> residual=0, no finding."""
     _patch_diff(monkeypatch, ['src/a.py', 'src/b.py', 'src/c.py'])
     _patch_resolve(monkeypatch, plan_with_refs.plan_dir)
-    recorder = _Recorder()
-    _patch_emit(monkeypatch, recorder)
+    stub = _PersistStub()
+    _patch_persist(monkeypatch, stub)
 
     rc = scc.cmd_check(Namespace(plan_id='scope-creep-test', threshold=None))
     out = capsys.readouterr().out
@@ -109,7 +128,7 @@ def test_empty_residual_no_finding(plan_with_refs, monkeypatch, capsys):
     assert rc == 0
     assert 'residual_count: 0' in out
     assert 'finding_emitted: false' in out
-    assert recorder.emitted_calls == []
+    assert stub.calls == []
 
 
 def test_residual_at_threshold_no_finding(plan_with_refs, monkeypatch, capsys):
@@ -121,8 +140,8 @@ def test_residual_at_threshold_no_finding(plan_with_refs, monkeypatch, capsys):
         + [f'extra/{i}.py' for i in range(5)],
     )
     _patch_resolve(monkeypatch, plan_with_refs.plan_dir)
-    recorder = _Recorder()
-    _patch_emit(monkeypatch, recorder)
+    stub = _PersistStub()
+    _patch_persist(monkeypatch, stub)
 
     rc = scc.cmd_check(Namespace(plan_id='scope-creep-test', threshold=None))
     out = capsys.readouterr().out
@@ -130,16 +149,16 @@ def test_residual_at_threshold_no_finding(plan_with_refs, monkeypatch, capsys):
     assert rc == 0
     assert 'residual_count: 5' in out
     assert 'finding_emitted: false' in out
-    assert recorder.emitted_calls == []
+    assert stub.calls == []
 
 
 def test_residual_over_threshold_emits_finding(plan_with_refs, monkeypatch, capsys):
-    """Case (c): residual > threshold -> finding emitted with full residual list."""
+    """Case (c): residual > threshold -> finding persisted with full residual list."""
     extras = [f'extra/{i}.py' for i in range(6)]
     _patch_diff(monkeypatch, ['src/a.py'] + extras)
     _patch_resolve(monkeypatch, plan_with_refs.plan_dir)
-    recorder = _Recorder()
-    _patch_emit(monkeypatch, recorder)
+    stub = _PersistStub()
+    _patch_persist(monkeypatch, stub)
 
     rc = scc.cmd_check(Namespace(plan_id='scope-creep-test', threshold=None))
     out = capsys.readouterr().out
@@ -147,10 +166,18 @@ def test_residual_over_threshold_emits_finding(plan_with_refs, monkeypatch, caps
     assert rc == 0
     assert 'residual_count: 6' in out
     assert 'finding_emitted: true' in out
-    assert len(recorder.emitted_calls) == 1
-    _, residual, threshold = recorder.emitted_calls[0]
-    assert sorted(residual) == sorted(extras)
-    assert threshold == 5
+    assert len(stub.calls) == 1
+    call = stub.calls[0]
+    # The real _emit_finding body ran: named arguments, no argv, and the
+    # finding type is still the (deliberately un-taxonomised) scope_creep_warning.
+    assert call['plan_id'] == 'scope-creep-test'
+    assert call['phase'] == '5-execute'
+    assert call['source'] == 'qgate'
+    assert call['finding_type'] == 'scope_creep_warning'
+    assert call['severity'] == 'warning'
+    assert 'threshold=5' in call['detail']
+    for extra in extras:
+        assert extra in call['title']
 
 
 def test_threshold_override_via_flag(plan_with_refs, monkeypatch, capsys):
@@ -158,8 +185,8 @@ def test_threshold_override_via_flag(plan_with_refs, monkeypatch, capsys):
     extras = [f'extra/{i}.py' for i in range(6)]
     _patch_diff(monkeypatch, ['src/a.py'] + extras)
     _patch_resolve(monkeypatch, plan_with_refs.plan_dir)
-    recorder = _Recorder()
-    _patch_emit(monkeypatch, recorder)
+    stub = _PersistStub()
+    _patch_persist(monkeypatch, stub)
 
     rc = scc.cmd_check(Namespace(plan_id='scope-creep-test', threshold=10))
     out = capsys.readouterr().out
@@ -168,7 +195,7 @@ def test_threshold_override_via_flag(plan_with_refs, monkeypatch, capsys):
     assert 'residual_count: 6' in out
     assert 'threshold: 10' in out
     assert 'finding_emitted: false' in out
-    assert recorder.emitted_calls == []
+    assert stub.calls == []
 
 
 def test_plan_dir_resolved_via_plan_base_dir(plan_with_refs, monkeypatch, capsys):
@@ -182,8 +209,8 @@ def test_plan_dir_resolved_via_plan_base_dir(plan_with_refs, monkeypatch, capsys
     extras = [f'extra/{i}.py' for i in range(6)]
     _patch_diff(monkeypatch, ['src/a.py'] + extras)
     monkeypatch.setattr(scc, '_resolve_worktree', lambda plan_id: Path.cwd())
-    recorder = _Recorder()
-    _patch_emit(monkeypatch, recorder)
+    stub = _PersistStub()
+    _patch_persist(monkeypatch, stub)
 
     rc = scc.cmd_check(Namespace(plan_id='scope-creep-test', threshold=None))
     out = capsys.readouterr().out
@@ -191,7 +218,7 @@ def test_plan_dir_resolved_via_plan_base_dir(plan_with_refs, monkeypatch, capsys
     assert rc == 0
     assert 'residual_count: 6' in out
     assert 'finding_emitted: true' in out
-    assert len(recorder.emitted_calls) == 1
+    assert len(stub.calls) == 1
 
 
 def test_threshold_zero_disables_guard(plan_with_refs, monkeypatch, capsys):
@@ -202,8 +229,8 @@ def test_threshold_zero_disables_guard(plan_with_refs, monkeypatch, capsys):
 
     monkeypatch.setattr(scc, '_git_diff_files', _raise)
     _patch_resolve(monkeypatch, plan_with_refs.plan_dir)
-    recorder = _Recorder()
-    _patch_emit(monkeypatch, recorder)
+    stub = _PersistStub()
+    _patch_persist(monkeypatch, stub)
 
     rc = scc.cmd_check(Namespace(plan_id='scope-creep-test', threshold=0))
     out = capsys.readouterr().out
@@ -211,4 +238,68 @@ def test_threshold_zero_disables_guard(plan_with_refs, monkeypatch, capsys):
     assert rc == 0
     assert 'disabled: true' in out
     assert 'finding_emitted: false' in out
-    assert recorder.emitted_calls == []
+    assert stub.calls == []
+
+
+# ---------------------------------------------------------------------------
+# Persist-outcome contract
+# ---------------------------------------------------------------------------
+
+
+def _over_threshold(monkeypatch, plan_with_refs):
+    """Seed a residual above the default threshold so a persist is attempted."""
+    extras = [f'extra/{i}.py' for i in range(6)]
+    _patch_diff(monkeypatch, ['src/a.py'] + extras)
+    _patch_resolve(monkeypatch, plan_with_refs.plan_dir)
+    return extras
+
+
+def test_rejected_persist_fails_loud(plan_with_refs, monkeypatch, capsys):
+    """A REJECTED persist yields status: error, a non-zero rc, and the content inline.
+
+    ``finding_emitted: false`` alongside ``status: success`` is no longer
+    reachable on a rejection — that shape was indistinguishable from "no creep".
+    """
+    extras = _over_threshold(monkeypatch, plan_with_refs)
+    stub = _PersistStub(
+        status='error',
+        message='Invalid finding type: scope_creep_warning. Must be one of (...)',
+    )
+    _patch_persist(monkeypatch, stub)
+
+    rc = scc.cmd_check(Namespace(plan_id='scope-creep-test', threshold=None))
+    out = capsys.readouterr().out
+
+    assert rc == 1
+    assert 'status: error' in out
+    assert 'error: finding_persist_failed' in out
+    assert 'Invalid finding type: scope_creep_warning' in out
+    # The rejected finding's own content travels inline.
+    assert 'finding_title: Scope creep detected' in out
+    assert 'threshold=5' in out
+    assert 'residual_count: 6' in out
+    for extra in extras:
+        assert extra in out
+    # The success shape must NOT also be printed.
+    assert 'status: success' not in out
+    assert 'finding_emitted: true' not in out
+
+
+@pytest.mark.parametrize('benign_status', ['success', 'deduplicated', 'reopened'])
+def test_in_store_outcomes_are_benign(plan_with_refs, monkeypatch, capsys, benign_status):
+    """All three in-store outcomes leave the run green — they never read as a rejection.
+
+    ``deduplicated`` and ``reopened`` mean the finding IS in the store, so they
+    must not collapse onto the ``error`` branch.
+    """
+    _over_threshold(monkeypatch, plan_with_refs)
+    stub = _PersistStub(status=benign_status)
+    _patch_persist(monkeypatch, stub)
+
+    rc = scc.cmd_check(Namespace(plan_id='scope-creep-test', threshold=None))
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert 'status: success' in out
+    assert 'finding_emitted: true' in out
+    assert 'finding_persist_failed' not in out

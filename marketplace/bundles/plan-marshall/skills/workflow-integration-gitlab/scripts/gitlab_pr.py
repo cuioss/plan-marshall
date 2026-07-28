@@ -207,9 +207,16 @@ def cmd_fetch_findings(args):
 
     Fail-loud: returns a typed ``unconfigured`` status when GitLab is not
     authenticated. ``count_fetched`` vs ``count_stored`` mismatches are recorded
-    as a ``qgate`` finding with title prefix ``(producer-mismatch)``.
+    as a ``qgate`` finding with title prefix ``(producer-mismatch)``. When that
+    mismatch finding is itself REJECTED by the persist primitive (status outside
+    ``QGATE_PERSIST_OK``), the result carries ``qgate_persist_failed: true`` plus
+    the rejected finding's content and the primitive's message, so no caller can
+    read a clean ``fetch_findings`` result while the mismatch finding was lost.
+    The enclosing ``status`` stays ``success`` — it reports the fetch, which did
+    succeed.
     """
     from _findings_core import (
+        QGATE_PERSIST_OK,
         add_finding,
         add_qgate_finding,
     )
@@ -283,6 +290,7 @@ def cmd_fetch_findings(args):
     expected_stored = count_fetched - skipped_noise
 
     qgate_hash: str | None = None
+    qgate_persist_failure: dict[str, str] | None = None
     if count_stored != expected_stored:
         mismatch_detail = (
             f'count_fetched={count_fetched}, '
@@ -291,17 +299,30 @@ def cmd_fetch_findings(args):
             f'expected_stored={expected_stored}, '
             f'failed_comment_ids={store_failures}'
         )
+        mismatch_title = f'(producer-mismatch) gitlab_pr fetch_findings MR #{pr_number}'
         qgate_result = add_qgate_finding(
             plan_id=plan_id,
             phase='5-execute',
             source='qgate',
             finding_type='pr-comment',
-            title=f'(producer-mismatch) gitlab_pr fetch_findings MR #{pr_number}',
+            title=mismatch_title,
             detail=mismatch_detail,
         )
-        qgate_hash = qgate_result.get('hash_id')
+        # The mismatch finding's whole purpose is to report that findings were
+        # lost — a rejected persist would lose it in turn, so the rejection is
+        # surfaced on the returned dict instead of being inferred from
+        # ``hash_id`` alone. The enclosing status stays ``success``: the fetch
+        # itself succeeded, and the persist failure travels as its own field.
+        if qgate_result.get('status') not in QGATE_PERSIST_OK:
+            qgate_persist_failure = {
+                'title': mismatch_title,
+                'detail': mismatch_detail,
+                'message': str(qgate_result.get('message', '')),
+            }
+        else:
+            qgate_hash = qgate_result.get('hash_id')
 
-    return {
+    result: dict[str, Any] = {
         'status': 'success',
         'operation': 'fetch_findings',
         'provider': 'gitlab',
@@ -313,6 +334,10 @@ def cmd_fetch_findings(args):
         'stored_hash_ids': stored_hashes,
         'producer_mismatch_hash_id': qgate_hash,
     }
+    if qgate_persist_failure is not None:
+        result['qgate_persist_failed'] = True
+        result['qgate_persist_failure'] = qgate_persist_failure
+    return result
 
 
 # ============================================================================

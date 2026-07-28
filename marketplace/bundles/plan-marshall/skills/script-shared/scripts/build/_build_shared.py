@@ -383,10 +383,18 @@ def _record_producer_mismatch(
     count_seen: int,
     count_stored: int,
     store_failures: list[str],
-) -> None:
+) -> dict[str, str] | None:
     """Emit a Q-Gate finding when a build run's parsed-issue count does not
-    match the count successfully stored in the findings store."""
-    from _findings_core import add_qgate_finding
+    match the count successfully stored in the findings store.
+
+    This emitter's whole purpose is to report findings that were lost, so its own
+    persist can never be fire-and-forget. Returns ``None`` when the finding
+    reached the store (status in ``QGATE_PERSIST_OK``), and a failure descriptor
+    — ``{'title', 'detail', 'message'}`` — when the primitive REJECTED it, so the
+    caller propagates ``qgate_persist_failed`` into the build result instead of
+    swallowing the loss at the emitter.
+    """
+    from _findings_core import QGATE_PERSIST_OK, add_qgate_finding
 
     detail = (
         f'count_seen={count_seen}, '
@@ -394,14 +402,23 @@ def _record_producer_mismatch(
         f'expected_stored={count_seen}, '
         f'store_failures={store_failures}'
     )
-    add_qgate_finding(
+    title = f'(producer-mismatch) {tool_name} build run'
+    full_detail = f'command={command_str} ; {detail}'
+    result = add_qgate_finding(
         plan_id=plan_id,
         phase='5-execute',
         source='qgate',
         finding_type='build-error',
-        title=f'(producer-mismatch) {tool_name} build run',
-        detail=f'command={command_str} ; {detail}',
+        title=title,
+        detail=full_detail,
     )
+    if result.get('status') not in QGATE_PERSIST_OK:
+        return {
+            'title': title,
+            'detail': full_detail,
+            'message': str(result.get('message', '')),
+        }
+    return None
 
 
 def _reconcile_pending_build_findings(plan_id: str, command_str: str) -> int:
@@ -627,7 +644,12 @@ def cmd_run_common(
             file=sys.stderr,
         )
 
-    # Build failed - parse the log file for errors
+    # Build failed - parse the log file for errors.
+    # A producer-mismatch finding the persist primitive REJECTED is propagated
+    # onto the emitted result rather than swallowed at the emitter, so a reader
+    # cannot take a build result at face value while the mismatch finding was
+    # lost.
+    qgate_persist_failure: dict[str, str] | None = None
     try:
         if parser_needs_command:
             issues, test_summary, build_status = parser_fn(log_file, command_str)
@@ -647,7 +669,7 @@ def cmd_run_common(
                 command_str=command_str,
             )
             if count_stored != count_seen:
-                _record_producer_mismatch(
+                qgate_persist_failure = _record_producer_mismatch(
                     plan_id=plan_id,
                     tool_name=tool_name,
                     command_str=command_str,
@@ -708,6 +730,10 @@ def cmd_run_common(
         if test_summary:
             output['tests'] = test_summary
 
+        if qgate_persist_failure is not None:
+            output['qgate_persist_failed'] = True
+            output['qgate_persist_failure'] = qgate_persist_failure
+
         print(formatter(output))
 
     except Exception as parse_err:
@@ -720,6 +746,9 @@ def cmd_run_common(
             log_file=log_file,
             command=command_str,
         )
+        if qgate_persist_failure is not None:
+            output['qgate_persist_failed'] = True
+            output['qgate_persist_failure'] = qgate_persist_failure
         print(formatter(output))
 
     return 0  # Status modeled in output, not exit code

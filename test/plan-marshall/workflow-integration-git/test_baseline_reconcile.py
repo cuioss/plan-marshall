@@ -636,3 +636,91 @@ def test_classification_overlap_with_content_conflict_keeps_loop_entry(plan_cont
         text=True,
     ).stdout.strip()
     assert head_before == head_after
+    # A landed conflict finding reports no persist failure.
+    assert 'qgate_persist_failed' not in result
+
+
+# =============================================================================
+# Rejected persist (P4) — the conflict finding IS this path's primary output
+# =============================================================================
+
+
+def test_rejected_persist_flips_status_and_carries_finding_content(plan_context):
+    """A REJECTED conflict-finding persist flips the status and inlines the finding.
+
+    Driven by the live failure mode: the merge-failure branch passes
+    ``finding_type='baseline_drift_reconcile_failed'``, which is not a member of
+    ``FINDING_TYPES``, so the real ``add_qgate_finding`` validator rejects it. The
+    fixture reaches that branch by leaving an uncommitted local edit, so
+    merge-tree predicts no conflict but the real merge refuses.
+    """
+    plan_dir = plan_context.plan_dir_for('br-persist-reject')
+    fixture_root = plan_dir / 'fixture'
+    fixture_root.mkdir(parents=True, exist_ok=True)
+    _, worktree, baseline_sha = _setup_overlap_no_conflict(fixture_root)
+    _write_status(plan_dir, worktree, baseline_sha)
+    # Uncommitted local edit — merge-tree still predicts no conflict, but
+    # ``git merge`` refuses to overwrite the dirty working-tree file.
+    (worktree / 'shared.txt').write_text('A-local-dirty\nB\nC\nD\nE\nF\nG\nH\n', encoding='utf-8')
+
+    args = Namespace(
+        plan_id='br-persist-reject',
+        base_branch='main',
+        worktree_path=str(worktree),
+        no_emit=False,
+        skip_fetch=False,
+    )
+    result = cmd_baseline_reconcile(args)
+
+    assert result['classification'] == 'overlap_with_content_conflict'
+    assert result['merge_failure_paths']
+    # The finding is this path's primary output — a lost persist is an error,
+    # never a clean result with findings_emitted: 0.
+    assert result['status'] == 'error'
+    assert result['error'] == 'finding_persist_failed'
+    assert result['qgate_persist_failed'] is True
+    assert result['findings_emitted'] == 0
+
+    failure = result['qgate_persist_failures'][0]
+    assert failure['finding_type'] == 'baseline_drift_reconcile_failed'
+    assert 'Invalid finding type' in failure['message']
+    # The rejected finding's own content travels inline.
+    assert 'merge conflict' in failure['title']
+    assert 'origin/main' in failure['detail']
+
+    # FINDING_TYPES is PLAN-85's scope — the rejection is preserved, not papered over.
+    findings_path = plan_dir / 'artifacts' / 'findings' / 'qgate-2-refine.jsonl'
+    assert not findings_path.exists(), 'a rejected persist must leave no stored record'
+
+
+def test_deduplicated_conflict_finding_stays_benign(plan_context):
+    """A ``deduplicated`` re-persist is benign and must not read as a rejection."""
+    plan_dir = plan_context.plan_dir_for('br-persist-dedup')
+    fixture_root = plan_dir / 'fixture'
+    fixture_root.mkdir(parents=True, exist_ok=True)
+    _, worktree, baseline_sha = _setup_remote_and_worktree(
+        fixture_root,
+        upstream_commits=1,
+        upstream_conflicts=True,
+    )
+    _write_status(plan_dir, worktree, baseline_sha)
+    args = Namespace(
+        plan_id='br-persist-dedup',
+        base_branch='main',
+        worktree_path=str(worktree),
+        no_emit=False,
+        skip_fetch=False,
+    )
+
+    first = cmd_baseline_reconcile(args)
+    assert first['status'] == 'success'
+    assert first['findings_emitted'] >= 1
+
+    second = cmd_baseline_reconcile(args)
+
+    # Re-detection dedups: the record is still in the store, so the run stays
+    # a clean success — the benign zero must never collapse onto a rejection.
+    assert second['status'] == 'success'
+    assert 'error' not in second
+    assert 'qgate_persist_failed' not in second
+    assert second['findings_emitted'] == 0

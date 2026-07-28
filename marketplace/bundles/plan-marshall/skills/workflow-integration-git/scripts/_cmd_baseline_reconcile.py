@@ -22,7 +22,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from _findings_core import add_qgate_finding
+from _findings_core import QGATE_PERSIST_OK, add_qgate_finding
 from git_provider import run_git
 
 _PHASE = '2-refine'
@@ -450,6 +450,10 @@ def cmd_baseline_reconcile(args) -> dict:
     # Finding emission
     # ------------------------------------------------------------------
     findings_emitted = 0
+    # Rejected persists — the conflict finding IS this path's primary output, so
+    # a rejection is never absorbed into the ``findings_emitted`` zero bucket
+    # (which is indistinguishable from "no conflicts").
+    persist_failures: list[dict[str, str]] = []
     if emit and classification == 'overlap_with_content_conflict':
         finding_paths = conflicts or merge_failure_paths
         finding_type = (
@@ -458,26 +462,39 @@ def cmd_baseline_reconcile(args) -> dict:
             else 'triage'
         )
         for path in finding_paths:
+            title = f'baseline-reconcile: merge conflict in {path}'
+            detail = (
+                f'Three-way merge of HEAD against origin/{base_branch} '
+                f'reports a conflict in {path}. The plan was authored '
+                f'against a baseline that has since drifted upstream; '
+                f're-author the affected scope OR justify in '
+                f'clarifications why the upstream change is irrelevant '
+                f'before phase-5-execute attempts the rebase.'
+            )
             result = add_qgate_finding(
                 plan_id=plan_id,
                 phase=_PHASE,
                 source=_QGATE_SOURCE,
                 finding_type=finding_type,
-                title=f'baseline-reconcile: merge conflict in {path}',
-                detail=(
-                    f'Three-way merge of HEAD against origin/{base_branch} '
-                    f'reports a conflict in {path}. The plan was authored '
-                    f'against a baseline that has since drifted upstream; '
-                    f're-author the affected scope OR justify in '
-                    f'clarifications why the upstream change is irrelevant '
-                    f'before phase-5-execute attempts the rebase.'
-                ),
+                title=title,
+                detail=detail,
                 file_path=path,
                 component='plan-marshall:workflow-integration-git:baseline-reconcile',
                 severity='warning',
                 iteration=None,
             )
-            if result.get('status') == 'success':
+            status = result.get('status')
+            if status not in QGATE_PERSIST_OK:
+                persist_failures.append(
+                    {
+                        'title': title,
+                        'detail': detail,
+                        'file_path': path,
+                        'finding_type': finding_type,
+                        'message': str(result.get('message', '')),
+                    }
+                )
+            elif status == 'success':
                 findings_emitted += 1
 
     payload: dict[str, Any] = {
@@ -505,6 +522,15 @@ def cmd_baseline_reconcile(args) -> dict:
         payload['merge_failure_paths'] = merge_failure_paths
     if base_branch_updated and original_base_branch is not None:
         payload['original_base_branch'] = original_base_branch
+    if persist_failures:
+        # The conflict finding is this path's primary output — if it never
+        # reached the store the command has not done its job, so the caller
+        # sees an error carrying the rejected finding content inline rather
+        # than a clean result with findings_emitted: 0.
+        payload['status'] = 'error'
+        payload['error'] = 'finding_persist_failed'
+        payload['qgate_persist_failed'] = True
+        payload['qgate_persist_failures'] = persist_failures
     return payload
 
 

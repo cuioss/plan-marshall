@@ -893,3 +893,80 @@ class TestFetchFindingsRouting:
         for token in argv:
             assert token in remaining
         assert _resolved is None
+
+
+# =============================================================================
+# Rejected producer-mismatch persist (P7) — FIELD_ONLY loudness
+# =============================================================================
+#
+# The producer-mismatch finding exists to report that findings were lost. When
+# its OWN persist is rejected, the loss must surface on the returned dict — but
+# the enclosing ``status`` stays truthful about the fetch, which did succeed.
+
+
+def _fetch_one_issue(plan_id):
+    """Run ``fetch_findings`` over a single-issue fixture with CE settled."""
+    with patch('sonar_mod._wait_for_ce_ready') as mock_wait, \
+            patch('sonar_mod._fetch_issues') as mock_fetch:
+        mock_wait.return_value = {'count_status': 'confirmed'}
+        mock_fetch.return_value = {'status': 'success', 'issues': [_issue()]}
+        return cmd_fetch_findings(_make_args(plan_id))
+
+
+class TestRejectedMismatchPersist:
+    """A rejected producer-mismatch persist is surfaced, never absorbed."""
+
+    def test_rejected_persist_surfaces_field_without_flipping_status(self, plan_context, monkeypatch):
+        """Driven by the real validator — ``sonar-issue`` removed from FINDING_TYPES."""
+        import _findings_core
+
+        plan_id = 'sonar-persist-reject'
+        plan_context.plan_dir_for(plan_id)
+        monkeypatch.setattr(
+            _findings_core,
+            'FINDING_TYPES',
+            tuple(t for t in _findings_core.FINDING_TYPES if t != 'sonar-issue'),
+        )
+
+        result = _fetch_one_issue(plan_id)
+
+        # FIELD_ONLY loudness: the fetch itself succeeded, so its status is unchanged.
+        assert result['status'] == 'success'
+        assert result['count_status'] == 'confirmed'
+        assert result['count_stored'] == 0
+        assert result['qgate_persist_failed'] is True
+        assert result['producer_mismatch_hash_id'] is None
+        failure = result['qgate_persist_failure']
+        assert '(producer-mismatch)' in failure['title']
+        assert 'count_stored=0' in failure['detail']
+        assert 'Invalid finding type' in failure['message']
+
+    def test_deduplicated_persist_stays_benign(self, plan_context, monkeypatch):
+        """A ``deduplicated`` mismatch persist is benign — never read as a rejection.
+
+        Only the upstream issue store is forced to fail (so a mismatch arises);
+        the mismatch persist itself runs against the REAL primitive, which dedups
+        the identical finding on the second run.
+        """
+        import _findings_core
+
+        plan_id = 'sonar-persist-dedup'
+        plan_context.plan_dir_for(plan_id)
+        monkeypatch.setattr(
+            _findings_core,
+            'add_finding',
+            lambda **kwargs: {'status': 'error', 'message': 'forced issue-store failure'},
+        )
+
+        first = _fetch_one_issue(plan_id)
+        assert first['status'] == 'success'
+        assert first['count_stored'] == 0
+        assert first['producer_mismatch_hash_id']
+        assert 'qgate_persist_failed' not in first
+
+        second = _fetch_one_issue(plan_id)
+
+        assert second['status'] == 'success'
+        assert 'qgate_persist_failed' not in second
+        # Dedup returns the SAME record — still in the store, so still a hash id.
+        assert second['producer_mismatch_hash_id'] == first['producer_mismatch_hash_id']

@@ -43,8 +43,10 @@ Skill: plan-marshall:persona-plan-marshall-agent
 
 Every `manage-*` script call in this document carries the following exit-code contract unless a step explicitly states otherwise:
 
-- **`exit_code == 0`**: parse the returned TOON and use the value as the step describes.
+- **`exit_code == 0`**: parse the returned TOON and use the value as the step describes. **`exit 0` does NOT imply the operation succeeded** — the `manage-*` scripts follow the canonical output contract (`pm-plugin-development:plugin-script-architecture/standards/output-contract.md`), under which an *operation* failure (`file_not_found`, `field_not_found`, `plan_not_found`, validation rejection, already-exists, etc.) exits `0` and carries the verdict in the stdout TOON `status: error` payload. Branch on the TOON `status` field to detect operation failures; never infer "the record landed" or "the plan exists" from a zero exit code.
 - **`exit_code != 0`**: STOP and return an error TOON to the orchestrator carrying the script's stderr verbatim. Non-zero exits include `argparse_rejection` (exit 2) — silent swallowing of `wrong_parameters` rejections is the prohibited anti-pattern; "log and continue" is equally forbidden.
+
+**Operation-failure carve-out:** Because operation failures exit `0`, a step that issues a `manage-*` call whose *effect* matters — a `qgate add` that must land a finding, a `read`/`get` that must find a field — MUST detect the rejection by inspecting the TOON `status` (`status: error` plus the precise `error` code), NOT by testing `exit_code != 0`. Reserving `exit_code != 0` for crash/argparse detection and reading the TOON for operation-failure detection are two distinct branches; conflating them (treating a zero exit as "the write landed") regresses the contract and is forbidden.
 
 Step-level exceptions — calls whose non-zero exit is itself the signal (e.g., `manage-files exists` returning `exists: false`, `manage-status get-worktree-path` returning an empty `worktree_path`) — are documented inline in the step that issues them.
 - On phase entry (Step 4), resolve the active worktree absolute path and surface it as a `[STATUS]` work-log line so it stays visible in model context throughout the run.
@@ -885,7 +887,31 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 
 (One `qgate add` call per finding; the verification task's structured `findings[]` output drives this loop.)
 
-**11d**: This per-task body is a **leaf** — it MUST NOT dispatch `verification-feedback` itself. After §11c has persisted each failing finding to the Q-Gate store, return a structured terminal payload to the main-context orchestrator and stop; the orchestrator owns the triage dispatch. See [`ref-workflow-architecture/standards/agents.md`](../ref-workflow-architecture/standards/agents.md) for the canonical leaf/dispatch-topology contract.
+**Readback gate (mandatory).** A `qgate add` that the primitive REJECTS still exits `0` — per the Operation-failure carve-out above, a zero exit is not evidence the record landed. Because §11d's `triage_required` return is a **by-reference referral** ("the findings are in the store, go read them"), the referral MUST NOT be emitted until the store is observed to hold them. After the `qgate add` loop, read the store back:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
+  qgate list --plan-id {plan_id} --phase 5-execute --resolution pending
+```
+
+Compare the returned pending count against the findings just persisted. **When the readback covers them, proceed to §11d.** When the readback is SHORT — one or more persisted findings are absent from the store — do NOT return `triage_required`; take the short-readback branch in §11d instead.
+
+**11d**: This per-task body is a **leaf** — it MUST NOT dispatch `verification-feedback` itself. After §11c has persisted each failing finding to the Q-Gate store **and the readback gate has confirmed the store holds them**, return a structured terminal payload to the main-context orchestrator and stop; the orchestrator owns the triage dispatch. See [`ref-workflow-architecture/standards/agents.md`](../ref-workflow-architecture/standards/agents.md) for the canonical leaf/dispatch-topology contract.
+
+**Short-readback branch.** When the readback gate reports fewer findings than were persisted, the by-reference referral would point the orchestrator at a store that lacks them — the finding would be silently lost. Return an error payload that carries the un-persisted findings **inline in the payload** instead:
+
+```toon
+status: error
+error: finding_persist_failed
+display_detail: "{task_number} finding_persist_failed: {K} finding(s) lost"
+plan_id: {plan_id}
+persisted_count: {N}
+readback_count: {M}
+unpersisted_findings[K]{type,severity,title,detail}:
+  ...
+```
+
+The orchestrator consumes the inline findings directly; it does NOT query the store for them.
 
 The leaf's return payload carries the discriminators the orchestrator needs to compose the dispatch:
 

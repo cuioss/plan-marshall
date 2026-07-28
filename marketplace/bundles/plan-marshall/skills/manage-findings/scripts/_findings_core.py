@@ -55,6 +55,17 @@ SEVERITIES = FINDING_SEVERITIES
 RESOLUTIONS = VALID_RESOLUTIONS
 CERTAINTY_VALUES = VALID_CERTAINTIES
 
+# The published partition of ``add_qgate_finding``'s four-valued ``status`` into
+# "the record is in the store" versus "the record was rejected".
+#
+# ``success`` (freshly appended), ``deduplicated`` (an identical pending record
+# already exists) and ``reopened`` (a matching resolved record was returned to
+# pending) all mean the finding IS in the store. The remaining value, ``error``,
+# means it is NOT — and callers MUST NOT fold it into the two benign no-op
+# outcomes. Every caller consults this set rather than re-deriving the partition
+# inline with ``status == 'success'``.
+QGATE_PERSIST_OK = frozenset({'success', 'deduplicated', 'reopened'})
+
 # Valid kind discriminator values for pr-comment findings.
 PR_COMMENT_KINDS = ['inline', 'review_body', 'issue_comment']
 
@@ -572,6 +583,13 @@ def add_qgate_finding(
     iterations (same title AND same discriminator) still collapses. Untrusted free-text
     supplied via ``raw_input`` is quarantined under ``raw_input.{field}`` with a per-field
     byte cap.
+
+    Returns a dict whose ``status`` is one of ``success``, ``deduplicated``,
+    ``reopened`` or ``error``. A ``status`` outside :data:`QGATE_PERSIST_OK` (i.e.
+    ``error``) means **the record is not in the store** and MUST NOT be conflated
+    with the two benign no-op outcomes ``deduplicated`` and ``reopened``, both of
+    which do leave the finding present. Callers test membership in
+    :data:`QGATE_PERSIST_OK`, never ``status == 'success'``.
     """
     if phase not in QGATE_PHASES:
         return {'status': 'error', 'message': f'Invalid Q-Gate phase: {phase}. Must be one of {QGATE_PHASES}'}
