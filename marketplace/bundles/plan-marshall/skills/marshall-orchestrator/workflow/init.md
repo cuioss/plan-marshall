@@ -91,7 +91,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging deci
 
 ### Step 5: Write the epic skeleton
 
-Instantiate `epic.md` from [`templates/epic.md`](../templates/epic.md) via the Write tool — direct file access inside the epic's own tree is the direct-file-access carve-out. Fill the Vision section from the operator's framing; leave the Ordered Queue empty (populated by `decompose`) and the START-HERE generated-block markers in place. Optionally seed `references.json` (external repos, PRs, source documents) the same way.
+Instantiate `epic.md` from [`templates/epic.md`](../templates/epic.md) via the Write tool — direct file access inside the epic's own tree is the direct-file-write carve-out. Fill the Vision section from the operator's framing; leave the Ordered Queue empty (populated by `decompose`) and the START-HERE generated-block markers in place. Optionally seed `references.json` (external repos, PRs, source documents) the same way.
 
 ### Step 6: Set the resume anchor and log
 

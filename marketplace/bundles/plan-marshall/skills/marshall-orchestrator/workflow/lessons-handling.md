@@ -35,7 +35,7 @@ python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime 
   --store orchestrator --slug {slug}
 ```
 
-Instantiate `epic.md` from `templates/epic.md` via the Write tool (direct file access inside the epic's own tree is covered by the direct-file-access carve-out). Set the epic phase to `orchestrating`:
+Instantiate `epic.md` from `templates/epic.md` via the Write tool (direct file access inside the epic's own tree is covered by the direct-file-write carve-out). Set the epic phase to `orchestrating`:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status update-field \
