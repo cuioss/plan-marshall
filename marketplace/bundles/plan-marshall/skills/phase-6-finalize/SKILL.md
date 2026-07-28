@@ -654,6 +654,16 @@ FOR each step_id in manifest.phase_6.steps:
            - IF no record OR any other value: dispatch normally
      Log skip/retry/re-fire decisions at INFO level so the work.log reflects the re-entry path.
 
+     **Named exemption — a re-entry SKIP intentionally emits NO completion line.** Every SKIP
+     branch above (the HEAD-dependent `head_at_completion == live HEAD` skip, the `push`
+     parity-driven `state == "synced"` skip, and the general `outcome == "done"` skip) is exempt
+     from the item-7 pairing, because a SKIP records NO outcome — it observes a terminal record
+     an EARLIER entry already wrote, and that entry already emitted the step's
+     `[STEP] ... Completed step:` line. The pairing binds a step's outcome RECORDING to its
+     completion emission; with no recording there is nothing to pair, and emitting here would
+     double-count the step as completed once per re-entry. The INFO skip-decision line above is
+     the audit record for this path.
+
      **HEAD-dependent step set**: `HEAD_DEPENDENT_STEPS = {"pre-push-quality-gate", "plan-marshall:automatic-review", "sonar-roundtrip", "ci-verify", "finalize-step-simplify", "finalize-step-security-audit"}`. The first three plus `ci-verify` validate the live worktree tree via local quality-gate, PR-comment, Sonar, and CI infrastructure respectively. `finalize-step-simplify` and `finalize-step-security-audit` apply edits directly to the worktree (committed by the dispatcher's instrumentation, item 5f), so they re-fire when a loop-back commit advances HEAD past their previously-recorded `head_at_completion` — the same HEAD-comparison contract as the validators. A loop-back commit (typically produced by `plan-marshall:automatic-review` or `sonar-roundtrip` opening a fix task that produces a new commit) advances HEAD past the previously-validated SHA, and a stale `done` record on any of these steps would produce a false-clean result on re-entry. The same `head_at_completion` comparison applies to all six. The `push` step is NOT in the set — it is a pure push barrier whose re-entry skip/re-fire decision is parity-driven, not done-record-driven: the item-1 push-specific branch consults `branch-sync-state` (`ahead`/`no_remote` → re-fire, `synced` → skip) instead of a HEAD-comparison, and the dispatcher additionally re-invokes it explicitly after a post-PR `mutates_source` step commits (item 5f § "Post-PR re-push") as the fast path. Other inline-only steps (`architecture-refresh`, `branch-cleanup`, `record-metrics`, `archive-plan`, `project:finalize-step-deploy-target`, `project:finalize-step-sync-plugin-cache`) and pure-administrative agent steps (`create-pr`, `lessons-capture`) are NOT HEAD-dependent — their effect is captured by side-effect (a created PR, recorded lessons, regenerated `target/claude/` from the post-merge source tree) and is idempotent against HEAD advances; the general rule above applies to them. CI completion is resolved as a separate dispatcher-side precondition (`requires: [ci-complete]`) — its cache key is the same `git rev-parse HEAD` SHA, so a HEAD advance also invalidates the precondition cache.
 
   2. Log step start:
@@ -757,6 +767,13 @@ FOR each step_id in manifest.phase_6.steps:
                 decision --plan-id {plan_id} --level INFO \
                 --message "(plan-marshall:phase-6-finalize:lessons-capture) Signal Gate skip — all three signals zero (qgate=0, plan-marshall:automatic-review=0, script-failures=0)"
 
+            - Emit the step-completion line — the `outcome=skipped` recording above and this
+              emission are ONE indivisible pair (see item 7). A Signal-Gate skip settles the
+              step's outcome, so it owes the same completion line as a dispatched run:
+
+              python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+                work --plan-id {plan_id} --level INFO --message "[STEP] (plan-marshall:phase-6-finalize) Completed step: {step_ref}"
+
             - CONTINUE the FOR loop (skip item 5 dispatch entirely for this step).
 
       c. Forward gate counts and orchestration context on dispatch (when at least one signal is non-zero, OR `orchestrated: true`):
@@ -813,6 +830,13 @@ FOR each step_id in manifest.phase_6.steps:
                 decision --plan-id {plan_id} --level INFO \
                 --message "(plan-marshall:phase-6-finalize:adr-propose) Signal Gate skip — no decision-shape signal (compatibility=0, decision-log=0)"
 
+            - Emit the step-completion line — the `outcome=skipped` recording above and this
+              emission are ONE indivisible pair (see item 7). A Signal-Gate skip settles the
+              step's outcome, so it owes the same completion line as a dispatched run:
+
+              python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+                work --plan-id {plan_id} --level INFO --message "[STEP] (plan-marshall:phase-6-finalize) Completed step: {step_ref}"
+
             - CONTINUE the FOR loop (skip item 5 dispatch entirely for this step).
 
       c. Forward gate count on dispatch (when the signal is non-zero):
@@ -855,7 +879,12 @@ FOR each step_id in manifest.phase_6.steps:
             python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
               --plan-id {plan_id} --phase 6-finalize --step {step_id} --outcome failed \
               --display-detail "timed out after {budget}s"
-         c. Continue to the next step in the loop — DO NOT abort the pipeline.
+         c. Emit the step-completion line — the (b) `outcome=failed` recording and this
+            emission are ONE indivisible pair (see item 7). The timeout path leaves the
+            iteration without reaching item 7, so the line is emitted here or not at all:
+            python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+              work --plan-id {plan_id} --level INFO --message "[STEP] (plan-marshall:phase-6-finalize) Completed step: {step_ref}"
+         d. Continue to the next step in the loop — DO NOT abort the pipeline.
 
      - BUILT-IN (inline-only: push, ci-verify, architecture-refresh, branch-cleanup, record-metrics, archive-plan):
        Read the standards document from dispatch table and follow all steps in main context. Inline steps are not wrapped by the per-agent timeout block above — they execute under the host platform's standard per-call ceiling. `ci-verify` runs the deterministic `scripts/ci_verify.py` executor: the dispatcher threads the `consume-failures` precondition envelope (`ci_final_status` → `--final-status`, `wait_outcome` → `--wait-outcome`, `head_sha` → `--head-sha`) into the script, which marks the step done on green (zero dispatch) or returns a per-producer needs-triage signal on red CI so the dispatcher runs `verification-feedback` — see `standards/ci-verify.md`.
@@ -1012,7 +1041,14 @@ FOR each step_id in manifest.phase_6.steps:
            python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
              work --plan-id {plan_id} --level ERROR \
              --message "[ERROR] (plan-marshall:phase-6-finalize) Step {step_ref} returned without recording a terminal outcome — post-dispatch guard recorded failed and halted; resumable re-entry will retry the step"
-        c. HALT the FOR loop (return control to the orchestrator). Do NOT proceed to item 6/7 for this step.
+        c. Emit the step-completion line, THEN HALT the FOR loop (return control to the
+           orchestrator). Do NOT proceed to item 6/7 for this step. The emission comes first
+           because the (a) `outcome=failed` recording and this line are ONE indivisible pair
+           (see item 7), and the halt bypasses item 7 — so the line is emitted here or not at
+           all, and a failed step that never appears as completed is invisible to per-step
+           completion coverage:
+           python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+             work --plan-id {plan_id} --level INFO --message "[STEP] (plan-marshall:phase-6-finalize) Completed step: {step_ref}"
 
   5e. Record per-step execution outcome to the manifest (mirror of the phase-5-execute Step 8c record-step call):
       Append one execution-log row to the manifest so per-step finalize execution metadata is loggable per-plan deterministically — this is the consuming side of the `record-step` contract published by `manage-execution-manifest` (its Producers table names `phase-6-finalize` as a `record-step` producer). The call fires per dispatched finalize step return, mirroring the 5b accumulate-agent-usage call so the per-step execution log and the per-phase token accumulator stay aligned. Unlike 5b/5c/5d, this row is recorded for EVERY finalize step — dispatched OR inline — so a skipped or inline step still lands an `execution_log` row (with zero token attribution for inline steps that carry no `<usage>` tag):
@@ -1088,7 +1124,31 @@ FOR each step_id in manifest.phase_6.steps:
      python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
        work --plan-id {plan_id} --level INFO --message "[STEP] (plan-marshall:phase-6-finalize) Completed step: {step_ref}"
 
+     **Recording a step's terminal outcome and emitting its completion line are ONE indivisible pair.**
+     The `mark-step-done` write (whatever its `--outcome`: `done` / `skipped` / `loop_back` / `failed`)
+     and the `[STEP] (plan-marshall:phase-6-finalize) Completed step: {step_ref}` line above are two
+     halves of a single action, exactly as the `[DISPATCH]` write and the `Task:` spawn are one pair.
+     Recording the outcome without emitting the line is a **contract violation**, not a cosmetic
+     omission: the work-log then carries no record that the step settled, so per-step completion
+     coverage cannot be reconstructed and the retrospective reads the step as never having run.
+     The pairing holds on EVERY path a step's outcome is recorded on — not only this happy path:
+     the item-4b.b and item-4c.b Signal-Gate skips (`outcome=skipped`, then CONTINUE), the
+     item-5 dispatch-timeout path (`outcome=failed`, then CONTINUE to the next step), and the
+     item-5d.c post-dispatch-guard halt (`outcome=failed`, then HALT) each emit the line at their
+     own recording site, and the item-1 re-entry SKIP and item-7a continuation hook each carry a
+     named exemption. Emit the line immediately after the recording call, never before it, and
+     never omit it because the step "obviously" completed.
+
   7a. Escalate-ask continuation hook (consult the dispatched step's return status):
+
+      **Named exemption — this hook's terminal recordings emit NO completion line of their own.**
+      Item 7a runs AFTER item 7, so the `[STEP] ... Completed step:` line for this
+      iteration's `{step_ref}` has already been emitted by the time any branch below
+      records an outcome. The "Merge anyway" branch's `mark-step-done --outcome done`
+      is a post-emission resolution of an already-completed iteration, not a new
+      terminal site, and emitting again here would double-count the step as completed.
+      The `defer` branch records nothing at all by design.
+
       When the dispatched `plan-marshall:automatic-review` step returns `status: escalate_ask`, the leaf has returned an escalation envelope rather than firing an `AskUserQuestion` itself (a dispatched leaf cannot own the prompt — see the leaf/dispatch-topology contract in `ref-workflow-architecture/standards/agents.md`). The dispatcher owns the consumption. Two escalation reasons reach this hook, discriminated by the return TOON's `reason` field, and the hook handles them **identically at the AskUserQuestion layer** — the only difference is which policy knob (if any) is consulted first:
 
       - **`reason: re_review_timeout`** — a re-review await timed out at trigger B (see `../automatic-review/SKILL.md` § "On re-review timeout (trigger B)"). The `re_review_on_timeout` policy knob selects `action: defer` vs `action: ask` (or `proceed`, which never returns `escalate_ask`).

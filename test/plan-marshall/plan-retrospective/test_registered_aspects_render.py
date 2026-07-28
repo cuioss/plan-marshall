@@ -10,8 +10,10 @@ ships dead (a producer emits a fragment that is silently dropped at render time)
    ``collect-fragments add`` accepts (``valid_aspect_keys()`` ∪
    ``_domain_aspect_keys()``). A domain-contributed key is accepted here but is
    NOT in ``SECTION_SPEC``.
-3. The Step-3 dispatch list in the plan-retrospective ``SKILL.md`` — the concrete
-   ``collect-fragments add --aspect <key>`` commands the workflow runs.
+3. The Step-3 aspect roster in the plan-retrospective ``SKILL.md`` — the concrete
+   ``collect-fragments add --aspect <key>`` commands the workflow runs, whether
+   they sit in ``SKILL.md`` itself or in the reference/standards document the
+   aspect's roster row names.
 
 This guard asserts both directions of the completeness contract:
 
@@ -44,7 +46,16 @@ from conftest import MARKETPLACE_ROOT, load_script_module
 _cr = load_script_module('plan-marshall', 'plan-retrospective', 'compile-report.py', 'cr_render_guard_mod')
 _cf = load_script_module('plan-marshall', 'plan-retrospective', 'collect-fragments.py', 'cf_render_guard_mod')
 
-_SKILL_MD_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospective' / 'SKILL.md'
+_SKILL_DIR = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospective'
+_SKILL_MD_PATH = _SKILL_DIR / 'SKILL.md'
+
+# A numbered row of the Step-3 aspect-order table. The row's cells name the
+# aspect and the Reference document that owns its dispatch; the aspect
+# population is derived from these rows rather than hand-listed.
+_ASPECT_TABLE_ROW_RE = re.compile(r'^\|\s*\d+\s*\|(?P<cells>.*)\|\s*$', re.MULTILINE)
+
+# A reference/standards document path named in an aspect row's Reference cell.
+_ASPECT_DOC_RE = re.compile(r'((?:references|standards)/[a-z0-9-]+\.md)')
 
 # Matches ``--aspect <key>`` where <key> is a concrete hyphenated aspect
 # identifier. The leading ``[a-z]`` anchor excludes ``{name}`` / ``{aspect}``
@@ -73,40 +84,49 @@ def _build_doc_with_aspect(aspect_key: str) -> str:
     return content
 
 
-def _scan_dispatched_aspects() -> set[str]:
-    """Enumerate the literal aspect keys the plan-retrospective SKILL.md dispatches.
+def _aspect_reference_docs() -> list[Path]:
+    """Return the reference/standards docs the Step-3 aspect-order table names.
 
-    Source-independent of ``SECTION_SPEC`` — reads the ``SKILL.md`` text and
-    extracts every literal ``add --aspect <key>`` command. Placeholder templates
-    (``{name}`` / ``{aspect}``) are excluded by the regex anchor.
-
-    **Known blind spot — file scope, not regex scope.** This scanner reads ONLY
-    ``SKILL.md``. An aspect whose ``add --aspect <key>`` command lives in its
-    aspect REFERENCE doc rather than in ``SKILL.md`` is therefore invisible to
-    direction (b) of the completeness guard, even though the regex would match
-    the command fine. ``chat-history-analysis`` is exactly that shape —
-    ``SKILL.md``'s aspect-14 block dispatches only the ``extract-chat-signal``
-    pre-pass and delegates fragment synthesis and registration to
-    ``references/chat-history-analysis.md`` — which is why it needs the explicit
-    anchor in ``TestChatHistoryAnalysisRenders`` below. Direction (a) misses it
-    too: an unregisterable key is not in ``_registerable_aspect_keys()`` and so is
-    never iterated.
-
-    **Explicitly-unresolved out-of-scope gap.** An outline-time trial of the
-    obvious "scan ``references/*.md`` too" widening surfaced two FURTHER
-    dispatched-but-unlisted keys — ``direct-gh-glab-usage``
-    (``references/direct-gh-glab-usage.md``) and
-    ``execution-context-dispatch-audit``
-    (``standards/execution-context-dispatch-audit.md``). Those two may be
-    legitimately domain-contributed (registerable via ``_domain_aspect_keys()``
-    rather than ``SECTION_SPEC``), or they may be the same defect a second and
-    third time — that was NOT resolved. Widening the scanner's file set here
-    would turn the guard red for aspects outside the owning plan's scope, so the
-    widening is deliberately deferred and the two keys are recorded here so the
-    next reader inherits the finding rather than rediscovering it.
+    The population is derived from the table itself — every numbered row's
+    Reference cell — so an aspect added to the roster brings its owning document
+    into the scan automatically. A row naming a document that does not exist on
+    disk is skipped here; the roster-vs-disk consistency of those paths is not
+    this guard's concern.
     """
     skill_text = _SKILL_MD_PATH.read_text(encoding='utf-8')
-    return set(_ASPECT_DISPATCH_RE.findall(skill_text))
+    docs: list[Path] = []
+    for row in _ASPECT_TABLE_ROW_RE.finditer(skill_text):
+        for rel in _ASPECT_DOC_RE.findall(row.group('cells')):
+            path = _SKILL_DIR / rel
+            if path.is_file() and path not in docs:
+                docs.append(path)
+    return docs
+
+
+def _scan_dispatched_aspects() -> set[str]:
+    """Enumerate the literal aspect keys the plan-retrospective workflow dispatches.
+
+    Source-independent of ``SECTION_SPEC``: the population is derived from the
+    Step-3 aspect-order table in ``SKILL.md`` — every numbered row contributes
+    the Reference document it names — and every literal
+    ``add --aspect <key>`` command is then extracted from ``SKILL.md`` PLUS each
+    of those documents. Placeholder templates (``{name}`` / ``{aspect}``) are
+    excluded by the regex anchor.
+
+    Scanning the referenced documents (not just ``SKILL.md``) is what makes this
+    a producer enumeration rather than a file-scoped sample: an aspect whose
+    registration command lives in its own reference doc — ``SKILL.md`` dispatches
+    only a pre-pass and delegates fragment synthesis and registration — is a
+    normal shape, not an exception. ``chat-history-analysis``,
+    ``direct-gh-glab-usage``, and ``execution-context-dispatch-audit`` are all
+    that shape, and all three are now enumerated here.
+    """
+    texts = [_SKILL_MD_PATH.read_text(encoding='utf-8')]
+    texts.extend(path.read_text(encoding='utf-8') for path in _aspect_reference_docs())
+    keys: set[str] = set()
+    for text in texts:
+        keys.update(_ASPECT_DISPATCH_RE.findall(text))
+    return keys
 
 
 class TestRegisterableAspectsRenderable:
@@ -171,6 +191,44 @@ class TestDispatchedAspectsHaveStaticRow:
         dispatched = _scan_dispatched_aspects()
         assert 'routing-decisions' in dispatched
         assert 'manifest-decisions' in dispatched
+
+    def test_scanner_reaches_aspects_dispatched_from_their_reference_doc(self):
+        # Anchor for the WIDENED half of the enumeration: these keys have no
+        # literal `--aspect` command in SKILL.md at all — each is registered from
+        # the reference/standards document its aspect-order row names. A scanner
+        # that silently narrowed back to SKILL.md-only (or returned an empty
+        # population) would make the completeness assertions below vacuous, and
+        # this anchor is what fails instead.
+        dispatched = _scan_dispatched_aspects()
+        skill_only = set(_ASPECT_DISPATCH_RE.findall(_SKILL_MD_PATH.read_text(encoding='utf-8')))
+
+        for key in ('direct-gh-glab-usage', 'execution-context-dispatch-audit'):
+            assert key in dispatched, (
+                f'{key} is dispatched from its reference document and MUST be '
+                f'enumerated by the producer scan'
+            )
+            assert key not in skill_only, (
+                f'{key} is expected to be dispatched from its reference document, '
+                f'not from SKILL.md — the anchor no longer exercises the widened '
+                f'half of the scan'
+            )
+
+    def test_every_dispatched_aspect_is_registerable(self):
+        # An aspect the workflow dispatches but `collect-fragments add` rejects
+        # ships dead: the producer's registration call fails with `Unregistered
+        # aspect key` and the report never carries its fragment. The population is
+        # derived, so a newly rostered aspect with no registerable key fails here.
+        dispatched = _scan_dispatched_aspects()
+        assert dispatched, 'Producer scan returned an empty population — the assertion would be vacuous'
+
+        registerable = _cf._registerable_aspect_keys()
+        unregisterable = sorted(dispatched - registerable)
+        assert not unregisterable, (
+            f'The retrospective workflow dispatches `collect-fragments add --aspect` '
+            f'for {unregisterable} but those keys are not registerable (neither a '
+            f'SECTION_SPEC row nor a domain-contributed key) — `add` rejects them and '
+            f'the aspects ship dead.'
+        )
 
     def test_every_dispatched_aspect_has_a_section_spec_row(self):
         dispatched = _scan_dispatched_aspects()
@@ -261,14 +319,14 @@ _TIER2_WARNING = 'transcript unavailable — chat-history analysis skipped'
 
 
 class TestChatHistoryAnalysisRenders:
-    """Explicit anchor for aspect 14, which the SKILL.md scanner cannot see.
+    """Explicit anchor for aspect 14, dispatched from its own reference document.
 
-    ``_scan_dispatched_aspects()`` reads only ``SKILL.md`` and aspect 14's
-    ``add --aspect chat-history-analysis`` command lives in
-    ``references/chat-history-analysis.md`` (see the scanner's docstring for the
-    full blind-spot note and the two unresolved out-of-scope keys), so neither
-    direction of the completeness guard covers this aspect. These assertions are
-    that missing coverage, made explicitly.
+    Aspect 14's ``add --aspect chat-history-analysis`` command lives in
+    ``references/chat-history-analysis.md``, not in ``SKILL.md``. The widened
+    producer scan now reaches it, so these assertions are no longer the ONLY
+    coverage of this aspect — they are the redundancy that proves the widened
+    enumeration is doing its job, and they pin render behaviour (the Tier-2
+    ``status: skipped`` case) that no key-set assertion can express.
     """
 
     @staticmethod

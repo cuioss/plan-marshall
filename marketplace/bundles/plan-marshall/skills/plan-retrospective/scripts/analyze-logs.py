@@ -408,14 +408,14 @@ def cluster_dispatches(
     `[MANAGE-TASKS]` / title-token lines carrying that caller tag and spaced more
     than the gap threshold apart during normal execution.
 
-    Caveat — the narrowed population may UNDER-count the first dispatch:
-    `starting_markers` is observed to be `0` on real plans, because the
-    `Starting execute phase` line documented in `phase-5-execute/SKILL.md` is
-    frequently not emitted. That under-count is itself an honest
-    logging-discipline signal for the consuming `RE_ENTRY_COVERAGE` rule, rather
-    than the fabricated over-count the substring admission produced. Repairing
-    the missing emission is a phase-5-execute orchestration concern, not this
-    extractor's.
+    Both counts are real dispatch signals. `phase-5-execute/SKILL.md` Step 4
+    emits the `Starting execute phase` line exactly once per plan — on first
+    entry, paired indivisibly with the `metadata.phase_5_first_entry_logged`
+    marker write — and the `Re-entering execute phase` line on every subsequent
+    re-dispatch. So `starting_markers` counts the first entry and
+    `re_entering_markers` counts the re-dispatches, and the consuming
+    `RE_ENTRY_COVERAGE` rule can read them as facts rather than as a
+    logging-discipline artefact.
 
     `script_log_lines` stays in the signature for caller compatibility but is
     deliberately NOT scanned. The marker lines are emitted only into `work.log`,
