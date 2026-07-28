@@ -35,6 +35,9 @@ Verbs:
 * ``upgrade`` — drain the running daemon then start the verified version (S7).
 * ``logs`` — read-only, project-scoped inspection of the daemon's central
   ``interaction-audit.log`` (the derived per-project view); never mutates it.
+  Each row is rendered with an explicit ``kind`` label, and an interaction row
+  carries its request-scoped ``request_status`` and the job's ``fate`` as two
+  separate columns, so a per-request row can never be misread as a job record.
 
 Every lifecycle verb appends one JSON-lines entry to the append-only lifecycle
 audit log (``lifecycle-audit.log`` under the daemon state dir) so the daemon's
@@ -72,7 +75,12 @@ from _build_server_registry import (
     register_project,
     unregister_project,
 )
-from _marshalld_audit import InteractionAudit
+from _marshalld_audit import (
+    FATE_UNKNOWN,
+    KIND_INTERACTION,
+    KIND_JOB_FATE,
+    InteractionAudit,
+)
 from file_ops import now_utc_iso
 from marketplace_paths import main_checkout_root
 from triage_helpers import ErrorCode, make_error, print_toon, safe_main
@@ -579,13 +587,62 @@ def run_status(_args: Namespace) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
+def _render_audit_record(record: dict[str, Any], fates: dict[str, str]) -> dict[str, Any]:
+    """Render one stored audit row into the explicit operator-view shape.
+
+    Every rendered row leads with an explicit ``kind`` label, so an interaction
+    row can never be read as a job record. An interaction row presents its
+    request-scoped ``request_status`` (how the REQUEST was answered) and the
+    job's ``fate`` as two separate columns — the fate is joined by ``job_id``
+    from the job-fate rows in the same 7-day store.
+
+    Fail-closed (ADR-009): a row written by an older daemon that predates these
+    field names, or a job with no fate record yet, renders an explicit
+    ``unknown`` rather than a silently missing field. ``unknown`` is never a
+    terminal status and never the request-scoped ``queued``.
+
+    Args:
+        record: One stored audit row.
+        fates: The ``job_id`` → ``fate`` map derived from the job-fate rows.
+
+    Returns:
+        The rendered row.
+    """
+    job_id = str(record.get('job_id', ''))
+    if record.get('kind') == KIND_JOB_FATE:
+        return {
+            'kind': KIND_JOB_FATE,
+            'job_id': job_id,
+            'project_root': record.get('project_root', ''),
+            'plan_id': record.get('plan_id', ''),
+            'fate': record.get('fate', FATE_UNKNOWN),
+            'timestamp': record.get('timestamp', ''),
+        }
+    rendered = {
+        'kind': KIND_INTERACTION,
+        'op': record.get('op', ''),
+        'job_id': job_id,
+        'project_root': record.get('project_root', ''),
+        'plan_id': record.get('plan_id', ''),
+        'request_status': record.get('request_status', FATE_UNKNOWN),
+        'fate': fates.get(job_id, FATE_UNKNOWN),
+        'timestamp': record.get('timestamp', ''),
+    }
+    reason = record.get('reason')
+    if reason is not None:
+        rendered['reason'] = reason
+    return rendered
+
+
 def run_logs(args: Namespace) -> dict[str, Any]:
     """Show the caller project's interaction-audit records (read-only, derived view).
 
     Resolves the caller's canonical root (``--root`` override, else the main
     checkout), reads the central ``interaction-audit.log`` through the
     :class:`InteractionAudit` reader, and returns the records whose
-    ``project_root`` matches the caller — the derived project-scoped view. The
+    ``project_root`` matches the caller — the derived project-scoped view,
+    rendered through :func:`_render_audit_record` so each row's kind, its
+    request-scoped status, and the job's fate are three distinct columns. The
     verb NEVER mutates the log.
 
     Fail-closed (ADR-9): when the log is absent or unreadable the verb returns an
@@ -635,6 +692,14 @@ def run_logs(args: Namespace) -> dict[str, Any]:
         }
 
     scoped = [record for record in all_records if record.get('project_root') == root]
+    # Build the job_id -> fate map from EVERY project-scoped row, not just the
+    # tail: a job's fate row can fall outside the --limit window while the
+    # interaction row it belongs to is still rendered.
+    fates = {
+        str(record.get('job_id', '')): str(record.get('fate', FATE_UNKNOWN))
+        for record in scoped
+        if record.get('kind') == KIND_JOB_FATE and record.get('job_id')
+    }
     tail = scoped[-limit:] if limit > 0 else scoped
     return {
         'status': 'success',
@@ -642,7 +707,7 @@ def run_logs(args: Namespace) -> dict[str, Any]:
         'caller_root': root,
         'count': len(tail),
         'total_matched': len(scoped),
-        'records': tail,
+        'records': [_render_audit_record(record, fates) for record in tail],
     }
 
 

@@ -99,12 +99,30 @@ All daemon state lives under the machine-global home root
 | `job-logs/` | Per-job captured build logs |
 
 The **interaction audit** is a central append-only log — the natural third
-sibling of `registry-audit.log` and `lifecycle-audit.log` — into which the daemon
-writes exactly one attributed record for every request it dispatches
-(`ping` / `submit` / `wait`). Each record carries per-project attribution
-(`project_root` + `plan_id` + `job_id`) plus `op` / `outcome` / `timestamp`, and
-never any secret-bearing spec field. Retention is bounded and GC'd on every daemon
-start, parallel to the journal's bounded-retention model.
+sibling of `registry-audit.log` and `lifecycle-audit.log` — which answers "who
+asked the daemon to do what, and how did it turn out?". It carries two record
+kinds, discriminated by an explicit `kind` field:
+
+| `kind` | Written when | Fields |
+|--------|--------------|--------|
+| `interaction` | Every request the daemon dispatches (`ping` / `submit` / `wait`) | `op`, `project_root`, `plan_id`, `job_id`, `request_status`, `timestamp` (plus a non-secret `reason`) |
+| `job_fate` | A job terminalizes — after the journal records its result, and once per job the restart replay forces to `killed` | `job_id`, `fate`, `project_root`, `plan_id`, `timestamp` |
+
+`request_status` is the **request's** response status (e.g. `queued` for an
+accepted submit) — it is deliberately not called `outcome`, because it says
+nothing about how the job itself ended. `fate` is the **job's** terminal status
+(`success` / `failure` / `timeout` / `killed`); a fate the daemon cannot
+substantiate is recorded and rendered as `unknown`, never a terminal value and
+never `queued`.
+
+The fate is emitted into this log rather than resolved by a read-time join
+against the journal because the two stores have deliberately different retention:
+terminal journal entries are GC'd after an hour, while audit records are kept for
+days. A join could therefore answer the fate question only for the first hour of
+a record's life. No record of either kind ever carries a secret-bearing spec
+field — a fate record's attribution copies only `project_root` and `plan_id` out
+of the stored spec. Retention is bounded and GC'd on every daemon start, parallel
+to the journal's bounded-retention model.
 
 ## Lifecycle operations
 
@@ -199,6 +217,18 @@ recent records (default `50`), ordered oldest-first within the returned window
 (so `records[0]` is the oldest of the window, not the newest). When the log is
 absent or unreadable the verb returns an explicit empty `records` list with a
 named `reason` (`log_absent` / `log_unreadable`; fails closed).
+
+Each returned record is **rendered**, not echoed verbatim, so a per-request row
+can never be misread as a job record. Every row leads with its `kind`; an
+`interaction` row carries `op`, `job_id`, `project_root`, `plan_id`,
+`request_status`, `fate`, `timestamp` (plus `reason` when present), and a
+`job_fate` row carries `job_id`, `project_root`, `plan_id`, `fate`, `timestamp`.
+On an interaction row the two status columns are distinct: `request_status` is
+how the request was answered, and `fate` is the job's outcome, joined by `job_id`
+from the job-fate rows in the same log. A job with no fate record yet — and any
+row written by an older daemon that predates these field names — renders an
+explicit `unknown` rather than a silently missing field, the same fail-closed
+discipline as `log_absent` / `log_unreadable`.
 
 ## Related
 

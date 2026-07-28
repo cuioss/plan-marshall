@@ -165,7 +165,15 @@ def test_one_job_id_correlates_all_three_stores(home, ledger, captured_logs, tmp
     assert any(job_id in message for _t, _p, _l, message in captured_logs)
 
     # Vantage 2 — the server interaction-audit records carry the job_id.
-    assert job_id in {record['job_id'] for record in audit.read_all()}
+    audit_records = audit.read_all()
+    assert job_id in {record['job_id'] for record in audit_records}
+    # The submit row is an INTERACTION record: its request-scoped `request_status`
+    # says how the request was answered and is never the job's fate. No job-fate
+    # record exists yet — the job has not terminalized.
+    submit_row = next(record for record in audit_records if record['job_id'] == job_id)
+    assert submit_row['kind'] == audit_mod.KIND_INTERACTION
+    assert submit_row['request_status'] == 'queued'
+    assert 'fate' not in submit_row
 
     # Vantage 3 — the change-ledger kind=job row carries the SAME job_id.
     rows = _job_rows()
@@ -203,12 +211,17 @@ def test_no_secret_field_in_any_correlated_store(home, ledger, captured_logs, tm
         assert executor_path not in message
         assert sys.executable not in message
 
-    # Server interaction audit — fixed schema, no command/env.
+    # Server interaction audit — fixed schema, no command/env. Holds for BOTH
+    # record kinds: a job-fate record derives its attribution from the stored spec
+    # but copies only project_root / plan_id out of it.
     for record in audit.read_all():
         blob = json.dumps(record)
+        assert record['kind'] in {audit_mod.KIND_INTERACTION, audit_mod.KIND_JOB_FATE}
         assert executor_path not in blob
         assert sys.executable not in blob
         assert 'command' not in record
+        assert 'spec' not in record
+        assert 'env' not in record
 
     # Change ledger kind=job row — no raw argv.
     for row in _job_rows():
