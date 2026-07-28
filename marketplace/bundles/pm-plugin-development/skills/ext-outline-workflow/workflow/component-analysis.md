@@ -157,4 +157,4 @@ uncertain: {count}
 assessments_logged: {count}
 ```
 
-**OUTPUT RULE**: Do NOT output any text except the final TOON summary. All analysis, reasoning, and assessments are logged to `assessments.jsonl` via bash commands; the parent workflow reads `assessments.jsonl` for details.
+The return shape is the **citations-only return shape** — see [`plan-marshall:ref-workflow-architecture/standards/citations-only-return.md`](../../../../plan-marshall/skills/ref-workflow-architecture/standards/citations-only-return.md), the single source of truth for the rule and its sink-persistence obligation; comply with that standard rather than a copy of it here. Applied here, the sink is `assessments.jsonl` — every analysis and reasoning detail is logged there via the [Logging command](#logging-command) above, and the parent workflow reads `assessments.jsonl` for details.
