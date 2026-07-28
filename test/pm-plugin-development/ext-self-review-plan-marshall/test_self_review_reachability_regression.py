@@ -36,6 +36,7 @@ import re  # noqa: I001
 import subprocess
 from pathlib import Path
 
+from _self_review_patterns import CANDIDATE_LISTS
 from conftest import get_script_path, run_script
 
 # =============================================================================
@@ -335,15 +336,27 @@ class TestPreFixScanningFormIsSurfaced:
         # Guards the sweep above against silent under-coverage: a candidate list
         # added later but never added to _PRE_EXISTING_LISTS would slip past the
         # complementary negative unnoticed.
+        #
+        # The assertion is three-way rather than two-way: the swept set must
+        # agree with the CANONICAL REGISTRY as well as with what this run
+        # actually emitted. The emitted-vs-swept half alone would still pass if a
+        # list were dropped from BOTH the emitter and this sweep; pinning the
+        # registry — the emitter's own source of truth — closes that.
         data = _surface(_fixture_repo(tmp_path, _PRE_FIX_SOURCE))
 
         emitted = set(data['counts']) - {'total'}
         swept = set(_PRE_EXISTING_LISTS) | {_NEW_LIST}
+        registered = {spec.key for spec in CANDIDATE_LISTS}
 
         assert emitted == swept, (
             f'The candidate-list vocabulary drifted from this regression. '
             f'Emitted but not swept: {sorted(emitted - swept)}. '
             f'Swept but not emitted: {sorted(swept - emitted)}.'
+        )
+        assert registered == swept, (
+            f'The candidate-list registry drifted from this regression. '
+            f'Registered but not swept: {sorted(registered - swept)}. '
+            f'Swept but not registered: {sorted(swept - registered)}.'
         )
 
 

@@ -1496,10 +1496,25 @@ def _scan_derived_key_in_block(block: dict[str, Any]) -> tuple[str, int] | None:
     return None
 
 
+def _block_is_diff_touched(block: dict[str, Any], touched: dict[int, str]) -> bool:
+    """Return True when the block's line range intersects the diff-touched lines.
+
+    The block spans its ``def`` header (``block['line']``) plus every line the
+    block carries. ``touched`` maps the file's added line numbers to their
+    content, so an empty map means nothing in that file was touched and no block
+    in it qualifies.
+    """
+    block_lines = {lineno for lineno, _content in block['lines']}
+    block_lines.add(block['line'])
+    return bool(block_lines & touched.keys())
+
+
 def _key_consumed_as_identity(
-    name: str, blocks_by_file: dict[str, list[dict[str, Any]]]
+    name: str,
+    blocks_by_file: dict[str, list[dict[str, Any]]],
+    touched_by_file: dict[str, dict[int, str]],
 ) -> bool:
-    """Return True when some OTHER block calls ``name`` and consumes it as an identity.
+    """Return True when some OTHER diff-touched block calls ``name`` and consumes it as an identity.
 
     Identity consumption is the third conjunct of the scan-versus-anchor shape,
     carried as a flag rather than as a firing condition (see
@@ -1507,13 +1522,19 @@ def _key_consumed_as_identity(
     body groups the derived value into a keyed map (``setdefault``), tests the
     cardinality of the resulting key set (``len``), or compares it for equality.
 
-    A caller that lives outside the surfaced diff is invisible here, which is why
-    ``False`` narrows the adjudication rather than suppressing the candidate.
+    Candidate callers are restricted to blocks the diff touched. ``blocks_by_file``
+    is walked over the file's full post-image whenever ``project_dir`` resolves it,
+    so without this restriction a caller the diff never touched could flip the
+    flag. A caller that lives outside the surfaced diff is invisible here, which is
+    why ``False`` narrows the adjudication rather than suppressing the candidate.
     """
     call = re.compile(r'(?<![A-Za-z0-9_])' + re.escape(name) + r'\s*\(')
-    for blocks in blocks_by_file.values():
+    for path, blocks in blocks_by_file.items():
+        touched = touched_by_file.get(path, {})
         for block in blocks:
             if block['name'] == name:
+                continue
+            if not _block_is_diff_touched(block, touched):
                 continue
             body = [content for _lineno, content in block['lines']]
             if not any(call.search(content) for content in body):
@@ -1575,9 +1596,7 @@ def _detect_scan_derived_keys(
     for path in sorted(added_by_file):
         touched = added_by_file[path]
         for block in blocks_by_file[path]:
-            block_lines = {lineno for lineno, _content in block['lines']}
-            block_lines.add(block['line'])
-            if not (block_lines & touched.keys()):
+            if not _block_is_diff_touched(block, touched):
                 continue
             hit = _scan_derived_key_in_block(block)
             if hit is None:
@@ -1589,7 +1608,9 @@ def _detect_scan_derived_keys(
                     'line': scan_line,
                     'name': block['name'],
                     'sequence': sequence,
-                    'key_consumed': _key_consumed_as_identity(block['name'], blocks_by_file),
+                    'key_consumed': _key_consumed_as_identity(
+                        block['name'], blocks_by_file, added_by_file
+                    ),
                 }
             )
     return out

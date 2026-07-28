@@ -8,6 +8,7 @@ name (e.g. ``from _self_review_patterns import _RE_CALL``).
 """
 
 import re
+from typing import NamedTuple
 
 # =============================================================================
 # Detection regexes
@@ -283,3 +284,64 @@ _FIRST_MATCH_EXIT = re.compile(r'^\s*(?:return\b|break\b)')
 _IDENTITY_CONSUMPTION = re.compile(
     r'\.setdefault\s*\(|\blen\s*\(|==|!='
 )
+
+
+# =============================================================================
+# Candidate-list registry
+# =============================================================================
+
+
+class CandidateList(NamedTuple):
+    """One candidate list in the surfacer's emitted vocabulary.
+
+    ``key`` is the payload and ``counts`` key; ``label`` is the human name used
+    in derived help prose; ``in_total`` records whether the list's cardinality is
+    summed into ``counts.total``.
+    """
+
+    key: str
+    label: str
+    in_total: bool
+
+
+#: The canonical candidate-list vocabulary — the single code-side source of
+#: truth for the surfacer's emitted key set, its ``counts.total`` formula, and
+#: the help prose that enumerates it. Adding a list here is what makes it appear
+#: in all three, so an emitter addition cannot drift from the derived count.
+#:
+#: ``in_total`` is False for the four review-anchor lists (``contract_sources``,
+#: ``schema_bearing_files``, ``count_prose``, ``advertised_form_help_strings``)
+#: and for ``protected_identifiers``, a derived index over ``keep_markers``.
+#: The prose rationale is owned by
+#: ``plan-marshall:extension-api/standards/ext-point-self-review-surfacing.md``
+#: § Output Schema and is NOT restated here.
+CANDIDATE_LISTS: tuple[CandidateList, ...] = (
+    CandidateList('regexes', 'regexes', True),
+    CandidateList('user_facing_strings', 'user-facing strings', True),
+    CandidateList('markdown_sections', 'markdown sections', True),
+    CandidateList('symmetric_pairs', 'symmetric pairs', True),
+    CandidateList('flag_guard_pairs', 'flag-guard pairs', True),
+    CandidateList('contract_sources', 'contract sources', False),
+    CandidateList('schema_bearing_files', 'schema-bearing files', False),
+    CandidateList('keep_markers', 'keep markers', True),
+    CandidateList('protected_identifiers', 'protected identifiers', False),
+    CandidateList('producer_consumer', 'producer-consumer pairs', True),
+    CandidateList('source_of_truth', 'source-of-truth duplicates', True),
+    CandidateList(
+        'same_document_consistency', 'same-document normative directives', True
+    ),
+    CandidateList('description_vs_body', 'description-vs-body frontmatter', True),
+    CandidateList('unguarded_boundaries', 'lone-unguarded-boundary calls', True),
+    CandidateList('count_prose', 'stale count-prose', False),
+    CandidateList('touched_claims', 'near-identical-hunk touched claims', True),
+    CandidateList(
+        'advertised_form_help_strings', 'advertised-form help strings', False
+    ),
+    CandidateList('ordinal_references', 'same-document ordinal references', True),
+    CandidateList('scan_derived_keys', 'scan-derived keys', True),
+)
+
+
+def candidate_list_prose() -> str:
+    """Return the registry's labels as a comma-separated enumeration for help prose."""
+    return ', '.join(spec.label for spec in CANDIDATE_LISTS)
