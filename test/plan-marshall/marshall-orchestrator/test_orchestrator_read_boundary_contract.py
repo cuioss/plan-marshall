@@ -42,6 +42,7 @@ without a red pipeline. Do not regress this design.
 from __future__ import annotations
 
 import re
+import sys
 from functools import lru_cache
 from pathlib import Path
 
@@ -228,8 +229,22 @@ def _is_orchestrator_document(document: Path) -> bool:
     sentence-level scoping alone would drop it and leave the intersection
     assertion vacuous. Prohibitions keep the strict sentence-level scoping below,
     so a prohibition reintroduced in ANY governed document is still caught.
+
+    The match is against the path RELATIVE to :data:`PROJECT_ROOT`, never the
+    absolute path. Matching the absolute path makes the predicate depend on
+    ancestor directory names outside the repository's control — and this plan's
+    own worktree checkout is literally named
+    ``orchestrator-read-boundary-self-contradiction``, which made every governed
+    document classify as orchestrator-governing. That is exactly the vacuous
+    over-broad detector this module exists to prevent, so the relative scoping is
+    load-bearing and is pinned by
+    :func:`test_orchestrator_document_detection_ignores_ancestor_directory_names`.
+
+    Every member of :func:`_governed_population` is built strictly under
+    ``MARKETPLACE_ROOT``, ``PROJECT_ROOT / 'doc'`` or ``PROJECT_ROOT /
+    'CLAUDE.md'``, so ``relative_to`` always succeeds — no exception handling.
     """
-    return 'orchestrator' in str(document).lower()
+    return 'orchestrator' in str(document.relative_to(PROJECT_ROOT)).lower()
 
 
 def _is_orchestrator_scoped(sentence: str, heading: str) -> bool:
@@ -382,6 +397,52 @@ def test_detector_flags_the_pre_fix_asciidoc_bullet():
     # The bullet names no explicit out-of-bounds list, so its exclusive
     # construction covers every canonical path by implication.
     assert _prohibited_paths(sentence) == _ALL_PATHS
+
+
+def test_orchestrator_document_detection_ignores_ancestor_directory_names(monkeypatch):
+    """Pins the relative-path scoping of :func:`_is_orchestrator_document`.
+
+    Reverting the predicate to an absolute-path substring match makes it depend
+    on ancestor directory names outside the repository — a worktree checkout
+    named ``…/orchestrator-…/`` classifies EVERY governed document as
+    orchestrator-governing, silently widening the permission population to the
+    whole corpus.
+
+    The synthetic root is deliberately named after that live failure, so the
+    guard bites on every platform and in every checkout rather than only in a
+    worktree that happens to carry the word. The paths are never created on disk
+    — ``relative_to`` is pure path arithmetic.
+    """
+    synthetic_root = Path('/tmp/worktrees/orchestrator-read-boundary-self-contradiction')
+    skills_root = synthetic_root / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills'
+    unrelated = skills_root / 'manage-files' / 'SKILL.md'
+    governing = skills_root / 'marshall-orchestrator' / 'SKILL.md'
+
+    # Precondition: the ABSOLUTE path of the unrelated document does contain the
+    # token, so a reverted absolute match would classify it True.
+    assert 'orchestrator' in str(unrelated).lower()
+
+    monkeypatch.setattr(sys.modules[__name__], 'PROJECT_ROOT', synthetic_root)
+
+    assert not _is_orchestrator_document(unrelated), (
+        '_is_orchestrator_document matched an ancestor directory name — it has reverted to '
+        'absolute-path matching, which classifies the whole corpus as orchestrator-governing'
+    )
+    assert _is_orchestrator_document(governing)
+
+
+def test_orchestrator_document_detection_scopes_the_real_population():
+    """The three governing documents classify True; an unrelated one does not."""
+    for expected in (
+        _ORCHESTRATION_MODEL,
+        _MARSHALL_ORCHESTRATOR_SKILL,
+        _PERSONA_ORCHESTRATOR_SKILL,
+    ):
+        assert _is_orchestrator_document(expected), f'{expected} should govern the orchestrator'
+
+    assert not _is_orchestrator_document(_CLAUDE_MD), (
+        f'{_CLAUDE_MD} is not an orchestrator-governing document — the detector is over-broad'
+    )
 
 
 def test_detector_does_not_flag_the_plan_side_ledger_clause():
