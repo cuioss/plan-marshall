@@ -16,9 +16,17 @@ point with constructed argv at the subprocess boundary (``run_script``), under
   once in ``test_inbox_envelope.py``'s in-process unit tests. This module's job
   at the CLI level is to prove the wiring (argv -> handler -> TOON ``error``)
   transports a rejection faithfully, not to re-enumerate the schema.
-- **Boundary still holds on every non-inbox path**: after a write, every
-  non-inbox path in a pre-populated epic tree is byte-identical, and an unsafe
-  slug is refused.
+- **Drain surface**: ``inbox list`` enumerates the queue in deterministic
+  (sender, sequence) order, reports a malformed message with its distinct
+  validator error code instead of dropping it, and never looks inside
+  ``inbox/archive/``; ``inbox archive`` relocates a consumed message, is
+  idempotent on repeat, refuses a path-shaped or empty name, refuses to clobber
+  an existing archived copy, and — being a MUTATING verb — refuses an unsafe
+  slug, an unscaffolded epic, and an archived-only epic rather than resolving
+  through the archived read-fallback the read-side verbs use.
+- **Boundary still holds on every non-inbox path**: after a write, and again
+  after a ``list`` + ``archive`` pair, every non-inbox path in a pre-populated
+  epic tree is byte-identical, and an unsafe slug is refused.
 
 The doc-contract assertions pin all three describe-side surfaces of the ledger
 write-boundary carve-out, in the same style as the existing
@@ -44,6 +52,13 @@ _PLAN_SPEC_TEMPLATE = (
 
 EPIC = 'contract-epic'
 SENDER = 'contract-plan'
+#: A second sender, so the (sender, sequence) ordering is observable. Sorts
+#: AFTER ``SENDER`` ('c' < 'o'), which is what the order assertion pins.
+OTHER_SENDER = 'other-plan'
+
+#: An epic whose active tree is relocated to ``archived-orchestrators/`` mid-test,
+#: so the mutating-verb resolver is observed against an archived-only epic.
+ARCHIVED_EPIC = 'archived-epic'
 
 #: The five ledger paths that stay forbidden to a plan after the carve-out.
 FORBIDDEN_PATHS = ('status.json', 'epic.md', 'workstreams', 'plans', 'landings')
@@ -57,6 +72,10 @@ def _epic_dir(plan_context, slug: str = EPIC) -> Path:
     return Path(plan_context.fixture_dir) / 'orchestrator' / slug
 
 
+def _archived_epic_dir(plan_context, slug: str) -> Path:
+    return Path(plan_context.fixture_dir) / 'archived-orchestrators' / slug
+
+
 def _payload(tmp_path: Path, body: str = 'the landing narrative', name: str = 'p.md') -> str:
     path = tmp_path / name
     path.write_text(body, encoding='utf-8')
@@ -67,7 +86,13 @@ def _scaffold(plan_context, slug: str = EPIC):
     return run_script(SCRIPT_PATH, 'scaffold', '--slug', slug, env_overrides=_env(plan_context))
 
 
-def _write(plan_context, payload_file: str, slug: str = EPIC, kind: str = 'landing'):
+def _write(
+    plan_context,
+    payload_file: str,
+    slug: str = EPIC,
+    kind: str = 'landing',
+    sender: str = SENDER,
+):
     return run_script(
         SCRIPT_PATH,
         'inbox',
@@ -77,12 +102,50 @@ def _write(plan_context, payload_file: str, slug: str = EPIC, kind: str = 'landi
         '--sender-type',
         'plan',
         '--sender-id',
-        SENDER,
+        sender,
         '--kind',
         kind,
         '--payload-file',
         payload_file,
         env_overrides=_env(plan_context),
+    )
+
+
+def _list(plan_context, slug: str = EPIC):
+    return run_script(
+        SCRIPT_PATH,
+        'inbox',
+        'list',
+        '--slug',
+        slug,
+        env_overrides=_env(plan_context),
+    )
+
+
+def _archive(plan_context, message: str, slug: str = EPIC):
+    return run_script(
+        SCRIPT_PATH,
+        'inbox',
+        'archive',
+        '--slug',
+        slug,
+        '--message',
+        message,
+        env_overrides=_env(plan_context),
+    )
+
+
+def _malformed(sender: str = OTHER_SENDER) -> str:
+    """A message whose only defect is an unsupported ``envelope_version``."""
+    return (
+        'envelope_version=99\n'
+        'sender_type=plan\n'
+        f'sender_id={sender}\n'
+        f'epic={EPIC}\n'
+        'kind=landing\n'
+        'created=2020-01-01T00:00:00Z\n'
+        '\n'
+        'payload prose\n'
     )
 
 
@@ -113,6 +176,20 @@ def _section(text: str, heading: str) -> str:
             break
         collected.append(line)
     return '\n'.join(collected)
+
+
+def _line(section: str, prefix: str) -> str:
+    """Return the first section line whose stripped form starts with ``prefix``.
+
+    Stripping before the prefix test matters: a bullet or table row nested under
+    a list item is indented to the item's continuation column, and a matcher
+    anchored at column zero would silently find nothing there — passing only by
+    the accident that the source happens to be unindented today.
+    """
+    stripped = (line.strip() for line in section.splitlines())
+    match = next((line for line in stripped if line.startswith(prefix)), None)
+    assert match is not None, f'no line starting with {prefix!r} in the section'
+    return match
 
 
 # =============================================================================
@@ -190,18 +267,8 @@ class TestCliCarriesRejection:
         self, plan_context
     ):
         _scaffold(plan_context)
-        message = (
-            'envelope_version=99\n'
-            'sender_type=plan\n'
-            f'sender_id={SENDER}\n'
-            f'epic={EPIC}\n'
-            'kind=landing\n'
-            'created=2020-01-01T00:00:00Z\n'
-            '\n'
-            'payload prose\n'
-        )
         (_epic_dir(plan_context) / 'inbox' / f'{SENDER}-001.md').write_text(
-            message, encoding='utf-8'
+            _malformed(SENDER), encoding='utf-8'
         )
 
         result = _validate(plan_context, f'{SENDER}-001.md')
@@ -209,6 +276,219 @@ class TestCliCarriesRejection:
         assert result.returncode == 0
         assert 'status: error' in result.stdout
         assert 'error: unknown_envelope_version' in result.stdout
+
+    def test_should_refuse_an_empty_message_name(self, plan_context):
+        _scaffold(plan_context)
+
+        result = _validate(plan_context, '')
+
+        assert result.returncode == 0
+        assert 'error: invalid_message_name' in result.stdout
+
+
+# =============================================================================
+# Drain surface: inbox list
+# =============================================================================
+
+
+class TestInboxList:
+    def test_should_return_messages_in_sender_then_sequence_order(
+        self, plan_context, tmp_path
+    ):
+        _scaffold(plan_context)
+        _write(plan_context, _payload(tmp_path, 'first', 'a.md'), kind='landing')
+        _write(plan_context, _payload(tmp_path, 'second', 'b.md'), kind='finding')
+        _write(
+            plan_context,
+            _payload(tmp_path, 'third', 'c.md'),
+            kind='candidate-lesson',
+            sender=OTHER_SENDER,
+        )
+
+        result = _list(plan_context)
+
+        assert result.returncode == 0
+        rows = result.toon()['messages']
+        assert [row['name'] for row in rows] == [
+            f'{SENDER}-001.md',
+            f'{SENDER}-002.md',
+            f'{OTHER_SENDER}-001.md',
+        ]
+        assert [row['sender_id'] for row in rows] == [SENDER, SENDER, OTHER_SENDER]
+        assert [row['kind'] for row in rows] == ['landing', 'finding', 'candidate-lesson']
+        assert all(row['valid'] is True for row in rows)
+        assert all(row['created'] for row in rows)
+
+    def test_should_report_a_malformed_message_alongside_the_valid_ones(
+        self, plan_context, tmp_path
+    ):
+        _scaffold(plan_context)
+        _write(plan_context, _payload(tmp_path))
+        (_epic_dir(plan_context) / 'inbox' / f'{OTHER_SENDER}-001.md').write_text(
+            _malformed(), encoding='utf-8'
+        )
+
+        parsed = _list(plan_context).toon()
+
+        rows = {row['name']: row for row in parsed['messages']}
+        assert parsed['count'] == 2
+        assert parsed['invalid_count'] == 1
+        assert rows[f'{SENDER}-001.md']['valid'] is True
+        assert rows[f'{SENDER}-001.md']['error'] == ''
+        assert rows[f'{OTHER_SENDER}-001.md']['valid'] is False
+        assert rows[f'{OTHER_SENDER}-001.md']['error'] == 'unknown_envelope_version'
+
+    def test_should_not_enumerate_anything_under_the_archive_subdirectory(
+        self, plan_context, tmp_path
+    ):
+        _scaffold(plan_context)
+        _write(plan_context, _payload(tmp_path))
+        archive_dir = _epic_dir(plan_context) / 'inbox' / 'archive'
+        archive_dir.mkdir()
+        (archive_dir / f'{OTHER_SENDER}-001.md').write_text('retired\n', encoding='utf-8')
+
+        parsed = _list(plan_context).toon()
+
+        assert [row['name'] for row in parsed['messages']] == [f'{SENDER}-001.md']
+        assert parsed['count'] == 1
+
+    def test_should_report_an_unreadable_message_and_still_return_the_rest(
+        self, plan_context, tmp_path
+    ):
+        _scaffold(plan_context)
+        _write(plan_context, _payload(tmp_path, 'first', 'a.md'), kind='landing')
+        (_epic_dir(plan_context) / 'inbox' / f'{OTHER_SENDER}-001.md').write_bytes(
+            b'\xff\xfe not valid utf-8 \xff'
+        )
+        _write(
+            plan_context,
+            _payload(tmp_path, 'third', 'c.md'),
+            kind='candidate-lesson',
+            sender=OTHER_SENDER,
+        )
+
+        parsed = _list(plan_context).toon()
+
+        rows = {row['name']: row for row in parsed['messages']}
+        assert parsed['count'] == 3
+        assert parsed['invalid_count'] == 1
+        bad = rows[f'{OTHER_SENDER}-001.md']
+        assert bad['valid'] is False
+        assert bad['error'] == 'unreadable'
+        assert rows[f'{SENDER}-001.md']['valid'] is True
+        assert rows[f'{SENDER}-001.md']['error'] == ''
+        assert rows[f'{OTHER_SENDER}-002.md']['valid'] is True
+        assert rows[f'{OTHER_SENDER}-002.md']['error'] == ''
+
+    def test_should_refuse_an_unscaffolded_epic(self, plan_context):
+        result = _list(plan_context, slug='never-scaffolded')
+
+        assert 'error: epic_not_found' in result.stdout
+
+    def test_should_refuse_an_unsafe_slug(self, plan_context):
+        result = _list(plan_context, slug='../evil')
+
+        assert 'error: invalid_slug' in result.stdout
+
+
+# =============================================================================
+# Drain surface: inbox archive
+# =============================================================================
+
+
+class TestInboxArchive:
+    def test_should_relocate_the_message_and_drop_it_from_the_next_list(
+        self, plan_context, tmp_path
+    ):
+        _scaffold(plan_context)
+        _write(plan_context, _payload(tmp_path, 'first', 'a.md'))
+        _write(plan_context, _payload(tmp_path, 'second', 'b.md'))
+
+        archived = _archive(plan_context, f'{SENDER}-001.md')
+
+        assert 'status: success' in archived.stdout
+        assert 'already_archived: false' in archived.stdout
+        inbox = _epic_dir(plan_context) / 'inbox'
+        assert not (inbox / f'{SENDER}-001.md').exists()
+        assert (inbox / 'archive' / f'{SENDER}-001.md').read_text(
+            encoding='utf-8'
+        ).endswith('first\n')
+        remaining = _list(plan_context).toon()['messages']
+        assert [row['name'] for row in remaining] == [f'{SENDER}-002.md']
+
+    def test_should_be_idempotent_on_a_second_archive(self, plan_context, tmp_path):
+        _scaffold(plan_context)
+        _write(plan_context, _payload(tmp_path))
+        _archive(plan_context, f'{SENDER}-001.md')
+
+        second = _archive(plan_context, f'{SENDER}-001.md')
+
+        assert 'status: success' in second.stdout
+        assert 'already_archived: true' in second.stdout
+
+    def test_should_refuse_a_path_shaped_message_name(self, plan_context, tmp_path):
+        _scaffold(plan_context)
+        _write(plan_context, _payload(tmp_path))
+
+        result = _archive(plan_context, f'../{SENDER}-001.md')
+
+        assert 'error: invalid_message_name' in result.stdout
+        assert (_epic_dir(plan_context) / 'inbox' / f'{SENDER}-001.md').is_file()
+
+    def test_should_refuse_to_clobber_an_existing_archived_copy(
+        self, plan_context, tmp_path
+    ):
+        _scaffold(plan_context)
+        _write(plan_context, _payload(tmp_path, 'original body', 'a.md'))
+        _archive(plan_context, f'{SENDER}-001.md')
+        inbox = _epic_dir(plan_context) / 'inbox'
+        (inbox / f'{SENDER}-001.md').write_text('a resurrected body\n', encoding='utf-8')
+
+        result = _archive(plan_context, f'{SENDER}-001.md')
+
+        assert 'error: archive_conflict' in result.stdout
+        assert 'original body' in (inbox / 'archive' / f'{SENDER}-001.md').read_text(
+            encoding='utf-8'
+        )
+
+    def test_should_report_a_message_present_at_neither_path(self, plan_context):
+        _scaffold(plan_context)
+
+        result = _archive(plan_context, f'{SENDER}-404.md')
+
+        assert 'error: file_not_found' in result.stdout
+
+    def test_should_refuse_an_empty_message_name(self, plan_context, tmp_path):
+        _scaffold(plan_context)
+        _write(plan_context, _payload(tmp_path))
+
+        result = _archive(plan_context, '')
+
+        assert 'error: invalid_message_name' in result.stdout
+        assert (_epic_dir(plan_context) / 'inbox' / f'{SENDER}-001.md').is_file()
+
+    def test_should_refuse_an_unsafe_slug(self, plan_context):
+        result = _archive(plan_context, f'{SENDER}-001.md', slug='../evil')
+
+        assert 'error: invalid_slug' in result.stdout
+
+    def test_should_refuse_an_unscaffolded_epic(self, plan_context):
+        result = _archive(plan_context, f'{SENDER}-001.md', slug='never-scaffolded')
+
+        assert 'error: epic_not_found' in result.stdout
+
+    def test_should_refuse_to_mutate_an_archived_only_epic(self, plan_context, tmp_path):
+        _scaffold(plan_context, ARCHIVED_EPIC)
+        _write(plan_context, _payload(tmp_path, 'archived body'), slug=ARCHIVED_EPIC)
+        archived = _archived_epic_dir(plan_context, ARCHIVED_EPIC)
+        archived.parent.mkdir(parents=True, exist_ok=True)
+        _epic_dir(plan_context, ARCHIVED_EPIC).rename(archived)
+
+        result = _archive(plan_context, f'{SENDER}-001.md', slug=ARCHIVED_EPIC)
+
+        assert 'error: epic_not_found' in result.stdout
+        assert (archived / 'inbox' / f'{SENDER}-001.md').is_file()
+        assert not (archived / 'inbox' / 'archive').exists()
 
 
 # =============================================================================
@@ -233,6 +513,28 @@ class TestWriteBoundary:
             (root / rel).write_text(content, encoding='utf-8')
 
         _write(plan_context, _payload(tmp_path))
+
+        for rel, content in seeded.items():
+            assert (root / rel).read_text(encoding='utf-8') == content, rel
+
+    def test_should_leave_every_non_inbox_path_byte_identical_after_a_drain(
+        self, plan_context, tmp_path
+    ):
+        _scaffold(plan_context)
+        root = _epic_dir(plan_context)
+        seeded = {
+            'status.json': '{"kind": "orchestrator"}',
+            'epic.md': '# Epic\n',
+            'workstreams/WS-01-a.md': 'charter\n',
+            'plans/PLAN-01-a.md': 'spec\n',
+            'landings/PLAN-01.md': 'landing\n',
+        }
+        for rel, content in seeded.items():
+            (root / rel).write_text(content, encoding='utf-8')
+        _write(plan_context, _payload(tmp_path))
+
+        _list(plan_context)
+        _archive(plan_context, f'{SENDER}-001.md')
 
         for rel, content in seeded.items():
             assert (root / rel).read_text(encoding='utf-8') == content, rel
@@ -307,7 +609,7 @@ class TestDocContract:
         section = _section(
             _ORCHESTRATION_MODEL.read_text(encoding='utf-8'), '## Dispatch Decision Rule'
         )
-        s2 = next(line for line in section.splitlines() if line.startswith('- **S2'))
+        s2 = _line(section, '- **S2')
 
         assert 'dispatched by an orchestrator verb' in s2
         assert 'Ledger Write-Boundary' in s2
@@ -316,7 +618,7 @@ class TestDocContract:
         section = _section(
             _ORCHESTRATION_MODEL.read_text(encoding='utf-8'), '## Dispatch Decision Rule'
         )
-        s2 = next(line for line in section.splitlines() if line.startswith('- **S2'))
+        s2 = _line(section, '- **S2')
 
         assert 'No dispatched leaf writes inside' not in s2
 

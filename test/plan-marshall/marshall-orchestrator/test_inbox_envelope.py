@@ -16,8 +16,14 @@ Covers, under ``PLAN_BASE_DIR`` isolation (via ``plan_context``):
 - ``classify_source_id``: positive, negative, and traversal cases.
 - ``cmd_inbox_write`` / ``cmd_inbox_validate`` / ``cmd_inbox_detect``: the
   handler surface, including every refusal class.
+- ``cmd_inbox_archive``'s atomic destination claim, driven through a
+  deterministically-opened check-to-claim window. These live here rather than
+  in the CLI contract module because forcing the interleaving requires an
+  in-process seam; a real concurrent race reproduces the same states only
+  sporadically and would make the assertion flaky.
 """
 
+import os
 from argparse import Namespace
 from pathlib import Path
 
@@ -36,6 +42,7 @@ KINDS = _inbox.KINDS
 SENDER_TYPES = _inbox.SENDER_TYPES
 allocate_message_path = _inbox.allocate_message_path
 classify_source_id = _inbox.classify_source_id
+cmd_inbox_archive = _inbox.cmd_inbox_archive
 cmd_inbox_detect = _inbox.cmd_inbox_detect
 cmd_inbox_validate = _inbox.cmd_inbox_validate
 cmd_inbox_write = _inbox.cmd_inbox_write
@@ -541,6 +548,121 @@ class TestInboxValidate:
 
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_slug'
+
+
+# =============================================================================
+# cmd_inbox_archive — the atomic destination claim under a forced race
+# =============================================================================
+
+
+def _open_race_window(monkeypatch, archive_dir: Path, side_effect) -> None:
+    """Fire ``side_effect`` inside the archive verb's check-to-claim window.
+
+    ``cmd_inbox_archive`` creates ``inbox/archive/`` immediately before it
+    claims the destination, so wrapping :meth:`pathlib.Path.mkdir` is the
+    deterministic seam for "a concurrent drain acted after our presence checks
+    and before our own move" — the exact interleaving a real race produces only
+    sporadically.
+    """
+    original = Path.mkdir
+
+    def mkdir(self, *args, **kwargs):
+        original(self, *args, **kwargs)
+        if self == archive_dir:
+            side_effect()
+
+    monkeypatch.setattr(Path, 'mkdir', mkdir)
+
+
+class TestInboxArchiveRace:
+    def _seed(self, plan_context, tmp_path) -> tuple[Path, Path, Path]:
+        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_inbox_write(_write_args(payload_file=_payload(tmp_path, 'my body')))
+        inbox = _inbox_dir(plan_context)
+        archive_dir = inbox / 'archive'
+        return inbox / f'{SENDER}-001.md', archive_dir, archive_dir / f'{SENDER}-001.md'
+
+    def test_should_refuse_a_destination_that_appears_inside_the_window(
+        self, plan_context, tmp_path, monkeypatch
+    ):
+        source, archive_dir, dest = self._seed(plan_context, tmp_path)
+        _open_race_window(
+            monkeypatch,
+            archive_dir,
+            lambda: dest.write_text('the winner audit record\n', encoding='utf-8'),
+        )
+
+        result = cmd_inbox_archive(Namespace(slug=EPIC, message=source.name))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'archive_conflict'
+        assert dest.read_text(encoding='utf-8') == 'the winner audit record\n'
+        # A refused claim retires nothing: the un-archived message must survive
+        # so a later drain can still consume it.
+        assert source.is_file()
+
+    def test_should_report_already_archived_when_dest_is_the_same_inode_as_source(
+        self, plan_context, tmp_path, monkeypatch
+    ):
+        source, archive_dir, dest = self._seed(plan_context, tmp_path)
+        # The winner has claimed the destination but has NOT yet unlinked its
+        # source, so both paths are one inode. Source presence is therefore
+        # true here while ``dest`` is the winner's own in-flight artifact — not
+        # a distinct competing audit record — so this must resolve to
+        # idempotent success, not ``archive_conflict``.
+        _open_race_window(monkeypatch, archive_dir, lambda: os.link(source, dest))
+
+        result = cmd_inbox_archive(Namespace(slug=EPIC, message=source.name))
+
+        assert result['status'] == 'success'
+        assert result['already_archived'] is True
+        assert dest.is_file()
+        # The winner still owns the source unlink; the loser must not have
+        # retired it on the winner's behalf.
+        assert source.is_file()
+
+    def test_should_reject_a_message_naming_a_directory(self, plan_context, tmp_path):
+        # ``archive`` is a bare filename, so it clears ``_is_bare_filename`` and
+        # reaches ``os.link`` — where it names the archive DIRECTORY. os.link
+        # refuses a directory source with a plain OSError that neither narrow
+        # handler catches, so this must return a structured refusal rather than
+        # letting the OSError escape.
+        self._seed(plan_context, tmp_path)
+
+        result = cmd_inbox_archive(Namespace(slug=EPIC, message='archive'))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_message_name'
+        assert result['message_name'] == 'archive'
+
+    def test_should_report_already_archived_when_the_race_is_lost(
+        self, plan_context, tmp_path, monkeypatch
+    ):
+        source, archive_dir, dest = self._seed(plan_context, tmp_path)
+
+        def concurrent_winner() -> None:
+            os.link(source, dest)
+            source.unlink()
+
+        _open_race_window(monkeypatch, archive_dir, concurrent_winner)
+
+        result = cmd_inbox_archive(Namespace(slug=EPIC, message=source.name))
+
+        assert result['status'] == 'success'
+        assert result['already_archived'] is True
+        assert dest.is_file()
+        assert not source.exists()
+
+    def test_should_report_file_not_found_when_the_source_vanishes_in_the_window(
+        self, plan_context, tmp_path, monkeypatch
+    ):
+        source, archive_dir, _dest = self._seed(plan_context, tmp_path)
+        _open_race_window(monkeypatch, archive_dir, source.unlink)
+
+        result = cmd_inbox_archive(Namespace(slug=EPIC, message=source.name))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'file_not_found'
 
 
 # =============================================================================

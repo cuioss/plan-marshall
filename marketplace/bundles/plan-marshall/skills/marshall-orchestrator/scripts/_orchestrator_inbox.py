@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Inbox envelope schema, validation seam, and epic-store write surface.
+"""Inbox envelope schema, validation seam, and epic-store write/drain surface.
 
 Backs ``orchestrator.py``'s ``inbox`` verb group. The inbox is the epic tree's
 single plan-writable OUTBOX: an executing plan appends
@@ -10,6 +10,11 @@ enforced here **by construction** — :func:`cmd_inbox_write` derives the target
 path solely from the validated slug and ``--sender-id`` and accepts no
 caller-supplied output path, so no argument value can reach ``status.json``,
 ``epic.md``, ``workstreams/``, ``plans/``, or ``landings/``.
+
+The orchestrator-side drain surface (:func:`cmd_inbox_list`,
+:func:`cmd_inbox_archive`) is bounded by the same construction: both derive
+their target from the validated slug plus a bare message filename, and the only
+path they ever write is ``inbox/archive/{name}``.
 
 The message format is markdown with the repo's existing ``key=value`` metadata
 header (``file_ops.parse_markdown_metadata`` /
@@ -61,6 +66,11 @@ HEADER_FIELDS = (
 #: The inbox subdirectory of an epic tree.
 INBOX_SUBDIR = 'inbox'
 
+#: Where a consumed message is retired to, relative to ``inbox/``. Created on
+#: first use — deliberately NOT a member of ``orchestrator.py``'s
+#: ``EPIC_SUBDIRS``, so no existing scaffold assertion moves.
+INBOX_ARCHIVE_SUBDIR = 'archive'
+
 #: ``{sender_id}-{NNN}.md`` — the one message-file shape the channel allocates.
 #: The sender group is non-greedy so the LAST dash-separated all-digit run is
 #: the sequence: a four-digit sequence, or a sender id that itself ends in
@@ -99,6 +109,49 @@ def _validate_identifier(value: str) -> str | None:
     except ValueError as exc:
         return str(exc)
     return None
+
+
+def _is_bare_filename(name: str) -> bool:
+    """Whether ``name`` is a bare filename safe to join onto ``inbox/``.
+
+    The shared guard behind every ``--message`` argument: an empty value, or a
+    value carrying a path separator, a traversal segment, or a directory
+    reference, is refused with ``invalid_message_name`` before it can reach a
+    filesystem join. The emptiness test is load-bearing rather than defensive:
+    ``Path('').name`` is itself ``''``, so the empty string satisfies the
+    bare-name equality on its own and the join would resolve to ``inbox/``
+    itself — surfacing a confusing not-found against a directory path instead
+    of naming the actual defect in the argument.
+    """
+    return bool(name) and name == Path(name).name and name not in ('.', '..')
+
+
+def _read_epic_root(slug: str) -> Path:
+    """Resolve the epic's store root for a READ-side verb.
+
+    Uses :func:`file_ops.get_store_dir`'s ``allow_archived=True`` read-fallback
+    so an archived epic resolves transparently when its active tree is gone —
+    the same resolution ``inbox validate`` uses.
+    """
+    return get_store_dir(ORCHESTRATOR_STORE, slug, allow_archived=True)
+
+
+def _inbox_dir(slug: str) -> Path:
+    """Resolve the epic's ``inbox/`` directory for a READ-side verb."""
+    return _read_epic_root(slug) / INBOX_SUBDIR
+
+
+def _mutate_epic_root(slug: str) -> Path:
+    """Resolve the epic's store root for a MUTATING verb.
+
+    Deliberately omits the ``allow_archived=True`` read-fallback
+    :func:`_read_epic_root` opts into. Archival relocates a file, so a verb
+    that MUTATES must never resolve into ``archived-orchestrators/{slug}`` and
+    write inside an epic's frozen audit record once its active tree is gone —
+    :func:`file_ops.get_store_dir`'s strict default returns the (absent) active
+    path instead, which the caller refuses with ``epic_not_found``.
+    """
+    return get_store_dir(ORCHESTRATOR_STORE, slug)
 
 
 def compose_envelope(
@@ -210,6 +263,36 @@ def next_sequence(inbox_dir: Path, sender_id: str) -> int:
         if match is not None and match.group('sender') == sender_id:
             highest = max(highest, int(match.group('seq')))
     return highest + 1
+
+
+def list_messages(inbox_dir: Path) -> list[Path]:
+    """Return ``inbox_dir``'s message files in deterministic (sender, sequence) order.
+
+    The enumeration seam behind ``inbox list``. Only direct children matching
+    :data:`_MESSAGE_NAME_RE` are returned: the scan is non-recursive, so nothing
+    under the ``archive/`` subdirectory is ever enumerated, and the subdirectory
+    entry itself is filtered out by the file check along with any other
+    off-shape name.
+
+    Args:
+        inbox_dir: The epic's ``inbox/`` directory; an absent directory yields
+            an empty list.
+
+    Returns:
+        The message paths, sorted by sender id then numeric sequence.
+    """
+    if not inbox_dir.is_dir():
+        return []
+    entries: list[tuple[str, int, Path]] = []
+    for entry in inbox_dir.iterdir():
+        if not entry.is_file():
+            continue
+        match = _MESSAGE_NAME_RE.match(entry.name)
+        if match is None:
+            continue
+        entries.append((match.group('sender'), int(match.group('seq')), entry))
+    entries.sort(key=lambda item: (item[0], item[1]))
+    return [path for _, _, path in entries]
 
 
 def allocate_message_path(inbox_dir: Path, sender_id: str, text: str) -> Path:
@@ -344,17 +427,13 @@ def cmd_inbox_validate(args: Any) -> dict[str, Any]:
     if invalid:
         return _error('invalid_slug', invalid, slug=args.slug)
     name = args.message
-    if name != Path(name).name or name in ('.', '..'):
+    if not _is_bare_filename(name):
         return _error(
             'invalid_message_name',
             f'--message must be a bare filename inside inbox/, got: {name}',
             slug=args.slug,
         )
-    path = (
-        get_store_dir(ORCHESTRATOR_STORE, args.slug, allow_archived=True)
-        / INBOX_SUBDIR
-        / name
-    )
+    path = _inbox_dir(args.slug) / name
     if not path.is_file():
         return _error(
             'file_not_found', f'inbox message not found: {path}', slug=args.slug
@@ -381,6 +460,220 @@ def cmd_inbox_validate(args: Any) -> dict[str, Any]:
         'kind': header['kind'],
         'created': header['created'],
     }
+
+
+def cmd_inbox_list(args: Any) -> dict[str, Any]:
+    """Enumerate and validate every message queued in the epic's inbox.
+
+    The drain's enumeration seam: one row per message, in deterministic
+    (sender, sequence) order, each row carrying the header context the
+    orchestrator routes on plus the validation verdict. A malformed message is
+    REPORTED with the validator's distinct error code — never silently dropped,
+    and never aborting the enumeration — so a broken message stays visible to
+    the drain instead of disappearing from it. A message that cannot even be
+    READ (non-UTF-8 bytes, or the file vanishing mid-drain under a concurrent
+    writer) is reported the same way, with the distinct ``unreadable`` code, so
+    a read failure never aborts the rest of the enumeration either. Consumed
+    messages already moved under ``inbox/archive/`` are not enumerated, which
+    is what makes a re-scan of a completed drain a no-op.
+    """
+    invalid = _validate_identifier(args.slug)
+    if invalid:
+        return _error('invalid_slug', invalid, slug=args.slug)
+    root = _read_epic_root(args.slug)
+    if not root.is_dir():
+        return _error(
+            'epic_not_found',
+            f'epic {args.slug!r} has no tree at {root}; run scaffold first',
+            slug=args.slug,
+        )
+    inbox_dir = root / INBOX_SUBDIR
+    messages: list[dict[str, Any]] = []
+    for path in list_messages(inbox_dir):
+        try:
+            text = path.read_text(encoding='utf-8')
+        except (OSError, UnicodeDecodeError):
+            messages.append(
+                {
+                    'name': path.name,
+                    'sender_id': '',
+                    'kind': '',
+                    'created': '',
+                    'valid': False,
+                    'error': 'unreadable',
+                }
+            )
+            continue
+        ok, error_code, header = validate_envelope(
+            text,
+            expected_epic=args.slug,
+            filename=path.name,
+        )
+        messages.append(
+            {
+                'name': path.name,
+                'sender_id': header.get('sender_id', ''),
+                'kind': header.get('kind', ''),
+                'created': header.get('created', ''),
+                'valid': ok,
+                'error': '' if ok else (error_code or 'invalid_envelope'),
+            }
+        )
+    return {
+        'status': 'success',
+        'operation': 'inbox-list',
+        'slug': args.slug,
+        'store': ORCHESTRATOR_STORE,
+        'count': len(messages),
+        'invalid_count': sum(1 for row in messages if not row['valid']),
+        'messages': messages,
+    }
+
+
+def _archive_success(
+    slug: str, name: str, dest: Path, already_archived: bool
+) -> dict[str, Any]:
+    """Build the ``inbox-archive`` success envelope."""
+    return {
+        'status': 'success',
+        'operation': 'inbox-archive',
+        'slug': slug,
+        'store': ORCHESTRATOR_STORE,
+        'message': name,
+        'already_archived': already_archived,
+        'archived_to': str(dest),
+    }
+
+
+def cmd_inbox_archive(args: Any) -> dict[str, Any]:
+    """Retire one consumed message to ``inbox/archive/{name}``.
+
+    Archival is the consume marker: the message leaves the enumeration
+    :func:`cmd_inbox_list` returns while its audit record survives at the
+    archived path, so the append-only invariant is unbroken — the file is
+    relocated, never edited or deleted. Because this verb MUTATES, the epic
+    root resolves strictly (:func:`_mutate_epic_root`): an epic whose active
+    tree is gone is refused with ``epic_not_found`` rather than silently
+    relocating a file inside its frozen archived record.
+
+    The relocation itself is an ATOMIC claim rather than a check-then-move:
+    :func:`os.link` creates ``inbox/archive/{name}`` without ever replacing an
+    existing destination, and the source is unlinked only once that claim has
+    succeeded. Every response is derived from the claim's own outcome, so two
+    racing drains cannot both clear a presence check and have the loser fault
+    on a source the winner already moved:
+
+    - claim refused because the source is gone (``FileNotFoundError``) and the
+      destination is present → idempotent success (``already_archived``), so a
+      resumed, repeated, or race-losing drain is safe.
+    - claim refused because the source is gone and the destination is absent
+      → ``error: file_not_found``.
+    - claim refused because the destination already exists
+      (``FileExistsError``) and ``dest`` is a DISTINCT inode from ``source``
+      → ``error: archive_conflict`` (never clobber the retired audit record).
+    - claim refused because the destination already exists but ``dest`` and
+      ``source`` are the SAME inode — the claim is a hard link, so a
+      concurrent winner that has linked and not yet unlinked leaves both
+      paths pointing at one file → idempotent success (``already_archived``),
+      because ``dest`` is that winner's own in-flight artifact rather than a
+      second, competing audit record. Source presence is NOT the
+      discriminator; inode identity is.
+    - claim refused for any other reason (a bare ``--message`` that names a
+      DIRECTORY under ``inbox/`` makes ``os.link`` raise a plain ``OSError``)
+      → ``error: invalid_message_name``.
+    - claim succeeded → unlink the source and report the relocation.
+    """
+    invalid = _validate_identifier(args.slug)
+    if invalid:
+        return _error('invalid_slug', invalid, slug=args.slug)
+    name = args.message
+    if not _is_bare_filename(name):
+        return _error(
+            'invalid_message_name',
+            f'--message must be a bare filename inside inbox/, got: {name}',
+            slug=args.slug,
+        )
+    root = _mutate_epic_root(args.slug)
+    if not root.is_dir():
+        return _error(
+            'epic_not_found',
+            f'epic {args.slug!r} has no active tree at {root}; '
+            'refusing to archive inside an archived epic',
+            slug=args.slug,
+        )
+    inbox_dir = root / INBOX_SUBDIR
+    source = inbox_dir / name
+    dest = inbox_dir / INBOX_ARCHIVE_SUBDIR / name
+    # Created before the claim so a FileNotFoundError from os.link below can
+    # only mean "the source is gone", never "the archive directory is missing".
+    # Guarded in its OWN try/except (never folded into the os.link try block
+    # below) so a genuine filesystem failure here (permission denied, disk
+    # full, read-only filesystem) returns its own precise error code instead
+    # of either propagating uncaught or being mislabelled as the unrelated
+    # `invalid_message_name` the broader `except OSError` below reports for
+    # `os.link`.
+    try:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        return _error(
+            'archive_dir_unavailable',
+            f'could not create the inbox archive directory {dest.parent}: {exc}',
+            slug=args.slug,
+            message_name=name,
+        )
+    try:
+        os.link(source, dest)
+    except FileNotFoundError:
+        if dest.is_file():
+            return _archive_success(args.slug, name, dest, already_archived=True)
+        return _error(
+            'file_not_found',
+            f'inbox message not found: {source}',
+            slug=args.slug,
+            message_name=name,
+        )
+    except FileExistsError:
+        # The claim is a HARD LINK, so between a concurrent winner's own
+        # ``os.link`` and its ``source.unlink()`` the two paths are the SAME
+        # inode. Source presence therefore does NOT discriminate: it is still
+        # true inside that window, where ``dest`` is the winner's in-flight
+        # artifact rather than a second, competing audit record. Inode
+        # identity is the discriminator.
+        try:
+            distinct = not source.samefile(dest)
+        except FileNotFoundError:
+            # ``source`` vanished between the claim and this check (the winner
+            # finished its unlink), or ``dest`` did — either way there is no
+            # distinct record to protect, so fall through to idempotent
+            # success exactly as a plainly race-losing drain does.
+            distinct = False
+        if distinct:
+            return _error(
+                'archive_conflict',
+                f'inbox message {name} is already archived at {dest}; '
+                'refusing to clobber the audit record',
+                slug=args.slug,
+                message_name=name,
+                archived_to=str(dest),
+            )
+        return _archive_success(args.slug, name, dest, already_archived=True)
+    except OSError as exc:
+        # Ordering is load-bearing: FileNotFoundError and FileExistsError are
+        # both OSError subclasses and MUST stay above this broader clause. A
+        # bare component like the literal ``archive`` clears
+        # :func:`_is_bare_filename` yet names a DIRECTORY once joined onto
+        # ``inbox/``, and ``os.link`` refuses a directory source with a plain
+        # OSError (``PermissionError`` on most platforms) that neither narrow
+        # clause catches — without this clause it escapes the handler instead
+        # of returning a structured response.
+        return _error(
+            'invalid_message_name',
+            f'--message does not name an archivable file: {name} ({exc})',
+            slug=args.slug,
+            message_name=name,
+        )
+    source.unlink()
+    return _archive_success(args.slug, name, dest, already_archived=False)
 
 
 def cmd_inbox_detect(args: Any) -> dict[str, Any]:

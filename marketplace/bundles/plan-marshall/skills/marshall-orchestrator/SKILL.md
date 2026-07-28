@@ -17,7 +17,7 @@ Verb router for epic orchestration. Sits ABOVE the plan lifecycle: it manages th
 /marshall-orchestrator decompose slug={slug}    # Decompose the epic into workstreams and plan specs
 /marshall-orchestrator status slug={slug}       # Report queue and plan states
 /marshall-orchestrator next slug={slug}         # Emit the next ready-to-run /plan-marshall command
-/marshall-orchestrator analyze slug={slug}      # Analyze a landing or mid-flight observation
+/marshall-orchestrator analyze slug={slug}      # Analyze a landing or mid-flight observation; drains the epic inbox when invoked without a paste
 /marshall-orchestrator resume slug={slug}       # Re-anchor a fresh session from the persisted tree
 /marshall-orchestrator close slug={slug}        # Freeze the epic into history.md
 /marshall-orchestrator archive slug={slug}      # Relocate a closed epic to archived-orchestrators/
@@ -61,7 +61,7 @@ Resolve the verb from the invocation (default: `status`), then load and follow t
 | `decompose` | `workflow/decompose.md` | Produce workstream charters and staged plan specs; populate the status.json queue |
 | `status` | `workflow/orchestrate.md` | Report the queue, running/parked plans, and resume anchor |
 | `next` | `workflow/orchestrate.md` | Emit the next ready-to-run `/plan-marshall` command (surface-disjointness checked) |
-| `analyze` | `workflow/analyze.md` | Analyze a landing (pasted / on-disk / cross-repo) or record a mid-flight observation |
+| `analyze` | `workflow/analyze.md` | Analyze a landing (pasted / on-disk / cross-repo) or record a mid-flight observation; with no paste, drains the epic's `inbox/` queue (the fourth input mode) message by message |
 | `resume` | `workflow/resume.md` | Re-anchor a fresh session from status.json + epic.md |
 | `close` | `workflow/close.md` | Freeze epic.md into history.md and mark the epic closed |
 | `archive` | `workflow/archive.md` | Relocate a closed epic tree to `archived-orchestrators/` (post-close, mechanical) |
@@ -84,7 +84,7 @@ Authoring templates for the ledger documents live in `templates/` and mirror the
 
 | Script | Notation | Purpose |
 |--------|----------|---------|
-| orchestrator | `plan-marshall:marshall-orchestrator:orchestrator` | Thin scaffolding: `scaffold` (create the epic tree), `queue` (read the plan queue, transition a plan's status, or set one plan row's result field), `resume-summary` (generate the START-HERE block from status.json), `archive` (relocate a closed epic tree to `archived-orchestrators/`), `inbox` (append/validate a plan-written OUTBOX message, or detect orchestration context from a plan's `source_id`) |
+| orchestrator | `plan-marshall:marshall-orchestrator:orchestrator` | Thin scaffolding: `scaffold` (create the epic tree), `queue` (read the plan queue, transition a plan's status, or set one plan row's result field), `resume-summary` (generate the START-HERE block from status.json), `archive` (relocate a closed epic tree to `archived-orchestrators/`), `inbox` (append/validate a plan-written OUTBOX message, list the queued messages, archive a consumed one, or detect orchestration context from a plan's `source_id`) |
 
 ## Canonical invocations
 
@@ -139,6 +139,24 @@ python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator
 ```
 
 Validates one existing message against the envelope schema. `--message` is a bare filename inside the epic's `inbox/` directory (a path is refused with `invalid_message_name`). Returns the parsed header on success; on rejection returns the distinct error code for the failing class — `missing_header_field`, `unknown_envelope_version`, `invalid_sender_type`, `invalid_kind`, `empty_payload`, `epic_mismatch`, or `filename_sender_mismatch` (checked in that order; see the validator error-code table in [`standards/inbox-envelope.md`](standards/inbox-envelope.md)).
+
+### inbox list
+
+```bash
+python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator inbox list \
+  --slug SLUG
+```
+
+Enumerates the epic's queued inbox messages — the drain's enumeration seam. Returns `count`, `invalid_count`, and a `messages[]` table carrying `name`, `sender_id`, `kind`, `created`, `valid`, and `error` per row, in deterministic (sender, sequence) order. Every message is validated through the same `validate_envelope` seam `inbox validate` uses, so a malformed message is REPORTED with its distinct error code (`error` non-empty, `valid: false`) rather than dropped or aborting the enumeration. A message that cannot even be read (non-UTF-8 bytes, or the file vanishing mid-drain under a concurrent writer) is reported the same way with the distinct `unreadable` code, also without aborting the enumeration. Messages already retired under `inbox/archive/` are not enumerated, which is what makes a re-scan of a completed drain a no-op. Refuses an unsafe slug (`invalid_slug`) and an unscaffolded epic (`epic_not_found`).
+
+### inbox archive
+
+```bash
+python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator inbox archive \
+  --slug SLUG --message MESSAGE
+```
+
+Retires one consumed message from `inbox/{name}` to `inbox/archive/{name}`, creating the archive directory on first use. `--message` is a bare filename inside the epic's `inbox/` directory (a path, or a directory name under `inbox/`, is refused with `invalid_message_name`, matching `inbox validate`). Archival is the consume marker, and it relocates rather than edits, so the append-only invariant is unbroken. The claim is atomic (a no-replace hard link): a race-losing or repeated drain resolves to idempotent success (`already_archived: true`) whether the source is already gone or the destination is the SAME inode as the still-present source (a concurrent winner's in-flight hard link) — inode identity, not source presence, is the discriminator. Refuses an unsafe slug (`invalid_slug`), an unscaffolded or archived-only epic (`epic_not_found` — this is a mutating verb and never resolves through the archived read-fallback), a message present at neither path (`file_not_found`), a genuinely DISTINCT destination inode (`archive_conflict`) rather than clobbering the retired audit record, and an archive-directory-creation failure (`archive_dir_unavailable`, e.g. permission denied or disk full).
 
 ### inbox detect
 
