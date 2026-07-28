@@ -38,6 +38,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from conftest import PROJECT_ROOT
 
 _AUDIT_SCRIPT = (
@@ -1064,7 +1066,9 @@ class TestExplorationShareRegistration:
 
         assert f'fixed_since: {audit.CHECK_ERA["exploration-share"]}' in block
 
-    def test_check_accepted_as_a_cli_choice(self, tmp_path: Path):
+    def test_check_accepted_as_a_cli_choice(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
         # --check choices are sourced from CHECK_NAMES; drive the real parser so an
         # argparse-level rejection would fail here rather than at audit time.
         _shares_plan(
@@ -1072,6 +1076,13 @@ class TestExplorationShareRegistration:
             exploration_calls=1, other_calls=1,
             exploration_bytes=1, other_bytes=1,
         )
+        # audit.main() derives its repo_root from Path.cwd() and uses it for BOTH
+        # the corpus scan and the persisted-report write. --plan-dir redirects only
+        # the scan (an absolute right-hand side discards repo_root on join), so
+        # without this chdir the report lands in the REAL .plan/local/audit-reports
+        # tree and trips conftest's pollution guard. Pin cwd into the sandbox so the
+        # write stays inside pytest's own auto-cleaned tmp_path.
+        monkeypatch.chdir(tmp_path)
 
         exit_code = audit.main(
             ['--check', 'exploration-share', '--plan-dir', str(tmp_path)]
