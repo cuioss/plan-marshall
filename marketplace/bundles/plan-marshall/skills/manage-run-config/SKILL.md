@@ -71,6 +71,7 @@ See [standards/run-config-standard.md](standards/run-config-standard.md) for com
 | init | `plan-marshall:manage-run-config:run_config init` |
 | validate | `plan-marshall:manage-run-config:run_config validate` |
 | timeout get | `plan-marshall:manage-run-config:run_config timeout get` |
+| timeout measured | `plan-marshall:manage-run-config:run_config timeout measured` |
 | timeout set | `plan-marshall:manage-run-config:run_config timeout set` |
 | warning add | `plan-marshall:manage-run-config:run_config warning add` |
 | warning list | `plan-marshall:manage-run-config:run_config warning list` |
@@ -124,7 +125,7 @@ Validate configuration structure.
 python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config validate --file run-configuration.json
 ```
 
-### timeout get / set
+### timeout get / measured / set
 
 Manage adaptive command timeouts. **Every value on this surface is in SECONDS** — the persisted field is `timeout_seconds`, and `--default`, `--explicit`, and `--duration` are all seconds, never milliseconds.
 
@@ -146,7 +147,13 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config timeo
 # Record an observed duration (seconds) into the adaptive value
 python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config timeout set \
   --command mvn-verify --duration 180
+
+# Ask whether a key has EVER been measured (raw persisted value, unscaled/unfloored)
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config timeout measured \
+  --command mvn-verify
 ```
+
+`timeout measured` answers a question `timeout get` structurally cannot: `get` returns an `int` for a measured and an unmeasured key alike, so its value carries no signal about whether the command has ever been observed. `measured` returns `measured: true|false` plus the RAW persisted `timeout_seconds` (`null` when unmeasured), with neither the safety margin nor the 120 s floor applied — any adjustment would blur the distinction the verb exists to expose. Its consumer is the `execution_tier` fail-closed rule in [`manage-architecture`](../manage-architecture/standards/resolve-command.md) § Lookup Path: an unmeasured build command routes to the orchestrator rather than being run in-leaf on an unobserved first run.
 
 ### warning add / list / remove
 
@@ -267,6 +274,7 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config clean
 | Client | Operation | Purpose |
 |--------|-----------|---------|
 | Build skills | timeout get | Read timeout values for command execution |
+| `manage-architecture` `_lookup_bash_timeout` | timeout measured | Read measured-ness for the `execution_tier` fail-closed rule (unmeasured → `orchestrator`) |
 | Build skills | warning list | Filter build warnings against accepted patterns |
 | `phase-6-finalize` architecture-refresh step | architecture-refresh get-tier-0/1 | Read tier knobs to decide deterministic refresh / LLM re-enrichment behaviour |
 | `manage-locks` `build_queue` acquire/release | build-queue-limit get | Read the adaptive upper limit to compute the `2 ×` stale-reclaim threshold |
@@ -292,11 +300,14 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config valid
 
 ### timeout
 
-`timeout` carries the nested sub-verbs `get` and `set`:
+`timeout` carries the nested sub-verbs `get`, `measured`, and `set`:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config timeout get \
   --command COMMAND --default DEFAULT [--explicit EXPLICIT]
+
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config timeout measured \
+  --command COMMAND
 
 python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config timeout set \
   --command COMMAND --duration DURATION

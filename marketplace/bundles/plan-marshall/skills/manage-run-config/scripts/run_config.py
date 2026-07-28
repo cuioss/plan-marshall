@@ -264,6 +264,48 @@ def timeout_get(command_key: str, default: int, project_dir: str = '.', explicit
     return max(timeout, MINIMUM_TIMEOUT_SECONDS)
 
 
+def timeout_measured(command_key: str, project_dir: str = '.') -> int | None:
+    """Return the RAW persisted duration for ``command_key``, or ``None``.
+
+    This is the measured-vs-unmeasured discriminator :func:`timeout_get`
+    structurally cannot provide: ``timeout_get`` returns an ``int`` for a
+    measured and an unmeasured key alike (falling back to ``default`` and then
+    flooring at ``MINIMUM_TIMEOUT_SECONDS``), so its return value carries no
+    signal about whether the key has ever been observed.
+
+    Neither ``SAFETY_MARGIN`` nor ``MINIMUM_TIMEOUT_SECONDS`` is applied — the
+    raw persisted ``commands[key].timeout_seconds`` is returned verbatim. The
+    whole purpose of this accessor is to answer *has this been measured?*, so
+    any adjustment would blur the very distinction it exists to expose.
+
+    Args:
+        command_key: Command identifier the learned value is keyed under.
+        project_dir: Kept for API compatibility; the config location is
+            main-anchored (see :func:`get_run_config_path`).
+
+    Returns:
+        The raw persisted duration in seconds, or ``None`` when the key has
+        never been measured.
+    """
+    config = read_run_config(get_run_config_path(project_dir))
+    persisted = config.get('commands', {}).get(command_key, {}).get('timeout_seconds')
+    return None if persisted is None else int(persisted)
+
+
+def cmd_timeout_measured(args: argparse.Namespace) -> dict:
+    """Report whether a command key has ever been measured, and its raw value."""
+    try:
+        persisted = timeout_measured(args.command)
+        return {
+            'status': 'success',
+            'command': args.command,
+            'measured': persisted is not None,
+            'timeout_seconds': persisted,
+        }
+    except Exception as e:
+        return _output_error(str(e))
+
+
 def timeout_set(command_key: str, duration: int, project_dir: str = '.') -> None:
     """Set timeout for a command with adaptive weighting."""
     config_path = get_run_config_path(project_dir)
@@ -702,6 +744,9 @@ Examples:
   # Override the learned value with an explicit bound (seconds; floored at 120)
   %(prog)s timeout get --command "ci:pr_checks" --default 300 --explicit 1800
 
+  # Report whether a command key has ever been measured (raw persisted value)
+  %(prog)s timeout measured --command "python:verify_plan_marshall"
+
   # Set/update timeout for a command (observed duration in seconds)
   %(prog)s timeout set --command "ci:pr_checks" --duration 180
 
@@ -782,6 +827,13 @@ Examples:
         f'(still floored at {MINIMUM_TIMEOUT_SECONDS}s)',
     )
     p_timeout_get.set_defaults(func=cmd_timeout_get)
+
+    # timeout measured
+    p_timeout_measured = timeout_subparsers.add_parser(
+        'measured', help='Report whether a command key has ever been measured', allow_abbrev=False
+    )
+    p_timeout_measured.add_argument('--command', required=True, help='Command identifier (e.g., "python:verify")')
+    p_timeout_measured.set_defaults(func=cmd_timeout_measured)
 
     # timeout set
     p_timeout_set = timeout_subparsers.add_parser('set', help='Set/update timeout for a command', allow_abbrev=False)

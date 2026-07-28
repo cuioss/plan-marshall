@@ -44,14 +44,24 @@ from _pyproject_cmd_parse import parse_log
 logger = logging.getLogger(__name__)
 
 
-# Outer timeout floor (seconds) for pyprojectx builds. pytest runs its own
-# per-test timeout backstop, configured under [tool.pytest.ini_options] in
-# pyproject.toml. This outer floor MUST stay strictly greater than that inner
-# backstop: if the outer wrapper timeout can expire first, it kills the run
-# before pytest can report WHICH test hung, turning a diagnosable inner timeout
-# into an opaque outer kill. See build-pyproject/standards/pyproject-impl.md
-# § "Timeout bound ordering".
-PYTEST_OUTER_FLOOR_SECONDS = 600
+# Outer timeout floor (seconds) for pyprojectx builds. The floor is bounded on
+# BOTH sides, and a value is only correct when it satisfies both:
+#
+# * LOWER bound — strictly greater than pytest's own per-test timeout backstop,
+#   configured under [tool.pytest.ini_options] ``timeout`` in pyproject.toml
+#   (300 s). If the outer wrapper timeout can expire first, it kills the run
+#   before pytest can report WHICH test hung, turning a diagnosable inner
+#   timeout into an opaque outer kill.
+# * UPPER bound — once ``OUTER_TIMEOUT_BUFFER`` (30 s) is added, the resulting
+#   stamped ``bash_timeout_seconds`` must stay at or below
+#   ``HARNESS_BASH_CEILING_SECONDS`` (600 s). The stamp is the number a leaf is
+#   instructed to pass on its Bash call, so a floor that pushes it past the
+#   ceiling makes the instruction unfollowable and forces every pyprojectx
+#   canonical to the orchestrator tier before any measurement is consulted.
+#
+# 330 satisfies both: 330 > 300, and 330 + 30 = 360 <= 600. See
+# build-pyproject/standards/pyproject-impl.md § "Timeout bound ordering".
+PYTEST_OUTER_FLOOR_SECONDS = 330
 
 
 def _python_scope_fn(args: str) -> str:

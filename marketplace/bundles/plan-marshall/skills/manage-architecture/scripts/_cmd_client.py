@@ -60,6 +60,7 @@ from _cmd_client_build import (  # noqa: E402, F401
     _BUILD_NOTATIONS,
     _HINT_ORCHESTRATOR,
     _HINT_PER_TASK_TEMPLATE,
+    _HINT_UNMEASURED,
     _MARKETPLACE_BUNDLES_DIR,
     HARNESS_BASH_CEILING_SECONDS,
     _classify_build_executable,

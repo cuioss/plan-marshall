@@ -467,7 +467,11 @@ class ExecuteConfig:
     Defaults to the tool-agnostic :data:`MIN_TIMEOUT`. A tool that runs its own
     inner timeout backstop MUST set a floor strictly greater than that backstop,
     so the outer timeout can never fire first and reduce a diagnosable inner
-    timeout report to an opaque outer kill."""
+    timeout report to an opaque outer kill. Every floor is ALSO bounded above:
+    ``floor + OUTER_TIMEOUT_BUFFER`` must stay at or below
+    ``HARNESS_BASH_CEILING_SECONDS``, because the same arithmetic produces the
+    ``bash_timeout_seconds`` stamp an agent is instructed to pass on its Bash
+    call — a floor above that bound yields an un-passable instruction."""
 
     notation: str = ''
     """Executor notation the marshalld daemon re-runs for this build (D5 routing).

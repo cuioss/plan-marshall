@@ -36,19 +36,31 @@ from marketplace_bundles import (
 #   config.min_timeout) + OUTER_TIMEOUT_BUFFER``. The ``config.min_timeout``
 #   clamp is the engine's own declared outer floor (``MAVEN_OUTER_FLOOR_SECONDS``
 #   / ``GRADLE_OUTER_FLOOR_SECONDS`` / ``NPM_OUTER_FLOOR_SECONDS`` = 300,
-#   ``PYTEST_OUTER_FLOOR_SECONDS`` = 600), and it is the SAME arithmetic
+#   ``PYTEST_OUTER_FLOOR_SECONDS`` = 330), and it is the SAME arithmetic
 #   ``execute_direct_base`` enforces at build time — so the stamp can never
 #   report a bound below what the real run will measure against.
 # * ``exceeds_bash_ceiling`` (bool) —
-#   ``bash_timeout_seconds > HARNESS_BASH_CEILING_SECONDS``. Because the tier is
-#   derived from the FLOORED value rather than the raw learned value, every
-#   pyproject build resolves ``orchestrator`` (600 + 30 > 600), while an
-#   unmeasured Maven / Gradle / npm build resolves ``per_task`` (300 + 30 < 600).
-# * ``execution_tier`` — ``"per_task"`` when ``exceeds_bash_ceiling`` is
-#   False, ``"orchestrator"`` when True.
-# * ``hint`` — short pinned recognition phrase for the LLM:
-#   ``"Bash timeout=<seconds*1000>ms"`` (per_task) or
-#   ``"Exceeds Bash ceiling; orchestrator-tier only"`` (orchestrator).
+#   ``bash_timeout_seconds > HARNESS_BASH_CEILING_SECONDS``. It keeps its
+#   literal ceiling meaning and nothing else: it answers "is the stamped bound
+#   passable on a Bash call?", not "which tier runs this command".
+# * ``execution_tier`` — driven by the MEASUREMENT, not by the floor:
+#   ``"per_task"`` only when the command's run-config key has actually been
+#   measured AND the stamp is within the ceiling; ``"orchestrator"`` otherwise.
+#   An UNMEASURED command therefore fails closed to ``"orchestrator"`` for all
+#   four engines, so a slow first run is never made runnable in-leaf before any
+#   measurement exists. That fail-closed branch is the ONE place the tier and
+#   ``exceeds_bash_ceiling`` decouple: the tier is ``"orchestrator"`` while
+#   ``exceeds_bash_ceiling`` is ``False``.
+# * ``hint`` — short pinned recognition phrase for the LLM, selected from the
+#   ``(execution_tier, exceeds_bash_ceiling)`` PAIR so all three reachable
+#   states carry an accurate string:
+#     - ceiling exceeded, orchestrator ->
+#       ``"Exceeds Bash ceiling; orchestrator-tier only"`` (``_HINT_ORCHESTRATOR``)
+#     - within ceiling, measured, per_task ->
+#       ``"Bash timeout=<seconds*1000>ms"`` (``_HINT_PER_TASK_TEMPLATE``)
+#     - within ceiling, unmeasured, orchestrator ->
+#       ``"Unmeasured; orchestrator-tier until first measurement"``
+#       (``_HINT_UNMEASURED``)
 #
 # Non-build executables (Bucket A ``manage-*`` notations, raw shell invocations
 # like ``./pw`` or ``grep``, etc.) cause classification to return ``None``;
@@ -79,6 +91,7 @@ _BUILD_NOTATIONS: dict[str, str] = {
 # ``bash_timeout_seconds``; the hint is a recognition token, not human prose.
 _HINT_PER_TASK_TEMPLATE: str = 'Bash timeout={ms}ms'
 _HINT_ORCHESTRATOR: str = 'Exceeds Bash ceiling; orchestrator-tier only'
+_HINT_UNMEASURED: str = 'Unmeasured; orchestrator-tier until first measurement'
 
 # Marketplace bundle root, used to locate each build skill's ``_*_execute.py``
 # module for ``_CONFIG`` import. Resolved via the validated bundles-root
@@ -238,8 +251,8 @@ def _load_build_config(tool_name: str) -> Any | None:
         _ = added_paths
 
 
-def _lookup_bash_timeout(tool_name: str, command_args: str, project_dir: str) -> int | None:
-    """Resolve the Bash-tool timeout (in seconds) for a build invocation.
+def _lookup_bash_timeout(tool_name: str, command_args: str, project_dir: str) -> tuple[int, bool] | None:
+    """Resolve the Bash-tool timeout and measured-ness for a build invocation.
 
     Performs the round-trip ``compute_command_key`` -> ``timeout_get`` ->
     ``max(..., config.min_timeout)`` -> ``get_bash_timeout`` lookup using the
@@ -247,12 +260,18 @@ def _lookup_bash_timeout(tool_name: str, command_args: str, project_dir: str) ->
     recommended timeout equals what the next real run will measure against
     (modulo adaptive updates). The ``config.min_timeout`` clamp is the engine's
     own declared outer floor; omitting it is what let the stamp under-report
-    the bound and mis-tier an orchestrator-tier command as ``per_task``.
+    the bound relative to what the real run measures against.
 
-    Returns the computed ``bash_timeout_seconds``, or ``None`` when any of
+    Measured-ness comes from ``timeout_measured`` on the SAME ``command_key``
+    already computed here — no second config load, no duplicated key
+    derivation. It is a separate signal from the stamp because ``timeout_get``
+    cannot express it: that function returns an ``int`` for a measured and an
+    unmeasured key alike.
+
+    Returns ``(bash_timeout_seconds, measured)``, or ``None`` when any of
     the required modules cannot be imported (e.g., when the manage-architecture
     skill is loaded in isolation without the build skills present). The
-    ``None`` return surfaces as omission of the four new fields in
+    ``None`` return surfaces as omission of the four fields in
     ``cmd_resolve``; non-build / non-resolvable executables behave as today.
     """
     config = _load_build_config(tool_name)
@@ -275,7 +294,7 @@ def _lookup_bash_timeout(tool_name: str, command_args: str, project_dir: str) ->
     try:
         from _build_execute_factory import compute_command_key
         from _build_shared import DEFAULT_BUILD_TIMEOUT, get_bash_timeout
-        from run_config import timeout_get
+        from run_config import timeout_get, timeout_measured
     except ImportError:
         return None
 
@@ -284,28 +303,44 @@ def _lookup_bash_timeout(tool_name: str, command_args: str, project_dir: str) ->
     except Exception:
         return None
 
+    measured = timeout_measured(command_key, project_dir) is not None
     inner_timeout = timeout_get(command_key, DEFAULT_BUILD_TIMEOUT, project_dir)
     # Apply the engine's own declared floor — the SAME clamp
     # ``execute_direct_base`` applies at build time. Without it the stamp can
-    # report a bound strictly below what the real run measures against, and can
-    # classify an orchestrator-tier command as ``per_task``.
+    # report a bound strictly below what the real run measures against.
     inner_timeout = max(inner_timeout, config.min_timeout)
-    return get_bash_timeout(inner_timeout)
+    return get_bash_timeout(inner_timeout), measured
 
 
-def _compute_execution_tier_fields(bash_timeout_seconds: int) -> dict[str, Any]:
-    """Build the four-field augmentation dict for a known ``bash_timeout_seconds``.
+def _compute_execution_tier_fields(bash_timeout_seconds: int, measured: bool) -> dict[str, Any]:
+    """Build the four-field augmentation dict from the stamp and its measured-ness.
 
-    Returns the canonical shape consumed by ``cmd_resolve``. Hint strings are
-    pinned recognition tokens — see module docstring.
+    ``measured`` is REQUIRED and deliberately carries no default. A
+    behaviour-preserving default would let an existing positional call site keep
+    compiling while silently pinning the old floor-driven derivation — the
+    argument-count failure IS the guard that forces every caller to state the
+    fact explicitly.
+
+    The tier follows the MEASUREMENT: ``per_task`` only when the command has
+    been measured AND the stamp is within the harness ceiling; ``orchestrator``
+    otherwise, so an unmeasured command fails closed uniformly across all four
+    engines. ``exceeds_bash_ceiling`` keeps its literal ceiling meaning and is
+    NOT forced true on that fail-closed branch.
+
+    The hint is selected from the ``(execution_tier, exceeds_bash_ceiling)``
+    PAIR rather than from ``exceeds_bash_ceiling`` alone — selecting on either
+    component alone leaves one of the three reachable states carrying a string
+    that contradicts its own tier. Hint strings are pinned recognition tokens
+    consumers match on; see module docstring.
     """
     exceeds = bash_timeout_seconds > HARNESS_BASH_CEILING_SECONDS
+    tier = 'per_task' if (measured and not exceeds) else 'orchestrator'
     if exceeds:
-        tier = 'orchestrator'
         hint = _HINT_ORCHESTRATOR
-    else:
-        tier = 'per_task'
+    elif tier == 'per_task':
         hint = _HINT_PER_TASK_TEMPLATE.format(ms=bash_timeout_seconds * 1000)
+    else:
+        hint = _HINT_UNMEASURED
     return {
         'bash_timeout_seconds': bash_timeout_seconds,
         'exceeds_bash_ceiling': exceeds,

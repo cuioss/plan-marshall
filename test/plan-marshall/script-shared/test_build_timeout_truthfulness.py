@@ -20,14 +20,18 @@ seam rather than re-implementing the resolution logic:
    (Red before deliverable 1: ``timeout_get`` discarded the caller's bound
    whenever any persisted value existed, and the argparse default made an
    explicit value indistinguishable from an unsupplied flag.)
-3. **Each engine carries its floor, and the resolve stamp agrees with the
-   run.** ``_lookup_bash_timeout``'s stamp must equal
-   ``get_bash_timeout(max(learned, config.min_timeout))`` — the same floored
-   value ``execute_direct_base`` measures against — and the derived
-   ``execution_tier`` / ``exceeds_bash_ceiling`` verdict must follow that
-   floored stamp rather than the raw learned value. (Red before deliverable 2:
-   the stamp omitted the floor, under-reporting the bound and mis-tiering an
-   orchestrator-tier command as ``per_task``.)
+3. **Each engine carries its floor, the resolve stamp agrees with the run, and
+   the tier follows the MEASUREMENT.** ``_lookup_bash_timeout``'s stamp must
+   equal ``get_bash_timeout(max(learned, config.min_timeout))`` — the same
+   floored value ``execute_direct_base`` measures against. ``exceeds_bash_ceiling``
+   follows that floored stamp, but ``execution_tier`` does NOT: it is
+   ``per_task`` only for a MEASURED command whose stamp stays within the
+   ceiling, and ``orchestrator`` otherwise, so an unmeasured command fails
+   closed uniformly across all four engines. (Red before deliverable 2: the
+   stamp omitted the floor, under-reporting the bound. Red before this plan:
+   the tier was derived from the floor, so an over-provisioned floor emptied
+   the runnable slice and an unmeasured slow command could be run in-leaf on
+   its very first run.)
 
 The engine list itself is the coverage guarantee: every case is parameterised
 over :data:`_ENGINES`, so adding a fifth engine without a declared floor fails
@@ -87,7 +91,7 @@ _ENGINES = [
     ('maven', 'build-maven', '_maven_execute.py', 300),
     ('gradle', 'build-gradle', '_gradle_execute.py', 300),
     ('npm', 'build-npm', '_npm_execute.py', 300),
-    ('python', 'build-pyproject', '_pyproject_execute.py', 600),
+    ('python', 'build-pyproject', '_pyproject_execute.py', 330),
 ]
 
 _ENGINE_IDS = [row[0] for row in _ENGINES]
@@ -165,6 +169,31 @@ def test_every_engine_declares_its_floor_explicitly(tool_name, skill, script_fil
     assert config.min_timeout == expected_floor, (
         f'{tool_name} must declare min_timeout={expected_floor}, got '
         f'{config.min_timeout}'
+    )
+
+
+@pytest.mark.parametrize(('tool_name', 'skill', 'script_file', 'expected_floor'), _ENGINES, ids=_ENGINE_IDS)
+def test_every_engine_floor_leaves_the_buffered_stamp_passable(
+    tool_name, skill, script_file, expected_floor
+):
+    """A declared floor must never push the stamped bound past the Bash ceiling.
+
+    The floor is bounded on BOTH sides. The lower half (floor > the engine's
+    inner backstop) is asserted at each engine's own declaration; this is the
+    upper half, and it is the one that had no guard: ``bash_timeout_seconds``
+    is the number a leaf is instructed to pass on its Bash call, so a floor
+    above ``ceiling - OUTER_TIMEOUT_BUFFER`` yields an instruction the host
+    platform cannot honour and forces every one of that engine's canonicals to
+    the orchestrator tier before any measurement is consulted. Parameterised
+    over the engine list so a fifth engine cannot escape by omission.
+    """
+    config = _engine_config(tool_name)
+    buffered = get_bash_timeout(config.min_timeout)
+    assert buffered <= HARNESS_BASH_CEILING_SECONDS, (
+        f'{tool_name}: min_timeout={config.min_timeout} + '
+        f'OUTER_TIMEOUT_BUFFER={OUTER_TIMEOUT_BUFFER} = {buffered} exceeds the '
+        f'harness Bash ceiling {HARNESS_BASH_CEILING_SECONDS}; the stamped bound '
+        'would be un-passable and the engine could never resolve per_task'
     )
 
 
@@ -333,7 +362,8 @@ def test_resolve_stamp_equals_the_floored_bound_the_run_measures_against(
 
     _isolate_run_config(tmp_path, monkeypatch, {command_key: persisted})
 
-    stamp = _lookup_bash_timeout(tool_name, command_args, str(tmp_path))
+    stamp, measured = _lookup_bash_timeout(tool_name, command_args, str(tmp_path))
+    assert measured is True, f'{tool_name}: a seeded persisted value must read as measured'
 
     assert stamp == get_bash_timeout(floored), (
         f'{tool_name}: the stamp must be get_bash_timeout(max(learned={learned}, '
@@ -369,17 +399,22 @@ def test_resolve_stamp_equals_the_floored_bound_the_run_measures_against(
 
 
 @pytest.mark.parametrize(('tool_name', 'skill', 'script_file', 'expected_floor'), _ENGINES, ids=_ENGINE_IDS)
-def test_unmeasured_tier_verdict_follows_the_floored_stamp(
+def test_unmeasured_stamp_is_floored_and_the_tier_fails_closed(
     tool_name, skill, script_file, expected_floor, tmp_path, monkeypatch
 ):
-    """The derived tier is computed from the floored stamp — Decision 1b.
+    """Unmeasured: the stamp is still floored, but the tier fails closed.
 
-    With NO learned value, the floor alone decides: pyproject's 600s floor
-    puts every pyproject build over the harness ceiling
-    (``orchestrator``), while the three 300s engines stay under it
-    (``per_task``). The expected verdict is DERIVED from the engine's declared
-    floor here, so the case cannot pass vacuously for an engine whose floor
-    changes.
+    Two separable claims, and keeping both is the point. The STAMP half still
+    pins the floor arithmetic — with no learned value, ``timeout_get`` echoes
+    ``DEFAULT_BUILD_TIMEOUT`` and the engine's own floor raises it. The TIER
+    half no longer follows that stamp: an unmeasured command is
+    ``orchestrator`` for EVERY engine regardless of where the stamp lands
+    relative to the ceiling, so no slow first run is ever made runnable
+    in-leaf before it has been observed.
+
+    ``measured=False`` is passed EXPLICITLY. ``_compute_execution_tier_fields``
+    declares the parameter with no default precisely so this case cannot keep
+    asserting the old floor-driven path by omission.
     """
     config = _engine_config(tool_name)
     command_args = 'verify'
@@ -387,35 +422,85 @@ def test_unmeasured_tier_verdict_follows_the_floored_stamp(
     # Empty entries → unmeasured → timeout_get echoes DEFAULT_BUILD_TIMEOUT.
     _isolate_run_config(tmp_path, monkeypatch, {})
 
-    stamp = _lookup_bash_timeout(tool_name, command_args, str(tmp_path))
+    stamp, measured = _lookup_bash_timeout(tool_name, command_args, str(tmp_path))
     expected_stamp = get_bash_timeout(max(DEFAULT_BUILD_TIMEOUT, config.min_timeout))
     assert stamp == expected_stamp
+    assert measured is False, f'{tool_name}: an absent persisted entry must read as unmeasured'
 
-    fields = _compute_execution_tier_fields(stamp)
+    fields = _compute_execution_tier_fields(stamp, False)
+    # exceeds_bash_ceiling keeps its LITERAL ceiling meaning...
     expected_exceeds = expected_stamp > HARNESS_BASH_CEILING_SECONDS
     assert fields['exceeds_bash_ceiling'] is expected_exceeds
-    assert fields['execution_tier'] == ('orchestrator' if expected_exceeds else 'per_task')
+    # ...while the tier decouples from it on exactly this branch.
+    assert fields['execution_tier'] == 'orchestrator', (
+        f'{tool_name}: an unmeasured command must fail closed to orchestrator '
+        f'even at stamp={expected_stamp} (exceeds={expected_exceeds})'
+    )
 
 
-def test_decision_1b_split_is_observable_across_the_engine_list(tmp_path, monkeypatch):
-    """The engine list itself proves Decision 1b's accepted blast radius.
+def test_unmeasured_fails_closed_uniformly_across_the_engine_list(tmp_path, monkeypatch):
+    """Unmeasured collapses to ONE tier for every registered engine.
 
-    Unmeasured, pyproject resolves ``orchestrator`` and the three 300s engines
-    resolve ``per_task``. Asserting the SPLIT (not just each engine in
-    isolation) is what makes the case fail if every engine collapsed to one
-    tier — the shape a dropped floor or a dropped clamp would produce.
+    This is the accepted blast radius of the fail-closed rule: it deliberately
+    changes first-run Maven / Gradle / npm behaviour from ``per_task`` to
+    ``orchestrator``. Asserting the whole dict — derived by iterating
+    :data:`_ENGINES` rather than hand-listing four names — is what makes a
+    fifth engine unable to escape the guard by omission.
+
+    The companion case below is the necessary other half: with the unmeasured
+    path no longer producing ``per_task``, something must still keep that
+    verdict reachable, or the tier axis would have collapsed for real.
     """
     _isolate_run_config(tmp_path, monkeypatch, {})
 
     tiers = {}
     for tool_name, _skill, _script, _floor in _ENGINES:
-        stamp = _lookup_bash_timeout(tool_name, 'verify', str(tmp_path))
-        assert stamp is not None
-        tiers[tool_name] = _compute_execution_tier_fields(stamp)['execution_tier']
+        lookup = _lookup_bash_timeout(tool_name, 'verify', str(tmp_path))
+        assert lookup is not None
+        stamp, measured = lookup
+        assert measured is False
+        tiers[tool_name] = _compute_execution_tier_fields(stamp, measured)['execution_tier']
 
-    assert tiers == {
-        'maven': 'per_task',
-        'gradle': 'per_task',
-        'npm': 'per_task',
-        'python': 'orchestrator',
-    }, f'Decision 1b tier split drifted: {tiers}'
+    assert tiers == dict.fromkeys(_ENGINE_IDS, 'orchestrator'), (
+        f'Unmeasured fail-closed drifted — every engine must be orchestrator: {tiers}'
+    )
+
+
+def test_measured_low_value_makes_the_per_task_verdict_reachable(tmp_path, monkeypatch):
+    """A cheap MEASURED command resolves ``per_task`` on every engine.
+
+    The split now emerges from the MEASUREMENT rather than from the engine
+    floors. Seeding a low persisted value per engine — low enough that the
+    floor binds and the buffered bound stays under the ceiling — must yield
+    ``per_task`` everywhere; seeding a value whose buffered bound crosses the
+    ceiling must yield ``orchestrator`` everywhere. Without this case the
+    ``per_task`` verdict would be under no coverage at all once the unmeasured
+    path stopped producing it.
+    """
+    cheap_key_seed, expensive_seed = 60, 4000
+
+    for tool_name, _skill, _script, _floor in _ENGINES:
+        config = _engine_config(tool_name)
+        command_key = compute_command_key(config, 'verify')
+
+        _isolate_run_config(tmp_path, monkeypatch, {command_key: cheap_key_seed})
+        stamp, measured = _lookup_bash_timeout(tool_name, 'verify', str(tmp_path))
+        assert measured is True
+        assert stamp <= HARNESS_BASH_CEILING_SECONDS, (
+            f'{tool_name}: a cheap measured command must stay within the ceiling'
+        )
+        cheap = _compute_execution_tier_fields(stamp, measured)
+        assert cheap['execution_tier'] == 'per_task', (
+            f'{tool_name}: a cheap MEASURED command must be runnable in-leaf, got '
+            f'{cheap["execution_tier"]} at stamp={stamp}'
+        )
+
+        _isolate_run_config(tmp_path, monkeypatch, {command_key: expensive_seed})
+        stamp, measured = _lookup_bash_timeout(tool_name, 'verify', str(tmp_path))
+        assert measured is True
+        expensive = _compute_execution_tier_fields(stamp, measured)
+        assert expensive['exceeds_bash_ceiling'] is True
+        assert expensive['execution_tier'] == 'orchestrator', (
+            f'{tool_name}: a measured command past the ceiling must hand off, got '
+            f'{expensive["execution_tier"]} at stamp={stamp}'
+        )

@@ -23,9 +23,11 @@ STATUS_ERROR = 'error'
 # This is the SINGLE canonical declaration of that ceiling. Two surfaces read it
 # from here and MUST NOT re-declare it:
 #
-# * ``manage-architecture/scripts/_cmd_client_build.py`` — classifies the
-#   resolve-stamp ``execution_tier`` (``per_task`` vs ``orchestrator``) by
-#   comparing the floored ``bash_timeout_seconds`` against this ceiling.
+# * ``manage-architecture/scripts/_cmd_client_build.py`` — sets the resolve-stamp
+#   ``exceeds_bash_ceiling`` flag by comparing ``bash_timeout_seconds`` against
+#   this ceiling. The ceiling bounds that flag ONLY; ``execution_tier`` follows
+#   the MEASUREMENT, and an unmeasured command fails closed to ``orchestrator``
+#   regardless of how the ceiling comparison lands.
 # * ``phase-6-finalize/scripts/ci_complete_precondition.py`` — clamps its
 #   bounded CI wait so ``inner + CI_WAIT_OUTER_BUFFER_SECONDS`` stays STRICTLY
 #   below this ceiling, so the wait always returns a structured result instead
