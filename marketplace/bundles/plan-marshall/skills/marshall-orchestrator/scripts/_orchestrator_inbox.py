@@ -569,8 +569,18 @@ def cmd_inbox_archive(args: Any) -> dict[str, Any]:
     - claim refused because the source is gone and the destination is absent
       → ``error: file_not_found``.
     - claim refused because the destination already exists
-      (``FileExistsError``) while the source is still present →
-      ``error: archive_conflict`` (never clobber the retired audit record).
+      (``FileExistsError``) and ``dest`` is a DISTINCT inode from ``source``
+      → ``error: archive_conflict`` (never clobber the retired audit record).
+    - claim refused because the destination already exists but ``dest`` and
+      ``source`` are the SAME inode — the claim is a hard link, so a
+      concurrent winner that has linked and not yet unlinked leaves both
+      paths pointing at one file → idempotent success (``already_archived``),
+      because ``dest`` is that winner's own in-flight artifact rather than a
+      second, competing audit record. Source presence is NOT the
+      discriminator; inode identity is.
+    - claim refused for any other reason (a bare ``--message`` that names a
+      DIRECTORY under ``inbox/`` makes ``os.link`` raise a plain ``OSError``)
+      → ``error: invalid_message_name``.
     - claim succeeded → unlink the source and report the relocation.
     """
     invalid = _validate_identifier(args.slug)
@@ -609,7 +619,21 @@ def cmd_inbox_archive(args: Any) -> dict[str, Any]:
             message_name=name,
         )
     except FileExistsError:
-        if source.is_file():
+        # The claim is a HARD LINK, so between a concurrent winner's own
+        # ``os.link`` and its ``source.unlink()`` the two paths are the SAME
+        # inode. Source presence therefore does NOT discriminate: it is still
+        # true inside that window, where ``dest`` is the winner's in-flight
+        # artifact rather than a second, competing audit record. Inode
+        # identity is the discriminator.
+        try:
+            distinct = not source.samefile(dest)
+        except FileNotFoundError:
+            # ``source`` vanished between the claim and this check (the winner
+            # finished its unlink), or ``dest`` did — either way there is no
+            # distinct record to protect, so fall through to idempotent
+            # success exactly as a plainly race-losing drain does.
+            distinct = False
+        if distinct:
             return _error(
                 'archive_conflict',
                 f'inbox message {name} is already archived at {dest}; '
@@ -619,6 +643,21 @@ def cmd_inbox_archive(args: Any) -> dict[str, Any]:
                 archived_to=str(dest),
             )
         return _archive_success(args.slug, name, dest, already_archived=True)
+    except OSError as exc:
+        # Ordering is load-bearing: FileNotFoundError and FileExistsError are
+        # both OSError subclasses and MUST stay above this broader clause. A
+        # bare component like the literal ``archive`` clears
+        # :func:`_is_bare_filename` yet names a DIRECTORY once joined onto
+        # ``inbox/``, and ``os.link`` refuses a directory source with a plain
+        # OSError (``PermissionError`` on most platforms) that neither narrow
+        # clause catches — without this clause it escapes the handler instead
+        # of returning a structured response.
+        return _error(
+            'invalid_message_name',
+            f'--message does not name an archivable file: {name} ({exc})',
+            slug=args.slug,
+            message_name=name,
+        )
     source.unlink()
     return _archive_success(args.slug, name, dest, already_archived=False)
 

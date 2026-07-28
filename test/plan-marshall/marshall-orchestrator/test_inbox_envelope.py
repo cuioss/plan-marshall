@@ -597,6 +597,43 @@ class TestInboxArchiveRace:
         assert result['status'] == 'error'
         assert result['error'] == 'archive_conflict'
         assert dest.read_text(encoding='utf-8') == 'the winner audit record\n'
+        # A refused claim retires nothing: the un-archived message must survive
+        # so a later drain can still consume it.
+        assert source.is_file()
+
+    def test_should_report_already_archived_when_dest_is_the_same_inode_as_source(
+        self, plan_context, tmp_path, monkeypatch
+    ):
+        source, archive_dir, dest = self._seed(plan_context, tmp_path)
+        # The winner has claimed the destination but has NOT yet unlinked its
+        # source, so both paths are one inode. Source presence is therefore
+        # true here while ``dest`` is the winner's own in-flight artifact — not
+        # a distinct competing audit record — so this must resolve to
+        # idempotent success, not ``archive_conflict``.
+        _open_race_window(monkeypatch, archive_dir, lambda: os.link(source, dest))
+
+        result = cmd_inbox_archive(Namespace(slug=EPIC, message=source.name))
+
+        assert result['status'] == 'success'
+        assert result['already_archived'] is True
+        assert dest.is_file()
+        # The winner still owns the source unlink; the loser must not have
+        # retired it on the winner's behalf.
+        assert source.is_file()
+
+    def test_should_reject_a_message_naming_a_directory(self, plan_context, tmp_path):
+        # ``archive`` is a bare filename, so it clears ``_is_bare_filename`` and
+        # reaches ``os.link`` — where it names the archive DIRECTORY. os.link
+        # refuses a directory source with a plain OSError that neither narrow
+        # handler catches, so this must return a structured refusal rather than
+        # letting the OSError escape.
+        self._seed(plan_context, tmp_path)
+
+        result = cmd_inbox_archive(Namespace(slug=EPIC, message='archive'))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_message_name'
+        assert result['message_name'] == 'archive'
 
     def test_should_report_already_archived_when_the_race_is_lost(
         self, plan_context, tmp_path, monkeypatch
