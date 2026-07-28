@@ -35,7 +35,8 @@ this script no longer sleeps internally for the queue case. The ``O_EXCL`` mutex
 stays the final ``k=1`` grant — the FIFO layer decides WHO may attempt it, the
 kernel race decides the single winner.
 
-It exposes three actions:
+It exposes four actions — the three merge-mutex actions plus the ``rate-window``
+claim that co-tenants the same store:
 
   * ``acquire`` — FIFO-enqueue ``--plan-id`` into ``merge-queue.json`` (idempotent,
     FIFO-position-preserving), then — only when this plan is the FIFO front —
@@ -73,6 +74,30 @@ It exposes three actions:
     a blind unlink) and REFUSING (``status: refused``,
     ``reason: holder_not_provably_dead``) on a ``fresh`` or ``unknown`` verdict, so
     a holder live in a sibling worktree (the #948 shape) is never force-released.
+  * ``rate-window {claim,check,release}`` — the cross-plan claim on ONE review
+    bot's rate window, used by the automatic-review recovery sequence to stop two
+    concurrently-finalizing plans from both re-triggering a rate-limited bot. State
+    lives under a ``rate_windows`` top-level key inside the SAME main-anchored
+    ``merge-queue.json`` store, keyed by ``bot_kind``, mutated through the SAME
+    :func:`_locks_core.rmw_json` critical section. ``claim`` is idempotent for the
+    self-holder (it renews rather than contending) and enforces a recursion cap of
+    :data:`_RECOVERY_ATTEMPT_CAP` recovery events per bot per PR, returning an
+    explicit ``exhausted`` verdict on the attempt past the cap; ``check`` is a pure
+    read; ``release`` drops the holder while RETAINING the attempt counter so the
+    cap survives the release between attempts.
+
+**The rate window shares the STORE, never the MUTEX.** The rate-window actions
+read and write only the ``rate_windows`` key. They never create, read, reclaim, or
+release ``merge.lock``, and never read or mutate the ``waiting`` FIFO list —
+claiming a bot's rate window does NOT serialize against merges. Coupling a bot's
+multi-minute cooldown to the ``k=1`` merge serializer would stall every
+concurrently-finalizing plan's merge behind a review-bot rate limit; the two
+claims are independent and only co-reside in one file, sharing nothing but the
+brief ``rmw_json`` guard both mutations serialize on. That co-tenancy is what
+makes the FIFO mutators' sibling-key preservation load-bearing: ``_enqueue_fifo``
+and ``_dequeue_fifo`` MERGE their ``waiting`` result into the state they were
+handed, because a wholesale ``{'waiting': ...}`` replace would silently erase the
+``rate_windows`` key on the next merge acquire.
 
 **Reconciliation (the unified design).** This primitive KEEPS the file
 ``O_EXCL`` lock's proven correctness core — atomic ``O_EXCL`` create,
@@ -200,6 +225,7 @@ lock branching never hard-codes a glyph.
 from __future__ import annotations
 
 import errno
+import json
 import logging
 import os
 import subprocess
@@ -240,6 +266,22 @@ logger = logging.getLogger(__name__)
 _DEFAULT_TIMEOUT_SECONDS = 0.0
 _LOCK_FILENAME = 'merge.lock'
 _QUEUE_FILENAME = 'merge-queue.json'
+
+# Rate-window co-tenancy: the top-level key the rate-window verbs own inside the
+# SAME main-anchored store the FIFO admission queue uses. The two keys are
+# independent — the rate-window verbs never read or write `waiting`, and the FIFO
+# mutators never read or write `rate_windows`.
+_RATE_WINDOWS_KEY = 'rate_windows'
+
+# Recursion cap: a plan may generate at most this many recovery events per bot
+# per PR. The next attempt returns the explicit `exhausted` verdict for the
+# orchestrator to escalate, rather than looping a bot into its own rate limit.
+_RECOVERY_ATTEMPT_CAP = 2
+
+# Fallback window length when the caller has no parsed ETA from the bot's
+# `rate_limit_eta_patterns`. One hour is the coarsest window any registered bot
+# advertises, so an un-parsed ETA errs toward waiting rather than re-triggering.
+_DEFAULT_WINDOW_SECONDS = 3600.0
 
 # Title-token state names persisted via manage-status (the bare state string;
 # manage-terminal-title owns the state → glyph rendering).
@@ -390,6 +432,13 @@ def _enqueue_fifo(plan_id: str, ts: float) -> dict[str, Any]:
     ``waiting_count`` (the post-mutation queue depth) for the caller's ``[LOCK]``
     correlation. The FIFO mutation is entirely inside ``rmw_json`` so two sessions
     cannot both observe the same queue pre-state and both decide they are front.
+
+    **Sibling-key preservation.** The mutator MERGES its ``waiting`` result into
+    the state it was handed (``{**state, 'waiting': waiting}``) rather than
+    returning a freshly-constructed ``{'waiting': ...}``. The store is shared: the
+    rate-window claim co-tenants a ``rate_windows`` top-level key in the same file,
+    and a wholesale replace here would silently erase it on the very next merge
+    acquire. The FIFO layer owns ``waiting`` and nothing else.
     """
     queue_path = _resolve_merge_queue_path()
     outcome: dict[str, Any] = {}
@@ -402,7 +451,7 @@ def _enqueue_fifo(plan_id: str, ts: float) -> dict[str, Any]:
         front = _fifo_front(waiting)
         outcome['is_front'] = front is not None and front['plan_id'] == plan_id
         outcome['waiting_count'] = len(waiting)
-        return {'waiting': waiting}
+        return {**state, 'waiting': waiting}
 
     rmw_json(queue_path, _mutate)
     return outcome
@@ -417,6 +466,10 @@ def _dequeue_fifo(plan_id: str) -> int:
     admitted on its next re-poll. Idempotent — removing a plan_id not in the queue
     is a benign no-op (a crashed-and-retried release does not error). Returns the
     post-removal ``waiting`` depth for ``[LOCK]`` correlation.
+
+    **Sibling-key preservation.** Like :func:`_enqueue_fifo`, the mutator MERGES
+    into the state it was handed rather than replacing it, so the co-tenant
+    ``rate_windows`` key survives a merge release.
     """
     queue_path = _resolve_merge_queue_path()
     waiting_count = 0
@@ -425,10 +478,206 @@ def _dequeue_fifo(plan_id: str) -> int:
         nonlocal waiting_count
         waiting = [e for e in _prune_dead_waiting(_queue_waiting(state)) if e['plan_id'] != plan_id]
         waiting_count = len(waiting)
-        return {'waiting': waiting}
+        return {**state, 'waiting': waiting}
 
     rmw_json(queue_path, _mutate)
     return waiting_count
+
+
+# ---------------------------------------------------------------------------
+# Rate-window claim state (co-tenant of the merge-queue store, NOT the mutex)
+# ---------------------------------------------------------------------------
+
+
+def _read_store() -> dict[str, Any]:
+    """Read the merge-queue store non-mutatingly, junk → empty mapping.
+
+    The ``rate-window check`` verb is a pure read, so it MUST NOT go through
+    :func:`_locks_core.rmw_json` — that helper always commits a state back and
+    would turn a read into a write. A missing or corrupt file reads as ``{}``,
+    mirroring the same tolerance ``rmw_json`` applies on its read leg.
+    """
+    try:
+        raw = _resolve_merge_queue_path().read_text(encoding='utf-8')
+    except OSError:
+        return {}
+    try:
+        data = json.loads(raw)
+    except (json.JSONDecodeError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _rate_windows(state: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Return ``state['rate_windows']`` as a ``bot_kind → record`` map, junk → empty.
+
+    Degraded-state tolerance mirroring :func:`_queue_waiting`'s handling of
+    ``waiting``: a missing, non-dict, or malformed ``rate_windows`` value degrades
+    to an empty mapping and is rebuilt from scratch, so a hand-edited store can
+    never crash the merge path that shares this file. Each retained record is
+    normalized to the four fields the claim contract defines:
+
+      * ``holder`` — the claiming ``plan_id``, or ``''`` once released (a released
+        record is RETAINED so its ``attempts`` counter survives; see
+        :func:`_release_rate_window`).
+      * ``pr_number`` — the PR the recovery attempts are counted against, or None.
+      * ``expires_at`` — epoch seconds at which the bot's rate window elapses.
+      * ``attempts`` — recovery events generated for this ``(bot_kind, pr_number)``.
+    """
+    raw = state.get(_RATE_WINDOWS_KEY)
+    if not isinstance(raw, dict):
+        return {}
+    windows: dict[str, dict[str, Any]] = {}
+    for bot_kind, entry in raw.items():
+        if not isinstance(bot_kind, str) or not isinstance(entry, dict):
+            continue
+        holder = entry.get('holder', '')
+        if not isinstance(holder, str):
+            continue
+        expires_at = entry.get('expires_at', 0.0)
+        if not isinstance(expires_at, (int, float)) or isinstance(expires_at, bool):
+            expires_at = 0.0
+        attempts = entry.get('attempts', 0)
+        if not isinstance(attempts, int) or isinstance(attempts, bool):
+            attempts = 0
+        pr_number = entry.get('pr_number')
+        if not isinstance(pr_number, int) or isinstance(pr_number, bool):
+            pr_number = None
+        windows[bot_kind] = {
+            'holder': holder,
+            'pr_number': pr_number,
+            'expires_at': float(expires_at),
+            'attempts': attempts,
+        }
+    return windows
+
+
+def _claim_rate_window(
+    plan_id: str, bot_kind: str, pr_number: int, window_seconds: float, now: float
+) -> dict[str, Any]:
+    """Claim ``bot_kind``'s rate window for ``plan_id``, enforcing the recursion cap.
+
+    A single serialized read-modify-write of the SHARED merge-queue store via
+    :func:`_locks_core.rmw_json`, touching ONLY the ``rate_windows`` key — never
+    ``merge.lock`` and never the ``waiting`` FIFO list, so a multi-minute bot
+    cooldown can never stall a concurrent plan's merge.
+
+    Returns an outcome dict whose ``verdict`` is one of:
+
+      * ``claimed`` / ``renewed`` / ``reclaimed`` — the claim succeeded (a fresh
+        claim, a self-holder renewal, or a takeover from a holder whose window
+        elapsed or whose plan is dead). ``expires_at`` and ``attempts`` are the
+        committed values.
+      * ``blocked`` — a DIFFERENT, live plan holds an unexpired window. No mutation.
+      * ``exhausted`` — the recursion cap (:data:`_RECOVERY_ATTEMPT_CAP` recovery
+        events per bot per PR) is already spent. No mutation; the caller escalates.
+
+    The attempt counter is scoped to ``(bot_kind, pr_number)`` and survives both a
+    release and a holder takeover — resetting it on release would make the cap
+    vacuous, since the recovery sequence releases the window between attempts.
+    """
+    queue_path = _resolve_merge_queue_path()
+    outcome: dict[str, Any] = {}
+
+    def _mutate(state: dict[str, Any]) -> dict[str, Any]:
+        windows = _rate_windows(state)
+        record = windows.get(bot_kind)
+
+        # A different, live plan holding an unexpired window blocks this claim.
+        if (
+            record is not None
+            and record['holder'] not in ('', plan_id)
+            and record['expires_at'] > now
+            and not holder_is_dead(record['holder'])
+        ):
+            outcome.update(
+                verdict='blocked',
+                holder=record['holder'],
+                pr_number=record['pr_number'],
+                expires_at=record['expires_at'],
+                attempts=record['attempts'],
+            )
+            return state
+
+        reclaimed_from = (
+            record['holder'] if record is not None and record['holder'] not in ('', plan_id) else None
+        )
+        # The cap is per (bot_kind, PR): a record for a DIFFERENT PR starts fresh.
+        attempts_before = record['attempts'] if record is not None and record['pr_number'] == pr_number else 0
+        next_attempts = attempts_before + 1
+        if next_attempts > _RECOVERY_ATTEMPT_CAP:
+            outcome.update(
+                verdict='exhausted',
+                holder=plan_id,
+                pr_number=pr_number,
+                expires_at=record['expires_at'] if record is not None else 0.0,
+                attempts=attempts_before,
+            )
+            return state
+
+        expires_at = now + window_seconds
+        windows[bot_kind] = {
+            'holder': plan_id,
+            'pr_number': pr_number,
+            'expires_at': expires_at,
+            'attempts': next_attempts,
+        }
+        if reclaimed_from is not None:
+            verdict = 'reclaimed'
+        elif attempts_before > 0:
+            verdict = 'renewed'
+        else:
+            verdict = 'claimed'
+        outcome.update(
+            verdict=verdict,
+            holder=plan_id,
+            pr_number=pr_number,
+            expires_at=expires_at,
+            attempts=next_attempts,
+            reclaimed_from=reclaimed_from,
+        )
+        return {**state, _RATE_WINDOWS_KEY: windows}
+
+    rmw_json(queue_path, _mutate)
+    return outcome
+
+
+def _release_rate_window(plan_id: str, bot_kind: str) -> dict[str, Any]:
+    """Release ``plan_id``'s claim on ``bot_kind``'s rate window (idempotent).
+
+    Clears the holder and the expiry but RETAINS the record so its ``attempts``
+    counter survives — the recursion cap counts recovery events per bot per PR
+    across the whole recovery sequence, which releases the window between
+    attempts. Releasing a window held by another plan, or one that was never
+    claimed, is a benign no-op. Touches only the ``rate_windows`` key.
+
+    Returns an outcome dict carrying ``action`` (``released`` / ``noop``), the
+    observed ``holder``, and the retained ``attempts``.
+    """
+    queue_path = _resolve_merge_queue_path()
+    outcome: dict[str, Any] = {}
+
+    def _mutate(state: dict[str, Any]) -> dict[str, Any]:
+        windows = _rate_windows(state)
+        record = windows.get(bot_kind)
+        if record is None or record['holder'] != plan_id:
+            outcome.update(
+                action='noop',
+                holder=(record['holder'] or None) if record is not None else None,
+                attempts=record['attempts'] if record is not None else 0,
+            )
+            return state
+        windows[bot_kind] = {
+            'holder': '',
+            'pr_number': record['pr_number'],
+            'expires_at': 0.0,
+            'attempts': record['attempts'],
+        }
+        outcome.update(action='released', holder=plan_id, attempts=record['attempts'])
+        return {**state, _RATE_WINDOWS_KEY: windows}
+
+    rmw_json(queue_path, _mutate)
+    return outcome
 
 
 # ---------------------------------------------------------------------------
@@ -1169,13 +1418,161 @@ def run_release(args: Namespace) -> dict[str, Any]:
     }
 
 
+def _run_rate_window_claim(args: Namespace) -> dict[str, Any]:
+    """``rate-window claim`` — claim one bot's rate window under the recursion cap."""
+    plan_id: str = args.plan_id
+    bot_kind: str = args.bot_kind
+    pr_number: int = args.pr_number
+    window_seconds: float = args.window_seconds
+    now = time.time()
+
+    outcome = _claim_rate_window(plan_id, bot_kind, pr_number, window_seconds, now)
+    verdict = outcome['verdict']
+
+    if verdict == 'blocked':
+        log_lock_event(
+            'rate-window', 'blocked', lock_id=plan_id, bot_kind=bot_kind,
+            holder=outcome['holder'], waiter=plan_id, pr_number=outcome['pr_number'],
+        )
+        return {
+            'status': 'blocked',
+            'plan_id': plan_id,
+            'bot_kind': bot_kind,
+            'reason': 'window_held_by_other_plan',
+            'holder': outcome['holder'],
+            'pr_number': outcome['pr_number'],
+            'expires_at': outcome['expires_at'],
+            'seconds_remaining': max(0.0, outcome['expires_at'] - now),
+            'attempts': outcome['attempts'],
+            'attempt_cap': _RECOVERY_ATTEMPT_CAP,
+        }
+
+    if verdict == 'exhausted':
+        log_lock_event(
+            'rate-window', 'exhausted', lock_id=plan_id, bot_kind=bot_kind,
+            pr_number=pr_number, attempts=outcome['attempts'], attempt_cap=_RECOVERY_ATTEMPT_CAP,
+        )
+        return {
+            'status': 'refused',
+            'plan_id': plan_id,
+            'bot_kind': bot_kind,
+            'reason': 'recovery_cap_exhausted',
+            'pr_number': pr_number,
+            'attempts': outcome['attempts'],
+            'attempt_cap': _RECOVERY_ATTEMPT_CAP,
+        }
+
+    log_lock_event(
+        'rate-window', 'reclaimed' if verdict == 'reclaimed' else 'claimed',
+        lock_id=plan_id, bot_kind=bot_kind, pr_number=pr_number,
+        expires_at=outcome['expires_at'], attempts=outcome['attempts'],
+        reclaimed_from=outcome.get('reclaimed_from'),
+    )
+    return {
+        'status': 'success',
+        'plan_id': plan_id,
+        'bot_kind': bot_kind,
+        'action': verdict,
+        # The holder after the mutation — always this plan on the success path.
+        # Named identically on the blocked / release payloads so a consumer reads
+        # one field for "who holds this window now" across every outcome.
+        'holder': plan_id,
+        'pr_number': pr_number,
+        'expires_at': outcome['expires_at'],
+        'seconds_remaining': max(0.0, outcome['expires_at'] - now),
+        'attempts': outcome['attempts'],
+        'attempt_cap': _RECOVERY_ATTEMPT_CAP,
+        'attempts_remaining': _RECOVERY_ATTEMPT_CAP - outcome['attempts'],
+        'reclaimed_from': outcome.get('reclaimed_from'),
+    }
+
+
+def _run_rate_window_check(args: Namespace) -> dict[str, Any]:
+    """``rate-window check`` — non-mutating read of one bot's rate-window state."""
+    plan_id: str = args.plan_id
+    bot_kind: str = args.bot_kind
+    now = time.time()
+
+    record = _rate_windows(_read_store()).get(bot_kind)
+    if record is None:
+        return {
+            'status': 'free',
+            'plan_id': plan_id,
+            'bot_kind': bot_kind,
+            'holder': None,
+            'pr_number': None,
+            'attempts': 0,
+            'attempt_cap': _RECOVERY_ATTEMPT_CAP,
+            'attempts_remaining': _RECOVERY_ATTEMPT_CAP,
+        }
+
+    held = bool(record['holder']) and record['expires_at'] > now
+    return {
+        'status': 'held' if held else 'free',
+        'plan_id': plan_id,
+        'bot_kind': bot_kind,
+        'holder': record['holder'] or None,
+        'pr_number': record['pr_number'],
+        'expires_at': record['expires_at'],
+        'seconds_remaining': max(0.0, record['expires_at'] - now),
+        'expired': not held,
+        'attempts': record['attempts'],
+        'attempt_cap': _RECOVERY_ATTEMPT_CAP,
+        'attempts_remaining': max(0, _RECOVERY_ATTEMPT_CAP - record['attempts']),
+    }
+
+
+def _run_rate_window_release(args: Namespace) -> dict[str, Any]:
+    """``rate-window release`` — drop this plan's claim, retaining the attempt count."""
+    plan_id: str = args.plan_id
+    bot_kind: str = args.bot_kind
+
+    outcome = _release_rate_window(plan_id, bot_kind)
+    if outcome['action'] == 'released':
+        log_lock_event(
+            'rate-window', 'released', lock_id=plan_id, bot_kind=bot_kind,
+            attempts=outcome['attempts'],
+        )
+    return {
+        'status': 'success',
+        'plan_id': plan_id,
+        'bot_kind': bot_kind,
+        'action': outcome['action'],
+        'holder': outcome['holder'],
+        'attempts': outcome['attempts'],
+        'attempt_cap': _RECOVERY_ATTEMPT_CAP,
+    }
+
+
+_RATE_WINDOW_ACTIONS = {
+    'claim': _run_rate_window_claim,
+    'check': _run_rate_window_check,
+    'release': _run_rate_window_release,
+}
+
+
+def run_rate_window(args: Namespace) -> dict[str, Any]:
+    """Dispatch the ``rate-window {claim,check,release}`` action.
+
+    The rate-window claim coordinates recovery from a review bot's rate-limit
+    refusal across concurrently-finalizing plans. It SHARES the merge-lock store
+    (``<main>/.plan/local/merge-queue.json``, under the ``rate_windows`` key) and
+    the same :func:`_locks_core.rmw_json` critical section, but it NEVER shares the
+    merge MUTEX: no rate-window action creates, reads, reclaims, or releases
+    ``merge.lock``, and none reads or mutates the ``waiting`` FIFO list. Coupling a
+    bot's multi-minute cooldown to the merge serializer would stall every
+    concurrently-finalizing plan behind a review-bot rate limit.
+    """
+    return _RATE_WINDOW_ACTIONS[args.action](args)
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
 
 def main() -> int:
-    """Entry point — ``acquire`` / ``check`` / ``release`` actions."""
+    """Entry point — ``acquire`` / ``check`` / ``release`` / ``rate-window`` actions."""
     parser = create_workflow_cli(
         description='Unified merge lock: the single main-anchored merge-to-main serializer with a FIFO admission queue',
         epilog="""
@@ -1183,6 +1580,9 @@ Examples:
   merge_lock.py acquire --plan-id EXAMPLE-PLAN [--timeout 0]
   merge_lock.py check --plan-id EXAMPLE-PLAN
   merge_lock.py release --plan-id EXAMPLE-PLAN
+  merge_lock.py rate-window claim --plan-id EXAMPLE-PLAN --bot-kind coderabbit --pr-number 42 [--window-seconds 3600]
+  merge_lock.py rate-window check --plan-id EXAMPLE-PLAN --bot-kind coderabbit
+  merge_lock.py rate-window release --plan-id EXAMPLE-PLAN --bot-kind coderabbit
 """,
         subcommands=[
             {
@@ -1245,6 +1645,44 @@ Examples:
                         'dest': 'set_title_token',
                         'action': 'store_false',
                         'help': 'Suppress the terminal-title glyph clear (matches a --no-title-token acquire)',
+                    },
+                ],
+            },
+            {
+                'name': 'rate-window',
+                'help': 'Claim / check / release one review bot\'s rate window (shares the merge-lock STORE, never the merge MUTEX)',
+                'handler': run_rate_window,
+                'args': [
+                    {
+                        'flags': ['action'],
+                        'choices': ['claim', 'check', 'release'],
+                        'help': 'claim (idempotent for the self-holder, capped), check (non-mutating), or release',
+                    },
+                    {
+                        'flags': ['--plan-id'],
+                        'dest': 'plan_id',
+                        'required': True,
+                        'help': 'Claiming plan_id (mandatory)',
+                    },
+                    {
+                        'flags': ['--bot-kind'],
+                        'dest': 'bot_kind',
+                        'required': True,
+                        'help': 'Registry bot_kind whose rate window is claimed (mandatory)',
+                    },
+                    {
+                        'flags': ['--pr-number'],
+                        'dest': 'pr_number',
+                        'type': int,
+                        'default': 0,
+                        'help': 'PR the recovery attempts are counted against (required for claim)',
+                    },
+                    {
+                        'flags': ['--window-seconds'],
+                        'dest': 'window_seconds',
+                        'type': float,
+                        'default': _DEFAULT_WINDOW_SECONDS,
+                        'help': f'Window length in seconds, from the parsed bot ETA (default: {_DEFAULT_WINDOW_SECONDS})',
                     },
                 ],
             },

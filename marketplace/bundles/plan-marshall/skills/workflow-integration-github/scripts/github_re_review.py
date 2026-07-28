@@ -41,11 +41,26 @@ rule the producer pre-filter applies: the awaited bot's registry
 ``ignore_patterns`` (case-sensitive substring containment) first, then the
 structural ``_is_rate_limit_notice`` fallback for an unknown/unregistered bot or
 a phrasing not yet captured as data. A refusal is the bot talking about itself,
-never evidence that the new HEAD was reviewed. Accepted tradeoff: a genuine
-review or comment whose body happens to contain an ``ignore_patterns`` substring
-is skipped and surfaces as a timeout — deliberate, because a truthful
-``matched: false`` / ``timed_out: true`` is recoverable, whereas a false
-``head_sha_verified: true`` silently asserts review coverage that never happened.
+never evidence that the new HEAD was reviewed.
+
+**A rejected refusal is RECORDED, never silently dropped.** Both discriminators
+append every refusal they skip to a per-poll accumulator, and the envelope
+surfaces it: ``refusal_detected`` (bool), ``refusal_class`` (the awaited bot's
+registry ``rate_limit_class`` — ``awaitable_window`` / ``hard_quota`` /
+``unknown``), ``refusal_eta`` (the reset time the notice itself stated, parsed
+through the bot's registry ``rate_limit_eta_patterns``), and ``refusals`` (one
+record per detected refusal carrying its source, detecting layer, awaited
+``bot_kind``, ETA, and a truncated body excerpt). The refusal still does NOT
+count as a completed review — ``matched`` is unaffected — but the caller can now
+distinguish "the bot refused, and here is the recovery this arms" from "the bot
+never responded". Without the record the two were the same bare
+``matched: false`` / ``timed_out: true``, and the refusal vanished.
+
+Accepted tradeoff: a genuine review or comment whose body happens to contain an
+``ignore_patterns`` substring is skipped — deliberate, because a truthful
+non-match is recoverable, whereas a false ``head_sha_verified: true`` silently
+asserts review coverage that never happened. That skip is now VISIBLE in
+``refusals`` rather than swallowed.
 
 The second signal exists because a bot that posts its review as one persistent
 issue comment and submits no review object could otherwise only ever time out.
@@ -73,7 +88,7 @@ from datetime import UTC, datetime
 import bot_registry
 import github_ops as _github
 from _findings_core import BOT_KINDS
-from _github_pr import _is_rate_limit_notice
+from _github_pr import _extract_rate_limit_eta, _is_rate_limit_notice
 from ci_base import (
     DEFAULT_CI_INTERVAL,
     DEFAULT_CI_TIMEOUT,
@@ -87,6 +102,13 @@ from ci_base import (
 )
 
 register_subcommands({'re-review'})
+
+# A refusal notice is short by construction, but the envelope it is recorded on is
+# serialized as TOON, whose scalar values are single-line. The recorded body is
+# therefore whitespace-collapsed to one line and truncated to this many characters
+# — enough to identify the notice in a decision log without risking a multi-line
+# value that would be silently clipped at the transport layer.
+_REFUSAL_BODY_EXCERPT_CHARS = 300
 
 
 def _now_iso() -> str:
@@ -111,6 +133,14 @@ def _parse_iso(value: str) -> datetime | None:
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=UTC)
     return dt
+
+
+def _body_excerpt(body: str) -> str:
+    """Collapse ``body`` to one truncated line safe to carry on a TOON envelope."""
+    collapsed = ' '.join(body.split())
+    if len(collapsed) <= _REFUSAL_BODY_EXCERPT_CHARS:
+        return collapsed
+    return collapsed[:_REFUSAL_BODY_EXCERPT_CHARS] + '...'
 
 
 # ---------------------------------------------------------------------------
@@ -187,15 +217,16 @@ class _ReReviewStrategy:
                     comments = comment_envelope.get('comments') or []
             return True, {**envelope, 'comments': comments}
 
-        def _resolve(data: dict) -> tuple[str, dict | None]:
-            """Return ``(matched_signal, record)`` for the strongest signal present."""
-            review = self._match_review(data.get('reviews') or [], head_sha, trigger_dt, bot_kind)
+        def _resolve(data: dict) -> tuple[str, dict | None, list[dict]]:
+            """Return ``(matched_signal, record, refusals)`` for the strongest signal present."""
+            refusals: list[dict] = []
+            review = self._match_review(data.get('reviews') or [], head_sha, trigger_dt, bot_kind, refusals)
             if review is not None:
-                return 'review', review
-            comment = self._match_bot_comment(data.get('comments') or [], bot_kind, trigger_dt)
+                return 'review', review, refusals
+            comment = self._match_bot_comment(data.get('comments') or [], bot_kind, trigger_dt, refusals)
             if comment is not None:
-                return 'issue_comment', comment
-            return '', None
+                return 'issue_comment', comment, refusals
+            return '', None, refusals
 
         def _is_complete(data: dict) -> bool:
             return _resolve(data)[1] is not None
@@ -205,7 +236,14 @@ class _ReReviewStrategy:
         if poll_result.get('error'):
             return make_error('await_fresh_review', poll_result['error'])
 
-        matched_signal, record = _resolve(poll_result.get('last_data') or {})
+        matched_signal, record, refusals = _resolve(poll_result.get('last_data') or {})
+        # A detected refusal ARMS a recovery strategy instead of vanishing into an
+        # indistinguishable timeout. It never counts as a completed review, so
+        # `matched` is unaffected — the caller branches on `matched: false` AND
+        # `refusal_detected: true` to enter the recovery sequence, and on
+        # `matched: false` with `refusal_detected: false` to treat the run as a
+        # genuine no-response timeout.
+        refusal_eta = next((r['eta'] for r in refusals if r['eta']), '')
         return {
             'status': 'success',
             'operation': 'await_fresh_review',
@@ -219,47 +257,89 @@ class _ReReviewStrategy:
             # An issue comment carries no reviewed-commit SHA, so it cannot prove
             # the new HEAD was reviewed. Only the review path verifies that.
             'head_sha_verified': matched_signal == 'review',
+            'refusal_detected': bool(refusals),
+            # The recovery strategy the refusal arms, from the bot's registry
+            # `rate_limit_class` (fail-closed to `unknown`). Empty when no refusal
+            # was detected — there is nothing to arm.
+            'refusal_class': (bot_registry.rate_limit_class(bot_kind) if bot_kind else 'unknown') if refusals else '',
+            'refusal_eta': refusal_eta,
+            'refusals': refusals,
             'timed_out': poll_result.get('timed_out', False),
             'polls': poll_result.get('polls', 0),
             'duration_sec': poll_result.get('duration_sec', 0),
         }
 
     @staticmethod
-    def _is_refusal(body: str, bot_kind: str | None) -> bool:
-        """Return True when ``body`` is a refusal notice for the awaited ``bot_kind``.
+    def _refusal_record(body: str, bot_kind: str | None, source: str) -> dict | None:
+        """Return a refusal RECORD when ``body`` is a refusal notice, else ``None``.
 
         The single TWO-LAYER rule shared by both discriminator paths (and by the
         producer pre-filter): the awaited bot's registry ``ignore_patterns``
         (case-sensitive substring containment) first, then the structural
-        ``_is_rate_limit_notice`` fallback for an unknown/unregistered bot or a
+        :func:`_is_rate_limit_notice` fallback for an unknown/unregistered bot or a
         phrasing not yet captured as data. When ``bot_kind`` is ``None`` the data
         layer cannot fire and only the structural test applies.
 
+        A detected refusal is RECORDED rather than merely reported as a boolean.
+        A refusal still does NOT count as a completed review — that behaviour is
+        correct and preserved — but the record is what lets the caller ARM a
+        recovery strategy instead of seeing an indistinguishable bare timeout. The
+        record carries:
+
+        - ``source`` — which discriminator saw it (``review`` / ``issue_comment``);
+        - ``bot_kind`` — the awaited bot (``''`` when none was supplied);
+        - ``layer`` — which layer fired, ``registry_ignore_patterns`` (the bot's
+          own declared phrasing) or ``structural_fallback`` (the bot-agnostic
+          notice shape). The distinction tells a reader whether the refusal was
+          recognized as DATA or merely inferred from shape;
+        - ``eta`` — the reset time the notice itself stated, parsed through the
+          bot's registry ``rate_limit_eta_patterns``, or ``''`` when the bot
+          declares no patterns or the notice states no ETA;
+        - ``body`` — a whitespace-collapsed, truncated excerpt (see
+          :func:`_body_excerpt`).
+
         Accepted tradeoff: a genuine review or comment whose body happens to
-        contain an ``ignore_patterns`` substring is skipped and reported as a
-        timeout. That is deliberate — a truthful ``matched: false`` /
-        ``timed_out: true`` is recoverable, whereas a false ``head_sha_verified:
-        true`` / "the bot responded" silently asserts review coverage that never
-        happened.
+        contain an ``ignore_patterns`` substring is skipped as a refusal. That is
+        deliberate — a truthful non-match is recoverable, whereas a false
+        ``head_sha_verified: true`` silently asserts review coverage that never
+        happened. It is now also VISIBLE: the skip is recorded, not swallowed.
         """
         if bot_kind and any(marker in body for marker in bot_registry.ignore_patterns(bot_kind)):
-            return True
-        return _is_rate_limit_notice(body)
+            layer = 'registry_ignore_patterns'
+        elif _is_rate_limit_notice(body):
+            layer = 'structural_fallback'
+        else:
+            return None
+        return {
+            'source': source,
+            'bot_kind': bot_kind or '',
+            'layer': layer,
+            'eta': _extract_rate_limit_eta(body, bot_kind) if bot_kind else '',
+            'body': _body_excerpt(body),
+        }
 
     @staticmethod
     def _match_review(
-        reviews: list[dict], head_sha: str, trigger_dt: datetime | None, bot_kind: str | None
+        reviews: list[dict],
+        head_sha: str,
+        trigger_dt: datetime | None,
+        bot_kind: str | None,
+        refusals: list[dict],
     ) -> dict | None:
         """Return the first genuine review matching ``head_sha`` and post-dating ``trigger_dt``.
 
         A review matches when its reviewed commit SHA equals ``head_sha``, its
         ``submitted_at`` is strictly after ``trigger_dt``, AND its body is not a
-        refusal notice (:meth:`_is_refusal`). A review with an unparseable
+        refusal notice (:meth:`_refusal_record`). A review with an unparseable
         ``submitted_at`` never matches (fail-closed). When ``trigger_dt`` is
         ``None`` (invalid or unparseable trigger time) the comparison is
         fail-closed — no review matches, preventing stale reviews from being
         incorrectly accepted. There is deliberately NO author gate on this path —
         the SHA match already establishes provenance.
+
+        Every refusal this path skips is APPENDED to ``refusals`` so the caller can
+        surface it on the envelope. A skipped refusal is a branchable signal, not a
+        silent ``continue`` that degrades into an indistinguishable timeout.
         """
         if trigger_dt is None:
             return None
@@ -271,13 +351,20 @@ class _ReReviewStrategy:
                 continue
             if submitted_dt <= trigger_dt:
                 continue
-            if _ReReviewStrategy._is_refusal(review.get('body') or '', bot_kind):
+            refusal = _ReReviewStrategy._refusal_record(review.get('body') or '', bot_kind, 'review')
+            if refusal is not None:
+                refusals.append(refusal)
                 continue
             return review
         return None
 
     @staticmethod
-    def _match_bot_comment(comments: list[dict], bot_kind: str | None, trigger_dt: datetime | None) -> dict | None:
+    def _match_bot_comment(
+        comments: list[dict],
+        bot_kind: str | None,
+        trigger_dt: datetime | None,
+        refusals: list[dict],
+    ) -> dict | None:
         """Return the first comment from ``bot_kind`` post-dating ``trigger_dt``.
 
         A comment matches when ALL of the following hold:
@@ -289,18 +376,23 @@ class _ReReviewStrategy:
           ``trigger_dt``. Taking the later of the two is what makes an EDITED
           persistent comment count: such a bot updates one comment in place, so
           ``created_at`` stops advancing after the first review;
-        - it is not a refusal notice (:meth:`_is_refusal`) — a "the bot could not
-          review" comment is the bot talking about itself, not a completed review.
+        - it is not a refusal notice (:meth:`_refusal_record`) — a "the bot could
+          not review" comment is the bot talking about itself, not a completed
+          review.
 
         Fail-closed on every missing input: no ``bot_kind``, no ``trigger_dt``,
-        or an unparseable timestamp yields no match.
+        or an unparseable timestamp yields no match. Every refusal this path skips
+        is APPENDED to ``refusals`` for the caller to surface, exactly as
+        :meth:`_match_review` does.
         """
         if not bot_kind or trigger_dt is None:
             return None
         for comment in comments:
             if bot_kind_for_author(comment.get('author')) != bot_kind:
                 continue
-            if _ReReviewStrategy._is_refusal(comment.get('body') or '', bot_kind):
+            refusal = _ReReviewStrategy._refusal_record(comment.get('body') or '', bot_kind, 'issue_comment')
+            if refusal is not None:
+                refusals.append(refusal)
                 continue
             stamps = [
                 dt

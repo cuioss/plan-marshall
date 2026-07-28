@@ -140,9 +140,12 @@ in the grounding source exercises a rate-limit, quota, or diff-size decline. `ra
 therefore `unknown` and `rate_limit_eta_patterns` is empty — both recorded as an honest absence of
 evidence, not as a claim that this bot never refuses.
 
-`unknown` is the FAIL-CLOSED value (ADR-009): a caller must NOT enter a rate-window await for a bot
-whose refusal shape has never been seen, because awaiting a quota that does not reopen burns the full
-budget and still times out. Should a refusal ever be observed, record its OBSERVED text in
+`unknown` is the FAIL-CLOSED value (ADR-009): a caller must NOT claim this bot's rate window, await
+it, or generate a recovery event for a bot whose refusal shape has never been seen — awaiting a quota
+that does not reopen burns the full budget and still times out, and re-triggering a bot that cannot
+answer spends a capped recovery attempt for nothing. The recovery sequence therefore escalates
+immediately for this class (`escalate_ask{reason: rate_window_not_awaitable}`); see `../SKILL.md`
+§ "Rate-limit refusal recovery (opt-in)". Should a refusal ever be observed, record its OBSERVED text in
 `ignore_patterns` and reclassify this field against that evidence — do not promote it to
 `awaitable_window` on the assumption that it behaves like CodeRabbit's window.
 

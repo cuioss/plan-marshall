@@ -85,10 +85,11 @@ The refusal notice (`Review limit reached`) is likewise a whole-comment drop: Co
 
 CodeRabbit's review limit is a **rolling window that reopens on its own**, so `rate_limit_class` is
 `awaitable_window`: awaiting the reset is productive work, not a stall. This is what makes the
-`automatic-review` opt-in rate-window await (`review_rate_window_await`, bounded by
+`automatic-review` opt-in rate-limit refusal recovery (`review_rate_window_await`, bounded by
 `review_rate_window_timeout_seconds`, defaulted to 3600 to match the roughly hourly reset) worth
-enabling for this bot — and it is the field the await decision reads, rather than assuming every
-bot's refusal is waitable.
+enabling for this bot — the class is the field the recovery decision reads, rather than assuming
+every bot's refusal is waitable. For this bot the recovery claims the window, polls it to expiry, and
+then generates a fresh trigger event; see `../SKILL.md` § "Rate-limit refusal recovery (opt-in)".
 
 The notice usually states its own reset time; `rate_limit_eta_patterns` extracts it so the caller
 can report a concrete ETA instead of an opaque "rate-limited". The patterns are *extraction* regexes,

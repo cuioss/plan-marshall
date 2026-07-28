@@ -97,8 +97,10 @@ a whole-comment drop: Sourcery posts it *in place of* a review, so it carries no
 The one observed Sourcery refusal is a **per-PR size limit**, not a rolling window: the same PR is
 over the limit a minute later and an hour later alike, so nothing reopens by waiting. `rate_limit_class`
 is therefore `hard_quota`, and `rate_limit_eta_patterns` is empty — there is no reset time to extract
-because there is no reset. A caller that reads this class should NOT enter a rate-window await for
-Sourcery; the productive responses are to split the PR or to accept the bot's non-participation, and
+because there is no reset. A caller that reads this class must NOT claim Sourcery's rate window, await
+it, or generate a recovery event — the recovery sequence escalates immediately for this class
+(`escalate_ask{reason: rate_window_not_awaitable}`; see `../SKILL.md` § "Rate-limit refusal recovery
+(opt-in)"). The productive responses are to split the PR or to accept the bot's non-participation, and
 the required-versus-optional classification is what decides whether that non-participation blocks.
 
 This is exactly the distinction the class exists to carry: treating every bot's refusal as awaitable

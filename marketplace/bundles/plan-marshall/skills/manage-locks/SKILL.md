@@ -1,6 +1,6 @@
 ---
 name: manage-locks
-description: Cross-session coordination primitives — the unified file-based merge mutex fronted by a FIFO admission queue for fair merge ordering, and the build-queue concurrency limiter, on one shared, TOCTOU-safe read-modify-write + plan-liveness core
+description: Cross-session coordination primitives — the unified file-based merge mutex fronted by a FIFO admission queue for fair merge ordering, the cross-plan review-bot rate-window claim co-tenanting that store, and the build-queue concurrency limiter, on one shared, TOCTOU-safe read-modify-write + plan-liveness core
 user-invocable: false
 mode: script-executor
 scope: global
@@ -40,7 +40,10 @@ Two primitives live here:
   `stale_holder_live_worktree` blocked signal for operator confirmation instead of
   force-releasing it; a `blocked` + `blocking_plan_id` admission payload (distinct
   from a hard error) drives the Pre-Merge Gate's poll loop and last-resort
-  orchestrator escalation.
+  orchestrator escalation. The same entry point also carries the **rate-window
+  claim** (`rate-window claim` / `check` / `release`) — a cross-plan claim on ONE
+  review bot's rate window that shares the merge-lock STORE but never the merge
+  MUTEX (see below).
 - **The build-queue limiter** (`scripts/build_queue.py`, notation
   `plan-marshall:manage-locks:build_queue`) — a bounded-`k`-slot admitter with a
   FIFO waiting queue, persisted in the machine-global `build-queue.json` under the
@@ -66,7 +69,9 @@ Two primitives live here:
 **Execution mode**: Run scripts via the executor; parse TOON output for `status` and route accordingly.
 
 **Prohibited actions:**
-- Do not read, write, or mutate the lock file (`merge.lock`) or the queue file (`build-queue.json`) directly — every mutation goes through the script API so the atomic `O_EXCL` / serialized read-modify-write invariant holds.
+- Do not read, write, or mutate the lock file (`merge.lock`) or either state file (`merge-queue.json`, `build-queue.json`) directly — every mutation goes through the script API so the atomic `O_EXCL` / serialized read-modify-write invariant holds.
+- Do not couple the rate-window claim to the merge mutex — a `rate-window` action must never acquire, contend for, or release `merge.lock`, and must never read or mutate the `waiting` FIFO list. The two claims share the store, not the mutex.
+- Do not return a freshly-constructed state dict from an `rmw_json` mutator — merge into the state handed in, so a co-tenant top-level key is never silently erased.
 - Do not invent script arguments not listed in the **Canonical invocations** section below.
 - Do not re-implement holder-liveness or main-anchored read-modify-write in a consumer — import the shared helpers from `_locks_core` so there is one TOCTOU-safe serialization surface, not parallel copies.
 - Do not add a second main-anchored resolution path for per-repo state — route `merge.lock` and `merge-queue.json` through `resolve_main_anchored_path` (the single ADR-002 sanctioned utility). Route `build-queue.json` through `home_root()` (the machine-global tier), NOT `resolve_main_anchored_path` — the build queue is host-wide, and binding it to one repository's main checkout would break cross-repo build coordination.
@@ -86,9 +91,30 @@ cwd. The build-queue file is machine-global — it lives under the home root
 
 ```text
 <main>/.plan/local/merge.lock          # the unified merge mutex (one-line holder plan_id)
-<main>/.plan/local/merge-queue.json    # the merge-lock FIFO admission queue (waiting state)
+<main>/.plan/local/merge-queue.json    # the merge-lock store: `waiting` (FIFO admission) + `rate_windows` (per-bot claims)
 ~/.plan-marshall/build-queue.json      # the machine-global build-queue active + waiting + run-log state
 ```
+
+## The rate window shares the STORE, never the MUTEX
+
+`merge-queue.json` is a **shared store with two independent top-level keys**, not a
+single queue file:
+
+- `waiting` — the FIFO admission queue in FRONT of the `k=1` `merge.lock` mutex.
+  Owned exclusively by `acquire` / `release`.
+- `rate_windows` — the per-`bot_kind` rate-window claims. Owned exclusively by the
+  `rate-window` verbs.
+
+Claiming a bot's rate window **does not serialize against merges**. No `rate-window`
+action creates, reads, reclaims, or releases `merge.lock`, and none reads or mutates
+the `waiting` list; conversely no merge action reads or mutates `rate_windows`.
+Coupling a review bot's multi-minute cooldown to the merge serializer would stall
+every concurrently-finalizing plan's merge behind that cooldown. The two claims
+share nothing but the brief `_locks_core.rmw_json` guard both mutations serialize
+on — which is exactly why the FIFO mutators **merge** their result into the state
+they were handed rather than returning a freshly-constructed `{"waiting": ...}`: a
+wholesale replace would silently erase the co-tenant `rate_windows` key on the next
+merge acquire.
 
 ## Anchoring: per-repo main vs machine-global home root
 
@@ -288,6 +314,59 @@ shape) is never force-released.
 token, so there is nothing to clear. Otherwise the release path issues an
 owner-scoped `merge-lock` clear and settles the state for the next render event.
 
+### merge_lock — rate-window claim
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock rate-window claim \
+  --plan-id PLAN_ID --bot-kind BOT_KIND --pr-number PR_NUMBER [--window-seconds WINDOW_SECONDS]
+```
+
+Claims `--bot-kind`'s rate window for `--plan-id`, recording the window expiry and
+advancing the recovery-attempt counter. `--window-seconds` carries the ETA parsed
+from the bot's registry `rate_limit_eta_patterns` (default `3600`). Idempotent for
+the self-holder: a re-claim renews the same record in place rather than contending.
+Outcomes:
+
+- **`status: success`** — the claim is held. `action` is `claimed` (first claim),
+  `renewed` (self-holder re-claim), or `reclaimed` (the previous holder's window
+  elapsed or its plan is dead). Fields: `holder` (this plan), `expires_at`,
+  `seconds_remaining`, `attempts`, `attempt_cap`, `attempts_remaining`,
+  `reclaimed_from`.
+- **`status: blocked`, `reason: window_held_by_other_plan`** — a DIFFERENT live plan
+  holds an unexpired window. No mutation. Fields: `holder`, `expires_at`,
+  `seconds_remaining`.
+- **`status: refused`, `reason: recovery_cap_exhausted`** — the recursion cap
+  (`attempt_cap` recovery events per bot per PR) is spent. No mutation; the consumer
+  escalates rather than re-triggering the bot. The attempt counter is scoped to
+  `(bot_kind, pr_number)` and survives both a release and a holder takeover, so the
+  cap cannot be reset by releasing and re-claiming.
+
+### merge_lock — rate-window check
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock rate-window check \
+  --plan-id PLAN_ID --bot-kind BOT_KIND
+```
+
+A pure non-mutating read: `status: held` while a holder's window is unexpired,
+`status: free` otherwise (including a released or elapsed record). Fields: `holder`,
+`pr_number`, `expires_at`, `seconds_remaining`, `expired`, `attempts`,
+`attempt_cap`, `attempts_remaining`. This is the observable the recovery sequence
+polls between paced `sleep` calls — never a single long blocking sleep of the
+parsed ETA.
+
+### merge_lock — rate-window release
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock rate-window release \
+  --plan-id PLAN_ID --bot-kind BOT_KIND
+```
+
+Drops this plan's claim (`action: released`), or is a benign no-op when the window
+is unclaimed or held by another plan (`action: noop`). The record is RETAINED with
+its `attempts` counter intact — the recursion cap counts recovery events per bot per
+PR across the whole sequence, which releases the window between attempts.
+
 ### build_queue — acquire
 
 ```bash
@@ -310,7 +389,8 @@ python3 .plan/execute-script.py plan-marshall:manage-locks:build_queue release \
 | `phase-6-finalize/standards/branch-cleanup.md` Pre-Merge Gate | consumes | `merge_lock acquire` (FIFO poll/backoff loop on `admission: blocked`)/`check`/`release` |
 | build wrappers (`_build_execute_factory`, `_pyproject_execute`) | consume | `build_queue acquire`/`release` around `execute_direct` — the in-process fallback path (unregistered / daemon-down) |
 | `manage-build-server:_marshalld_scheduler` (via the D5 routing seam) | consumes | the same machine-global `build-queue.json` — the registered path (daemon-served builds) |
-| `_locks_core.rmw_json` | consumed by | both `build_queue` (`build-queue.json`) and `merge_lock` (`merge-queue.json` FIFO layer) |
+| `automatic-review/SKILL.md` rate-limit recovery sequence | consumes | `merge_lock rate-window claim`/`check`/`release` |
+| `_locks_core.rmw_json` | consumed by | both `build_queue` (`build-queue.json`) and `merge_lock` (`merge-queue.json` FIFO layer AND `rate_windows` claims) |
 
 ## Standards
 

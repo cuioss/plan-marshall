@@ -44,10 +44,10 @@ configurable:
     description: "Timeout policy applied at both re-review triggers (A and B) when the await budget expires with no fresh bot review (timed_out: true, matched: false). One of ask|defer|proceed. ask halts and asks the operator (interactive); defer auto-skips the merge without prompting (safe default-action); proceed is the explicit opt-in to advance the unreviewed HEAD, decision-logged at WARNING."
   - key: review_rate_window_await
     default: false
-    description: Opt-in bool (default-off) that, when enabled, awaits a bot rate-window reset instead of proceeding on a rate-limit status-notice. When the pr wait-for-comments return carries a non-empty rate_limited_bots[] (the per-bot discriminator) AND at least one listed bot has rate_limit_class awaitable_window, the step re-polls in a bounded await loop until a non-rate-limited bot review lands or review_rate_window_timeout_seconds is exhausted. When every listed bot is hard_quota or unknown the await is skipped as unproductive. When false, a rate-limit notice is treated as an ordinary settle and the step proceeds without awaiting.
+    description: "Opt-in bool (default-off) arming the rate-limit refusal recovery sequence instead of proceeding on a detected refusal. When enabled and a refusal is detected (a non-empty rate_limited_bots[] on the pr wait-for-comments return, or refusal_detected on the github_re_review await), the step branches on the bot's rate_limit_class: awaitable_window claims the bot's rate window via merge_lock rate-window claim, polls the claim's own expiry as a bounded paced wait, then GENERATES the event (rebase onto base and push; the registry trigger_comment only as a fallback when main is unchanged and only after the window elapsed); hard_quota and unknown escalate immediately without awaiting; cap exhaustion escalates with reason rate_window_exhausted. When false, a detected refusal is treated as an ordinary settle and the step proceeds."
   - key: review_rate_window_timeout_seconds
     default: 3600
-    description: Await budget (seconds) capping the rate-window await loop, defaulting to 3600 to match CodeRabbit's ~hourly rate-window reset. On exhaustion the step returns escalate_ask with reason rate_window_timeout. Only consulted when review_rate_window_await is true.
+    description: Await budget (seconds) capping the rate-window expiry poll, defaulting to 3600 to match CodeRabbit's ~hourly rate-window reset. On exhaustion the step releases the claim and returns escalate_ask with reason rate_window_timeout. Only consulted when review_rate_window_await is true.
 ---
 
 # Automatic Review
@@ -135,7 +135,8 @@ block at runtime and exposes the derived registry (`bot_kinds()`, the login→bo
 bot's `trigger_comment`, `completion_check_name`, `honors_skip_label`, `ignore_patterns`,
 `rate_limit_class`, `rate_limit_eta_patterns`, and `severity_map`). The producer
 (`github_pr.py` noise pre-filter), the finding store (`_findings_core.BOT_KINDS`), the re-review
-strategy registry (`github_re_review.py`), and the per-bot rate-limit detector
+strategy registry (`github_re_review.py` — both its trigger comments and the `refusal_class` /
+`refusal_eta` it surfaces on a detected refusal), and the per-bot rate-limit detector
 (`_github_pr._detect_rate_limited_bots`) all DERIVE from this loader — adding, removing, or
 re-configuring a bot is a pure `standards/{bot_kind}.md` edit with no code change.
 
@@ -289,8 +290,8 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-
 | `status: error` | Treat as warning, log, proceed to the completion-aware poll best-effort |
 
 `rate_limited_bots[]` is orthogonal to the rows above: it is an additive per-bot discriminator, not a
-poll outcome, so a non-empty list never changes which row fires. It is consumed by the "Rate-window
-await (opt-in)" subsection below.
+poll outcome, so a non-empty list never changes which row fires. It is consumed by the "Rate-limit
+refusal recovery (opt-in)" subsection below.
 
 #### Completion-aware poll (per enabled bot)
 
@@ -335,48 +336,219 @@ invocations → `github_ops pr wait-for-comments` for the authoritative field co
 The list is per-bot and class-bearing because the correct response differs per bot: an
 `awaitable_window` refusal reopens on its own and is worth awaiting, a `hard_quota` refusal does not
 reopen on a useful timescale so awaiting it only burns budget, and `unknown` is the fail-closed value
-for a bot whose refusal shape has never been observed. The "Rate-window await" subsection below acts
-on this discriminator when the opt-in is enabled; when the opt-in is off, a non-empty
+for a bot whose refusal shape has never been observed. The "Rate-limit refusal recovery" subsection
+below acts on this discriminator when the opt-in is enabled; when the opt-in is off, a non-empty
 `rate_limited_bots[]` is treated as an ordinary settle by the table above.
 
-### Rate-window await (opt-in)
+### Rate-limit refusal recovery (opt-in)
 
-Read `review_rate_window_await` and `review_rate_window_timeout_seconds` off the same `params` object returned by the one-stop `manage-execution-manifest step-params get --plan-id {plan_id} --phase 6-finalize --step-id plan-marshall:automatic-review` call used for `review_bot_buffer_seconds` (defaults: `false` and `3600`). **When `review_rate_window_await == false`**, skip this entire subsection and proceed directly to "Producer: FIND" below — a non-empty `rate_limited_bots[]` return is treated as an ordinary settle.
+A detected refusal is a **branchable signal, never a silent drop**. Two producers surface one:
 
-**When `review_rate_window_await == true` AND the "Wait for review-bot comments" return carried a non-empty `rate_limited_bots[]`**, at least one bot's limit was hit before a review landed. Branch on the `rate_limit_class` of the listed bots BEFORE entering any await — the await is only productive for a window that actually reopens:
+- **`rate_limited_bots[]`** on the "Wait for review-bot comments" return — one
+  `{bot_kind, rate_limit_class, eta}` record per registered bot whose newest comment is a rate-limit
+  notice.
+- **`refusal_detected` / `refusal_class` / `refusal_eta` / `refusals[]`** on the
+  `github_re_review re-review` return — the re-review await recorded a refusal instead of collapsing
+  it into a bare `matched: false` / `timed_out: true`.
 
-- **At least one listed bot has `rate_limit_class: awaitable_window`** — its window reopens on its own, so the await below is productive. Enter the loop. When that bot's record carries a non-empty `eta`, surface it in the decision log so the operator sees the stated reset rather than an opaque wait.
-- **Every listed bot has `rate_limit_class: hard_quota` or `unknown`** — nothing reopens on a useful timescale (`hard_quota`), or the refusal shape has never been observed for that bot (`unknown`, the fail-closed value). Do NOT enter the await loop: it would burn the full `review_rate_window_timeout_seconds` budget and still time out. Skip this subsection, decision-log the skip naming each bot and its class, and proceed directly to "Producer: FIND" — whether the non-participation is tolerable is a required-versus-optional classification question, not a waiting question.
+Both carry the same two discriminators, so this section treats them uniformly: `{bot_kind}` and its
+`rate_limit_class` (`awaitable_window` / `hard_quota` / `unknown`), plus the stated `eta` when the
+bot's registry `rate_limit_eta_patterns` matched.
+
+Read `review_rate_window_await` and `review_rate_window_timeout_seconds` off the same `params` object returned by the one-stop `manage-execution-manifest step-params get --plan-id {plan_id} --phase 6-finalize --step-id plan-marshall:automatic-review` call used for `review_bot_buffer_seconds` (defaults: `false` and `3600`). **When `review_rate_window_await == false`**, skip this entire subsection and proceed directly to "Producer: FIND" below — a detected refusal is treated as an ordinary settle.
+
+**When `review_rate_window_await == true` AND a refusal was detected**, branch on `rate_limit_class` BEFORE claiming or awaiting anything — recovery is only productive for a window that actually reopens.
+
+**Every branch below is decision-logged.** A refusal never leaves this section without an auditable record of what was decided and why.
+
+#### Branch 1 — `hard_quota` or `unknown`: escalate, do not await, do not generate
+
+Nothing reopens on a useful timescale (`hard_quota`), or the refusal shape has never been observed for
+that bot (`unknown`, the fail-closed value). Do NOT claim a window, do NOT await, and do NOT generate
+an event: awaiting would burn the full `review_rate_window_timeout_seconds` budget and still time out,
+and generating an event would re-trigger a bot that cannot answer. Decision-log, then return
+`status: escalate_ask` with `reason: rate_window_not_awaitable` (see "Output" below). Whether the
+non-participation is tolerable is a required-versus-optional classification question, not a waiting
+question — so it belongs with the operator, not in a loop here.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO \
+  --message "(plan-marshall:automatic-review) refusal recovery SKIPPED — bot {bot_kind} rate_limit_class={rate_limit_class} is not awaitable; returning escalate_ask{reason: rate_window_not_awaitable} rather than awaiting a limit that does not reopen"
+```
+
+#### Branch 2 — `awaitable_window`: claim the window
+
+The window is a **cross-plan shared resource**: every concurrently-finalizing plan in this repository
+contends for the same bot's rate window, so two plans must not both drive a recovery for it. Claim it
+through the `manage-locks` rate-window verbs — which share the merge-lock STORE but never the merge
+MUTEX, so the claim can never stall a concurrent plan's merge. See
+[`../manage-locks/SKILL.md`](../manage-locks/SKILL.md) § Canonical invocations →
+`merge_lock — rate-window claim`.
+
+Pass `--window-seconds` derived from the refusal's stated `eta` when it names a duration (e.g. an
+`eta` of `15 minutes` → `900`); omit the flag when the notice stated no ETA, so the claim falls back
+to the verb's default rather than inventing a reset time.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock rate-window claim \
+  --plan-id {plan_id} --bot-kind {bot_kind} --pr-number {pr_number} --window-seconds {window_seconds}
+```
+
+Branch on the returned `status`:
+
+- **`status: refused`, `reason: recovery_cap_exhausted`** — this PR has already spent its
+  `attempt_cap` recovery events for this bot. Recursion is capped, and exhaustion is an explicit
+  escalation, never a silent give-up. Decision-log, then return `status: escalate_ask` with
+  `reason: rate_window_exhausted` (see "Output"). Do NOT await and do NOT generate an event.
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    decision --plan-id {plan_id} --level WARNING \
+    --message "(plan-marshall:automatic-review) refusal recovery EXHAUSTED — bot {bot_kind} on pr {pr_number} spent attempts={attempts}/{attempt_cap}; returning escalate_ask{reason: rate_window_exhausted}"
+  ```
+
+- **`status: blocked`, `reason: window_held_by_other_plan`** — another live plan is already driving
+  recovery for this bot's window. Do NOT drive a second one. Decision-log the deferral naming the
+  holder, and proceed directly to "Producer: FIND" — the other plan's event generation reopens the
+  bot for this PR too.
 
   ```bash
   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
     decision --plan-id {plan_id} --level INFO \
-    --message "(plan-marshall:automatic-review) rate-window await SKIPPED — no listed bot is awaitable: {bot_kind}={rate_limit_class} ... — awaiting a non-reopening limit would exhaust review_rate_window_timeout_seconds without effect"
+    --message "(plan-marshall:automatic-review) refusal recovery DEFERRED — bot {bot_kind} rate window held by plan {holder} with {seconds_remaining}s remaining; not driving a second recovery"
   ```
 
-Once an `awaitable_window` bot is present, re-poll in a bounded await loop until a non-rate-limited bot review lands OR the `review_rate_window_timeout_seconds` budget is exhausted. The loop is driven across tool calls — **no shell loop**: each poll is exactly one `pr wait-for-comments` Bash call, and pacing between polls is a single standalone `sleep {interval}` Bash call (`{interval}` = 60s). Track elapsed wall-clock against `review_rate_window_timeout_seconds`; stop issuing new polls once the budget would be exceeded.
+- **`status: success`** — the window is claimed (`action` is `claimed` / `renewed` / `reclaimed`).
+  Decision-log the claim with its `expires_at` and `attempts_remaining`, then proceed to Branch 3.
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    decision --plan-id {plan_id} --level INFO \
+    --message "(plan-marshall:automatic-review) refusal recovery ARMED — claimed {bot_kind} rate window ({action}), eta={refusal_eta} seconds_remaining={seconds_remaining} attempts={attempts}/{attempt_cap}"
+  ```
+
+#### Branch 3 — poll the claimed window to expiry (bounded, paced, never one long sleep)
+
+Poll the window's **own observable state** — the claim's `seconds_remaining` — until it elapses OR the
+`review_rate_window_timeout_seconds` budget is exhausted. This is a bounded wait over a concrete
+observable, NOT a blind sleep: a single blocking `sleep {parsed_eta}` is prohibited here, because a
+bot's stated ETA is an estimate and sleeping through it is guessing at a condition rather than
+observing one (see [`../plan-marshall/standards/waiting.md`](../plan-marshall/standards/waiting.md)).
+
+The loop is driven across tool calls — **no shell loop**: each poll is exactly one `rate-window check`
+Bash call, and pacing between polls is a single standalone `sleep {interval}` Bash call
+(`{interval}` = 60s). Track elapsed wall-clock against `review_rate_window_timeout_seconds`; stop
+issuing new polls once the budget would be exceeded.
 
 Each poll:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-dir {worktree_path} pr wait-for-comments \
-  --pr-number {pr_number} --timeout {review_bot_buffer_seconds}
+python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock rate-window check \
+  --plan-id {plan_id} --bot-kind {bot_kind}
 ```
 
-- **Empty `rate_limited_bots[]` with new comment(s)** (`status: success`, `timed_out: false`) — a non-rate-limited bot review has landed; exit the await loop and proceed to "Producer: FIND" below.
-- **The awaited bot still listed in `rate_limited_bots[]`** — its rate window is still exhausted. If the elapsed budget is not yet spent, pace with a single standalone `sleep` call, then re-poll:
+- **`expired: true`** (or `status: free`) — the window has elapsed. Proceed to Branch 4 (generate the
+  event).
+- **`expired: false`** with budget remaining — pace with a single standalone `sleep` call, then
+  re-poll:
 
   ```bash
   sleep 60
   ```
 
-- **Budget exhausted** (`review_rate_window_timeout_seconds` elapsed with the bot still rate-limited) — return `status: escalate_ask` with `reason: rate_window_timeout` and the three prompt options (see the `escalate_ask` return in "Output" below). Honour the **no-mark invariant**: do NOT call `mark-step-done` before returning `escalate_ask` — the dispatcher's item 7a owns the continuation. Decision-log the exhaustion:
+- **Budget exhausted** (`review_rate_window_timeout_seconds` elapsed with the window still open) —
+  release the claim, decision-log, and return `status: escalate_ask` with
+  `reason: rate_window_timeout` (see "Output"). Honour the **no-mark invariant**: do NOT call
+  `mark-step-done` before returning `escalate_ask` — the dispatcher's item 7a owns the continuation.
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock rate-window release \
+    --plan-id {plan_id} --bot-kind {bot_kind}
+  ```
 
   ```bash
   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
     decision --plan-id {plan_id} --level INFO \
-    --message "(plan-marshall:automatic-review) rate-window await: review_rate_window_timeout_seconds={review_rate_window_timeout_seconds} exhausted with bot still rate-limited — returning escalate_ask{reason: rate_window_timeout}; orchestrator will fire AskUserQuestion"
+    --message "(plan-marshall:automatic-review) refusal recovery: review_rate_window_timeout_seconds={review_rate_window_timeout_seconds} exhausted with {bot_kind} window still open — released the claim, returning escalate_ask{reason: rate_window_timeout}; orchestrator will fire AskUserQuestion"
   ```
+
+#### Branch 4 — GENERATE the event (rebase-and-push preferred, trigger comment as fallback)
+
+Recovery is **event generation**, not continued waiting. New commits are the trigger every registered
+bot honours, so the primary recovery is to rebase the feature branch onto base and push. The registry
+`trigger_comment` is a FALLBACK only — and only under the two conditions below, because a premature
+trigger burns a recovery attempt and resets the bot's window, which is precisely the failure this
+ordering prevents.
+
+**Reached only after the window has elapsed** (Branch 3 observed `expired: true`). There is no path
+into this branch while the window is still open — a trigger comment during an open rate-limit window
+is structurally unreachable, not merely discouraged.
+
+1. **Resolve the base branch** and check whether it advanced past the branch's merge base — a rebase
+   only produces new commits when base has moved:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-references:manage-references get \
+     --plan-id {plan_id} --field base_branch
+   ```
+
+   ```bash
+   git -C {worktree_path} fetch origin {base_branch}
+   ```
+
+   ```bash
+   git -C {worktree_path} log --oneline HEAD..origin/{base_branch}
+   ```
+
+   A NON-EMPTY output means base advanced — a rebase will produce new commits. An EMPTY output means
+   main is unchanged and no rebase can generate an event.
+
+2. **Base advanced (preferred path)** — rebase onto base and force-push. The new commits ARE the
+   trigger; do NOT also post a trigger comment.
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-rebase-to \
+     --plan-id {plan_id} --base origin/{base_branch}
+   ```
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow force-push-with-lease \
+     --plan-id {plan_id}
+   ```
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+     decision --plan-id {plan_id} --level INFO \
+     --message "(plan-marshall:automatic-review) refusal recovery GENERATED — rebased onto origin/{base_branch} and force-pushed; new commits are the trigger for {bot_kind}"
+   ```
+
+3. **Main unchanged (fallback path ONLY)** — no rebase can produce new commits, so the registry
+   `trigger_comment` is the only remaining event. Post it via the re-review registry, which owns the
+   trigger string and the await. Both fallback conditions now hold: main is unchanged AND the window
+   has elapsed.
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_re_review re-review \
+     --pr-number {pr_number} --bot-kind {bot_kind} --head-sha {head_sha} --push-time {push_time} \
+     --timeout {re_review_await_timeout_seconds} --plan-id {plan_id}
+   ```
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+     decision --plan-id {plan_id} --level INFO \
+     --message "(plan-marshall:automatic-review) refusal recovery GENERATED (fallback) — main unchanged so no rebase produces commits; posted {bot_kind} trigger_comment after the window elapsed"
+   ```
+
+4. **Release the claim** in both cases, so the next plan (or the next attempt) is not blocked behind a
+   completed recovery. The attempt counter is retained by the verb, so the cap survives the release:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock rate-window release \
+     --plan-id {plan_id} --bot-kind {bot_kind}
+   ```
+
+Then proceed to "Producer: FIND" below, which surfaces whatever the regenerated review produced.
 
 ### Producer: FIND — file PR comments to the ledger (entry-point)
 
@@ -515,12 +687,14 @@ FIND-only producer — this step fetches and files `pr-comment` findings; the pe
 
 ### `escalate_ask` return (timeout escalations)
 
-This step returns `status: escalate_ask` instead of `success`/`loop_back` on two distinct timeout escalations, discriminated by the `reason` field:
+This step returns `status: escalate_ask` instead of `success`/`loop_back` on four distinct escalations, discriminated by the `reason` field:
 
 - **`reason: re_review_timeout`** — the "On re-review timeout (trigger B)" sub-block fired with `re_review_on_timeout` of `defer` or `ask` (the re-review await budget expired with no fresh bot review). The `proceed` policy does NOT return `escalate_ask` — the leaf falls through to "Wait for review-bot comments" and the run terminates normally (`success`/`loop_back`); `proceed` is the documented non-escalating case.
-- **`reason: rate_window_timeout`** — the "Rate-window await (opt-in)" sub-block fired: with `review_rate_window_await == true`, the bounded await loop exhausted `review_rate_window_timeout_seconds` while the bot was still rate-limited.
+- **`reason: rate_window_timeout`** — the "Rate-limit refusal recovery" Branch 3 poll exhausted `review_rate_window_timeout_seconds` while the claimed window was still open.
+- **`reason: rate_window_not_awaitable`** — the "Rate-limit refusal recovery" Branch 1 fired: the refusing bot's `rate_limit_class` is `hard_quota` or `unknown`, so no await and no event generation is productive. Escalates immediately without claiming a window.
+- **`reason: rate_window_exhausted`** — the "Rate-limit refusal recovery" Branch 2 claim returned `recovery_cap_exhausted`: this PR has already spent its `attempt_cap` recovery events for this bot. Cap exhaustion is an explicit escalation, never a silent give-up.
 
-In both cases the dispatched leaf does NOT fire `AskUserQuestion` itself — it returns this envelope and the inline orchestrator (phase-6-finalize SKILL.md Step 3 item 7a) owns the prompt.
+In all cases the dispatched leaf does NOT fire `AskUserQuestion` itself — it returns this envelope and the inline orchestrator (phase-6-finalize SKILL.md Step 3 item 7a) owns the prompt.
 
 `reason: re_review_timeout` variant:
 
@@ -539,14 +713,18 @@ prompt_options[3]:              # present only when action: ask — omitted for 
   - "Defer merge"
 ```
 
-`reason: rate_window_timeout` variant (the rate-window await exhausted its budget with the bot still rate-limited; there is no re-review `head_sha` — the escalation is about an unlanded review, not an unreviewed HEAD):
+The three rate-window variants (`rate_window_timeout`, `rate_window_not_awaitable`,
+`rate_window_exhausted`) share one shape. There is no re-review `head_sha` on any of them — the
+escalation is about an unlanded review, not an unreviewed HEAD:
 
 ```toon
 status: escalate_ask
-display_detail: "rate-window timeout — awaiting bot review (pr {pr_number})"
+display_detail: "rate-window {timeout|not-awaitable|exhausted} — {bot_kind} (pr {pr_number})"
 action: ask
-reason: rate_window_timeout
-timed_out: true
+reason: rate_window_timeout | rate_window_not_awaitable | rate_window_exhausted
+timed_out: true | false
+bot_kind: {the refusing bot}
+refusal_class: {awaitable_window | hard_quota | unknown}
 timeout_seconds: {review_rate_window_timeout_seconds}
 pr_number: {pr_number}
 prompt_options[3]:
@@ -557,10 +735,12 @@ prompt_options[3]:
 
 Field contract:
 
-- `action`: `defer` when policy is `defer` (orchestrator skips the merge directly); `ask` when policy is `ask` (orchestrator fires `AskUserQuestion` with `prompt_options[]`). The `rate_window_timeout` variant always uses `action: ask`.
-- `reason`: `re_review_timeout` or `rate_window_timeout` — distinguishes the two escalation triggers so item 7a can route them identically while keeping the audit trail specific.
-- `head_sha`: present only on the `re_review_timeout` variant — the full worktree HEAD SHA the timed-out re-review was awaiting; the unreviewed commit the operator decision applies to. Omitted on the `rate_window_timeout` variant (no HEAD advance is involved).
-- `timeout_seconds`: the exhausted budget — `re_review_await_timeout_seconds` for `re_review_timeout`, `review_rate_window_timeout_seconds` for `rate_window_timeout`.
+- `action`: `defer` when policy is `defer` (orchestrator skips the merge directly); `ask` when policy is `ask` (orchestrator fires `AskUserQuestion` with `prompt_options[]`). All three rate-window variants always use `action: ask`.
+- `reason`: `re_review_timeout`, `rate_window_timeout`, `rate_window_not_awaitable`, or `rate_window_exhausted` — distinguishes the four escalation triggers so item 7a can route them identically while keeping the audit trail specific.
+- `head_sha`: present only on the `re_review_timeout` variant — the full worktree HEAD SHA the timed-out re-review was awaiting; the unreviewed commit the operator decision applies to. Omitted on the three rate-window variants (no HEAD advance is involved).
+- `timed_out`: `true` only for `rate_window_timeout` (a budget genuinely elapsed). `rate_window_not_awaitable` and `rate_window_exhausted` escalate WITHOUT awaiting, so they report `false` — reporting a timeout that never happened would misdescribe the escalation.
+- `bot_kind` / `refusal_class`: present on the three rate-window variants — which bot refused and under which class, so the operator sees whether the non-participation is awaitable at all.
+- `timeout_seconds`: the exhausted budget — `re_review_await_timeout_seconds` for `re_review_timeout`, `review_rate_window_timeout_seconds` for the rate-window variants.
 - `prompt_options[]`: the three operator choices the orchestrator presents when `action: ask`. "Wait another {timeout_seconds}s" is realized by the orchestrator re-dispatching `plan-marshall:automatic-review` from scratch with a fresh budget (the harness cannot resume a spawned agent — see [phase-6-finalize SKILL.md](../phase-6-finalize/SKILL.md) Step 3). Present only when `action: ask`; omitted for `action: defer`.
 
 **No-mark invariant (symmetric with the dispatcher's item-5d carve-out)** — before returning `escalate_ask`, the leaf MUST NOT call `mark-step-done`. The continuation — firing the `AskUserQuestion` for the `ask` policy, or skipping the merge for the `defer` policy — is owned exclusively by the dispatcher's item 7a, not by the leaf. Recording a terminal outcome here would pre-empt that continuation. This no-mark contract is the symmetric counterpart of the dispatcher-side completion-guard carve-out: the leaf does not record terminality, and the post-dispatch completion guard does not assert it for an `escalate_ask` return (see [`../phase-6-finalize/SKILL.md`](../phase-6-finalize/SKILL.md) item 5d, the `escalate_ask`-returning steps skip class). Without both halves, the guard would halt the pipeline with `step_record_missing` before item 7a could run.
