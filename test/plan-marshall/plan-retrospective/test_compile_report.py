@@ -247,12 +247,15 @@ class TestStrippedArchiveIntegration:
     """Regression: full retrospective pipeline on the committed stripped archive.
 
     Copies the production-shape archived-plan fixture into a tmp dir and
-    drives collect-fragments init → add (x10) → finalize → compile-report
-    run end-to-end. Asserts the rendered report contains real content for
-    every registered section (no ``_No data provided._`` placeholders and
-    no missing headings). This is the integration test that would have
-    caught all four bugs the parent plan fixes: wrong key names, wrong
-    filenames, wrong log-source filenames, and missing-file silent-swallow.
+    drives collect-fragments init → add → finalize → compile-report run
+    end-to-end, with one ``add`` per registerable registry key — the
+    committed fixture file where one exists, a fragment synthesized into
+    the tmp archive otherwise. Asserts the rendered report contains real
+    content for every registered section (no ``_No data provided._``
+    placeholders and no missing headings). This is the integration test
+    that would have caught all four bugs the parent plan fixes: wrong key
+    names, wrong filenames, wrong log-source filenames, and missing-file
+    silent-swallow.
     """
 
     def test_full_retrospective_on_stripped_archive(self, tmp_path):
@@ -277,12 +280,34 @@ class TestStrippedArchiveIntegration:
         )
         assert result_init.success, result_init.stderr
 
-        # add each of the 10 committed fragment files under its
-        # consumer-expected aspect key.
+        # Register one fragment per registerable registry key. The population is
+        # DERIVED from the live ``SECTION_SPEC`` rather than hand-listed, so a
+        # new registry row is covered here automatically: a committed fixture
+        # file is used when ``_FRAGMENT_TO_ASPECT`` names one (keeping the
+        # fixture-drift guard on the committed ten), and a minimal fragment is
+        # synthesized into the already-copied tmp archive otherwise.
+        #
+        # ``collect-fragments add`` stores the PARSED fragment file as
+        # ``bundle[aspect]``, so a synthesized file must carry the fragment BODY
+        # only — the shared ``_registry_render_fragment_lines`` helper emits the
+        # body under a leading ``{fragment_key}:`` line, so drop that line and
+        # de-indent the remainder one level (which also de-indents the
+        # ``dispatch_boundaries`` per-phase mapping correctly).
         work_dir = archived / 'work'
-        for fragment_name, aspect in _FRAGMENT_TO_ASPECT.items():
-            fragment_path = work_dir / fragment_name
-            assert fragment_path.exists(), f'Fixture drift: missing fragment file {fragment_path}'
+        aspect_to_fixture = {aspect: name for name, aspect in _FRAGMENT_TO_ASPECT.items()}
+        for _heading, aspect, trigger in _retro_sections.SECTION_SPEC:
+            if aspect.startswith('_'):
+                continue
+            fixture_name = aspect_to_fixture.get(aspect)
+            if fixture_name is not None:
+                fragment_path = work_dir / fixture_name
+                assert fragment_path.exists(), f'Fixture drift: missing fragment file {fragment_path}'
+            else:
+                fragment_path = work_dir / f'fragment-{aspect}.toon'
+                body_lines = _registry_render_fragment_lines(aspect, trigger)[1:]
+                fragment_path.write_text(
+                    '\n'.join(line[2:] for line in body_lines) + '\n', encoding='utf-8'
+                )
             result_add = run_script(
                 _COLLECT_FRAGMENTS_SCRIPT,
                 'add',
@@ -309,7 +334,9 @@ class TestStrippedArchiveIntegration:
         assert result_finalize.success, result_finalize.stderr
         finalize_data = result_finalize.toon()
         bundle_path = finalize_data['bundle_path']
-        assert int(finalize_data['aspect_count']) == 10
+        # The bundle carries one aspect per registerable registry key — derived,
+        # never a hand-maintained count.
+        assert int(finalize_data['aspect_count']) == len(_retro_sections.valid_aspect_keys())
         try:
             # compile the report in archived mode.
             result_compile = run_script(
@@ -331,18 +358,13 @@ class TestStrippedArchiveIntegration:
             # none were omitted silently.
             sections_written = data.get('sections_written') or []
             sections_omitted = data.get('sections_omitted') or []
+            # Derived from the live registry — the same population-derived shape
+            # TestRegistryConsistencyGuard uses — so a new SECTION_SPEC row is
+            # asserted here without editing a hand-maintained heading list.
             expected_headings = {
-                'Executive Summary',
-                'Goals vs Outcomes',
-                'Artifact Consistency',
-                'Log Analysis',
-                'Invariant Outcomes',
-                'Plan Efficiency',
-                'LLM-to-Script Opportunities',
-                'Logging Gaps',
-                'Script Failure Analysis',
-                'Permission Prompt Analysis',
-                'Proposed Lessons',
+                heading
+                for heading, fragment_key, _trigger in _retro_sections.SECTION_SPEC
+                if not fragment_key.startswith('_')
             }
             missing = expected_headings - set(sections_written)
             assert not missing, f'Sections missing from report: {sorted(missing)} (omitted={sections_omitted})'

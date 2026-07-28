@@ -42,6 +42,16 @@ SECTION_SPEC: tuple[tuple[str, str, str | None], ...] = (
     ('Logging Gaps', 'logging-gap-analysis', None),
     ('Script Failure Analysis', 'script-failure-analysis', 'script-failure-analysis'),
     ('Permission Prompt Analysis', 'permission-prompt-analysis', 'permission-prompt-analysis'),
+    # Direct gh/glab Usage is ALWAYS emitted (``conditional_trigger = None``). A
+    # self-trigger would be wrong here: the aspect runs for every plan and a
+    # clean run emits a populated counts block with an EMPTY findings list.
+    # ``should_emit`` would refuse that fragment while ``_fragment_has_payload``
+    # still reports payload, mis-classifying a healthy run as ``sections_dropped``.
+    ('Direct gh/glab Usage', 'direct-gh-glab-usage', None),
+    # Execution-Context Dispatch Audit is ALWAYS emitted for the same reason: a
+    # clean trail yields populated counts with zero findings, which a
+    # self-trigger would drop while ``_fragment_has_payload`` still sees payload.
+    ('Execution-Context Dispatch Audit', 'execution-context-dispatch-audit', None),
     # Manifest Decisions is conditional on its own fragment being present —
     # ``check-manifest-consistency`` only emits a fragment when execution.toon
     # exists, so plans pre-dating the manifest deliverable get no section.

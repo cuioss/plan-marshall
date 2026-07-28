@@ -21,16 +21,18 @@ The compiler must emit exactly these sections in this order:
 9. Logging Gaps — renders the `logging_gap_analysis` aspect fragment as expected-vs-actual numbers and gap items.
 10. Script Failure Analysis — conditional. Emit only when `log_analysis.counts.errors_script > 0`. Renders the `script_failure_analysis` aspect fragment.
 11. Permission Prompt Analysis — conditional. Emit only when a session surfaced prompts, or the chat-history aspect detected them. Renders the `permission_prompt_analysis` aspect fragment.
-12. Manifest Decisions — conditional. Emit only when the `manifest-decisions` fragment is present. Renders the manifest body plus the paired decision-log entries.
-13. Routing Decisions — conditional. Emit only when the `routing-decisions` fragment is present. Renders the lane/recipe/posture verdict, the mis-prune checks, and the cost preview.
-14. Chat History Analysis — conditional. Emit only when the `chat-history-analysis` fragment is present. A Tier-2 `status: skipped` fragment carrying a warning finding still renders — the warning is required to be visible.
-15. Proposed Lessons — renders the `lessons_proposal` aspect fragment as a list of draft lesson blocks. In user-invocable mode, each draft that the user recorded is marked with a trailing `[recorded]` tag.
+12. Direct gh/glab Usage — always emitted; the aspect runs for every plan and emits zero findings on a clean trail. Renders the `direct-gh-glab-usage` aspect fragment.
+13. Execution-Context Dispatch Audit — always emitted; the aspect runs for every plan and emits zero findings on a clean trail. Renders the `execution-context-dispatch-audit` aspect fragment.
+14. Manifest Decisions — conditional. Emit only when the `manifest-decisions` fragment is present. Renders the manifest body plus the paired decision-log entries.
+15. Routing Decisions — conditional. Emit only when the `routing-decisions` fragment is present. Renders the lane/recipe/posture verdict, the mis-prune checks, and the cost preview.
+16. Chat History Analysis — conditional. Emit only when the `chat-history-analysis` fragment is present. A Tier-2 `status: skipped` fragment carrying a warning finding still renders — the warning is required to be visible.
+17. Proposed Lessons — renders the `lessons_proposal` aspect fragment as a list of draft lesson blocks. In user-invocable mode, each draft that the user recorded is marked with a trailing `[recorded]` tag.
 
 ## Conditional Rule
 
 Conditional sections are emitted only when their source fragment carries non-empty data. When a fragment is absent, has `status: skipped`, or carries only an empty list, the compiler must omit the entire section — it must not emit an empty heading. That is a benign omission and the compiler reports it under `sections_omitted`.
 
-Chat History Analysis (item 14) is the sole documented exception: its own entry specifies that a `status: skipped` fragment carrying a warning finding still renders, because that warning is required to be visible. The override is keyed to that one section — every other conditional section still omits on `status: skipped` regardless of payload.
+Chat History Analysis (item 16) is the sole documented exception: its own entry specifies that a `status: skipped` fragment carrying a warning finding still renders, because that warning is required to be visible. The override is keyed to that one section — every other conditional section still omits on `status: skipped` regardless of payload.
 
 The counterpart holds too: a fragment that IS present and DOES carry payload but still does not render is a **drop**, not an omission, and must be reported as such — under `sections_dropped`, with the run's status raised to `warning`. A dropped section is content the aspect produced and the report lost, so it can never ride the same clean-run signal as an omission.
 

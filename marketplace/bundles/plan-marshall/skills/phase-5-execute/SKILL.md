@@ -493,30 +493,37 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks list \
 
 Parse the row count from the returned `tasks_table` and substitute it as `{N}`.
 
-**Differentiate first entry from re-entry**: Read the persisted phase status from `manage-status read` to determine whether this is the first time phase-5-execute is being entered or a re-dispatch of an already-in-progress phase. The 5-execute phase row's `status` is `pending` on the very first entry and `in_progress` on every subsequent re-dispatch (the `manage-status transition --completed 4-plan` call sets it to `in_progress`).
+**Differentiate first entry from re-entry**: the discriminator is a phase-5-owned first-entry marker in `status.metadata` — `metadata.phase_5_first_entry_logged`. Read it from `manage-status read`:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read \
   --plan-id {plan_id}
 ```
 
-Locate the `phases[name=5-execute]` row in the returned TOON and read its `status` field. Then:
+Locate `metadata.phase_5_first_entry_logged` in the returned TOON. Then:
 
-- If `status == pending` (first entry) → emit:
+- **Marker ABSENT (first entry)** → emit the `Starting` line AND set the marker. **The emission and the marker write are ONE indivisible pair** — exactly as the `[DISPATCH]` line and its dispatch are one pair: never emit without writing the marker (the next entry would re-report a first entry), and never write the marker without emitting (the first-entry signal is lost for good).
 
   ```bash
   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
     work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-5-execute) Starting execute phase — {N} tasks pending"
   ```
 
-- If `status == in_progress` (re-entry; e.g., orchestrator re-dispatched a execution-context after a previous turn ended without completing the queue) → emit:
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
+    --plan-id {plan_id} --set --field phase_5_first_entry_logged --value true
+  ```
+
+- **Marker PRESENT (re-entry**; e.g., orchestrator re-dispatched a execution-context after a previous turn ended without completing the queue) → emit the `Re-entering` line only; the marker is already set and is NOT re-written:
 
   ```bash
   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
     work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-5-execute) Re-entering execute phase — {N} tasks pending"
   ```
 
-Both forms emit exactly one `[STATUS]` line; the wording difference makes it possible to grep for re-entries during retrospective gap analysis.
+The marker is **branch-independent**: it is written by this step alone and carries the same meaning whether `metadata.use_worktree` is `true` (Case A) or `false` (Case B). `metadata.worktree_path` MUST NOT be used as the signal — it is populated in Case A and empty in Case B, so it would misread every main-checkout plan's first entry as a re-entry.
+
+Both forms emit exactly one `[STATUS]` line, with the literal marker text `Starting execute phase` / `Re-entering execute phase` under the `[STATUS] (plan-marshall:phase-5-execute)` prefix. That shape is byte-compatible with the retrospective consumer's `_STARTING_RE` / `_RE_ENTERING_RE` in `plan-retrospective/scripts/analyze-logs.py`; the wording difference is what makes first entries and re-entries separately countable during retrospective gap analysis.
 
 **Surface the active worktree absolute path** so it remains visible in model context for every subsequent Edit/Write/Read call. Read the worktree path from status metadata:
 
