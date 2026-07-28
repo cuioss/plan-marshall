@@ -829,6 +829,38 @@ in that case the orchestrator-dispatched q-gate-validation (signaled by
 Step 8b via `qgate_validation_required: true`) is the only authoritative pass
 and the orchestrator MUST still fire it.
 
+**Persist-rejection gate (mandatory).** The same return TOON carries
+`qgate_persist_failed` (bool) and `qgate_persist_failures` (a list of
+`{title, message}` records). A rejected persist means a mechanical-check
+finding never reached the store: the check DID fail, but its finding is absent
+from `manage-findings qgate list`, so `total_failed` counts a failure the
+operator will never see at the phase-4-plan gate. Reading only `total_failed`
+and `ambiguous` therefore proceeds as if the findings landed.
+
+When `qgate_persist_failed` is `true`, the phase MUST fail loudly — do NOT
+proceed to Step 8b or the Step 10 transition, and do NOT downgrade the
+rejection to a warning. Surface every `qgate_persist_failures` entry in the
+phase return TOON and abort:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level ERROR \
+  --message "[STATUS] (plan-marshall:phase-4-plan) Q-Gate persist rejected — aborting phase. {failure_count} finding(s) lost: {failure_titles}"
+```
+
+```toon
+status: error
+error: qgate_persist_failed
+display_detail: "phase-4-plan Q-Gate persist rejected: {failure_count} finding(s) lost"
+plan_id: {plan_id}
+total_failed: {total_failed}
+qgate_persist_failures[{failure_count}]{title,message}:
+  ...
+```
+
+The orchestrator consumes the rejected findings inline from this payload; it
+does NOT query the Q-Gate store for them.
+
 ### Log Q-Gate Result
 
 ```bash

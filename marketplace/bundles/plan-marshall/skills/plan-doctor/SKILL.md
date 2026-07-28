@@ -133,6 +133,16 @@ summary:
 
 The TOON table widens to the union of fields across all rule types — TASK-level rows leave the rule-specific cells empty, and rule-level rows leave the TASK-specific cells empty. The TOON parser surfaces each row as a dict keyed by the column names; missing cells parse as empty strings.
 
+When the Q-Gate primitive REJECTS one or more of the emitted findings, two further top-level fields follow `summary`:
+
+```toon
+qgate_persist_failed: true
+qgate_persist_failures[1]{title,detail,message}:
+  "plan-doctor finding (phantom_lesson_id): EXAMPLE-PLAN","TASK-003.json cites 2099-01-01-00-001","plan_not_found"
+```
+
+Both fields are absent when every finding reached the store. A rejected finding is counted in `findings_count` but is NOT in the Q-Gate store, so a caller that reads `findings_count` alone would report findings the run failed to file — branch on `qgate_persist_failed` before treating `findings[]` as retrievable via `manage-findings qgate list`.
+
 Errors (TOON, exit 1):
 
 ```toon
@@ -153,6 +163,8 @@ message: "manage-lessons list exited 2: 'boom'"
 | `confidence` / `threshold` | Set only on `stuck_low_confidence_archive` rows. |
 | `summary.plans_scanned` | Distinct plans inspected |
 | `summary.emit_to_qgate` | `true` when findings were emitted, `false` for `--no-emit` |
+| `qgate_persist_failed` | Present and `true` only when the Q-Gate primitive rejected at least one finding; absent when every finding reached the store |
+| `qgate_persist_failures[]{title, detail, message}` | Present alongside `qgate_persist_failed`. One row per rejected finding, carrying the finding content that never landed plus the primitive's rejection message |
 
 ### Error codes
 

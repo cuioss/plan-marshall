@@ -123,7 +123,7 @@ Both operations take the same `PRRT_` thread ID — pass the comment's `thread_i
    ```bash
    python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr fetch_findings --pr-number {pr} --plan-id {plan_id}
    ```
-   Output reports `count_fetched`, `count_skipped_noise`, `count_stored`, and `producer_mismatch_hash_id` (set when count_stored ≠ count_fetched − count_skipped_noise; the mismatch is also persisted as a Q-Gate finding under phase `5-execute` with title prefix `(producer-mismatch)`). A `status: unconfigured` return means GitHub is not authenticated — never a silent zero-findings success.
+   Output reports `count_fetched`, `count_skipped_noise`, `count_stored`, and `producer_mismatch_hash_id` (set when count_stored ≠ count_fetched − count_skipped_noise; the mismatch is also persisted as a Q-Gate finding under phase `5-execute` with title prefix `(producer-mismatch)`). When that mismatch finding's own persist is REJECTED, `producer_mismatch_hash_id` stays `null` and the output carries `qgate_persist_failed: true` plus `qgate_persist_failure{title, detail, message}` — the mismatch content that never reached the store, with the primitive's rejection message. Both fields are absent when the mismatch finding landed (or when there was no mismatch). Read `qgate_persist_failed`, not a `null` hash id, to tell a lost mismatch finding from no mismatch at all; `status` stays `success` because the fetch itself succeeded. A `status: unconfigured` return means GitHub is not authenticated — never a silent zero-findings success.
 
 2. **INGEST — promote validated free-text to top-level** (one batched deterministic pass over the whole ledger):
    ```bash
