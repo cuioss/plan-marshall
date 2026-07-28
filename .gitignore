@@ -50,6 +50,11 @@ target/
 # Virtual environment (if using uv directly)
 .venv/
 
+# Ad-hoc local interpreter environments (see doc/developer/build.adoc:
+# "Which Interpreter Runs the Build"). The committed UV_PYTHON pin stays at the
+# supported floor; these are opt-in, developer-machine-only forward checks.
+.venv-*/
+
 # Tool caches
 .pytest_cache/
 .mypy_cache/
