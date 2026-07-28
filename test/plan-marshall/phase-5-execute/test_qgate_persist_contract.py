@@ -16,10 +16,12 @@ Three contracts:
   (a) A persist the REAL primitive rejects produces the loud behaviour — non-zero
       rc, ``error: finding_persist_failed``, the rejected finding's content
       present — and never ``status: success``, never a content-free referral.
-  (b) The same assertions are demonstrated RED against pre-fix code. The pre-fix
-      ``_emit_finding`` is reconstructed here (a vacuous ``returncode == 0``
-      guard over a subprocess call) and routed through the same command, proving
-      the assertions in (a) discriminate rather than merely passing post-fix.
+  (b) The seam that carried the defect — the emitter's RETURN CONTRACT — is
+      pinned directly. The pre-fix ``_emit_finding`` answered a rejection with a
+      bare bool, which is the same signal it used for "nothing emitted", so the
+      caller had nothing to branch on. The post-fix emitter answers the SAME real
+      rejection with a failure descriptor carrying the primitive's message, which
+      is what makes (a)'s loud output possible at all.
   (c) A successful persist is unaffected: the finding lands in the store, a
       ``resolution=pending`` readback covers it, and a ``deduplicated``
       re-persist stays benign.
@@ -121,7 +123,7 @@ def test_real_rejection_is_loud_and_carries_finding_content(plan_context, monkey
 
 
 # ---------------------------------------------------------------------------
-# Contract (b): the same assertions are RED against pre-fix code
+# Contract (b): the pre-fix return contract could not carry a rejection
 # ---------------------------------------------------------------------------
 
 
@@ -137,38 +139,55 @@ def _pre_fix_emit_finding(plan_id: str, residual: list[str], threshold: int) -> 
        ``status: error`` in the TOON.
 
     The argv is not reconstructed (no subprocess is spawned here); what matters
-    is the return contract: a bool that is ``False`` on every rejection, which
-    ``cmd_check`` then reported as ``finding_emitted: false`` under
+    is the return contract: a bare ``False`` on every rejection, which the
+    PRE-FIX ``cmd_check`` then reported as ``finding_emitted: false`` under
     ``status: success``.
     """
     return False
 
 
-def test_pre_fix_emitter_reports_a_rejection_as_a_clean_pass(plan_context, monkeypatch, capsys):
-    """Pre-fix code turns a lost finding into a clean success — the defect, pinned.
+def test_pre_fix_return_contract_cannot_distinguish_a_rejection_from_no_creep(
+    plan_context, monkeypatch, capsys
+):
+    """The pre-fix emitter collapsed a lost finding into the no-creep shape.
 
-    This is the RED half of contract (b): routed through the reconstructed
-    pre-fix emitter, the SAME command produces exactly the shape the post-fix
-    assertions above reject. A post-fix-only green would not be evidence, because
-    the pre-fix path also "passes" — it just passes wrongly.
+    Contract (b), pinned at the seam that actually carried the defect: the
+    emitter's return value. The pre-fix emitter answered a REJECTED persist with
+    the same bare ``False`` it used for "nothing emitted", so ``cmd_check`` had
+    nothing to branch on and printed the ordinary no-creep output. The post-fix
+    emitter answers the SAME real rejection with a failure descriptor carrying
+    the primitive's own message — the input contract (a)'s loud output is built
+    from.
+
+    The pre-fix bool is deliberately NOT routed through the current
+    ``cmd_check``: that caller's contract (``None``-or-dict) changed together
+    with the emitter as one fix, so a bool is not a state the current code path
+    can reach, and feeding it one would exercise a shape that never existed in
+    either the pre-fix or the post-fix program.
     """
     plan_id = 'qgate-contract-pre-fix-shape'
     _seed_plan(plan_context, plan_id)
     _patch_worktree_reads(monkeypatch)
-    monkeypatch.setattr(scc, '_emit_finding', _pre_fix_emit_finding)
 
-    rc = _run_check(plan_id)
-    out = capsys.readouterr().out
+    # The no-creep output of the REAL command, with the threshold raised above
+    # the residual: this is the shape a lost finding used to be confused with.
+    assert scc.cmd_check(Namespace(plan_id=plan_id, threshold=len(_EXCESS_FILES) + 1)) == 0
+    no_creep_out = capsys.readouterr().out
+    assert 'status: success' in no_creep_out
+    assert 'finding_emitted: false' in no_creep_out
+    assert 'error: finding_persist_failed' not in no_creep_out
 
-    # The pre-fix shape: a lost finding reported as a clean pass, indistinguishable
-    # from "no scope creep".
-    assert rc == 0
-    assert 'status: success' in out
-    assert 'finding_emitted: false' in out
-    # Every post-fix assertion from contract (a) fails against this output —
-    # which is what makes those assertions evidence rather than decoration.
-    assert 'error: finding_persist_failed' not in out
-    assert 'finding_title:' not in out
+    # Pre-fix: a rejection is answered with the same content-free bool, so it is
+    # indistinguishable from the no-creep run above.
+    assert _pre_fix_emit_finding(plan_id, _EXCESS_FILES, 5) is False
+
+    # Post-fix, driven against the REAL primitive's REAL rejection: the cause
+    # travels back to the caller, which is what makes contract (a) reachable.
+    failure = scc._emit_finding(plan_id, _EXCESS_FILES, 5)
+    assert isinstance(failure, dict)
+    assert 'Invalid finding type' in failure['message']
+    assert _SCOPE_CREEP_TYPE in failure['message']
+    assert failure['title'].startswith('Scope creep detected')
 
 
 # ---------------------------------------------------------------------------

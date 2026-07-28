@@ -24,6 +24,7 @@ via the root conftest's marketplace PYTHONPATH setup.
 
 import argparse
 import json
+import sys
 
 import pytest
 
@@ -100,6 +101,22 @@ def _patch_provider(monkeypatch, comments):
 def _run_fetch(pr_number, plan_id):
     args = argparse.Namespace(pr_number=pr_number, plan_id=plan_id)
     return github_pr.cmd_fetch_findings(args)
+
+
+def _live_findings_core():
+    """Return the ``_findings_core`` module object the SUT will actually import.
+
+    ``cmd_fetch_findings`` imports ``_findings_core`` lazily, inside the function
+    body, so the module object it binds is whatever ``sys.modules`` holds at CALL
+    time. ``load_script_module`` re-registers ``sys.modules['_findings_core']``
+    with a *fresh* object on every call, and several test modules load it — so
+    the object this module captured at import time is not necessarily the one the
+    SUT resolves when the test runs. Monkeypatching the import-time capture is
+    then a silent no-op: the validator keeps reading the unpatched globals of a
+    different module object. Resolving the live ``sys.modules`` entry at call
+    time targets the very globals ``add_finding`` reads.
+    """
+    return sys.modules['_findings_core']
 
 
 def test_second_fetch_dedupes_all_bot_kinds(plan_context, monkeypatch):
@@ -972,14 +989,17 @@ def test_rejected_mismatch_persist_surfaces_field_without_flipping_status(plan_c
 
     Driven by the real validator: ``pr-comment`` is removed from the live
     ``FINDING_TYPES``, so both the per-comment stores AND the mismatch finding
-    are rejected by ``_findings_core`` itself — no synthetic persist mock.
+    are rejected by ``_findings_core`` itself — no synthetic persist mock. The
+    patch targets the LIVE module object (see ``_live_findings_core``), because
+    that is the one ``cmd_fetch_findings`` imports at call time.
     """
     plan_id = 'gh-pr-persist-reject'
     _patch_provider(monkeypatch, _COMMENTS)
+    live_core = _live_findings_core()
     monkeypatch.setattr(
-        _findings_core,
+        live_core,
         'FINDING_TYPES',
-        tuple(t for t in _findings_core.FINDING_TYPES if t != 'pr-comment'),
+        tuple(t for t in live_core.FINDING_TYPES if t != 'pr-comment'),
     )
 
     result = _run_fetch(105, plan_id)
