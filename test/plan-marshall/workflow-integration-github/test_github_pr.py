@@ -192,87 +192,93 @@ def test_same_comment_id_distinct_bots_not_collided(plan_context, monkeypatch):
     assert {f.get('bot_kind') for f in stored} == {'coderabbit', 'sourcery'}
 
 
-def _run_fetch_enabled(pr_number, plan_id, enabled_bots):
-    """Invoke ``cmd_fetch_findings`` with an explicit ``--enabled-bots`` value.
+def _run_fetch_classified(pr_number, plan_id, *, required_bots=None, optional_bots=None):
+    """Invoke ``cmd_fetch_findings`` with explicit participation-classification lists.
 
-    ``enabled_bots`` is the raw comma-joined flag value (``'coderabbit'``,
-    ``'coderabbit,sourcery'``, or ``''`` to disable every bot). Passing the
-    attribute at all switches the producer filter on; the sibling ``_run_fetch``
-    omits it so the filter stays disabled there.
+    ``required_bots`` / ``optional_bots`` are the raw comma-joined flag values
+    (``'coderabbit'``, ``'coderabbit,pr-agent'``, or ``''`` for an
+    answered-empty list). Their union is the CLASSIFIED set; neither list admits
+    or drops a comment. The sibling ``_run_fetch`` omits both attributes, which
+    is the never-supplied case.
     """
-    args = argparse.Namespace(pr_number=pr_number, plan_id=plan_id, enabled_bots=enabled_bots)
+    args = argparse.Namespace(
+        pr_number=pr_number,
+        plan_id=plan_id,
+        required_bots=required_bots,
+        optional_bots=optional_bots,
+    )
     return github_pr.cmd_fetch_findings(args)
 
 
-def test_enabled_bots_filters_disabled_bot_comments(plan_context, monkeypatch):
-    """``--enabled-bots "coderabbit"`` files no sourcery/pr-agent findings.
+def test_unclassified_bot_comments_are_ingested_and_reported(plan_context, monkeypatch):
+    """A bot in NEITHER list is warned about, never dropped — its findings are USED.
 
-    Over the mixed-bot comment set, only the coderabbit comment (enabled) and
-    the human comment (``bot_kind`` None, never filtered — the gate is
-    bot-scoped) are stored; the sourcery (``review_body``) and pr-agent
-    (``inline``) comments are skipped as disabled bots. The disabled skips are
-    legitimate non-stores, so no producer-mismatch Q-Gate fires.
+    With only ``--required-bots "coderabbit"`` supplied, sourcery and pr-agent
+    fall outside the classified union. Under the warn-but-ingest rule their
+    comments are stored exactly like a classified bot's; the two bots are merely
+    named in ``unclassified_bots`` so the caller can surface the configuration
+    gap. Dropping them would let a configuration omission silently destroy real
+    review signal.
     """
-    plan_id = 'gh-pr-enabled-bots-coderabbit'
+    plan_id = 'gh-pr-unclassified-reported'
     _patch_provider(monkeypatch, _COMMENTS)
 
-    result = _run_fetch_enabled(101, plan_id, 'coderabbit')
+    result = _run_fetch_classified(101, plan_id, required_bots='coderabbit')
     assert result['status'] == 'success'
-    # coderabbit (c1) + human (c4) survive; sourcery (c2) + pr-agent (c3) disabled.
-    assert result['count_stored'] == 2
-    assert result['count_skipped_disabled'] == 2
+    # Every comment is ingested — classification is not admission.
+    assert result['count_stored'] == len(_COMMENTS)
+    assert result['unclassified_bots'] == ['pr-agent', 'sourcery']
     assert result['producer_mismatch_hash_id'] is None
 
     stored = query_findings(plan_id, finding_type='pr-comment')['findings']
     bot_kinds = {f.get('bot_kind') for f in stored}
-    assert 'sourcery' not in bot_kinds
-    assert 'pr-agent' not in bot_kinds
-    assert 'coderabbit' in bot_kinds
+    # The unclassified bots' findings are present and usable, not merely counted.
+    assert {'coderabbit', 'pr-agent', 'sourcery'} <= bot_kinds
 
 
-def test_enabled_bots_multiple_enabled_pass_through(plan_context, monkeypatch):
-    """A comma-joined enabled set passes each named bot; the unnamed one is filtered.
+def test_classification_union_spans_both_lists(plan_context, monkeypatch):
+    """A bot classified via EITHER list is not reported unclassified.
 
-    ``--enabled-bots "coderabbit,pr-agent"`` keeps coderabbit and pr-agent but
-    filters sourcery, proving the split-at-read set membership rather than a
-    single-value match.
+    ``--required-bots "coderabbit,pr-agent"`` plus ``--optional-bots "sourcery"``
+    classifies all three participating bots, proving the producer takes the union
+    of the two comma-split sets rather than reading only one list.
     """
-    plan_id = 'gh-pr-enabled-bots-multi'
+    plan_id = 'gh-pr-classification-union'
     _patch_provider(monkeypatch, _COMMENTS)
 
-    result = _run_fetch_enabled(103, plan_id, 'coderabbit,pr-agent')
+    result = _run_fetch_classified(
+        103, plan_id, required_bots='coderabbit,pr-agent', optional_bots='sourcery'
+    )
     assert result['status'] == 'success'
-    # coderabbit (c1) + pr-agent (c3) + human (c4) survive; only sourcery (c2) disabled.
-    assert result['count_stored'] == 3
-    assert result['count_skipped_disabled'] == 1
+    assert result['count_stored'] == len(_COMMENTS)
+    assert result['unclassified_bots'] == []
     assert result['producer_mismatch_hash_id'] is None
 
     stored = query_findings(plan_id, finding_type='pr-comment')['findings']
     bot_kinds = {f.get('bot_kind') for f in stored}
-    assert 'sourcery' not in bot_kinds
-    assert {'coderabbit', 'pr-agent'} <= bot_kinds
+    assert {'coderabbit', 'pr-agent', 'sourcery'} <= bot_kinds
 
 
-def test_enabled_bots_empty_disables_all_bots(plan_context, monkeypatch):
-    """An empty ``--enabled-bots`` value disables every bot; only human comments store.
+def test_empty_classification_lists_still_ingest_every_bot(plan_context, monkeypatch):
+    """Answered-empty lists classify nothing yet suppress nothing.
 
-    An empty string yields an empty enabled set, so every comment whose
-    ``bot_kind`` is non-empty is filtered. The human comment (``bot_kind`` None)
-    is bot-scoped-exempt and still files a finding.
+    Both knobs default to the empty string, so an unconfigured project yields an
+    empty classified union. Every participating bot is therefore reported as
+    unclassified — and every one of their comments is still stored. An empty
+    configuration degrades to "warn about everything", never to "drop
+    everything".
     """
-    plan_id = 'gh-pr-enabled-bots-empty'
+    plan_id = 'gh-pr-classification-empty'
     _patch_provider(monkeypatch, _COMMENTS)
 
-    result = _run_fetch_enabled(102, plan_id, '')
+    result = _run_fetch_classified(102, plan_id, required_bots='', optional_bots='')
     assert result['status'] == 'success'
-    # Only the human comment (c4) survives; all three bots are disabled.
-    assert result['count_stored'] == 1
-    assert result['count_skipped_disabled'] == 3
+    assert result['count_stored'] == len(_COMMENTS)
+    assert result['unclassified_bots'] == ['coderabbit', 'pr-agent', 'sourcery']
     assert result['producer_mismatch_hash_id'] is None
 
     stored = query_findings(plan_id, finding_type='pr-comment')['findings']
-    assert len(stored) == 1
-    assert stored[0].get('bot_kind') in (None, '')
+    assert len(stored) == len(_COMMENTS)
 
 
 def test_pipeline_trigger_and_rate_limit_notice_dropped(plan_context, monkeypatch):
@@ -636,15 +642,16 @@ def test_unregistered_bot_login_is_filed_unattributed(plan_context, monkeypatch)
     assert result['responded_bots'] == []
 
 
-def test_unregistered_bot_login_survives_the_enabled_bots_gate(plan_context, monkeypatch):
-    """``--enabled-bots`` does NOT suppress an unregistered login's comment.
+def test_unregistered_bot_login_is_not_reported_unclassified(plan_context, monkeypatch):
+    """An unattributable login is filed, and is NOT named as an unclassified bot.
 
-    The producer gate reads ``enabled_bots_set is not None and bot_kind and ...``,
-    so a falsy ``bot_kind`` short-circuits it. Supplying a narrow enabled set that
-    names a DIFFERENT bot therefore still files the unregistered comment — the
-    gate is bot-scoped, and an unattributable comment is treated as human input.
+    Classification is bot-scoped: the producer records an unclassified bot only
+    when a ``bot_kind`` resolved. An unregistered login yields a falsy
+    ``bot_kind``, so its comment is treated as human input — stored, and absent
+    from ``unclassified_bots`` (which would otherwise report a nonexistent bot
+    kind for the operator to classify).
     """
-    plan_id = 'gh-pr-unregistered-bot-enabled-gate'
+    plan_id = 'gh-pr-unregistered-bot-classification'
     comments = [
         {
             'id': 'retired-2',
@@ -659,10 +666,10 @@ def test_unregistered_bot_login_survives_the_enabled_bots_gate(plan_context, mon
     ]
     _patch_provider(monkeypatch, comments)
 
-    result = _run_fetch_enabled(108, plan_id, 'coderabbit')
+    result = _run_fetch_classified(108, plan_id, required_bots='coderabbit')
     assert result['status'] == 'success'
     assert result['count_stored'] == 1
-    assert result['count_skipped_disabled'] == 0
+    assert result['unclassified_bots'] == []
 
     stored = query_findings(plan_id, finding_type='pr-comment')['findings']
     assert len(stored) == 1

@@ -4,12 +4,16 @@ PR-Agent-specific triage rule for the plan-marshall `pr-comment` findings pipeli
 [`coderabbit.md`](coderabbit.md); read that first for the shared pipeline mechanics — this file
 only carries what differs for PR-Agent (`cuioss-review-bot[bot]`). The machine-readable registry
 block below is the single per-bot data record the `automatic-review` step consumes when `pr-agent`
-is present in the step's `enabled_bots`.
+is classified in the step's `required_bots` or `optional_bots`. Classification decides whether
+PR-Agent's silence is a failure (required) or tolerable (optional); it does NOT decide admission — a
+PR-Agent comment is ingested even when the bot appears in neither list, with a warning recorded. See
+[`bot-participation-contract.md`](bot-participation-contract.md).
 
 PR-Agent is the third reviewer beside CodeRabbit and Sourcery, deliberately narrowed to a
 **security-weighted** charter. It is opt-in per repository (the repo must carry the
-`reusable-pr-agent-review.yml` caller workflow), so `pr-agent` is NOT in the shipped
-`enabled_bots` default — add it per project.
+`reusable-pr-agent-review.yml` caller workflow). Both `required_bots` and `optional_bots` ship
+EMPTY, so `pr-agent` — like every other bot — is classified per project rather than by a shipped
+default.
 
 ## Grounding source
 

@@ -103,6 +103,9 @@ JSON structure and field definitions for project configuration.
         "default:push": {},
         "default:create-pr": {},
         "plan-marshall:automatic-review": {
+          "required_bots": "",
+          "optional_bots": "",
+          "bot_lists_provenance": "never_asked",
           "review_bot_buffer_seconds": 180,
           "lane": "ask"
         },
@@ -274,6 +277,74 @@ Read/write via `manage-config orchestrator get/set --field auto_emit`: `get` ret
 ### Validation
 
 The whole block is validated by `validate_orchestrator_block` (`_config_defaults.py`): the seeded shape (`{"auto_emit": false}`) passes trivially; a populated block rejects any top-level key outside `{effort, parallelization_scope, auto_emit}`, any `orchestrator.effort` object key outside `{analyze, decompose, reader, default, max}`, any non-`ALLOWED_LEVELS` effort value, a `parallelization_scope` that is not an int `>= 1`, and an `auto_emit` that is not a bool.
+
+## Section: plan.phase-6-finalize step params — review-bot participation
+
+The `plan-marshall:automatic-review` step owns three participation params nested in its entry of the
+`phase-6-finalize.steps` keyed map. They replace the retired `enabled_bots` knob outright — there is
+no deprecation shim. The participation SEMANTICS (required-vs-optional meaning, the ask posture, the
+five-member failure taxonomy) are owned by
+[`../../automatic-review/standards/bot-participation-contract.md`](../../automatic-review/standards/bot-participation-contract.md);
+this section documents only the storage shape and defaults.
+
+### Structure
+
+```json
+{
+  "plan-marshall:automatic-review": {
+    "required_bots": "",
+    "optional_bots": "",
+    "bot_lists_provenance": "never_asked"
+  }
+}
+```
+
+### Fields
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `required_bots` | string (CSV of `bot_kind`) | `""` (EMPTY) | Bots whose participation is REQUIRED. A required bot's silence is a failure and gates the `review_completeness` quorum. Each entry must have a registry doc at `automatic-review/standards/{bot_kind}.md`. |
+| `optional_bots` | string (CSV of `bot_kind`) | `""` (EMPTY) | Bots whose participation is OPTIONAL. Classified and reported for visibility but NEVER gating — an optional bot's silence never blocks mark-done. |
+| `bot_lists_provenance` | enum(`never_asked`\|`migrated`\|`answered`) | `never_asked` | How the two lists came to hold their current value. See the provenance table below. |
+
+### Why both defaults are EMPTY
+
+The empty default is load-bearing, not a placeholder. It keeps a **never-asked** key distinguishable
+from an **answered-empty** value. Collapsing the two would make "the operator has not been asked yet"
+indistinguishable from "the operator deliberately chose no required bots" — two states that warrant
+opposite handling (the first is re-asked, the second is not). `bot_lists_provenance` is what carries
+that distinction:
+
+| Provenance | Meaning | Set by |
+|------------|---------|--------|
+| `never_asked` | The wizard has not put the question to the operator. The empty value is a placeholder, not an answer. | The seeded default. |
+| `migrated` | Seeded by the one-shot legacy auto-map from a retired `enabled_bots` list, not by an operator answer. | `marshall-steward:upgrade migrate-bot-lists` (Stage 2 `reconcile-config`). |
+| `answered` | The operator was asked and answered — **including an explicit answer of none**. An answered-empty value is a real answer and is never re-asked. | The `marshall-steward` wizard question. |
+
+An EMPTY `required_bots` with provenance `answered` is a fully valid configured state: the
+completeness quorum is **vacuously satisfied** and nothing is awaited.
+
+### Warn-but-ingest
+
+The two lists carry **classification, not admission**. A comment from a bot in NEITHER list is
+**still ingested** into the findings store, and the run records a warning naming the unclassified bot
+(`github_pr fetch_findings` returns it in `unclassified_bots`). Dropping such a comment would let a
+configuration omission silently destroy real review signal precisely when the operator had not yet
+considered that bot; warning-and-ingesting fails safe instead.
+
+### Access
+
+Read/write through the nested step-param verb (never a dotted `--field` path):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config plan phase-6-finalize step set \
+  --step-id plan-marshall:automatic-review --param required_bots --value "coderabbit,pr-agent"
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config plan phase-6-finalize step get \
+  --step-id plan-marshall:automatic-review
+```
 
 ## Section: credentials_config
 
@@ -621,6 +692,9 @@ Finalize pipeline with a `steps` keyed map. `steps` serializes on disk as a JSON
         "default:push": {},
         "default:create-pr": {},
         "plan-marshall:automatic-review": {
+          "required_bots": "",
+          "optional_bots": "",
+          "bot_lists_provenance": "never_asked",
           "review_bot_buffer_seconds": 180,
           "lane": "ask"
         },

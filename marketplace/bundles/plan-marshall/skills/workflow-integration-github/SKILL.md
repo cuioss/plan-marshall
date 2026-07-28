@@ -123,7 +123,7 @@ Both operations take the same `PRRT_` thread ID — pass the comment's `thread_i
    ```bash
    python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr fetch_findings --pr-number {pr} --plan-id {plan_id}
    ```
-   Output reports `count_fetched`, `count_skipped_noise`, `count_stored`, and `producer_mismatch_hash_id` (set when count_stored ≠ count_fetched − count_skipped_noise; the mismatch is also persisted as a Q-Gate finding under phase `5-execute` with title prefix `(producer-mismatch)`). When that mismatch finding's own persist is REJECTED, `producer_mismatch_hash_id` stays `null` and the output carries `qgate_persist_failed: true` plus `qgate_persist_failure{title, detail, message}` — the mismatch content that never reached the store, with the primitive's rejection message. Both fields are absent when the mismatch finding landed (or when there was no mismatch). Read `qgate_persist_failed`, not a `null` hash id, to tell a lost mismatch finding from no mismatch at all; `status` stays `success` because the fetch itself succeeded. A `status: unconfigured` return means GitHub is not authenticated — never a silent zero-findings success.
+   Output reports `count_fetched`, `count_skipped_noise`, `count_skipped_duplicate`, `count_stored`, `responded_bots[]`, `unclassified_bots[]`, and `producer_mismatch_hash_id` (set when count_stored ≠ count_fetched − count_skipped_noise − count_skipped_duplicate; the mismatch is also persisted as a Q-Gate finding under phase `5-execute` with title prefix `(producer-mismatch)`). An unclassified bot's comments are stored like any other, so they are NOT subtracted from the expected count. When that mismatch finding's own persist is REJECTED, `producer_mismatch_hash_id` stays `null` and the output carries `qgate_persist_failed: true` plus `qgate_persist_failure{title, detail, message}` — the mismatch content that never reached the store, with the primitive's rejection message. Both fields are absent when the mismatch finding landed (or when there was no mismatch). Read `qgate_persist_failed`, not a `null` hash id, to tell a lost mismatch finding from no mismatch at all; `status` stays `success` because the fetch itself succeeded. A `status: unconfigured` return means GitHub is not authenticated — never a silent zero-findings success.
 
 2. **INGEST — promote validated free-text to top-level** (one batched deterministic pass over the whole ledger):
    ```bash
@@ -169,7 +169,7 @@ The strategies differ **only** in the trigger comment `request_fresh_review` pos
 | **review** (preferred) | a review whose reviewed commit SHA equals `--head-sha` AND whose `submittedAt` strictly post-dates the trigger time, and which is not a refusal notice | `matched_signal: review`, `matched_review: {…}`, `head_sha_verified: true` |
 | **issue comment** (fallback) | a comment whose author resolves to the awaited `bot_kind`, whose later of `updated_at` / `created_at` strictly post-dates the trigger time, and which is not a refusal notice | `matched_signal: issue_comment`, `matched_comment: {…}`, `head_sha_verified: false` |
 
-**Both** signals additionally reject a **refusal notice** — a bot declining to review (rate-limit, diff-size, quota). The rejection is two-layer and identical on both paths: the awaited bot's registry `ignore_patterns` (its OBSERVED refusal strings) are matched first, with the author-independent structural `_is_rate_limit_notice` as the last-resort fallback for an unknown or renamed bot. A refusal carries no review, so counting it as a completion signal would assert review coverage that never happened. This applies to the review path as much as the comment path: a bot may submit its refusal as a **review object** rather than an issue comment, and the review path resolves first — so without the check the strongest signal (`head_sha_verified: true`) would be the one most likely to be false.
+**Both** signals additionally reject a **refusal notice** — a bot declining to review (rate-limit, diff-size, quota). The rejection is two-layer and identical on both paths: the awaited bot's registry `refusal_patterns` (its OBSERVED refusal strings — a DEDICATED field, never `ignore_patterns`, which lists the routine sections a bot emits on a *successful* review and would therefore over-match) are checked first, with the author-independent structural `_is_rate_limit_notice` as the last-resort fallback for an unknown or renamed bot. A refusal carries no review, so counting it as a completion signal would assert review coverage that never happened. This applies to the review path as much as the comment path: a bot may submit its refusal as a **review object** rather than an issue comment, and the review path resolves first — so without the check the strongest signal (`head_sha_verified: true`) would be the one most likely to be false.
 
 `head_sha_verified: false` on the comment path is load-bearing: an issue comment carries no reviewed-commit SHA, so the match proves the bot **responded**, not that it reviewed the new HEAD. The caller learns the strength of the evidence, not just the fact of a match. The comment path uses the LATER of `updated_at` / `created_at` so a bot that edits ONE persistent comment in place still registers as fresh activity. No bot is named in code — both matchers are generic across the registry.
 
@@ -478,8 +478,16 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr fetch_findings \
-  --pr-number N --plan-id PLAN_ID
+  --pr-number N --plan-id PLAN_ID \
+  [--required-bots CSV] [--optional-bots CSV]
 ```
+
+`--required-bots` / `--optional-bots` carry the review-bot participation CLASSIFICATION, not an
+admission filter. A comment whose derived `bot_kind` is in NEITHER list is **still ingested**, and
+the bot is reported in the return's `unclassified_bots[]` so the caller can surface the configuration
+gap (the warn-but-ingest rule). A required bot's silence is a failure that gates the completeness
+quorum; an optional bot's silence never gates. See
+[`automatic-review/standards/bot-participation-contract.md`](../automatic-review/standards/bot-participation-contract.md).
 
 ### github_pr post_responses
 

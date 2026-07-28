@@ -121,12 +121,21 @@ def _is_rate_limit_notice(body: str) -> bool:
     primary surface.** It covers an unknown / unregistered bot, or a phrasing not
     yet captured in the data layer. A *registered* bot's OBSERVED refusal text
     belongs in that bot's ``automatic-review/standards/{bot_kind}.md``
-    ``ignore_patterns`` — a data record, not a regex. Every refusal-recognition
-    site (``github_pr._is_obvious_noise``, ``github_re_review._match_bot_comment``,
-    and ``github_re_review._match_review``) is expected to pair this structural
-    fallback with that registry data layer; neither alone is a superset of the
-    other, and a refusal recognized here but absent from the registry is a signal
-    that the bot's ``ignore_patterns`` need the observed phrasing added.
+    ``refusal_patterns`` — a data record, not a regex.
+
+    ``refusal_patterns`` is deliberately a DEDICATED field, never a reuse of
+    ``ignore_patterns``: ``ignore_patterns`` lists the routine sections a bot emits
+    on a *successful* review (walkthrough headings, learning notices), so matching
+    refusals against it would classify ordinary successful reviews as refusals. The
+    two lists answer different questions. See
+    ``automatic-review/standards/bot-participation-contract.md``.
+
+    Every refusal-recognition site (``github_pr._is_obvious_noise``,
+    ``github_re_review._match_bot_comment``, and ``github_re_review._match_review``)
+    is expected to pair this structural fallback with that registry data layer;
+    neither alone is a superset of the other, and a refusal recognized here but
+    absent from the registry is a signal that the bot's ``refusal_patterns`` need
+    the observed phrasing added.
 
     Precision is load-bearing: a genuine review comment that merely mentions a
     rate limit in prose (no limit-exceeded statement, no notice shape) is not
@@ -287,9 +296,11 @@ def cmd_pr_create(args: argparse.Namespace) -> dict:
     if getattr(args, 'head', None):
         gh_args.extend(['--head', args.head])
     # Optional --label passthrough (repeatable). create-pr applies
-    # `--label skip-bot-review` when the enabled_bots set is empty; the label is
-    # a best-effort suppression signal layered on top of the real gate (the
-    # producer enabled_bots filter that files no findings for disabled bots).
+    # `--label skip-bot-review` when the required_bots/optional_bots union is
+    # empty AND the operator actually answered that way. Under the two-list model
+    # the producer classifies rather than admits (warn-but-ingest), so the label
+    # is the only suppression signal on that path — and the bots honor it
+    # asymmetrically, so it is best-effort.
     for label in getattr(args, 'label', None) or []:
         gh_args.extend(['--label', label])
 

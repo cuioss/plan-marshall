@@ -4,7 +4,10 @@ Sourcery-specific triage rule for the plan-marshall `pr-comment` findings pipeli
 [`coderabbit.md`](coderabbit.md); read that first for the shared pipeline mechanics — this file
 only carries what differs for Sourcery (`sourcery-ai[bot]`). The machine-readable registry block
 below is the single per-bot data record the `automatic-review` step consumes when `sourcery` is
-present in the step's `enabled_bots`.
+classified in the step's `required_bots` or `optional_bots`. Classification decides whether
+Sourcery's silence is a failure (required) or tolerable (optional); it does NOT decide admission — a
+Sourcery comment is ingested even when the bot appears in neither list, with a warning recorded. See
+[`bot-participation-contract.md`](bot-participation-contract.md).
 
 ## Registry data block
 

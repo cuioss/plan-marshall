@@ -3,7 +3,8 @@
 """Regression tests for ``_github_pr.cmd_pr_create`` ``--label`` passthrough.
 
 The create-pr finalize step applies ``--label skip-bot-review`` when the
-enabled_bots set is empty (all reviewer bots disabled for this plan). The
+``required_bots`` / ``optional_bots`` union is empty AND the operator explicitly
+answered that way (a ``never_asked`` posture never suppresses review). The
 handler forwards every ``--label`` value straight through to ``gh pr create``.
 These tests capture the ``gh`` argv the handler constructs and assert the label
 passthrough — verbatim, repeatable, and absent when no label is supplied.

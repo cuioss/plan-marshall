@@ -144,21 +144,22 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metada
 
 Bind `{pr_title}` ← the returned `value`. An empty or missing `pr_title` here is an error — the `pr_title_present` phase-handshake invariant should already have blocked the `2-refine`+ boundary, so reaching this step with no title means the invariant was bypassed. STOP and return an error TOON rather than improvising a title.
 
-#### Step 3.6: Resolve the `enabled_bots` skip-label
+#### Step 3.6: Resolve the bot-participation skip-label
 
-Read the `enabled_bots` knob — the config gate that governs which reviewer bots participate on this plan's PR. It is a `configurable:` param owned by the `plan-marshall:automatic-review` finalize step (its single source-of-truth seed lives in that skill's frontmatter, `default: "coderabbit,sourcery"`), read here from the plan-local execution-manifest step-params snapshot:
+Read the `required_bots` / `optional_bots` participation lists — the config that governs which reviewer bots are expected on this plan's PR. Both are `configurable:` params owned by the `plan-marshall:automatic-review` finalize step (their single source-of-truth seeds live in that skill's frontmatter, both `default: ""`), read here from the plan-local execution-manifest step-params snapshot:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest \
   step-params get --plan-id {plan_id} --phase 6-finalize --step-id plan-marshall:automatic-review
 ```
 
-Read `enabled_bots` off the returned `params` object (default: `"coderabbit,sourcery"`). It is a comma-joined string split at read time — bind `{enabled_bots_set}` to the non-empty, whitespace-trimmed tokens. When the `plan-marshall:automatic-review` step is not present in the manifest (e.g. a plan whose preset excludes it), treat `enabled_bots` as its default (a non-empty set) — the skip-label is applied ONLY on an explicit empty set.
+Read `required_bots`, `optional_bots`, and `bot_lists_provenance` off the returned `params` object (defaults: `""`, `""`, `never_asked`). Each list is a comma-joined string split at read time — bind `{participating_set}` to the union of the non-empty, whitespace-trimmed tokens from BOTH lists. When the `plan-marshall:automatic-review` step is not present in the manifest (e.g. a plan whose preset excludes it), do NOT apply the skip-label.
 
-- **`{enabled_bots_set}` is non-empty** (the common case — at least one bot enabled): do NOT apply the skip-label. Bind `{label_args}` to the empty string.
-- **`{enabled_bots_set}` is empty** (all reviewer bots disabled for this plan/flow): bind `{label_args}` to `--label skip-bot-review`. This applies the shared `skip-bot-review` label on the created PR as a best-effort suppression signal.
+- **`{participating_set}` is non-empty** (the common case — at least one bot classified): do NOT apply the skip-label. Bind `{label_args}` to the empty string.
+- **`{participating_set}` is empty AND `bot_lists_provenance` is `never_asked`**: do NOT apply the skip-label. Bind `{label_args}` to the empty string. **A never-asked posture does NOT mean "skip review"** — it means the operator has not yet been asked, and defaulting an unanswered question into review-suppression would silently disable review on every fresh project. Fail toward being reviewed.
+- **`{participating_set}` is empty AND `bot_lists_provenance` is `answered` or `migrated`**: the operator explicitly classified no bots at all. Bind `{label_args}` to `--label skip-bot-review`, applying the shared `skip-bot-review` label on the created PR as a suppression signal.
 
-**Honoring asymmetry (why the label is necessary-but-not-sufficient):** `enabled_bots` is the REAL gate — a disabled bot files no findings through the producer's `--enabled-bots` filter (D3), so its review is suppressed at the source regardless of any label. The `skip-bot-review` label is only a secondary, best-effort signal to the bots' own PR-level suppression, and the bots honor it asymmetrically: CodeRabbit honors it centrally, PR-Agent via its reusable workflow's job-level `if:` guard, and Sourcery only via a per-repo `.sourcery.yaml`. The label therefore cannot be relied upon on its own — it layers on top of the authoritative producer gate, never replaces it. Applying a remote PR label is not a source mutation, so this step's `mutates_source` stays `false`.
+**Why the label now carries the whole weight.** Under the two-list model the participation knobs classify rather than admit: a comment from a bot in neither list is still INGESTED (the warn-but-ingest rule — see [`../../automatic-review/standards/bot-participation-contract.md`](../../automatic-review/standards/bot-participation-contract.md)). Empty lists therefore no longer suppress anything at the producer boundary, so the `skip-bot-review` label is the ONLY suppression signal on this path — not, as before, a secondary layer over an authoritative producer gate. That matters because the bots honor the label asymmetrically: CodeRabbit honors it centrally, PR-Agent via its reusable workflow's job-level `if:` guard, and Sourcery only via a per-repo `.sourcery.yaml`. Expect a bot without label support to review anyway; its comments will be ingested and reported as unclassified. Applying a remote PR label is not a source mutation, so this step's `mutates_source` stays `false`.
 
 #### Step 3.7: Consult `pr_strategy` for ride-vs-split
 

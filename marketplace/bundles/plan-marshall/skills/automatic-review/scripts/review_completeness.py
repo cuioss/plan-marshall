@@ -4,19 +4,28 @@
 
 Deterministic, no-LLM helper the ``automatic-review`` "Mark Step Complete" guard
 consults BEFORE the terminal-clean ``mark-step-done``. It answers one question
-against the per-plan ``pr-comment`` findings store: is every enabled review bot
-accounted for — meaning each enabled bot both produced at least one fetched
+against the per-plan ``pr-comment`` findings store: is every REQUIRED review bot
+accounted for — meaning each required bot both produced at least one fetched
 finding AND has no unresolved (``pending``) finding left?
+
+**The quorum is over ``required_bots`` ONLY.** An optional bot never gates
+``complete``: its silence is not a failure, so it can never hold the step open.
+Optional bots are still classified and reported for visibility — the guard shows
+what the optional reviewers did — but their membership in ``pending_bots`` /
+``unfetched_bots`` is informational and contributes nothing to ``complete``. See
+``automatic-review/standards/bot-participation-contract.md`` for the
+required-vs-optional semantics.
 
 Two independent incompleteness classes are surfaced separately so the guard can
 name the offending bots:
 
-- ``unfetched_bots`` — enabled bots that produced NO ``pr-comment`` finding at
-  all AND are not accounted-for as *settled*. A bot whose review is still
-  genuinely awaited (nothing posted, review window still open) leaves no finding,
-  so the store is silent on it and it blocks.
-- ``pending_bots`` — enabled bots that DID produce a finding but still carry at
-  least one ``resolution == 'pending'`` finding (fetched, not yet triaged).
+- ``unfetched_bots`` — bots that produced NO ``pr-comment`` finding at all AND
+  are not accounted-for as *settled*. A bot whose review is still genuinely
+  awaited (nothing posted, review window still open) leaves no finding, so the
+  store is silent on it. Only a REQUIRED entry here blocks.
+- ``pending_bots`` — bots that DID produce a finding but still carry at least one
+  ``resolution == 'pending'`` finding (fetched, not yet triaged). Only a REQUIRED
+  entry here blocks, and only once triage has run.
 
 Settled-bots accounting: a bot with ZERO stored findings has NOT necessarily gone
 un-heard. A bot is *settled* — accounted for despite filing no actionable
@@ -34,25 +43,28 @@ whose review landed as pure noise or whose review was skipped/declined.
 - ``triage_ran == False`` (the default — the FIND-only automatic-review step,
   BEFORE the dispatcher-owned unified triage runs): a ``pending`` finding is the
   EXPECTED awaiting-triage state and does NOT count as incompleteness, so
-  ``complete = not unfetched_bots`` — only an enabled bot that produced NO
-  finding blocks. This is what stops the guard manufacturing a loop-back on
-  findings that are pending only because triage has not run yet.
-- ``triage_ran == True`` (triage has run): a still-``pending`` finding IS a real
-  incompleteness, so ``complete = not pending_bots and not unfetched_bots`` —
-  today's behavior.
+  ``complete`` is false only when a REQUIRED bot produced NO finding. This is what
+  stops the guard manufacturing a loop-back on findings that are pending only
+  because triage has not run yet.
+- ``triage_ran == True`` (triage has run): a still-``pending`` finding on a
+  REQUIRED bot IS a real incompleteness and blocks alongside an unfetched
+  required bot.
 
-``pending_bots`` and ``unfetched_bots`` are emitted for visibility in BOTH
-modes; only their contribution to ``complete`` changes with ``triage_ran``. The
-predicate fails closed: a plan with no findings yet reports every enabled bot as
-unfetched and ``complete: false`` in both modes, so the guard never marks the
-step done on an empty store.
+``pending_bots`` and ``unfetched_bots`` are emitted for visibility in BOTH modes
+and span required ∪ optional; only the REQUIRED subset contributes to
+``complete``, and only ``pending``'s contribution additionally depends on
+``triage_ran``. The predicate fails closed over the required set: a plan with no
+findings yet reports every required bot as unfetched and ``complete: false`` in
+both modes, so the guard never marks the step done on an empty store. An EMPTY
+``required_bots`` is a valid configured state — the quorum is vacuously satisfied
+and ``complete`` is true.
 
 Usage:
-    review_completeness.py check --plan-id <id> --enabled-bots <csv> [--settled-bots <csv>] [--triage-ran]
+    review_completeness.py check --plan-id <id> --required-bots <csv> [--optional-bots <csv>] [--settled-bots <csv>] [--triage-ran]
     review_completeness.py --help
 
 Subcommands:
-    check  Report whether every enabled bot is fetched-and-resolved for the plan.
+    check  Report whether every REQUIRED bot is fetched-and-resolved for the plan.
 
 Return TOON shape:
     status: success
@@ -71,17 +83,23 @@ from _findings_core import query_findings
 
 def check_completeness(
     plan_id: str,
-    enabled_bots: list[str],
+    required_bots: list[str],
+    optional_bots: list[str] | None = None,
     triage_ran: bool = False,
     settled_bots: list[str] | None = None,
 ) -> dict:
-    """Classify each enabled bot against the plan's ``pr-comment`` findings store.
+    """Classify each participating bot against the plan's ``pr-comment`` findings store.
 
     Args:
         plan_id:       Plan identifier (used to resolve the findings store).
-        enabled_bots:  The bot kinds this step drives, in caller order. An empty
-                       list is a valid degenerate input (no bots to await →
-                       ``complete: true``).
+        required_bots: The bot kinds whose participation is REQUIRED, in caller
+                       order. These — and only these — form the completeness
+                       quorum. An empty list is a valid configured state (nothing
+                       to await → ``complete: true``), not a misconfiguration.
+        optional_bots: The bot kinds whose participation is OPTIONAL. They are
+                       classified and reported for visibility but NEVER gate
+                       ``complete`` — an optional bot's silence is not a failure.
+                       ``None`` (default) means no optional bots.
         triage_ran:    Whether the dispatcher-owned unified triage has already
                        run. ``False`` (default — the FIND-only step) treats a
                        ``pending`` finding as the expected awaiting-triage state
@@ -105,10 +123,10 @@ def check_completeness(
         mutually exclusive: a bot with no finding that is not settled is
         ``unfetched``; a bot with a finding but an unresolved one is ``pending``;
         a bot whose findings are all resolved, or a bot with no finding that IS
-        settled, is complete and appears in neither list. ``pending_bots`` and
-        ``unfetched_bots`` are reported for visibility regardless of
-        ``triage_ran``; only whether ``pending_bots`` contributes to ``complete``
-        depends on it.
+        settled, is complete and appears in neither list. Both lists span
+        required ∪ optional and are reported for visibility regardless of
+        ``triage_ran``; only the REQUIRED subset contributes to ``complete``, and
+        only ``pending``'s contribution additionally depends on ``triage_ran``.
 
         On a findings-store load failure (corrupt or inaccessible store JSON)
         returns the ``_emit_toon`` error-branch payload
@@ -125,9 +143,14 @@ def check_completeness(
         }
 
     settled = set(settled_bots or [])
+    required_set = set(required_bots)
+    # Required first, then the optional bots not already listed as required, so
+    # the reported lists read in a stable, caller-meaningful order.
+    participating = list(required_bots) + [b for b in (optional_bots or []) if b not in required_set]
+
     pending_bots: list[str] = []
     unfetched_bots: list[str] = []
-    for bot in enabled_bots:
+    for bot in participating:
         bot_findings = [f for f in findings if f.get('bot_kind') == bot]
         if not bot_findings and bot not in settled:
             # No stored finding AND not accounted-for as settled — still
@@ -139,14 +162,20 @@ def check_completeness(
         if any(f.get('resolution') == 'pending' for f in bot_findings):
             pending_bots.append(bot)
 
+    # The quorum is over the REQUIRED set only — an optional bot appears in the
+    # reported lists for visibility but never gates the mark-done, because its
+    # silence is not a failure.
+    required_unfetched = [b for b in unfetched_bots if b in required_set]
+    required_pending = [b for b in pending_bots if b in required_set]
+
     # Triage-state-aware completeness. Before triage runs (``triage_ran`` False,
     # the FIND-only step) a pending finding is the expected awaiting-triage state
-    # and must NOT block — only unfetched enabled bots gate the mark-done. After
-    # triage runs, a still-pending finding is a real incompleteness and blocks.
+    # and must NOT block — only unfetched REQUIRED bots gate the mark-done. After
+    # triage runs, a still-pending required finding is a real incompleteness.
     if triage_ran:
-        complete = not pending_bots and not unfetched_bots
+        complete = not required_pending and not required_unfetched
     else:
-        complete = not unfetched_bots
+        complete = not required_unfetched
     return {
         'status': 'success',
         'complete': complete,
@@ -174,14 +203,21 @@ def _emit_toon(payload: dict) -> None:
 
 def cmd_check(args: argparse.Namespace) -> int:
     """Run the completeness predicate and emit the summary TOON to stdout."""
-    enabled_bots: list[str] = []
-    if args.enabled_bots:
-        enabled_bots = [b.strip() for b in args.enabled_bots.split(',') if b.strip()]
+    required_bots: list[str] = []
+    if args.required_bots:
+        required_bots = [b.strip() for b in args.required_bots.split(',') if b.strip()]
+    optional_bots: list[str] = []
+    if args.optional_bots:
+        optional_bots = [b.strip() for b in args.optional_bots.split(',') if b.strip()]
     settled_bots: list[str] = []
     if args.settled_bots:
         settled_bots = [b.strip() for b in args.settled_bots.split(',') if b.strip()]
     payload = check_completeness(
-        args.plan_id, enabled_bots, triage_ran=args.triage_ran, settled_bots=settled_bots
+        args.plan_id,
+        required_bots,
+        optional_bots=optional_bots,
+        triage_ran=args.triage_ran,
+        settled_bots=settled_bots,
     )
     _emit_toon(payload)
     return 0 if payload.get('status') == 'success' else 1
@@ -197,14 +233,28 @@ def main(argv: list[str] | None = None) -> int:
 
     check_parser = subparsers.add_parser(
         'check',
-        help='Report whether every enabled bot is fetched-and-resolved',
+        help='Report whether every REQUIRED bot is fetched-and-resolved',
         allow_abbrev=False,
     )
     check_parser.add_argument('--plan-id', required=True)
     check_parser.add_argument(
-        '--enabled-bots',
+        '--required-bots',
         default='',
-        help='Comma-separated list of enabled review-bot kinds',
+        help=(
+            'Comma-separated review-bot kinds whose participation is REQUIRED. '
+            'These and only these form the completeness quorum — a required '
+            "bot's silence blocks the mark-done. An empty list is a valid "
+            'configured state (quorum vacuously satisfied).'
+        ),
+    )
+    check_parser.add_argument(
+        '--optional-bots',
+        default='',
+        help=(
+            'Comma-separated review-bot kinds whose participation is OPTIONAL. '
+            'Classified and reported for visibility but NEVER gating: an optional '
+            "bot's silence is not a failure and never blocks the mark-done."
+        ),
     )
     check_parser.add_argument(
         '--settled-bots',
@@ -226,9 +276,9 @@ def main(argv: list[str] | None = None) -> int:
         help=(
             'Whether the dispatcher-owned unified triage has already run. Omit '
             '(the FIND-only default) so a pending finding does NOT block '
-            'completeness — only unfetched enabled bots gate the mark-done. Pass '
-            'it once triage has run so a still-pending finding blocks as a real '
-            'incompleteness.'
+            'completeness — only unfetched REQUIRED bots gate the mark-done. Pass '
+            'it once triage has run so a still-pending required finding blocks as '
+            'a real incompleteness.'
         ),
     )
     check_parser.set_defaults(func=cmd_check)

@@ -4,7 +4,11 @@ CodeRabbit-specific triage rule for the plan-marshall `pr-comment` findings pipe
 producer (what to drop before a comment becomes a finding), the consumer (how to classify and
 dispose of a surviving CodeRabbit finding), and where the authoritative CodeRabbit configuration
 lives. The machine-readable registry block below is the single per-bot data record the
-`automatic-review` step consumes when `coderabbit` is present in the step's `enabled_bots`.
+`automatic-review` step consumes when `coderabbit` is classified in the step's `required_bots` or
+`optional_bots`. Classification decides whether CodeRabbit's silence is a failure (required) or
+tolerable (optional); it does NOT decide admission — a CodeRabbit comment is ingested even when the
+bot appears in neither list, with a warning recorded. See
+[`bot-participation-contract.md`](bot-participation-contract.md).
 
 ## Registry data block
 

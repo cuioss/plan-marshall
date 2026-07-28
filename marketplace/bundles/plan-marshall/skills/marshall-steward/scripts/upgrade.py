@@ -46,7 +46,7 @@ Per-stage ``sub_steps`` (the meta/consumer matrix):
                                            cache-retention-sweep]
                                 consumer: [cache-freshness-check, regenerate-executor,
                                            cache-retention-sweep]
-    Stage 2 reconcile-config    both:     [reconcile-marshal-json]
+    Stage 2 reconcile-config    both:     [reconcile-marshal-json, migrate-bot-lists]
     Stage 3 verify              meta:     [executor-preflight, content-drift-report]
                                 consumer: [executor-preflight]
     Stage 4 land                both:     [run-landing-cycle]
@@ -62,14 +62,20 @@ Gate model:
   ``build-map-reseed`` on ``reconcile-config``; ``land-leave`` +
   ``branch-reuse`` on ``land``; none elsewhere.
 
-Subcommand:
-    plan  Emit the stage plan. ``--integrate {true|false}`` (default ``false``)
-          and ``--project-kind {auto|meta|consumer}`` (default ``auto``).
+Subcommands:
+    plan               Emit the stage plan. ``--integrate {true|false}`` (default
+                       ``false``) and ``--project-kind {auto|meta|consumer}``
+                       (default ``auto``).
+    migrate-bot-lists  One-shot legacy auto-map of the retired ``enabled_bots``
+                       knob onto ``required_bots`` / ``optional_bots``. Driven as
+                       the ``migrate-bot-lists`` sub_step of Stage 2
+                       (``reconcile-config``).
 
 Usage:
     python3 upgrade.py plan
     python3 upgrade.py plan --integrate true
     python3 upgrade.py plan --project-kind consumer
+    python3 upgrade.py migrate-bot-lists
 
 Output (TOON):
     status: success
@@ -114,7 +120,7 @@ _STAGE_SPECS: list[dict] = [
         'name': 'Reconcile config',
         'mutating': True,
         'nested_gates': ['build-map-reseed'],
-        'sub_steps': ['reconcile-marshal-json'],
+        'sub_steps': ['reconcile-marshal-json', 'migrate-bot-lists'],
     },
     {
         'order': 3,
@@ -216,6 +222,121 @@ def build_plan(integrate: bool, project_kind: str) -> dict:
     return {'status': 'success', 'integrate': integrate, 'project_kind': project_kind, 'stages': stages}
 
 
+# ---------------------------------------------------------------------------
+# migrate-bot-lists — one-shot legacy auto-map of the retired enabled_bots knob
+# ---------------------------------------------------------------------------
+#
+# The retired ``enabled_bots`` knob is replaced by the two-list participation
+# model (``required_bots`` / ``optional_bots``). This migration is deliberately
+# hosted on the EXISTING upgrade entry point rather than as a new script, and is
+# driven as the ``migrate-bot-lists`` sub_step of Stage 2 (reconcile-config).
+#
+# It is exhaustive over four input states and SELF-DISARMING — once the legacy
+# key is gone, states (3) and (4) are indistinguishable and both are a no-op
+# success, so re-running the upgrade verb is always safe.
+
+_AUTOMATIC_REVIEW_STEP_ID = 'plan-marshall:automatic-review'
+_LEGACY_BOT_LIST_KEY = 'enabled_bots'
+_REQUIRED_BOTS_KEY = 'required_bots'
+_OPTIONAL_BOTS_KEY = 'optional_bots'
+_PROVENANCE_KEY = 'bot_lists_provenance'
+
+
+def migrate_bot_lists(params: dict) -> dict:
+    """Auto-map a retired ``enabled_bots`` value onto the two-list model.
+
+    Pure function over ONE step's param object. It mutates ``params`` in place
+    and returns a report describing which of the four input states applied.
+
+    The four states are exhaustive:
+
+    1. **legacy present, neither new key present** — seed ``required_bots`` from
+       the legacy value VERBATIM, leave ``optional_bots`` empty, remove
+       ``enabled_bots``, and record provenance ``migrated``. Seeding required (not
+       optional) preserves the legacy semantics: every bot on the old list was
+       awaited, and awaiting is exactly what ``required`` means.
+    2. **legacy present, either new key already present** — the operator has
+       already answered, so THEIR ANSWER WINS: the new keys are left untouched and
+       only the stale legacy key is removed. Both values are reported so the
+       operator can see what was discarded. Provenance is NOT downgraded to
+       ``migrated`` — an answered value stays ``answered``.
+    3. **legacy absent, neither new key present** — nothing to migrate; a no-op
+       success that leaves the never-asked posture intact.
+    4. **already migrated** — indistinguishable from (3) once the legacy key is
+       gone. This is what makes the migration self-disarming and re-runnable.
+
+    Args:
+        params: The ``plan-marshall:automatic-review`` step's param object.
+
+    Returns:
+        A report dict: ``state`` (one of ``migrated`` / ``operator_answer_kept`` /
+        ``noop``), plus ``required_bots`` / ``optional_bots`` (the resulting
+        values) and, when a legacy value was discarded, ``discarded_legacy``.
+    """
+    legacy = params.get(_LEGACY_BOT_LIST_KEY)
+    has_legacy = legacy is not None
+    has_new = _REQUIRED_BOTS_KEY in params or _OPTIONAL_BOTS_KEY in params
+
+    if not has_legacy:
+        # States (3) and (4) — nothing to migrate, and deliberately
+        # indistinguishable from each other.
+        return {
+            'state': 'noop',
+            'required_bots': params.get(_REQUIRED_BOTS_KEY, ''),
+            'optional_bots': params.get(_OPTIONAL_BOTS_KEY, ''),
+        }
+
+    if has_new:
+        # State (2) — the operator already answered; their answer wins. Remove
+        # only the stale legacy key.
+        del params[_LEGACY_BOT_LIST_KEY]
+        return {
+            'state': 'operator_answer_kept',
+            'required_bots': params.get(_REQUIRED_BOTS_KEY, ''),
+            'optional_bots': params.get(_OPTIONAL_BOTS_KEY, ''),
+            'discarded_legacy': legacy,
+        }
+
+    # State (1) — seed required from the legacy list verbatim.
+    params[_REQUIRED_BOTS_KEY] = legacy
+    params[_OPTIONAL_BOTS_KEY] = ''
+    params[_PROVENANCE_KEY] = 'migrated'
+    del params[_LEGACY_BOT_LIST_KEY]
+    return {
+        'state': 'migrated',
+        'required_bots': legacy,
+        'optional_bots': '',
+    }
+
+
+def cmd_migrate_bot_lists(_args: argparse.Namespace) -> dict:
+    """Handle the ``migrate-bot-lists`` subcommand against the live marshal.json.
+
+    Loads marshal.json, applies :func:`migrate_bot_lists` to the
+    ``plan-marshall:automatic-review`` step's param object, and writes the config
+    back only when the migration actually changed something. A project with no
+    such step configured is a no-op success — the verb never fails merely because
+    the automatic-review step is absent.
+    """
+    from _config_core import load_config, save_config
+
+    config = load_config()
+    steps = (config.get('plan', {}).get('phase-6-finalize', {}) or {}).get('steps') or {}
+    params = steps.get(_AUTOMATIC_REVIEW_STEP_ID)
+    if not isinstance(params, dict):
+        return {
+            'status': 'success',
+            'operation': 'migrate-bot-lists',
+            'state': 'noop',
+            'detail': f'no {_AUTOMATIC_REVIEW_STEP_ID} step configured',
+        }
+
+    report = migrate_bot_lists(params)
+    if report['state'] != 'noop':
+        save_config(config)
+    return {'status': 'success', 'operation': 'migrate-bot-lists', **report}
+
+
 def cmd_plan(args: argparse.Namespace) -> dict:
     """Handle the ``plan`` subcommand.
 
@@ -261,10 +382,21 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
 
+    subparsers.add_parser(
+        'migrate-bot-lists',
+        help=(
+            'One-shot legacy auto-map of the retired enabled_bots knob onto '
+            'required_bots / optional_bots. Idempotent and self-disarming.'
+        ),
+        allow_abbrev=False,
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == 'plan':
         result = cmd_plan(args)
+    elif args.command == 'migrate-bot-lists':
+        result = cmd_migrate_bot_lists(args)
     else:  # pragma: no cover - argparse enforces a valid subcommand
         parser.print_help()
         return 2

@@ -362,10 +362,17 @@ def cmd_fetch_findings(args):
 
     ``responded_bots``: the sorted, de-duplicated list of non-None ``bot_kind``
     values derived (via ``bot_kind_for_author``) from EVERY raw fetched comment —
-    computed BEFORE any noise / duplicate / disabled / resolved filtering. A bot
-    whose comments were entirely filtered as noise (so ``count_stored`` is 0 for
-    it) or entirely already-resolved still appears here, so the completeness guard
-    can treat it as a *settled* (heard-from) bot rather than an ``unfetched`` one.
+    computed BEFORE any noise / duplicate / resolved filtering. A bot whose
+    comments were entirely filtered as noise (so ``count_stored`` is 0 for it) or
+    entirely already-resolved still appears here, so the completeness guard can
+    treat it as a *settled* (heard-from) bot rather than an ``unfetched`` one.
+
+    ``unclassified_bots``: the sorted list of bot_kinds that participated but
+    appear in NEITHER ``--required-bots`` nor ``--optional-bots``. Per the
+    warn-but-ingest rule these comments are **still ingested** — the two lists
+    carry classification, not admission — and the bot is named here so the caller
+    can surface the configuration gap. Dropping them would let a configuration
+    omission silently destroy real review signal.
     """
     from _findings_core import (
         add_finding,
@@ -376,17 +383,16 @@ def cmd_fetch_findings(args):
     pr_number: int = args.pr_number
     plan_id: str = args.plan_id
 
-    # enabled-bots producer filter: --enabled-bots carries a comma-joined set of
-    # enabled bot_kinds, split at read time. When the flag is omitted the value
-    # is None and the filter is disabled (every comment is considered). When
-    # supplied — even as an empty string, which yields an empty enabled set and
-    # thus disables ALL bots — a comment whose derived bot_kind is non-empty and
-    # NOT in the set files no finding. Human comments (bot_kind is None) are
-    # never filtered; the gate is bot-scoped.
-    enabled_bots_raw = getattr(args, 'enabled_bots', None)
-    enabled_bots_set: set[str] | None = None
-    if enabled_bots_raw is not None:
-        enabled_bots_set = {b.strip() for b in enabled_bots_raw.split(',') if b.strip()}
+    # Participation classification: --required-bots / --optional-bots each carry a
+    # comma-joined set of bot_kinds, split at read time. Their union is the set of
+    # CLASSIFIED bots. Neither list admits or drops anything — a comment whose
+    # derived bot_kind is outside the union is still ingested and its bot is
+    # reported in ``unclassified_bots`` (the warn-but-ingest rule). Human comments
+    # (bot_kind is None) are never classified; the notion is bot-scoped.
+    classified_bots: set[str] = set()
+    for _raw in (getattr(args, 'required_bots', None), getattr(args, 'optional_bots', None)):
+        if _raw:
+            classified_bots.update(b.strip() for b in _raw.split(',') if b.strip())
 
     # Fail-loud config guard — an unconfigured provider must NOT report a silent
     # zero-findings success.
@@ -403,10 +409,10 @@ def cmd_fetch_findings(args):
 
     # Responded-bots signal for the completeness guard: the distinct non-None
     # bot_kinds present across EVERY raw fetched comment, derived BEFORE any
-    # noise / duplicate / disabled / resolved filtering. A bot whose comments
-    # were all noise-filtered (count_stored 0) or all already-resolved still
-    # appears here, so the guard can treat it as heard-from (settled) rather than
-    # unfetched. Human comments (bot_kind None) are excluded.
+    # noise / duplicate / resolved filtering. A bot whose comments were all
+    # noise-filtered (count_stored 0) or all already-resolved still appears here,
+    # so the guard can treat it as heard-from (settled) rather than unfetched.
+    # Human comments (bot_kind None) are excluded.
     responded_set: set[str] = set()
     for _comment in raw_comments:
         _bot_kind = bot_kind_for_author(_comment.get('author') or 'unknown')
@@ -433,7 +439,7 @@ def cmd_fetch_findings(args):
     stored_hashes: list[str] = []
     skipped_noise = 0
     skipped_duplicate = 0
-    skipped_disabled = 0
+    unclassified_set: set[str] = set()
     store_failures: list[str] = []
 
     for comment in raw_comments:
@@ -466,15 +472,14 @@ def cmd_fetch_findings(args):
         line = comment.get('line') or None
         comment_id = comment.get('id') or 'unknown'
 
-        # Pre-filter 2b: enabled-bots producer filter. When --enabled-bots was
-        # supplied, a comment whose bot_kind is non-empty and NOT in the enabled
-        # set files no finding (its bot is disabled for this plan/flow). Human
-        # comments (bot_kind is None) always pass — the gate is bot-scoped. A
-        # disabled bot files nothing, so its re-review is transitively
-        # suppressed (no findings -> no re-review trigger).
-        if enabled_bots_set is not None and bot_kind and bot_kind not in enabled_bots_set:
-            skipped_disabled += 1
-            continue
+        # Participation classification (warn-but-ingest, NOT a filter). A comment
+        # whose bot_kind falls outside required ∪ optional is still stored — the
+        # bot is merely recorded as unclassified so the caller can surface the
+        # configuration gap. This is deliberately NOT a `continue`: dropping the
+        # comment would make a configuration omission silently destroy real review
+        # signal, precisely when the operator had not yet considered that bot.
+        if bot_kind and bot_kind not in classified_bots:
+            unclassified_set.add(bot_kind)
 
         # Pre-filter 3: cross-iteration dedup keyed on (bot_kind, comment_id)
         # for ALL bot kinds, thread-bearing and thread_id-less alike. A comment
@@ -534,11 +539,12 @@ def cmd_fetch_findings(args):
             store_failures.append(comment_id)
 
     count_stored = len(stored_hashes)
-    # Duplicates skipped by the cross-iteration guard and comments skipped by the
-    # enabled-bots filter are both legitimate non-stores, so they drop out of
-    # expected_stored alongside the noise skips — otherwise every deduped or
-    # disabled-bot comment would spuriously trip the producer-mismatch Q-Gate.
-    expected_stored = count_fetched - skipped_noise - skipped_duplicate - skipped_disabled
+    # Duplicates skipped by the cross-iteration guard are legitimate non-stores, so
+    # they drop out of expected_stored alongside the noise skips — otherwise every
+    # deduped comment would spuriously trip the producer-mismatch Q-Gate. An
+    # unclassified bot's comments are NOT subtracted: under the warn-but-ingest
+    # rule they are stored like any other, so they belong in expected_stored.
+    expected_stored = count_fetched - skipped_noise - skipped_duplicate
 
     qgate_hash: str | None = None
     qgate_persist_failure: dict[str, str] | None = None
@@ -578,9 +584,9 @@ def cmd_fetch_findings(args):
         'count_fetched': count_fetched,
         'count_skipped_noise': skipped_noise,
         'count_skipped_duplicate': skipped_duplicate,
-        'count_skipped_disabled': skipped_disabled,
         'count_stored': count_stored,
         'responded_bots': sorted(responded_set),
+        'unclassified_bots': sorted(unclassified_set),
         'stored_hash_ids': stored_hashes,
         'producer_mismatch_hash_id': qgate_hash,
     }
@@ -885,14 +891,24 @@ Examples:
                     {'flags': ['--pr-number'], 'dest': 'pr_number', 'type': int, 'required': True, 'help': 'PR number'},
                     {'flags': ['--plan-id'], 'dest': 'plan_id', 'required': True, 'help': 'Plan ID for finding store'},
                     {
-                        'flags': ['--enabled-bots'],
-                        'dest': 'enabled_bots',
+                        'flags': ['--required-bots'],
+                        'dest': 'required_bots',
                         'help': (
-                            'Comma-joined enabled bot_kinds (e.g. "coderabbit,sourcery,pr-agent"). When '
-                            'supplied, a comment whose derived bot_kind is non-empty and NOT in this set '
-                            'files no finding — its bot is disabled for this plan/flow, so its re-review is '
-                            'transitively suppressed. Human comments (bot_kind is None) always pass. Omit '
-                            'the flag to disable the filter entirely (all comments considered).'
+                            'Comma-joined bot_kinds whose participation is REQUIRED (e.g. '
+                            '"coderabbit,pr-agent"). A required bot\'s silence is a failure and gates the '
+                            'review-completeness quorum. This list classifies, it does NOT admit: a comment '
+                            'from a bot outside both lists is still ingested and its bot is reported in '
+                            'unclassified_bots.'
+                        ),
+                    },
+                    {
+                        'flags': ['--optional-bots'],
+                        'dest': 'optional_bots',
+                        'help': (
+                            'Comma-joined bot_kinds whose participation is OPTIONAL (e.g. "sourcery"). An '
+                            "optional bot's silence is not a failure and never gates mark-done. Like "
+                            '--required-bots this classifies rather than admits; see '
+                            'automatic-review/standards/bot-participation-contract.md.'
                         ),
                     },
                 ],

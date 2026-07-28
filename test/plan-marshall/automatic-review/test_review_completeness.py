@@ -6,15 +6,19 @@
 Covers the three states the D3 guard distinguishes against the pr-comment findings
 store, and the TRIAGE-STATE awareness of the ``complete`` verdict (``triage_ran``):
 
-    complete   — every enabled bot produced a fetched finding
-    pending    — an enabled bot has an unresolved (pending) finding; whether this
-                 blocks ``complete`` depends on ``triage_ran``
-    unfetched  — an enabled bot produced no finding at all (blocks in both modes)
+    complete   — every REQUIRED bot produced a fetched finding
+    pending    — a bot has an unresolved (pending) finding; whether this blocks
+                 ``complete`` depends on ``triage_ran`` AND on the bot being required
+    unfetched  — a bot produced no finding at all (blocks only when required)
+
+**The quorum is over ``required_bots`` ONLY.** An optional bot is classified and
+reported for visibility but never gates ``complete`` — its silence is not a
+failure. See ``automatic-review/standards/bot-participation-contract.md``.
 
 ``triage_ran=False`` (default, the FIND-only step) treats a ``pending`` finding as
-the expected awaiting-triage state that does NOT block; only ``unfetched`` bots
-gate. ``triage_ran=True`` (triage has run) treats a still-``pending`` finding as a
-real incompleteness that blocks.
+the expected awaiting-triage state that does NOT block; only ``unfetched`` required
+bots gate. ``triage_ran=True`` (triage has run) treats a still-``pending`` required
+finding as a real incompleteness that blocks.
 
 The store is seeded in-process via ``_findings_core.add_finding`` /
 ``resolve_finding`` under the ``plan_context`` PLAN_BASE_DIR sandbox, so
@@ -97,7 +101,7 @@ def test_pending_bot_blocks_after_triage(plan_context):
 
 
 def test_fully_resolved_is_complete(plan_context):
-    """An enabled bot whose only finding is resolved reports complete."""
+    """A required bot whose only finding is resolved reports complete."""
     plan_id = 'rc-resolved'
     plan_context.plan_dir_for(plan_id)
     _seed(plan_id, 'coderabbit', resolution='fixed')
@@ -111,7 +115,7 @@ def test_fully_resolved_is_complete(plan_context):
 
 
 def test_unfetched_bot_blocks(plan_context):
-    """An enabled bot that produced no finding at all is unfetched → incomplete.
+    """A required bot that produced no finding at all is unfetched → incomplete.
 
     Unfetched blocks in BOTH triage modes — it is a FIND-completeness gap (a
     review never surfaced), independent of whether triage has run.
@@ -148,7 +152,7 @@ def test_mixed_pending_and_unfetched(plan_context):
 
 
 def test_empty_store_all_unfetched(plan_context):
-    """A store with no findings reports every enabled bot as unfetched (fail-closed)."""
+    """A store with no findings reports every required bot as unfetched (fail-closed)."""
     plan_id = 'rc-empty-store'
     plan_context.plan_dir_for(plan_id)
 
@@ -160,8 +164,12 @@ def test_empty_store_all_unfetched(plan_context):
     assert result['unfetched_bots'] == ['coderabbit', 'pr-agent']
 
 
-def test_empty_enabled_bots_is_complete(plan_context):
-    """No enabled bots means nothing to await — complete is vacuously true."""
+def test_empty_required_bots_is_vacuously_complete(plan_context):
+    """No required bots means nothing to await — complete is vacuously true.
+
+    An EMPTY ``required_bots`` is a legitimate configured state (the operator
+    answered "none"), not a misconfiguration: the quorum is vacuously satisfied.
+    """
     plan_id = 'rc-no-bots'
     plan_context.plan_dir_for(plan_id)
 
@@ -171,6 +179,106 @@ def test_empty_enabled_bots_is_complete(plan_context):
     assert result['complete'] is True
     assert result['pending_bots'] == []
     assert result['unfetched_bots'] == []
+
+
+def test_silent_optional_bot_does_not_block(plan_context):
+    """An OPTIONAL bot that produced nothing is reported but does NOT block.
+
+    This is the core required-vs-optional asymmetry: an optional bot's silence is
+    not a failure, so it can never hold the step open. The bot still appears on
+    ``unfetched_bots`` for visibility — reporting and gating are separate concerns.
+    """
+    plan_id = 'rc-optional-silent'
+    plan_context.plan_dir_for(plan_id)
+    _seed(plan_id, 'coderabbit', resolution='fixed')
+
+    result = rc.check_completeness(plan_id, ['coderabbit'], optional_bots=['sourcery'])
+
+    assert result['status'] == 'success'
+    assert result['complete'] is True
+    assert result['unfetched_bots'] == ['sourcery']
+
+
+def test_silent_required_bot_blocks(plan_context):
+    """The counterpart: a REQUIRED bot that produced nothing DOES block.
+
+    Paired with ``test_silent_optional_bot_does_not_block`` against an otherwise
+    identical store, so the assertion isolates the required/optional dial as the
+    only difference — a silent bot blocks iff it is required.
+    """
+    plan_id = 'rc-required-silent'
+    plan_context.plan_dir_for(plan_id)
+    _seed(plan_id, 'coderabbit', resolution='fixed')
+
+    result = rc.check_completeness(plan_id, ['coderabbit', 'sourcery'])
+
+    assert result['status'] == 'success'
+    assert result['complete'] is False
+    assert result['unfetched_bots'] == ['sourcery']
+
+
+def test_pending_optional_bot_does_not_block_after_triage(plan_context):
+    """An OPTIONAL bot still pending after triage does not block either.
+
+    ``triage_ran=True`` escalates a still-pending finding to a real incompleteness
+    — but only for a REQUIRED bot. An optional bot's pending finding is reported
+    and ignored by the quorum.
+    """
+    plan_id = 'rc-optional-pending'
+    plan_context.plan_dir_for(plan_id)
+    _seed(plan_id, 'sourcery', resolution='pending')
+
+    result = rc.check_completeness(
+        plan_id, [], optional_bots=['sourcery'], triage_ran=True
+    )
+
+    assert result['status'] == 'success'
+    assert result['complete'] is True
+    assert result['pending_bots'] == ['sourcery']
+
+
+def test_bot_listed_both_required_and_optional_is_not_duplicated(plan_context):
+    """A bot named in BOTH lists is classified once, as required.
+
+    The de-dup keeps the reported lists clean and — because required wins — keeps
+    the gating behaviour unambiguous for a contradictory configuration.
+    """
+    plan_id = 'rc-both-lists'
+    plan_context.plan_dir_for(plan_id)
+
+    result = rc.check_completeness(
+        plan_id, ['sourcery'], optional_bots=['sourcery']
+    )
+
+    assert result['status'] == 'success'
+    assert result['unfetched_bots'] == ['sourcery']
+    assert result['complete'] is False
+
+
+def test_cli_optional_bots_flag_does_not_gate(plan_context):
+    """The ``--optional-bots`` CLI flag reports without gating.
+
+    An empty store with only optional bots emits ``complete: true`` while still
+    listing them under ``unfetched_bots``.
+    """
+    plan_id = 'rc-cli-optional'
+    plan_context.plan_dir_for(plan_id)
+
+    result = run_script(
+        SCRIPT_PATH,
+        'check',
+        '--plan-id',
+        plan_id,
+        '--required-bots',
+        '',
+        '--optional-bots',
+        'sourcery',
+    )
+
+    assert result.success, result.stderr
+    assert 'complete: true' in result.stdout
+    assert 'unfetched_bots[1]' in result.stdout
+    assert 'sourcery' in result.stdout
 
 
 def test_bot_with_multiple_findings_one_pending(plan_context):
@@ -202,7 +310,7 @@ def test_cli_emits_toon_and_zero_exit(plan_context):
     _seed(plan_id, 'coderabbit', resolution='pending')
 
     result = run_script(
-        SCRIPT_PATH, 'check', '--plan-id', plan_id, '--enabled-bots', 'coderabbit,sourcery'
+        SCRIPT_PATH, 'check', '--plan-id', plan_id, '--required-bots', 'coderabbit,sourcery'
     )
 
     assert result.success, result.stderr
@@ -220,7 +328,7 @@ def test_cli_complete_emits_true(plan_context):
     plan_context.plan_dir_for(plan_id)
     _seed(plan_id, 'coderabbit', resolution='fixed')
 
-    result = run_script(SCRIPT_PATH, 'check', '--plan-id', plan_id, '--enabled-bots', 'coderabbit')
+    result = run_script(SCRIPT_PATH, 'check', '--plan-id', plan_id, '--required-bots', 'coderabbit')
 
     assert result.success, result.stderr
     assert 'complete: true' in result.stdout
@@ -240,12 +348,12 @@ def test_cli_triage_ran_flips_pending_to_incomplete(plan_context):
     plan_context.plan_dir_for(plan_id)
     _seed(plan_id, 'coderabbit', resolution='pending')
 
-    pre = run_script(SCRIPT_PATH, 'check', '--plan-id', plan_id, '--enabled-bots', 'coderabbit')
+    pre = run_script(SCRIPT_PATH, 'check', '--plan-id', plan_id, '--required-bots', 'coderabbit')
     assert pre.success, pre.stderr
     assert 'complete: true' in pre.stdout
 
     post = run_script(
-        SCRIPT_PATH, 'check', '--plan-id', plan_id, '--enabled-bots', 'coderabbit', '--triage-ran'
+        SCRIPT_PATH, 'check', '--plan-id', plan_id, '--required-bots', 'coderabbit', '--triage-ran'
     )
     assert post.success, post.stderr
     assert 'complete: false' in post.stdout
@@ -297,7 +405,7 @@ def test_cmd_check_load_failure_nonzero_exit(plan_context, monkeypatch, capsys):
 
     monkeypatch.setattr(rc, 'query_findings', _raise)
 
-    rc_exit = rc.main(['check', '--plan-id', plan_id, '--enabled-bots', 'coderabbit'])
+    rc_exit = rc.main(['check', '--plan-id', plan_id, '--required-bots', 'coderabbit'])
 
     captured = capsys.readouterr()
     assert rc_exit == 1
@@ -374,7 +482,7 @@ def test_settled_does_not_override_pending_under_triage_ran(plan_context):
 def test_cli_settled_bots_flag_marks_bot_complete(plan_context):
     """D4: the ``--settled-bots`` CLI flag stops a fetch-less bot reporting unfetched.
 
-    Without ``--settled-bots`` the empty store reports both enabled bots as
+    Without ``--settled-bots`` the empty store reports both required bots as
     unfetched (``complete: false``). Passing ``--settled-bots coderabbit,sourcery``
     accounts for both, so the check emits ``complete: true`` with no bot lists.
     """
@@ -382,7 +490,7 @@ def test_cli_settled_bots_flag_marks_bot_complete(plan_context):
     plan_context.plan_dir_for(plan_id)
 
     without = run_script(
-        SCRIPT_PATH, 'check', '--plan-id', plan_id, '--enabled-bots', 'coderabbit,sourcery'
+        SCRIPT_PATH, 'check', '--plan-id', plan_id, '--required-bots', 'coderabbit,sourcery'
     )
     assert without.success, without.stderr
     assert 'complete: false' in without.stdout
@@ -393,7 +501,7 @@ def test_cli_settled_bots_flag_marks_bot_complete(plan_context):
         'check',
         '--plan-id',
         plan_id,
-        '--enabled-bots',
+        '--required-bots',
         'coderabbit,sourcery',
         '--settled-bots',
         'coderabbit,sourcery',
@@ -403,14 +511,14 @@ def test_cli_settled_bots_flag_marks_bot_complete(plan_context):
     assert 'unfetched_bots' not in with_settled.stdout
 
 
-def test_cli_whitespace_in_enabled_bots_tolerated(plan_context):
+def test_cli_whitespace_in_required_bots_tolerated(plan_context):
     """Whitespace around comma-separated bot tokens is stripped."""
     plan_id = 'rc-cli-ws'
     plan_context.plan_dir_for(plan_id)
     _seed(plan_id, 'coderabbit', resolution='fixed')
 
     result = run_script(
-        SCRIPT_PATH, 'check', '--plan-id', plan_id, '--enabled-bots', ' coderabbit , '
+        SCRIPT_PATH, 'check', '--plan-id', plan_id, '--required-bots', ' coderabbit , '
     )
 
     assert result.success, result.stderr
