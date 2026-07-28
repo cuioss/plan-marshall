@@ -64,6 +64,8 @@ from _lessons_io import (
     read_lesson,
 )
 from _lessons_query import (
+    DEFAULT_CONSULT_MAX_PER_COMPONENT,
+    cmd_consult,
     cmd_get,
     cmd_list,
     cmd_list_stalled,
@@ -1163,6 +1165,29 @@ def main() -> int:
     )
     list_parser.add_argument('--full', action='store_true', help='Include full lesson body content')
     list_parser.set_defaults(func=cmd_list)
+
+    # consult — prospective read fired by phase-3-outline once the outline is written.
+    consult_parser = subparsers.add_parser(
+        'consult',
+        help=(
+            'Read-only prospective query: surface the active lessons whose component '
+            "exactly equals a bundle:skill derived from the plan's solution_outline.md "
+            'affected files. Writes work/lessons-consult.toon; never applies a lesson.'
+        ),
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(consult_parser)
+    consult_parser.add_argument(
+        '--max-per-component',
+        type=int,
+        default=DEFAULT_CONSULT_MAX_PER_COMPONENT,
+        help=(
+            'Per-component cap on surfaced lessons (default: '
+            f'{DEFAULT_CONSULT_MAX_PER_COMPONENT}). When the cap binds, the result '
+            'reports truncated: true together with the untruncated total_matched.'
+        ),
+    )
+    consult_parser.set_defaults(func=cmd_consult)
 
     # convert-to-plan
     convert_parser = subparsers.add_parser(

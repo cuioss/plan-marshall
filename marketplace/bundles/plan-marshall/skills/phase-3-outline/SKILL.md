@@ -526,6 +526,25 @@ python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-sol
 
 ---
 
+### Prospective Lessons Consult (lane-agnostic, mandatory)
+
+Immediately after `solution_outline.md` has been written and validated — and before the phase returns — consult the lessons corpus for active lessons naming the components this plan is about to edit:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons consult \
+  --plan-id {plan_id}
+```
+
+This is the single lane-agnostic anchor point: it fires on **every** authoring path this phase owns — the deep-lane Complex Track, the Simple-Track authoring procedure, and the [light lane](workflow/light-lane.md) (which fires the same consult from its own outline write/validate step). No lane is exempt; a lane-gated consult would be vacuous for the light-lane majority.
+
+The consult is the earliest moment the plan's affected-component set exists (it is *derived from* the deliverables) and the last moment it can still be changed cheaply — a surfaced lesson can force a deliverable revision inside this same phase.
+
+**Never auto-apply a surfaced lesson.** The verb surfaces lessons for judgment; it emits no findings and mutates no deliverable. The author records exactly one disposition (`heeded` / `not_applicable` / `stale`) plus a one-line rationale for **every** surfaced lesson, and MUST emit the `## Lessons Consulted` section in the outline — including when `surfaced_count: 0`, which is a valid recorded outcome. The section's structural specification (row shape, ordering, section-order position) is owned by [`manage-solution-outline` standards/solution-outline-standard.md § Lessons Consulted](../manage-solution-outline/standards/solution-outline-standard.md) — this phase owns the *obligation to write it*, not its shape.
+
+The authoritative procedure — the disposition vocabulary, the prohibition on auto-apply, the required action when a lesson is `heeded`, and the `surfaced_count: 0` recording rule — lives in [`standards/outline-workflow-detail.md` § Prospective lessons consult](standards/outline-workflow-detail.md#prospective-lessons-consult). Do NOT restate it here.
+
+---
+
 ### Log Completion
 
 ```bash
@@ -623,6 +642,7 @@ All other fields (`plan_id`, `track`, `deliverable_count`, `qgate_passed`, `qgat
 - `plan-marshall:manage-plan-documents:manage-plan-documents` - Read request
 - `plan-marshall:manage-references:manage-references` - Read domains
 - `plan-marshall:manage-solution-outline:manage-solution-outline` - Write solution document
+- `plan-marshall:manage-lessons:manage-lessons` - Prospective lessons consult
 - `plan-marshall:manage-findings:manage-findings` - Q-Gate findings (qgate add/query/resolve)
 - `plan-marshall:manage-status:manage-status` - Read/write change_type metadata
 - `plan-marshall:manage-logging:manage-logging` - Decision and work logging

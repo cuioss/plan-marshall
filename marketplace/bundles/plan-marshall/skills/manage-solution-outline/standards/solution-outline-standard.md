@@ -169,6 +169,39 @@ See the [Deliverable Contract](#deliverable-contract) section for the complete d
 - Breaking changes
 - Performance concerns
 
+#### Lessons Consulted
+
+Records the outcome of `phase-3-outline`'s prospective lessons consult — which active lessons named the components this plan edits, and what the outline author decided about each one.
+
+```markdown
+## Lessons Consulted
+
+surfaced_count: {N}
+
+| Lesson | Component | Disposition | Rationale |
+|--------|-----------|-------------|-----------|
+| {lesson_id} | {bundle}:{skill} | heeded \| not_applicable \| stale | {one line} |
+```
+
+**Row shape**: exactly one row per surfaced lesson — no lesson omitted, none listed twice. `Disposition` is a closed three-member enum (`heeded` / `not_applicable` / `stale`). This document owns the row shape and structural spec only; the authoritative per-disposition meanings live in [`phase-3-outline` standards/outline-workflow-detail.md § Record exactly one disposition per surfaced lesson](../../phase-3-outline/standards/outline-workflow-detail.md#record-exactly-one-disposition-per-surfaced-lesson) — do NOT restate them here.
+
+**Zero-match form**: when the consult matched nothing, the section is still emitted, with the count and no table:
+
+```markdown
+## Lessons Consulted
+
+surfaced_count: 0
+
+The consult fired and matched no active lessons for this plan's components.
+```
+
+**Machine record**: the deterministic query output backing this section lives at `work/lessons-consult.toon` in the same plan directory. The two artifacts are complementary and deliberately separate — the artifact records *what the query saw*, this section records *what was done about it*. A present artifact with `surfaced_count: 0` means the consult fired and matched nothing; an absent artifact means it never fired.
+
+**When to Include**:
+- Produced by `phase-3-outline`'s prospective lessons consult, on every authoring lane (deep-lane Complex Track, Simple-Track authoring, light lane). The obligation to emit the section is owned by that phase — see [`phase-3-outline` standards/outline-workflow-detail.md § Prospective lessons consult](../../phase-3-outline/standards/outline-workflow-detail.md#prospective-lessons-consult).
+
+**Schema-optional**: the section is deliberately NOT in the `### Validation` required-section list, and `manage-solution-outline validate` does not check for it. Every pre-existing `solution_outline.md` therefore still validates unchanged, and no doc-vs-validator divergence is introduced.
+
 ### Validation
 
 The `manage-solution-outline validate` command checks:
@@ -231,6 +264,7 @@ Sections should appear in this order:
 6. Approach (if present)
 7. Dependencies (if present)
 8. Risks and Mitigations (if present)
+9. Lessons Consulted (if present)
 
 ---
 

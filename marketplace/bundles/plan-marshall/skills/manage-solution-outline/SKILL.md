@@ -22,7 +22,7 @@ This skill provides structure guidelines, examples, and operations for `solution
 
 ## Document Structure
 
-Required sections: **Solution Metadata** (top-level `## Solution Metadata` block with `scope_estimate`), **Summary** (2-3 sentences), **Overview** (ASCII diagram), **Deliverables** (numbered `###` sections). Optional: Approach, Dependencies, Risks and Mitigations.
+Required sections: **Solution Metadata** (top-level `## Solution Metadata` block with `scope_estimate`), **Summary** (2-3 sentences), **Overview** (ASCII diagram), **Deliverables** (numbered `###` sections). Optional: Approach, Dependencies, Risks and Mitigations, Lessons Consulted.
 
 See [standards/solution-outline-standard.md](standards/solution-outline-standard.md) for the complete section specification, content guidelines, and validation rules.
 

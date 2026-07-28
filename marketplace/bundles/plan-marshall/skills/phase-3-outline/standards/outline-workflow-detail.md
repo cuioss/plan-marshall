@@ -1133,3 +1133,60 @@ For each deliverable being composed:
 ### Contradiction is a design signal, not a hard gate
 
 A deliverable that contradicts an `Accepted` ADR is a **design signal to surface**, not a hard gate that blocks the outline in this plan's scope. When a contradiction is unavoidable (the request genuinely requires revisiting an established decision), the outline SHOULD note the contradiction in the deliverable narrative so the reviewer — and the downstream finalize `adr-propose` step — can decide whether the decision warrants a new or superseding ADR. The outline does not auto-block on the contradiction; it makes the tension visible.
+
+---
+
+## Prospective lessons consult
+
+The authoritative procedure for the lane-agnostic lessons consult that `SKILL.md` § "Prospective Lessons Consult" and [`workflow/light-lane.md`](../workflow/light-lane.md) both point at. It fires **after** `solution_outline.md` has been written and validated and **before** the phase returns, on every authoring path — deep-lane Complex Track, Simple-Track authoring, and the light lane. No lane is exempt.
+
+### Invocation
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons consult \
+  --plan-id {plan_id}
+```
+
+The verb derives the plan's `{bundle}:{skill}` component set from the deliverables' `**Affected files:**` paths, returns every active lesson whose `component` exactly equals one of them, and writes the machine record to `work/lessons-consult.toon`. The full contract — the derivation steps, the `unmapped_paths[]` disclosure, the `--max-per-component` cap and its `truncated` / `total_matched` disclosure — is owned by [`manage-lessons` SKILL.md § consult](../../manage-lessons/SKILL.md) and its Canonical invocations → `consult`. Do NOT restate it here.
+
+An `error: outline_not_found` means the consult ran before the outline was written — a sequencing defect in the calling lane, not a valid empty result. Fix the sequencing; never proceed as though nothing matched.
+
+### Record exactly one disposition per surfaced lesson
+
+For **every** entry in `surfaced[]`, the outline author records exactly one disposition plus a one-line rationale in the outline's `## Lessons Consulted` section:
+
+| Disposition | Meaning |
+|-------------|---------|
+| `heeded` | The lesson names a real risk on this plan's path, and the deliverables are revised to account for it. |
+| `not_applicable` | The lesson names the component but does not bear on what this plan does to it. The rationale must say *why* it does not bear. |
+| `stale` | The lesson is wrong, obsolete, or describes a mechanism that no longer exists. A stale lesson is *judged*, not obeyed. |
+
+The dispositions are exhaustive and mutually exclusive: no surfaced lesson may be left unrecorded, and none may carry two. A surfaced lesson the author neither revises for nor explains is an incomplete consult.
+
+### Required action when a lesson is `heeded`
+
+Revise the affected deliverables to account for the lesson and re-run the outline validator **within the same phase** so the revised document is the one that ships:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline update \
+  --plan-id {plan_id}
+```
+
+Acting on a `heeded` lesson in a later phase forfeits the whole point of consulting at outline time — this is the last point where a deliverable can still be changed cheaply.
+
+### Prohibition: surface for judgment, never auto-apply
+
+The consult surfaces lessons; it does not apply them. Specifically prohibited:
+
+- **Auto-applying a surfaced lesson** — silently editing a deliverable to satisfy a lesson without recording the `heeded` disposition and its rationale. The judgment must be visible; a `stale` or wrong-mechanism lesson is surfaced as readily as a correct one, and obeying it unexamined is the failure mode this rule exists to prevent.
+- **Emitting Q-Gate findings from the consult** — the verb writes none, and the author must not manufacture them. A surfaced lesson is an input to judgment, not a quality failure.
+- **Treating the surfaced set as a gate** — a plan is never blocked by the consult. Every outcome, including "all surfaced lessons judged `stale`", is a valid completed consult.
+
+### `surfaced_count: 0` is a valid recorded outcome
+
+When the query matches nothing, the author still emits the `## Lessons Consulted` section recording `surfaced_count: 0`. This keeps two distinct states distinguishable:
+
+- **The consult fired and matched nothing** — `work/lessons-consult.toon` present with `surfaced_count: 0`, and the outline section says so.
+- **The consult never fired** — the artifact is absent.
+
+A silently omitted section collapses those two states into one and destroys exactly the signal a later retrospective needs. The section's structural specification (row shape, section-order position) is owned by [`manage-solution-outline` standards/solution-outline-standard.md](../../manage-solution-outline/standards/solution-outline-standard.md) § Lessons Consulted; this phase owns the obligation to write it.
