@@ -43,6 +43,7 @@ from pathlib import Path
 from typing import Any
 
 from _build_server_protocol import (
+    STATUS_KILLED,
     STATUS_NOT_FOUND,
     STATUS_QUEUED,
     STATUS_REFUSED,
@@ -304,10 +305,12 @@ class Daemon:
 
         Attribution (``project_root`` / ``plan_id`` / ``job_id``) is derived from
         the request/job spec where present and left empty when absent (e.g. a
-        ``ping`` carries none); ``outcome`` is the response ``status``. Audit
-        writing is best-effort — a disk failure must never abort request
-        handling. Secrets discipline lives in :meth:`InteractionAudit.record`:
-        only ``op`` / ``project_root`` / ``plan_id`` / ``job_id`` / ``outcome`` /
+        ``ping`` carries none); ``request_status`` is the response ``status`` —
+        how the REQUEST was answered, never the job's fate (that is recorded
+        separately by :meth:`_audit_job_fate`). Audit writing is best-effort — a
+        disk failure must never abort request handling. Secrets discipline lives
+        in :meth:`InteractionAudit.record`: only ``kind`` / ``op`` /
+        ``project_root`` / ``plan_id`` / ``job_id`` / ``request_status`` /
         ``timestamp`` (plus a non-secret ``reason``) are ever written.
         """
         try:
@@ -329,10 +332,43 @@ class Daemon:
                 project_root=project_root,
                 plan_id=plan_id,
                 job_id=job_id,
-                outcome=str(response.get('status', '')),
+                request_status=str(response.get('status', '')),
                 reason=str(reason) if reason else None,
             )
         except Exception:  # noqa: BLE001 — audit is best-effort, never abort request handling
+            pass
+
+    def _audit_job_fate(self, job_id: str, fate: str, spec: dict[str, Any]) -> None:
+        """Append exactly one job-fate record for a terminalized job.
+
+        Called at the daemon's two terminalization seams — after
+        ``journal.record_result`` in :meth:`_execute`, and once per id returned by
+        ``journal.replay_on_restart`` in :meth:`serve` — so a job's real outcome
+        is carried into the 7-day audit store while the journal entry that holds
+        it is GC'd after 3600 s.
+
+        Attribution is derived from the job's stored spec: only ``project_path``
+        (canonicalised into ``project_root``) and ``plan_id`` are read, never the
+        raw ``command`` or any other secret-bearing spec field. Like
+        :meth:`_audit_interaction` this write is best-effort — a disk,
+        attribution, or serialization failure is swallowed so it can abort
+        neither request handling nor daemon startup.
+
+        Args:
+            job_id: The job the fate belongs to.
+            fate: The job's terminal status; a value outside the terminal
+                vocabulary is stored as ``unknown`` by the audit writer.
+            spec: The job's stored spec dict, used only for attribution.
+        """
+        try:
+            project_path = str(spec.get('project_path', ''))
+            self._interaction_audit.record_job_fate(
+                job_id=job_id,
+                fate=fate,
+                project_root=canonicalize_root(project_path) if project_path else '',
+                plan_id=str(spec.get('plan_id', '')),
+            )
+        except Exception:  # noqa: BLE001 — fate audit is best-effort, never abort the caller
             pass
 
     @staticmethod
@@ -447,6 +483,7 @@ class Daemon:
         except Exception as exc:  # noqa: BLE001 -- any failure becomes a terminal result
             payload = status_payload('failure', error=str(exc))
         self._journal.record_result(job_id, payload)
+        self._audit_job_fate(job_id, str(payload.get('status', '')), spec_dict)
         self._journal.record_duration(
             _command_key(spec_dict), float(payload.get('duration_seconds', 0) or 0)
         )
@@ -463,12 +500,30 @@ class Daemon:
         rotate_log(log_path())
         stale_socket_takeover(socket_path(), pidfile_path())
         try:
-            self._journal.replay_on_restart()
+            replayed = self._journal.replay_on_restart()
         except OSError:
             # Journal replay is best-effort — it reads and rewrites the on-disk
             # journal, either of which can raise OSError. A replay failure must
             # never abort daemon startup; the unreplayed records are simply
             # carried to the next start's replay.
+            replayed = []
+        # Second terminalization seam: a job the previous daemon left in flight
+        # was just forced to `killed`, which IS its real fate — emit it so the
+        # operator log can distinguish an abandoned job from a completed one long
+        # after the journal entry has been GC'd.
+        try:
+            for replayed_job_id in replayed:
+                entry = self._journal.get(replayed_job_id)
+                spec = entry.get('spec', {}) if isinstance(entry, dict) else {}
+                self._audit_job_fate(
+                    replayed_job_id,
+                    STATUS_KILLED,
+                    spec if isinstance(spec, dict) else {},
+                )
+        except OSError:
+            # Re-reading each replayed entry for its attribution touches the disk;
+            # like the replay and GC guards around it, a failure here must never
+            # abort daemon startup.
             pass
         try:
             self._interaction_audit.gc()

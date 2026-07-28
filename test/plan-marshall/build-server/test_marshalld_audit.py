@@ -12,6 +12,11 @@ Two surfaces are exercised:
 * ``Daemon.handle_request`` writes exactly one attributed record per dispatched
   ``ping`` / ``submit`` / ``wait`` request, deriving ``project_root`` / ``plan_id``
   / ``job_id`` from the request where present and empty when absent.
+
+Every record written here is a ``kind='interaction'`` record carrying the
+request-scoped ``request_status``; the sibling ``kind='job_fate'`` records and
+the fate-reporting behaviour they back are covered by
+``test_job_fate_reporting.py``.
 """
 
 from __future__ import annotations
@@ -65,11 +70,15 @@ def test_record_stamps_attribution_and_timestamp(home):
 
     stored = audit.read_all()[-1]
     assert stored == record
+    assert stored['kind'] == audit_mod.KIND_INTERACTION
     assert stored['op'] == 'submit'
     assert stored['project_root'] == '/proj'
     assert stored['plan_id'] == 'p1'
     assert stored['job_id'] == 'JOB-1'
-    assert stored['outcome'] == 'queued'
+    # The request-scoped response status — deliberately NOT named `outcome`, so it
+    # cannot be misread as the job's fate.
+    assert stored['request_status'] == 'queued'
+    assert 'outcome' not in stored
     assert stored['timestamp']  # a non-empty ISO stamp
 
 
@@ -90,7 +99,15 @@ def test_record_never_writes_secret_bearing_fields(home):
 
     stored = audit.read_all()[-1]
     # The record schema is fixed — no spec/command/env/argv ever leaks in.
-    assert set(stored) == {'op', 'project_root', 'plan_id', 'job_id', 'outcome', 'timestamp'}
+    assert set(stored) == {
+        'kind',
+        'op',
+        'project_root',
+        'plan_id',
+        'job_id',
+        'request_status',
+        'timestamp',
+    }
     assert 'command' not in stored
     assert 'spec' not in stored
     assert 'env' not in stored
@@ -263,11 +280,13 @@ def test_handle_request_writes_one_record_per_ping_and_wait(home, tmp_path):
 
     records = audit.read_all()
     assert [r['op'] for r in records] == ['ping', 'wait']
+    # Both are per-request interaction records, never job-fate records.
+    assert {r['kind'] for r in records} == {audit_mod.KIND_INTERACTION}
     # ping carries no attribution; wait carries only the requested job_id.
     assert records[0]['project_root'] == ''
     assert records[0]['plan_id'] == ''
     assert records[0]['job_id'] == ''
-    assert records[0]['outcome'] == 'ok'
+    assert records[0]['request_status'] == 'ok'
     assert records[1]['job_id'] == 'J'
 
 
@@ -307,10 +326,11 @@ def test_submit_dispatch_records_project_attribution(home, tmp_path):
     records = audit.read_all()
     assert len(records) == 1
     record = records[0]
+    assert record['kind'] == audit_mod.KIND_INTERACTION
     assert record['op'] == 'submit'
     assert record['plan_id'] == 'p1'
     assert record['project_root']  # canonicalised project path — non-empty
-    assert record['outcome'] == response['status']
+    assert record['request_status'] == response['status']
     # Secrets discipline: the raw command argv never appears anywhere in the record.
     assert 'command' not in record
     assert 'spec' not in record
@@ -328,8 +348,9 @@ def test_handle_request_unknown_op_is_still_audited(home, tmp_path):
 
     records = audit.read_all()
     assert len(records) == 1
+    assert records[0]['kind'] == audit_mod.KIND_INTERACTION
     assert records[0]['op'] == 'bogus'
-    assert records[0]['outcome'] == 'error'
+    assert records[0]['request_status'] == 'error'
     # Failure detail is preserved: unknown_op sets `error` (not `reason`), and the
     # audit reason-capture falls back to `error`, so the record keeps the detail
     # instead of dropping it to None.

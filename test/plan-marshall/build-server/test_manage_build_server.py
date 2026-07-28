@@ -350,6 +350,14 @@ def test_logs_filters_to_the_caller_project(home):
     assert result['count'] == 2
     assert all(record['project_root'] == caller for record in result['records'])
     assert [record['job_id'] for record in result['records']] == ['JOB-A', 'JOB-A']
+    # Rendered shape: every row is labelled an interaction row, carries its
+    # request-scoped status under a name that is not a job fate, and — with no
+    # job-fate record written — an explicit unknown fate rather than a missing field.
+    for record in result['records']:
+        assert record['kind'] == 'interaction'
+        assert 'outcome' not in record
+        assert record['fate'] == 'unknown'
+    assert [record['request_status'] for record in result['records']] == ['queued', 'success']
 
 
 def test_logs_absent_log_fails_closed_with_reason(home):
@@ -396,6 +404,8 @@ def test_logs_limit_bounds_the_newest_tail(home):
     assert result['total_matched'] == 5
     # The two newest records (the tail), oldest-first within the tail.
     assert [record['job_id'] for record in result['records']] == ['JOB-3', 'JOB-4']
+    # Bounding the tail does not drop the rendering.
+    assert all(record['kind'] == 'interaction' for record in result['records'])
 
 
 def test_logs_performs_no_mutation(home):
@@ -406,7 +416,72 @@ def test_logs_performs_no_mutation(home):
     audit.record('submit', caller, 'p1', 'JOB-A', 'queued')
     before = audit.path.read_text(encoding='utf-8')
 
-    mbs.run_logs(Namespace(root=str(root), limit=1))
+    result = mbs.run_logs(Namespace(root=str(root), limit=1))
 
     after = mbs.InteractionAudit().path.read_text(encoding='utf-8')
     assert after == before
+    # The rendering is a DERIVED view: the returned row is reshaped while the
+    # on-disk bytes are byte-identical.
+    assert result['records'][0]['kind'] == 'interaction'
+
+
+def test_logs_joins_the_job_fate_onto_the_interaction_row(home):
+    """A terminalized job's fate is rendered on its interaction row.
+
+    The fate lives in its own ``kind='job_fate'`` record; the operator view joins
+    it by ``job_id`` so "what happened to this job?" is answerable from the submit
+    row itself — which is the whole point of emitting the fate into this 7-day
+    store instead of joining against the hour-retained journal.
+    """
+    root = home / 'proj'
+    root.mkdir()
+    caller = mbs.canonicalize_root(str(root))
+    audit = mbs.InteractionAudit()
+    audit.record('submit', caller, 'p1', 'JOB-DONE', 'queued')
+    audit.record('submit', caller, 'p1', 'JOB-LOST', 'queued')
+    audit.record_job_fate('JOB-DONE', 'success', caller, 'p1')
+    audit.record_job_fate('JOB-LOST', 'killed', caller, 'p1')
+
+    result = mbs.run_logs(Namespace(root=str(root), limit=None))
+
+    interactions = [r for r in result['records'] if r['kind'] == 'interaction']
+    fates = {r['job_id']: r['fate'] for r in interactions}
+    # A completed job and an abandoned job are distinguishable — the defect this
+    # closes rendered BOTH permanently as `outcome: queued`.
+    assert fates == {'JOB-DONE': 'success', 'JOB-LOST': 'killed'}
+    # Both still report the truthful request-scoped status, which really was queued.
+    assert {r['request_status'] for r in interactions} == {'queued'}
+    # The fate rows themselves are rendered with their own explicit kind label.
+    fate_rows = [r for r in result['records'] if r['kind'] == 'job_fate']
+    assert {r['fate'] for r in fate_rows} == {'success', 'killed'}
+
+
+def test_logs_renders_legacy_row_fail_closed_with_unknown_fate(home):
+    """A row predating the kind/request_status fields renders fail-closed.
+
+    It is labelled an interaction row and carries an explicit ``unknown`` for both
+    the request status and the fate — never a silently missing field (ADR-009).
+    """
+    root = home / 'proj'
+    root.mkdir()
+    caller = mbs.canonicalize_root(str(root))
+    audit = mbs.InteractionAudit()
+    audit.record('submit', caller, 'p1', 'JOB-OLD', 'queued')  # materialise the log
+    legacy = {
+        'op': 'submit',
+        'project_root': caller,
+        'plan_id': 'p1',
+        'job_id': 'JOB-LEGACY',
+        'outcome': 'queued',
+        'timestamp': '2000-01-01T00:00:00Z',
+    }
+    with open(audit.path, 'a', encoding='utf-8') as handle:
+        handle.write(json.dumps(legacy) + '\n')
+
+    result = mbs.run_logs(Namespace(root=str(root), limit=None))
+
+    rendered = next(r for r in result['records'] if r['job_id'] == 'JOB-LEGACY')
+    assert rendered['kind'] == 'interaction'
+    assert rendered['request_status'] == 'unknown'
+    assert rendered['fate'] == 'unknown'
+    assert 'outcome' not in rendered

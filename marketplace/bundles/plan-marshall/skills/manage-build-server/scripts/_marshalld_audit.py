@@ -15,15 +15,36 @@ job :mod:`_marshalld_journal` (which keeps raw specs/results/ETA keyed by
   ``degraded`` interactions that carry no ``job_id`` and so cannot be keyed under
   the journal at all).
 
-Each record stamps ``op`` / ``project_root`` / ``plan_id`` / ``job_id`` /
-``outcome`` / ``timestamp`` (plus non-secret extras like ``reason``). The
-``project_root`` field is the per-project attribution the operator ``logs`` read
-verb filters on to derive a project-scoped view. Retention is bounded and GC'd on
-every daemon start, mirroring the journal's S6 model.
+The log carries TWO record kinds, discriminated by an explicit ``kind`` field:
+
+* ``kind='interaction'`` — one per dispatched request, stamping ``op`` /
+  ``project_root`` / ``plan_id`` / ``job_id`` / ``request_status`` /
+  ``timestamp`` (plus non-secret extras like ``reason``). ``request_status`` is
+  the REQUEST's response status (e.g. ``queued`` for an accepted submit). It is
+  deliberately NOT called ``outcome``: it says how the *request* was answered and
+  nothing at all about how the *job* ended.
+* ``kind='job_fate'`` — one per job terminalization, stamping ``job_id`` /
+  ``fate`` / ``project_root`` / ``plan_id`` / ``timestamp``. ``fate`` is the job's
+  terminal status from the shared wire vocabulary
+  (``success|failure|timeout|killed``). A fate the daemon cannot substantiate is
+  written as ``unknown`` — never a terminal value and never ``queued``.
+
+The fate is EMITTED into this 7-day store rather than resolved by a read-time
+join against the journal: terminal journal entries are GC'd after 3600 s while
+audit rows live 7 days, so a join could answer "what happened to this job?" for
+only the first hour of a row's seven-day life. Emission keeps the answer
+available for the whole audit window.
+
+The ``project_root`` field is the per-project attribution the operator ``logs``
+read verb filters on to derive a project-scoped view. Retention is bounded and
+GC'd on every daemon start, mirroring the journal's S6 model.
 
 Secrets discipline: a record NEVER carries ``spec.command`` (the raw argv), the
 process env, exec/project paths beyond the canonical ``project_root``, or any
-other spec field that may carry secrets.
+other spec field that may carry secrets. This holds for BOTH record kinds — a
+fate record's attribution is derived from the journal entry's stored spec, from
+which only ``project_path`` is canonicalised into ``project_root`` and
+``plan_id`` is copied.
 
 Usage:
     from _marshalld_audit import InteractionAudit
@@ -31,6 +52,8 @@ Usage:
     audit = InteractionAudit()                 # resolves ~/.plan-marshall/marshalld/
     audit.record('submit', '/proj', 'p1', 'JOB-1', 'queued')
     audit.record('submit', '/proj', 'p1', '', 'refused', reason='not_registered')
+    audit.record_job_fate('JOB-1', 'success', '/proj', 'p1')
+    audit.record_job_fate('JOB-2', 'not-a-status')   # stored as fate='unknown'
     records = audit.read_all()                  # every stored record (newest last)
     removed = audit.gc()                        # count of expired records pruned
 """
@@ -44,12 +67,29 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from _build_server_protocol import TERMINAL_STATUSES
 from file_ops import atomic_write_file, now_utc_iso
 from marketplace_paths import ensure_home_root, home_root
 
 _AUDIT_FILENAME = 'interaction-audit.log'
 _DIR_MODE = 0o700
 _FILE_MODE = 0o600
+
+KIND_INTERACTION = 'interaction'
+"""``kind`` discriminator for a per-request interaction record."""
+
+KIND_JOB_FATE = 'job_fate'
+"""``kind`` discriminator for a per-job terminal-fate record."""
+
+FATE_UNKNOWN = 'unknown'
+"""The fate written when the daemon cannot substantiate a job's real outcome.
+
+Fail-closed third value (ADR-009): an undeterminable fate is recorded as
+``unknown`` — NEVER a terminal status the daemon did not observe, and never the
+request-scoped ``queued``. The two undeterminable conditions are a journal entry
+already GC'd past its 3600 s window and a daemon that died without restarting
+(so restart replay never ran and its on-disk entry is frozen non-terminal).
+"""
 
 _FORBIDDEN_EXTRA_KEYS = frozenset({
     'command',
@@ -144,16 +184,48 @@ class InteractionAudit:
 
     # -- record / read / gc -----------------------------------------------
 
+    @staticmethod
+    def _reject_forbidden_extras(caller: str, extra: dict[str, Any]) -> None:
+        """Raise when ``extra`` carries a secret-shaped key.
+
+        The single backstop both writer entry points route their ``**extra``
+        through, so a new write path cannot bypass the secrets discipline.
+
+        Args:
+            caller: The calling method name, for the error message.
+            extra: The caller-supplied extra fields.
+
+        Raises:
+            ValueError: when a forbidden key is present.
+        """
+        forbidden = _FORBIDDEN_EXTRA_KEYS & extra.keys()
+        if forbidden:
+            raise ValueError(
+                f'InteractionAudit.{caller}: forbidden secret-shaped extra key(s) {sorted(forbidden)} '
+                '— the audit trail never carries spec/command/env fields'
+            )
+
+    def _append(self, record: dict[str, Any], extra: dict[str, Any]) -> dict[str, Any]:
+        """Merge non-``None`` extras into ``record`` and append it as one JSON line."""
+        self._ensure_dir()
+        for key, value in extra.items():
+            if value is not None:
+                record[key] = value
+        with open(self._path, 'a', encoding='utf-8') as handle:
+            handle.write(json.dumps(record) + '\n')
+        self._chmod_file()
+        return record
+
     def record(
         self,
         op: str,
         project_root: str,
         plan_id: str,
         job_id: str,
-        outcome: str,
+        request_status: str,
         **extra: Any,
     ) -> dict[str, Any]:
-        """Append exactly one attributed interaction record.
+        """Append exactly one attributed ``kind='interaction'`` record.
 
         Args:
             op: The dispatched op (``ping`` / ``submit`` / ``wait``).
@@ -161,7 +233,9 @@ class InteractionAudit:
                 (e.g. a ``ping`` or a ``wait`` that carries no spec).
             plan_id: The submitting plan id, or ``''`` when absent.
             job_id: The daemon-assigned job id, or ``''`` when absent.
-            outcome: The response outcome (the response ``status``).
+            request_status: The REQUEST's response ``status`` (e.g. ``queued``
+                for an accepted submit). This is not the job's fate — a job's
+                real outcome is recorded separately by :meth:`record_job_fate`.
             **extra: Non-secret extra fields to record (e.g. ``reason``). A
                 ``None`` value is dropped. NEVER pass secret-bearing spec fields.
 
@@ -174,28 +248,67 @@ class InteractionAudit:
                 error, surfaced immediately rather than silently written to the
                 durable audit trail.
         """
-        forbidden = _FORBIDDEN_EXTRA_KEYS & extra.keys()
-        if forbidden:
-            raise ValueError(
-                f'InteractionAudit.record: forbidden secret-shaped extra key(s) {sorted(forbidden)} '
-                '— the audit trail never carries spec/command/env fields'
-            )
-        self._ensure_dir()
-        record: dict[str, Any] = {
-            'op': op,
-            'project_root': project_root,
-            'plan_id': plan_id,
-            'job_id': job_id,
-            'outcome': outcome,
-            'timestamp': now_utc_iso(),
-        }
-        for key, value in extra.items():
-            if value is not None:
-                record[key] = value
-        with open(self._path, 'a', encoding='utf-8') as handle:
-            handle.write(json.dumps(record) + '\n')
-        self._chmod_file()
-        return record
+        self._reject_forbidden_extras('record', extra)
+        return self._append(
+            {
+                'kind': KIND_INTERACTION,
+                'op': op,
+                'project_root': project_root,
+                'plan_id': plan_id,
+                'job_id': job_id,
+                'request_status': request_status,
+                'timestamp': now_utc_iso(),
+            },
+            extra,
+        )
+
+    def record_job_fate(
+        self,
+        job_id: str,
+        fate: str,
+        project_root: str = '',
+        plan_id: str = '',
+        **extra: Any,
+    ) -> dict[str, Any]:
+        """Append exactly one ``kind='job_fate'`` record for a terminalized job.
+
+        Emitted by the daemon at its two terminalization seams (after
+        ``journal.record_result``, and once per id returned by
+        ``journal.replay_on_restart``), so the job's real outcome is carried
+        durably into this 7-day store instead of depending on a journal entry
+        that is GC'd after 3600 s.
+
+        A ``fate`` outside the shared terminal vocabulary is stored as
+        :data:`FATE_UNKNOWN` rather than written through verbatim — the daemon
+        never claims a fate it cannot substantiate, and never records the
+        request-scoped ``queued`` as though it were an outcome.
+
+        Args:
+            job_id: The daemon-assigned job id the fate belongs to.
+            fate: The job's terminal status (``success|failure|timeout|killed``);
+                anything else is recorded as ``unknown``.
+            project_root: The canonical project root, or ``''`` when absent.
+            plan_id: The submitting plan id, or ``''`` when absent.
+            **extra: Non-secret extra fields. A ``None`` value is dropped.
+
+        Returns:
+            The stored record dict.
+
+        Raises:
+            ValueError: when ``extra`` carries a forbidden secret-shaped key.
+        """
+        self._reject_forbidden_extras('record_job_fate', extra)
+        return self._append(
+            {
+                'kind': KIND_JOB_FATE,
+                'job_id': job_id,
+                'fate': fate if fate in TERMINAL_STATUSES else FATE_UNKNOWN,
+                'project_root': project_root,
+                'plan_id': plan_id,
+                'timestamp': now_utc_iso(),
+            },
+            extra,
+        )
 
     def read_all(self) -> list[dict[str, Any]]:
         """Return every stored record in append order (oldest first).
