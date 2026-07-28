@@ -387,7 +387,6 @@ The three surviving lifecycle gates ride the `gate_mode` enum (`auto|always|neve
 | `self_review` (ceremony, lane) | `plan.phase-6-finalize.steps['default:pre-submission-self-review'].lane` | `plan phase-6-finalize step get --step-id default:pre-submission-self-review` (read `lane` off `params`) |
 | `simplify` (ceremony, lane) | `plan.phase-6-finalize.steps['default:finalize-step-simplify'].lane` | `plan phase-6-finalize step get --step-id default:finalize-step-simplify` (read `lane` off `params`) |
 | `security_audit` (ceremony, lane) | `plan.phase-6-finalize.steps['default:finalize-step-security-audit'].lane` | `plan phase-6-finalize step get --step-id default:finalize-step-security-audit` (read `lane` off `params`) |
-| `drop_review_on_scope_gate` | `plan.phase-6-finalize.steps['default:pre-submission-self-review']` (step-owned param) | `plan phase-6-finalize step get --step-id default:pre-submission-self-review` (read `drop_review_on_scope_gate` off `params`) |
 
 ### Read an automation knob
 

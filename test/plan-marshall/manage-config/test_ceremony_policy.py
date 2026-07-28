@@ -98,15 +98,20 @@ _DISTRIBUTED_GATES = (
     ('phase-2-refine', 'revalidation'),
 )
 
-# The finalize escape-hatch knob that folds under its owning finalize step's
-# nested param object (no longer a flat phase-level sibling).
-# `default:pre-submission-self-review` is a BUILT-IN finalize step (discovered
-# with `default_on: true`), so its folded `drop_review_on_scope_gate` default is
-# materialized in get_default_config()['plan']['phase-6-finalize']['steps']. The
-# ceremony run-at-all params (`simplify`, `self_review`) were removed in the
-# run-at-all → lane migration and are no longer folded knobs.
+# The finalize knobs that fold under their owning finalize step's nested param
+# object (no longer flat phase-level siblings). `default:branch-cleanup` is a
+# BUILT-IN finalize step (discovered with `default_on: true`), so its folded
+# defaults are materialized in
+# get_default_config()['plan']['phase-6-finalize']['steps'].
+#
+# The ceremony run-at-all params (`simplify`, `self_review`) were removed in the
+# run-at-all → lane migration, and `drop_review_on_scope_gate` was removed from
+# `default:pre-submission-self-review` in favour of declared-lane immunity in the
+# manifest composer's scope_gated_finalize pre-filter — none of the three is a
+# folded knob any more, so none is exercised here.
 _SEEDED_FOLDED_KNOBS = (
-    ('default:pre-submission-self-review', 'drop_review_on_scope_gate', False),
+    ('default:branch-cleanup', 'final_merge_without_asking', False),
+    ('default:branch-cleanup', 'pr_merge_strategy', 'squash'),
 )
 
 
@@ -182,7 +187,7 @@ def test_distributed_gates_not_in_other_phases():
 
 @pytest.mark.parametrize('owner_step,knob,default', _SEEDED_FOLDED_KNOBS)
 def test_folded_finalize_knob_is_not_a_flat_sibling(owner_step, knob, default):
-    """simplify / self_review / drop_review_on_scope_gate are no longer flat siblings.
+    """A step-owned finalize knob is no longer a flat phase-6-finalize sibling.
 
     Each knob folded out of its former flat phase-6-finalize sibling location into
     the nested param object of its owning finalize step (declared in the step's
@@ -203,8 +208,8 @@ def test_folded_finalize_knob_is_not_a_flat_sibling(owner_step, knob, default):
 def test_seeded_folded_knob_materializes_under_owning_built_in_step(owner_step, knob, default):
     """A folded knob on a BUILT-IN finalize step is materialized in the default seed.
 
-    `default:pre-submission-self-review` is a built-in finalize step, so its folded
-    `drop_review_on_scope_gate` default appears nested under the step in
+    `default:branch-cleanup` is a built-in finalize step, so its folded knob
+    defaults appear nested under the step in
     get_default_config()['plan']['phase-6-finalize']['steps'].
     """
     config = _config_defaults_mod.get_default_config()

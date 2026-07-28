@@ -91,7 +91,7 @@ The pre-filters run in this order:
 3. **`pre_submission_self_review_inactive`** — drops `pre-submission-self-review` when the live plan footprint is empty.
 4. **`simplify_inactive`** — drops `finalize-step-simplify` when `change_type ∉ {feature, bug_fix, tech_debt, enhancement}` OR `affected_files_count == 0`.
 4b. **`security_audit_inactive`** — drops `finalize-step-security-audit` on the same gate as `simplify_inactive` (`change_type ∉ {feature, bug_fix, tech_debt, enhancement}` OR `affected_files_count == 0`).
-5. **`scope_gated_finalize`** — drops heavyweight phase-6 review/audit steps by `scope_estimate`: `surgical` drops `plan-retrospective`, `pre-submission-self-review`, and `plugin-doctor`; `single_module` drops only `plan-retrospective`. `plan-marshall:automatic-review` is dropped ONLY via the explicit `drop_review_on_scope_gate` opt-in, never by the implicit scope gate.
+5. **`scope_gated_finalize`** — drops heavyweight phase-6 review/audit steps by `scope_estimate`: `surgical` drops `plan-retrospective`, `pre-submission-self-review`, and `plugin-doctor`; `single_module` drops only `plan-retrospective`. A step declaring an explicit non-`auto` per-element `lane` override is immune and is never dropped here.
 6. **`unresolved_ask_provider_drop`** — drops an UNRESOLVED `lane: ask` infra element (`plan-marshall:automatic-review` / `default:sonar-roundtrip`) when its corresponding provider is genuinely absent (no CI provider for `automatic-review`; no Sonar provider for `sonar-roundtrip`). A resolved ask (`off`/`auto`/`full`) and a provider-configured ask both survive. Documented in its own subsection below.
 
 Each row that emits a Phase 6 list (whether by intersection, subtraction, or pass-through) operates on the already-filtered candidate list, so the resulting `phase_6.steps` will never contain a step removed by any pre-filter that ran before the row matrix.
@@ -101,6 +101,8 @@ After the six-row matrix runs, three post-matrix transforms inspect the matrix o
 1. **`ceremony_finalize_selection`** — applies the four `plan.phase-6-finalize` ceremony gates (`self_review` / `qgate` / `simplify` / `security_audit`), each derived from its owning step's per-element `lane` override (`off→never`, `minimal→always`, `auto/absent→auto`), to the final `phase_6.steps`, forcing each gate's step in (`always`), out (`never`), or deferring (`auto`). It NEVER touches `plan-marshall:automatic-review`. Documented in its own subsection below.
 2. **Execution-profile lane resolution** — applies the `minimal ⊏ auto ⊏ full` posture cutoff from `status.metadata.execution_profile` to the lane-participating steps, dropping every element whose effective tier exceeds the posture. `plan-marshall:automatic-review` participates in this pass like any other lane element — its keep/drop is governed purely by its configured `lane` and lane tier, with no separate downstream force-add guard. Documented in its own subsection below.
 3. **`frontmatter_order_sort`** — reorders the final `phase_6.steps` into ascending frontmatter `order` (stable sort via `_sort_steps_by_frontmatter_order`; order-unresolvable entries stay pinned at their original index), so `archive-plan` (order 1000) is the terminal barrier regardless of seed order. This sort is the sole ordering authority — `plan-marshall:automatic-review` (order 30) is placed deterministically before the plan-mutating tail by its frontmatter order, so no separate placement validator is needed. Documented in its own subsection below.
+
+The sort is asserted by the [`phase_6_order_violation`](#post-compose-assertion-phase_6_order_violation) gate, which fails the compose when the sorted list is not verifiably ascending.
 
 ### Pre-Filter: `commit_push_disabled`
 
@@ -198,7 +200,7 @@ When the gate passes (`change_type ∈ {feature, bug_fix, tech_debt, enhancement
 
 ### Pre-Filter: `scope_gated_finalize`
 
-**Condition**: `scope_estimate ∈ {surgical, single_module}`. This is the sole entry condition for the pre-filter. `drop_review_on_scope_gate == true` is a *modifier* that only takes effect when the scope condition already holds — it is never a standalone trigger, so on `multi_module` / `broad` / `none` plans the override is inert.
+**Condition**: `scope_estimate ∈ {surgical, single_module}`. This is the sole entry condition for the pre-filter.
 
 **Effect**: heavyweight phase-6 review/audit steps are removed from `phase_6_candidates` by scope before the rows are evaluated:
 
@@ -206,17 +208,24 @@ When the gate passes (`change_type ∈ {feature, bug_fix, tech_debt, enhancement
 - **`scope_estimate == 'single_module'`** — drops only `plan-marshall:plan-retrospective`.
 - **`scope_estimate ∈ {none, multi_module, broad}`** — no implicit subtraction; the full candidate set survives into the matrix.
 
-**The deliberate `plan-marshall:automatic-review` carve-out**: the implicit scope gate NEVER drops `plan-marshall:automatic-review`. Its presence is governed purely by its configured `lane` (seeded `ask` → resolved by marshall-steward) and its lane tier — there is no separate force-add guard, so the implicit scope gate must not drop it. The only path that suppresses `plan-marshall:automatic-review` at the scope gate is the explicit `drop_review_on_scope_gate` opt-in — a step-owned param of `default:pre-submission-self-review`, read from `marshal.json` at `plan.phase-6-finalize.steps['default:pre-submission-self-review'].drop_review_on_scope_gate` (its former flat-sibling location is gone): when that value is `true` **and** the plan is itself scope-gated (`scope_estimate ∈ {surgical, single_module}`), the scope gate additionally drops `plan-marshall:automatic-review`. The override is scoped, not global — on `multi_module` / `broad` / `none` plans it is inert, so flipping the project-wide knob can never silently disable bot review on a large plan. The default (`false`) keeps `plan-marshall:automatic-review` governed by its `lane` alone.
+**Declared-lane immunity**: membership in a drop set is not sufficient to drop. A step carrying an explicitly declared, non-`auto` per-element `lane` override in `marshal.json::plan.phase-6-finalize.steps[<step>].lane` is **immune** — the scope gate keeps it whatever the `scope_estimate` says. The rule follows from what the two signals are: this gate is IMPLICIT, inferring "you probably do not want this" from the scope estimate, while a `lane` override is the operator stating what they do want. An implicit inference must never silently override an explicit declaration.
 
-**Why a pre-filter (not an eighth row)**: the subtraction depends only on `scope_estimate` (and the `drop_review_on_scope_gate` config knob), both orthogonal to the change-type / recipe inputs the six-row matrix consumes. Modeling it as a pre-filter keeps the six-row matrix unchanged and is consistent with the composer's "rows and pre-filters only ever narrow the candidate list" architecture. It runs after `simplify_inactive` and before the matrix, so every row sees a candidate list already narrowed by the scope gate.
+The immunity is load-bearing rather than cosmetic because of WHERE this pre-filter sits. It runs at the candidate-narrowing stage — before `ceremony_finalize_selection` and before the execution-profile lane resolution — and the ceremony `always` transform, the only re-add path, covers exactly the four `_CEREMONY_FINALIZE_GATES`. For any step outside those four (`plan-marshall:plan-retrospective` is the canonical case) a drop here removes the step from the list the lane pass later walks, so its declared `lane` is **structurally unreachable**, not merely outvoted. `auto` is excluded because it is the defer value: declaring `auto` expresses no override intent and leaves the implicit machinery its say. (`ask` — the unresolved seed — is non-`auto` and so counts as declared here, but it is seeded only on the two infra elements, neither of which belongs to a drop set, so the classification is not load-bearing for this pre-filter; the unresolved-ask case is owned by `unresolved_ask_provider_drop` below.)
 
-**Decision log line** (one per subtraction, in addition to the row's own log line and any other pre-filter log line):
+`plan-marshall:automatic-review` needs no carve-out of its own under this rule: it is governed purely by its configured `lane` (seeded `ask` → resolved by marshall-steward) and its lane tier, exactly as the general immunity rule provides for every element the operator has spoken for.
+
+**Why a pre-filter (not an eighth row)**: the subtraction depends only on `scope_estimate` and the declared per-element lane, both orthogonal to the change-type / recipe inputs the six-row matrix consumes. Modeling it as a pre-filter keeps the six-row matrix unchanged and is consistent with the composer's "rows and pre-filters only ever narrow the candidate list" architecture. It runs after `simplify_inactive` and before the matrix, so every row sees a candidate list already narrowed by the scope gate.
+
+**Decision log lines** (one per subtraction and one per immunity retention, in addition to the row's own log line and any other pre-filter log line):
 
 ```text
 (plan-marshall:manage-execution-manifest:compose) scope_gated_finalize subtraction — scope_estimate={value}, dropped {step} from phase_6.steps
+(plan-marshall:manage-execution-manifest:compose) scope_gated_finalize immunity — kept {step} despite scope_estimate={value}: the step declares an explicit non-auto lane override, which the implicit scope gate must not silently override
 ```
 
-When `scope_estimate ∈ {none, multi_module, broad}` and `drop_review_on_scope_gate == false`, the pre-filter is a no-op and emits no log entry; the full candidate set survives into the six-row matrix.
+The immunity line exists so a retention is as visible as a subtraction — a step surviving a gate that names it is otherwise indistinguishable from a gate that never ran. The composer surfaces both lists as `scope_gated_finalize_dropped` and `scope_gated_finalize_immune` in the `compose` result.
+
+When `scope_estimate ∈ {none, multi_module, broad}`, the pre-filter is a no-op and emits no log entry; the full candidate set survives into the six-row matrix.
 
 **Evaluation order vs. the six-row matrix**: This pre-filter runs *after* `simplify_inactive`, followed by the `unresolved_ask_provider_drop` pre-filter, and *before* every row of the six-row matrix.
 
@@ -305,7 +314,9 @@ The six-bucket classifier above (`_classify_paths_via_extensions`) and the `buil
 **Effect** (per gate, against the matrix-produced `phase_6.steps`):
 
 - **`never`** — every match-set form of the gate's step (bare and `project:`-prefixed) is removed from `phase_6.steps`. A no-op when already absent. The composer applies the resolved value directly.
-- **`always`** — the gate's canonical step is ensured present, inserted before the plan-mutating tail (`archive-plan` / `record-metrics` / `branch-cleanup` / `plan-marshall:plan-retrospective`) when absent. A no-op when any match-set form is already present. `always` is the **only** path that can re-add a step the relevant pre-filter dropped — that is the point: an operator-set `always` overrides the implicit gate. For `self_review` / `qgate` the overridden pre-filter is `scope_gated_finalize`; for `simplify` it is `simplify_inactive`; for `security_audit` it is `security_audit_inactive`.
+- **`always`** — the gate's canonical step is ensured present, inserted before the plan-mutating tail (`archive-plan` / `record-metrics` / `branch-cleanup` / `plan-marshall:plan-retrospective`) when absent. A no-op when any match-set form is already present. `always` is the only path that RE-ADDS a step a pre-filter already dropped — that is the point: an operator-set `always` overrides the implicit gate. For `self_review` / `qgate` the overridden pre-filter is `scope_gated_finalize`; for `simplify` it is `simplify_inactive`; for `security_audit` it is `security_audit_inactive`.
+
+  It is not, however, the only way an operator declaration survives an implicit gate. `scope_gated_finalize`'s declared-lane immunity keeps a step with an explicit non-`auto` `lane` from being dropped at all — a distinct mechanism (prevent the drop) from this one (undo the drop), and the only mechanism available to the steps this transform does not cover. The distinction matters because this gate map holds exactly the four ceremony steps: for any other step, such as `plan-marshall:plan-retrospective`, no re-add route exists, so immunity at the scope gate is what makes its declared lane reachable.
 - **`auto`** (the default) — defer to the existing decision machinery already applied before this transform. For `self_review` / `qgate` that is the `scope_gated_finalize` pre-filter and the six-row matrix; for `simplify` it is the `simplify_inactive` pre-filter and for `security_audit` the `security_audit_inactive` pre-filter (both drop the step when `change_type ∉ {feature, bug_fix, tech_debt, enhancement}` OR `affected_files_count == 0`). No-op in every case.
 
 **The deliberate `plan-marshall:automatic-review` carve-out**: this transform's gate map contains only the four finalize steps (`default:pre-submission-self-review`, `pre-push-quality-gate`, `finalize-step-simplify`, `finalize-step-security-audit`). It NEVER adds or drops `plan-marshall:automatic-review`, whose presence is governed purely by its configured `lane` and lane tier through the execution-profile lane-resolution pass — there is no separate force-add guard. Keeping the ceremony transform's gate map to exactly the four ceremony steps structurally guarantees `plan-marshall:automatic-review` is never force-added or force-dropped by this transform.
@@ -368,6 +379,47 @@ When the posture is `full` (or no lane-participating element is above the cutoff
 **Interaction with anchor-based insertion helpers**: the ceremony-finalize insertion helper anchors an `always`-forced step before the plan-mutating tail, and `plan-marshall:automatic-review` (order 30) sorts below that tail by its frontmatter order, so the sort preserves — rather than competes with — that placement intent. No separate placement validator is required: the frontmatter-order sort is the single ordering authority for order-resolvable steps, and order-unresolvable entries keep their original index.
 
 **Decision log line**: none — the transform is deterministic, unconditional, and emits no dedicated log entry; the composed `phase_6.steps` in the rule's own decision-log line reflects the sorted order.
+
+## Post-Compose Assertion: `phase_6_order_violation`
+
+An **assertion**, not a transform: it reorders nothing and drops nothing, and it fails the compose loud when the final layout cannot be shown to be correct. Sibling of the `unresolvable_step` / `non_canonical_step` / `build_verdict_contradiction` gates in shape (`_manifest_validation.check_emitted_steps_ascending_order` — pure, returns the first offender or `None`).
+
+**Where it runs**: over the FINAL `phase_6.steps`, AFTER the `unresolvable_step` and `non_canonical_step` gates. The ordering is deliberate — a step whose SOURCE FILE is missing is a resolution defect, and `unresolvable_step` names it far more usefully than an ordering error would, so that gate is given first refusal. What survives to here is the case those gates cannot see: a step whose source resolves but declares no readable integer `order:`. Like its siblings it returns before the step-params snapshot and `write_manifest`, so a failing compose never persists a partial manifest.
+
+**What it rejects**, in list order, first offender wins:
+
+| `reason` | Rejected when |
+|----------|---------------|
+| `order_inversion` | A step's resolved `order` is strictly less than the maximum resolved `order` at a preceding list position. The message names BOTH steps of the inverted pair. |
+| `unresolvable_order` | A built-in or `project:` step's `order` does not resolve — either its source file declares no integer `order:` key, or its source file could not be resolved at all. The two cases are distinguished in the message. |
+
+A `bundle:skill` external step has no project-local source by design, is legitimately orderless, and is skipped without complaint. Non-string entries are left to the schema checks.
+
+**Why `unresolvable_order` is an offence and not a skip**: this is the whole reason the assertion is not simply `_check_ascending_order` re-run on the composed list. That walk SKIPS a step whose order does not resolve — and `_sort_steps_by_frontmatter_order` PINS exactly such a step at its original index instead of ordering it. The two behaviours compose into the failure this gate closes: a step that should carry an order but whose source cannot be read is pinned wherever the seed happened to put it, and the ascending walk then declines to check the position it was pinned at, so an inversion is reported by nobody and the compose is green. A step the gate cannot verify is therefore an offence. The reproduction that established this is recorded in the plan artifact `work/defect-b-gate-reproduction.md`.
+
+The `order`-resolution verdicts backing the gate live in `_manifest_validation._resolve_step_order_verdict`, which distinguishes `resolved` / `not_declared` (source resolved, no readable integer `order:`) / `source_unresolvable` (no source file) / `not_applicable` (`bundle:skill`). `_resolve_step_order` remains the order-only projection consumed by the sort and by the seed-path `_check_ascending_order`.
+
+**Seed vs composed**: this gate asserts the COMPOSED list; `validate-loadable --check-seed` asserts the PRE-composition seed. Neither disturbs the D4 array-authority contract on `validate-loadable --all`, which concerns a manifest already composed and written — there the array is authoritative for execution order.
+
+**On failure** the composer emits one decision-log line and returns `status: error` with `error: phase_6_order_violation`, plus `phase`, `step_id`, and `reason`:
+
+```text
+(plan-marshall:manage-execution-manifest:compose) phase_6_order_violation — {message}
+```
+
+## Preview/Compose Agreement Contract
+
+`manage-execution-manifest lanes preview` and `compose` are two renderings of one decision, so they must not disagree about a step. The preview renders the SAME membership and the SAME order `compose` reaches for every step whose fate marshal configuration alone decides, and NAMES the steps whose fate it cannot know.
+
+**What the preview applies** (in composer order), because each depends only on marshal configuration:
+
+1. `unresolved_ask_provider_drop` — decided by the per-element lane override plus provider presence.
+2. The posture lane cutoff, per posture (`minimal` / `auto` / `full`).
+3. The frontmatter-order sort — included because `compose` sorts its final list, so an unsorted preview would report a different ORDER for an identical membership.
+
+**What the preview cannot apply**: the remaining pre-filters, the six-row matrix, and `ceremony_finalize_selection` all read PLAN inputs (`change_type` / `scope_estimate` / `track` / `affected_files_count` / `commit_and_push` / the live footprint) that do not exist at preview time — the preview runs at the init dialogue, before those values are settled.
+
+**How it refuses diagnosably**: rather than silently rendering a membership `compose` may not reach, the preview returns `plan_input_dependent_steps[]` — the emitted steps still subject to a plan-input-dependent decision (the `push` / `pre-push-quality-gate` / `pre-submission-self-review` / `finalize-step-simplify` / `finalize-step-security-audit` / `plan-retrospective` / `plugin-doctor` family). An empty list means preview and compose agree on membership outright. A named step means "the preview shows this, and a plan input may still remove it" — an explicit statement of uncertainty rather than a false claim of agreement.
 
 ## execution_tier Routing
 

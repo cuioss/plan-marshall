@@ -21,12 +21,19 @@ orthogonal and preserved.
 Every ceremony gate's ``lane`` override folds under its owning finalize step's
 nested param object in ``plan.phase-6-finalize.steps``: ``qgate`` →
 ``default:pre-push-quality-gate``; ``self_review`` →
-``default:pre-submission-self-review`` (which also owns the
-``drop_review_on_scope_gate`` escape hatch); ``simplify`` →
+``default:pre-submission-self-review``; ``simplify`` →
 ``default:finalize-step-simplify``; ``security_audit`` →
 ``default:finalize-step-security-audit``. There is no flat phase-level ``qgate``
 sibling. The internal transform name retains the ``ceremony_finalize`` prefix for
 continuity.
+
+``always`` is the only path that RE-ADDS a step a pre-filter already dropped, and
+it covers only these four gates. It is not the only way an operator declaration
+survives an implicit gate: ``scope_gated_finalize``'s declared-lane immunity keeps
+a step carrying an explicit non-``auto`` ``lane`` from being dropped at all. That
+mechanism (prevent the drop) is distinct from this one (undo the drop), and it is
+the only one available to the steps this transform does not cover — see
+``test_decision_rules.py`` for its coverage.
 """
 
 import importlib.util
@@ -129,12 +136,11 @@ _GATE_OWNER_STEP = {
     'simplify': 'default:finalize-step-simplify',
     'security_audit': 'default:finalize-step-security-audit',
     'self_review': 'default:pre-submission-self-review',
-    'drop_review_on_scope_gate': 'default:pre-submission-self-review',
 }
 
 # The four ceremony gates whose value is written as the owning step's ``lane``
-# override (``off``/``minimal``/``auto``). Every other step-folded knob (e.g.
-# ``drop_review_on_scope_gate``) is written under its own param key verbatim.
+# override (``off``/``minimal``/``auto``). Any other step-folded knob a caller
+# passes is written under its own param key verbatim.
 _CEREMONY_LANE_GATES = frozenset({'qgate', 'self_review', 'simplify', 'security_audit'})
 
 
@@ -149,7 +155,7 @@ def _seed_marshal(
     ``security_audit``) is written as its owning finalize step's ``lane`` override
     (``off``/``minimal``/``auto``) nested under the step's param object in
     ``plan.phase-6-finalize.steps`` (the id-keyed map the reader consumes via
-    ``_read_step_owned_knob``); ``drop_review_on_scope_gate`` writes under its own
+    ``_read_step_owned_knob``); any other step-folded knob writes under its own
     param key. There is no flat phase-level ``qgate`` sibling. Callers pass
     ``finalize_gates`` values in the ``lane`` vocabulary.
 
@@ -392,10 +398,18 @@ class TestCeremonyFinalizeNever:
 class TestCeremonyFinalizeAlways:
     """``always`` re-adds the gate's step even when a pre-filter dropped it."""
 
-    def test_always_readds_steps_dropped_by_surgical_scope_gate(self, plan_context):
-        # On surgical scope, scope_gated_finalize drops self_review
-        # (and plan-retrospective). `always` must re-add it via the canonical
-        # default:pre-submission-self-review insertion form.
+    def test_self_review_survives_surgical_scope_gate_via_declared_lane_immunity(self, plan_context):
+        """A ``minimal`` self_review gate keeps the step on a surgical plan — by
+        IMMUNITY at the scope gate, not by an ``always`` re-add.
+
+        Setting the gate to ``minimal`` writes ``lane: minimal`` on
+        ``default:pre-submission-self-review``, which is an explicit non-``auto``
+        lane declaration. ``scope_gated_finalize`` therefore never drops the step,
+        so by the time the ceremony transform runs there is nothing to re-add and
+        ``always`` is correctly a no-op. The operator-visible outcome — the step
+        runs — is unchanged; the mechanism that delivers it moved one stage
+        earlier, from undoing the drop to preventing it.
+        """
         _seed_marshal(
             finalize_gates={'self_review': 'minimal'}
         )
@@ -413,10 +427,54 @@ class TestCeremonyFinalizeAlways:
         assert result['status'] == 'success'
         bare = _bare(_manifest_phase_6_steps(result))
         assert 'pre-submission-self-review' in bare
-        forced_in = set(result['ceremony_finalize_forced_in'])
+        # Kept by the scope gate's declared-lane immunity...
+        assert 'pre-submission-self-review' in result['scope_gated_finalize_immune']
+        assert 'pre-submission-self-review' not in result['scope_gated_finalize_dropped']
+        # ...so the ceremony transform had nothing to re-add.
+        assert 'pre-submission-self-review' not in result['ceremony_finalize_forced_in']
+
+    def test_always_still_readds_a_step_the_scope_gate_dropped(self, plan_context):
+        """``always`` remains the re-add path when the step carries NO lane declaration.
+
+        Immunity only covers a step the operator declared a non-``auto`` lane for.
+        Here the ``self_review`` gate is forced in through the ceremony channel
+        while the owning step declares no lane, so ``scope_gated_finalize`` drops
+        it on a surgical plan and the ``always`` transform genuinely re-adds it —
+        the mechanism the immunity test above does NOT exercise.
+        """
+        # Candidate set WITHOUT the self-review owner, so the step is absent from
+        # the seeded steps map (and therefore carries no lane declaration) and the
+        # ceremony gate must insert it.
+        candidates = [
+            s for s in _phase_6_with_ceremony_steps().split(',')
+            if s != 'default:pre-submission-self-review'
+        ]
+        _seed_marshal(candidates=candidates)
+        _stub_footprint(_FOOTPRINT)
+        # Force the gate value directly — the owning step is absent from the map,
+        # so `_seed_marshal` cannot fold the knob onto it.
+        original_gates = _mem._read_finalize_gates
+        _mem._read_finalize_gates = lambda: {
+            'self_review': 'always', 'qgate': 'auto', 'simplify': 'auto', 'security_audit': 'auto',
+        }
+        try:
+            result = cmd_compose(
+                _compose_ns(
+                    plan_id='ceremony-always-readd',
+                    scope_estimate='surgical',
+                    change_type='bug_fix',
+                    phase_6_steps=','.join(candidates),
+                )
+            )
+        finally:
+            _mem._read_finalize_gates = original_gates
+
+        assert result is not None
+        assert result['status'] == 'success'
+        assert 'pre-submission-self-review' in _bare(_manifest_phase_6_steps(result))
         # The canonical insertion form is BARE (aligned with the compose-time
         # canonical-step-key gate) — no `default:`-prefixed id is re-inserted.
-        assert 'pre-submission-self-review' in forced_in
+        assert 'pre-submission-self-review' in result['ceremony_finalize_forced_in']
 
     def test_always_readds_qgate_dropped_by_inactive_prefilter(self, plan_context):
         # Empty footprint → pre_push_quality_gate_inactive drops the qgate step.
