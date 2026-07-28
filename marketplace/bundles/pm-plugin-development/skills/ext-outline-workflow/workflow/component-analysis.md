@@ -8,7 +8,7 @@ Semantic analysis of marketplace component files (skills, agents, commands, test
 
 ## Contract reference
 
-Implements: [`plan-marshall:phase-3-outline/standards/component-analysis-contract.md`](../../../../plan-marshall/skills/phase-3-outline/standards/component-analysis-contract.md). That document carries the canonical input parameters, prompt structure, output format, and critical rules — this workflow doc adds the dispatch-side concerns and the per-component-type LLM-judgement context.
+Implements: [`plan-marshall:phase-3-outline/standards/component-analysis-contract.md`](../../../../plan-marshall/skills/phase-3-outline/standards/component-analysis-contract.md). That document carries the canonical input parameters and prompt structure, and **delegates** the return-shape rule to [`plan-marshall:ref-workflow-architecture/standards/citations-only-return.md`](../../../../plan-marshall/skills/ref-workflow-architecture/standards/citations-only-return.md) — this workflow doc adds the dispatch-side concerns and the per-component-type LLM-judgement context.
 
 ## Inputs
 

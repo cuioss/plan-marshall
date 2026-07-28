@@ -20,6 +20,7 @@ Load specific standards on-demand based on what aspect you need to understand.
 | [call-graph.md](standards/call-graph.md) | Holistic dispatch call graph | ASCII box diagrams: per-phase detail, 6-group phase-scoped registry overlay, dispatch-vs-script verdict table — every dispatch path starting from `plan-marshall` |
 | [dispatch-walkthrough.md](standards/dispatch-walkthrough.md) | Worked dispatch traces | Three end-to-end examples: phase-2-refine entry, finalize automated-review with `verification-feedback` (producer=pr-comment), architecture-refresh Tier-1 fan-out |
 | [dispatch-logging.md](standards/dispatch-logging.md) | Standardized dispatch log line | Post-resolve `[DISPATCH]` emission contract — five literal fields (target, level, role, workflow, plan_id), placement after `effort resolve-target` and before `Task: plan-marshall:{target}`, canonical `manage-logging work` invocation, positive example + anti-pattern |
+| [citations-only-return.md](standards/citations-only-return.md) | Read-only dispatch return shape | One TOON summary, no free prose; sink-persistence obligation; `## Applies to` roster (the conformance detector's population); untrusted-ingestion boundary explicitly out of scope |
 | [data-layer.md](standards/data-layer.md) | manage-* skills | Inventory, dependency graph, data flow |
 | [manage-contract.md](standards/manage-contract.md) | manage-* contract | Enforcement, error codes, shared formats |
 | [skill-loading.md](standards/skill-loading.md) | Two-tier loading | System vs domain skills, domain flow through phases |
