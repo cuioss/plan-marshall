@@ -96,7 +96,7 @@ def _read_store(queue_path: Path) -> dict:
 def _claim(
     plan_id: str, bot_kind: str = 'coderabbit', pr_number: int = 42, window_seconds: float = 3600.0
 ) -> dict:
-    return merge_lock.run_rate_window(
+    result: dict = merge_lock.run_rate_window(
         Namespace(
             action='claim',
             plan_id=plan_id,
@@ -105,14 +105,21 @@ def _claim(
             window_seconds=window_seconds,
         )
     )
+    return result
 
 
 def _check(plan_id: str, bot_kind: str = 'coderabbit') -> dict:
-    return merge_lock.run_rate_window(Namespace(action='check', plan_id=plan_id, bot_kind=bot_kind))
+    result: dict = merge_lock.run_rate_window(
+        Namespace(action='check', plan_id=plan_id, bot_kind=bot_kind)
+    )
+    return result
 
 
 def _release(plan_id: str, bot_kind: str = 'coderabbit') -> dict:
-    return merge_lock.run_rate_window(Namespace(action='release', plan_id=plan_id, bot_kind=bot_kind))
+    result: dict = merge_lock.run_rate_window(
+        Namespace(action='release', plan_id=plan_id, bot_kind=bot_kind)
+    )
+    return result
 
 
 # =============================================================================
