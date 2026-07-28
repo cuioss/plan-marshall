@@ -123,6 +123,10 @@ Both tracks converge at Step 10:
 │  Step 10.1: Write Solution Document (Simple Track only)         │
 │          → Complex Track: skill already wrote it                 │
 │                                                                  │
+│  Step 10.1b: Prospective Lessons Consult (all lanes)            │
+│          → manage-lessons consult --plan-id {plan_id}            │
+│          → surfaced lessons recorded, never auto-applied         │
+│                                                                  │
 │  Step 10.2: Log Completion                                       │
 │          → Log artifact and decision                            │
 │                                                                  │
