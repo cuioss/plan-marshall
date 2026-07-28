@@ -459,11 +459,42 @@ class Daemon:
 
     # -- admission / execution --------------------------------------------
 
+    def _is_terminalized(self, job_id: str) -> bool:
+        """Return whether ``job_id``'s journal entry already holds a terminal status.
+
+        The journal is the daemon's durable record of a job's fate, so a terminal
+        status there is the authoritative "this job has already ended" signal.
+        A job with no journal entry reads as NOT terminalized — absence is not
+        evidence of an outcome, and a job whose entry has not been written yet
+        must still be allowed to run.
+
+        Args:
+            job_id: The job id to test.
+
+        Returns:
+            ``True`` when the stored entry's status is one of the terminal
+            statuses (``success|failure|timeout|killed``).
+        """
+        entry = self._journal.get(job_id)
+        if not isinstance(entry, dict):
+            return False
+        return str(entry.get('status', '')) in TERMINAL_STATUSES
+
     def _admit_ready(self) -> None:
         while self._scheduler.available_slots() > 0:
             entry = self._scheduler.admit_next()
             if entry is None:
                 return
+            if self._is_terminalized(entry.job_id):
+                # The job already reached a terminal status, so this admission is
+                # for a job that has ALREADY ended. Executing it again would
+                # re-run the build, clobber the terminal journal status back to
+                # `running`, and append a SECOND `job_fate` record for a single
+                # terminalization. Release the admission (freeing the slot and the
+                # idempotency fingerprint) instead of running it — one
+                # terminalization can therefore only ever emit one fate.
+                self._scheduler.complete(entry.job_id)
+                continue
             self._journal.record_status(entry.job_id, STATUS_RUNNING)
             self._progress[entry.job_id] = JobProgress()
             self._tasks[entry.job_id] = asyncio.create_task(self._execute(entry.job_id, entry.spec))

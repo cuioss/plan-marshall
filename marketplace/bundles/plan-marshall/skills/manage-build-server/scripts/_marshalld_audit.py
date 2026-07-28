@@ -283,6 +283,12 @@ class InteractionAudit:
         never claims a fate it cannot substantiate, and never records the
         request-scoped ``queued`` as though it were an outcome.
 
+        This writer is an unconditional appender: it writes one record per call
+        and does NOT de-duplicate. The "one terminalization, one fate record"
+        invariant is enforced upstream at the caller, where
+        ``Daemon._admit_ready`` refuses to execute a job whose journal entry is
+        already terminal — so a job can only reach its terminalization seam once.
+
         Args:
             job_id: The daemon-assigned job id the fate belongs to.
             fate: The job's terminal status (``success|failure|timeout|killed``);

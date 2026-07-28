@@ -13,7 +13,9 @@ Four groups:
 1. **Discrimination** — a completed job and an abandoned job, driven through the
    REAL terminalization seams (``Daemon._execute`` after ``journal.record_result``
    and ``Daemon.serve`` over ``journal.replay_on_restart``), render differently in
-   the operator ``logs`` view.
+   the operator ``logs`` view. Those seams also emit exactly ONE fate record per
+   terminalization: an already-terminalized job is never admitted — and so never
+   re-executed — a second time.
 2. **Unknown fate** — a fate the daemon cannot substantiate renders ``unknown``,
    never a terminal value and never ``queued``; covered over the
    died-without-restart path and the GC'd-journal-entry path.
@@ -97,13 +99,30 @@ def _submit(daemon, spec: JobSpec) -> str:
     return result.job_id
 
 
-def _terminalize(daemon, job_id: str, spec: JobSpec, payload: dict, monkeypatch) -> None:
-    """Drive the REAL ``_execute`` terminalization seam with ``run_job`` stubbed."""
+def _stub_run_job(monkeypatch, payload: dict) -> None:
+    """Replace the supervisor's ``run_job`` with a coroutine returning ``payload``."""
 
     async def _fake_run_job(*_args, **_kwargs):
         return payload
 
     monkeypatch.setattr(marshalld, 'run_job', _fake_run_job)
+
+
+def _terminalize(daemon, job_id: str, spec: JobSpec, payload: dict, monkeypatch) -> None:
+    """Drive the REAL ``_execute`` terminalization seam with ``run_job`` stubbed.
+
+    The job is ADMITTED through the scheduler first, exactly as ``_admit_ready``
+    does in production — a job only ever reaches ``_execute`` after admission.
+    Driving ``_execute`` on a still-queued job would leave the scheduler's
+    ``complete()`` tail a no-op (freeing neither the slot nor the idempotency
+    fingerprint) and leave the job's own stale queue entry behind for the tail's
+    ``_admit_ready()`` to pick up.
+    """
+    admitted = daemon._scheduler.admit_next()
+    assert admitted is not None and admitted.job_id == job_id
+    daemon._journal.record_status(job_id, 'running')
+
+    _stub_run_job(monkeypatch, payload)
     asyncio.run(daemon._execute(job_id, spec.to_dict()))
 
 
@@ -198,6 +217,41 @@ def test_request_status_stays_truthful_about_the_request(project, tmp_path, monk
     row = next(r for r in _logs(project) if r['kind'] == audit_mod.KIND_INTERACTION)
     assert row['request_status'] == 'queued'
     assert row['fate'] == 'failure'
+
+
+def test_terminalized_job_is_never_admitted_again(project, tmp_path, monkeypatch):
+    """One terminalization emits exactly ONE fate record — structurally.
+
+    ``_execute``'s tail re-enters ``_admit_ready()``. If an admission ever hands
+    back a job that has ALREADY terminalized, the daemon would re-run the build,
+    clobber the terminal journal status back to ``running``, and append a SECOND
+    ``kind=job_fate`` record for a single terminalization. The admission must be
+    released instead — freeing both the slot and the idempotency fingerprint.
+    """
+    audit = audit_mod.InteractionAudit()
+    journal = Journal()
+    daemon = _daemon(tmp_path, audit, journal)
+    spec = _spec(project)
+    _stub_run_job(monkeypatch, status_payload('success', duration_seconds=1, log_file='x'))
+
+    # A job that terminalized while its own entry is still sitting in the queue.
+    job_id = _submit(daemon, spec)
+    journal.record_result(job_id, status_payload('success', duration_seconds=1, log_file='x'))
+    daemon._audit_job_fate(job_id, 'success', spec.to_dict())
+
+    async def _drive():
+        daemon._admit_ready()
+
+    asyncio.run(_drive())
+
+    fate_records = [r for r in audit.read_all() if r.get('kind') == audit_mod.KIND_JOB_FATE]
+    assert [r['job_id'] for r in fate_records] == [job_id]
+    assert daemon._tasks == {}  # no second execution was ever started
+    assert journal.get(job_id)['status'] == 'success'  # terminal status not clobbered
+    # The stale admission was released, not left holding the slot or the fingerprint.
+    assert daemon._scheduler.queued_count == 0
+    assert daemon._scheduler.running_count == 0
+    assert not daemon._scheduler.has_job(spec.fingerprint)
 
 
 # =============================================================================
