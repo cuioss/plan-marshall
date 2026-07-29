@@ -511,8 +511,15 @@ class TestFromErrorInputValidation:
         assert result['error'] == 'invalid_json'
         assert result['message'] == 'Context must be a valid JSON object'
 
-    def test_non_string_component_defaults_to_unknown(self, tmp_path):
-        """An explicit null / numeric component must not crash — it defaults to 'unknown'."""
+    def test_explicit_null_component_is_rejected_as_invalid(self, tmp_path):
+        """An explicitly-supplied null component is malformed, not a request to default.
+
+        It must not crash (the original concern) and must not be silently coerced to
+        'unknown' either — coercion would make the guard's isinstance check
+        unreachable from this path and file a lesson under a component the caller
+        never supplied. Only an ABSENT component defaults; see
+        `test_absent_component_defaults_to_unknown` for that path.
+        """
         lessons_dir = tmp_path / 'lessons-learned'
         lessons_dir.mkdir(parents=True)
 
@@ -521,13 +528,12 @@ class TestFromErrorInputValidation:
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
             result = cmd_from_error(Namespace(context=error_context))
 
-        assert result['status'] == 'success'
-        assert result['created_from'] == 'error_context'
-        lesson_path = next(lessons_dir.glob(f'{result["id"]}.md'))
-        assert 'component=unknown' in lesson_path.read_text(encoding='utf-8')
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_component'
+        assert not list(lessons_dir.glob('*.md'))
 
-    def test_numeric_component_defaults_to_unknown(self, tmp_path):
-        """A numeric component value also coerces to 'unknown' instead of crashing."""
+    def test_numeric_component_is_rejected_as_invalid(self, tmp_path):
+        """A numeric component is malformed for the same reason as an explicit null."""
         lessons_dir = tmp_path / 'lessons-learned'
         lessons_dir.mkdir(parents=True)
 
@@ -536,7 +542,22 @@ class TestFromErrorInputValidation:
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
             result = cmd_from_error(Namespace(context=error_context))
 
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_component'
+        assert not list(lessons_dir.glob('*.md'))
+
+    def test_absent_component_defaults_to_unknown(self, tmp_path):
+        """An ABSENT component still defaults to the prefix-less 'unknown' and succeeds."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+
+        error_context = json.dumps({'error': 'boom', 'solution': 'fix'})
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_from_error(Namespace(context=error_context))
+
         assert result['status'] == 'success'
+        assert result['created_from'] == 'error_context'
         lesson_path = next(lessons_dir.glob(f'{result["id"]}.md'))
         assert 'component=unknown' in lesson_path.read_text(encoding='utf-8')
 
@@ -843,6 +864,40 @@ class TestGuardComponentStoreMatch:
         else:  # pragma: no cover - the guard must raise
             raise AssertionError('expected MalformedComponentError')
 
+    def test_trailing_newline_component_is_malformed(self, monkeypatch):
+        """`$` matches before a trailing newline, so `match` would accept this.
+
+        Pins the fullmatch semantics: a component ending in a newline is malformed
+        even though every character before it is well-formed.
+        """
+
+        def _boom(bundle):  # pragma: no cover - shape check precedes ownership
+            raise AssertionError('ownership must not be consulted for a malformed component')
+
+        monkeypatch.setattr(_lessons_io, 'main_anchored_store_owns_bundle', _boom)
+
+        try:
+            _lessons_io.guard_component_store_match('integration-tests\n', allow_foreign=False)
+        except _lessons_io.MalformedComponentError:
+            pass
+        else:  # pragma: no cover - the guard must raise
+            raise AssertionError('expected MalformedComponentError for a trailing newline')
+
+    def test_non_string_component_is_malformed(self, monkeypatch):
+        """A non-string component is malformed, not foreign."""
+
+        def _boom(bundle):  # pragma: no cover - shape check precedes ownership
+            raise AssertionError('ownership must not be consulted for a non-string component')
+
+        monkeypatch.setattr(_lessons_io, 'main_anchored_store_owns_bundle', _boom)
+
+        for value in (None, 42, ['a']):
+            try:
+                _lessons_io.guard_component_store_match(value, allow_foreign=False)
+            except _lessons_io.MalformedComponentError:
+                continue
+            raise AssertionError(f'expected MalformedComponentError for {value!r}')
+
     def test_allow_foreign_does_not_launder_a_malformed_component(self, monkeypatch):
         """The shape check runs BEFORE the allow_foreign bypass."""
 
@@ -1016,6 +1071,27 @@ class TestAddWrongStoreGuard:
 
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_component'
+        assert not list(lessons_dir.glob('*.md'))
+
+    def test_from_error_explicit_non_string_component_returns_invalid_component(self, tmp_path, monkeypatch):
+        """An explicitly-supplied non-string component must NOT be coerced to 'unknown'.
+
+        Only an ABSENT component defaults. Coercing an explicit null/number would
+        make the guard's isinstance check unreachable from this path and file a
+        lesson under 'unknown' for input the contract calls malformed.
+        """
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+        monkeypatch.setattr(_lessons_io, 'main_anchored_store_owns_bundle', lambda bundle: False)
+
+        for value in (None, 42, ['a']):
+            context = json.dumps({'component': value, 'error': 'boom', 'solution': 'x'})
+            result = cmd_from_error(Namespace(context=context, allow_foreign_store=False))
+
+            assert result['status'] == 'error', f'{value!r} should be rejected'
+            assert result['error'] == 'invalid_component', f'{value!r} should be invalid_component'
+
         assert not list(lessons_dir.glob('*.md'))
 
     def test_from_error_default_unknown_component_succeeds(self, tmp_path, monkeypatch):

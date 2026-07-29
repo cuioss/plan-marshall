@@ -77,7 +77,9 @@ def guard_component_store_match(component: str, allow_foreign: bool) -> None:
         WrongStoreError: when ``component`` carries a bundle prefix the store repo
             does not own and ``allow_foreign`` is ``False``.
     """
-    if not isinstance(component, str) or not COMPONENT_RE.match(component):
+    # fullmatch, not match: `$` also matches just before a trailing newline, so
+    # `match` would accept 'integration-tests\n' as well-formed.
+    if not isinstance(component, str) or COMPONENT_RE.fullmatch(component) is None:
         raise MalformedComponentError(
             f'malformed component {component!r}; expected the canonical shape '
             f'{COMPONENT_RE.pattern} — either a prefix-less project-local name '
