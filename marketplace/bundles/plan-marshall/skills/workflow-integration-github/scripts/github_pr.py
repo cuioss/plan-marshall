@@ -291,7 +291,18 @@ _KIND_DETAIL = re.compile(r'^kind:[ \t]*(?P<id>\S[^\n]*?)[ \t]*$', re.MULTILINE)
 # The originating PR, stamped by ``cmd_fetch_findings`` as the first ``detail``
 # line. ``post_responses`` filters on it so a plan whose findings store spans
 # several PRs transmits each disposition only to the PR it came from.
-_PR_NUMBER_DETAIL = re.compile(r'^pr_number:[ \t]*(?P<id>\S[^\n]*?)[ \t]*$', re.MULTILINE)
+#
+# Unlike the three patterns above this one is anchored to the START OF THE WHOLE
+# detail string (``\A``, no ``re.MULTILINE``) and accepts a digits-only id. Both
+# narrowings are deliberate: the producer writes ``pr_number`` as the FIRST detail
+# line and always as an integer, so a per-line ``search`` would additionally honour
+# a ``pr_number:`` line appearing anywhere later in the block — including inside
+# text a future producer change might append — and a ``\S``-class value would admit
+# a non-numeric id. ``cmd_post_responses`` routes on this extraction to decide
+# ``belongs_to_pr_<n>`` vs ``pr_number_unrecorded``, so anything that does not match
+# the producer's own shape must resolve as unrecorded rather than widen the
+# routing predicate's trust surface.
+_PR_NUMBER_DETAIL = re.compile(r'\Apr_number:[ \t]*(?P<id>[0-9]+)[ \t]*(?:\n|\Z)')
 
 # The comment kinds that are GENUINELY threadless — GitHub gives them no
 # resolvable review thread, so the only way to transmit their disposition is the

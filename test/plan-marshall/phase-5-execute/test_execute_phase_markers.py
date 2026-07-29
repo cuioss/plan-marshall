@@ -60,14 +60,27 @@ _PHASE_ROW_STATUS_DISCRIMINATOR_RE = re.compile(
     re.IGNORECASE,
 )
 
+#: One character of a span that stays INSIDE the command the match started in. A
+#: code-fence line, a blank line, or a second ``manage-status`` notation each end
+#: that command, so none of them may be consumed. Without the bound an
+#: unrestricted ``[\s\S]`` span stitches an unrelated ``manage-status metadata
+#: ... --set`` in one fenced block together with a ``--field
+#: phase_5_first_entry_logged --value true`` fragment belonging to a SEPARATE
+#: command — a match with no single command that performs the marker write.
+_SAME_COMMAND_CHAR = r'(?:(?!```|\n[ \t]*\n|manage-status\b)[\s\S])'
+
 #: The paired metadata write the first-entry branch must carry. The field and its
 #: value are BOTH pinned: a bare ``manage-status metadata --set`` anywhere in the
 #: Step-4 section would be satisfied by any unrelated metadata write, so the
 #: assertion would pass while the first-entry marker itself was never written and
-#: every entry re-reported as a first entry.
+#: every entry re-reported as a first entry. The spans between the pinned literals
+#: are additionally bounded to a single command (see ``_SAME_COMMAND_CHAR``), so
+#: the four literals must be carried by ONE invocation rather than collected
+#: across a command boundary.
 _METADATA_SET_RE = re.compile(
-    r'manage-status\s+metadata\b[\s\S]{0,200}?--set\b[\s\S]{0,200}?'
-    r'--field\s+phase_5_first_entry_logged\b[\s\S]{0,80}?--value\s+true\b'
+    r'manage-status\s+metadata\b' + _SAME_COMMAND_CHAR + r'{0,200}?--set\b'
+    + _SAME_COMMAND_CHAR + r'{0,200}?'
+    r'--field\s+phase_5_first_entry_logged\b' + _SAME_COMMAND_CHAR + r'{0,80}?--value\s+true\b'
 )
 
 
@@ -195,6 +208,48 @@ class TestFirstEntryDiscriminatorIsReachable:
 
         # Positive control — the real documented shape IS accepted, so the
         # detector is not unconditionally negative.
+        marker_write = (
+            'python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \\\n'
+            '  --plan-id {plan_id} --set --field phase_5_first_entry_logged --value true\n'
+        )
+
+        assert _METADATA_SET_RE.search(marker_write)
+
+    def test_metadata_write_detector_does_not_match_across_separate_commands(self):
+        # Mutation guard for the CROSS-COMMAND false positive the isolated-`--set`
+        # case above cannot reach: an unrelated `manage-status metadata ... --set`
+        # in one fenced block, followed by a bare `--field
+        # phase_5_first_entry_logged --value true` fragment in a SEPARATE block.
+        # No single command writes the marker here, yet the pre-fix
+        # `[\s\S]{0,200}?` spans crossed the fence and reported a pass.
+        cross_command = (
+            '```bash\n'
+            'python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \\\n'
+            '  --plan-id {plan_id} --set --field worktree_path --value /some/path\n'
+            '```\n'
+            '\n'
+            'Then, from a different command:\n'
+            '\n'
+            '```bash\n'
+            '  --field phase_5_first_entry_logged --value true\n'
+            '```\n'
+        )
+
+        # Anchor: the two fragments sit well inside the pre-fix 200-character
+        # span of each other, so only the command-boundary bound — never mere
+        # distance — can reject this shape.
+        gap = cross_command.index('--field phase_5_first_entry_logged') - cross_command.index('--set')
+        assert 0 < gap < 200, f'the negative control must exercise the in-range span, gap was {gap}'
+
+        assert not _METADATA_SET_RE.search(cross_command), (
+            'The metadata-write detector matched across two separate commands — an '
+            'unrelated `--set` plus a foreign field/value fragment satisfied it, so '
+            'the pairing assertion can pass while no single command writes the '
+            'phase_5_first_entry_logged marker'
+        )
+
+        # Positive control — one command carrying the whole shape is still
+        # accepted, so the tightening is not unconditionally negative.
         marker_write = (
             'python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \\\n'
             '  --plan-id {plan_id} --set --field phase_5_first_entry_logged --value true\n'

@@ -939,6 +939,81 @@ def test_pr_number_detail_matcher_reads_the_producer_written_shape():
     assert github_pr._detail_field('kind: inline\ncomment_id: c1', github_pr._PR_NUMBER_DETAIL) == ''
 
 
+def _pr_comment_finding_with_detail(hash_id, detail):
+    """Build a resolved threadless pr-comment finding carrying a hand-written detail block.
+
+    ``_resolved_pr_comment_finding`` always writes the producer's own shape, so it
+    cannot express a detail block that DEVIATES from it. These deviation cases are
+    exactly what the ``pr_number`` extraction must reject, so they are built here.
+    """
+    return {
+        'hash_id': hash_id,
+        'detail': detail,
+        'resolution': 'fixed',
+        'resolution_detail': f'disposition body for {hash_id}',
+    }
+
+
+def test_post_responses_skips_a_row_whose_pr_number_marker_is_not_the_first_line(monkeypatch):
+    """A ``pr_number:`` marker appearing later in the detail block does not attribute the row.
+
+    The producer stamps ``pr_number`` as the FIRST detail line and nowhere else, so
+    a marker found deeper in the block did not come from the producer — it is text
+    that happens to look like the marker. Honouring it would let arbitrary later
+    content decide which PR a disposition is transmitted to, which is precisely the
+    routing predicate ``cmd_post_responses`` must not widen. The row is reported as
+    ``pr_number_unrecorded`` (visibly deferred), never delivered to PR 1036.
+    """
+    # Arrange
+    findings = [
+        _resolved_pr_comment_finding('own', 1036, comment_id='a'),
+        _pr_comment_finding_with_detail(
+            'late-marker',
+            'kind: review_body\nauthor: coderabbitai\nthread_id: \ncomment_id: L\npr_number: 1036',
+        ),
+    ]
+    posted, replied = [], []
+    _patch_respond_surface(monkeypatch, findings, posted, replied)
+
+    # Act
+    result = _run_post_responses(1036, 'gh-pr-scoping-late-marker')
+
+    # Assert
+    assert {entry['hash_id'] for entry in result['responded']} == {'own'}
+    assert result['skipped'] == [{'hash_id': 'late-marker', 'reason': 'pr_number_unrecorded'}]
+    assert result['status'] == 'success'
+    assert 'comment_id: `L`' not in posted[0][1]
+
+
+def test_post_responses_skips_a_row_whose_pr_number_marker_is_not_numeric(monkeypatch):
+    """A non-numeric ``pr_number`` value does not attribute the row to any PR.
+
+    The producer writes an integer PR number, so a non-numeric value cannot have
+    come from it. Accepting it would produce a nonsense ``belongs_to_pr_<value>``
+    verdict — a confident-looking attribution to a PR that does not exist — instead
+    of the fail-closed ``pr_number_unrecorded`` deferral.
+    """
+    # Arrange
+    findings = [
+        _resolved_pr_comment_finding('own', 1036, comment_id='a'),
+        _pr_comment_finding_with_detail(
+            'non-numeric',
+            'pr_number: 1036x\nkind: review_body\nauthor: coderabbitai\nthread_id: \ncomment_id: N',
+        ),
+    ]
+    posted, replied = [], []
+    _patch_respond_surface(monkeypatch, findings, posted, replied)
+
+    # Act
+    result = _run_post_responses(1036, 'gh-pr-scoping-non-numeric')
+
+    # Assert
+    assert {entry['hash_id'] for entry in result['responded']} == {'own'}
+    assert result['skipped'] == [{'hash_id': 'non-numeric', 'reason': 'pr_number_unrecorded'}]
+    assert result['status'] == 'success'
+    assert 'comment_id: `N`' not in posted[0][1]
+
+
 def test_post_responses_batches_thread_less_dispositions_into_one_comment(plan_context, monkeypatch):
     """Two thread-less dispositions are transmitted by exactly ONE batched PR comment.
 
