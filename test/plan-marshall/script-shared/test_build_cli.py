@@ -269,12 +269,15 @@ def test_build_main_emits_mutually_exclusive_error_on_both_flags(monkeypatch, ca
 
 def test_build_main_emits_worktree_resolution_error_on_corrupt_metadata(monkeypatch, capsys):
     """When --plan-id points to corrupt metadata, build_main emits worktree_resolution_failed."""
+    import file_ops as _resolver_core
     import resolve_project_dir as _routing
 
     def fake_query(_pid):
         raise _routing.WorktreeResolutionError(f'plan {_pid!r} metadata is corrupt')
 
-    monkeypatch.setattr(_routing, '_query_worktree_path', fake_query)
+    # The shell-out seam lives in file_ops now; resolve_project_dir delegates to
+    # it through resolve_plan_context, and re-exports the same error class.
+    monkeypatch.setattr(_resolver_core, '_query_worktree_path', fake_query)
     monkeypatch.setattr(
         'sys.argv',
         [
@@ -294,9 +297,11 @@ def test_build_main_emits_worktree_resolution_error_on_corrupt_metadata(monkeypa
 
 def test_build_main_resolves_plan_id_to_worktree_before_handler(monkeypatch):
     """The resolver overwrites args.project_dir BEFORE the handler runs."""
-    import resolve_project_dir as _routing
+    import file_ops as _resolver_core
 
-    monkeypatch.setattr(_routing, '_query_worktree_path', lambda _pid: (True, CANONICAL_WORKTREE))
+    monkeypatch.setattr(
+        _resolver_core, '_query_worktree_path', lambda _pid: (True, CANONICAL_WORKTREE)
+    )
 
     captured: list[str] = []
 
@@ -329,7 +334,10 @@ def test_build_main_resolves_neither_flag_to_main_checkout(monkeypatch):
     """build_main with neither flag falls back to the main checkout root."""
     import resolve_project_dir as _routing
 
-    monkeypatch.setattr(_routing, '_main_checkout_root', lambda: '/tmp/main-checkout-stub')
+    # The "neither flag" branch reaches cwd_checkout_root through the name bound
+    # into resolve_project_dir by its `from file_ops import ...`, so THAT is the
+    # binding to patch here.
+    monkeypatch.setattr(_routing, 'cwd_checkout_root', lambda: '/tmp/main-checkout-stub')
 
     captured: list[str] = []
 

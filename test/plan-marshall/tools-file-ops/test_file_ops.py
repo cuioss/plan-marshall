@@ -658,6 +658,88 @@ def test_get_executor_path_git_toplevel_fallback(outside_repo_dir, monkeypatch):
 
 
 # =============================================================================
+# get_plan_dir delegate tests
+#
+# get_plan_dir is now a THIN DELEGATE to resolve_plan_context(plan_id,
+# ensure=False). Every one of its existing call sites was written against the
+# old direct base_path('plans', plan_id) computation, so the delegation is only
+# safe if it preserved three properties those call sites rely on:
+#
+#   (a) the same Path is returned for the same plan id,
+#   (b) no filesystem side effect (call sites name paths for plans that do not
+#       exist yet — a materializing get_plan_dir would create orphan plans),
+#   (c) no subprocess (the worktree face is lazy; an eager one would put a
+#       manage-status shell-out behind every plan-path computation, including
+#       inside manage-status itself — the producer of that very command).
+#
+# These are pinned as behaviour rather than as a call-site count: a count claim
+# goes stale silently, whereas a broken invariant fails here for every caller.
+
+
+def test_get_plan_dir_matches_the_direct_base_path_computation(tmp_path, monkeypatch):
+    """(a) The delegate returns exactly what base_path('plans', id) returns."""
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+
+    assert get_plan_dir('some-plan') == base_path('plans', 'some-plan')
+    assert get_plan_dir('some-plan') == tmp_path / 'plans' / 'some-plan'
+
+
+def test_get_plan_dir_has_no_filesystem_side_effect(tmp_path, monkeypatch):
+    """(b) Naming a path must never create it.
+
+    Call sites routinely name the directory of a plan that does not exist yet
+    (that is exactly what require_plan_exists is then asked to reject). If the
+    delegate materialized, every such call would silently create an orphan plan.
+    """
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    plans_dir = tmp_path / 'plans'
+    assert not plans_dir.exists()
+
+    resolved = get_plan_dir('never-created')
+
+    assert not resolved.exists()
+    assert not plans_dir.exists()
+
+
+def test_get_plan_dir_does_not_materialize_the_sentinel(tmp_path, monkeypatch):
+    """(b) The NO_PLAN sentinel is no exception — ensure=False means ensure=False.
+
+    resolve_plan_context DOES auto-create the sentinel under ensure=True. The
+    delegate must pass ensure=False, or every incidental get_plan_dir call would
+    create the shared sentinel directory as a side effect of naming a path.
+    """
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+
+    resolved = get_plan_dir(file_ops.NO_PLAN_SENTINEL)
+
+    assert resolved == tmp_path / 'plans' / file_ops.NO_PLAN_SENTINEL
+    assert not resolved.exists()
+
+
+def test_get_plan_dir_does_not_shell_out_to_manage_status(tmp_path, monkeypatch):
+    """(c) The worktree face stays lazy — no subprocess behind a path join."""
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+
+    def _explode(_plan_id):
+        raise AssertionError(
+            'get_plan_dir must not resolve the worktree face — it is a pure '
+            'path computation, and an eager face would put a manage-status '
+            'subprocess behind every one of its call sites'
+        )
+
+    monkeypatch.setattr(file_ops, '_query_worktree_path', _explode)
+
+    assert get_plan_dir('some-plan') == tmp_path / 'plans' / 'some-plan'
+
+
+def test_get_plan_dir_is_stable_across_repeated_calls(tmp_path, monkeypatch):
+    """(a) Repeated calls agree — no hidden per-call state in the delegate."""
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+
+    assert get_plan_dir('some-plan') == get_plan_dir('some-plan')
+
+
+# =============================================================================
 # require_plan_exists tests
 #
 # The guard rejects (a) plan_id whose plan directory does not exist, and

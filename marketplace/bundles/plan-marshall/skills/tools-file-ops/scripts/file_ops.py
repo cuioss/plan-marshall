@@ -22,7 +22,11 @@ Usage:
         get_archived_orchestrator_dir,
         get_temp_dir,
         get_executor_path,
-        guard_worktree_cwd
+        guard_worktree_cwd,
+        resolve_plan_context,
+        cwd_checkout_root,
+        PlanContext,
+        WorktreeResolutionError
     )
 """
 
@@ -33,11 +37,20 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+# NO_PLAN_SENTINEL is imported from marketplace_paths, NOT from
+# input_validation: this module must import cleanly on the BOOTSTRAP path
+# (bootstrap_plugin.py and friends run before the executor sets PYTHONPATH and
+# put only script-shared, ref-toon-format and tools-file-ops on sys.path).
+# tools-input-validation is NOT on that path, so importing the sentinel from
+# input_validation here would make every bootstrap import of file_ops raise
+# ModuleNotFoundError.
 from marketplace_paths import (
+    NO_PLAN_SENTINEL,
     PLAN_DIR_NAME,
     _find_plan_root_from_cwd,
     resolve_main_anchored_path,
@@ -570,16 +583,272 @@ def _reject_unsafe_entry_id(entry_id: str) -> None:
 def get_plan_dir(plan_id: str) -> Path:
     """Get the plan directory path for a given plan ID.
 
-    Delegates to :func:`get_store_dir` with ``store='plans'`` — behavior is
-    byte-identical to the previous direct ``base_path('plans', plan_id)``.
+    Thin delegate to :func:`resolve_plan_context` with ``ensure=False`` — a
+    pure path computation with no existence check and no side effects, so the
+    existing ``get_plan_dir`` call sites keep working unchanged. The sentinel
+    ``NO_PLAN`` resolves to ``{base_dir}/plans/NO_PLAN`` here WITHOUT being
+    materialized; materialization is the ``ensure=True`` path.
 
     Args:
-        plan_id: Plan identifier
+        plan_id: Plan identifier, or the ``NO_PLAN`` sentinel.
 
     Returns:
         Path to {base_dir}/plans/{plan_id}/
     """
-    return get_store_dir('plans', plan_id)
+    return resolve_plan_context(plan_id, ensure=False).plan_dir
+
+
+class WorktreeResolutionError(RuntimeError):
+    """Raised when the worktree face of a plan context cannot be resolved.
+
+    Indicates that ``manage-status get-worktree-path`` returned an error
+    payload (e.g. ``worktree_unresolved``), or could not be invoked at all —
+    the metadata is corrupt or the plan was created without seeding worktree
+    state. Callers surface the underlying message verbatim.
+    """
+
+
+def _query_worktree_path(plan_id: str) -> tuple[bool, str]:
+    """Return ``(use_worktree, worktree_path)`` for a plan id.
+
+    This is the SINGLE place in the codebase that invokes ``manage-status
+    get-worktree-path``. Every worktree-face consumer reaches it through
+    :func:`resolve_plan_context` (``resolve_project_dir`` delegates here), so
+    the shell-out exists once rather than once per Bucket B script.
+
+    ``manage-status`` is Bucket A (cwd-agnostic), so executor invocation works
+    from any worktree.
+
+    Raises:
+        WorktreeResolutionError: when the executor cannot be located, the
+            script returns a non-success status, or stdout cannot be parsed.
+    """
+    try:
+        executor = get_executor_path()
+    except RuntimeError as exc:
+        raise WorktreeResolutionError(
+            'Cannot locate executor — not inside a git checkout. '
+            "Pass --project-dir explicitly or run from a checkout that "
+            "contains '.plan/execute-script.py'."
+        ) from exc
+
+    cmd = [
+        sys.executable,
+        str(executor),
+        'plan-marshall:manage-status:manage-status',
+        'get-worktree-path',
+        '--plan-id',
+        plan_id,
+    ]
+    try:
+        completed = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError) as exc:
+        raise WorktreeResolutionError(
+            f"Failed to invoke manage-status get-worktree-path for plan_id='{plan_id}': {exc}"
+        ) from exc
+
+    if completed.returncode != 0:
+        stderr = (completed.stderr or '').strip()
+        raise WorktreeResolutionError(
+            f'manage-status get-worktree-path failed (exit {completed.returncode}) '
+            f"for plan_id='{plan_id}': {stderr}"
+        )
+
+    return _parse_get_worktree_path_output(completed.stdout)
+
+
+def _parse_get_worktree_path_output(stdout: str) -> tuple[bool, str]:
+    """Parse the TOON payload produced by manage-status get-worktree-path.
+
+    The output is a flat key/value document with the shape::
+
+        status: success
+        plan_id: X
+        use_worktree: false
+        worktree_path: ""
+
+    Rather than pulling in the full ``toon_parser``, the shallow payload is
+    walked manually — the contract is owned by ``_status_query.py``.
+    """
+    use_worktree = False
+    worktree_path = ''
+    saw_status_success = False
+    error_field: str | None = None
+    message_field: str | None = None
+    for raw_line in stdout.splitlines():
+        line = raw_line.strip()
+        if not line or ':' not in line:
+            continue
+        key, _, value = line.partition(':')
+        key = key.strip()
+        value = value.strip()
+        if value.startswith('"') and value.endswith('"'):
+            value = value[1:-1]
+        if key == 'status' and value == 'success':
+            saw_status_success = True
+        elif key == 'use_worktree':
+            use_worktree = value.lower() == 'true'
+        elif key == 'worktree_path':
+            worktree_path = value
+        elif key == 'error':
+            error_field = value
+        elif key == 'message':
+            message_field = value
+    if not saw_status_success:
+        raise WorktreeResolutionError(
+            f"manage-status get-worktree-path returned non-success: "
+            f"error='{error_field}' message='{message_field}'"
+        )
+    return use_worktree, worktree_path
+
+
+def cwd_checkout_root() -> str:
+    """Return the checkout root as an absolute path string.
+
+    Resolved cwd-relatively via the uniform cwd rule (ADR-002): the nearest
+    ancestor of cwd containing ``.plan/local``. Falls back to cwd when the
+    caller operates outside any resolvable plan root (rare; usually a test
+    fixture), preserving the historical ``--project-dir=.`` behaviour.
+
+    Deliberately NOT named ``main_checkout_root``: ``marketplace_paths`` already
+    exports a ``main_checkout_root`` with a DIFFERENT resolution rule (git
+    ``--git-common-dir``, which is always MAIN even from a linked worktree) and
+    a different return type (``Path``). This one is the cwd-relative rule and
+    resolves to the WORKTREE during phase-5+. Two same-named helpers with
+    opposite worktree semantics across two modules that are routinely imported
+    together is a trap; the names are kept distinct.
+    """
+    root = _find_plan_root_from_cwd()
+    if root is None:
+        return os.path.abspath(os.getcwd())
+    return str(root)
+
+
+@dataclass
+class PlanContext:
+    """The resolved plan context: plan directory, worktree face, sentinel flag.
+
+    The single struct every plan-id consumer resolves against. ``plan_dir`` is
+    computed eagerly (it is a pure path join); ``worktree_path`` is computed
+    LAZILY on first access, because resolving it shells out to ``manage-status
+    get-worktree-path``. The laziness is load-bearing: ``get_plan_dir``
+    delegates to this struct on every one of its call sites, and an eager
+    worktree face would put a subprocess behind every plan-path computation —
+    including inside ``manage-status`` itself, which is the producer of that
+    very command.
+    """
+
+    plan_id: str
+    plan_dir: Path
+    is_sentinel: bool
+    _worktree_path: str | None = field(default=None, init=False, repr=False)
+
+    @property
+    def worktree_path(self) -> str:
+        """The working-tree root for this plan, resolved on first access.
+
+        For the ``NO_PLAN`` sentinel this is ALWAYS the main checkout — a
+        plan-less caller has no worktree, so the sentinel never resolves to
+        one. For a real plan id the value comes from ``manage-status
+        get-worktree-path``: the persisted ``worktree_path`` when
+        ``use_worktree`` is true, else the main-checkout root.
+
+        Raises:
+            WorktreeResolutionError: when resolution fails for a real plan id.
+        """
+        if self._worktree_path is None:
+            self._worktree_path = self._resolve_worktree_face()
+        return self._worktree_path
+
+    def _resolve_worktree_face(self) -> str:
+        if self.is_sentinel:
+            return cwd_checkout_root()
+        use_worktree, worktree_path = _query_worktree_path(self.plan_id)
+        if use_worktree:
+            if not worktree_path:
+                raise WorktreeResolutionError(
+                    f"Plan '{self.plan_id}' reports use_worktree=true but "
+                    'worktree_path is empty.'
+                )
+            return os.path.abspath(worktree_path)
+        return cwd_checkout_root()
+
+
+def _materialize_sentinel_plan(plan_dir: Path) -> None:
+    """Create the sentinel plan directory AND its ``status.json`` marker.
+
+    Creating the directory alone is NOT sufficient: :func:`require_plan_exists`
+    treats a directory without ``status.json`` as not-found, so a mkdir-only
+    sentinel would leave every ``prepare_body`` caller failing with
+    ``plan_not_found`` — the exact breakage this sentinel exists to remove.
+    Both halves are therefore written together, and the write is idempotent
+    (an existing ``status.json`` is never overwritten).
+    """
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    status_path = plan_dir / 'status.json'
+    if status_path.is_file():
+        return
+    atomic_write_file(
+        status_path,
+        json.dumps(
+            {
+                'plan': {
+                    'title': 'Plan-less operations sentinel',
+                    'short_description': (
+                        'Shared directory backing genuinely plan-less callers'
+                    ),
+                    'metadata': {'use_worktree': False, 'sentinel': True},
+                }
+            },
+            indent=2,
+        )
+        + '\n',
+    )
+
+
+def resolve_plan_context(plan_id: str, *, ensure: bool = True) -> PlanContext:
+    """Resolve the plan directory and worktree face for ``plan_id``.
+
+    The ONE entry point every plan-id consumer resolves against, built on the
+    existing :func:`get_store_dir` machinery.
+
+    The ``NO_PLAN`` sentinel is the plan-less path: it resolves to
+    ``{base_dir}/plans/NO_PLAN``, is auto-created on first use under
+    ``ensure=True`` (directory AND ``status.json``), and its worktree face is
+    always the main checkout — never a worktree path.
+
+    Args:
+        plan_id: Plan identifier, or the ``NO_PLAN`` sentinel.
+        ensure: When ``True`` (default), the plan must resolve: the sentinel is
+            materialized on demand, and a real plan id is checked against
+            :func:`require_plan_exists`. When ``False``, the call is a pure
+            path computation — no existence check, no side effects. This is
+            the mode :func:`get_plan_dir` delegates in.
+
+    Returns:
+        The resolved :class:`PlanContext`.
+
+    Raises:
+        PlanNotFoundError: under ``ensure=True``, when ``plan_id`` is a real
+            identifier that does not resolve. The exception carries the
+            sentinel hint and its caveat via :attr:`PlanNotFoundError.envelope`.
+    """
+    is_sentinel = plan_id == NO_PLAN_SENTINEL
+    plan_dir = get_store_dir('plans', plan_id)
+
+    if ensure:
+        if is_sentinel:
+            _materialize_sentinel_plan(plan_dir)
+        else:
+            require_plan_exists(plan_id)
+
+    return PlanContext(plan_id=plan_id, plan_dir=plan_dir, is_sentinel=is_sentinel)
 
 
 class PlanNotFoundError(Exception):
@@ -597,6 +866,33 @@ class PlanNotFoundError(Exception):
         super().__init__(
             f"plan '{plan_id}' not found: {reason} (expected at {plan_dir})"
         )
+
+    @property
+    def envelope(self) -> dict[str, Any]:
+        """The canonical ``plan_not_found`` error payload for TOON callers.
+
+        Carries the sentinel HINT together with its CAVEAT: ``NO_PLAN`` is the
+        correct routing only for genuinely plan-less callers. A caller that
+        mistyped a real plan id must fix the id, not fall back to the
+        sentinel — the hint without the caveat would turn every typo into a
+        silent write against the shared sentinel directory.
+        """
+        return {
+            'status': 'error',
+            'error': 'plan_not_found',
+            'message': str(self),
+            'plan_id': self.plan_id,
+            'plan_dir': str(self.plan_dir),
+            'hint': (
+                f'Genuinely plan-less callers pass --plan-id {NO_PLAN_SENTINEL} '
+                'to route through the shared plan-less sentinel.'
+            ),
+            'hint_caveat': (
+                f'{NO_PLAN_SENTINEL} is correct ONLY for callers that have no '
+                'plan at all. If this id was meant to name a real plan, correct '
+                'the id — do NOT substitute the sentinel.'
+            ),
+        }
 
 
 def require_plan_exists(plan_id: str) -> Path:

@@ -882,11 +882,14 @@ def test_execute_direct_base_honours_resolved_worktree_path(monkeypatch):
     match exactly so the build runs against the worktree, not the main
     checkout.
     """
-    import resolve_project_dir as _routing
+    import file_ops as _resolver_core
     from resolve_project_dir import resolve_project_dir
 
-    # Patch the manage-status helper to return a deterministic path.
-    monkeypatch.setattr(_routing, '_query_worktree_path', lambda _pid: (True, '/tmp/wt-resolved'))
+    # Patch the manage-status shell-out seam, which now lives in file_ops —
+    # resolve_project_dir delegates the worktree face to resolve_plan_context.
+    monkeypatch.setattr(
+        _resolver_core, '_query_worktree_path', lambda _pid: (True, '/tmp/wt-resolved')
+    )
     resolved = resolve_project_dir('task-routing-canonical', '.', default='.')
     assert resolved.endswith('wt-resolved')
 
@@ -919,7 +922,7 @@ def test_execute_direct_base_honours_main_checkout_fallback(monkeypatch):
     import resolve_project_dir as _routing
     from resolve_project_dir import resolve_project_dir
 
-    monkeypatch.setattr(_routing, '_main_checkout_root', lambda: '/tmp/main-stub')
+    monkeypatch.setattr(_routing, 'cwd_checkout_root', lambda: '/tmp/main-stub')
     resolved = resolve_project_dir(None, '.', default='.')
     assert resolved == '/tmp/main-stub'
 

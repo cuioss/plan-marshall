@@ -1029,11 +1029,14 @@ def test_format_checks_toon_clamps_runaway_aggregate(monkeypatch, capsys):
 
 def test_main_routes_plan_id_via_extract_routing_args(monkeypatch):
     """github_ops.main() MUST consume router-level --plan-id and set the default cwd."""
-    import resolve_project_dir as _routing
+    import file_ops as _resolver_core
     from ci_base import get_default_cwd
 
-    # Patch manage-status helper deterministically.
-    monkeypatch.setattr(_routing, '_query_worktree_path', lambda _pid: (True, '/tmp/wt-resolved'))
+    # Patch the manage-status shell-out seam, which lives in file_ops —
+    # resolve_project_dir delegates the worktree face to resolve_plan_context.
+    monkeypatch.setattr(
+        _resolver_core, '_query_worktree_path', lambda _pid: (True, '/tmp/wt-resolved')
+    )
     # Stub gh CLI invocations so we don't actually shell out.
     captured_cwds: list = []
 

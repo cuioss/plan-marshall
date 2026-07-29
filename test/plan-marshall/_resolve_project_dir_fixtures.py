@@ -14,7 +14,7 @@ The five contract states tested across those files are:
 * ``--plan-id X`` only, ``use_worktree=true`` → resolves to the
   persisted worktree path.
 * ``--plan-id X`` only, ``use_worktree=false`` → falls back to the
-  main checkout root (``git rev-parse --show-toplevel``).
+  cwd-relative checkout root (``file_ops.cwd_checkout_root``).
 * ``--project-dir Y`` only → returns ``Y`` verbatim (legacy / escape
   hatch).
 * Neither flag → returns the main checkout root.
@@ -28,9 +28,9 @@ is NOT a ``conftest.py`` — placing a ``conftest.py`` under
 
 from __future__ import annotations
 
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 # =============================================================================
 # Shared canonical values
@@ -55,11 +55,19 @@ CANONICAL_PROJECT_DIR = '/tmp/test-explicit-project-dir'
 
 @contextmanager
 def patch_query_worktree_path(use_worktree: bool, worktree_path: str | None = None):
-    """Patch ``resolve_project_dir._query_worktree_path`` deterministically.
+    """Patch ``file_ops._query_worktree_path`` deterministically.
 
     Avoids the need to spin up a real ``manage-status get-worktree-path``
-    subprocess. The helper is the boundary between the in-process resolver
-    and the executor invocation, so patching it covers every consumer.
+    subprocess.
+
+    The patch target is ``file_ops``, not ``resolve_project_dir``:
+    ``resolve_project_dir`` no longer shells out itself — it delegates the
+    worktree face to ``file_ops.resolve_plan_context``, and
+    ``file_ops._query_worktree_path`` is now the SINGLE place in the codebase
+    that invokes ``manage-status get-worktree-path``. Patching that one seam
+    therefore still covers every consumer, and it leaves the real delegation
+    chain (``resolve_project_dir`` → ``resolve_plan_context`` →
+    ``PlanContext.worktree_path``) executing for real rather than mocked out.
 
     Args:
         use_worktree: The ``use_worktree`` flag the patched helper returns.
@@ -74,7 +82,7 @@ def patch_query_worktree_path(use_worktree: bool, worktree_path: str | None = No
     if worktree_path is None:
         worktree_path = CANONICAL_WORKTREE if use_worktree else ''
     with patch(
-        'resolve_project_dir._query_worktree_path',
+        'file_ops._query_worktree_path',
         return_value=(use_worktree, worktree_path),
     ) as mock:
         yield mock
@@ -82,13 +90,38 @@ def patch_query_worktree_path(use_worktree: bool, worktree_path: str | None = No
 
 @contextmanager
 def patch_main_checkout_root(path: str = '/tmp/test-main-checkout'):
-    """Patch ``resolve_project_dir._main_checkout_root`` deterministically.
+    """Patch the cwd-relative checkout-root resolver deterministically.
 
-    Avoids dependence on the real ``git rev-parse --show-toplevel`` of
-    the test runner. Used in the "neither" and ``use_worktree=false``
-    branches of the contract.
+    Avoids dependence on the real checkout layout of the test runner. Used in
+    the "neither flag" and ``use_worktree=false`` branches of the contract.
+
+    BOTH bindings of ``cwd_checkout_root`` are patched, because there are two
+    distinct call sites reached by two different lookups:
+
+    * ``resolve_project_dir.cwd_checkout_root`` — the "neither flag" branch;
+      bound into that module's namespace by ``from file_ops import ...``, so
+      patching ``file_ops`` alone would NOT affect it.
+    * ``file_ops.cwd_checkout_root`` — reached through the module global inside
+      ``PlanContext._resolve_worktree_face`` on the ``use_worktree=false`` and
+      sentinel branches.
+
+    Patching only one of the two leaves the other resolving for real, which is
+    exactly the kind of half-patched fixture that makes a test pass for the
+    wrong reason.
+
+    The SAME mock object is installed at both bindings, so a caller's
+    ``assert_called_once()`` observes the call whichever of the two routes the
+    code under test actually took. Yielding one binding's own mock would make
+    the call-count assertion silently route-dependent — it would read "never
+    called" for a branch that did resolve the root, just through the other name.
+
+    Yields:
+        The shared ``MagicMock`` installed at both bindings.
     """
-    with patch('resolve_project_dir._main_checkout_root', return_value=path) as mock:
+    mock = MagicMock(return_value=path)
+    with ExitStack() as stack:
+        stack.enter_context(patch('resolve_project_dir.cwd_checkout_root', new=mock))
+        stack.enter_context(patch('file_ops.cwd_checkout_root', new=mock))
         yield mock
 
 

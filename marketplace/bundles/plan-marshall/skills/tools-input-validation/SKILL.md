@@ -218,6 +218,20 @@ message: Plan ID contains invalid characters: bad!!id
 | `domain_name` | `^[a-z][a-z0-9-]*$` | `add_domain_arg` |
 | `resource_name` | `^[a-zA-Z0-9_-]+$` | `add_name_arg` |
 
+### The `NO_PLAN` sentinel (plan_id carve-out)
+
+`plan_id` carries exactly one carve-out: the plan-less sentinel `NO_PLAN`, exported as `NO_PLAN_SENTINEL`.
+
+The literal is **defined once** in `script-shared`'s `marketplace_paths.py` and re-exported here. That placement is load-bearing, not incidental: `file_ops` also needs the sentinel, and `file_ops` must import cleanly on the **bootstrap path** — `bootstrap_plugin.py` and its siblings run before the executor sets `PYTHONPATH` and put only `script-shared`, `ref-toon-format` and `tools-file-ops` on `sys.path`, with `tools-input-validation` deliberately absent. Importing the sentinel from `input_validation` at `file_ops` module scope therefore breaks every bootstrap import with `ModuleNotFoundError`. Import it from either surface; both name the same object.
+
+| Sentinel | Value | Accepted by | Matched by `PLAN_ID_RE` |
+|----------|-------|-------------|-------------------------|
+| `NO_PLAN_SENTINEL` | `NO_PLAN` | `validate_plan_id` / `is_valid_plan_id` | **No** — the regex still rejects it |
+
+The uppercase spelling is deliberate: it is unrepresentable in the kebab-case grammar, so no real plan id can ever collide with it. The carve-out is evaluated **ahead of** the `PLAN_ID_RE` test inside `validate_plan_id`, which is the single canonical place it exists — `PLAN_ID_RE` itself is unchanged, and the carve-out MUST NOT be duplicated into any caller. `is_valid_plan_id` inherits it by delegation.
+
+Routing a caller through `NO_PLAN` is correct **only** when that caller genuinely has no plan (the steward landing cycle and other plan-less entry points). A mistyped real plan id must be corrected, never substituted with the sentinel. `file_ops.resolve_plan_context` resolves the sentinel to `{base_dir}/plans/NO_PLAN`, materializes it on first use (directory **and** `status.json`), and always presents the main checkout as its worktree face.
+
 The constants are exported from `input_validation.py` as `PLAN_ID_RE`, `LESSON_ID_RE`, etc., so consumers can reuse the canonical regex without re-deriving it. The `add_<id>_arg(parser)` builders wire `type=validate_<id>` into argparse so malformed input is rejected at the CLI boundary; pair them with `parse_args_with_toon_errors()` to centralise the `status: error / error: invalid_<field>` output path.
 
 ## Edge-case contract
