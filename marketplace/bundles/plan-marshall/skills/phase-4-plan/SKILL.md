@@ -156,20 +156,7 @@ The Phase Entry Protocol's `phase_handshake verify --phase 3-outline --strict` c
 
 ## Output
 
-```toon
-status: success | error
-display_detail: "<{M} tasks across {N} groups>"
-plan_id: {echo}
-summary:
-  deliverables_processed: N
-  tasks_created: M
-  parallelizable_groups: N
-tasks_created[M]: {number, title, deliverable, depends_on}
-execution_order: {parallel groups}
-message: {error message if status=error}
-```
-
-`display_detail` shape: `"{tasks_created} tasks across {parallelizable_groups} groups"` on success; ≤80 chars, ASCII, no trailing period.
+The full return TOON contract — including `security_class_omitted[]` — is authoritative at Step 10 § Output below; it is not restated here to avoid a second copy drifting out of sync. `display_detail` shape: `"{tasks_created} tasks across {parallelizable_groups} groups"` on success; ≤80 chars, ASCII, no trailing period.
 
 **Error codes** (returned in the `error` field when `status: error`):
 
