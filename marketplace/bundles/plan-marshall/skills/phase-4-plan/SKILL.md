@@ -156,20 +156,7 @@ The Phase Entry Protocol's `phase_handshake verify --phase 3-outline --strict` c
 
 ## Output
 
-```toon
-status: success | error
-display_detail: "<{M} tasks across {N} groups>"
-plan_id: {echo}
-summary:
-  deliverables_processed: N
-  tasks_created: M
-  parallelizable_groups: N
-tasks_created[M]: {number, title, deliverable, depends_on}
-execution_order: {parallel groups}
-message: {error message if status=error}
-```
-
-`display_detail` shape: `"{tasks_created} tasks across {parallelizable_groups} groups"` on success; ≤80 chars, ASCII, no trailing period.
+The full return TOON contract — including `security_class_omitted[]` — is authoritative at Step 10 § Output below; it is not restated here to avoid a second copy drifting out of sync. `display_detail` shape: `"{tasks_created} tasks across {parallelizable_groups} groups"` on success; ≤80 chars, ASCII, no trailing period.
 
 **Error codes** (returned in the `error` field when `status: error`):
 
@@ -792,6 +779,8 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   --message "[STATUS] (plan-marshall:phase-4-plan) Manifest validation failed — aborting phase. {validation_message}"
 ```
 
+**Surface every dropped security-class step (mandatory).** Parse `security_class_omitted[]` from the `compose` result — a list of `{step, reason}` records, one per security-class step the `security_class_inactive` pre-filter removed (empty on the normal path). For each entry, carry a `{step, reason}` row through into this phase's return TOON under `security_class_omitted[]` so the omission reaches the operator. Do NOT treat the composer's `decision.log` line as the report: that file has no live reader, and a security gate that vanishes from `phase_6.steps` while nothing user-visible says so is exactly the failure this surfacing exists to close. An empty list is reported as an empty list, not omitted.
+
 The composer's `decision.log` entry (one per applied rule) provides the audit trail; the manifest itself stays lean and diffable. The six-row matrix is documented in `marketplace/bundles/plan-marshall/skills/manage-execution-manifest/standards/decision-rules.md`.
 
 **Per-task verification routing (data-driven)**: After the six-row matrix runs, the composer performs an `execution_tier` routing pass over every `TASK-*.json` in the plan. For each `verification.commands` entry, the composer subprocesses `architecture resolve` to obtain the four-field augmented TOON (`bash_timeout_seconds`, `exceeds_bash_ceiling`, `execution_tier`, `hint`) and branches: `orchestrator` commands are mapped to their canonical phase-5 step ID — emitted as **bare** names per the boundary-normalization contract (`quality-gate → quality_check`, `verify`/`module-tests → build_verify`, `coverage → coverage_check`) so no stray `default:`-prefixed ID is appended alongside the bare names the matrix already produced — appended to `phase_5.verification_steps` (de-duped), and removed from the task's verification list; `per_task` commands stay per-task and the task's `verification.bash_timeout_seconds` field is set to the maximum measured timeout across surviving commands. Non-build / unresolvable executables pass through unchanged. The routing is data-driven — no hardcoded "long-running" command list — and the authoritative source is `architecture resolve` per the "Structured queries first" hard rule. The composer derives each canonical-verify step's matrix role from the trailing canonical segment of its `default:verify:{canonical}` ID (rather than a per-canonical role-file), then applies the generic footprint pre-filter that drops any footprint-gated whole-tree canonical (`integration` / `e2e`) the live footprint does not exercise. See `manage-execution-manifest/standards/decision-rules.md § execution_tier Routing`, § "Role derivation for canonical-verify steps", and § "Generic footprint pre-filter" for the full contracts, and `manage-architecture/standards/resolve-command.md` for the failure mode that motivated the routing.
@@ -996,7 +985,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   separator --plan-id {plan_id} --type work
 ```
 
-See [Task Creation Flow](references/task-creation-flow.md) for the full output structure.
+See [Task Creation Flow](references/task-creation-flow.md) for the visual overview of the 1:N task-creation and manifest-emission flow. The return TOON contract below is the authoritative one — that reference document does not restate it.
 
 **Output**:
 ```toon
@@ -1021,7 +1010,10 @@ execution_order:
 lessons_recorded: {count}
 qgate_pending_count: {0 if no findings}
 qgate_validation_required: {true|false}
+security_class_omitted[K]{step,reason}:
 ```
+
+`security_class_omitted[]` carries the `{step, reason}` records Step 7b ("Surface every dropped security-class step") mandates — one row per security-class step the composer's `security_class_inactive` pre-filter removed. It is **always** rendered, as an explicitly empty list (`K` = 0, no rows) on the normal path where nothing was dropped; omitting the field is not an accepted spelling of "nothing was omitted", because a security gate that disappears silently is the exact failure the surfacing exists to close.
 
 `qgate_validation_required` is `true` on every successful phase-4-plan completion (Step 8b signals unconditionally — both module-mapping and scope-criterion validators apply to every plan) and `false` only on the unrecoverable error path. The orchestrator (`plan-marshall:plan-marshall/workflow/planning-outline.md`) reads this flag after the phase returns and dispatches `q-gate-validation` as a sibling top-level Task when it is `true`.
 
