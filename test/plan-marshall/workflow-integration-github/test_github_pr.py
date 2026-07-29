@@ -1076,11 +1076,18 @@ def test_unregistered_bot_login_is_not_reported_unclassified(plan_context, monke
 # =============================================================================
 
 
-def _stage_respondable(plan_id, *, comment_id, thread_id, resolution_detail, kind='review_body'):
+def _stage_respondable(plan_id, *, pr_number, comment_id, thread_id, resolution_detail, kind='review_body'):
     """Add a pr-comment finding already resolved by triage; return its ``hash_id``.
 
     ``resolution_detail`` of ``None`` stages a finding whose disposition carries
     no body — the ``skipped`` branch's input.
+
+    ``pr_number`` is stamped as the first detail line exactly as
+    ``cmd_fetch_findings`` writes it, and is required rather than defaulted: it is
+    the gate ``post_responses`` reads to decide whether a row belongs to the PR
+    being responded to. A staged row with no recorded PR is a different case (the
+    fail-closed ``pr_number_unrecorded`` skip, covered by its own test), so
+    defaulting it here would let a caller silently stage the wrong shape.
 
     ``kind`` is the finding's recorded publish shape and is LOAD-BEARING, because it
     is the routing predicate ``post_responses`` reads: a genuinely threadless kind
@@ -1090,7 +1097,7 @@ def _stage_respondable(plan_id, *, comment_id, thread_id, resolution_detail, kin
     the kind its scenario is about — staging ``review_body`` for a thread-bearing
     scenario would silently assert the batch path under a thread-bearing name.
     """
-    detail = f'comment_id: {comment_id}\nthread_id: {thread_id}\nkind: {kind}'
+    detail = f'pr_number: {pr_number}\ncomment_id: {comment_id}\nthread_id: {thread_id}\nkind: {kind}'
     add_result = _findings_core.add_finding(plan_id, 'pr-comment', f'Finding {comment_id}', detail)
     hash_id = add_result['hash_id']
     _findings_core.resolve_finding(plan_id, hash_id, 'accepted', detail=resolution_detail)
@@ -1116,6 +1123,254 @@ class _PostSpy:
         return {'status': 'error', 'operation': 'post_pr_comment', 'detail': 'gh rejected the comment'}
 
 
+# =============================================================================
+# post_responses PR-scoping — a plan-scoped store must not cross-deliver
+# =============================================================================
+#
+# The findings store is keyed by PLAN, not by PR, so a plan that gathered
+# findings across several PRs (a review-debt sweep, a multi-PR triage) holds
+# rows owned by PRs other than the one being responded to. ``post_responses``
+# used to read the whole plan ledger unfiltered, so every threadless row landed
+# in the batched comment on whichever PR was passed — misdelivering other PRs'
+# dispositions while still returning ``count_untransmitted: 0``, a confidently
+# green report for a partly-misdelivered action.
+
+
+def _resolved_pr_comment_finding(hash_id, pr_number, *, thread_id='', comment_id='cid', pr_line=True):
+    """Build a resolved pr-comment finding shaped exactly as cmd_fetch_findings writes it.
+
+    ``thread_id`` selects the recorded ``kind`` so the fixture matches the
+    routing predicate: a thread-bearing row is ``inline``, a threadless row is
+    ``review_body``. ``pr_line=False`` omits the ``pr_number:`` line entirely,
+    modelling a row whose originating PR was never recorded.
+    """
+    detail_lines = []
+    if pr_line:
+        detail_lines.append(f'pr_number: {pr_number}')
+    detail_lines.extend(
+        [
+            'kind: inline' if thread_id else 'kind: review_body',
+            'author: coderabbitai',
+            f'thread_id: {thread_id}',
+            f'comment_id: {comment_id}',
+        ]
+    )
+    return {
+        'hash_id': hash_id,
+        'detail': '\n'.join(detail_lines),
+        'resolution': 'fixed',
+        'resolution_detail': f'disposition body for {hash_id}',
+    }
+
+
+def _patch_respond_surface(monkeypatch, findings, posted, replied):
+    """Patch the provider surface + the live findings store cmd_post_responses reads.
+
+    ``cmd_post_responses`` does ``from _findings_core import query_findings``
+    INSIDE the function body, so the attribute is resolved from the live
+    ``sys.modules`` entry at call time — the same reason ``_live_findings_core``
+    exists above. Patching that attribute is what the SUT actually reads.
+    """
+    monkeypatch.setattr(github_pr._github, 'check_auth', lambda: (True, ''))
+    monkeypatch.setattr(
+        _live_findings_core(),
+        'query_findings',
+        lambda plan_id, finding_type=None, **kwargs: {'findings': list(findings)},
+    )
+
+    def _run_graphql(_mutation, variables):
+        replied.append(variables.get('threadId'))
+        return 0, {}, ''
+
+    def _post_pr_comment(pr_number, body):
+        posted.append((pr_number, body))
+        return {'status': 'success'}
+
+    monkeypatch.setattr(github_pr._github, 'run_graphql', _run_graphql)
+    monkeypatch.setattr(github_pr._github, 'post_pr_comment', _post_pr_comment)
+
+
+def test_post_responses_transmits_only_the_target_prs_findings(monkeypatch):
+    """A multi-PR store transmits only the rows owned by the PR being responded to.
+
+    Two threadless rows belong to PR 1036, one to PR 1013. Responding to 1036
+    must transmit exactly the two, and report the foreign row as skipped with a
+    reason naming its real owner — not fold it into the batched comment.
+    """
+    # Arrange
+    findings = [
+        _resolved_pr_comment_finding('own-a', 1036, comment_id='a'),
+        _resolved_pr_comment_finding('own-b', 1036, comment_id='b'),
+        _resolved_pr_comment_finding('foreign', 1013, comment_id='f'),
+    ]
+    posted, replied = [], []
+    _patch_respond_surface(monkeypatch, findings, posted, replied)
+
+    # Act
+    result = _run_post_responses(1036, 'gh-pr-scoping')
+
+    # Assert — only this PR's rows were transmitted.
+    assert result['status'] == 'success'
+    assert {entry['hash_id'] for entry in result['responded']} == {'own-a', 'own-b'}
+    assert {entry['hash_id'] for entry in result['skipped']} == {'foreign'}
+    assert result['skipped'][0]['reason'] == 'belongs_to_pr_1013'
+
+    # Exactly one batched comment, on the target PR, carrying only its own rows.
+    assert len(posted) == 1
+    target_pr, body = posted[0]
+    assert target_pr == 1036
+    assert 'comment_id: `a`' in body
+    assert 'comment_id: `b`' in body
+    assert 'comment_id: `f`' not in body
+
+
+def test_post_responses_does_not_reply_to_foreign_threads(monkeypatch):
+    """A thread-bearing row owned by another PR is not replied to or resolved.
+
+    A ``thread_id`` is a global GraphQL node id, so an unfiltered pass WOULD
+    reach the foreign PR's thread — and because the caller loops once per PR, it
+    would re-reply and re-resolve that thread on every iteration. The gate must
+    apply to thread-bearing rows too, not only to the batched ones.
+    """
+    # Arrange
+    findings = [
+        _resolved_pr_comment_finding('own-thread', 1036, thread_id='PRRT_OWN', comment_id='a'),
+        _resolved_pr_comment_finding('foreign-thread', 1013, thread_id='PRRT_FOREIGN', comment_id='f'),
+    ]
+    posted, replied = [], []
+    _patch_respond_surface(monkeypatch, findings, posted, replied)
+
+    # Act
+    result = _run_post_responses(1036, 'gh-pr-scoping-threads')
+
+    # Assert — the foreign thread was never touched.
+    assert 'PRRT_FOREIGN' not in replied
+    # The own thread got its reply-then-resolve pair (both mutations run).
+    assert replied.count('PRRT_OWN') == 2
+    assert {entry['hash_id'] for entry in result['responded']} == {'own-thread'}
+    assert {entry['hash_id'] for entry in result['skipped']} == {'foreign-thread'}
+    # No threadless rows survived the gate, so no batched comment was posted.
+    assert posted == []
+
+
+def test_post_responses_skips_a_row_whose_pr_number_was_never_recorded(monkeypatch):
+    """An unattributable row is skipped, not defaulted onto the current PR.
+
+    Fail-closed: a row with no recorded ``pr_number`` is precisely the case that
+    cannot be shown to belong here, so it is reported in ``skipped`` — visibly
+    deferred rather than silently dropped or misdelivered.
+    """
+    # Arrange
+    findings = [
+        _resolved_pr_comment_finding('own', 1036, comment_id='a'),
+        _resolved_pr_comment_finding('orphan', 0, comment_id='o', pr_line=False),
+    ]
+    posted, replied = [], []
+    _patch_respond_surface(monkeypatch, findings, posted, replied)
+
+    # Act
+    result = _run_post_responses(1036, 'gh-pr-scoping-orphan')
+
+    # Assert
+    assert {entry['hash_id'] for entry in result['responded']} == {'own'}
+    assert result['skipped'] == [{'hash_id': 'orphan', 'reason': 'pr_number_unrecorded'}]
+    # The orphan is skipped, never transmitted — and skips are not failures.
+    assert result['count_untransmitted'] == 0
+    assert result['status'] == 'success'
+    assert 'comment_id: `o`' not in posted[0][1]
+
+
+def test_pr_number_detail_matcher_reads_the_producer_written_shape():
+    """Mutation guard: the matcher fires on the exact detail block the producer writes.
+
+    ``cmd_fetch_findings`` stamps ``pr_number`` as the FIRST line of the detail
+    block. Without this guard a regex typo would make ``_detail_field`` return
+    '' for every row, so every finding would look unattributable and
+    ``post_responses`` would silently transmit nothing at all — a vacuous pass of
+    the three tests above.
+    """
+    producer_shape = 'pr_number: 1036\nkind: inline\nauthor: coderabbitai\nthread_id: PRRT_1\ncomment_id: c1'
+
+    assert github_pr._detail_field(producer_shape, github_pr._PR_NUMBER_DETAIL) == '1036'
+    # A detail block with no pr_number line yields '' (drives the fail-closed skip).
+    assert github_pr._detail_field('kind: inline\ncomment_id: c1', github_pr._PR_NUMBER_DETAIL) == ''
+
+
+def _pr_comment_finding_with_detail(hash_id, detail):
+    """Build a resolved threadless pr-comment finding carrying a hand-written detail block.
+
+    ``_resolved_pr_comment_finding`` always writes the producer's own shape, so it
+    cannot express a detail block that DEVIATES from it. These deviation cases are
+    exactly what the ``pr_number`` extraction must reject, so they are built here.
+    """
+    return {
+        'hash_id': hash_id,
+        'detail': detail,
+        'resolution': 'fixed',
+        'resolution_detail': f'disposition body for {hash_id}',
+    }
+
+
+def test_post_responses_skips_a_row_whose_pr_number_marker_is_not_the_first_line(monkeypatch):
+    """A ``pr_number:`` marker appearing later in the detail block does not attribute the row.
+
+    The producer stamps ``pr_number`` as the FIRST detail line and nowhere else, so
+    a marker found deeper in the block did not come from the producer — it is text
+    that happens to look like the marker. Honouring it would let arbitrary later
+    content decide which PR a disposition is transmitted to, which is precisely the
+    routing predicate ``cmd_post_responses`` must not widen. The row is reported as
+    ``pr_number_unrecorded`` (visibly deferred), never delivered to PR 1036.
+    """
+    # Arrange
+    findings = [
+        _resolved_pr_comment_finding('own', 1036, comment_id='a'),
+        _pr_comment_finding_with_detail(
+            'late-marker',
+            'kind: review_body\nauthor: coderabbitai\nthread_id: \ncomment_id: L\npr_number: 1036',
+        ),
+    ]
+    posted, replied = [], []
+    _patch_respond_surface(monkeypatch, findings, posted, replied)
+
+    # Act
+    result = _run_post_responses(1036, 'gh-pr-scoping-late-marker')
+
+    # Assert
+    assert {entry['hash_id'] for entry in result['responded']} == {'own'}
+    assert result['skipped'] == [{'hash_id': 'late-marker', 'reason': 'pr_number_unrecorded'}]
+    assert result['status'] == 'success'
+    assert 'comment_id: `L`' not in posted[0][1]
+
+
+def test_post_responses_skips_a_row_whose_pr_number_marker_is_not_numeric(monkeypatch):
+    """A non-numeric ``pr_number`` value does not attribute the row to any PR.
+
+    The producer writes an integer PR number, so a non-numeric value cannot have
+    come from it. Accepting it would produce a nonsense ``belongs_to_pr_<value>``
+    verdict — a confident-looking attribution to a PR that does not exist — instead
+    of the fail-closed ``pr_number_unrecorded`` deferral.
+    """
+    # Arrange
+    findings = [
+        _resolved_pr_comment_finding('own', 1036, comment_id='a'),
+        _pr_comment_finding_with_detail(
+            'non-numeric',
+            'pr_number: 1036x\nkind: review_body\nauthor: coderabbitai\nthread_id: \ncomment_id: N',
+        ),
+    ]
+    posted, replied = [], []
+    _patch_respond_surface(monkeypatch, findings, posted, replied)
+
+    # Act
+    result = _run_post_responses(1036, 'gh-pr-scoping-non-numeric')
+
+    # Assert
+    assert {entry['hash_id'] for entry in result['responded']} == {'own'}
+    assert result['skipped'] == [{'hash_id': 'non-numeric', 'reason': 'pr_number_unrecorded'}]
+    assert result['status'] == 'success'
+    assert 'comment_id: `N`' not in posted[0][1]
+
+
 def test_post_responses_batches_thread_less_dispositions_into_one_comment(plan_context, monkeypatch):
     """Two thread-less dispositions are transmitted by exactly ONE batched PR comment.
 
@@ -1125,8 +1380,12 @@ def test_post_responses_batches_thread_less_dispositions_into_one_comment(plan_c
     stays traceable to the comment it answers.
     """
     plan_id = 'gh-pr-respond-batched'
-    hash_a = _stage_respondable(plan_id, comment_id='ca', thread_id='', resolution_detail='Accepted: covered by TASK-3.')
-    hash_b = _stage_respondable(plan_id, comment_id='cb', thread_id='', resolution_detail='Accepted: out of scope here.')
+    hash_a = _stage_respondable(
+        plan_id, pr_number=300, comment_id='ca', thread_id='', resolution_detail='Accepted: covered by TASK-3.'
+    )
+    hash_b = _stage_respondable(
+        plan_id, pr_number=300, comment_id='cb', thread_id='', resolution_detail='Accepted: out of scope here.'
+    )
 
     monkeypatch.setattr(github_pr._github, 'check_auth', lambda: (True, ''))
     spy = _PostSpy()
@@ -1161,7 +1420,7 @@ def test_post_responses_missing_resolution_detail_is_skipped_not_untransmitted(p
     could not deliver it" (a real failure).
     """
     plan_id = 'gh-pr-respond-skipped'
-    hash_id = _stage_respondable(plan_id, comment_id='cs', thread_id='', resolution_detail=None)
+    hash_id = _stage_respondable(plan_id, pr_number=301, comment_id='cs', thread_id='', resolution_detail=None)
 
     monkeypatch.setattr(github_pr._github, 'check_auth', lambda: (True, ''))
     spy = _PostSpy()
@@ -1185,8 +1444,12 @@ def test_post_responses_batch_post_failure_untransmits_whole_batch(plan_context,
     lost disposition must be enumerated with a reason.
     """
     plan_id = 'gh-pr-respond-batch-fails'
-    hash_a = _stage_respondable(plan_id, comment_id='fa', thread_id='', resolution_detail='Accepted: noted.')
-    hash_b = _stage_respondable(plan_id, comment_id='fb', thread_id='', resolution_detail='Accepted: also noted.')
+    hash_a = _stage_respondable(
+        plan_id, pr_number=302, comment_id='fa', thread_id='', resolution_detail='Accepted: noted.'
+    )
+    hash_b = _stage_respondable(
+        plan_id, pr_number=302, comment_id='fb', thread_id='', resolution_detail='Accepted: also noted.'
+    )
 
     monkeypatch.setattr(github_pr._github, 'check_auth', lambda: (True, ''))
     spy = _PostSpy(succeed=False)
@@ -1213,7 +1476,7 @@ def test_post_responses_all_thread_bearing_keeps_reply_then_resolve_sequence(pla
     """
     plan_id = 'gh-pr-respond-threaded'
     hash_id = _stage_respondable(
-        plan_id, comment_id='ct', thread_id='PRRT_T', resolution_detail='Fixed in TASK-4.', kind='inline'
+        plan_id, pr_number=303, comment_id='ct', thread_id='PRRT_T', resolution_detail='Fixed in TASK-4.', kind='inline'
     )
 
     monkeypatch.setattr(github_pr._github, 'check_auth', lambda: (True, ''))
@@ -1254,7 +1517,7 @@ def test_post_responses_thread_reply_failure_is_untransmitted(plan_context, monk
     """A failed thread-reply is an UNTRANSMITTED disposition, not a silent skip."""
     plan_id = 'gh-pr-respond-thread-fails'
     hash_id = _stage_respondable(
-        plan_id, comment_id='cf', thread_id='PRRT_F', resolution_detail='Fixed in TASK-5.', kind='inline'
+        plan_id, pr_number=304, comment_id='cf', thread_id='PRRT_F', resolution_detail='Fixed in TASK-5.', kind='inline'
     )
 
     monkeypatch.setattr(github_pr._github, 'check_auth', lambda: (True, ''))

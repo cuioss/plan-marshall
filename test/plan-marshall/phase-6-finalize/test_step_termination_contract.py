@@ -386,8 +386,17 @@ def test_invariant_is_reachable_from_every_dispatched_roster_entry():
         f'for all {len(roster)} dispatched roster entries to reach it'
     )
 
-    external = [key for key in roster if key.startswith(('project:', 'plan-marshall:'))]
     builtin = [key for key in roster if key.startswith('default:')]
+    # Partition on SHAPE, never on a hardcoded bundle name: external-step-contract.md
+    # governs every `project:` step and every fully-qualified `{bundle}:{skill}` step,
+    # so a dispatched row contributed by any bundle other than `plan-marshall` must
+    # land here rather than in `unpartitioned` with the misleading claim that no
+    # reach-point binds it.
+    external = [
+        key
+        for key in roster
+        if key.startswith('project:') or (':' in key and not key.startswith('default:'))
+    ]
 
     # Every roster row must fall in exactly one partition, or a row shape was
     # added that neither reach-point covers.

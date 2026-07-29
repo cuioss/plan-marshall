@@ -21,9 +21,13 @@ These tests pin the closure invariant and the count-free rewrite:
 (d) Every row under ``## Dispatched steps`` declares the ``effort
     resolve-target`` lookup it resolves under — the roster's resolver-lookup
     completeness invariant.
-(e) Every dispatch branch in ``SKILL.md`` carries a **concrete**
-    ``[DISPATCH]`` bash block: no ``Task:`` spawn is unpaired, and no citation
-    of the emission contract satisfies the obligation with prose alone.
+(e) Every dispatch branch in ``SKILL.md`` § "Step 3: Execute Step Pipeline"
+    carries a **concrete** ``[DISPATCH]`` bash block: no ``Task:`` spawn is
+    unpaired, and no citation of the emission contract satisfies the obligation
+    with prose alone. The sweep is scoped to that one section — the section
+    that holds every dispatch branch the document has — so a
+    ``dispatch-logging.md`` reference in unrelated prose (a cross-reference
+    table, say) is not misread as an unbacked emit site.
 
 Steps are named in the roster by their exact registry key (``default:`` /
 ``project:`` / ``bundle:skill`` prefix included), so the comparison is a plain
@@ -31,7 +35,8 @@ set equality with no normalisation heuristics.
 
 The (d) and (e) populations are **derived, never hardcoded**: (d) iterates the
 rows the roster parser finds under ``## Dispatched steps``, and (e) iterates the
-``Task:`` spawns and emission-contract citations found in ``SKILL.md``. A
+``Task:`` spawns and emission-contract citations found in that ``SKILL.md``
+section. A
 hardcoded roster or emit-site list would pass vacuously the moment a row or a
 dispatch branch is added, which is precisely the drift these tests exist to
 catch. Each detector carries a mutation guard asserting it fires on the exact
@@ -54,6 +59,24 @@ _MARSHAL_JSON = PROJECT_ROOT / '.plan' / 'marshal.json'
 _DISPATCHED_HEADING = '## Dispatched steps'
 _INLINE_HEADING = '## Inline steps'
 _SKILL_SECTION_HEADING = '## Dispatched workflows vs inline steps'
+
+#: The one ``SKILL.md`` section that carries every dispatch branch. The (e)
+#: sweeps are scoped to it so a ``dispatch-logging.md`` link in unrelated prose
+#: (e.g. the trailing ``## Related`` table) is not read as an emit site — the
+#: exact false positive raised in review. The scoping drops no dispatch branch:
+#: every ``Task: plan-marshall:`` spawn and every emission-contract citation in
+#: the document today lies inside this section.
+_SKILL_STEP3_HEADING = (
+    '### Step 3: Execute Step Pipeline (Manifest-Driven, Resumable, Timeout-Wrapped)'
+)
+
+#: Terminate the Step-3 scope at the next ``### `` step heading as well as at
+#: the next ``## `` heading. The bare ``('## ',)`` default does NOT stop at
+#: ``### Step 4`` (``'### Step 4'.startswith('## ')`` is ``False``), which would
+#: silently run the section to EOF and make the scoping a no-op. ``#### ``
+#: sub-headings inside Step 3 correctly do not terminate it, for the same
+#: prefix-comparison reason.
+_SKILL_SECTION_STOP_PREFIXES = ('## ', '### ')
 
 #: Count-bearing prose patterns. Each matched the pre-fix text:
 #:   "Of the 17 default + project finalize steps"  -> _COUNT_BEFORE_STEPS
@@ -144,6 +167,35 @@ def _roster_rows(heading: str) -> list[tuple[str, str]]:
 def _row_declares_resolver_lookup(row: str) -> bool:
     """Whether a roster row declares the resolve-target lookup it resolves under."""
     return bool(_RESOLVER_LOOKUP.search(row))
+
+
+def _dispatch_branch_scoped_skill_text() -> str:
+    """Return ``SKILL.md`` with every line outside the dispatch-branch section blanked.
+
+    Blanking rather than slicing keeps the line count — and therefore every
+    index the (e) detectors report — identical to the real document, so a
+    reported ``line N`` still names the actual ``SKILL.md`` line. The detectors
+    themselves keep taking raw text, so their mutation guards can go on feeding
+    them synthetic snippets; the scoping lives here, at the call sites.
+
+    Raises:
+        AssertionError: via ``section_lines`` when the heading is renamed —
+        a loud failure rather than a silently empty (vacuous) sweep.
+    """
+    text = _SKILL_DOC.read_text(encoding='utf-8')
+    lines = text.splitlines()
+    section = section_lines(
+        text, _SKILL_STEP3_HEADING, stop_prefixes=_SKILL_SECTION_STOP_PREFIXES
+    )
+    heading_index = next(
+        index
+        for index, line in enumerate(lines)
+        if line.strip() == _SKILL_STEP3_HEADING
+    )
+    start = heading_index + 1
+    scoped = [''] * len(lines)
+    scoped[start : start + len(section)] = section
+    return '\n'.join(scoped)
 
 
 def _spawns_missing_concrete_emit(text: str) -> list[str]:
@@ -323,9 +375,10 @@ def test_roster_row_population_matches_the_closure_parser():
 def test_every_task_spawn_is_paired_with_a_concrete_dispatch_emit():
     # The `[DISPATCH]` write and the `Task:` spawn are one indivisible pair: a
     # spawn with no preceding concrete emit is a contract violation.
-    text = _SKILL_DOC.read_text(encoding='utf-8')
+    text = _dispatch_branch_scoped_skill_text()
     assert _TASK_SPAWN.search(text), (
-        'No `Task:` spawn found in SKILL.md — the assertion would be vacuous'
+        'No `Task:` spawn found in the SKILL.md '
+        f'"{_SKILL_STEP3_HEADING}" section — the assertion would be vacuous'
     )
 
     unpaired = _spawns_missing_concrete_emit(text)
@@ -340,9 +393,10 @@ def test_every_task_spawn_is_paired_with_a_concrete_dispatch_emit():
 def test_no_dispatch_emit_site_is_prose_only():
     # Every citation of the emission contract must be backed by a concrete bash
     # block; prose alone does not discharge the emission obligation.
-    text = _SKILL_DOC.read_text(encoding='utf-8')
+    text = _dispatch_branch_scoped_skill_text()
     assert _EMISSION_CONTRACT_CITATION.search(text), (
-        'No emission-contract citation found in SKILL.md — assertion vacuous'
+        'No emission-contract citation found in the SKILL.md '
+        f'"{_SKILL_STEP3_HEADING}" section — assertion vacuous'
     )
 
     prose_only = _prose_only_emit_sites(text)

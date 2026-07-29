@@ -89,17 +89,34 @@ def _aspect_reference_docs() -> list[Path]:
 
     The population is derived from the table itself — every numbered row's
     Reference cell — so an aspect added to the roster brings its owning document
-    into the scan automatically. A row naming a document that does not exist on
-    disk is skipped here; the roster-vs-disk consistency of those paths is not
-    this guard's concern.
+    into the scan automatically.
+
+    A row naming a document that does not exist on disk FAILS LOUDLY rather than
+    being skipped. Silently dropping it would shrink the scanned population, so
+    every aspect registered inside that document would vanish from the
+    enumeration and the completeness sweep downstream would pass vacuously — a
+    renamed or mistyped Reference cell would read as "no aspects to check"
+    instead of as the roster drift it is.
     """
     skill_text = _SKILL_MD_PATH.read_text(encoding='utf-8')
     docs: list[Path] = []
+    missing: list[str] = []
     for row in _ASPECT_TABLE_ROW_RE.finditer(skill_text):
         for rel in _ASPECT_DOC_RE.findall(row.group('cells')):
             path = _SKILL_DIR / rel
-            if path.is_file() and path not in docs:
+            if not path.is_file():
+                if rel not in missing:
+                    missing.append(rel)
+                continue
+            if path not in docs:
                 docs.append(path)
+
+    assert not missing, (
+        f'Step-3 aspect-order table names Reference document(s) that do not exist on '
+        f'disk: {sorted(missing)} — a missing reference silently shrinks the scanned '
+        f'population and makes the completeness sweep vacuous, so the roster must be '
+        f'corrected (or the document restored) rather than the row ignored'
+    )
     return docs
 
 

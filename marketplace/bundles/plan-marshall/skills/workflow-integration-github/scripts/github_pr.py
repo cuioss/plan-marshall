@@ -412,6 +412,21 @@ def _unconfigured_result(operation: str, detail: str) -> dict[str, Any]:
 _COMMENT_ID_DETAIL = re.compile(r'^comment_id:[ \t]*(?P<id>\S[^\n]*?)[ \t]*$', re.MULTILINE)
 _THREAD_ID_DETAIL = re.compile(r'^thread_id:[ \t]*(?P<id>\S[^\n]*?)[ \t]*$', re.MULTILINE)
 _KIND_DETAIL = re.compile(r'^kind:[ \t]*(?P<id>\S[^\n]*?)[ \t]*$', re.MULTILINE)
+# The originating PR, stamped by ``cmd_fetch_findings`` as the first ``detail``
+# line. ``post_responses`` filters on it so a plan whose findings store spans
+# several PRs transmits each disposition only to the PR it came from.
+#
+# Unlike the three patterns above this one is anchored to the START OF THE WHOLE
+# detail string (``\A``, no ``re.MULTILINE``) and accepts a digits-only id. Both
+# narrowings are deliberate: the producer writes ``pr_number`` as the FIRST detail
+# line and always as an integer, so a per-line ``search`` would additionally honour
+# a ``pr_number:`` line appearing anywhere later in the block — including inside
+# text a future producer change might append — and a ``\S``-class value would admit
+# a non-numeric id. ``cmd_post_responses`` routes on this extraction to decide
+# ``belongs_to_pr_<n>`` vs ``pr_number_unrecorded``, so anything that does not match
+# the producer's own shape must resolve as unrecorded rather than widen the
+# routing predicate's trust surface.
+_PR_NUMBER_DETAIL = re.compile(r'\Apr_number:[ \t]*(?P<id>[0-9]+)[ \t]*(?:\n|\Z)')
 
 # The comment kinds that are GENUINELY threadless — GitHub gives them no
 # resolvable review thread, so the only way to transmit their disposition is the
@@ -1061,10 +1076,18 @@ def cmd_post_responses(args):
     """RESPOND verb: apply already-decided triage dispositions back to the PR.
 
     Reads every ``pr-comment`` finding whose ``resolution`` is a terminal triage
-    disposition (``_RESPONDABLE_RESOLUTIONS``) and — keyed by each finding's own
-    ``hash_id`` (never positional pairing) — transmits it through a three-way
+    disposition (``_RESPONDABLE_RESOLUTIONS``) **and whose recorded ``pr_number``
+    is the PR being responded to** — keyed by each finding's own ``hash_id``
+    (never positional pairing) — and transmits it through a three-way
     disposition. This verb makes NO triage decision; it only transmits decisions
     the triage pass already recorded.
+
+    The findings store is plan-scoped, not PR-scoped, so the ``pr_number`` gate
+    is what keeps a multi-PR plan's dispositions from cross-delivering. A row
+    owned by another PR, or one whose ``pr_number`` was never recorded, is
+    reported in ``skipped`` (reason ``belongs_to_pr_<n>`` /
+    ``pr_number_unrecorded``) — visibly deferred, never silently dropped and
+    never misdelivered.
 
     The routing predicate is the finding's **kind** — its thread-BEARING-ness,
     recorded in the detail block by ``cmd_fetch_findings`` — never the mere
@@ -1123,6 +1146,29 @@ def cmd_post_responses(args):
     for finding in findings:
         hash_id = finding.get('hash_id', '')
         if finding.get('resolution') not in _RESPONDABLE_RESOLUTIONS:
+            continue
+
+        # Transmit only what belongs to THIS PR. The findings store is
+        # plan-scoped, not PR-scoped, so a plan that gathered findings across
+        # several PRs (a review-debt sweep, a multi-PR triage) holds rows owned
+        # by PRs other than the one being responded to. Without this gate every
+        # threadless row lands in the batched comment on whichever PR happens to
+        # be passed, misdelivering other PRs' dispositions while the return still
+        # reports count_untransmitted: 0 — a confidently green report for a
+        # partly-misdelivered action.
+        #
+        # Thread-bearing rows are filtered too, even though a thread_id is a
+        # global GraphQL node id that would reach its own PR regardless: the
+        # caller loops once per PR, so an unfiltered pass would re-reply to and
+        # re-resolve every other PR's threads on every iteration.
+        finding_pr = _detail_field(finding.get('detail'), _PR_NUMBER_DETAIL)
+        if finding_pr != str(pr_number):
+            # Fail closed on an unattributable row rather than defaulting it to
+            # the current PR: an unrecorded pr_number is precisely the case that
+            # cannot be shown to belong here. It is recorded in `skipped`, so it
+            # is visibly deferred rather than silently dropped or misdelivered.
+            reason = 'pr_number_unrecorded' if not finding_pr else f'belongs_to_pr_{finding_pr}'
+            skipped.append({'hash_id': hash_id, 'reason': reason})
             continue
 
         reply_body = finding.get('resolution_detail') or ''

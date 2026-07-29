@@ -134,12 +134,14 @@ class TestPopulationIsNonDegenerate:
         assert blocks, 'The Step-3 FOR-loop body split into zero item blocks'
 
     def test_enumeration_finds_the_known_bypass_sites(self):
-        # Anchors: the post-dispatch-guard HALT (item 5d) and the two Signal-Gate
-        # skips (items 4b and 4c) are the known record-then-leave sites. An
-        # enumeration that no longer sees them is not enumerating the loop.
+        # Anchors: the post-dispatch-guard HALT (item 5d), the dispatch-timeout
+        # path (item 5, which records outcome=failed and CONTINUEs without
+        # reaching item 7), and the two Signal-Gate skips (items 4b and 4c) are
+        # the known record-then-leave sites. An enumeration that no longer sees
+        # them is not enumerating the loop.
         terminal_exit = _terminal_exit_blocks(_item_blocks(_loop_body(_skill_text())))
 
-        for item in ('4b', '4c', '5d'):
+        for item in ('4b', '4c', '5', '5d'):
             assert item in terminal_exit, (
                 f'Item {item} records a terminal outcome and leaves the iteration, but '
                 f'the enumeration did not classify it as such — the completeness sweep '
