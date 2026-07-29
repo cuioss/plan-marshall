@@ -143,9 +143,12 @@ class TestConvertToPlanTombstoneReservation:
 
         After ``convert-to-plan`` the live ``.md`` is gone from ``lessons-learned/``
         (it moved into the plan dir), so only the tombstone and the plan dir keep
-        the id reserved. Freezing the clock to the same prefix, ``get_next_id``
-        must return ``-002`` — proving the reservation path is honoured.
+        the id reserved. Freezing the clock to the same UTC prefix,
+        ``get_next_id`` must return ``-002`` — proving the reservation path is
+        honoured. The instant is aware-UTC so the prefix is host-timezone
+        independent.
         """
+        from datetime import UTC as real_utc
         from datetime import datetime as real_datetime
 
         lessons_dir = tmp_path / 'lessons-learned'
@@ -154,7 +157,7 @@ class TestConvertToPlanTombstoneReservation:
             'id=2025-01-01-02-001\ncomponent=x\ncategory=bug\ncreated=2025-01-01\n\n# Test\n'
         )
 
-        frozen = real_datetime(2025, 1, 1, 2, 30, 0)
+        frozen = real_datetime(2025, 1, 1, 2, 30, 0, tzinfo=real_utc)
         monkeypatch.setattr(_mod, 'datetime', _FakeDatetime(frozen))
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
