@@ -49,6 +49,47 @@ _TMP_SUFFIX = '.tmp'
 
 
 # =============================================================================
+# File-Inventory Category Vocabulary
+# =============================================================================
+
+# Every category the two file classifiers in ``_cmd_manage`` may emit —
+# ``_classify_marketplace`` (skill, skill_doc, script, standard, template,
+# agent, command, build_file, doc) and ``_classify_generic`` (build_file, doc,
+# script, source, test).
+#
+# This is the DECLARED vocabulary, not a set scraped from the classifiers: it is
+# the membership test that lets a reader distinguish "not a category at all"
+# from "a real category that is empty for this module". Those two cases are
+# otherwise indistinguishable, because a module's ``files`` block is built with
+# ``setdefault``, so only categories that actually have files ever become keys.
+#
+# It lives here rather than in ``_cmd_manage`` because both ``_cmd_manage`` and
+# ``_cmd_client_handlers`` import ``_architecture_core`` at module level,
+# whereas ``_cmd_client_handlers`` reaches ``_cmd_manage`` only through a
+# deferred import that exists to break an import cycle. This module is the only
+# cycle-free shared home.
+#
+# Drift guard: the file-inventory test suite asserts that every category the
+# classifiers return over the real tree is a member of this set, so adding a
+# category without a row here fails the build.
+FILE_CATEGORIES: frozenset[str] = frozenset(
+    {
+        'agent',
+        'build_file',
+        'command',
+        'doc',
+        'script',
+        'skill',
+        'skill_doc',
+        'source',
+        'standard',
+        'template',
+        'test',
+    }
+)
+
+
+# =============================================================================
 # Exceptions
 # =============================================================================
 

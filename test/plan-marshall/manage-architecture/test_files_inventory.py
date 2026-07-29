@@ -30,8 +30,18 @@ _cmd_manage = load_script_module('plan-marshall', 'manage-architecture', '_cmd_m
 _cmd_client = load_script_module('plan-marshall', 'manage-architecture', '_cmd_client.py', '_cmd_client')
 
 _post_process_files = _cmd_manage._post_process_files
+_classify_marketplace = _cmd_manage._classify_marketplace
+_classify_generic = _cmd_manage._classify_generic
+FILE_CATEGORIES = _architecture_core.FILE_CATEGORIES
 cmd_which_module = _cmd_client.cmd_which_module
 resolve_module_for_path = _architecture_core.resolve_module_for_path
+
+# Repository root, derived from this file's own location
+# (``test/plan-marshall/manage-architecture/`` → three levels up). The
+# real-tree tests below walk the live ``marketplace/bundles/`` population from
+# here rather than from a hard-coded list.
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_BUNDLES_ROOT = _REPO_ROOT / 'marketplace' / 'bundles'
 
 
 # =============================================================================
@@ -54,6 +64,17 @@ def _make_marketplace_bundle(project: Path, bundle_name: str) -> dict:
     _write(bundle_root / 'skills' / 'core' / 'scripts' / 'do_thing.py', '# python')
     _write(bundle_root / 'skills' / 'core' / 'scripts' / 'helper.sh', '# shell')
     _write(bundle_root / 'skills' / 'core' / 'templates' / 'sample.tmpl', 'tmpl')
+    # Sub-documents exercising the residual rule on BOTH of its axes: two
+    # differently-named directories (so the rule cannot be a directory-name
+    # allowlist) and a non-markdown format (so it cannot be an extension list).
+    _write(bundle_root / 'skills' / 'core' / 'references' / 'deep-dive.md', '# ref')
+    _write(bundle_root / 'skills' / 'core' / 'workflow' / 'run.md', '# workflow')
+    _write(bundle_root / 'skills' / 'core' / 'assets' / 'data.json', '{}')
+    # Precedence anchors: a build file and a README that sit UNDER a skill
+    # directory must keep their build_file / doc categories. The residual rule
+    # runs last precisely so these classifications do not shift to skill_doc.
+    _write(bundle_root / 'skills' / 'core' / 'package.json', '{}')
+    _write(bundle_root / 'skills' / 'core' / 'references' / 'README.md', '# nested')
     _write(bundle_root / 'agents' / 'reviewer.md', '# agent')
     _write(bundle_root / 'commands' / 'do.md', '# cmd')
     return {
@@ -100,7 +121,10 @@ def test_marketplace_mode_classifies_script_standard_template():
 
 
 def test_marketplace_mode_classifies_build_files_and_doc():
-    """plugin.json and README* are classified deterministically."""
+    """plugin.json and README* are classified deterministically — including
+    when they sit under a skill directory, where the residual ``skill_doc``
+    rule must NOT claim them.
+    """
     with tempfile.TemporaryDirectory() as tmp:
         project = Path(tmp)
         modules = {'pm-x': _make_marketplace_bundle(project, 'pm-x')}
@@ -108,8 +132,36 @@ def test_marketplace_mode_classifies_build_files_and_doc():
         _post_process_files(modules, str(project))
 
         files = modules['pm-x']['files']
-        assert files['build_file'] == ['marketplace/bundles/pm-x/plugin.json']
-        assert files['doc'] == ['marketplace/bundles/pm-x/README.md']
+        assert files['build_file'] == [
+            'marketplace/bundles/pm-x/plugin.json',
+            'marketplace/bundles/pm-x/skills/core/package.json',
+        ]
+        assert files['doc'] == [
+            'marketplace/bundles/pm-x/README.md',
+            'marketplace/bundles/pm-x/skills/core/references/README.md',
+        ]
+
+
+def test_marketplace_mode_classifies_residual_sub_documents_as_skill_doc():
+    """Every remaining file under ``skills/<skill>/**`` becomes ``skill_doc``,
+    regardless of its sub-directory name or its file format.
+
+    Both axes are asserted: two differently-named directories (``references/``,
+    ``workflow/``) and a non-markdown format (``assets/data.json``). A
+    directory-name allowlist would miss one axis; an ``.md``-only rule would
+    miss the other.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        project = Path(tmp)
+        modules = {'pm-x': _make_marketplace_bundle(project, 'pm-x')}
+
+        _post_process_files(modules, str(project))
+
+        assert modules['pm-x']['files']['skill_doc'] == [
+            'marketplace/bundles/pm-x/skills/core/assets/data.json',
+            'marketplace/bundles/pm-x/skills/core/references/deep-dive.md',
+            'marketplace/bundles/pm-x/skills/core/workflow/run.md',
+        ]
 
 
 def test_marketplace_mode_does_not_emit_source_category():
@@ -146,13 +198,18 @@ def test_paths_tests_outside_module_get_test_category():
 
 
 def test_generic_mode_classifies_source_test_doc_build():
-    """Generic modules use the source/test/doc/build_file split."""
+    """Generic modules use the source/test/doc/build_file split.
+
+    ``doc`` is extension-driven, so a non-``README`` AsciiDoc page in a nested
+    directory is inventoried alongside the README.
+    """
     with tempfile.TemporaryDirectory() as tmp:
         project = Path(tmp)
         module_dir = project / 'libapp'
         _write(module_dir / 'src' / 'main.py', 'print()')
         _write(module_dir / 'tests' / 'test_main.py', 'def test_x(): pass')
         _write(module_dir / 'README.md', '# readme')
+        _write(module_dir / 'docs' / 'guide.adoc', '= guide')
         _write(module_dir / 'pyproject.toml', '[project]')
 
         modules = {
@@ -166,8 +223,26 @@ def test_generic_mode_classifies_source_test_doc_build():
         files = modules['libapp']['files']
         assert files['source'] == ['libapp/src/main.py']
         assert files['test'] == ['libapp/tests/test_main.py']
-        assert files['doc'] == ['libapp/README.md']
+        assert files['doc'] == ['libapp/README.md', 'libapp/docs/guide.adoc']
         assert files['build_file'] == ['libapp/pyproject.toml']
+
+
+def test_generic_doc_extension_set_is_a_pinned_boundary():
+    """The generic peer is deliberately extension-DRIVEN, not residual.
+
+    Every declared doc extension classifies as ``doc``; an out-of-set extension
+    still classifies as ``None``. Pinning both halves keeps the asymmetry
+    between the two classifier peers an asserted decision rather than a silent
+    gap — an extension-free residual here would sweep binaries and generated
+    artefacts into ``doc``.
+    """
+    for suffix in ('.md', '.adoc', '.asciidoc'):
+        basename = f'page{suffix}'
+        assert _classify_generic(f'docs/{basename}', basename) == 'doc'
+
+    # Out of the declared set — still unclassified, by design.
+    assert _classify_generic('docs/notes.txt', 'notes.txt') is None
+    assert _classify_generic('docs/diagram.svg', 'diagram.svg') is None
 
 
 def test_generic_mode_test_files_under_test_dir_classify_as_test():
@@ -186,6 +261,108 @@ def test_generic_mode_test_files_under_test_dir_classify_as_test():
         assert 'app/test/a.py' in tests
         assert 'app/tests/b.py' in tests
         assert 'app/__tests__/c.js' in tests
+
+
+# =============================================================================
+# Real-tree coverage (population-derived)
+# =============================================================================
+#
+# These tests derive their population from a filesystem walk of the live
+# ``marketplace/bundles/`` tree rather than from a hard-coded directory list or
+# file count. That is load-bearing: an ``.md``-only population, or a list of the
+# sub-directory kinds that happen to exist today, would be structurally unable
+# to detect the very gap the residual rule exists to close — a new
+# sub-directory kind or a new file format would silently re-open the blind spot
+# while the test kept passing.
+
+
+def _iter_real_bundle_files():
+    """Yield ``(rel_from_bundle, basename)`` for every real file in every bundle.
+
+    Mirrors the walker's dotfile / ``__pycache__`` skip policy so the population
+    matches what ``_walk_module_root`` actually hands the classifier. There is
+    deliberately NO extension filter.
+    """
+    for bundle_dir in sorted(_BUNDLES_ROOT.iterdir()):
+        if not bundle_dir.is_dir() or bundle_dir.is_symlink():
+            continue
+        for path in sorted(bundle_dir.rglob('*')):
+            if path.is_symlink() or not path.is_file():
+                continue
+            rel = path.relative_to(bundle_dir)
+            if any(part.startswith('.') or part == '__pycache__' for part in rel.parts):
+                continue
+            yield rel.as_posix(), path.name
+
+
+def test_every_real_skill_file_is_classified():
+    """Zero files under a real ``skills/<skill>/**`` tree classify as ``None``.
+
+    The population is every file — not only markdown — so the assertion covers
+    the residual rule on both its axes.
+    """
+    population = [
+        (rel, basename) for rel, basename in _iter_real_bundle_files() if rel.startswith('skills/')
+    ]
+    assert population, 'population is empty — the bundle walk found no skill files'
+
+    unclassified = [rel for rel, basename in population if _classify_marketplace(rel, basename) is None]
+    assert unclassified == [], f'{len(unclassified)} skill file(s) are invisible to the inventory: {unclassified[:10]}'
+
+
+def test_classifier_output_is_closed_over_file_categories():
+    """The declared vocabulary and the classifier's real output agree both ways.
+
+    Every category produced over the real tree is a member of
+    ``FILE_CATEGORIES`` (so a new category cannot be added without a vocabulary
+    row), and ``FILE_CATEGORIES`` carries no member the marketplace walk never
+    produces beyond a small, named, individually-covered set (so a retired
+    category cannot linger unnoticed in the vocabulary).
+    """
+    produced: set[str] = set()
+    for rel, basename in _iter_real_bundle_files():
+        category = _classify_marketplace(rel, basename)
+        if category is not None:
+            produced.add(category)
+
+    assert produced, 'population is empty — the bundle walk produced no categories'
+    assert produced <= FILE_CATEGORIES, f'undeclared categories: {sorted(produced - FILE_CATEGORIES)}'
+
+    # Members the marketplace walk cannot reach over THIS repository. Each is
+    # still a live category, covered directly by a fixture test above, so none
+    # of them is dead vocabulary:
+    #   - source / test — emitted only by the generic peer
+    #     (test_generic_mode_classifies_source_test_doc_build).
+    #   - build_file — emitable by the marketplace peer, but every bundle's
+    #     manifest lives under the ``.claude-plugin/`` dot-directory that the
+    #     walker skips, so no bundle carries a walk-visible build file today
+    #     (test_marketplace_mode_classifies_build_files_and_doc).
+    assert FILE_CATEGORIES - produced == {'build_file', 'source', 'test'}
+
+
+def test_live_anchor_skill_workflow_document_is_classified():
+    """The plan's own reproduction case is inventoried.
+
+    ``skills/phase-3-outline/workflow/light-lane.md`` exists on disk and used to
+    classify as ``None`` — the confident ``count: 0`` this plan removes.
+    """
+    anchor = _BUNDLES_ROOT / 'plan-marshall' / 'skills' / 'phase-3-outline' / 'workflow' / 'light-lane.md'
+    assert anchor.is_file(), f'anchor file missing — the regression case moved: {anchor}'
+
+    assert _classify_marketplace('skills/phase-3-outline/workflow/light-lane.md', 'light-lane.md') == 'skill_doc'
+
+
+def test_live_anchor_generic_adoc_page_classifies_as_doc():
+    """The ``_classify_generic`` peer anchor: a non-README AsciiDoc developer page.
+
+    ``doc/developer/repository-layout.adoc`` exists on disk yet used to be
+    invisible to the inventory because the generic peer recognised only
+    ``README*`` / ``CHANGELOG*``.
+    """
+    anchor = _REPO_ROOT / 'doc' / 'developer' / 'repository-layout.adoc'
+    assert anchor.is_file(), f'anchor file missing — the regression case moved: {anchor}'
+
+    assert _classify_generic('doc/developer/repository-layout.adoc', 'repository-layout.adoc') == 'doc'
 
 
 # =============================================================================
