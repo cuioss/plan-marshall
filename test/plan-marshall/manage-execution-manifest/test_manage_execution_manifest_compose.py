@@ -1096,9 +1096,9 @@ def test_surgical_enhancement_with_code_candidates_falls_to_default(plan_context
     manifest = read_manifest('matrix-surgical-enh')
     assert manifest is not None
     # Default keeps the full phase_6 candidate list — enhancement is a member of
-    # the code-touching activation set {feature, bug_fix, tech_debt, enhancement},
-    # so with affected_files_count > 0 the simplify_inactive /
-    # security_audit_inactive pre-filters keep both ceremony steps.
+    # the code-touching activation set {feature, bug_fix, tech_debt, enhancement}
+    # that simplify_inactive gates on, and with affected_files_count > 0 the
+    # security_class_inactive gate keeps its step too, so both survive.
     assert manifest['phase_6']['steps'] == list(DEFAULT_PHASE_6_STEPS)
 
 

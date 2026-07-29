@@ -738,8 +738,8 @@ class TestCeremonyFinalizeSecurityAudit:
     """
 
     def test_auto_defers_to_prefilter_keep_branch(self, plan_context):
-        # change_type=feature, files>0 → security_audit_inactive keeps the step;
-        # auto is a no-op, so it survives.
+        # files>0 → security_class_inactive keeps the step (the gate has no
+        # change_type leg); auto is a no-op, so it survives.
         _seed_marshal(finalize_gates={'security_audit': 'auto'})
         _stub_footprint(_FOOTPRINT)
 
