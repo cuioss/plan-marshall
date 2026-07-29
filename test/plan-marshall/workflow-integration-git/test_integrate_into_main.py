@@ -19,8 +19,11 @@ Contract under test (solution_outline.md §5):
   ``.plan/execute-script.py``; the success payload carries no regen fields.
 
 cwd-independence (this plan, Deliverable 1): integrate resolves its SOURCE
-(worktree via ``manage-status get-worktree-path``, stubbed here at the
-``_resolve_worktree_path_for_plan`` seam) and its DESTINATION (main via the
+(worktree via ``file_ops.resolve_plan_context`` — the single plan-context
+resolver, which owns the ``manage-status get-worktree-path`` shell-out; stubbed
+in most cases at the composite ``_resolve_worktree_path_for_plan`` seam, and
+driven for real against ``file_ops._query_worktree_path`` in
+:class:`TestResolveWorktreePathViaStatusChannel`) and its DESTINATION (main via the
 sanctioned ``resolve_main_anchored_path`` resolver, driven REAL through
 ``PLAN_BASE_DIR``) cwd-independently. The
 :class:`TestIntegrateCwdIndependent` regression suite invokes the script from the
@@ -44,6 +47,10 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from _resolve_project_dir_fixtures import (
+    NO_PLAN_SENTINEL,
+    patch_query_worktree_path,
+)
 
 from conftest import get_script_path
 
@@ -820,12 +827,20 @@ class TestResolveWorktreePathFallback:
     def test_critical_channel_error_surfaces_verbatim_without_probe(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """A critical infrastructure failure (e.g. executor missing) is NOT a
-        recoverable channel-could-not-resolve case — it surfaces verbatim and the
-        structural probe is never consulted."""
+        """A critical infrastructure failure is NOT a recoverable
+        channel-could-not-resolve case — it surfaces verbatim and the structural
+        probe is never consulted.
+
+        The message here is one the MIGRATED channel can actually produce: after
+        the migration the executor lookup lives inside the resolver, so the
+        channel's critical failures arrive as ``WorktreeResolutionError`` text.
+        The retired 'plan-marshall executor not available' wording was pinned
+        here long after the channel stopped being able to emit it — a fixture
+        that keeps passing while asserting a shape the code can no longer take.
+        """
         plan_id = 'crit-plan'
         critical = integrate_into_main.make_error(
-            'plan-marshall executor not available (.plan/execute-script.py missing)',
+            'Cannot locate executor — not inside a git checkout.',
             code=integrate_into_main.ErrorCode.NOT_FOUND,
             plan_id=plan_id,
         )
@@ -867,6 +882,85 @@ class TestResolveWorktreePathFallback:
         path, err = integrate_into_main._resolve_worktree_path_for_plan(plan_id)
         assert path is None
         assert err is recoverable
+
+
+class TestResolveWorktreePathViaStatusChannel:
+    """Direct coverage of the CHANNEL itself, against the single resolver seam.
+
+    Previously this layer had no direct tests — every case stubbed the channel
+    wholesale, so nothing exercised the code that talks to the resolver. That is
+    exactly the layer the migration rewrote, and the layer whose classification
+    the probe ladder above depends on.
+
+    The load-bearing property pinned here: the recoverable
+    "no worktree configured" verdict is derived STRUCTURALLY from the resolver's
+    ``has_worktree`` face, not by matching the resolver's error text. A textual
+    derivation would silently unhook the structural-probe fallback the moment
+    the resolver reworded an error.
+    """
+
+    def test_resolves_the_path_through_the_resolver_seam(self, tmp_path: Path) -> None:
+        worktree = tmp_path / 'wt'
+        worktree.mkdir()
+
+        with patch_query_worktree_path(True, str(worktree)) as mock:
+            path, err = integrate_into_main._resolve_worktree_path_via_status_channel('ok-plan')
+
+        assert err is None, err
+        assert path == worktree
+        assert mock.call_count == 1
+
+    def test_no_worktree_verdict_is_structural_and_recoverable(self) -> None:
+        """``use_worktree=false`` yields the verbatim recoverable message.
+
+        The message is emitted off ``has_worktree``, so it is a constant this
+        module owns rather than resolver text — which is what keeps it inside
+        ``_EXPECTED_ERROR_SUBSTRINGS`` and the probe fallback reachable.
+        """
+        with patch_query_worktree_path(False):
+            path, err = integrate_into_main._resolve_worktree_path_via_status_channel('no-wt')
+
+        assert path is None
+        assert err is not None
+        message = str(err.get('error') or err.get('message') or '').lower()
+        assert 'no worktree configured' in message
+        assert any(s in message for s in integrate_into_main._EXPECTED_ERROR_SUBSTRINGS), (
+            'the no-worktree verdict fell outside the recoverable set, which '
+            'makes the structural-probe fallback unreachable'
+        )
+
+    def test_resolution_failure_surfaces_the_resolver_message(self, monkeypatch) -> None:
+        """A resolver failure is surfaced verbatim, never rewritten."""
+        import file_ops  # noqa: PLC0415
+
+        def _raise(_plan_id):
+            raise file_ops.WorktreeResolutionError('status.json not found for plan')
+
+        monkeypatch.setattr(file_ops, '_query_worktree_path', _raise)
+
+        path, err = integrate_into_main._resolve_worktree_path_via_status_channel('gone-plan')
+
+        assert path is None
+        assert err is not None
+        assert 'status.json not found' in str(err.get('error') or err.get('message'))
+
+    def test_no_plan_sentinel_is_refused_without_shelling_out(self) -> None:
+        """``NO_PLAN`` has no dedicated worktree, so the move-back refuses it.
+
+        The resolver ACCEPTS the sentinel (it resolves to the main checkout);
+        the refusal belongs here, because there is no worktree to move a plan
+        dir back FROM. Asserting the zero call-count also pins that the sentinel
+        never pays a ``get-worktree-path`` round trip.
+        """
+        with patch_query_worktree_path(True) as mock:
+            path, err = integrate_into_main._resolve_worktree_path_via_status_channel(
+                NO_PLAN_SENTINEL
+            )
+
+        assert path is None
+        assert err is not None
+        assert 'no worktree configured' in str(err.get('error') or err.get('message')).lower()
+        assert mock.call_count == 0, 'the sentinel must never reach get-worktree-path'
 
 
 class TestIntegrateFromMainViaStructuralProbe:

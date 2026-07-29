@@ -2,15 +2,27 @@
 """Tests for _cmd_force_push.py — force-push-with-lease verb.
 
 Tier 2 (direct import) tests covering:
-* _resolve_branch_and_path  — --plan-id missing executor, missing branch, base branch guard
+* _resolve_branch_and_path  — the --plan-id resolver path, missing branch, base branch guard
 * _verify_git_repo          — non-git path
 * cmd_force_push            — success path, branch_not_found, push_rejected, push_failed,
                               lease_check_failed, base-branch rejection
-* _find_executor            — helper-based executor path resolution
 
 Tier 3 (subprocess CLI plumbing) tests covering:
 * Missing required args (argparse rejects)
 * force-push-with-lease --project-dir path with --branch (escape-hatch)
+
+Resolver-migration note
+-----------------------
+The private ``_find_executor`` helper this file used to exercise is GONE. It
+existed only to locate ``.plan/execute-script.py`` for a hand-rolled
+``manage-status get-worktree-path`` shell-out; that whole block now delegates to
+``file_ops.resolve_plan_context``, which owns the single executor lookup in the
+codebase. Its three tests are deliberately NOT re-pointed at
+``file_ops.get_executor_path`` — that would re-test the resolver's internals
+from a consumer's suite. What replaces them is the
+``TestResolveBranchAndPathViaResolver`` block below, which pins the behaviour
+that actually matters here: this verb resolves BOTH worktree faces through the
+resolver.
 """
 
 from __future__ import annotations
@@ -21,6 +33,12 @@ from argparse import Namespace
 from pathlib import Path
 
 import pytest
+from _resolve_project_dir_fixtures import (
+    CANONICAL_WORKTREE,
+    CANONICAL_WORKTREE_BRANCH,
+    NO_PLAN_SENTINEL,
+    patch_worktree_faces,
+)
 from toon_parser import parse_toon
 
 from conftest import get_script_path, run_script
@@ -40,7 +58,6 @@ _spec.loader.exec_module(_mod)
 cmd_force_push = _mod.cmd_force_push
 _verify_git_repo = _mod._verify_git_repo
 _resolve_branch_and_path = _mod._resolve_branch_and_path
-_find_executor = _mod._find_executor
 
 
 # ---------------------------------------------------------------------------
@@ -303,60 +320,100 @@ class TestCmdForcePushPushFailures:
 
 
 # ---------------------------------------------------------------------------
-# Tier 2: _find_executor — helper-based executor path resolution
+# Tier 2: _resolve_branch_and_path — the --plan-id resolver path
 # ---------------------------------------------------------------------------
 
 
-class TestFindExecutor:
-    """Direct-import tests for _find_executor's helper-based resolution.
+class TestResolveBranchAndPathViaResolver:
+    """The ``--plan-id`` path resolves BOTH worktree faces through the resolver.
 
-    _find_executor delegates to ``file_ops.get_executor_path()`` (worktree-safe
-    resolution via git-common-dir) and returns the resolved path only when it
-    exists on disk, falling back to None on RuntimeError (no git repo) or a
-    missing executor file.
+    ``force-push-with-lease`` is the one verb in this bundle that needs the path
+    face AND the branch face, so it exercises both seams of the single
+    ``get-worktree-path`` channel. The retired implementation shelled out once
+    and hand-parsed both values out of the TOON; the migrated one asks the
+    resolver for each face.
     """
 
-    def test_returns_resolved_path_when_executor_exists(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """When get_executor_path resolves an existing file, return it."""
-        import file_ops  # noqa: PLC0415
+    def test_plan_id_resolves_path_and_branch_from_the_resolver(self) -> None:
+        """Both faces come from the resolver, each reached exactly once."""
+        args = Namespace(plan_id='fp-plan', project_dir=None, branch=None)
 
-        executor = tmp_path / 'execute-script.py'
-        executor.write_text('# executor\n')
-        monkeypatch.setattr(file_ops, 'get_executor_path', lambda: executor)
+        with patch_worktree_faces(True) as (path_mock, branch_mock):
+            branch, path, error = _resolve_branch_and_path(args)
 
-        result = _find_executor()
+        assert error is None, error
+        assert branch == CANONICAL_WORKTREE_BRANCH
+        assert path == Path(CANONICAL_WORKTREE)
+        assert path_mock.call_count == 1, 'path face not resolved exactly once'
+        assert branch_mock.call_count == 1, 'branch face not resolved exactly once'
 
-        assert result == executor
+    def test_plan_without_a_dedicated_worktree_is_refused(self) -> None:
+        """``use_worktree=false`` is refused rather than answered with the main checkout.
 
-    def test_returns_none_when_executor_missing(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """When the resolved path does not exist on disk, return None."""
-        import file_ops  # noqa: PLC0415
+        This verb force-pushes a plan's feature branch; silently answering with
+        the main checkout would target the wrong tree. The ``has_worktree`` face
+        is what makes that refusal expressible without re-reading status.
+        """
+        args = Namespace(plan_id='fp-no-worktree', project_dir=None, branch=None)
 
-        missing = tmp_path / 'execute-script.py'  # never created
-        monkeypatch.setattr(file_ops, 'get_executor_path', lambda: missing)
+        with patch_worktree_faces(False):
+            branch, path, error = _resolve_branch_and_path(args)
 
-        result = _find_executor()
+        assert branch is None
+        assert path is None
+        assert error is not None
+        assert error['error_type'] == 'worktree_not_materialized'
 
-        assert result is None
+    def test_absent_branch_is_refused(self) -> None:
+        """A resolvable worktree with no recorded branch is an incomplete plan."""
+        args = Namespace(plan_id='fp-no-branch', project_dir=None, branch=None)
 
-    def test_returns_none_when_helper_raises_runtime_error(
+        with patch_worktree_faces(True, worktree_branch=''):
+            branch, path, error = _resolve_branch_and_path(args)
+
+        assert branch is None
+        assert path is None
+        assert error is not None
+        assert error['error_type'] == 'worktree_not_materialized'
+
+    def test_resolution_failure_surfaces_the_resolver_message(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """When get_executor_path raises RuntimeError (no git repo), return None."""
+        """A ``WorktreeResolutionError`` is surfaced verbatim, not swallowed."""
         import file_ops  # noqa: PLC0415
 
-        def _raise() -> Path:
-            raise RuntimeError('no git repository')
+        def _raise(_plan_id):
+            raise file_ops.WorktreeResolutionError('metadata is corrupt')
 
-        monkeypatch.setattr(file_ops, 'get_executor_path', _raise)
+        monkeypatch.setattr(file_ops, '_query_worktree_path', _raise)
+        args = Namespace(plan_id='fp-corrupt', project_dir=None, branch=None)
 
-        result = _find_executor()
+        branch, path, error = _resolve_branch_and_path(args)
 
-        assert result is None
+        assert branch is None
+        assert path is None
+        assert error is not None
+        assert error['error_type'] == 'plan_not_found'
+        assert 'metadata is corrupt' in error['message']
+
+    def test_no_plan_sentinel_is_refused_by_the_worktree_verb(self) -> None:
+        """``NO_PLAN`` has no dedicated worktree, so this verb refuses it.
+
+        The sentinel is accepted by the RESOLVER — it resolves to the main
+        checkout — but ``force-push-with-lease`` needs a plan's feature branch,
+        and the sentinel has none. Refusing here is the correct outcome, and
+        asserting it keeps a future reader from "fixing" the sentinel into a
+        main-branch force push.
+        """
+        args = Namespace(plan_id=NO_PLAN_SENTINEL, project_dir=None, branch=None)
+
+        with patch_worktree_faces(True) as (path_mock, branch_mock):
+            branch, path, error = _resolve_branch_and_path(args)
+
+        assert error is not None
+        assert error['error_type'] == 'worktree_not_materialized'
+        assert path_mock.call_count == 0, 'the sentinel must never reach get-worktree-path'
+        assert branch_mock.call_count == 0, 'the sentinel must never reach get-worktree-path'
 
 
 # ---------------------------------------------------------------------------

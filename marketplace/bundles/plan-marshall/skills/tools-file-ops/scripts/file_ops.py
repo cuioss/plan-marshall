@@ -608,20 +608,20 @@ class WorktreeResolutionError(RuntimeError):
     """
 
 
-def _query_worktree_path(plan_id: str) -> tuple[bool, str]:
-    """Return ``(use_worktree, worktree_path)`` for a plan id.
+def _run_get_worktree_path(plan_id: str) -> str:
+    """Invoke ``manage-status get-worktree-path`` and return its raw stdout.
 
     This is the SINGLE place in the codebase that invokes ``manage-status
     get-worktree-path``. Every worktree-face consumer reaches it through
-    :func:`resolve_plan_context` (``resolve_project_dir`` delegates here), so
-    the shell-out exists once rather than once per Bucket B script.
+    :func:`resolve_plan_context`, so the shell-out exists once rather than once
+    per Bucket B script.
 
     ``manage-status`` is Bucket A (cwd-agnostic), so executor invocation works
     from any worktree.
 
     Raises:
-        WorktreeResolutionError: when the executor cannot be located, the
-            script returns a non-success status, or stdout cannot be parsed.
+        WorktreeResolutionError: when the executor cannot be located or the
+            script cannot be invoked / exits non-zero.
     """
     try:
         executor = get_executor_path()
@@ -660,7 +660,72 @@ def _query_worktree_path(plan_id: str) -> tuple[bool, str]:
             f"for plan_id='{plan_id}': {stderr}"
         )
 
-    return _parse_get_worktree_path_output(completed.stdout)
+    return completed.stdout
+
+
+def _query_worktree_path(plan_id: str) -> tuple[bool, str]:
+    """Return ``(use_worktree, worktree_path)`` for a plan id.
+
+    The worktree-path face of the single ``get-worktree-path`` channel; the
+    branch face is :func:`_query_worktree_branch`. Both are separate seams so a
+    consumer that needs only one pays for only one, and each can be stubbed
+    independently in tests.
+
+    Raises:
+        WorktreeResolutionError: when the executor cannot be located, the
+            script returns a non-success status, or stdout cannot be parsed.
+    """
+    return _parse_get_worktree_path_output(_run_get_worktree_path(plan_id))
+
+
+def _query_worktree_branch(plan_id: str) -> str:
+    """Return the persisted ``worktree_branch`` for a plan id.
+
+    The branch face of the same ``get-worktree-path`` channel. An absent branch
+    is returned as ``''`` — a plan whose worktree was never materialized has no
+    branch, and that is the caller's decision to classify, not this function's.
+
+    Raises:
+        WorktreeResolutionError: when the executor cannot be located, the
+            script returns a non-success status, or stdout cannot be parsed.
+    """
+    return _parse_get_worktree_branch_output(_run_get_worktree_path(plan_id))
+
+
+def _parse_get_worktree_branch_output(stdout: str) -> str:
+    """Extract ``worktree_branch`` from the get-worktree-path TOON payload.
+
+    Shares the non-success detection of
+    :func:`_parse_get_worktree_path_output` so an error payload raises rather
+    than degrading to an empty branch name.
+    """
+    branch = ''
+    saw_status_success = False
+    error_field: str | None = None
+    message_field: str | None = None
+    for raw_line in stdout.splitlines():
+        line = raw_line.strip()
+        if not line or ':' not in line:
+            continue
+        key, _, value = line.partition(':')
+        key = key.strip()
+        value = value.strip()
+        if value.startswith('"') and value.endswith('"'):
+            value = value[1:-1]
+        if key == 'status' and value == 'success':
+            saw_status_success = True
+        elif key == 'worktree_branch':
+            branch = value
+        elif key == 'error':
+            error_field = value
+        elif key == 'message':
+            message_field = value
+    if not saw_status_success:
+        raise WorktreeResolutionError(
+            f'manage-status get-worktree-path returned non-success: '
+            f"error='{error_field}' message='{message_field}'"
+        )
+    return branch
 
 
 def _parse_get_worktree_path_output(stdout: str) -> tuple[bool, str]:
@@ -732,12 +797,14 @@ def cwd_checkout_root() -> str:
 
 @dataclass
 class PlanContext:
-    """The resolved plan context: plan directory, worktree face, sentinel flag.
+    """The resolved plan context: plan directory, worktree faces, sentinel flag.
 
     The single struct every plan-id consumer resolves against. ``plan_dir`` is
-    computed eagerly (it is a pure path join); ``worktree_path`` is computed
-    LAZILY on first access, because resolving it shells out to ``manage-status
-    get-worktree-path``. The laziness is load-bearing: ``get_plan_dir``
+    computed eagerly (it is a pure path join); the three worktree faces —
+    ``worktree_path``, ``has_worktree`` and ``worktree_branch`` — are computed
+    LAZILY on first access, because resolving them shells out to
+    ``manage-status get-worktree-path``. The laziness is load-bearing:
+    ``get_plan_dir``
     delegates to this struct on every one of its call sites, and an eager
     worktree face would put a subprocess behind every plan-path computation —
     including inside ``manage-status`` itself, which is the producer of that
@@ -748,6 +815,10 @@ class PlanContext:
     plan_dir: Path
     is_sentinel: bool
     _worktree_path: str | None = field(default=None, init=False, repr=False)
+    _worktree_query: tuple[bool, str] | None = field(
+        default=None, init=False, repr=False
+    )
+    _worktree_branch: str | None = field(default=None, init=False, repr=False)
 
     @property
     def worktree_path(self) -> str:
@@ -766,10 +837,50 @@ class PlanContext:
             self._worktree_path = self._resolve_worktree_face()
         return self._worktree_path
 
+    @property
+    def has_worktree(self) -> bool:
+        """Whether this plan is bound to a DEDICATED worktree.
+
+        Distinct from :attr:`worktree_path`, which always yields a usable
+        working-tree root (falling back to the main checkout). A consumer that
+        must refuse when no worktree was ever materialized — ``worktree-path``,
+        ``branch-sync-state``, the finalize move-back — asks this instead of
+        inferring "no worktree" from a path it cannot tell apart from a
+        legitimate main-checkout binding. Always ``False`` for the sentinel.
+
+        Raises:
+            WorktreeResolutionError: when resolution fails for a real plan id.
+        """
+        if self.is_sentinel:
+            return False
+        return self._worktree_face_query()[0]
+
+    @property
+    def worktree_branch(self) -> str:
+        """The persisted feature branch for this plan, resolved on first access.
+
+        ``''`` when no branch is recorded (the worktree was never materialized)
+        and always ``''`` for the sentinel, which has no feature branch. Lazy
+        and cached for the same reason :attr:`worktree_path` is.
+
+        Raises:
+            WorktreeResolutionError: when resolution fails for a real plan id.
+        """
+        if self.is_sentinel:
+            return ''
+        if self._worktree_branch is None:
+            self._worktree_branch = _query_worktree_branch(self.plan_id)
+        return self._worktree_branch
+
+    def _worktree_face_query(self) -> tuple[bool, str]:
+        if self._worktree_query is None:
+            self._worktree_query = _query_worktree_path(self.plan_id)
+        return self._worktree_query
+
     def _resolve_worktree_face(self) -> str:
         if self.is_sentinel:
             return cwd_checkout_root()
-        use_worktree, worktree_path = _query_worktree_path(self.plan_id)
+        use_worktree, worktree_path = self._worktree_face_query()
         if use_worktree:
             if not worktree_path:
                 raise WorktreeResolutionError(

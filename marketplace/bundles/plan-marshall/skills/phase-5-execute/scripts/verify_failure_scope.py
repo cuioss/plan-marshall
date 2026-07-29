@@ -37,34 +37,10 @@ from _references_core import (
     compute_plan_branch_diff,
     resolve_base_ref,
 )
-from file_ops import get_plan_dir
+from file_ops import WorktreeResolutionError, get_plan_dir, resolve_plan_context
 
 
-def _resolve_worktree_root(plan_dir: Path) -> Path:
-    """Resolve the worktree root from status.metadata.worktree_path.
-
-    Falls back to the current working directory when no worktree is
-    materialised (main-checkout flow). The status.json is read directly to keep
-    this command self-contained.
-    """
-    status_path = plan_dir / 'status.json'
-    if status_path.exists():
-        try:
-            status = json.loads(status_path.read_text())
-        except (ValueError, OSError):
-            status = {}
-        if isinstance(status, dict):
-            metadata = status.get('metadata', {})
-            if isinstance(metadata, dict):
-                worktree_path = metadata.get('worktree_path', '')
-                if isinstance(worktree_path, str) and worktree_path:
-                    candidate = Path(worktree_path)
-                    if candidate.is_dir():
-                        return candidate
-    return Path.cwd()
-
-
-def _resolve_declared_footprint(plan_dir: Path) -> set[str]:
+def _resolve_declared_footprint(plan_dir: Path, plan_id: str) -> set[str]:
     """Return the live plan footprint, or raise FileNotFoundError.
 
     Reads references.json only to resolve the base ref, then derives the
@@ -72,6 +48,13 @@ def _resolve_declared_footprint(plan_dir: Path) -> set[str]:
     git derivation fails (e.g. an archived plan with no live worktree), the
     footprint degrades to the empty set so classification still proceeds — every
     error path is then treated as out-of-scope.
+
+    The worktree face comes from the single plan-context resolver rather than a
+    private re-derivation that hand-read ``status.metadata.worktree_path``.
+    ``ensure=False`` keeps this a routing lookup: classifying a verify failure
+    must not materialize or existence-check the plan. An unresolvable worktree
+    degrades to the current working directory, preserving the previous
+    non-fatal behaviour for archived plans and test seams.
     """
     refs_path = plan_dir / 'references.json'
     if not refs_path.exists():
@@ -83,7 +66,10 @@ def _resolve_declared_footprint(plan_dir: Path) -> set[str]:
     if not isinstance(refs, dict):
         refs = {}
     base_ref = resolve_base_ref(None, refs)
-    worktree = _resolve_worktree_root(plan_dir)
+    try:
+        worktree = Path(resolve_plan_context(plan_id, ensure=False).worktree_path)
+    except WorktreeResolutionError:
+        worktree = Path.cwd()
     try:
         return compute_plan_branch_diff(worktree, base_ref)
     except subprocess.CalledProcessError:
@@ -110,7 +96,7 @@ def classify_failure_scope(
     if plan_dir is None:
         plan_dir = get_plan_dir(plan_id)
     try:
-        declared = _resolve_declared_footprint(plan_dir)
+        declared = _resolve_declared_footprint(plan_dir, plan_id)
     except FileNotFoundError as exc:
         return {
             'status': 'error',

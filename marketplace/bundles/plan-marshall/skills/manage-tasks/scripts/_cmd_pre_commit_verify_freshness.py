@@ -79,50 +79,8 @@ from _ledger_core import (
     read_entries,
     resolve_ledger_path,
 )
-from _tasks_core import get_plan_dir
-from constants import FILE_STATUS
-from file_ops import read_json
+from file_ops import WorktreeResolutionError, resolve_plan_context
 from worktree_sha import compute_worktree_sha
-
-
-def _read_status_metadata(plan_id: str) -> dict:
-    """Read ``status.json`` for the plan and return its ``metadata`` dict.
-
-    Reads the plan-scoped status file directly via ``file_ops.read_json``
-    rather than dispatching through ``manage-status`` to keep this command
-    inside the manage-tasks sys.path island. Returns an empty dict on any
-    read/parse error so the caller can degrade to the cwd fallback.
-    """
-    status_path = get_plan_dir(plan_id) / FILE_STATUS
-    if not status_path.is_file():
-        return {}
-    try:
-        status = read_json(status_path)
-    except Exception:  # noqa: BLE001 — degrade to empty metadata on any error
-        return {}
-    if not isinstance(status, dict):
-        return {}
-    metadata = status.get('metadata', {})
-    if not isinstance(metadata, dict):
-        return {}
-    return metadata
-
-
-def _resolve_worktree_root(plan_id: str) -> Path:
-    """Resolve the worktree root for the plan.
-
-    Reads ``status.metadata.worktree_path`` and falls back to the current
-    working directory when no worktree is materialised. The fallback is
-    intentional: a plan that runs against the main checkout still needs a
-    freshness gate, and the main checkout is reachable from cwd.
-    """
-    metadata = _read_status_metadata(plan_id)
-    worktree_path = metadata.get('worktree_path', '')
-    if isinstance(worktree_path, str) and worktree_path:
-        candidate = Path(worktree_path)
-        if candidate.is_dir():
-            return candidate
-    return Path.cwd()
 
 
 def _build_necessity_verdict(plan_id: str) -> dict:
@@ -177,7 +135,16 @@ def cmd_pre_commit_verify_freshness(args) -> dict:
             ),
         }
 
-    worktree_root = _resolve_worktree_root(plan_id)
+    # ``ensure=False`` keeps this a routing lookup: a freshness check must not
+    # materialize or existence-check the plan. A plan running against the main
+    # checkout still needs a freshness gate, and the resolver supplies the
+    # cwd-relative checkout root for that case; the ``Path.cwd()`` fallback
+    # survives only for a genuinely unresolvable worktree, preserving the
+    # previous non-fatal behaviour.
+    try:
+        worktree_root = Path(resolve_plan_context(plan_id, ensure=False).worktree_path)
+    except WorktreeResolutionError:
+        worktree_root = Path.cwd()
     current_sha = compute_worktree_sha(worktree_root)
 
     if current_sha is None:

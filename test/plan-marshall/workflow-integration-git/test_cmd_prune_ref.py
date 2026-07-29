@@ -10,11 +10,21 @@ Tier 2 (direct import) tests covering:
                                   show-ref absent (graceful partial no-op),
                                   update-ref failure after show-ref confirms ref,
                                   success path (local + remote ref deleted)
-* _find_executor                — helper-based executor path resolution
 
 Tier 3 (subprocess CLI plumbing) tests:
 * --project-dir requires --head
 * --project-dir + --head + non-git path returns structured error
+
+Resolver-migration note
+-----------------------
+The private ``_find_executor`` helper this file used to exercise is GONE, along
+with the hand-rolled ``manage-status get-worktree-path`` shell-out it served.
+``_resolve_project_dir_and_head`` KEEPS its name — it is a CLI argument adapter
+that owns this verb's ``--project-dir`` / ``--head`` escape hatch — but its body
+now takes the head branch from ``file_ops.resolve_plan_context`` and the target
+checkout from ``cwd_checkout_root``. Its three ``_find_executor`` tests are
+replaced by ``TestResolveProjectDirAndHeadViaResolver`` below, which pins the
+two-source split that is the actual migration.
 """
 
 from __future__ import annotations
@@ -25,6 +35,13 @@ from argparse import Namespace
 from pathlib import Path
 
 import pytest
+from _resolve_project_dir_fixtures import (
+    CANONICAL_WORKTREE,
+    CANONICAL_WORKTREE_BRANCH,
+    MAIN_CHECKOUT_ROOT,
+    NO_PLAN_SENTINEL,
+    patch_worktree_faces,
+)
 from toon_parser import parse_toon
 
 from conftest import get_script_path, run_script
@@ -46,7 +63,6 @@ _spec.loader.exec_module(_mod)
 cmd_prune_ref = _mod.cmd_prune_ref
 _resolve_project_dir_and_head = _mod._resolve_project_dir_and_head
 _verify_git_repo = _mod._verify_git_repo
-_find_executor = _mod._find_executor
 
 
 # ---------------------------------------------------------------------------
@@ -304,60 +320,112 @@ class TestCmdPruneRefEscapeHatch:
 
 
 # ---------------------------------------------------------------------------
-# Tier 2: _find_executor — helper-based executor path resolution
+# Tier 2: _resolve_project_dir_and_head — the --plan-id resolver path
 # ---------------------------------------------------------------------------
 
 
-class TestFindExecutor:
-    """Direct-import tests for _find_executor's helper-based resolution.
+class TestResolveProjectDirAndHeadViaResolver:
+    """The ``--plan-id`` path takes its two values from two DIFFERENT sources.
 
-    _find_executor delegates to ``file_ops.get_executor_path()`` (worktree-safe
-    resolution via git-common-dir) and returns the resolved path only when it
-    exists on disk, falling back to None on RuntimeError (no git repo) or a
-    missing executor file.
+    This is the migration's substantive change for this verb:
+
+    * head branch     -> ``file_ops.resolve_plan_context(plan_id).worktree_branch``
+    * target checkout -> ``file_ops.cwd_checkout_root()``
+
+    They are deliberately NOT the same source. ``prune-local-and-remote-ref`` is
+    typically called AFTER the plan's worktree has been removed, so pruning must
+    target the checkout the working directory is in — never the (possibly gone)
+    worktree the plan's metadata names.
     """
 
-    def test_returns_resolved_path_when_executor_exists(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """When get_executor_path resolves an existing file, return it."""
+    def test_head_branch_comes_from_the_resolver(self, monkeypatch) -> None:
+        """The branch face supplies the head; the path face is not consulted."""
         import file_ops  # noqa: PLC0415
 
-        executor = tmp_path / 'execute-script.py'
-        executor.write_text('# executor\n')
-        monkeypatch.setattr(file_ops, 'get_executor_path', lambda: executor)
+        monkeypatch.setattr(file_ops, 'cwd_checkout_root', lambda: MAIN_CHECKOUT_ROOT)
+        args = Namespace(plan_id='pr-plan', project_dir=None, head=None)
 
-        result = _find_executor()
+        with patch_worktree_faces(True) as (path_mock, branch_mock):
+            path, head, error = _resolve_project_dir_and_head(args)
 
-        assert result == executor
+        assert error is None, error
+        assert head == CANONICAL_WORKTREE_BRANCH
+        assert branch_mock.call_count == 1, 'branch face not resolved exactly once'
+        assert path_mock.call_count == 0, (
+            'the path face was consulted; this verb must target the cwd checkout, '
+            'not the plan worktree'
+        )
 
-    def test_returns_none_when_executor_missing(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """When the resolved path does not exist on disk, return None."""
+    def test_target_checkout_is_the_cwd_root_not_the_plan_worktree(self, monkeypatch) -> None:
+        """The returned path is the cwd checkout root, never the worktree path.
+
+        Pinning this is what keeps the verb usable after worktree removal: a
+        regression that returned the plan's worktree path would leave the prune
+        pointed at a directory that no longer exists.
+        """
         import file_ops  # noqa: PLC0415
 
-        missing = tmp_path / 'execute-script.py'  # never created
-        monkeypatch.setattr(file_ops, 'get_executor_path', lambda: missing)
+        monkeypatch.setattr(file_ops, 'cwd_checkout_root', lambda: MAIN_CHECKOUT_ROOT)
+        args = Namespace(plan_id='pr-plan', project_dir=None, head=None)
 
-        result = _find_executor()
+        with patch_worktree_faces(True):
+            path, head, error = _resolve_project_dir_and_head(args)
 
-        assert result is None
+        assert error is None, error
+        assert path == Path(MAIN_CHECKOUT_ROOT)
+        assert path != Path(CANONICAL_WORKTREE)
 
-    def test_returns_none_when_helper_raises_runtime_error(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """When get_executor_path raises RuntimeError (no git repo), return None."""
+    def test_absent_branch_is_refused(self, monkeypatch) -> None:
+        """A plan with no recorded branch has nothing to prune."""
         import file_ops  # noqa: PLC0415
 
-        def _raise() -> Path:
-            raise RuntimeError('no git repository')
+        monkeypatch.setattr(file_ops, 'cwd_checkout_root', lambda: MAIN_CHECKOUT_ROOT)
+        args = Namespace(plan_id='pr-no-branch', project_dir=None, head=None)
 
-        monkeypatch.setattr(file_ops, 'get_executor_path', _raise)
+        with patch_worktree_faces(True, worktree_branch=''):
+            path, head, error = _resolve_project_dir_and_head(args)
 
-        result = _find_executor()
+        assert path is None
+        assert head is None
+        assert error is not None
+        assert error['error_type'] == 'worktree_not_materialized'
 
-        assert result is None
+    def test_resolution_failure_surfaces_the_resolver_message(self, monkeypatch) -> None:
+        """A ``WorktreeResolutionError`` is surfaced verbatim, not swallowed."""
+        import file_ops  # noqa: PLC0415
+
+        def _raise(_plan_id):
+            raise file_ops.WorktreeResolutionError('metadata is corrupt')
+
+        monkeypatch.setattr(file_ops, '_query_worktree_branch', _raise)
+        args = Namespace(plan_id='pr-corrupt', project_dir=None, head=None)
+
+        path, head, error = _resolve_project_dir_and_head(args)
+
+        assert path is None
+        assert head is None
+        assert error is not None
+        assert error['error_type'] == 'plan_not_found'
+        assert 'metadata is corrupt' in error['message']
+
+    def test_no_plan_sentinel_is_refused_by_the_branch_verb(self, monkeypatch) -> None:
+        """``NO_PLAN`` has no feature branch, so this verb refuses it.
+
+        The resolver ACCEPTS the sentinel (its branch face is the empty string);
+        the refusal happens here, on the absent-branch guard. Asserting it keeps
+        a future reader from routing a plan-less caller into a branch deletion.
+        """
+        import file_ops  # noqa: PLC0415
+
+        monkeypatch.setattr(file_ops, 'cwd_checkout_root', lambda: MAIN_CHECKOUT_ROOT)
+        args = Namespace(plan_id=NO_PLAN_SENTINEL, project_dir=None, head=None)
+
+        with patch_worktree_faces(True) as (_path_mock, branch_mock):
+            path, head, error = _resolve_project_dir_and_head(args)
+
+        assert error is not None
+        assert error['error_type'] == 'worktree_not_materialized'
+        assert branch_mock.call_count == 0, 'the sentinel must never reach get-worktree-path'
 
 
 # ---------------------------------------------------------------------------

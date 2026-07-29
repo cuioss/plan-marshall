@@ -8,7 +8,9 @@ rather than silently overwriting remote state.
 Design contract: §3.2 and §5.1 of design.md.
 
 Primary path  (``--plan-id``): resolves the worktree path and branch name
-              from ``manage-status get-worktree-path``.
+              through ``file_ops.resolve_plan_context`` — the single plan-context
+              resolver — which owns the ``manage-status get-worktree-path``
+              channel.
 Escape hatch  (``--project-dir`` + ``--branch``): uses the supplied path as
               the ``git -C`` target and the supplied branch name directly.
               Useful after worktree removal or in non-plan contexts.
@@ -47,89 +49,43 @@ def _resolve_branch_and_path(args) -> tuple[str | None, Path | None, dict | None
     """
     if getattr(args, 'plan_id', None):
         plan_id: str = args.plan_id
-        # Import here to keep the module testable without a live executor.
         try:
-            import subprocess
-
-            from git_provider import run_git as _rg  # noqa: F401 — already imported above
-
-            executor = _find_executor()
-            if executor is None:
-                return None, None, {
-                    'status': 'error',
-                    'operation': 'force-push-with-lease',
-                    'plan_id': plan_id,
-                    'error_type': 'plan_not_found',
-                    'message': 'plan-marshall executor not available (.plan/execute-script.py missing)',
-                }
-
-            result = subprocess.run(
-                ['python3', str(executor), 'plan-marshall:manage-status:manage-status',
-                 'get-worktree-path', '--plan-id', plan_id],
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-        except FileNotFoundError:
+            from file_ops import WorktreeResolutionError, resolve_plan_context
+        except ImportError as exc:
             return None, None, {
                 'status': 'error',
                 'operation': 'force-push-with-lease',
                 'plan_id': plan_id,
                 'error_type': 'plan_not_found',
-                'message': 'python3 not found on PATH',
-            }
-        except subprocess.TimeoutExpired:
-            return None, None, {
-                'status': 'error',
-                'operation': 'force-push-with-lease',
-                'plan_id': plan_id,
-                'error_type': 'plan_not_found',
-                'message': 'manage-status get-worktree-path timed out',
+                'message': f'file_ops module unavailable: {exc}',
             }
 
-        if result.returncode != 0:
-            return None, None, {
-                'status': 'error',
-                'operation': 'force-push-with-lease',
-                'plan_id': plan_id,
-                'error_type': 'plan_not_found',
-                'message': (result.stderr or result.stdout).strip() or 'manage-status failed',
-            }
-
-        # Parse TOON output for worktree_path and worktree_branch.
         try:
-            from toon_parser import parse_toon
-            parsed = parse_toon(result.stdout)
-        except Exception as exc:  # noqa: BLE001
+            context = resolve_plan_context(plan_id, ensure=False)
+            worktree_path_str = context.worktree_path if context.has_worktree else ''
+            plan_branch = context.worktree_branch
+        except WorktreeResolutionError as exc:
             return None, None, {
                 'status': 'error',
                 'operation': 'force-push-with-lease',
                 'plan_id': plan_id,
                 'error_type': 'plan_not_found',
-                'message': f'failed to parse manage-status output: {exc}',
+                'message': str(exc),
             }
 
-        if parsed.get('status') == 'error' or parsed.get('error'):
-            return None, None, {
-                'status': 'error',
-                'operation': 'force-push-with-lease',
-                'plan_id': plan_id,
-                'error_type': 'plan_not_found',
-                'message': parsed.get('message') or 'plan resolution failed',
-            }
-
-        worktree_path_str = parsed.get('worktree_path') or ''
-        branch = parsed.get('worktree_branch') or ''
-        if not worktree_path_str or not branch:
+        if not worktree_path_str or not plan_branch:
             return None, None, {
                 'status': 'error',
                 'operation': 'force-push-with-lease',
                 'plan_id': plan_id,
                 'error_type': 'worktree_not_materialized',
-                'message': 'worktree_path or worktree_branch absent from manage-status response',
+                'message': (
+                    'plan has no materialized worktree: the resolver reported no '
+                    'dedicated worktree path, or no feature branch is recorded'
+                ),
             }
 
-        return branch, Path(worktree_path_str), None
+        return plan_branch, Path(worktree_path_str), None
 
     else:
         # --project-dir + --branch path
@@ -144,22 +100,6 @@ def _resolve_branch_and_path(args) -> tuple[str | None, Path | None, dict | None
                            '--project-dir also requires --branch',
             }
         return branch, Path(project_dir), None
-
-
-def _find_executor() -> Path | None:
-    """Locate ``.plan/execute-script.py`` relative to the main checkout.
-
-    Note: This function is intentionally duplicated across ``_cmd_force_push.py``,
-    ``_cmd_prune_ref.py``, and ``_cmd_switch_and_pull.py`` to maintain module
-    independence (private helpers must not cross module boundaries). Keep the
-    implementations in sync when modifying this logic.
-    """
-    try:
-        from file_ops import get_executor_path
-        candidate = get_executor_path()
-        return candidate if candidate.exists() else None
-    except (ImportError, RuntimeError):
-        return None
 
 
 # ---------------------------------------------------------------------------

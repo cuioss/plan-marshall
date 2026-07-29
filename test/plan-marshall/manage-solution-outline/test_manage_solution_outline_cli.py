@@ -20,6 +20,10 @@ from __future__ import annotations
 import sys
 
 import pytest
+from _resolve_project_dir_fixtures import (
+    assert_sentinel_accepted,
+    assert_worktree_face_routes_through_resolver,
+)
 from toon_parser import parse_toon
 
 from conftest import load_script_module
@@ -238,3 +242,44 @@ def test_main_missing_subcommand_exits_2(plan_context, monkeypatch, capsys):
     """No subcommand → argparse required-subparser error exits 2."""
     code, _ = _run_main(monkeypatch, capsys, [])
     assert code == 2
+
+
+# =============================================================================
+# Resolver-migration contract
+# =============================================================================
+#
+# ``get-module-context`` is this CLI's working-tree-binding verb. Its worktree
+# face must come from the ONE resolver rather than a private re-derivation, and
+# the ``NO_PLAN`` sentinel must be accepted so a genuinely plan-less caller
+# resolves against the main checkout.
+
+
+def _resolve_project_dir_via_cli(plan_id):
+    """Resolve exactly as ``main`` does, through the CLI's own imported symbol."""
+    return _mod._routing.resolve_project_dir(plan_id, '.', default='.')
+
+
+def test_worktree_binding_routes_through_the_resolver():
+    """The worktree face reaches the single ``get-worktree-path`` seam."""
+    assert_worktree_face_routes_through_resolver(_resolve_project_dir_via_cli)
+
+
+def test_no_plan_sentinel_is_accepted():
+    """``NO_PLAN`` resolves to the main checkout without shelling out."""
+    assert_sentinel_accepted(_resolve_project_dir_via_cli)
+
+
+def test_get_module_context_accepts_the_no_plan_sentinel(plan_context, monkeypatch, capsys, tmp_path):
+    """``get-module-context --plan-id NO_PLAN`` routes without a resolution error.
+
+    End-to-end through ``main``: the sentinel must reach the command handler and
+    produce the handler's own verdict (``not_found`` for a checkout with no
+    architecture data), never a ``worktree_resolution_failed`` envelope.
+    """
+    monkeypatch.chdir(tmp_path)
+    code, out = _run_main(monkeypatch, capsys, ['get-module-context', '--plan-id', 'NO_PLAN'])
+    data = parse_toon(out)
+    assert data.get('error') != 'worktree_resolution_failed', (
+        f'the NO_PLAN sentinel was rejected by worktree resolution: {data!r}'
+    )
+    assert code in (0, 1), f'unexpected exit code {code} for the sentinel path: {data!r}'

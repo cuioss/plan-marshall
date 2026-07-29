@@ -30,11 +30,14 @@ def add_project_dir_arg(parser) -> None:
 
     * ``--plan-id X`` and ``--project-dir Y`` together — error
       ``mutually_exclusive_args``.
-    * ``--plan-id X`` only — auto-resolve via
-      ``manage-status get-worktree-path``.
+    * ``--plan-id X`` only — auto-resolve the worktree face through
+      ``file_ops.resolve_plan_context``, which owns the single
+      ``manage-status get-worktree-path`` invocation in the codebase.
     * ``--project-dir Y`` only — explicit override (legacy / escape
       hatch).
-    * Neither — main checkout via ``git rev-parse --show-toplevel``.
+    * Neither — the cwd-relative checkout root via
+      ``file_ops.cwd_checkout_root`` (nearest ``.plan/local`` ancestor of
+      cwd, per the uniform cwd rule / ADR-002).
 
     The ``--project-dir`` default stays ``'.'`` so the existing
     ``execute_direct(project_dir=args.project_dir, ...)`` call sites

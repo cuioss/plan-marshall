@@ -37,7 +37,7 @@ import sys
 from pathlib import Path
 
 from _findings_core import QGATE_PERSIST_OK, add_qgate_finding
-from file_ops import get_plan_dir
+from file_ops import WorktreeResolutionError, get_plan_dir, resolve_plan_context
 
 DEFAULT_THRESHOLD = 5
 
@@ -80,26 +80,24 @@ def _collect_declared_files(plan_dir: Path) -> set[str]:
 
 
 def _resolve_worktree(plan_id: str) -> Path:
-    """Resolve the active worktree path for the plan, or fall back to cwd."""
-    result = subprocess.run(
-        [
-            'python3',
-            '.plan/execute-script.py',
-            'plan-marshall:manage-status:manage-status',
-            'get-worktree-path',
-            '--plan-id',
-            plan_id,
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    for line in result.stdout.splitlines():
-        if line.startswith('worktree_path:'):
-            value = line.split(':', 1)[1].strip().strip('"').strip("'")
-            if value and value != '""':
-                return Path(value)
-    return Path.cwd()
+    """Resolve the active worktree path for the plan, or fall back to cwd.
+
+    Routes through the single plan-context resolver rather than re-implementing
+    the ``manage-status get-worktree-path`` shell-out and hand-parsing its TOON.
+    ``ensure=False`` keeps this a routing lookup: classifying scope creep must
+    not materialize or existence-check the plan.
+
+    The main-checkout flow (``use_worktree=false``) is handled inside the
+    resolver, which returns the cwd-relative checkout root — strictly better
+    than the bare ``Path.cwd()`` this used to fall back to, since it walks up to
+    the checkout root instead of trusting wherever the caller happened to be.
+    The ``Path.cwd()`` fallback survives only for the genuinely unresolvable
+    case, preserving the previous non-fatal behaviour.
+    """
+    try:
+        return Path(resolve_plan_context(plan_id, ensure=False).worktree_path)
+    except WorktreeResolutionError:
+        return Path.cwd()
 
 
 def _emit_finding(plan_id: str, residual: list[str], threshold: int) -> dict[str, str] | None:

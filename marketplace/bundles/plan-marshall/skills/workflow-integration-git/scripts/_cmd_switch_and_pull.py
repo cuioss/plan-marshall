@@ -7,8 +7,11 @@ from ``origin`` using the explicit form ``git pull origin {base_branch}``
 
 Design contract: §3.2 and §5.2 of design.md.
 
-Primary path  (``--plan-id``): resolves the project directory (main checkout)
-              from ``manage-status get-worktree-path``.
+Primary path  (``--plan-id``): validates the plan through
+              ``file_ops.resolve_plan_context`` — the single plan-context
+              resolver — then targets the cwd-relative checkout root, since this
+              verb switches the checkout the working directory is in, not the
+              plan's worktree.
 Escape hatch  (``--project-dir``): uses the supplied path directly. Useful
               in post-cleanup scenarios or non-plan contexts where the
               caller already knows the main checkout path.
@@ -16,7 +19,6 @@ Escape hatch  (``--project-dir``): uses the supplied path directly. Useful
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 
 from git_provider import run_git
@@ -24,22 +26,6 @@ from git_provider import run_git
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
-
-
-def _find_executor() -> Path | None:
-    """Locate ``.plan/execute-script.py`` relative to the main checkout.
-
-    Note: This function is intentionally duplicated across ``_cmd_force_push.py``,
-    ``_cmd_prune_ref.py``, and ``_cmd_switch_and_pull.py`` to maintain module
-    independence (private helpers must not cross module boundaries). Keep the
-    implementations in sync when modifying this logic.
-    """
-    try:
-        from file_ops import get_executor_path
-        candidate = get_executor_path()
-        return candidate if candidate.exists() else None
-    except (ImportError, RuntimeError):
-        return None
 
 
 def _resolve_project_dir(args) -> tuple[Path | None, dict | None]:
@@ -58,89 +44,41 @@ def _resolve_project_dir(args) -> tuple[Path | None, dict | None]:
         envelope['project_dir'] = project_dir_arg
 
     if plan_id:
-        executor = _find_executor()
-        if executor is None:
-            return None, {
-                **envelope,
-                'status': 'error',
-                'error_type': 'plan_not_found',
-                'message': 'plan-marshall executor not available (.plan/execute-script.py missing)',
-            }
-
         try:
-            result = subprocess.run(
-                ['python3', str(executor), 'plan-marshall:manage-status:manage-status',
-                 'get-worktree-path', '--plan-id', plan_id],
-                capture_output=True,
-                text=True,
-                timeout=30,
+            from file_ops import (
+                WorktreeResolutionError,
+                cwd_checkout_root,
+                resolve_plan_context,
             )
-        except FileNotFoundError:
+        except ImportError as exc:
             return None, {
                 **envelope,
                 'status': 'error',
                 'error_type': 'plan_not_found',
-                'message': 'python3 not found on PATH',
-            }
-        except subprocess.TimeoutExpired:
-            return None, {
-                **envelope,
-                'status': 'error',
-                'error_type': 'plan_not_found',
-                'message': 'manage-status get-worktree-path timed out',
+                'message': f'file_ops module unavailable: {exc}',
             }
 
-        if result.returncode != 0:
-            return None, {
-                **envelope,
-                'status': 'error',
-                'error_type': 'plan_not_found',
-                'message': (result.stderr or result.stdout).strip() or 'manage-status failed',
-            }
-
+        # The plan id is a validity gate here, not a path source: switch-and-pull
+        # operates on the checkout the working directory is in, never on the
+        # plan's worktree. Resolving the plan's worktree face is what fails loudly
+        # for an unresolvable plan id (and for a cwd outside any checkout, since
+        # the resolver locates the executor by the same cwd walk-up).
         try:
-            from toon_parser import parse_toon
-            parsed = parse_toon(result.stdout)
-        except Exception as exc:  # noqa: BLE001
+            _ = resolve_plan_context(plan_id, ensure=False).worktree_path
+        except WorktreeResolutionError as exc:
             return None, {
                 **envelope,
                 'status': 'error',
                 'error_type': 'plan_not_found',
-                'message': f'failed to parse manage-status output: {exc}',
+                'message': str(exc),
             }
 
-        if parsed.get('status') == 'error' or parsed.get('error'):
-            return None, {
-                **envelope,
-                'status': 'error',
-                'error_type': 'plan_not_found',
-                'message': parsed.get('message') or 'plan resolution failed',
-            }
-
-        # For switch-and-pull, we operate on the checkout the working directory
-        # is in. The caller of this verb (branch-cleanup.md §7.1) supplies
-        # ``--project-dir {main_checkout}`` explicitly when they know the path.
-        # When invoked via ``--plan-id``, the caller does not know the path — we
-        # derive the checkout root via the uniform cwd rule (ADR-002): the plan
-        # root is the nearest ancestor of cwd containing ``.plan/local``.
-        try:
-            from marketplace_paths import _find_plan_root_from_cwd
-            main_root = _find_plan_root_from_cwd()
-            if main_root is None:
-                return None, {
-                    **envelope,
-                    'status': 'error',
-                    'error_type': 'plan_not_found',
-                    'message': 'cannot resolve checkout root from cwd',
-                }
-            return main_root, None
-        except ImportError:
-            return None, {
-                **envelope,
-                'status': 'error',
-                'error_type': 'plan_not_found',
-                'message': 'marketplace_paths module unavailable',
-            }
+        # The caller of this verb (branch-cleanup.md §7.1) supplies
+        # ``--project-dir {main_checkout}`` explicitly when it knows the path.
+        # When invoked via ``--plan-id`` it does not, so the checkout root comes
+        # from the uniform cwd rule (ADR-002): the nearest ancestor of cwd
+        # containing ``.plan/local``.
+        return Path(cwd_checkout_root()), None
 
     elif project_dir_arg:
         return Path(project_dir_arg), None

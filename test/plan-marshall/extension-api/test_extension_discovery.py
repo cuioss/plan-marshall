@@ -45,7 +45,9 @@ import pytest
 from conftest import (
     MARKETPLACE_ROOT,
     PROJECT_ROOT,
+    get_script_path,
     load_script_module,
+    run_script,
 )
 
 # The resolved-role constants used to build stub route sets live in the
@@ -58,6 +60,11 @@ from extension_base import (
     ROLE_PRODUCTION,
     ROLE_TEST,
     BuildExtensionBase,
+)
+
+from _resolve_project_dir_fixtures import (
+    assert_sentinel_accepted,
+    assert_worktree_face_routes_through_resolver,
 )
 
 _discovery = load_script_module('plan-marshall', 'extension-api', 'extension_discovery.py')
@@ -1099,6 +1106,45 @@ def test_build_implementor_record_omits_verification_profile_when_absent(tmp_pat
     )
     # The contract fields the record always carries are unaffected by the absence.
     assert {'name', 'order', 'default_on', 'presets', 'canonicals', 'description'} <= set(record)
+
+
+# =============================================================================
+# Resolver-migration contract
+# =============================================================================
+#
+# ``extension_discovery`` binds its project root through the two-state routing
+# module it imports as ``_routing``, whose worktree face is owned by
+# ``file_ops.resolve_plan_context``. Both assertions below go through the
+# SCRIPT's own ``_routing`` binding, so they state that this script resolves
+# through the single resolver rather than that the shared helper does.
+
+
+def _resolve_project_root(plan_id):
+    """Resolve as ``apply-config-defaults`` does, via the script's own binding."""
+    return _discovery._routing.resolve_project_dir(plan_id, '.', default='.')
+
+
+def test_worktree_binding_routes_through_the_resolver():
+    """The worktree face reaches the single ``get-worktree-path`` seam."""
+    assert_worktree_face_routes_through_resolver(_resolve_project_root)
+
+
+def test_no_plan_sentinel_is_accepted():
+    """``NO_PLAN`` resolves to the main checkout without shelling out."""
+    assert_sentinel_accepted(_resolve_project_root)
+
+
+def test_apply_config_defaults_declares_both_routing_flags():
+    """The two-state routing surface is declared on the real parser.
+
+    Built from the script's own ``build_parser``/``main`` argparse surface via
+    ``--help``, so a dropped flag cannot stay green here.
+    """
+    script = get_script_path('plan-marshall', 'extension-api', 'extension_discovery.py')
+    result = run_script(script, 'apply-config-defaults', '--help')
+    combined = result.stdout + result.stderr
+    assert '--plan-id' in combined, 'apply-config-defaults does not declare --plan-id'
+    assert '--project-dir' in combined, 'apply-config-defaults does not declare --project-dir'
 
 
 def test_find_implementors_finalize_records_omit_verification_profile():

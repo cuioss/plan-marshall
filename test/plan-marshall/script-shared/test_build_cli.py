@@ -47,6 +47,8 @@ from _resolve_project_dir_fixtures import (
     CANONICAL_PLAN_ID,
     CANONICAL_PROJECT_DIR,
     CANONICAL_WORKTREE,
+    MAIN_CHECKOUT_ROOT,
+    NO_PLAN_SENTINEL,
     patch_main_checkout_root,
     patch_query_worktree_path,
 )
@@ -404,3 +406,69 @@ def test_register_standard_subparsers_propagates_routing_flags():
 
     args = parser.parse_args(['check-warnings', '--project-dir', CANONICAL_PROJECT_DIR])
     assert args.project_dir == CANONICAL_PROJECT_DIR
+
+
+# =============================================================================
+# Resolver-migration contract — the NO_PLAN sentinel
+# =============================================================================
+#
+# ``--plan-id`` is no longer a plan-only flag: a genuinely plan-less caller
+# passes the ``NO_PLAN`` sentinel and must resolve to the main checkout. Because
+# every Bucket B build script inherits its routing from ``build_main``, pinning
+# the sentinel here covers maven / gradle / npm / pyproject_build at once —
+# the same reason the four-state resolver behaviour is centralised in this file.
+
+
+def test_resolve_no_plan_sentinel_returns_main_checkout():
+    """The sentinel resolves to the main checkout WITHOUT reaching manage-status.
+
+    The call-count half is the load-bearing one: a sentinel that returned the
+    right path but still paid a ``get-worktree-path`` shell-out would fail in
+    exactly the plan-less contexts the sentinel exists to serve (no plan record
+    exists for it to resolve).
+    """
+    from resolve_project_dir import resolve_project_dir
+
+    with (
+        patch_query_worktree_path(use_worktree=True) as mock,
+        patch_main_checkout_root(MAIN_CHECKOUT_ROOT),
+    ):
+        resolved = resolve_project_dir(NO_PLAN_SENTINEL, '.', default='.')
+
+    assert resolved == MAIN_CHECKOUT_ROOT
+    assert mock.call_count == 0, 'the sentinel must never reach get-worktree-path'
+
+
+def test_build_main_routes_the_sentinel_to_the_main_checkout(monkeypatch):
+    """End-to-end through ``build_main``: ``--plan-id NO_PLAN`` reaches the handler.
+
+    A build invoked outside any plan must run against the main checkout rather
+    than failing resolution, so the resolved ``args.project_dir`` the handler
+    sees is the checkout root.
+    """
+    import file_ops as _resolver_core
+
+    def _forbidden(_pid):
+        raise AssertionError('the NO_PLAN sentinel reached get-worktree-path')
+
+    monkeypatch.setattr(_resolver_core, '_query_worktree_path', _forbidden)
+    monkeypatch.setattr(_resolver_core, 'cwd_checkout_root', lambda: MAIN_CHECKOUT_ROOT)
+
+    captured: list[str] = []
+
+    def capture_run(args):
+        captured.append(args.project_dir)
+        return 0
+
+    def register(subparsers):
+        p = add_run_subparser(subparsers, command_args_help='Test')
+        p.set_defaults(func=capture_run)
+
+    monkeypatch.setattr(
+        'sys.argv',
+        ['maven.py', 'run', '--command-args', 'verify', '--plan-id', NO_PLAN_SENTINEL],
+    )
+    rc = build_main('Maven build', [register])
+
+    assert rc == 0
+    assert captured == [MAIN_CHECKOUT_ROOT]

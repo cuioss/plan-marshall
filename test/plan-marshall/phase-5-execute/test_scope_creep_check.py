@@ -27,7 +27,16 @@ import sys
 from argparse import Namespace
 from pathlib import Path
 
+import file_ops
 import pytest
+from _resolve_project_dir_fixtures import (
+    CANONICAL_PLAN_ID,
+    CANONICAL_WORKTREE,
+    MAIN_CHECKOUT_ROOT,
+    NO_PLAN_SENTINEL,
+    patch_main_checkout_root,
+    patch_query_worktree_path,
+)
 from conftest import get_script_path
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'phase-5-execute', 'scope_creep_check.py')
@@ -95,14 +104,23 @@ def _patch_diff(monkeypatch, files):
 
 
 def _patch_resolve(monkeypatch, plan_dir):
-    """Patch only the worktree resolver.
+    """Stub the RESOLVER seam, not ``scc._resolve_worktree``.
 
-    The plan-dir resolution now flows through ``file_ops.get_plan_dir``, which
-    honours the ``PLAN_BASE_DIR`` the ``plan_context`` fixture sets. Each test
-    passes the matching ``plan_id`` so ``get_plan_dir(plan_id)`` resolves to the
-    fixture's ``plan_dir`` with no patching of the resolver itself.
+    ``_resolve_worktree`` no longer shells out — it delegates to
+    ``file_ops.resolve_plan_context``, whose only external touch point is
+    ``file_ops._query_worktree_path``. Stubbing that one seam leaves the real
+    ``_resolve_worktree`` body (and the whole delegation chain beneath it)
+    executing, which is exactly what the migration must keep covered. Stubbing
+    ``_resolve_worktree`` itself would hide a regression back to a hand-rolled
+    re-derivation, since the replaced function would never run.
+
+    The plan-dir resolution flows separately through ``file_ops.get_plan_dir``,
+    which honours the ``PLAN_BASE_DIR`` the ``plan_context`` fixture sets, so no
+    plan-dir patching is needed.
     """
-    monkeypatch.setattr(scc, '_resolve_worktree', lambda plan_id: Path.cwd())
+    monkeypatch.setattr(
+        file_ops, '_query_worktree_path', lambda plan_id: (True, str(Path.cwd()))
+    )
 
 
 def _patch_persist(monkeypatch, stub):
@@ -208,7 +226,7 @@ def test_plan_dir_resolved_via_plan_base_dir(plan_with_refs, monkeypatch, capsys
     """
     extras = [f'extra/{i}.py' for i in range(6)]
     _patch_diff(monkeypatch, ['src/a.py'] + extras)
-    monkeypatch.setattr(scc, '_resolve_worktree', lambda plan_id: Path.cwd())
+    _patch_resolve(monkeypatch, plan_with_refs.plan_dir)
     stub = _PersistStub()
     _patch_persist(monkeypatch, stub)
 
@@ -303,3 +321,50 @@ def test_in_store_outcomes_are_benign(plan_with_refs, monkeypatch, capsys, benig
     assert 'status: success' in out
     assert 'finding_emitted: true' in out
     assert 'finding_persist_failed' not in out
+
+
+# ---------------------------------------------------------------------------
+# Resolver-migration contract
+# ---------------------------------------------------------------------------
+#
+# ``_resolve_worktree`` KEEPS its name after the migration — it is the helper
+# that applies this script's cwd fallback — but its BODY must now delegate to
+# ``file_ops.resolve_plan_context`` instead of shelling out to
+# ``manage-status get-worktree-path`` and hand-parsing the TOON.
+
+
+def test_resolve_worktree_routes_through_the_resolver():
+    """The real ``_resolve_worktree`` body reaches the single resolver seam."""
+    with patch_query_worktree_path(True) as mock:
+        resolved = scc._resolve_worktree(CANONICAL_PLAN_ID)
+
+    assert resolved == Path(CANONICAL_WORKTREE)
+    assert mock.call_count == 1, (
+        '_resolve_worktree did not reach file_ops._query_worktree_path exactly '
+        f'once (call_count={mock.call_count}) — it is bypassing the resolver.'
+    )
+
+
+def test_resolve_worktree_accepts_the_no_plan_sentinel():
+    """``NO_PLAN`` resolves to the main checkout without shelling out."""
+    with patch_query_worktree_path(True) as mock, patch_main_checkout_root():
+        resolved = scc._resolve_worktree(NO_PLAN_SENTINEL)
+
+    assert resolved == Path(MAIN_CHECKOUT_ROOT)
+    assert mock.call_count == 0, 'the sentinel must never reach get-worktree-path'
+
+
+def test_resolve_worktree_falls_back_to_cwd_when_resolution_fails(monkeypatch):
+    """An unresolvable plan degrades to cwd rather than aborting the check.
+
+    Scope-creep classification is advisory: a plan whose worktree cannot be
+    resolved must still produce a verdict, so the non-fatal fallback that
+    predated the migration is preserved deliberately.
+    """
+
+    def _raise(_plan_id):
+        raise file_ops.WorktreeResolutionError('deliberately unresolvable')
+
+    monkeypatch.setattr(file_ops, '_query_worktree_path', _raise)
+
+    assert scc._resolve_worktree('never-resolves') == Path.cwd()

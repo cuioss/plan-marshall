@@ -122,8 +122,10 @@ def _cmd_surface(args: argparse.Namespace) -> int:
     plan_id = require_valid_plan_id(args)
 
     # Routing: when --project-dir is supplied, use it verbatim (escape hatch).
-    # When omitted, auto-resolve via manage-status get-worktree-path. Both
-    # paths are funneled through resolve_project_dir so the two-state
+    # When omitted, auto-resolve through the single plan-context resolver
+    # (resolve_project_dir delegates to file_ops.resolve_plan_context, which
+    # owns the manage-status get-worktree-path channel). Both paths are funneled
+    # through resolve_project_dir so the two-state
     # contract is enforced consistently — note that self_review legitimately
     # needs --plan-id for modified-files lookup as well, so an explicit
     # --project-dir alongside is allowed here only as a tie-break (the

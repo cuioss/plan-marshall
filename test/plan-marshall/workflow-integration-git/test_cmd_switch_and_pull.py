@@ -7,11 +7,22 @@ Tier 2 (direct import) tests covering:
 * cmd_switch_and_pull  — remote branch not found, merge_conflict on checkout,
                          pull failure, success path with commits_pulled, and
                          success path with zero commits_pulled
-* _find_executor       — helper-based executor path resolution
 
 Tier 3 (subprocess CLI plumbing) tests:
 * Missing --base arg is rejected
 * --project-dir with --base produces a structured error (non-git path)
+
+Resolver-migration note
+-----------------------
+The private ``_find_executor`` helper this file used to exercise is GONE, along
+with the hand-rolled ``manage-status get-worktree-path`` shell-out it served.
+``_resolve_project_dir`` KEEPS its name — it is the CLI argument adapter that
+owns this verb's ``--project-dir`` escape hatch — but under ``--plan-id`` the
+plan id is now a VALIDITY GATE rather than a path source: the plan is resolved
+through ``file_ops.resolve_plan_context`` so an unresolvable id fails loudly,
+and the returned path is the cwd checkout root. Its three ``_find_executor``
+tests are replaced by ``TestResolveProjectDirViaResolver`` below, which pins
+exactly that gate-not-source distinction.
 """
 
 from __future__ import annotations
@@ -22,6 +33,12 @@ from argparse import Namespace
 from pathlib import Path
 
 import pytest
+from _resolve_project_dir_fixtures import (
+    CANONICAL_WORKTREE,
+    MAIN_CHECKOUT_ROOT,
+    NO_PLAN_SENTINEL,
+    patch_worktree_faces,
+)
 from toon_parser import parse_toon
 
 from conftest import get_script_path, run_script
@@ -43,7 +60,6 @@ _spec.loader.exec_module(_mod)
 cmd_switch_and_pull = _mod.cmd_switch_and_pull
 _resolve_project_dir = _mod._resolve_project_dir
 _verify_git_repo = _mod._verify_git_repo
-_find_executor = _mod._find_executor
 
 
 # ---------------------------------------------------------------------------
@@ -334,60 +350,93 @@ class TestCmdSwitchAndPullEscapeHatch:
 
 
 # ---------------------------------------------------------------------------
-# Tier 2: _find_executor — helper-based executor path resolution
+# Tier 2: _resolve_project_dir — the --plan-id resolver path
 # ---------------------------------------------------------------------------
 
 
-class TestFindExecutor:
-    """Direct-import tests for _find_executor's helper-based resolution.
+class TestResolveProjectDirViaResolver:
+    """Under ``--plan-id`` the plan id is a VALIDITY GATE, not a path source.
 
-    _find_executor delegates to ``file_ops.get_executor_path()`` (worktree-safe
-    resolution via git-common-dir) and returns the resolved path only when it
-    exists on disk, falling back to None on RuntimeError (no git repo) or a
-    missing executor file.
+    ``switch-and-pull`` switches the checkout the working directory is in — it
+    is typically called to return the main checkout to its base branch after a
+    plan's worktree is gone. So the plan id must be validated (an unresolvable
+    id is a caller error worth failing on) while the returned path stays the cwd
+    checkout root.
     """
 
-    def test_returns_resolved_path_when_executor_exists(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """When get_executor_path resolves an existing file, return it."""
+    def test_plan_id_is_validated_through_the_resolver(self, monkeypatch) -> None:
+        """A resolvable plan id reaches the resolver seam exactly once."""
         import file_ops  # noqa: PLC0415
 
-        executor = tmp_path / 'execute-script.py'
-        executor.write_text('# executor\n')
-        monkeypatch.setattr(file_ops, 'get_executor_path', lambda: executor)
+        monkeypatch.setattr(file_ops, 'cwd_checkout_root', lambda: MAIN_CHECKOUT_ROOT)
+        args = Namespace(plan_id='sp-plan', project_dir=None)
 
-        result = _find_executor()
+        with patch_worktree_faces(True) as (path_mock, _branch_mock):
+            path, error = _resolve_project_dir(args)
 
-        assert result == executor
+        assert error is None, error
+        assert path_mock.call_count == 1, 'the plan id was not validated via the resolver'
 
-    def test_returns_none_when_executor_missing(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """When the resolved path does not exist on disk, return None."""
+    def test_resolved_path_is_the_cwd_checkout_not_the_plan_worktree(self, monkeypatch) -> None:
+        """The returned path is the cwd checkout root, never the worktree path.
+
+        Returning the plan's worktree would point the switch at the very tree
+        this verb exists to move AWAY from — and at a directory that may already
+        have been removed.
+        """
         import file_ops  # noqa: PLC0415
 
-        missing = tmp_path / 'execute-script.py'  # never created
-        monkeypatch.setattr(file_ops, 'get_executor_path', lambda: missing)
+        monkeypatch.setattr(file_ops, 'cwd_checkout_root', lambda: MAIN_CHECKOUT_ROOT)
+        args = Namespace(plan_id='sp-plan', project_dir=None)
 
-        result = _find_executor()
+        with patch_worktree_faces(True):
+            path, error = _resolve_project_dir(args)
 
-        assert result is None
+        assert error is None, error
+        assert path == Path(MAIN_CHECKOUT_ROOT)
+        assert path != Path(CANONICAL_WORKTREE)
 
-    def test_returns_none_when_helper_raises_runtime_error(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """When get_executor_path raises RuntimeError (no git repo), return None."""
+    def test_unresolvable_plan_id_fails_loudly(self, monkeypatch) -> None:
+        """An unresolvable plan id is an error, not a silent cwd fallback.
+
+        This is the whole point of keeping the resolver call in a verb that does
+        not use its result as a path: without it, a typo'd plan id would switch
+        whatever checkout the caller happened to be standing in.
+        """
         import file_ops  # noqa: PLC0415
 
-        def _raise() -> Path:
-            raise RuntimeError('no git repository')
+        def _raise(_plan_id):
+            raise file_ops.WorktreeResolutionError('plan metadata is corrupt')
 
-        monkeypatch.setattr(file_ops, 'get_executor_path', _raise)
+        monkeypatch.setattr(file_ops, '_query_worktree_path', _raise)
+        monkeypatch.setattr(file_ops, 'cwd_checkout_root', lambda: MAIN_CHECKOUT_ROOT)
+        args = Namespace(plan_id='sp-corrupt', project_dir=None)
 
-        result = _find_executor()
+        path, error = _resolve_project_dir(args)
 
-        assert result is None
+        assert path is None
+        assert error is not None
+        assert error['error_type'] == 'plan_not_found'
+        assert 'plan metadata is corrupt' in error['message']
+
+    def test_no_plan_sentinel_resolves_to_the_cwd_checkout(self, monkeypatch) -> None:
+        """``NO_PLAN`` is accepted and resolves without shelling out.
+
+        Unlike the branch-taking verbs, ``switch-and-pull`` needs no feature
+        branch, so the sentinel is a legitimate plan-less invocation: it passes
+        the validity gate in-process and targets the cwd checkout.
+        """
+        import file_ops  # noqa: PLC0415
+
+        monkeypatch.setattr(file_ops, 'cwd_checkout_root', lambda: MAIN_CHECKOUT_ROOT)
+        args = Namespace(plan_id=NO_PLAN_SENTINEL, project_dir=None)
+
+        with patch_worktree_faces(True) as (path_mock, _branch_mock):
+            path, error = _resolve_project_dir(args)
+
+        assert error is None, error
+        assert path == Path(MAIN_CHECKOUT_ROOT)
+        assert path_mock.call_count == 0, 'the sentinel must never reach get-worktree-path'
 
 
 # ---------------------------------------------------------------------------

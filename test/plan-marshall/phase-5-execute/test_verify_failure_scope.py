@@ -22,7 +22,15 @@ from __future__ import annotations
 
 import json
 import sys
+from pathlib import Path
 
+import file_ops
+from _resolve_project_dir_fixtures import (
+    MAIN_CHECKOUT_ROOT,
+    NO_PLAN_SENTINEL,
+    patch_main_checkout_root,
+    patch_query_worktree_path,
+)
 from conftest import get_script_path
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'phase-5-execute', 'verify_failure_scope.py')
@@ -41,9 +49,16 @@ def _write_refs(plan_dir):
 
 
 def _stub_footprint(monkeypatch, footprint):
-    """Patch the footprint resolver to return the given declared set."""
+    """Patch the footprint resolver to return the given declared set.
+
+    The stub takes ``(plan_dir, plan_id)``: the resolver now needs the plan id
+    because the worktree face comes from ``resolve_plan_context(plan_id)``
+    rather than from a hand-read of ``status.metadata.worktree_path`` under
+    ``plan_dir``. The extra parameter IS the migration, so the stub signature
+    tracks it deliberately.
+    """
     monkeypatch.setattr(
-        vfs, '_resolve_declared_footprint', lambda plan_dir: set(footprint)
+        vfs, '_resolve_declared_footprint', lambda plan_dir, plan_id: set(footprint)
     )
 
 
@@ -159,12 +174,18 @@ def test_plan_dir_resolved_via_plan_base_dir(plan_context, monkeypatch):
     assert result['out_of_scope_paths'] == ['foreign/x.py']
 
 
-def test_footprint_resolver_reads_references_and_status(plan_context, monkeypatch, tmp_path):
-    """End-to-end seam: _resolve_declared_footprint derives via compute_plan_branch_diff.
+def test_footprint_resolver_takes_worktree_from_the_resolver(plan_context, monkeypatch, tmp_path):
+    """End-to-end seam: the worktree comes from the resolver, the base ref from references.
 
-    Patches the git-derivation primitive so no real worktree is needed, and
-    confirms the resolver threads the worktree from status.metadata and the
-    base ref from references.json into the derivation.
+    The two inputs to the derivation now have DIFFERENT sources, and this is the
+    migration's central behavioural change:
+
+    * worktree  -> ``file_ops.resolve_plan_context(plan_id).worktree_path``
+    * base ref  -> ``references.json`` under ``plan_dir``
+
+    A ``status.json`` seeded under ``plan_dir`` is deliberately NOT written here:
+    the resolver, not a local status read, is what supplies the worktree. The
+    git-derivation primitive is patched so no real worktree is needed.
     """
     plan_dir = plan_context.plan_dir_for('vfs-resolver-seam')
     (plan_dir / 'references.json').write_text(
@@ -172,9 +193,6 @@ def test_footprint_resolver_reads_references_and_status(plan_context, monkeypatc
     )
     worktree = tmp_path / 'wt'
     worktree.mkdir()
-    (plan_dir / 'status.json').write_text(
-        json.dumps({'metadata': {'worktree_path': str(worktree)}})
-    )
 
     captured = {}
 
@@ -185,7 +203,60 @@ def test_footprint_resolver_reads_references_and_status(plan_context, monkeypatc
 
     monkeypatch.setattr(vfs, 'compute_plan_branch_diff', _fake_diff)
 
-    declared = vfs._resolve_declared_footprint(plan_dir)
+    with patch_query_worktree_path(True, str(worktree)) as mock:
+        declared = vfs._resolve_declared_footprint(plan_dir, 'vfs-resolver-seam')
+
     assert declared == {'src/a.py'}
     assert str(captured['worktree']) == str(worktree)
     assert captured['base_ref'] == 'develop'
+    assert mock.call_count == 1, (
+        'the footprint resolver did not reach the single resolver seam — it is '
+        'still re-deriving the worktree locally'
+    )
+
+
+def test_footprint_resolver_accepts_the_no_plan_sentinel(plan_context, monkeypatch):
+    """``NO_PLAN`` resolves to the main checkout without shelling out."""
+    plan_dir = plan_context.plan_dir_for('vfs-sentinel')
+    (plan_dir / 'references.json').write_text(json.dumps({'base_branch': 'main'}))
+
+    captured = {}
+
+    def _fake_diff(wt, base_ref):
+        captured['worktree'] = wt
+        return set()
+
+    monkeypatch.setattr(vfs, 'compute_plan_branch_diff', _fake_diff)
+
+    with patch_query_worktree_path(True) as mock, patch_main_checkout_root():
+        vfs._resolve_declared_footprint(plan_dir, NO_PLAN_SENTINEL)
+
+    assert str(captured['worktree']) == MAIN_CHECKOUT_ROOT
+    assert mock.call_count == 0, 'the sentinel must never reach get-worktree-path'
+
+
+def test_footprint_resolver_falls_back_to_cwd_when_resolution_fails(plan_context, monkeypatch):
+    """An unresolvable worktree degrades to cwd rather than aborting classification.
+
+    Verify-failure classification is advisory: an archived plan whose worktree no
+    longer resolves must still produce a verdict, so the non-fatal fallback that
+    predated the migration is preserved deliberately.
+    """
+    plan_dir = plan_context.plan_dir_for('vfs-unresolvable')
+    (plan_dir / 'references.json').write_text(json.dumps({'base_branch': 'main'}))
+
+    captured = {}
+
+    def _fake_diff(wt, base_ref):
+        captured['worktree'] = wt
+        return set()
+
+    def _raise(_plan_id):
+        raise file_ops.WorktreeResolutionError('deliberately unresolvable')
+
+    monkeypatch.setattr(vfs, 'compute_plan_branch_diff', _fake_diff)
+    monkeypatch.setattr(file_ops, '_query_worktree_path', _raise)
+
+    vfs._resolve_declared_footprint(plan_dir, 'vfs-unresolvable')
+
+    assert captured['worktree'] == Path.cwd()

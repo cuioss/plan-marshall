@@ -47,7 +47,15 @@ import json
 from argparse import Namespace
 from pathlib import Path
 
+import file_ops
 import pytest
+from _resolve_project_dir_fixtures import (
+    CANONICAL_WORKTREE,
+    MAIN_CHECKOUT_ROOT,
+    NO_PLAN_SENTINEL,
+    patch_main_checkout_root,
+    patch_query_worktree_path,
+)
 from toon_parser import serialize_toon
 
 from conftest import PROJECT_ROOT
@@ -96,12 +104,15 @@ _OTHER_SHA = 'b' * 64
 
 
 def _write_status(plan_dir: Path, *, worktree_path: str = '') -> Path:
-    """Write a minimal ``status.json`` whose metadata.worktree_path is set.
+    """Write a minimal ``status.json`` for the plan.
 
-    Empty ``worktree_path`` (the default) leaves the worktree resolution to fall
-    back to the current working directory. ``compute_worktree_sha`` is stubbed,
-    so the resolved root never reaches real git — the status file exists only so
-    ``_resolve_worktree_root`` has a deterministic input.
+    The gate no longer READS this file for its worktree root — that resolution
+    moved behind ``file_ops.resolve_plan_context`` (stubbed at the single
+    ``_query_worktree_path`` seam by the autouse fixture below). The file is
+    still written so each case has a well-formed plan directory, and its
+    ``metadata.worktree_path`` is deliberately left as a DECOY: nothing here may
+    change the resolved root, which is exactly what
+    ``test_worktree_root_ignores_status_metadata`` pins.
     """
     status = {
         'plan_id': plan_dir.name,
@@ -207,6 +218,20 @@ def _stub_verdict(monkeypatch, verdict: dict) -> None:
     authority's internals, which are covered by the authority's own tests.
     """
     monkeypatch.setattr(_freshness_mod, '_build_necessity_verdict', lambda _plan_id: verdict)
+
+
+@pytest.fixture(autouse=True)
+def _stub_resolver_seam(monkeypatch):
+    """Stub the ONE resolver seam so no case shells out to ``manage-status``.
+
+    The gate resolves its worktree root through ``resolve_plan_context``, whose
+    only external touch point is ``file_ops._query_worktree_path``. Stubbing
+    that seam (rather than the gate's own resolution) keeps the real delegation
+    chain executing while making every case hermetic and subprocess-free.
+    """
+    monkeypatch.setattr(
+        file_ops, '_query_worktree_path', lambda _plan_id: (True, str(Path.cwd()))
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -779,3 +804,109 @@ def test_malformed_manifest_is_irrelevant_to_the_gate(
 
     assert result['status'] == 'fresh', result
     assert result['worktree_sha'] == _CURRENT_SHA
+
+
+# =============================================================================
+# Resolver-migration contract
+# =============================================================================
+#
+# The gate's worktree root used to come from a private ``_resolve_worktree_root``
+# that hand-read ``status.metadata.worktree_path`` through a private
+# ``_read_status_metadata``. Both are gone: the root now comes from the ONE
+# resolver. The three cases below pin the routing, the sentinel carve-out, and
+# the deliberately-preserved non-fatal fallback.
+
+
+def _capture_worktree_root(monkeypatch) -> list[Path]:
+    """Capture the root the gate hands to ``compute_worktree_sha``."""
+    seen: list[Path] = []
+
+    def _record(root):
+        seen.append(root)
+        return _CURRENT_SHA
+
+    monkeypatch.setattr(_freshness_mod, 'compute_worktree_sha', _record)
+    return seen
+
+
+def test_worktree_root_routes_through_the_resolver(
+    plan_context, monkeypatch, tmp_path
+) -> None:
+    """The root reaches the single ``get-worktree-path`` seam, exactly once."""
+    plan_dir = plan_context.plan_dir_for('freshness-routing')
+    _write_status(plan_dir)
+    seen = _capture_worktree_root(monkeypatch)
+    _stub_ledger_path(monkeypatch, _write_ledger(tmp_path, [_build_entry()]))
+
+    with patch_query_worktree_path(True) as mock:
+        cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-routing'))
+
+    assert seen == [Path(CANONICAL_WORKTREE)]
+    assert mock.call_count == 1, (
+        'the freshness gate did not reach the single resolver seam exactly once '
+        f'(call_count={mock.call_count})'
+    )
+
+
+def test_worktree_root_ignores_status_metadata(
+    plan_context, monkeypatch, tmp_path
+) -> None:
+    """A ``status.metadata.worktree_path`` decoy must NOT steer the resolution.
+
+    The retired implementation read exactly this field. Seeding it with a path
+    the resolver does not return proves the hand-read is gone: if the decoy ever
+    wins again, the resolver has been bypassed.
+    """
+    plan_dir = plan_context.plan_dir_for('freshness-decoy')
+    decoy = tmp_path / 'decoy-worktree'
+    decoy.mkdir()
+    _write_status(plan_dir, worktree_path=str(decoy))
+    seen = _capture_worktree_root(monkeypatch)
+    _stub_ledger_path(monkeypatch, _write_ledger(tmp_path, [_build_entry()]))
+
+    with patch_query_worktree_path(True):
+        cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-decoy'))
+
+    assert seen == [Path(CANONICAL_WORKTREE)], (
+        'the gate followed status.metadata.worktree_path instead of the resolver'
+    )
+
+
+def test_no_plan_sentinel_resolves_to_the_main_checkout(
+    plan_context, monkeypatch, tmp_path
+) -> None:
+    """``NO_PLAN`` resolves to the main checkout without shelling out."""
+    plan_context.plan_dir_for(NO_PLAN_SENTINEL)
+    seen = _capture_worktree_root(monkeypatch)
+    _stub_ledger_path(monkeypatch, _write_ledger(tmp_path, [_build_entry()]))
+
+    with patch_query_worktree_path(True) as mock, patch_main_checkout_root():
+        cmd_pre_commit_verify_freshness(Namespace(plan_id=NO_PLAN_SENTINEL))
+
+    assert seen == [Path(MAIN_CHECKOUT_ROOT)]
+    assert mock.call_count == 0, 'the sentinel must never reach get-worktree-path'
+
+
+def test_unresolvable_worktree_falls_back_to_cwd(
+    plan_context, monkeypatch, tmp_path
+) -> None:
+    """An unresolvable worktree degrades to cwd rather than aborting the gate.
+
+    The fallback is deliberate and predates the migration: a plan whose worktree
+    metadata is unusable must still receive a freshness VERDICT (which will fail
+    closed on the ledger scan), never an exception that skips the gate entirely.
+    """
+    plan_dir = plan_context.plan_dir_for('freshness-unresolvable')
+    _write_status(plan_dir)
+    seen = _capture_worktree_root(monkeypatch)
+    _stub_ledger_path(monkeypatch, _write_ledger(tmp_path, [_build_entry()]))
+
+    def _raise(_plan_id):
+        raise file_ops.WorktreeResolutionError('deliberately unresolvable')
+
+    monkeypatch.setattr(file_ops, '_query_worktree_path', _raise)
+
+    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-unresolvable'))
+
+    assert seen == [Path.cwd()]
+    assert result['status'] in ('fresh', 'stale', 'undecidable')

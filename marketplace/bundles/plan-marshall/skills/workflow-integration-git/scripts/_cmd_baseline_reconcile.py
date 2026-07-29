@@ -30,33 +30,44 @@ _QGATE_SOURCE = 'qgate'
 _DEFAULT_BASE_BRANCH = 'main'
 
 
-def _resolve_worktree_path(plan_id: str, override: str | None) -> tuple[str | None, str | None]:
-    """Resolve the worktree path for ``plan_id``.
+def _worktree_target(plan_id: str, override: str | None) -> tuple[str | None, str | None]:
+    """Select the working tree this reconciliation runs against.
+
+    An argument adapter over the single plan-context resolver, NOT a worktree
+    re-deriver: it applies the ``--worktree-path`` override, delegates the
+    actual resolution, and maps the outcome onto Step 3d's skip-reason
+    vocabulary.
 
     Returns ``(path, skip_reason_or_None)``. The skip reason is
     populated when the plan declares ``use_worktree==false`` or when
     status.json is missing/unparseable — both are documented skip
     conditions in Step 3d's activation guard.
+
+    Resolution routes through the single plan-context resolver rather than
+    hand-reading ``status.metadata``. The skip-reason vocabulary is unchanged
+    and is derived structurally, not by matching the resolver's error text:
+    a failure to resolve the worktree PRESENCE is ``status_not_found``, while a
+    plan that declares a worktree but resolves no path is
+    ``worktree_path_missing``.
     """
     if override:
         return override, None
 
     try:
-        from _status_core import read_status
+        from file_ops import WorktreeResolutionError, resolve_plan_context
     except ImportError:
         return None, 'status_module_unavailable'
 
     try:
-        status = read_status(plan_id)
-    except FileNotFoundError:
+        context = resolve_plan_context(plan_id, ensure=False)
+        if not context.has_worktree:
+            return None, 'main_checkout_flow'
+    except WorktreeResolutionError:
         return None, 'status_not_found'
 
-    metadata = status.get('metadata', {}) if isinstance(status, dict) else {}
-    if metadata.get('use_worktree') is False:
-        return None, 'main_checkout_flow'
-
-    worktree_path = metadata.get('worktree_path')
-    if not worktree_path or not isinstance(worktree_path, str):
+    try:
+        worktree_path = context.worktree_path
+    except WorktreeResolutionError:
         return None, 'worktree_path_missing'
 
     if not Path(worktree_path).is_dir():
@@ -316,7 +327,7 @@ def cmd_baseline_reconcile(args) -> dict:
     override_worktree: str | None = getattr(args, 'worktree_path', None)
     skip_fetch: bool = bool(getattr(args, 'skip_fetch', False))
 
-    worktree_path, skip_reason = _resolve_worktree_path(plan_id, override_worktree)
+    worktree_path, skip_reason = _worktree_target(plan_id, override_worktree)
     if worktree_path is None:
         return {
             'status': 'skipped',
