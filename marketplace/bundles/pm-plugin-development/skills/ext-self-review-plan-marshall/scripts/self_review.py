@@ -3,14 +3,12 @@
 """Deterministic candidate surfacing for the pre-submission-self-review finalize step.
 
 Reads the worktree's diff against the base branch, scans added lines in modified
-files, and emits eighteen candidate lists (regexes, user-facing strings, markdown
-sections, symmetric-pair functions, flag-guard pairs, contract sources,
-schema-bearing files, keep-identifier markers, protected identifiers,
-producer-consumer pairs,
-source-of-truth duplicates, same-document normative directives, description-vs-body
-frontmatter, lone-unguarded-boundary calls, stale count-prose, near-identical-hunk
-touched claims, advertised-form help strings, same-document ordinal references) as
-TOON for the LLM cognitive review pass to consume.
+files, and emits one candidate list per entry of the ``CANDIDATE_LISTS`` registry
+in ``_self_review_patterns`` as TOON for the LLM cognitive review pass to consume.
+That registry is the single code-side source of truth for the emitted key set,
+the ``counts.total`` formula, and the ``surface`` help prose — this docstring
+deliberately does not mirror the vocabulary. The contract prose lives in
+``plan-marshall:extension-api/standards/ext-point-self-review-surfacing.md``.
 
 Storage: stateless — reads the worktree diff and derives the plan footprint
 live from the worktree (``compute-footprint``: ``{base}...HEAD`` ∪ porcelain).
@@ -21,7 +19,9 @@ Usage:
 """
 
 import argparse
+import textwrap
 from pathlib import Path
+from typing import Any
 
 from _self_review_detectors import (
     _detect_advertised_form_help_strings,
@@ -35,6 +35,7 @@ from _self_review_detectors import (
     _detect_producer_consumer,
     _detect_regexes,
     _detect_same_document_consistency,
+    _detect_scan_derived_keys,
     _detect_source_of_truth,
     _detect_symmetric_pairs,
     _detect_touched_claims,
@@ -53,6 +54,10 @@ from _self_review_diff import (
     _run_git,
     _truncate,  # noqa: F401 - re-exported for stable import surface
     _verify_base_branch,
+)
+from _self_review_patterns import (
+    CANDIDATE_LISTS,
+    candidate_list_prose,
 )
 from file_ops import (
     output_toon,
@@ -73,6 +78,44 @@ from resolve_project_dir import (
 # =============================================================================
 # Subcommand: surface
 # =============================================================================
+
+
+def _compose_candidate_output(detected: dict[str, list]) -> dict[str, Any]:
+    """Derive the counts block and the candidate payload from ``CANDIDATE_LISTS``.
+
+    ``detected`` maps every registry key to that list's detector output. Both the
+    per-list counts, the ``total`` sum (over the registry's ``in_total`` entries),
+    and the emitted payload key set are derived here, so a candidate list cannot
+    reach the output without also appearing in the derived count.
+
+    The two key sets MUST match exactly. A registry entry with no detector result
+    would emit a key with no payload; a detector result with no registry entry
+    would be silently dropped from BOTH the payload and the count — the same
+    mirror-drift this registry exists to remove. Either direction raises.
+
+    Which lists feed ``total`` is the registry's ``in_total`` field; the rationale
+    is owned by
+    ``plan-marshall:extension-api/standards/ext-point-self-review-surfacing.md``
+    § Output Schema.
+    """
+    registered = {spec.key for spec in CANDIDATE_LISTS}
+    if detected.keys() != registered:
+        raise ValueError(
+            'candidate-list registry drift — detected but not registered: '
+            f'{sorted(detected.keys() - registered)}; registered but not '
+            f'detected: {sorted(registered - detected.keys())}'
+        )
+
+    counts: dict[str, int] = {
+        spec.key: len(detected[spec.key]) for spec in CANDIDATE_LISTS
+    }
+    counts['total'] = sum(
+        len(detected[spec.key]) for spec in CANDIDATE_LISTS if spec.in_total
+    )
+
+    payload: dict[str, Any] = {'counts': counts}
+    payload.update({spec.key: detected[spec.key] for spec in CANDIDATE_LISTS})
+    return payload
 
 
 def _cmd_surface(args: argparse.Namespace) -> int:
@@ -152,52 +195,9 @@ def _cmd_surface(args: argparse.Namespace) -> int:
         added, project_dir
     )
     ordinal_references = _detect_ordinal_references(added, project_dir)
+    scan_derived_keys = _detect_scan_derived_keys(added, project_dir)
 
-    output = {
-        'status': 'success',
-        'plan_id': plan_id,
-        'project_dir': str(project_dir),
-        'base_branch': base_branch,
-        'counts': {
-            'regexes': len(regexes),
-            'user_facing_strings': len(user_facing),
-            'markdown_sections': len(md_sections),
-            'symmetric_pairs': len(sym_pairs),
-            'flag_guard_pairs': len(flag_guard_pairs),
-            'contract_sources': len(contract_sources),
-            'schema_bearing_files': len(schema_bearing),
-            'keep_markers': len(keep_markers),
-            'protected_identifiers': len(protected_identifiers),
-            'producer_consumer': len(producer_consumer),
-            'source_of_truth': len(source_of_truth),
-            'same_document_consistency': len(same_document),
-            'description_vs_body': len(description_vs_body),
-            'unguarded_boundaries': len(unguarded_boundaries),
-            'count_prose': len(count_prose),
-            'touched_claims': len(touched_claims),
-            'advertised_form_help_strings': len(advertised_form_help_strings),
-            'ordinal_references': len(ordinal_references),
-            # ``count_prose`` and ``advertised_form_help_strings`` are
-            # review-anchor lists (like ``contract_sources`` and
-            # ``schema_bearing_files``) and are excluded from ``total``; the
-            # line-level lists ``unguarded_boundaries``, ``touched_claims``, and
-            # ``ordinal_references`` flag a specific added line and are included.
-            'total': (
-                len(regexes)
-                + len(user_facing)
-                + len(md_sections)
-                + len(sym_pairs)
-                + len(flag_guard_pairs)
-                + len(keep_markers)
-                + len(producer_consumer)
-                + len(source_of_truth)
-                + len(same_document)
-                + len(description_vs_body)
-                + len(unguarded_boundaries)
-                + len(touched_claims)
-                + len(ordinal_references)
-            ),
-        },
+    detected: dict[str, list] = {
         'regexes': regexes,
         'user_facing_strings': user_facing,
         'markdown_sections': md_sections,
@@ -216,6 +216,15 @@ def _cmd_surface(args: argparse.Namespace) -> int:
         'touched_claims': touched_claims,
         'advertised_form_help_strings': advertised_form_help_strings,
         'ordinal_references': ordinal_references,
+        'scan_derived_keys': scan_derived_keys,
+    }
+
+    output = {
+        'status': 'success',
+        'plan_id': plan_id,
+        'project_dir': str(project_dir),
+        'base_branch': base_branch,
+        **_compose_candidate_output(detected),
     }
     output_toon(output)
     return 0
@@ -226,17 +235,41 @@ def _cmd_surface(args: argparse.Namespace) -> int:
 # =============================================================================
 
 
+class _TermPreservingHelpFormatter(argparse.HelpFormatter):
+    """Wrap help text without splitting a term across a line break.
+
+    The candidate-list labels the ``surface`` help enumerates are hyphenated
+    terms of art derived from ``CANDIDATE_LISTS`` (``same-document normative
+    directives``, ``near-identical-hunk touched claims``). ``textwrap``'s
+    defaults break on hyphens and inside over-long words, which renders a label
+    that no reader — and no derivation check — can match verbatim against the
+    registry. Both break modes are disabled so a label always reaches the
+    rendered help intact; an over-long term simply overflows its column.
+    """
+
+    def _split_lines(self, text: str, width: int) -> list[str]:
+        collapsed = self._whitespace_matcher.sub(' ', text).strip()
+        return textwrap.wrap(
+            collapsed, width, break_on_hyphens=False, break_long_words=False
+        )
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description='Surface candidate lists for pre-submission self-review.',
         allow_abbrev=False,
+        formatter_class=_TermPreservingHelpFormatter,
     )
     sub = parser.add_subparsers(dest='command', required=True)
 
     p_surface = sub.add_parser(
         'surface',
-        help='Emit eighteen candidate lists (regexes, user-facing strings, markdown sections, symmetric pairs, flag-guard pairs, contract sources, schema-bearing files, keep markers, protected identifiers, producer-consumer pairs, source-of-truth duplicates, same-document normative directives, description-vs-body frontmatter, lone-unguarded-boundary calls, stale count-prose, near-identical-hunk touched claims, advertised-form help strings, same-document ordinal references) from the worktree diff as TOON.',
+        help=(
+            f'Emit {len(CANDIDATE_LISTS)} candidate lists '
+            f'({candidate_list_prose()}) from the worktree diff as TOON.'
+        ),
         allow_abbrev=False,
+        formatter_class=_TermPreservingHelpFormatter,
     )
     add_plan_id_arg(p_surface)
     p_surface.add_argument(

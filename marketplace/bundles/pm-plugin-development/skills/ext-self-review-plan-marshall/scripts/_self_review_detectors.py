@@ -32,11 +32,13 @@ from _self_review_patterns import (
     _DEST_KWARG,
     _EXECUTE_SCRIPT_NOTATION,
     _FILE_IO_BOUNDARY,
+    _FIRST_MATCH_EXIT,
     _FLAG_MEMBERSHIP_GUARD,
     _FLAG_STARTSWITH_GUARD,
     _FNMATCH_CALL,
     _FRONTMATTER_DESCRIPTION,
     _HELP_FIELD,
+    _IDENTITY_CONSUMPTION,
     _KEEP_MARKER,
     _MD_BULLET,
     _MD_HEADING,
@@ -47,11 +49,14 @@ from _self_review_patterns import (
     _ORDINAL_NOUN_REFERENCE,
     _ORDINAL_PAREN_REFERENCE,
     _PAIR_TOKENS,
+    _PATTERN_MATCH_TEST,
     _PRINT_CALL,
     _PRODUCER_SUBSCRIPT_ASSIGN,
     _RAISE_MESSAGE,
     _RAW_REGEX_LITERAL,
     _RE_CALL,
+    _SCAN_LOOP,
+    _SEQUENCE_DECOMPOSITION,
     _SUBPROCESS_BOUNDARY,
     _TOKENIZE,
     _TOON_FIELD_TOKEN,
@@ -1414,6 +1419,198 @@ def _detect_advertised_form_help_strings(
                     'arg': dest,
                     'help_text': _truncate(help_text, 200),
                     'raw_pass_line': raw_pass[0],
+                }
+            )
+    return out
+
+
+def _function_blocks(scan_lines: list[tuple[int, str]]) -> list[dict[str, Any]]:
+    """Split a file's lines into ``def``-headed blocks.
+
+    ``scan_lines`` is a list of ``(line_number, content)`` pairs — the file's
+    post-image when one is available, else the diff's added lines only. Each
+    returned block carries ``name`` (the function name), ``line`` (the ``def``
+    header's line number), and ``lines`` (the body's ``(line_number, content)``
+    pairs, excluding the header).
+
+    A ``class`` header, or a ``def`` whose name does not resolve, closes the
+    current block without opening a new one — so lines at class scope are never
+    attributed to the preceding function.
+    """
+    blocks: list[dict[str, Any]] = []
+    current: dict[str, Any] | None = None
+    for lineno, content in scan_lines:
+        if _DEF_OR_CLASS_HEADER.match(content):
+            m = _DEF_NAME.match(content)
+            if m is None:
+                current = None
+                continue
+            current = {'name': m.group(1), 'line': lineno, 'lines': []}
+            blocks.append(current)
+            continue
+        if current is not None:
+            current['lines'].append((lineno, content))
+    return blocks
+
+
+def _scan_derived_key_in_block(block: dict[str, Any]) -> tuple[str, int] | None:
+    """Return ``(sequence_name, scan_line)`` when a block derives a key by scanning.
+
+    Fires on the conjunction of the two firing conjuncts documented in
+    ``standards/unreachable-guard-detection.md`` § 1: the block binds a sequence
+    by decomposing a value (``.parts`` / ``.split(...)``), and iterates THAT
+    sequence in a loop whose body both applies a compiled-pattern match and exits
+    on the first hit (``return`` / ``break``). A full traversal with no
+    first-match exit, or a loop over a sequence that was never decomposed, is not
+    the shape and returns ``None``.
+
+    The loop body is delimited by indentation: the lines following the ``for``
+    header while they are indented deeper than it. Blank lines never close the
+    body.
+    """
+    decomposed: set[str] = set()
+    for _lineno, content in block['lines']:
+        m = _SEQUENCE_DECOMPOSITION.match(content)
+        if m is not None:
+            decomposed.add(m.group('name'))
+    if not decomposed:
+        return None
+
+    lines = block['lines']
+    for idx, (lineno, content) in enumerate(lines):
+        m = _SCAN_LOOP.match(content)
+        if m is None or m.group('seq') not in decomposed:
+            continue
+        indent = len(content) - len(content.lstrip())
+        body: list[str] = []
+        for _follow_lineno, follow in lines[idx + 1:]:
+            if not follow.strip():
+                continue
+            if len(follow) - len(follow.lstrip()) <= indent:
+                break
+            body.append(follow)
+        has_pattern_match = any(_PATTERN_MATCH_TEST.search(b) for b in body)
+        has_first_match_exit = any(_FIRST_MATCH_EXIT.match(b) for b in body)
+        if has_pattern_match and has_first_match_exit:
+            return m.group('seq'), lineno
+    return None
+
+
+def _block_is_diff_touched(block: dict[str, Any], touched: dict[int, str]) -> bool:
+    """Return True when the block's line range intersects the diff-touched lines.
+
+    The block spans its ``def`` header (``block['line']``) plus every line the
+    block carries. ``touched`` maps the file's added line numbers to their
+    content, so an empty map means nothing in that file was touched and no block
+    in it qualifies.
+    """
+    block_lines = {lineno for lineno, _content in block['lines']}
+    block_lines.add(block['line'])
+    return bool(block_lines & touched.keys())
+
+
+def _key_consumed_as_identity(
+    name: str,
+    blocks_by_file: dict[str, list[dict[str, Any]]],
+    touched_by_file: dict[str, dict[int, str]],
+) -> bool:
+    """Return True when some OTHER diff-touched block calls ``name`` and consumes it as an identity.
+
+    Identity consumption is the third conjunct of the scan-versus-anchor shape,
+    carried as a flag rather than as a firing condition (see
+    ``standards/unreachable-guard-detection.md`` § 1 for why): the calling block's
+    body groups the derived value into a keyed map (``setdefault``), tests the
+    cardinality of the resulting key set (``len``), or compares it for equality.
+
+    Candidate callers are restricted to blocks the diff touched. ``blocks_by_file``
+    is walked over the file's full post-image whenever ``project_dir`` resolves it,
+    so without this restriction a caller the diff never touched could flip the
+    flag. A caller that lives outside the surfaced diff is invisible here, which is
+    why ``False`` narrows the adjudication rather than suppressing the candidate.
+    """
+    call = re.compile(r'(?<![A-Za-z0-9_])' + re.escape(name) + r'\s*\(')
+    for path, blocks in blocks_by_file.items():
+        touched = touched_by_file.get(path, {})
+        for block in blocks:
+            if block['name'] == name:
+                continue
+            if not _block_is_diff_touched(block, touched):
+                continue
+            body = [content for _lineno, content in block['lines']]
+            if not any(call.search(content) for content in body):
+                continue
+            if any(_IDENTITY_CONSUMPTION.search(content) for content in body):
+                return True
+    return False
+
+
+def _detect_scan_derived_keys(
+    added: list[tuple[str, int, str]], project_dir: Path | None = None
+) -> list[dict[str, Any]]:
+    """Detect a key derived by scanning a decomposition instead of anchoring on a root.
+
+    The unreachable-guard candidate list. A function that decomposes a value into
+    segments and then selects one by first-match of a compiled pattern — rather
+    than by indexing the decomposition at a position anchored on a known root —
+    collapses every input carrying an out-of-domain leading match to the SAME
+    key. A guard fed by such a key can never observe a difference, so its refusal
+    path is unreachable while its tests stay green.
+
+    The full gate verdict, the two rejected framings, the discriminator, and the
+    PR #1013 worked example live in
+    ``standards/unreachable-guard-detection.md`` — this docstring does not
+    restate them.
+
+    Only functions the diff touched are considered (at least one added line in
+    the block, or an added ``def`` header). When ``project_dir`` is supplied the
+    file's full post-image is walked, so a scan loop whose enclosing ``def`` or
+    whose decomposition binding sits outside the diff is still resolved; without
+    it the detector falls back to the added lines alone, which preserves the
+    diff-only behaviour unit tests rely on.
+
+    Each entry carries ``file``, ``line`` (the scan loop's line), ``name`` (the
+    deriving function), ``sequence`` (the decomposed sequence the loop iterates),
+    and ``key_consumed`` (the Tier-2 identity-consumption flag). The list is
+    surfacing-only — it records candidates and never blocks or self-adjudicates.
+    """
+    added_by_file: dict[str, dict[int, str]] = {}
+    for path, lineno, content in added:
+        if path.endswith('.py'):
+            added_by_file.setdefault(path, {})[lineno] = content
+    if not added_by_file:
+        return []
+
+    scan_lines_by_file: dict[str, list[tuple[int, str]]] = {}
+    for path in added_by_file:
+        post_image = _read_post_image(project_dir, path) if project_dir is not None else []
+        if post_image:
+            scan_lines_by_file[path] = list(enumerate(post_image, start=1))
+        else:
+            scan_lines_by_file[path] = sorted(added_by_file[path].items())
+
+    blocks_by_file = {
+        path: _function_blocks(scan_lines) for path, scan_lines in scan_lines_by_file.items()
+    }
+
+    out: list[dict[str, Any]] = []
+    for path in sorted(added_by_file):
+        touched = added_by_file[path]
+        for block in blocks_by_file[path]:
+            if not _block_is_diff_touched(block, touched):
+                continue
+            hit = _scan_derived_key_in_block(block)
+            if hit is None:
+                continue
+            sequence, scan_line = hit
+            out.append(
+                {
+                    'file': path,
+                    'line': scan_line,
+                    'name': block['name'],
+                    'sequence': sequence,
+                    'key_consumed': _key_consumed_as_identity(
+                        block['name'], blocks_by_file, added_by_file
+                    ),
                 }
             )
     return out

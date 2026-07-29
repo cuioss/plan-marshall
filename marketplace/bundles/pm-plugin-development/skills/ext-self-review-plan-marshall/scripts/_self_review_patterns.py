@@ -8,6 +8,7 @@ name (e.g. ``from _self_review_patterns import _RE_CALL``).
 """
 
 import re
+from typing import NamedTuple
 
 # =============================================================================
 # Detection regexes
@@ -243,3 +244,104 @@ _NORMALIZATION_TOKENS = re.compile(
     r'\b(?:normali[sz]e|parse|resolve|canonical|extract|to_url|to_id|'
     r'from_url|split|strip|rstrip|lstrip|replace|urlparse|sub)\b'
 )
+
+# Scan-derived-key (unreachable-guard) detection.
+# The scan-versus-anchor shape: a key derived by first-match over an unbounded
+# decomposition instead of by indexing that decomposition at a position anchored
+# on a known root. See standards/unreachable-guard-detection.md for the gate
+# verdict that selected this framing, the two rejected framings, and the
+# reachability argument — the rationale is NOT restated here.
+
+# A sequence decomposition binding: ``NAME = <expr>.parts`` or
+# ``NAME = <expr>.split(...)``. Group ``name`` captures the bound sequence
+# variable, which the scan loop below must iterate for the shape to hold.
+_SEQUENCE_DECOMPOSITION = re.compile(
+    r'^\s*(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*.*?(?:\.parts\b|\.split\s*\()'
+)
+# A scan loop over a decomposed sequence: ``for part in parts:`` or
+# ``for index, part in enumerate(parts):``. Group ``seq`` captures the iterated
+# sequence name so it can be matched against a decomposition binding.
+_SCAN_LOOP = re.compile(
+    r'^\s*for\s+[A-Za-z_][A-Za-z0-9_,\s]*?\s+in\s+(?:enumerate\s*\(\s*)?'
+    r'(?P<seq>[A-Za-z_][A-Za-z0-9_]*)'
+)
+# A pattern-match test inside the scan loop — either a bare ``re.match``/
+# ``re.search``/``re.fullmatch`` or the same method on a module-level compiled
+# pattern constant (``_VERSION_DIR_NAME_RE.match(...)``). This is what makes the
+# selection a *pattern* first-match rather than an ordinary sequence search.
+_PATTERN_MATCH_TEST = re.compile(
+    r'\b(?:re|_?[A-Z][A-Z0-9_]*)\s*\.\s*(?:match|search|fullmatch)\s*\('
+)
+# The first-match exit: a ``return`` or ``break`` inside the loop body. Without
+# it the loop is a full traversal, not a first-match selection, and the
+# collapse-to-one-key failure mode does not arise.
+_FIRST_MATCH_EXIT = re.compile(r'^\s*(?:return\b|break\b)')
+# Identity consumption of a derived key — the three shapes that treat a value as
+# an identity rather than as data: grouping it into a keyed map
+# (``setdefault``), testing the cardinality of the resulting key set (``len``),
+# or comparing it for equality. Used only to compute the ``key_consumed`` flag
+# that rides on a surfaced candidate; it never gates the candidate.
+_IDENTITY_CONSUMPTION = re.compile(
+    r'\.setdefault\s*\(|\blen\s*\(|==|!='
+)
+
+
+# =============================================================================
+# Candidate-list registry
+# =============================================================================
+
+
+class CandidateList(NamedTuple):
+    """One candidate list in the surfacer's emitted vocabulary.
+
+    ``key`` is the payload and ``counts`` key; ``label`` is the human name used
+    in derived help prose; ``in_total`` records whether the list's cardinality is
+    summed into ``counts.total``.
+    """
+
+    key: str
+    label: str
+    in_total: bool
+
+
+#: The canonical candidate-list vocabulary — the single code-side source of
+#: truth for the surfacer's emitted key set, its ``counts.total`` formula, and
+#: the help prose that enumerates it. Adding a list here is what makes it appear
+#: in all three, so an emitter addition cannot drift from the derived count.
+#:
+#: ``in_total`` is False for the four review-anchor lists (``contract_sources``,
+#: ``schema_bearing_files``, ``count_prose``, ``advertised_form_help_strings``)
+#: and for ``protected_identifiers``, a derived index over ``keep_markers``.
+#: The prose rationale is owned by
+#: ``plan-marshall:extension-api/standards/ext-point-self-review-surfacing.md``
+#: § Output Schema and is NOT restated here.
+CANDIDATE_LISTS: tuple[CandidateList, ...] = (
+    CandidateList('regexes', 'regexes', True),
+    CandidateList('user_facing_strings', 'user-facing strings', True),
+    CandidateList('markdown_sections', 'markdown sections', True),
+    CandidateList('symmetric_pairs', 'symmetric pairs', True),
+    CandidateList('flag_guard_pairs', 'flag-guard pairs', True),
+    CandidateList('contract_sources', 'contract sources', False),
+    CandidateList('schema_bearing_files', 'schema-bearing files', False),
+    CandidateList('keep_markers', 'keep markers', True),
+    CandidateList('protected_identifiers', 'protected identifiers', False),
+    CandidateList('producer_consumer', 'producer-consumer pairs', True),
+    CandidateList('source_of_truth', 'source-of-truth duplicates', True),
+    CandidateList(
+        'same_document_consistency', 'same-document normative directives', True
+    ),
+    CandidateList('description_vs_body', 'description-vs-body frontmatter', True),
+    CandidateList('unguarded_boundaries', 'lone-unguarded-boundary calls', True),
+    CandidateList('count_prose', 'stale count-prose', False),
+    CandidateList('touched_claims', 'near-identical-hunk touched claims', True),
+    CandidateList(
+        'advertised_form_help_strings', 'advertised-form help strings', False
+    ),
+    CandidateList('ordinal_references', 'same-document ordinal references', True),
+    CandidateList('scan_derived_keys', 'scan-derived keys', True),
+)
+
+
+def candidate_list_prose() -> str:
+    """Return the registry's labels as a comma-separated enumeration for help prose."""
+    return ', '.join(spec.label for spec in CANDIDATE_LISTS)

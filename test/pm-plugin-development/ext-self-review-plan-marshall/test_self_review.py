@@ -6,7 +6,10 @@ import subprocess  # noqa: I001
 from pathlib import Path
 
 import pytest
+from _self_review_patterns import CANDIDATE_LISTS, candidate_list_prose
 from self_review import (
+    _build_parser,
+    _compose_candidate_output,
     _detect_advertised_form_help_strings,
     _detect_contract_sources,
     _detect_count_prose,
@@ -18,6 +21,7 @@ from self_review import (
     _detect_producer_consumer,
     _detect_regexes,
     _detect_same_document_consistency,
+    _detect_scan_derived_keys,
     _detect_source_of_truth,
     _detect_symmetric_pairs,
     _detect_touched_claims,
@@ -2026,28 +2030,192 @@ class TestDetectAdvertisedFormHelpStrings:
 
 
 # =============================================================================
+# Test: _detect_scan_derived_keys
+# =============================================================================
+
+
+class TestDetectScanDerivedKeys:
+    """The scan-versus-anchor shape behind the unreachable-guard candidate list.
+
+    Fires on the conjunction of a sequence decomposition and a first-match scan
+    over that same sequence. See
+    ``standards/unreachable-guard-detection.md`` for the gate verdict.
+    """
+
+    # The PR #1013 pre-fix scanning derivation, in added-line-tuple form.
+    _SCANNING_FORM = [
+        ('gen.py', 1, 'def _split_bundle_version(path):'),
+        ('gen.py', 2, '    parts = Path(path).parts'),
+        ('gen.py', 3, '    for index, part in enumerate(parts):'),
+        ('gen.py', 4, '        if index > 0 and _VERSION_DIR_NAME_RE.match(part):'),
+        ('gen.py', 5, '            return parts[index - 1], part'),
+        ('gen.py', 6, '    return None'),
+    ]
+
+    def test_scanning_derivation_surfaces_candidate(self):
+        out = _detect_scan_derived_keys(list(self._SCANNING_FORM))
+        assert len(out) == 1
+        assert out[0]['file'] == 'gen.py'
+        assert out[0]['line'] == 3
+        assert out[0]['name'] == '_split_bundle_version'
+        assert out[0]['sequence'] == 'parts'
+
+    def test_no_caller_in_diff_yields_key_consumed_false(self):
+        out = _detect_scan_derived_keys(list(self._SCANNING_FORM))
+        assert out[0]['key_consumed'] is False
+
+    def test_identity_consuming_caller_yields_key_consumed_true(self):
+        added = list(self._SCANNING_FORM) + [
+            ('gen.py', 8, 'def _check_provenance(paths):'),
+            ('gen.py', 9, '    by_bundle = {}'),
+            ('gen.py', 10, '    for p in paths:'),
+            ('gen.py', 11, '        bundle, version = _split_bundle_version(p)'),
+            ('gen.py', 12, '        by_bundle.setdefault(bundle, set()).add(version)'),
+            ('gen.py', 13, '    return any(len(v) > 1 for v in by_bundle.values())'),
+        ]
+        out = _detect_scan_derived_keys(added)
+        surfaced = [e for e in out if e['name'] == '_split_bundle_version']
+        assert len(surfaced) == 1
+        assert surfaced[0]['key_consumed'] is True
+
+    #: A post-image carrying the scanning derivation on lines 1-6 (the diff's
+    #: added lines) and an identity-consuming caller on lines 9-14 that the diff
+    #: never touched. Used by the diff-scoping pair below.
+    _POST_IMAGE_WITH_UNTOUCHED_CALLER = (
+        'def _split_bundle_version(path):\n'
+        '    parts = Path(path).parts\n'
+        '    for index, part in enumerate(parts):\n'
+        '        if index > 0 and _VERSION_DIR_NAME_RE.match(part):\n'
+        '            return parts[index - 1], part\n'
+        '    return None\n'
+        '\n'
+        '\n'
+        'def _check_provenance(paths):\n'
+        '    by_bundle = {}\n'
+        '    for p in paths:\n'
+        '        bundle, version = _split_bundle_version(p)\n'
+        '        by_bundle.setdefault(bundle, set()).add(version)\n'
+        '    return any(len(v) > 1 for v in by_bundle.values())\n'
+    )
+
+    #: The caller's post-image lines 9-14, as added-line tuples.
+    _CALLER_ADDED_LINES = [
+        ('gen.py', 9, 'def _check_provenance(paths):'),
+        ('gen.py', 10, '    by_bundle = {}'),
+        ('gen.py', 11, '    for p in paths:'),
+        ('gen.py', 12, '        bundle, version = _split_bundle_version(p)'),
+        ('gen.py', 13, '        by_bundle.setdefault(bundle, set()).add(version)'),
+        ('gen.py', 14, '    return any(len(v) > 1 for v in by_bundle.values())'),
+    ]
+
+    def test_untouched_caller_in_post_image_leaves_key_consumed_false(self, tmp_path):
+        # The documented invariant: "a caller that lives outside the surfaced
+        # diff is invisible here". With project_dir supplied the file's FULL
+        # post-image is walked to resolve the candidate block, so an
+        # identity-consuming caller the diff never touched must NOT flip the
+        # Tier-2 flag.
+        (tmp_path / 'gen.py').write_text(self._POST_IMAGE_WITH_UNTOUCHED_CALLER)
+
+        out = _detect_scan_derived_keys(list(self._SCANNING_FORM), tmp_path)
+
+        surfaced = [e for e in out if e['name'] == '_split_bundle_version']
+        assert len(surfaced) == 1, (
+            f'The candidate must still surface off the post-image — otherwise '
+            f'the flag assertion below is vacuous. Got: {out}'
+        )
+        assert surfaced[0]['key_consumed'] is False
+
+    def test_touched_caller_in_post_image_still_sets_key_consumed(self, tmp_path):
+        # The complementary positive over the IDENTICAL post-image: with the
+        # caller's lines present in the diff, the flag must still resolve true.
+        # Without this, the negative above would pass equally if the diff filter
+        # suppressed every caller — collapsing the Tier-2 flag to a constant
+        # False and making its own guard unreachable.
+        (tmp_path / 'gen.py').write_text(self._POST_IMAGE_WITH_UNTOUCHED_CALLER)
+
+        added = list(self._SCANNING_FORM) + list(self._CALLER_ADDED_LINES)
+        out = _detect_scan_derived_keys(added, tmp_path)
+
+        surfaced = [e for e in out if e['name'] == '_split_bundle_version']
+        assert len(surfaced) == 1
+        assert surfaced[0]['key_consumed'] is True
+
+    def test_anchored_derivation_surfaces_nothing(self):
+        # The shipped post-fix form indexes the decomposition at a fixed
+        # position anchored on a known root — no scan loop, no candidate.
+        added = [
+            ('gen.py', 1, 'def _split_bundle_version(path, base_path):'),
+            ('gen.py', 2, '    relative = Path(path).relative_to(base_path)'),
+            ('gen.py', 3, '    parts = relative.parts'),
+            ('gen.py', 4, '    if len(parts) < 2 or not _VERSION_DIR_NAME_RE.match(parts[1]):'),
+            ('gen.py', 5, '        return None'),
+            ('gen.py', 6, '    return parts[0], parts[1]'),
+        ]
+        assert _detect_scan_derived_keys(added) == []
+
+    def test_full_traversal_without_first_match_exit_surfaces_nothing(self):
+        # A loop that collects every match is a traversal, not a first-match
+        # selection — the collapse-to-one-key failure mode does not arise.
+        added = [
+            ('scan.py', 1, 'def collect(path):'),
+            ('scan.py', 2, "    parts = path.split('/')"),
+            ('scan.py', 3, '    found = []'),
+            ('scan.py', 4, '    for part in parts:'),
+            ('scan.py', 5, '        if _NAME_RE.match(part):'),
+            ('scan.py', 6, '            found.append(part)'),
+            ('scan.py', 7, '    return found'),
+        ]
+        assert _detect_scan_derived_keys(added) == []
+
+    def test_loop_over_undecomposed_sequence_surfaces_nothing(self):
+        # An ordinary search over a caller-supplied list is not the shape: the
+        # sequence was never derived by decomposing a single value.
+        added = [
+            ('scan.py', 1, 'def pick(names):'),
+            ('scan.py', 2, '    for name in names:'),
+            ('scan.py', 3, '        if _NAME_RE.match(name):'),
+            ('scan.py', 4, '            return name'),
+            ('scan.py', 5, '    return None'),
+        ]
+        assert _detect_scan_derived_keys(added) == []
+
+    def test_non_python_file_surfaces_nothing(self):
+        added = [
+            ('guide.md', 1, 'def _split_bundle_version(path):'),
+            ('guide.md', 2, '    parts = Path(path).parts'),
+            ('guide.md', 3, '    for part in parts:'),
+            ('guide.md', 4, '        if _RE.match(part):'),
+            ('guide.md', 5, '            return part'),
+        ]
+        assert _detect_scan_derived_keys(added) == []
+
+    def test_empty_added_surfaces_nothing(self):
+        assert _detect_scan_derived_keys([]) == []
+
+
+# =============================================================================
 # Test: counts.total invariant (review-anchor lists excluded from total)
 # =============================================================================
 
 
 class TestCountsTotalInvariant:
-    """``counts.total`` excludes the four review-anchor lists.
+    """``counts.total`` sums exactly the registry's ``in_total`` lists.
 
-    The end-to-end ``surface`` output sums every line-level candidate list into
-    ``counts.total`` EXCEPT the four review-anchor lists
-    (``contract_sources``, ``schema_bearing_files``, ``count_prose``,
-    ``advertised_form_help_strings``). This test drives the real ``_cmd_surface``
-    path over a git fixture whose uncommitted diff triggers the
-    advertised-form detector, and asserts the new detector populates its own
-    list while leaving ``total`` equal to the sum of the INCLUDED lists only.
+    The end-to-end ``surface`` output sums every candidate list into
+    ``counts.total`` EXCEPT those the ``CANDIDATE_LISTS`` registry marks
+    ``in_total=False``. This test drives the real ``_cmd_surface`` path over a git
+    fixture whose uncommitted diff triggers the advertised-form detector, and
+    asserts the new detector populates its own list while leaving ``total`` equal
+    to the sum of the INCLUDED lists only.
     """
 
-    # The four lists deliberately excluded from ``counts.total``.
-    _REVIEW_ANCHOR_LISTS = (
-        'contract_sources',
-        'schema_bearing_files',
-        'count_prose',
-        'advertised_form_help_strings',
+    #: The lists excluded from ``counts.total``, derived from the registry rather
+    #: than hand-mirrored. The hand-written tuple this replaces named only the
+    #: four review-anchor lists and omitted ``protected_identifiers``, which is
+    #: ALSO excluded from ``total`` — so the invariant below held only while that
+    #: list happened to be empty in every fixture.
+    _EXCLUDED_FROM_TOTAL = tuple(
+        spec.key for spec in CANDIDATE_LISTS if not spec.in_total
     )
 
     def _surface(self, repo: Path):
@@ -2099,7 +2267,7 @@ class TestCountsTotalInvariant:
         included_sum = sum(
             int(v)
             for k, v in counts.items()
-            if k != 'total' and k not in self._REVIEW_ANCHOR_LISTS
+            if k != 'total' and k not in self._EXCLUDED_FROM_TOTAL
         )
         assert int(counts['total']) == included_sum
 
@@ -2120,7 +2288,7 @@ class TestCountsTotalInvariant:
         included_sum = sum(
             int(v)
             for k, v in counts.items()
-            if k != 'total' and k not in self._REVIEW_ANCHOR_LISTS
+            if k != 'total' and k not in self._EXCLUDED_FROM_TOTAL
         )
         assert int(counts['total']) == included_sum
 
@@ -2147,14 +2315,191 @@ class TestCountsTotalInvariant:
         assert int(data['counts']['ordinal_references']) >= 1
         assert len(data['ordinal_references']) >= 1
 
-        # ordinal_references is NOT a review-anchor list — it is summed into
-        # total. The invariant (total == sum of included lists) therefore still
-        # holds, and the included sum carries the ordinal_references count.
+        # ordinal_references is marked in_total — it is summed into total. The
+        # invariant (total == sum of included lists) therefore still holds, and
+        # the included sum carries the ordinal_references count.
         counts = data['counts']
         included_sum = sum(
             int(v)
             for k, v in counts.items()
-            if k != 'total' and k not in self._REVIEW_ANCHOR_LISTS
+            if k != 'total' and k not in self._EXCLUDED_FROM_TOTAL
         )
         assert int(counts['total']) == included_sum
-        assert 'ordinal_references' not in self._REVIEW_ANCHOR_LISTS
+        assert 'ordinal_references' not in self._EXCLUDED_FROM_TOTAL
+
+    def test_scan_derived_keys_included_in_total(self, tmp_path):
+        # An uncommitted .py diff carrying the scan-versus-anchor derivation
+        # triggers the scan_derived_keys detector, which IS summed into
+        # counts.total (unlike the review-anchor lists).
+        repo = tmp_path / 'repo'
+        _init_repo(repo)
+        _commit(repo, 'base', {'base.txt': 'base\n'})
+        _git(repo, 'checkout', '-b', 'feature')
+        (repo / 'gen.py').write_text(
+            'import re\n'
+            'from pathlib import Path\n'
+            '\n'
+            "_VERSION_DIR_NAME_RE = re.compile(r'^0-9')\n"
+            '\n'
+            'def split_bundle_version(path):\n'
+            '    parts = Path(path).parts\n'
+            '    for index, part in enumerate(parts):\n'
+            '        if index > 0 and _VERSION_DIR_NAME_RE.match(part):\n'
+            '            return parts[index - 1], part\n'
+            '    return None\n'
+        )
+        _git(repo, 'add', 'gen.py')
+
+        data = self._surface(repo)
+
+        # The new detector fired and populated its own list.
+        assert int(data['counts']['scan_derived_keys']) >= 1
+        assert len(data['scan_derived_keys']) >= 1
+
+        counts = data['counts']
+        included_sum = sum(
+            int(v)
+            for k, v in counts.items()
+            if k != 'total' and k not in self._EXCLUDED_FROM_TOTAL
+        )
+        assert int(counts['total']) == included_sum
+        assert 'scan_derived_keys' not in self._EXCLUDED_FROM_TOTAL
+
+    def test_scan_derived_keys_invariant_holds_when_list_is_empty(self, tmp_path):
+        # The inclusion invariant must hold whether or not the list fires.
+        repo = tmp_path / 'repo'
+        _init_repo(repo)
+        _commit(repo, 'base', {'base.txt': 'base\n'})
+        _git(repo, 'checkout', '-b', 'feature')
+        (repo / 'plain.py').write_text('x = 1\ny = x + 1\n')
+        _git(repo, 'add', 'plain.py')
+
+        data = self._surface(repo)
+
+        assert int(data['counts']['scan_derived_keys']) == 0
+        counts = data['counts']
+        included_sum = sum(
+            int(v)
+            for k, v in counts.items()
+            if k != 'total' and k not in self._EXCLUDED_FROM_TOTAL
+        )
+        assert int(counts['total']) == included_sum
+
+
+# =============================================================================
+# Test: CANDIDATE_LISTS registry (single-sourced candidate vocabulary)
+# =============================================================================
+
+
+class TestCandidateListRegistry:
+    """The registry is the single code-side source of the candidate vocabulary.
+
+    ``counts``, the emitted payload key set, and the ``surface`` help prose are
+    all derived from ``CANDIDATE_LISTS``. These cases pin the registry's own
+    integrity and prove each derivation actually reads it, so a list cannot be
+    added to the emitter without appearing in the count and the help string.
+    """
+
+    def test_keys_and_labels_are_unique(self):
+        keys = [spec.key for spec in CANDIDATE_LISTS]
+        labels = [spec.label for spec in CANDIDATE_LISTS]
+
+        assert len(set(keys)) == len(keys), f'Duplicate registry key: {keys}'
+        assert len(set(labels)) == len(labels), f'Duplicate registry label: {labels}'
+        assert all(keys) and all(labels), 'Registry entries must be non-empty'
+
+    def test_in_total_partition_is_not_degenerate(self):
+        # Both sides of the partition must be populated. A registry where every
+        # entry carried the same in_total value would make the total formula
+        # either "sum everything" or "sum nothing", and the exclusion assertions
+        # elsewhere in this module would stop discriminating.
+        included = [spec.key for spec in CANDIDATE_LISTS if spec.in_total]
+        excluded = [spec.key for spec in CANDIDATE_LISTS if not spec.in_total]
+
+        assert included, 'No candidate list feeds counts.total'
+        assert excluded, 'No candidate list is excluded from counts.total'
+
+    def test_surface_help_is_derived_from_the_registry(self):
+        # The help string must enumerate the registry rather than a hand-mirrored
+        # copy: every label present, and the cardinality stated as a derived
+        # number rather than a literal word that can go stale.
+        help_text = ' '.join(_build_parser().format_help().split())
+
+        assert f'Emit {len(CANDIDATE_LISTS)} candidate lists' in help_text
+        missing = [spec.label for spec in CANDIDATE_LISTS if spec.label not in help_text]
+        assert not missing, f'Registry labels absent from surface help: {missing}'
+
+    def test_candidate_list_prose_enumerates_every_entry(self):
+        prose = candidate_list_prose()
+
+        assert prose.split(', ') == [spec.label for spec in CANDIDATE_LISTS]
+
+    @staticmethod
+    def _empty_detected() -> dict:
+        return {spec.key: [] for spec in CANDIDATE_LISTS}
+
+    def test_compose_derives_counts_and_payload_from_the_registry(self):
+        detected = self._empty_detected()
+        detected['regexes'] = [{'file': 'a.py', 'line': 1, 'pattern': 'x'}]
+        detected['contract_sources'] = [{'file': 'a.py', 'sources': 's'}]
+
+        composed = _compose_candidate_output(detected)
+
+        assert set(composed) - {'counts'} == {spec.key for spec in CANDIDATE_LISTS}
+        assert composed['counts']['regexes'] == 1
+        assert composed['counts']['contract_sources'] == 1
+        # regexes is in_total, contract_sources is not — so total counts one.
+        assert composed['counts']['total'] == 1
+
+    def test_compose_rejects_a_detector_result_with_no_registry_entry(self):
+        # The drift direction that would otherwise be SILENT: an emitter gains a
+        # list, the registry does not, and the list vanishes from both the
+        # payload and the count with no error.
+        detected = self._empty_detected()
+        detected['brand_new_list'] = []
+
+        with pytest.raises(ValueError, match='brand_new_list'):
+            _compose_candidate_output(detected)
+
+    def test_compose_rejects_a_registry_entry_with_no_detector_result(self):
+        detected = self._empty_detected()
+        dropped = CANDIDATE_LISTS[0].key
+        del detected[dropped]
+
+        with pytest.raises(ValueError, match=dropped):
+            _compose_candidate_output(detected)
+
+    def test_emitted_payload_and_counts_keys_equal_the_registry(self, tmp_path):
+        # End-to-end: the real surface output's counts keys (minus ``total``) and
+        # its top-level payload keys must BOTH equal the registry key set.
+        repo = tmp_path / 'repo'
+        _init_repo(repo)
+        _commit(repo, 'base', {'base.txt': 'base\n'})
+        _git(repo, 'checkout', '-b', 'feature')
+        (repo / 'plain.py').write_text('x = 1\ny = x + 1\n')
+        _git(repo, 'add', 'plain.py')
+
+        from conftest import get_script_path, run_script
+
+        script = get_script_path(
+            'pm-plugin-development', 'ext-self-review-plan-marshall', 'self_review.py'
+        )
+        result = run_script(
+            script,
+            'surface',
+            '--plan-id',
+            'registry-vocabulary-plan',
+            '--project-dir',
+            str(repo),
+            '--base-branch',
+            'main',
+        )
+        assert result.success, f'surface failed: stderr={result.stderr}'
+        data = result.toon()
+
+        registry_keys = {spec.key for spec in CANDIDATE_LISTS}
+
+        assert set(data['counts']) - {'total'} == registry_keys
+        assert registry_keys <= set(data), (
+            f'Payload is missing registry keys: {sorted(registry_keys - set(data))}'
+        )
