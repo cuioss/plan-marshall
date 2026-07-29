@@ -527,6 +527,197 @@ def test_accumulated_self_responses_at_the_bound_report_the_loop(plan_context, m
     assert result['producer_mismatch_hash_id'] is None
 
 
+# ---------------------------------------------------------------------------
+# Current-cycle bound: history must not be read as an active loop
+# ---------------------------------------------------------------------------
+#
+# ``cmd_fetch_findings`` fetches with ``unresolved_only=False``, so every fetch
+# sees the PR's ENTIRE comment history. Comparing the cumulative
+# ``count_skipped_self_response`` against the bound therefore counted
+# already-converged cycles as evidence of a running one: any PR that completed
+# three normal triage rounds tripped ``self_response_loop_detected`` on its next
+# fetch — typically at pre-merge validation, long after every finding was
+# resolved — and filed a spurious ``(self-response-loop)`` Q-Gate finding.
+#
+# The predicate is now the TRAILING run of self-responses. The two properties
+# below are co-equal and both must hold: history no longer trips the bound, and a
+# genuinely non-converging cycle still does.
+
+
+def _at(second):
+    """ISO-8601 ``created_at`` on a fixed day — only the relative order matters."""
+    return f'2026-07-29T10:{second:02d}:00Z'
+
+
+def _reviewer_comment(comment_id, created_at, body):
+    """A substantive coderabbit inline comment — provider ``kind`` group 1."""
+    return {
+        'id': comment_id,
+        'author': 'coderabbitai',
+        'thread_id': f'PRRT_{comment_id}',
+        'kind': 'inline',
+        'body': body,
+        'path': 'src/loop.py',
+        'line': 7,
+        'resolved': False,
+        'created_at': created_at,
+    }
+
+
+def _self_comment(comment_id, created_at):
+    """A real batched self-response — provider ``kind`` group 3 (``issue_comment``)."""
+    return {
+        'id': comment_id,
+        'author': 'oliver',
+        'thread_id': '',
+        'kind': 'issue_comment',
+        'body': _self_response_body(comment_id=comment_id),
+        'resolved': False,
+        'created_at': created_at,
+    }
+
+
+def test_converged_history_at_the_bound_does_not_report_a_loop(plan_context, monkeypatch):
+    """Three ALREADY-CONVERGED cycles must not be read as one non-converging cycle.
+
+    The PR below completed three ordinary triage rounds: each reviewer comment was
+    answered once, and the reviewer came back with fresh feedback afterwards. Its
+    lifetime self-response total therefore equals ``_SELF_RESPONSE_LOOP_BOUND``,
+    which is exactly what the cumulative predicate mistook for a live loop. The
+    current cycle is one turn deep, so no loop is reported.
+
+    The comment list is built in the order the provider actually returns it —
+    GROUPED BY KIND (all ``inline`` threads, then all ``issue_comment`` bodies),
+    NOT chronologically. That grouping is why this test is load-bearing rather than
+    cosmetic: self-responses are always ``issue_comment``, so they occupy the tail
+    of the raw list no matter when they were written. A trailing-run scan over the
+    list AS RECEIVED would count all three and re-report the very false positive
+    this test pins. Only the ``created_at`` sort recovers the real interleaving.
+    """
+    plan_id = 'gh-pr-self-response-converged-history'
+    comments = [
+        # Provider group 1 — inline reviewer comments, oldest first.
+        _reviewer_comment('rev-1', _at(1), 'The retry bound is off by one here.'),
+        _reviewer_comment('rev-2', _at(3), 'This branch swallows the decode error silently.'),
+        _reviewer_comment('rev-3', _at(5), 'Prefer an explicit timeout over the implicit default.'),
+        # Provider group 3 — our batched responses, each answering the reviewer
+        # comment immediately above it in TIME, though they land last in the list.
+        _self_comment('self-1', _at(2)),
+        _self_comment('self-2', _at(4)),
+        _self_comment('self-3', _at(6)),
+    ]
+    _patch_provider(monkeypatch, comments)
+
+    result = _run_fetch(108, plan_id)
+    assert result['status'] == 'success'
+    # The lifetime total is exactly the bound — the figure the old predicate read.
+    assert result['count_skipped_self_response'] == github_pr._SELF_RESPONSE_LOOP_BOUND
+    # ...but only the newest response belongs to the current cycle.
+    assert result['count_self_response_current_cycle'] == 1
+    # So no loop is reported, and none is FILED.
+    assert result['self_response_loop_detected'] is False
+    assert result['self_response_loop_hash_id'] is None
+    # The reviewer comments are still ingested normally.
+    assert result['count_stored'] == 3
+    assert result['producer_mismatch_hash_id'] is None
+
+
+def test_unbroken_self_response_run_still_reports_the_loop(plan_context, monkeypatch):
+    """The termination guarantee survives: a genuinely stuck cycle is still caught.
+
+    Narrowing the predicate must not blunt it. Here one reviewer comment is
+    followed by three self-responses with NOBODY else speaking in between — which
+    is precisely what a non-converging respond → re-fetch cycle looks like. The run
+    reaches the bound and the exhaustion is filed as a Q-Gate finding for an
+    operator decision.
+    """
+    plan_id = 'gh-pr-self-response-live-loop'
+    comments = [
+        _reviewer_comment('rev-1', _at(1), 'This disposition does not address the null path.'),
+        _self_comment('self-1', _at(2)),
+        _self_comment('self-2', _at(3)),
+        _self_comment('self-3', _at(4)),
+    ]
+    _patch_provider(monkeypatch, comments)
+
+    result = _run_fetch(109, plan_id)
+    assert result['status'] == 'success'
+    assert result['count_self_response_current_cycle'] == github_pr._SELF_RESPONSE_LOOP_BOUND
+    assert result['self_response_loop_detected'] is True
+    # Reported, not merely flagged — the finding actually persisted.
+    assert result['self_response_loop_hash_id']
+    assert 'self_response_loop_persist_failed' not in result
+    assert result['producer_mismatch_hash_id'] is None
+
+
+def test_interleaved_pipeline_triggers_do_not_reset_the_run(plan_context, monkeypatch):
+    """The pipeline cannot reset its own guard by posting re-review triggers.
+
+    A registered re-review trigger is pipeline-authored output, exactly like the
+    self-responses it sits between — it is not somebody else engaging with the PR.
+    If it broke the run, the pipeline could cycle trigger → response → trigger →
+    response indefinitely and never reach the bound, masking the exact loop class
+    the bound exists to terminate. Triggers are therefore transparent: they neither
+    count toward the run nor break it.
+    """
+    plan_id = 'gh-pr-self-response-trigger-interleave'
+    trigger = {
+        'author': 'oliver',
+        'thread_id': '',
+        'kind': 'issue_comment',
+        'body': '@coderabbitai review',
+        'resolved': False,
+    }
+    comments = [
+        _reviewer_comment('rev-1', _at(1), 'The guard still misses the empty-thread case.'),
+        _self_comment('self-1', _at(2)),
+        {**trigger, 'id': 'trigger-1', 'created_at': _at(3)},
+        _self_comment('self-2', _at(4)),
+        {**trigger, 'id': 'trigger-2', 'created_at': _at(5)},
+        _self_comment('self-3', _at(6)),
+    ]
+    _patch_provider(monkeypatch, comments)
+
+    result = _run_fetch(110, plan_id)
+    assert result['status'] == 'success'
+    # Three responses in the run; the two triggers between them are transparent.
+    assert result['count_self_response_current_cycle'] == github_pr._SELF_RESPONSE_LOOP_BOUND
+    assert result['self_response_loop_detected'] is True
+    assert result['self_response_loop_hash_id']
+    # The triggers are still dropped as pipeline noise, and the accounting balances.
+    assert result['count_skipped_noise'] == 2
+    assert result['count_stored'] == 1
+    assert result['producer_mismatch_hash_id'] is None
+
+
+def test_reviewer_comment_after_a_stuck_run_reopens_the_cycle(plan_context, monkeypatch):
+    """Fresh reviewer activity breaks the run — the next response starts a new cycle.
+
+    The mirror of the trigger case: a reviewer comment is somebody OTHER than this
+    pipeline speaking, so the cycle it interrupts has converged by definition.
+    Three self-responses that would have reached the bound are cut off by the
+    reviewer's reply, leaving a one-turn current cycle.
+    """
+    plan_id = 'gh-pr-self-response-reopened'
+    comments = [
+        _self_comment('self-1', _at(1)),
+        _self_comment('self-2', _at(2)),
+        _self_comment('self-3', _at(3)),
+        # The reviewer comes back — everything before this belongs to a closed cycle.
+        _reviewer_comment('rev-1', _at(4), 'Reopening: the second disposition regressed the retry path.'),
+        _self_comment('self-4', _at(5)),
+    ]
+    _patch_provider(monkeypatch, comments)
+
+    result = _run_fetch(111, plan_id)
+    assert result['status'] == 'success'
+    assert result['count_skipped_self_response'] == 4
+    assert result['count_self_response_current_cycle'] == 1
+    assert result['self_response_loop_detected'] is False
+    assert result['self_response_loop_hash_id'] is None
+    assert result['count_stored'] == 1
+
+
 # =============================================================================
 # Bot-agnostic rate-limit / service-notice recognizer (github_pr._is_refusal_notice)
 # =============================================================================

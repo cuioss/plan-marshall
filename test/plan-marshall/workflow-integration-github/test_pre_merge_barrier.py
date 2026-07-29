@@ -20,8 +20,9 @@ surface (``check_auth``, ``fetch_pr_comments_data``, ``fetch_pr_head_sha``):
         stays EMPTY and the merge proceeds. Before the self-response exclusion
         this reply was filed as a fresh pending finding, so the barrier blocked,
         triage responded again, and the cycle never terminated.
-    (d) guard trips and reports — at ``_SELF_RESPONSE_LOOP_BOUND`` accumulated
-        self-authored responses the producer REPORTS exhaustion as a
+    (d) guard trips and reports — at ``_SELF_RESPONSE_LOOP_BOUND`` CONSECUTIVE
+        self-authored responses (the current cycle's unbroken run, not the PR's
+        lifetime total) the producer REPORTS exhaustion as a
         ``(self-response-loop)`` Q-Gate finding instead of passing silently.
 
 Per lesson 2026-07-09-14-001 the provider response is built from a real fixture
@@ -243,10 +244,11 @@ def test_self_response_loop_bound_reports_qgate_finding(plan_context, monkeypatc
     resolve-thread failed leaves an unresolved reply carrying arbitrary
     ``resolution_detail`` text and no transmission shape at all, so that residue
     is unkeyable by construction and only a bound can terminate it. When the
-    accumulated self-responses reach ``_SELF_RESPONSE_LOOP_BOUND`` the producer
-    files a ``(self-response-loop)`` Q-Gate finding, which is what turns
-    exhaustion into a reported coverage gap requiring an operator decision rather
-    than a silent pass.
+    CONSECUTIVE self-responses of the current cycle reach
+    ``_SELF_RESPONSE_LOOP_BOUND`` — as they do here, where nothing but our own
+    replies is on the PR — the producer files a ``(self-response-loop)`` Q-Gate
+    finding, which is what turns exhaustion into a reported coverage gap requiring
+    an operator decision rather than a silent pass.
     """
     plan_id = 'barrier-self-response-bound'
     accumulated = [
