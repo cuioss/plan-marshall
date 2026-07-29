@@ -271,3 +271,107 @@ def test_self_response_loop_bound_reports_qgate_finding(plan_context, monkeypatc
     assert len(loop_findings) == 1
     assert loop_findings[0]['resolution'] == 'pending'
     assert loop_findings[0]['hash_id'] == result['self_response_loop_hash_id']
+
+
+# --- Predicate 2: required-bot participation ---------------------------------
+#
+# The barrier's comment predicate asks whether every comment that EXISTS has been
+# handled. It is structurally blind to an absence: a required bot that never
+# reviewed publishes nothing, files no finding, and so contributes zero pending
+# comments — identical, to a pending count, to a bot that reviewed and was
+# triaged clean. The participation predicate is the complement, and these tests
+# pin the distinction the merge gate depends on.
+
+review_completeness = load_script_module(
+    'plan-marshall', 'automatic-review', 'review_completeness.py', 'review_completeness'
+)
+
+
+# Only CodeRabbit speaks. `pr-agent` — the required bot — never publishes, which
+# is the plan-marshall#1045 shape: the fix commit was reviewed by CodeRabbit and
+# never by the required bot, yet nothing downstream blocked the merge.
+_CODERABBIT_ONLY = [_INITIAL_COMMENTS[0]]
+
+
+def _participation_csv(fetch_result):
+    """Render ``fetch_findings``'s participation rows as the barrier's CSV argument.
+
+    The producer emits ``[{bot_kind, evidence_kind}, ...]``; the predicate's CLI
+    takes ``bot_kind:evidence_kind`` pairs. The barrier crosses exactly this seam,
+    so the tests cross it too rather than hand-building an already-parsed map.
+    """
+    return ','.join(
+        f'{row["bot_kind"]}:{row["evidence_kind"]}' for row in fetch_result['participated_bots']
+    )
+
+
+def _completeness(plan_id, participated_csv, required, optional):
+    return review_completeness.check_completeness(
+        plan_id,
+        required_bots=required,
+        optional_bots=optional,
+        participated_bots=review_completeness.parse_participation(participated_csv),
+    )
+
+
+def test_absent_required_bot_blocks_merge_though_no_comment_is_pending(plan_context, monkeypatch):
+    """A required bot that never reviewed must block the merge — plan-marshall#1045.
+
+    The comment predicate is satisfied (every fetched comment triaged, zero
+    pending), so on the pending count alone the barrier would proceed to merge.
+    The participation predicate must independently refuse, because `pr-agent`
+    published nothing at all and its silence is indistinguishable from a clean
+    review to any count of comments.
+    """
+    plan_id = 'barrier-absent-required-bot'
+
+    _patch_provider(monkeypatch, _CODERABBIT_ONLY)
+    result = _run_fetch(206, plan_id)
+    assert result['status'] == 'success'
+    # `pr-agent` is not in the observed participation set — it never published.
+    assert 'pr-agent' not in {row['bot_kind'] for row in result['participated_bots']}
+
+    # Triage handles every comment that exists: predicate 1 is CLEAN.
+    _resolve_all_pending(plan_id)
+    assert _pending(plan_id) == []
+
+    # Predicate 2 refuses anyway — this is the whole point of the second predicate.
+    verdict = _completeness(
+        plan_id,
+        _participation_csv(result),
+        required=['pr-agent'],
+        optional=['coderabbit'],
+    )
+    assert verdict['participation_complete'] is False
+    assert verdict['unproven_bots'] == ['pr-agent']
+    assert {r['bot_kind']: r['state'] for r in verdict['bot_states']}['pr-agent'] == 'absent'
+    # The ceiling travels with the verdict: a satisfied quorum is never a quality claim.
+    assert verdict['proves'] == 'participation_only'
+
+
+def test_optional_bot_silence_does_not_block_merge(plan_context, monkeypatch):
+    """Silence from an OPTIONAL bot is the configured way to accept non-participation.
+
+    This is the counter-case that keeps the predicate from being a blanket
+    "every configured bot must speak" rule: a bot on a hard quota that will not
+    clear inside the plan's lifetime belongs in `optional_bots`, and moving it
+    there is the sanctioned alternative to a force-done that would accept every
+    bot's silence at once.
+    """
+    plan_id = 'barrier-optional-silence'
+
+    _patch_provider(monkeypatch, _CODERABBIT_ONLY)
+    result = _run_fetch(207, plan_id)
+    _resolve_all_pending(plan_id)
+    assert _pending(plan_id) == []
+
+    verdict = _completeness(
+        plan_id,
+        _participation_csv(result),
+        required=['coderabbit'],
+        optional=['pr-agent', 'sourcery'],
+    )
+    assert verdict['participation_complete'] is True
+    # The silent optional bots are still REPORTED — accepted, never hidden.
+    assert 'pr-agent' in verdict['unproven_bots']
+    assert 'sourcery' in verdict['unproven_bots']
