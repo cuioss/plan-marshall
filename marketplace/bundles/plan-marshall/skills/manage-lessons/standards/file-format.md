@@ -21,7 +21,8 @@ Format: `{YYYY-MM-DD}-{HH}-{NNN}.md`
   date field in the metadata header uses, so the id's date segment and `created`
   always name the same day
 - `HH` is the zero-padded 24-hour UTC hour
-- `NNN` is a zero-padded 3-digit sequence number starting at 001
+- `NNN` is a sequence number zero-padded to a minimum width of 3, starting at
+  001 (it widens past 3 digits if a bucket ever exceeds 999)
 - Sequence resets per hour (each `{date}-{hour}` bucket starts at 001)
 
 Examples: `2025-12-02-09-001.md`, `2025-12-02-09-002.md`, `2026-01-15-23-001.md`
