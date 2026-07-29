@@ -1655,12 +1655,20 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # protected population is derived from each candidate's frontmatter
     # ``persona: persona-security-expert``, never from a step-id literal. See
     # standards/decision-rules.md § Pre-Filter: security_class_inactive.
+    #
+    # The live footprint is derived ONCE here and reused by the build-verdict
+    # consistency assertion near the end of this compose. Deriving it runs the
+    # subprocess-backed ``compute_plan_branch_diff`` git walk, and nothing between
+    # the two use sites mutates the working tree (the staged task rewrites are
+    # persisted under ``.plan/`` after both), so a second resolve paid the
+    # subprocess cost for an identical answer.
+    live_footprint = _resolve_footprint(plan_id)
     security_class_steps = frozenset(s for s in phase_6_candidates if _is_security_class_step(s))
     phase_6_candidates, security_class_omitted = _apply_security_class_inactive(
         phase_6_candidates,
         security_class_steps,
         affected_files_count,
-        len(_resolve_footprint(plan_id)),
+        len(live_footprint),
     )
 
     # Pre-filter 5 (scope_gated_finalize) drops heavyweight phase-6 review/audit
@@ -2009,11 +2017,13 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # non-empty-footprint precondition: at early compose the footprint is always
     # empty and the verdict is therefore always not_necessary, so an unguarded
     # assertion would fire on every plan (see check_build_verdict_consistent's
-    # docstring — the empty-footprint trap).
+    # docstring — the empty-footprint trap). It consumes the ``live_footprint``
+    # derived once for the security_class_inactive pre-filter above rather than
+    # re-running the subprocess-backed derivation for the same answer.
     verdict_error = check_build_verdict_consistent(
         list(body['phase_5'].get('verification_steps', [])),
         list(body['phase_6'].get('steps', [])),
-        _resolve_footprint(plan_id),
+        list(live_footprint),
         _command_free_build_verdict(plan_id),
     )
     if verdict_error is not None:

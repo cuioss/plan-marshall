@@ -15,7 +15,9 @@ implements: plan-marshall:extension-api/standards/ext-point-finalize-step
 
 # Finalize Step: security-audit
 
-Proactive security-audit pass for the `default:finalize-step-security-audit` finalize step. Runs the shared five-stage security-audit engine over the plan's live footprint before the `push` barrier, applies any hardening edits directly to the worktree, and lets the dispatcher's commit instrumentation commit them. This is the proactive, ship-time complement to the on-demand `recipe-security-audit` command: the recipe runs a security review when a user asks for one; this step runs it automatically on every feature/bug-fix/tech-debt plan that touched files.
+Proactive security-audit pass for the `default:finalize-step-security-audit` finalize step. Runs the shared five-stage security-audit engine over the plan's live footprint before the `push` barrier, applies any hardening edits directly to the worktree, and lets the dispatcher's commit instrumentation commit them. This is the proactive, ship-time complement to the on-demand `recipe-security-audit` command: the recipe runs a security review when a user asks for one; this step runs automatically.
+
+Activation is **change-type-independent**: any plan carrying a change surface at all — a non-empty declared `affected_files_count` **or** a non-empty live footprint — gets the audit, and only a plan with neither is dropped. The operator's escape hatch is the step's per-element `lane` override, which forces the step in or out irrespective of that gate. The normative rules live in **Activation and skip-reason** below; this summary states no gate of its own.
 
 The step reuses the engine **additively at stage 3 only** — it supplies each affected domain's `skills_by_profile.security` skills (the `extra_security_skills` input) on top of the action-general context set. Stages 1, 2, 4, and 5 are unchanged; this step never re-authors an engine stage. See [`../../recipe-security-audit/standards/audit-engine.md`](../../recipe-security-audit/standards/audit-engine.md) for the normative engine contract and the `extra_security_skills` plug-in surface.
 

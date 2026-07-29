@@ -998,7 +998,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   separator --plan-id {plan_id} --type work
 ```
 
-See [Task Creation Flow](references/task-creation-flow.md) for the full output structure.
+See [Task Creation Flow](references/task-creation-flow.md) for the visual overview of the 1:N task-creation and manifest-emission flow. The return TOON contract below is the authoritative one — that reference document does not restate it.
 
 **Output**:
 ```toon
@@ -1023,7 +1023,10 @@ execution_order:
 lessons_recorded: {count}
 qgate_pending_count: {0 if no findings}
 qgate_validation_required: {true|false}
+security_class_omitted[K]{step,reason}:
 ```
+
+`security_class_omitted[]` carries the `{step, reason}` records Step 7b ("Surface every dropped security-class step") mandates — one row per security-class step the composer's `security_class_inactive` pre-filter removed. It is **always** rendered, as an explicitly empty list (`K` = 0, no rows) on the normal path where nothing was dropped; omitting the field is not an accepted spelling of "nothing was omitted", because a security gate that disappears silently is the exact failure the surfacing exists to close.
 
 `qgate_validation_required` is `true` on every successful phase-4-plan completion (Step 8b signals unconditionally — both module-mapping and scope-criterion validators apply to every plan) and `false` only on the unrecoverable error path. The orchestrator (`plan-marshall:plan-marshall/workflow/planning-outline.md`) reads this flag after the phase returns and dispatches `q-gate-validation` as a sibling top-level Task when it is `true`.
 
