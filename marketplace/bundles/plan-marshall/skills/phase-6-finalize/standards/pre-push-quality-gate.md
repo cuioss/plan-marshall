@@ -115,7 +115,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   --message "[WARNING] (plan-marshall:pre-push-quality-gate) Whole-tree quality-gate unavailable — three whole-tree-only dimensions are UN-GATED at finalize for this push: the marketplace-wide plugin-doctor static-analysis pass, the .claude/ ruff path coverage, and the marketplace/targets SPDX-header coverage. Proceeding on honest degradation."
 ```
 
-The same escalate-only-on-trigger discipline the module-tests gate applies (below) is available here should the unconditional whole-tree run prove too expensive in a given project: gate the arm on a trigger, and emit the identical three-dimension WARNING on every path where the run is skipped. The WARNING is mandatory on any skip path — the degradation must be legible in the work-log, never inferred from its absence.
+The whole-tree arm is **unconditional**. The honest-degradation branch above — the invocation cannot run at all in this project — is the ONLY sanctioned path that does not run it. There is no trigger-gated variant of this arm, and a project MUST NOT gate it on a trigger to save cost: two admissible behaviours for the same guard make Branch A's "clean whole-tree `quality-gate`" precondition mean different things across runs, which is precisely the divergence this arm exists to prevent. (The escalate-only-on-trigger discipline the module-tests gate applies below governs a different gate with a different cost profile; it does not extend here.) The three-dimension WARNING is mandatory on the honest-degradation path — the degradation must be legible in the work-log, never inferred from its absence.
 
 ### Whole-tree test-compile gate
 
