@@ -198,9 +198,14 @@ def _read_request_body(plan_id: str) -> str:
         # non-UTF-8 request.md is an unreadable body, so it routes to the same
         # declared-unknown path as a missing file.
         return ''
-    return '\n'.join(
-        line for line in content.split('\n') if not _REQUEST_TITLE_RE.match(line)
-    ).strip()
+    lines = content.split('\n')
+    # Strip the title ONLY when it is the document's own first line. Matching
+    # anywhere would also drop an ingested spec's ``# Request …`` heading, which
+    # is request narrative, not host chrome — and would contradict the
+    # ONLY-line-removed contract stated above.
+    if lines and _REQUEST_TITLE_RE.match(lines[0]):
+        lines = lines[1:]
+    return '\n'.join(lines).strip()
 
 
 def _request_is_concrete(body: str) -> bool:
