@@ -1,6 +1,6 @@
 ---
 name: persona-module-tester
-description: Language-agnostic testing methodology covering AAA pattern, test structure, organization, coverage, property-based testing, test doubles, determinism, constructed-argv assertion at the lowest subprocess primitive, and real-resolver E2E testing for path-resolver/create side effects
+description: Language-agnostic testing methodology covering AAA pattern, test structure, organization, coverage, property-based testing, test doubles, determinism, fixture-level neutralization of state-dependent branch selection (default-on inheritance, location carve-out plus registered marker, matched positive/negative control), constructed-argv assertion at the lowest subprocess primitive, and real-resolver E2E testing for path-resolver/create side effects
 user-invocable: false
 mode: knowledge
 implements: persona

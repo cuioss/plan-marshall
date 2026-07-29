@@ -26,6 +26,12 @@ The queue acquire/release seam (``_acquire`` / ``_release_raw``) is mocked
 directly, so the tests are independent of whether the queue is reached by a
 file-path import or the executor. Every wait-loop test patches ``time.sleep`` to
 a no-op so the 60s wait is never slept.
+
+The end-to-end ``cmd_run`` saturation case leaves ``execution_mode`` at its
+``auto`` default and depends on the autouse ``_neutralize_daemon_routing``
+fixture in ``test/conftest.py`` to hold the D5 ``_route_to_daemon`` seam at its
+non-routing outcome — without it, a host with marshalld registered and ready
+would route the build away before ``build_queue_slot`` is ever reached.
 """
 
 from __future__ import annotations
@@ -339,11 +345,6 @@ def test_factory_cmd_run_emits_timeout_on_saturation(monkeypatch, capsys):
         return _cm()
 
     monkeypatch.setattr(factory, 'build_queue_slot', _saturated)
-    # Hermeticity: force the D5 routing seam to signal fallback so this test
-    # exercises the in-process queue-saturation path regardless of whether a real
-    # marshalld daemon is registered + ready on the host (a live daemon would
-    # otherwise route the build away before build_queue_slot is reached).
-    monkeypatch.setattr(factory, '_route_to_daemon', lambda *_a, **_k: (None, 'no_notation'))
 
     args = argparse.Namespace(command_args='module-tests', plan_id='P', format='toon')
     rc = cmd_run(args)

@@ -19,6 +19,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from types import ModuleType
 from typing import Any
 
 # =============================================================================
@@ -840,6 +841,138 @@ def _credentials_dir_sandbox(request, tmp_path_factory, monkeypatch):
     import _providers_core
 
     monkeypatch.setattr(_providers_core, 'CREDENTIALS_DIR', sandbox)
+
+    yield
+
+
+#: Location carve-out for ``_neutralize_daemon_routing``. Every test module under
+#: this directory owns the build-server routing seam as its SYSTEM UNDER TEST, so
+#: neutralizing the seam there would delete the coverage rather than isolate it.
+#: Resolved from the collected node's own path, so a new module added under the
+#: directory inherits the carve-out with no registry to update.
+_DAEMON_ROUTING_CARVE_OUT = TEST_ROOT / 'plan-marshall' / 'build-server'
+
+#: The seam name the factory's ``cmd_run`` closure resolves at call time.
+_ROUTING_SEAM_NAME = '_route_to_daemon'
+
+
+def _no_daemon_routing(*_args, **_kwargs):
+    """Stand-in for ``_route_to_daemon`` that always declines to route.
+
+    Returns the factory's benign ``(result=None, reason)`` "do not route" signal
+    using the ``no_notation`` reason — the one the factory already emits for an
+    unroutable build tool. It is deliberately NOT recorded as a degradation, so a
+    neutralized test produces the same audit trail as a host with no daemon.
+    """
+    return (None, 'no_notation')
+
+
+def _routing_namespaces(test_module) -> list[dict]:
+    """Return every globals dict a live ``cmd_run`` resolves the seam from.
+
+    Patching by MODULE OBJECT is not sufficient here, and the reason is
+    load-order dependent — which makes getting it wrong a FLAKY green rather
+    than a clean red. Two facts combine:
+
+    1. ``test/plan-marshall/build_test_helpers.py`` loads the factory through
+       ``load_script_module``, which re-registers it in ``sys.modules`` under its
+       own stem. That REPLACES the entry, so a test module that already did
+       ``import _build_execute_factory as factory`` at its own import time holds
+       a copy that is no longer reachable from ``sys.modules`` at all — it
+       survives only as a reference in that test module's globals.
+    2. ``cmd_run`` is a CLOSURE created by ``create_execute_handlers``, so it
+       resolves ``_route_to_daemon`` from ``cmd_run.__globals__`` — the dict of
+       whichever factory copy produced it, not from whatever ``sys.modules``
+       currently maps the name to.
+
+    Targeting the ``__globals__`` DICT rather than the module object therefore
+    reaches the exact binding the closure reads, regardless of how many copies
+    exist or which one a given test happens to hold. Scanning is confined to the
+    canonical ``sys.modules`` entry plus the test module's own globals, so the
+    cost stays proportional to one module's namespace rather than to the whole
+    import graph.
+    """
+    namespaces: dict[int, dict] = {}
+
+    def _consider(obj: Any) -> None:
+        # A module contributes its own globals; a function (e.g. a bound
+        # ``cmd_run`` handler) contributes the globals it closes over.
+        candidate = vars(obj) if isinstance(obj, ModuleType) else getattr(obj, '__globals__', None)
+        # The isinstance check also excludes the ``MagicMock`` module stand-ins
+        # several test modules install via ``sys.modules.setdefault``, whose
+        # auto-generated attributes would otherwise match anything.
+        if isinstance(candidate, dict) and _ROUTING_SEAM_NAME in candidate:
+            namespaces[id(candidate)] = candidate
+
+    canonical = sys.modules.get('_build_execute_factory')
+    if canonical is not None:
+        _consider(canonical)
+    if test_module is not None:
+        for value in list(vars(test_module).values()):
+            _consider(value)
+    return list(namespaces.values())
+
+
+@pytest.fixture(autouse=True)
+def _neutralize_daemon_routing(request, monkeypatch):
+    """Default the D5 build-routing seam to its non-routing outcome.
+
+    WHY THIS EXISTS. ``_build_execute_factory.cmd_run`` consults
+    ``_route_to_daemon`` whenever ``execution_mode`` is left at its ``auto``
+    default, and routing then depends on MACHINE-GLOBAL state: whether the
+    project is registered with marshalld and whether the daemon answers a
+    verified handshake. A test that drives ``cmd_run`` without pinning
+    ``execution_mode`` therefore behaves differently on a developer host where
+    the daemon is registered and ready than on a bare CI runner — on the former
+    it submits a real build job to a real daemon, and the in-process seams the
+    test injected (queue doubles, exec recorders) are never reached. The test
+    does not fail honestly; it silently stops testing what it claims to test.
+
+    Neutralization used to be COPIED into each affected module as an inline
+    ``monkeypatch.setattr(factory, '_route_to_daemon', ...)``. That made
+    correctness a matter of every future author remembering to repeat it, and a
+    test written without the incantation was ambiently host-dependent with
+    nothing to catch it. Making the fixture autouse here inverts the default:
+    neutralization is INHERITED BY CONSTRUCTION, and a test that genuinely wants
+    live routing must say so explicitly.
+
+    The patched value ``(None, 'no_notation')`` is the benign "do not route"
+    signal the factory already understands for an unroutable build tool: it
+    takes no fallback slot accounting of its own and is not recorded as a
+    degradation, so ``cmd_run`` proceeds down its in-process path exactly as it
+    would on a host with no daemon at all.
+
+    Two disengagement paths, evaluated in this order:
+
+    1. **Location carve-out** — the fixture is a no-op for any test collected
+       under ``test/plan-marshall/build-server/`` (see
+       :data:`_DAEMON_ROUTING_CARVE_OUT`), whose modules own routing as their
+       subject.
+    2. **Marker opt-out** — ``@pytest.mark.allow_daemon_routing`` for a one-off
+       that owns routing but lives outside that directory, honoured the same way
+       the isolation sandboxes above honour ``allow_pollution``.
+
+    ``monkeypatch`` scopes the patch to the single test, so it unwinds on
+    teardown and never leaks into a sibling. ``_build_execute_factory`` is
+    imported lazily inside the body, matching the ``_config_core`` /
+    ``_providers_core`` convention used by the sandboxes above. The patch targets
+    the closure's ``__globals__`` dict rather than a module attribute — see
+    :func:`_routing_namespaces` for why more than one factory copy exists and why
+    patching a single module object is silently partial.
+    """
+    if _DAEMON_ROUTING_CARVE_OUT in request.node.path.parents:
+        yield
+        return
+
+    if request.node.get_closest_marker('allow_daemon_routing'):
+        yield
+        return
+
+    # Ensure the canonical copy is loaded before the scan below.
+    import _build_execute_factory  # noqa: F401
+
+    for namespace in _routing_namespaces(getattr(request, 'module', None)):
+        monkeypatch.setitem(namespace, _ROUTING_SEAM_NAME, _no_daemon_routing)
 
     yield
 

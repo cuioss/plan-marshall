@@ -175,6 +175,32 @@ A unit test whose pass/fail depends on the liveness or registration state of a m
 
 Either way, add a companion test that explicitly asserts the real-service submission path with a *mocked* service, never a live one.
 
+Both techniques above are per-test: they make *the test that remembers to apply them* hermetic. That is necessary but not sufficient, because the next test written against the same seam inherits nothing. The rule below is what makes hermeticity the default rather than a convention.
+
+### Neutralize State-Dependent Branch Selection at the Fixture Level
+
+**Trigger**: production code selects between branches by consulting **live machine state** — a daemon's registration/readiness handshake, a shared queue's occupancy, a system-wide cache's presence — and a test drives that code without pinning the branch. The test then asserts one thing on a machine where the state is absent and another where it is present.
+
+**Part 1 — the default must be structural, not remembered.** A test whose branch selection depends on live machine state MUST have that state neutralized by a **shared, default-on fixture that every test inherits by construction**. A per-test opt-in — an inline stub of the seam, an explicit mode argument, a helper each test must remember to call — is insufficient *as the default*, because a newly-written test inherits none of it: it is ambiently state-dependent from the moment it is written, and nothing fails to say so. Correctness that depends on every future author repeating an incantation is not a guarantee; it is a habit, and habits regress silently.
+
+Where a subset of tests legitimately owns the state-dependent behaviour as its **system under test**, express the exclusion in two tiers:
+
+* A **location carve-out** — a directory whose modules own the behaviour, resolved from the collected test's own path. This is structural: a module added there inherits the exclusion, and one moved out of it loses the exclusion, with no registry to forget to update.
+* A **registered marker** reserved for one-off exceptions that live outside that directory. Keep it registered in the marker registry (so `--strict-markers` catches typos) and keep its use rare — a marker that accumulates members is a location carve-out that has not been recognized yet.
+
+Deriving the exclusion set is part of the work, not an afterthought: enumerate the tests that own the behaviour **before** switching the default on. A blanket neutralization applied over a routing-owning test does not fail loudly — it replaces the seam that test asserts on and reduces its assertions to tautologies, deleting the coverage while the suite stays green.
+
+**Part 2 — the fixture needs a matched positive/negative control.** A neutralizing fixture is self-concealing: if it silently stops engaging, every test it protects keeps passing on any host where the state is absent, and the regression surfaces only as ambient flakiness elsewhere. Pin it with a **matched pair** in which both arms *simulate* the state the fixture suppresses:
+
+* **Positive arm** — fixture engaged, state simulated as present, assert the neutralized branch is still taken.
+* **Negative control** — identical setup, fixture disengaged via the marker, assert the state-dependent branch IS taken.
+
+The negative arm must simulate the state, never rely on it being absent from the host — an arm that passes because nothing was reachable proves nothing. The pair is the evidence: each arm alone is consistent with the fixture being vacuous, and only the contrast between two otherwise-identical setups attributes the outcome to the fixture. Record in the module docstring that the two are a matched pair and that deleting or weakening either one voids the other's evidentiary value.
+
+**Relation to [Compose Isolation, Don't Impose It](#compose-isolation-dont-impose-it)**: that rule rejects blanket auto-applied fixtures that mutate **global resolution state** (config roots, env vars, search paths) precisely because individual tests legitimately stage their own version of the redirected resource, making the collision set large and unbounded. This rule governs the opposite shape: neutralizing **ambient machine state** that no test should depend on, where the correct default is uniform and the collision set is small, enumerable, and structurally identifiable as "the tests that own this behaviour". Auto-application is appropriate here for the reason that rule names — the redirection is universally correct for every test in scope, minus a carve-out derived up front.
+
+**Concrete instance in this repository** (a discoverability pointer, not the rule): marshalld build routing is neutralized by the default-on `_neutralize_daemon_routing` autouse fixture in `test/conftest.py`, carved out by location for `test/plan-marshall/build-server/`, with the registered `allow_daemon_routing` marker for routing-owning modules outside it, and pinned by the matched pair in `test/plan-marshall/script-shared/test_daemon_routing_neutralization.py`.
+
 ### Test Isolation
 
 Each test must be independent:
