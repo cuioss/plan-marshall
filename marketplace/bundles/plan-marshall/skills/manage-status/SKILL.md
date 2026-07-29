@@ -677,7 +677,7 @@ The signal set (`deep` IFF any deep-precondition fires; otherwise `light`):
 | S2 | `scope_estimate` | `references.scope_estimate` | ∈ {`multi_module`, `broad`, `none`, unset} (`surgical`/`single_module` → light) |
 | S3 | `change_type` | `status.metadata.change_type` | ∈ {`feature`, `feature_breaking`} (`bug_fix`/`tech_debt`/`enhancement`/`verification` → light) |
 | S4 | `compatibility` | `marshal.json plan.phase-2-refine.compatibility` | == `breaking` |
-| S5 | request concreteness | regex over `request.md` clarified/original body | body names NO file path **AND** NO concrete fix signal (fenced code block / `python3 .plan/execute-script.py` CLI / `manage-*` notation) |
+| S5 | request concreteness | regex over the **whole** `request.md` body (heading-blind: the entire file minus its own `# Request` title line — no section is selected) | body names NO file path **AND** NO concrete fix signal (fenced code block / `python3 .plan/execute-script.py` CLI / `manage-*` notation) |
 | S6 | explicit override | `status.metadata.planning_lane_override` (or `--lane-override deep`) | == `deep` forces deep (one-way) |
 
 **deep-lane short-circuit** — `plan.phase-1-init.deep_lane` is read BEFORE the signal set: `always` → force `deep`; `never` → force `light` (the DQ3 hard-escalation ratchet still fires unless `plan.phase-1-init.escalation: never` is also set); `auto` (default) → the signal set decides.
@@ -842,6 +842,7 @@ Phase set, transition rules, and phase-to-skill routing are defined in [standard
 | `route` | `--phase` | Get skill name for phase |
 | `get-routing-context` | `--plan-id` | Get combined routing context |
 | `change-type-heuristic` | `--plan-id [--persist]` | Deterministic change-type classifier for phase-3-outline Step 4. Reads the clarified-request narrative (falling back to original_input) and scores it against a fixed keyword table — returns one of `feature`, `bug_fix`, `tech_debt`, `enhancement`, `verification`, `analysis`, or `ambiguous=true` when no keyword fires / two change types tie / confidence < 0.7. With `--persist`, writes the resolved change_type to `status.metadata.change_type` (skipped in the ambiguous branch so the LLM `detect-change-type` workflow is the single writer there). |
+| `scope-estimate-heuristic` | `--plan-id [--persist]` | Deterministic pre-route `scope_estimate` classifier for phase-1-init, run BEFORE `planning-lane route` so the router's S2 signal reads a real value instead of `None`. Scores the **whole** `request.md` body (heading-blind — the entire file minus its own `# Request` title line; no section is selected, so an ingested spec's own `##` headings cannot truncate it) by counting distinct `dir/name.ext` path references, with zero architecture queries. Returns `surgical` (1–3 distinct paths and no glob / pattern fan-out marker), `single_module` (any other non-empty body), or `none` — the **declared unknown** emitted when the body is unscoreable (`request.md` absent, unreadable, or empty), never a band guessed from zero bytes. The companion `scope_resolved` boolean distinguishes a classified band (`true`) from the declared unknown (`false`); `none` is a deep-biasing S2 value, so an unscoreable request widens the lane rather than narrowing it. The path counter counts distinct path-shaped **strings**, not work targets: it cannot separate a target from a citation and deliberately requires a directory separator (a bare filename is intentionally excluded) — both residuals bias toward the wider band. With `--persist`, writes the result to `references.json`'s `scope_estimate` and emits one decision-log line. The deep-lane refine Step 9 module-mapping derivation may later overwrite the coarse guess. |
 | `aggregate-confidence` | `--plan-id [--scores-file PATH] [--correctness N] [--completeness N] [--consistency N] [--non-duplication N] [--ambiguity N] [--module-mapping N] [--persist]` | Weighted-math confidence aggregator for phase-2-refine Step 10. Computes the overall confidence from per-dimension scores (0..100) using the fixed weights `correctness 20% / completeness 20% / consistency 20% / non-duplication 10% / ambiguity 20% / module-mapping 10%`. Missing dimensions default to 0 and are recorded in `missing_dimensions`. Scores can be supplied via `--scores-file` (JSON object keyed by dimension) and / or individual CLI flags; flags take precedence on conflict. With `--persist`, the overall confidence is written to `status.metadata.confidence`. |
 | `planning-lane route` | `--plan-id [--lane-override deep\|light] [--persist]` | Deterministic planning-lane router. Resolves `planning_lane ∈ {light, deep}` from the DQ1 signal set (S1–S6) plus a `request.md` regex with zero discovery; `plan.phase-1-init.deep_lane` (`always`/`never`/`auto`) short-circuits the signals. Default is light; any deep signal forces deep. Also projects the recommended `execution_profile` posture (`minimal`/`auto`/`full`) over the same signals, independent of the deep-lane gate. With `--persist`, writes `status.metadata.planning_lane` + `status.metadata.execution_profile`. Emits one decision-log line naming every signal value, the winning predicate, and the projected posture. |
 | `planning-lane escalate` | `--plan-id --trigger explosion\|premise\|cross_cutting [--persist]` | One-way light→deep ratchet. Sets `planning_lane=deep` + `lane_escalated=true` + `escalation_trigger`; the flag is sticky and there is no downgrade path. With `--persist`, writes the mutation to `status.metadata`. |
@@ -997,6 +998,30 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status assert
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status change-type-heuristic \
   --plan-id PLAN_ID [--persist]
 ```
+
+### scope-estimate-heuristic
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status scope-estimate-heuristic \
+  --plan-id PLAN_ID [--persist]
+```
+
+**Output** (TOON):
+```toon
+status: success
+plan_id: my-feature
+scope_estimate: surgical
+scope_resolved: true
+distinct_path_count: 2
+distinct_paths[2]:
+  - marketplace/bundles/plan-marshall/skills/manage-status/SKILL.md
+  - test/plan-marshall/manage-status/test_planning_lane.py
+persisted: true
+```
+
+`scope_resolved: false` is the **declared unknown** — the request body was unscoreable, so
+`scope_estimate` is `none` (a "cannot tell" verdict that biases S2 deep), not a measured
+narrow band. Reading `scope_estimate` alone cannot make that distinction.
 
 ### aggregate-confidence
 
