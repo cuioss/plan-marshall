@@ -829,6 +829,35 @@ def test_read_request_body_strips_only_the_host_title_line(plan_context):
     assert 'source: description' in body
 
 
+def test_read_request_body_retains_a_non_first_line_request_heading(plan_context):
+    """Only line 1 is eligible for the title strip — a later '# Request…' stays.
+
+    The strip is anchored to the FIRST line rather than matched anywhere,
+    because an ingested spec may legitimately carry its own ``# Request …``
+    heading. Dropping that would silently remove request narrative and would
+    contradict the docstring's ONLY-line-removed contract.
+    """
+    plan_dir = plan_context.plan_dir_for('pl-read-nested-request-heading')
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    (plan_dir / 'request.md').write_text(
+        '# Request: host title\n'
+        '\n'
+        'source: description\n'
+        '\n'
+        '# Request routing rework\n'
+        '\n'
+        'Body naming marketplace/bundles/plan-marshall/skills/x/y.py\n',
+        encoding='utf-8',
+    )
+
+    body = _mod._read_request_body('pl-read-nested-request-heading')
+
+    # The host title (line 1) is gone...
+    assert '# Request: host title' not in body
+    # ...but the ingested spec's own '# Request …' heading is preserved.
+    assert '# Request routing rework' in body
+
+
 def test_read_request_body_counts_targets_the_truncating_read_could_not_reach(plan_context):
     """The scored body yields the target paths, not just the boilerplate citation.
 
