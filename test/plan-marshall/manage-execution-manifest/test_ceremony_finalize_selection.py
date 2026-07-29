@@ -1307,6 +1307,15 @@ class TestCeremonyPrefilterLaneWarnings:
         assert 'finalize-step-security-audit' in warned
         assert 'ceremony pre-filter' in warned['finalize-step-simplify']
         assert 'ceremony pre-filter' in warned['finalize-step-security-audit']
+        # Each warning must name the gate that ACTUALLY fired. The two pre-filters
+        # no longer share a condition, so a shared message would misreport the
+        # security-class drop as change_type-gated. A substring check on the common
+        # prefix alone cannot catch that — assert the discriminating clause, and
+        # assert the wrong one is absent.
+        assert 'change_type/affected_files gate' in warned['finalize-step-simplify']
+        assert 'zero-change-surface gate' not in warned['finalize-step-simplify']
+        assert 'zero-change-surface gate' in warned['finalize-step-security-audit']
+        assert 'change_type' not in warned['finalize-step-security-audit']
         # The steps are genuinely gone from the composed list.
         bare = _bare(_manifest_phase_6_steps(result))
         assert 'finalize-step-simplify' not in bare

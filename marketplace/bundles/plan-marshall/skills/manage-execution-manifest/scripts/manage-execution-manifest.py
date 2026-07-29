@@ -1356,7 +1356,11 @@ def _ceremony_prefilter_warnings(
     step AND the ceremony ``always`` gate did not force it back into the final
     step list, the drop would otherwise be silent from the operator's
     perspective — the lane said "keep", yet the step vanished. One entry per
-    such drop names the ceremony pre-filter — not the lane — as the remover.
+    such drop names the ceremony pre-filter — not the lane — as the remover,
+    and names WHICH gate fired: the two pre-filters do not share a condition, so
+    the message is selected per step (``zero-change-surface gate`` for a
+    security-class step, ``change_type/affected_files gate`` for simplify)
+    rather than being one fixed string covering both.
 
     Read-only with respect to the lane machinery: no keep/drop decision is
     changed here; the same resolvers (:func:`_resolve_element_lane`,
@@ -1381,10 +1385,21 @@ def _ceremony_prefilter_warnings(
                     # The lane itself would have dropped the step under this
                     # posture — the ceremony pre-filter changed nothing.
                     continue
+        # Name the gate that actually fired. The two ceremony pre-filters do NOT
+        # share a condition: security_class_inactive has no change_type leg (it
+        # gates purely on the change surface), so attributing a change_type gate
+        # to a security-class drop would misreport the reason the step vanished.
+        # Membership is read through the same persona predicate the gate itself
+        # uses — never a hardcoded step id.
+        gate = (
+            'zero-change-surface gate'
+            if _is_security_class_step(step)
+            else 'change_type/affected_files gate'
+        )
         warnings.append(
             (
                 step,
-                'ceremony pre-filter (change_type/affected_files gate) removed this '
+                f'ceremony pre-filter ({gate}) removed this '
                 'operator-selected step — the lane did not drop it',
             )
         )
