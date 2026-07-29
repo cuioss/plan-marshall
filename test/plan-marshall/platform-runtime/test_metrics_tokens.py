@@ -12,11 +12,18 @@ assert:
 - it returns a ``transcript_not_found`` no-op when no transcript exists;
 - ``OpenCodeRuntime.metrics_normalized_tokens`` is an honest no-op;
 - the relocated arithmetic helpers (``_billing_weighted_total``,
-  ``_sum_subagent_transcript``) behave as before; and
+  ``_sum_subagent_transcript``) behave as before;
+- the exploration-share counters bucket each ``tool_use`` by tool name, sum the
+  matching ``tool_result`` payload bytes, count an unknown name into
+  ``unclassified`` rather than dropping it, and match names casefolded;
+- the emitted per-phase bucket key set equals the key list the ``Runtime`` ABC's
+  contract docstring declares (the key set is PARSED from that docstring, so a
+  producer/contract drift fails here for both implementations); and
 - the router dispatches the new ``metrics normalized-tokens`` operation.
 """
 
 import json  # noqa: I001
+import re
 from pathlib import Path
 
 # conftest.py sets up PYTHONPATH so imports resolve without manual sys.path work.
@@ -24,6 +31,7 @@ import claude_runtime
 import platform_runtime
 from claude_runtime import ClaudeRuntime
 from opencode_runtime import OpenCodeRuntime
+from runtime_base import Runtime
 from toon_parser import parse_toon
 
 
@@ -77,6 +85,70 @@ def _agent_return_entry(timestamp: str, usage_block: str) -> dict:
     }
 
 
+def _tool_use_entry(timestamp: str, calls: list[tuple[str, str]]) -> dict:
+    """Build an assistant entry carrying one ``tool_use`` item per ``(id, name)``."""
+    return {
+        "timestamp": timestamp,
+        "message": {
+            "role": "assistant",
+            "content": [
+                {"type": "tool_use", "id": tool_id, "name": name, "input": {}}
+                for tool_id, name in calls
+            ],
+        },
+    }
+
+
+def _tool_result_entry(timestamp: str, tool_use_id: str, text: str) -> dict:
+    """Build a user entry carrying the ``tool_result`` for *tool_use_id*."""
+    return {
+        "timestamp": timestamp,
+        "message": {
+            "role": "user",
+            "content": [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": tool_use_id,
+                    "content": [{"type": "text", "text": text}],
+                }
+            ],
+        },
+    }
+
+
+def _contract_bucket_keys() -> set[str]:
+    """Parse the per-phase bucket key set out of the ABC's contract docstring.
+
+    The key list is DERIVED from ``Runtime.metrics_normalized_tokens.__doc__``
+    rather than restated here, so a producer that drifts from the published
+    contract fails this assertion for BOTH implementations instead of the drift
+    being invisible until a consumer reads a missing key.
+    """
+    doc = Runtime.metrics_normalized_tokens.__doc__ or ""
+    match = re.search(r"\{phase_name:\s*\{(.*?)\}\}", doc, re.DOTALL)
+    assert match is not None, "contract docstring no longer declares a per-phase bucket shape"
+    return {key.strip() for key in match.group(1).split(",") if key.strip()}
+
+
+# The four raw ``message.usage`` key spellings the Claude producer emits ALONGSIDE
+# the contract's normalized short names. They are aliases of
+# ``input``/``output``/``cache_read``/``cache_creation``, not additional contract
+# surface, so they are carved out of the exact-match assertion below.
+_RAW_USAGE_ALIASES = {
+    "input_tokens",
+    "output_tokens",
+    "cache_read_input_tokens",
+    "cache_creation_input_tokens",
+}
+
+# The exploration-share counter keys, derived from the same contract docstring.
+_EXPECTED_COUNTER_KEYS = {
+    key
+    for key in _contract_bucket_keys()
+    if key.endswith("_tool_calls") or key.endswith("_result_bytes")
+}
+
+
 def _write_jsonl(path: Path, entries: list[dict]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as f:
@@ -104,6 +176,13 @@ def test_claude_normalized_tokens_writes_per_phase_json(tmp_path, monkeypatch):
                 cache_read_input_tokens=1000,
                 cache_creation_input_tokens=40,
             ),
+            _tool_use_entry(
+                "2026-03-27T10:12:00+00:00",
+                [("toolu_r1", "Read"), ("toolu_b1", "Bash"), ("toolu_w1", "Write")],
+            ),
+            _tool_result_entry("2026-03-27T10:12:10+00:00", "toolu_r1", "r" * 120),
+            _tool_result_entry("2026-03-27T10:12:20+00:00", "toolu_b1", "b" * 30),
+            _tool_result_entry("2026-03-27T10:12:30+00:00", "toolu_w1", "w" * 7),
             _agent_return_entry(
                 "2026-03-27T10:15:00+00:00",
                 "<usage>total_tokens: 4000\ntool_uses: 5\nduration_ms: 25000</usage>",
@@ -137,6 +216,85 @@ def test_claude_normalized_tokens_writes_per_phase_json(tmp_path, monkeypatch):
     assert five["subagent_total_tokens"] == 4000
     assert five["subagent_tool_uses"] == 5
     assert five["subagent_duration_ms"] == 25000
+
+    # Contract-level key-set assertion: what the producer emits must equal what
+    # the ABC's contract docstring declares, modulo the raw-usage aliases. This
+    # fails on EITHER side of a drift — a producer that drops a contract key, or
+    # a contract that gains one no producer writes.
+    assert set(five) == _contract_bucket_keys() | _RAW_USAGE_ALIASES
+
+    # Exploration-share counters: Read -> exploration, Bash -> execute,
+    # Write -> work, each with its result payload's byte length.
+    assert five["exploration_tool_calls"] == 1
+    assert five["execute_tool_calls"] == 1
+    assert five["work_tool_calls"] == 1
+    assert five["exploration_result_bytes"] == 120
+    assert five["execute_result_bytes"] == 30
+    assert five["work_result_bytes"] == 7
+    # Nothing landed in the excluded buckets, and the classifier met no unknown
+    # name — a MEASURED zero, present as 0 rather than absent.
+    assert five["orchestration_tool_calls"] == 0
+    assert five["unclassified_tool_calls"] == 0
+    assert int(result["unclassified_tool_calls"]) == 0
+
+
+def test_claude_normalized_tokens_unknown_tool_name_is_counted_not_dropped(tmp_path, monkeypatch):
+    """A tool name outside the classifier's domain lands in unclassified, never dropped."""
+    session_id = "22222222-2222-2222-2222-222222222204"
+    projects_root = tmp_path / "home" / ".claude" / "projects" / "plan"
+    _write_jsonl(
+        projects_root / f"{session_id}.jsonl",
+        [
+            _main_context_entry("2026-03-27T10:10:00+00:00", input_tokens=1, output_tokens=1),
+            _tool_use_entry("2026-03-27T10:11:00+00:00", [("toolu_x", "NoSuchToolInvented")]),
+            _tool_result_entry("2026-03-27T10:11:10+00:00", "toolu_x", "z" * 11),
+        ],
+    )
+
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path / "home"))
+
+    output_file = tmp_path / "normalized.json"
+    result = _parse(
+        ClaudeRuntime().metrics_normalized_tokens(session_id, _WINDOWS, str(output_file))
+    )
+    assert result["status"] == "success"
+
+    five = json.loads(output_file.read_text(encoding="utf-8"))["5-execute"]
+    assert five["unclassified_tool_calls"] == 1
+    assert five["unclassified_result_bytes"] == 11
+    # The unknown name inflated no other bucket.
+    assert five["exploration_tool_calls"] == 0
+    assert five["work_tool_calls"] == 0
+    assert five["execute_tool_calls"] == 0
+    assert five["orchestration_tool_calls"] == 0
+    # ...and it is surfaced at run level so the classifier's gap is visible.
+    assert int(result["unclassified_tool_calls"]) == 1
+
+
+def test_claude_normalized_tokens_tool_name_matched_casefolded(tmp_path, monkeypatch):
+    """A casing variant of a known tool name resolves to the same bucket."""
+    session_id = "22222222-2222-2222-2222-222222222205"
+    projects_root = tmp_path / "home" / ".claude" / "projects" / "plan"
+    _write_jsonl(
+        projects_root / f"{session_id}.jsonl",
+        [
+            _main_context_entry("2026-03-27T10:10:00+00:00", input_tokens=1, output_tokens=1),
+            # ``bash`` really occurs lowercase in the corpus alongside ``Bash``.
+            _tool_use_entry("2026-03-27T10:11:00+00:00", [("toolu_l", "bash")]),
+        ],
+    )
+
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path / "home"))
+
+    output_file = tmp_path / "normalized.json"
+    result = _parse(
+        ClaudeRuntime().metrics_normalized_tokens(session_id, _WINDOWS, str(output_file))
+    )
+    assert result["status"] == "success"
+
+    five = json.loads(output_file.read_text(encoding="utf-8"))["5-execute"]
+    assert five["execute_tool_calls"] == 1
+    assert five["unclassified_tool_calls"] == 0
 
 
 def test_claude_normalized_tokens_subagent_transcript_summed(tmp_path, monkeypatch):
@@ -289,12 +447,34 @@ def test_sum_subagent_transcript_sums_four_fields(tmp_path):
             },
         ],
     )
-    fields, first_ts = claude_runtime._sum_subagent_transcript(path)
+    fields, first_ts, tool_counters = claude_runtime._sum_subagent_transcript(path)
     assert fields["input_tokens"] == 150
     assert fields["output_tokens"] == 15
     assert fields["cache_read_input_tokens"] == 2000
     assert fields["cache_creation_input_tokens"] == 300
     assert first_ts == "2026-03-27T10:05:00+00:00"
+    # No tool_use items in this transcript → every counter is a measured zero,
+    # and the key set is complete rather than partially populated.
+    assert set(tool_counters) == set(_EXPECTED_COUNTER_KEYS)
+    assert set(tool_counters.values()) == {0}
+
+
+def test_sum_subagent_transcript_counts_tool_calls_and_result_bytes(tmp_path):
+    """A subagent transcript's tool calls are bucketed and their result bytes summed."""
+    path = tmp_path / "agent-002.jsonl"
+    _write_jsonl(
+        path,
+        [
+            _tool_use_entry("2026-03-27T10:05:00+00:00", [("toolu_a", "Read"), ("toolu_b", "Edit")]),
+            _tool_result_entry("2026-03-27T10:05:30+00:00", "toolu_a", "x" * 40),
+            _tool_result_entry("2026-03-27T10:05:40+00:00", "toolu_b", "y" * 9),
+        ],
+    )
+    _fields, _first_ts, tool_counters = claude_runtime._sum_subagent_transcript(path)
+    assert tool_counters["exploration_tool_calls"] == 1
+    assert tool_counters["work_tool_calls"] == 1
+    assert tool_counters["exploration_result_bytes"] == 40
+    assert tool_counters["work_result_bytes"] == 9
 
 
 # =============================================================================

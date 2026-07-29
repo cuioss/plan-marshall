@@ -7,11 +7,20 @@ The findings contract is exactly TWO pure, zero-LLM verbs — no triage judgment
 lives here:
 
 - ``fetch_findings`` fetches PR review comments, applies the keyword pre-filter
-  from ``standards/comment-patterns.json`` to drop obvious noise, then files one
-  ``pr-comment`` finding per surviving comment via ``manage-findings add``. The
-  untrusted comment body is quarantined under ``raw_input.{body}`` (never
-  embedded raw in the top-level ``detail``); the batched ``manage-findings
-  ingest`` pass promotes it to top-level only after ``validate_struct``.
+  from ``standards/comment-patterns.json`` to drop obvious noise, excludes the
+  batched response body ``post_responses`` itself posts (recognized start-anchored
+  on ``_SELF_RESPONSE_HEADING``, counted in ``count_skipped_self_response``), then
+  files one ``pr-comment`` finding per surviving comment via ``manage-findings
+  add``. The untrusted comment body is quarantined under ``raw_input.{body}``
+  (never embedded raw in the top-level ``detail``); the batched ``manage-findings
+  ingest`` pass promotes it to top-level only after ``validate_struct``. Because
+  the self-response filter cannot be complete (a thread-bearing disposition whose
+  resolve fails leaves an unresolved reply carrying no transmission shape), a
+  bounded guard reports exhaustion as a ``(self-response-loop)`` Q-Gate finding
+  rather than looping silently. The bound counts the CURRENT cycle's consecutive
+  self-responses (``_current_cycle_self_response_count``), not the PR's lifetime
+  total, so a PR that merely completed several converged triage rounds is never
+  reported as looping.
 - ``post_responses`` applies already-decided triage dispositions back to the
   provider, keyed by each finding's own ``hash_id`` (no positional pairing), via
   a three-way disposition that never loses a decision: a finding with no
@@ -246,6 +255,121 @@ def _is_obvious_noise(body: str, bot_kind: str | None = None) -> bool:
     return False
 
 
+# The exact heading ``_build_batched_response_body`` emits as the literal first
+# line of the batched PR-level comment ``post_responses`` posts for thread-less
+# dispositions. The emitter and the ``_is_self_authored_response`` recognizer BOTH
+# read this one constant, so the transmission shape and the shape that recognizes
+# it cannot drift apart — a renamed heading would otherwise silently reopen the
+# re-ingestion loop while every test still passed.
+_SELF_RESPONSE_HEADING = '## Triage dispositions'
+
+# How many CONSECUTIVE self-authored responses — responses belonging to the
+# CURRENT, still-unconverged respond → re-fetch cycle — a single fetch may observe
+# before the producer reports the loop as exhausted. Mirrors
+# ``phase-6-finalize.max_iterations`` (3): three unbroken turns of respond →
+# re-fetch without the comment set converging is not a slow convergence, it is a
+# cycle. The guard is load-bearing beyond the filter because the filter cannot be
+# complete — a thread-bearing disposition whose ``resolve_thread`` failed leaves
+# an unresolved reply whose body is arbitrary ``resolution_detail`` text carrying
+# no transmission shape at all, so only a bound can terminate it.
+#
+# The comparand is ``_current_cycle_self_response_count`` — the TRAILING run of
+# self-responses — NOT the cumulative ``count_skipped_self_response`` over the
+# PR's whole history. ``cmd_fetch_findings`` fetches with
+# ``unresolved_only=False``, so the cumulative count spans every triage cycle the
+# PR ever completed; comparing it against this bound made any PR that legitimately
+# converged three times report a loop that was not running.
+_SELF_RESPONSE_LOOP_BOUND = 3
+
+
+def _is_self_authored_response(body: str) -> bool:
+    """Pre-filter: True if ``body`` is the batched response ``post_responses`` posted.
+
+    START-ANCHORED, never a substring search. ``post_responses`` transmits
+    thread-less dispositions as a NEW PR-level comment authored by the repo-owner
+    account (``bot_kind`` None, ``kind`` ``issue_comment``), which every other
+    pre-filter stage misses: it is unresolved, it is not a refusal, no ``ignore``
+    regex matches it, and the ``(bot_kind, comment_id)`` dedup cannot fire because
+    each turn posts a comment with a NEW id. Without this stage the barrier
+    re-ingests our own reply as a fresh unaddressed finding on every pass.
+
+    The start anchor is the false-positive boundary and is load-bearing: a human
+    comment that QUOTES the heading — as a blockquote (``> ## Triage
+    dispositions``) or inside prose — is real reviewer feedback and MUST still be
+    filed. Only leading whitespace is stripped before the prefix test, so a
+    blockquote marker or any preceding prose leaves the body unmatched.
+
+    This is deliberately NOT added to ``comment-patterns.json``: that file is the
+    shared *acknowledgment-noise* layer, and a self-authored response is not noise
+    — it is our own output. Folding a structural transmission-shape recognizer into
+    the noise set would repeat exactly the mistake ``_is_obvious_noise``'s
+    docstring warns against for refusals. It gets its own counter
+    (``count_skipped_self_response``) for the same reason, following the
+    established ``count_skipped_refusal`` precedent.
+    """
+    return body.lstrip().startswith(_SELF_RESPONSE_HEADING)
+
+
+def _current_cycle_self_response_count(comments: list[dict]) -> int:
+    """Count the self-responses belonging to the CURRENT, still-unconverged cycle.
+
+    The bounded guard needs the number of unbroken respond → re-fetch turns in the
+    cycle running RIGHT NOW, not the number of self-responses the PR accumulated
+    over its lifetime. ``cmd_fetch_findings`` fetches with ``unresolved_only=False``,
+    so a raw count spans every cycle the PR ever completed: a PR that legitimately
+    converged three times carries three self-responses and would report a loop that
+    is not running, filing a spurious ``(self-response-loop)`` Q-Gate finding long
+    after every finding was resolved.
+
+    The discriminator is CONSECUTIVENESS in time. A non-converging cycle posts
+    self-response after self-response with nothing else in between — nobody else is
+    speaking, which is precisely what "not converging" means. A converged cycle is
+    always followed by fresh reviewer activity before the next cycle starts, so its
+    self-responses sit BEHIND that activity. Counting only the trailing run
+    therefore keeps the termination guarantee for a genuine loop while historical
+    converged cycles stop counting as evidence of an active one.
+
+    Two comment classes are transparent to the run — neither counts nor breaks it:
+
+    - A **registered re-review trigger** (``is_registered_trigger_comment``) is
+      pipeline-authored, exactly like the self-responses themselves. Letting it
+      break the run would let the pipeline reset its own guard forever by
+      interleaving trigger → response → trigger → response, masking the very loop
+      class this bound exists to terminate.
+
+    Everything else — any reviewer bot comment, any human comment — breaks the run:
+    somebody other than this pipeline spoke, so the next self-response opens a new
+    cycle rather than continuing the old one.
+
+    Ordering is established here and is load-bearing: ``fetch_pr_comments_data``
+    emits comments GROUPED BY KIND (inline threads, then review bodies, then issue
+    comments), NOT chronologically. Self-responses are posted as ``issue_comment``
+    and therefore always land in the last group, so scanning the provider list
+    as-received would read every historical self-response as one contiguous tail
+    and reproduce the exact false positive this function removes. Sorting by
+    ``created_at`` first is what makes the trailing run mean "most recent in time".
+    A comment whose ``created_at`` the provider omitted sorts as oldest and so
+    cannot inflate the run; the stable sort preserves provider order among ties.
+
+    Args:
+        comments: The raw provider comment records for the PR.
+
+    Returns:
+        The number of consecutive most-recent self-authored responses.
+    """
+    ordered = sorted(comments, key=lambda c: str(c.get('created_at') or ''))
+    count = 0
+    for comment in reversed(ordered):
+        body = str(comment.get('body') or '')
+        if _is_self_authored_response(body):
+            count += 1
+            continue
+        if is_registered_trigger_comment(body):
+            continue
+        break
+    return count
+
+
 # ============================================================================
 # FAIL-LOUD CONFIG GUARD (shared by fetch_findings + post_responses)
 # ============================================================================
@@ -398,8 +522,32 @@ def cmd_fetch_findings(args):
        ``count_skipped_noise``, and the refusing bot is named in ``refused_bots``.
        It files no ``pr-comment`` finding: a refusal is a signal ABOUT the review,
        not feedback about the code, so the operator is never asked to triage it.
-    3. Obvious text noise — matched via ``_is_obvious_noise`` (lgtm, bot sigs, etc.),
+    3. SELF-AUTHORED RESPONSE — the batched disposition comment ``post_responses``
+       itself posted, recognized start-anchored by ``_is_self_authored_response``.
+       Counted in ``count_skipped_self_response``, NEVER in ``count_skipped_noise``
+       (it is our own output, not noise), and files no finding — re-ingesting it is
+       the non-terminating barrier loop this stage exists to close.
+    4. Obvious text noise — matched via ``_is_obvious_noise`` (lgtm, bot sigs, etc.),
        counted in ``count_skipped_noise``.
+    5. Cross-iteration duplicate — a ``(bot_kind, comment_id)`` key already present
+       in the store, counted in ``count_skipped_duplicate``.
+
+    ``self_response_loop_detected``: true when a single fetch observed
+    ``count_self_response_current_cycle >= _SELF_RESPONSE_LOOP_BOUND``. Every turn
+    of the respond → re-fetch cycle leaves one permanent response comment on the
+    PR, so the PR's own comment list IS the iteration counter — no new state store
+    and no new config key. The counter is the CURRENT cycle's trailing run of
+    self-responses (``_current_cycle_self_response_count``), NOT the cumulative
+    ``count_skipped_self_response``: this fetch is ``unresolved_only=False``, so the
+    cumulative figure spans every cycle the PR ever completed and would report a
+    loop on any PR that merely converged three normal times. Both counts are
+    reported — the cumulative one is the honest total of what the filter dropped,
+    the current-cycle one is the loop predicate. On detection the producer files a
+    ``(self-response-loop)`` Q-Gate finding through ``add_qgate_finding_checked``,
+    so exhaustion is a REPORTED coverage gap requiring an operator decision rather
+    than a silent pass; a rejected persist surfaces as
+    ``self_response_loop_persist_failed``. The enclosing ``status`` stays
+    ``success`` — the fetch itself succeeded.
 
     Containment: the untrusted comment ``body`` is quarantined under
     ``raw_input.{body}`` — never embedded raw in the top-level ``detail``. The
@@ -547,6 +695,7 @@ def cmd_fetch_findings(args):
     skipped_noise = 0
     skipped_duplicate = 0
     skipped_refusal = 0
+    skipped_self_response = 0
     refused_set: set[str] = set()
     unclassified_set: set[str] = set()
     store_failures: list[str] = []
@@ -584,7 +733,18 @@ def cmd_fetch_findings(args):
                 refused_set.add(bot_kind)
             continue
 
-        # Pre-filter 3: obvious noise — the shared acknowledgment/automation
+        # Pre-filter 3: SELF-AUTHORED RESPONSE — the batched disposition comment
+        # this workflow's own ``post_responses`` posted. Placed AFTER the refusal
+        # branch (a refusal must never be swallowed by an earlier stage) and
+        # BEFORE the noise filter, with its OWN counter rather than folding into
+        # ``skipped_noise``: our own output is not acknowledgment noise. Without
+        # this stage the reply is filed as a fresh pending finding, the pre-merge
+        # barrier blocks on it, triage responds again, and the cycle never ends.
+        if _is_self_authored_response(body):
+            skipped_self_response += 1
+            continue
+
+        # Pre-filter 4: obvious noise — the shared acknowledgment/automation
         # regexes plus, for a known reviewer bot, that bot's per-registry literal
         # ignore markers (walkthrough headings, marketing footers, no-op reviews).
         if _is_obvious_noise(body, bot_kind):
@@ -606,7 +766,7 @@ def cmd_fetch_findings(args):
         if bot_kind and bot_kind not in classified_bots:
             unclassified_set.add(bot_kind)
 
-        # Pre-filter 4: cross-iteration dedup keyed on (bot_kind, comment_id)
+        # Pre-filter 5: cross-iteration dedup keyed on (bot_kind, comment_id)
         # for ALL bot kinds, thread-bearing and thread_id-less alike. A comment
         # already staged in a prior iteration MUST NOT re-surface as a new
         # pending finding when HEAD advances. Dropping the earlier
@@ -664,14 +824,16 @@ def cmd_fetch_findings(args):
             store_failures.append(comment_id)
 
     count_stored = len(stored_hashes)
-    # Duplicates skipped by the cross-iteration guard and refusals surfaced through
-    # ``refused_bots`` are both legitimate non-stores, so they drop out of
-    # expected_stored alongside the noise skips — otherwise every deduped comment
-    # and every surfaced refusal would spuriously trip the producer-mismatch
-    # Q-Gate. An unclassified bot's comments are NOT subtracted: under the
-    # warn-but-ingest rule they are stored like any other, so they belong in
-    # expected_stored.
-    expected_stored = count_fetched - skipped_noise - skipped_duplicate - skipped_refusal
+    # Duplicates skipped by the cross-iteration guard, refusals surfaced through
+    # ``refused_bots``, and self-authored responses are all legitimate non-stores,
+    # so they drop out of expected_stored alongside the noise skips — otherwise
+    # every deduped comment, every surfaced refusal, and every correctly-excluded
+    # self response would spuriously trip the producer-mismatch Q-Gate. An
+    # unclassified bot's comments are NOT subtracted: under the warn-but-ingest
+    # rule they are stored like any other, so they belong in expected_stored.
+    expected_stored = (
+        count_fetched - skipped_noise - skipped_duplicate - skipped_refusal - skipped_self_response
+    )
 
     qgate_hash: str | None = None
     qgate_persist_failure: dict[str, str] | None = None
@@ -682,7 +844,9 @@ def cmd_fetch_findings(args):
         mismatch_detail = (
             f'count_fetched={count_fetched}, '
             f'count_skipped_noise={skipped_noise}, '
+            f'count_skipped_duplicate={skipped_duplicate}, '
             f'count_skipped_refusal={skipped_refusal}, '
+            f'count_skipped_self_response={skipped_self_response}, '
             f'count_stored={count_stored}, '
             f'expected_stored={expected_stored}, '
             f'failed_comment_ids={store_failures}'
@@ -703,6 +867,42 @@ def cmd_fetch_findings(args):
             detail=mismatch_detail,
         )
 
+    # Termination guarantee — state-free. Every turn of the respond → re-fetch
+    # cycle leaves one permanent self-response comment on the PR, so the PR's own
+    # comment list is the iteration counter: no new state store, no new config
+    # key. At the bound the exhaustion is REPORTED as a Q-Gate finding requiring
+    # an operator decision, never passed silently — the same checked-persist
+    # contract the ``(producer-mismatch)`` finding above uses, so a rejected
+    # persist cannot lose the report.
+    #
+    # The counter is the CURRENT cycle's trailing run, not the cumulative
+    # ``skipped_self_response`` over the PR's whole history: this fetch is
+    # ``unresolved_only=False``, so the cumulative figure includes every
+    # already-converged cycle and would report a loop on any PR that simply
+    # completed three normal triage rounds. ``skipped_self_response`` remains the
+    # honest total of what the filter dropped (it must, for ``expected_stored``);
+    # only the loop predicate reads the narrower signal.
+    current_cycle_self_response = _current_cycle_self_response_count(raw_comments)
+    self_response_loop_detected = current_cycle_self_response >= _SELF_RESPONSE_LOOP_BOUND
+    loop_hash: str | None = None
+    loop_persist_failure: dict[str, str] | None = None
+    if self_response_loop_detected:
+        loop_hash, loop_persist_failure = add_qgate_finding_checked(
+            plan_id=plan_id,
+            phase='5-execute',
+            source='qgate',
+            finding_type='pr-comment',
+            title=f'(self-response-loop) github_pr fetch_findings PR #{pr_number}',
+            detail=(
+                f'count_self_response_current_cycle={current_cycle_self_response} reached '
+                f'_SELF_RESPONSE_LOOP_BOUND={_SELF_RESPONSE_LOOP_BOUND} on PR #{pr_number} '
+                f'(count_skipped_self_response={skipped_self_response} over the PR\'s full history). '
+                'The respond -> re-fetch cycle is not converging: every pass leaves another '
+                'self-authored response comment on the PR, with no reviewer activity in between. '
+                'Operator decision required.'
+            ),
+        )
+
     result: dict[str, Any] = {
         'status': 'success',
         'operation': 'fetch_findings',
@@ -713,6 +913,10 @@ def cmd_fetch_findings(args):
         'count_skipped_noise': skipped_noise,
         'count_skipped_duplicate': skipped_duplicate,
         'count_skipped_refusal': skipped_refusal,
+        'count_skipped_self_response': skipped_self_response,
+        'count_self_response_current_cycle': current_cycle_self_response,
+        'self_response_loop_detected': self_response_loop_detected,
+        'self_response_loop_hash_id': loop_hash,
         'count_stored': count_stored,
         'participated_bots': [
             {'bot_kind': bot, 'evidence_kind': participated[bot]} for bot in sorted(participated)
@@ -725,6 +929,9 @@ def cmd_fetch_findings(args):
     if qgate_persist_failure is not None:
         result['qgate_persist_failed'] = True
         result['qgate_persist_failure'] = qgate_persist_failure
+    if loop_persist_failure is not None:
+        result['self_response_loop_persist_failed'] = True
+        result['self_response_loop_persist_failure'] = loop_persist_failure
     return result
 
 
@@ -850,8 +1057,12 @@ def _build_batched_response_body(entries: list[tuple[str, str]]) -> str:
 
     Returns:
         One markdown body with a heading and one anchored section per entry.
+
+    The heading is ``_SELF_RESPONSE_HEADING`` — the SAME constant
+    ``_is_self_authored_response`` recognizes on the fetch side, so this emitted
+    shape and the shape that excludes it on re-fetch cannot drift apart.
     """
-    parts = ['## Triage dispositions', '']
+    parts = [_SELF_RESPONSE_HEADING, '']
     for comment_id, reply_body in entries:
         anchor = f'comment_id: `{comment_id}`' if comment_id else 'comment_id: _(unrecorded)_'
         parts.append(f'### In reply to {anchor}')

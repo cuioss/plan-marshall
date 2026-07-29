@@ -28,12 +28,24 @@ Coverage:
   ``deep_lane=always`` does NOT coerce the posture to ``full``.
 - ``scope_estimate_from_request_pure`` — the pre-route coarse scope classifier:
   surgical for one-to-three distinct file paths with no glob, single_module for
-  many paths / a glob / an ambiguous pathless request, distinct-path dedup, and
-  the zero-architecture-call invariant.
+  many paths / a glob / an ambiguous pathless request, ``none`` as the DECLARED
+  UNKNOWN for an unscoreable body (plus the invariant that the unknown biases S2
+  deep), distinct-path dedup, and the zero-architecture-call invariant.
+- ``_read_request_body`` — the whole-body, heading-blind read: text below a
+  nested ``## `` heading is reached, only the host ``# Request`` title line is
+  stripped, and an absent / title-only / non-UTF-8 ``request.md`` degrades to the
+  declared unknown instead of raising.
+- The settled path-counter semantics — the intentional bare-filename exclusion
+  (a directory separator is required) and the declared inapplicability of
+  target-vs-citation discrimination, both asserted with their one-directional
+  (band-widening) residual.
+- The shared-population invariant — S5 concreteness and the scope band are shown
+  to consume the identical body, not merely documented as doing so.
 - ``cmd_scope_estimate_heuristic`` — ``--persist`` writing
-  ``references.json.scope_estimate``, the no-persist read-only path, the missing
-  plan-dir error, its manage-status dispatch registration, and the D2 acceptance
-  that pre-classification flips the router's S2 from deep to light for a concrete
+  ``references.json.scope_estimate``, the ``scope_resolved`` classified-vs-unknown
+  discriminator, the no-persist read-only path, the missing plan-dir error, its
+  manage-status dispatch registration, and the D2 acceptance that
+  pre-classification flips the router's S2 from deep to light for a concrete
   narrow request.
 """
 
@@ -80,6 +92,71 @@ def _write_request(plan_dir: Path, body: str) -> None:
         '(unused)\n\n'
         '## Clarified Request\n\n'
         f'{body}\n'
+    )
+    (plan_dir / 'request.md').write_text(content, encoding='utf-8')
+
+
+# An INGESTED orchestrator plan spec, embedded verbatim under ``## Original
+# Input`` exactly as phase-1-init writes it. Its defining property — and the one
+# every pre-existing fixture above lacks — is that it carries its OWN ``## ``
+# headings, so an H2-splitting section reader terminates ``original_input`` at
+# ``## Objective`` and never sees the surface list below it.
+#
+# The two readings disagree by construction, which is what makes this fixture a
+# pre/post discriminator rather than a restatement:
+#
+#   truncated (H2-split) -> 1 path, the boilerplate CITATION only -> surgical
+#   whole body           -> 5 distinct paths (citation + 4 targets) -> single_module
+_INGESTED_SPEC_BODY = (
+    '# PLAN-99: An ingested orchestrator plan spec\n'
+    '\n'
+    'epic: truthful-signals\n'
+    '\n'
+    '> Staged plan spec — one shippable unit of work. See\n'
+    '> `persona-marshall-orchestrator/standards/orchestration-model.md` for the\n'
+    '> hand-off contract.\n'
+    '\n'
+    '## Objective\n'
+    '\n'
+    'Fix the four real targets enumerated below.\n'
+    '\n'
+    '## Expected Surface\n'
+    '\n'
+    '- `marketplace/bundles/plan-marshall/skills/manage-status/scripts/_cmd_planning_lane.py`\n'
+    '- `test/plan-marshall/manage-status/test_planning_lane.py`\n'
+    '- `marketplace/bundles/plan-marshall/skills/phase-1-init/SKILL.md`\n'
+    '- `doc/concepts/orchestration.adoc`\n'
+)
+
+# The single path token in the truncated head region — a CITATION of a governing
+# document, never a target of the work.
+_BOILERPLATE_CITATION = 'persona-marshall-orchestrator/standards/orchestration-model.md'
+# A target named in the ingested body BELOW the first nested ``## `` heading. The
+# truncating read could never reach it.
+_TARGET_BELOW_NESTED_HEADING = (
+    'marketplace/bundles/plan-marshall/skills/manage-status/scripts/_cmd_planning_lane.py'
+)
+
+
+def _write_ingested_request(plan_dir: Path, spec_body: str = _INGESTED_SPEC_BODY) -> None:
+    """Author a ``request.md`` whose ``## Original Input`` holds an ingested spec.
+
+    Mirrors the phase-1-init shape for an orchestrated plan: a ``# Request``
+    title, the virtual-header metadata block, and the spec embedded verbatim
+    under ``## Original Input``. There is deliberately NO ``## Clarified
+    Request`` section — the scope heuristic runs at phase-1-init, before refine
+    authors one.
+    """
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    content = (
+        '# Request: An ingested orchestrator plan spec\n'
+        '\n'
+        f'plan_id: {plan_dir.name}\n'
+        'source: description\n'
+        '\n'
+        '## Original Input\n'
+        '\n'
+        f'{spec_body}'
     )
     (plan_dir / 'request.md').write_text(content, encoding='utf-8')
 
@@ -694,8 +771,184 @@ def test_request_is_concrete_true_for_each_anchor(body):
 
 @pytest.mark.parametrize('body', ['', 'The thing should do the thing, somehow.'])
 def test_request_is_concrete_false_for_anchorless_body(body):
-    """An empty or anchorless body is not concrete (→ S5 deep)."""
+    """An empty or anchorless body is not concrete (→ S5 deep).
+
+    Re-justified under the whole-body read: the empty case now arrives here only
+    when ``request.md`` is genuinely absent, unreadable, or empty — never as a
+    side effect of an H2 section boundary. S5 and the scope band agree on that
+    input (S5 → not concrete, scope → declared unknown), and both bias deep, so
+    the unscoreable request is widened by two independent signals rather than
+    silently narrowed by either.
+    """
     assert _mod._request_is_concrete(body) is False
+
+
+# =============================================================================
+# _read_request_body — the whole-body, heading-blind read
+# =============================================================================
+#
+# The reader must be robust to an ingested spec carrying its own '## ' headings,
+# which is the NORMAL case for every orchestrated plan. The shared markdown
+# splitter starts a new section on any line beginning '## ' with no nesting
+# awareness, so a section-scoped read truncated the request at the ingested
+# body's first nested heading and scored boilerplate instead.
+
+
+def test_read_request_body_returns_text_after_a_nested_h2_heading(plan_context):
+    """The read spans the whole body, including text below a nested '## ' heading.
+
+    The regression the whole-body read exists to prevent: with a section-scoped
+    read this target is unreachable, because '## Objective' terminates the
+    'Original Input' section before the surface list is ever seen.
+    """
+    plan_dir = plan_context.plan_dir_for('pl-read-nested-h2')
+    _write_ingested_request(plan_dir)
+
+    body = _mod._read_request_body('pl-read-nested-h2')
+
+    # Text below the first nested heading is present.
+    assert _TARGET_BELOW_NESTED_HEADING in body
+    assert '## Expected Surface' in body
+    assert 'doc/concepts/orchestration.adoc' in body
+    # The ingested spec's own headings survive verbatim — nothing was consumed
+    # as a section boundary.
+    assert '## Objective' in body
+
+
+def test_read_request_body_strips_only_the_host_title_line(plan_context):
+    """Only the host document's own '# Request' title line is removed."""
+    plan_dir = plan_context.plan_dir_for('pl-read-title-strip')
+    _write_ingested_request(plan_dir)
+
+    body = _mod._read_request_body('pl-read-title-strip')
+
+    assert '# Request' not in body
+    # The INGESTED spec's own '# PLAN-99' title is not the host title and stays.
+    assert '# PLAN-99: An ingested orchestrator plan spec' in body
+    # Header metadata lines are not a section boundary and are retained.
+    assert 'source: description' in body
+
+
+def test_read_request_body_counts_targets_the_truncating_read_could_not_reach(plan_context):
+    """The scored body yields the target paths, not just the boilerplate citation.
+
+    Pins the end-to-end consequence of the read change on the same fixture: the
+    truncated head region carries exactly one path — a citation — which would
+    band ``surgical``; the whole body carries five, which bands
+    ``single_module``.
+    """
+    plan_dir = plan_context.plan_dir_for('pl-read-target-count')
+    _write_ingested_request(plan_dir)
+
+    body = _mod._read_request_body('pl-read-target-count')
+    paths = _mod._distinct_paths(body)
+
+    assert _BOILERPLATE_CITATION in paths
+    assert _TARGET_BELOW_NESTED_HEADING in paths
+    assert len(paths) == 5, sorted(paths)
+    assert scope_estimate_from_request_pure(body) == 'single_module'
+
+
+def test_read_request_body_empty_when_request_absent(plan_context):
+    """A plan with no request.md reads as the empty (declared-unknown) body."""
+    plan_dir = plan_context.plan_dir_for('pl-read-absent')
+    plan_dir.mkdir(parents=True, exist_ok=True)
+
+    assert _mod._read_request_body('pl-read-absent') == ''
+
+
+def test_read_request_body_empty_when_only_the_title_line_present(plan_context):
+    """A request.md carrying nothing but the title line reads as empty, not as chrome."""
+    plan_dir = plan_context.plan_dir_for('pl-read-title-only')
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    (plan_dir / 'request.md').write_text('# Request: nothing else\n', encoding='utf-8')
+
+    assert _mod._read_request_body('pl-read-title-only') == ''
+
+
+def test_read_request_body_handles_non_utf8_request(plan_context):
+    """A non-UTF-8 request.md degrades to the declared unknown, never an exception.
+
+    ``Path.read_text(encoding='utf-8')`` raises ``UnicodeDecodeError`` — a
+    ``ValueError`` subtype, NOT an ``OSError`` — so an ``except OSError`` guard
+    alone would let it escape and crash the phase. This asserts the widened
+    guard routes an undecodable body to the same unscoreable path as a missing
+    file.
+    """
+    plan_dir = plan_context.plan_dir_for('pl-read-non-utf8')
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    # 0xFF is not a valid UTF-8 start byte.
+    (plan_dir / 'request.md').write_bytes(b'# Request\n\n\xff\xfe not utf-8 \xff\n')
+
+    assert _mod._read_request_body('pl-read-non-utf8') == ''
+    assert scope_estimate_from_request_pure(_mod._read_request_body('pl-read-non-utf8')) == 'none'
+
+
+def test_scope_heuristic_declares_unknown_for_unreadable_request(plan_context):
+    """End-to-end: an unscoreable request persists the declared unknown, not a band."""
+    plan_dir = plan_context.plan_dir_for('pl-scope-unknown')
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    _write_references(plan_dir, scope_estimate=None)
+
+    result = cmd_scope_estimate_heuristic(
+        Namespace(plan_id='pl-scope-unknown', persist=True)
+    )
+
+    assert result['status'] == 'success'
+    assert result['scope_estimate'] == 'none'
+    assert result['scope_resolved'] is False
+    assert result['distinct_path_count'] == 0
+    refs = json.loads((plan_dir / 'references.json').read_text())
+    assert refs['scope_estimate'] == 'none'
+
+
+def test_scope_heuristic_reports_scope_resolved_true_for_a_scored_body(plan_context):
+    """``scope_resolved`` distinguishes a classified band from the declared unknown.
+
+    Without this field a consumer reading ``scope_estimate`` alone cannot tell a
+    measured band from a "cannot tell" verdict — which is exactly how a zero-byte
+    read used to pass for a band.
+    """
+    plan_dir = plan_context.plan_dir_for('pl-scope-resolved')
+    _write_request(plan_dir, 'Fix pkg/one.py.')
+    _write_references(plan_dir, scope_estimate=None)
+
+    result = cmd_scope_estimate_heuristic(Namespace(plan_id='pl-scope-resolved', persist=False))
+
+    assert result['scope_estimate'] == 'surgical'
+    assert result['scope_resolved'] is True
+
+
+def test_concreteness_and_scope_consume_the_identical_body(plan_context, monkeypatch):
+    """S5 concreteness and the scope band read the SAME text — asserted, not claimed.
+
+    The two signals are corroborating readings of one request. If one consumer
+    were ever narrowed (say, to a declared-surface region) while the other kept
+    the whole body, they would silently describe different documents and their
+    agreement would stop meaning anything. This records the shared-population
+    invariant behaviourally by capturing what each consumer actually receives.
+    """
+    plan_dir = plan_context.plan_dir_for('pl-shared-population')
+    _write_ingested_request(plan_dir)
+    _write_status(plan_dir)
+    _write_references(plan_dir, scope_estimate=None)
+
+    seen: list[str] = []
+    real_read = _mod._read_request_body
+
+    def _recording_read(plan_id: str) -> str:
+        # _mod is loaded dynamically, so real_read is untyped (Any) to mypy.
+        body: str = real_read(plan_id)
+        seen.append(body)
+        return body
+
+    monkeypatch.setattr(_mod, '_read_request_body', _recording_read)
+
+    _mod._evaluate_signals('pl-shared-population', {})
+    cmd_scope_estimate_heuristic(Namespace(plan_id='pl-shared-population', persist=False))
+
+    assert len(seen) == 2, 'both consumers must go through _read_request_body'
+    assert seen[0] == seen[1] != ''
 
 
 # =============================================================================
@@ -927,10 +1180,115 @@ def test_scope_pure_glob_disqualifies_surgical(body):
     assert scope_estimate_from_request_pure(body) == 'single_module'
 
 
-@pytest.mark.parametrize('body', ['', None, 'Make the thing better, somehow, everywhere.'])
-def test_scope_pure_single_module_for_pathless_or_empty(body):
-    """An empty / None / pathless (ambiguous) request defaults to single_module."""
+@pytest.mark.parametrize('body', ['', None])
+def test_scope_pure_declares_unknown_for_unscoreable_body(body):
+    """An unscoreable (empty / None) body yields the DECLARED UNKNOWN, not a band.
+
+    This assertion is the inverse of the one it replaces. The prior contract had
+    an empty body classify as ``single_module`` — a confident narrow-ish band
+    derived from zero bytes, which is precisely the "scorer reads nothing and
+    still emits a verdict" failure this change exists to remove. A body that
+    cannot be scored must say so.
+
+    ``none`` is deliberately reused rather than a new enum member: it is already
+    inside the closed ``none|surgical|single_module|multi_module|broad`` set that
+    ``manage-solution-outline validate`` enforces, and it is already a member of
+    ``_DEEP_SCOPE_ESTIMATES``, so the unknown biases the lane DEEP (wider) rather
+    than narrow. See ``test_scope_unknown_is_a_deep_biasing_s2_value`` for that
+    second half — the enum choice is only correct if the routing consequence
+    holds, so both are asserted.
+    """
+    assert scope_estimate_from_request_pure(body) == 'none'
+
+
+def test_scope_pure_single_module_for_pathless_body():
+    """A non-empty but pathless (ambiguous) request still bands as single_module.
+
+    The declared-unknown change narrows to the UNSCOREABLE case only. A body that
+    was read successfully and simply names no path is a real, scoreable request
+    about which the coarse verdict is "not demonstrably narrow" — it keeps its
+    ``single_module`` band and must NOT drift into the unknown.
+    """
+    assert scope_estimate_from_request_pure('Make the thing better, somehow, everywhere.') == (
+        'single_module'
+    )
+
+
+def test_scope_unknown_is_a_deep_biasing_s2_value():
+    """The declared unknown routes DEEP — the unknown must widen, never narrow.
+
+    Guards the enum choice in ``scope_estimate_from_request_pure``: reusing
+    ``none`` is only safe while ``none`` remains in ``_DEEP_SCOPE_ESTIMATES`` and
+    outside ``_NARROW_SCOPE_ESTIMATES``. If a future edit moved it, the unknown
+    would silently start biasing light — the exact inversion this plan removes —
+    so both memberships and the end-to-end lane verdict are pinned here.
+    """
+    assert 'none' in _mod._DEEP_SCOPE_ESTIMATES
+    assert 'none' not in _mod._NARROW_SCOPE_ESTIMATES
+
+    verdict = evaluate_signals_pure(
+        scope_estimate='none',
+        change_type='bug_fix',
+        compatibility='deprecation',
+        plan_source='lesson',
+        request_concrete=True,
+    )
+    assert verdict['lane'] == 'deep'
+    assert 'S2:scope_estimate' in verdict['fired_signals']
+
+
+# --- Settled path-counter semantics ------------------------------------------
+#
+# Both properties below are DECISIONS recorded in _distinct_paths' docstring, not
+# accidents of the regex. They are asserted so a future edit has to change the
+# test deliberately rather than drift.
+
+
+@pytest.mark.parametrize(
+    'bare_name',
+    ['_cmd_planning_lane.py', 'agents.md', 'retro_sections.py'],
+)
+def test_distinct_paths_excludes_bare_filenames_intentionally(bare_name):
+    """A bare filename is deliberately NOT counted — a directory separator is required.
+
+    ``_PATH_RE`` matches only ``dir/name.ext``. This exclusion is intentional: a
+    bare filename cannot be resolved to a repo location without the directory
+    discovery this module is defined to exclude, and matching bare ``word.word``
+    tokens would sweep in ordinary prose (``e.g.``, version numbers,
+    sentence-final abbreviations). The consequence is an UNDER-count, which
+    biases toward the wider band — the same conservative direction as citation
+    inflation.
+    """
+    body = f'Rewrite {bare_name} so the handler is reachable.'
+
+    assert _mod._distinct_paths(body) == set()
+    # Under-counting to zero paths lands in single_module (wider), never surgical.
     assert scope_estimate_from_request_pure(body) == 'single_module'
+
+
+def test_distinct_paths_counts_a_citation_it_cannot_distinguish_from_a_target():
+    """The counter counts path STRINGS; it cannot tell a citation from a target.
+
+    A body whose only path is a citation of a governing document still counts
+    one path and bands ``surgical``. The sensor declares its inapplicability for
+    this discrimination rather than faking it — but the residual must stay
+    visible, so it is asserted rather than left implicit. The error is
+    one-directional: citations INFLATE the count, and inflation moves the band
+    from ``surgical`` toward ``single_module`` (wider), never the reverse.
+    """
+    citation_only = (
+        'Tidy the hand-off prose. See '
+        f'`{_BOILERPLATE_CITATION}` for the tier contract.'
+    )
+
+    assert _mod._distinct_paths(citation_only) == {_BOILERPLATE_CITATION}
+    assert scope_estimate_from_request_pure(citation_only) == 'surgical'
+
+    # Adding real targets alongside the citation moves the band wider, never narrower.
+    with_targets = (
+        f'{citation_only} Change a/one.py, b/two.py, c/three.py and d/four.py.'
+    )
+    assert scope_estimate_from_request_pure(with_targets) == 'single_module'
 
 
 def test_scope_pure_makes_no_architecture_call(monkeypatch):

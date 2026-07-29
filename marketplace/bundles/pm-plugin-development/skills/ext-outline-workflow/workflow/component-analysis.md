@@ -8,7 +8,7 @@ Semantic analysis of marketplace component files (skills, agents, commands, test
 
 ## Contract reference
 
-Implements: [`plan-marshall:phase-3-outline/standards/component-analysis-contract.md`](../../../../plan-marshall/skills/phase-3-outline/standards/component-analysis-contract.md). That document carries the canonical input parameters, prompt structure, output format, and critical rules — this workflow doc adds the dispatch-side concerns and the per-component-type LLM-judgement context.
+Implements: [`plan-marshall:phase-3-outline/standards/component-analysis-contract.md`](../../../../plan-marshall/skills/phase-3-outline/standards/component-analysis-contract.md). That document carries the canonical input parameters and prompt structure, and **delegates** the return-shape rule to [`plan-marshall:ref-workflow-architecture/standards/citations-only-return.md`](../../../../plan-marshall/skills/ref-workflow-architecture/standards/citations-only-return.md) — this workflow doc adds the dispatch-side concerns and the per-component-type LLM-judgement context.
 
 ## Inputs
 
@@ -157,4 +157,4 @@ uncertain: {count}
 assessments_logged: {count}
 ```
 
-**OUTPUT RULE**: Do NOT output any text except the final TOON summary. All analysis, reasoning, and assessments are logged to `assessments.jsonl` via bash commands; the parent workflow reads `assessments.jsonl` for details.
+The return shape is the **citations-only return shape** — see [`plan-marshall:ref-workflow-architecture/standards/citations-only-return.md`](../../../../plan-marshall/skills/ref-workflow-architecture/standards/citations-only-return.md), the single source of truth for the rule and its sink-persistence obligation; comply with that standard rather than a copy of it here. Applied here, the sink is `assessments.jsonl` — every analysis and reasoning detail is logged there via the [Logging command](#logging-command) above, and the parent workflow reads `assessments.jsonl` for details.

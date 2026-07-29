@@ -835,9 +835,23 @@ alternative: pass --total-tokens manually
 
 ### `metrics normalized-tokens`
 
-Resolve normalized transcript token totals for the active target. Walks the session transcript, writes the per-phase `{input, output, cache_read, cache_creation, total, billing_weighted_total, subagent_*}` view to `--output-file` as JSON, and returns the attribution counters. `total` is the canonical four-field sum (`input + output + cache_read + cache_creation`); `billing_weighted_total` is reported separately.
+Resolve normalized transcript token totals for the active target. Walks the session transcript, writes the per-phase `{input, output, cache_read, cache_creation, total, billing_weighted_total, subagent_*}` view plus the exploration-share counters to `--output-file` as JSON, and returns the attribution counters. `total` is the canonical four-field sum (`input + output + cache_read + cache_creation`); `billing_weighted_total` is reported separately.
 
 **Arguments**: `--session-id <id>` (required), `--window <phase> <start> <end>` (repeatable), `--output-file <path>` (required)
+
+**Per-phase bucket keys**
+
+| Group | Keys |
+|-------|------|
+| Normalized token categories | `input`, `output`, `cache_read`, `cache_creation`, `total` |
+| Billing view | `billing_weighted_total` |
+| Subagent `<usage>` attribution | `subagent_total_tokens`, `subagent_tool_uses`, `subagent_duration_ms`, `subagent_samples` |
+| Exploration-share turn counts | `exploration_tool_calls`, `work_tool_calls`, `execute_tool_calls`, `orchestration_tool_calls`, `unclassified_tool_calls` |
+| Exploration-share payload bytes | `exploration_result_bytes`, `work_result_bytes`, `execute_result_bytes`, `orchestration_result_bytes`, `unclassified_result_bytes` |
+
+Each observed tool call is classified by its tool name into one of five buckets; the call is counted into `{bucket}_tool_calls` and its result payload's UTF-8 byte length into `{bucket}_result_bytes`, both attributed to the phase window containing the call's timestamp. `exploration + work + execute` is the exploration-share denominator; `orchestration` (control-plane calls, which scale with the workflow rather than the change) and `unclassified` are emitted but excluded from the ratio, so the five buckets partition the observed population and the exclusion stays auditable.
+
+**Absent is not zero.** A target that emits a per-phase bucket at all MUST populate the full counter key set, so a `0` there is a *measured* zero. A target that declines the primitive — OpenCode, which exposes no transcript — emits no bucket, and its counters are *absent*. Consumers MUST preserve the distinction and MUST NOT substitute `0` for a target that never measured; a zero-initialized bucket on a declining target would make "did not explore" indistinguishable from "was never measured". This is the declinable-primitive posture of ADR-011 and the explicit-unknown rule of ADR-009.
 
 **Success**:
 ```toon
@@ -851,7 +865,10 @@ subagent_phases_attributed: 4
 subagent_calls_attributed: 11
 subagent_transcripts_walked: 11
 four_field_phases_attributed: 6
+unclassified_tool_calls: 0
 ```
+
+`unclassified_tool_calls` is the run-level count of tool names outside the classifier's population-derived domain. A non-zero value is the signal that a new tool name has appeared and the classifier needs extending — the name was counted, not dropped.
 
 **No-op (no transcript located)**:
 ```toon

@@ -38,6 +38,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from conftest import PROJECT_ROOT
 
 _AUDIT_SCRIPT = (
@@ -1007,6 +1009,394 @@ class TestDedupPretag:
         tag = audit._dedup_pretag('token drift pattern', corpus)
 
         assert tag == 'covered_by:lesson-7'
+
+# =============================================================================
+# exploration-share — registration, absent-vs-zero, corpus-relative flags
+# =============================================================================
+
+def _plan_with_counters(repo_root: Path, name: str, phases: dict[str, dict[str, int]]) -> Any:
+    """Stage an archived plan whose metrics.toon carries per-phase counters.
+
+    ``phases`` maps a phase name to the counter fields to write under its
+    ``[phase]`` section. A phase mapped to an EMPTY dict writes the section with a
+    non-counter field only — the absent-counter shape.
+    """
+    plan_dir = repo_root / '.plan' / 'local' / 'archived-plans' / name
+    (plan_dir / 'work').mkdir(parents=True, exist_ok=True)
+    (plan_dir / 'references.json').write_text(
+        '{"scope_estimate": "surgical"}', encoding='utf-8'
+    )
+    (plan_dir / 'status.json').write_text(
+        '{"metadata": {"change_type": "feature"}}', encoding='utf-8'
+    )
+    lines: list[str] = []
+    for phase, fields in phases.items():
+        lines.append(f'[{phase}]')
+        lines.append('  total_tokens: 100')
+        for key, value in fields.items():
+            lines.append(f'  {key}: {value}')
+        lines.append('')
+    (plan_dir / 'work' / 'metrics.toon').write_text('\n'.join(lines), encoding='utf-8')
+    return audit.collect_inputs(plan_dir)
+
+def _counters(exploration: int, work: int, execute: int = 0, **extra: int) -> dict[str, int]:
+    """Build a counter dict for one measure pair, defaulting the rest to a measured 0."""
+    fields = {
+        'exploration_tool_calls': exploration,
+        'work_tool_calls': work,
+        'execute_tool_calls': execute,
+        'orchestration_tool_calls': 0,
+        'unclassified_tool_calls': 0,
+    }
+    fields.update(extra)
+    return fields
+
+def _shares_plan(
+    repo_root: Path,
+    name: str,
+    *,
+    exploration_calls: int,
+    other_calls: int,
+    exploration_bytes: int,
+    other_bytes: int,
+    orchestration_calls: int = 0,
+    orchestration_bytes: int = 0,
+    unclassified_calls: int = 0,
+    unclassified_bytes: int = 0,
+) -> Any:
+    """Stage a one-phase plan with the exact call/byte split a share test needs."""
+    return _plan_with_counters(
+        repo_root,
+        name,
+        {
+            '5-execute': {
+                'exploration_tool_calls': exploration_calls,
+                'work_tool_calls': other_calls,
+                'execute_tool_calls': 0,
+                'orchestration_tool_calls': orchestration_calls,
+                'unclassified_tool_calls': unclassified_calls,
+                'exploration_result_bytes': exploration_bytes,
+                'work_result_bytes': other_bytes,
+                'execute_result_bytes': 0,
+                'orchestration_result_bytes': orchestration_bytes,
+                'unclassified_result_bytes': unclassified_bytes,
+            }
+        },
+    )
+
+class TestExplorationShareRegistration:
+    """The check is registered at every audit.py site, and the ordering
+    invariant (`cross-check-synthesis` stays LAST) survives the insertion."""
+
+    def test_registered_in_every_table(self):
+        assert 'exploration-share' in audit.CHECK_NAMES
+        assert 'exploration-share' in audit.CROSS_PLAN_CHECKS
+        assert 'exploration-share' in audit.CHECK_ERA
+
+    def test_cross_check_synthesis_remains_last(self):
+        # the new check is inserted BEFORE the facet-completeness critic, which
+        # consumes the other checks' retained results and must run last.
+        assert audit.CHECK_NAMES[-1] == 'cross-check-synthesis'
+        assert audit.CHECK_NAMES.index('exploration-share') < audit.CHECK_NAMES.index(
+            'cross-check-synthesis'
+        )
+
+    def test_era_stamp_rides_the_emitted_block(self, tmp_path: Path):
+        # The stamp VALUE is pinned in test_audit.py, the mirror
+        # project:finalize-step-era-stamp-fill rewrites in lock-step with audit.py;
+        # pinning the literal here too would go stale the moment the fill resolves
+        # it, so this asserts only that whatever CHECK_ERA holds reaches the block.
+        _shares_plan(
+            tmp_path, 'p1',
+            exploration_calls=1, other_calls=1,
+            exploration_bytes=1, other_bytes=1,
+        )
+        block = audit._stamp_era(
+            audit.emit_exploration_share_block(audit.cross_exploration_share([]))
+        )
+
+        assert f'fixed_since: {audit.CHECK_ERA["exploration-share"]}' in block
+
+    def test_check_accepted_as_a_cli_choice(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        # --check choices are sourced from CHECK_NAMES; drive the real parser so an
+        # argparse-level rejection would fail here rather than at audit time.
+        _shares_plan(
+            tmp_path, 'p1',
+            exploration_calls=1, other_calls=1,
+            exploration_bytes=1, other_bytes=1,
+        )
+        # audit.main() derives its repo_root from Path.cwd() and uses it for BOTH
+        # the corpus scan and the persisted-report write. --plan-dir redirects only
+        # the scan (an absolute right-hand side discards repo_root on join), so
+        # without this chdir the report lands in the REAL .plan/local/audit-reports
+        # tree and trips conftest's pollution guard. Pin cwd into the sandbox so the
+        # write stays inside pytest's own auto-cleaned tmp_path.
+        monkeypatch.chdir(tmp_path)
+
+        exit_code = audit.main(
+            ['--check', 'exploration-share', '--plan-dir', str(tmp_path)]
+        )
+
+        assert exit_code == 0
+
+class TestExplorationShareAbsentIsNotZero:
+    """A plan whose counters are ABSENT measured nothing and is EXCLUDED from the
+    corpus — never admitted at zero exploration, which would enter it as a
+    maximally efficient plan. A MEASURED zero is a real observation and stays in."""
+
+    def test_plan_without_counters_is_excluded_not_zeroed(self, tmp_path: Path):
+        # a pre-counter archived plan: phase sections, but no counter field
+        inputs = _plan_with_counters(tmp_path, 'pre-counters', {'5-execute': {}})
+
+        result = audit.cross_exploration_share([inputs])
+
+        assert result['plans_in_corpus'] == 0
+        assert result['plans_excluded_no_counters'] == 1
+        assert result['excluded_plan_ids'] == ['pre-counters']
+        assert result['rows'] == []
+
+    def test_measured_zero_stays_in_the_corpus(self, tmp_path: Path):
+        # the walk ran and found no calls: a real observation, not an absence
+        inputs = _plan_with_counters(
+            tmp_path, 'measured-zero', {'5-execute': _counters(0, 0)}
+        )
+
+        result = audit.cross_exploration_share([inputs])
+
+        assert result['plans_in_corpus'] == 1
+        assert result['plans_excluded_no_counters'] == 0
+        row = result['rows'][0]
+        assert row['plan_id'] == 'measured-zero'
+        # a zero denominator yields no share — reported as n/a, never as 0%.
+        assert row['turn_share'] is None
+        assert row['denom_calls'] == 0
+
+    def test_missing_metrics_file_is_excluded(self, tmp_path: Path):
+        plan_dir = tmp_path / '.plan' / 'local' / 'archived-plans' / 'nometrics'
+        plan_dir.mkdir(parents=True)
+        (plan_dir / 'status.json').write_text('{}', encoding='utf-8')
+
+        result = audit.cross_exploration_share([audit.collect_inputs(plan_dir)])
+
+        assert result['excluded_plan_ids'] == ['nometrics']
+
+    def test_counters_sum_across_phases_and_count_measured_phases(self, tmp_path: Path):
+        inputs = _plan_with_counters(
+            tmp_path,
+            'multi',
+            {
+                '3-outline': _counters(4, 1),
+                '5-execute': _counters(6, 9),
+                '6-finalize': {},  # carries no counter — not a measured phase
+            },
+        )
+
+        result = audit.cross_exploration_share([inputs])
+
+        row = result['rows'][0]
+        assert row['phases'] == 2
+        assert row['exploration_calls'] == 10
+        assert row['denom_calls'] == 20
+
+class TestExplorationShareDenominator:
+    """`exploration + work + execute` is the productive denominator; the
+    `orchestration` and `unclassified` buckets are read and surfaced but excluded
+    from every share."""
+
+    def test_orchestration_and_unclassified_excluded_from_share(self, tmp_path: Path):
+        inputs = _shares_plan(
+            tmp_path, 'excl',
+            exploration_calls=3, other_calls=1,
+            exploration_bytes=30, other_bytes=10,
+            orchestration_calls=100, orchestration_bytes=1000,
+            unclassified_calls=50, unclassified_bytes=500,
+        )
+
+        result = audit.cross_exploration_share([inputs])
+
+        row = result['rows'][0]
+        # denominators carry ONLY the productive buckets, so the huge orchestration
+        # and unclassified volumes do not dilute either share.
+        assert row['denom_calls'] == 4
+        assert row['denom_bytes'] == 40
+        assert row['turn_share'] == 0.75
+        assert row['byte_share'] == 0.75
+        # ...but the unclassified count is still surfaced on the row.
+        assert row['unclassified'] == 50
+
+class TestExplorationShareDegenerateCorpus:
+    """Each flag is a corpus-relative OUTLIER detector, so it stays suppressed
+    unless the share distribution has a genuine high tail. A collapsed band
+    (`p75 == median == max`) would otherwise flag every plan."""
+
+    def test_single_plan_corpus_flags_nobody(self, tmp_path: Path):
+        # one plan IS the distribution: max == median, so no spread, no flags.
+        inputs = _shares_plan(
+            tmp_path, 'solo',
+            exploration_calls=9, other_calls=1,
+            exploration_bytes=900, other_bytes=100,
+        )
+
+        result = audit.cross_exploration_share([inputs])
+
+        thr = result['thresholds']
+        assert thr['byte_share_has_spread'] == 0.0
+        assert thr['turn_share_has_spread'] == 0.0
+        assert result['rows'][0]['flags'] == []
+
+    def test_uniform_corpus_flags_nobody(self, tmp_path: Path):
+        # every plan explores alike: max == median on both distributions.
+        inputs = [
+            _shares_plan(
+                tmp_path, name,
+                exploration_calls=8, other_calls=2,
+                exploration_bytes=800, other_bytes=200,
+            )
+            for name in ('u1', 'u2', 'u3')
+        ]
+
+        result = audit.cross_exploration_share(inputs)
+
+        assert all(r['flags'] == [] for r in result['rows']), result['rows']
+        assert result['thresholds']['byte_share_has_spread'] == 0.0
+
+class TestExplorationShareFlags:
+    """With a real high tail present, the corpus-relative flags fire — each
+    annotating the plan's value AND the floating cut-point."""
+
+    def test_byte_heavy_fires_on_the_high_tail(self, tmp_path: Path):
+        inputs = [
+            _shares_plan(
+                tmp_path, 'hi',
+                exploration_calls=9, other_calls=1,
+                exploration_bytes=900, other_bytes=100,
+            ),
+            _shares_plan(
+                tmp_path, 'mid',
+                exploration_calls=5, other_calls=5,
+                exploration_bytes=500, other_bytes=500,
+            ),
+            _shares_plan(
+                tmp_path, 'lo',
+                exploration_calls=1, other_calls=9,
+                exploration_bytes=100, other_bytes=900,
+            ),
+        ]
+
+        result = audit.cross_exploration_share(inputs)
+
+        by = {r['plan_id']: r for r in result['rows']}
+        assert any(f.startswith('exploration_byte_heavy') for f in by['hi']['flags'])
+        assert by['lo']['flags'] == []
+        # rows are sorted by byte share, descending — the headline number.
+        assert [r['plan_id'] for r in result['rows']] == ['hi', 'mid', 'lo']
+
+    def test_many_cheap_probes_fires_on_high_turn_low_byte(self, tmp_path: Path):
+        # `probe` spends an unusual share of its DECISIONS on lookup while those
+        # lookups return almost no context — the groping-around signature.
+        inputs = [
+            _shares_plan(
+                tmp_path, 'probe',
+                exploration_calls=9, other_calls=1,
+                exploration_bytes=10, other_bytes=990,
+            ),
+            _shares_plan(
+                tmp_path, 'balanced',
+                exploration_calls=5, other_calls=5,
+                exploration_bytes=500, other_bytes=500,
+            ),
+            _shares_plan(
+                tmp_path, 'bulk',
+                exploration_calls=1, other_calls=9,
+                exploration_bytes=900, other_bytes=100,
+            ),
+        ]
+
+        result = audit.cross_exploration_share(inputs)
+
+        by = {r['plan_id']: r for r in result['rows']}
+        assert any(f.startswith('many_cheap_probes') for f in by['probe']['flags'])
+        # `balanced` is turn-heavy too, but its byte share is NOT below the corpus
+        # median, so the cheap-probe signature does not fire for it.
+        assert not any(f.startswith('many_cheap_probes') for f in by['balanced']['flags'])
+        # `bulk` is byte-heavy (0.9 byte share — the corpus high tail), so it
+        # legitimately carries `exploration_byte_heavy`; that orthogonal flag is
+        # covered by test_byte_heavy_fires_on_the_high_tail. Assert only the
+        # subject of THIS test: the cheap-probe signature does not fire for it.
+        assert not any(f.startswith('many_cheap_probes') for f in by['bulk']['flags'])
+
+    def test_unclassified_tools_flag_is_spread_independent(self, tmp_path: Path):
+        # A tool name outside the classifier's domain is a maintenance signal, not
+        # an outlier — it fires even in a degenerate single-plan corpus.
+        inputs = _shares_plan(
+            tmp_path, 'unknown-tool',
+            exploration_calls=1, other_calls=1,
+            exploration_bytes=10, other_bytes=10,
+            unclassified_calls=2, unclassified_bytes=20,
+        )
+
+        result = audit.cross_exploration_share([inputs])
+
+        assert result['rows'][0]['flags'] == ['unclassified_tools(n=2)']
+
+class TestEmitExplorationShareBlock:
+    """The emitted block leads with the exclusion read-out and the derived
+    cut-points, and carries the uniform severity column."""
+
+    def test_block_renders_header_columns_and_severity(self, tmp_path: Path):
+        inputs = [
+            _shares_plan(
+                tmp_path, 'hi',
+                exploration_calls=9, other_calls=1,
+                exploration_bytes=900, other_bytes=100,
+            ),
+            _shares_plan(
+                tmp_path, 'lo',
+                exploration_calls=1, other_calls=9,
+                exploration_bytes=100, other_bytes=900,
+            ),
+            _plan_with_counters(tmp_path, 'unmeasured', {'5-execute': {}}),
+        ]
+        result = audit.cross_exploration_share(inputs)
+
+        block = audit.emit_exploration_share_block(result)
+
+        assert 'check: exploration-share' in block
+        assert 'status: success' in block
+        assert 'plans_in_corpus: 2' in block
+        # the excluded plan is NAMED rather than silently absent or zeroed
+        assert 'plans_excluded_no_counters: 1' in block
+        assert 'excluded_plan_ids: unmeasured' in block
+        assert 'genuine_signal_count: 1' in block
+        assert (
+            'rows[2]{plan_id,change_type,phases,exploration_calls,denom_calls,'
+            'turn_share,exploration_bytes,denom_bytes,byte_share,unclassified,'
+            'flags,severity}:' in block
+        )
+        genuine_row = next(
+            ln.strip() for ln in block.splitlines() if ln.strip().startswith('hi,')
+        )
+        assert genuine_row.endswith(',genuine')
+
+    def test_undefined_share_renders_as_not_available(self, tmp_path: Path):
+        # a measured zero has no defined share; it renders `n/a`, never `0.0%`
+        inputs = _plan_with_counters(tmp_path, 'zeroed', {'5-execute': _counters(0, 0)})
+        result = audit.cross_exploration_share([inputs])
+
+        block = audit.emit_exploration_share_block(result)
+
+        row = next(ln.strip() for ln in block.splitlines() if ln.strip().startswith('zeroed,'))
+        assert ',n/a,' in row
+
+    def test_empty_corpus_emits_zeroed_block(self):
+        result = audit.cross_exploration_share([])
+
+        block = audit.emit_exploration_share_block(result)
+
+        assert 'plans_in_corpus: 0' in block
+        assert 'genuine_signal_count: 0' in block
 
 # =============================================================================
 # D2 — global-log-analysis cross-plan check

@@ -87,7 +87,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings as
 
 ## Output Format
 
-Single TOON summary — no other text output. All analysis detail is persisted to assessments.jsonl.
+The return shape is the **citations-only return shape** — see [`plan-marshall:ref-workflow-architecture/standards/citations-only-return.md`](../../ref-workflow-architecture/standards/citations-only-return.md), the single source of truth for the rule and its sink-persistence obligation. This contract is on that standard's `## Applies to` roster; it does not restate the rule. Applied here, the sink is `assessments.jsonl` (written by `manage-findings assessment add`, per § Assessment Logging above) and the summary carries these fields:
 
 ```toon
 status: success
@@ -102,7 +102,7 @@ assessments_logged: {count}
 
 ## Critical Rules
 
-1. **No text output** except the final TOON summary — all reasoning goes to assessments.jsonl
+1. **Citations-only return** — the return shape and its sink-persistence obligation are owned by [`citations-only-return.md`](../../ref-workflow-architecture/standards/citations-only-return.md); comply with that standard rather than a copy of it here.
 2. **Sequential processing** — log each assessment before proceeding to the next file
 3. **Script-only logging** — use `plan-marshall:manage-findings:manage-findings assessment add` exclusively
 4. **No ad-hoc discovery** — analyze only the files provided in the input list

@@ -465,14 +465,20 @@ def main() -> int:
         'scope-estimate-heuristic',
         help='Deterministic pre-route scope_estimate classifier for phase-1-init (no LLM, no architecture calls)',
         description=(
-            "Classify a coarse scope_estimate (surgical | single_module) from the "
-            "plan's request narrative by counting distinct file-path references, "
-            "with ZERO architecture queries. Run BEFORE the planning-lane route at "
-            "phase-1-init so the router reads a real scope_estimate instead of None. "
-            "Use --persist to write the result to references.json's scope_estimate "
-            "field (the S2 signal source). The deep-lane refine Step 9 module-mapping "
-            "derivation overwrites the coarse guess when the deep lane runs, so no "
-            "accuracy is lost."
+            "Classify a coarse scope_estimate (surgical | single_module | none) from "
+            "the WHOLE request.md body by counting distinct file-path references, "
+            "with ZERO architecture queries. The scored text is heading-blind — the "
+            "entire file minus its own '# Request' title line, with no section "
+            "selected — so an ingested spec's own '##' headings cannot truncate it. "
+            "'none' is the DECLARED UNKNOWN emitted when the body is unscoreable "
+            "(request.md absent, unreadable, or empty); the companion scope_resolved "
+            "boolean tells a classified band apart from that unknown, which biases "
+            "the lane deep rather than guessing a narrow band. Run BEFORE the "
+            "planning-lane route at phase-1-init so the router reads a real "
+            "scope_estimate instead of None. Use --persist to write the result to "
+            "references.json's scope_estimate field (the S2 signal source). The "
+            "deep-lane refine Step 9 module-mapping derivation overwrites the coarse "
+            "guess when the deep lane runs, so no accuracy is lost."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         allow_abbrev=False,

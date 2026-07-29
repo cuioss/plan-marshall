@@ -11,9 +11,39 @@ name: PR Agent Review
 
 on:
   pull_request:
-    types: [opened, reopened, ready_for_review]
-  # On-demand commands (/review, /ask, /improve, /help). Also how a re-review is requested
-  # after pushing fixes — there is deliberately no automatic re-review on every push.
+    # `synchronize` is REQUIRED, not tuning. PR-Agent is the primary required reviewer for this
+    # repository, and it is the only one with neither a per-account review quota nor a diff-size
+    # refusal — which is exactly why it was made primary. But it has no push trigger of its own,
+    # so without this line its ONLY re-review path is an explicit `/review` comment.
+    #
+    # That gap is structural, and it produced a merge-gate failure on #1045: the fix commit
+    # a9b2c4d0c was reviewed by CodeRabbit and never by PR-Agent, `review_completeness` returned
+    # `participation_complete: false` with `unproven_bots: [pr-agent, ...]`, and the step was only
+    # marked done through the force-done escape hatch. A required bot that cannot produce evidence
+    # on a loop-back turns every loop-back into a forced green — the review is not merely missing,
+    # its absence is recorded as a pass.
+    #
+    # The two mechanisms that were supposed to cover this do not:
+    #   - `re_review_on_loopback` is default-off and off in this repo's marshal.json, so a loop-back
+    #     fix commit never triggers a re-review request at all.
+    #   - `re_review_on_branch_cleanup` is on, but it fires AT cleanup and nothing makes the merge
+    #     wait for the result. Observed twice on CodeRabbit's equivalent path: on #1042 the
+    #     requested review landed 77 seconds AFTER the merge.
+    #
+    # `synchronize` removes the dependency on the plan flow requesting anything. Every pushed HEAD
+    # — including the branch-cleanup rebase, which is the tree closest to what actually merges — is
+    # reviewed automatically, so the evidence exists whether or not a leaf remembers to ask for it.
+    #
+    # The ingestion side already expects this shape: PR-Agent's registry entry carries
+    # `participation_requires_update: true`, because a re-review EDITS its one persistent Guide
+    # comment in place rather than posting a new one, and the re-review matcher keys on the later of
+    # updated_at/created_at. See automatic-review/standards/pr-agent.md.
+    #
+    # Cost is real and accepted: each push is a FULL review, not a delta. It is affordable here
+    # precisely because this reviewer is quota-free and runs on Vertex — the constraint it trades
+    # against is spend, not availability, and availability is what a required bot must have.
+    types: [opened, reopened, ready_for_review, synchronize]
+  # On-demand commands (/review, /ask, /improve, /help).
   issue_comment:
     types: [created]
 

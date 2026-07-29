@@ -934,6 +934,45 @@ def test_emit_lane_lever_block_renders_header_and_severity(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+def test_exploration_share_carries_this_plan_pr_boundary():
+    # The ten per-phase exploration counters this check reads are emitted for the
+    # first time by the same plan that introduces the check, so every plan archived
+    # before that boundary carries no counters at all and is EXCLUDED from the
+    # corpus rather than read as zero-exploration. Its era boundary is therefore
+    # that plan's own PR, carried as the PR-PENDING placeholder until
+    # project:finalize-step-era-stamp-fill resolves it to the real PR at finalize.
+    # This is the co-changing mirror of the audit.py CHECK_ERA constant — the pair
+    # is rewritten in lock-step by that step.
+    assert audit.CHECK_ERA["exploration-share"] == "#1043"
+
+
+def test_exploration_share_registered_and_ordered_before_synthesis():
+    # Registered in every table, and inserted BEFORE the facet-completeness critic
+    # so the "synthesis runs last" invariant survives the addition.
+    assert "exploration-share" in audit.CHECK_NAMES
+    assert "exploration-share" in audit.CROSS_PLAN_CHECKS
+    assert "exploration-share" in audit.CHECK_ERA
+    assert audit.CHECK_NAMES[-1] == "cross-check-synthesis"
+    assert audit.CHECK_NAMES.index("exploration-share") < audit.CHECK_NAMES.index(
+        "cross-check-synthesis"
+    )
+
+
+def test_full_sweep_emits_exploration_share_block(tmp_path):
+    # The full sweep emits the block, era-stamped, ahead of cross-check-synthesis.
+    inputs = _minimal_corpus(tmp_path)
+
+    output = audit.run_checks(inputs, list(audit.CHECK_NAMES), tmp_path)
+
+    assert (
+        "check: exploration-share\nstatus: success\n"
+        f"fixed_since: {audit.CHECK_ERA['exploration-share']}" in output
+    )
+    assert output.index("check: exploration-share") < output.index(
+        "check: cross-check-synthesis"
+    )
+
+
 def test_lane_lever_registered_and_era_stamped():
     assert "lane-lever-effectiveness" in audit.CHECK_NAMES
     assert "lane-lever-effectiveness" in audit.CROSS_PLAN_CHECKS
