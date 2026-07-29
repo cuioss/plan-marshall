@@ -165,7 +165,28 @@ python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator
   --source-id SOURCE_ID
 ```
 
-Classifies a plan's `request.md` `source_id` — the pointer `phase-1-init` already persists — as an orchestrated plan spec. Returns `orchestrated`, `epic`, and `plan_spec`. A pointer of the shape `.plan/local/orchestrator/{slug}/plans/PLAN-NN-*.md` with a path-safe `{slug}` is orchestrated; every other string (prose, an unrelated path, a traversal attempt) returns `orchestrated: false` with empty `epic` / `plan_spec`. This is the single detection seam — consumers never add a second detector or a new persisted metadata field.
+Classifies a plan's `request.md` `source_id` — the pointer `phase-1-init` already persists — as an orchestrated plan spec. Returns `orchestrated`, `epic`, `plan_spec`, and `detection`.
+
+A pointer under `.plan/local/orchestrator/{slug}/plans/` with a path-safe `{slug}` is orchestrated when its id segment matches one of three accepted forms:
+
+| Form | Example |
+|------|---------|
+| `PLAN-{DIGITS}` | `PLAN-03-content-search-seam.md` |
+| `PLAN-{SLUG}-{DIGITS}` | `PLAN-CIS-01-content-search-seam.md` |
+| `{SLUG}-{DIGITS}` | `CIS-01-content-search-seam.md` |
+
+`{SLUG}` is a two-to-eight-character uppercase-alphanumeric token and its trailing digits are mandatory, so `01-foo.md`, a lowercase `cis-01-foo.md`, and a nine-character token are all outside the grammar.
+
+`detection` names WHY the verdict came out as it did, over a closed four-token vocabulary:
+
+| `detection` | Meaning |
+|-------------|---------|
+| `orchestrated` | Recognised pointer with a path-safe slug — `orchestrated: true`. |
+| `not_orchestrator_pointer` | Not an orchestrator plan-spec path at all (prose, an unrelated path, a traversal attempt). |
+| `unrecognised_id` | The path IS under `.plan/local/orchestrator/{slug}/plans/*.md` but its id segment matches none of the three forms — distinguishable from a plain non-pointer, so the reclassification is reportable rather than silent. |
+| `unsafe_slug` | Orchestrator-shaped path whose `{slug}` fails the path-safety validator. |
+
+Every negative verdict returns `orchestrated: false` with empty `epic` / `plan_spec`. This is the single detection seam — consumers never add a second detector or a new persisted metadata field.
 
 ## Related
 

@@ -696,11 +696,19 @@ FOR each step_id in manifest.phase_6.steps:
             python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator inbox detect \
               --source-id "{source_id}"
 
-         Parse `orchestrated` and `epic` from the TOON output. Log the verdict, mirroring the Signal-Gate skip log line:
+         Parse `orchestrated`, `epic`, and `detection` from the TOON output. `detection` names WHY the verdict came out the way it did, over the seam's closed four-token vocabulary (`orchestrated`, `not_orchestrator_pointer`, `unrecognised_id`, `unsafe_slug`). Log the verdict, mirroring the Signal-Gate skip log line:
 
             python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
               decision --plan-id {plan_id} --level INFO \
-              --message "(plan-marshall:phase-6-finalize:lessons-capture) Orchestration context: orchestrated={orchestrated} epic={epic}"
+              --message "(plan-marshall:phase-6-finalize:lessons-capture) Orchestration context: orchestrated={orchestrated} epic={epic} detection={detection}"
+
+         When `detection == unrecognised_id`, ALSO emit one work-log WARNING naming the pointer. That token means the `source_id` IS an orchestrator plan-spec path but its id segment matched none of the accepted forms — the plan looks orchestrated, yet no inbox message will be written for it:
+
+            python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+              work --plan-id {plan_id} --level WARNING \
+              --message "[VERIFY] (plan-marshall:phase-6-finalize:lessons-capture) Unrecognised orchestrator pointer {source_id} - the plan looks orchestrated but its id segment was not recognised, so no inbox message will be written"
+
+         The WARNING changes the SILENCE, not the branch: the verdict stays `orchestrated: false` and the run proceeds down the non-orchestrated path exactly as before. The two forwarded consumers (`default:lessons-capture` and `plan-marshall:plan-retrospective` Step 5b) keep receiving `orchestrated` and `epic` unchanged — `detection` is read here and is not added to their runtime inputs. Emit the WARNING for `unrecognised_id` only: `orchestrated` and `not_orchestrator_pointer` are the ordinary paths and stay quiet.
 
       a. Compute three signal counts:
 

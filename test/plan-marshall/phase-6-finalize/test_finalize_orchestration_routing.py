@@ -103,26 +103,66 @@ class TestDetectionSeam:
     def test_should_classify_the_pointer_shape_phase_1_init_emits(self):
         pointer = '.plan/local/orchestrator/truthful-signals/plans/PLAN-55-inbox.md'
 
-        orchestrated, epic, _ = classify_source_id(pointer)
+        verdict = classify_source_id(pointer)
 
-        assert (orchestrated, epic) == (True, 'truthful-signals')
+        assert (verdict.orchestrated, verdict.epic) == (True, 'truthful-signals')
+        assert verdict.detection == 'orchestrated'
 
     def test_should_reject_a_plain_text_description(self):
-        assert classify_source_id('make finalize talk to the epic') == (False, None, None)
+        assert classify_source_id('make finalize talk to the epic') == (
+            False,
+            None,
+            None,
+            'not_orchestrator_pointer',
+        )
 
     def test_should_reject_an_unrelated_path(self):
-        assert classify_source_id('doc/adr/ADR-002.adoc') == (False, None, None)
+        assert classify_source_id('doc/adr/ADR-002.adoc') == (
+            False,
+            None,
+            None,
+            'not_orchestrator_pointer',
+        )
 
     def test_should_reject_a_traversal_attempt(self):
         pointer = '.plan/local/orchestrator/../../etc/plans/PLAN-1.md'
 
-        assert classify_source_id(pointer) == (False, None, None)
+        assert classify_source_id(pointer) == (
+            False,
+            None,
+            None,
+            'not_orchestrator_pointer',
+        )
 
     def test_dispatcher_uses_the_same_two_call_seam(self):
         text = _read(_FINALIZE_SKILL)
 
         assert 'request read --plan-id {plan_id} --section source_id' in text
         assert 'orchestrator inbox detect' in text
+
+    def test_dispatcher_parses_the_detection_token(self):
+        # Anchored to the a0 block so the assertion cannot pass on a stray
+        # match elsewhere in the SKILL body.
+        block = _between(
+            _read(_FINALIZE_SKILL),
+            'a0. Resolve orchestration context',
+            'a. Compute three signal counts',
+        )
+
+        assert '`detection`' in block
+        assert 'detection={detection}' in block
+
+    def test_dispatcher_warns_on_an_unrecognised_pointer(self):
+        block = _between(
+            _read(_FINALIZE_SKILL),
+            'a0. Resolve orchestration context',
+            'a. Compute three signal counts',
+        )
+
+        assert 'detection == unrecognised_id' in block
+        assert '--level WARNING' in block
+        # The obligation is to name the pointer, not merely to log something.
+        assert '{source_id}' in block
 
 
 # =============================================================================
