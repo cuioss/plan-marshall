@@ -452,11 +452,13 @@ direct-session-file fallback branch retains the legacy cwd-slug path.
 
 The per-phase rows in `work/metrics.toon` gain `subagent_total_tokens`,
 `subagent_tool_uses`, `subagent_duration_ms`, and `subagent_samples` (from the
-`<usage>`-tag walk) plus `input_tokens`, `output_tokens`,
+`<usage>`-tag walk), plus `input_tokens`, `output_tokens`,
 `cache_read_input_tokens`, `cache_creation_input_tokens`, and
-`billing_weighted_total` (from the four-field walks) — see
-[data-format.md](standards/data-format.md). The existing `total_tokens` field
-is left untouched. When the orchestrator called `accumulate-agent-usage` for
+`billing_weighted_total` (from the four-field walks), plus the ten
+exploration-share counters `{exploration,work,execute,orchestration,unclassified}_tool_calls`
+and `{exploration,work,execute,orchestration,unclassified}_result_bytes` (from
+the tool-call walk) — see [data-format.md](standards/data-format.md). The
+existing `total_tokens` field is left untouched. When the orchestrator called `accumulate-agent-usage` for
 the same agent dispatches the on-disk totals are independent of `enrich`'s
 per-phase subagent fields, so double-counting does not occur in the closed-phase
 row (`total_tokens`), which is filled from the accumulator at `end-phase` time.

@@ -625,15 +625,33 @@ class Runtime(ABC):
 
         ``{phase_name: {input, output, cache_read, cache_creation, total,
         billing_weighted_total, subagent_total_tokens, subagent_tool_uses,
-        subagent_duration_ms, subagent_samples}}``
+        subagent_duration_ms, subagent_samples,
+        exploration_tool_calls, work_tool_calls, execute_tool_calls,
+        orchestration_tool_calls, unclassified_tool_calls,
+        exploration_result_bytes, work_result_bytes, execute_result_bytes,
+        orchestration_result_bytes, unclassified_result_bytes}}``
+
+        The ten ``*_tool_calls`` / ``*_result_bytes`` keys are the exploration-share
+        counters: each tool call observed in the transcript is classified by its
+        tool name into one of five buckets, and both the call count (turn share)
+        and its result payload's byte length (payload-byte share) are accumulated
+        into the phase the call's timestamp attributes to.
+
+        **Absent is not zero.** A target that emits a phase bucket at all MUST
+        carry the full counter key set, so a zero there is a MEASURED zero. A
+        target that declines the primitive emits no bucket, and its counters are
+        ABSENT — consumers must preserve that distinction rather than
+        substituting zeros for a target that never measured.
 
         On Claude: reads ``~/.claude/projects/.../{session_id}.jsonl`` and the
         ``{session_id}/subagents/agent-*.jsonl`` transcripts, parses ``message.usage``
-        four-field records and ``<usage>`` return tags, and writes the per-phase JSON.
+        four-field records, ``<usage>`` return tags, and ``tool_use`` /
+        ``tool_result`` content items, and writes the per-phase JSON.
         Returns ``no-op`` with code ``transcript_not_found`` when no transcript exists.
 
         On OpenCode: returns ``no-op`` with code ``transcript_not_found`` — OpenCode
-        exposes no session transcript.
+        exposes no session transcript, so it writes no bucket and its counters are
+        absent rather than zero.
 
         Args:
             session_id: Platform session identifier whose transcript is walked.
@@ -645,8 +663,10 @@ class Runtime(ABC):
             Serialized TOON string (success, error, or no-op). The success payload
             carries attribution counters (``message_count``,
             ``subagent_calls_attributed``, ``subagent_transcripts_walked``,
-            ``four_field_phases_attributed``); the no-op carries
-            ``error: transcript_not_found``.
+            ``four_field_phases_attributed``, ``unclassified_tool_calls`` — the
+            run-level count of tool names outside the classifier's
+            population-derived domain, non-zero when the classifier needs
+            extending); the no-op carries ``error: transcript_not_found``.
         """
 
     # ------------------------------------------------------------------

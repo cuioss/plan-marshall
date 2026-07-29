@@ -39,8 +39,13 @@ Consequences every reader of this block MUST hold:
   not necessarily a lot of total traffic (a plan with a large context across many turns
   under-reports its full traffic here).
 
-Recording the full usage view (`cache_read` + `cache_creation`) is a known
-`manage-metrics` improvement; until then, read this check as generation volume.
+The four-field usage view (`cache_read` + `cache_creation`) and
+`billing_weighted_total` **are** recorded per phase by `manage-metrics enrich` —
+see `manage-metrics/standards/data-format.md` § Per-Phase Fields. What remains
+true is narrower: **this check** reads only `total_tokens`, so it reports
+generation volume rather than billed cost. A reader who needs the billed view
+consults the per-phase `billing_weighted_total`, `cache_read_input_tokens`, and
+`cache_creation_input_tokens` fields directly.
 
 ## Inputs the check reads
 

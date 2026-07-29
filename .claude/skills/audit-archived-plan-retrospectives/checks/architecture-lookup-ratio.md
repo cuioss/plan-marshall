@@ -95,9 +95,15 @@ may be dismissed as informational/expected ONLY with a cited reason.
      not a defect. Dismiss with the plan's `change_type`/scope as the cited reason.
   2. **"Lever bypassed"** — the plan DID navigate, but via `Read` / raw-bash
      (`cat`/`grep`/`ls`) instead of `architecture find`/`which-module`. To confirm,
-     cross-read the `global-log-analysis` rows (high `Read`/raw-bash, low
-     `architecture find`) or the transcripts. Only THEN is it a real
-     structured-query-adoption gap.
+     cross-read the plan's [`checks/exploration-share.md`](exploration-share.md)
+     row: that check measures the navigation COST directly from the per-phase
+     tool-call counters, whichever tool paid it, so it supplies the evidence this
+     check structurally cannot. A `many_cheap_probes` flag there (an unusual share
+     of decisions spent on lookup, each returning little context) alongside a low
+     ratio here is the bypassed-lever signature. When the plan carries no
+     exploration counters — it is named in that check's `excluded_plan_ids` — the
+     evidence is simply absent for that plan, which is NOT a clearance. Only with
+     the corroborating measurement is this a real structured-query-adoption gap.
 - **A high `build_lookups` with no flag** is still worth a glance: repeated
   resolution of the same module's canonical command is a **wall-clock /
   re-resolution** concern (cacheable), tied to the `architecture resolve` perf

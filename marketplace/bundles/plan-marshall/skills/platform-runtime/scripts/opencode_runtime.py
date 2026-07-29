@@ -468,6 +468,17 @@ class OpenCodeRuntime(Runtime):
         OpenCode does not provide a session transcript, so there is nothing to
         walk or normalize. Returns ``transcript_not_found`` so the
         finalize/retrospective enrich steps degrade gracefully (skip enrichment).
+
+        **Counters are ABSENT here, never zero.** This method constructs no
+        per-phase bucket, writes no *output_file*, and returns no counters, which
+        is exactly the required shape: OpenCode declines the primitive rather than
+        reporting a measurement it never took. Do NOT "helpfully" add a
+        zero-initialized bucket carrying the exploration-share counters — a zero
+        asserts "measured, and it was none", which would make an unmeasured target
+        indistinguishable from a target that genuinely explored nothing and would
+        silently pollute the corpus the ``exploration-share`` audit check reads.
+        This is the declinable-primitive posture of ADR-011 and the
+        explicit-unknown rule of ADR-009.
         """
         return toon_noop(
             "metrics normalized-tokens",

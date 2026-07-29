@@ -1442,10 +1442,18 @@ class ClaudeRuntime(Runtime):
         """Walk the Claude transcript and write per-phase normalized tokens to JSON.
 
         Computes the per-phase ``{input, output, cache_read, cache_creation,
-        total, billing_weighted_total, subagent_*}`` view from the session
-        transcript, writes it to *output_file* as JSON, and returns a success TOON
-        carrying the attribution counters. Returns a ``transcript_not_found`` no-op
-        when no transcript can be located.
+        total, billing_weighted_total, subagent_*}`` view plus the
+        exploration-share counters
+        ``{exploration,work,execute,orchestration,unclassified}_tool_calls`` and
+        the matching ``_result_bytes`` from the session transcript, writes it to
+        *output_file* as JSON, and returns a success TOON carrying the attribution
+        counters — including ``unclassified_tool_calls``, the run-level count of
+        tool names outside the classifier's population-derived domain.
+
+        Because this target walks a real transcript, every emitted phase bucket
+        carries the full counter key set, so a zero is a MEASURED zero. Counters
+        are ABSENT only when no bucket is emitted at all. Returns a
+        ``transcript_not_found`` no-op when no transcript can be located.
         """
         computed = claude_runtime._compute_normalized_tokens(session_id, windows)
         if computed is None:
