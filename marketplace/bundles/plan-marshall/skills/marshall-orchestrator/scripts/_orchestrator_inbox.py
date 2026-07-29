@@ -29,7 +29,7 @@ schema itself is documented in
 import os
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 from file_ops import (
     generate_markdown_metadata,
@@ -80,10 +80,52 @@ INBOX_ARCHIVE_SUBDIR = 'archive'
 _MESSAGE_NAME_RE = re.compile(r'^(?P<sender>.+?)-(?P<seq>\d{3,})\.md$')
 
 #: The orchestrator plan-spec pointer ``phase-1-init`` records as
-#: ``request.md``'s ``source_id`` for an orchestrated plan.
+#: ``request.md``'s ``source_id`` for an orchestrated plan. The id segment is an
+#: explicit three-way alternation over the settled forms — ``PLAN-{DIGITS}``,
+#: ``PLAN-{SLUG}-{DIGITS}``, and ``{SLUG}-{DIGITS}``. Writing it as an
+#: alternation rather than as one pattern with an OPTIONAL slug group is
+#: load-bearing: an optional group would also accept a bare ``01-foo.md`` that
+#: is neither ``PLAN-``-prefixed nor slug-prefixed. ``{SLUG}`` is a bounded
+#: uppercase-alphanumeric token and its trailing digits are mandatory, so the
+#: grammar is widened without drifting toward an always-matching pattern.
 _SOURCE_ID_RE = re.compile(
-    r'^\.plan/local/orchestrator/(?P<slug>[^/]+)/plans/PLAN-\d+[^/]*\.md$'
+    r'^\.plan/local/orchestrator/(?P<slug>[^/]+)/plans/'
+    r'(?:PLAN-(?:[A-Z0-9]{2,8}-)?\d+|[A-Z0-9]{2,8}-\d+)[^/]*\.md$'
 )
+
+#: Shape-only sibling of :data:`_SOURCE_ID_RE` — any markdown file directly
+#: under an epic's ``plans/`` directory, whatever its id segment. It is the
+#: predicate that separates "not an orchestrator pointer at all" from
+#: "orchestrator pointer whose id segment matches none of the accepted forms",
+#: which is the case that previously reclassified silently.
+_ORCHESTRATOR_PLANS_RE = re.compile(
+    r'^\.plan/local/orchestrator/(?P<slug>[^/]+)/plans/[^/]+\.md$'
+)
+
+#: The closed vocabulary :func:`classify_source_id` reports in its ``detection``
+#: field. Consumers assert against this set rather than re-listing literals.
+DETECTION_TOKENS = frozenset(
+    {
+        'orchestrated',
+        'not_orchestrator_pointer',
+        'unrecognised_id',
+        'unsafe_slug',
+    }
+)
+
+
+class SourceIdClassification(NamedTuple):
+    """The verdict :func:`classify_source_id` returns.
+
+    ``epic`` and ``plan_spec`` are populated only when ``orchestrated`` is
+    ``True``; ``detection`` always carries one of :data:`DETECTION_TOKENS` and
+    is what makes the three negative outcomes distinguishable.
+    """
+
+    orchestrated: bool
+    epic: str | None
+    plan_spec: str | None
+    detection: str
 
 
 def _error(error: str, message: str, **extra: Any) -> dict[str, Any]:
@@ -341,26 +383,45 @@ def allocate_message_path(inbox_dir: Path, sender_id: str, text: str) -> Path:
         return candidate
 
 
-def classify_source_id(source_id: str) -> tuple[bool, str | None, str | None]:
+def classify_source_id(source_id: str) -> SourceIdClassification:
     """Classify ``request.md``'s ``source_id`` as an orchestrated plan pointer.
 
     Pure classification of the string ``phase-1-init`` already persisted — no
-    filesystem access and no second detector. A pointer of the shape
-    ``.plan/local/orchestrator/{slug}/plans/PLAN-NN-*.md`` whose ``{slug}`` is
-    a safe identifier is orchestrated; every other string (a prose description,
-    an unrelated path, a traversal attempt) is not.
+    filesystem access and no second detector. A pointer under
+    ``.plan/local/orchestrator/{slug}/plans/`` whose ``{slug}`` is a safe
+    identifier and whose id segment matches one of the three settled forms is
+    orchestrated:
+
+    - ``PLAN-{DIGITS}`` — ``PLAN-03-content-search-seam.md``
+    - ``PLAN-{SLUG}-{DIGITS}`` — ``PLAN-CIS-01-content-search-seam.md``
+    - ``{SLUG}-{DIGITS}`` — ``CIS-01-content-search-seam.md``
+
+    Every other string is not, and ``detection`` says WHY over the closed
+    :data:`DETECTION_TOKENS` vocabulary: ``orchestrated`` for a recognised
+    pointer with a safe slug, ``unsafe_slug`` for a recognised pointer whose
+    ``{slug}`` fails the path-safety validator, ``unrecognised_id`` for a path
+    that IS an orchestrator plan-spec path but whose id segment matches none of
+    the three forms, and ``not_orchestrator_pointer`` for everything else (a
+    prose description, an unrelated path, a traversal attempt).
+
+    Check order is load-bearing: the slug-safety check runs on the FULL match,
+    and the shape-only check runs only after the full match has failed.
 
     Returns:
-        ``(orchestrated, epic, plan_spec)`` — ``(False, None, None)`` when the
-        pointer does not identify an orchestrated plan.
+        A :class:`SourceIdClassification` carrying ``(orchestrated, epic,
+        plan_spec, detection)``; ``epic`` and ``plan_spec`` are ``None`` on
+        every negative verdict.
     """
-    match = _SOURCE_ID_RE.match(source_id.strip()) if source_id else None
-    if match is None:
-        return False, None, None
-    slug = match.group('slug')
-    if _validate_identifier(slug) is not None:
-        return False, None, None
-    return True, slug, source_id.strip()
+    pointer = source_id.strip() if source_id else ''
+    match = _SOURCE_ID_RE.match(pointer) if pointer else None
+    if match is not None:
+        slug = match.group('slug')
+        if _validate_identifier(slug) is not None:
+            return SourceIdClassification(False, None, None, 'unsafe_slug')
+        return SourceIdClassification(True, slug, pointer, 'orchestrated')
+    if pointer and _ORCHESTRATOR_PLANS_RE.match(pointer) is not None:
+        return SourceIdClassification(False, None, None, 'unrecognised_id')
+    return SourceIdClassification(False, None, None, 'not_orchestrator_pointer')
 
 
 def cmd_inbox_write(args: Any) -> dict[str, Any]:
@@ -731,14 +792,17 @@ def cmd_inbox_detect(args: Any) -> dict[str, Any]:
 
     The single detection seam every consumer calls; it re-uses the pointer
     ``phase-1-init`` already persisted rather than introducing a parallel
-    detector or a new persisted metadata field.
+    detector or a new persisted metadata field. ``detection`` reports which of
+    :data:`DETECTION_TOKENS` the verdict is, so an orchestrator-shaped pointer
+    with an unrecognised id segment is distinguishable from a plain negative.
     """
-    orchestrated, epic, plan_spec = classify_source_id(args.source_id)
+    verdict = classify_source_id(args.source_id)
     return {
         'status': 'success',
         'operation': 'inbox-detect',
         'store': ORCHESTRATOR_STORE,
-        'orchestrated': orchestrated,
-        'epic': epic or '',
-        'plan_spec': plan_spec or '',
+        'orchestrated': verdict.orchestrated,
+        'epic': verdict.epic or '',
+        'plan_spec': verdict.plan_spec or '',
+        'detection': verdict.detection,
     }

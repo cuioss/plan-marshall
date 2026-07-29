@@ -15,7 +15,10 @@ Covers, under ``PLAN_BASE_DIR`` isolation (via ``plan_context``):
   BOTH the live queue and ``inbox/archive/`` (so a drained sender never re-uses
   a retired number), zero-padding, and the ``O_EXCL`` concurrent-claim retry
   that stays scoped to ``inbox/``.
-- ``classify_source_id``: positive, negative, and traversal cases.
+- ``classify_source_id``: the exhaustive grammar and ``detection``-vocabulary
+  sweep — one accepting case per settled id form, the over-acceptance and
+  slug-bound guards, and one case per ``detection`` token, compared against the
+  module's own token frozenset.
 - ``cmd_inbox_write`` / ``cmd_inbox_validate`` / ``cmd_inbox_detect``: the
   handler surface, including every refusal class.
 - ``cmd_inbox_archive``'s atomic destination claim, driven through a
@@ -40,6 +43,7 @@ _orch = load_script_module(
     'plan-marshall', 'marshall-orchestrator', 'orchestrator.py', 'orchestrator_script'
 )
 
+DETECTION_TOKENS = _inbox.DETECTION_TOKENS
 ENVELOPE_VERSION = _inbox.ENVELOPE_VERSION
 HEADER_FIELDS = _inbox.HEADER_FIELDS
 KINDS = _inbox.KINDS
@@ -332,41 +336,130 @@ class TestClassifySourceId:
     def test_should_classify_an_orchestrator_plan_spec_pointer(self):
         pointer = '.plan/local/orchestrator/truthful-signals/plans/PLAN-55-inbox.md'
 
-        assert classify_source_id(pointer) == (True, 'truthful-signals', pointer)
+        assert classify_source_id(pointer) == (
+            True,
+            'truthful-signals',
+            pointer,
+            'orchestrated',
+        )
 
     def test_should_classify_a_bare_numbered_spec(self):
         pointer = '.plan/local/orchestrator/my-epic/plans/PLAN-7.md'
 
-        assert classify_source_id(pointer) == (True, 'my-epic', pointer)
+        assert classify_source_id(pointer) == (True, 'my-epic', pointer, 'orchestrated')
 
     def test_should_tolerate_surrounding_whitespace(self):
         pointer = '.plan/local/orchestrator/my-epic/plans/PLAN-7.md'
 
-        assert classify_source_id(f'  {pointer}\n') == (True, 'my-epic', pointer)
+        assert classify_source_id(f'  {pointer}\n') == (
+            True,
+            'my-epic',
+            pointer,
+            'orchestrated',
+        )
+
+    def test_should_classify_a_plan_prefixed_numbered_form(self):
+        pointer = (
+            '.plan/local/orchestrator/my-epic/plans/PLAN-03-content-search-seam.md'
+        )
+
+        assert classify_source_id(pointer) == (True, 'my-epic', pointer, 'orchestrated')
+
+    def test_should_classify_a_plan_prefixed_slug_scoped_form(self):
+        pointer = (
+            '.plan/local/orchestrator/my-epic/plans/PLAN-CIS-01-content-search-seam.md'
+        )
+
+        assert classify_source_id(pointer) == (True, 'my-epic', pointer, 'orchestrated')
+
+    def test_should_classify_a_bare_slug_scoped_form(self):
+        pointer = (
+            '.plan/local/orchestrator/my-epic/plans/CIS-01-content-search-seam.md'
+        )
+
+        assert classify_source_id(pointer) == (True, 'my-epic', pointer, 'orchestrated')
 
     def test_should_reject_a_prose_description(self):
-        assert classify_source_id('a request typed by the operator') == (False, None, None)
+        assert classify_source_id('a request typed by the operator') == (
+            False,
+            None,
+            None,
+            'not_orchestrator_pointer',
+        )
 
     def test_should_reject_an_unrelated_path(self):
-        assert classify_source_id('doc/developer/build.adoc') == (False, None, None)
+        assert classify_source_id('doc/developer/build.adoc') == (
+            False,
+            None,
+            None,
+            'not_orchestrator_pointer',
+        )
 
     def test_should_reject_an_empty_source_id(self):
-        assert classify_source_id('') == (False, None, None)
+        assert classify_source_id('') == (
+            False,
+            None,
+            None,
+            'not_orchestrator_pointer',
+        )
 
     def test_should_reject_a_traversal_bearing_pointer(self):
         pointer = '.plan/local/orchestrator/../../etc/plans/PLAN-1.md'
 
-        assert classify_source_id(pointer) == (False, None, None)
+        assert classify_source_id(pointer) == (
+            False,
+            None,
+            None,
+            'not_orchestrator_pointer',
+        )
 
     def test_should_reject_an_unsafe_slug(self):
         pointer = '.plan/local/orchestrator/..evil/plans/PLAN-1.md'
 
-        assert classify_source_id(pointer) == (False, None, None)
+        assert classify_source_id(pointer) == (False, None, None, 'unsafe_slug')
 
     def test_should_reject_a_non_plan_file_in_the_plans_dir(self):
+        # Orchestrator-SHAPED, id segment unrecognised — the case whose
+        # reclassification was previously silent.
         pointer = '.plan/local/orchestrator/my-epic/plans/README.md'
 
-        assert classify_source_id(pointer) == (False, None, None)
+        assert classify_source_id(pointer) == (False, None, None, 'unrecognised_id')
+
+    def test_should_reject_an_id_segment_carrying_no_form_prefix(self):
+        # Over-acceptance guard: an optional-slug-group regex would accept a
+        # bare ``01-foo.md`` that is neither PLAN-prefixed nor slug-prefixed.
+        pointer = '.plan/local/orchestrator/my-epic/plans/01-foo.md'
+
+        assert classify_source_id(pointer) == (False, None, None, 'unrecognised_id')
+
+    def test_should_reject_a_lowercase_slug_token(self):
+        pointer = '.plan/local/orchestrator/my-epic/plans/cis-01-foo.md'
+
+        assert classify_source_id(pointer) == (False, None, None, 'unrecognised_id')
+
+    def test_should_reject_an_over_long_slug_token(self):
+        # Bound guard: the slug token caps at eight characters, so a
+        # nine-character token is outside the widened grammar.
+        pointer = '.plan/local/orchestrator/my-epic/plans/ABCDEFGHI-01-foo.md'
+
+        assert classify_source_id(pointer) == (False, None, None, 'unrecognised_id')
+
+    def test_should_only_report_tokens_from_the_module_vocabulary(self):
+        # Population-derived: the observed tokens are compared against the
+        # module's own frozenset rather than a re-listed literal set, so the
+        # assertion tracks the vocabulary instead of drifting from it. The
+        # equality is two-sided — every declared token is reachable, and no
+        # case reports a token outside the declared set.
+        cases = (
+            '.plan/local/orchestrator/my-epic/plans/PLAN-7.md',
+            '.plan/local/orchestrator/..evil/plans/PLAN-1.md',
+            '.plan/local/orchestrator/my-epic/plans/README.md',
+            'a request typed by the operator',
+        )
+
+        observed = {classify_source_id(case).detection for case in cases}
+
+        assert observed == DETECTION_TOKENS
 
 
 # =============================================================================
@@ -919,6 +1012,7 @@ class TestInboxDetect:
         assert result['orchestrated'] is True
         assert result['epic'] == 'my-epic'
         assert result['plan_spec'] == pointer
+        assert result['detection'] == 'orchestrated'
 
     def test_should_report_not_orchestrated_for_a_plain_description(self):
         result = cmd_inbox_detect(Namespace(source_id='fix the flaky test'))
@@ -926,3 +1020,17 @@ class TestInboxDetect:
         assert result['orchestrated'] is False
         assert result['epic'] == ''
         assert result['plan_spec'] == ''
+        assert result['detection'] == 'not_orchestrator_pointer'
+
+    def test_should_surface_an_unrecognised_id_for_an_orchestrator_shaped_pointer(self):
+        # The reclassification the WARNING at the single call site reports: the
+        # verdict is still orchestrated=false, but it is now distinguishable
+        # from a plain non-pointer.
+        pointer = '.plan/local/orchestrator/my-epic/plans/PLAN-CIS-alpha.md'
+
+        result = cmd_inbox_detect(Namespace(source_id=pointer))
+
+        assert result['orchestrated'] is False
+        assert result['epic'] == ''
+        assert result['plan_spec'] == ''
+        assert result['detection'] == 'unrecognised_id'
