@@ -105,7 +105,7 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons add 
 - `--title` (required): Lesson title
 - `--bundle`: Optional bundle reference
 - `--rule`: Rule identity — required for `--category arch-constraint` (the dedup key). When an active `arch-constraint` lesson already covers the rule, `add` reinforces it (recurrence_count bump + `## Recurrence` section) and returns the existing id with `action: reinforced` instead of allocating a new lesson.
-- `--allow-foreign-store`: Bypass the cross-repo wrong-store guard — file the lesson even when the resolved main-anchored store repo does not own the `--component` bundle. Without this flag, a mismatch refuses with `error: wrong_store`. Skipped under test overrides (`PLAN_BASE_DIR`).
+- `--allow-foreign-store`: Bypass the cross-repo wrong-store guard — file the lesson even when the resolved main-anchored store repo does not own the `--component` bundle. The guard applies **only to a component carrying a bundle prefix** (`bundle:skill[:script]`); a prefix-less project-local component (e.g. `integration-tests`) names no bundle, so it files into its own store **without this flag**. Without the flag, a prefixed-bundle mismatch refuses with `error: wrong_store`. A component that does not match the canonical component shape is rejected with `error: invalid_component` — the shape check runs before this flag, so the override cannot launder a malformed value. Skipped under test overrides (`PLAN_BASE_DIR`).
 
 **Output** (TOON):
 ```toon
@@ -457,7 +457,7 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons from
   - `component`: Component name (defaults to "unknown")
   - `error`: Error message (required)
   - `solution`: Optional solution description
-- `--allow-foreign-store`: Bypass the cross-repo wrong-store guard — file the lesson even when the resolved main-anchored store repo does not own the context `component` bundle. Without this flag, a mismatch refuses with `error: wrong_store`. Skipped under test overrides (`PLAN_BASE_DIR`).
+- `--allow-foreign-store`: Bypass the cross-repo wrong-store guard — file the lesson even when the resolved main-anchored store repo does not own the context `component` bundle. The guard applies **only to a component carrying a bundle prefix** (`bundle:skill[:script]`); a prefix-less component names no bundle and files without this flag. This includes the documented `unknown` default applied when the context supplies no `component` — `unknown` is prefix-less and therefore local. Without the flag, a prefixed-bundle mismatch refuses with `error: wrong_store`. Because the context `component` comes from untrusted JSON and bypasses the argparse validator, the guard is also the shape check for this path: a value failing the canonical component shape is rejected with `error: invalid_component`, before this flag is consulted. Skipped under test overrides (`PLAN_BASE_DIR`).
 
 **Output** (TOON):
 ```toon
@@ -594,7 +594,8 @@ The classification logic for the read-side corpus operations lives under `refere
 | `file_read_error` | `set-body --file PATH` failed with an `OSError` while reading (permission denied, I/O error, etc.) |
 | `malformed_lesson` | `set-body` target lesson file is missing its metadata header / title structure |
 | `missing_required` | Required parameter missing |
-| `wrong_store` | `add` / `from-error` refused: the resolved main-anchored lessons store repo does not own the component's bundle (the bundle segment of `--component`/context `component` has no `marketplace/bundles/{bundle}` directory in that repo). Bypass with `--allow-foreign-store`. Skipped under test overrides (`PLAN_BASE_DIR`) |
+| `wrong_store` | `add` / `from-error` refused: the component **carries a bundle prefix** and the resolved main-anchored lessons store repo does not own that bundle (the prefix segment of `--component`/context `component` has no `marketplace/bundles/{bundle}` directory in that repo). A prefix-less project-local component names no bundle and never reaches this refusal. Bypass with `--allow-foreign-store`. Skipped under test overrides (`PLAN_BASE_DIR`) |
+| `invalid_component` | `add` / `from-error` refused: the component does not match the canonical component shape (`^[a-z0-9-]+(:[a-z0-9-]+)*$`). Distinct from `wrong_store` — the value is not a well-formed component at all, so no ownership claim is made about it. Primarily reachable via `from-error`, whose context `component` comes from untrusted JSON and bypasses the argparse validator. The shape check precedes `--allow-foreign-store`, so the override cannot bypass it |
 
 ---
 
@@ -615,7 +616,7 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons add 
 ```
 
 `--rule` is required when `--category arch-constraint` (the dedup key); ignored for other categories.
-`--allow-foreign-store` bypasses the cross-repo wrong-store guard (see [Error Responses](#error-responses) → `wrong_store`).
+`--allow-foreign-store` bypasses the cross-repo wrong-store guard, which applies only to a component carrying a bundle prefix — a prefix-less project-local component files without the flag (see [Error Responses](#error-responses) → `wrong_store`).
 
 ### update
 
@@ -684,7 +685,7 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons from
   --context JSON [--allow-foreign-store]
 ```
 
-`--allow-foreign-store` bypasses the cross-repo wrong-store guard (see [Error Responses](#error-responses) → `wrong_store`).
+`--allow-foreign-store` bypasses the cross-repo wrong-store guard, which applies only to a component carrying a bundle prefix — a prefix-less component, including the `unknown` default applied when the context supplies none, files without the flag (see [Error Responses](#error-responses) → `wrong_store`). A context `component` failing the canonical component shape is rejected with `invalid_component` before the flag is consulted.
 
 ### remove
 
