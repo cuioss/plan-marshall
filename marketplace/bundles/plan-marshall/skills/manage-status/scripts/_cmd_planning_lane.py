@@ -51,7 +51,6 @@ import re
 from typing import Any
 
 from _cmd_classification_validate import run_classification_validation
-from _plan_parsing import parse_document_sections
 from _status_core import read_status, write_status
 from constants import FILE_MARSHAL
 from file_ops import base_path, get_plan_dir, read_json, write_json
@@ -101,6 +100,33 @@ def _distinct_paths(body: str) -> set[str]:
     ``scope_estimate_from_request_pure`` and ``cmd_scope_estimate_heuristic``.
     Callers guard the empty-``body`` case themselves and layer their own
     downstream ``sorted()`` / ``len()`` on the returned set.
+
+    What this counter counts — settled, not incidental:
+
+    - **Path strings, not work targets.** The scan is purely lexical and has no
+      notion of whether a matched path is a *target of the work* or a *citation
+      of a governing document*. Discriminating the two needs the very
+      architecture discovery and cognition this module is defined to exclude,
+      so the sensor DECLARES ITS INAPPLICABILITY for that discrimination rather
+      than faking it. The residual is documented, bounded, and one-directional:
+      citations inflate the count, inflation pushes the band from ``surgical``
+      toward ``single_module``, and ``single_module`` is the WIDER band — so the
+      error mode is conservative (more planning ceremony), never a silent
+      narrowing. Consumers MUST read the count as "distinct path-shaped strings
+      in the request", never as "files this plan will change".
+    - **A directory separator is REQUIRED, deliberately.** ``_PATH_RE`` matches
+      only ``dir/name.ext``, so a bare filename (``_cmd_planning_lane.py``,
+      ``agents.md``) is intentionally NOT counted. This is a decision, not an
+      artefact of the pattern: a bare filename cannot be resolved to a repo
+      location without the directory discovery this module excludes, and
+      matching bare ``word.word`` tokens would sweep in ordinary prose
+      (``e.g.``, version numbers, sentence-final abbreviations). Under-counting
+      a bare filename biases toward the wider band, which is the same
+      conservative direction as citation inflation.
+
+    Both properties are unchanged by the whole-body read in
+    ``_read_request_body``; that change alters WHICH TEXT is scanned, never how
+    a match is judged.
     """
     return {m.group(0) for m in _PATH_RE.finditer(body)}
 
@@ -113,6 +139,13 @@ def _distinct_paths(body: str) -> set[str]:
 # the deep lane runs.
 SURGICAL = 'surgical'
 SINGLE_MODULE = 'single_module'
+# The declared-unknown band emitted when the request body is unscoreable (absent,
+# unreadable, or empty). It is a member of _DEEP_SCOPE_ESTIMATES, so S2 reads it
+# as a deep-biasing signal — an unscoreable request never yields a confident
+# narrow band. Reusing 'none' keeps the field inside the closed
+# none|surgical|single_module|multi_module|broad enum that
+# `manage-solution-outline validate` checks; no new member is introduced.
+UNKNOWN = 'none'
 # At most this many distinct file-path references still reads as a surgical,
 # tightly-bounded change.
 _SURGICAL_MAX_PATHS = 3
@@ -121,27 +154,53 @@ _SURGICAL_MAX_PATHS = 3
 # across an unbounded file set.
 _GLOB_RE = re.compile(r'\*\*|/\*|\*/|\*\.[A-Za-z0-9]+')
 
+# The host document's own top-level title line (``# Request: {title}``). It is
+# the ONLY line removed from the scored body — it is ``request.md`` chrome, not
+# part of the request narrative. An ingested spec's own ``# PLAN-NN: …`` title
+# does not match and is deliberately retained.
+_REQUEST_TITLE_RE = re.compile(r'^#\s+Request\b')
+
 
 def _read_request_body(plan_id: str) -> str:
-    """Return the clarified-request (or original-input fallback) narrative.
+    """Return the WHOLE ``request.md`` narrative, minus the document's title line.
 
-    Returns the empty string when ``request.md`` is missing or carries neither
-    section — the S5 concreteness check then fails (no anchors), biasing deep,
-    which is the documented deep-default for an unknown request body.
+    The scored text is deliberately **heading-blind**: it is the entire file
+    body with only the host document's own ``# Request`` title line removed. No
+    section boundary is consulted and nothing else is stripped.
+
+    Why the whole body. ``request.md`` embeds an ingested orchestrator plan spec
+    verbatim, and that spec legitimately carries its OWN markdown headings. The
+    previous section-scoped read (``parse_document_sections`` →
+    ``clarified_request`` / ``original_input``) terminated the section at the
+    ingested body's first nested ``## `` line, because the shared splitter
+    starts a new section on any line beginning ``'## '`` with no nesting
+    awareness. The router therefore scored a boilerplate fragment — typically
+    the spec's title plus the plan-spec template blockquote, whose only
+    path-shaped token is a citation of a governing document — instead of the
+    request. Reading the whole body removes that failure BY CONSTRUCTION: there
+    is no section boundary left to get wrong, whatever headings the ingested
+    body carries.
+
+    Returns the empty string ONLY when ``request.md`` is genuinely absent,
+    unreadable, or empty once the title line is removed — never as a side effect
+    of document structure. That empty result is a DECLARED UNKNOWN:
+    ``scope_estimate_from_request_pure`` reports it as ``none`` (a deep-biasing
+    band) and the S5 concreteness check reads it as "no anchors", so an
+    unscoreable request biases deep instead of receiving a confident band.
     """
     request_path = get_plan_dir(plan_id) / 'request.md'
     if not request_path.exists():
         return ''
     try:
         content = request_path.read_text(encoding='utf-8')
-    except OSError:
+    except (OSError, UnicodeDecodeError):
+        # UnicodeDecodeError is a ValueError subtype, not an OSError: a
+        # non-UTF-8 request.md is an unreadable body, so it routes to the same
+        # declared-unknown path as a missing file.
         return ''
-    sections = parse_document_sections(content)
-    for candidate in ('clarified_request', 'original_input'):
-        body = sections.get(candidate)
-        if isinstance(body, str) and body.strip():
-            return body
-    return ''
+    return '\n'.join(
+        line for line in content.split('\n') if not _REQUEST_TITLE_RE.match(line)
+    ).strip()
 
 
 def _request_is_concrete(body: str) -> bool:
@@ -218,21 +277,35 @@ def scope_estimate_from_request_pure(body: str | None) -> str:
     from the body and classifies with ZERO architecture queries (the same
     zero-discovery invariant the lane router itself preserves):
 
+    - ``none`` — a DECLARED UNKNOWN. The body is unscoreable: ``request.md`` was
+      absent, unreadable, or empty. A scorer that reads zero bytes must not emit
+      a band, so this case reports "cannot tell" instead of guessing. ``none`` is
+      in ``_DEEP_SCOPE_ESTIMATES``, so S2 reads the unknown as a deep-biasing
+      signal.
     - ``surgical`` — between one and three distinct file paths AND no glob /
       pattern fan-out marker (``**``, ``/*``, ``*.ext``). A tightly-bounded,
       explicitly-named change.
-    - ``single_module`` — everything else: no explicit path (an ambiguous ask), a
-      glob/pattern present (unbounded fan-out), or more than three distinct
-      paths. This is the coarse default; the deep-lane refine Step 9
-      module-mapping derivation overwrites it with the accurate band
+    - ``single_module`` — everything else with a non-empty body: no explicit path
+      (an ambiguous ask), a glob/pattern present (unbounded fan-out), or more
+      than three distinct paths. This is the coarse default; the deep-lane refine
+      Step 9 module-mapping derivation overwrites it with the accurate band
       (``multi_module`` / ``broad``) when the deep lane runs.
 
-    The vocabulary is deliberately limited to the two narrow bands the light
-    lane cares about — the heuristic is a cheap pre-route guess, not the
-    authoritative scope estimate.
+    The classified vocabulary is deliberately limited to the two narrow bands the
+    light lane cares about, plus the declared unknown — the heuristic is a cheap
+    pre-route guess, not the authoritative scope estimate.
+
+    Note on the ``_GLOB_RE`` disqualifier under the whole-body read: the
+    disqualifier's RULE is unchanged, but the whole-body read enlarges the text
+    it sees, so a fan-out marker anywhere in the request now disqualifies
+    ``surgical`` where a truncated fragment might have hidden it. That widening
+    is one-directional (toward the wider band) and therefore conservative.
+    ``_GLOB_RE``'s own precision — notably that its ``**`` alternative also
+    matches markdown bold — is a separate counting-precision question this
+    change deliberately does NOT alter.
     """
     if not body:
-        return SINGLE_MODULE
+        return UNKNOWN
     if _GLOB_RE.search(body):
         return SINGLE_MODULE
     distinct_paths = _distinct_paths(body)
@@ -512,15 +585,21 @@ def cmd_planning_lane_route(args: argparse.Namespace) -> dict[str, Any]:
 def cmd_scope_estimate_heuristic(args: argparse.Namespace) -> dict[str, Any]:
     """Classify a coarse ``scope_estimate`` from the request and persist it.
 
-    Reads the clarified-request (or original-input) narrative, classifies it via
-    ``scope_estimate_from_request_pure`` (distinct-file-path count, ZERO
-    architecture queries), and with ``--persist`` writes it to
+    Reads the WHOLE ``request.md`` narrative (see ``_read_request_body``),
+    classifies it via ``scope_estimate_from_request_pure`` (distinct-file-path
+    count, ZERO architecture queries), and with ``--persist`` writes it to
     ``references.json``'s ``scope_estimate`` field — the same field
     ``_read_scope_estimate`` (the router's S2 signal source) reads. Run at
     phase-1-init BEFORE the planning-lane route so the router reads a real
     ``scope_estimate`` instead of ``None``. The deep-lane refine Step 9
     module-mapping derivation later overwrites the coarse guess when the deep
     lane runs, so no accuracy is lost.
+
+    The return carries ``scope_resolved`` so callers can tell a CLASSIFIED band
+    apart from the DECLARED UNKNOWN: ``scope_resolved: false`` means the body was
+    unscoreable and ``scope_estimate`` is ``none`` (a "cannot tell" verdict),
+    not a measured narrow band. Reading ``scope_estimate`` alone cannot make that
+    distinction, which is exactly how a zero-byte read used to pass for a band.
     """
     plan_id: str = args.plan_id
     persist: bool = bool(getattr(args, 'persist', False))
@@ -535,6 +614,7 @@ def cmd_scope_estimate_heuristic(args: argparse.Namespace) -> dict[str, Any]:
 
     body = _read_request_body(plan_id)
     scope_estimate = scope_estimate_from_request_pure(body)
+    scope_resolved = scope_estimate != UNKNOWN
     distinct_paths = sorted(_distinct_paths(body)) if body else []
 
     persisted = False
@@ -546,15 +626,20 @@ def cmd_scope_estimate_heuristic(args: argparse.Namespace) -> dict[str, Any]:
         references['scope_estimate'] = scope_estimate
         write_json(references_path, references)
         persisted = True
+        verdict = (
+            f'Classified scope_estimate={scope_estimate}'
+            if scope_resolved
+            else f'Declared scope_estimate={scope_estimate} (unknown — unscoreable request body)'
+        )
         log_entry(
             'decision',
             plan_id,
             'INFO',
             (
-                f'(plan-marshall:manage-status:scope-estimate-heuristic) '
-                f'Classified scope_estimate={scope_estimate} '
-                f'(distinct_paths={len(distinct_paths)}, glob={bool(_GLOB_RE.search(body))}) '
-                f'— pre-route coarse guess, deep-lane Step 9 may overwrite'
+                f'(plan-marshall:manage-status:scope-estimate-heuristic) {verdict} '
+                f'(distinct_paths={len(distinct_paths)}, glob={bool(_GLOB_RE.search(body))}, '
+                f'scope_resolved={scope_resolved}) '
+                f'— pre-route coarse guess over the whole request body, deep-lane Step 9 may overwrite'
             ),
         )
 
@@ -562,6 +647,7 @@ def cmd_scope_estimate_heuristic(args: argparse.Namespace) -> dict[str, Any]:
         'status': 'success',
         'plan_id': plan_id,
         'scope_estimate': scope_estimate,
+        'scope_resolved': scope_resolved,
         'distinct_path_count': len(distinct_paths),
         'distinct_paths': distinct_paths,
         'persisted': persisted,
