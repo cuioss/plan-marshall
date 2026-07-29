@@ -60,8 +60,15 @@ _PHASE_ROW_STATUS_DISCRIMINATOR_RE = re.compile(
     re.IGNORECASE,
 )
 
-#: The paired metadata write the first-entry branch must carry.
-_METADATA_SET_RE = re.compile(r'manage-status\s+metadata\b[\s\S]{0,200}?--set\b')
+#: The paired metadata write the first-entry branch must carry. The field and its
+#: value are BOTH pinned: a bare ``manage-status metadata --set`` anywhere in the
+#: Step-4 section would be satisfied by any unrelated metadata write, so the
+#: assertion would pass while the first-entry marker itself was never written and
+#: every entry re-reported as a first entry.
+_METADATA_SET_RE = re.compile(
+    r'manage-status\s+metadata\b[\s\S]{0,200}?--set\b[\s\S]{0,200}?'
+    r'--field\s+phase_5_first_entry_logged\b[\s\S]{0,80}?--value\s+true\b'
+)
 
 
 def _skill_text() -> str:
@@ -164,10 +171,36 @@ class TestFirstEntryDiscriminatorIsReachable:
 
         assert _METADATA_SET_RE.search(section), (
             'The first-entry branch must pair its emission with a '
-            '`manage-status metadata --set` marker write; without the write the '
-            'next entry re-reports a first entry and the two counts stop meaning '
+            '`manage-status metadata --set --field phase_5_first_entry_logged '
+            '--value true` marker write; without that specific write the next '
+            'entry re-reports a first entry and the two counts stop meaning '
             'anything'
         )
+
+    def test_metadata_write_detector_rejects_an_unrelated_metadata_set(self):
+        # Mutation guard: the assertion above is only meaningful if the detector
+        # rejects a metadata write that is NOT the first-entry marker. The
+        # pre-fix regex matched any `--set` in the section, so an unrelated write
+        # (or a marker write that lost its field/value) satisfied it vacuously.
+        unrelated_write = (
+            'python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \\\n'
+            '  --plan-id {plan_id} --set --field worktree_path --value /some/path\n'
+        )
+
+        assert not _METADATA_SET_RE.search(unrelated_write), (
+            'The metadata-write detector matched an unrelated `--set` — it must '
+            'pin the phase_5_first_entry_logged field and its true value, or the '
+            'pairing assertion is vacuous'
+        )
+
+        # Positive control — the real documented shape IS accepted, so the
+        # detector is not unconditionally negative.
+        marker_write = (
+            'python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \\\n'
+            '  --plan-id {plan_id} --set --field phase_5_first_entry_logged --value true\n'
+        )
+
+        assert _METADATA_SET_RE.search(marker_write)
 
     def test_discriminator_detector_bites_on_the_pre_fix_shape(self):
         # Bites-check: the exact pre-fix prose must be rejected, or the guard
