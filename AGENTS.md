@@ -38,7 +38,7 @@ Examples:
 
 - **`.plan/` access via scripts only** — Never Read/Write/Edit `.plan/` files directly. Use `python3 .plan/execute-script.py` with manage-* scripts.
 - **Bash: one command per call** — No `&&`, `;`, `|`, loops, `$()`, subshells. Use dedicated tools or multiple Bash calls.
-- **No shell file operations** — Use Glob/Grep/Read/Edit tools, not `ls`, `find`, `cat`, `grep`.
+- **No shell file operations** — Use Glob/Grep/Read/Edit tools, not `ls`, `find`, `cat`, bare `grep`. Sole carve-out: `git grep <pattern> -- <pathspec>` for a broad content sweep when `Grep` is not granted — see `plan-marshall:persona-plan-marshall-agent`.
 - **Structured queries first** — Before Glob/Grep for navigation, try `architecture files --module X` or `architecture which-module --path P`.
 - **CI operations via abstraction** — All PR/issue/CI work goes through `plan-marshall:tools-integration-ci:ci` scripts. Never `gh` or `glab` directly.
 

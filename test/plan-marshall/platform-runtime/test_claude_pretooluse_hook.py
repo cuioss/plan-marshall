@@ -210,6 +210,15 @@ def test_r2_not_fired_on_substring_program() -> None:
     assert hook.evaluate(_signal2_payload("Bash", _bash("category --help"))) is None
 
 
+def test_r2_not_fired_on_git_grep() -> None:
+    # `git grep` is the sanctioned broad-content-sweep carve-out documented in
+    # persona-plan-marshall-agent § "Bash: No file operations". The program token
+    # is `git`, not `grep`, so R2 must not fire. Pinned mechanically so a future
+    # widening of _R2_FILE_OPS cannot break the documented primitive silently.
+    payload = _signal2_payload("Bash", _bash('git grep -n "pattern" -- marketplace'))
+    assert hook.evaluate(payload) is None
+
+
 # =============================================================================
 # R3 — generated-executor edit
 # =============================================================================

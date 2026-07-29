@@ -17,7 +17,7 @@ When an agent's frontmatter lists required tools, those tools MUST be available.
 | Locate by name/pattern across modules | `architecture find --pattern P` first; fall back to `Glob`/`Grep` for sub-module or content-level searches | repository-wide `grep`, `rg` via Bash |
 | Check file exists | `Read` + error handling | `test -f`, `cat` |
 | Check directory exists | `Glob` | `test -d` |
-| Search content | `Grep` | `grep`, `rg` via Bash |
+| Search content | `Grep` when the runtime grants it; `git grep <pattern> -- <pathspec>` when it does not (see [Broad content sweep](#broad-content-sweep)) | bare `grep`, `rg` via Bash |
 | Read files | `Read` | `cat`, `head`, `tail` |
 | Count items | `Glob` + count results | `wc -l` via Bash |
 
@@ -92,8 +92,8 @@ When you need the *why* of a build/test failure — the traceback or assertion b
    ```text
    Grep(pattern="FAILED|AssertionError|Error", path="{log_file}", output_mode="content", -C=5)
    ```
-   A Bash `grep` over the same `log_file` is hook-blocked by the [No Bash for file operations](../SKILL.md#bash-no-file-operations) rule. Do NOT route around that block with Bash. The `Grep` tool is NOT hook-blocked, so it is the correct fallback **when the runtime grants it** — but a dispatched subagent's runtime MAY deny `Grep` / `Glob` even though the agent declaration lists them (the harness can narrow the granted set below the declaration; see [`execution-context.md` § Runtime tool availability for dispatched leaves](../../../agents/execution-context.md)). When `Grep` is NOT granted, do NOT silently degrade to a coverage-shrinking spot-check: read the specific failure detail out of the already-known `log_file` with a targeted `Read`, and when a genuine broad content sweep is needed that the structured slice and a targeted `Read` cannot cover, RETURN the coverage gap to the main-context orchestrator (the sanctioned search-capable path) rather than passing green with reduced coverage.
-3. **Avoid — a full-file `Read` of the log.** A full-file `Read` of a large build log burns context on content you do not need; it is the avoidable detour, not a substitute for the slice or the targeted `Grep`-tool query (or, when `Grep` is denied, the targeted `Read` and coverage-gap return above). Read the whole log only when the structured slice, a targeted `Grep`, and a targeted `Read` all genuinely cannot answer the question.
+   A bare Bash `grep` over the same `log_file` is hook-blocked by the [No Bash for file operations](../SKILL.md#bash-no-file-operations) rule. Do NOT route around that block with bare `grep`. The `Grep` tool is NOT hook-blocked, so it is the correct fallback **when the runtime grants it** — but a dispatched subagent's runtime MAY deny `Grep` / `Glob` even though the agent declaration lists them (the harness can narrow the granted set below the declaration; see [`execution-context.md` § Runtime tool availability for dispatched leaves](../../../agents/execution-context.md)). When `Grep` is NOT granted, do NOT silently degrade to a coverage-shrinking spot-check: read the specific failure detail out of the already-known `log_file` with a targeted `Read`, and when a genuine broad content sweep is needed that the structured slice and a targeted `Read` cannot cover, run it with `git grep` — the sanctioned Bash content-search carve-out documented in [Broad content sweep](#broad-content-sweep) below. Return the coverage gap to the main-context orchestrator only for the genuinely residual case: content that is not in git-tracked files, and therefore invisible to `git grep` too.
+3. **Avoid — a full-file `Read` of the log.** A full-file `Read` of a large build log burns context on content you do not need; it is the avoidable detour, not a substitute for the slice, the targeted `Grep`-tool query, or (when `Grep` is denied) the targeted `Read` plus the `git grep` sweep above. Read the whole log only when the structured slice, a targeted `Grep`, a targeted `Read`, and a `git grep` sweep all genuinely cannot answer the question.
 
 ## When Bash IS Appropriate
 
@@ -109,6 +109,26 @@ Bash(command="git -C /path/to/other-tree status")
 ```
 
 In the move-based, cwd-pinned model (ADR-002), cwd is pinned to the plan's worktree during phase-5+, so a plain `git` command already acts on the right tree — explicit `git -C {worktree_path}` forwarding is redundant and re-leaks the worktree absolute path the model deliberately removed. Reserve `git -C {path}` for genuinely cross-tree operations or callers invoked outside a pinned-cwd context (phases 1-4, cleanup, fixtures). See [`cd <path> && <anything>` is forbidden for every tool, not just git](#cd-path--anything-is-forbidden-for-every-tool-not-just-git) below for the always-forbidden `cd && X` rule and rationale, [`tools-script-executor/standards/cwd-policy.md`](../../tools-script-executor/standards/cwd-policy.md) § "Worktree-path passing is unnecessary under cwd-pinning" for the cwd-pinned resolution model, and `workflow-integration-git/standards/worktree-handling.md` for the worktree-specific application of this rule.
+
+### Broad content sweep
+
+`git grep` is the ONE sanctioned Bash content search — the carve-out to the [Bash: No file operations](../SKILL.md#bash-no-file-operations) hard rule. It belongs here, adjacent to the git operations above, because it *is* a git command. Reach for it when a broad content sweep across file **prose** is needed and the `Grep` tool is not granted to the current runtime — the structured architecture inventory cannot answer a prose question, because it is a path-glob over the registered inventory, not a content matcher.
+
+```text
+# Worked invocation — which documents restate a given sentence?
+Bash(command='git grep -n "Bash: No file operations" -- marketplace/bundles/plan-marshall')
+
+# Files-only form, narrowed by pathspec
+Bash(command='git grep -l "coverage gap" -- marketplace doc')
+```
+
+Three bounds apply:
+
+1. **Git-tracked files only.** Untracked and ignored content is invisible to `git grep`. When the content genuinely lives outside git tracking, the sweep is unanswerable — return the coverage gap to the main-context orchestrator.
+2. **One command per call still binds the enclosing Bash call.** A pattern containing `;`, `&`, `` ` ``, or `$(` is denied by the R1 shell-construct rule and must be reshaped (narrow the pattern, or issue separate `git grep` calls) — never chained or escaped around.
+3. **No carve-out for `cat` / `head` / `tail` / `find` / `ls`.** The exception is the content-sweep primitive only; reading a known file remains `Read`, and path discovery remains the architecture inventory or `Glob`.
+
+The carve-out presupposes a `Bash`-granted leaf, so it does not apply to the read-only `execution-context-reader-{level}` variant, which has no `Bash`.
 
 **CI/Git provider operations (PRs, issues, CI status, reviews):**
 
