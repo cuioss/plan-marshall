@@ -49,12 +49,19 @@ get_next_id = _mod.get_next_id
 
 
 class _FakeDatetime:
-    """Stand-in for ``datetime.datetime`` that returns a fixed aware ``now()``.
+    """Stand-in for ``datetime.datetime`` that freezes a single instant.
 
-    The module under test calls ``datetime.now().astimezone()`` at the module
-    level import ``from datetime import UTC, datetime``. Tests monkeypatch
-    ``_mod.datetime`` with this fake so ID generation becomes deterministic
-    regardless of the host timezone or wall clock.
+    The module under test imports ``from datetime import UTC, datetime`` and
+    calls ``datetime.now(UTC)``. Tests monkeypatch ``_mod.datetime`` with this
+    fake so ID generation becomes deterministic regardless of the host
+    timezone or wall clock.
+
+    ``fixed_now`` is an *instant*, not a wall-clock reading: pass an aware
+    datetime (typically UTC) and both branches project that one instant into
+    the requested zone, so a test can pin an instant whose local date and UTC
+    date differ and observe how the module under test reads it. A naive
+    ``fixed_now`` is interpreted as local time by both branches, which is why
+    the pre-existing naive fixtures keep their wall-clock values.
     """
 
     def __init__(self, fixed_now):
@@ -62,7 +69,7 @@ class _FakeDatetime:
 
     def now(self, tz=None):  # noqa: D401 - mirrors datetime API
         if tz is None:
-            # Strip tzinfo to mimic the naive ``datetime.now()`` behaviour so
-            # the subsequent ``.astimezone()`` call attaches the local tz.
-            return self._fixed_now.replace(tzinfo=None)
+            # ``datetime.now()`` returns the LOCAL wall clock with no tzinfo —
+            # project the instant into the local zone first, then strip.
+            return self._fixed_now.astimezone().replace(tzinfo=None)
         return self._fixed_now.astimezone(tz)

@@ -9,6 +9,7 @@ Covers:
 * ``cmd_add`` CLI plumbing via subprocess (TestCliPlumbingAdd)
 * ``status=active`` frontmatter seeding on add (TestStatusFrontmatterOnAdd)
 * Hour-aware id generation backing ``cmd_add`` (TestGetNextIdHourAware)
+* Zone agreement between the id prefix and ``created`` (TestLessonIdClockZone)
 * Collision-safe id allocation in ``cmd_add`` / ``cmd_from_error``
   (TestCollisionSafeAllocation) — these tests cover the
   ``_allocate_and_write_scaffold`` helper that both subcommands share;
@@ -17,6 +18,7 @@ Covers:
 """
 
 import json
+import time
 from argparse import Namespace
 from pathlib import Path
 from unittest.mock import patch
@@ -24,6 +26,7 @@ from unittest.mock import patch
 import _lessons_io
 import file_ops
 import marketplace_paths
+import pytest
 
 from _lessons_helpers import (
     SCRIPT_PATH,
@@ -126,11 +129,13 @@ class TestGetNextIdHourAware:
         """Counter must reset to 001 when the hour changes.
 
         Seeds the lessons dir with a lesson from hour 01, freezes ``datetime.now``
-        to a local-aware instant at ``2025-01-01 02:15:00``, then asserts that
+        to the UTC instant ``2025-01-01 02:15:00+00:00``, then asserts that
         ``get_next_id`` returns ``2025-01-01-02-001`` — the hour prefix rolls
         forward and the sequence number resets because no prior lesson exists
-        for hour 02.
+        for hour 02. The instant is aware-UTC so the asserted hour bucket is the
+        same on every host timezone.
         """
+        from datetime import UTC as real_utc
         from datetime import datetime as real_datetime
 
         lessons_dir = tmp_path / 'lessons-learned'
@@ -140,7 +145,7 @@ class TestGetNextIdHourAware:
             'id=2025-01-01-01-001\ncomponent=x\ncategory=bug\ncreated=2025-01-01\n\n# seed\n'
         )
 
-        frozen = real_datetime(2025, 1, 1, 2, 15, 0)
+        frozen = real_datetime(2025, 1, 1, 2, 15, 0, tzinfo=real_utc)
         monkeypatch.setattr(_mod, 'datetime', _FakeDatetime(frozen))
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
@@ -150,6 +155,7 @@ class TestGetNextIdHourAware:
 
     def test_get_next_id_increments_within_same_hour(self, tmp_path, monkeypatch):
         """Sequence number must increment when multiple lessons share an hour."""
+        from datetime import UTC as real_utc
         from datetime import datetime as real_datetime
 
         lessons_dir = tmp_path / 'lessons-learned'
@@ -158,7 +164,7 @@ class TestGetNextIdHourAware:
             'id=2025-01-01-02-001\ncomponent=x\ncategory=bug\ncreated=2025-01-01\n\n# seed\n'
         )
 
-        frozen = real_datetime(2025, 1, 1, 2, 30, 0)
+        frozen = real_datetime(2025, 1, 1, 2, 30, 0, tzinfo=real_utc)
         monkeypatch.setattr(_mod, 'datetime', _FakeDatetime(frozen))
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
@@ -170,10 +176,12 @@ class TestGetNextIdHourAware:
         """Legacy ``YYYY-MM-DD-NNN`` files must not collide with a new hour prefix.
 
         Seeds a legacy lesson ``2025-01-01-005.md`` (no hour segment), freezes
-        ``now`` to hour 03, and asserts ``get_next_id`` returns ``2025-01-01-03-001``
-        rather than reading the legacy counter. The legacy file must remain
-        on disk untouched — this test only covers the generation path.
+        ``now`` to UTC hour 03, and asserts ``get_next_id`` returns
+        ``2025-01-01-03-001`` rather than reading the legacy counter. The legacy
+        file must remain on disk untouched — this test only covers the
+        generation path.
         """
+        from datetime import UTC as real_utc
         from datetime import datetime as real_datetime
 
         lessons_dir = tmp_path / 'lessons-learned'
@@ -182,7 +190,7 @@ class TestGetNextIdHourAware:
         legacy_content = 'id=2025-01-01-005\ncomponent=x\ncategory=bug\ncreated=2025-01-01\n\n# legacy seed\n'
         legacy_path.write_text(legacy_content)
 
-        frozen = real_datetime(2025, 1, 1, 3, 0, 0)
+        frozen = real_datetime(2025, 1, 1, 3, 0, 0, tzinfo=real_utc)
         monkeypatch.setattr(_mod, 'datetime', _FakeDatetime(frozen))
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
@@ -192,6 +200,75 @@ class TestGetNextIdHourAware:
         # Legacy file remains readable and untouched.
         assert legacy_path.exists()
         assert legacy_path.read_text() == legacy_content
+
+
+# =============================================================================
+# Tier 2: id prefix / created-field zone agreement
+# =============================================================================
+
+
+@pytest.fixture
+def europe_berlin_tz(monkeypatch):
+    """Pin the process-local timezone to ``Europe/Berlin`` for one test.
+
+    ``Europe/Berlin`` is UTC+2 in July (CEST), so a late-evening UTC instant
+    already falls on the next local calendar day — the divergence window this
+    module's zone regression needs. ``time.tzset()`` is what makes the ``TZ``
+    change visible to ``datetime.astimezone()``; it must be re-run on teardown
+    so the restored ``TZ`` takes effect for subsequent tests.
+    """
+    monkeypatch.setenv('TZ', 'Europe/Berlin')
+    time.tzset()
+    try:
+        yield
+    finally:
+        monkeypatch.undo()
+        time.tzset()
+
+
+class TestLessonIdClockZone:
+    """The id prefix date and the ``created`` field must name the same day.
+
+    ``get_next_id`` derived its ``{date}-{hour}`` prefix from the LOCAL wall
+    clock while ``cmd_add`` stamps ``created`` from UTC. For any instant inside
+    the local-vs-UTC divergence window the two disagreed: frozen at
+    ``2026-07-28T22:30Z`` — ``2026-07-29 00:30`` in Europe/Berlin — the id
+    claimed the 29th while ``created`` said the 28th, so retention math keyed on
+    ``created`` and lookups keyed on the id prefix read different dates.
+
+    The test is zone-sensitive by construction: under a UTC host (as CI runs)
+    the window does not exist and the assertion is vacuous, so the fixture pins
+    a UTC-offset zone for the duration of the test.
+    """
+
+    def test_id_prefix_date_matches_created_field_inside_the_divergence_window(
+        self, tmp_path, monkeypatch, europe_berlin_tz
+    ):
+        """The allocated id's date segment must equal the ``created`` metadata."""
+        from datetime import UTC as real_utc
+        from datetime import datetime as real_datetime
+
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+
+        # 22:30 UTC on the 28th is 00:30 local on the 29th under CEST.
+        frozen = real_datetime(2026, 7, 28, 22, 30, 0, tzinfo=real_utc)
+        monkeypatch.setattr(_mod, 'datetime', _FakeDatetime(frozen))
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_add(
+                Namespace(
+                    component='test-component',
+                    category='bug',
+                    title='Zone Boundary Lesson',
+                    bundle=None,
+                )
+            )
+            metadata, _title, _body = _mod.read_lesson(result['id'])
+
+        assert result['status'] == 'success'
+        assert metadata['created'] == '2026-07-28'
+        assert result['id'][:10] == metadata['created']
 
 
 # =============================================================================
@@ -217,6 +294,7 @@ class TestGetNextIdUnionScan:
         the clock to the same prefix, and asserts ``get_next_id`` returns
         ``-002`` rather than re-issuing ``-001``.
         """
+        from datetime import UTC as real_utc
         from datetime import datetime as real_datetime
 
         lessons_dir = tmp_path / 'lessons-learned'
@@ -227,7 +305,7 @@ class TestGetNextIdUnionScan:
             'id=2025-01-01-02-001\ncomponent=x\ncategory=bug\ncreated=2025-01-01\n\n# converted\n'
         )
 
-        frozen = real_datetime(2025, 1, 1, 2, 30, 0)
+        frozen = real_datetime(2025, 1, 1, 2, 30, 0, tzinfo=real_utc)
         monkeypatch.setattr(_mod, 'datetime', _FakeDatetime(frozen))
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
@@ -241,6 +319,7 @@ class TestGetNextIdUnionScan:
         Seeds a tombstone with no live ``.md`` and no plan dir, freezes the clock
         to the same prefix, and asserts ``get_next_id`` returns ``-002``.
         """
+        from datetime import UTC as real_utc
         from datetime import datetime as real_datetime
 
         lessons_dir = tmp_path / 'lessons-learned'
@@ -257,7 +336,7 @@ class TestGetNextIdUnionScan:
             )
         )
 
-        frozen = real_datetime(2025, 1, 1, 2, 30, 0)
+        frozen = real_datetime(2025, 1, 1, 2, 30, 0, tzinfo=real_utc)
         monkeypatch.setattr(_mod, 'datetime', _FakeDatetime(frozen))
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
@@ -728,6 +807,7 @@ class TestLessonsCorpusMainAnchoring:
         from a worktree cwd ``get_next_id`` must clear that reservation and
         return ``-002``, proving the ``plans`` scan is main-anchored.
         """
+        from datetime import UTC as real_utc
         from datetime import datetime as real_datetime
 
         main_base = tmp_path / 'main' / '.plan' / 'local'
@@ -745,7 +825,7 @@ class TestLessonsCorpusMainAnchoring:
         (worktree / '.plan' / 'local').mkdir(parents=True)
         monkeypatch.chdir(worktree)
 
-        frozen = real_datetime(2025, 1, 1, 2, 30, 0)
+        frozen = real_datetime(2025, 1, 1, 2, 30, 0, tzinfo=real_utc)
         monkeypatch.setattr(_mod, 'datetime', _FakeDatetime(frozen))
 
         next_id = get_next_id()

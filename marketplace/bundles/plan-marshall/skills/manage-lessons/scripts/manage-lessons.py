@@ -112,6 +112,12 @@ MAX_ID_ALLOCATION_RETRIES = 99
 def get_next_id() -> str:
     """Generate the next lesson ID.
 
+    The ``{date}-{hour}`` prefix is read from **UTC** — the same clock every
+    other date field in the corpus uses (``created``, ``last_seen``, tombstone
+    ``removed_at``, and the retention math that compares against them). Reading
+    it from the local wall clock instead put the prefix a calendar day ahead of
+    ``created`` for any allocation inside the local-vs-UTC divergence window.
+
     Allocates the next sequence number for the current ``{date}-{hour}`` prefix
     by scanning the union of three id sources so a freed-up sequence number is
     never re-issued for an id that still exists elsewhere:
@@ -129,7 +135,7 @@ def get_next_id() -> str:
     Each scan is guarded by an ``.exists()`` check so a missing directory yields
     an empty contribution. The return shape is unchanged — a single id string.
     """
-    now = datetime.now().astimezone()
+    now = datetime.now(UTC)
     date = now.strftime('%Y-%m-%d')
     hour = now.strftime('%H')
     prefix = f'{date}-{hour}'
