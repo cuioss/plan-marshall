@@ -56,6 +56,7 @@ from _lessons_crud import (
     retire_quiet_arch_constraints,
 )
 from _lessons_io import (
+    MalformedComponentError,
     WrongStoreError,
     _build_lesson_content,
     get_lessons_dir,
@@ -397,6 +398,8 @@ def cmd_add(args: argparse.Namespace) -> dict:
     """
     try:
         guard_component_store_match(args.component, getattr(args, 'allow_foreign_store', False))
+    except MalformedComponentError as exc:
+        return {'status': 'error', 'error': 'invalid_component', 'message': str(exc)}
     except WrongStoreError as exc:
         return {'status': 'error', 'error': 'wrong_store', 'message': str(exc)}
 
@@ -787,14 +790,17 @@ def cmd_from_error(args: argparse.Namespace) -> dict:
     if not isinstance(context, dict):
         return {'status': 'error', 'error': 'invalid_json', 'message': 'Context must be a valid JSON object'}
 
-    # An explicit null or numeric component would crash guard_component_store_match;
-    # coerce any non-string value to the 'unknown' default before the guard.
-    component = context.get('component', 'unknown')
-    if not isinstance(component, str):
-        component = 'unknown'
+    # Only an ABSENT component defaults to 'unknown'. An explicitly-supplied null,
+    # number, or array is NOT coerced — it reaches guard_component_store_match and
+    # is rejected as invalid_component. Coercing it here would make the guard's own
+    # isinstance check unreachable from this path and silently file a lesson under
+    # 'unknown' for input the contract says is malformed.
+    component = context['component'] if 'component' in context else 'unknown'
 
     try:
         guard_component_store_match(component, getattr(args, 'allow_foreign_store', False))
+    except MalformedComponentError as exc:
+        return {'status': 'error', 'error': 'invalid_component', 'message': str(exc)}
     except WrongStoreError as exc:
         return {'status': 'error', 'error': 'wrong_store', 'message': str(exc)}
 
