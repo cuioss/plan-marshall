@@ -19,7 +19,6 @@ copy the binding and defeat the patch.
 import argparse
 import json
 import re
-from pathlib import Path
 from urllib.parse import quote
 
 import bot_registry
@@ -273,59 +272,34 @@ def _detect_rate_limited_bots(comments: list[dict]) -> list[dict]:
 def cmd_pr_create(args: argparse.Namespace) -> dict:
     """Handle 'pr create' subcommand.
 
-    The PR body comes from exactly ONE of two mutually-exclusive sources:
+    The PR body comes from ONE source: the plan-bound body store, keyed by
+    ``--plan-id`` [+ ``--slot``] — a prepared scratch file consumed here and
+    deleted on success.
 
-    - ``--plan-id`` [+ ``--slot``]: the plan-bound body store (a prepared scratch
-      file consumed here and deleted on success).
-    - ``--body-file PATH``: an explicit file read directly (the plan-less /
-      steward path — no plan directory exists to hold a scratch body).
-
-    Supplying neither, or both, is rejected.
+    A genuinely plan-less caller passes ``--plan-id NO_PLAN``, which resolves to
+    the shared plan-less directory, so the SAME store serves it. That is why
+    there is no longer a second body source to choose between, and no
+    mutual-exclusion contract to validate.
     """
     # Check auth
     is_auth, err = github_ops.check_auth()
     if not is_auth:
         return make_error('pr_create', err)
 
-    # Resolve the body from exactly one source. Validate the mutual-exclusion
-    # contract before any network call. Both ``plan_id`` and ``body_file`` are
-    # read defensively via getattr so a direct-Namespace caller that bypasses the
-    # argparse parser and omits either flag falls through to the "no body source"
-    # error instead of raising AttributeError.
+    # ``plan_id`` is read defensively via getattr so a direct-Namespace caller
+    # that bypasses the argparse parser (where it is required=True) falls
+    # through to the structured error instead of raising AttributeError.
     plan_id = getattr(args, 'plan_id', None)
-    body_file = getattr(args, 'body_file', None)
-    if plan_id and body_file:
+    if not plan_id:
         return make_error(
             'pr_create',
-            '--plan-id and --body-file are mutually exclusive; supply exactly one body source',
-        )
-    if not plan_id and not body_file:
-        return make_error(
-            'pr_create',
-            'A PR body source is required: supply either --plan-id (plan-bound body '
-            'store) or --body-file PATH (plan-less body file)',
+            '--plan-id is required; it keys the prepared body store. Genuinely '
+            'plan-less callers pass --plan-id NO_PLAN.',
         )
 
-    consumed_from_store = False
-    if body_file:
-        # Plan-less path: read the body directly from the explicit file. Fail
-        # loud on a missing / unreadable / empty file.
-        try:
-            body = Path(body_file).read_text(encoding='utf-8')
-        except OSError as exc:
-            return make_error('pr_create', f'Could not read --body-file {body_file}', str(exc))
-        if not body.strip():
-            return make_error('pr_create', f'--body-file is empty: {body_file}')
-    else:
-        # Plan-bound path: consume the prepared scratch body from the body store.
-        # plan_id is non-None here — the mutual-exclusion guard above returned
-        # early when both sources were falsy, and body_file is falsy in this branch.
-        assert plan_id is not None  # noqa: S101 — narrowing after the mutual-exclusion guard
-        store_body, err_dict = read_and_consume_body(plan_id, BODY_KIND_PR_CREATE, getattr(args, 'slot', None))
-        if err_dict or store_body is None:
-            return make_error('pr_create', (err_dict or {}).get('message', 'body not prepared'))
-        body = store_body
-        consumed_from_store = True
+    body, err_dict = read_and_consume_body(plan_id, BODY_KIND_PR_CREATE, getattr(args, 'slot', None))
+    if err_dict or body is None:
+        return make_error('pr_create', (err_dict or {}).get('message', 'body not prepared'))
 
     # Build command
     gh_args = ['pr', 'create', '--title', args.title, '--body', body]
@@ -349,11 +323,9 @@ def cmd_pr_create(args: argparse.Namespace) -> dict:
     if returncode != 0:
         return make_error('pr_create', 'Failed to create PR', stderr.strip())
 
-    # Delete the consumed scratch body — success only, and only when the body
-    # came from the plan-bound store (the plan-less --body-file is caller-owned).
-    if consumed_from_store:
-        assert plan_id is not None  # noqa: S101 — consumed_from_store is set only on the plan-bound path
-        delete_consumed_body(plan_id, BODY_KIND_PR_CREATE, getattr(args, 'slot', None))
+    # Delete the consumed scratch body — success only, so a failed create leaves
+    # the prepared body in place for the caller to retry.
+    delete_consumed_body(plan_id, BODY_KIND_PR_CREATE, getattr(args, 'slot', None))
 
     # Parse the URL from output (gh pr create outputs the URL)
     pr_url = stdout.strip()

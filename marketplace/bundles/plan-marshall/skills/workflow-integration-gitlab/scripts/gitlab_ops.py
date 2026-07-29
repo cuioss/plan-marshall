@@ -26,7 +26,11 @@ Subcommands:
     issue close     Close an issue
     branch delete   Delete a remote branch via REST API
 
-Usage (bodies supplied via path-allocate pattern: prepare-body → write file → consume):
+Usage (bodies supplied via path-allocate pattern: prepare-body → write file → consume).
+``--plan-id`` is the ONLY body route on every body-taking verb, and the sentinel
+``NO_PLAN`` is an accepted value: a genuinely plan-less caller passes
+``--plan-id NO_PLAN`` and gets the shared plan-less body store, so no verb needs
+a second plan-less convention of its own:
     python3 gitlab.py pr prepare-body --plan-id EXAMPLE-PLAN [--for create|edit] [--slot name]
     python3 gitlab.py pr prepare-comment --plan-id EXAMPLE-PLAN [--for reply|thread-reply] [--slot name]
     python3 gitlab.py issue prepare-body --plan-id EXAMPLE-PLAN [--slot name]
@@ -63,7 +67,6 @@ import argparse
 import json
 import subprocess
 import sys
-from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
@@ -204,54 +207,33 @@ def _resolve_mr_iid(args: argparse.Namespace, operation: str) -> tuple[str | Non
 def cmd_pr_create(args: argparse.Namespace) -> dict:
     """Handle 'pr create' subcommand (creates MR in GitLab).
 
-    The MR body comes from exactly ONE of two mutually-exclusive sources: the
-    plan-bound body store (``--plan-id`` [+ ``--slot``]) or an explicit
-    ``--body-file PATH`` (the plan-less / steward path). Supplying neither, or
-    both, is rejected.
+    The MR body comes from ONE source: the plan-bound body store, keyed by
+    ``--plan-id`` [+ ``--slot``]. A genuinely plan-less caller passes
+    ``--plan-id NO_PLAN``, which resolves to the shared plan-less directory, so
+    the SAME store serves it — there is no second body source to choose between.
+
+    Mirrors the GitHub provider's ``cmd_pr_create`` exactly; the two handlers are
+    kept in lock-step so the CI abstraction presents one contract per verb.
     """
     # Check auth
     is_auth, err = check_auth()
     if not is_auth:
         return make_error('pr_create', err)
 
-    # Resolve the body from exactly one source before any network call. Both
-    # ``plan_id`` and ``body_file`` are read defensively via getattr so a
-    # direct-Namespace caller that bypasses the argparse parser and omits either
-    # flag falls through to the "no body source" error instead of raising
-    # AttributeError.
+    # ``plan_id`` is read defensively via getattr so a direct-Namespace caller
+    # that bypasses the argparse parser (where it is required=True) falls
+    # through to the structured error instead of raising AttributeError.
     plan_id = getattr(args, 'plan_id', None)
-    body_file = getattr(args, 'body_file', None)
-    if plan_id and body_file:
+    if not plan_id:
         return make_error(
             'pr_create',
-            '--plan-id and --body-file are mutually exclusive; supply exactly one body source',
-        )
-    if not plan_id and not body_file:
-        return make_error(
-            'pr_create',
-            'A MR body source is required: supply either --plan-id (plan-bound body '
-            'store) or --body-file PATH (plan-less body file)',
+            '--plan-id is required; it keys the prepared body store. Genuinely '
+            'plan-less callers pass --plan-id NO_PLAN.',
         )
 
-    consumed_from_store = False
-    if body_file:
-        # Plan-less path: read the body directly from the explicit file.
-        try:
-            body = Path(body_file).read_text(encoding='utf-8')
-        except OSError as exc:
-            return make_error('pr_create', f'Could not read --body-file {body_file}', str(exc))
-        if not body.strip():
-            return make_error('pr_create', f'--body-file is empty: {body_file}')
-    else:
-        # Plan-bound path: plan_id is non-None here — the mutual-exclusion guard
-        # above returned early when both sources were falsy, and body_file is
-        # falsy in this branch.
-        assert plan_id is not None  # noqa: S101 — narrowing after the mutual-exclusion guard
-        store_body, err_dict = read_and_consume_body(plan_id, BODY_KIND_PR_CREATE, getattr(args, 'slot', None))
-        if err_dict or store_body is None:
-            return make_error('pr_create', (err_dict or {}).get('message', 'body not prepared'))
-        body = store_body
-        consumed_from_store = True
+    body, err_dict = read_and_consume_body(plan_id, BODY_KIND_PR_CREATE, getattr(args, 'slot', None))
+    if err_dict or body is None:
+        return make_error('pr_create', (err_dict or {}).get('message', 'body not prepared'))
 
     # Build command - glab uses 'mr' for merge requests
     glab_args = ['mr', 'create', '--title', args.title, '--description', body]
@@ -278,10 +260,9 @@ def cmd_pr_create(args: argparse.Namespace) -> dict:
     if returncode != 0:
         return make_error('pr_create', 'Failed to create MR', stderr.strip())
 
-    # Delete the consumed scratch body — only when it came from the plan store.
-    if consumed_from_store:
-        assert plan_id is not None  # noqa: S101 — consumed_from_store is set only on the plan-bound path
-        delete_consumed_body(plan_id, BODY_KIND_PR_CREATE, getattr(args, 'slot', None))
+    # Delete the consumed scratch body — success only, so a failed create leaves
+    # the prepared body in place for the caller to retry.
+    delete_consumed_body(plan_id, BODY_KIND_PR_CREATE, getattr(args, 'slot', None))
 
     # Parse the URL from output (glab mr create outputs the URL)
     mr_url = stdout.strip()
