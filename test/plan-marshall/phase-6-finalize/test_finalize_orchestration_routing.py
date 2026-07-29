@@ -140,6 +140,30 @@ class TestDetectionSeam:
         assert 'request read --plan-id {plan_id} --section source_id' in text
         assert 'orchestrator inbox detect' in text
 
+    def test_dispatcher_parses_the_detection_token(self):
+        # Anchored to the a0 block so the assertion cannot pass on a stray
+        # match elsewhere in the SKILL body.
+        block = _between(
+            _read(_FINALIZE_SKILL),
+            'a0. Resolve orchestration context',
+            'a. Compute three signal counts',
+        )
+
+        assert '`detection`' in block
+        assert 'detection={detection}' in block
+
+    def test_dispatcher_warns_on_an_unrecognised_pointer(self):
+        block = _between(
+            _read(_FINALIZE_SKILL),
+            'a0. Resolve orchestration context',
+            'a. Compute three signal counts',
+        )
+
+        assert 'detection == unrecognised_id' in block
+        assert '--level WARNING' in block
+        # The obligation is to name the pointer, not merely to log something.
+        assert '{source_id}' in block
+
 
 # =============================================================================
 # Zero global-store writes at BOTH write-sites
