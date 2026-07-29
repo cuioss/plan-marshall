@@ -786,6 +786,78 @@ class TestGuardComponentStoreMatch:
 
         _lessons_io.guard_component_store_match('foreign:skill', allow_foreign=True)
 
+    def test_prefix_less_component_is_project_local_and_never_consults_ownership(self, monkeypatch):
+        """A prefix-less component names no bundle, so ownership is not a question to ask.
+
+        The predicate is replaced with a callable that fails the test if invoked —
+        asserting the branch is skipped outright rather than merely happening to
+        return True.
+        """
+
+        def _boom(bundle):  # pragma: no cover - must not be consulted
+            raise AssertionError('ownership must not be consulted for a prefix-less component')
+
+        monkeypatch.setattr(_lessons_io, 'main_anchored_store_owns_bundle', _boom)
+
+        # No exception, no flag → a project-local lesson files into its own store.
+        _lessons_io.guard_component_store_match('integration-tests', allow_foreign=False)
+
+    def test_prefixed_foreign_bundle_is_still_refused_without_the_flag(self, monkeypatch):
+        """The regression that matters: scoping the guard must not turn it off."""
+        monkeypatch.setattr(_lessons_io, 'main_anchored_store_owns_bundle', lambda bundle: False)
+
+        try:
+            _lessons_io.guard_component_store_match('foreign-bundle:skill', allow_foreign=False)
+        except _lessons_io.WrongStoreError as exc:
+            assert 'foreign-bundle' in str(exc)
+        else:  # pragma: no cover - the guard must still raise
+            raise AssertionError('expected WrongStoreError for a prefixed foreign bundle')
+
+    def test_refusal_message_names_the_bundle_prefix_not_the_whole_component(self, monkeypatch):
+        """The refusal must state a true reason: the named value really is a bundle."""
+        monkeypatch.setattr(_lessons_io, 'main_anchored_store_owns_bundle', lambda bundle: False)
+
+        try:
+            _lessons_io.guard_component_store_match('foreign-bundle:some-skill', allow_foreign=False)
+        except _lessons_io.WrongStoreError as exc:
+            message = str(exc)
+            assert "does not own bundle 'foreign-bundle'" in message
+            # The bundle-hood claim is made about the prefix only — never about
+            # the full component notation.
+            assert "does not own bundle 'foreign-bundle:some-skill'" not in message
+        else:  # pragma: no cover - the guard must raise
+            raise AssertionError('expected WrongStoreError')
+
+    def test_malformed_component_is_rejected_as_malformed(self, monkeypatch):
+        """A value failing COMPONENT_RE is malformed, not foreign — and says so."""
+
+        def _boom(bundle):  # pragma: no cover - shape check precedes ownership
+            raise AssertionError('ownership must not be consulted for a malformed component')
+
+        monkeypatch.setattr(_lessons_io, 'main_anchored_store_owns_bundle', _boom)
+
+        try:
+            _lessons_io.guard_component_store_match('bad/component', allow_foreign=False)
+        except _lessons_io.MalformedComponentError as exc:
+            assert 'bad/component' in str(exc)
+        else:  # pragma: no cover - the guard must raise
+            raise AssertionError('expected MalformedComponentError')
+
+    def test_allow_foreign_does_not_launder_a_malformed_component(self, monkeypatch):
+        """The shape check runs BEFORE the allow_foreign bypass."""
+
+        def _boom(bundle):  # pragma: no cover - shape check precedes ownership
+            raise AssertionError('ownership must not be consulted for a malformed component')
+
+        monkeypatch.setattr(_lessons_io, 'main_anchored_store_owns_bundle', _boom)
+
+        try:
+            _lessons_io.guard_component_store_match('bad/component', allow_foreign=True)
+        except _lessons_io.MalformedComponentError:
+            pass
+        else:  # pragma: no cover - the override must not bypass the shape check
+            raise AssertionError('expected MalformedComponentError even with allow_foreign=True')
+
 
 class TestAddWrongStoreGuard:
     """``cmd_add`` / ``cmd_from_error`` refuse to file into a store that does not own the bundle."""
@@ -884,3 +956,82 @@ class TestAddWrongStoreGuard:
         assert result['status'] == 'error'
         assert result['error'] == 'wrong_store'
         assert not list(lessons_dir.glob('*.md'))
+
+    def test_prefix_less_component_files_into_local_store_without_a_flag(self, tmp_path, monkeypatch):
+        """A project-local lesson files into its own store with no --allow-foreign-store."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+        # Ownership is patched False so the test cannot pass merely because the
+        # PLAN_BASE_DIR override short-circuits the predicate to True.
+        monkeypatch.setattr(_lessons_io, 'main_anchored_store_owns_bundle', lambda bundle: False)
+
+        result = cmd_add(
+            Namespace(
+                component='integration-tests',
+                category='bug',
+                title='Project Local',
+                bundle=None,
+                allow_foreign_store=False,
+            )
+        )
+
+        assert result['status'] == 'success'
+        assert Path(result['path']).exists()
+
+    def test_malformed_component_add_returns_invalid_component(self, tmp_path, monkeypatch):
+        """cmd_add reports a malformed component as invalid_component, never wrong_store."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+        monkeypatch.setattr(_lessons_io, 'main_anchored_store_owns_bundle', lambda bundle: False)
+
+        result = cmd_add(
+            Namespace(
+                component='bad/component',
+                category='bug',
+                title='Malformed',
+                bundle=None,
+                allow_foreign_store=False,
+            )
+        )
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_component'
+        assert not list(lessons_dir.glob('*.md'))
+
+    def test_malformed_component_from_error_returns_invalid_component(self, tmp_path, monkeypatch):
+        """cmd_from_error reports a malformed component as invalid_component too.
+
+        This path takes its component from untrusted JSON and bypasses argparse
+        validation, so the guard is the only shape check it gets.
+        """
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+        monkeypatch.setattr(_lessons_io, 'main_anchored_store_owns_bundle', lambda bundle: False)
+
+        context = json.dumps({'component': 'bad/component', 'error': 'boom', 'solution': 'x'})
+        result = cmd_from_error(Namespace(context=context, allow_foreign_store=False))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_component'
+        assert not list(lessons_dir.glob('*.md'))
+
+    def test_from_error_default_unknown_component_succeeds(self, tmp_path, monkeypatch):
+        """The 'unknown' default is prefix-less, so the guard must not refuse it.
+
+        Before the guard was scoped to prefixed components this path was refused
+        100% of the time in production (outside a PLAN_BASE_DIR override), because
+        no store can ever own a bundle named 'unknown'.
+        """
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+        monkeypatch.setattr(_lessons_io, 'main_anchored_store_owns_bundle', lambda bundle: False)
+
+        context = json.dumps({'error': 'boom', 'solution': 'x'})
+        result = cmd_from_error(Namespace(context=context, allow_foreign_store=False))
+
+        assert result['status'] == 'success'
+        assert list(lessons_dir.glob('*.md'))

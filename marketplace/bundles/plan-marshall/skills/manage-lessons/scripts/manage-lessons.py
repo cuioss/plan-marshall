@@ -56,6 +56,7 @@ from _lessons_crud import (
     retire_quiet_arch_constraints,
 )
 from _lessons_io import (
+    MalformedComponentError,
     WrongStoreError,
     _build_lesson_content,
     get_lessons_dir,
@@ -397,6 +398,8 @@ def cmd_add(args: argparse.Namespace) -> dict:
     """
     try:
         guard_component_store_match(args.component, getattr(args, 'allow_foreign_store', False))
+    except MalformedComponentError as exc:
+        return {'status': 'error', 'error': 'invalid_component', 'message': str(exc)}
     except WrongStoreError as exc:
         return {'status': 'error', 'error': 'wrong_store', 'message': str(exc)}
 
@@ -795,6 +798,8 @@ def cmd_from_error(args: argparse.Namespace) -> dict:
 
     try:
         guard_component_store_match(component, getattr(args, 'allow_foreign_store', False))
+    except MalformedComponentError as exc:
+        return {'status': 'error', 'error': 'invalid_component', 'message': str(exc)}
     except WrongStoreError as exc:
         return {'status': 'error', 'error': 'wrong_store', 'message': str(exc)}
 

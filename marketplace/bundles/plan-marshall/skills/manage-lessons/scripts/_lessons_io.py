@@ -17,6 +17,7 @@ from pathlib import Path
 
 from constants import DIR_LESSONS
 from file_ops import parse_markdown_metadata
+from input_validation import COMPONENT_RE
 from marketplace_paths import (
     main_anchored_store_owns_bundle,
     resolve_main_anchored_path,
@@ -32,26 +33,64 @@ class WrongStoreError(Exception):
     """
 
 
-def guard_component_store_match(component: str, allow_foreign: bool) -> None:
-    """Refuse to file a lesson whose bundle is not owned by the resolved store repo.
+class MalformedComponentError(Exception):
+    """Raised when a component does not match the canonical component shape.
 
-    Parses the bundle (first ``:``-segment) from the ``bundle:skill[:script]``
-    component notation and consults
-    :func:`marketplace_paths.main_anchored_store_owns_bundle`. When the resolved
-    main-anchored store repo does not own the bundle AND ``allow_foreign`` is
-    ``False``, raises :class:`WrongStoreError`. When ``allow_foreign`` is ``True``
-    or ownership holds (including under a test override, where the ownership
-    predicate short-circuits to ``True``), returns without effect.
+    Distinct from :class:`WrongStoreError`: the component is not merely owned by
+    another repo, it is not a well-formed component at all. The manage-lessons
+    entry module renders this as ``status: error`` with ``error: invalid_component``
+    so a malformed input is never reported as an ownership problem.
+    """
+
+
+def guard_component_store_match(component: str, allow_foreign: bool) -> None:
+    """Refuse to file a lesson whose bundle prefix is not owned by the store repo.
+
+    The ownership question only exists for a component that actually names a
+    bundle. Accordingly the guard evaluates four ordered branches:
+
+    1. The component must match the canonical shape
+       :data:`input_validation.COMPONENT_RE` — otherwise
+       :class:`MalformedComponentError` is raised. This runs BEFORE the
+       ``allow_foreign`` bypass so the override cannot launder a malformed value.
+    2. ``allow_foreign`` short-circuits the remaining ownership check.
+    3. A **prefix-less** component (no ``:``) is project-local by construction: it
+       names no bundle, so there is no cross-repo ownership question to answer and
+       no flag is required. Returns without effect.
+    4. A **prefixed** component has its bundle taken from the first ``:``-segment
+       and checked against
+       :func:`marketplace_paths.main_anchored_store_owns_bundle`; a miss raises
+       :class:`WrongStoreError` naming that bundle.
+
+    Because branch 4 is the only path that raises :class:`WrongStoreError`, the
+    refusal message names a value that genuinely IS a bundle.
 
     Args:
-        component: The ``bundle:skill[:script]`` component notation.
-        allow_foreign: When ``True``, bypass the refusal (explicit override).
+        component: Either a prefix-less project-local name (``integration-tests``)
+            or the ``bundle:skill[:script]`` notation.
+        allow_foreign: When ``True``, bypass the ownership refusal (explicit
+            override). Does NOT bypass the shape check.
 
     Raises:
-        WrongStoreError: when the store repo does not own the component's bundle
-            and ``allow_foreign`` is ``False``.
+        MalformedComponentError: when ``component`` does not match the canonical
+            component shape.
+        WrongStoreError: when ``component`` carries a bundle prefix the store repo
+            does not own and ``allow_foreign`` is ``False``.
     """
+    if not isinstance(component, str) or not COMPONENT_RE.match(component):
+        raise MalformedComponentError(
+            f'malformed component {component!r}; expected the canonical shape '
+            f'{COMPONENT_RE.pattern} — either a prefix-less project-local name '
+            f"(e.g. 'integration-tests') or a bundle-prefixed notation "
+            f"(e.g. 'plan-marshall:manage-lessons')."
+        )
+
     if allow_foreign:
+        return
+
+    if ':' not in component:
+        # Project-local by construction — no bundle is named, so no store can
+        # fail to own it. Filing requires no --allow-foreign-store override.
         return
 
     bundle = component.split(':', 1)[0]
