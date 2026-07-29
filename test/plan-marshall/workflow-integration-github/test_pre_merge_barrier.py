@@ -15,6 +15,14 @@ surface (``check_auth``, ``fetch_pr_comments_data``, ``fetch_pr_head_sha``):
         comment), so the barrier's pending query is non-empty and blocks.
     (b) clean-path — a re-fetch whose comments were all already stored files
         zero new findings, so the barrier query is empty and the merge proceeds.
+    (c) termination — once triage's own batched response comment is the only new
+        comment on the PR, the re-fetch excludes it, the barrier's pending query
+        stays EMPTY and the merge proceeds. Before the self-response exclusion
+        this reply was filed as a fresh pending finding, so the barrier blocked,
+        triage responded again, and the cycle never terminated.
+    (d) guard trips and reports — at ``_SELF_RESPONSE_LOOP_BOUND`` accumulated
+        self-authored responses the producer REPORTS exhaustion as a
+        ``(self-response-loop)`` Q-Gate finding instead of passing silently.
 
 Per lesson 2026-07-09-14-001 the provider response is built from a real fixture
 shape (mirroring ``test_github_pr.py``), so a green fixture cannot diverge from
@@ -29,6 +37,7 @@ github_pr = load_script_module('plan-marshall', 'workflow-integration-github', '
 _findings_core = load_script_module('plan-marshall', 'manage-findings', '_findings_core.py', '_findings_core')
 
 query_findings = _findings_core.query_findings
+query_qgate_findings = _findings_core.query_qgate_findings
 resolve_finding = _findings_core.resolve_finding
 
 
@@ -170,3 +179,93 @@ def test_clean_path_no_new_comments_leaves_barrier_empty(plan_context, monkeypat
 
     # Barrier query empty → merge proceeds.
     assert _pending(plan_id) == []
+
+
+# A batched disposition comment as ``post_responses`` actually posts it: a NEW
+# PR-level comment authored by the repo-owner account, carrying kind
+# ``issue_comment`` and a NEW comment_id each turn. The body is rendered by the
+# PRODUCTION emitter rather than a hand-written literal, so a future rename of the
+# heading cannot leave these barrier tests green while reopening the loop.
+def _self_response_comment(comment_id, anchor='c1'):
+    return {
+        'id': comment_id,
+        'author': 'oliver',
+        'thread_id': '',
+        'kind': 'issue_comment',
+        'body': github_pr._build_batched_response_body(
+            [(anchor, 'Fixed — the None case is now guarded before the dereference.')]
+        ),
+        'resolved': False,
+    }
+
+
+def test_self_response_after_triage_leaves_barrier_empty(plan_context, monkeypatch):
+    """The loop TERMINATES: our own reply does not re-block the barrier.
+
+    This is the end-to-end property the fix exists for. Triage resolves the bot
+    comments and transmits its dispositions as one batched PR-level comment; the
+    barrier then re-fetches with that comment now present on the PR. The comment
+    is unresolved, is not a refusal, matches no ``ignore`` regex, and carries a
+    comment_id the ``(bot_kind, comment_id)`` dedup has never seen — so before the
+    self-response exclusion it was filed as a fresh PENDING finding and the
+    barrier blocked forever. The pending query must now be empty.
+    """
+    plan_id = 'barrier-self-response-terminates'
+
+    _patch_provider(monkeypatch, _INITIAL_COMMENTS)
+    first = _run_fetch(204, plan_id)
+    assert first['status'] == 'success'
+    assert first['count_stored'] == len(_INITIAL_COMMENTS)
+
+    # Triage resolves every comment and transmits its dispositions.
+    _resolve_all_pending(plan_id)
+    assert _pending(plan_id) == []
+
+    # The transmitted batched response is now a comment on the PR; the barrier
+    # re-fetches with it present.
+    _patch_provider(monkeypatch, [*_INITIAL_COMMENTS, _self_response_comment('self-1')])
+    second = _run_fetch(204, plan_id)
+    assert second['status'] == 'success'
+    # Nothing new is filed: the originals dedupe, our own reply is excluded.
+    assert second['count_stored'] == 0
+    assert second['count_skipped_duplicate'] == len(_INITIAL_COMMENTS)
+    assert second['count_skipped_self_response'] == 1
+    assert second['producer_mismatch_hash_id'] is None
+
+    # THE property: the barrier's pending query is empty → the merge proceeds.
+    assert _pending(plan_id) == []
+
+
+def test_self_response_loop_bound_reports_qgate_finding(plan_context, monkeypatch):
+    """At the bound the guard REPORTS exhaustion — it never passes silently.
+
+    The exclusion filter cannot be complete: a thread-bearing disposition whose
+    resolve-thread failed leaves an unresolved reply carrying arbitrary
+    ``resolution_detail`` text and no transmission shape at all, so that residue
+    is unkeyable by construction and only a bound can terminate it. When the
+    accumulated self-responses reach ``_SELF_RESPONSE_LOOP_BOUND`` the producer
+    files a ``(self-response-loop)`` Q-Gate finding, which is what turns
+    exhaustion into a reported coverage gap requiring an operator decision rather
+    than a silent pass.
+    """
+    plan_id = 'barrier-self-response-bound'
+    accumulated = [
+        _self_response_comment(f'self-{i}', anchor=f'c{i}')
+        for i in range(github_pr._SELF_RESPONSE_LOOP_BOUND)
+    ]
+    _patch_provider(monkeypatch, accumulated)
+
+    result = _run_fetch(205, plan_id)
+    # The fetch itself succeeded — the loop report travels as its own field.
+    assert result['status'] == 'success'
+    assert result['count_skipped_self_response'] == github_pr._SELF_RESPONSE_LOOP_BOUND
+    assert result['self_response_loop_detected'] is True
+
+    # The barrier is not blocked by a pr-comment finding...
+    assert _pending(plan_id) == []
+    # ...but the exhaustion IS filed and retrievable, so it cannot pass unnoticed.
+    qgate = query_qgate_findings(plan_id, '5-execute')['findings']
+    loop_findings = [f for f in qgate if f.get('title', '').startswith('(self-response-loop)')]
+    assert len(loop_findings) == 1
+    assert loop_findings[0]['resolution'] == 'pending'
+    assert loop_findings[0]['hash_id'] == result['self_response_loop_hash_id']

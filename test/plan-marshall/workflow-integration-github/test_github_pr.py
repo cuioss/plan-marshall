@@ -362,6 +362,172 @@ def test_pipeline_trigger_is_noise_while_a_rate_limit_notice_is_a_refusal(plan_c
 
 
 # =============================================================================
+# Self-authored response exclusion + loop bound (the non-terminating barrier loop)
+# =============================================================================
+#
+# ``post_responses`` transmits thread-less dispositions as a NEW PR-level comment.
+# On the next fetch that comment is unresolved, is not a refusal, matches no
+# ``ignore`` regex, and carries a NEW comment_id the ``(bot_kind, comment_id)``
+# dedup cannot know — so before the fix it was filed as a fresh pending finding,
+# the pre-merge barrier blocked on it, triage responded again, and the cycle never
+# terminated.
+#
+# The self-response bodies below are produced by the REAL emitter
+# (``_build_batched_response_body``) rather than a hand-written literal. That is
+# deliberate: it makes the test prove the recognizer matches what the emitter
+# actually emits, so a future rename of the heading cannot leave a green test
+# while silently reopening the loop.
+
+
+def _self_response_body(comment_id='c1', reply='Fixed in the follow-up commit; see the updated guard.'):
+    """Render a real ``post_responses`` batched body via the production emitter."""
+    return github_pr._build_batched_response_body([(comment_id, reply)])
+
+
+def test_self_authored_response_excluded_and_counted_separately(plan_context, monkeypatch):
+    """Our own batched response is excluded, counted apart from noise, and files no finding.
+
+    This is the loop-closing property: the comment ``post_responses`` posted must
+    not come back as a fresh pending ``pr-comment`` finding. It is counted in
+    ``count_skipped_self_response`` — NOT ``count_skipped_noise``, because our own
+    transmitted output is not acknowledgment noise — and it is subtracted from
+    ``expected_stored`` so a correctly-excluded self response never trips the
+    ``(producer-mismatch)`` Q-Gate.
+    """
+    plan_id = 'gh-pr-self-response-excluded'
+    comments = [
+        # The batched disposition comment this workflow itself posted, authored by
+        # the repo-owner account (bot_kind None) with kind issue_comment — exactly
+        # the shape every other pre-filter stage misses.
+        {
+            'id': 'self-1',
+            'author': 'oliver',
+            'thread_id': '',
+            'kind': 'issue_comment',
+            'body': _self_response_body(),
+            'resolved': False,
+        },
+        # A genuine reviewer comment on the same fetch — the exclusion must be
+        # surgical, not a blanket drop of everything on the PR.
+        {
+            'id': 'genuine-1',
+            'author': 'coderabbitai',
+            'thread_id': 'PRRT_7',
+            'kind': 'inline',
+            'body': 'This slice bound drops the final element; use len(items) instead.',
+            'path': 'src/e.py',
+            'line': 12,
+            'resolved': False,
+        },
+    ]
+    _patch_provider(monkeypatch, comments)
+
+    result = _run_fetch(105, plan_id)
+    assert result['status'] == 'success'
+    # Only the genuine reviewer comment is filed.
+    assert result['count_stored'] == 1
+    # Counted as a self response...
+    assert result['count_skipped_self_response'] == 1
+    # ...and NOT folded into the noise count (the counters are deliberately split).
+    assert result['count_skipped_noise'] == 0
+    # expected_stored accounts for the new counter — no producer-mismatch false-positive.
+    assert result['producer_mismatch_hash_id'] is None
+    # One self response is far below the bound, so no loop is reported.
+    assert result['self_response_loop_detected'] is False
+
+    stored = query_findings(plan_id, finding_type='pr-comment')['findings']
+    assert len(stored) == 1
+    detail = stored[0].get('detail') or ''
+    assert 'comment_id: genuine-1' in detail
+    assert 'comment_id: self-1' not in detail
+
+
+def test_human_comment_quoting_the_disposition_heading_is_still_stored(plan_context, monkeypatch):
+    """The false-positive boundary: quoting the heading is feedback, not our output.
+
+    The recognizer is START-ANCHORED, never a substring search. A reviewer who
+    blockquotes the disposition heading while disputing it, or who mentions it
+    mid-sentence, is giving real feedback — dropping either would silently destroy
+    review signal, which is a strictly worse failure than the loop the exclusion
+    closes.
+    """
+    plan_id = 'gh-pr-self-response-boundary'
+    comments = [
+        # (a) Blockquoted heading — the body starts with '>', not with the heading.
+        {
+            'id': 'quote-1',
+            'author': 'alice',
+            'thread_id': '',
+            'kind': 'issue_comment',
+            'body': (
+                '> ## Triage dispositions\n'
+                '>\n'
+                'This disposition is wrong: the guard still misses the empty-thread case.'
+            ),
+            'resolved': False,
+        },
+        # (b) Heading mentioned inside prose — never at the start of the body.
+        {
+            'id': 'quote-2',
+            'author': 'alice',
+            'thread_id': '',
+            'kind': 'issue_comment',
+            'body': 'The ## Triage dispositions comment above skipped my second point entirely.',
+            'resolved': False,
+        },
+    ]
+    _patch_provider(monkeypatch, comments)
+
+    result = _run_fetch(106, plan_id)
+    assert result['status'] == 'success'
+    # Both human comments survive — neither is mistaken for our own output.
+    assert result['count_stored'] == 2
+    assert result['count_skipped_self_response'] == 0
+    assert result['producer_mismatch_hash_id'] is None
+
+    stored = query_findings(plan_id, finding_type='pr-comment')['findings']
+    details = ' '.join(f.get('detail') or '' for f in stored)
+    assert 'comment_id: quote-1' in details
+    assert 'comment_id: quote-2' in details
+
+
+def test_accumulated_self_responses_at_the_bound_report_the_loop(plan_context, monkeypatch):
+    """At the bound the guard REPORTS exhaustion — it never passes silently.
+
+    The filter alone cannot terminate every cycle (a thread-bearing disposition
+    whose resolve-thread failed leaves an unresolved reply carrying no
+    transmission shape at all), so a bound backs it. Every turn leaves one
+    permanent response comment on the PR, which makes the PR's own comment list
+    the iteration counter — no new state store, no new config key.
+    """
+    plan_id = 'gh-pr-self-response-bound'
+    comments = [
+        {
+            'id': f'self-{i}',
+            'author': 'oliver',
+            'thread_id': '',
+            'kind': 'issue_comment',
+            'body': _self_response_body(comment_id=f'c{i}'),
+            'resolved': False,
+        }
+        for i in range(github_pr._SELF_RESPONSE_LOOP_BOUND)
+    ]
+    _patch_provider(monkeypatch, comments)
+
+    result = _run_fetch(107, plan_id)
+    # The fetch itself succeeded — the loop report travels as its own field.
+    assert result['status'] == 'success'
+    assert result['count_stored'] == 0
+    assert result['count_skipped_self_response'] == github_pr._SELF_RESPONSE_LOOP_BOUND
+    assert result['self_response_loop_detected'] is True
+    # The exhaustion was actually FILED, not merely flagged on the return.
+    assert result['self_response_loop_hash_id']
+    assert 'self_response_loop_persist_failed' not in result
+    # Every excluded self response is subtracted, so no mismatch false-positive.
+    assert result['producer_mismatch_hash_id'] is None
+
+
+# =============================================================================
 # Bot-agnostic rate-limit / service-notice recognizer (github_pr._is_refusal_notice)
 # =============================================================================
 #
