@@ -86,6 +86,45 @@ def _read_frontmatter_lane(path: Path) -> dict[str, str] | None:
     return lane or None
 
 
+def _read_frontmatter_scalar(path: Path, key: str) -> str | None:
+    """Read a TOP-LEVEL scalar key from a markdown file's frontmatter block.
+
+    Sibling of :func:`_read_frontmatter_lane`, which parses the nested ``lane:``
+    block; this one reads a flat ``key: value`` pair at column 0 of the first
+    ``---``-fenced block (e.g. ``persona``, ``order``, ``name``). Indented lines
+    are skipped so a nested block's sub-keys can never be mistaken for a
+    top-level scalar. The same minimal-parser discipline applies — PyYAML is
+    intentionally avoided.
+
+    Args:
+        path: The markdown file to read.
+        key: The top-level frontmatter key to resolve.
+
+    Returns:
+        The unquoted scalar value, or ``None`` when the file is missing, has no
+        frontmatter, does not declare ``key`` at the top level, or declares it
+        with an empty value.
+    """
+    if not path.is_file():
+        return None
+    try:
+        text = path.read_text(encoding='utf-8')
+    except OSError:
+        return None
+    if not text.startswith('---'):
+        return None
+    for line in text.splitlines()[1:]:
+        if line.strip() == '---':
+            break
+        if line.startswith((' ', '\t')) or line.lstrip().startswith('#'):
+            continue
+        candidate, sep, value = line.partition(':')
+        if not sep or candidate.strip() != key:
+            continue
+        return value.strip().strip('"').strip("'") or None
+    return None
+
+
 def _lane_override_for(step_id: str, overrides: dict[str, dict] | None) -> str | None:
     """Resolve the per-element ``lane`` override from the marshal.json step map.
 

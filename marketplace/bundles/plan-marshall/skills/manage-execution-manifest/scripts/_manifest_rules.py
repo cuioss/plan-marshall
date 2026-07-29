@@ -169,8 +169,7 @@ def _apply_code_step_inactive(
 ) -> tuple[list[str], bool]:
     """Pre-filter: drop a code-gated phase-6 step when its activation gate fails.
 
-    Shared gate for ``finalize-step-simplify`` and ``finalize-step-security-audit``.
-    Both steps activate when BOTH:
+    Gate for ``finalize-step-simplify``. The step activates when BOTH:
 
     1. ``change_type ∈ {feature, bug_fix, tech_debt, enhancement}`` — the four
        code-touching change types; and
@@ -201,13 +200,60 @@ def _apply_simplify_inactive(
     return _apply_code_step_inactive(phase_6_candidates, 'finalize-step-simplify', change_type, affected_files_count)
 
 
-def _apply_security_audit_inactive(
+# The single drop reason a security-class step can carry. The gate has exactly one
+# failing condition (no declared change surface AND no live change surface), so the
+# reason string is a constant rather than a formatted per-case message.
+_SECURITY_CLASS_DROP_REASON = 'no declared affected files and empty live footprint'
+
+
+def _apply_security_class_inactive(
     phase_6_candidates: list[str],
-    change_type: str,
+    security_class_steps: frozenset[str] | set[str],
     affected_files_count: int,
-) -> tuple[list[str], bool]:
-    """Pre-filter: drop ``finalize-step-security-audit`` when its activation gate fails."""
-    return _apply_code_step_inactive(phase_6_candidates, 'finalize-step-security-audit', change_type, affected_files_count)
+    live_footprint_count: int,
+) -> tuple[list[str], list[dict[str, str]]]:
+    """Pre-filter: drop a security-class step only when there is no change surface at all.
+
+    The gate is deliberately NOT the shared ``_apply_code_step_inactive`` change-shape
+    gate. ``change_type`` is a semantic label frozen at outline time and selected
+    FIRST-DELIVERABLE-WINS by the composer's caller, so a plan that opens with a
+    read-only discovery deliverable forwards ``verification`` however much production
+    code its remaining deliverables mutate. A security sweep must never be removed on
+    that evidence, so the change-type leg is absent here entirely and the gate **fails
+    toward inclusion**.
+
+    What remains is the zero-surface leg, now evaluated against BOTH the declared and
+    the live change surface: a security-class step is dropped only when
+    ``affected_files_count == 0`` AND ``live_footprint_count == 0``. Either signal being
+    non-empty keeps the step — there is something to audit.
+
+    ``security_class_steps`` is the caller-derived population (steps whose frontmatter
+    declares ``persona: persona-security-expert``), not a hardcoded step id, so a future
+    second security-class finalize step inherits the protection by declaring the same
+    persona.
+
+    Args:
+        phase_6_candidates: The boundary-normalized phase-6 candidate list.
+        security_class_steps: The candidate ids that belong to the security class.
+        affected_files_count: ``references.json::affected_files`` length (declared surface).
+        live_footprint_count: Length of the live worktree footprint (live surface).
+
+    Returns:
+        ``(kept, dropped)`` — the filtered candidate list, and one
+        ``{'step': ..., 'reason': ...}`` record per dropped step so the caller can emit a
+        per-drop decision-log line and surface the drop in the compose result.
+    """
+    if affected_files_count > 0 or live_footprint_count > 0:
+        return phase_6_candidates, []
+
+    kept: list[str] = []
+    dropped: list[dict[str, str]] = []
+    for step in phase_6_candidates:
+        if step in security_class_steps:
+            dropped.append({'step': step, 'reason': _SECURITY_CLASS_DROP_REASON})
+        else:
+            kept.append(step)
+    return kept, dropped
 
 
 # Scope-gated phase-6 subtraction sets. Each entry lists the step references the

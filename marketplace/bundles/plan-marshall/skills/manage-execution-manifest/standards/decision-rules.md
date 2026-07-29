@@ -42,6 +42,10 @@ For each rule the composer emits:
 - `phase_5.verification_steps` — ordered list[string] subset of `phase_5_candidates`.
 - `phase_6.steps` — ordered list[string] subset of `phase_6_candidates`.
 
+The `compose` **result** (the TOON the caller reads back — distinct from the persisted manifest body) additionally reports each pre-filter's outcome so the caller can surface it. Most are booleans (`commit_push_omitted`, `pre_push_quality_gate_omitted`, `pre_submission_self_review_omitted`, `simplify_omitted`); the security gate reports a record list:
+
+- `security_class_omitted` — list of `{step, reason}`, one record per security-class step the `security_class_inactive` pre-filter dropped (empty when none). A record list rather than a boolean because the population is metadata-derived, so the field must name *which* step was dropped and *why*. `phase-4-plan` Step 7b surfaces each entry in its phase return.
+
 ## The `execution_log` Section (record-step)
 
 The `execution_log[]` section is a runtime append log that is **separate from the decision matrix** — `compose` never reads or writes it. It is populated exclusively by the `record-step` subcommand, one row appended per invocation, capturing per-step execution outcome plus token attribution into the manifest. This makes per-step execution metadata loggable per-plan deterministically rather than relying on the fragile orchestrator `<usage>`-forwarding boundary call.
@@ -90,7 +94,7 @@ The pre-filters run in this order:
 2. **`pre_push_quality_gate_inactive`** — drops `pre-push-quality-gate` when activation conditions fail.
 3. **`pre_submission_self_review_inactive`** — drops `pre-submission-self-review` when the live plan footprint is empty.
 4. **`simplify_inactive`** — drops `finalize-step-simplify` when `change_type ∉ {feature, bug_fix, tech_debt, enhancement}` OR `affected_files_count == 0`.
-4b. **`security_audit_inactive`** — drops `finalize-step-security-audit` on the same gate as `simplify_inactive` (`change_type ∉ {feature, bug_fix, tech_debt, enhancement}` OR `affected_files_count == 0`).
+4b. **`security_class_inactive`** — drops a **security-class** step (any candidate whose source doc declares `persona: persona-security-expert`) only when `affected_files_count == 0` **AND** the live footprint is empty. It shares no helper and no gate with `simplify_inactive`: there is no `change_type` leg, so the gate fails toward inclusion.
 5. **`scope_gated_finalize`** — drops heavyweight phase-6 review/audit steps by `scope_estimate`: `surgical` drops `plan-retrospective`, `pre-submission-self-review`, and `plugin-doctor`; `single_module` drops only `plan-retrospective`. A step declaring an explicit non-`auto` per-element `lane` override is immune and is never dropped here.
 6. **`unresolved_ask_provider_drop`** — drops an UNRESOLVED `lane: ask` infra element (`plan-marshall:automatic-review` / `default:sonar-roundtrip`) when its corresponding provider is genuinely absent (no CI provider for `automatic-review`; no Sonar provider for `sonar-roundtrip`). A resolved ask (`off`/`auto`/`full`) and a provider-configured ask both survive. Documented in its own subsection below.
 
@@ -178,25 +182,35 @@ When the gate passes (`change_type ∈ {feature, bug_fix, tech_debt, enhancement
 
 **Evaluation order vs. the six-row matrix**: This pre-filter runs *after* `pre_submission_self_review_inactive` and *before* every row of the six-row matrix.
 
-### Pre-Filter: `security_audit_inactive`
+### Pre-Filter: `security_class_inactive`
 
-**Condition**: `change_type ∉ {feature, bug_fix, tech_debt, enhancement}` OR `affected_files_count == 0` — the same gate as `simplify_inactive`.
+**Population**: every candidate whose source doc declares the top-level frontmatter scalar `persona: persona-security-expert` — resolved per candidate at compose time, never a hardcoded step-id list. `finalize-step-security-audit` is today's sole member; a future security-class finalize step joins the population by declaring the same persona, with no change here. The tag is an existing discriminator, not one invented for this gate: the structural peer `finalize-step-simplify` declares no `persona` key at all.
 
-**Effect**: `finalize-step-security-audit` is removed from `phase_6_candidates` before the rows are evaluated. Equivalently — phrased as the activation gate — `default:finalize-step-security-audit` lands in `phase_6.steps` **whenever `change_type ∈ {feature, bug_fix, tech_debt, enhancement}` AND `affected_files_count > 0`** (and the step is present in the candidate set). The proactive security sweep has no change surface to audit on a pure-analysis / verification plan or a zero-files plan, so the gate is identical to `simplify_inactive` — a subtraction-only expression matching the manifest architecture where rows and pre-filters only ever narrow the candidate list.
+**Condition**: `affected_files_count == 0` **AND** the live footprint is empty (`_resolve_footprint(plan_id)` returns no paths). Either signal being non-empty keeps the step.
 
-**Why a pre-filter (not an eighth row)**: Activation depends only on `change_type` and `affected_files_count`, orthogonal to the scope / recipe inputs the six-row matrix consumes. The branch-prefix enum reconciliation (`fix → bug_fix`, `chore → tech_debt`) documented for `simplify_inactive` applies verbatim. Expressing it as a pre-filter keeps the six-row matrix unchanged.
+**Effect**: every security-class step is removed from `phase_6_candidates` before the rows are evaluated, but only in the genuine zero-change-surface case. Equivalently — phrased as the activation gate — a security-class step lands in `phase_6.steps` **whenever the plan has a declared change surface OR a live one** (and the step is present in the candidate set). The subtraction-only shape matches the manifest architecture where rows and pre-filters only ever narrow the candidate list.
 
-**Decision log line** (in addition to the row's own log line and any other pre-filter log line):
+**No `change_type` leg — the gate fails toward inclusion.** This is the load-bearing difference from `simplify_inactive`, and it is deliberate. `change_type` is a semantic label produced by an outline-time classifier and it cannot be re-derived from a footprint at compose time. Worse, the value the composer receives is **not plan-wide**: its caller reads it from `solution_outline.md` deliverable metadata and forwards the **first** deliverable's label (see [`phase-4-plan/SKILL.md`](../../phase-4-plan/SKILL.md) § Step 7b Inputs). A plan that opens with a read-only discovery deliverable therefore forwards `verification` — one of the two values the old gate excluded — however much production code its remaining deliverables mutate. A proactive security sweep must never be removed on evidence that weak, so the change-type leg is absent entirely and an unknown or misleading change shape keeps the step.
+
+**Not a peer of `simplify_inactive`.** The two pre-filters share no helper: `simplify_inactive` delegates to `_apply_code_step_inactive` (the change-shape gate over `_SIMPLIFY_CHANGE_TYPES`), while this one is `_apply_security_class_inactive`, a separate function with a separate condition. `finalize-step-simplify`'s gate is unchanged.
+
+**Why a pre-filter (not an eighth row)**: Activation depends only on the declared and live change surface, orthogonal to the change-type / scope / recipe inputs the six-row matrix consumes. Expressing it as a pre-filter keeps the six-row matrix unchanged.
+
+**Decision log line** (one per dropped step, in addition to the row's own log line and any other pre-filter log line):
 
 ```text
-(plan-marshall:manage-execution-manifest:compose) finalize-step-security-audit omitted — change_type={value} affected_files_count={N}
+(plan-marshall:manage-execution-manifest:compose) [STATUS] security_class_inactive — dropped {step} from phase_6.steps: no declared affected files and empty live footprint
 ```
 
-When the gate passes (`change_type ∈ {feature, bug_fix, tech_debt, enhancement}` AND `affected_files_count > 0`), the pre-filter is a no-op and emits no log entry; `finalize-step-security-audit` survives into the six-row matrix.
+The `[STATUS]` prefix marks the line as a status-bearing visibility signal rather than routine bookkeeping, matching the `domain_seeded_step_unresolvable` and unclaimed-path lines.
 
-**Operator-selected drop surfaces as a lane warning**: when this pre-filter fires over a step the operator's selected posture/lane would have included (and the ceremony `always` gate did not force it back in), the composer additionally appends a `{step, warning}` entry to the `lane_warnings[]` compose result naming the ceremony pre-filter — not the lane — as the remover, so the drop is never silent. The `security_audit_omitted` boolean in the compose result remains unchanged.
+When the plan has any change surface, the pre-filter is a no-op and emits no log entry; every security-class step survives into the six-row matrix.
 
-**Evaluation order vs. the six-row matrix**: This pre-filter runs immediately *after* `simplify_inactive` (its symmetric peer) and *before* `scope_gated_finalize` and every row of the six-row matrix.
+**Compose-result field**: `security_class_omitted` — a list of `{step, reason}` records, one per drop (empty when nothing was dropped). It replaces the former `security_audit_omitted` boolean: a bare boolean could not name *which* step was dropped once the population became metadata-derived, nor *why*. `phase-4-plan` Step 7b surfaces each entry in its phase return so the omission reaches the operator instead of resting in `decision.log`.
+
+**Operator-selected drop surfaces as a lane warning**: when this pre-filter fires over a step the operator's selected posture/lane would have included (and the ceremony `always` gate did not force it back in), the composer additionally appends a `{step, warning}` entry to the `lane_warnings[]` compose result naming the ceremony pre-filter — not the lane — as the remover, so the drop is never silent.
+
+**Evaluation order vs. the six-row matrix**: This pre-filter runs immediately *after* `simplify_inactive` and *before* `scope_gated_finalize` and every row of the six-row matrix.
 
 ### Pre-Filter: `scope_gated_finalize`
 
@@ -323,10 +337,12 @@ The six-bucket classifier above (`_classify_paths_via_extensions`) and the `buil
 **Effect** (per gate, against the matrix-produced `phase_6.steps`):
 
 - **`never`** — every match-set form of the gate's step (bare and `project:`-prefixed) is removed from `phase_6.steps`. A no-op when already absent. The composer applies the resolved value directly.
-- **`always`** — the gate's canonical step is ensured present, inserted before the plan-mutating tail (`archive-plan` / `record-metrics` / `branch-cleanup` / `plan-marshall:plan-retrospective`) when absent. A no-op when any match-set form is already present. `always` is the only path that RE-ADDS a step a pre-filter already dropped — that is the point: an operator-set `always` overrides the implicit gate. For `self_review` / `qgate` the overridden pre-filter is `scope_gated_finalize`; for `simplify` it is `simplify_inactive`; for `security_audit` it is `security_audit_inactive`.
+- **`always`** — the gate's canonical step is ensured present, inserted before the plan-mutating tail (`archive-plan` / `record-metrics` / `branch-cleanup` / `plan-marshall:plan-retrospective`) when absent. A no-op when any match-set form is already present. `always` is the only path that RE-ADDS a step a pre-filter already dropped — that is the point: an operator-set `always` overrides the implicit gate. For `self_review` / `qgate` the overridden pre-filter is `scope_gated_finalize`; for `simplify` it is `simplify_inactive`; for `security_audit` it is `security_class_inactive`.
+
+  Note that `always` is a much weaker requirement for `security_audit` than it used to be: `security_class_inactive` drops the step only when the plan has no change surface at all, so on any plan with something to audit there is nothing for `always` to undo.
 
   It is not, however, the only way an operator declaration survives an implicit gate. `scope_gated_finalize`'s declared-lane immunity keeps a step with an explicit non-`auto` `lane` from being dropped at all — a distinct mechanism (prevent the drop) from this one (undo the drop), and the only mechanism available to the steps this transform does not cover. The distinction matters because this gate map holds exactly the four ceremony steps: for any other step, such as `plan-marshall:plan-retrospective`, no re-add route exists, so immunity at the scope gate is what makes its declared lane reachable.
-- **`auto`** (the default) — defer to the existing decision machinery already applied before this transform. For `self_review` / `qgate` that is the `scope_gated_finalize` pre-filter and the six-row matrix; for `simplify` it is the `simplify_inactive` pre-filter and for `security_audit` the `security_audit_inactive` pre-filter (both drop the step when `change_type ∉ {feature, bug_fix, tech_debt, enhancement}` OR `affected_files_count == 0`). No-op in every case.
+- **`auto`** (the default) — defer to the existing decision machinery already applied before this transform. For `self_review` / `qgate` that is the `scope_gated_finalize` pre-filter and the six-row matrix; for `simplify` it is the `simplify_inactive` pre-filter (dropping the step when `change_type ∉ {feature, bug_fix, tech_debt, enhancement}` OR `affected_files_count == 0`); for `security_audit` it is the `security_class_inactive` pre-filter (dropping the step only when `affected_files_count == 0` AND the live footprint is empty). No-op in every case.
 
 **The deliberate `plan-marshall:automatic-review` carve-out**: this transform's gate map contains only the four finalize steps (`default:pre-submission-self-review`, `pre-push-quality-gate`, `finalize-step-simplify`, `finalize-step-security-audit`). It NEVER adds or drops `plan-marshall:automatic-review`, whose presence is governed purely by its configured `lane` and lane tier through the execution-profile lane-resolution pass — there is no separate force-add guard. Keeping the ceremony transform's gate map to exactly the four ceremony steps structurally guarantees `plan-marshall:automatic-review` is never force-added or force-dropped by this transform.
 
@@ -428,7 +444,7 @@ The `order`-resolution verdicts backing the gate live in `_manifest_validation._
 
 **What the preview cannot apply**: the remaining pre-filters, the six-row matrix, and `ceremony_finalize_selection` all read PLAN inputs (`change_type` / `scope_estimate` / `track` / `affected_files_count` / `commit_and_push` / the live footprint) that do not exist at preview time — the preview runs at the init dialogue, before those values are settled.
 
-**How it refuses diagnosably**: rather than silently rendering a membership `compose` may not reach, the preview returns `plan_input_dependent_steps[]` — the emitted steps still subject to a plan-input-dependent decision (the `push` / `pre-push-quality-gate` / `pre-submission-self-review` / `finalize-step-simplify` / `finalize-step-security-audit` / `plan-retrospective` / `plugin-doctor` family). An empty list means preview and compose agree on membership outright. A named step means "the preview shows this, and a plan input may still remove it" — an explicit statement of uncertainty rather than a false claim of agreement.
+**How it refuses diagnosably**: rather than silently rendering a membership `compose` may not reach, the preview returns `plan_input_dependent_steps[]` — the emitted steps still subject to a plan-input-dependent decision (the `push` / `pre-push-quality-gate` / `pre-submission-self-review` / `finalize-step-simplify` / `finalize-step-security-audit` / `plan-retrospective` / `plugin-doctor` family). A security-class step stays in this family under `security_class_inactive`: the gate no longer reads `change_type`, but `affected_files_count` and the live footprint are equally unavailable at preview time. An empty list means preview and compose agree on membership outright. A named step means "the preview shows this, and a plan input may still remove it" — an explicit statement of uncertainty rather than a false claim of agreement.
 
 ## execution_tier Routing
 

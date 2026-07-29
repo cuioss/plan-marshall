@@ -510,69 +510,112 @@ class TestEarlyTerminateTaskQueueGuard:
 
 
 # =============================================================================
-# Test: security_audit_inactive pre-filter (direct helper unit coverage)
+# Test: security_class_inactive pre-filter (direct helper unit coverage)
 #
-# ``_apply_security_audit_inactive`` is the symmetric peer of
-# ``_apply_simplify_inactive``: it drops ``finalize-step-security-audit`` from
-# the phase-6 candidate list unless BOTH
-# ``change_type ∈ {feature, bug_fix, tech_debt, enhancement}`` AND
-# ``affected_files_count > 0``. These tests exercise the helper directly (no
-# compose round-trip) so the gate's truth table and the no-op-when-absent
-# contract are pinned at the unit boundary. See standards/decision-rules.md
-# § Pre-Filter: security_audit_inactive.
+# ``_apply_security_class_inactive`` is NOT the peer of
+# ``_apply_simplify_inactive`` — it shares no helper and no gate. It drops a
+# security-class step (the caller-derived population) from the phase-6 candidate
+# list ONLY when ``affected_files_count == 0`` AND ``live_footprint_count == 0``.
+# There is no ``change_type`` leg, so the gate fails toward INCLUSION: an unknown
+# or misleading change shape keeps the security sweep. These tests exercise the
+# helper directly (no compose round-trip) so the gate's truth table, the
+# population contract, and the no-op-when-absent contract are pinned at the unit
+# boundary. See standards/decision-rules.md § Pre-Filter: security_class_inactive.
 # =============================================================================
 
 
-_apply_security_audit_inactive = _mem._apply_security_audit_inactive
+_apply_security_class_inactive = _mem._apply_security_class_inactive
+
+_SECURITY_CLASS = frozenset({'finalize-step-security-audit'})
 
 
-class TestSecurityAuditInactivePreFilter:
-    """Direct unit coverage of the ``security_audit_inactive`` pre-filter helper."""
+class TestSecurityClassInactivePreFilter:
+    """Direct unit coverage of the ``security_class_inactive`` pre-filter helper."""
 
     @pytest.mark.parametrize(
-        'change_type,affected_files_count,expect_present,expect_fired',
+        'affected_files_count,live_footprint_count,expect_present,expect_dropped_count',
         [
-            # Gate passes: code-touching change types with files > 0 → kept.
-            ('feature', 5, True, False),
-            ('bug_fix', 1, True, False),
-            ('tech_debt', 3, True, False),
-            ('enhancement', 5, True, False),
-            # Gate fails on change_type → dropped.
-            ('analysis', 5, False, True),
-            ('verification', 5, False, True),
-            # Gate fails on zero affected files (even for a code-touching type).
-            ('feature', 0, False, True),
-            ('tech_debt', 0, False, True),
-            ('enhancement', 0, False, True),
+            # Either change-surface signal being non-empty keeps the step.
+            (5, 3, True, 0),
+            (5, 0, True, 0),
+            (0, 3, True, 0),
+            (1, 0, True, 0),
+            (0, 1, True, 0),
+            # Only the genuine no-change-surface case drops it.
+            (0, 0, False, 1),
         ],
     )
     def test_gate_truth_table(
-        self, change_type, affected_files_count, expect_present, expect_fired
+        self,
+        affected_files_count,
+        live_footprint_count,
+        expect_present,
+        expect_dropped_count,
     ):
         candidates = ['finalize-step-security-audit', 'push', 'archive-plan']
-        filtered, fired = _apply_security_audit_inactive(
-            candidates, change_type, affected_files_count
+        kept, dropped = _apply_security_class_inactive(
+            candidates, _SECURITY_CLASS, affected_files_count, live_footprint_count
         )
-        assert fired is expect_fired
-        assert ('finalize-step-security-audit' in filtered) is expect_present
+        assert len(dropped) == expect_dropped_count
+        assert ('finalize-step-security-audit' in kept) is expect_present
         # Non-target candidates are never disturbed.
-        assert 'push' in filtered
-        assert 'archive-plan' in filtered
+        assert 'push' in kept
+        assert 'archive-plan' in kept
 
-    def test_no_op_when_step_absent_from_candidates(self):
-        # The step is not in the candidate set → the pre-filter is a no-op even
-        # when the gate would otherwise fail (returns the list unchanged, fired=False).
+    @pytest.mark.parametrize('change_type', ['analysis', 'verification', 'feature', 'bug_fix'])
+    def test_change_type_is_not_an_input_at_all(self, change_type):
+        # The helper's signature carries no change_type parameter — the regression
+        # this gate exists to prevent is a security sweep dropped on a semantic
+        # outline-time label. Passing a change-shape-bearing candidate set with a
+        # non-zero surface must keep the step whatever the plan's change_type is,
+        # which the absent parameter makes structurally true.
+        assert 'change_type' not in _apply_security_class_inactive.__code__.co_varnames
+        kept, dropped = _apply_security_class_inactive(
+            ['finalize-step-security-audit'], _SECURITY_CLASS, 4, 0
+        )
+        assert kept == ['finalize-step-security-audit']
+        assert dropped == []
+
+    def test_drop_record_names_step_and_reason(self):
+        kept, dropped = _apply_security_class_inactive(
+            ['finalize-step-security-audit', 'push'], _SECURITY_CLASS, 0, 0
+        )
+        assert kept == ['push']
+        assert dropped == [
+            {
+                'step': 'finalize-step-security-audit',
+                'reason': 'no declared affected files and empty live footprint',
+            }
+        ]
+
+    def test_population_is_caller_derived_not_a_step_id_literal(self):
+        # A second security-class member is dropped by the same call, and a
+        # non-member sharing no persona is not — proving the helper reads the
+        # supplied population rather than a hardcoded id.
+        population = frozenset({'finalize-step-security-audit', 'finalize-step-other-security'})
+        candidates = [
+            'finalize-step-security-audit',
+            'finalize-step-other-security',
+            'finalize-step-simplify',
+        ]
+        kept, dropped = _apply_security_class_inactive(candidates, population, 0, 0)
+        assert kept == ['finalize-step-simplify']
+        assert {record['step'] for record in dropped} == population
+
+    def test_no_op_when_no_security_class_step_in_candidates(self):
+        # No population member is present → nothing to drop even in the
+        # zero-change-surface case.
         candidates = ['push', 'archive-plan']
-        filtered, fired = _apply_security_audit_inactive(candidates, 'analysis', 0)
-        assert fired is False
-        assert filtered == candidates
+        kept, dropped = _apply_security_class_inactive(candidates, _SECURITY_CLASS, 0, 0)
+        assert dropped == []
+        assert kept == candidates
 
     def test_returns_new_list_on_drop_not_mutating_input(self):
         # The drop branch must not mutate the caller's candidate list in place.
         candidates = ['finalize-step-security-audit', 'push']
-        filtered, fired = _apply_security_audit_inactive(candidates, 'analysis', 2)
-        assert fired is True
-        assert 'finalize-step-security-audit' not in filtered
+        kept, dropped = _apply_security_class_inactive(candidates, _SECURITY_CLASS, 0, 0)
+        assert len(dropped) == 1
+        assert 'finalize-step-security-audit' not in kept
         # Input list is untouched.
         assert candidates == ['finalize-step-security-audit', 'push']
 

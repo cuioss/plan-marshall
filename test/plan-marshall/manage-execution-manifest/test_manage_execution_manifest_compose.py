@@ -279,10 +279,13 @@ def test_tests_only_runs_module_tests_and_full_phase_6(plan_context):
     manifest = read_manifest('matrix-tests')
     assert manifest is not None
     assert manifest['phase_5']['verification_steps'] == ['verify:module-tests']
-    # finalize-step-simplify AND finalize-step-security-audit are both dropped by
-    # their respective pre-filters (simplify_inactive / security_audit_inactive):
-    # change_type=verification is not in the shared code-bearing change-type set.
-    dropped = {'finalize-step-simplify', 'finalize-step-security-audit'}
+    # Only finalize-step-simplify drops: simplify_inactive still gates on
+    # change_type, and 'verification' is not in its code-bearing set.
+    # finalize-step-security-audit is KEPT — security_class_inactive reads no
+    # change_type at all, and this plan declares 4 affected files, so it has a
+    # change surface to audit. This asymmetry is the whole point of the two gates
+    # being separate.
+    dropped = {'finalize-step-simplify'}
     expected_phase_6 = [s for s in DEFAULT_PHASE_6_STEPS if s not in dropped]
     assert manifest['phase_6']['steps'] == expected_phase_6
 
@@ -2396,90 +2399,119 @@ def test_simplify_inactive_no_decision_log_on_kept_branch(plan_context):
 
 
 # =============================================================================
-# Pre-Filter: security_audit_inactive (finalize-step-security-audit gate)
+# Pre-Filter: security_class_inactive (security-class finalize-step gate)
 #
 # finalize-step-security-audit is a candidate by default (it sits in
-# DEFAULT_PHASE_6_STEPS). The security_audit_inactive pre-filter is the symmetric
-# peer of simplify_inactive — it DROPS the step unless BOTH
-# change_type ∈ {feature, bug_fix, tech_debt, enhancement} AND
-# affected_files_count > 0. The
-# proactive security sweep has no change surface to audit on a pure-analysis /
-# verification plan or a zero-files plan. These tests enforce: a code-touching
-# plan composes the step into phase_6.steps; a docs-only / zero-affected-files
-# plan does NOT; and the drop-only decision-log line fires only on the dropped
-# branch.
+# DEFAULT_PHASE_6_STEPS) and belongs to the security class by declaring the
+# frontmatter scalar ``persona: persona-security-expert``. The
+# security_class_inactive pre-filter is NOT the peer of simplify_inactive: it
+# shares no helper, and it reads NO change_type. It drops a security-class step
+# only when affected_files_count == 0 AND the live footprint is empty — the
+# genuine no-change-surface case. Everything else keeps the sweep, because
+# change_type is an outline-time semantic label the composer's caller forwards
+# from the FIRST deliverable, so a plan opening with a read-only discovery
+# deliverable reports 'verification' however much production code it mutates.
 #
-# See standards/decision-rules.md § Pre-Filter: security_audit_inactive.
+# The live footprint is stubbed per test so the assertions do not depend on
+# ambient worktree state.
+#
+# See standards/decision-rules.md § Pre-Filter: security_class_inactive.
 # =============================================================================
 
 
+@contextlib.contextmanager
+def _pinned_footprint(paths: list[str]):
+    """Pin ``_resolve_footprint`` to a fixed path list for the duration of a compose."""
+    original = _mem._resolve_footprint
+    _mem._resolve_footprint = lambda plan_id: list(paths)
+    try:
+        yield
+    finally:
+        _mem._resolve_footprint = original
+
+
 @pytest.mark.parametrize(
-    'change_type,affected_files_count,expect_present,expect_omitted',
+    'change_type,affected_files_count,footprint,expect_prefilter_drop,expect_in_manifest',
     [
-        # Gate passes: all four code-touching change types with files > 0.
-        ('feature', 5, True, False),
-        ('bug_fix', 1, True, False),
-        ('tech_debt', 3, True, False),
-        ('enhancement', 5, True, False),
-        # Gate fails on change_type: not a code-touching type.
-        ('analysis', 5, False, True),
-        ('verification', 5, False, True),
-        # Gate fails on affected_files_count == 0 (even for a code-touching type).
-        ('feature', 0, False, True),
-        ('bug_fix', 0, False, True),
-        ('enhancement', 0, False, True),
+        # Code-touching change types with a declared surface → kept (unchanged).
+        ('feature', 5, [], False, True),
+        ('bug_fix', 1, [], False, True),
+        ('tech_debt', 3, [], False, True),
+        ('enhancement', 5, [], False, True),
+        # ⭐ The regression this gate exists to close: the two change types the old
+        # gate excluded now KEEP the step, because a declared surface exists.
+        ('analysis', 5, [], False, True),
+        ('verification', 5, [], False, True),
+        # Zero declared files but a live footprint → the pre-filter still keeps it
+        # (fail toward inclusion).
+        ('feature', 0, ['src/a.py'], False, True),
+        # Same for an excluded change type — but here the six-row matrix separately
+        # narrows phase_6 for a zero-files verification plan, so the step is absent
+        # from the manifest for a reason that is NOT this pre-filter. The
+        # security_class_omitted assertion is what pins the pre-filter's behaviour.
+        ('verification', 0, ['src/a.py'], False, False),
+        # Only the genuine no-change-surface case drops it.
+        ('feature', 0, [], True, False),
+        ('verification', 0, [], True, False),
+        ('analysis', 0, [], True, False),
     ],
 )
-def test_security_audit_inactive_gate(
-    plan_context, change_type, affected_files_count, expect_present, expect_omitted
+def test_security_class_inactive_gate(
+    plan_context,
+    change_type,
+    affected_files_count,
+    footprint,
+    expect_prefilter_drop,
+    expect_in_manifest,
 ):
-    """finalize-step-security-audit lands only when change_type ∈ {feature, bug_fix, tech_debt, enhancement} AND files > 0."""
-    slug = f'{change_type}-{affected_files_count}'.replace('_', '-')
+    """A security-class step drops only when there is no declared AND no live change surface."""
+    slug = f'{change_type}-{affected_files_count}-{len(footprint)}'.replace('_', '-')
     plan_id = f'matrix-secaudit-{slug}'
     # Use a non-surgical, code-shaped scope so the surgical Row 5 path
     # doesn't intersect-narrow phase_6.steps and confuse the assertion.
-    result = cmd_compose(
-        _compose_ns(
-            plan_id=plan_id,
-            change_type=change_type,
-            scope_estimate='multi_module',
-            affected_files_count=affected_files_count,
+    with _pinned_footprint(footprint):
+        result = cmd_compose(
+            _compose_ns(
+                plan_id=plan_id,
+                change_type=change_type,
+                scope_estimate='multi_module',
+                affected_files_count=affected_files_count,
+            )
         )
-    )
     assert result is not None and result['status'] == 'success'
-    assert result['security_audit_omitted'] is expect_omitted
+    dropped_steps = [record['step'] for record in result['security_class_omitted']]
+    expected_dropped = ['finalize-step-security-audit'] if expect_prefilter_drop else []
+    assert dropped_steps == expected_dropped
     manifest = read_manifest(plan_id)
     assert manifest is not None
-    if expect_present:
-        assert 'finalize-step-security-audit' in manifest['phase_6']['steps']
-    else:
-        assert 'finalize-step-security-audit' not in manifest['phase_6']['steps']
+    assert ('finalize-step-security-audit' in manifest['phase_6']['steps']) is expect_in_manifest
 
 
-def test_security_audit_inactive_noop_when_step_absent_from_candidates(plan_context):
-    """When finalize-step-security-audit is not a candidate, the pre-filter is a no-op even on a failing gate."""
+def test_security_class_inactive_noop_when_step_absent_from_candidates(plan_context):
+    """When no security-class step is a candidate, the pre-filter is a no-op even on a failing gate."""
     candidates_without_secaudit = [
         s for s in DEFAULT_PHASE_6_STEPS if s != 'finalize-step-security-audit'
     ]
-    result = cmd_compose(
-        _compose_ns(
-            plan_id='matrix-secaudit-absent',
-            change_type='analysis',  # gate would fail
-            scope_estimate='multi_module',
-            affected_files_count=0,  # gate would fail
-            phase_6_steps=','.join(candidates_without_secaudit),
+    with _pinned_footprint([]):
+        result = cmd_compose(
+            _compose_ns(
+                plan_id='matrix-secaudit-absent',
+                change_type='analysis',
+                scope_estimate='multi_module',
+                affected_files_count=0,  # gate would fail
+                phase_6_steps=','.join(candidates_without_secaudit),
+            )
         )
-    )
     assert result is not None and result['status'] == 'success'
-    # No-op: the step was never present, so the pre-filter did not "fire".
-    assert result['security_audit_omitted'] is False
+    # No-op: no population member was present, so nothing was dropped.
+    assert result['security_class_omitted'] == []
     manifest = read_manifest('matrix-secaudit-absent')
     assert manifest is not None
     assert 'finalize-step-security-audit' not in manifest['phase_6']['steps']
 
 
-def test_security_audit_inactive_emits_decision_log_only_on_drop(plan_context):
-    """The drop-only decision-log line fires exactly once on the dropped branch."""
+def test_security_class_inactive_emits_status_decision_log_only_on_drop(plan_context):
+    """The per-drop [STATUS] decision-log line fires exactly once on the dropped branch."""
     captured: list[tuple[str, str]] = []
     original_emit = _mem._emit_decision_log
 
@@ -2488,32 +2520,32 @@ def test_security_audit_inactive_emits_decision_log_only_on_drop(plan_context):
 
     _mem._emit_decision_log = _capture
     try:
-        # Dropped branch: analysis change_type fails the gate.
-        cmd_compose(
-            _compose_ns(
-                plan_id='matrix-secaudit-drop',
-                change_type='analysis',
-                scope_estimate='multi_module',
-                affected_files_count=3,
+        # Dropped branch: no declared files AND no live footprint.
+        with _pinned_footprint([]):
+            cmd_compose(
+                _compose_ns(
+                    plan_id='matrix-secaudit-drop',
+                    change_type='analysis',
+                    scope_estimate='multi_module',
+                    affected_files_count=0,
+                )
             )
-        )
     finally:
         _mem._emit_decision_log = original_emit
 
-    drop_entries = [
-        (pid, msg) for pid, msg in captured if 'finalize-step-security-audit omitted' in msg
-    ]
-    assert len(drop_entries) == 1, f'expected one security-audit omission entry, got {captured!r}'
+    drop_entries = [(pid, msg) for pid, msg in captured if 'security_class_inactive' in msg]
+    assert len(drop_entries) == 1, f'expected one security-class omission entry, got {captured!r}'
     pid, msg = drop_entries[0]
     assert pid == 'matrix-secaudit-drop'
     assert msg == (
-        '(plan-marshall:manage-execution-manifest:compose) finalize-step-security-audit omitted — '
-        'change_type=analysis affected_files_count=3'
+        '(plan-marshall:manage-execution-manifest:compose) [STATUS] security_class_inactive — '
+        'dropped finalize-step-security-audit from phase_6.steps: '
+        'no declared affected files and empty live footprint'
     )
 
 
-def test_security_audit_inactive_no_decision_log_on_kept_branch(plan_context):
-    """No security-audit-omission log fires when the gate passes (step retained)."""
+def test_security_class_inactive_no_decision_log_on_kept_branch(plan_context):
+    """No security-class omission log fires when the plan has a change surface."""
     captured: list[tuple[str, str]] = []
     original_emit = _mem._emit_decision_log
 
@@ -2522,20 +2554,19 @@ def test_security_audit_inactive_no_decision_log_on_kept_branch(plan_context):
 
     _mem._emit_decision_log = _capture
     try:
-        cmd_compose(
-            _compose_ns(
-                plan_id='matrix-secaudit-kept',
-                change_type='feature',
-                scope_estimate='multi_module',
-                affected_files_count=4,
+        with _pinned_footprint([]):
+            cmd_compose(
+                _compose_ns(
+                    plan_id='matrix-secaudit-kept',
+                    change_type='feature',
+                    scope_estimate='multi_module',
+                    affected_files_count=4,
+                )
             )
-        )
     finally:
         _mem._emit_decision_log = original_emit
 
-    drop_entries = [
-        (pid, msg) for pid, msg in captured if 'finalize-step-security-audit omitted' in msg
-    ]
+    drop_entries = [(pid, msg) for pid, msg in captured if 'security_class_inactive' in msg]
     assert drop_entries == []
 
 
@@ -4402,9 +4433,11 @@ def test_lanes_preview_names_plan_input_dependent_steps(plan_context, monkeypatc
 
     ``finalize-step-security-audit`` survives the lane cutoff at the ``full``
     posture, but its membership in a composed manifest is decided by the
-    ``security_audit_inactive`` pre-filter, which reads ``change_type`` /
-    ``affected_files_count`` — inputs that do not exist at preview time. The
-    preview names it rather than implying the composer will agree.
+    ``security_class_inactive`` pre-filter, which reads ``affected_files_count``
+    and the live footprint — inputs that do not exist at preview time. (The gate
+    reads no ``change_type`` at all, but the two surface signals it does read are
+    equally unavailable here.) The preview names it rather than implying the
+    composer will agree.
     """
     _patch_element_lane(monkeypatch)
     result = cmd_lanes_preview(_lanes_preview_ns('lanes-plan-input', _LANE_STEPS))

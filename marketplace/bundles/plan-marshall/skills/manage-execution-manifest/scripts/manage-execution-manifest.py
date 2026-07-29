@@ -82,6 +82,7 @@ from _manifest_lanes import (
     _read_cost_size_token_table,  # noqa: F401
     _read_execution_profile,  # noqa: F401
     _read_frontmatter_lane,  # noqa: F401
+    _read_frontmatter_scalar,  # noqa: F401
 )
 from _manifest_rules import (
     _CEREMONY_FINALIZE_DEFAULT,  # noqa: F401
@@ -92,6 +93,7 @@ from _manifest_rules import (
     _SCOPE_GATED_SINGLE_MODULE_DROP,  # noqa: F401
     _SCOPE_GATED_SURGICAL_DROP,  # noqa: F401
     _SECURITY_AUDIT_OWNER_STEP,  # noqa: F401
+    _SECURITY_CLASS_DROP_REASON,  # noqa: F401
     _SIMPLIFY_CHANGE_TYPES,  # noqa: F401
     _SIMPLIFY_OWNER_STEP,  # noqa: F401
     _VERB_TO_PHASE_5_STEP,  # noqa: F401
@@ -99,7 +101,7 @@ from _manifest_rules import (
     _apply_code_step_inactive,  # noqa: F401
     _apply_commit_push_disabled,  # noqa: F401
     _apply_scope_gated_finalize,  # noqa: F401
-    _apply_security_audit_inactive,  # noqa: F401
+    _apply_security_class_inactive,  # noqa: F401
     _apply_simplify_inactive,  # noqa: F401
     _apply_unresolved_ask_provider_drop,  # noqa: F401
     _ceremony_finalize_insert_index,  # noqa: F401
@@ -1276,6 +1278,33 @@ def _resolve_element_lane(step_id: str) -> dict[str, str] | None:
     return _read_frontmatter_lane(_resolve_standards_path(step_id))
 
 
+#: The frontmatter ``persona`` value that puts a finalize step in the protected
+#: security class. Derived from existing metadata rather than a step-id literal:
+#: ``finalize-step-security-audit.md`` already declares it and its structural peer
+#: ``finalize-step-simplify.md`` declares no ``persona`` at all, so the tag is an
+#: existing discriminator. A future second security-class finalize step inherits the
+#: protection by declaring the same persona — no list to update.
+_SECURITY_CLASS_PERSONA = 'persona-security-expert'
+
+
+def _is_security_class_step(step_id: str) -> bool:
+    """Return True when ``step_id``'s source doc declares the security-class persona.
+
+    Resolves the step's source the same way :func:`_resolve_element_lane` does
+    (``project:`` steps via the project-local ``{bare}/SKILL.md``, built-ins via the
+    standards / workflow doc, external ``bundle:skill`` steps unresolvable) and reads
+    the top-level ``persona`` frontmatter scalar. An external step, a missing source,
+    or an absent / different ``persona`` all read as NOT security-class.
+    """
+    if step_id.startswith('project:'):
+        bare = step_id[len('project:') :]
+        skill_path = resolve_project_skill_path(f'{bare}/SKILL.md', base=_REPO_ROOT)
+        return _read_frontmatter_scalar(skill_path, 'persona') == _SECURITY_CLASS_PERSONA
+    if _is_external_step(step_id):
+        return False
+    return _read_frontmatter_scalar(_resolve_standards_path(step_id), 'persona') == _SECURITY_CLASS_PERSONA
+
+
 def _apply_lane_resolution(
     phase_6_steps: list[str],
     posture: str,
@@ -1320,9 +1349,10 @@ def _ceremony_prefilter_warnings(
 
     Second producer on the ``lane_warnings`` channel (peer of
     :func:`_apply_lane_resolution`, same ``(step, warning)`` tuple shape): when
-    the ``simplify_inactive`` / ``security_audit_inactive`` ceremony pre-filter
-    fired for a step (the change_type + affected_files_count activation gate
-    failed) AND the operator's selected posture/lane would have included the
+    the ``simplify_inactive`` or ``security_class_inactive`` ceremony pre-filter
+    fired for a step (its activation gate failed — the change_type +
+    affected_files_count gate for simplify, the zero-change-surface gate for a
+    security-class step) AND the operator's selected posture/lane would have included the
     step AND the ceremony ``always`` gate did not force it back into the final
     step list, the drop would otherwise be silent from the operator's
     perspective — the lane said "keep", yet the step vanished. One entry per
@@ -1564,8 +1594,10 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     #   4. simplify_inactive — drop finalize-step-simplify when
     #      change_type ∉ {feature, bug_fix, tech_debt, enhancement}
     #      OR affected_files_count == 0.
-    #   4b. security_audit_inactive — drop finalize-step-security-audit on the
-    #      same change_type + affected_files_count gate as simplify_inactive.
+    #   4b. security_class_inactive — drop a security-class step (frontmatter
+    #      persona: persona-security-expert) only when affected_files_count == 0
+    #      AND the live footprint is empty. No change_type leg — fails toward
+    #      inclusion. Shares no helper with simplify_inactive.
     #   5. scope_gated_finalize — drop heavyweight phase-6 review/audit steps by
     #      scope_estimate; a step carrying an explicitly declared, non-auto
     #      per-element `lane` override is immune (declared-lane immunity).
@@ -1597,13 +1629,23 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         phase_6_candidates, args.change_type, affected_files_count
     )
 
-    # Pre-filter 4b (security_audit_inactive) is the symmetric peer of
-    # simplify_inactive — same change_type + affected_files_count gate, dropping
-    # finalize-step-security-audit when the plan has no code-touching change
-    # surface to audit. See standards/decision-rules.md § Pre-Filter:
-    # security_audit_inactive.
-    phase_6_candidates, security_audit_omitted = _apply_security_audit_inactive(
-        phase_6_candidates, args.change_type, affected_files_count
+    # Pre-filter 4b (security_class_inactive) is NOT the symmetric peer of
+    # simplify_inactive. It shares no helper and no gate: the change-type leg is
+    # absent entirely, because ``change_type`` is a semantic outline-time label the
+    # caller selects FIRST-DELIVERABLE-WINS, so a plan opening with a read-only
+    # discovery deliverable forwards ``verification`` however much production code
+    # its later deliverables mutate. A security sweep must never be removed on that
+    # evidence, so the gate FAILS TOWARD INCLUSION and keeps only the zero-surface
+    # leg — now evaluated against the declared AND the live change surface. The
+    # protected population is derived from each candidate's frontmatter
+    # ``persona: persona-security-expert``, never from a step-id literal. See
+    # standards/decision-rules.md § Pre-Filter: security_class_inactive.
+    security_class_steps = frozenset(s for s in phase_6_candidates if _is_security_class_step(s))
+    phase_6_candidates, security_class_omitted = _apply_security_class_inactive(
+        phase_6_candidates,
+        security_class_steps,
+        affected_files_count,
+        len(_resolve_footprint(plan_id)),
     )
 
     # Pre-filter 5 (scope_gated_finalize) drops heavyweight phase-6 review/audit
@@ -1807,7 +1849,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
 
     # Ceremony pre-filter warnings ride the same lane_warnings channel as lane
     # resolution (second producer, same (step, warning) shape). When the
-    # simplify / security-audit ceremony pre-filter fired but the operator's
+    # simplify / security-class ceremony pre-filter fired but the operator's
     # selected posture/lane would have included the step — and the ceremony
     # `always` gate did not force it back in — the entry names the ceremony
     # pre-filter (not the lane) as the remover, so the drop is never silent.
@@ -1815,7 +1857,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         _ceremony_prefilter_warnings(
             (
                 ('finalize-step-simplify', simplify_omitted),
-                ('finalize-step-security-audit', security_audit_omitted),
+                *((record['step'], True) for record in security_class_omitted),
             ),
             body['phase_6']['steps'],
             execution_profile,
@@ -2010,8 +2052,12 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         _log_pre_submission_self_review_omitted(plan_id)
     if simplify_omitted:
         _log_prefilter_omitted(plan_id, 'finalize-step-simplify', args.change_type, affected_files_count)
-    if security_audit_omitted:
-        _log_prefilter_omitted(plan_id, 'finalize-step-security-audit', args.change_type, affected_files_count)
+    for omitted in security_class_omitted:
+        _emit_decision_log(
+            plan_id,
+            '(plan-marshall:manage-execution-manifest:compose) [STATUS] security_class_inactive — '
+            f'dropped {omitted["step"]} from phase_6.steps: {omitted["reason"]}',
+        )
     for dropped_step in scope_gated_dropped:
         _log_scope_gated_finalize_subtraction(plan_id, args.scope_estimate, dropped_step)
     for immune_step in scope_gated_immune:
@@ -2068,7 +2114,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         'pre_push_quality_gate_omitted': pre_push_quality_gate_omitted,
         'pre_submission_self_review_omitted': pre_submission_self_review_omitted,
         'simplify_omitted': simplify_omitted,
-        'security_audit_omitted': security_audit_omitted,
+        'security_class_omitted': security_class_omitted,
         'scope_gated_finalize_dropped': scope_gated_dropped,
         'scope_gated_finalize_immune': scope_gated_immune,
         'unresolved_ask_provider_dropped': unresolved_ask_dropped,
