@@ -50,6 +50,17 @@ The marketplace is the source of truth — everything else is built from here.
 
 Each bundle under `marketplace/bundles/` follows the same internal layout: `.claude-plugin/plugin.json`, optional `agents/`, optional `commands/`, and a `skills/` tree where each skill is a `SKILL.md` accompanied by `standards/`, `scripts/`, `references/`, `templates/`, or `workflow/` subdirectories as needed.
 
+=== What the file inventory covers
+
+Plan Marshall keeps a categorised inventory of this tree and answers structural queries against it — `architecture files`, `architecture find`, and `architecture which-module`. Two properties matter when you read a result:
+
+* **Coverage inside a bundle is residual.** Every file under a bundle's `skills/<skill>/` tree is inventoried, regardless of the sub-directory's name or the file's extension. A file that is not a skill definition, script, standard, template, build file or README is categorised as `skill_doc`. The rule names no directory and tests no extension, so a new sub-directory kind — or a new file format — is covered the moment it appears, without a code change.
+* **Coverage outside a bundle is extension-driven.** In the rest of the tree a file's path carries no role guarantee, so the inventory classifies by extension instead: `.md`, `.adoc` and `.asciidoc` are `doc`, source and script extensions are `source` / `test` / `script`. The asymmetry between the two rules is deliberate — an extension-free rule out here would sweep binaries and generated artifacts into `doc`.
+
+A zero result is therefore meaningful rather than ambiguous. An unrecognised `--category` name returns an **error** naming the valid vocabulary, never an empty list, so a typo is distinguishable from a category that genuinely holds no file in the queried module. A recognised category with nothing in it still returns an ordinary empty success.
+
+The category vocabulary and the full per-verb contract live in the `manage-architecture` client API — see xref:../../marketplace/bundles/plan-marshall/skills/manage-architecture/standards/client-api.md[client-api.md] rather than a copy here.
+
 == `target/` (gitignored)
 
 Build output. `marketplace/targets/generate.py --target claude --output target/claude` populates `target/claude/`; future targets (OpenCode, etc.) populate `target/{target_name}/`. The `target/` tree is gitignored and never committed — distribution happens via orphan branches (`dist-claude`) and immutable tags (`claude/v*`) created by CI. See xref:distribution.adoc[Distribution].
