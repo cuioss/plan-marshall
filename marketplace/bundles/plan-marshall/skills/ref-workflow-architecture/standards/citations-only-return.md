@@ -6,7 +6,9 @@ A read-only dispatch is a dispatched envelope whose deliverable is *judgement ov
 
 ## The rule
 
-A read-only dispatch returns **exactly one TOON block and nothing else**. No prose preamble, no per-item narration, no restated reasoning, no closing summary paragraph, no markdown headings around the block. The TOON carries status and counts only.
+A read-only dispatch returns **exactly one TOON block and nothing else**. No prose preamble, no per-item narration, no restated reasoning, no closing summary paragraph, no markdown headings around the block. The TOON carries status, counts, and the single bounded `display_detail` routing field — nothing further.
+
+`display_detail` is the marketplace-wide agent-return-shape convention (≤80 chars, ASCII, no trailing period; owned by [`agents.md`](agents.md)): one routing summary the orchestrator surfaces without opening the sink. It is **permitted, not an exception** — its hard length bound is what keeps it a citation rather than a retelling, so it cannot grow into the prose this rule eliminates. Everything the prohibition names above stays prohibited whether it appears in the block or around it: per-item narration, restated reasoning, and closing prose paragraphs are excluded regardless of which field would carry them.
 
 The counts are **citations**, not the content: they tell the caller how many records were written and where to look, and the caller retrieves the detail from the sink by query. A caller that needs an individual item reads it from the sink; it never parses it out of the return.
 

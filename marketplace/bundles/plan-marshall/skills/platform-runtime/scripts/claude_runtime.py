@@ -183,7 +183,12 @@ _TOOL_BUCKETS: dict[str, str] = {
 # ``execute`` form the exploration-share denominator; ``orchestration`` and
 # ``unclassified`` are emitted but excluded from the ratio, so the five buckets
 # partition the observed tool-call population and the exclusion stays auditable.
-_TOOL_BUCKET_NAMES = ("exploration", "work", "execute", "orchestration", "unclassified")
+# DERIVED, never hand-mirrored: the names come out of ``_TOOL_BUCKETS``' own value
+# population (``dict.fromkeys`` dedupes while preserving first-occurrence order)
+# plus the fail-open ``unclassified`` bucket ``_classify_tool_name`` returns for a
+# name outside that domain — so adding a bucket to the map cannot leave this
+# tuple behind.
+_TOOL_BUCKET_NAMES = tuple(dict.fromkeys([*_TOOL_BUCKETS.values(), "unclassified"]))
 
 
 def _classify_tool_name(name: object) -> str:

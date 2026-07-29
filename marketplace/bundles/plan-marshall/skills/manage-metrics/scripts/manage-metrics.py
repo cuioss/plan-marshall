@@ -1642,6 +1642,17 @@ _INLINE_MAIN_CONTEXT_FIELDS = ('input_tokens', 'output_tokens', 'cache_creation_
 # the share denominator; ``orchestration`` and ``unclassified`` are carried so the
 # buckets partition the observed tool-call population and the exclusion from the
 # ratio stays auditable.
+#
+# SOURCE OF TRUTH is the platform-runtime contract — ``Runtime.metrics_normalized_
+# tokens.__doc__``'s per-phase bucket declaration (mirrored in
+# ``platform-runtime/standards/contract.md``). This tuple is a hand-mirror of that
+# declaration because manage-metrics runs in a DIFFERENT process from the runtime
+# producer and cannot import ``claude_runtime._TOOL_BUCKET_NAMES`` across that
+# boundary. The mirror is held honest by the contract-drift test
+# ``test_exploration_buckets_match_platform_runtime_contract`` in
+# ``test/plan-marshall/manage-metrics/test_manage_metrics.py``, which parses the
+# same contract docstring and fails loudly when a bucket is added on either side —
+# so a new bucket cannot silently under-persist or under-render here.
 _EXPLORATION_BUCKETS = ('exploration', 'work', 'execute', 'orchestration', 'unclassified')
 
 # The per-phase counter fields the platform-runtime transcript engine supplies.

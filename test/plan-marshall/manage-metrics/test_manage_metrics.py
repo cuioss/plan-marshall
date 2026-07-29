@@ -2398,3 +2398,66 @@ def test_script_source_uses_canonical_local_plans_path():
     assert '.plan/local/plans/' in source
     legacy = re.findall(r'(?<!local/)\.plan/plans/', source)
     assert legacy == [], f'Legacy .plan/plans/ strings remain: {legacy}'
+
+
+# =============================================================================
+# Exploration-share bucket contract drift
+# =============================================================================
+
+
+def _contract_counter_keys() -> set[str]:
+    """Parse the exploration-share counter key set out of the platform-runtime contract.
+
+    manage-metrics runs in a DIFFERENT process from the runtime producer, so
+    ``_EXPLORATION_BUCKETS`` cannot import ``claude_runtime._TOOL_BUCKET_NAMES``
+    and is necessarily a hand-mirror. The key set is therefore DERIVED here from
+    ``Runtime.metrics_normalized_tokens.__doc__`` — the published contract both
+    sides are mirroring — rather than restated, so a bucket added on either side
+    fails this assertion instead of silently under-persisting (producer writes a
+    counter manage-metrics never reads) or under-rendering (report omits a bucket
+    the producer emits).
+
+    Mirrors ``_contract_bucket_keys`` in
+    ``test/plan-marshall/platform-runtime/test_metrics_tokens.py``, which parses
+    the same docstring for the producer-side assertion.
+    """
+    import re
+
+    from runtime_base import Runtime
+
+    doc = Runtime.metrics_normalized_tokens.__doc__ or ''
+    match = re.search(r'\{phase_name:\s*\{(.*?)\}\}', doc, re.DOTALL)
+    assert match is not None, 'contract docstring no longer declares a per-phase bucket shape'
+    declared = {key.strip() for key in match.group(1).split(',') if key.strip()}
+    return {k for k in declared if k.endswith('_tool_calls') or k.endswith('_result_bytes')}
+
+
+def test_exploration_buckets_match_platform_runtime_contract():
+    """``_EXPLORATION_BUCKETS`` matches the bucket set the runtime contract declares.
+
+    Contract-level drift guard for the cross-process hand-mirror: the bucket names
+    are recovered from the contract's ``*_tool_calls`` keys, so adding a bucket to
+    the producer without extending ``_EXPLORATION_BUCKETS`` fails loudly here.
+    """
+    contract_buckets = {
+        key[: -len('_tool_calls')]
+        for key in _contract_counter_keys()
+        if key.endswith('_tool_calls')
+    }
+
+    assert contract_buckets, 'contract declares no *_tool_calls counter keys'
+    assert set(manage_metrics._EXPLORATION_BUCKETS) == contract_buckets
+    # The mirror must also stay duplicate-free — a repeated name would silently
+    # double a bucket's counter fields below.
+    assert len(manage_metrics._EXPLORATION_BUCKETS) == len(contract_buckets)
+
+
+def test_exploration_counter_fields_match_platform_runtime_contract():
+    """``_EXPLORATION_COUNTER_FIELDS`` equals the contract's counter key set exactly.
+
+    The derived ``{bucket}_{measure}`` product must reproduce the contract's ten
+    published counter keys — no extra field manage-metrics would persist but the
+    producer never emits, and no missing field the producer emits but the report
+    would drop.
+    """
+    assert set(manage_metrics._EXPLORATION_COUNTER_FIELDS) == _contract_counter_keys()

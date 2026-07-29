@@ -134,6 +134,7 @@ against, so a flagged row is self-describing.
 ## Emitted columns
 
 ```
+exclusion_rule: absent counters exclude a plan from the corpus (never counted as zero exploration); a measured zero stays in
 plans_in_corpus: K
 plans_excluded_no_counters: X
 excluded_plan_ids: id;id;…
