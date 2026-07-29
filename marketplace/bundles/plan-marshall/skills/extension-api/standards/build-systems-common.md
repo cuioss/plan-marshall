@@ -12,6 +12,8 @@ See [build-execution.md](build-execution.md) § R3 for the complete timeout lear
 
 A tool that runs its own inner timeout backstop overrides the default floor via `ExecuteConfig.min_timeout` (threaded into `execute_direct_base`), and MUST set it strictly greater than that inner backstop — otherwise the outer timeout can fire first and reduce a diagnosable inner timeout report to an opaque outer kill.
 
+Every declared floor is ALSO bounded above: `min_timeout + OUTER_TIMEOUT_BUFFER` MUST stay at or below `HARNESS_BASH_CEILING_SECONDS`. The same arithmetic produces the `bash_timeout_seconds` an agent is instructed to pass on its Bash call, so a floor above that bound yields an instruction the host platform cannot honour. Both halves are required when choosing a floor — stating only the lower bound is what permits an over-provisioned floor to ship unnoticed.
+
 ---
 
 ## Log File Handling

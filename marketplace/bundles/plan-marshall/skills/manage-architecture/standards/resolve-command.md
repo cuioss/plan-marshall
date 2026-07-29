@@ -10,10 +10,10 @@ When the resolved `executable` matches the Bucket B build shape, the result carr
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `bash_timeout_seconds` | int | Recommended Bash-tool timeout in seconds. Computed as `max(timeout_get(command_key, DEFAULT_BUILD_TIMEOUT), config.min_timeout) + OUTER_TIMEOUT_BUFFER` — identical arithmetic to `cmd_run`, **including the engine's declared floor**. `config.min_timeout` is the floor the engine declares on its own `ExecuteConfig`: `MAVEN_OUTER_FLOOR_SECONDS` / `GRADLE_OUTER_FLOOR_SECONDS` / `NPM_OUTER_FLOOR_SECONDS` = `300`, `PYTEST_OUTER_FLOOR_SECONDS` = `600`. The clamp is what makes the stamp truthful: without it the stamp can report a bound strictly below what the run will consume. |
-| `exceeds_bash_ceiling` | bool | `bash_timeout_seconds > HARNESS_BASH_CEILING_SECONDS` (600). That constant is declared once in `tools-file-ops/scripts/constants.py`; the Bash tool's `timeout` parameter is capped at 600s (10 minutes) by the host platform, and values above the ceiling cannot be invoked synchronously from a sub-agent. |
-| `execution_tier` | enum | `"per_task"` when `exceeds_bash_ceiling` is false; `"orchestrator"` when true. Drives the manifest composer's per-command routing decision (per-task verification vs `phase_5.verification_steps`) and the caller's run-inline-vs-hand-back decision. **The tier follows the FLOORED value, never the raw learned value** — so every pyproject build resolves `orchestrator` (`max(learned, 600) + 30 ≥ 630 > 600`), while an unmeasured Maven / Gradle / npm build resolves `per_task` (`max(300, 300) + 30 = 330 < 600`). |
-| `hint` | string | Short pinned recognition phrase. See [Hint Strings](#hint-strings) below. |
+| `bash_timeout_seconds` | int | Recommended Bash-tool timeout in seconds. Computed as `max(timeout_get(command_key, DEFAULT_BUILD_TIMEOUT), config.min_timeout) + OUTER_TIMEOUT_BUFFER` — identical arithmetic to `cmd_run`, **including the engine's declared floor**. `config.min_timeout` is the floor the engine declares on its own `ExecuteConfig`: `MAVEN_OUTER_FLOOR_SECONDS` / `GRADLE_OUTER_FLOOR_SECONDS` / `NPM_OUTER_FLOOR_SECONDS` = `300`, `PYTEST_OUTER_FLOOR_SECONDS` = `330`. The clamp is what makes the stamp truthful: without it the stamp can report a bound strictly below what the run will consume. Every engine floor is chosen so the buffered stamp stays at or below the harness ceiling, i.e. the stamped bound is always passable on a Bash call. |
+| `exceeds_bash_ceiling` | bool | `bash_timeout_seconds > HARNESS_BASH_CEILING_SECONDS` (600). That constant is declared once in `tools-file-ops/scripts/constants.py`; the Bash tool's `timeout` parameter is capped at 600s (10 minutes) by the host platform, and values above the ceiling cannot be invoked synchronously from a sub-agent. The flag keeps this literal ceiling meaning and nothing more — it is coupled to `execution_tier` on every branch **except** the unmeasured fail-closed branch, where the tier is `orchestrator` while this flag is `false`. That single decoupling is deliberate and documented, not an inconsistency. |
+| `execution_tier` | enum | `"per_task"` **only when the command key has actually been measured AND `exceeds_bash_ceiling` is false**; `"orchestrator"` otherwise. Drives the manifest composer's per-command routing decision (per-task verification vs `phase_5.verification_steps`) and the caller's run-inline-vs-hand-back decision. **The tier follows the MEASUREMENT, never the floor** — the floor bounds the stamp, it does not decide the tier. An UNMEASURED command fails closed to `orchestrator` uniformly across all four engines, so a slow first run is never made runnable in-leaf before any measurement of it exists. |
+| `hint` | string | Short pinned recognition phrase, selected from the `(execution_tier, exceeds_bash_ceiling)` **pair**. See [Hint Strings](#hint-strings) below. |
 
 The four fields are emitted **as a unit** — either all four are present (Bucket B build executable, resolvable timeout) or all four are omitted (non-build executable, or the build skill could not be loaded). Consumers detect their absence and fall back to today's behaviour.
 
@@ -21,14 +21,15 @@ The four fields are emitted **as a unit** — either all four are present (Bucke
 
 ## Hint Strings
 
-The `hint` field is a recognition token for the LLM, not human prose. The pinned phrases are:
+The `hint` field is a recognition token for the LLM, not human prose. There are **three** pinned public tokens, and consumers match on them exactly. The token is selected from the `(execution_tier, exceeds_bash_ceiling)` **pair** — not from `exceeds_bash_ceiling` alone, because the unmeasured fail-closed branch decouples the two and selecting on either component by itself would leave that state carrying a string that contradicts its own tier:
 
-| Tier | `hint` value |
-|------|--------------|
-| `per_task` | `"Bash timeout=<bash_timeout_seconds × 1000>ms"` |
-| `orchestrator` | `"Exceeds Bash ceiling; orchestrator-tier only"` |
+| `exceeds_bash_ceiling` | measured? | `execution_tier` | `hint` value |
+|---|---|---|---|
+| `true` | either | `orchestrator` | `"Exceeds Bash ceiling; orchestrator-tier only"` |
+| `false` | yes | `per_task` | `"Bash timeout=<bash_timeout_seconds × 1000>ms"` |
+| `false` | no | `orchestrator` | `"Unmeasured; orchestrator-tier until first measurement"` |
 
-Example for a per-task build with `bash_timeout_seconds: 330` — an unmeasured Maven module-tests, where the 300 s Maven floor leaves headroom under the ceiling:
+Example for a per-task build with `bash_timeout_seconds: 330` — a **measured** Maven module-tests whose learned value sits under the 300 s Maven floor, leaving headroom below the ceiling:
 
 ```toon
 status: success
@@ -42,31 +43,45 @@ execution_tier: per_task
 hint: Bash timeout=330000ms
 ```
 
-Example for an orchestrator-tier build (`python:verify_plan_marshall` measured at 931s):
+Example for an orchestrator-tier build (`python:coverage` measured at 1897s):
 
 ```toon
 status: success
 module: plan-marshall
-command: verify
-executable: python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "verify plan-marshall"
+command: coverage
+executable: python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "coverage plan-marshall"
 resolution_level: module
-bash_timeout_seconds: 1194
+bash_timeout_seconds: 1927
 exceeds_bash_ceiling: true
 execution_tier: orchestrator
 hint: Exceeds Bash ceiling; orchestrator-tier only
+```
+
+Example for the unmeasured fail-closed branch — the stamp is comfortably passable, but the command has never been observed, so it hands off rather than gambling a first run in-leaf:
+
+```toon
+status: success
+module: plan-marshall
+command: compile
+executable: python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "compile plan-marshall"
+resolution_level: module
+bash_timeout_seconds: 360
+exceeds_bash_ceiling: false
+execution_tier: orchestrator
+hint: Unmeasured; orchestrator-tier until first measurement
 ```
 
 ## Threshold Rationale: `> 600`
 
 The 600-second threshold is `HARNESS_BASH_CEILING_SECONDS` — the Bash tool's `timeout` parameter ceiling on the host platform, declared once in `tools-file-ops/scripts/constants.py`. A build whose recommended Bash timeout exceeds the ceiling cannot be invoked from a per-task sub-agent's Bash call without auto-backgrounding, which produces ≈ 600K tokens of re-dispatch overhead per 12-task plan.
 
-The threshold is applied to a value computed from real measurements via the adaptive-timeout infrastructure, floored by the engine's own declaration — nothing hard-codes a list of "long-running" commands:
+The threshold bounds `exceeds_bash_ceiling`, and is applied to a value computed from real measurements via the adaptive-timeout infrastructure, floored by the engine's own declaration — nothing hard-codes a list of "long-running" commands:
 
-1. First run of an unmeasured Maven / Gradle / npm command resolves `max(DEFAULT_BUILD_TIMEOUT, 300) = 300` → `bash_timeout_seconds = 330` → `per_task` tier. An unmeasured pyproject command resolves `max(300, 600) = 600` → `bash_timeout_seconds = 630` → `orchestrator` tier, because the 600 s pytest floor alone already clears the ceiling.
-2. If a run actually exceeds the timeout, `timeout_set` adaptively updates the persisted value (compute_weighted_timeout favours the higher value).
-3. The next composition automatically routes the command to `orchestrator` tier without any catalogue maintenance, once the learned value crosses the ceiling.
+1. First run of any UNMEASURED command — Maven, Gradle, npm, or pyproject alike — resolves `orchestrator` tier by the fail-closed rule, regardless of where the floored stamp lands relative to the ceiling. No command is made runnable in-leaf before it has ever been observed. The stamp itself is still truthful and passable (`max(DEFAULT_BUILD_TIMEOUT, 300) + 30 = 330` for Maven / Gradle / npm; `max(300, 330) + 30 = 360` for pyproject).
+2. The first run persists a real duration via `timeout_set` (compute_weighted_timeout favours the higher value), so the key becomes measured.
+3. From the next composition on, the tier follows that measurement without any catalogue maintenance: a measured command whose buffered bound stays within the ceiling routes `per_task`, and one that crosses the ceiling routes `orchestrator`.
 
-The system self-corrects in at most two runs. The floor is what makes the FIRST run truthful too: a command that will measure past the ceiling is not mis-tiered as `per_task` merely because no measurement exists yet.
+The system self-corrects in at most two runs, and it errs toward the orchestrator while it is uninformed: a command that will measure past the ceiling is never mis-tiered as `per_task` merely because no measurement exists yet.
 
 ## Detection Rules
 
@@ -90,15 +105,22 @@ For a classified executable, the recommended Bash timeout is derived through the
 ```text
 command_key   = compute_command_key(build_skill_CONFIG, command_args)
                 # e.g. "python:verify_plan_marshall"
+measured      = timeout_measured(command_key, project_dir) is not None
+                # the RAW persisted value, unscaled and unfloored — the only
+                # signal that distinguishes "never observed" from "observed".
+                # timeout_get cannot express it: it returns an int either way.
 inner_timeout = timeout_get(command_key, DEFAULT_BUILD_TIMEOUT, project_dir)
                 # persisted_value * 1.25 safety margin, or DEFAULT_BUILD_TIMEOUT when unmeasured
 inner_timeout = max(inner_timeout, config.min_timeout)
                 # the engine's OWN declared floor — maven / gradle / npm: 300,
-                # pyproject: 600. Same clamp execute_direct_base applies at
+                # pyproject: 330. Same clamp execute_direct_base applies at
                 # build time, so the stamp cannot under-report the real bound.
 bash_timeout  = get_bash_timeout(inner_timeout)
                 # inner_timeout + 30s OUTER_TIMEOUT_BUFFER
+tier          = 'per_task' if (measured and bash_timeout <= ceiling) else 'orchestrator'
 ```
+
+`timeout_measured` is owned by `manage-run-config`, which owns the store — see that skill's Canonical invocations → `timeout measured`. The measured-ness lookup reuses the SAME `command_key` computed above; there is no second config load and no duplicated key derivation.
 
 The round-trip property holds: the key produced here exactly matches the key persisted by `timeout_set` after a real run, because both paths route through the shared `compute_command_key` helper. The floor clamp preserves that property rather than breaking it — `execute_direct_base` applies the identical `max(..., min_timeout)` at execute time, so the stamped bound and the enforced bound are computed from one value and can never disagree.
 
@@ -164,11 +186,11 @@ classified_count: 3
 command_count: 2
 unclaimed[0]:
 commands[2]{build_class,path,module,command,executable,resolution_level,bash_timeout_seconds,exceeds_bash_ceiling,execution_tier,hint}:
-  compile,marketplace/bundles/plan-marshall/skills/manage-architecture/scripts/architecture.py,plan-marshall,compile,"python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args ""compile plan-marshall""",module,630,true,orchestrator,"Exceeds Bash ceiling; orchestrator-tier only"
-  module-tests,test/plan-marshall/manage-architecture/test_derive_verification.py,plan-marshall,module-tests,"python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args ""module-tests plan-marshall""",module,630,true,orchestrator,"Exceeds Bash ceiling; orchestrator-tier only"
+  compile,marketplace/bundles/plan-marshall/skills/manage-architecture/scripts/architecture.py,plan-marshall,compile,"python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args ""compile plan-marshall""",module,360,false,per_task,"Bash timeout=360000ms"
+  module-tests,test/plan-marshall/manage-architecture/test_derive_verification.py,plan-marshall,module-tests,"python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args ""module-tests plan-marshall""",module,360,false,per_task,"Bash timeout=360000ms"
 ```
 
-Both rows resolve `orchestrator` because they are pyproject builds and the 600 s `PYTEST_OUTER_FLOOR_SECONDS` floor alone clears the ceiling — see the `execution_tier` row in [Augmented Fields](#augmented-fields).
+Both rows resolve `per_task` because both keys are MEASURED and their buffered bounds stay under the ceiling. Both also land on the same `360`, because the `max(inner_timeout, config.min_timeout)` floor clamp dominates each one's learned value: `compile` at 120 s and `module-tests` at 203 s (`203 × 1.25 = 254`) are both below the 330 s pyproject floor, so both clamp to 330 and buffer to `360`. A learned value only binds the bound once it exceeds the floor — `coverage` at 1897 s is the canonical that does, and it buffers to `1927`, above the ceiling, so it resolves `orchestrator`. The same two rows would resolve `orchestrator` while either key is still unmeasured — see the `execution_tier` row in [Augmented Fields](#augmented-fields).
 
 The `unclaimed` array lists changed paths that no `build_map` glob matched (they derive no build).
 

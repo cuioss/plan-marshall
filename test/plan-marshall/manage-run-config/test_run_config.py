@@ -328,6 +328,62 @@ def test_timeout_get_enforces_minimum_on_default(plan_context):
     assert data['timeout_seconds'] == 120
 
 
+def test_timeout_measured_returns_none_for_an_absent_key(plan_context):
+    """An unmeasured key reads as ``None`` — the signal ``timeout_get`` cannot give.
+
+    ``timeout_get`` returns an ``int`` for a measured and an unmeasured key
+    alike, so its value carries no measured-ness signal. This accessor exists
+    solely to answer *has this been observed?*, and ``None`` is that answer.
+    """
+    plan_dir = plan_context.fixture_dir
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    (plan_dir / 'run-configuration.json').write_text(json.dumps({'version': 1, 'commands': {}}))
+
+    assert run_config.timeout_measured('python:never_observed') is None
+
+
+def test_timeout_measured_returns_the_raw_persisted_value_unadjusted(plan_context):
+    """A measured key reads back RAW — no safety margin, no minimum floor.
+
+    Both adjustments are deliberately absent: 15 * 1.25 = 18 would be the
+    margin-applied value and 120 would be the floored one, and either would
+    blur the measured-vs-unmeasured distinction this accessor exists to expose.
+    The seeded 15 is below the 120 floor precisely so the floor's absence is
+    observable rather than coincidental.
+    """
+    plan_dir = plan_context.fixture_dir
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    config = {'version': 1, 'commands': {'maven:discover': {'timeout_seconds': 15}}}
+    (plan_dir / 'run-configuration.json').write_text(json.dumps(config))
+
+    assert run_config.timeout_measured('maven:discover') == 15
+    # The contrast that makes the claim non-vacuous: the same key through
+    # timeout_get is floored to 120 and would be indistinguishable from unmeasured.
+    assert run_config.timeout_get('maven:discover', 60) == 120
+
+
+def test_timeout_measured_cli_verb_toon_shape(plan_context):
+    """The CLI verb reports ``measured`` plus the raw value, for both states."""
+    plan_dir = plan_context.fixture_dir
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    config = {'version': 1, 'commands': {'ci:pr_checks': {'timeout_seconds': 240}}}
+    (plan_dir / 'run-configuration.json').write_text(json.dumps(config))
+
+    result = run_script(SCRIPT_PATH, 'timeout', 'measured', '--command', 'ci:pr_checks')
+    assert result.success, f'Should succeed: {result.stderr}'
+    data = result.toon()
+    assert data.get('status') == 'success'
+    assert data.get('command') == 'ci:pr_checks'
+    assert data.get('measured') is True
+    assert data.get('timeout_seconds') == 240
+
+    absent = run_script(SCRIPT_PATH, 'timeout', 'measured', '--command', 'ci:never_observed')
+    assert absent.success, f'Should succeed: {absent.stderr}'
+    absent_data = absent.toon()
+    assert absent_data.get('measured') is False
+    assert absent_data.get('timeout_seconds') is None
+
+
 def test_timeout_set_initial_value(plan_context):
     """Test timeout set writes directly when no existing value."""
     plan_dir = plan_context.fixture_dir

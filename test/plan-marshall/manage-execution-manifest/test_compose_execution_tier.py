@@ -6,25 +6,28 @@
 ``phase_5.verification_steps`` entry's ``execution_tier`` (``per_task`` |
 ``orchestrator``) as a uniform-array record list (``{step_id, tier}`` per step).
 
-**The stamp is ADVISORY, not the routing authority.** The tier derives from
-``bash_timeout_seconds``, which ``manage-architecture``'s ``_lookup_bash_timeout``
-computes as ``max(timeout_get(command_key, ...), config.min_timeout)`` — the
-adaptive learned build duration, floored by the engine's OWN declared outer floor
-(Maven / Gradle / npm: 300, pyproject: 600). Every intervening build updates the
-learned half, so a step whose floored duration sits near the 600s Bash ceiling
-crosses the ceiling between compose and execute in ordinary operation, and a
-compose-time snapshot cannot be a durable routing fact. ``phase-5-execute``
-re-resolves the tier LIVE before running each verification step and routes on that
-verdict; the stamp serves planning and observability.
+**The stamp is ADVISORY, not the routing authority.** The tier derives from TWO
+run-config quantities ``manage-architecture``'s ``_lookup_bash_timeout`` reads:
+whether the command key has been MEASURED at all, and the adaptive learned build
+duration behind ``bash_timeout_seconds`` (``max(timeout_get(command_key, ...),
+config.min_timeout)``, floored by the engine's OWN declared outer floor — Maven /
+Gradle / npm: 300, pyproject: 330). Every intervening build moves both: the
+measured-ness flips once, on a key's first observed run, and the learned duration
+keeps moving after that. So a step's tier changes between compose and execute in
+ordinary operation, and a compose-time snapshot cannot be a durable routing fact.
+``phase-5-execute`` re-resolves the tier LIVE before running each verification
+step and routes on that verdict; the stamp serves planning and observability.
 ``TestStampReflectsALiveResolvedCeilingVerdict`` below pins that volatility with
 the production producers.
 
-The floor half is what makes the FIRST stamp truthful rather than optimistic: a
-pyproject command is ``orchestrator`` from its very first resolve (600 + 30 > 600)
-instead of being mis-stamped ``per_task`` merely because nothing has measured it
-yet. Only an engine whose floor leaves headroom under the ceiling (Maven / Gradle /
-npm at 300 → 330) can still start ``per_task``, which is why the crossing test
-below is seeded against Maven.
+The FLOOR is what makes the first STAMP truthful rather than optimistic — the
+bound can never be reported below what the run will measure against. The
+MEASUREMENT is what decides the TIER: ``per_task`` only for a measured command
+whose stamp stays within the ceiling, ``orchestrator`` otherwise, so an unmeasured
+command fails closed on every engine rather than gambling an unobserved first run
+in-leaf. The two are separate axes, and conflating them is precisely the defect
+this suite now guards: deriving the tier from the floor let an over-provisioned
+pyproject floor empty the leaf's runnable slice entirely.
 
 The contract properties the stamping guarantees:
 
@@ -401,17 +404,18 @@ class TestStampReflectsALiveResolvedCeilingVerdict:
         'run --command-args "coverage"'
     )
 
-    # A MAVEN executable for the crossing test below. Maven declares a 300s outer
-    # floor against pyproject's 600s, so an unmeasured Maven command resolves
-    # max(300, 300) + 30 = 330 and starts INSIDE the ceiling — leaving the
-    # per_task → orchestrator crossing observable. Seeding the crossing against
-    # the pyproject executable above would make its pre-seed leg unreachable:
-    # max(learned, 600) + 30 is never under 600, so no pyproject command ever
-    # starts per_task.
+    # A MAVEN executable for the crossing test below. The engine is incidental
+    # now that the tier follows the measurement rather than the floor — the
+    # crossing is seeded on a MEASURED low value and re-seeded on a MEASURED
+    # high one, which is the honest crossing and works for any engine.
     _MAVEN_RESOLVED_EXECUTABLE = (
         'python3 .plan/execute-script.py plan-marshall:build-maven:maven '
         'run --command-args "test -pl core"'
     )
+
+    # A cheap learned duration whose buffered bound stays well inside the
+    # ceiling — the pre-crossing seed.
+    _WELL_BELOW_CEILING_SECONDS = 60
 
     # A learned duration far above the ceiling — the seed for the crossing test.
     # Its exact value is never asserted; only which side of the ceiling the
@@ -419,16 +423,25 @@ class TestStampReflectsALiveResolvedCeilingVerdict:
     _WELL_ABOVE_CEILING_SECONDS = 3600
 
     @staticmethod
-    def _production_tier_fields() -> dict[str, Any]:
-        """Run the full production producer chain for the whole-tree coverage canonical."""
+    def _production_lookup() -> tuple[int, bool]:
+        """Run the production classify → lookup legs for the whole-tree coverage canonical."""
         classified = _arch_build._classify_build_executable(
             TestStampReflectsALiveResolvedCeilingVerdict._RESOLVED_EXECUTABLE
         )
         assert classified is not None, 'production classifier rejected a real resolved executable'
         tool_name, command_args = classified
-        bash_timeout = _arch_build._lookup_bash_timeout(tool_name, command_args, '.')
+        lookup = _arch_build._lookup_bash_timeout(tool_name, command_args, '.')
+        assert lookup is not None, 'production timeout lookup returned nothing'
+        bash_timeout, measured = lookup
         assert isinstance(bash_timeout, int), 'production timeout lookup returned no int'
-        fields: dict[str, Any] = _arch_build._compute_execution_tier_fields(bash_timeout)
+        assert isinstance(measured, bool), 'production timeout lookup returned no measured-ness'
+        return bash_timeout, measured
+
+    @staticmethod
+    def _production_tier_fields() -> dict[str, Any]:
+        """Run the full production producer chain for the whole-tree coverage canonical."""
+        bash_timeout, measured = TestStampReflectsALiveResolvedCeilingVerdict._production_lookup()
+        fields: dict[str, Any] = _arch_build._compute_execution_tier_fields(bash_timeout, measured)
         return fields
 
     @staticmethod
@@ -445,8 +458,17 @@ class TestStampReflectsALiveResolvedCeilingVerdict:
         )
 
     def test_production_producers_emit_the_four_field_envelope(self):
-        """The producer chain yields exactly the four fields the composer consumes."""
-        fields = self._production_tier_fields()
+        """The producer chain yields exactly the four fields the composer consumes.
+
+        The derived fields are asserted against the MEASURED-vs-UNMEASURED
+        contract, not against the ceiling alone: ``exceeds_bash_ceiling`` is a
+        pure ceiling comparison, while ``execution_tier`` is ``per_task`` only
+        when the key is measured AND the stamp fits. Re-deriving both from the
+        same ``(stamp, measured)`` pair the production lookup returned is what
+        keeps this case from re-pinning the floor-driven derivation.
+        """
+        bash_timeout, measured = self._production_lookup()
+        fields = _arch_build._compute_execution_tier_fields(bash_timeout, measured)
 
         assert set(fields) == {
             'bash_timeout_seconds',
@@ -456,10 +478,11 @@ class TestStampReflectsALiveResolvedCeilingVerdict:
         }
         assert isinstance(fields['bash_timeout_seconds'], int)
         assert fields['execution_tier'] in ('per_task', 'orchestrator')
-        # The three derived fields agree with each other and with the ceiling.
         expected_exceeds = fields['bash_timeout_seconds'] > _arch_build.HARNESS_BASH_CEILING_SECONDS
         assert fields['exceeds_bash_ceiling'] is expected_exceeds
-        assert fields['execution_tier'] == ('orchestrator' if expected_exceeds else 'per_task')
+        assert fields['execution_tier'] == (
+            'per_task' if (measured and not expected_exceeds) else 'orchestrator'
+        )
 
     def test_ceiling_boundary_is_strictly_above(self):
         """At the ceiling → per_task; one second above it → orchestrator.
@@ -467,21 +490,45 @@ class TestStampReflectsALiveResolvedCeilingVerdict:
         Both envelopes come from the production ``_compute_execution_tier_fields``
         and the production ``HARNESS_BASH_CEILING_SECONDS`` constant, so a threshold
         change moves this assertion with it instead of silently invalidating it.
+        Both are seeded ``measured=True`` — the ceiling boundary is only OBSERVABLE
+        on the measured branch, since an unmeasured command is ``orchestrator``
+        on both sides of it.
         """
         ceiling = _arch_build.HARNESS_BASH_CEILING_SECONDS
 
-        at_ceiling = _arch_build._compute_execution_tier_fields(ceiling)
-        above_ceiling = _arch_build._compute_execution_tier_fields(ceiling + 1)
+        at_ceiling = _arch_build._compute_execution_tier_fields(ceiling, True)
+        above_ceiling = _arch_build._compute_execution_tier_fields(ceiling + 1, True)
 
         assert at_ceiling['exceeds_bash_ceiling'] is False
         assert at_ceiling['execution_tier'] == 'per_task'
         assert above_ceiling['exceeds_bash_ceiling'] is True
         assert above_ceiling['execution_tier'] == 'orchestrator'
 
+    def test_unmeasured_is_orchestrator_on_both_sides_of_the_ceiling(self):
+        """The fail-closed branch is ceiling-insensitive — that is the whole point.
+
+        Complements the boundary case above: with ``measured=False`` the tier is
+        ``orchestrator`` at AND below the ceiling, while ``exceeds_bash_ceiling``
+        keeps reporting the literal comparison. This is the one branch where the
+        two fields deliberately decouple, and pinning it here is what stops a
+        future refactor from re-coupling them.
+        """
+        ceiling = _arch_build.HARNESS_BASH_CEILING_SECONDS
+
+        below = _arch_build._compute_execution_tier_fields(ceiling - 100, False)
+        above = _arch_build._compute_execution_tier_fields(ceiling + 1, False)
+
+        assert below['exceeds_bash_ceiling'] is False
+        assert below['execution_tier'] == 'orchestrator'
+        assert below['hint'] == _arch_build._HINT_UNMEASURED
+        assert above['exceeds_bash_ceiling'] is True
+        assert above['execution_tier'] == 'orchestrator'
+        assert above['hint'] == _arch_build._HINT_ORCHESTRATOR
+
     def test_above_ceiling_resolve_is_never_stamped_per_task(self, monkeypatch):
         """THE regression: an orchestrator-tier resolve stamps orchestrator, never per_task."""
         fields = _arch_build._compute_execution_tier_fields(
-            _arch_build.HARNESS_BASH_CEILING_SECONDS + 1
+            _arch_build.HARNESS_BASH_CEILING_SECONDS + 1, True
         )
         assert fields['execution_tier'] == 'orchestrator'
         self._patch_resolve_with(monkeypatch, self._resolve_toon_for(fields))
@@ -492,7 +539,9 @@ class TestStampReflectsALiveResolvedCeilingVerdict:
 
     def test_at_ceiling_resolve_stamps_per_task(self, monkeypatch):
         """The other side of the boundary, through the same production envelope."""
-        fields = _arch_build._compute_execution_tier_fields(_arch_build.HARNESS_BASH_CEILING_SECONDS)
+        fields = _arch_build._compute_execution_tier_fields(
+            _arch_build.HARNESS_BASH_CEILING_SECONDS, True
+        )
         assert fields['execution_tier'] == 'per_task'
         self._patch_resolve_with(monkeypatch, self._resolve_toon_for(fields))
 
@@ -503,20 +552,21 @@ class TestStampReflectsALiveResolvedCeilingVerdict:
     def test_learned_duration_crossing_the_ceiling_flips_the_resolved_tier(self):
         """The volatility that makes the stamp advisory, pinned against production code.
 
-        Reads the production tier for an unmeasured MAVEN command, records an
-        observed duration far above the ceiling through the production
-        ``run_config.timeout_set`` writer, and reads the tier again. The verdict
-        flips ``per_task`` → ``orchestrator`` with no code change — exactly the
-        compose-vs-execute divergence this plan diagnosed. The autouse
+        Seeds a MEASURED cheap duration for a build command, reads the production
+        tier, then records an observed duration far above the ceiling through the
+        production ``run_config.timeout_set`` writer and reads the tier again. The
+        verdict flips ``per_task`` → ``orchestrator`` with no code change — exactly
+        the compose-vs-execute divergence this plan diagnosed. The autouse
         ``_plan_base_dir_sandbox`` fixture redirects the run-config store into a
-        per-test tmp sandbox, so the seed never touches the real learned durations
-        and the pre-seed read starts from the unmeasured default.
+        per-test tmp sandbox, so neither seed touches the real learned durations.
 
-        The seed is Maven, not pyproject: the engine floor now clamps the stamp, and
-        pyproject's 600s floor puts every one of its commands above the ceiling from
-        the very first resolve. Weakening this case to assert
-        ``orchestrator → orchestrator`` would assert nothing about a CROSSING, so the
-        seed moves to an engine whose 300s floor still leaves headroom.
+        BOTH legs are measured. That is the substantive change: the crossing is now
+        a duration crossing on the measured branch, which is the honest one and
+        works for ANY engine — the pre-fix version had to be seeded specifically
+        against Maven because the floor decided the tier and no pyproject command
+        could ever start ``per_task``. Anchoring the pre-crossing leg on the
+        unmeasured default would now assert ``orchestrator → orchestrator``, i.e.
+        nothing about a crossing at all.
         """
         classified = _arch_build._classify_build_executable(self._MAVEN_RESOLVED_EXECUTABLE)
         assert classified is not None
@@ -527,19 +577,20 @@ class TestStampReflectsALiveResolvedCeilingVerdict:
 
         command_key = compute_command_key(config, command_args)
 
-        before = _arch_build._compute_execution_tier_fields(
-            _arch_build._lookup_bash_timeout(tool_name, command_args, '.')
-        )
+        run_config.timeout_set(command_key, self._WELL_BELOW_CEILING_SECONDS)
+        stamp, measured = _arch_build._lookup_bash_timeout(tool_name, command_args, '.')
+        assert measured is True, 'the cheap seed must make the key read as measured'
+        before = _arch_build._compute_execution_tier_fields(stamp, measured)
         assert before['execution_tier'] == 'per_task', (
-            'an unmeasured Maven command should start inside the Bash ceiling '
-            '(max(300, 300) + 30 = 330), so the crossing stays observable'
+            'a cheap MEASURED command must start inside the Bash ceiling so the '
+            'crossing stays observable'
         )
 
         run_config.timeout_set(command_key, self._WELL_ABOVE_CEILING_SECONDS)
 
-        after = _arch_build._compute_execution_tier_fields(
-            _arch_build._lookup_bash_timeout(tool_name, command_args, '.')
-        )
+        stamp, measured = _arch_build._lookup_bash_timeout(tool_name, command_args, '.')
+        assert measured is True
+        after = _arch_build._compute_execution_tier_fields(stamp, measured)
         assert after['execution_tier'] == 'orchestrator'
         assert after['bash_timeout_seconds'] > before['bash_timeout_seconds']
 

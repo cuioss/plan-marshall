@@ -190,7 +190,9 @@ def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
     When the resolved ``executable`` is a Bucket B build notation, the result
     is augmented with four additional fields (``bash_timeout_seconds``,
     ``exceeds_bash_ceiling``, ``execution_tier``, ``hint``) derived from the
-    persisted run-config timeout. Non-build executables return today's TOON
+    persisted run-config timeout and whether that key has ever been measured
+    (an unmeasured command fails closed to ``orchestrator``). Non-build
+    executables return today's TOON
     shape unchanged. See the module-level "Build-executable classification"
     section for the full contract.
     """
@@ -236,14 +238,22 @@ def _augment_resolved(executable_result: dict[str, Any], project_dir: str) -> di
     ``exceeds_bash_ceiling`` / ``execution_tier`` / ``hint`` quartet so the
     per-task timeout routing keeps working for derived commands exactly as it
     does for a direct ``resolve`` call.
+
+    The quartet is NOT a pure function of the stamp alone: ``execution_tier``
+    (and, on the fail-closed branch, ``hint``) also depends on whether the
+    command key has ever been measured, so the lookup returns the
+    ``(stamp, measured)`` pair and both are forwarded to the field computation.
+    A ``None`` lookup still means "modules unavailable" and leaves the resolved
+    dict unaugmented.
     """
     augmented = dict(executable_result)
     classification = _classify_build_executable(executable_result.get('executable', ''))
     if classification is not None:
         tool_name, command_args = classification
-        bash_timeout = _lookup_bash_timeout(tool_name, command_args, project_dir)
-        if bash_timeout is not None:
-            augmented.update(_compute_execution_tier_fields(bash_timeout))
+        lookup = _lookup_bash_timeout(tool_name, command_args, project_dir)
+        if lookup is not None:
+            stamp, measured = lookup
+            augmented.update(_compute_execution_tier_fields(stamp, measured))
     return augmented
 
 
