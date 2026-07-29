@@ -85,7 +85,9 @@ The 🔨 `build-busy` terminal-title bracket around such a call is **machine-own
 
 Never use Bash for file discovery or reading. Use the structured architecture inventory first (`architecture files --module X`, `architecture which-module --path P`, `architecture find --pattern P`); fall back to Glob, Grep, Read when narrowing to sub-module components, scanning content inside an already-known file, or when the architecture verb returns elision. See "Structured queries first" below for the full rule.
 
-**Carve-out — `git grep` is the one sanctioned Bash content search.** A *broad content sweep* across file **prose** — "which documents restate sentence S?" — is a question the structured architecture inventory cannot answer: it is a path-glob over the registered inventory, not a content matcher. When the `Grep` tool is not granted, perform that sweep with `git grep`, which is the ONE sanctioned Bash search form:
+**Carve-out — `git grep` is the one sanctioned Bash content search.** This rule prescribes its own remedy for content search: the `Grep` **tool**. In the main orchestrator context that remedy is reachable, so the rule is satisfiable as written. A dispatched `execution-context` leaf, however, can have `Grep` revoked by the harness at runtime while the prohibition on bare `grep` via Bash stays fully enforced by the R2 hook rule. That is an asymmetry — the permission is withdrawn but the prohibition is retained — and it leaves the rule prescribing a remedy the leaf cannot reach.
+
+`git grep` restores this rule's OWN remedy under that revocation. It is not a workaround for a missing capability; it is the prescribed content search, reached through the one Bash program family the R2 rule permits. Use it for a *broad content sweep* across file **prose** — "which documents restate sentence S?" — whenever the `Grep` tool is not granted:
 
 ```text
 Bash(command='git grep -n "Bash: No file operations" -- marketplace/bundles/plan-marshall')
@@ -97,7 +99,7 @@ Three bounds apply, and none of them is negotiable:
 2. **The one-command-per-call rule still applies to the enclosing Bash call.** A pattern carrying a shell metacharacter — a semicolon, an ampersand, a backtick, or a command substitution — is denied by the R1 shell-construct rule and must be reshaped (narrow the pattern, or split into separate `git grep` calls) — never chained or escaped around.
 3. **`cat` / `head` / `tail` / `find` / `ls` gain no carve-out whatsoever.** The exception is the content-sweep primitive only; every other Bash file operation stays blocked, and reading a known file is still `Read`.
 
-The carve-out presupposes a `Bash`-granted leaf, so it does NOT apply to the read-only `execution-context-reader-{level}` variant, which has no `Bash` at all. See [standards/tool-usage-patterns.md § Broad content sweep](standards/tool-usage-patterns.md#broad-content-sweep) for the worked invocation and the Tool Selection Guide row.
+The carve-out presupposes a `Bash`-granted leaf, so it does NOT apply to the read-only `execution-context-reader-{level}` variant, which has no `Bash` at all. See [standards/tool-usage-patterns.md § Broad content sweep](standards/tool-usage-patterns.md#broad-content-sweep) for the worked invocation, the Tool Selection Guide row, and why the revocation is not repairable by widening any grant this repository controls.
 
 ### Skill workflow: No improvisation
 
