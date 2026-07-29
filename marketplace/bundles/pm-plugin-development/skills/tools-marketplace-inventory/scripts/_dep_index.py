@@ -338,6 +338,15 @@ def _extract_bundle_name(bundle_dir: Path) -> str:
 
 
 # Sub-document directories under a skill that hold markdown reference material.
+#
+# DELIBERATELY NARROWER than the dependency-edge-source walk in
+# :func:`iter_skill_subdoc_edge_sources`. This constant defines the
+# plugin-doctor LINT POPULATION (consumed by :func:`enumerate_skill_files`,
+# whose downstream framework passes lint every file it returns), while the edge
+# walk answers a different question — *where can a dependency edge be written*.
+# Widening this tuple to every sub-directory kind present on disk would silently
+# widen what plugin-doctor lints; that is a separate, opt-in change. The two
+# enumerations diverge by decision, not by oversight.
 SKILL_SUBDOC_DIRS = ('references', 'standards', 'workflow', 'templates')
 
 
@@ -398,6 +407,66 @@ def enumerate_skill_files(base_path: Path) -> list[SkillFile]:
     return files
 
 
+def iter_skill_subdoc_edge_sources(base_path: Path) -> list[tuple[ComponentId, Path]]:
+    """Return ``(owning skill, markdown file)`` for every skill sub-document.
+
+    The enumeration is **name-free**: every ``.md`` under ``skills/<skill>/**``
+    except those under ``scripts/``, derived by walking the tree rather than from
+    a directory-name list. A new sub-directory kind therefore contributes edges
+    automatically instead of silently re-opening a blind spot. ``SKILL.md``
+    itself is excluded — it is already scanned as the skill component's own
+    definition file.
+
+    Deliberately does NOT reuse :data:`SKILL_SUBDOC_DIRS`: that constant is the
+    plugin-doctor lint population, and widening it to match this walk would widen
+    what plugin-doctor lints. See the comment at that constant for the full
+    rationale.
+    """
+    sources: list[tuple[ComponentId, Path]] = []
+
+    for plugin_json in sorted(base_path.rglob('.claude-plugin/plugin.json')):
+        bundle_dir = plugin_json.parent.parent
+        bundle_name = _extract_bundle_name(bundle_dir)
+
+        skills_dir = bundle_dir / 'skills'
+        if not skills_dir.is_dir():
+            continue
+
+        for skill_md in sorted(skills_dir.glob('*/SKILL.md')):
+            skill_dir = skill_md.parent
+            owner = ComponentId(
+                bundle=bundle_name,
+                component_type='skill',
+                name=skill_dir.name,
+            )
+            for md_file in sorted(skill_dir.rglob('*.md')):
+                if md_file == skill_md:
+                    continue
+                if 'scripts' in md_file.relative_to(skill_dir).parts[:-1]:
+                    continue
+                sources.append((owner, md_file))
+
+    return sources
+
+
+def _index_dependencies_from(
+    index: DependencyIndex,
+    file_path: Path,
+    component_id: ComponentId,
+    dep_types: set[DependencyType] | None,
+) -> None:
+    """Detect dependencies in ``file_path`` and record them under ``component_id``.
+
+    Shared by the per-component pass and the sub-document edge-source pass; the
+    two differ only in whether the scanned file IS the component's own
+    definition. A target absent from the index is marked unresolved.
+    """
+    for dep in detect_all_dependencies(file_path, component_id, dep_types):
+        if dep.target.to_notation() not in index.components:
+            dep.resolved = False
+        index.add_dependency(dep)
+
+
 def build_dependency_index(
     base_path: Path,
     dep_types: set[DependencyType] | None = None,
@@ -422,17 +491,14 @@ def build_dependency_index(
 
     # Detect dependencies for each component
     for component in components:
-        deps = detect_all_dependencies(
-            component.file_path,
-            component.component_id,
-            dep_types,
-        )
-        for dep in deps:
-            # Mark as unresolved if target not in index
-            target_key = dep.target.to_notation()
-            if target_key not in index.components:
-                dep.resolved = False
-            index.add_dependency(dep)
+        _index_dependencies_from(index, component.file_path, component.component_id, dep_types)
+
+    # Sub-documents are EDGE SOURCES, never components: an edge cited in
+    # ``workflow/light-lane.md`` is attributed to the skill that owns the file.
+    # ``ComponentId`` has no sub-document type, and inventing one would change
+    # the component namespace that deps / rdeps / tree / validate all key on.
+    for owner_id, subdoc_path in iter_skill_subdoc_edge_sources(base_path):
+        _index_dependencies_from(index, subdoc_path, owner_id, dep_types)
 
     return index
 

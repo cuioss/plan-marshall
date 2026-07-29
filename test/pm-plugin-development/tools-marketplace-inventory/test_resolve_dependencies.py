@@ -53,8 +53,15 @@ extract_frontmatter = _dep_detection_mod.extract_frontmatter
 build_dependency_index = _dep_index_mod.build_dependency_index
 discover_components = _dep_index_mod.discover_components
 enumerate_skill_files = _dep_index_mod.enumerate_skill_files
+iter_skill_subdoc_edge_sources = _dep_index_mod.iter_skill_subdoc_edge_sources
+SKILL_SUBDOC_DIRS = _dep_index_mod.SKILL_SUBDOC_DIRS
 SkillFile = _dep_index_mod.SkillFile
 AstCache = _dep_index_mod.AstCache
+
+# Repository root, derived from this file's own location
+# (``test/pm-plugin-development/tools-marketplace-inventory/`` → three levels up).
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_BUNDLES_ROOT = _REPO_ROOT / 'marketplace' / 'bundles'
 
 cmd_deps = _resolve_mod.cmd_deps
 cmd_rdeps = _resolve_mod.cmd_rdeps
@@ -929,3 +936,168 @@ class TestAstCache:
         # successful parse) and the file is not re-parsed.
         assert cache.parse_count == 0
         assert str(broken) in cache._trees
+
+
+# =============================================================================
+# Tests - Skill sub-documents as dependency edge sources
+# =============================================================================
+#
+# ``build_dependency_index`` used to read edges ONLY from component definition
+# files (SKILL.md, agents/*.md, commands/*.md, scripts/*), so a dependency cited
+# in ``workflow/light-lane.md`` or ``standards/agent-behavior-rules.md`` was
+# invisible to ``deps`` / ``rdeps`` / ``tree`` / ``validate``.
+#
+# ``iter_skill_subdoc_edge_sources`` closes that gap with a NAME-FREE walk. The
+# coverage test below derives its population from the filesystem — never from a
+# directory-name list — so a new sub-directory kind fails the test instead of
+# silently re-opening the blind spot.
+
+
+def _real_subdoc_population() -> set[Path]:
+    """Every ``.md`` under a real ``skills/<skill>/**`` outside ``scripts/``.
+
+    Derived by a single glob over the live tree, deliberately expressed
+    DIFFERENTLY from the implementation's nested walk so the comparison is a
+    genuine cross-check rather than a restatement of the implementation.
+    ``SKILL.md`` is excluded — it is scanned as the skill's own definition file.
+    """
+    population: set[Path] = set()
+    for plugin_json in _BUNDLES_ROOT.rglob('.claude-plugin/plugin.json'):
+        bundle_dir = plugin_json.parent.parent
+        for md_file in bundle_dir.glob('skills/*/**/*.md'):
+            rel = md_file.relative_to(bundle_dir)
+            # rel is skills/<skill>/<...>; skip the skill's own SKILL.md.
+            if len(rel.parts) == 3 and rel.name == 'SKILL.md':
+                continue
+            if 'scripts' in rel.parts[2:-1]:
+                continue
+            population.add(md_file)
+    return population
+
+
+def test_subdoc_edge_walk_covers_every_real_skill_markdown():
+    """The edge-source walk enumerates the whole real sub-document population.
+
+    Population-derived: a new sub-directory kind appearing on disk is covered
+    automatically, and a regression that reintroduces a directory-name allowlist
+    fails here instead of silently shrinking the edge graph.
+    """
+    population = _real_subdoc_population()
+    assert population, 'population is empty — the bundle walk found no sub-documents'
+
+    enumerated = {path for _owner, path in iter_skill_subdoc_edge_sources(_BUNDLES_ROOT)}
+
+    missing = sorted(str(p) for p in population - enumerated)
+    assert missing == [], f'{len(missing)} sub-document(s) are not edge sources: {missing[:10]}'
+    assert enumerated == population
+
+
+def test_subdoc_edges_are_attributed_to_the_owning_skill():
+    """Every edge source is attributed to the skill whose directory contains it."""
+    sources = iter_skill_subdoc_edge_sources(_BUNDLES_ROOT)
+    assert sources
+
+    for owner, path in sources:
+        assert owner.component_type == 'skill'
+        # The owning skill's directory is an ancestor of the sub-document.
+        assert owner.name in path.parts
+
+
+def test_subdoc_edge_walk_is_name_free_over_unknown_directories():
+    """A sub-directory kind outside ``SKILL_SUBDOC_DIRS`` still contributes edges.
+
+    Pins the residual property directly: ``examples/`` is not a member of the
+    lint-population constant, so a name-list implementation would miss it.
+    """
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        bundles = _seed_skill_tree(Path(tmp))
+        skill_dir = bundles / 'enum-bundle' / 'skills' / 'full-skill'
+        _write(skill_dir / 'examples' / 'sample.md', '# Example\n')
+        _write(skill_dir / 'knowledge' / 'note.md', '# Knowledge\n')
+
+        enumerated = {path.name for _owner, path in iter_skill_subdoc_edge_sources(bundles)}
+
+    assert 'sample.md' in enumerated
+    assert 'note.md' in enumerated
+    # SKILL.md is the component's own definition file, never a sub-document.
+    assert 'SKILL.md' not in enumerated
+
+
+def test_subdoc_edge_walk_excludes_scripts_directory_markdown():
+    """Markdown under ``scripts/`` is not a sub-document edge source."""
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        bundles = _seed_skill_tree(Path(tmp))
+        skill_dir = bundles / 'enum-bundle' / 'skills' / 'full-skill'
+        _write(skill_dir / 'scripts' / 'NOTES.md', '# Script notes\n')
+
+        enumerated = {path.name for _owner, path in iter_skill_subdoc_edge_sources(bundles)}
+
+    assert 'NOTES.md' not in enumerated
+
+
+def test_subdocuments_are_edge_sources_but_never_components():
+    """Sub-documents add edges without entering the component namespace.
+
+    ``ComponentId`` has no sub-document type; registering one would change the
+    namespace that ``deps`` / ``rdeps`` / ``tree`` / ``validate`` all key on.
+    """
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        bundles = _seed_skill_tree(Path(tmp))
+        skill_dir = bundles / 'enum-bundle' / 'skills' / 'full-skill'
+        # A sub-document in a non-allowlisted directory citing another skill.
+        _write(
+            skill_dir / 'examples' / 'usage.md',
+            '# Usage\n\nSkill: enum-bundle:leaf-skill\n',
+        )
+
+        index = build_dependency_index(bundles)
+        component_keys = set(index.components)
+        discovered_keys = {c.component_id.to_notation() for c in discover_components(bundles)}
+
+    # The edge pass added no components.
+    assert component_keys == discovered_keys
+    # ...but the sub-document's edge landed, attributed to the OWNING skill.
+    rdeps = index.get_reverse_deps('enum-bundle:leaf-skill')
+    assert any(dep.source.to_notation() == 'enum-bundle:full-skill' for dep in rdeps)
+
+
+def test_live_anchor_persona_agent_subdoc_edge_is_indexed():
+    """The verified live anchor: a real edge that only a sub-document carries.
+
+    ``plan-marshall:persona-plan-marshall-agent`` cites
+    ``plan-marshall:untrusted-ingestion:validate_struct`` twice — both citations
+    live in its ``standards/agent-behavior-rules.md``, never in its ``SKILL.md``
+    — so this dependent was absent from ``rdeps`` before the sub-document edge
+    pass existed.
+
+    The anchor is asserted against the THREE-part script notation because that
+    is what those citations actually are; the two-part skill notation
+    ``plan-marshall:untrusted-ingestion`` is a different index key that these
+    particular citations do not produce.
+    """
+    index = build_dependency_index(_BUNDLES_ROOT)
+
+    dependents = {
+        dep.source.to_notation()
+        for dep in index.get_reverse_deps('plan-marshall:untrusted-ingestion:validate_struct')
+    }
+
+    assert 'plan-marshall:persona-plan-marshall-agent' in dependents
+
+
+def test_skill_subdoc_dirs_constant_is_not_widened():
+    """``SKILL_SUBDOC_DIRS`` still holds exactly its four kinds.
+
+    Guards the deliberate non-widening: this constant is the plugin-doctor LINT
+    population (via ``enumerate_skill_files``), not the dependency-edge
+    population. A "helpful" edit that widens it here would silently expand what
+    plugin-doctor lints — a blast radius the edge-source change deliberately
+    avoided by walking name-free instead.
+    """
+    assert SKILL_SUBDOC_DIRS == ('references', 'standards', 'workflow', 'templates')
