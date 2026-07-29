@@ -73,6 +73,14 @@ INBOX_SUBDIR = 'inbox'
 #: ``EPIC_SUBDIRS``, so no existing scaffold assertion moves.
 INBOX_ARCHIVE_SUBDIR = 'archive'
 
+#: The closed vocabulary :func:`resolve_message_path` reports. ``queued`` and
+#: ``archived`` are the two RESOLUTION outcomes a caller can act on; ``missing``
+#: is the third, which :func:`cmd_inbox_validate` surfaces as ``file_not_found``.
+#: These are resolution outcomes, NOT envelope-validation verdicts — a message
+#: resolved as ``archived`` is still validated through the same
+#: :func:`validate_envelope` seam as a ``queued`` one.
+MESSAGE_LOCATIONS = frozenset({'queued', 'archived', 'missing'})
+
 #: ``{sender_id}-{NNN}.md`` — the one message-file shape the channel allocates.
 #: The sender group is non-greedy so the LAST dash-separated all-digit run is
 #: the sequence: a four-digit sequence, or a sender id that itself ends in
@@ -352,6 +360,36 @@ def list_messages(inbox_dir: Path) -> list[Path]:
     return [path for _, _, path in entries]
 
 
+def resolve_message_path(inbox_dir: Path, name: str) -> tuple[Path, str]:
+    """Resolve one message name to its path, probing the archive second.
+
+    The single place the archive-probe ORDER lives. A drain relocates a consumed
+    message under ``inbox/archive/`` rather than deleting it, so a name that is
+    absent from the live queue is not necessarily missing — it may have been
+    consumed. Probing ``inbox/{name}`` first and ``inbox/archive/{name}``
+    second is what makes those two states distinguishable instead of collapsing
+    both into "not found".
+
+    Args:
+        inbox_dir: The epic's ``inbox/`` directory.
+        name: A bare message filename (already guarded by
+            :func:`_is_bare_filename`).
+
+    Returns:
+        ``(path, location)`` where ``location`` is one of
+        :data:`MESSAGE_LOCATIONS`. On ``missing`` the returned path is the
+        LIVE-queue candidate, so a caller's not-found message keeps naming the
+        queue path a reader would look at first.
+    """
+    queued = inbox_dir / name
+    if queued.is_file():
+        return queued, 'queued'
+    archived = inbox_dir / INBOX_ARCHIVE_SUBDIR / name
+    if archived.is_file():
+        return archived, 'archived'
+    return queued, 'missing'
+
+
 def allocate_message_path(inbox_dir: Path, sender_id: str, text: str) -> Path:
     """Claim the next free message path and write ``text`` into it.
 
@@ -498,6 +536,22 @@ def cmd_inbox_validate(args: Any) -> dict[str, Any]:
     construction the write surface uses. The epic slug and the filename are
     both fed to :func:`validate_envelope`, so ``epic_mismatch`` and
     ``filename_sender_mismatch`` are reachable here.
+
+    Resolution probes the archive via :func:`resolve_message_path`, so a
+    CONSUMED message is distinguishable from a MISSING one. Three outcomes:
+
+    - present in ``inbox/`` → success with ``location: queued`` and an empty
+      ``archive_path``.
+    - absent from ``inbox/`` but present in ``inbox/archive/`` → success with
+      ``location: archived`` and ``archive_path`` set to the resolved archived
+      path. The archived read goes through the SAME :func:`validate_envelope`
+      seam and reports the same header fields as the queued branch.
+    - present at neither path → ``file_not_found``, which now means exactly
+      that: not queued AND not archived.
+
+    Resolution keeps using :func:`_inbox_dir` (the ``allow_archived=True`` read
+    root), so an archived EPIC still resolves as before — that fallback is
+    about the epic tree, and the archive probe here is about the message.
     """
     invalid = _validate_identifier(args.slug)
     if invalid:
@@ -509,8 +563,8 @@ def cmd_inbox_validate(args: Any) -> dict[str, Any]:
             f'--message must be a bare filename inside inbox/, got: {name}',
             slug=args.slug,
         )
-    path = _inbox_dir(args.slug) / name
-    if not path.is_file():
+    path, location = resolve_message_path(_inbox_dir(args.slug), name)
+    if location == 'missing':
         return _error(
             'file_not_found', f'inbox message not found: {path}', slug=args.slug
         )
@@ -530,6 +584,8 @@ def cmd_inbox_validate(args: Any) -> dict[str, Any]:
         'slug': args.slug,
         'store': ORCHESTRATOR_STORE,
         'message': name,
+        'location': location,
+        'archive_path': str(path) if location == 'archived' else '',
         'envelope_version': header['envelope_version'],
         'sender_type': header['sender_type'],
         'sender_id': header['sender_id'],

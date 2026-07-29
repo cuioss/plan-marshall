@@ -19,8 +19,13 @@ Covers, under ``PLAN_BASE_DIR`` isolation (via ``plan_context``):
   sweep — one accepting case per settled id form, the over-acceptance and
   slug-bound guards, and one case per ``detection`` token, compared against the
   module's own token frozenset.
+- ``resolve_message_path``: the archive-probe order and its closed
+  ``MESSAGE_LOCATIONS`` vocabulary, compared against the module's own frozenset.
 - ``cmd_inbox_write`` / ``cmd_inbox_validate`` / ``cmd_inbox_detect``: the
-  handler surface, including every refusal class.
+  handler surface, including every refusal class. ``cmd_inbox_validate``'s two
+  success branches (``location: queued`` / ``location: archived``) are covered
+  here together with their success-payload field symmetry and the narrowed
+  ``file_not_found`` (present at NEITHER path).
 - ``cmd_inbox_archive``'s atomic destination claim, driven through a
   deterministically-opened check-to-claim window, plus the sender-constrained
   ``--as-name`` recovery override for a message stranded by a pre-fix sequence
@@ -47,6 +52,7 @@ DETECTION_TOKENS = _inbox.DETECTION_TOKENS
 ENVELOPE_VERSION = _inbox.ENVELOPE_VERSION
 HEADER_FIELDS = _inbox.HEADER_FIELDS
 KINDS = _inbox.KINDS
+MESSAGE_LOCATIONS = _inbox.MESSAGE_LOCATIONS
 SENDER_TYPES = _inbox.SENDER_TYPES
 allocate_message_path = _inbox.allocate_message_path
 classify_source_id = _inbox.classify_source_id
@@ -56,6 +62,7 @@ cmd_inbox_validate = _inbox.cmd_inbox_validate
 cmd_inbox_write = _inbox.cmd_inbox_write
 compose_envelope = _inbox.compose_envelope
 next_sequence = _inbox.next_sequence
+resolve_message_path = _inbox.resolve_message_path
 validate_envelope = _inbox.validate_envelope
 
 cmd_scaffold = _orch.cmd_scaffold
@@ -638,7 +645,13 @@ class TestInboxValidate:
         assert result['error'] == 'invalid_message_name'
 
     def test_should_report_a_missing_message(self, plan_context):
+        # ``file_not_found`` stays reachable, and now means present at NEITHER
+        # inbox/ nor inbox/archive/ — the assertion pins both absences so the
+        # narrowed meaning cannot be read as "the archive probe swallowed it".
         cmd_scaffold(Namespace(slug=EPIC))
+        inbox = _inbox_dir(plan_context)
+        assert not (inbox / 'absent-001.md').exists()
+        assert not (inbox / 'archive' / 'absent-001.md').exists()
 
         result = cmd_inbox_validate(Namespace(slug=EPIC, message='absent-001.md'))
 
@@ -650,6 +663,143 @@ class TestInboxValidate:
 
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_slug'
+
+    def test_should_report_the_queued_location_for_a_live_message(
+        self, plan_context, tmp_path
+    ):
+        cmd_scaffold(Namespace(slug=EPIC))
+        written = cmd_inbox_write(_write_args(payload_file=_payload(tmp_path)))
+
+        result = cmd_inbox_validate(Namespace(slug=EPIC, message=written['message']))
+
+        assert result['status'] == 'success'
+        assert result['location'] == 'queued'
+        assert result['archive_path'] == ''
+
+    def test_should_resolve_a_consumed_message_out_of_the_archive(
+        self, plan_context, tmp_path
+    ):
+        # The defect this fixes: a drained message was indistinguishable from a
+        # never-written one, because both answered ``file_not_found``.
+        cmd_scaffold(Namespace(slug=EPIC))
+        written = cmd_inbox_write(_write_args(payload_file=_payload(tmp_path)))
+        cmd_inbox_archive(_archive_args(written['message']))
+        assert not (_inbox_dir(plan_context) / written['message']).exists()
+
+        result = cmd_inbox_validate(Namespace(slug=EPIC, message=written['message']))
+
+        assert result['status'] == 'success'
+        assert result['location'] == 'archived'
+        assert result['archive_path'].endswith(f'archive/{written["message"]}')
+
+    def test_should_report_the_same_header_fields_for_both_success_branches(
+        self, plan_context, tmp_path
+    ):
+        # Success-payload field symmetry: the archived branch is not a reduced
+        # payload — it carries every field the queued branch carries, so a
+        # consumer never has to special-case where the message was found.
+        cmd_scaffold(Namespace(slug=EPIC))
+        written = cmd_inbox_write(_write_args(payload_file=_payload(tmp_path)))
+        queued = cmd_inbox_validate(Namespace(slug=EPIC, message=written['message']))
+        cmd_inbox_archive(_archive_args(written['message']))
+
+        archived = cmd_inbox_validate(Namespace(slug=EPIC, message=written['message']))
+
+        # The header fields the success payload surfaces; ``epic`` rides the
+        # payload as ``slug``, so the reported set is HEADER_FIELDS minus it.
+        reported = tuple(field for field in HEADER_FIELDS if field != 'epic')
+
+        assert set(archived) == set(queued)
+        assert {key: archived[key] for key in reported} == {
+            key: queued[key] for key in reported
+        }
+
+    def test_should_validate_an_archived_message_through_the_same_seam(
+        self, plan_context
+    ):
+        # An archived message is not trusted on account of being archived: the
+        # identical rejection codes still fire against it.
+        cmd_scaffold(Namespace(slug=EPIC))
+        archive = _inbox_dir(plan_context) / 'archive'
+        archive.mkdir(parents=True, exist_ok=True)
+        (archive / f'{SENDER}-001.md').write_text(
+            _message(envelope_version='99'), encoding='utf-8'
+        )
+
+        result = cmd_inbox_validate(Namespace(slug=EPIC, message=f'{SENDER}-001.md'))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'unknown_envelope_version'
+
+    def test_should_prefer_the_live_queue_over_the_archive(self, plan_context):
+        # Probe ORDER: with the name present at both paths, the live queue wins.
+        cmd_scaffold(Namespace(slug=EPIC))
+        inbox = _inbox_dir(plan_context)
+        (inbox / f'{SENDER}-001.md').write_text(_message(kind='landing'), encoding='utf-8')
+        archive = inbox / 'archive'
+        archive.mkdir(parents=True, exist_ok=True)
+        (archive / f'{SENDER}-001.md').write_text(
+            _message(kind='finding'), encoding='utf-8'
+        )
+
+        result = cmd_inbox_validate(Namespace(slug=EPIC, message=f'{SENDER}-001.md'))
+
+        assert result['location'] == 'queued'
+        assert result['kind'] == 'landing'
+
+
+# =============================================================================
+# resolve_message_path — the single home of the archive-probe order
+# =============================================================================
+
+
+class TestResolveMessagePath:
+    def test_should_resolve_a_queued_message(self, tmp_path):
+        (tmp_path / f'{SENDER}-001.md').write_text('x', encoding='utf-8')
+
+        path, location = resolve_message_path(tmp_path, f'{SENDER}-001.md')
+
+        assert location == 'queued'
+        assert path == tmp_path / f'{SENDER}-001.md'
+
+    def test_should_resolve_an_archived_message(self, tmp_path):
+        archive = tmp_path / 'archive'
+        archive.mkdir()
+        (archive / f'{SENDER}-001.md').write_text('x', encoding='utf-8')
+
+        path, location = resolve_message_path(tmp_path, f'{SENDER}-001.md')
+
+        assert location == 'archived'
+        assert path == archive / f'{SENDER}-001.md'
+
+    def test_should_report_missing_when_present_at_neither_path(self, tmp_path):
+        path, location = resolve_message_path(tmp_path, f'{SENDER}-001.md')
+
+        assert location == 'missing'
+        # The live-queue candidate is returned so the caller's not-found message
+        # keeps naming the path a reader would look at first.
+        assert path == tmp_path / f'{SENDER}-001.md'
+
+    def test_should_tolerate_an_absent_inbox_directory(self, tmp_path):
+        _path, location = resolve_message_path(tmp_path / 'never-made', 'x-001.md')
+
+        assert location == 'missing'
+
+    def test_should_only_report_locations_from_the_module_vocabulary(self, tmp_path):
+        # Population-derived: compared against the module's own frozenset rather
+        # than a re-listed literal set, and two-sided — every declared location
+        # is reachable and no case reports one outside the declared set.
+        (tmp_path / 'queued-001.md').write_text('x', encoding='utf-8')
+        archive = tmp_path / 'archive'
+        archive.mkdir()
+        (archive / 'retired-001.md').write_text('x', encoding='utf-8')
+
+        observed = {
+            resolve_message_path(tmp_path, name)[1]
+            for name in ('queued-001.md', 'retired-001.md', 'absent-001.md')
+        }
+
+        assert observed == MESSAGE_LOCATIONS
 
 
 # =============================================================================

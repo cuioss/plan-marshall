@@ -138,7 +138,18 @@ python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator
   --slug SLUG --message MESSAGE
 ```
 
-Validates one existing message against the envelope schema. `--message` is a bare filename inside the epic's `inbox/` directory (a path is refused with `invalid_message_name`). Returns the parsed header on success; on rejection returns the distinct error code for the failing class — `missing_header_field`, `unknown_envelope_version`, `invalid_sender_type`, `invalid_kind`, `empty_payload`, `epic_mismatch`, or `filename_sender_mismatch` (checked in that order; see the validator error-code table in [`standards/inbox-envelope.md`](standards/inbox-envelope.md)).
+Validates one existing message against the envelope schema. `--message` is a bare filename inside the epic's `inbox/` directory (a path is refused with `invalid_message_name`).
+
+Resolution probes the archive, so a CONSUMED message is distinguishable from a MISSING one. There are two success branches, both carrying the same parsed-header fields:
+
+| Resolution | Payload |
+|------------|---------|
+| present in `inbox/` | `status: success`, `location: queued`, empty `archive_path` |
+| absent from `inbox/` but present in `inbox/archive/` | `status: success`, `location: archived`, `archive_path` set to the resolved archived path |
+
+The archived branch is validated through the same `validate_envelope` seam as the queued branch, so an archived message's rejection codes are identical. `location` is a *resolution* outcome, not an envelope-validation verdict.
+
+`file_not_found` now means the message is present at NEITHER `inbox/` nor `inbox/archive/`. On envelope rejection the verb returns the distinct error code for the failing class — `missing_header_field`, `unknown_envelope_version`, `invalid_sender_type`, `invalid_kind`, `empty_payload`, `epic_mismatch`, or `filename_sender_mismatch` (checked in that order; see the validator error-code table in [`standards/inbox-envelope.md`](standards/inbox-envelope.md)).
 
 ### inbox list
 
