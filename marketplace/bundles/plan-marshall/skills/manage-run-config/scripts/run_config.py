@@ -792,6 +792,9 @@ Examples:
   # Dry-run cleanup for a specific target
   %(prog)s cleanup --dry-run --target logs
 
+  # Age out orphaned prepared-body files under the plan-less NO_PLAN sentinel
+  %(prog)s cleanup --target no-plan-bodies
+
   # Show cleanup status
   %(prog)s cleanup-status
 """,
@@ -977,7 +980,7 @@ Examples:
     p_cleanup.add_argument('--dry-run', action='store_true', help='Show what would be deleted without deleting')
     p_cleanup.add_argument(
         '--target',
-        choices=['all', 'temp', 'logs', 'archived-plans'],
+        choices=['all', 'temp', 'logs', 'archived-plans', 'no-plan-bodies'],
         default='all',
         help='Clean specific target only (default: all)',
     )
