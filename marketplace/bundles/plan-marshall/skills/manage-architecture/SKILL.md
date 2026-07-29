@@ -471,6 +471,12 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture f
   --module MODULE [--category CATEGORY]
 ```
 
+`--category` is one of the declared file-inventory vocabulary: `agent`, `build_file`, `command`, `doc`, `script`, `skill`, `skill_doc`, `source`, `standard`, `template`, `test`. The vocabulary is declared once as `FILE_CATEGORIES` in `scripts/_architecture_core.py`; [client-api.md](standards/client-api.md) is the authoritative client contract.
+
+**Coverage**: inside a marketplace bundle, every file under `skills/<skill>/` is inventoried regardless of its sub-directory name or its file extension — a file that is not a `skill`, `script`, `standard`, `template`, `build_file` or `doc` classifies as `skill_doc`. Outside a bundle, the generic classifier is extension-driven and inventories `.md` / `.adoc` / `.asciidoc` as `doc`.
+
+**Zero-result semantics**: an unrecognised `--category` returns `status: error, error: unknown_category` carrying the valid vocabulary in `valid_categories` — it is never a confident empty list. A recognised category that this module does not populate returns `status: success` with `files: []`.
+
 ### which-module
 
 ```bash
@@ -484,6 +490,8 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture w
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture find \
   --pattern PATTERN [--category CATEGORY]
 ```
+
+`--category` takes the same vocabulary and the same zero-result semantics as the `files` verb above: an unrecognised name returns `status: error, error: unknown_category`, while a recognised-but-unpopulated category returns `status: success` with `count: 0`.
 
 ### diff-modules
 

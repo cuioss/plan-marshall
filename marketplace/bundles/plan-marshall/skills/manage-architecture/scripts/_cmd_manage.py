@@ -82,13 +82,18 @@ _FILES_ALWAYS_IGNORED_DIRS = frozenset(
 _FILES_DOTFILE_ALLOWLIST = frozenset({'.gitignore', '.editorconfig'})
 
 # Marketplace-specific category list. Modules outside ``marketplace/bundles/``
-# fall back to the generic set (``source``, ``test``, ``build_file``, ``doc``,
-# ``config``).
+# fall back to the generic set (``build_file``, ``doc``, ``script``, ``source``,
+# ``test``). Every category either classifier may emit is declared once in
+# ``_architecture_core.FILE_CATEGORIES``.
 _FILES_BUILD_FILES = frozenset({'pyproject.toml', 'package.json', 'pom.xml', 'plugin.json'})
 _FILES_GENERIC_SOURCE_EXTS = frozenset(
     {'.py', '.java', '.js', '.jsx', '.ts', '.tsx', '.go', '.rs', '.kt', '.c', '.cpp', '.h', '.hpp', '.cs'}
 )
 _FILES_GENERIC_SCRIPT_EXTS = frozenset({'.sh', '.bash', '.zsh'})
+# Bounded, declared doc-extension set for the generic peer. Deliberately NOT a
+# residual rule — see :func:`_classify_generic` for why generic mode stays
+# extension-driven while the marketplace peer is extension-free.
+_FILES_GENERIC_DOC_EXTS = frozenset({'.md', '.adoc', '.asciidoc'})
 
 _MARKETPLACE_BUNDLE_PREFIX = 'marketplace/bundles/'
 
@@ -243,18 +248,37 @@ def _classify_marketplace(rel_from_module: str, basename: str) -> str | None:
     if basename.startswith('README') or basename.startswith('CHANGELOG'):
         return 'doc'
 
+    # Residual: every remaining file under ``skills/<skill>/**`` is skill-owned
+    # reference material. The rule is deliberately RESIDUAL ON BOTH AXES — it
+    # names no sub-directory and tests no extension — so a seventh sub-directory
+    # kind or a fifth file format cannot reopen the inventory blind spot. This
+    # mirrors the ``skills/<skill>/templates/**`` rule above, which is likewise
+    # extension-free. Placement is load-bearing: it must stay LAST so the
+    # build-file and README/CHANGELOG tests above keep classifying those files
+    # as ``build_file`` / ``doc`` even when they sit under a skill directory.
+    if len(parts) >= 3 and parts[0] == 'skills':
+        return 'skill_doc'
+
     return None
 
 
 def _classify_generic(rel_from_module: str, basename: str) -> str | None:
-    """Return the generic category for ``rel_from_module`` or None to skip."""
+    """Return the generic category for ``rel_from_module`` or None to skip.
+
+    This peer stays EXTENSION-DRIVEN by design — unlike
+    :func:`_classify_marketplace`, whose residual rule is extension-free. In an
+    arbitrary project a file's path position carries no role guarantee, so an
+    extension-free residual here would sweep binaries, lockfiles and generated
+    artefacts into ``doc``. The generic peer therefore keeps a bounded, declared
+    extension set.
+    """
     if basename in _FILES_BUILD_FILES:
         return 'build_file'
 
-    if basename.startswith('README') or basename.startswith('CHANGELOG'):
+    suffix = Path(basename).suffix.lower()
+    if suffix in _FILES_GENERIC_DOC_EXTS:
         return 'doc'
 
-    suffix = Path(basename).suffix.lower()
     if suffix in _FILES_GENERIC_SCRIPT_EXTS:
         return 'script'
     if suffix in _FILES_GENERIC_SOURCE_EXTS:
