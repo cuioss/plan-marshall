@@ -125,7 +125,7 @@ Bash(command='git grep -l "coverage gap" -- marketplace doc')
 Three bounds apply:
 
 1. **Git-tracked files only.** Untracked and ignored content is invisible to `git grep`. When the content genuinely lives outside git tracking, the sweep is unanswerable — return the coverage gap to the main-context orchestrator.
-2. **One command per call still binds the enclosing Bash call.** A pattern containing `;`, `&`, `` ` ``, or `$(` is denied by the R1 shell-construct rule and must be reshaped (narrow the pattern, or issue separate `git grep` calls) — never chained or escaped around.
+2. **One command per call still binds the enclosing Bash call.** A pattern carrying a shell metacharacter — a semicolon, an ampersand, a backtick, or a command substitution — is denied by the R1 shell-construct rule and must be reshaped (narrow the pattern, or issue separate `git grep` calls) — never chained or escaped around.
 3. **No carve-out for `cat` / `head` / `tail` / `find` / `ls`.** The exception is the content-sweep primitive only; reading a known file remains `Read`, and path discovery remains the architecture inventory or `Glob`.
 
 The carve-out presupposes a `Bash`-granted leaf, so it does not apply to the read-only `execution-context-reader-{level}` variant, which has no `Bash`.

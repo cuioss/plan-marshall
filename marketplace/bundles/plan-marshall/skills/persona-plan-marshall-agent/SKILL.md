@@ -94,7 +94,7 @@ Bash(command='git grep -n "Bash: No file operations" -- marketplace/bundles/plan
 Three bounds apply, and none of them is negotiable:
 
 1. **Git-tracked files only.** `git grep` searches the index/worktree of tracked files; untracked or ignored content is invisible to it. When the content genuinely lives outside git tracking, the sweep is unanswerable here — return the coverage gap to the main-context orchestrator.
-2. **The one-command-per-call rule still applies to the enclosing Bash call.** A pattern containing `;`, `&`, `` ` ``, or `$(` is denied by the R1 shell-construct rule and must be reshaped (narrow the pattern, or split into separate `git grep` calls) — never chained or escaped around.
+2. **The one-command-per-call rule still applies to the enclosing Bash call.** A pattern carrying a shell metacharacter — a semicolon, an ampersand, a backtick, or a command substitution — is denied by the R1 shell-construct rule and must be reshaped (narrow the pattern, or split into separate `git grep` calls) — never chained or escaped around.
 3. **`cat` / `head` / `tail` / `find` / `ls` gain no carve-out whatsoever.** The exception is the content-sweep primitive only; every other Bash file operation stays blocked, and reading a known file is still `Read`.
 
 The carve-out presupposes a `Bash`-granted leaf, so it does NOT apply to the read-only `execution-context-reader-{level}` variant, which has no `Bash` at all. See [standards/tool-usage-patterns.md § Broad content sweep](standards/tool-usage-patterns.md#broad-content-sweep) for the worked invocation and the Tool Selection Guide row.
