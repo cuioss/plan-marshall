@@ -40,7 +40,7 @@ configurable:
     description: Gate the GitHub-only stuck-state `--admin` fallback inside `ci pr safe-merge` — false refuses the admin merge and surfaces the stuck PR to the operator; true permits `gh pr merge --admin` only when the PR stays `mergeable_state: blocked` past the poll timeout AND every active ruleset requirement is provably met. Orthogonal to `final_merge_without_asking` (which gates whether the merge is attempted at all).
   - key: pre_merge_comment_barrier
     default: fail_into_loopback
-    description: Gate the fail-closed pre-merge comment-completeness barrier that re-fetches bot comments immediately before merge/enqueue and blocks when any pr-comment finding is still pending. fail_into_loopback (default) loops the plan back into the automatic-review triage pipeline (records the branch-cleanup step loop_back, releases the merge mutex if held, re-enters phase-6-finalize); ask fires an inline AskUserQuestion offering re-triage / merge-anyway-with-recorded-reason / defer. The clean path (zero new pending findings) proceeds straight to merge.
+    description: Gate the fail-closed pre-merge review-completeness barrier that re-fetches bot comments immediately before merge/enqueue and blocks on EITHER of two predicates — any pr-comment finding still pending, or any REQUIRED bot whose participation against the current HEAD is unproven. The second predicate exists because the first cannot see an absence: a bot that never reviewed files no comment and so reads as clean to a pending count. fail_into_loopback (default) loops the plan back into the automatic-review triage pipeline (records the branch-cleanup step loop_back, releases the merge mutex if held, re-enters phase-6-finalize); ask fires an inline AskUserQuestion offering re-triage / merge-anyway-with-recorded-reason / defer. The clean path requires BOTH zero pending findings and participation_complete.
 ---
 
 # Branch Cleanup
@@ -93,7 +93,7 @@ The cross-plan merge mutex (`plan-marshall:manage-locks:merge_lock`) is held acr
 
 The widened hold obeys four invariants:
 
-1. **Release-and-FIFO-re-enqueue at every operator-wait / loop-back boundary.** The lock is held ONLY across non-interactive spans. Before EVERY `AskUserQuestion` (the Pre-Rebase Confirmation Gate, the re-review-timeout trigger-A gate, the Pre-Merge Confirmation Gate, the Pre-Merge Comment-Completeness Barrier ask gate, and the merge-queue budget-exhaustion escalation) and before every loop-back boundary (the loop-back-to-phase-5 disposition AND the Pre-Merge Comment-Completeness Barrier's fail-closed loop-back-to-6-finalize), the orchestrator releases the lock **if held** and re-enqueues via the FIFO admission queue (preserving FIFO position). On resume it RE-ACQUIRES through the same FIFO poll loop and **re-validates** — re-runs `baseline-reconcile` and re-rebases when `origin/{base_branch}` advanced during the released window — before merging. Releasing before the interactive wait is what prevents a held lock from blocking every other plan while this plan waits on a human. (At the Pre-Rebase Gate the lock is normally not yet held, so its release is a no-op; the guard is uniform for robustness.)
+1. **Release-and-FIFO-re-enqueue at every operator-wait / loop-back boundary.** The lock is held ONLY across non-interactive spans. Before EVERY `AskUserQuestion` (the Pre-Rebase Confirmation Gate, the re-review-timeout trigger-A gate, the Pre-Merge Confirmation Gate, the Pre-Merge Review-Completeness Barrier ask gate, and the merge-queue budget-exhaustion escalation) and before every loop-back boundary (the loop-back-to-phase-5 disposition AND the Pre-Merge Review-Completeness Barrier's fail-closed loop-back-to-6-finalize), the orchestrator releases the lock **if held** and re-enqueues via the FIFO admission queue (preserving FIFO position). On resume it RE-ACQUIRES through the same FIFO poll loop and **re-validates** — re-runs `baseline-reconcile` and re-rebases when `origin/{base_branch}` advanced during the released window — before merging. Releasing before the interactive wait is what prevents a held lock from blocking every other plan while this plan waits on a human. (At the Pre-Rebase Gate the lock is normally not yet held, so its release is a no-op; the guard is uniform for robustness.)
 
 2. **Bounded hold with the `merge_hold_budget_seconds` knob.** The orchestrator records the wall-clock instant of acquire and tracks elapsed-since-acquire. When a legitimate wait would push the held duration past `merge_hold_budget_seconds` (default 3600s), it releases + FIFO-re-enqueues + escalates via `AskUserQuestion` rather than continuing to hold. `merge_lock.py` is unchanged — its holder-liveness reclaim already bounds a CRASHED holder; this budget bounds a live-but-slow holder at the orchestrator layer.
 
@@ -572,9 +572,13 @@ Set `{merge_consent} = deferred`. Skip the **Merge PR**, **Wait for Merge CI**, 
 - On `use_merge_queue == false` (default): the `pr safe-merge` poll-then-merge path — including its GitHub-only stuck-state admin fallback when `admin_merge_on_stuck_state` is enabled — is authorized (explicit consent was given for the merge action; the stuck-state fallback is part of the same merge intent).
 - On `use_merge_queue == true`: the ENQUEUE via `ci pr merge-queue` is authorized instead — with NO `--delete-branch` and NO direct-merge/admin fallback; the platform re-tests-and-merges against the latest base and performs the head-branch deletion itself after the queue merge.
 
-### Pre-Merge Comment-Completeness Barrier
+### Pre-Merge Review-Completeness Barrier
 
 **Only if `state == open` AND `{merge_consent} == explicit_yes`** (the `final_merge_without_asking == true` bypass and the interactive "Yes, merge" both set `{merge_consent} = explicit_yes`). This fail-closed barrier fires AFTER the pre-merge gate authorized the merge and BEFORE the **Merge PR (if not yet merged)** routing below, so it gates BOTH the `use_merge_queue == false` safe-merge path and the `use_merge_queue == true` merge-queue path (both live inside **Merge PR**). It re-fetches bot comments from the provider against the current HEAD and refuses to merge while any `pr-comment` finding is still unhandled — closing the window where a comment that lands after `automatic-review` (order 30) marked done is never re-fetched by the time `branch-cleanup` (order 70) merges. The existing `phase_handshake findings-check` gate only re-reads the findings *store*; this barrier re-reads the *provider*, so a comment that was never fetched is visible to it.
+
+**The barrier has TWO predicates, and the second exists because the first cannot see an absence.** Unhandled-comment completeness asks whether every comment that EXISTS has been handled; a required bot that never reviewed at all publishes nothing, contributes zero pending findings, and therefore reads as *clean* to that predicate alone. Silence and satisfaction are indistinguishable to a comment count. The participation predicate below closes that by asking the complementary question — did every REQUIRED bot actually publish a review artifact against this HEAD — and both must pass before the merge proceeds.
+
+⚠ **This barrier, not the `automatic-review` force-done escape hatch, is what authorizes a merge.** That escape hatch (SKILL.md § "Force-done with an explicit recorded reason") lets the FIND step mark itself `done` with a required bot unproven, and the resulting record is byte-identical to one earned by a genuine pass — so nothing downstream could previously distinguish *reviewed* from *forced*. Observed on plan-marshall#1045: the fix commit was reviewed by CodeRabbit and never by the required `pr-agent`, `review_completeness` returned `participation_complete: false` with `unproven_bots: [pr-agent, sourcery]`, the step went `done` through the hatch, and `final_merge_without_asking: true` carried it to merge unchallenged. Re-deriving participation HERE rather than trusting the step record means a force-done no longer buys a merge: it defers the question to a barrier that asks it again, under an operator-configured `{barrier_mode}` rather than a leaf's own judgement.
 
 #### Read the barrier knob and the bot participation lists
 
@@ -617,18 +621,45 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings li
 
 Parse the returned `findings` list; let `{count}` be its length.
 
-#### Clean path — zero pending findings
+#### Predicate 2 — required-bot participation against this HEAD
 
-When the pending `pr-comment` list is empty, the barrier is satisfied: every enabled bot's comments against the current HEAD are handled. Log and proceed directly to **Merge PR (if not yet merged)** below — the barrier added exactly one `fetch_findings` call and zero dispatches:
+Retain `participated_bots` and `refused_bots` from the `fetch_findings` return above — that call observed every bot comment on the PR at the current HEAD, so its participation sets are the freshest evidence available and no second provider round-trip is needed. Feed them to the same predicate the FIND step uses:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:automatic-review:review_completeness \
+  check --plan-id {plan_id} --required-bots {required_bots} --optional-bots {optional_bots} \
+  --participated-bots {participated_bots} --refused-bots {refused_bots}
+```
+
+Read `participation_complete` and `unproven_bots` from the returned TOON. The predicate is fail-closed over the REQUIRED set: a required bot that published nothing resolves to `absent` and yields `participation_complete: false`. An unproven OPTIONAL bot never blocks — a bot on a hard quota that will not clear inside this plan's lifetime belongs in `optional_bots`, which is the configured way to accept its silence, rather than in a force-done that accepts every bot's silence at once.
+
+> **`participation_complete: true` proves PARTICIPATION, never review QUALITY.** It means each required bot published an artifact against this diff — not that the diff was reviewed well. Do not render a satisfied quorum as a reviewed diff in any log line, `display_detail`, or PR-body claim. See [`../../automatic-review/standards/bot-participation-contract.md`](../../automatic-review/standards/bot-participation-contract.md) § "Participation is not review quality".
+
+#### Clean path — zero pending findings AND participation complete
+
+The barrier is satisfied only when **both** predicates pass: `{count} == 0` (every comment against the current HEAD is handled) **and** `participation_complete: true` (every required bot published against it). Log and proceed directly to **Merge PR (if not yet merged)** below — the barrier added exactly one `fetch_findings` call, one predicate evaluation, and zero dispatches:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Pre-merge comment barrier: clean — zero pending pr-comment findings, proceeding to merge"
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Pre-merge review barrier: clean — zero pending pr-comment findings, required-bot participation complete, proceeding to merge"
 ```
+
+#### Blocked path — participation incomplete
+
+When `participation_complete: false`, the merge is blocked even if `{count} == 0`. **Zero pending comments is exactly what an unreviewed diff looks like**, so this branch must never be collapsed into the clean path on a comment count alone.
+
+Branch on `{barrier_mode}` using the SAME two branches as the unhandled-comment block below — `fail_into_loopback` (default) loops back into `6-finalize` so `automatic-review` re-fires and re-awaits the unproven bot, and `ask` prompts the operator. Both branches carry the same merge-mutex release obligations documented there; only the recorded message differs:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level WARNING --message "(plan-marshall:phase-6-finalize) Pre-merge review barrier: required-bot participation incomplete — unproven_bots={unproven_bots}, pending pr-comment findings={count} — pre_merge_comment_barrier={barrier_mode} (merge blocked)"
+```
+
+⚠ **A loop-back here is only productive if the unproven bot can still produce evidence.** Whether it can is a per-bot, per-repository property: a bot with no auto-review-on-push trigger in this repository's caller workflow will never re-review a loop-back fix commit on its own, and `re_review_on_loopback` (default `false`) governs whether an explicit trigger comment is posted for it. If neither holds, the loop-back re-enters this barrier with the same verdict. Fix the trigger, or move the bot to `optional_bots` — do not answer a structurally-unprovable bot with repeated loop-backs. See [`../../automatic-review/standards/pr-agent.md`](../../automatic-review/standards/pr-agent.md) § "Signal calibration" for how to read a given repository's caller.
 
 #### Blocked path — one or more pending findings
 
-When the pending list is non-empty, the merge is blocked. Branch on `{barrier_mode}`:
+When the pending list is non-empty, the merge is blocked. Branch on `{barrier_mode}` (these are the branches the participation-incomplete block above also uses):
 
 ##### `{barrier_mode} == fail_into_loopback` (default)
 
