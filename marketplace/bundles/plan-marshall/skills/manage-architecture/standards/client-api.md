@@ -542,7 +542,7 @@ architecture.py files --module MODULE [--category CATEGORY]
 | Option | Required | Default | Description |
 |--------|----------|---------|-------------|
 | `--module` | Yes | — | Module name from `_project.json` |
-| `--category` | No | (all) | Restrict to one category (`skill`, `agent`, `command`, `script`, `standard`, `template`, `source`, `test`, `build_file`, `doc`, `config`) |
+| `--category` | No | (all) | Restrict to one category. The vocabulary is exactly `agent`, `build_file`, `command`, `doc`, `script`, `skill`, `skill_doc`, `source`, `standard`, `template`, `test` — declared once as `FILE_CATEGORIES` in `scripts/_architecture_core.py`. An unrecognised name is an error, not an empty list (see **Edge cases** below). |
 
 **Output** (TOON, no filter):
 
@@ -591,10 +591,37 @@ sample spanning the full range), not a contiguous prefix — see
 
 **Edge cases**:
 
-- Unknown category: returns `files: []` (empty list) — distinct from a
-  capped bucket which returns the elision shape.
+- Unrecognised category (not a member of `FILE_CATEGORIES`): returns
+  `status: error`, `error: unknown_category`, and a `valid_categories`
+  list carrying the sorted vocabulary. The check is pure argument
+  validation and applies regardless of module.
+- Recognised category that this module does not populate: returns
+  `status: success` with `files: []`. A real category that happens to be
+  empty here is a legitimate empty answer — this is why the discriminator
+  is vocabulary membership and NOT membership in the module's `files`
+  block, whose keys only ever exist for categories that have files.
 - Unknown module: returns `error: Module not found` plus an `available`
   list of module names from `_project.json`.
+
+**Output** (TOON, unrecognised `--category`):
+
+```toon
+status: error
+error: unknown_category
+category: bogus-category
+valid_categories[11]:
+  - agent
+  - build_file
+  - command
+  - doc
+  - script
+  - skill
+  - skill_doc
+  - source
+  - standard
+  - template
+  - test
+```
 
 > **Elision passthrough is `files`-only.** This verb intentionally returns the
 > raw `{elided, sample}` shape verbatim — a reader consuming `files` must treat
@@ -678,7 +705,7 @@ architecture.py find --pattern P [--category CATEGORY]
 | Option | Required | Default | Description |
 |--------|----------|---------|-------------|
 | `--pattern` | Yes | — | Glob pattern (`fnmatch` syntax, case-sensitive, anchored to the full path) |
-| `--category` | No | (all) | Restrict search to one category |
+| `--category` | No | (all) | Restrict search to one category. Same vocabulary and same unrecognised-name error as the [`files`](#files) verb's `--category` option. |
 
 **Pattern semantics**: `*` matches any sequence of non-`/` characters, `?`
 matches one non-`/` character, `[seq]` matches one character from the
@@ -733,6 +760,13 @@ elided[1]{module,category,elided_count,sample_size}:
 - No matches: `count: 0`, `results: []`, `status: success`, and — when no
   in-scope category was elided — `truncated: false`, so the negative is
   trustworthy.
+- Unrecognised category (not a member of `FILE_CATEGORIES`): returns
+  `status: error`, `error: unknown_category`, and the sorted
+  `valid_categories` vocabulary — never a confident `count: 0`. The payload
+  is identical to the `files` verb's, shown above.
+- Recognised category that no module populates: returns `status: success`
+  with `count: 0`. The discriminator is vocabulary membership, not whether
+  any module's `files` block carries the key.
 
 ---
 

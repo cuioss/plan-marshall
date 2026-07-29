@@ -26,6 +26,7 @@ from typing import Any
 
 from _architecture_core import (
     DATA_DIR,
+    FILE_CATEGORIES,
     DataNotFoundError,
     ModuleNotFoundInProjectError,
     classify_changed_path,
@@ -634,6 +635,28 @@ def _resolve_module_inventory(
     return _flatten_inventory(files_block), truncation_entries
 
 
+def _unknown_category_result(category: str) -> dict[str, Any]:
+    """Return the shared ``unknown_category`` error payload for the two readers.
+
+    The discriminator is membership in :data:`FILE_CATEGORIES` — the declared
+    vocabulary — NOT membership in a module's ``files`` block. That distinction
+    is load-bearing: the block is built with ``setdefault``, so a category with
+    no files in a module is simply absent as a key. Testing block membership
+    would make "unknown category" and "in-taxonomy but empty here" the same
+    observable condition, which is exactly the confident-false-negative this
+    error removes.
+
+    The payload advertises the vocabulary itself so a caller never has to guess
+    the valid names, and so the published list cannot drift from the constant.
+    """
+    return {
+        'status': 'error',
+        'error': 'unknown_category',
+        'category': category,
+        'valid_categories': sorted(FILE_CATEGORIES),
+    }
+
+
 def cmd_files(args: argparse.Namespace) -> dict[str, Any]:
     """CLI handler for the ``files`` reader.
 
@@ -641,7 +664,17 @@ def cmd_files(args: argparse.Namespace) -> dict[str, Any]:
     block. When ``--category`` is supplied, the response is narrowed to
     that single bucket (and the ``elided``/``sample`` shape is preserved
     verbatim if the bucket was capped).
+
+    An unrecognised ``--category`` is an ``unknown_category`` error rather than
+    a confident empty list; a recognised category that this module does not
+    populate remains a legitimate ``status: success`` with ``files: []``. The
+    category check runs before module resolution because it is pure argument
+    validation and applies regardless of module.
     """
+    category = getattr(args, 'category', None)
+    if category and category not in FILE_CATEGORIES:
+        return _unknown_category_result(category)
+
     try:
         derived = _load_module_or_raise(args.module, args.project_dir)
     except DataNotFoundError:
@@ -656,22 +689,16 @@ def cmd_files(args: argparse.Namespace) -> dict[str, Any]:
         return {'status': 'error', 'error': str(e)}
 
     files_block = derived.get('files') or {}
-    category = getattr(args, 'category', None)
 
     if category:
+        # The category is known-valid here. An absent bucket means the module
+        # simply has no file in that category — a legitimate empty answer.
         bucket = files_block.get(category)
-        if bucket is None:
-            return {
-                'status': 'success',
-                'module': args.module,
-                'category': category,
-                'files': [],
-            }
         return {
             'status': 'success',
             'module': args.module,
             'category': category,
-            'files': bucket,
+            'files': [] if bucket is None else bucket,
         }
 
     return {
@@ -789,9 +816,17 @@ def cmd_find(args: argparse.Namespace) -> dict[str, Any]:
     reports ``truncated: true`` with the elided category names and true counts
     instead of a bare negative. The result always carries ``truncated: bool`` and
     ``elided: list[dict]`` (empty when clean) per ADR-009 fail-closed reporting.
+
+    An unrecognised ``--category`` is an ``unknown_category`` error rather than a
+    confident ``count: 0`` — the same two-way split ``cmd_files`` applies, and
+    for the same reason. A recognised category that no module populates still
+    returns ``count: 0``.
     """
     pattern = args.pattern
     category_filter = getattr(args, 'category', None)
+
+    if category_filter and category_filter not in FILE_CATEGORIES:
+        return _unknown_category_result(category_filter)
 
     try:
         module_names = iter_modules(args.project_dir)

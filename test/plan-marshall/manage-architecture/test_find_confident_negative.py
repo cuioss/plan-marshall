@@ -35,12 +35,23 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from _arch_fixtures import seed_project  # noqa: E402
 
+_architecture_core = load_script_module(
+    'plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core'
+)
 _cmd_manage = load_script_module('plan-marshall', 'manage-architecture', '_cmd_manage.py', '_cmd_manage')
 _cmd_client = load_script_module('plan-marshall', 'manage-architecture', '_cmd_client.py', '_cmd_client')
 
 _post_process_files = _cmd_manage._post_process_files
+FILE_CATEGORIES = _architecture_core.FILE_CATEGORIES
+cmd_files = _cmd_client.cmd_files
 cmd_find = _cmd_client.cmd_find
 cmd_which_module = _cmd_client.cmd_which_module
+
+# A category name that is NOT in the declared vocabulary.
+_UNKNOWN_CATEGORY = 'bogus-category'
+# A category that IS in the declared vocabulary but is deliberately absent from
+# the fixture module's ``files`` block — the "recognised but empty here" case.
+_RECOGNISED_UNPOPULATED_CATEGORY = 'template'
 
 # Sorts after every ``pkg/s*.py`` entry, so it lands in the elided tail past the
 # strided sample's last entry — only an uncapped self-scan can surface it.
@@ -145,6 +156,105 @@ def test_which_module_arm_self_scan_resolves_owner():
         assert result['module'] == 'pkg'
         assert result['truncated'] is False
         assert result['elided'] == []
+
+
+def _seed_partially_populated_project(tmpdir: str) -> None:
+    """Seed a module whose ``files`` block populates ``source`` but NOT ``template``.
+
+    ``template`` is a real member of ``FILE_CATEGORIES``, so this fixture makes
+    the two cases the readers must distinguish observable at the same time: an
+    unrecognised name (never a category) versus a recognised name this module
+    simply does not populate (absent as a block key, because the block is built
+    with ``setdefault``).
+    """
+    modules = {
+        'pkg': {
+            'name': 'pkg',
+            'paths': {'module': 'pkg'},
+            'files': {'source': ['pkg/a.py']},
+        },
+    }
+    seed_project(tmpdir, modules)
+
+
+def test_unknown_category_is_an_error_on_files():
+    """``files --category <not-a-category>`` errors instead of answering ``files: []``."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_partially_populated_project(tmpdir)
+
+        args = Namespace(project_dir=tmpdir, module='pkg', category=_UNKNOWN_CATEGORY)
+        result = cmd_files(args)
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'unknown_category'
+        assert result['category'] == _UNKNOWN_CATEGORY
+        # Anti-shape: never the confident empty list that was the defect.
+        assert 'files' not in result
+
+
+def test_unknown_category_is_an_error_on_find():
+    """``find --category <not-a-category>`` errors instead of answering ``count: 0``."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_partially_populated_project(tmpdir)
+
+        args = Namespace(project_dir=tmpdir, pattern='*', category=_UNKNOWN_CATEGORY)
+        result = cmd_find(args)
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'unknown_category'
+        assert result['category'] == _UNKNOWN_CATEGORY
+        # Anti-shape: never the confident zero count that was the defect.
+        assert 'count' not in result
+
+
+def test_recognised_but_unpopulated_category_still_succeeds_on_files():
+    """A real category this module does not populate stays a legitimate empty answer.
+
+    This is the half that proves the discriminator reads the VOCABULARY and not
+    the module's ``files`` block keys: ``template`` is absent from the block, so
+    a block-key-based implementation would wrongly report it as unknown.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_partially_populated_project(tmpdir)
+
+        # Precondition: the category is in the vocabulary but absent from the block.
+        assert _RECOGNISED_UNPOPULATED_CATEGORY in FILE_CATEGORIES
+
+        args = Namespace(project_dir=tmpdir, module='pkg', category=_RECOGNISED_UNPOPULATED_CATEGORY)
+        result = cmd_files(args)
+
+        assert result['status'] == 'success'
+        assert result['category'] == _RECOGNISED_UNPOPULATED_CATEGORY
+        assert result['files'] == []
+
+
+def test_recognised_but_unpopulated_category_still_succeeds_on_find():
+    """The same legitimate-empty contract on ``find`` — ``count: 0``, not an error."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_partially_populated_project(tmpdir)
+
+        args = Namespace(project_dir=tmpdir, pattern='*', category=_RECOGNISED_UNPOPULATED_CATEGORY)
+        result = cmd_find(args)
+
+        assert result['status'] == 'success'
+        assert result['count'] == 0
+        assert result['results'] == []
+
+
+def test_unknown_category_error_advertises_the_declared_vocabulary():
+    """The error payload's advertised vocabulary IS ``FILE_CATEGORIES``, sorted.
+
+    Pins the published list to the constant so it cannot drift the way the
+    ``client-api.md`` category enumeration already had.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_partially_populated_project(tmpdir)
+
+        files_result = cmd_files(Namespace(project_dir=tmpdir, module='pkg', category=_UNKNOWN_CATEGORY))
+        find_result = cmd_find(Namespace(project_dir=tmpdir, pattern='*', category=_UNKNOWN_CATEGORY))
+
+        assert files_result['valid_categories'] == sorted(FILE_CATEGORIES)
+        assert find_result['valid_categories'] == sorted(FILE_CATEGORIES)
 
 
 def test_which_module_arm_truncation_qualifies_null():
