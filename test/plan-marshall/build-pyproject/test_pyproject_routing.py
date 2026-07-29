@@ -48,6 +48,17 @@ import _build_execute_factory as _factory  # noqa: E402
 
 PYPROJECT_NOTATION = 'plan-marshall:build-pyproject:pyproject_build'
 
+# This module owns the D5 routing seam as its SUBJECT — it fakes the build-server
+# client at ``_load_build_server`` and then asserts what the REAL
+# ``_route_to_daemon`` does with it (routes, falls back with a named reason, or
+# fails loud under ``execution_mode=daemon``). The autouse
+# ``_neutralize_daemon_routing`` fixture in ``test/conftest.py`` would replace
+# that seam with a constant non-routing return and reduce every assertion here to
+# a tautology, so the module re-arms the real seam. It lives outside
+# ``test/plan-marshall/build-server/`` and is therefore NOT covered by the
+# fixture's location carve-out, which is exactly what this marker is for.
+pytestmark = pytest.mark.allow_daemon_routing
+
 
 class _FakeClient:
     """Scriptable build-server client installed over ``_load_build_server``.

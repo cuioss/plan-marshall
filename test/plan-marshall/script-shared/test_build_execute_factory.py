@@ -17,6 +17,14 @@ seam mocked on the ``_build_queue_slot`` module) and assert the four admission
 paths: admitted-once, blocked-then-admitted, max-retries-exhausted (structured
 ``queue_saturated`` error, build NOT run), and plan_id-absent (pure passthrough,
 zero queue interaction).
+
+These queue-integration cases leave ``execution_mode`` at its ``auto`` default
+and depend on the autouse ``_neutralize_daemon_routing`` fixture in
+``test/conftest.py`` to hold the D5 ``_route_to_daemon`` seam at its non-routing
+outcome — without it, a host with marshalld registered and ready would route the
+build away before the injected queue double and exec recorder are ever reached.
+The ``TestCmdRunExecutionModeVerdict`` daemon-mode cases below own that seam as
+their subject and re-arm it with ``@pytest.mark.allow_daemon_routing``.
 """
 
 import argparse
@@ -448,15 +456,6 @@ def _install(monkeypatch: pytest.MonkeyPatch, double: _QueueDouble):
     monkeypatch.setattr(bqs, '_acquire', double.acquire)
     monkeypatch.setattr(bqs, '_release_raw', double.release)
 
-    # Hermeticity: these tests exercise the IN-PROCESS build-queue-slot path, so
-    # force the D5 routing seam to signal fallback regardless of whether a real
-    # marshalld daemon is registered + ready on the host. Without this, a live
-    # daemon (e.g. a machine where the meta-project is registered) makes
-    # ``cmd_run`` route the build to the daemon before reaching the mocked
-    # in-process path, and the injected exec recorder / queue double are never
-    # exercised. ``no_notation`` is the benign "do not route" fallback reason.
-    monkeypatch.setattr(factory, '_route_to_daemon', lambda *_a, **_k: (None, 'no_notation'))
-
     exec_recorder = _ExecRecorder()
     monkeypatch.setattr(factory, 'execute_direct_base', exec_recorder)
     # cmd_run_common runs AFTER the slot closes; stub it so the test does not
@@ -801,6 +800,7 @@ class TestCmdRunExecutionModeVerdict:
         assert capture.result is not None
         assert capture.result['status'] == 'error'
 
+    @pytest.mark.allow_daemon_routing
     def test_daemon_mode_lying_success_is_failed_closed(self, monkeypatch, tmp_path):
         # (b) The daemon reports job_status: success over a failure-log; the
         # client cross-check catches the lying/lagging daemon and renders error.
@@ -824,6 +824,7 @@ class TestCmdRunExecutionModeVerdict:
         assert capture.result['status'] == 'error'
         assert capture.result['exit_code'] == 5
 
+    @pytest.mark.allow_daemon_routing
     def test_daemon_mode_genuine_success_stays_success(self, monkeypatch, tmp_path):
         monkeypatch.delenv(factory.MARSHALLD_JOB_ENV, raising=False)
         log = tmp_path / 'job.log'

@@ -139,7 +139,7 @@ timeout = 300
 # ``config.addinivalue_line`` in ``test/conftest.py::pytest_configure`` so the
 # registry is data, not code, and so enabling ``--strict-markers`` later needs
 # no relocation. A whole-tree sweep of ``@pytest.mark.<name>`` confirms these
-# two are the complete set of custom markers in use.
+# three are the complete set of custom markers in use.
 markers = [
     # ``allow_pollution`` is a DELIBERATE ESCAPE HATCH, retained by design: it
     # is the single opt-out a test uses when it must exercise the real
@@ -151,6 +151,16 @@ markers = [
     # resolvers.
     "allow_pollution: test may legitimately mutate the real ~/.plan-marshall/credentials/ directory or the tracked .plan/ tree (opts out of the autouse PLAN_BASE_DIR and CREDENTIALS_DIR sandboxes and the pollution guard).",
     "xdist_group(name): pin all tests sharing the same group name to a single xdist worker (requires --dist=loadgroup).",
+    # ``allow_daemon_routing`` is the second DELIBERATE ESCAPE HATCH, and the
+    # narrower of the two. The autouse ``_neutralize_daemon_routing`` fixture in
+    # ``test/conftest.py`` patches the D5 ``_route_to_daemon`` seam to its
+    # non-routing outcome for every test, so no test's behaviour depends on
+    # whether a marshalld daemon happens to be registered and ready on the host.
+    # Modules under ``test/plan-marshall/build-server/`` are carved out BY
+    # LOCATION and need no marker; this marker exists for a routing-owning test
+    # that lives OUTSIDE that directory and must therefore re-arm the real seam
+    # explicitly.
+    "allow_daemon_routing: test owns the marshalld build-routing seam as its subject and must run against the real _route_to_daemon (opts out of the autouse _neutralize_daemon_routing fixture; unnecessary under test/plan-marshall/build-server/, which is carved out by location).",
 ]
 
 [tool.coverage.run]
