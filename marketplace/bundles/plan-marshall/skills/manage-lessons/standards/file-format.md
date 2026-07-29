@@ -6,8 +6,8 @@ Storage format specification for global lessons learned.
 
 ```text
 .plan/lessons-learned/
-  2025-12-02-001.md
-  2025-12-02-002.md
+  2025-12-02-09-001.md
+  2025-12-02-09-002.md
   ...
 ```
 
@@ -15,20 +15,23 @@ Lessons are global (not plan-scoped) and persist across plans.
 
 ## File Naming Convention
 
-Format: `{YYYY-MM-DD}-{sequence}.md`
+Format: `{YYYY-MM-DD}-{HH}-{NNN}.md`
 
-- Date is the creation date
-- Sequence is a zero-padded 3-digit number starting at 001
-- Sequence resets per day (each day starts at 001)
+- Date and hour are the creation instant read in **UTC** — the same clock every
+  date field in the metadata header uses, so the id's date segment and `created`
+  always name the same day
+- `HH` is the zero-padded 24-hour UTC hour
+- `NNN` is a zero-padded 3-digit sequence number starting at 001
+- Sequence resets per hour (each `{date}-{hour}` bucket starts at 001)
 
-Examples: `2025-12-02-001.md`, `2025-12-02-002.md`, `2026-01-15-001.md`
+Examples: `2025-12-02-09-001.md`, `2025-12-02-09-002.md`, `2026-01-15-23-001.md`
 
 ## File Structure
 
 Markdown with key=value metadata header (no YAML frontmatter):
 
 ```markdown
-id=2025-12-02-001
+id=2025-12-02-09-001
 component=maven-build
 category=bug
 created=2025-12-02
@@ -59,14 +62,14 @@ This affects all projects using jakarta.json without explicit dependency.
 
 | Field | Required | Type | Description |
 |-------|----------|------|-------------|
-| `id` | Yes | string | Unique identifier matching filename without `.md` extension |
+| `id` | Yes | string | Unique identifier matching filename without `.md` extension. Its `{YYYY-MM-DD}-{HH}` prefix is read in **UTC** |
 | `component` | Yes | string | Component that the lesson applies to (e.g., `maven-build`, `plan-files`) |
 | `category` | Yes | string | One of: `bug`, `improvement`, `anti-pattern`, `arch-constraint`. The first three match the promotable finding types in `manage-findings/standards/jsonl-format.md`; `arch-constraint` is the exception — it is fed by the lessons-housekeeping machinery from recurring `arch-gate` violations (not by finding promotion) and follows a distinct rule-identity dedup + retire-on-quiet lifecycle (see below) |
-| `created` | Yes | string | Creation date in `YYYY-MM-DD` format |
+| `created` | Yes | string | Creation date in `YYYY-MM-DD` format, read in **UTC** — always equal to the date segment of `id` |
 | `bundle` | No | string | Bundle that the lesson relates to (e.g., `pm-dev-java`). Used for filtering when applying lessons to specific bundles. |
 | `rule` | Conditional | string | Rule identity for `arch-constraint` lessons (the structural rule the arch-gate violation references). Required for `arch-constraint`; it is the dedup key — at most one active `arch-constraint` lesson exists per rule. Absent for other categories. |
 | `recurrence_count` | Conditional | string | Integer (stored as string) for `arch-constraint` lessons: `1` on creation, bumped by one on each reinforce-on-recurrence. Absent for other categories. |
-| `last_seen` | Conditional | string | `YYYY-MM-DD` of the most recent observation for `arch-constraint` lessons: set to `created` on creation, refreshed on each reinforce. Anchors the retire-on-quiet window. Absent for other categories. |
+| `last_seen` | Conditional | string | `YYYY-MM-DD` (**UTC**) of the most recent observation for `arch-constraint` lessons: set to `created` on creation, refreshed on each reinforce. Anchors the retire-on-quiet window, whose day arithmetic therefore reads the same clock. Absent for other categories. |
 
 ### Category Definitions
 
