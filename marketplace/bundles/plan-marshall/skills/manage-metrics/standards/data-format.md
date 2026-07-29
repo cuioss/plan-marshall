@@ -46,7 +46,8 @@ session_message_count: 127
 |-------|------|--------|
 | `start` | ISO 8601 timestamp | `start-phase` command |
 | `end` | ISO 8601 timestamp | `end-phase` command |
-| `total_tokens` | int | Task agent `<usage>` tag (forwarded explicitly OR read from accumulator file) |
+| `close_count` | int | `end-phase` / `phase-boundary` — incremented on every close of this phase (absent read as `0`). `close_count > 1` is the **authoritative, inference-free re-entry marker**: the row was closed more than once (a finalize loop-back), so its token/tool and `duration_seconds` figures are sums across every close. `generate` reads it for the top-level `re_entered_phases` list and the `> Re-entered phases: …` marker |
+| `total_tokens` | int | Task agent `<usage>` tag (forwarded explicitly OR read from accumulator file). **Accumulating**: an explicitly-forwarded flag value is a per-close delta ADDED to the row; an accumulator-sourced value is already cumulative and is ASSIGNED |
 | `duration_ms` | int | Task agent `<usage>` tag (agent-reported, distinct from wall-clock) |
 | `tool_uses` | int | Task agent `<usage>` tag |
 | `retrospective_tokens` | int | Tokens attributable to the plan-retrospective dispatch within the phase window (forwarded explicitly via `--retrospective-tokens` OR read from the accumulator when the finalize retrospective step seeded it). Default-absent — present only on `[6-finalize]` rows of plans where the opt-in retrospective step ran |
@@ -179,12 +180,25 @@ the complementary case: a mixed phase where a dispatched total already exists.
 `generate` derives three time quantities per phase from already-persisted fields — no new pause/resume or user-gate API is introduced:
 
 - **Worked** — effort actually spent on the phase: `worked_ms = max(agent_duration_ms, subagent_duration_ms)` (missing operands treated as `0`). The `max(...)` form is the non-double-counting definition: when a main-context (orchestrating) turn dispatches a subagent, the subagent's wall span overlaps with the orchestrator's own wall span — the orchestrator is awaiting the subagent return, not doing independent compute. Summing the two values would double-count that overlap and could produce `Worked > Reported (wall)`. Taking the maximum lets the longer attribution span subsume the shorter overlap so the per-phase **`Worked <= Reported (wall)`** invariant always holds.
-- **Reported (wall)** — wall-clock span of the phase: `duration_seconds` (or, when absent, the span between `start_time` and `end_time`). This is calendar time between the phase's recorded `start_time` and `end_time` (a conversation boundary, not a compute measure). Calendar time is the right basis for the Idle residual because it is the only quantity that captures user-wait gaps — a compute-time wall would collapse Idle to zero by construction.
+- **Reported (wall)** — wall-clock span of the phase: `duration_seconds` (or, when absent, the span between `start_time` and `end_time` — a first-entry-only approximation, not an equivalent; see the Timestamp-vs-duration divergence subsection below). This is calendar time between the phase's recorded `start_time` and `end_time` (a conversation boundary, not a compute measure). Calendar time is the right basis for the Idle residual because it is the only quantity that captures user-wait gaps — a compute-time wall would collapse Idle to zero by construction.
 - **Idle** — the residual user-wait/idle time, persisted into `metrics.toon` as `idle_duration_ms`: `idle = max(0, wall_clock - worked)`. Because Worked is now bounded above by the longer of the two attribution sources rather than their sum, `wall_clock - worked` is non-negative for every phase whose subagent dispatches stay within the phase window, so the `max(0, …)` clamp is a safety net rather than a routine path. Idle time is computed post-hoc via session-boundary inference — `generate` reads the persisted phase window and effort fields and writes `idle_duration_ms` back before rendering.
 
 #### Worked <= Reported (wall) Invariant
 
 For every phase row that carries both signals, `Worked <= Reported (wall)` MUST hold. The invariant is what makes the `Idle` column non-blank for subagent-dispatching phases — when Worked could exceed wall (the prior additive formula), Idle clamped to zero and the column rendered `-`, hiding all user-wait time. The `max(agent_duration_ms, subagent_duration_ms)` definition guarantees the invariant for any phase whose dispatched subagents return within the phase window; out-of-window attribution (a subagent that overruns the boundary) cannot occur because `enrich` only attributes `<usage>` totals to phases whose `start_time..end_time` window contains the subagent's timestamp.
+
+**On a re-entered row the invariant survives because the wall span accumulates alongside the worked span**, and it is preserved by **clamping the summed worked value against the accumulated wall span** — not by any re-entry carve-out inside the clamp. The write site accumulates `agent_duration_ms` first and hands the clamp the SUM, which the clamp then bounds by the already-accumulated `duration_seconds`. The opposite ordering is unsound: clamping each per-close delta against the accumulated wall and then adding it to an already-clamped existing value can sum past that wall span and break the invariant. The clamp itself is therefore ordering-dependent but re-entry-agnostic — it needs no knowledge of `close_count`.
+
+#### Timestamp-vs-duration divergence on a re-entered row
+
+Accumulating the wall span makes `duration_seconds` and the `start_time`/`end_time` pair **stop being interchangeable definitions** on a `close_count > 1` row:
+
+- `start_time` stays **re-entry-scoped** — the latest entry's start. Both writers assign it unconditionally, and accumulation does not change that.
+- `duration_seconds` is the **cumulative sum of every entry's active span**.
+
+Such a row therefore deliberately does **not** satisfy `duration_seconds == end_time − start_time`. The intended reading: the accumulated value is the phase's total **active** wall time, excluding the gap during which the plan was executing a different phase. Preserving the first entry's `start_time` instead was rejected — it would make `duration_seconds` a contiguous span that silently bills the other phase's time to this row, and it would inflate the clamp ceiling, weakening the very invariant the accumulation exists to protect.
+
+The one consumer of the alternative definition is `_wall_clock_ms`'s timestamp-derived fallback, which is consequently a **first-entry-only approximation**, not an equivalent. It is unreachable for an accumulated row: it fires only when `duration_seconds` is absent, and a closed accumulated row always carries the field. The two definitions therefore never disagree about the same row in practice — but they are no longer interchangeable, and a consumer must not re-derive a re-entered phase's wall span from its timestamps.
 
 ### Boundary Monotonicity (Loop-Back Re-entry)
 
@@ -192,9 +206,21 @@ A finalize **loop-back** re-enters a prior phase (e.g. `5-execute`) and
 re-records its work under that phase's key. Because a later phase (`6-finalize`)
 was already closed, the re-entered phase's fresh `start_time` can end up
 preceding a prior phase's already-recorded `end_time` — a **non-monotonic**
-boundary. The corruption is upstream, in the phase-row writes: the overlapping
-window makes the derived wall span (and therefore the `idle = max(0, wall -
-worked)` residual) meaningless.
+boundary. The overlapping window makes a wall span derived from those timestamps
+(and therefore the `idle = max(0, wall - worked)` residual) meaningless.
+
+**This detector is a timestamp-ordering signal, not the re-entry marker.** The
+write-side loss it once stood in for is fixed — a repeat close now accumulates —
+and `close_count` is the authoritative re-entry marker (see the Per-Phase Fields
+table and the top-level `re_entered_phases` list). Critically, the two do not
+agree on *which* phase to name: the detector flags the **later** phase, not the
+re-entered one. On a `6-finalize → 5-execute` loop-back, `5-execute`'s fresh
+`start_time` is later than every earlier phase's `end_time`, so the phase that
+trips the check is `6-finalize` — whose original `start_time` now precedes
+`5-execute`'s new `end_time` — even though `6-finalize` was never re-entered.
+Read `boundary_monotonicity` as "these rows' timestamp windows overlap, so their
+idle residual was guarded", and `re_entered_phases` / `close_count` as "this is
+the row that was closed more than once".
 
 `generate` carries a **render-time monotonicity detector**. Walking the canonical
 `PHASE_NAMES` order it tracks the maximum `end_time` seen so far and flags any
@@ -219,7 +245,8 @@ reuses the existing `generate` read → annotate → write loop.
 
 | Field | Type | Source |
 |-------|------|--------|
-| `boundary_monotonicity` | list (comma-joined in `metrics.toon`, simple TOON array in the `generate` return) | Derived by `generate` — canonical-order list of phases whose `start_time` precedes a prior phase's `end_time`; absent when every boundary is monotonic |
+| `boundary_monotonicity` | list (comma-joined in `metrics.toon`, simple TOON array in the `generate` return) | Derived by `generate` — canonical-order list of phases whose `start_time` precedes a prior phase's `end_time`; absent when every boundary is monotonic. Names the LATER phase, not the re-entered one |
+| `re_entered_phases` | list (comma-joined in `metrics.toon`, simple TOON array in the `generate` return) | Derived by `generate` — canonical-order list of phases whose row carries `close_count > 1`; absent when no phase was re-entered. Rendered as the `> Re-entered phases: …` marker under `## Phase Breakdown`, with a per-phase **Closes** bullet under Phase Details. The authoritative re-entry signal — it names the phase that was actually closed more than once |
 
 ### Enrichment Fields
 
@@ -307,15 +334,23 @@ regenerated from the resulting state.
 
 For the **previous phase** (closed):
 
+Every usage/duration source below **accumulates** onto the row rather than
+replacing it, so a loop-back that closes the same phase a second time keeps both
+entries' figures. A forwarded flag is a per-close **delta** that is ADDED; an
+accumulator-sourced value is already **cumulative** and is ASSIGNED unchanged
+(adding it would double-count every re-close). A field that resolves from
+neither source leaves the row untouched — it never writes a `0`.
+
 | Field | Source |
 |-------|--------|
-| `end_time` | Timestamp at boundary call |
-| `duration_seconds` | Computed from `start_time` - `end_time` if `start_time` present |
-| `agent_duration_ms` | `--duration-ms` (when forwarded) |
-| `agent_duration_seconds` | Derived from `--duration-ms` (when forwarded) |
-| `total_tokens` | `--total-tokens` (when forwarded) |
-| `tool_uses` | `--tool-uses` (when forwarded) |
-| `retrospective_tokens` | `--retrospective-tokens` (when forwarded) OR the closing phase's accumulator value |
+| `end_time` | Timestamp at boundary call (stamped unconditionally, so it always reflects the latest close) |
+| `close_count` | Incremented on every close of the closing phase (absent read as `0`) |
+| `duration_seconds` | ADDS this close's **active span** — from whichever of `start_time` / the prior `end_time` is later, up to this `end_time`. A first close is therefore identical to a plain `end_time − start_time`; a second close with no intervening `start-phase` adds only the genuinely-new span. Unparseable timestamps leave the field untouched |
+| `agent_duration_ms` | `--duration-ms` (when forwarded) ADDED to the row, or the accumulator's cumulative `duration_ms` ASSIGNED; the resulting **sum** is then clamped to the accumulated wall span |
+| `agent_duration_seconds` | Derived from the clamped `agent_duration_ms` |
+| `total_tokens` | `--total-tokens` (when forwarded) ADDED, or the accumulator's cumulative value ASSIGNED |
+| `tool_uses` | `--tool-uses` (when forwarded) ADDED, or the accumulator's cumulative value ASSIGNED |
+| `retrospective_tokens` | `--retrospective-tokens` (when forwarded) ADDED, or the closing phase's accumulator value ASSIGNED |
 
 For the **next phase** (entered):
 
@@ -342,11 +377,17 @@ prev_phase: 1-init
 next_phase: 2-refine
 end_time: 2026-03-27T10:03:00+00:00
 start_time: 2026-03-27T10:03:00+00:00
+prev_close_count: 1
 prev_duration_seconds: 180.0
 prev_total_tokens: 25514
 metrics_file: metrics.md
 phases_recorded: 2
 ```
+
+`prev_close_count` reports how many times the closing phase has now been closed.
+`prev_duration_seconds` / `prev_total_tokens` report the row's **persisted
+accumulated** values, not the per-close delta forwarded in — identical figures on
+a first close, divergent on a re-entry.
 
 If `generate` cannot run (no phase data at all — only possible at plan
 start), the boundary call still writes the start/end records and surfaces the

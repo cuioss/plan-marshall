@@ -158,13 +158,62 @@ def _read_dispatch_boundary_totals(plan_id: str, phase: str) -> int:
     return total
 
 
-def _resolve_token_field(arg_value: int | None, accumulator: dict[str, int], key: str) -> int | None:
-    """Explicit flag wins; fall back to accumulator value when flag is absent."""
+def _resolve_token_field(
+    arg_value: int | None, accumulator: dict[str, int], key: str
+) -> tuple[int | None, str | None]:
+    """Resolve a usage field to its value AND its provenance.
+
+    Explicit flag wins; fall back to the accumulator value when the flag is
+    absent. The provenance half is what makes correct accumulation expressible
+    at the write site, because the two sources carry different arithmetic:
+
+    - ``'flag'`` — an explicit ``--total-tokens``-style value is a **per-close
+      delta**. On a phase re-entry it must be ADDED to whatever the row already
+      holds (see ``_apply_provenance``).
+    - ``'accumulator'`` — the on-disk per-phase accumulator is **already
+      cumulative** (``cmd_accumulate_agent_usage`` only ever sums and no verb
+      resets it), so it must be ASSIGNED unchanged. Adding it would double-count
+      every re-close.
+
+    Returns:
+        ``(value, source)`` where ``source`` is ``'flag'`` or ``'accumulator'``;
+        ``(None, None)`` when neither source carries the field, which the write
+        sites treat as "leave the row untouched" (never write a ``0``).
+    """
     if arg_value is not None:
-        return arg_value
+        return arg_value, 'flag'
     if key in accumulator:
-        return accumulator[key]
-    return None
+        return accumulator[key], 'accumulator'
+    return None, None
+
+
+def _row_int(phase_data: dict, key: str) -> int:
+    """Return a phase row's integer field, treating absent / non-numeric as 0."""
+    value = phase_data.get(key)
+    return int(value) if isinstance(value, (int, float)) else 0
+
+
+def _apply_provenance(phase_data: dict, row_key: str, value: int, source: str | None) -> int:
+    """Combine a resolved usage value with the row's existing value by provenance.
+
+    The accumulate-on-re-entry rule for the token/tool fields: a ``'flag'``-sourced
+    value is a per-close delta and is added to what the row already holds (absent
+    treated as 0); any other provenance (``'accumulator'``) is already the
+    cumulative total and is returned unchanged. Callers assign the result.
+    """
+    if source == 'flag':
+        return _row_int(phase_data, row_key) + value
+    return value
+
+
+def _increment_close_count(phase_data: dict) -> None:
+    """Record one more close of this phase row (absent ⇒ 0).
+
+    ``close_count > 1`` is the inference-free re-entry marker: it is written at
+    the write site on every close, so it never has to be inferred from timestamp
+    ordering the way ``cmd_generate``'s ``boundary_monotonicity`` detector does.
+    """
+    phase_data['close_count'] = _row_int(phase_data, 'close_count') + 1
 
 
 def _guard_plan_exists(plan_id: str) -> dict | None:
@@ -330,11 +379,66 @@ def _clamp_worked_to_wall(phase_data: dict, duration_ms: int) -> int:
     present, clamp the worked value to it so the per-phase ``Worked <= Reported
     (wall)`` invariant always holds; otherwise return the value unchanged. The
     clamp only ever bounds — it never inflates a worked value below the wall span.
+
+    Re-entry carries no carve-out here: this function bounds whatever value it is
+    handed against whatever ``duration_seconds`` the row holds. On a re-entered
+    phase the caller hands it the **summed** worked value and the row already
+    holds the **accumulated** wall span, so the invariant survives accumulation
+    without any special case. That ordering is the caller's obligation — clamping
+    a per-close delta and adding the clamped result to an already-clamped value
+    can sum past the accumulated wall span; see ``cmd_end_phase`` /
+    ``cmd_phase_boundary``, which accumulate first and clamp the sum.
     """
     wall_seconds = phase_data.get('duration_seconds')
     if isinstance(wall_seconds, (int, float)):
         return min(duration_ms, int(round(float(wall_seconds) * 1000.0)))
     return duration_ms
+
+
+def _accumulate_duration_seconds(phase_data: dict, prior_end_time: object, end_now: str) -> None:
+    """Add this close's active wall span onto the row's ``duration_seconds``.
+
+    ``duration_seconds`` carries no flag-vs-accumulator provenance — both writers
+    compute it inline — so it is an unconditional add of a per-close **active
+    span** rather than a provenance-keyed decision. The span runs from
+    ``max(start_time, prior_end_time)`` to ``end_now``, which makes all three
+    close shapes correct with one rule:
+
+    - **First close** — ``prior_end_time`` is absent, so the anchor is
+      ``start_time`` and the existing value is 0: byte-identical to a plain
+      ``end_time - start_time`` assignment.
+    - **Loop-back re-entry** — ``start_phase`` re-stamped a later ``start_time``,
+      so it wins the ``max`` and only the new entry's span is added.
+    - **Bare second close** (no intervening ``start-phase``) — the stale
+      ``start_time`` loses to ``prior_end_time``, so only the genuinely-new span
+      is added instead of double-counting the first entry.
+
+    The accumulated value is the phase's total *active* wall time; it therefore
+    deliberately does not satisfy ``duration_seconds == end_time - start_time`` on
+    a re-entered row (``start_time`` stays re-entry-scoped). Unparseable
+    timestamps leave the field untouched rather than writing a partial value.
+
+    Args:
+        phase_data: The phase row, mutated in place.
+        prior_end_time: The row's ``end_time`` as captured BEFORE this close
+            overwrote it, or a falsy value on a first close.
+        end_now: This close's ``end_time`` ISO timestamp.
+    """
+    start_str = phase_data.get('start_time')
+    if not start_str:
+        return
+    try:
+        anchor_dt = datetime.fromisoformat(str(start_str))
+        end_dt = datetime.fromisoformat(end_now)
+        if prior_end_time:
+            prior_dt = datetime.fromisoformat(str(prior_end_time))
+            anchor_dt = max(anchor_dt, prior_dt)
+        span_s = (end_dt - anchor_dt).total_seconds()
+    except (ValueError, TypeError):
+        return
+    existing = phase_data.get('duration_seconds')
+    base = float(existing) if isinstance(existing, (int, float)) else 0.0
+    phase_data['duration_seconds'] = round(base + span_s, 1)
 
 
 def _reconcile_accumulator_into_phase(phase_data: dict, accumulator: dict[str, int]) -> None:
@@ -374,7 +478,112 @@ def _reconcile_accumulator_into_phase(phase_data: dict, accumulator: dict[str, i
         phase_data['agent_duration_seconds'] = round(clamped / 1000.0, 1)
 
 
+def _close_phase_accumulating(
+    phase_data: dict, plan_id: str, phase: str, args: argparse.Namespace, now: str
+) -> dict[str, object]:
+    """Close one phase row for one call, accumulating per-close totals onto it.
+
+    Shared by ``cmd_end_phase`` and the phase-closing half of
+    ``cmd_phase_boundary`` — both close a phase under the identical
+    accumulate-on-re-entry contract. A phase can legitimately close more than
+    once (a finalize loop-back re-enters an earlier phase under the same phase
+    key), so this writer ACCUMULATES rather than replaces. Three distinct rules
+    apply, because the fields do not share one arithmetic:
+
+    - **Rule A (provenance-keyed)** for ``total_tokens``, ``tool_uses``,
+      ``retrospective_tokens``, and the resolved worked ``duration_ms``: a
+      ``'flag'``-sourced value is a per-close delta and is added to the row; an
+      ``'accumulator'``-sourced value is already cumulative and is assigned. An
+      unresolved field leaves the row untouched — never writes a ``0``.
+    - **Rule B** for ``duration_seconds``: an unconditional add of this close's
+      active span, anchored at ``max(start_time, prior_end_time)`` — see
+      ``_accumulate_duration_seconds``.
+    - **Rule C** for ``agent_duration_ms``: accumulate first, then clamp the SUM
+      against the accumulated wall span, which keeps ``Worked <= Reported
+      (wall)`` intact with no re-entry carve-out inside
+      ``_clamp_worked_to_wall``.
+
+    ``close_count`` is incremented on every close, making ``close_count > 1`` the
+    inference-free re-entry marker ``cmd_generate`` renders. Mutates
+    ``phase_data`` in place; the caller stamps its own result dict from the
+    mutated row plus the returned pre-provenance values.
+
+    Returns:
+        A dict with ``total_tokens`` / ``retrospective_tokens`` (the
+        pre-provenance resolved values, ``None``/falsy when unresolved — callers
+        use these to decide whether to surface the row's accumulated value in
+        their own result) and ``accumulator`` (the on-disk accumulator dict,
+        used to decide ``accumulator_used``).
+    """
+    # Capture the row's prior end_time BEFORE the unconditional stamp below
+    # overwrites it — it is the active-span anchor for a close that follows an
+    # earlier close with no intervening start-phase (see
+    # _accumulate_duration_seconds).
+    prior_end_time = phase_data.get('end_time')
+    # Stamp end_time unconditionally: it is the sole "recorded" marker
+    # cmd_generate reads. An inline phase closes here with the usage flags
+    # omitted (no agent <usage> envelope) and is still a fully recorded,
+    # timestamps-only row — never listed under unrecorded_phases.
+    phase_data['end_time'] = now
+
+    # Rule B: add this close's active wall span onto duration_seconds. Must run
+    # BEFORE the clamp below, which reads the accumulated span as its ceiling.
+    _accumulate_duration_seconds(phase_data, prior_end_time, now)
+    _increment_close_count(phase_data)
+
+    # Read on-disk accumulator as fallback when explicit flags are absent.
+    accumulator = _read_accumulator(plan_id, phase)
+    duration_ms, duration_ms_source = _resolve_token_field(args.duration_ms, accumulator, 'duration_ms')
+    total_tokens, total_tokens_source = _resolve_token_field(args.total_tokens, accumulator, 'total_tokens')
+    tool_uses, tool_uses_source = _resolve_token_field(args.tool_uses, accumulator, 'tool_uses')
+
+    # Rule C: accumulate the worked value first, then clamp the SUM against the
+    # accumulated wall span — never clamp the delta and add it to an
+    # already-clamped value, which can sum past that span.
+    if duration_ms is not None:
+        worked_total = _apply_provenance(phase_data, 'agent_duration_ms', duration_ms, duration_ms_source)
+        worked_total = _clamp_worked_to_wall(phase_data, worked_total)
+        phase_data['agent_duration_ms'] = worked_total
+        phase_data['agent_duration_seconds'] = round(worked_total / 1000.0, 1)
+
+    if total_tokens is not None:
+        phase_data['total_tokens'] = _apply_provenance(
+            phase_data, 'total_tokens', total_tokens, total_tokens_source
+        )
+
+    if tool_uses is not None:
+        phase_data['tool_uses'] = _apply_provenance(phase_data, 'tool_uses', tool_uses, tool_uses_source)
+
+    # Plan-retrospective spend attribution (default-absent): records the token
+    # total attributable to the plan-retrospective dispatch within this phase
+    # window. The retrospective dispatches under `--phase phase-6-finalize`, so
+    # its spend is otherwise folded into the `[6-finalize]` total with no
+    # separator. The audit's three metrics-related checks read this field to
+    # exclude deliberate-analysis spend; plans archived before the producer
+    # wiring landed simply lack it. The explicit `--retrospective-tokens` flag
+    # is the override; absent it the value is read back from the accumulator
+    # that the finalize retrospective step seeded via accumulate-agent-usage.
+    retrospective_tokens, retrospective_tokens_source = _resolve_token_field(
+        args.retrospective_tokens, accumulator, 'retrospective_tokens'
+    )
+    if retrospective_tokens:
+        phase_data['retrospective_tokens'] = _apply_provenance(
+            phase_data, 'retrospective_tokens', retrospective_tokens, retrospective_tokens_source
+        )
+
+    return {
+        'total_tokens': total_tokens,
+        'retrospective_tokens': retrospective_tokens,
+        'accumulator': accumulator,
+    }
+
+
 def cmd_end_phase(args: argparse.Namespace) -> dict:
+    """Close a phase, accumulating its per-close totals onto the existing row.
+
+    See ``_close_phase_accumulating`` for the authoritative statement of the
+    three accumulate-on-re-entry rules this delegates to.
+    """
     plan_id = require_valid_plan_id(args)
     phase = args.phase
 
@@ -392,52 +601,10 @@ def cmd_end_phase(args: argparse.Namespace) -> dict:
         data['phases'][phase] = {}
 
     phase_data = data['phases'][phase]
-    # Stamp end_time unconditionally: it is the sole "recorded" marker
-    # cmd_generate reads. An inline phase closes here with the usage flags
-    # omitted (no agent <usage> envelope) and is still a fully recorded,
-    # timestamps-only row — never listed under unrecorded_phases.
-    phase_data['end_time'] = now
-
-    # Compute duration from start/end if available
-    start_str = phase_data.get('start_time')
-    if start_str:
-        try:
-            start_dt = datetime.fromisoformat(str(start_str))
-            end_dt = datetime.fromisoformat(now)
-            duration_s = (end_dt - start_dt).total_seconds()
-            phase_data['duration_seconds'] = round(duration_s, 1)
-        except (ValueError, TypeError):
-            pass
-
-    # Read on-disk accumulator as fallback when explicit flags are absent.
-    accumulator = _read_accumulator(plan_id, phase)
-    duration_ms = _resolve_token_field(args.duration_ms, accumulator, 'duration_ms')
-    total_tokens = _resolve_token_field(args.total_tokens, accumulator, 'total_tokens')
-    tool_uses = _resolve_token_field(args.tool_uses, accumulator, 'tool_uses')
-
-    if duration_ms is not None:
-        duration_ms = _clamp_worked_to_wall(phase_data, duration_ms)
-        phase_data['agent_duration_ms'] = duration_ms
-        phase_data['agent_duration_seconds'] = round(duration_ms / 1000.0, 1)
-
-    if total_tokens is not None:
-        phase_data['total_tokens'] = total_tokens
-
-    if tool_uses is not None:
-        phase_data['tool_uses'] = tool_uses
-
-    # Plan-retrospective spend attribution (default-absent): records the token
-    # total attributable to the plan-retrospective dispatch within this phase
-    # window. The retrospective dispatches under `--phase phase-6-finalize`, so
-    # its spend is otherwise folded into the `[6-finalize]` total with no
-    # separator. The audit's three metrics-related checks read this field to
-    # exclude deliberate-analysis spend; plans archived before the producer
-    # wiring landed simply lack it. The explicit `--retrospective-tokens` flag
-    # is the override; absent it the value is read back from the accumulator
-    # that the finalize retrospective step seeded via accumulate-agent-usage.
-    retrospective_tokens = _resolve_token_field(args.retrospective_tokens, accumulator, 'retrospective_tokens')
-    if retrospective_tokens:
-        phase_data['retrospective_tokens'] = retrospective_tokens
+    closed = _close_phase_accumulating(phase_data, plan_id, phase, args, now)
+    total_tokens = closed['total_tokens']
+    retrospective_tokens = closed['retrospective_tokens']
+    accumulator = closed['accumulator']
 
     data['updated'] = now
     write_metrics(plan_id, data)
@@ -447,13 +614,14 @@ def cmd_end_phase(args: argparse.Namespace) -> dict:
         'plan_id': plan_id,
         'phase': phase,
         'end_time': now,
+        'close_count': phase_data['close_count'],
     }
     if 'duration_seconds' in phase_data:
         result['duration_seconds'] = phase_data['duration_seconds']
     if total_tokens is not None:
-        result['total_tokens'] = total_tokens
+        result['total_tokens'] = phase_data['total_tokens']
     if retrospective_tokens:
-        result['retrospective_tokens'] = retrospective_tokens
+        result['retrospective_tokens'] = phase_data['retrospective_tokens']
     if accumulator and args.total_tokens is None:
         result['accumulator_used'] = True
 
@@ -466,6 +634,14 @@ def _wall_clock_ms(phase: dict) -> int | None:
     Prefers the persisted ``duration_seconds`` field; when absent, derives the
     span from ``start_time``/``end_time`` ISO timestamps. Returns None when no
     wall-clock signal is available.
+
+    The timestamp-derived branch is a **first-entry-only approximation**, NOT an
+    equivalent definition of the persisted field. ``duration_seconds`` accumulates
+    every close's active span while ``start_time`` stays re-entry-scoped, so on a
+    ``close_count > 1`` row the two disagree by the gap spent in another phase.
+    The approximation is nonetheless safe here because it fires only when
+    ``duration_seconds`` is absent, and an accumulated row always carries it — so
+    the two branches can never disagree about the same row.
     """
     duration_seconds = phase.get('duration_seconds')
     if isinstance(duration_seconds, (int, float)):
@@ -574,10 +750,14 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     # READ-ONLY detector — it surfaces the anomaly (a top-level
     # `boundary_monotonicity` warning listing the phases plus a per-phase
     # `boundary_non_monotonic` annotation) and guards the idle residual below,
-    # but NEVER mutates the recorded start_time / end_time boundary fields. The
-    # corruption it guards against is upstream, in the phase-row writes, so the
-    # detector only annotates and guards rather than rewriting the boundary. It
+    # but NEVER mutates the recorded start_time / end_time boundary fields. It
     # does not touch the #812 `end_time`-keyed partial verdict.
+    #
+    # This detector is a timestamp-ordering signal only, and it names the LATER
+    # phase rather than the re-entered one (the re-entered phase's fresh
+    # start_time is what pushes the following phase's already-closed window out of
+    # order). `close_count`, written at the write site, is the authoritative
+    # re-entry marker — see the re_entered_phases detection below.
     non_monotonic_phases: list[str] = []
     prior_end_dt: datetime | None = None
     for phase_name in PHASE_NAMES:
@@ -593,6 +773,16 @@ def cmd_generate(args: argparse.Namespace) -> dict:
             prior_end_dt = end_dt
     if non_monotonic_phases:
         data['boundary_monotonicity'] = ','.join(non_monotonic_phases)
+
+    # Re-entry marker, read straight off the write site's close_count. Unlike the
+    # timestamp detector above this needs no inference and names the phase that
+    # was actually re-entered, so a reader can tell which row's totals are the
+    # sum across multiple closes.
+    re_entered_phases = [
+        name for name in PHASE_NAMES if name in phases and _row_int(phases[name], 'close_count') > 1
+    ]
+    if re_entered_phases:
+        data['re_entered_phases'] = ','.join(re_entered_phases)
 
     # Persist the per-phase idle residual back into metrics.toon before
     # rendering: idle = max(0, wall_clock - worked). Derived deterministically
@@ -647,6 +837,18 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     # report is a floor, not a complete accounting.
     if partial:
         lines.append(f'> Partial: unrecorded phases — {", ".join(unrecorded_phases)}')
+        lines.append('')
+
+    # Re-entry marker: name every phase closed more than once, so a reader knows
+    # which rows carry totals summed across multiple closes. This is the
+    # authoritative re-entry signal (close_count is written at the write site);
+    # the timestamp-derived warning below is a weaker inference that names the
+    # later phase instead.
+    if re_entered_phases:
+        lines.append(
+            f'> Re-entered phases: {", ".join(re_entered_phases)}. Totals for these '
+            'phases are the sum across every close (close_count > 1).'
+        )
         lines.append('')
 
     # Boundary-monotonicity warning: when a finalize loop-back re-entered an
@@ -841,6 +1043,16 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         lines.append(f'- **Start**: {start}')
         lines.append(f'- **End**: {end}')
 
+        # Only a re-entered phase gets this bullet: a once-closed row carries no
+        # reader-relevant close-count fact, and stating "1" on every phase would
+        # bury the rows that actually accumulated.
+        close_count = _row_int(phase, 'close_count')
+        if close_count > 1:
+            lines.append(
+                f'- **Closes**: {close_count} (phase re-entered; the totals below are '
+                'the sum across every close, and Start is the latest entry only)'
+            )
+
         wall_ms = _wall_clock_ms(phase)
         if wall_ms:
             lines.append(f'- **Reported (wall-clock) duration**: {format_duration(wall_ms / 1000.0)}')
@@ -939,6 +1151,7 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         'partial': partial,
         'unrecorded_phases': unrecorded_phases,
         'boundary_monotonicity': non_monotonic_phases,
+        're_entered_phases': re_entered_phases,
         'total_worked_seconds': round(total_worked, 1),
         'total_wall_seconds': round(total_wall, 1),
         'total_idle_seconds': round(total_idle, 1),
@@ -1109,6 +1322,13 @@ def cmd_phase_boundary(args: argparse.Namespace) -> dict:
     matching `start-phase`), it is recorded with end metadata only — same
     behaviour as the standalone `end-phase` command.
 
+    Accumulate-on-re-entry: closing `--prev-phase` ADDS to that row rather than
+    replacing it, so a finalize loop-back that re-enters an earlier phase keeps
+    both entries' totals. The closing half delegates to
+    `_close_phase_accumulating` — the shared writer `cmd_end_phase` also calls —
+    see its docstring for the authoritative statement of the three
+    accumulate-on-re-entry rules.
+
     Inline-phase recording mode: a phase that runs *inline* in the main
     orchestrator context (rather than as a dispatched `execution-context`
     leaf) produces no agent `<usage>` envelope, so the caller OMITS the
@@ -1150,53 +1370,20 @@ def cmd_phase_boundary(args: argparse.Namespace) -> dict:
     if prev_phase not in data['phases']:
         data['phases'][prev_phase] = {}
     prev_data = data['phases'][prev_phase]
-    # Stamp end_time unconditionally — this is the sole "recorded" marker
-    # cmd_generate's partiality verdict reads. Stamping it independent of any
-    # usage flag is what makes the inline-phase (omit-usage) close a fully
-    # recorded, timestamps-only row rather than an unrecorded one.
-    prev_data['end_time'] = end_now
 
     # 1-init structural backfill: when transitioning out of 1-init for the
     # first time the phase row never went through cmd_start_phase, so
-    # start_time is absent. Source it from status.json.created so the
-    # duration-computation path below catches the backfill and writes
-    # duration_seconds in the same call.
+    # start_time is absent. Source it from status.json.created BEFORE closing
+    # the row so the duration-computation path inside the shared closer catches
+    # the backfill and writes duration_seconds in the same call.
     if prev_phase == '1-init' and not prev_data.get('start_time'):
         created_ts = _read_status_created(plan_id)
         if created_ts is not None:
             prev_data['start_time'] = created_ts
 
-    start_str = prev_data.get('start_time')
-    if start_str:
-        try:
-            start_dt = datetime.fromisoformat(str(start_str))
-            end_dt = datetime.fromisoformat(end_now)
-            duration_s = (end_dt - start_dt).total_seconds()
-            prev_data['duration_seconds'] = round(duration_s, 1)
-        except (ValueError, TypeError):
-            pass
-
-    accumulator = _read_accumulator(plan_id, prev_phase)
-    duration_ms = _resolve_token_field(args.duration_ms, accumulator, 'duration_ms')
-    total_tokens = _resolve_token_field(args.total_tokens, accumulator, 'total_tokens')
-    tool_uses = _resolve_token_field(args.tool_uses, accumulator, 'tool_uses')
-
-    if duration_ms is not None:
-        duration_ms = _clamp_worked_to_wall(prev_data, duration_ms)
-        prev_data['agent_duration_ms'] = duration_ms
-        prev_data['agent_duration_seconds'] = round(duration_ms / 1000.0, 1)
-    if total_tokens is not None:
-        prev_data['total_tokens'] = total_tokens
-    if tool_uses is not None:
-        prev_data['tool_uses'] = tool_uses
-
-    # Plan-retrospective spend attribution on the phase being closed (symmetric
-    # with cmd_end_phase). Explicit `--retrospective-tokens` overrides; absent it
-    # the value is read back from the closing phase's accumulator. Default-absent:
-    # plans archived before the producer wiring landed lack the field.
-    retrospective_tokens = _resolve_token_field(args.retrospective_tokens, accumulator, 'retrospective_tokens')
-    if retrospective_tokens:
-        prev_data['retrospective_tokens'] = retrospective_tokens
+    closed = _close_phase_accumulating(prev_data, plan_id, prev_phase, args, end_now)
+    total_tokens = closed['total_tokens']
+    accumulator = closed['accumulator']
 
     # Step 2: start the next phase (mirrors cmd_start_phase semantics).
     start_now = now_utc_iso()
@@ -1217,11 +1404,12 @@ def cmd_phase_boundary(args: argparse.Namespace) -> dict:
         'next_phase': next_phase,
         'end_time': end_now,
         'start_time': start_now,
+        'prev_close_count': prev_data['close_count'],
     }
     if 'duration_seconds' in prev_data:
         result['prev_duration_seconds'] = prev_data['duration_seconds']
     if total_tokens is not None:
-        result['prev_total_tokens'] = total_tokens
+        result['prev_total_tokens'] = prev_data['total_tokens']
     if accumulator and args.total_tokens is None:
         result['accumulator_used'] = True
     # Surface the generate side-effect outcome so callers can react if it

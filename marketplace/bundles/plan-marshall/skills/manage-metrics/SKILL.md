@@ -47,7 +47,13 @@ Record phase end timestamp with optional token data from Task agent notification
 
 **Prerequisite**: `start-phase` must have been called for this phase. If no start time exists, duration cannot be calculated (the phase is silently recorded without duration).
 
-**Idempotency**: Calling `end-phase` multiple times for the same phase replaces the previous end data (does not accumulate).
+**Re-entry (accumulate, never replace)**: Calling `end-phase` more than once for the same phase — which is exactly what a finalize loop-back into a phase that precedes it in the six-phase sequence produces — **accumulates** onto the existing row rather than replacing it, and increments the row's `close_count`. Three rules apply, because the fields do not share one arithmetic:
+
+- **Token/tool fields** (`total_tokens`, `tool_uses`, `retrospective_tokens`, and the worked `agent_duration_ms`) are provenance-keyed: an explicitly-passed flag value is a **per-close delta** and is added to what the row already holds, while an accumulator-sourced value is **already cumulative** and is assigned unchanged (adding it would double-count every re-close). A field that resolves from neither source leaves the row untouched — it never writes a `0`.
+- **The wall span accumulates too**: `duration_seconds` adds this close's **active span**, measured from whichever of `start_time` / the prior `end_time` is later. A first close is therefore identical to a plain `end_time − start_time`; a bare second close with no intervening `start-phase` adds only the genuinely-new span instead of double-counting the first entry.
+- **`agent_duration_ms` accumulates first and the sum is then clamped** to the accumulated wall span, so the `Worked <= Reported (wall)` invariant holds on a re-entered row with no special case in the clamp itself.
+
+Because the wall span accumulates while `start_time` stays scoped to the latest entry, a `close_count > 1` row deliberately does not satisfy `duration_seconds == end_time − start_time`. See [data-format.md](standards/data-format.md) for that divergence and the full per-field contract.
 
 **Accumulator fallback**: When any of `--total-tokens`, `--tool-uses`, `--duration-ms`, or `--retrospective-tokens` is omitted, `end-phase` reads `work/metrics-accumulator-{phase}.toon` (written by `accumulate-agent-usage`) and uses its running totals for the missing fields. Explicitly passed flags always win over accumulator values. Phases that ran without any agent dispatch (no accumulator file, no flags) are recorded with timestamps only — same behaviour as before; this is the inline-phase recording mode documented under `phase-boundary` (a timestamps-only closed row is fully recorded, never `unrecorded`). The `retrospective_tokens` field is carried alongside the others: the finalize retrospective step seeds it via `accumulate-agent-usage --retrospective-tokens`, and `end-phase` reads it back here so `[6-finalize].retrospective_tokens` is recorded without an explicit flag at the `end-phase` call site.
 
@@ -71,9 +77,15 @@ status: success
 plan_id: EXAMPLE-PLAN
 phase: 1-init
 end_time: 2026-03-27T10:03:00+00:00
+close_count: 1
 duration_seconds: 180.0
 total_tokens: 25514
 ```
+
+`close_count` is the number of times this phase has now been closed, and
+`duration_seconds` / `total_tokens` report the **persisted row values** (the
+accumulated figures) rather than the per-close delta that was passed in — on a
+first close the two are identical.
 
 ### generate
 
@@ -94,6 +106,8 @@ partial: true
 unrecorded_phases[1]:
   - 6-finalize
 boundary_monotonicity[0]:
+re_entered_phases[1]:
+  - 5-execute
 total_worked_seconds: 572.5
 total_wall_seconds: 640.0
 total_idle_seconds: 67.5
@@ -107,6 +121,8 @@ total_tokens_formatted: 86.8K
 The `total_worked_formatted` / `total_wall_formatted` / `total_idle_formatted` fields are produced by `format_duration` (shared with the metrics.md Phase Breakdown table) and `total_tokens_formatted` is produced by `format_tokens_short` from `tools-file-ops` (abbreviated decimal-suffix form, e.g. `599K`, `1.2M`). The raw `total_worked_seconds` / `total_wall_seconds` / `total_idle_seconds` / `total_tokens` seconds-and-count figures are kept alongside them — consumers that want the human-readable form for an `[OK]` row should read the `_formatted` fields instead of re-formatting.
 
 **Partiality (floor-not-truth)**: `partial` and `unrecorded_phases` make the report's completeness first-class. A canonical phase is *recorded* iff its `metrics.toon` row carries an `end_time` (the boundary-close marker); a phase with no row at all is unrecorded too. `unrecorded_phases` lists every canonical phase (from the six-phase model) that lacks that marker, and `partial` is `true` whenever the list is non-empty. A `partial: true` total is a **floor, not a truth** — at least the listed phases' tokens/durations are under-counted (the canonical case is a `6-finalize` whose terminal close never folded its accumulator in). A fully-recorded six-phase plan reports `partial: false` with an empty `unrecorded_phases`. The same verdict is persisted as top-level keys in `metrics.toon` and rendered as a `> Partial: unrecorded phases — …` marker under the `## Phase Breakdown` heading in `metrics.md`; the Phase Breakdown Total uses the canonical-six baseline as its completeness denominator, so an entirely-absent phase renders the Total as partial (`n=k/6`) instead of looking complete.
+
+**Re-entered phases**: `re_entered_phases` lists every phase whose row carries `close_count > 1` — a phase closed more than once, which is what a finalize loop-back into a phase that precedes it in the six-phase sequence produces. Its totals are the sum across every close (see the `end-phase` "Re-entry" paragraph). The same list is persisted as a top-level `re_entered_phases` key in `metrics.toon` and rendered as a `> Re-entered phases: …` marker under the `## Phase Breakdown` heading, with a per-phase **Closes** bullet under Phase Details. Because `close_count` is written at the write site, this is the **authoritative** re-entry signal; the neighbouring `boundary_monotonicity` list is a weaker timestamp-ordering inference that names the *later* phase rather than the re-entered one.
 
 Returns `status: error, error: no_data` if no metrics have been collected yet (no start-phase/end-phase calls made).
 
@@ -192,11 +208,16 @@ prev_phase: 1-init
 next_phase: 2-refine
 end_time: 2026-03-27T10:03:00+00:00
 start_time: 2026-03-27T10:03:00+00:00
+prev_close_count: 1
 prev_duration_seconds: 180.0
 prev_total_tokens: 25514
 metrics_file: metrics.md
 phases_recorded: 2
 ```
+
+`prev_close_count` is the number of times the closing phase has now been closed;
+`prev_duration_seconds` / `prev_total_tokens` report that row's **persisted
+accumulated** values, not the per-close delta forwarded in.
 
 The fused call is the canonical path at orchestrator phase boundaries —
 prefer it over a manual `end-phase` + `start-phase` + `generate` sequence
@@ -207,6 +228,16 @@ whenever the caller knows the exact `prev → next` transition.
 `--retrospective-tokens` are omitted, the closing phase row is filled from
 `work/metrics-accumulator-{prev_phase}.toon` if the file exists. Explicit
 flags always override accumulator values.
+
+It also shares the **accumulate-on-re-entry** rule: closing `--prev-phase`
+adds to that row rather than replacing it, and increments the row's
+`close_count`. The provenance split is what makes the two fallback sources
+combine correctly — an explicit flag is a per-close delta that is **added**,
+while the accumulator value is already cumulative and is **assigned**, so a
+loop-back re-entry neither loses the first close's totals nor double-counts the
+accumulator. `duration_seconds` accumulates the per-close active span, and the
+worked `agent_duration_ms` is summed before being clamped to that accumulated
+span. See the `end-phase` "Re-entry" paragraph for the three rules in full.
 
 **Inline-phase recording mode (omit the `<usage>` flags)**: a phase that runs
 *inline* in the main orchestrator context — rather than as a dispatched
@@ -483,11 +514,17 @@ phases:
     total_tokens: 25514
     duration_ms: 23332
     tool_uses: 12
+    close_count: 1
   2-refine:
     start_time: 2026-03-27T10:03:30+00:00
     end_time: 2026-03-27T10:05:00+00:00
     duration_seconds: 90.0
 ```
+
+`close_count` counts the closes of that phase row; `1-init` shows `1` because it
+can never be looped back into. A row with `close_count > 1` was re-entered, so
+its `duration_seconds` and token/tool figures are sums across every close while
+`start_time` reflects only the latest entry — see [data-format.md](standards/data-format.md).
 
 ### Generated metrics.md
 
