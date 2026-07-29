@@ -630,6 +630,33 @@ def percentile(values: list[float], pct: float) -> float:
 
 
 # ---------------------------------------------------------------------------
+# Repo-root resolution
+# ---------------------------------------------------------------------------
+
+
+def _resolve_repo_root() -> Path:
+    """Resolve the project root by walking up from the working directory.
+
+    Every repo-root-anchored read and write in this script — the corpus scan
+    roots, the lessons-corpus read, the global-log read, the retire-on-quiet run
+    history, and the persisted report — is derived from the returned path, so it
+    must name the project rather than whichever directory the auditor happened
+    to be invoked from.
+
+    Returns:
+        The nearest ancestor of the working directory (the working directory
+        itself included) that contains a `.plan/local` directory. When no
+        ancestor qualifies, the working directory itself, which keeps an
+        out-of-project invocation anchored inside its own sandbox.
+    """
+    cwd = Path.cwd()
+    for candidate in (cwd, *cwd.parents):
+        if (candidate / ".plan" / "local").is_dir():
+            return candidate
+    return cwd
+
+
+# ---------------------------------------------------------------------------
 # Shared file readers
 # ---------------------------------------------------------------------------
 
@@ -7062,7 +7089,7 @@ def main(argv: list[str]) -> int:
     )
     args = parser.parse_args(argv)
 
-    repo_root = Path.cwd()
+    repo_root = _resolve_repo_root()
 
     if args.dormate or args.dormate_all:
         if args.dormate_all:
