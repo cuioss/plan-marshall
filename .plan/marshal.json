@@ -114,8 +114,8 @@
           "review_rate_window_timeout_seconds": 3600,
           "review_completion_poll_timeout_seconds": 600,
           "lane": "minimal",
-          "required_bots": "coderabbit,pr-agent",
-          "optional_bots": "sourcery",
+          "required_bots": "pr-agent",
+          "optional_bots": "coderabbit,sourcery",
           "bot_lists_provenance": "answered"
         },
         "default:ci-verify": {

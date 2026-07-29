@@ -168,7 +168,18 @@ class TestThisRepositorysSettledConfiguration:
     """This repo's own step params, as settled by the operator."""
 
     def test_required_and_optional_lists_are_the_settled_two_list_split(self):
-        """CodeRabbit + PR-Agent required; Sourcery kept as an additional reviewer.
+        """PR-Agent is the SOLE required bot; CodeRabbit and Sourcery are optional.
+
+        Operator decision, on **reliability**: pr-agent is the only reviewer with
+        neither a per-account review quota nor a diff-size refusal. CodeRabbit
+        carries a rolling per-developer quota and Sourcery a weekly diff-character
+        cap, so requiring either makes routine review-coverage gaps gate the merge
+        — the failure mode that repeatedly forced merge-anyway decisions.
+
+        Optional is NOT dropped: an optional bot is still fetched, classified and
+        triaged, and its findings are acted on. It simply cannot hold the step
+        open by being rate-limited. CodeRabbit earns its place there — it produced
+        two real findings (one Major) that the required-bot pass missed.
 
         The seeded defaults are both empty by design (never-asked), so the
         operative classification lives only in each project's own marshal.json.
@@ -178,8 +189,8 @@ class TestThisRepositorysSettledConfiguration:
         """
         params = _live_step_params()
 
-        assert params['required_bots'] == 'coderabbit,pr-agent'
-        assert params['optional_bots'] == 'sourcery'
+        assert params['required_bots'] == 'pr-agent'
+        assert params['optional_bots'] == 'coderabbit,sourcery'
 
     def test_the_retired_single_list_key_does_not_survive(self):
         """``enabled_bots`` must be gone from the operative config, not shadowed."""
