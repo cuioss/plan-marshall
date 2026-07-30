@@ -1,0 +1,283 @@
+= ADR-013: An aggregation over N independent producers carries producer identity, and no producer suppresses an element silently
+:toc: left
+:toclevels: 2
+:sectnums:
+
+// adr-metadata
+// Progressive-disclosure metadata block (see manage-adr SKILL.md → "ADR Template
+// Structure"). Read by `manage-adr.py scan` so a caller can assess an ADR's
+// relevance without reading the full file. List fields are comma-separated.
+// summary: An aggregating query over N independent producers makes provenance part of the answer — every element carries its producers and every response carries the producer roster and count — so a working-but-empty substrate is distinguishable from an inert one, and no producer may suppress an element without reporting the condition that suppressed it.
+// tags: provenance, anti-vacuity, aggregation, merge-semantics, fail-visible, determinism
+// affects: plan-marshall, extension-api, manage-architecture
+// supersedes:
+// end-adr-metadata
+
+// Authoring discipline (see manage-adr SKILL.md → "Authoring Discipline"):
+// ADRs are durable architectural statements, not incident write-ups. No PR numbers,
+// commit SHAs, dates, or lesson IDs anywhere in the body. CLAUDE.md's "current state
+// only" rule applies — describe the architecture, not the chronology.
+
+== Status
+
+Proposed
+
+== Context
+
+A growing family of query surfaces answers a question by **aggregating over N
+independent producers** rather than by computing an answer directly: the consumer asks
+once, the substrate dispatches to every registered producer, and the response is the
+merge of what those producers returned. Module-edge derivation is one instance; any
+extension-point-backed query whose implementors are plural has the same shape.
+
+This shape carries a specific and severe failure mode. **An aggregation with zero
+registered producers and an aggregation whose producers all found nothing return
+byte-identical empty answers.** The consumer sees an empty result set and cannot
+distinguish:
+
+* *the substrate is inert* — no producer is registered, nothing ran, and the empty
+  answer is an absence of capability; from
+* *the substrate is working* — N producers ran, examined their inputs, and correctly
+  found nothing, so the empty answer is a real, positive finding.
+
+The first is a defect report. The second is information. Presented identically, the
+first is read as the second: an inert aggregation looks exactly like a confident
+"there is nothing there", and it can stay broken indefinitely while every consumer
+reads its emptiness as an answer. This is the vacuity failure mode — a
+confident-looking result that carries none of the evidence that would make it
+confident.
+
+A second, narrower version of the same failure lives *inside* each producer. A
+producer that meets a condition it cannot resolve — an ambiguous identity key, an
+unresolvable reference, a malformed declaration — and responds by silently emitting
+nothing has made its own inability indistinguishable from a genuine negative. Worse,
+a producer that resolves the ambiguity by picking a winner (insertion order,
+last-write-wins over a map) makes the answer non-deterministic *and* presents it as
+confident.
+
+The structural choice point is therefore twofold: is provenance a **property of the
+answer** that the response schema must carry, or metadata a caller may separately
+request? And when a producer cannot attribute an element, is silence an acceptable
+response?
+
+== Decision
+
+**Provenance is part of the answer, not metadata about it.** An aggregation over N
+independent producers carries producer identity at both granularities — per element
+and per response — and no producer may suppress an element without reporting the
+condition that suppressed it.
+
+=== The two provenance obligations
+
+* *Per element.* Every element in the merged result names the producers that derived
+  it, in a `producers[]` list. No element in any response is producer-less. When core
+  itself augments the result set after the merge, its additions are stamped with a
+  reserved producer id rather than left unattributed, so the invariant holds for the
+  whole response and not merely for its producer-derived part.
+* *Per response.* Every response carries the producer roster and its cardinality —
+  `resolvers[]` and `resolver_count` on the realising surface. This is what makes the
+  two empty states distinguishable **without inspecting the element list at all**:
+
+[cols="2,3", options="header"]
+|===
+| Response | Meaning
+
+| `resolver_count: 0`, empty element list
+| *No producer ran.* The empty answer is an absence of capability, not a finding.
+
+| `resolver_count: N`, empty element list
+| *N producers ran and found nothing.* The empty answer is a real, positive answer.
+|===
+
+=== The merge mechanisms
+
+* *Set-union keyed on element identity.* The merge unions producer outputs keyed on
+  each element's identity, dropping elements that fail a validity precondition before
+  the union. An element produced by more than one producer collapses to **one**
+  element whose `producers[]` is the sorted list of every contributing producer id.
+* *A per-producer report.* Alongside the merged elements, the merge returns one report
+  per producer of the shape `{id, count, status, notes[]}` — its identity, how many
+  elements it contributed, whether it succeeded, and every condition it reports.
+* *A raising producer degrades, it does not abort.* A producer that raises is reported
+  with `status: error` and a zero count, contributes no elements, and does not stop
+  the aggregate; its siblings still contribute. A single broken producer therefore
+  costs its own contribution and nothing more — and the loss is legible in its report
+  rather than silent.
+* *Sorted output.* Merged elements are emitted in a total order derived from element
+  identity, so the response is byte-stable across runs and across producer iteration
+  order. Determinism is part of the contract because a response that varies run to run
+  cannot be diffed, cached, or asserted on.
+
+=== The suppression obligation
+
+The `notes[]` channel on each producer's return is the **required** reporting path for
+any condition that suppressed an element. A producer that drops an element silently
+violates this contract. Concretely, when a producer's identity key is ambiguous — two
+distinct entities claim the same key — the producer:
+
+. MUST NOT resolve the collision by insertion order. Last-write-wins over a map
+  silently discards one claimant and everything attributed to it, and which claimant
+  survives depends on iteration order: a non-deterministic answer presented as a
+  confident one.
+. Emits **no element** for the colliding key. A genuinely ambiguous reference cannot
+  be attributed from the key alone, and abstaining is strictly better than guessing.
+. **Reports the collision** in `notes[]`, so it rides that producer's report into the
+  response. A genuinely ambiguous key thereby stays distinguishable from an absent
+  one — the same anti-vacuity principle applied one level down.
+
+This obligation binds every producer of every such aggregation, not only the first one
+implemented.
+
+=== Relation to the existing corpus
+
+* *Sibling to
+  xref:009-Status_reporting_fails_closed_with_an_explicit_unknown_state.adoc[ADR-009]
+  in the fail-closed family.* ADR-009 establishes that a status surface must model
+  "cannot substantiate the positive" as an explicit distinct state rather than folding
+  it into a vacuous positive. This ADR applies the identical discipline to an
+  aggregating *data* surface: an empty result the substrate cannot substantiate as a
+  finding must stay distinguishable from one it can.
+* *Refines
+  xref:010-Domain_content_is_active_only_when_its_domain_is_active.adoc[ADR-010].*
+  ADR-010 permits a capability-provision layer to gate **invisibly** — a capability no
+  domain provides resolves to a first-class absence and asserts no positive property.
+  That permission stands, and is refined here: the gating may be invisible in its
+  mechanism, but the **response must still make the gating legible**. Zero registered
+  producers remains a legitimate, non-error outcome that raises nothing and fabricates
+  nothing; what it may not do is leave the response shape identical to a substantive
+  negative. Without the producer roster, invisible gating and an empty answer are
+  indistinguishable, and ADR-010's "absence asserts nothing" collapses into "absence
+  asserts a finding".
+
+== Consequences
+
+=== Positive
+
+* A working-but-empty aggregation is distinguishable from an inert one by reading two
+  scalar fields, so an unregistered or systematically-excluded producer surfaces as a
+  visible zero instead of hiding behind a plausible empty answer.
+* Every element is attributable. A questionable element traces to the producer that
+  derived it without re-running the aggregation, and corroboration by several
+  producers is visible rather than collapsed away.
+* One broken producer costs exactly its own contribution. The aggregate stays usable
+  and the loss is legible in that producer's report, so partial degradation is a
+  reported state rather than a silent shrinkage of the result set.
+* Ambiguity is reported rather than guessed, so the aggregate never presents an
+  order-dependent choice as a confident answer.
+* Responses are byte-stable, which makes them diffable, cacheable, and directly
+  assertable in tests.
+
+=== Negative
+
+* The response schema is larger: every element carries a producer list and every
+  response carries a roster and a count, which is overhead a consumer indifferent to
+  provenance still pays.
+* Every producer must be written to report, not merely to produce. Emitting nothing is
+  no longer a complete response to an unresolvable condition, which is a real
+  authoring obligation and a heavier contract than "return what you found".
+* The merge is a distinct component with its own semantics — validity filtering,
+  identity-keyed union, per-producer reporting, total ordering — rather than a
+  concatenation, so it must be tested as a unit in its own right.
+
+=== Risks
+
+* A producer author can satisfy the schema while defeating its purpose by dropping an
+  element and leaving `notes[]` empty. Because `notes[]` defaults to empty, a producer
+  that reports nothing is shape-indistinguishable from one that had nothing to report.
+  The mitigation is the explicit suppression obligation plus per-producer tests
+  asserting a note for each suppressing condition; the schema alone cannot enforce it.
+* A future consumer may read the element list without reading the roster,
+  reintroducing the original ambiguity at the consumption site rather than at the
+  production site. The mitigation is that the roster is a top-level field of every
+  response, never an opt-in query parameter.
+* The reserved producer id used for core's own post-merge augmentation could be
+  mistaken for a registered producer. It is reserved and documented as such precisely
+  so the "no element is producer-less" invariant needs no nullable field.
+
+== Alternatives Considered
+
+* *Define a conflict-resolution rule for overlapping producers.* Specify precedence —
+  by producer priority, by registration order, by a declared authority ranking — so
+  that when two producers disagree about an element, one wins. This alternative is
+  **refuted, not deferred**: for an unweighted boolean element (an edge is either
+  present or absent; there is no attribute to disagree about) no conflict is
+  expressible. Two producers deriving the same element have not disagreed, they have
+  independently corroborated. That is duplicate *identity*, and it resolves by
+  collapsing the duplicates into one element carrying both producer ids — which is
+  exactly what the provenance obligation already requires. A precedence rule would be
+  machinery for a condition the data model cannot produce, and it would *discard*
+  corroboration information the provenance contract exists to keep.
+
+* *Expose suppressed-condition notes through a separate accessor.* Let a producer
+  record its notes internally and offer a second method the caller reads after
+  production. This keeps the production return value narrow. It makes the second
+  method **temporally coupled** to the first — meaningful only after production has
+  run, on an object that is otherwise a pure function of its arguments — which forces
+  producers to hold state they otherwise would not, and lets a caller that forgets the
+  second call silently lose every note. Rejected: notes ride the same return as the
+  elements, so a stateless producer stays stateless and the notes cannot be dropped by
+  omission.
+
+* *Resolve an ambiguous identity key by insertion order.* Accept the first (or last)
+  claimant of a colliding key and proceed. This always yields an answer and needs no
+  reporting channel. The surviving claimant depends on map iteration order, so the
+  answer is non-deterministic, and everything attributed to the discarded claimant
+  vanishes without trace — a non-deterministic result presented with full confidence.
+  Rejected: the producer emits no element for that key and reports the condition
+  instead.
+
+* *Return only the merged elements and let the caller ask a separate question about
+  which producers are registered.* Keep the primary response minimal and provide a
+  registry-introspection verb alongside it. This splits one fact across two calls, and
+  the two can disagree — a producer registered at introspection time may not have run
+  for the response in hand. Rejected: provenance is a property of *this* answer, not of
+  the substrate in general, so it must travel with the answer.
+
+The alternatives fall in one class: each treats provenance and suppression as
+information *about* an answer that a sufficiently diligent caller can obtain
+separately, rather than as constituents *of* the answer. The unifying principle is
+that a result whose trustworthiness depends on facts not carried in it is, in
+practice, trusted without them.
+
+== Generalisation
+
+The pattern is independent of this codebase. Whenever a query is answered by merging
+the outputs of N independently-registered producers:
+
+* Make the producer roster and its cardinality part of the response schema, so a
+  caller can distinguish "nothing was asked" from "nothing was found" without
+  examining the payload.
+* Make each element carry the identity of every producer that yielded it, and give
+  aggregator-injected elements a reserved producer identity rather than a null one.
+* Give each producer a mandatory channel for conditions that suppressed an element,
+  returned together with its elements rather than readable afterwards, so a producer
+  stays a pure function and its notes cannot be lost by omission.
+* Let a failing producer degrade to a reported error contributing nothing, never to an
+  aborted aggregate and never to a silent shrinkage.
+* Emit a total order over elements so the response is byte-stable.
+
+The property this buys is that an empty or diminished answer always carries the reason
+it is empty or diminished. Absence stops being ambiguous, so it can be acted on
+instead of assumed.
+
+== References
+
+* xref:009-Status_reporting_fails_closed_with_an_explicit_unknown_state.adoc[ADR-009]
+  (`Status reporting fails closed with an explicit unknown state`) — the fail-closed
+  reporting discipline this ADR is a sibling of, applied to an aggregating data surface
+  instead of a status surface.
+* xref:010-Domain_content_is_active_only_when_its_domain_is_active.adoc[ADR-010]
+  (`Domain content is active only when its domain is active`) — the invisible-gating
+  permission this ADR refines: gating may be invisible in mechanism, but the response
+  must make it legible.
+* xref:012-A_capability_spanning_both_extension_hierarchies_lives_in_a_sibling_ABC_not_a_face_on_either.adoc[ADR-012]
+  (`A capability spanning both extension hierarchies lives in a sibling ABC, not a face
+  on either`) — the placement decision that makes the producer population complete;
+  this ADR governs what an aggregation over that population must report.
+* `extension-api` `standards/ext-point-derivation-resolver.md` — the first contract
+  authored on this decision, carrying the per-element and per-response provenance
+  obligations, the suppression channel, and the ambiguous-identity-key rule.
+* `extension-api` `scripts/_derivation_merge.py` — the merge component realising
+  identity-keyed union, per-producer reporting, error degradation, and total ordering.
+* `extension-api` `standards/extension-contract.md` — the core extension-hook contract
+  in which a producer's identity and production faces are registered.

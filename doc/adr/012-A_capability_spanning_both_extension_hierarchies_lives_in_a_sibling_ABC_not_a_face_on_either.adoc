@@ -1,0 +1,259 @@
+= ADR-012: A capability spanning both extension hierarchies lives in a sibling ABC, not a face on either
+:toc: left
+:toclevels: 2
+:sectnums:
+
+// adr-metadata
+// Progressive-disclosure metadata block (see manage-adr SKILL.md → "ADR Template
+// Structure"). Read by `manage-adr.py scan` so a caller can assess an ADR's
+// relevance without reading the full file. List fields are comma-separated.
+// summary: A capability whose legitimate implementors span both disjoint extension hierarchies (Axis-A skill loading, Axis-B file-to-build) is declared as a standalone sibling ABC (Axis-C) inherited by neither and opted into by multiple inheritance from either, discovered by an isinstance filter over the union of the two existing collectors.
+// tags: extension-point, axis-taxonomy, abc, multiple-inheritance, disjoint-hierarchies, discovery
+// affects: plan-marshall, script-shared, extension-api, manage-architecture, build-maven
+// supersedes:
+// end-adr-metadata
+
+// Authoring discipline (see manage-adr SKILL.md → "Authoring Discipline"):
+// ADRs are durable architectural statements, not incident write-ups. No PR numbers,
+// commit SHAs, dates, or lesson IDs anywhere in the body. CLAUDE.md's "current state
+// only" rule applies — describe the architecture, not the chronology.
+
+== Status
+
+Proposed
+
+== Context
+
+The extension contract is not one hierarchy. It is **two disjoint abstract base
+classes**, each answering a different question and each subclassed by a different
+population of bundles:
+
+* *Axis-A — `ExtensionBase`*: "which domain knowledge and which domain-owned
+  capabilities does this bundle contribute?" Implemented by language and content
+  domain bundles, whose faces are `get_skill_domains()`, `provides_triage()`,
+  `provides_outline_skill()`, and the rest of the hook family.
+* *Axis-B — `BuildExtensionBase`*: "what build does a changed file trigger?"
+  Implemented by build-system bundles, whose faces are `classify_paths()`,
+  `classify_globs()`, and `discover_modules()`.
+
+The disjointness is deliberate and load-bearing: a build-system extension does not
+inherit `ExtensionBase`, and a language domain does not inherit
+`BuildExtensionBase`. That separation is the ownership boundary
+xref:004-The_file-to-build_contract_is_owned_by_build-system_extensions_not_languagecontent_domains.adoc[ADR-004]
+establishes, and entangling the two hierarchies would dissolve it.
+
+The architectural problem this ADR settles is the class of capability whose
+**legitimate implementor population straddles both axes**. Module-edge derivation is
+the canonical instance: deriving "which module depends on which" from Maven
+`groupId:artifactId` coordinates is knowledge only a build-system bundle owns, while
+deriving the same relation from markdown cross-references or from Python import
+statements is knowledge only a content or language domain owns. Both are the same
+capability, answering the same question, feeding the same consumer — and their
+implementors live on opposite sides of a hierarchy boundary that neither crosses.
+
+Such a capability has **no home on either existing ABC**. Declaring it as a face on
+one hierarchy is not a stylistic preference; it is a structural exclusion of every
+implementor on the other side. The failure mode is quiet: the hook exists, the
+contract doc reads correctly, and the excluded implementors simply have no reachable
+place to declare themselves — so the capability ships with a systematically
+incomplete producer set that looks like a complete one.
+
+The structural choice point is therefore: when a capability's implementor population
+is not contained by either existing hierarchy, does the capability *pick* a
+hierarchy (and lose the implementors on the other side, or force them to
+misrepresent themselves), or does the taxonomy grow an axis?
+
+== Decision
+
+**A capability whose legitimate implementors span both extension hierarchies is
+declared as a standalone sibling ABC — a third axis — inherited by neither existing
+ABC and inherited by neither, opted into by multiple inheritance from either.**
+
+The realising mechanisms:
+
+* *Declaration.* The capability's ABC is declared alongside `ExtensionBase` and
+  `BuildExtensionBase` in `extension_base.py`. It does not subclass either, and
+  neither subclasses it. An implementor from either hierarchy opts in by multiple
+  inheritance — `class BuildExtension(BuildExtensionBase, DerivationResolverBase)`
+  for an Axis-B implementor, `class Extension(ExtensionBase, DerivationResolverBase)`
+  for an Axis-A one. The opt-in is the inheritance itself; there is no separate
+  registration step.
+
+* *No abstract method.* Every method on the sibling ABC carries a safe default, so
+  the ABC has no abstract member. A subclass that overrides nothing is a valid,
+  contributing-nothing implementor. This keeps the opt-in cheap and means adding the
+  axis imposes no obligation on a bundle that inherits it without implementing it.
+
+* *Discovery is an isinstance filter over the union of the existing collectors.* The
+  axis introduces **no new registry, no new scan surface, and no per-implementor
+  glob**. Its collector spans both existing discovery paths —
+  `discover_all_extensions()` for Axis-A and `discover_build_extensions()` for
+  Axis-B — and filters the results by `isinstance(obj, SiblingBase)`. An implementor
+  is discovered because its bundle is *already* a registered extension that happens
+  to also subclass the sibling ABC. Spanning both paths is mandatory: scanning only
+  one would silently hide every implementor on the other side, which is the same
+  systematic-exclusion failure the axis exists to prevent.
+
+* *Identity gates participation.* Each implementor declares a short, stable id. An
+  implementor whose id is empty or whose id accessor raises is skipped with a
+  warning, matching the existing per-hook guarded-call idiom — an unidentifiable
+  producer never contributes an unattributable result.
+
+The diagnostic question that selects this shape is: *is the set of legitimate
+implementors contained by one existing hierarchy?* If yes, the capability is a face
+on that hierarchy. If no, it is a sibling axis.
+
+=== Relation to ADR-004
+
+xref:004-The_file-to-build_contract_is_owned_by_build-system_extensions_not_languagecontent_domains.adoc[ADR-004]
+governs contract **ownership** — which population of bundles is entitled to answer a
+given question, and that the file-to-build answer belongs to build systems alone.
+This ADR governs capability **placement across hierarchies** — where a contract
+lives structurally when its entitled population is not the population of either
+hierarchy. The two are complementary: ADR-004 says who owns an answer, this says
+where a cross-hierarchy contract is declared so that everyone ADR-004 entitles can
+actually reach it. Adding an axis preserves ADR-004's boundary rather than eroding
+it, because neither existing ABC gains a face it does not own.
+
+=== Precedent
+
+Two precedents in the corpus already point at this shape:
+
+* `BuildExtensionBase` is itself a carve-out — Axis-B was split out of Axis-A rather
+  than added as a face on it, for the same reason: its implementor population was a
+  different population.
+* `ext-point-domain-verb.md` establishes that an optional hook and a standalone
+  contract doc are **complements, not alternatives**. A sibling axis pairs the
+  standalone ABC with its own contract doc on exactly that pattern.
+
+== Consequences
+
+=== Positive
+
+* Every legitimate implementor of a cross-hierarchy capability has a reachable place
+  to declare itself, so the capability's producer set is complete by construction
+  rather than complete-looking.
+* The two existing hierarchies stay un-entangled. Neither ABC acquires a face
+  belonging to a population it does not represent, so the ADR-004 ownership boundary
+  survives the addition.
+* Opting in costs one base class and nothing else. Because the sibling ABC has no
+  abstract member, the axis can be added to an existing extension without forcing a
+  behavioural change, and a bundle that inherits it and implements nothing is valid.
+* Discovery adds no surface. The axis reuses two collectors that already exist and
+  already run, so there is no new scan cost, no new configuration, and no new place
+  for a registration to go stale.
+* The selection rule generalises. A future capability author has a single
+  mechanical test — is the implementor population contained by one hierarchy? — that
+  produces the right shape without re-litigating the taxonomy.
+
+=== Negative
+
+* The taxonomy is now three axes rather than two, and that is something a reader of
+  the extension API must learn before they can place a new capability correctly.
+* Discovery for a sibling axis must union two collectors rather than consult one, so
+  its collector is structurally more complex than a single-hierarchy hook's and
+  carries an invariant (span *both* paths) that a future maintainer can break.
+* Multiple inheritance appears in implementor class declarations, which is a heavier
+  idiom than a single base class and demands care about method-resolution order if a
+  future sibling axis ever shares a member name with an existing ABC.
+
+=== Risks
+
+* A future collector for a sibling axis that scans only one hierarchy would silently
+  hide every implementor on the other side — the exact failure the axis was created
+  to prevent, reintroduced one layer down. The mitigation is the explicit
+  span-both-paths obligation in the contract doc plus a discovery test that asserts
+  an implementor from each hierarchy is found.
+* Axis proliferation: the same argument that justifies a third axis can be
+  misapplied to justify a fourth for a capability whose implementors *are* contained
+  by one hierarchy. The containment test is the guard, but it must actually be
+  applied rather than assumed.
+
+== Alternatives Considered
+
+* *Declare the capability as a face on `ExtensionBase` (Axis-A).* This reuses the
+  established hook family, the existing discovery path, and the familiar
+  `provides_*()` idiom, so it is the cheapest-looking option. It is structurally
+  unreachable from the build-system hierarchy: a build extension does not inherit
+  `ExtensionBase`, so a hook declared there cannot be implemented by the very bundle
+  that owns the coordinate-join knowledge the capability most needs. Rejected: it
+  excludes an entire population of legitimate implementors, and the exclusion is
+  invisible at the declaration site.
+
+* *Declare the capability as a face on `BuildExtensionBase` (Axis-B).* This reaches
+  the build-system implementors directly and needs no new ABC. It forces every
+  non-build implementor — a markdown resolver deriving edges from cross-document
+  references, a Python resolver deriving them from imports — to masquerade as a
+  build system in order to declare a capability that has nothing to do with
+  building. That is precisely the category error `ext-point-domain-verb.md` rejects
+  for executable verbs and that ADR-004's ownership split exists to prevent.
+  Rejected: it buys reachability by corrupting what Axis-B means.
+
+* *Duplicate the capability as a parallel face on both hierarchies.* Declare the
+  same contract twice, once per ABC, and have the consumer merge both. This reaches
+  every implementor without a new axis. It creates two contract sources for one
+  capability that must be kept byte-identical by hand, and two discovery paths whose
+  divergence is undetectable from either side — the two-tables-that-do-not-feed-each-other
+  archetype. Rejected: one capability with two authoritative declarations is a
+  drift generator, not a design.
+
+* *Put the capability in the core and hard-code the per-domain derivations behind
+  configuration flags.* This avoids the extension machinery entirely. It re-couples
+  the core to every domain's private knowledge, reintroduces the dead-code and
+  centralisation problems the extension model exists to remove, and inverts the
+  ownership the domain-bundle architecture is built on. Rejected on the same grounds
+  ADR-010 rejects core-resident domain behaviour.
+
+The alternatives fall in one class: each tries to fit a capability whose implementor
+population straddles a hierarchy boundary into a structure organised *by* that
+boundary — by excluding half the population, by forcing half of it to misrepresent
+itself, by declaring the contract twice, or by dissolving the boundary into the core.
+The unifying principle is that when the implementor population is not the population
+of any existing hierarchy, the correct answer is a new sibling of those hierarchies,
+not a distortion of one.
+
+== Generalisation
+
+The pattern is independent of this codebase. Given a plugin or extension system whose
+contract surface is partitioned into two or more disjoint base types, and a new
+capability whose legitimate providers are drawn from more than one of those
+partitions:
+
+* The diagnostic question is *containment*: is the set of legitimate providers a
+  subset of one existing partition's population?
+* If yes, the capability belongs as a member of that partition's base type.
+* If no, the capability belongs in a new base type that is a **sibling** of the
+  existing ones — related to none of them by inheritance, adopted by any of them
+  through multiple inheritance or an equivalent composition mechanism — and its
+  provider discovery must span the union of the existing discovery paths, never a
+  single one.
+
+The property this buys is that provider completeness follows from the structure
+rather than from vigilance: no provider is excluded by the shape of the contract, so
+an incomplete provider set cannot masquerade as a complete one.
+
+== References
+
+* xref:004-The_file-to-build_contract_is_owned_by_build-system_extensions_not_languagecontent_domains.adoc[ADR-004]
+  (`The file-to-build contract is owned by build-system extensions, not
+  language/content domains`) — the ownership split that keeps Axis-A and Axis-B
+  un-entangled, and which this third axis preserves rather than erodes.
+* xref:010-Domain_content_is_active_only_when_its_domain_is_active.adoc[ADR-010]
+  (`Domain content is active only when its domain is active`) — the null-on-absent
+  degrade contract every axis in this API shares, including a sibling axis with zero
+  registered implementors.
+* `extension-api` `standards/extension-contract.md` — the core extension-hook
+  contract; registers each axis and carries the per-axis method tables.
+* `extension-api` `standards/ext-point-derivation-resolver.md` — the first sibling-axis
+  contract authored on this decision, including its span-both-collectors discovery
+  obligation.
+* `extension-api` `standards/ext-point-domain-verb.md` — the precedent that an
+  optional hook and a standalone contract doc are complements, and the source of the
+  "would force a non-build bundle to masquerade as a build system" category-error
+  argument.
+* `extension-api` `standards/ext-point-build.md` — the Axis-B extension point whose
+  disjointness from Axis-A creates the choice point this ADR settles.
+* `script-shared` `scripts/extension/extension_base.py` — where all axes are
+  declared side by side.
+* `extension-api` `scripts/extension_discovery.py` — the collectors a sibling axis
+  unions rather than replaces.
