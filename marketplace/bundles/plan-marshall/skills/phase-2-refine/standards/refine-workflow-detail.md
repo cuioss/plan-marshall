@@ -762,7 +762,7 @@ The accepted enum values are `none | surgical | single_module | multi_module | b
 
 #### Re-run the classification-validation gate after the overwrite
 
-This persist **overwrites** the pre-route `scope_estimate` that phase-1-init's Step 8a.5 heuristic wrote, so it is the first moment at which the persisted band can disagree with what the request body actually measures. Re-run the deterministic gate immediately after the overwrite:
+This Step 13 persist **overwrites** the pre-route `scope_estimate` that phase-1-init's Step 8a.5 heuristic wrote (the value itself is derived earlier, at Step 9), so it is the first moment at which the persisted band can disagree with what the request body actually measures. Re-run the deterministic gate immediately after the overwrite:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status classification-validate \

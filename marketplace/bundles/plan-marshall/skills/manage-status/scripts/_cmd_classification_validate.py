@@ -165,9 +165,10 @@ def _detect_scale_mismatch_light_routing(
     ``_distinct_paths`` / ``_MULTI_MODULE_MIN_PATHS`` logic re-derived below, so the
     two readings cannot disagree there and the class can never fire from that site
     alone. It becomes reachable only where a LATER writer overwrites the band: the
-    phase-2-refine Step 9 module-mapping persist and the phase-3-outline light-lane
-    persist both re-invoke ``classification-validate`` immediately after their
-    overwrite for exactly this reason. The light-lane site is the one that matters
+    phase-2-refine Step 13 ``scope_estimate`` persist (Persist and Return Results —
+    Step 9 is where the value is DERIVED, not where it is re-validated) and the
+    phase-3-outline light-lane persist both re-invoke ``classification-validate``
+    immediately after their overwrite for exactly this reason. The light-lane site is the one that matters
     for this class specifically — a light-routed plan never enters refine's
     clarification loop, so the refine-side re-validation never runs for it. Removing
     either re-invocation turns this detector back into a guard that cannot fire.
