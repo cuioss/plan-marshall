@@ -118,7 +118,14 @@ def cmd_modules(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def cmd_graph(args: argparse.Namespace) -> dict[str, Any]:
-    """CLI handler for graph command."""
+    """CLI handler for graph command.
+
+    The ``resolvers[]`` / ``resolver_count`` provenance pair rides through from
+    :func:`get_module_graph`'s result, so an empty graph is never vacuous:
+    ``resolver_count: 0`` means no resolver ran, while ``resolver_count: N`` means
+    N resolvers ran and found no edges. Each edge additionally carries
+    ``producers[]`` naming the resolver ids that derived it.
+    """
     try:
         result = get_module_graph(args.project_dir, args.full)
         return {'status': 'success', **result}
@@ -454,14 +461,22 @@ def _modules_from_exception_or_fallback(exc: ModuleNotFoundInProjectError, proje
 
 
 def cmd_path(args: argparse.Namespace) -> dict[str, Any]:
-    """CLI handler for path command."""
+    """CLI handler for path command.
+
+    Carries the resolver provenance so an unreachable answer is never vacuous:
+    ``resolver_count: 0`` with ``path: null`` means no resolver ran (there were no
+    edges to walk), while ``resolver_count: N`` with ``path: null`` means N
+    resolvers ran and no path exists.
+    """
     try:
-        path = get_module_path(args.source, args.target, args.project_dir)
+        path, resolvers = get_module_path(args.source, args.target, args.project_dir)
         return {
             'status': 'success',
             'source': args.source,
             'target': args.target,
             'path': path,
+            'resolvers': resolvers,
+            'resolver_count': len(resolvers),
         }
     except DataNotFoundError:
         return require_project_meta_result(args.project_dir)
@@ -474,14 +489,22 @@ def cmd_path(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def cmd_neighbors(args: argparse.Namespace) -> dict[str, Any]:
-    """CLI handler for neighbors command."""
+    """CLI handler for neighbors command.
+
+    Carries the resolver provenance so a lone-module answer is never vacuous:
+    ``resolver_count: 0`` with only the starting module in ``neighbors`` means no
+    resolver ran, while ``resolver_count: N`` means N resolvers ran and the module
+    genuinely has no neighbours within the requested depth.
+    """
     try:
-        neighbors = get_module_neighbors(args.module, args.depth, args.project_dir)
+        neighbors, resolvers = get_module_neighbors(args.module, args.depth, args.project_dir)
         return {
             'status': 'success',
             'module': args.module,
             'depth': min(args.depth, NEIGHBORS_DEPTH_CAP),
             'neighbors': neighbors,
+            'resolvers': resolvers,
+            'resolver_count': len(resolvers),
         }
     except DataNotFoundError:
         return require_project_meta_result(args.project_dir)
@@ -495,13 +518,21 @@ def cmd_neighbors(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def cmd_impact(args: argparse.Namespace) -> dict[str, Any]:
-    """CLI handler for impact command."""
+    """CLI handler for impact command.
+
+    Carries the resolver provenance so an empty impact set is never vacuous:
+    ``resolver_count: 0`` with ``impact: []`` means no resolver ran (nothing could
+    have depended on the module), while ``resolver_count: N`` with ``impact: []``
+    means N resolvers ran and nothing depends on it.
+    """
     try:
-        impact = get_module_impact(args.module, args.project_dir)
+        impact, resolvers = get_module_impact(args.module, args.project_dir)
         return {
             'status': 'success',
             'module': args.module,
             'impact': impact,
+            'resolvers': resolvers,
+            'resolver_count': len(resolvers),
         }
     except DataNotFoundError:
         return require_project_meta_result(args.project_dir)

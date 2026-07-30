@@ -1058,7 +1058,7 @@ def test_build_internal_deps_map_honours_preloaded_kwargs(monkeypatch):
         monkeypatch.setattr(_cmd_client, 'load_module_derived', tracking_load_derived)
         monkeypatch.setattr(_cmd_client, 'load_module_enriched_or_empty', tracking_load_enriched)
 
-        deps_map, module_names = _build_internal_deps_map(
+        deps_map, module_names, _resolvers = _build_internal_deps_map(
             tmpdir,
             derived_by_name=preloaded_derived,
             enriched_by_name=preloaded_enriched,
@@ -1461,7 +1461,7 @@ def test_build_internal_deps_map_cross_links_all_sibling_pairs_symmetrically():
         create_test_project_with_deps(tmpdir)
 
         # Act
-        deps_map, module_names = _build_internal_deps_map(
+        deps_map, module_names, _resolvers = _build_internal_deps_map(
             tmpdir,
             derived_by_name=derived_by_name,
             enriched_by_name=enriched_by_name,

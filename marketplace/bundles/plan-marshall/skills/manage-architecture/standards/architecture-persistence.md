@@ -505,6 +505,45 @@ Provides a view of internal module dependencies for:
 - Identifying dependency chains
 - Detecting circular dependencies
 
+### Edge shape and resolver provenance
+
+The graph is **not** derived by core. Module-edge derivation is an extension
+point (`DerivationResolverBase`, Axis-C): each domain owns its own derivation
+while core owns the merge, the provenance, and the traversal. See
+[ext-point-derivation-resolver.md](../../extension-api/standards/ext-point-derivation-resolver.md)
+for the contract.
+
+Every entry of `edges[]` therefore carries a third field naming what derived it:
+
+```json
+{
+  "edges": [
+    {"from": "oauth-sheriff-core", "to": "oauth-sheriff-quarkus", "producers": ["maven"]},
+    {"from": "oauth-sheriff-api", "to": "oauth-sheriff-core", "producers": ["declared"]}
+  ]
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `from` | The dependency. Edge direction runs from the dependency TO the dependent, so the topological layering can consume it directly. |
+| `to` | The dependent module. |
+| `producers` | Non-empty list naming what derived the edge — the contributing resolver ids (a pair several resolvers each derived collapses to ONE edge carrying all of them, sorted), or one of two reserved ids: `declared` (sourced from a curated `enriched.internal_dependencies` or a discovered `derived.internal_dependencies` list, both of which take precedence over derivation) and `sibling-cross-link` (added by core's symmetric virtual-sibling augmentation after resolution). No edge is ever producer-less. |
+
+The result additionally carries a top-level provenance pair:
+
+| Field | Description |
+|-------|-------------|
+| `resolvers` | One `{id, edge_count, status, notes[]}` record per resolver that ran. `status` is `ok` or `error`; an errored resolver contributes zero edges without aborting its siblings. `notes[]` reports each condition that **suppressed** an edge (an ambiguous identity key, an unresolvable reference). |
+| `resolver_count` | `len(resolvers)` — the zero-edge discriminator. |
+
+**Zero-edge disambiguation**: `resolver_count: 0` with `edge_count: 0` means no
+resolver ran, so the empty graph is an absence of capability. `resolver_count: N`
+with `edge_count: 0` means N resolvers ran and found nothing — a real, positive
+answer. The two states MUST stay distinguishable without inspecting the edge
+list, the same fail-closed reporting discipline the `files` inventory applies via
+`truncated` / `elided`.
+
 ### Parameters
 
 | Parameter | Description |

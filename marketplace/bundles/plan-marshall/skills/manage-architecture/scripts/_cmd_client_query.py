@@ -269,59 +269,16 @@ def get_module_graph(
             shared with other helpers in the same caller; avoids redundant I/O.
         enriched_by_name: Optional pre-loaded ``module_name → enriched.json`` map.
     """
-    if derived_by_name is None:
-        module_names_all = iter_modules(project_dir)
-        # Lazily load each module's derived/enriched data once.
-        derived_by_name = {}
-        for name in module_names_all:
-            try:
-                derived_by_name[name] = load_module_derived(name, project_dir)
-            except DataNotFoundError:
-                derived_by_name[name] = {}
-    else:
-        module_names_all = list(derived_by_name.keys())
+    derived_by_name, enriched_by_name, module_names_all = _load_module_maps(
+        project_dir, derived_by_name, enriched_by_name
+    )
 
-    if enriched_by_name is None:
-        enriched_by_name = {
-            name: load_module_enriched_or_empty(name, project_dir) for name in module_names_all
-        }
-
-    # Build mapping of groupId:artifactId -> module_name for internal dep
-    # detection. Lets us identify which dependencies are internal to the project.
-    artifact_to_module: dict[str, str] = {}
-    for mod_name, mod_data in derived_by_name.items():
-        metadata = mod_data.get('metadata', {})
-        group_id = metadata.get('group_id')
-        artifact_id = metadata.get('artifact_id')
-        if group_id and artifact_id:
-            artifact_to_module[f'{group_id}:{artifact_id}'] = mod_name
-
-    # Compute internal_dependencies for each module from its dependencies list.
-    internal_deps_map: dict[str, list[str]] = {}
-    for mod_name, mod_data in derived_by_name.items():
-        enriched_mod = enriched_by_name.get(mod_name, {})
-        if 'internal_dependencies' in enriched_mod:
-            internal_deps_map[mod_name] = enriched_mod['internal_dependencies']
-        elif 'internal_dependencies' in mod_data:
-            internal_deps_map[mod_name] = mod_data['internal_dependencies']
-        else:
-            # The cheap crawl leaves ``dependencies`` empty — enrich this one
-            # module lazily (memoized) so internal edges can be computed.
-            deps = _enriched_dependencies(mod_name, mod_data, project_dir)
-            internal: set[str] = set()
-            for dep in deps:
-                parts = dep.split(':')
-                if len(parts) >= 2:
-                    ga = f'{parts[0]}:{parts[1]}'
-                    if ga in artifact_to_module:
-                        dep_module = artifact_to_module[ga]
-                        if dep_module != mod_name:
-                            internal.add(dep_module)
-            internal_deps_map[mod_name] = list(internal)
-
-    # Post-resolution augmentation: symmetric virtual-sibling cross-linking.
-    # See _apply_sibling_cross_links for the full rationale.
-    _apply_sibling_cross_links(internal_deps_map, derived_by_name)
+    # Derive every module's internal dependencies through the shared derivation
+    # path (precedence branches, then the Axis-C resolver seam, then sibling
+    # cross-linking), carrying per-edge provenance.
+    internal_deps_map, producers_by_edge, resolver_reports = _build_deps_and_producers(
+        project_dir, derived_by_name, enriched_by_name
+    )
 
     # Filter out aggregator modules unless --full is specified.
     # Aggregators are pom-packaging modules (not jar, nar, war, etc.). However
@@ -352,12 +309,24 @@ def get_module_graph(
     in_degree: dict[str, int] = dict.fromkeys(module_names, 0)
     dependents: dict[str, list[str]] = {name: [] for name in module_names}
 
-    edges: list[dict[str, str]] = []
+    # Edge direction note: ``internal_deps_map[M]`` lists what M depends ON, while
+    # the emitted edge runs from the dependency TO the dependent so Kahn's
+    # algorithm can layer it. The provenance of the edge is keyed on the
+    # (dependent, dependency) pair the derivation produced.
+    edges: list[dict[str, Any]] = []
     for module_name in module_names:
         internal_deps = internal_deps_map.get(module_name, [])
         for dep in internal_deps:
             if dep in module_names:
-                edges.append({'from': dep, 'to': module_name})
+                edges.append(
+                    {
+                        'from': dep,
+                        'to': module_name,
+                        'producers': producers_by_edge.get(
+                            (module_name, dep), [_PRODUCER_DECLARED]
+                        ),
+                    }
+                )
                 in_degree[module_name] += 1
                 dependents[dep].append(module_name)
 
@@ -411,6 +380,12 @@ def get_module_graph(
         'leaves': sorted(leaves),
         'circular_dependencies': circular_deps,
         'filtered_out': sorted(filtered_out) if filtered_out else None,
+        # Provenance: ``resolver_count: 0`` with an empty graph means no resolver
+        # ran, while ``resolver_count: N`` with an empty graph means N resolvers
+        # ran and found nothing. The two states must stay distinguishable without
+        # inspecting the edge list.
+        'resolvers': resolver_reports,
+        'resolver_count': len(resolver_reports),
     }
 
 
@@ -724,33 +699,167 @@ def _apply_sibling_cross_links(
         deps_map[mod_name] = sorted(augmented)
 
 
-def _build_internal_deps_map(
-    project_dir: str = '.',
-    *,
-    derived_by_name: dict[str, dict[str, Any]] | None = None,
-    enriched_by_name: dict[str, dict[str, Any]] | None = None,
-) -> tuple[dict[str, list[str]], list[str]]:
-    """Build internal_dependencies mapping for all modules.
+# =============================================================================
+# The derivation-resolver seam (Axis-C)
+# =============================================================================
+#
+# Module-edge derivation is NOT core logic: there is no domain-neutral way to
+# derive it (a Maven reactor derives edges from coordinates, a documentation tree
+# from cross-document references, a Python package from imports). Core owns the
+# merge, the provenance, and the traversal; each domain owns its own derivation
+# behind the ``DerivationResolverBase`` extension point. See
+# extension-api/standards/ext-point-derivation-resolver.md.
 
-    Resolution order per module mirrors get_module_graph:
-      1. enriched.{X}.internal_dependencies (LLM-curated)
-      2. derived.{X}.internal_dependencies (from discover)
-      3. computed from derived.{X}.dependencies via groupId:artifactId
+# Reserved producer ids for the two edge sources that are NOT resolver-derived.
+# Every edge in every graph-family response carries a non-empty ``producers[]``,
+# so neither source may go unstamped (the anti-vacuity provenance property).
+_PRODUCER_DECLARED = 'declared'
+_PRODUCER_SIBLING_CROSS_LINK = 'sibling-cross-link'
 
-    Args:
-        project_dir: Project directory path
-        derived_by_name: Optional pre-loaded ``module_name → derived.json`` map.
-            When supplied, the helper skips its per-module ``load_module_derived``
-            calls and reuses the caller's already-loaded data. Module-name set
-            is taken from this dict's keys (preserves caller's ordering).
-        enriched_by_name: Optional pre-loaded ``module_name → enriched.json``
-            map. When supplied, the helper skips its per-module
-            ``load_module_enriched_or_empty`` calls.
+
+def _derive_edges(
+    derived_by_name: dict[str, dict[str, Any]],
+    enriched_by_name: dict[str, dict[str, Any]],
+    project_dir: str,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Derive module edges through the registered derivation resolvers.
+
+    The single delegation point to the Axis-C seam: discovers every registered
+    ``DerivationResolverBase`` implementor and merges their edge sets with
+    provenance. This replaces the two hand-rolled coordinate joins that
+    previously lived inline in :func:`get_module_graph` and
+    :func:`_build_internal_deps_map` — the Maven join is now the Maven resolver.
+
+    A resolver is a pure function of its arguments (no subprocess, no filesystem
+    access), so the lazily-enriched dependency list is materialized HERE, before
+    dispatch: the cheap crawl leaves ``dependencies`` empty, and a resolver that
+    read the raw crawl output would see nothing to join against. Each module's
+    ``dependencies`` is filled from :func:`_enriched_dependencies` (memoized, at
+    most one Maven run per module per CLI invocation) on a shallow copy, so the
+    caller's map is never mutated.
+
+    The extension-api import is deferred and guarded, matching the
+    ``_maven_cmd_discover`` idiom in :func:`_enrich_maven_module_cached`:
+    manage-architecture still loads in isolation, and an unavailable extension-api
+    resolves to zero resolvers rather than an error.
 
     Returns:
-        Tuple of (deps_map, module_names) where deps_map maps each module name
-        to its list of internal dependency module names. Lists are sorted to
-        guarantee deterministic traversal order.
+        A ``(edges, resolver_reports)`` tuple. ``edges`` is a list of
+        ``{'from', 'to', 'producers'}`` dicts where ``from`` depends on ``to``.
+        ``resolver_reports`` is one ``{'id', 'edge_count', 'status', 'notes'}``
+        record per resolver that ran — an EMPTY list means no resolver was
+        registered, which is what makes a zero-edge answer non-vacuous.
+    """
+    try:
+        from _derivation_merge import merge_resolver_edges
+        from extension_discovery import discover_derivation_resolvers
+    except ImportError:
+        return [], []
+
+    resolvers = discover_derivation_resolvers()
+    if not resolvers:
+        return [], []
+
+    # Materialize the resolved dependency list so resolvers stay pure.
+    resolver_input: dict[str, dict[str, Any]] = {}
+    for mod_name, mod_data in derived_by_name.items():
+        module_view = dict(mod_data)
+        module_view['dependencies'] = _enriched_dependencies(mod_name, mod_data, project_dir)
+        resolver_input[mod_name] = module_view
+
+    return merge_resolver_edges(resolvers, resolver_input, enriched_by_name)
+
+
+def _build_deps_and_producers(
+    project_dir: str,
+    derived_by_name: dict[str, dict[str, Any]],
+    enriched_by_name: dict[str, dict[str, Any]],
+) -> tuple[dict[str, list[str]], dict[tuple[str, str], list[str]], list[dict[str, Any]]]:
+    """Resolve every module's internal dependencies, with per-edge provenance.
+
+    The SINGLE derivation path shared by :func:`get_module_graph` and
+    :func:`_build_internal_deps_map` — the two call sites that each carried their
+    own copy of the coordinate join before the resolver seam landed.
+
+    Resolution order per module (the precedence branches are retained AHEAD of
+    the resolver call — a curated or discovered declaration always wins over a
+    derived one):
+
+    1. ``enriched.{X}.internal_dependencies`` (LLM-curated) → stamped
+       ``declared``.
+    2. ``derived.{X}.internal_dependencies`` (from discover) → stamped
+       ``declared``.
+    3. The resolver seam's derived edges → stamped with the contributing
+       resolver ids.
+
+    Symmetric virtual-sibling cross-linking then runs as post-resolution
+    augmentation, and any edge it adds that no earlier source produced is stamped
+    ``sibling-cross-link``. Every edge therefore carries a non-empty
+    ``producers[]``.
+
+    Returns:
+        A ``(deps_map, producers_by_edge, resolver_reports)`` tuple. ``deps_map``
+        maps each module to its sorted internal-dependency list.
+        ``producers_by_edge`` maps each ``(module, dependency)`` pair to its
+        sorted producer-id list. ``resolver_reports`` is the per-resolver report
+        list from the merge.
+    """
+    edges, resolver_reports = _derive_edges(derived_by_name, enriched_by_name, project_dir)
+
+    resolved_deps: dict[str, set[str]] = {}
+    resolved_producers: dict[tuple[str, str], list[str]] = {}
+    for edge in edges:
+        pair = (edge['from'], edge['to'])
+        resolved_deps.setdefault(edge['from'], set()).add(edge['to'])
+        resolved_producers[pair] = list(edge.get('producers', []))
+
+    deps_map: dict[str, list[str]] = {}
+    producers_by_edge: dict[tuple[str, str], list[str]] = {}
+
+    for mod_name, mod_data in derived_by_name.items():
+        enriched_mod = enriched_by_name.get(mod_name, {})
+        if 'internal_dependencies' in enriched_mod:
+            deps = sorted(set(enriched_mod['internal_dependencies']))
+            declared = True
+        elif 'internal_dependencies' in mod_data:
+            deps = sorted(set(mod_data['internal_dependencies']))
+            declared = True
+        else:
+            deps = sorted(resolved_deps.get(mod_name, set()))
+            declared = False
+
+        deps_map[mod_name] = deps
+        for dep in deps:
+            pair = (mod_name, dep)
+            if declared:
+                producers_by_edge[pair] = [_PRODUCER_DECLARED]
+            else:
+                producers_by_edge[pair] = resolved_producers.get(pair, [_PRODUCER_DECLARED])
+
+    # Post-resolution augmentation: symmetric virtual-sibling cross-linking.
+    # See _apply_sibling_cross_links for the full rationale.
+    _apply_sibling_cross_links(deps_map, derived_by_name)
+
+    # Stamp whatever the augmentation added — an unstamped edge would be
+    # producer-less, which the provenance contract forbids.
+    for mod_name, deps in deps_map.items():
+        for dep in deps:
+            producers_by_edge.setdefault((mod_name, dep), [_PRODUCER_SIBLING_CROSS_LINK])
+
+    return deps_map, producers_by_edge, resolver_reports
+
+
+def _load_module_maps(
+    project_dir: str,
+    derived_by_name: dict[str, dict[str, Any]] | None,
+    enriched_by_name: dict[str, dict[str, Any]] | None,
+) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]], list[str]]:
+    """Resolve the derived/enriched module maps, loading only what is missing.
+
+    Shared by :func:`get_module_graph` and :func:`_build_internal_deps_map`, both
+    of which accept optional pre-loaded maps from a caller that already paid the
+    I/O. When ``derived_by_name`` is supplied its key order is preserved as the
+    module-name order.
     """
     if derived_by_name is None:
         module_names = iter_modules(project_dir)
@@ -768,44 +877,51 @@ def _build_internal_deps_map(
             name: load_module_enriched_or_empty(name, project_dir) for name in module_names
         }
 
-    artifact_to_module: dict[str, str] = {}
-    for mod_name, mod_data in derived_by_name.items():
-        metadata = mod_data.get('metadata', {})
-        group_id = metadata.get('group_id')
-        artifact_id = metadata.get('artifact_id')
-        if group_id and artifact_id:
-            artifact_to_module[f'{group_id}:{artifact_id}'] = mod_name
-
-    deps_map: dict[str, list[str]] = {}
-    for mod_name, mod_data in derived_by_name.items():
-        enriched_mod = enriched_by_name.get(mod_name, {})
-        if 'internal_dependencies' in enriched_mod:
-            deps_map[mod_name] = sorted(set(enriched_mod['internal_dependencies']))
-        elif 'internal_dependencies' in mod_data:
-            deps_map[mod_name] = sorted(set(mod_data['internal_dependencies']))
-        else:
-            # The cheap crawl leaves ``dependencies`` empty — enrich this one
-            # module lazily (memoized) so internal edges can be computed.
-            deps = _enriched_dependencies(mod_name, mod_data, project_dir)
-            internal: set[str] = set()
-            for dep in deps:
-                parts = dep.split(':')
-                if len(parts) >= 2:
-                    ga = f'{parts[0]}:{parts[1]}'
-                    if ga in artifact_to_module:
-                        dep_module = artifact_to_module[ga]
-                        if dep_module != mod_name:
-                            internal.add(dep_module)
-            deps_map[mod_name] = sorted(internal)
-
-    # Post-resolution augmentation: symmetric virtual-sibling cross-linking.
-    # See _apply_sibling_cross_links for the full rationale.
-    _apply_sibling_cross_links(deps_map, derived_by_name)
-
-    return deps_map, module_names
+    return derived_by_name, enriched_by_name, module_names
 
 
-def get_module_path(source: str, target: str, project_dir: str = '.') -> list[str] | None:
+def _build_internal_deps_map(
+    project_dir: str = '.',
+    *,
+    derived_by_name: dict[str, dict[str, Any]] | None = None,
+    enriched_by_name: dict[str, dict[str, Any]] | None = None,
+) -> tuple[dict[str, list[str]], list[str], list[dict[str, Any]]]:
+    """Build internal_dependencies mapping for all modules.
+
+    Resolution order per module mirrors get_module_graph and is owned by
+    :func:`_build_deps_and_producers` — the shared derivation path. The
+    coordinate join that once lived inline here is now the Maven derivation
+    resolver behind the Axis-C seam.
+
+    Args:
+        project_dir: Project directory path
+        derived_by_name: Optional pre-loaded ``module_name → derived.json`` map.
+            When supplied, the helper skips its per-module ``load_module_derived``
+            calls and reuses the caller's already-loaded data. Module-name set
+            is taken from this dict's keys (preserves caller's ordering).
+        enriched_by_name: Optional pre-loaded ``module_name → enriched.json``
+            map. When supplied, the helper skips its per-module
+            ``load_module_enriched_or_empty`` calls.
+
+    Returns:
+        Tuple of (deps_map, module_names, resolver_reports). ``deps_map`` maps
+        each module name to its list of internal dependency module names, sorted
+        to guarantee deterministic traversal order. ``resolver_reports`` is the
+        per-resolver report list every graph-family caller surfaces so a
+        zero-edge answer is never vacuous — an EMPTY list means no resolver ran.
+    """
+    derived_by_name, enriched_by_name, module_names = _load_module_maps(
+        project_dir, derived_by_name, enriched_by_name
+    )
+    deps_map, _producers, resolver_reports = _build_deps_and_producers(
+        project_dir, derived_by_name, enriched_by_name
+    )
+    return deps_map, module_names, resolver_reports
+
+
+def get_module_path(
+    source: str, target: str, project_dir: str = '.'
+) -> tuple[list[str] | None, list[dict[str, Any]]]:
     """BFS shortest path from source to target over internal_dependencies edges.
 
     Edge semantics: a directed edge exists from M to N iff N appears in M's
@@ -818,14 +934,17 @@ def get_module_path(source: str, target: str, project_dir: str = '.') -> list[st
         project_dir: Project directory path
 
     Returns:
-        Shortest path [source, ..., target] as a list of module names, or None
-        when target is unreachable from source. When source == target returns
-        [source].
+        A ``(path, resolver_reports)`` tuple. ``path`` is the shortest path
+        [source, ..., target] as a list of module names, or None when target is
+        unreachable from source; when source == target it is [source].
+        ``resolver_reports`` is the per-resolver provenance list the caller
+        surfaces so an unreachable answer is never vacuous — an EMPTY list means
+        no resolver ran, so there were no edges to walk in the first place.
 
     Raises:
         ModuleNotFoundInProjectError: If source or target is not a known module
     """
-    deps_map, module_names = _build_internal_deps_map(project_dir)
+    deps_map, module_names, resolver_reports = _build_internal_deps_map(project_dir)
 
     if source not in deps_map:
         raise ModuleNotFoundInProjectError(f'Module not found: {source}', module_names)
@@ -833,7 +952,7 @@ def get_module_path(source: str, target: str, project_dir: str = '.') -> list[st
         raise ModuleNotFoundInProjectError(f'Module not found: {target}', module_names)
 
     if source == target:
-        return [source]
+        return [source], resolver_reports
 
     visited: set[str] = {source}
     queue: deque[tuple[str, list[str]]] = deque([(source, [source])])
@@ -841,14 +960,16 @@ def get_module_path(source: str, target: str, project_dir: str = '.') -> list[st
         current, path = queue.popleft()
         for neighbor in deps_map.get(current, []):
             if neighbor == target:
-                return [*path, neighbor]
+                return [*path, neighbor], resolver_reports
             if neighbor not in visited:
                 visited.add(neighbor)
                 queue.append((neighbor, [*path, neighbor]))
-    return None
+    return None, resolver_reports
 
 
-def get_module_neighbors(module_name: str, depth: int, project_dir: str = '.') -> list[str]:
+def get_module_neighbors(
+    module_name: str, depth: int, project_dir: str = '.'
+) -> tuple[list[str], list[dict[str, Any]]]:
     """N-hop neighborhood of a module over internal_dependencies edges.
 
     Args:
@@ -858,8 +979,12 @@ def get_module_neighbors(module_name: str, depth: int, project_dir: str = '.') -
         project_dir: Project directory path
 
     Returns:
-        Sorted list of module names reachable within `depth` hops, including
-        the starting module. Excludes modules that are not part of the project.
+        A ``(neighbors, resolver_reports)`` tuple. ``neighbors`` is the sorted
+        list of module names reachable within `depth` hops, including the
+        starting module, excluding modules that are not part of the project.
+        ``resolver_reports`` is the per-resolver provenance list the caller
+        surfaces so a lone-module answer is never vacuous — an EMPTY list means
+        no resolver ran.
 
     Raises:
         ValueError: If depth is negative
@@ -870,7 +995,7 @@ def get_module_neighbors(module_name: str, depth: int, project_dir: str = '.') -
     if depth > NEIGHBORS_DEPTH_CAP:
         depth = NEIGHBORS_DEPTH_CAP
 
-    deps_map, module_names = _build_internal_deps_map(project_dir)
+    deps_map, module_names, resolver_reports = _build_internal_deps_map(project_dir)
 
     if module_name not in deps_map:
         raise ModuleNotFoundInProjectError(f'Module not found: {module_name}', module_names)
@@ -887,10 +1012,12 @@ def get_module_neighbors(module_name: str, depth: int, project_dir: str = '.') -
         if not next_frontier:
             break
         frontier = next_frontier
-    return sorted(visited)
+    return sorted(visited), resolver_reports
 
 
-def get_module_impact(module_name: str, project_dir: str = '.') -> list[str]:
+def get_module_impact(
+    module_name: str, project_dir: str = '.'
+) -> tuple[list[str], list[dict[str, Any]]]:
     """Transitive reverse-dependency closure of a module.
 
     Returns every module Y such that `module_name` is in the transitive closure
@@ -902,12 +1029,16 @@ def get_module_impact(module_name: str, project_dir: str = '.') -> list[str]:
         project_dir: Project directory path
 
     Returns:
-        Sorted list of module names that transitively depend on module_name.
+        An ``(impact, resolver_reports)`` tuple. ``impact`` is the sorted list of
+        module names that transitively depend on module_name.
+        ``resolver_reports`` is the per-resolver provenance list the caller
+        surfaces so an empty impact set is never vacuous — an EMPTY list means no
+        resolver ran, so nothing could have depended on the module.
 
     Raises:
         ModuleNotFoundInProjectError: If module_name is not a known module
     """
-    deps_map, module_names = _build_internal_deps_map(project_dir)
+    deps_map, module_names, resolver_reports = _build_internal_deps_map(project_dir)
 
     if module_name not in deps_map:
         raise ModuleNotFoundInProjectError(f'Module not found: {module_name}', module_names)
@@ -926,4 +1057,4 @@ def get_module_impact(module_name: str, project_dir: str = '.') -> list[str]:
             continue
         impact.add(current)
         queue.extend(rev.get(current, []))
-    return sorted(impact)
+    return sorted(impact), resolver_reports
