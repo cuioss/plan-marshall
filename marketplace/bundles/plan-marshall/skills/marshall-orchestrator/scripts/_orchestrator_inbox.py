@@ -81,6 +81,13 @@ INBOX_ARCHIVE_SUBDIR = 'archive'
 #: :func:`validate_envelope` seam as a ``queued`` one.
 MESSAGE_LOCATIONS = frozenset({'queued', 'archived', 'missing'})
 
+#: The closed vocabulary :func:`cmd_inbox_list` reports as ``inbox_state``.
+#: ``present`` means the enumeration looked at a real directory; ``missing``
+#: means it could not look because the epic has no ``inbox/`` yet. The verb
+#: stays non-faulting either way, so the two zeros are told apart by the
+#: PAYLOAD, never by the status.
+INBOX_STATES = frozenset({'present', 'missing'})
+
 #: ``{sender_id}-{NNN}.md`` — the one message-file shape the channel allocates.
 #: The sender group is non-greedy so the LAST dash-separated all-digit run is
 #: the sequence: a four-digit sequence, or a sender id that itself ends in
@@ -608,6 +615,16 @@ def cmd_inbox_list(args: Any) -> dict[str, Any]:
     a read failure never aborts the rest of the enumeration either. Consumed
     messages already moved under ``inbox/archive/`` are not enumerated, which
     is what makes a re-scan of a completed drain a no-op.
+
+    The payload also states WHICH KIND OF ZERO a ``count: 0`` is, so the
+    three zeros are separately representable: ``epic_not_found`` (no epic tree
+    at all — the retained error branch), ``inbox_state: missing`` (the epic is
+    there but has no ``inbox/`` directory, so the enumeration could not look),
+    and ``inbox_state: present`` with ``count: 0`` (it looked and found
+    nothing). ``inbox_dir`` reports the absolute path the enumeration actually
+    scanned. An absent ``inbox/`` is NOT a fault — the verb still returns
+    ``status: success`` so a drain is never aborted by it; the discriminator
+    rides the payload, not the status.
     """
     invalid = _validate_identifier(args.slug)
     if invalid:
@@ -656,6 +673,8 @@ def cmd_inbox_list(args: Any) -> dict[str, Any]:
         'operation': 'inbox-list',
         'slug': args.slug,
         'store': ORCHESTRATOR_STORE,
+        'inbox_dir': str(inbox_dir),
+        'inbox_state': 'present' if inbox_dir.is_dir() else 'missing',
         'count': len(messages),
         'invalid_count': sum(1 for row in messages if not row['valid']),
         'messages': messages,

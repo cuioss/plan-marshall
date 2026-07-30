@@ -158,7 +158,17 @@ python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator
   --slug SLUG
 ```
 
-Enumerates the epic's queued inbox messages — the drain's enumeration seam. Returns `count`, `invalid_count`, and a `messages[]` table carrying `name`, `sender_id`, `kind`, `created`, `valid`, and `error` per row, in deterministic (sender, sequence) order. Every message is validated through the same `validate_envelope` seam `inbox validate` uses, so a malformed message is REPORTED with its distinct error code (`error` non-empty, `valid: false`) rather than dropped or aborting the enumeration. A message that cannot even be read (non-UTF-8 bytes, or the file vanishing mid-drain under a concurrent writer) is reported the same way with the distinct `unreadable` code, also without aborting the enumeration. Messages already retired under `inbox/archive/` are not enumerated, which is what makes a re-scan of a completed drain a no-op. Refuses an unsafe slug (`invalid_slug`) and an unscaffolded epic (`epic_not_found`).
+Enumerates the epic's queued inbox messages — the drain's enumeration seam. Returns `inbox_dir`, `inbox_state`, `count`, `invalid_count`, and a `messages[]` table carrying `name`, `sender_id`, `kind`, `created`, `valid`, and `error` per row, in deterministic (sender, sequence) order. Every message is validated through the same `validate_envelope` seam `inbox validate` uses, so a malformed message is REPORTED with its distinct error code (`error` non-empty, `valid: false`) rather than dropped or aborting the enumeration. A message that cannot even be read (non-UTF-8 bytes, or the file vanishing mid-drain under a concurrent writer) is reported the same way with the distinct `unreadable` code, also without aborting the enumeration. Messages already retired under `inbox/archive/` are not enumerated, which is what makes a re-scan of a completed drain a no-op.
+
+`inbox_dir` is the absolute `inbox/` path the enumeration actually scanned, and `inbox_state` says WHICH KIND OF ZERO a `count: 0` is. The three zeros are separately representable:
+
+| Zero | Payload |
+|------|---------|
+| no epic tree at all | `status: error`, `error: epic_not_found` |
+| epic present, `inbox/` directory absent — *could not look* | `status: success`, `inbox_state: missing`, `count: 0` |
+| epic present, `inbox/` present, queue empty — *looked, found nothing* | `status: success`, `inbox_state: present`, `count: 0` |
+
+An absent `inbox/` is NOT a fault: the verb stays non-faulting so a drain is never aborted by it, and the discriminator rides the PAYLOAD rather than the status. `inbox_state` is drawn from the closed `INBOX_STATES` vocabulary (`present`, `missing`). Refuses an unsafe slug (`invalid_slug`) and an unscaffolded epic (`epic_not_found`).
 
 ### inbox archive
 

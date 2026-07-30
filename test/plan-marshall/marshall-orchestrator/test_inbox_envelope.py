@@ -26,6 +26,10 @@ Covers, under ``PLAN_BASE_DIR`` isolation (via ``plan_context``):
   success branches (``location: queued`` / ``location: archived``) are covered
   here together with their success-payload field symmetry and the narrowed
   ``file_not_found`` (present at NEITHER path).
+- ``cmd_inbox_list``'s three separately-representable zeros — ``epic_not_found``,
+  ``inbox_state: missing`` (could not look), and ``inbox_state: present`` with
+  ``count: 0`` (looked, found nothing) — plus the closed ``INBOX_STATES``
+  vocabulary compared against the module's own frozenset.
 - ``cmd_inbox_archive``'s atomic destination claim, driven through a
   deterministically-opened check-to-claim window, plus the sender-constrained
   ``--as-name`` recovery override for a message stranded by a pre-fix sequence
@@ -51,6 +55,7 @@ _orch = load_script_module(
 DETECTION_TOKENS = _inbox.DETECTION_TOKENS
 ENVELOPE_VERSION = _inbox.ENVELOPE_VERSION
 HEADER_FIELDS = _inbox.HEADER_FIELDS
+INBOX_STATES = _inbox.INBOX_STATES
 KINDS = _inbox.KINDS
 MESSAGE_LOCATIONS = _inbox.MESSAGE_LOCATIONS
 SENDER_TYPES = _inbox.SENDER_TYPES
@@ -58,6 +63,7 @@ allocate_message_path = _inbox.allocate_message_path
 classify_source_id = _inbox.classify_source_id
 cmd_inbox_archive = _inbox.cmd_inbox_archive
 cmd_inbox_detect = _inbox.cmd_inbox_detect
+cmd_inbox_list = _inbox.cmd_inbox_list
 cmd_inbox_validate = _inbox.cmd_inbox_validate
 cmd_inbox_write = _inbox.cmd_inbox_write
 compose_envelope = _inbox.compose_envelope
@@ -746,6 +752,109 @@ class TestInboxValidate:
 
         assert result['location'] == 'queued'
         assert result['kind'] == 'landing'
+
+
+# =============================================================================
+# cmd_inbox_list — which kind of zero a ``count: 0`` is
+# =============================================================================
+
+
+class TestInboxListState:
+    """The three separately-representable zeros of the enumeration seam.
+
+    The defect this pins: a ``count: 0`` meaning *could not look* (the epic has
+    no ``inbox/`` directory) was indistinguishable from a ``count: 0`` meaning
+    *looked, found nothing*. Both now carry a distinct ``inbox_state``, and the
+    pre-existing ``epic_not_found`` error branch remains the third zero.
+    """
+
+    def test_should_report_present_state_and_the_scanned_directory(
+        self, plan_context, tmp_path
+    ):
+        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_inbox_write(_write_args(payload_file=_payload(tmp_path)))
+
+        result = cmd_inbox_list(Namespace(slug=EPIC))
+
+        assert result['status'] == 'success'
+        assert result['inbox_state'] == 'present'
+        assert result['count'] == 1
+        assert result['inbox_dir'] == str(_inbox_dir(plan_context))
+
+    def test_should_report_present_state_for_a_genuinely_empty_queue(
+        self, plan_context
+    ):
+        # Zero #3: it looked at a real directory and found nothing.
+        cmd_scaffold(Namespace(slug=EPIC))
+        assert _inbox_dir(plan_context).is_dir()
+
+        result = cmd_inbox_list(Namespace(slug=EPIC))
+
+        assert result['status'] == 'success'
+        assert result['count'] == 0
+        assert result['inbox_state'] == 'present'
+
+    def test_should_report_missing_state_when_the_inbox_directory_is_absent(
+        self, plan_context
+    ):
+        # Zero #2: the epic tree is there but the enumeration could not look.
+        cmd_scaffold(Namespace(slug=EPIC))
+        _inbox_dir(plan_context).rmdir()
+
+        result = cmd_inbox_list(Namespace(slug=EPIC))
+
+        assert result['count'] == 0
+        assert result['inbox_state'] == 'missing'
+        # The scanned path is reported even when it does not exist, so the
+        # payload always names WHERE the enumeration looked (or would have).
+        assert result['inbox_dir'] == str(_inbox_dir(plan_context))
+
+    def test_should_not_answer_the_two_zeros_with_equal_payloads(self, plan_context):
+        # The invariant the whole deliverable exists for: a zero meaning "could
+        # not look" and a zero meaning "looked, found nothing" agree on `count`
+        # and on `status`, so they MUST differ somewhere in the payload — the
+        # discriminator is what makes them separately representable.
+        cmd_scaffold(Namespace(slug=EPIC))
+        looked = cmd_inbox_list(Namespace(slug=EPIC))
+        _inbox_dir(plan_context).rmdir()
+
+        could_not_look = cmd_inbox_list(Namespace(slug=EPIC))
+
+        assert looked['count'] == could_not_look['count'] == 0
+        assert looked['status'] == could_not_look['status'] == 'success'
+        assert looked != could_not_look
+        assert looked['inbox_dir'] == could_not_look['inbox_dir']
+
+    def test_should_stay_non_faulting_when_the_inbox_directory_is_absent(
+        self, plan_context
+    ):
+        # The discriminator rides the PAYLOAD, never the status — an absent
+        # inbox/ must not abort a drain.
+        cmd_scaffold(Namespace(slug=EPIC))
+        _inbox_dir(plan_context).rmdir()
+
+        result = cmd_inbox_list(Namespace(slug=EPIC))
+
+        assert result['status'] == 'success'
+        assert 'error' not in result
+
+    def test_should_keep_epic_not_found_as_the_third_zero(self, plan_context):
+        # Zero #1: no epic tree at all, retained unchanged as an error branch.
+        result = cmd_inbox_list(Namespace(slug='never-scaffolded'))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'epic_not_found'
+        assert 'inbox_state' not in result
+
+    def test_should_only_report_states_from_the_module_vocabulary(self, plan_context):
+        # Population-derived and two-sided: every declared state is reachable
+        # and no case reports one outside the module's own frozenset.
+        cmd_scaffold(Namespace(slug=EPIC))
+        present = cmd_inbox_list(Namespace(slug=EPIC))['inbox_state']
+        _inbox_dir(plan_context).rmdir()
+        absent = cmd_inbox_list(Namespace(slug=EPIC))['inbox_state']
+
+        assert {present, absent} == INBOX_STATES
 
 
 # =============================================================================
