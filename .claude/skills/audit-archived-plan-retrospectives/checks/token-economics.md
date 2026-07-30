@@ -67,6 +67,16 @@ collected by `collect_inputs`. Plans without a parseable `metrics.toon` are
 excluded from the corpus entirely — they carry no token signal and a zero total
 would skew the distributions.
 
+### Corpus partition (delivery-cost check)
+
+This check runs over the SHIPPING partition of the corpus, not every scanned
+plan: a plan carrying no delivery evidence — no PR record and no footprint — is
+excluded before the check sees it, so a plan that spent tokens and delivered
+nothing cannot dilute the cost-per-delivery aggregates or shift the
+corpus-relative cut-points. See SKILL.md § "Shipping-predicate corpus partition"
+for the derived predicate. This exclusion is applied BEFORE the
+`metrics.toon`-absent exclusion described above; the two are independent.
+
 ## Per-plan computation
 
 For each plan the script computes:
@@ -212,6 +222,18 @@ by_scope[S]{value,n,avg_tokens,avg_files,tokens_per_file}
 `genuine_signal_count` equals the number of flagged rows. The threshold and
 corpus-distribution summary lines above the table carry the derived cut-points so
 each flagged row is self-describing.
+
+### Corpus-partition exclusion columns
+
+Two further block-header lines accompany the block above:
+
+| Line | Meaning |
+|------|---------|
+| `plans_excluded_non_shipping` | How many scanned plans were excluded from this check's corpus as non-shipping — a number reported SEPARATELY from `plans_in_corpus`. |
+| `excluded_non_shipping_plan_ids` | The excluded plans, each as `{plan_id}:{archived_reason or unrecorded}`. |
+
+An excluded plan delivered nothing, so it is absent from this check's aggregates
+by design; the count is the audit trail proving no row was silently dropped.
 
 ## How the orchestrator interprets the rows
 

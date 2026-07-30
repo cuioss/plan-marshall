@@ -14,6 +14,11 @@ Per scanned plan, the script:
   present, falling back to the distinct `deliverable` ids referenced across the
   plan's `TASK-*.json` files.
 
+**Corpus partition (delivery-cost check).** This check runs over the SHIPPING
+partition of the corpus, not every scanned plan: a plan carrying no delivery
+evidence — no PR record and no footprint — is excluded before the check sees it.
+See SKILL.md § "Shipping-predicate corpus partition" for the derived predicate.
+
 ## Outlier rule
 
 The check computes the tasks-per-deliverable ratio and flags it when outside the
@@ -39,6 +44,18 @@ rows[N]{plan_id,task_count,deliverable_count,outlier}
 | `task_count` | Number of `TASK-*.json` files. |
 | `deliverable_count` | Resolved deliverable count. |
 | `outlier` | Empty when the tasks-per-deliverable ratio is inside the band; otherwise the under-/over-decomposed verdict with the ratio. |
+
+### Corpus-partition exclusion columns
+
+Two block-header lines accompany the rows above:
+
+| Line | Meaning |
+|------|---------|
+| `plans_excluded_non_shipping` | How many scanned plans were excluded from this check's corpus as non-shipping — a number reported SEPARATELY from the examined count. |
+| `excluded_non_shipping_plan_ids` | The excluded plans, each as `{plan_id}:{archived_reason or unrecorded}`. |
+
+An excluded plan delivered nothing, so it is absent from this check's aggregates
+by design; the count is the audit trail proving no row was silently dropped.
 
 ## How the orchestrator interprets the rows
 

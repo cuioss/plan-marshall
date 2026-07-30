@@ -15,6 +15,11 @@ latest as the merge-side reference, computing the elapsed duration between them.
 Timestamps are parsed as ISO-8601 UTC (`YYYY-MM-DDTHH:MM:SS`) using only the
 standard library — no third-party timezone dependency.
 
+**Corpus partition (delivery-cost check).** This check runs over the SHIPPING
+partition of the corpus, not every scanned plan: a plan carrying no delivery
+evidence — no PR record and no footprint — is excluded before the check sees it.
+See SKILL.md § "Shipping-predicate corpus partition" for the derived predicate.
+
 ## Not-applicable handling
 
 A plan with no PR artifact — no `pr_number`, or no parseable open/merge
@@ -40,6 +45,21 @@ rows[N]{plan_id,pr_number,elapsed_hours,flagged,applicable}
 | `elapsed_hours` | Open-to-merge duration in hours, one decimal (empty when not applicable). |
 | `flagged` | `true` when the cycle exceeds 24h; otherwise empty. |
 | `applicable` | `true` when a PR artifact with parseable timestamps was found; otherwise `false`. |
+
+### Corpus-partition exclusion columns
+
+Two block-header lines accompany the rows above:
+
+| Line | Meaning |
+|------|---------|
+| `plans_excluded_non_shipping` | How many scanned plans were excluded from this check's corpus as non-shipping — a number reported SEPARATELY from the examined count. |
+| `excluded_non_shipping_plan_ids` | The excluded plans, each as `{plan_id}:{archived_reason or unrecorded}`. |
+
+An excluded plan delivered nothing, so it is absent from this check's aggregates
+by design; the count is the audit trail proving no row was silently dropped. It
+is distinct from the `applicable: false` row above: an excluded plan produces no
+row at all, whereas an inapplicable plan is examined and reported without a
+velocity number.
 
 ## How the orchestrator interprets the rows
 

@@ -39,6 +39,14 @@ phase-N agent dispatch is a `role=phase-N` marker) and the qualitative build-ver
 mentions. Best-effort: a plan with no logs degrades to an all-zero row rather than
 raising.
 
+### Corpus partition (delivery-cost check)
+
+This check runs over the SHIPPING partition of the corpus, not every scanned
+plan: a plan carrying no delivery evidence — no PR record and no footprint — is
+excluded before the check sees it, so builds run by a plan that delivered nothing
+cannot inflate the corpus build-class totals. See SKILL.md § "Shipping-predicate
+corpus partition" for the derived predicate.
+
 ## Per-plan computation
 
 ### Sequence reconstruction
@@ -142,6 +150,18 @@ rows[K]{plan_id,change_type,calls,span_seconds,builds,build_minimal,build_scoped
 `genuine_signal_count` equals the number of flagged rows. The threshold and
 corpus-total summary lines above the table carry the duration bands and the
 corpus build-class totals so each flagged row is self-describing.
+
+### Corpus-partition exclusion columns
+
+Two further block-header lines accompany the block above:
+
+| Line | Meaning |
+|------|---------|
+| `plans_excluded_non_shipping` | How many scanned plans were excluded from this check's corpus as non-shipping — a number reported SEPARATELY from the examined plan count. |
+| `excluded_non_shipping_plan_ids` | The excluded plans, each as `{plan_id}:{archived_reason or unrecorded}`. |
+
+An excluded plan delivered nothing, so it is absent from this check's aggregates
+by design; the count is the audit trail proving no row was silently dropped.
 
 ## Three caveats (structural — read every flagged row against these)
 

@@ -34,6 +34,14 @@ All inputs are per-plan (no global logs):
 | `planning_lane` | `status.json::metadata.planning_lane` | light-lane fire (`== "light"`) |
 | `execution_profile` | `status.json::metadata.execution_profile` | chosen posture; `minimal` is the cost-reducing lever |
 
+### Corpus partition (delivery-cost check)
+
+This check runs over the SHIPPING partition of the corpus, not every scanned
+plan: a plan carrying no delivery evidence — no PR record and no footprint — is
+excluded before the check sees it, so a plan that burned budget and delivered
+nothing cannot be scored against a delivery checkpoint target. See SKILL.md §
+"Shipping-predicate corpus partition" for the derived predicate.
+
 ## Armed checkpoint targets
 
 A plan's `scope_estimate` maps to its checkpoint class and the armed total-token
@@ -99,6 +107,18 @@ rows[K]{plan_id,scope,checkpoint_class,target,total_tokens,verdict,recipe_routed
 |--------|---------|
 | `flags` | `checkpoint_over` when the plan overspent its target, else empty. |
 | `severity` | Uniform D1 severity column: `genuine` when `checkpoint_over` fired, else `informational`. |
+
+### Corpus-partition exclusion columns
+
+Two further block-header lines accompany the block above:
+
+| Line | Meaning |
+|------|---------|
+| `plans_excluded_non_shipping` | How many scanned plans were excluded from this check's corpus as non-shipping — a number reported SEPARATELY from `plans_measured`. |
+| `excluded_non_shipping_plan_ids` | The excluded plans, each as `{plan_id}:{archived_reason or unrecorded}`. |
+
+An excluded plan delivered nothing, so it is absent from this check's aggregates
+by design; the count is the audit trail proving no row was silently dropped.
 
 ## How the orchestrator interprets the rows
 

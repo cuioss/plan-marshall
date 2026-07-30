@@ -33,7 +33,9 @@ the move; only the file's location changed.
 """
 
 import importlib.util
+import re
 import sys
+import tempfile
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -806,6 +808,76 @@ class TestEmitTrendBlockSeverity:
         )
 
 # =============================================================================
+# D1 — repo-root resolution: the ADR-002 cwd walk-up
+# =============================================================================
+
+class TestResolveRepoRoot:
+    """``_resolve_repo_root`` walks up to the nearest ancestor carrying ``.plan/local``.
+
+    Every repo-root-anchored read and write in ``audit.py`` — the corpus scan
+    roots, the lessons-corpus read, the global-log read, the retire-on-quiet run
+    history, and the persisted report — hangs off this resolver, so the branch
+    that matters is (b): invoked from a subdirectory, the resolver must return
+    the project root rather than the working directory.
+
+    All three branches drive the REAL resolver through ``monkeypatch.chdir``
+    into a constructed sandbox. ``Path.cwd`` itself is never stubbed or
+    monkeypatched, which is what makes branch (b) fail against a revert to
+    ``repo_root = Path.cwd()`` instead of passing against a mock.
+    """
+
+    def test_cwd_is_the_marker_bearing_root_returns_cwd(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        # branch (a): cwd IS the root
+        (tmp_path / '.plan' / 'local').mkdir(parents=True)
+        monkeypatch.chdir(tmp_path)
+
+        resolved = audit._resolve_repo_root()
+
+        assert resolved == Path.cwd()
+        assert (resolved / '.plan' / 'local').is_dir()
+
+    def test_nested_cwd_walks_up_to_the_marker_bearing_ancestor(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        # branch (b): cwd is BELOW the root — the branch a Path.cwd() derivation fails
+        (tmp_path / '.plan' / 'local').mkdir(parents=True)
+        nested = tmp_path / 'marketplace' / 'bundles' / 'plan-marshall'
+        nested.mkdir(parents=True)
+        monkeypatch.chdir(nested)
+
+        resolved = audit._resolve_repo_root()
+
+        assert resolved == tmp_path.resolve()
+        assert resolved != Path.cwd()
+
+    def test_no_marker_bearing_ancestor_falls_back_to_cwd(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
+        # branch (c): nothing qualifies — stay anchored where we were invoked, which
+        # is what keeps an out-of-project invocation inside its own sandbox.
+        #
+        # Deliberately NOT `tmp_path`: pytest's basetemp is configured under this
+        # project's own `.plan/temp/`, so every `tmp_path` HAS a `.plan/local`-bearing
+        # ancestor (the repo root) and the no-marker branch is unconstructible there.
+        # The system temp dir is the nearest thing to a genuinely out-of-project cwd;
+        # the precondition below fails loudly rather than silently passing vacuously
+        # if that ever stops holding.
+        with tempfile.TemporaryDirectory() as raw:
+            bare = Path(raw).resolve() / 'outside-any-project'
+            bare.mkdir()
+            assert not any(
+                (ancestor / '.plan' / 'local').is_dir()
+                for ancestor in (bare, *bare.parents)
+            ), 'system temp dir sits inside a .plan/local tree — branch (c) unconstructible'
+            monkeypatch.chdir(bare)
+
+            resolved = audit._resolve_repo_root()
+
+            assert resolved == Path.cwd()
+
+# =============================================================================
 # D1 — persisted report sink: path-guarding + load / diff round-trip
 # =============================================================================
 
@@ -1127,19 +1199,27 @@ class TestExplorationShareRegistration:
             exploration_calls=1, other_calls=1,
             exploration_bytes=1, other_bytes=1,
         )
-        # audit.main() derives its repo_root from Path.cwd() and uses it for BOTH
-        # the corpus scan and the persisted-report write. --plan-dir redirects only
-        # the scan (an absolute right-hand side discards repo_root on join), so
-        # without this chdir the report lands in the REAL .plan/local/audit-reports
-        # tree and trips conftest's pollution guard. Pin cwd into the sandbox so the
-        # write stays inside pytest's own auto-cleaned tmp_path.
-        monkeypatch.chdir(tmp_path)
+        # The sandbox carries a real `.plan/local` marker, and cwd is a NESTED
+        # subdirectory of it, so `cwd != repo_root` and the persisted-report write
+        # lands where it does only because `_resolve_repo_root` walked up. Under a
+        # `repo_root = Path.cwd()` derivation the report would land beneath `nested`
+        # instead, which both assertions below catch.
+        (tmp_path / '.plan' / 'local').mkdir(parents=True, exist_ok=True)
+        nested = tmp_path / 'nested' / 'workdir'
+        nested.mkdir(parents=True)
+        monkeypatch.chdir(nested)
 
         exit_code = audit.main(
             ['--check', 'exploration-share', '--plan-dir', str(tmp_path)]
         )
 
         assert exit_code == 0
+        assert list((tmp_path / audit.AUDIT_REPORTS_REL).glob('*.toon')), (
+            'persisted report did not land under the resolved repo root'
+        )
+        assert not (nested / audit.AUDIT_REPORTS_REL).exists(), (
+            'persisted report followed cwd instead of the resolved repo root'
+        )
 
 class TestExplorationShareAbsentIsNotZero:
     """A plan whose counters are ABSENT measured nothing and is EXCLUDED from the
@@ -6408,3 +6488,301 @@ class TestTrackSelectionAccuracy:
         # The block header is emitted and carries the per-plan row.
         assert 'track-selection-accuracy' in output
         assert 'plan-e2e' in output
+
+
+# =============================================================================
+# D2 — shipping-predicate corpus partition + separate exclusion accounting
+# =============================================================================
+#
+# The delivery-cost checks divide spend by delivery, so an archived plan that
+# delivered nothing dilutes them. `_plan_shipped` decides membership from
+# DELIVERY EVIDENCE (a PR record OR a real footprint) and never from the
+# recorded `archived_reason`, which rides along only as the exclusion LABEL.
+
+_CHECKS_DOC_DIR = (
+    PROJECT_ROOT
+    / '.claude'
+    / 'skills'
+    / 'audit-archived-plan-retrospectives'
+    / 'checks'
+)
+
+_SKILL_DOC = (
+    PROJECT_ROOT
+    / '.claude'
+    / 'skills'
+    / 'audit-archived-plan-retrospectives'
+    / 'SKILL.md'
+)
+
+# The prose annotation a SKILL.md summary-table row carries when its check runs
+# over the shipping partition. Matched case-insensitively so both the leading
+# `Runs over ...` and the mid-sentence `Also runs over ...` phrasings count.
+_SHIPPING_ANNOTATION = 'runs over the shipping partition'
+
+# Each summary-table row links its sub-document as `checks/{check-name}.md`; the
+# link is the row's machine-readable identity (the leading prose cell is a title,
+# not a check name).
+_CHECK_DOC_LINK_RE = re.compile(r'checks/([a-z0-9-]+)\.md')
+
+
+def _skill_md_shipping_annotated_checks() -> set[str]:
+    """Return the SKILL.md summary-table rows annotated as shipping-partitioned.
+
+    Scans ONLY the ``## Available checks`` section (so an annotation mentioned in
+    the surrounding narrative cannot leak in) and collects the check name from
+    each annotated row's ``checks/{name}.md`` sub-document link.
+    """
+    lines = _SKILL_DOC.read_text(encoding='utf-8').splitlines()
+    heading = next(
+        (i for i, ln in enumerate(lines) if ln.strip() == '## Available checks'),
+        None,
+    )
+    assert heading is not None, 'SKILL.md has no "## Available checks" section'
+    annotated: set[str] = set()
+    for line in lines[heading + 1:]:
+        if line.startswith('## '):
+            break
+        if not line.startswith('|') or _SHIPPING_ANNOTATION not in line.lower():
+            continue
+        match = _CHECK_DOC_LINK_RE.search(line)
+        assert match is not None, f'annotated row carries no checks/ link: {line}'
+        annotated.add(match.group(1))
+    return annotated
+
+
+def _write_shipping_plan(
+    repo_root: Path,
+    plan_id: str,
+    *,
+    pr_number: str | None = None,
+    modified_files: list[str] | None = None,
+    archived_reason: str | None = None,
+) -> Any:
+    """Materialise a plan carrying the two shipping-evidence inputs (or neither).
+
+    ``pr_number`` writes ``artifacts/ci-runs/run-1/manifest.toon`` with that
+    scalar (the PR-record arm); ``modified_files`` seeds
+    ``references.json::modified_files`` (the footprint arm); ``archived_reason``
+    seeds ``status.json::metadata.archived_reason`` (the exclusion LABEL, never
+    the predicate). Parsed through the real ``collect_inputs`` so the field
+    wiring is exercised end-to-end.
+    """
+    import json as _json
+
+    plan_dir = repo_root / '.plan' / 'temp' / 'ship-corpus' / plan_id
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    (plan_dir / 'references.json').write_text(
+        _json.dumps(
+            {'scope_estimate': 'surgical', 'modified_files': modified_files or []}
+        ),
+        encoding='utf-8',
+    )
+    metadata: dict[str, Any] = {'change_type': 'bug_fix'}
+    if archived_reason is not None:
+        metadata['archived_reason'] = archived_reason
+    (plan_dir / 'status.json').write_text(
+        _json.dumps({'metadata': metadata}), encoding='utf-8'
+    )
+    if pr_number is not None:
+        run_dir = plan_dir / 'artifacts' / 'ci-runs' / 'run-1'
+        run_dir.mkdir(parents=True, exist_ok=True)
+        (run_dir / 'manifest.toon').write_text(
+            f'pr_number: {pr_number}\nfetched_at: 2026-05-30T10:00:00Z\n',
+            encoding='utf-8',
+        )
+    return audit.collect_inputs(plan_dir)
+
+
+class TestShippingPartition:
+    """`_plan_shipped` / `_partition_shipping` split the corpus on delivery
+    evidence alone, and the excluded plans are counted and named SEPARATELY from
+    each partitioned check's examined count."""
+
+    def test_pr_record_alone_is_shipping(self, tmp_path: Path):
+        # a PR record with an empty footprint still delivered something
+        inputs = _write_shipping_plan(tmp_path, 'pr-only', pr_number='4711')
+
+        assert inputs.modified_files_count == 0
+        assert audit._plan_shipped(inputs) is True
+
+    def test_footprint_alone_is_shipping(self, tmp_path: Path):
+        # a real footprint with no persisted CI run still delivered something
+        inputs = _write_shipping_plan(
+            tmp_path, 'footprint-only', modified_files=['src/a.py']
+        )
+
+        assert audit.plan_pr_number(inputs.plan_dir) == ''
+        assert audit._plan_shipped(inputs) is True
+
+    def test_neither_is_excluded_and_labelled_with_its_archived_reason(
+        self, tmp_path: Path
+    ):
+        # no PR record, no footprint → excluded, labelled with the recorded reason
+        inputs = _write_shipping_plan(
+            tmp_path, 'no-ship', archived_reason='closed_superseded'
+        )
+
+        shipping, excluded = audit._partition_shipping([inputs])
+
+        assert shipping == []
+        assert [i.plan_id for i in excluded] == ['no-ship']
+        assert audit._exclusion_label(excluded[0]) == 'no-ship:closed_superseded'
+
+    def test_missing_archived_reason_is_still_excluded_and_labelled_unrecorded(
+        self, tmp_path: Path
+    ):
+        # the predicate is DERIVED, so an absent reason cannot re-admit the plan;
+        # the label degrades to `unrecorded` rather than the exclusion vanishing.
+        inputs = _write_shipping_plan(tmp_path, 'no-reason')
+
+        shipping, excluded = audit._partition_shipping([inputs])
+
+        assert shipping == []
+        assert audit._exclusion_label(excluded[0]) == 'no-reason:unrecorded'
+
+    def test_other_non_shipping_reason_excluded_by_the_same_predicate(
+        self, tmp_path: Path
+    ):
+        # NOT `closed_superseded`: there is no per-value special case, so any
+        # evidence-free plan is excluded and carries its own reason verbatim.
+        inputs = _write_shipping_plan(
+            tmp_path, 'abandoned', archived_reason='closed_abandoned'
+        )
+
+        shipping, excluded = audit._partition_shipping([inputs])
+
+        assert shipping == []
+        assert audit._exclusion_label(excluded[0]) == 'abandoned:closed_abandoned'
+
+    def test_partitioned_check_reports_exclusion_apart_from_examined_count(
+        self, tmp_path: Path
+    ):
+        # `scope-estimate-accuracy` is a delivery-cost check: two shipping plans
+        # are examined, the third is excluded — two DISTINCT numbers, and the
+        # excluded plan is NAMED rather than silently dropped.
+        inputs = [
+            _write_shipping_plan(tmp_path, 'ship-a', modified_files=['a.py']),
+            _write_shipping_plan(tmp_path, 'ship-b', pr_number='99'),
+            _write_shipping_plan(
+                tmp_path, 'no-ship', archived_reason='closed_superseded'
+            ),
+        ]
+
+        output = audit.run_checks(inputs, ['scope-estimate-accuracy'], tmp_path)
+
+        assert 'plans_scanned: 2' in output
+        assert 'plans_excluded_non_shipping: 1' in output
+        assert 'excluded_non_shipping_plan_ids: no-ship:closed_superseded' in output
+        # the excluded plan contributes no row to the check's table
+        assert 'ship-a' in output
+        assert 'ship-b' in output
+        assert '\n  no-ship,' not in output
+
+    def test_input_integrity_still_sees_every_plan(self, tmp_path: Path):
+        # the no-false-healthy foundation must never be partitioned: it reports
+        # one health row per SCANNED plan, and carries no exclusion columns.
+        inputs = [
+            _write_shipping_plan(tmp_path, 'ship-a', modified_files=['a.py']),
+            _write_shipping_plan(
+                tmp_path, 'no-ship', archived_reason='closed_superseded'
+            ),
+        ]
+
+        output = audit.run_checks(inputs, ['input-integrity'], tmp_path)
+
+        assert 'ship-a' in output
+        assert 'no-ship' in output
+        assert 'plans_excluded_non_shipping' not in output
+
+
+class TestDeliveryCostPartitionContract:
+    """Pins the partition against the LIVE `CHECK_NAMES` registry.
+
+    Assertion strength is deliberately uneven and recorded here so a future
+    reader does not mistake a tautology for a proof:
+
+    - `test_delivery_cost_checks_are_declared_checks` is the LOAD-BEARING
+      assertion. It is the one that can actually fail against the set-difference
+      derivation (a typo'd or retired name in the decision set), and it is what
+      makes the exact cover below real rather than merely arithmetic.
+    - `test_partitions_are_disjoint` and `test_partitions_exactly_cover_check_names`
+      are PROVABLY IMPLIED by `FULL_CORPUS_CHECKS = frozenset(CHECK_NAMES) -
+      DELIVERY_COST_CHECKS` plus the load-bearing assertion, and cannot fail
+      today. They are kept as REGRESSION TRIPWIRES, not as independent evidence:
+      they become non-vacuous the moment someone re-authors `FULL_CORPUS_CHECKS`
+      as a literal list — exactly the drift the derived construction exists to
+      prevent — which is why they are written against the live module attributes.
+    - `test_check_names_has_no_duplicates` is independent of the derivation (the
+      set-based exact cover cannot see a duplicated entry) and can genuinely fail.
+    - `test_documentation_is_in_lock_step_with_the_partition` iterates the two
+      live constants rather than a copied filename list, so a membership change
+      moves the documentation obligation with it. It guards BOTH hand-maintained
+      prose mirrors of the membership: the per-check `checks/{name}.md`
+      sub-documents AND the `SKILL.md` "Available checks" summary table, whose
+      shipping-partition row annotations are asserted equal to the live
+      `DELIVERY_COST_CHECKS` frozenset.
+    """
+
+    def test_delivery_cost_checks_are_declared_checks(self):
+        # no phantom member that is not a real declared check
+        assert audit.DELIVERY_COST_CHECKS <= frozenset(audit.CHECK_NAMES)
+
+    def test_partitions_are_disjoint(self):
+        # regression tripwire — see the class docstring
+        assert audit.DELIVERY_COST_CHECKS.isdisjoint(audit.FULL_CORPUS_CHECKS)
+
+    def test_partitions_exactly_cover_check_names(self):
+        # regression tripwire — see the class docstring
+        assert (
+            audit.DELIVERY_COST_CHECKS | audit.FULL_CORPUS_CHECKS
+            == frozenset(audit.CHECK_NAMES)
+        )
+
+    def test_check_names_has_no_duplicates(self):
+        # the set-based exact cover above compares SETS, so a duplicated entry in
+        # CHECK_NAMES would slip past it; this assertion is what catches one.
+        assert len(audit.CHECK_NAMES) == len(set(audit.CHECK_NAMES))
+
+    def test_track_selection_accuracy_falls_into_the_full_corpus_side(self):
+        # it grades a per-plan planning decision against its counterfactual, not
+        # a cost-per-delivery ratio, so a non-shipping plan is a legitimate and
+        # informative observation for it. No hand edit puts it here — the
+        # derivation does.
+        assert 'track-selection-accuracy' in audit.FULL_CORPUS_CHECKS
+
+    def test_input_integrity_falls_into_the_full_corpus_side(self):
+        # the declared no-false-healthy foundation; a partition would blind it.
+        assert 'input-integrity' in audit.FULL_CORPUS_CHECKS
+
+    def test_documentation_is_in_lock_step_with_the_partition(self):
+        # every partitioned check documents the exclusion columns, and no
+        # unpartitioned check claims them. Iterates the live constants so a
+        # membership change moves the obligation with it.
+        missing: list[str] = []
+        for name in sorted(audit.DELIVERY_COST_CHECKS):
+            doc = _CHECKS_DOC_DIR / f'{name}.md'
+            if not doc.is_file():
+                missing.append(f'{name}: no checks/{name}.md')
+                continue
+            if 'plans_excluded_non_shipping' not in doc.read_text(encoding='utf-8'):
+                missing.append(f'{name}: doc omits plans_excluded_non_shipping')
+        stray: list[str] = []
+        for name in sorted(audit.FULL_CORPUS_CHECKS):
+            doc = _CHECKS_DOC_DIR / f'{name}.md'
+            if not doc.is_file():
+                continue
+            if 'plans_excluded_non_shipping' in doc.read_text(encoding='utf-8'):
+                stray.append(name)
+
+        assert missing == [], missing
+        assert stray == [], stray
+
+        # The SKILL.md "Available checks" table is the SECOND hand-maintained
+        # prose mirror of the same membership. Its shipping-partition row
+        # annotations must be exactly DELIVERY_COST_CHECKS — no more (a row
+        # annotated for a check the code does not partition), no fewer (a
+        # partitioned check whose row lost, or never gained, the annotation).
+        assert _skill_md_shipping_annotated_checks() == set(
+            audit.DELIVERY_COST_CHECKS
+        )
