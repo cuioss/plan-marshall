@@ -3,14 +3,15 @@
 """Tests for the ``planning-lane`` subcommand of manage-status.
 
 The router resolves ``planning_lane ∈ {light, deep}`` from the DQ1 signal set
-(S1–S6) plus a ``request.md`` regex, with zero codebase discovery. The default
+(S1–S7) plus a ``request.md`` regex, with zero codebase discovery. The default
 is ``light``; any deep-precondition signal forces ``deep``; the
 ``plan.phase-1-init.deep_lane`` (``always``/``never``/``auto``) gate
 short-circuits the signal evaluation. The ``escalate`` verb is a one-way
 light→deep ratchet that refuses any downgrade.
 
 Coverage:
-- Each signal (S1–S6) firing deep in isolation.
+- Each signal (S1–S6) firing deep in isolation. S7 (``risk_prose``) is covered
+  in ``test_planning_lane_risk_prose.py``, not here.
 - The all-light default (no deep signal fires).
 - The deep_lane ``always`` / ``never`` short-circuit.
 - ``--lane-override`` handling.
@@ -18,7 +19,7 @@ Coverage:
 - The one-way escalate invariant (deep + lane_escalated, no downgrade).
 - Dispatch wiring (both verbs registered in manage-status.py argparse).
 - ``evaluate_signals_pure`` — direct, I/O-free unit coverage of the extracted
-  pure scorer: each of the five signal arguments firing deep in isolation, the
+  pure scorer: each of the six signal arguments firing deep in isolation, the
   all-light default, the S6 override, and the importability of the S5 regex
   constants and ``_request_is_concrete`` for downstream consumers.
 - ``project_profile_pure`` — the execution-profile posture projection: the
@@ -718,7 +719,7 @@ def test_pure_signals_echoes_all_realized_values():
 
 
 def test_pure_multiple_deep_signals_accumulate_in_fired_order():
-    """Multiple deep signals all appear in fired_signals in canonical S1..S6 order."""
+    """Multiple deep signals all appear in fired_signals in canonical S1..S7 order."""
     result = _pure(
         scope_estimate='multi_module',  # S2
         change_type='feature',           # S3

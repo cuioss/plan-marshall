@@ -520,7 +520,7 @@ DEFAULT_PLAN_INIT = {
     'init_without_asking': True,
     # Deep-lane gate_mode gate (auto|always|never). Consumed by the
     # phase-1-init planning-lane router (_cmd_planning_lane.py): `always` forces
-    # the deep lane, `never` forces light, `auto` (default) defers to the S1-S6
+    # the deep lane, `never` forces light, `auto` (default) defers to the S1-S7
     # signal set. Validated by validate_gate_mode at set-time. Read via
     # `manage-config plan phase-1-init get --field deep_lane`.
     'deep_lane': 'auto',
