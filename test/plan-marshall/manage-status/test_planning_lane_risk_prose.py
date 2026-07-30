@@ -29,8 +29,9 @@ Coverage
    it supplied no evidence for.
 7. ``test_route_end_to_end_fires_s7_from_the_request_body`` — the signal is wired
    through the real reader at the command entry point, not only in the pure scorer.
-8. ``test_epic_metadata_key_fires_s7_a_documented_conservative_over_fire`` — the
-   known over-fire, pinned as a property so it cannot change silently.
+8. ``test_epic_metadata_key_does_not_fire_s7`` — the ``epic:`` metadata key is
+   document chrome, so the ``(?!\\s*:)`` lookahead keeps S7 from firing for the
+   entire orchestrated population.
 """
 
 from __future__ import annotations
