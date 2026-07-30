@@ -688,13 +688,21 @@ def test_pure_s6_override_light_does_not_force_deep():
 
 
 def test_pure_signals_echoes_all_realized_values():
-    """The returned ``signals`` dict echoes every realized signal value verbatim."""
+    """The returned ``signals`` dict echoes every realized signal value verbatim.
+
+    Compared with ``==`` on purpose: the point is that the echo is COMPLETE, so a
+    signal added to the scorer without being echoed fails here. That is why the S7
+    ``risk_prose`` key appears below — it is the pin working as designed, not an
+    incidental update. (S7's own behaviour is covered by
+    ``test_planning_lane_risk_prose.py``.)
+    """
     result = _pure(
         scope_estimate='multi_module',
         change_type='feature',
         compatibility='breaking',
         plan_source='lesson',
         request_concrete=False,
+        risk_prose=True,
         override='deep',
     )
 
@@ -704,6 +712,7 @@ def test_pure_signals_echoes_all_realized_values():
         'change_type': 'feature',
         'compatibility': 'breaking',
         'request_concrete': False,
+        'risk_prose': True,
         'planning_lane_override': 'deep',
     }
 

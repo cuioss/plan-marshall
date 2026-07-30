@@ -8,7 +8,7 @@ mismatch — it NEVER blocks routing. The gate is a pre-route validation pass:
 ``planning-lane route`` invokes it before resolving the lane, and the
 ``classification-validate`` subcommand exposes it standalone.
 
-Two mismatch classes are detected, both chosen to raise zero false positives:
+Three mismatch classes are detected, each chosen to raise zero false positives:
 
 1. **feature-as-bug_fix** — ``change_type == 'bug_fix'`` while the deterministic
    change-type heuristic (the same scoring engine phase-3-outline uses) resolves
@@ -22,6 +22,18 @@ Two mismatch classes are detected, both chosen to raise zero false positives:
    non-empty while ``references.scope_estimate`` is null / empty / ``none``. A
    plan that already enumerated touched files but left scope unestimated is a
    deterministic data gap (no heuristic involved), so this check is exact.
+
+3. **scale_mismatch_light_routing** — a persisted ``scope_estimate`` of
+   ``surgical`` alongside a request body whose distinct-path count has reached the
+   ``multi_module`` floor. This is the safety net for the one residual the
+   pre-route sensor cannot close on its own: the sensor is not the only writer of
+   ``references.scope_estimate`` (phase-2-refine's module-mapping derivation and
+   phase-3-outline's refinement both write it through the generic setter), so a
+   narrow band can outlive a body that plainly is not narrow. The check is exact
+   rather than heuristic — it compares two readings of the SAME document and fires
+   only when they genuinely disagree — and the threshold and the path counter are
+   both imported from ``_cmd_planning_lane`` rather than restated, so the gate can
+   never drift away from the sensor it is checking.
 
 The Q-Gate finding is recorded against the ``2-init`` → ``2-refine`` boundary:
 ``1-init`` is not a Q-Gate phase (the Q-Gate store opens at ``2-refine``), and
@@ -55,6 +67,11 @@ _GATE_QGATE_PHASE = '2-refine'
 
 # scope_estimate values that count as "unestimated" for mismatch class 2.
 _NULL_SCOPE_VALUES = frozenset({'', 'none'})
+
+# The one persisted band mismatch class 3 treats as a narrow claim. Only the
+# genuinely-narrow band qualifies: `single_module` is the catch-all middle band, so
+# pairing it with a high path count is not a contradiction worth flagging.
+_NARROW_CLAIM_SCOPE = 'surgical'
 
 
 def _read_references(plan_id: str) -> dict[str, Any]:
@@ -127,8 +144,61 @@ def _detect_affected_files_without_scope(references: dict[str, Any]) -> dict[str
     }
 
 
+def _detect_scale_mismatch_light_routing(
+    plan_id: str, references: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Mismatch class 3 — a narrow persisted band over a demonstrably large body.
+
+    Returns a finding-descriptor dict when ``scope_estimate`` is persisted as
+    ``surgical`` while the request body carries at least ``_MULTI_MODULE_MIN_PATHS``
+    distinct path references — i.e. the persisted band claims the work is tightly
+    bounded while the body the sensor scores says it is multi-module. Returns
+    ``None`` otherwise, including for an unscoreable body (nothing to contradict).
+
+    Exact, not heuristic: it re-derives the count from the SAME whole-body read the
+    sensor uses, so the two readings are comparable by construction and the check
+    fires only on a genuine disagreement.
+    """
+    scope = references.get('scope_estimate')
+    if not isinstance(scope, str) or scope.strip().lower() != _NARROW_CLAIM_SCOPE:
+        return None
+
+    # DEFERRED IMPORT, and it must stay deferred: `_cmd_planning_lane` imports
+    # `run_classification_validation` from THIS module at module scope, so a
+    # top-level import back would close an import cycle and fail — at the time
+    # `_cmd_planning_lane` is mid-initialisation, `_distinct_paths` does not exist
+    # yet. Importing here (rather than restating the threshold or the counter) is
+    # what keeps the gate and the sensor on one definition. Same shape as
+    # `_emit_finding`'s deferred `_findings_core` import below.
+    from _cmd_planning_lane import (  # noqa: PLC0415
+        _MULTI_MODULE_MIN_PATHS,
+        _distinct_paths,
+        _read_request_body,
+    )
+
+    body = _read_request_body(plan_id)
+    if not body:
+        return None
+
+    distinct_path_count = len(_distinct_paths(body))
+    if distinct_path_count < _MULTI_MODULE_MIN_PATHS:
+        return None
+
+    return {
+        'mismatch': 'scale_mismatch_light_routing',
+        'title': 'Classification mismatch: scope_estimate=surgical over a multi-module-sized request',
+        'detail': (
+            f'references.scope_estimate is persisted as {_NARROW_CLAIM_SCOPE!r}, but the request '
+            f'body names {distinct_path_count} distinct file paths — at or above the '
+            f'multi_module floor of {_MULTI_MODULE_MIN_PATHS}. A narrow band suppresses the '
+            f'S3/S4 escalation signals and projects the minimal execution posture, so re-confirm '
+            f'the scope during refinement before the narrow claim is relied on.'
+        ),
+    }
+
+
 def run_classification_validation(plan_id: str) -> dict[str, Any]:
-    """Run both mismatch checks and emit one Q-Gate finding per fired mismatch.
+    """Run all three mismatch checks and emit one Q-Gate finding per fired mismatch.
 
     This is the reusable entry point: the ``classification-validate`` subcommand
     calls it directly, and ``planning-lane route`` calls it as a pre-route pass.
@@ -156,6 +226,9 @@ def run_classification_validation(plan_id: str) -> dict[str, Any]:
     scope_mismatch = _detect_affected_files_without_scope(references)
     if scope_mismatch is not None:
         descriptors.append(scope_mismatch)
+    scale_mismatch = _detect_scale_mismatch_light_routing(plan_id, references)
+    if scale_mismatch is not None:
+        descriptors.append(scale_mismatch)
 
     mismatches: list[dict[str, Any]] = []
     findings_emitted = 0

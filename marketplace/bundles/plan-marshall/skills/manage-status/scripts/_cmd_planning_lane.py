@@ -17,8 +17,9 @@ The signal set (DQ1 of the planning-lanes solution outline):
 | S4 | ``compatibility`` | ``marshal.json plan.phase-2-refine.compatibility`` | == breaking **AND NOT** narrow-and-concrete |
 | S5 | request concreteness | regex over ``request.md`` body | NO file path AND NO concrete fix signal |
 | S6 | explicit override | ``status.metadata.planning_lane_override`` | == deep forces deep (one-way) |
+| S7 | author risk prose | regex over ``request.md`` body | body carries an explicit scale warning |
 
-``deep`` IFF (S1 ∨ S2 ∨ S3 ∨ S4 ∨ S5 ∨ S6-deep); otherwise ``light``.
+``deep`` IFF (S1 ∨ S2 ∨ S3 ∨ S4 ∨ S5 ∨ S6-deep ∨ S7); otherwise ``light``.
 
 The narrow-and-concrete carve-out: when ``scope_estimate == surgical`` AND the
 request is concrete, S3 (generative change_type) and S4 (breaking compatibility)
@@ -26,8 +27,8 @@ are suppressed so they cannot force ``deep`` *alone* for a positively-bounded,
 well-specified request. The carve-out demands ACTUAL narrowness — ``single_module``
 is the catch-all middle band, not a bounded verdict, so it does NOT earn the
 carve-out. The carve-out relaxes ONLY this co-firing — S1/S2/S5 (the
-unknown-to-deep defaults) and S6 (explicit override) still bias ``deep``
-unchanged, so the conservative unknown case is untouched.
+unknown-to-deep defaults), S6 (explicit override) and S7 (author risk prose) still
+bias ``deep`` unchanged, so the conservative unknown case is untouched.
 
 ``plan.phase-1-init.deep_lane`` is read BEFORE the signal set and
 short-circuits the evaluation: ``always`` forces deep, ``never`` forces light
@@ -98,6 +99,26 @@ _PATH_RE = re.compile(r'[\w./-]+/[\w.-]+\.[A-Za-z0-9]+')
 _FENCE_RE = re.compile(r'```')
 _CLI_RE = re.compile(r'python3\s+\.plan/execute-script\.py')
 _NOTATION_RE = re.compile(r'\bmanage-[a-z-]+\b')
+
+# S7 — the author's own written scale warning. When a request says in prose that
+# the work is large, that statement outranks any cheap band this module can
+# compute from path counts: the author knows things the sensor cannot see.
+# Case-insensitive and word-boundary anchored, mirroring the S5 pattern exactly.
+#
+# ``epic`` carries ONE extra guard, for the same reason ``_GLOB_RE``'s ``**``
+# alternatives are path-adjacent: an alternative that matches document CHROME
+# instead of request CONTENT makes the whole signal fire vacuously. Every ingested
+# orchestrator plan spec opens with an ``epic:`` metadata key, so a bare ``\bepic\b``
+# would fire S7 for the entire orchestrated population and the signal would mean
+# "is orchestrator-authored" rather than "the author warned about scale" — and no
+# orchestrated request, however genuinely surgical, could ever route light again.
+# The ``(?!\s*:)`` lookahead therefore excludes the metadata-key form while keeping
+# every prose use (``… the truthful-signals epic.``, ``an epic-sized rename``).
+_RISK_PROSE_RE = re.compile(
+    r'\b(?:multi-PR|codebase-wide|largest|riskiest|expect a split|foundation|campaign)\b'
+    r'|\bepic\b(?!\s*:)',
+    re.IGNORECASE,
+)
 
 
 def _distinct_paths(body: str) -> set[str]:
@@ -243,6 +264,20 @@ def _request_is_concrete(body: str) -> bool:
     if _NOTATION_RE.search(body):
         return True
     return False
+
+
+def _request_has_risk_prose(body: str) -> bool:
+    """S7 — the request body carries an explicit author scale warning.
+
+    Mirrors ``_request_is_concrete``: a single module-level regex over the same
+    whole body, so the two signals are corroborating readings of one document. An
+    empty (unscoreable) body has no warning to report and returns False — the
+    unknown case is already handled by S2 and S5, which both bias deep, so S7 adds
+    no second opinion there.
+    """
+    if not body:
+        return False
+    return bool(_RISK_PROSE_RE.search(body))
 
 
 def _read_scope_estimate(plan_id: str) -> str | None:
@@ -415,9 +450,10 @@ def evaluate_signals_pure(
     compatibility: str | None,
     plan_source: str | None,
     request_concrete: bool,
+    risk_prose: bool = False,
     override: str | None = None,
 ) -> dict[str, Any]:
-    """Score the S1–S6 signal set into a lane verdict — pure, I/O-free.
+    """Score the S1–S7 signal set into a lane verdict — pure, I/O-free.
 
     Takes the realized signal values directly (the reads happen in the caller)
     and returns the ``{lane, fired_signals, signals, profile}`` dict that drives
@@ -426,6 +462,11 @@ def evaluate_signals_pure(
     init dialogue consumes it as the default recommendation. Importable by
     downstream consumers (e.g. the audit retrospective check) so the routing
     thresholds are never duplicated.
+
+    ``risk_prose`` (S7) defaults to False so a consumer that scores only the
+    band-and-metadata signals keeps working; the default is the ABSENCE of a
+    warning, which is the neutral value — it can never manufacture a deep verdict
+    a caller did not supply evidence for.
     """
     # Carve-out — the positively-bounded case. A request that is BOTH narrowly
     # scoped (scope_estimate ∈ _NARROW_SCOPE_ESTIMATES, i.e. surgical) AND
@@ -453,6 +494,13 @@ def evaluate_signals_pure(
     s4_deep = compatibility == 'breaking' and not narrow_and_concrete
     # S6 — explicit user override to deep is one-way.
     s6_deep = override == DEEP
+    # S7 — the author's own written scale warning. Deliberately OUTSIDE the
+    # narrow-and-concrete carve-out: the carve-out exists to stop a cheap band
+    # plus a generative change_type from forcing deep, but S7 is not a cheap
+    # inference — it is the author stating the scale. An explicit warning
+    # therefore outranks the band, even for a surgical, concretely-specified
+    # request.
+    s7_deep = risk_prose
 
     fired = []
     if s1_deep:
@@ -467,6 +515,8 @@ def evaluate_signals_pure(
         fired.append('S5:concreteness')
     if s6_deep:
         fired.append('S6:override')
+    if s7_deep:
+        fired.append('S7:risk_prose')
 
     lane = DEEP if fired else LIGHT
     recommended_posture = project_profile_pure(
@@ -484,6 +534,7 @@ def evaluate_signals_pure(
             'change_type': change_type,
             'compatibility': compatibility,
             'request_concrete': request_concrete,
+            'risk_prose': risk_prose,
             'planning_lane_override': override,
         },
         'profile': {
@@ -494,11 +545,11 @@ def evaluate_signals_pure(
 
 
 def _evaluate_signals(plan_id: str, metadata: dict[str, Any]) -> dict[str, Any]:
-    """Read S1–S6 signals from disk and delegate scoring to the pure helper.
+    """Read S1–S7 signals from disk and delegate scoring to the pure helper.
 
     Returns the dict produced by ``evaluate_signals_pure`` — ``lane`` (the
     aggregate ``{light|deep}`` verdict), ``fired_signals`` (the deep-bias signals
-    that fired), ``signals`` (the resolved S1-S6 input values) and ``profile``
+    that fired), ``signals`` (the resolved S1-S7 input values) and ``profile``
     (the projected posture) — plus one key this reader adds:
 
     - ``scope_provenance`` — the ``classify_scope_pure`` explanation of the band
@@ -515,6 +566,7 @@ def _evaluate_signals(plan_id: str, metadata: dict[str, Any]) -> dict[str, Any]:
     compatibility = _read_compatibility()
     body = _read_request_body(plan_id)
     concrete = _request_is_concrete(body)
+    risk_prose = _request_has_risk_prose(body)
     _, scope_provenance = classify_scope_pure(body)
 
     evaluation = evaluate_signals_pure(
@@ -523,6 +575,7 @@ def _evaluate_signals(plan_id: str, metadata: dict[str, Any]) -> dict[str, Any]:
         compatibility=compatibility,
         plan_source=plan_source,
         request_concrete=concrete,
+        risk_prose=risk_prose,
         override=override,
     )
     evaluation['scope_provenance'] = scope_provenance
