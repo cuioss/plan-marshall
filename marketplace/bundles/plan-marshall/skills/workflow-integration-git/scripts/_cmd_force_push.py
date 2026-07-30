@@ -69,11 +69,18 @@ def _resolve_branch_and_path(args) -> tuple[str | None, Path | None, dict | None
             worktree_path_str = context.worktree_path if context.has_worktree else ''
             plan_branch = context.worktree_branch
         except WorktreeResolutionError as exc:
+            # NOT 'plan_not_found': this arm wraps BOTH the context resolution
+            # and the three worktree-face property accesses, so it fires for an
+            # unavailable executor, a subprocess timeout or non-zero exit,
+            # corrupt metadata, and the use_worktree=true-with-empty-path case —
+            # none of which means the plan is missing. Reporting a resolver
+            # failure as a missing plan sends the caller looking in the wrong
+            # place, so the operational cause gets its own error_type.
             return None, None, {
                 'status': 'error',
                 'operation': 'force-push-with-lease',
                 'plan_id': plan_id,
-                'error_type': 'plan_not_found',
+                'error_type': 'worktree_resolution_failed',
                 'message': str(exc),
             }
 

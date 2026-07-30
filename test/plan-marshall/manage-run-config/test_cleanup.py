@@ -30,6 +30,16 @@ DEFAULT_RETENTION = {
     'temp_on_maintenance': True,
 }
 
+# A marshal.json written BEFORE `no_plan_body_days` joined the retention
+# defaults, and never re-synced with `manage-config sync-defaults`. Every real
+# project's config predates some key, so the absent-key shape — not the fully
+# populated one above — is what the retention reader must survive.
+LEGACY_RETENTION_WITHOUT_NO_PLAN_BODY_DAYS = {
+    'logs_days': 1,
+    'archived_plans_days': 5,
+    'temp_on_maintenance': True,
+}
+
 
 def clean_fixture_dirs(fixture_dir: Path):
     """Clean up directories that may leak between tests in shared fixture."""
@@ -373,6 +383,49 @@ def test_status_reports_no_plan_bodies(plan_context):
     assert 'retention_no_plan_body_days: 7' in result.stdout
     assert 'no_plan_bodies_total: 2' in result.stdout
     assert 'no_plan_bodies_old: 1' in result.stdout
+
+
+def test_status_backfills_no_plan_body_days_when_config_predates_it(plan_context):
+    """An un-synced marshal.json yields the default, not a KeyError traceback.
+
+    ``cleanup-status`` indexes ``no_plan_body_days`` directly; a config written
+    before that key existed would blow up with an unhandled KeyError instead of
+    the structured TOON result the caller parses. Asserting the DEFAULT value
+    (not merely a zero exit) is what proves the key was backfilled rather than
+    the whole sentinel-body section silently skipped.
+    """
+    clean_fixture_dirs(plan_context.fixture_dir)
+    setup_marshal_json(plan_context.fixture_dir, LEGACY_RETENTION_WITHOUT_NO_PLAN_BODY_DAYS)
+    setup_sentinel(plan_context.fixture_dir)
+
+    write_sentinel_body(plan_context.fixture_dir, 'pr-create-old.md', age_days=10)
+    write_sentinel_body(plan_context.fixture_dir, 'pr-create-default.md', age_days=1)
+
+    result = run_script(SCRIPT_PATH, 'cleanup-status')
+    assert result.success, f'Script failed: {result.stderr}'
+    assert 'KeyError' not in result.stderr
+    assert 'status: ok' in result.stdout
+    assert 'retention_no_plan_body_days: 7' in result.stdout
+    assert 'no_plan_bodies_old: 1' in result.stdout
+
+
+def test_clean_backfills_no_plan_body_days_when_config_predates_it(plan_context):
+    """The clean path honours the backfilled default and prunes accordingly."""
+    clean_fixture_dirs(plan_context.fixture_dir)
+    setup_marshal_json(plan_context.fixture_dir, LEGACY_RETENTION_WITHOUT_NO_PLAN_BODY_DAYS)
+    setup_sentinel(plan_context.fixture_dir)
+
+    aged = write_sentinel_body(plan_context.fixture_dir, 'pr-create-old.md', age_days=10)
+    fresh = write_sentinel_body(plan_context.fixture_dir, 'pr-create-default.md', age_days=1)
+
+    result = run_script(SCRIPT_PATH, 'cleanup', '--target', 'no-plan-bodies')
+    assert result.success, f'Script failed: {result.stderr}'
+    assert 'KeyError' not in result.stderr
+    assert 'status: success' in result.stdout
+    assert 'no_plan_bodies_deleted: 1' in result.stdout
+
+    assert not aged.exists(), 'Aged sentinel body should be deleted under the backfilled default'
+    assert fresh.exists(), 'Fresh sentinel body should be kept under the backfilled default'
 
 
 def test_clean_all_includes_no_plan_bodies(plan_context):

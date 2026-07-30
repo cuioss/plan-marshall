@@ -327,7 +327,8 @@ remote_sha: abc123def456
 
 | `error_type` | Cause |
 |-------------|-------|
-| `plan_not_found` | `--plan-id` supplied but executor missing, python3 absent, manage-status timed out, or plan resolution failed |
+| `status_module_unavailable` | `file_ops` could not be imported — an environment problem, not a missing plan |
+| `worktree_resolution_failed` | Worktree resolution raised — executor missing, python3 absent, manage-status timed out or exited non-zero, metadata corrupt, or `use_worktree=true` with an empty persisted path. Deliberately NOT `plan_not_found`: the plan may well exist |
 | `worktree_not_materialized` | `worktree_path` or `worktree_branch` absent from manage-status response |
 | `missing_required_arg` | Neither `--plan-id` nor `--project-dir` supplied; or `--project-dir` without `--branch` |
 | `project_dir_not_a_git_repo` | `--project-dir` path is not a git working tree |

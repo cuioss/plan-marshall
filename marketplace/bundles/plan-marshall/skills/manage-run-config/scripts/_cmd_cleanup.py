@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 # Direct imports - PYTHONPATH set by executor
+from _config_defaults import DEFAULT_SYSTEM_RETENTION
 from constants import (
     CI_BODIES_DIRNAME,
     CLEANUP_TARGET_ALL,
@@ -99,7 +100,16 @@ def get_retention_settings() -> dict[str, Any] | None:
         )
         return None
 
-    retention: dict[str, Any] = config['system']['retention']
+    retention: dict[str, Any] = dict(config['system']['retention'])
+    # Backfill retention keys the persisted marshal.json predates. A project
+    # whose config was written before a key joined DEFAULT_SYSTEM_RETENTION —
+    # and which has not re-run `manage-config sync-defaults` since — carries no
+    # entry for it, so the direct indexing below (and in cmd_status / cmd_clean)
+    # would raise an unhandled KeyError instead of producing a structured TOON
+    # result. Defaults come from DEFAULT_SYSTEM_RETENTION so this normalization
+    # cannot drift from the canonical values.
+    for key, default in DEFAULT_SYSTEM_RETENTION.items():
+        retention.setdefault(key, default)
     return retention
 
 

@@ -137,8 +137,14 @@ contract — five cases, no others:
   `mutually_exclusive_args`. Pick one.
 * `--plan-id X` only — auto-resolve through `file_ops.resolve_plan_context`,
   which owns the single `manage-status get-worktree-path` invocation.
-  When `use_worktree=true` the persisted worktree path is used; when
-  `use_worktree=false` (or metadata absent) the main checkout is used.
+  When `use_worktree=true` the persisted worktree path is used; when the
+  query succeeds and reports `use_worktree=false`, the main checkout is
+  used. A resolution FAILURE is not a silent fallback: when the
+  worktree-state query cannot be answered — metadata absent, corrupt, or
+  never seeded, or `use_worktree=true` with an empty persisted path — the
+  resolver raises `WorktreeResolutionError`, and the router emits a
+  structured TOON error and exits 2. It does NOT degrade to the main
+  checkout.
 * `--plan-id NO_PLAN` only — the plan-less sentinel. Binds to the main
   checkout, always; the sentinel never resolves to a worktree.
 * `--project-dir Y` only — explicit override (legacy / escape hatch).

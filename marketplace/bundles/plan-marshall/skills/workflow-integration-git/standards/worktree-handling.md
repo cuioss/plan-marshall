@@ -308,7 +308,7 @@ remote: origin
 remote_sha: {sha after push}
 ```
 
-**Typed errors**: `plan_not_found`, `worktree_not_materialized`, `missing_required_arg`, `project_dir_not_a_git_repo`, `branch_not_found`, `push_rejected_non_fast_forward`, `lease_check_failed`, `push_failed`.
+**Typed errors**: `status_module_unavailable`, `worktree_resolution_failed`, `worktree_not_materialized`, `missing_required_arg`, `project_dir_not_a_git_repo`, `branch_not_found`, `push_rejected_non_fast_forward`, `lease_check_failed`, `push_failed`. A resolver failure is classified as `worktree_resolution_failed`, never `plan_not_found` — the plan may exist while the resolution is what failed.
 
 ### `switch-and-pull`
 

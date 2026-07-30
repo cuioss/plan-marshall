@@ -379,7 +379,15 @@ class TestResolveBranchAndPathViaResolver:
     def test_resolution_failure_surfaces_the_resolver_message(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """A ``WorktreeResolutionError`` is surfaced verbatim, not swallowed."""
+        """A ``WorktreeResolutionError`` is surfaced verbatim, not swallowed.
+
+        The classification is ``worktree_resolution_failed``, NOT
+        ``plan_not_found``: this arm fires for operational causes — an
+        unavailable executor, a timed-out or non-zero ``manage-status``, corrupt
+        metadata — none of which implies the plan is missing. Corrupt metadata
+        for a plan that plainly exists is the case that makes the distinction
+        observable, so it is the one stubbed here.
+        """
         import file_ops  # noqa: PLC0415
 
         def _raise(_plan_id):
@@ -393,8 +401,29 @@ class TestResolveBranchAndPathViaResolver:
         assert branch is None
         assert path is None
         assert error is not None
-        assert error['error_type'] == 'plan_not_found'
+        assert error['error_type'] == 'worktree_resolution_failed', (
+            'an operational resolver failure is still being reported as a '
+            'missing plan, sending the caller looking in the wrong place'
+        )
         assert 'metadata is corrupt' in error['message']
+
+    def test_empty_persisted_worktree_path_is_a_resolution_failure(self) -> None:
+        """``use_worktree=true`` with an empty persisted path is operational too.
+
+        The resolver raises for this case rather than returning an empty path,
+        so it lands in the SAME arm as a corrupt-metadata failure — and must
+        carry the same non-``plan_not_found`` classification. Pinning it here
+        keeps the two causes from drifting apart into different error types.
+        """
+        args = Namespace(plan_id='fp-empty-path', project_dir=None, branch=None)
+
+        with patch_worktree_faces(True, worktree_path=''):
+            branch, path, error = _resolve_branch_and_path(args)
+
+        assert branch is None
+        assert path is None
+        assert error is not None
+        assert error['error_type'] == 'worktree_resolution_failed'
 
     def test_no_plan_sentinel_is_refused_by_the_worktree_verb(self) -> None:
         """``NO_PLAN`` has no dedicated worktree, so this verb refuses it.

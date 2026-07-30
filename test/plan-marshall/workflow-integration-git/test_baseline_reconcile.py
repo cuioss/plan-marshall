@@ -296,6 +296,59 @@ def test_unresolvable_plan_skips_as_status_not_found(plan_context, monkeypatch):
     assert result['reason'] == 'status_not_found'
 
 
+def test_empty_persisted_worktree_path_skips_as_worktree_path_missing(plan_context):
+    """An EMPTY persisted path is classified upstream, as ``worktree_path_missing``.
+
+    ``PlanContext._resolve_worktree_face`` raises ``WorktreeResolutionError``
+    when ``use_worktree=true`` and the persisted path is empty, so
+    ``_worktree_target``'s ``except`` arm claims this case before the directory
+    guard below it can run. Pinning the reason here is what keeps the guard from
+    re-acquiring a dead ``not worktree_path`` half: a predicate that also tried
+    to classify emptiness would be advertising a verdict this test proves is
+    unreachable.
+    """
+    plan_context.plan_dir_for('br-empty-worktree')
+    args = Namespace(
+        plan_id='br-empty-worktree',
+        base_branch='main',
+        worktree_path=None,
+        no_emit=True,
+        skip_fetch=True,
+    )
+    with patch_query_worktree_path(True, ''):
+        result = cmd_baseline_reconcile(args)
+
+    assert result['status'] == 'skipped'
+    assert result['reason'] == 'worktree_path_missing', (
+        'the empty persisted worktree_path was classified by the directory '
+        'guard rather than by the resolver error it actually raises'
+    )
+
+
+def test_non_directory_worktree_path_skips_as_not_a_directory(plan_context):
+    """A NON-EMPTY path that is not a directory is the guard's reachable case.
+
+    This is the scenario the surviving ``is_dir()`` predicate exists for — a
+    worktree removed or relocated after its path was persisted — and running it
+    proves the classification is live rather than vestigial.
+    """
+    plan_dir = plan_context.plan_dir_for('br-stale-worktree')
+    missing_worktree = plan_dir / 'removed-worktree'
+    assert not missing_worktree.exists()
+    args = Namespace(
+        plan_id='br-stale-worktree',
+        base_branch='main',
+        worktree_path=None,
+        no_emit=True,
+        skip_fetch=True,
+    )
+    with patch_query_worktree_path(True, str(missing_worktree)):
+        result = cmd_baseline_reconcile(args)
+
+    assert result['status'] == 'skipped'
+    assert result['reason'] == 'worktree_path_not_a_directory'
+
+
 def test_worktree_path_override_bypasses_the_resolver_entirely(plan_context):
     """``--worktree-path`` is the escape hatch: it short-circuits resolution.
 
