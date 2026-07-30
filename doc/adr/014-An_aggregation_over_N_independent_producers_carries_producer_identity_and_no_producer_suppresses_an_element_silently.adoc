@@ -1,4 +1,4 @@
-= ADR-013: An aggregation over N independent producers carries producer identity, and no producer suppresses an element silently
+= ADR-014: An aggregation over N independent producers carries producer identity, and no producer suppresses an element silently
 :toc: left
 :toclevels: 2
 :sectnums:
@@ -270,7 +270,7 @@ instead of assumed.
   (`Domain content is active only when its domain is active`) — the invisible-gating
   permission this ADR refines: gating may be invisible in mechanism, but the response
   must make it legible.
-* xref:012-A_capability_spanning_both_extension_hierarchies_lives_in_a_sibling_ABC_not_a_face_on_either.adoc[ADR-012]
+* xref:013-A_capability_spanning_both_extension_hierarchies_lives_in_a_sibling_ABC_not_a_face_on_either.adoc[ADR-013]
   (`A capability spanning both extension hierarchies lives in a sibling ABC, not a face
   on either`) — the placement decision that makes the producer population complete;
   this ADR governs what an aggregation over that population must report.

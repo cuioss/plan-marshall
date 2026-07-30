@@ -1,4 +1,4 @@
-= ADR-012: A capability spanning both extension hierarchies lives in a sibling ABC, not a face on either
+= ADR-013: A capability spanning both extension hierarchies lives in a sibling ABC, not a face on either
 :toc: left
 :toclevels: 2
 :sectnums:
