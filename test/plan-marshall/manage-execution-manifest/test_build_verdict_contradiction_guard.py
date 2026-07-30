@@ -14,14 +14,23 @@ It is an ASSERTION, not a pre-filter: it narrows nothing and rejects instead.
 
 **The anti-vacuity obligation.** The guard carries a non-empty-footprint
 precondition, and that precondition is the whole reason the guard needs careful
-tests. ``should_execute_build`` returns ``not_necessary`` for an EMPTY footprint,
-and the footprint is structurally empty at early compose (``phase-4-plan`` runs
-before ``phase-5-execute`` Step 2.5 materializes the worktree). Without the
-precondition the guard would fire on essentially every plan's first compose —
-inverted into a permanent false alarm rather than merely vacuous. The
-``TestAntiVacuity`` class below therefore pins BOTH directions: the guard is
-silent at early compose, AND it is not silent on the real contradiction. A guard
-that only ever returns ``None`` would pass the first half alone.
+tests. At early compose no footprint is observable at all: ``phase-4-plan`` runs
+before ``phase-5-execute`` Step 2.5 materializes the worktree, so the resolver
+reports the footprint UNRESOLVABLE and the caller passes that state through as an
+empty list. Without the precondition the guard would fire on essentially every
+plan's first compose — inverted into a permanent false alarm rather than merely
+vacuous. The ``TestAntiVacuity`` class below therefore pins BOTH directions: the
+guard is silent at early compose, AND it is not silent on the real contradiction.
+A guard that only ever returns ``None`` would pass the first half alone.
+
+**Only ``not_necessary`` substantiates a contradiction.** The verdict vocabulary
+has three values, and the guard's decision precondition names exactly one of
+them. ``unknown`` — what an unresolvable footprint now produces — asserts
+nothing: it reports that the authority could not substantiate an answer, so it
+can never evidence a contradiction. ``TestUnknownVerdictNeverFires`` pins that
+independently of the footprint precondition, because the two preconditions are
+independent and both fail open; a guard that keyed on ``decision != 'build'``
+would pass every footprint case here and still reject real plans on ``unknown``.
 """
 
 import importlib.util
@@ -64,6 +73,12 @@ _EMPTY_FOOTPRINT_VERDICT = {
     'reason': 'plan footprint is empty — no changed files to build',
 }
 _BUILD = {'decision': 'build'}
+#: The third verdict. An unresolvable footprint yields this instead of the
+#: vacuously-positive ``not_necessary`` a single collapsed empty list produced.
+_UNKNOWN = {
+    'decision': 'unknown',
+    'reason': 'plan footprint unresolvable — worktree not yet materialised',
+}
 
 
 # =============================================================================
@@ -304,4 +319,84 @@ class TestAntiVacuity:
         assert (
             check_build_verdict_consistent(steps, [], _REAL_FOOTPRINT, _NOT_NECESSARY)
             is not None
+        )
+
+
+# =============================================================================
+# The ``unknown`` verdict never fires the guard
+# =============================================================================
+
+
+class TestUnknownVerdictNeverFires:
+    """``unknown`` asserts nothing, so it can never evidence a contradiction.
+
+    These cases deliberately hold the footprint NON-EMPTY, which disarms the
+    other precondition — so the only thing that can keep the guard silent here is
+    the decision check itself. That separation matters: a guard written as
+    ``decision != 'build'`` would satisfy every footprint-precondition test in
+    this module and still reject every real plan whose footprint happens to be
+    unresolvable at the moment the assertion runs.
+    """
+
+    def test_unknown_with_module_tests_does_not_fire(self):
+        assert (
+            check_build_verdict_consistent(
+                ['verify:module-tests'], [], _REAL_FOOTPRINT, _UNKNOWN
+            )
+            is None
+        )
+
+    def test_unknown_with_the_full_build_manifest_does_not_fire(self):
+        """The whole code-plan shape passes on ``unknown`` — phase-5 and phase-6."""
+        assert (
+            check_build_verdict_consistent(
+                ['verify:quality-gate', 'verify:module-tests', 'verify:coverage'],
+                ['push', 'pre-push-quality-gate'],
+                _REAL_FOOTPRINT,
+                _UNKNOWN,
+            )
+            is None
+        )
+
+    def test_unknown_with_a_phase_6_build_evidence_gate_does_not_fire(self):
+        """The phase-6 arm keys on the same decision precondition."""
+        assert (
+            check_build_verdict_consistent(
+                [], ['pre-push-quality-gate'], _REAL_FOOTPRINT, _UNKNOWN
+            )
+            is None
+        )
+
+    def test_unknown_and_not_necessary_differ_on_identical_inputs(self):
+        """The paired opposite: only the decision changes, and only one fires.
+
+        The single assertion that proves the guard reads the decision VALUE
+        rather than merely "not build". Same steps, same real footprint — the
+        ``not_necessary`` verdict rejects and the ``unknown`` verdict passes.
+        """
+        steps = ['verify:module-tests']
+
+        assert check_build_verdict_consistent(steps, [], _REAL_FOOTPRINT, _UNKNOWN) is None
+        assert (
+            check_build_verdict_consistent(steps, [], _REAL_FOOTPRINT, _NOT_NECESSARY)
+            is not None
+        )
+
+    def test_unknown_at_early_compose_does_not_fire(self):
+        """Both preconditions disarmed at once — the realistic early-compose shape.
+
+        This is what phase-4-plan actually produces: the worktree does not exist,
+        so the footprint is unresolvable (passed through as ``[]``) AND the
+        verdict derived from it is ``unknown``. Neither precondition alone is
+        being relied on here; the case exists to pin the combination a real first
+        compose hits.
+        """
+        assert (
+            check_build_verdict_consistent(
+                ['verify:quality-gate', 'verify:module-tests', 'verify:coverage'],
+                ['push', 'pre-push-quality-gate'],
+                [],
+                _UNKNOWN,
+            )
+            is None
         )

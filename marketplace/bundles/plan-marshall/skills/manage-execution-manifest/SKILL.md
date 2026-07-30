@@ -135,9 +135,11 @@ phase_6:
   steps_count: 6
 rule_fired: surgical_tech_debt
 commit_and_push: true
-commit_push_omitted: false
+commit_push_dropped[0]:
 pre_push_quality_gate_omitted: false
-pre_submission_self_review_omitted: false
+build_verdict_decision: build
+decision_matrix_dropped[1]{step,reason}:
+  ci-wait,"decide rule 'surgical_tech_debt' drops the legacy ci-wait step"
 simplify_omitted: true
 security_class_omitted[0]:
 scope_gated_finalize_dropped[0]:
@@ -150,7 +152,12 @@ ceremony_finalize_gates:
   security_audit: auto
 ceremony_finalize_forced_in[0]:
 ceremony_finalize_forced_out[0]:
+execution_profile: full
+lane_dropped[0]:
+lane_warnings[0]:
 ```
+
+Every field that can name more than one dropped step is a `{step, reason}` **record list**, not a boolean — `commit_push_dropped`, `decision_matrix_dropped`, `security_class_omitted`, `lane_dropped`, and the two `scope_gated_finalize_*` lists. A boolean cannot say *which* step went or *why*, and each such field pairs with one `[STATUS]` `decision.log` line per record. `pre_push_quality_gate_omitted` and `simplify_omitted` stay booleans because each names one fixed step; `build_verdict_decision` carries the build verdict verbatim (`build` / `not_necessary` / `unknown`) so an `unknown` verdict — which KEEPS the gate — is distinguishable from a `build` one. The full convention is normative in [`standards/decision-rules.md`](standards/decision-rules.md) § "Every subtraction is reported".
 
 #### Compose-time step-resolution gate
 
@@ -549,13 +556,13 @@ Before the six-row matrix, the composer applies a scope-gated pre-filter that dr
 - **`single_module`** — drops only `plan-marshall:plan-retrospective`.
 - **`multi_module` / `broad` / `none`** — no implicit subtraction; the full candidate set is retained.
 
-**Declared-lane immunity** — membership in a drop set is not sufficient to drop. A step declaring an explicit non-`auto` per-element `lane` override in `marshal.json::plan.phase-6-finalize.steps[<step>].lane` is immune and is kept whatever the `scope_estimate` says. This gate is IMPLICIT (it infers intent from the scope estimate) while a `lane` override is the operator stating what they want, and an implicit inference must not silently override an explicit declaration. The immunity is load-bearing because the pre-filter runs BEFORE ceremony selection and lane resolution, and the ceremony `always` re-add path covers only the four ceremony gates — so for any other step (canonically `plan-marshall:plan-retrospective`) a drop here makes the declared lane structurally unreachable rather than merely outvoted. `automatic-review` therefore needs no carve-out of its own: the general rule already keeps it governed purely by its configured `lane` and lane tier.
+**Declared-lane immunity** — membership in a drop set is not sufficient to drop. A step declaring an explicit non-`auto` per-element `lane` override is immune and is kept whatever the `scope_estimate` says. The declaration is resolved from the MERGED source `_read_merged_phase_6_step_map(plan_id)`, which overlays the plan-local `status.metadata.finalize_step_overrides` map onto the project-wide `marshal.json::plan.phase-6-finalize.steps` map — plan-local wins per step key, merged per knob — so an operator's answer captured for one plan grants immunity exactly as a project-wide declaration does. Both channels, their shared shape and enum, and the full precedence ordering are the contract-of-record in [`extension-api/standards/ext-point-lane-element.md`](../extension-api/standards/ext-point-lane-element.md) § "Per-element override knob"; the enum is not restated here. The same merged map feeds the peer reader behind the four ceremony gates, so the two readers of this one field can never disagree. This gate is IMPLICIT (it infers intent from the scope estimate) while a `lane` override is the operator stating what they want, and an implicit inference must not silently override an explicit declaration. The immunity is load-bearing because the pre-filter runs BEFORE ceremony selection and lane resolution, and the ceremony `always` re-add path covers only the four ceremony gates — so for any other step (canonically `plan-marshall:plan-retrospective`) a drop here makes the declared lane structurally unreachable rather than merely outvoted. `automatic-review` therefore needs no carve-out of its own: the general rule already keeps it governed purely by its configured `lane` and lane tier.
 
 The composer emits one `decision.log` line per scope-gated subtraction (canonical prefix `(plan-marshall:manage-execution-manifest:compose) scope_gated_finalize subtraction`) and one per immunity retention (`… scope_gated_finalize immunity`), and surfaces `scope_gated_finalize_dropped` and `scope_gated_finalize_immune` in the `compose` result for observability — a retention is made as visible as a subtraction, since a step surviving a gate that names it is otherwise indistinguishable from a gate that never ran.
 
 ### Generic footprint pre-filter for canonical-verify steps (`canonical_verify_inactive`)
 
-After the six-row matrix and `execution_tier` routing produce the final `phase_5.verification_steps` list, the composer applies a canonical-agnostic footprint pre-filter: a `default:verify:{canonical}` step whose derived role is a footprint-gated whole-tree role (`integration` / `e2e`) is dropped when the live footprint is non-empty AND carries no path of that role. The core roles (`quality-gate` / `module-tests` / `coverage`) are never footprint-gated. The pre-filter is a no-op when the footprint is empty (early compose, before the worktree is materialized), so every canonical survives until a re-compose can observe the real footprint. The composer emits one `decision.log` line when at least one step is dropped (canonical prefix `(plan-marshall:manage-execution-manifest:compose) canonical_verify_inactive`). The full rule and the safety-against-compose-time-emptiness rationale are documented in [standards/decision-rules.md](standards/decision-rules.md) § "Generic footprint pre-filter".
+After the six-row matrix and `execution_tier` routing produce the final `phase_5.verification_steps` list, the composer applies a canonical-agnostic footprint pre-filter: a `default:verify:{canonical}` step whose derived role is a footprint-gated whole-tree role (`integration` / `e2e`) is dropped when the live footprint is non-empty AND carries no path of that role. The core roles (`quality-gate` / `module-tests` / `coverage`) are never footprint-gated. The pre-filter is a no-op when the footprint is unresolvable (early compose, before the worktree is materialized) or resolvable-but-empty, so every canonical survives until a re-compose can observe a real footprint. The composer emits one `decision.log` line when at least one step is dropped (canonical prefix `(plan-marshall:manage-execution-manifest:compose) canonical_verify_inactive`). The full rule and the safety-against-compose-time-emptiness rationale are documented in [standards/decision-rules.md](standards/decision-rules.md) § "Generic footprint pre-filter".
 
 ### Command-level execution_tier routing (`execution_tier_routing`)
 

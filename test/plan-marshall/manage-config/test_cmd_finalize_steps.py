@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for `manage-config finalize-steps apply-preset --preset <name>` write subcommand.
+"""Tests for the `manage-config finalize-steps` write subcommands.
 
-Covers the writer end-to-end:
+Covers ``apply-preset`` end-to-end:
 
 1. ``apply-preset --preset local|standard|full`` writes the expected
    ``plan.phase-6-finalize.steps`` list.
@@ -12,6 +12,14 @@ Covers the writer end-to-end:
    same on-disk state.
 4. A bogus preset is rejected at the argparse layer (exit code 2) with the
    valid names surfaced in the error.
+
+…and ``set-lane``'s ``--plan-id`` CHANNEL SELECTOR (section 8): one verb, one
+mechanism, two destinations. ``--plan-id`` absent writes the project-wide
+marshal.json map; ``--plan-id`` present writes that one plan's
+``status.metadata.finalize_step_overrides`` and leaves marshal.json byte-
+unchanged. The anti-leak assertion — marshal.json is unchanged by a
+``--plan-id`` write — is the point of the channel, since one plan's answer must
+not leak into every later plan.
 """
 
 import importlib.util
@@ -57,6 +65,10 @@ _cmd_mod = _load_module(
     '_cmd_finalize_steps', '_cmd_finalize_steps.py', _MANAGE_CONFIG_SCRIPTS_DIR
 )
 cmd_finalize_steps_apply_preset = _cmd_mod.cmd_finalize_steps_apply_preset
+cmd_finalize_steps_set_lane = _cmd_mod.cmd_finalize_steps_set_lane
+
+#: A finalize step every discovery run knows about, used as the set-lane target.
+_LANE_STEP_ID = 'plan-marshall:automatic-review'
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 from conftest import run_script  # noqa: E402
@@ -424,3 +436,288 @@ def test_apply_preset_string_plan_block_returns_structured_error(plan_context):
 
     assert result['status'] == 'error'
     assert 'plan block' in result['error']
+
+
+# =============================================================================
+# (8) set-lane --plan-id — the CHANNEL SELECTOR
+# =============================================================================
+#
+# ``set-lane`` writes into one of two destinations, chosen by the optional
+# ``--plan-id``. The pair of channels is the whole point: a per-plan operator
+# answer must reach both compose-side readers (the scope gate's declared-lane
+# immunity predicate and the ceremony gates' run-at-all knob) WITHOUT being
+# written into the project-wide marshal.json, where it would silently govern
+# every later plan. Each direction is therefore asserted twice — the destination
+# it DOES write, and the destination it must leave untouched.
+
+
+def _set_lane_args(step_id: str, lane: str, plan_id: str | None = None) -> Namespace:
+    """Build the Namespace argparse produces for ``finalize-steps set-lane``."""
+    return Namespace(step_id=step_id, lane=lane, plan_id=plan_id)
+
+
+def _status_path(plan_context, plan_id: str) -> Path:
+    plan_dir: Path = Path(plan_context.plan_dir_for(plan_id))
+    return plan_dir / 'status.json'
+
+
+def _seed_status(plan_context, plan_id: str, metadata: dict | None = None) -> Path:
+    """Write a minimal status.json for ``plan_id`` and return its path."""
+    path = _status_path(plan_context, plan_id)
+    path.write_text(json.dumps({'metadata': metadata if metadata is not None else {}}))
+    return path
+
+
+def _overrides(status_path: Path) -> dict:
+    """Return ``status.metadata.finalize_step_overrides`` from disk."""
+    status = json.loads(status_path.read_text(encoding='utf-8'))
+    overrides: dict = status.get('metadata', {}).get('finalize_step_overrides', {})
+    return overrides
+
+
+def test_set_lane_without_plan_id_writes_marshal_and_reports_the_project_channel(plan_context):
+    """The unchanged default: no ``--plan-id`` writes the project-wide map."""
+    # Arrange
+    create_marshal_json(plan_context.fixture_dir)
+
+    # Act
+    result = cmd_finalize_steps_set_lane(_set_lane_args(_LANE_STEP_ID, 'off'))
+
+    # Assert — written to marshal.json, and the channel is named on the result.
+    assert result['status'] == 'success'
+    assert result['channel'] == 'project'
+    assert result['lane'] == 'off'
+    section = _read_finalize_section(plan_context.fixture_dir)
+    assert section['steps'][_LANE_STEP_ID]['lane'] == 'off'
+
+
+def test_set_lane_without_plan_id_preserves_sibling_step_params(plan_context):
+    """The project-channel write replaces only ``lane``, never the step's siblings."""
+    # Arrange — the seeded step already carries a param.
+    create_marshal_json(plan_context.fixture_dir)
+    before = _read_finalize_section(plan_context.fixture_dir)
+    assert before['steps'][_LANE_STEP_ID]['review_bot_buffer_seconds'] == 300
+
+    # Act
+    cmd_finalize_steps_set_lane(_set_lane_args(_LANE_STEP_ID, 'full'))
+
+    # Assert
+    params = _read_finalize_section(plan_context.fixture_dir)['steps'][_LANE_STEP_ID]
+    assert params['lane'] == 'full'
+    assert params['review_bot_buffer_seconds'] == 300
+
+
+def test_set_lane_with_plan_id_writes_the_plan_local_map(plan_context):
+    """``--plan-id`` writes ``status.metadata.finalize_step_overrides`` for that plan."""
+    # Arrange
+    create_marshal_json(plan_context.fixture_dir)
+    status_path = _seed_status(plan_context, 'plan-local-write')
+
+    # Act
+    result = cmd_finalize_steps_set_lane(
+        _set_lane_args(_LANE_STEP_ID, 'full', plan_id='plan-local-write')
+    )
+
+    # Assert
+    assert result['status'] == 'success'
+    assert result['channel'] == 'plan_local'
+    assert result['plan_id'] == 'plan-local-write'
+    assert _overrides(status_path) == {_LANE_STEP_ID: {'lane': 'full'}}
+
+
+def test_set_lane_with_plan_id_leaves_marshal_json_byte_unchanged(plan_context):
+    """ANTI-LEAK: a ``--plan-id`` write must not touch marshal.json at all.
+
+    The load-bearing assertion of the whole channel. Comparing the file's raw
+    bytes before and after — rather than re-reading the parsed step map and
+    checking the one key is absent — also catches an incidental rewrite that
+    reorders or reformats the project-wide config, which would still be a write
+    the operator did not ask for.
+    """
+    # Arrange
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    create_marshal_json(plan_context.fixture_dir)
+    _seed_status(plan_context, 'no-leak')
+    before = marshal_path.read_bytes()
+
+    # Act
+    result = cmd_finalize_steps_set_lane(_set_lane_args(_LANE_STEP_ID, 'off', plan_id='no-leak'))
+
+    # Assert
+    assert result['status'] == 'success'
+    assert marshal_path.read_bytes() == before
+
+
+def test_set_lane_without_plan_id_leaves_plan_status_untouched(plan_context):
+    """The complementary direction: a project write must not touch a plan's status."""
+    # Arrange
+    create_marshal_json(plan_context.fixture_dir)
+    status_path = _seed_status(plan_context, 'untouched-plan')
+    before = status_path.read_bytes()
+
+    # Act
+    cmd_finalize_steps_set_lane(_set_lane_args(_LANE_STEP_ID, 'off'))
+
+    # Assert
+    assert status_path.read_bytes() == before
+
+
+def test_set_lane_plan_local_preserves_sibling_params_on_the_step(plan_context):
+    """A plan-local write replaces only ``lane``, mirroring the marshal-side writer."""
+    # Arrange — the plan already declares another param on the same step.
+    create_marshal_json(plan_context.fixture_dir)
+    status_path = _seed_status(
+        plan_context,
+        'sibling-params',
+        metadata={'finalize_step_overrides': {_LANE_STEP_ID: {'review_bot_buffer_seconds': 42}}},
+    )
+
+    # Act
+    cmd_finalize_steps_set_lane(_set_lane_args(_LANE_STEP_ID, 'full', plan_id='sibling-params'))
+
+    # Assert
+    assert _overrides(status_path) == {
+        _LANE_STEP_ID: {'review_bot_buffer_seconds': 42, 'lane': 'full'}
+    }
+
+
+def test_set_lane_plan_local_preserves_unrelated_status_metadata(plan_context):
+    """The plan-local write is surgical — other ``status.metadata`` keys survive."""
+    # Arrange
+    create_marshal_json(plan_context.fixture_dir)
+    status_path = _seed_status(
+        plan_context, 'other-metadata', metadata={'worktree_path': '/tmp/wt', 'use_worktree': True}
+    )
+
+    # Act
+    cmd_finalize_steps_set_lane(_set_lane_args(_LANE_STEP_ID, 'off', plan_id='other-metadata'))
+
+    # Assert
+    metadata = json.loads(status_path.read_text(encoding='utf-8'))['metadata']
+    assert metadata['worktree_path'] == '/tmp/wt'
+    assert metadata['use_worktree'] is True
+    assert metadata['finalize_step_overrides'] == {_LANE_STEP_ID: {'lane': 'off'}}
+
+
+def test_set_lane_plan_local_errors_when_the_plan_has_no_status(plan_context):
+    """A plan with no ``status.json`` is a named error, not a silent no-op."""
+    # Arrange — marshal exists, the plan does not.
+    create_marshal_json(plan_context.fixture_dir)
+
+    # Act
+    result = cmd_finalize_steps_set_lane(_set_lane_args(_LANE_STEP_ID, 'off', plan_id='ghost-plan'))
+
+    # Assert
+    assert result['status'] == 'error'
+    assert 'ghost-plan' in result['error']
+
+
+def test_set_lane_plan_local_refuses_to_overwrite_a_malformed_override_map(plan_context):
+    """A non-dict override map aborts the write rather than destroying it.
+
+    An existing map that cannot be parsed as the documented shape is an EXPLICIT
+    error: the file is repaired deliberately, never silently replaced by the next
+    write.
+    """
+    # Arrange
+    create_marshal_json(plan_context.fixture_dir)
+    status_path = _seed_status(
+        plan_context, 'malformed-map', metadata={'finalize_step_overrides': ['not', 'a', 'map']}
+    )
+    before = status_path.read_bytes()
+
+    # Act
+    result = cmd_finalize_steps_set_lane(
+        _set_lane_args(_LANE_STEP_ID, 'off', plan_id='malformed-map')
+    )
+
+    # Assert — named error, and the malformed file is left exactly as found.
+    assert result['status'] == 'error'
+    assert 'finalize_step_overrides' in result['error']
+    assert status_path.read_bytes() == before
+
+
+def test_set_lane_plan_local_refuses_to_overwrite_a_malformed_param_object(plan_context):
+    """A non-dict param object for the target step aborts the write."""
+    # Arrange
+    create_marshal_json(plan_context.fixture_dir)
+    status_path = _seed_status(
+        plan_context, 'malformed-params', metadata={'finalize_step_overrides': {_LANE_STEP_ID: 'off'}}
+    )
+    before = status_path.read_bytes()
+
+    # Act
+    result = cmd_finalize_steps_set_lane(
+        _set_lane_args(_LANE_STEP_ID, 'full', plan_id='malformed-params')
+    )
+
+    # Assert
+    assert result['status'] == 'error'
+    assert status_path.read_bytes() == before
+
+
+def test_set_lane_invalid_plan_id_does_not_fall_through_to_the_project_channel(plan_context):
+    """A PRESENT-but-invalid ``--plan-id`` errors; it never writes marshal.json.
+
+    Falling through to the project-wide write on a bad plan id would leak the
+    answer into every later plan — precisely the outcome the plan-local channel
+    exists to prevent — while looking like a success to the operator.
+    """
+    # Arrange
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    create_marshal_json(plan_context.fixture_dir)
+    before = marshal_path.read_bytes()
+
+    # Act — a traversal-shaped id the plan-id validator rejects.
+    result = cmd_finalize_steps_set_lane(
+        _set_lane_args(_LANE_STEP_ID, 'off', plan_id='../../etc/passwd')
+    )
+
+    # Assert
+    assert result['status'] == 'error'
+    assert marshal_path.read_bytes() == before
+
+
+def test_set_lane_plan_local_still_validates_the_lane_value(plan_context):
+    """The writer enum (off/auto/full) is enforced on the plan-local channel too."""
+    # Arrange
+    create_marshal_json(plan_context.fixture_dir)
+    status_path = _seed_status(plan_context, 'bad-lane')
+
+    # Act — ``ask`` is a seed value, never a resolved answer.
+    result = cmd_finalize_steps_set_lane(_set_lane_args(_LANE_STEP_ID, 'ask', plan_id='bad-lane'))
+
+    # Assert — rejected before any write reaches the plan.
+    assert result['status'] == 'error'
+    assert _overrides(status_path) == {}
+
+
+def test_set_lane_plan_local_still_validates_the_step_id(plan_context):
+    """Step-id validation is channel-independent (defence in depth on both paths)."""
+    # Arrange
+    create_marshal_json(plan_context.fixture_dir)
+    status_path = _seed_status(plan_context, 'bad-step')
+
+    # Act
+    result = cmd_finalize_steps_set_lane(
+        _set_lane_args('default:not-a-real-step', 'off', plan_id='bad-step')
+    )
+
+    # Assert
+    assert result['status'] == 'error'
+    assert _overrides(status_path) == {}
+
+
+def test_set_lane_cli_accepts_the_plan_id_flag(plan_context):
+    """The argparse surface declares ``--plan-id`` on ``finalize-steps set-lane``.
+
+    A CLI-level check rather than a handler one: the flag has to exist on the
+    parser for any caller to reach the plan-local channel at all, and an argparse
+    rejection here would be an exit-2 the handler tests above could never see.
+    """
+    create_marshal_json(plan_context.fixture_dir)
+
+    result = run_script(SCRIPT_PATH, 'finalize-steps', 'set-lane', '--help')
+
+    assert result.success
+    assert '--plan-id' in result.stdout

@@ -111,6 +111,8 @@ from _manifest_rules import (
     _read_ci_provider,  # noqa: F401
     _read_finalize_gates,  # noqa: F401
     _read_marshal_phase_step_map,  # noqa: F401
+    _read_merged_phase_6_step_map,  # noqa: F401
+    _read_plan_local_phase_6_step_map,  # noqa: F401
     _read_sonar_provider,  # noqa: F401
     _read_step_owned_knob,  # noqa: F401
     _snapshot_step_params,  # noqa: F401
@@ -456,9 +458,19 @@ def _log_decision(plan_id: str, rule: str, body: dict[str, Any]) -> None:
     _emit_decision_log(plan_id, message)
 
 
-def _log_commit_push_omitted(plan_id: str) -> None:
-    """Emit the decision-log entry for the ``commit_push_disabled`` pre-filter."""
-    message = '(plan-marshall:manage-execution-manifest:compose) push omitted — commit_and_push=false'
+def _log_commit_push_omitted(plan_id: str, step: str, reason: str) -> None:
+    """Emit ONE decision-log entry per ``commit_push_disabled`` subtraction.
+
+    Per-step rather than per-pre-filter: the gate drops three steps (``push`` plus
+    the two push-only gates), and the former single aggregate line named only
+    ``push`` — so the two gates vanished unnamed. The caller loops the pre-filter's
+    ``{step, reason}`` records through here, reusing the shared subtraction-record
+    convention rather than inventing a second reporting shape.
+    """
+    message = (
+        '(plan-marshall:manage-execution-manifest:compose) [STATUS] commit_push_disabled — '
+        f'dropped {step} from phase_6.steps: {reason}'
+    )
     _emit_decision_log(plan_id, message)
 
 
@@ -476,23 +488,34 @@ def _log_candidate_source(plan_id: str, phase_key: str, source: str) -> None:
 
 
 def _log_pre_push_quality_gate_omitted(plan_id: str, reason: str) -> None:
-    """Emit the decision-log entry for the ``pre_push_quality_gate_inactive`` pre-filter.
+    """Emit the subtraction record for the ``pre_push_quality_gate_inactive`` pre-filter.
 
-    ``reason`` is the verdict's OWN ``reason`` text, threaded through from the
-    ``build-decision`` consult. The emitter never composes a reason of its own —
-    a hardcoded string can state a reason the verdict did not give.
+    Fires only on the POSITIVE ``not_necessary`` verdict — the one answer that
+    licenses dropping the gate. ``reason`` is the verdict's OWN ``reason`` text,
+    threaded through from the ``build-decision`` consult. The emitter never
+    composes a reason of its own — a hardcoded string can state a reason the
+    verdict did not give.
     """
     message = (
-        '(plan-marshall:manage-execution-manifest:compose) pre-push-quality-gate omitted — '
-        f'{reason}'
+        '(plan-marshall:manage-execution-manifest:compose) [STATUS] pre_push_quality_gate_inactive — '
+        f'dropped pre-push-quality-gate from phase_6.steps: {reason}'
     )
     _emit_decision_log(plan_id, message)
 
 
-def _log_pre_submission_self_review_omitted(plan_id: str) -> None:
-    """Emit the decision-log entry for the ``pre_submission_self_review_inactive`` pre-filter."""
+def _log_pre_push_quality_gate_kept_unknown(plan_id: str, reason: str) -> None:
+    """Emit the diagnosable-keep entry for an ``unknown`` build verdict.
+
+    The counterpart of :func:`_log_pre_push_quality_gate_omitted`: an ``unknown``
+    verdict is NO evidence either way, so the gate is kept and the keep is
+    reported rather than passing silently. Without this line the operator sees no
+    difference between "the verdict said build" and "the verdict could not be
+    substantiated", which is the ADR-009 unknown-state visibility the three-value
+    vocabulary exists to give.
+    """
     message = (
-        '(plan-marshall:manage-execution-manifest:compose) pre-submission-self-review omitted — empty footprint'
+        '(plan-marshall:manage-execution-manifest:compose) [STATUS] pre_push_quality_gate_inactive — '
+        f'kept pre-push-quality-gate on an unknown build verdict: {reason}'
     )
     _emit_decision_log(plan_id, message)
 
@@ -534,33 +557,41 @@ def _read_marshal_phase_steps(phase_key: str) -> list[str] | None:
     return list(step_map.keys())
 
 
-def _resolve_footprint(plan_id: str) -> list[str]:
+def _resolve_footprint(plan_id: str) -> list[str] | None:
     """Derive the live plan footprint for ``plan_id`` on demand.
 
-    Reads ``status.metadata.worktree_path`` to locate the worktree, then derives
-    the footprint live via ``compute_plan_branch_diff`` (``{base}...HEAD`` ∪
-    porcelain). Returns an empty list when no worktree is resolvable — which is
-    the normal case during early compose at phase-4-plan, *before* phase-5
-    materialises the worktree. The activation pre-filters treat an empty
-    footprint as "no matches" and omit the gated step, preserving the prior
-    behaviour where an absent/empty ledger omitted the self-review and
-    pre-push-quality-gate steps.
+    The composer-local symmetric peer of
+    ``extension_base._resolve_plan_footprint``, and kept in lock-step with it: the
+    return distinguishes the same two materially different states.
+
+    - ``None`` — the footprint is **unresolvable** (no ``status.json``, malformed
+      status, absent/empty ``worktree_path``, ``worktree_path`` not a directory, or
+      the diff walk raising). This is the normal condition during early compose at
+      phase-4-plan, *before* phase-5-execute Step 2.5 materialises the worktree.
+      Every consumer treats it as **no evidence** — never as "nothing there" — so
+      an unresolvable footprint fails toward inclusion at each gate rather than
+      subtracting a step.
+    - ``[]`` — the worktree **is** resolvable and its diff is genuinely empty.
+
+    Collapsing the two into one empty list is the defect this split fixes: the
+    absence of evidence read as evidence of absence silently dropped gates the
+    operator never opted out of.
     """
     status_path = get_plan_dir(plan_id) / FILE_STATUS
     if not status_path.exists():
-        return []
+        return None
     status = read_json(status_path, default={})
     if not isinstance(status, dict):
-        return []
+        return None
     metadata = status.get('metadata', {})
     if not isinstance(metadata, dict):
-        return []
+        return None
     worktree_path = metadata.get('worktree_path', '')
     if not isinstance(worktree_path, str) or not worktree_path:
-        return []
+        return None
     worktree = Path(worktree_path)
     if not worktree.is_dir():
-        return []
+        return None
 
     refs_path = get_plan_dir(plan_id) / FILE_REFERENCES
     refs = read_json(refs_path, default={})
@@ -570,7 +601,7 @@ def _resolve_footprint(plan_id: str) -> list[str]:
     try:
         footprint = compute_plan_branch_diff(worktree, base_ref)
     except subprocess.CalledProcessError:
-        return []
+        return None
     return sorted(footprint)
 
 
@@ -586,6 +617,13 @@ def _command_free_build_verdict(plan_id: str) -> dict | None:
     absent verdict is no evidence of one. Degrading to a fabricated verdict in
     either direction would either fail composes spuriously or assert consistency
     that was never checked.
+
+    The verdict is forwarded VERBATIM across all three values of the vocabulary —
+    ``build`` / ``not_necessary`` / ``unknown`` — and ``unknown`` is never
+    collapsed into either of the others here. Only the positive ``not_necessary``
+    answer can substantiate a contradiction, which is why
+    :func:`_manifest_validation.check_build_verdict_consistent` gates on it
+    explicitly: an ``unknown`` verdict flows through and asserts nothing.
     """
     try:
         from extension_base import should_execute_build
@@ -598,8 +636,8 @@ def _command_free_build_verdict(plan_id: str) -> dict | None:
 
 def _apply_pre_push_quality_gate_inactive(
     phase_6_candidates: list[str], plan_id: str
-) -> tuple[list[str], bool, str]:
-    """Pre-filter: drop ``pre-push-quality-gate`` when the build decision says so.
+) -> tuple[list[str], str | None, str]:
+    """Pre-filter: drop ``pre-push-quality-gate`` ONLY on a ``not_necessary`` verdict.
 
     Activation is a pure CONSUMPTION of the sole build/no-build authority
     (``extension_base.should_execute_build``); this pre-filter derives nothing of
@@ -608,56 +646,52 @@ def _apply_pre_push_quality_gate_inactive(
     a representative command; the verdict does not vary by command, and choosing
     one is the retired anti-pattern ADR-004's amendment names.
 
-    When the verdict is ``not_necessary``, ``pre-push-quality-gate`` is removed
-    from ``phase_6_candidates``. The pre-filter is a no-op when
-    ``pre-push-quality-gate`` is already absent (e.g., already filtered by
-    ``_apply_commit_push_disabled``). Returns the filtered list, a flag
-    indicating whether the pre-filter fired, and the verdict's own ``reason``
-    (empty string when the pre-filter did not fire) so the caller's decision-log
-    entry states the reason the verdict actually gave.
+    The verdict vocabulary has three values and each routes differently:
+
+    - ``not_necessary`` — a POSITIVE answer that nothing here needs building, so
+      ``pre-push-quality-gate`` is dropped and the verdict's own ``reason`` is
+      returned for the caller's decision-log entry.
+    - ``unknown`` — the footprint is unresolvable, so there is NO evidence either
+      way (the normal state at phase-4-plan compose, before phase-5-execute Step
+      2.5 materialises the worktree). The gate is KEPT and the caller emits a
+      ``[STATUS]`` line naming the verdict's reason. Failing toward inclusion is
+      required by ADR-009 (an unsubstantiated verdict must not read as a positive
+      one) and ADR-004 (the composer may not re-derive build necessity from any
+      other signal, so it may not invent an empty-footprint rule of its own).
+    - ``build`` — the gate is kept.
+
+    The pre-filter is a no-op when ``pre-push-quality-gate`` is already absent
+    (e.g. already filtered by ``_apply_commit_push_disabled``).
+
+    Args:
+        phase_6_candidates: The boundary-normalized phase-6 candidate list.
+        plan_id: Plan identifier the verdict is computed for.
+
+    Returns:
+        ``(kept, decision, reason)`` — the filtered candidate list, the verdict's
+        ``decision`` verbatim (or ``None`` when the pre-filter did not evaluate
+        because the step was already absent), and the verdict's own ``reason``
+        (empty string when it carried none) so the caller's log line states the
+        reason the verdict actually gave rather than a hardcoded one.
     """
     if 'pre-push-quality-gate' not in phase_6_candidates:
-        return phase_6_candidates, False, ''
+        return phase_6_candidates, None, ''
 
     from extension_base import should_execute_build
 
     verdict = should_execute_build(None, plan_id)
-    if verdict.get('decision') != 'build':
+    decision = verdict.get('decision')
+    reason = verdict.get('reason', '')
+    if decision == 'not_necessary':
         return (
             [s for s in phase_6_candidates if s != 'pre-push-quality-gate'],
-            True,
-            verdict.get('reason', ''),
+            decision,
+            reason,
         )
 
-    # Build is necessary — keep the step.
-    return phase_6_candidates, False, ''
-
-
-def _apply_pre_submission_self_review_inactive(phase_6_candidates: list[str], plan_id: str) -> tuple[list[str], bool]:
-    """Pre-filter: keep ``pre-submission-self-review`` through compose; self-gate at run time.
-
-    Unlike ``pre-push-quality-gate`` (which gates on the ``build.map`` globs),
-    this step has no glob gate — the four cognitive checks it targets (symmetric
-    pairs, regex over-fit, wording, duplication) apply to any code or doc change.
-
-    Safety against compose-time emptiness (mirroring
-    ``_apply_canonical_verify_inactive``): during early compose (phase-4-plan,
-    before the worktree is materialised) the live footprint is empty. An empty
-    compose-time footprint is NOT evidence the step is inactive — it only means
-    the worktree is not yet materialised — so the step SURVIVES phase-4 compose
-    and self-gates at run time against the live footprint via the surfacing
-    implementor's own empty-candidate success path. A non-empty footprint keeps
-    the step too (there is no glob gate to fail), so this pre-filter never drops
-    the step on footprint grounds and always reports ``omitted=False``.
-
-    The step is still dropped upstream by ``_apply_commit_push_disabled`` when
-    ``commit_and_push`` is false (this pre-filter is then a no-op because the
-    step is already absent — that path is unaffected).
-
-    Returns the candidate list unchanged plus ``False`` (the pre-filter never
-    fires).
-    """
-    return phase_6_candidates, False
+    # ``build`` (a real build is needed) and ``unknown`` (no evidence either way)
+    # both KEEP the gate. Only the positive ``not_necessary`` answer drops it.
+    return phase_6_candidates, decision, reason
 
 
 def _apply_canonical_verify_inactive(
@@ -674,17 +708,18 @@ def _apply_canonical_verify_inactive(
     ``_FOOTPRINT_GATED_CANONICAL_ROLES`` membership table, with no per-canonical
     branch in the code path.
 
-    Safety against compose-time emptiness: during early compose (phase-4-plan,
-    before the worktree is materialised) the footprint is empty, so the
-    pre-filter is a no-op and every canonical survives — the gate only fires
-    against a NON-empty footprint that genuinely lacks the gating role's paths.
-    Non-canonical-verify step IDs (``project:`` / ``bundle:skill`` steps) are
-    passed through untouched.
+    Safety against no-evidence footprints: an UNRESOLVABLE footprint (``None`` —
+    early compose at phase-4-plan, before the worktree is materialised) and a
+    resolvable-but-EMPTY footprint both make the pre-filter a no-op, so every
+    canonical survives. The gate only fires against a NON-empty footprint that
+    genuinely lacks the gating role's paths — the one state that is real evidence
+    the role has no paths. Non-canonical-verify step IDs (``project:`` /
+    ``bundle:skill`` steps) are passed through untouched.
 
     Returns ``(kept_steps, dropped_steps)``.
     """
     footprint = _resolve_footprint(plan_id)
-    if not footprint:
+    if footprint is None or not footprint:
         return phase_5_steps, []
 
     kept: list[str] = []
@@ -1310,7 +1345,7 @@ def _apply_lane_resolution(
     posture: str,
     marshal_phase_6_map: dict[str, dict] | None,
     plan_id: str,
-) -> tuple[list[str], list[str], list[tuple[str, str]]]:
+) -> tuple[list[str], list[dict[str, str]], list[tuple[str, str]]]:
     """Resolve the phase-6 step list under ``posture`` — returns (kept, dropped, warnings).
 
     ``full`` is a no-op (keep everything). For ``minimal`` / ``auto`` each
@@ -1320,11 +1355,17 @@ def _apply_lane_resolution(
     ``automatic-review`` participates in this pass like any other lane element —
     its keep/drop is governed purely by its configured ``lane`` and lane tier,
     with no separate downstream force-add guard.
+
+    ``dropped`` carries one ``{step, reason}`` record per removed element — the
+    shared subtraction-record shape, replacing the former bare id list that the
+    caller reported as a single aggregate line. Each reason names the element's
+    effective tier and the posture cutoff that removed it, so the drop is
+    diagnosable per step.
     """
     if posture == 'full':
         return list(phase_6_steps), [], []
     kept: list[str] = []
-    dropped: list[str] = []
+    dropped: list[dict[str, str]] = []
     warnings: list[tuple[str, str]] = []
     for step in phase_6_steps:
         lane = _resolve_element_lane(step)
@@ -1335,7 +1376,16 @@ def _apply_lane_resolution(
         keep, warning = _lane_keep_decision(lane, override, posture)
         if warning is not None:
             warnings.append((step, warning))
-        (kept if keep else dropped).append(step)
+        if keep:
+            kept.append(step)
+        else:
+            effective, is_off = _effective_lane_tier(lane, override)
+            reason = (
+                f"explicit 'off' override opts this {lane.get('class')} element out"
+                if is_off
+                else f'effective tier {effective} exceeds the {posture} posture cutoff'
+            )
+            dropped.append({'step': step, 'reason': reason})
     return kept, dropped, warnings
 
 
@@ -1571,7 +1621,12 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # Keyed-map reads carrying the per-step params — used at compose end to
     # snapshot each selected step's resolved params into the manifest body.
     marshal_phase_5_map = _read_marshal_phase_step_map('phase-5-execute')
-    marshal_phase_6_map = _read_marshal_phase_step_map('phase-6-finalize')
+    # The phase-6 per-step map is the MERGED plan-local-over-marshal source (D2/R2):
+    # every per-step reader in this compose — the scope gate's declared-lane
+    # immunity predicate, the ceremony gates' run-at-all knob, and the lane
+    # resolution pass — consults this one map, so an operator's plan-scoped answer
+    # cannot reach one reader and be invisible to another.
+    marshal_phase_6_map = _read_merged_phase_6_step_map(plan_id)
     phase_5_source = 'marshal.json' if marshal_phase_5 is not None else 'csv_fallback'
     phase_6_source = 'marshal.json' if marshal_phase_6 is not None else 'csv_fallback'
     if marshal_phase_5 is not None:
@@ -1601,11 +1656,9 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # standards/decision-rules.md:
     #   1. commit_push_disabled — drop push (and pre-push-quality-gate
     #      and pre-submission-self-review) when no push will occur.
-    #   2. pre_push_quality_gate_inactive — drop pre-push-quality-gate when
-    #      build.map carries no globs or no live-footprint entry
-    #      matches a build_map glob.
-    #   3. pre_submission_self_review_inactive — drop pre-submission-self-review
-    #      when the live footprint is empty.
+    #   2. pre_push_quality_gate_inactive — drop pre-push-quality-gate ONLY on a
+    #      positive ``not_necessary`` build verdict. An ``unknown`` verdict (the
+    #      footprint is unresolvable) KEEPS the gate and emits a [STATUS] line.
     #   4. simplify_inactive — drop finalize-step-simplify when
     #      change_type ∉ {feature, bug_fix, tech_debt, enhancement}
     #      OR affected_files_count == 0.
@@ -1616,18 +1669,19 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     #   5. scope_gated_finalize — drop heavyweight phase-6 review/audit steps by
     #      scope_estimate; a step carrying an explicitly declared, non-auto
     #      per-element `lane` override is immune (declared-lane immunity).
-    # Each pre-filter returns (filtered_candidates, fired_flag); we log a
-    # dedicated decision-log line per fired pre-filter in addition to the row
-    # log line emitted by _log_decision below.
-    phase_6_candidates, commit_push_omitted = _apply_commit_push_disabled(phase_6_candidates, commit_and_push)
+    # Every subtraction a pre-filter makes is REPORTED: each returns either a
+    # ``{step, reason}`` record list (one record per dropped step) or, for a
+    # single-step gate, the verdict plus its own reason. The caller emits one
+    # [STATUS] decision-log line per dropped step — never one aggregate line for a
+    # multi-step drop — in addition to the row log line emitted by _log_decision
+    # below.
+    phase_6_candidates, commit_push_dropped = _apply_commit_push_disabled(phase_6_candidates, commit_and_push)
     (
         phase_6_candidates,
-        pre_push_quality_gate_omitted,
+        pre_push_quality_gate_decision,
         pre_push_quality_gate_reason,
     ) = _apply_pre_push_quality_gate_inactive(phase_6_candidates, plan_id)
-    phase_6_candidates, pre_submission_self_review_omitted = _apply_pre_submission_self_review_inactive(
-        phase_6_candidates, plan_id
-    )
+    pre_push_quality_gate_omitted = pre_push_quality_gate_decision == 'not_necessary'
 
     affected_files_count = max(0, int(args.affected_files_count or 0))
     # Recipe / lesson provenance: an explicit --recipe-key wins; otherwise read
@@ -1662,13 +1716,18 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # the two use sites mutates the working tree (the staged task rewrites are
     # persisted under ``.plan/`` after both), so a second resolve paid the
     # subprocess cost for an identical answer.
+    # ``None`` means UNRESOLVABLE (no evidence), which every consumer below must
+    # distinguish from a resolvable-but-empty ``[]``: the security-class gate is
+    # handed ``None`` so it fails toward inclusion, and the build-verdict assertion
+    # is handed ``[]`` so its non-empty-footprint precondition disables it.
     live_footprint = _resolve_footprint(plan_id)
+    live_footprint_paths = [] if live_footprint is None else live_footprint
     security_class_steps = frozenset(s for s in phase_6_candidates if _is_security_class_step(s))
     phase_6_candidates, security_class_omitted = _apply_security_class_inactive(
         phase_6_candidates,
         security_class_steps,
         affected_files_count,
-        len(live_footprint),
+        None if live_footprint is None else len(live_footprint),
     )
 
     # Pre-filter 5 (scope_gated_finalize) drops heavyweight phase-6 review/audit
@@ -1708,7 +1767,12 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         phase_6_candidates, marshal_phase_6_map, ci_provider, sonar_provider
     )
 
-    body, rule = _decide(
+    # The third return value is the firing row's ``{step, reason}`` subtraction
+    # records — one per candidate the row removed. Five of the six matrix rows
+    # narrow the candidate lists, and every one of them used to do it silently;
+    # the caller emits one [STATUS] line per record below and surfaces the list in
+    # the compose result. The matrix DECISIONS are unchanged — only observability.
+    body, rule, decide_dropped = _decide(
         change_type=args.change_type,
         track=args.track,
         scope_estimate=args.scope_estimate,
@@ -1840,9 +1904,12 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # touches `automatic-review`, leaving the bot-review invariant intact. Each
     # gate's decision is derived from its owning step's per-element `lane` override
     # (`steps[<owner>].lane` — `off`→`never`, `minimal`→`always`, `auto`/absent→
-    # `auto`), not a flat phase-level sibling. See
-    # standards/decision-rules.md § plan.phase-6-finalize Selection.
-    ceremony_finalize_gates = _read_finalize_gates()
+    # `auto`), not a flat phase-level sibling. `plan_id` is forwarded so the gates
+    # resolve that override from the SAME merged plan-local-over-marshal map the
+    # scope gate's immunity predicate reads — the symmetric-pair obligation: a
+    # plan-local declaration must not reach one reader and be invisible to the
+    # other. See standards/decision-rules.md § plan.phase-6-finalize Selection.
+    ceremony_finalize_gates = _read_finalize_gates(plan_id)
     ceremony_forced_in, ceremony_forced_out = _apply_ceremony_finalize_selection(
         body['phase_6']['steps'], ceremony_finalize_gates
     )
@@ -2014,16 +2081,19 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # consumer decided build necessity from a signal other than the authority.
     #
     # The assertion is deliberately fed the live footprint so it can enforce its
-    # non-empty-footprint precondition: at early compose the footprint is always
-    # empty and the verdict is therefore always not_necessary, so an unguarded
-    # assertion would fire on every plan (see check_build_verdict_consistent's
+    # non-empty-footprint precondition (see check_build_verdict_consistent's
     # docstring — the empty-footprint trap). It consumes the ``live_footprint``
     # derived once for the security_class_inactive pre-filter above rather than
-    # re-running the subprocess-backed derivation for the same answer.
+    # re-running the subprocess-backed derivation for the same answer, passing the
+    # ``[]``-normalized ``live_footprint_paths``: an UNRESOLVABLE footprint (early
+    # compose, before the worktree is materialised) must disable the assertion by
+    # the same precondition, and it now also yields an ``unknown`` verdict, which
+    # the assertion declines to act on because only the positive ``not_necessary``
+    # answer can substantiate a contradiction.
     verdict_error = check_build_verdict_consistent(
         list(body['phase_5'].get('verification_steps', [])),
         list(body['phase_6'].get('steps', [])),
-        list(live_footprint),
+        live_footprint_paths,
         _command_free_build_verdict(plan_id),
     )
     if verdict_error is not None:
@@ -2069,12 +2139,12 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     write_manifest(plan_id, manifest)
     _log_candidate_source(plan_id, 'phase-5-execute', phase_5_source)
     _log_candidate_source(plan_id, 'phase-6-finalize', phase_6_source)
-    if commit_push_omitted:
-        _log_commit_push_omitted(plan_id)
+    for omitted in commit_push_dropped:
+        _log_commit_push_omitted(plan_id, omitted['step'], omitted['reason'])
     if pre_push_quality_gate_omitted:
         _log_pre_push_quality_gate_omitted(plan_id, pre_push_quality_gate_reason)
-    if pre_submission_self_review_omitted:
-        _log_pre_submission_self_review_omitted(plan_id)
+    elif pre_push_quality_gate_decision == 'unknown':
+        _log_pre_push_quality_gate_kept_unknown(plan_id, pre_push_quality_gate_reason)
     if simplify_omitted:
         _log_prefilter_omitted(plan_id, 'finalize-step-simplify', args.change_type, affected_files_count)
     for omitted in security_class_omitted:
@@ -2103,12 +2173,25 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         _log_ceremony_finalize_selection(plan_id, change['gate'], 'always', change['step'])
     for change in ceremony_forced_out:
         _log_ceremony_finalize_selection(plan_id, change['gate'], 'never', change['step'])
-    if execution_profile != 'full' and lane_dropped:
+    for dropped_record in decide_dropped:
         _emit_decision_log(
             plan_id,
-            '(plan-marshall:manage-execution-manifest:compose) lane_resolution — '
-            f'execution_profile={execution_profile}, dropped {lane_dropped} from phase_6.steps '
-            '(tier above posture cutoff)',
+            f'(plan-marshall:manage-execution-manifest:compose) [STATUS] decision_matrix — '
+            f'dropped {dropped_record["step"]}: {dropped_record["reason"]}',
+        )
+    # One line per dropped element, replacing the single aggregate line that named
+    # the whole list at once — an aggregate is not a per-drop record, so no
+    # individual drop carried its own reason. The former `execution_profile !=
+    # 'full'` guard is dropped as redundant rather than as a fix: `full` is a
+    # no-op posture that produces no drops at all, so the guard could only ever
+    # suppress an empty list. Removing it keeps the emission driven by the records
+    # themselves rather than by a second, independently-maintained predicate.
+    for dropped_record in lane_dropped:
+        _emit_decision_log(
+            plan_id,
+            '(plan-marshall:manage-execution-manifest:compose) [STATUS] lane_resolution — '
+            f'dropped {dropped_record["step"]} from phase_6.steps '
+            f'(execution_profile={execution_profile}): {dropped_record["reason"]}',
         )
     for warned_step, warning in lane_warnings:
         _emit_decision_log(
@@ -2135,9 +2218,10 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         },
         'rule_fired': rule,
         'commit_and_push': commit_and_push,
-        'commit_push_omitted': commit_push_omitted,
+        'commit_push_dropped': commit_push_dropped,
         'pre_push_quality_gate_omitted': pre_push_quality_gate_omitted,
-        'pre_submission_self_review_omitted': pre_submission_self_review_omitted,
+        'build_verdict_decision': pre_push_quality_gate_decision,
+        'decision_matrix_dropped': decide_dropped,
         'simplify_omitted': simplify_omitted,
         'security_class_omitted': security_class_omitted,
         'scope_gated_finalize_dropped': scope_gated_dropped,

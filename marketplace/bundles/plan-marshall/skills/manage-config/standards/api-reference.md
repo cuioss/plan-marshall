@@ -299,19 +299,43 @@ manage-config plan phase-5-execute get --field max_iterations
 
 ## Noun: finalize-steps
 
-Write the `phase-6-finalize` step list from a named preset. `apply-preset` surgically writes the preset's steps into the `plan.phase-6-finalize.steps` keyed map — carrying over any existing per-step params for steps the preset keeps and seeding `{}` for newly-introduced steps — while preserving every flat phase-6 knob (`max_iterations`, the ceremony gates, …). Step enumeration stays on the `plan phase-6-finalize list-finalize-steps` surface; this noun only writes presets. The persisted map keys are sorted ascending by each step's resolved `order` (see [Order-driven step verbs](#order-driven-step-verbs-phase-5-execute-phase-6-finalize)).
+Write the `phase-6-finalize` step list from a named preset, and read/write the per-element `lane` overrides that govern individual finalize steps. `apply-preset` surgically writes the preset's steps into the `plan.phase-6-finalize.steps` keyed map — carrying over any existing per-step params for steps the preset keeps and seeding `{}` for newly-introduced steps — while preserving every flat phase-6 knob (`max_iterations`, the ceremony gates, …). Step enumeration stays on the `plan phase-6-finalize list-finalize-steps` surface. The persisted map keys are sorted ascending by each step's resolved `order` (see [Order-driven step verbs](#order-driven-step-verbs-phase-5-execute-phase-6-finalize)).
 
 | Verb | Parameters | Description |
 |------|-----------|-------------|
 | `apply-preset` | `--preset` | Surgically overwrite `plan.phase-6-finalize.steps` from a named preset (case-insensitive lookup). Preset names: `local`, `standard`, `full` (least ➜ most coverage; see `finalize_step_presets.py` for the per-preset step lists). Other phase-6 knobs are preserved. |
+| `list-ask-lane` | -- | Enumerate the finalize steps whose effective `lane` override is still `ask` (unresolved) — the marshall-steward always-prompt read surface. |
+| `set-lane` | `--step-id`, `--lane`, `[--plan-id]` | Persist a resolved `lane` override for one finalize step. `--plan-id` is the CHANNEL SELECTOR (see below). |
 
-### Example: apply-preset
+### `set-lane` — the two declaration channels
+
+`--plan-id` selects which of the two per-step declaration channels the write targets. It is the only argument that differs between them; there is no second writer verb:
+
+| `--plan-id` | Writes | Leaves untouched |
+|-------------|--------|------------------|
+| absent | `marshal.json::plan.phase-6-finalize.steps[<step>].lane` — project-wide, every plan | the plan's `status.json` |
+| present | `status.metadata.finalize_step_overrides[<step>].lane` for that plan only | `marshal.json`, byte-unchanged |
+
+The plan-scoped channel exists so an answer given about one plan does not silently become policy for every later plan. Both channels carry the same shape and the same enum, and the composer merges them (plan-local ▸ marshal, per step key, per knob) into the ONE map every per-element reader consults — see [`extension-api/standards/ext-point-lane-element.md`](../../extension-api/standards/ext-point-lane-element.md) § "Per-element override knob".
+
+`--lane` accepts `off` / `auto` / `full`. This writer enum is a deliberate SUBSET of the reader's `off|minimal|auto|full|ask`: those three are the resolved answers an operator dialogue produces, while `minimal` and `ask` are seed values only shipped frontmatter and marshal seeding emit. A writer emitting a subset of a valid enum is not reader-writer drift — both readers accept the full enum.
+
+An existing declaration map that cannot be parsed as the documented shape is an explicit error, never a silent overwrite.
+
+### Examples
 
 ```bash
 manage-config finalize-steps apply-preset --preset standard
 ```
 
 Success payload fields: `preset` (the applied preset name) and `steps_count` (number of steps written).
+
+```bash
+manage-config finalize-steps set-lane --step-id default:sonar-roundtrip --lane off
+manage-config finalize-steps set-lane --plan-id my-plan --step-id plan-marshall:plan-retrospective --lane full
+```
+
+Success payload fields: `step_id`, `lane`, `channel` (`project` or `plan_local`), and — on the plan-scoped channel only — `plan_id`.
 
 ---
 

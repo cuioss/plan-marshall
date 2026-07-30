@@ -10,10 +10,20 @@ driven entirely by the ``_CANONICAL_TO_ROLE`` derivation and the
 ``_FOOTPRINT_GATED_CANONICAL_ROLES`` membership table — there is no per-canonical
 branch in the code path.
 
-Safety against compose-time emptiness: an empty footprint (the normal case
-during early compose at phase-4-plan, before the worktree is materialised)
-makes the pre-filter a no-op so every canonical survives. The gate only fires
-against a NON-empty footprint that genuinely lacks the gating role's paths.
+Safety against no-evidence footprints: BOTH an UNRESOLVABLE footprint (``None``
+— the normal case during early compose at phase-4-plan, before the worktree is
+materialised) and a resolvable-but-EMPTY footprint (``[]``) make the pre-filter a
+no-op, so every canonical survives. The gate only fires against a NON-empty
+footprint that genuinely lacks the gating role's paths — the one state that is
+real evidence the role has no paths.
+
+The two no-op states reach the same outcome here but for different reasons, and
+the distinction is load-bearing rather than cosmetic: ``[]`` is a substantiated
+"nothing changed", while ``None`` is "we could not look". This pre-filter treats
+both as no evidence and subtracts nothing, which is why an unresolvable footprint
+must not be silently normalised to ``[]`` on the way in — a consumer that DOES
+distinguish them (the build verdict) would then read a positive answer off a
+state nobody observed.
 
 These tests drive ``_apply_canonical_verify_inactive`` directly with a
 monkeypatched ``_resolve_footprint`` so the prefilter logic is exercised
@@ -54,9 +64,19 @@ _FOOTPRINT_GATED_CANONICAL_ROLES = _mem._FOOTPRINT_GATED_CANONICAL_ROLES
 _PLAN_ID = 'canonical-inactive'
 
 
-def _patch_footprint(monkeypatch, footprint: list[str]) -> None:
-    """Force ``_resolve_footprint`` to return ``footprint`` for any plan id."""
-    monkeypatch.setattr(_mem, '_resolve_footprint', lambda plan_id: list(footprint))
+def _patch_footprint(monkeypatch, footprint: list[str] | None) -> None:
+    """Force ``_resolve_footprint`` to return ``footprint`` for any plan id.
+
+    ``footprint`` is the resolver's three-state return verbatim: ``None``
+    (unresolvable), ``[]`` (resolvable and genuinely empty), or a path list.
+    ``None`` is deliberately not collapsed into ``[]`` — the pre-filter must be
+    handed the real state so its handling of each can be asserted separately.
+    """
+    monkeypatch.setattr(
+        _mem,
+        '_resolve_footprint',
+        lambda plan_id: None if footprint is None else list(footprint),
+    )
 
 
 class TestFootprintHasRole:
@@ -137,18 +157,54 @@ class TestCanonicalVerifyInactiveKeep:
         assert kept == ['default:verify:integration-tests']
         assert dropped == []
 
-    def test_empty_footprint_is_a_noop_every_canonical_survives(self, monkeypatch):
-        """An empty footprint (early compose, pre-materialisation) keeps all steps.
+    def test_resolvable_empty_footprint_is_a_noop_every_canonical_survives(self, monkeypatch):
+        """A resolvable-but-empty footprint keeps all steps.
 
-        This is the compose-time-emptiness safety contract: the gate must NOT
-        fire against an empty footprint, otherwise a still-unmaterialised plan
-        would lose its integration/e2e gate before the worktree even exists.
+        Nothing changed, so no role's paths are present — but "no paths at all"
+        is not evidence that the GATING role specifically has none, so the gate
+        stays silent rather than subtracting on a technicality.
         """
         _patch_footprint(monkeypatch, [])
         steps = ['default:verify:integration-tests', 'default:verify:e2e']
         kept, dropped = _apply_canonical_verify_inactive(steps, _PLAN_ID, {})
         assert kept == steps
         assert dropped == []
+
+    def test_unresolvable_footprint_is_a_noop_every_canonical_survives(self, monkeypatch):
+        """An UNRESOLVABLE footprint (early compose, pre-materialisation) keeps all steps.
+
+        The no-evidence safety contract: at phase-4-plan the worktree does not
+        exist, so the resolver reports ``None``. The gate must NOT fire against
+        it, otherwise a still-unmaterialised plan would lose its integration/e2e
+        gate before there was anything to look at. Treating the unresolvable state
+        as "no paths of that role" is exactly the absence-of-evidence-as-
+        evidence-of-absence read that silently dropped gates elsewhere.
+        """
+        _patch_footprint(monkeypatch, None)
+        steps = ['default:verify:integration-tests', 'default:verify:e2e']
+        kept, dropped = _apply_canonical_verify_inactive(steps, _PLAN_ID, {})
+        assert kept == steps
+        assert dropped == []
+
+    def test_unresolvable_and_non_empty_footprint_diverge(self, monkeypatch):
+        """The paired opposite: only a REAL footprint lacking the role drops a step.
+
+        Asserting the two against each other is what proves the ``None`` no-op is
+        a genuine guard rather than an inert pre-filter — a gate that never fired
+        would satisfy the unresolvable case on its own.
+        """
+        steps = ['default:verify:integration-tests']
+
+        _patch_footprint(monkeypatch, None)
+        kept_unresolvable, dropped_unresolvable = _apply_canonical_verify_inactive(
+            steps, _PLAN_ID, {}
+        )
+
+        _patch_footprint(monkeypatch, ['src/main/java/Foo.java'])
+        kept_real, dropped_real = _apply_canonical_verify_inactive(steps, _PLAN_ID, {})
+
+        assert kept_unresolvable == steps and dropped_unresolvable == []
+        assert kept_real == [] and dropped_real == steps
 
     def test_core_roles_never_footprint_gated(self, monkeypatch):
         """``quality-gate`` / ``module-tests`` / ``coverage`` canonicals are NEVER

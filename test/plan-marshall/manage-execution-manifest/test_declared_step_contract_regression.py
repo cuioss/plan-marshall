@@ -9,7 +9,9 @@ fixtures and reads the result back from the PERSISTED ``execution.toon``, never
 from in-memory composer internals. Three regression families:
 
 (a) an operator-declared ``lane: minimal`` on ``plan-marshall:plan-retrospective``
-    survives a ``single_module`` compose (declared-lane immunity);
+    survives a ``single_module`` compose (declared-lane immunity) — asserted for
+    BOTH declaration channels, project-wide marshal.json and plan-local
+    ``status.metadata.finalize_step_overrides``;
 (b) the composed ``phase_6.steps`` is in ascending frontmatter ``order``, asserted
     specifically for the BARE ``finalize-step-preference-emitter`` id placed
     before ``branch-cleanup``;
@@ -89,6 +91,23 @@ def _write_execution_profile(plan_context, plan_id: str, posture: str) -> None:
     plan_dir = plan_context.plan_dir_for(plan_id)
     (plan_dir / 'status.json').write_text(
         json.dumps({'plan_id': plan_id, 'metadata': {'execution_profile': posture}}, indent=2),
+        encoding='utf-8',
+    )
+
+
+def _write_plan_local_overrides(plan_context, plan_id: str, overrides: dict) -> None:
+    """Seed the PLAN-LOCAL declaration channel for ``plan_id``.
+
+    ``status.metadata.finalize_step_overrides`` mirrors marshal.json's
+    ``phase-6-finalize.steps`` shape exactly — an id-keyed map of nested param
+    objects, same key forms, same lane enum — but lives beside marshal rather than
+    inside it, so one plan's answer never leaks into every later plan.
+    """
+    plan_dir = plan_context.plan_dir_for(plan_id)
+    (plan_dir / 'status.json').write_text(
+        json.dumps(
+            {'plan_id': plan_id, 'metadata': {'finalize_step_overrides': overrides}}, indent=2
+        ),
         encoding='utf-8',
     )
 
@@ -190,6 +209,83 @@ class TestDeclaredLaneSurvivesScopeGate:
         assert result is not None and result['status'] == 'success'
         assert _RETROSPECTIVE in _persisted_phase_6_steps('dsc-multi')
         assert result['scope_gated_finalize_dropped'] == []
+
+    def test_plan_local_declaration_grants_the_same_immunity(self, plan_context):
+        """The PLAN-LOCAL channel grants immunity exactly as marshal does.
+
+        The D2 regression peer, asserted at the same user-visible boundary as its
+        marshal sibling above: the marshal step map carries NO lane at all, and the
+        declaration lives only in that plan's
+        ``status.metadata.finalize_step_overrides``. The composer merges the two
+        channels into one map, so the scope gate's immunity predicate sees the
+        plan-scoped answer.
+
+        Pre-fix, the immunity predicate read marshal.json alone, so a plan-scoped
+        answer was structurally unreachable here — the operator declared the step
+        and it was dropped anyway, with the drop recorded as an ordinary scope-gate
+        subtraction.
+        """
+        _seed_marshal(self._STEPS_WITHOUT_LANE)
+        _write_plan_local_overrides(
+            plan_context, 'dsc-plan-local', {_RETROSPECTIVE: {'lane': 'minimal'}}
+        )
+
+        result = cmd_compose(_compose_ns('dsc-plan-local', scope_estimate='single_module'))
+
+        assert result is not None and result['status'] == 'success'
+        assert _RETROSPECTIVE in _persisted_phase_6_steps('dsc-plan-local')
+        assert result['scope_gated_finalize_immune'] == [_RETROSPECTIVE]
+        assert result['scope_gated_finalize_dropped'] == []
+
+    def test_both_channels_reach_the_identical_outcome(self, plan_context):
+        """Equivalence: the two channels are interchangeable for this decision.
+
+        Asserted as an equality between the two composes rather than as two
+        independent expectations. Written this way, the test fails if EITHER
+        channel regresses — including the asymmetric failure the merge exists to
+        prevent, where one reader honours a declaration the other cannot see.
+        """
+        # Channel A — marshal-declared.
+        _seed_marshal(self._STEPS_WITH_LANE)
+        marshal_result = cmd_compose(_compose_ns('dsc-chan-marshal', scope_estimate='single_module'))
+        marshal_steps = _persisted_phase_6_steps('dsc-chan-marshal')
+
+        # Channel B — plan-local declared, marshal silent.
+        _seed_marshal(self._STEPS_WITHOUT_LANE)
+        _write_plan_local_overrides(
+            plan_context, 'dsc-chan-plan', {_RETROSPECTIVE: {'lane': 'minimal'}}
+        )
+        plan_result = cmd_compose(_compose_ns('dsc-chan-plan', scope_estimate='single_module'))
+        plan_steps = _persisted_phase_6_steps('dsc-chan-plan')
+
+        assert marshal_steps == plan_steps
+        assert (
+            marshal_result['scope_gated_finalize_immune']
+            == plan_result['scope_gated_finalize_immune']
+            == [_RETROSPECTIVE]
+        )
+
+    def test_plan_local_declaration_does_not_leak_to_another_plan(self, plan_context):
+        """A plan-local answer governs THAT plan only — the point of the channel.
+
+        The anti-leak assertion at the consuming end (its writer-side peer lives in
+        ``test_cmd_finalize_steps.py``). One plan declares the lane; a sibling plan
+        composed against the SAME marshal.json must still be scope-gated, because
+        the declaration was never written project-wide.
+        """
+        _seed_marshal(self._STEPS_WITHOUT_LANE)
+        _write_plan_local_overrides(
+            plan_context, 'dsc-leak-declared', {_RETROSPECTIVE: {'lane': 'minimal'}}
+        )
+
+        declared = cmd_compose(_compose_ns('dsc-leak-declared', scope_estimate='single_module'))
+        sibling = cmd_compose(_compose_ns('dsc-leak-sibling', scope_estimate='single_module'))
+
+        assert _RETROSPECTIVE in _persisted_phase_6_steps('dsc-leak-declared')
+        assert declared['scope_gated_finalize_immune'] == [_RETROSPECTIVE]
+        # The sibling never declared anything, so the gate still takes the step.
+        assert _RETROSPECTIVE not in _persisted_phase_6_steps('dsc-leak-sibling')
+        assert sibling['scope_gated_finalize_dropped'] == [_RETROSPECTIVE]
 
 
 # =============================================================================

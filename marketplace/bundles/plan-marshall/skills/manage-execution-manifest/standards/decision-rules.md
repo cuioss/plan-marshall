@@ -42,9 +42,17 @@ For each rule the composer emits:
 - `phase_5.verification_steps` — ordered list[string] subset of `phase_5_candidates`.
 - `phase_6.steps` — ordered list[string] subset of `phase_6_candidates`.
 
-The `compose` **result** (the TOON the caller reads back — distinct from the persisted manifest body) additionally reports each pre-filter's outcome so the caller can surface it. Most are booleans (`commit_push_omitted`, `pre_push_quality_gate_omitted`, `pre_submission_self_review_omitted`, `simplify_omitted`); the security gate reports a record list:
+The `compose` **result** (the TOON the caller reads back — distinct from the persisted manifest body) additionally reports each narrowing site's outcome so the caller can surface it. A site that can drop more than one step reports a `{step, reason}` **record list**, never a bare boolean — a boolean cannot name *which* step went or *why*, and every silent-subtraction defect in this composer's history began as an unnamed drop. A single-step gate may report a boolean because the step it names is fixed:
 
-- `security_class_omitted` — list of `{step, reason}`, one record per security-class step the `security_class_inactive` pre-filter dropped (empty when none). A record list rather than a boolean because the population is metadata-derived, so the field must name *which* step was dropped and *why*. `phase-4-plan` Step 7b surfaces each entry in its phase return.
+- `commit_push_dropped` — list of `{step, reason}`, one record per step the `commit_push_disabled` pre-filter dropped (`push` plus the two push-only gates; empty when none).
+- `pre_push_quality_gate_omitted` — bool. `true` only on a positive `not_necessary` build verdict, the one answer that licenses dropping the fixed step this gate names.
+- `build_verdict_decision` — the build verdict's `decision` verbatim (`build` / `not_necessary` / `unknown`), or absent when the gate did not evaluate because the step was already gone. Reported alongside the boolean so an `unknown` verdict — which KEEPS the gate — is distinguishable from a `build` verdict.
+- `simplify_omitted` — bool. Single-step gate over the fixed `finalize-step-simplify`.
+- `security_class_omitted` — list of `{step, reason}`, one record per security-class step the `security_class_inactive` pre-filter dropped (empty when none). A record list rather than a boolean because the population is metadata-derived. `phase-4-plan` Step 7b surfaces each entry in its phase return.
+- `scope_gated_finalize_dropped` / `scope_gated_finalize_immune` — the scope gate's per-step subtraction and retention lists.
+- `unresolved_ask_provider_dropped` — the unresolved-ask infra elements dropped for an absent provider.
+- `decision_matrix_dropped` — list of `{step, reason}`, one record per candidate the FIRING matrix row removed, naming the rule that removed it. Empty for the default row, which narrows nothing.
+- `lane_dropped` — list of `{step, reason}`, one record per element the execution-profile lane resolution dropped, each naming the element's effective tier and the posture cutoff that removed it.
 
 ## The `execution_log` Section (record-step)
 
@@ -86,17 +94,27 @@ execution_log[K]{step_id,phase,outcome,total_tokens,tool_uses,duration_ms,timest
 
 ## Pre-Filters
 
-Before evaluating the six-row matrix below, the composer applies a fixed sequence of pre-filters to the `phase_6_candidates` list. Each pre-filter is independent of the row matrix's change-type / scope / recipe inputs, so modeling them as pre-filters keeps the six-row matrix orthogonal and lets the composer emit one dedicated `decision.log` entry per fired pre-filter.
+Before evaluating the six-row matrix below, the composer applies a fixed sequence of pre-filters to the `phase_6_candidates` list. Each pre-filter is independent of the row matrix's change-type / scope / recipe inputs, so modeling them as pre-filters keeps the six-row matrix orthogonal and lets the composer emit dedicated `decision.log` entries per fired pre-filter.
+
+### Every subtraction is reported
+
+**Normative.** Every site in this composer that can remove a step from a candidate list — pre-filter, matrix row, post-matrix transform alike — MUST report each removal individually, in ONE shape:
+
+- a `{step, reason}` record per removed step, surfaced in the `compose` result, and
+- one `[STATUS]` `decision.log` line per removed step, naming the site, the step, and the step's own reason.
+
+Three consequences are binding rather than stylistic. **One line per step, never an aggregate**: a single line naming a list is not a per-drop record, and a multi-step gate that emits one line leaves the other steps vanishing unnamed. **The reason is the site's own**, never a hardcoded string composed by the emitter — a fixed string can state a reason the site did not give. **A retention that a gate deliberated over is reported too** (the `scope_gated_finalize` immunity line), because a step surviving a gate that named it is otherwise indistinguishable from a gate that never ran.
+
+The `security_class_inactive` gate below is the reference implementation of this convention; every other site reuses its shape verbatim rather than inventing a second one.
 
 The pre-filters run in this order:
 
-1. **`commit_push_disabled`** — drops `push`, `pre-push-quality-gate`, AND `pre-submission-self-review` when no push will occur.
-2. **`pre_push_quality_gate_inactive`** — drops `pre-push-quality-gate` when activation conditions fail.
-3. **`pre_submission_self_review_inactive`** — drops `pre-submission-self-review` when the live plan footprint is empty.
-4. **`simplify_inactive`** — drops `finalize-step-simplify` when `change_type ∉ {feature, bug_fix, tech_debt, enhancement}` OR `affected_files_count == 0`.
-4b. **`security_class_inactive`** — drops a **security-class** step (any candidate whose source doc declares `persona: persona-security-expert`) only when `affected_files_count == 0` **AND** the live footprint is empty. It shares no helper and no gate with `simplify_inactive`: there is no `change_type` leg, so the gate fails toward inclusion.
-5. **`scope_gated_finalize`** — drops heavyweight phase-6 review/audit steps by `scope_estimate`: `surgical` drops `plan-retrospective`, `pre-submission-self-review`, and `plugin-doctor`; `single_module` drops only `plan-retrospective`. A step declaring an explicit non-`auto` per-element `lane` override is immune and is never dropped here.
-6. **`unresolved_ask_provider_drop`** — drops an UNRESOLVED `lane: ask` infra element (`plan-marshall:automatic-review` / `default:sonar-roundtrip`) when its corresponding provider is genuinely absent (no CI provider for `automatic-review`; no Sonar provider for `sonar-roundtrip`). A resolved ask (`off`/`auto`/`full`) and a provider-configured ask both survive. Documented in its own subsection below.
+1. **`commit_push_disabled`** — drops `push`, `pre-push-quality-gate`, AND `pre-submission-self-review` when no push will occur, reporting one record per dropped step.
+2. **`pre_push_quality_gate_inactive`** — drops `pre-push-quality-gate` ONLY on a positive `not_necessary` build verdict. An `unknown` verdict keeps the step.
+3. **`simplify_inactive`** — drops `finalize-step-simplify` when `change_type ∉ {feature, bug_fix, tech_debt, enhancement}` OR `affected_files_count == 0`.
+3b. **`security_class_inactive`** — drops a **security-class** step (any candidate whose source doc declares `persona: persona-security-expert`) only when `affected_files_count == 0` **AND** the live footprint is resolvable-and-empty. It shares no helper and no gate with `simplify_inactive`: there is no `change_type` leg, so the gate fails toward inclusion. An UNRESOLVABLE footprint is no evidence and keeps the step.
+4. **`scope_gated_finalize`** — drops heavyweight phase-6 review/audit steps by `scope_estimate`: `surgical` drops `plan-retrospective`, `pre-submission-self-review`, and `plugin-doctor`; `single_module` drops only `plan-retrospective`. A step declaring an explicit non-`auto` per-element `lane` override — in EITHER declaration channel — is immune and is never dropped here.
+5. **`unresolved_ask_provider_drop`** — drops an UNRESOLVED `lane: ask` infra element (`plan-marshall:automatic-review` / `default:sonar-roundtrip`) when its corresponding provider is genuinely absent (no CI provider for `automatic-review`; no Sonar provider for `sonar-roundtrip`). A resolved ask (`off`/`auto`/`full`) and a provider-configured ask both survive. Documented in its own subsection below.
 
 Each row that emits a Phase 6 list (whether by intersection, subtraction, or pass-through) operates on the already-filtered candidate list, so the resulting `phase_6.steps` will never contain a step removed by any pre-filter that ran before the row matrix.
 
@@ -116,49 +134,50 @@ The sort is asserted by the [`phase_6_order_violation`](#post-compose-assertion-
 
 **Why a pre-filter (not an eighth row)**: `commit_and_push` is configuration known at outline time and is orthogonal to the row matrix's change-type / scope / recipe inputs. A row would have to either short-circuit (and re-implement the six rows' Phase 5 logic) or duplicate the filter into every row. Modeling it as a pre-filter keeps the six-row matrix unchanged and lets the composer emit one extra `decision.log` entry naming the omission.
 
-**Decision log line** (in addition to the row's own log line):
+**Decision log lines** (one per dropped step, in addition to the row's own log line):
 
 ```text
-(plan-marshall:manage-execution-manifest:compose) push omitted — commit_and_push=false
+(plan-marshall:manage-execution-manifest:compose) [STATUS] commit_push_disabled — dropped {step} from phase_6.steps: commit_and_push is disabled — no downstream push exists
 ```
+
+One line per step, not one for the gate: the gate drops three steps, and a single line naming only `push` left the two gates vanishing unnamed.
+
+**Compose-result field**: `commit_push_dropped` — a list of `{step, reason}` records, one per dropped step (empty when the gate did not fire).
 
 When `commit_and_push == true` (or absent — the default is `true`), the pre-filter is a no-op and emits no log entry.
 
 ### Pre-Filter: `pre_push_quality_gate_inactive`
 
-**Condition**: the `build-decision` verdict is not `build`. The pre-filter is a **verdict consumer** — it does not compute build necessity. It asks the command-free build-necessity question through the single authority (`extension_base.should_execute_build`, exposed as the `manage-config build-decision` verb) and branches on the returned `decision`. The predicate behind that verdict, its `not_necessary` reasons, and the matcher it uses are owned by the authority, not restated here; see [ADR-004](../../../../../../doc/adr/004-The_file-to-build_contract_is_owned_by_build-system_extensions_not_languagecontent_domains.adoc) § "Amendment: `build-decision` is the sole build/no-build authority".
+**Condition**: the `build-decision` verdict is exactly `not_necessary`. The pre-filter is a **verdict consumer** — it does not compute build necessity. It asks the command-free build-necessity question through the single authority (`extension_base.should_execute_build`, exposed as the `manage-config build-decision` verb) and branches on the returned `decision`. The predicate behind that verdict, its reasons, and the matcher it uses are owned by the authority, not restated here; see [ADR-004](../../../../../../doc/adr/004-The_file-to-build_contract_is_owned_by_build-system_extensions_not_languagecontent_domains.adoc) § "Amendment: `build-decision` is the sole build/no-build authority".
 
-**Effect**: `pre-push-quality-gate` is removed from `phase_6_candidates` before the rows are evaluated. When `pre-push-quality-gate` was already removed by `commit_push_disabled`, this pre-filter is a no-op and emits no log entry.
+**The verdict has three values, and only one of them drops the step:**
+
+| Verdict | Effect | Why |
+|---------|--------|-----|
+| `not_necessary` | **drops** `pre-push-quality-gate` | The positive answer: nothing in this footprint needs building, so the gate has nothing to gate. |
+| `unknown` | **keeps** the step, and emits a `[STATUS]` line | The footprint is UNRESOLVABLE — no evidence either way. This is the normal state at `phase-4-plan` compose, before `phase-5-execute` Step 2.5 materialises the worktree. |
+| `build` | keeps the step | A build is needed; the gate applies. |
+
+Failing toward inclusion on `unknown` is required by two settled decisions, not chosen for caution. [ADR-009](../../../../../../doc/adr/009-Status_reporting_fails_closed_with_an_explicit_unknown_state.adoc) forbids reading an unsubstantiated verdict as a positive one. ADR-004 forbids this pre-filter from re-deriving build necessity from any other signal, so it may not invent an empty-footprint rule of its own to fill the gap — it consumes the verdict verbatim and keeps the gate when the verdict cannot substantiate a drop.
+
+**Effect**: on `not_necessary`, `pre-push-quality-gate` is removed from `phase_6_candidates` before the rows are evaluated. When `pre-push-quality-gate` was already removed by `commit_push_disabled`, this pre-filter is a no-op and emits no log entry.
 
 **Why a pre-filter (not an eighth row)**: The verdict it consumes is orthogonal to the change-type / scope / recipe inputs that the six-row matrix consumes. A row would either have to short-circuit and re-implement Phase 5 logic, or duplicate the filter into every row. Keeping it as a pre-filter preserves the six-row matrix verbatim and adds exactly one independent decision-log line.
 
-**Decision log line** (in addition to the row's own log line and any other pre-filter log line):
+**Decision log lines** (in addition to the row's own log line and any other pre-filter log line). The reason is the verdict's OWN `reason` text, threaded through from the `build-decision` consult — the emitter never composes one of its own, because a hardcoded string can state a reason the verdict did not give:
 
 ```text
-(plan-marshall:manage-execution-manifest:compose) pre-push-quality-gate omitted — no build_map globs or no footprint match
+(plan-marshall:manage-execution-manifest:compose) [STATUS] pre_push_quality_gate_inactive — dropped pre-push-quality-gate from phase_6.steps: {verdict reason}
+(plan-marshall:manage-execution-manifest:compose) [STATUS] pre_push_quality_gate_inactive — kept pre-push-quality-gate on an unknown build verdict: {verdict reason}
 ```
+
+The second line is the visibility half of the `unknown` branch: without it, "the verdict said build" and "the verdict could not be substantiated" look identical to an operator reading the log.
+
+**Compose-result fields**: `pre_push_quality_gate_omitted` (bool — `true` only on `not_necessary`) and `build_verdict_decision` (the verdict's `decision` verbatim, so `unknown` is distinguishable from `build`).
 
 When the verdict is `build`, the pre-filter is a no-op and emits no log entry; `pre-push-quality-gate` survives into the six-row matrix.
 
 **Evaluation order vs. the six-row matrix**: This pre-filter runs *after* `commit_push_disabled` and *before* every row of the six-row matrix. The pre-filter is therefore observable independently — Row 7 (default), Row 5 (surgical_bug_fix / surgical_tech_debt), and Row 2 (recipe) all see a Phase 6 candidate list that already has `pre-push-quality-gate` removed if either pre-filter fired.
-
-### Pre-Filter: `pre_submission_self_review_inactive`
-
-**Condition**: the live plan footprint is empty.
-
-**Effect**: `pre-submission-self-review` is removed from `phase_6_candidates` before the rows are evaluated. When `pre-submission-self-review` was already removed by `commit_push_disabled`, this pre-filter is a no-op and emits no log entry.
-
-**Why a pre-filter (not an eighth row)**: Activation depends only on the live footprint being non-empty (the four cognitive checks have no diff to inspect when the plan touched zero files). The condition is orthogonal to the change-type / scope / recipe inputs the six-row matrix consumes. Unlike `pre-push-quality-gate` (which gates on the `build.map` globs), this step has no glob gate — the four structural-defect classes it targets (symmetric pairs, regex over-fit, wording, duplication) apply to any code or doc change, and gating by file extension would mean missing the very wording/duplication defects the lesson cites for `.md` files.
-
-**Decision log line** (in addition to the row's own log line and any other pre-filter log line):
-
-```text
-(plan-marshall:manage-execution-manifest:compose) pre-submission-self-review omitted — empty footprint
-```
-
-When the footprint is non-empty, the pre-filter is a no-op and emits no log entry; `pre-submission-self-review` survives into the six-row matrix.
-
-**Evaluation order vs. the six-row matrix**: This pre-filter runs *after* `pre_push_quality_gate_inactive` and *before* every row of the six-row matrix. The pre-filter is observable independently of the row matrix — every row sees a Phase 6 candidate list that has `pre-submission-self-review` removed if any of the prior pre-filters fired.
 
 ### Pre-Filter: `simplify_inactive`
 
@@ -180,13 +199,15 @@ When the gate passes (`change_type ∈ {feature, bug_fix, tech_debt, enhancement
 
 **Operator-selected drop surfaces as a lane warning**: when this pre-filter fires over a step the operator's selected posture/lane would have included (and the ceremony `always` gate did not force it back in), the composer additionally appends a `{step, warning}` entry to the `lane_warnings[]` compose result naming the ceremony pre-filter — not the lane — as the remover, so the drop is never silent. The `simplify_omitted` boolean in the compose result remains unchanged.
 
-**Evaluation order vs. the six-row matrix**: This pre-filter runs *after* `pre_submission_self_review_inactive` and *before* every row of the six-row matrix.
+**Evaluation order vs. the six-row matrix**: This pre-filter runs *after* `pre_push_quality_gate_inactive` and *before* every row of the six-row matrix.
 
 ### Pre-Filter: `security_class_inactive`
 
 **Population**: every candidate whose source doc declares the top-level frontmatter scalar `persona: persona-security-expert` — resolved per candidate at compose time, never a hardcoded step-id list. `finalize-step-security-audit` is today's sole member; a future security-class finalize step joins the population by declaring the same persona, with no change here. The tag is an existing discriminator, not one invented for this gate: the structural peer `finalize-step-simplify` declares no `persona` key at all.
 
-**Condition**: `affected_files_count == 0` **AND** the live footprint is empty (`_resolve_footprint(plan_id)` returns no paths). Either signal being non-empty keeps the step.
+**Condition**: `affected_files_count == 0` **AND** the live footprint is resolvable and genuinely empty (`_resolve_footprint(plan_id)` returns `[]`). Either signal being non-empty keeps the step.
+
+**An unresolvable footprint keeps the step.** `_resolve_footprint` returns `None` — not `[]` — when the footprint cannot be resolved at all (the worktree is not yet materialised). That is no evidence about the change surface rather than evidence of an empty one, so it keeps the step unconditionally, matching the fail-toward-inclusion discipline the absent `change_type` leg already follows. Only `[]` — a resolvable worktree whose diff is genuinely empty — can contribute to a drop.
 
 **Effect**: every security-class step is removed from `phase_6_candidates` before the rows are evaluated, but only in the genuine zero-change-surface case. Equivalently — phrased as the activation gate — a security-class step lands in `phase_6.steps` **whenever the plan has a declared change surface OR a live one** (and the step is present in the candidate set). The subtraction-only shape matches the manifest architecture where rows and pre-filters only ever narrow the candidate list.
 
@@ -222,7 +243,11 @@ When the plan has any change surface, the pre-filter is a no-op and emits no log
 - **`scope_estimate == 'single_module'`** — drops only `plan-marshall:plan-retrospective`.
 - **`scope_estimate ∈ {none, multi_module, broad}`** — no implicit subtraction; the full candidate set survives into the matrix.
 
-**Declared-lane immunity**: membership in a drop set is not sufficient to drop. A step carrying an explicitly declared, non-`auto` per-element `lane` override in `marshal.json::plan.phase-6-finalize.steps[<step>].lane` is **immune** — the scope gate keeps it whatever the `scope_estimate` says. The rule follows from what the two signals are: this gate is IMPLICIT, inferring "you probably do not want this" from the scope estimate, while a `lane` override is the operator stating what they do want. An implicit inference must never silently override an explicit declaration.
+**Declared-lane immunity**: membership in a drop set is not sufficient to drop. A step carrying an explicitly declared, non-`auto` per-element `lane` override is **immune** — the scope gate keeps it whatever the `scope_estimate` says. The rule follows from what the two signals are: this gate is IMPLICIT, inferring "you probably do not want this" from the scope estimate, while a `lane` override is the operator stating what they do want. An implicit inference must never silently override an explicit declaration.
+
+**The declaration source is the MERGED map, not marshal alone.** Immunity is resolved from `_read_merged_phase_6_step_map(plan_id)`, which overlays the plan-local `status.metadata.finalize_step_overrides` map onto the project-wide `marshal.json::plan.phase-6-finalize.steps` map — plan-local wins per step key, merged per knob (shallow), so a plan-local `lane` does not erase a marshal-side sibling param on the same step. An operator's answer captured for THIS plan therefore grants immunity exactly as a project-wide declaration does, and appears in the same `scope_gated_finalize_immune` list. Both channels, their identical shape and enum, and the full precedence ordering are the contract-of-record in [`ext-point-lane-element.md`](../../extension-api/standards/ext-point-lane-element.md) § "Per-element override knob" — not restated here.
+
+The merge is deliberately consumed by BOTH per-step readers, not just this one: the peer reader behind the four ceremony gates (`_read_step_owned_knob` → `_read_finalize_gates`) reads the same `steps[<step>].lane` field through a different path, and widening only one would let a plan-local declaration grant scope-gate immunity while leaving the ceremony gate deaf to it.
 
 The immunity is load-bearing rather than cosmetic because of WHERE this pre-filter sits. It runs at the candidate-narrowing stage — before `ceremony_finalize_selection` and before the execution-profile lane resolution — and the ceremony `always` transform, the only re-add path, covers exactly the four `_CEREMONY_FINALIZE_GATES`. For any step outside those four (`plan-marshall:plan-retrospective` is the canonical case) a drop here removes the step from the list the lane pass later walks, so its declared `lane` is **structurally unreachable**, not merely outvoted. `auto` is excluded because it is the defer value: declaring `auto` expresses no override intent and leaves the implicit machinery its say. (`ask` — the unresolved seed — is non-`auto` and so counts as declared here, but it is seeded only on the two infra elements, neither of which belongs to a drop set, so the classification is not load-bearing for this pre-filter; the unresolved-ask case is owned by `unresolved_ask_provider_drop` below.)
 
@@ -323,7 +348,7 @@ The six-bucket classifier above (`_classify_paths_via_extensions`) and the `buil
 
 **Type**: Composition-time post-matrix transform (NOT a pre-filter). Runs *after* the six-row matrix has produced the final `phase_6.steps` list and *after* `execution_tier` routing, *before* the execution-profile lane resolution.
 
-**Inputs**: the four `plan.phase-6-finalize` ceremony gates, each derived from its owning finalize step's per-element `lane` override in `marshal.json::plan.phase-6-finalize.steps`:
+**Inputs**: the four `plan.phase-6-finalize` ceremony gates, each derived from its owning finalize step's per-element `lane` override, read from the MERGED plan-local-over-marshal step map (`_read_merged_phase_6_step_map(plan_id)`) — the same one source the scope gate's declared-lane immunity predicate consults, so a plan-local declaration governs a ceremony gate exactly as a project-wide one does:
 
 | Gate | Owning step (its `lane` override) | Derived run decision |
 |------|-----------------------------------|----------------------|
@@ -332,7 +357,7 @@ The six-bucket classifier above (`_classify_paths_via_extensions`) and the `buil
 | `simplify` | `default:finalize-step-simplify` (holistic post-implementation simplification sweep) | `off→never` \| `minimal→always` \| `auto`/absent→`auto` (default) |
 | `security_audit` | `default:finalize-step-security-audit` (proactive security sweep) | `off→never` \| `minimal→always` \| `auto`/absent→`auto` (default) |
 
-**Gate resolution**: each gate's run decision is derived from its owning step's per-element `lane` override (`steps[<owner>].lane`), read via `_read_finalize_gates`. The `lane` value maps to the ceremony run-at-all decision the transform consumes: `off` → `never` (force out), `minimal` → `always` (force in), and every other value (`auto` / `full` / `ask` / absent) → `auto` (defer to the pre-filter machinery). There is no flat phase-level `qgate` sibling and no step-owned run-at-all param — the four ceremony gates ride the same per-element `lane` override channel the other lane elements use.
+**Gate resolution**: each gate's run decision is derived from its owning step's per-element `lane` override (`steps[<owner>].lane`), read via `_read_finalize_gates(plan_id)` → `_read_step_owned_knob(owner, knob, plan_id)`. That reader and the lane-override reader behind the scope gate's immunity predicate are a symmetric pair over the same field, so both consume the merged map — widening only one would let a plan-local `lane` grant scope-gate immunity while leaving the ceremony gate deaf to it. The `lane` value maps to the ceremony run-at-all decision the transform consumes: `off` → `never` (force out), `minimal` → `always` (force in), and every other value (`auto` / `full` / `ask` / absent) → `auto` (defer to the pre-filter machinery). There is no flat phase-level `qgate` sibling and no step-owned run-at-all param — the four ceremony gates ride the same per-element `lane` override channel the other lane elements use.
 
 **Effect** (per gate, against the matrix-produced `phase_6.steps`):
 
@@ -341,8 +366,8 @@ The six-bucket classifier above (`_classify_paths_via_extensions`) and the `buil
 
   Note that `always` is a much weaker requirement for `security_audit` than it used to be: `security_class_inactive` drops the step only when the plan has no change surface at all, so on any plan with something to audit there is nothing for `always` to undo.
 
-  It is not, however, the only way an operator declaration survives an implicit gate. `scope_gated_finalize`'s declared-lane immunity keeps a step with an explicit non-`auto` `lane` from being dropped at all — a distinct mechanism (prevent the drop) from this one (undo the drop), and the only mechanism available to the steps this transform does not cover. The distinction matters because this gate map holds exactly the four ceremony steps: for any other step, such as `plan-marshall:plan-retrospective`, no re-add route exists, so immunity at the scope gate is what makes its declared lane reachable.
-- **`auto`** (the default) — defer to the existing decision machinery already applied before this transform. For `self_review` / `qgate` that is the `scope_gated_finalize` pre-filter and the six-row matrix; for `simplify` it is the `simplify_inactive` pre-filter (dropping the step when `change_type ∉ {feature, bug_fix, tech_debt, enhancement}` OR `affected_files_count == 0`); for `security_audit` it is the `security_class_inactive` pre-filter (dropping the step only when `affected_files_count == 0` AND the live footprint is empty). No-op in every case.
+  It is not, however, the only way an operator declaration survives an implicit gate. `scope_gated_finalize`'s declared-lane immunity keeps a step with an explicit non-`auto` `lane` — declared in EITHER channel — from being dropped at all: a distinct mechanism (prevent the drop) from this one (undo the drop), and the only mechanism available to the steps this transform does not cover. The distinction matters because this gate map holds exactly the four ceremony steps: for any other step, such as `plan-marshall:plan-retrospective`, no re-add route exists, so immunity at the scope gate is what makes its declared lane reachable.
+- **`auto`** (the default) — defer to the existing decision machinery already applied before this transform. For `self_review` / `qgate` that is the `scope_gated_finalize` pre-filter and the six-row matrix; for `simplify` it is the `simplify_inactive` pre-filter (dropping the step when `change_type ∉ {feature, bug_fix, tech_debt, enhancement}` OR `affected_files_count == 0`); for `security_audit` it is the `security_class_inactive` pre-filter (dropping the step only when `affected_files_count == 0` AND the live footprint is resolvable-and-empty). No-op in every case.
 
 **The deliberate `plan-marshall:automatic-review` carve-out**: this transform's gate map contains only the four finalize steps (`default:pre-submission-self-review`, `pre-push-quality-gate`, `finalize-step-simplify`, `finalize-step-security-audit`). It NEVER adds or drops `plan-marshall:automatic-review`, whose presence is governed purely by its configured `lane` and lane tier through the execution-profile lane-resolution pass — there is no separate force-add guard. Keeping the ceremony transform's gate map to exactly the four ceremony steps structurally guarantees `plan-marshall:automatic-review` is never force-added or force-dropped by this transform.
 
@@ -381,11 +406,13 @@ An element with no `lane:` block is not lane-participating and is always kept. A
 **Decision log lines** (in addition to the row + pre-filter lines):
 
 ```text
-(plan-marshall:manage-execution-manifest:compose) lane_resolution — execution_profile={posture}, dropped {steps} from phase_6.steps (tier above posture cutoff)
+(plan-marshall:manage-execution-manifest:compose) [STATUS] lane_resolution — dropped {step} from phase_6.steps (execution_profile={posture}): {reason}
 (plan-marshall:manage-execution-manifest:compose) lane_resolution warning — {step}: override 'off' ignored for {class} floor element — immune, cannot be weakened
 ```
 
-When the posture is `full` (or no lane-participating element is above the cutoff), the transform is a no-op and emits no log entry. The composer surfaces `execution_profile`, `lane_dropped`, and `lane_warnings` in the `compose` result for observability.
+One line per dropped element, not one aggregate line naming the whole list: an aggregate is not a per-drop record, so no individual drop carried its own reason. The reason is the element's own — either the explicit `off` opt-out or the effective tier that exceeded the posture cutoff.
+
+When the posture is `full` (or no lane-participating element is above the cutoff), the transform is a no-op and emits no log entry. The composer surfaces `execution_profile`, `lane_dropped` (a `{step, reason}` record list), and `lane_warnings` in the `compose` result for observability.
 
 ## Frontmatter-Order Sort
 
@@ -524,7 +551,7 @@ A `default:verify:{canonical}` (or its bare `verify:{canonical}`) ID is recogniz
 
 **Condition**: a `default:verify:{canonical}` step whose derived role is a **footprint-gated whole-tree role** (`integration` / `e2e`) is dropped when the live footprint is **non-empty** AND carries **no path** of that role. The gate is canonical-agnostic — it is driven entirely by the `_CANONICAL_TO_ROLE` derivation plus the `_FOOTPRINT_GATED_CANONICAL_ROLES` membership table, with no per-canonical branch in the code path. The core roles (`quality-gate` / `module-tests` / `coverage`) are NEVER footprint-gated; they always run when present.
 
-**Safety against compose-time emptiness**: during early compose (phase-4-plan, before the worktree is materialized) the live footprint is empty, so the pre-filter is a **no-op** and every canonical survives. The gate only fires against a non-empty footprint that genuinely lacks the gating role's paths — a project with no integration/e2e sources never schedules those whole-tree gates, while every code-shaped plan keeps its core verification.
+**Safety against no-evidence footprints**: an UNRESOLVABLE footprint (during early compose at phase-4-plan, before the worktree is materialized) and a resolvable-but-empty one both make the pre-filter a **no-op**, so every canonical survives. The gate fires only against a non-empty footprint that genuinely lacks the gating role's paths — the one state that is real evidence the role has no paths. A project with no integration/e2e sources therefore never schedules those whole-tree gates, while every code-shaped plan keeps its core verification, and a plan whose footprint cannot be resolved keeps everything rather than losing gates to an absence of evidence.
 
 **Decision log line** (emitted only when at least one step is dropped):
 
@@ -536,6 +563,14 @@ A `default:verify:{canonical}` (or its bare `verify:{canonical}`) ID is recogniz
 
 The six rows below are evaluated top-down; the first match wins. They operate on the (possibly pre-filtered) `phase_6_candidates` list described above. Rows 2, 4, and 5 use the structural role intersection described above for their `phase_5.verification_steps` outputs; Rows 1, 6, and 7 do not consult roles (Row 1 produces an empty list, Rows 6 and 7 pass the candidate list through unchanged). Row numbering is stable: the rule keys are the contract, and the retired `docs_only` row's number is not reused.
 
+**Per-row subtraction reporting.** Five of the six rows NARROW a candidate list — by intersection (Rows 1, 2, 4, 5, 6) or by subtraction (Rows 2, 5) — and each narrowing is a step removal like any other, so it is reported under the same convention as the pre-filters (§ "Every subtraction is reported"). The firing row returns one `{step, reason}` record per candidate it removed, naming the rule that removed it; the composer surfaces the list as `decision_matrix_dropped` and emits one `[STATUS]` line per record:
+
+```text
+(plan-marshall:manage-execution-manifest:compose) [STATUS] decision_matrix — dropped {step}: decide rule '{rule}' {what it narrowed}
+```
+
+Only the FIRING row reports — the rows are first-match-wins, so a row that never ran removed nothing. Row 7 (`default`) narrows nothing and returns an empty record list. The rows' DECISIONS are unchanged by this reporting; only their observability is.
+
 ### Row 1 — `early_terminate_analysis`
 
 **Condition**: `change_type == analysis` AND `affected_files_count == 0`.
@@ -543,7 +578,7 @@ The six rows below are evaluated top-down; the first match wins. They operate on
 **Outcome**:
 - `phase_5.early_terminate = true`
 - `phase_5.verification_steps = []`
-- `phase_6.steps` = `phase_6_candidates ∩ {lessons-capture, archive-plan}`
+- `phase_6.steps` = `phase_6_candidates ∩ {lessons-capture, adr-propose, archive-plan}`
 
 **Why**: A pure-analysis plan with no source-file impact has nothing to verify. Phase 6 still runs lessons capture so the analysis findings don't leak silently, and `archive-plan` finalizes the plan record.
 
@@ -617,7 +652,9 @@ An **assertion**, not a pre-filter. The distinction is load-bearing: every pre-f
 
 **Why it is worth an assertion**: such a step cannot succeed. The verdict says nothing in this footprint can be built, so the build evidence the step needs can never exist and the step is a guaranteed false-red. Its presence means some consumer decided build necessity from a signal other than the authority — the exact regression [ADR-004](../../../../../../doc/adr/004-The_file-to-build_contract_is_owned_by_build-system_extensions_not_languagecontent_domains.adoc) § "Amendment: `build-decision` is the sole build/no-build authority" retires. A pre-filter would silently paper over that drift by removing the step; the assertion surfaces it.
 
-**Non-empty-footprint precondition (the empty-footprint trap)**: the assertion is DISABLED whenever the live footprint is empty, and this guard is not an optimization — it is what keeps the gate from inverting into a permanent false alarm. `should_execute_build` returns `not_necessary` for an empty footprint ("plan footprint is empty — no changed files to build"), and at early compose the footprint is ALWAYS empty: `phase-4-plan` composes before `phase-5-execute` Step 2.5 materializes the worktree, so no file has been changed yet. An unguarded assertion would therefore see `not_necessary` on essentially every plan's first compose and reject every build step in it. The guard restricts the assertion to composes that can actually observe a real footprint. An unobtainable verdict likewise disables it — absence of a verdict is not evidence of a contradiction.
+**Non-empty-footprint precondition (the empty-footprint trap)**: the assertion is DISABLED whenever the live footprint carries no paths, and this guard is not an optimization — it is what keeps the gate from inverting into a permanent false alarm. It restricts the assertion to composes that can actually observe a real footprint. At early compose no footprint is observable at all: `phase-4-plan` composes before `phase-5-execute` Step 2.5 materializes the worktree, so nothing has been changed yet and the resolver returns *unresolvable*. The composer passes that state through as an empty list, which the precondition treats as "cannot observe" and the assertion declines to act on.
+
+**Only `not_necessary` can substantiate a contradiction**: the assertion additionally requires the verdict's `decision` to be exactly `not_necessary`. An `unknown` verdict — the one an unresolvable footprint produces — asserts nothing: it says the authority could not substantiate an answer, which is not the positive "nothing here can be built" claim a contradiction needs. The two guards are independent and both fail open. An unobtainable verdict likewise disables the assertion — absence of a verdict is not evidence of a contradiction.
 
 **On failure** the composer emits one decision-log line and returns `status: error` with `error: build_verdict_contradiction`, plus `phase`, `step_id`, and the verdict's own `reason`:
 

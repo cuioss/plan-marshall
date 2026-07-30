@@ -366,7 +366,7 @@ def main() -> int:
     p_bd = subparsers.add_parser(
         'build-decision',
         help='Return the build-necessity verdict for a plan footprint '
-        '(build / not_necessary verdict)',
+        '(build / not_necessary / unknown verdict)',
         allow_abbrev=False,
     )
     p_bd.add_argument(
@@ -686,10 +686,15 @@ def main() -> int:
     )
 
     # set-lane: persist a resolved lane override (off/auto/full) for a finalize
-    # step — the write side of the steward always-prompt flow.
+    # step — the write side of the steward always-prompt flow. `--plan-id` is a
+    # CHANNEL SELECTOR, not a second verb: absent it writes the project-wide
+    # marshal.json map (unchanged behaviour), present it writes that one plan's
+    # status.metadata.finalize_step_overrides map and touches marshal.json not at
+    # all, so one plan's answer never leaks into every later plan.
     finalize_steps_set_lane = finalize_steps_sub.add_parser(
         'set-lane',
-        help='Persist a resolved lane override (off/auto/full) for a finalize step',
+        help='Persist a resolved lane override (off/auto/full) for a finalize step, '
+        'project-wide or (with --plan-id) for one plan',
         allow_abbrev=False,
     )
     finalize_steps_set_lane.add_argument(
@@ -702,7 +707,18 @@ def main() -> int:
         '--lane',
         required=True,
         choices=['off', 'auto', 'full'],
-        help='Resolved lane override: off (no bots/Sonar) or auto/full (has them)',
+        help='Resolved lane override: off (no bots/Sonar) or auto/full (has them). These are the '
+        'resolved answers an operator dialogue produces; the reader enum additionally accepts the '
+        'seed values minimal/ask, which only shipped frontmatter and marshal seeding emit',
+    )
+    finalize_steps_set_lane.add_argument(
+        '--plan-id',
+        dest='plan_id',
+        required=False,
+        default=None,
+        help='Channel selector: omit to write the project-wide marshal.json step map; supply a plan '
+        "id to write that plan's status.metadata.finalize_step_overrides instead, leaving "
+        'marshal.json untouched',
     )
 
     # --- resolve-domain-skills ---

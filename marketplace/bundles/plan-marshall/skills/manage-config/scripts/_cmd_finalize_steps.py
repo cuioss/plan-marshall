@@ -4,7 +4,8 @@
 Handles:
     finalize-steps apply-preset --preset <name>       (preset writer)
     finalize-steps list-ask-lane                       (ask-tier enumerate)
-    finalize-steps set-lane --step-id <id> --lane <v>  (resolved-ask writer)
+    finalize-steps set-lane --step-id <id> --lane <v> [--plan-id <p>]
+                                                       (resolved-ask writer)
 
 The write path imports :class:`FinalizeStepPresets` from this skill.
 ``apply-preset`` surgically writes the preset's step list into
@@ -22,6 +23,18 @@ persists the operator's resolved answer (``off`` = no bots / Sonar;
 ``auto`` / ``full`` = has them) as the step's ``lane`` override. A steward-set
 answer is a RESOLVED ask that the compose-time drop-when-no-provider safety net
 never drops.
+
+``set-lane`` writes into one of TWO channels, selected by the optional
+``--plan-id`` argument — one verb, one mechanism, two destinations:
+
+- **absent** — the project-wide ``marshal.json`` map at
+  ``plan.phase-6-finalize.steps[<step>].lane`` (the steward's channel; unchanged).
+- **present** — that ONE plan's ``status.metadata.finalize_step_overrides``
+  map, and marshal.json is not touched at all. The plan-local map mirrors the
+  marshal shape exactly (id-keyed map of nested param objects, same key forms,
+  same lane enum), so both compose-side readers resolve it through the same
+  merged source. Keeping the operator's per-plan answer out of marshal.json is
+  the point: one plan's answer must not leak into every later plan.
 """
 
 from _cmd_quality_phases import _resolve_step_orders, _steps_map
@@ -33,12 +46,19 @@ from _config_core import (
     success_exit,
 )
 from _config_defaults import FINALIZE_STEP_EXT_POINT
+from constants import FILE_STATUS
+from file_ops import get_plan_dir, read_json, write_json
 from finalize_step_presets import (
     FinalizeStepPresets,
 )
+from input_validation import validate_plan_id
 
 # Phase key the preset writes into.
 _PHASE_SECTION = 'phase-6-finalize'
+
+# The ``status.metadata`` key holding the plan-local per-step declaration map —
+# the plan-scoped sibling of marshal.json's ``plan.phase-6-finalize.steps``.
+_PLAN_LOCAL_STEP_MAP_KEY = 'finalize_step_overrides'
 
 # The lane values an operator may persist when RESOLVING an ask-tier infra
 # element. ``ask`` and ``minimal`` are deliberately excluded: ``ask`` is the
@@ -190,17 +210,102 @@ def cmd_finalize_steps_list_ask_lane(args) -> dict:
     )
 
 
+def _set_lane_plan_local(plan_id: str, step_id: str, lane: str) -> dict:
+    """Write the resolved ``lane`` into one plan's ``status.metadata`` map.
+
+    The plan-local half of the ``set-lane`` channel selector. Writes
+    ``status.metadata.finalize_step_overrides[<step_id>]['lane']`` and touches
+    marshal.json not at all, so the operator's answer for THIS plan never leaks
+    into every later plan. Sibling params already on the step survive — only the
+    ``lane`` knob is replaced — mirroring the marshal-side writer's behaviour.
+
+    An existing map that cannot be parsed as the documented shape is an EXPLICIT
+    ERROR, never a silent overwrite: a non-dict ``metadata``, a non-dict override
+    map, or a non-dict param object for the target step each abort the write with
+    a named reason, so a malformed file is repaired deliberately rather than
+    destroyed by the next write.
+
+    Args:
+        plan_id: The already-validated plan identifier to write into.
+        step_id: The finalize step id whose lane is being declared.
+        lane: The resolved lane value.
+
+    Returns:
+        The ``success_exit`` / ``error_exit`` result dict.
+    """
+    status_path = get_plan_dir(plan_id) / FILE_STATUS
+    if not status_path.exists():
+        return error_exit(f"no status.json for plan '{plan_id}'; cannot set plan-local lane")
+    status = read_json(status_path, default=None)
+    if not isinstance(status, dict):
+        return error_exit(
+            f"status.json for plan '{plan_id}' is not a JSON object; refusing to overwrite it"
+        )
+    metadata = status.get('metadata')
+    if metadata is None:
+        metadata = {}
+        status['metadata'] = metadata
+    if not isinstance(metadata, dict):
+        return error_exit(
+            f"status.json metadata for plan '{plan_id}' is not a dict; refusing to overwrite it"
+        )
+    overrides = metadata.get(_PLAN_LOCAL_STEP_MAP_KEY)
+    if overrides is None:
+        overrides = {}
+        metadata[_PLAN_LOCAL_STEP_MAP_KEY] = overrides
+    if not isinstance(overrides, dict):
+        return error_exit(
+            f"status.metadata.{_PLAN_LOCAL_STEP_MAP_KEY} for plan '{plan_id}' is not a map; "
+            'refusing to overwrite it'
+        )
+    params = overrides.get(step_id)
+    if params is None:
+        params = {}
+    if not isinstance(params, dict):
+        return error_exit(
+            f"status.metadata.{_PLAN_LOCAL_STEP_MAP_KEY}['{step_id}'] for plan '{plan_id}' is not a "
+            'param object; refusing to overwrite it'
+        )
+    params['lane'] = lane
+    overrides[step_id] = params
+
+    write_json(status_path, status)
+
+    return success_exit(
+        {
+            'step_id': step_id,
+            'lane': lane,
+            'channel': 'plan_local',
+            'plan_id': plan_id,
+        }
+    )
+
+
 def cmd_finalize_steps_set_lane(args) -> dict:
-    """Handle ``finalize-steps set-lane --step-id <id> --lane <off|auto|full>``.
+    """Handle ``finalize-steps set-lane --step-id <id> --lane <off|auto|full> [--plan-id <p>]``.
 
     Persists the operator's RESOLVED answer as the finalize step's ``lane``
-    override under ``plan.phase-6-finalize.steps[<step_id>].lane``, preserving any
-    other params on the step and materializing the step entry when absent. The
-    lane value is validated against :data:`_RESOLVED_ASK_LANE_VALUES` (``off`` /
-    ``auto`` / ``full`` — never ``ask`` / ``minimal``), and the step id is
-    re-validated against the discovered finalize-step universe (defence in depth,
-    mirroring the preset writer). A resolved answer written here is never dropped
-    by the compose-time drop-when-no-provider safety net.
+    override, preserving any other params on the step and materializing the step
+    entry when absent. ``--plan-id`` selects the CHANNEL, and is the only new
+    argument — there is no second writer verb:
+
+    - **absent** → ``plan.phase-6-finalize.steps[<step_id>].lane`` in the
+      project-wide marshal.json (unchanged behaviour).
+    - **present** → ``status.metadata.finalize_step_overrides[<step_id>].lane``
+      for that plan only, leaving marshal.json byte-unchanged.
+
+    The lane value is validated against :data:`_RESOLVED_ASK_LANE_VALUES` (``off``
+    / ``auto`` / ``full``) on BOTH channels, and the step id is re-validated
+    against the discovered finalize-step universe (defence in depth, mirroring the
+    preset writer). That writer enum is a deliberate SUBSET of the reader's
+    ``LANE_OVERRIDES``: ``off`` / ``auto`` / ``full`` are the resolved answers an
+    operator dialogue produces, while ``minimal`` and ``ask`` are seed values only
+    shipped frontmatter and marshal seeding emit. A writer emitting a subset of a
+    valid enum is not the two-readers-disagreeing drift — both readers accept the
+    full enum; this writer simply never produces the seed half of it.
+
+    A resolved answer written here is never dropped by the compose-time
+    drop-when-no-provider safety net.
     """
     if not is_initialized():
         return error_exit('marshal.json not initialized; run /marshall-steward first')
@@ -214,6 +319,18 @@ def cmd_finalize_steps_set_lane(args) -> dict:
     step_id = args.step_id
     if step_id not in _known_finalize_steps():
         return error_exit(f"unknown finalize step '{step_id}'")
+
+    # Channel selection. An ABSENT --plan-id is the project-wide channel; a
+    # PRESENT-but-invalid value is an explicit error, never a silent fall-through
+    # to the project-wide write, which would leak one plan's answer into every
+    # later plan — precisely the outcome the plan-local channel exists to prevent.
+    plan_id = getattr(args, 'plan_id', None)
+    if plan_id is not None:
+        try:
+            plan_id = validate_plan_id(plan_id)
+        except ValueError as exc:
+            return error_exit(str(exc))
+        return _set_lane_plan_local(plan_id, step_id, lane)
 
     config = load_config()
     plan_block = config.setdefault('plan', {})
@@ -240,5 +357,6 @@ def cmd_finalize_steps_set_lane(args) -> dict:
         {
             'step_id': step_id,
             'lane': lane,
+            'channel': 'project',
         }
     )

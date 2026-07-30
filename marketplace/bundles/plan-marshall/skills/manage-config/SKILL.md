@@ -501,10 +501,13 @@ domain_count: 1
 
 ### Decide Whether a Build Must Run
 
-`build-decision` is the CLI surface of the **sole build/no-build authority**. It returns a structured `build` / `not_necessary` verdict for a plan's live footprint, and every consumer site consults it instead of deciding build necessity from any other signal. The verdict is a pure function of the `build.map` globs and the live plan footprint — no LLM judgement:
+`build-decision` is the CLI surface of the **sole build/no-build authority**. It returns a structured **three-value** verdict for a plan's live footprint, and every consumer site consults it instead of deciding build necessity from any other signal. The verdict is a pure function of the `build.map` globs and the live plan footprint — no LLM judgement:
 
 - `decision: build` when the footprint touches at least one registered build_map glob.
-- `decision: not_necessary` (always carrying a non-empty, log-friendly `reason`) when the build_map registers no globs, the footprint is empty, or the footprint intersects no build glob.
+- `decision: not_necessary` (always carrying a non-empty, log-friendly `reason`) when the build_map registers no globs, the footprint is resolvable-and-empty, or the footprint intersects no build glob.
+- `decision: unknown` (always carrying a non-empty `reason`) when the footprint is **unresolvable** — the worktree is not yet materialised, so there is no evidence either way about what changed.
+
+**Consumers MUST branch on all three and MUST NOT collapse `unknown` into `not_necessary`.** The two answer different questions: `not_necessary` is the positive "nothing here needs building", while `unknown` is "the authority could not substantiate an answer". Dropping a build gate requires the positive answer — reading an unsubstantiated verdict as a positive one is the failure [`doc/adr/009`](../../../../../doc/adr/009-Status_reporting_fails_closed_with_an_explicit_unknown_state.adoc) closes. A gate consuming this verdict therefore fails toward inclusion on `unknown`.
 
 `--command` is **optional** and is an echo-only label: it takes no part in the predicate above, so for a fixed footprint every command yields the identical `decision` / `reason` pair. Omit it to ask the command-free plan-wide question; supply it when the caller wants the label echoed back alongside the verdict. Synthesizing a plan-wide answer by picking an arbitrary representative command is a retired anti-pattern — see [`doc/adr/004`](../../../../../doc/adr/004-The_file-to-build_contract_is_owned_by_build-system_extensions_not_languagecontent_domains.adoc) § "Amendment: `build-decision` is the sole build/no-build authority", which also records the empty-footprint constraint that makes a compose-time consultation unsafe.
 
@@ -532,6 +535,14 @@ status: success
 decision: not_necessary
 reason: plan footprint touches no build_map glob — only non-buildable files changed
 canonical_command: quality-gate
+```
+
+**Output — `unknown` verdict, command-free** (TOON):
+
+```toon
+status: success
+decision: unknown
+reason: plan footprint unresolvable — worktree not yet materialised
 ```
 
 The decision logic itself lives in the build-system-owned `should_execute_build` helper in `script-shared`; `build-decision` is a thin wrapper exposing it through the `manage-config` command surface (the home that already owns the `build_map` seed and footprint-matching logic the decision reuses).
@@ -580,7 +591,8 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci issue view
 | `effort` | `read` (role/phase/`--default` resolver; `--role orchestrator`\|`orchestrator.{analyze\|decompose\|reader}` resolves the sibling `orchestrator.effort` block, clamped to `orchestrator.effort.max`), `resolve-target` (same lookup plus `execution-context-{level}` target-name computation), `apply-preset --preset` (whole-tree writer), `set --scope {phase}.{role}\|plan\|orchestrator[.{analyze\|decompose\|reader}\|default\|max] --level` (surgical per-scope writer) |
 | `ci` | get, get-provider, get-tools, get-command, set-provider, set-tools, persist |
 | `build-map` | `seed` (re-seed `build.map` from applicable extensions, write-once; `--force` clears + re-derives), `read` (effective map from `build.map`, fail-closed when absent), `drift` (read-only diff of persisted vs derived map: `in_sync` + per-domain added/removed globs) |
-| `build-decision` | `[--command] --plan-id` (the sole build/no-build authority's verdict: `build` / `not_necessary`; `not_necessary` carries a log-friendly `reason`. `--command` is an optional echo-only label that never enters the predicate — omit it for the command-free plan-wide verdict) |
+| `build-decision` | `[--command] --plan-id` (the sole build/no-build authority's three-value verdict: `build` / `not_necessary` / `unknown`; the latter two each carry a log-friendly `reason`, and `unknown` — an unresolvable footprint — must never be collapsed into `not_necessary`. `--command` is an optional echo-only label that never enters the predicate — omit it for the command-free plan-wide verdict) |
+| `finalize-steps` | `apply-preset --preset` (write `plan.phase-6-finalize.steps` from a named preset), `list-ask-lane` (enumerate steps whose effective `lane` is still the unresolved `ask`), `set-lane --step-id --lane [--plan-id]` (persist a resolved `off`/`auto`/`full` lane override; `--plan-id` is the channel selector — absent writes project-wide marshal.json, present writes only that plan's `status.metadata.finalize_step_overrides`) |
 | `init` | Initialize marshal.json (with optional `--force`) |
 | `normalize-keys` | Re-write `marshal.json` with the canonical top-level key order (silent, idempotent; reuses the `save_config` key-order writer) |
 | `steps-sort` | Re-sort `plan.phase-6-finalize.steps` into ascending frontmatter `order` (silent, idempotent, values byte-identical; reuses the manifest composer's `_sort_steps_by_frontmatter_order` choke-point; `phase-5-execute.verification_steps` is out of scope; unresolvable-order steps pinned at their original index) |
@@ -1334,6 +1346,15 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config list-f
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config list-verify-steps
 ```
 
+### finalize-steps set-lane
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config finalize-steps set-lane \
+  --step-id STEP_ID --lane {off,auto,full} [--plan-id PLAN_ID]
+```
+
+Persists a resolved per-element `lane` override for one finalize step. `--plan-id` is the **channel selector** and the only argument distinguishing the two declaration channels: omit it to write the project-wide `marshal.json` `plan.phase-6-finalize.steps[<step>].lane`, supply it to write only that plan's `status.metadata.finalize_step_overrides[<step>].lane` and leave `marshal.json` byte-unchanged. The composer merges both (plan-local ▸ marshal) into the one map every per-element reader consults. The `--lane` choices are the resolved answers an operator dialogue produces; the reader enum additionally accepts the `minimal` / `ask` seed values, which only shipped frontmatter and marshal seeding emit.
+
 ### domain-detect
 
 ```bash
@@ -1389,7 +1410,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config build-
   [--command COMMAND] --plan-id PLAN_ID
 ```
 
-Returns a `build` / `not_necessary` verdict for `PLAN_ID`'s live footprint. `--audit-plan-id` is accepted as an alias for `--plan-id`. Thin wrapper over `extension_base.should_execute_build` — a pure function of the `build.map` globs ∩ the live plan footprint; on `not_necessary` it carries a populated `reason`, on `build` no `reason`.
+Returns a `build` / `not_necessary` / `unknown` verdict for `PLAN_ID`'s live footprint. `--audit-plan-id` is accepted as an alias for `--plan-id`. Thin wrapper over `extension_base.should_execute_build` — a pure function of the `build.map` globs ∩ the live plan footprint; on `not_necessary` and `unknown` it carries a populated `reason`, on `build` no `reason`. `unknown` means the footprint could not be resolved at all (the worktree is not yet materialised) and is forwarded verbatim — the wrapper never collapses it into `not_necessary`.
 
 `--command` is **optional** and is an echo-only label: it never enters the predicate, so the verdict is identical with and without it for a given footprint. Omit it for the command-free plan-wide verdict (`{decision, reason}` with no `canonical_command` key); supply it to have the label echoed back. Picking an arbitrary representative command to stand in for a plan-wide answer is a retired anti-pattern.
 

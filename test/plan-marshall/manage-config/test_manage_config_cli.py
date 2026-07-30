@@ -22,6 +22,7 @@ tmp sandbox, so every seed/write lands in the sandbox, never the real
 ``.plan/`` tree.
 """
 
+import json
 import sys
 
 import pytest
@@ -382,6 +383,103 @@ def test_main_finalize_steps_apply_preset(plan_context, monkeypatch, capsys):
     assert data['status'] == 'success'
     assert data['preset'] == 'local'
     assert 'steps_count' in data
+
+
+def test_main_finalize_steps_set_lane_without_plan_id_writes_marshal(plan_context, monkeypatch, capsys):
+    """`finalize-steps set-lane` with no `--plan-id` routes to the project channel.
+
+    The unchanged default, asserted at the CLI dispatcher so the channel
+    selector's absent-case is pinned on the surface an operator actually types.
+    """
+    create_marshal_json(plan_context.fixture_dir)
+
+    code, out, _ = _drive(
+        monkeypatch,
+        capsys,
+        'finalize-steps',
+        'set-lane',
+        '--step-id',
+        'plan-marshall:automatic-review',
+        '--lane',
+        'off',
+    )
+
+    assert code == 0
+    data = parse_toon(out)
+    assert data['status'] == 'success'
+    assert data['channel'] == 'project'
+    marshal = json.loads((plan_context.fixture_dir / 'marshal.json').read_text(encoding='utf-8'))
+    steps = marshal['plan']['phase-6-finalize']['steps']
+    assert steps['plan-marshall:automatic-review']['lane'] == 'off'
+
+
+def test_main_finalize_steps_set_lane_with_plan_id_leaves_marshal_unchanged(
+    plan_context, monkeypatch, capsys
+):
+    """`finalize-steps set-lane --plan-id X` writes the plan and NOT marshal.json.
+
+    The anti-leak assertion at the CLI surface. Reading the marshal bytes before
+    and after proves the plan-scoped answer never reached the project-wide config
+    — the failure mode where one plan's answer silently governs every later plan.
+    """
+    create_marshal_json(plan_context.fixture_dir)
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    plan_dir = plan_context.plan_dir_for('cli-plan-local')
+    (plan_dir / 'status.json').write_text(json.dumps({'metadata': {}}))
+    before = marshal_path.read_bytes()
+
+    code, out, _ = _drive(
+        monkeypatch,
+        capsys,
+        'finalize-steps',
+        'set-lane',
+        '--step-id',
+        'plan-marshall:automatic-review',
+        '--lane',
+        'full',
+        '--plan-id',
+        'cli-plan-local',
+    )
+
+    assert code == 0
+    data = parse_toon(out)
+    assert data['status'] == 'success'
+    assert data['channel'] == 'plan_local'
+    assert data['plan_id'] == 'cli-plan-local'
+    # The plan-local map received the declaration…
+    status = json.loads((plan_dir / 'status.json').read_text(encoding='utf-8'))
+    assert status['metadata']['finalize_step_overrides'] == {
+        'plan-marshall:automatic-review': {'lane': 'full'}
+    }
+    # …and marshal.json is byte-identical.
+    assert marshal_path.read_bytes() == before
+
+
+def test_main_finalize_steps_set_lane_rejects_a_seed_lane_value(plan_context, monkeypatch, capsys):
+    """`--lane ask` is rejected by argparse choices on BOTH channels (exit 2).
+
+    ``ask`` / ``minimal`` are seed values only shipped frontmatter and marshal
+    seeding emit; the writer enum is deliberately the resolved-answer subset. The
+    rejection happens at the parser, so it applies before the channel selector is
+    even consulted.
+    """
+    create_marshal_json(plan_context.fixture_dir)
+
+    code, _, err = _drive(
+        monkeypatch,
+        capsys,
+        'finalize-steps',
+        'set-lane',
+        '--step-id',
+        'plan-marshall:automatic-review',
+        '--lane',
+        'ask',
+        '--plan-id',
+        'cli-plan-local',
+    )
+
+    assert code == 2
+    assert 'ask' in err
 
 
 def test_main_build_map_read_missing_is_error(plan_context, monkeypatch, capsys):

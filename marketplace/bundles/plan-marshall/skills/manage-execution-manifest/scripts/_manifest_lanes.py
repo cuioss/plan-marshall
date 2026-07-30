@@ -126,9 +126,17 @@ def _read_frontmatter_scalar(path: Path, key: str) -> str | None:
 
 
 def _lane_override_for(step_id: str, overrides: dict[str, dict] | None) -> str | None:
-    """Resolve the per-element ``lane`` override from the marshal.json step map.
+    """Resolve the per-element ``lane`` override from the supplied step map.
 
-    The phase-6 candidate ids are bare-normalized; the marshal map keys preserve
+    The function is map-parameterized: it resolves the override from whatever
+    ``overrides`` map the CALLER supplies, which is the merged
+    plan-local-over-marshal step map produced by
+    ``_manifest_rules._read_merged_phase_6_step_map`` — NOT marshal.json alone.
+    That parameterization is why the merge can live on the ``_manifest_rules``
+    side of the existing ``_manifest_rules → _manifest_lanes`` import edge: this
+    module gains no import of ``_manifest_rules`` and the graph stays acyclic.
+
+    The phase-6 candidate ids are bare-normalized; the map keys preserve
     ``default:`` / ``project:`` prefixes, so match on the prefix-stripped key.
     Returns the override value when valid (``off|minimal|auto|full|ask``), else
     ``None``.

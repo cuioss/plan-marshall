@@ -511,6 +511,8 @@ Declares this **build** extension's contribution to the `build_map` file-to-buil
 
 **Lifecycle**: Called by `manage-config`'s `aggregate_build_map()` during `init` / `sync-defaults` / `build-map seed`. The aggregator collects every build extension's routes via `derive_globs_from_tree(project_root, extensions)` (the `script-shared` route collector), stamps each `(pattern, role)` with `classify_build_class`, and writes the result into `build.map`.
 
+**Downstream verdict vocabulary.** The routes declared here are one of the two inputs to `should_execute_build` — the sole build/no-build authority, exposed as the `manage-config build-decision` verb — which intersects them with a plan's live footprint. That verdict has **three** values, and every consumer must branch on all three: `build`, `not_necessary` (the positive answer that nothing here needs building — no registered globs, a resolvable-but-empty footprint, or no glob intersection), and `unknown` (the footprint is unresolvable, so there is no evidence either way). `unknown` must never be collapsed into `not_necessary`: dropping a build gate requires the positive answer, per [ADR-009](../../../../../../doc/adr/009-Status_reporting_fails_closed_with_an_explicit_unknown_state.adoc). The predicate itself is owned by the authority and is not restated here — see [`manage-config` SKILL.md](../../manage-config/SKILL.md) § `build-decision`.
+
 ```python
 def classify_globs(self) -> list[tuple[str, str]]:
     """Return this extension's explicit (pattern, role) build_map routes.
