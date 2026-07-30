@@ -26,6 +26,11 @@ from plan_logging import log_entry
 _STATUS_OK = 'ok'
 _STATUS_ERROR = 'error'
 
+#: Prefix marking a note the MERGE appended, distinguishing it from the notes the
+#: resolver itself returned. Without the prefix a reader of the report cannot tell
+#: whether the resolver suppressed the edge deliberately or the merge discarded it.
+_MERGE_NOTE_PREFIX = 'merge: '
+
 
 def _coerce_pair(candidate: Any) -> tuple[str, str] | None:
     """Return ``candidate`` as a ``(from, to)`` string pair, or ``None``.
@@ -69,14 +74,25 @@ def merge_resolver_edges(
     """Merge every resolver's edge set into one provenance-carrying edge list.
 
     Calls each resolver's ``derive_edges``, unpacking the ``(edges, notes)``
-    return and carrying that resolver's ``notes`` onto its report unchanged. Each
-    candidate pair must survive two validity filters before it is unioned:
+    return and carrying that resolver's ``notes`` onto its report. Each candidate
+    pair must survive three validity filters before it is unioned:
 
-    1. **Both endpoints must be known module names** — a pair naming a module
+    1. **The pair must be well-formed** — a candidate that is not a two-element
+       sequence of strings is dropped rather than propagated into the graph.
+    2. **Both endpoints must be known module names** — a pair naming a module
        absent from ``derived_by_name`` is dropped, so a resolver cannot invent a
        node.
-    2. **Self-edges are dropped** — a module does not depend on itself, and a
+    3. **Self-edges are dropped** — a module does not depend on itself, and a
        self-loop would corrupt traversal.
+
+    **Every merge-side drop appends its own note.** The three filters above are
+    the merge suppressing an edge, so each one records why, prefixed with
+    ``merge:`` to keep it distinguishable from the notes the resolver itself
+    returned. Without that, a resolver whose every candidate the merge discarded
+    would report ``status: ok``, ``edge_count: 0`` and an empty ``notes`` list —
+    a confident-looking zero indistinguishable from "ran and legitimately found
+    nothing", which is exactly the vacuity this extension point exists to
+    eliminate (see the contract's § "Suppression must be reported, never silent").
 
     Surviving pairs are unioned keyed on ``(from, to)``. A pair produced by more
     than one resolver collapses to ONE edge whose ``producers[]`` is the sorted
@@ -143,11 +159,24 @@ def merge_resolver_edges(
         for candidate in raw_edges or []:
             pair = _coerce_pair(candidate)
             if pair is None:
+                notes.append(
+                    f'{_MERGE_NOTE_PREFIX}dropped malformed candidate {candidate!r} — '
+                    f'not a two-element pair of module-name strings'
+                )
                 continue
             source, target = pair
             if source == target:
+                notes.append(
+                    f'{_MERGE_NOTE_PREFIX}dropped self-edge ({source} -> {target}) — '
+                    f'a module does not depend on itself'
+                )
                 continue
-            if source not in known_modules or target not in known_modules:
+            unknown = [name for name in (source, target) if name not in known_modules]
+            if unknown:
+                notes.append(
+                    f'{_MERGE_NOTE_PREFIX}dropped edge ({source} -> {target}) — '
+                    f'unknown module endpoint(s): {", ".join(unknown)}'
+                )
                 continue
             contributed.add(pair)
             producers_by_pair.setdefault(pair, set()).add(resolver_id)

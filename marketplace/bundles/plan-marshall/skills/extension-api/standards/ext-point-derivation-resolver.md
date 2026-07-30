@@ -1,6 +1,6 @@
 # Extension Point: Derivation Resolver
 
-> **Type**: Module-Edge Derivation (Axis-C) | **Hook Method**: `DerivationResolverBase` subclass | **Implementations**: 1 (`maven`) | **Status**: Shipped — the `extension_base.py` ABC is wired and `build-maven` implements it
+> **Type**: Module-Edge Derivation (Axis-C) | **Hook Method**: `DerivationResolverBase` subclass | **Implementations**: see [§ Current implementations](#current-implementations) | **Status**: Shipped — the `extension_base.py` ABC is wired and `build-maven` implements it
 
 ## Overview
 
@@ -134,6 +134,8 @@ Two obligations follow for implementors:
 The `notes[]` half of the `derive_edges` return is the **required channel** for any condition that suppressed an edge — an ambiguous identity key, an unresolvable reference, a malformed declaration. A resolver that drops an edge silently violates this contract.
 
 `notes[]` defaults to `[]`, so a resolver that emits nothing is indistinguishable in shape from one that cannot emit. The field exists precisely because a condition that suppresses an edge must be visible somewhere; silently dropping it is the vacuity this extension point was built to eliminate.
+
+The obligation binds **core as well as the resolver**. The merge applies three validity filters of its own — a malformed candidate pair, a self-edge, an endpoint naming no known module — and each of those is core suppressing an edge. Every such drop appends its own note to that resolver's report, prefixed `merge:` so a reader can tell a core-side drop from a resolver-side one. A resolver whose candidates were all discarded by the merge would otherwise report `status: ok`, `edge_count: 0` and an empty `notes[]`: a confident zero that reads exactly like "ran and legitimately found nothing".
 
 ### The ambiguous-identity-key obligation
 

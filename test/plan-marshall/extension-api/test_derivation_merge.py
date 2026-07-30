@@ -19,6 +19,12 @@ producers, resolvers derive. The properties pinned here:
   siblings still contribute — one broken implementor never blanks the graph.
 - A resolver emitting ``notes[]`` has them preserved on its report while
   ``status`` stays ``ok``; a resolver emitting none reports ``notes: []``.
+- **Every merge-side drop is reported.** The three validity filters are core
+  suppressing an edge, so each appends a ``merge:``-prefixed note to that
+  resolver's report. The headline property: a resolver whose every candidate the
+  merge discarded must NOT report ``status: ok`` / ``edge_count: 0`` /
+  ``notes: []`` — that confident-looking zero is indistinguishable from "ran and
+  legitimately found nothing", and is the vacuity the contract forbids.
 - Edge ordering is deterministic across runs (sorted by ``(from, to)``).
 
 Note on notes ordering: the implementation contract carries a resolver's
@@ -352,6 +358,136 @@ def test_bare_string_notes_value_is_normalized_to_a_list():
 
     # Assert
     assert reports[0]['notes'] == ['single condition']
+
+
+# =============================================================================
+# Merge-side suppression reporting — core's own drops must be legible
+# =============================================================================
+
+
+def _merge_notes(report: dict) -> list[str]:
+    """Return only the notes the MERGE appended, not the resolver's own."""
+    return [note for note in report['notes'] if note.startswith('merge: ')]
+
+
+def test_dropped_self_edge_is_reported_in_notes():
+    # Arrange
+    resolver = _StubResolver(edges=[('core', 'core')])
+
+    # Act
+    _, reports = _merge_with(('maven', resolver))
+
+    # Assert — the drop is visible, and names the edge that was dropped
+    notes = _merge_notes(reports[0])
+    assert len(notes) == 1
+    assert 'self-edge' in notes[0]
+    assert 'core' in notes[0]
+
+
+def test_dropped_unknown_endpoint_edge_is_reported_in_notes():
+    # Arrange — 'ghost' is absent from the known-module universe
+    resolver = _StubResolver(edges=[('core', 'ghost')])
+
+    # Act
+    _, reports = _merge_with(('maven', resolver))
+
+    # Assert — the note names the endpoint that was not known
+    notes = _merge_notes(reports[0])
+    assert len(notes) == 1
+    assert 'ghost' in notes[0]
+
+
+def test_note_for_unknown_endpoints_names_both_when_both_are_unknown():
+    # Arrange
+    resolver = _StubResolver(edges=[('ghost', 'phantom')])
+
+    # Act
+    _, reports = _merge_with(('maven', resolver))
+
+    # Assert
+    note = _merge_notes(reports[0])[0]
+    assert 'ghost' in note
+    assert 'phantom' in note
+
+
+def test_dropped_malformed_pair_is_reported_in_notes():
+    # Arrange — wrong arity, wrong types, and a bare string
+    resolver = _StubResolver(edges=[('core',), (1, 2), 'core-util'])
+
+    # Act
+    _, reports = _merge_with(('maven', resolver))
+
+    # Assert — one note per discarded candidate
+    assert len(_merge_notes(reports[0])) == 3
+
+
+def test_resolver_whose_every_edge_was_dropped_does_not_report_a_silent_zero():
+    # Arrange — the headline vacuity case: candidates produced, all discarded
+    resolver = _StubResolver(edges=[('core', 'core'), ('core', 'ghost'), ('bad',)])
+
+    # Act
+    edges, reports = _merge_with(('maven', resolver))
+
+    # Assert — a zero edge_count is only trustworthy when the drops are legible
+    assert edges == []
+    assert reports[0]['edge_count'] == 0
+    assert reports[0]['status'] == 'ok'
+    assert reports[0]['notes'] != []
+    assert len(_merge_notes(reports[0])) == 3
+
+
+def test_merge_notes_are_distinguishable_from_the_resolvers_own_notes():
+    # Arrange — the resolver reports one condition; the merge drops one edge
+    resolver = _StubResolver(
+        edges=[('core', 'core'), ('core', 'util')],
+        notes=['ambiguous coordinate g:a claimed by core and util'],
+    )
+
+    # Act
+    _, reports = _merge_with(('maven', resolver))
+
+    # Assert — both channels survive, and the prefix separates them
+    all_notes = reports[0]['notes']
+    assert all_notes[0] == 'ambiguous coordinate g:a claimed by core and util'
+    assert len(_merge_notes(reports[0])) == 1
+    assert len(all_notes) == 2
+
+
+def test_clean_merge_appends_no_merge_notes():
+    # Arrange — every candidate is valid
+    resolver = _StubResolver(edges=[('core', 'util'), ('api', 'core')])
+
+    # Act
+    _, reports = _merge_with(('maven', resolver))
+
+    # Assert — the drop channel stays silent when nothing was dropped
+    assert reports[0]['notes'] == []
+
+
+def test_merge_notes_are_attributed_to_the_resolver_that_produced_the_candidate():
+    # Arrange — only one of two resolvers emits a droppable candidate
+    dropper = _StubResolver(edges=[('core', 'ghost')])
+    clean = _StubResolver(edges=[('core', 'util')])
+
+    # Act
+    _, reports = _merge_with(('maven', dropper), ('python', clean))
+
+    # Assert — the note rides the offending resolver's report, not its sibling's
+    by_id = {rec['id']: rec for rec in reports}
+    assert len(_merge_notes(by_id['maven'])) == 1
+    assert by_id['python']['notes'] == []
+
+
+def test_dropped_candidates_do_not_inflate_edge_count():
+    # Arrange — one valid edge among three dropped candidates
+    resolver = _StubResolver(edges=[('core', 'core'), ('core', 'ghost'), ('core', 'util')])
+
+    # Act
+    _, reports = _merge_with(('maven', resolver))
+
+    # Assert — edge_count still counts only what survived
+    assert reports[0]['edge_count'] == 1
+    assert len(_merge_notes(reports[0])) == 2
 
 
 # =============================================================================

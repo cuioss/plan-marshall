@@ -19,6 +19,12 @@ Covered:
 - A resolver whose id accessor raises is skipped rather than crashing discovery.
 - A resolver reporting an empty id is skipped (a producer-less edge is never
   emitted).
+- A resolver reporting a truthy NON-STRING id is skipped — it would survive a
+  falsiness check and then raise on the mixed-type sort, aborting every
+  graph-family query.
+- Two resolvers claiming the SAME id do not silently collapse into one producer
+  identity: the second is skipped, so the provenance report never attributes one
+  resolver's edges to another.
 """
 
 from extension_base import (
@@ -74,6 +80,16 @@ class _EmptyIdResolver(BuildExtensionBase, DerivationResolverBase):
 
     def derivation_resolver_id(self) -> str:
         return ''
+
+
+class _NonStringIdResolver(BuildExtensionBase, DerivationResolverBase):
+    """A resolver whose id is truthy but not a string — skipped before the sort."""
+
+    def __init__(self, resolver_id=1):
+        self._id = resolver_id
+
+    def derivation_resolver_id(self):
+        return self._id
 
 
 class _PlainBuildExtension(BuildExtensionBase):
@@ -249,3 +265,128 @@ def test_all_resolvers_unidentifiable_yields_empty_list(monkeypatch):
 
     # Assert
     assert resolvers == []
+
+
+def test_resolver_with_whitespace_only_id_is_skipped(monkeypatch):
+    # Arrange — truthy, but carries no identity
+    _patch_collectors(
+        monkeypatch,
+        build_modules=(_BuildSideResolver('   '), _BuildSideResolver('maven')),
+    )
+
+    # Act
+    resolvers = _disc.discover_derivation_resolvers()
+
+    # Assert
+    assert [rec['id'] for rec in resolvers] == ['maven']
+
+
+def test_resolver_id_is_normalized_by_stripping_surrounding_whitespace(monkeypatch):
+    # Arrange
+    _patch_collectors(monkeypatch, build_modules=(_BuildSideResolver('  maven  '),))
+
+    # Act
+    resolvers = _disc.discover_derivation_resolvers()
+
+    # Assert — the stored id is the normalized form, not the raw return
+    assert [rec['id'] for rec in resolvers] == ['maven']
+
+
+# =============================================================================
+# Non-string id — truthy, but would raise on the mixed-type sort
+# =============================================================================
+
+
+def test_resolver_with_non_string_id_is_skipped(monkeypatch):
+    # Arrange — the int 1 passes a falsiness check but is not a usable producer id
+    _patch_collectors(
+        monkeypatch,
+        build_modules=(_NonStringIdResolver(1), _BuildSideResolver('maven')),
+    )
+
+    # Act — discovery must neither admit it nor raise while sorting
+    resolvers = _disc.discover_derivation_resolvers()
+
+    # Assert
+    assert [rec['id'] for rec in resolvers] == ['maven']
+
+
+def test_non_string_id_does_not_break_the_sort_of_surviving_resolvers(monkeypatch):
+    # Arrange — a mixed-type id alongside two healthy resolvers out of order
+    _patch_collectors(
+        monkeypatch,
+        domain_modules=(_DomainSideResolver('zeta'),),
+        build_modules=(_NonStringIdResolver(1), _BuildSideResolver('alpha')),
+    )
+
+    # Act — the pre-sort rejection is what keeps this from raising TypeError
+    resolvers = _disc.discover_derivation_resolvers()
+
+    # Assert
+    assert [rec['id'] for rec in resolvers] == ['alpha', 'zeta']
+
+
+# =============================================================================
+# Duplicate ids — two resolvers must never collapse into one producer identity
+# =============================================================================
+
+
+def test_duplicate_resolver_id_from_two_origins_is_skipped(monkeypatch):
+    # Arrange — an Axis-A and an Axis-B resolver both claiming 'maven'
+    _patch_collectors(
+        monkeypatch,
+        domain_modules=(_DomainSideResolver('maven'),),
+        build_modules=(_BuildSideResolver('maven'),),
+    )
+
+    # Act
+    resolvers = _disc.discover_derivation_resolvers()
+
+    # Assert — exactly one survives; the id never maps to two producers
+    assert [rec['id'] for rec in resolvers] == ['maven']
+    assert len(resolvers) == 1
+
+
+def test_duplicate_resolver_id_keeps_the_first_claimant(monkeypatch):
+    # Arrange — the Axis-A path is scanned first, so its claimant wins
+    _patch_collectors(
+        monkeypatch,
+        domain_modules=(_DomainSideResolver('maven'),),
+        build_modules=(_BuildSideResolver('maven'),),
+    )
+
+    # Act
+    resolvers = _disc.discover_derivation_resolvers()
+
+    # Assert
+    assert resolvers[0]['origin'] == 'bundle-0'
+
+
+def test_duplicate_id_does_not_suppress_a_distinct_sibling(monkeypatch):
+    # Arrange — a colliding pair plus one resolver with its own id
+    _patch_collectors(
+        monkeypatch,
+        domain_modules=(_DomainSideResolver('maven'),),
+        build_modules=(_BuildSideResolver('maven'), _BuildSideResolver('gradle')),
+    )
+
+    # Act
+    resolvers = _disc.discover_derivation_resolvers()
+
+    # Assert — only the duplicate is dropped
+    assert [rec['id'] for rec in resolvers] == ['gradle', 'maven']
+
+
+def test_id_collision_is_detected_after_whitespace_normalization(monkeypatch):
+    # Arrange — the two ids differ only by surrounding whitespace
+    _patch_collectors(
+        monkeypatch,
+        domain_modules=(_DomainSideResolver('maven'),),
+        build_modules=(_BuildSideResolver(' maven '),),
+    )
+
+    # Act
+    resolvers = _disc.discover_derivation_resolvers()
+
+    # Assert — normalization happens before the uniqueness check
+    assert len(resolvers) == 1
