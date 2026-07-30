@@ -606,8 +606,10 @@ def main() -> int:
             "Deterministic classification-validation gate. Cross-checks the plan's "
             "change_type and scope_estimate against cheap request signals and emits a "
             "phase-1-init Q-Gate finding (recorded against 2-refine) on a mismatch. "
-            "Flags two classes — feature-as-bug_fix and non-empty-affected_files with "
-            "a null scope_estimate — and NEVER blocks routing. Also runs automatically "
+            "Flags three classes — feature-as-bug_fix, non-empty-affected_files with "
+            "a null scope_estimate, and scale-mismatch-light-routing (a surgical "
+            "scope_estimate over a request body the scope sensor reads as "
+            "multi_module) — and NEVER blocks routing. Also runs automatically "
             "as a pre-route pass inside 'planning-lane route'."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
