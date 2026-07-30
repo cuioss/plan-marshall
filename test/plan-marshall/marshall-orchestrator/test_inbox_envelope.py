@@ -29,7 +29,9 @@ Covers, under ``PLAN_BASE_DIR`` isolation (via ``plan_context``):
 - ``cmd_inbox_list``'s three separately-representable zeros — ``epic_not_found``,
   ``inbox_state: missing`` (could not look), and ``inbox_state: present`` with
   ``count: 0`` (looked, found nothing) — plus the closed ``INBOX_STATES``
-  vocabulary compared against the module's own frozenset.
+  vocabulary compared against the module's own frozenset, and the
+  concurrent-drain race in which ``inbox/`` is removed after the enumeration
+  read it (``count`` and ``inbox_state`` must report the SAME observation).
 - ``cmd_inbox_archive``'s atomic destination claim, driven through a
   deterministically-opened check-to-claim window, plus the sender-constrained
   ``--as-name`` recovery override for a message stranded by a pre-fix sequence
@@ -40,6 +42,7 @@ Covers, under ``PLAN_BASE_DIR`` isolation (via ``plan_context``):
 """
 
 import os
+import shutil
 from argparse import Namespace
 from pathlib import Path
 
@@ -855,6 +858,47 @@ class TestInboxListState:
         absent = cmd_inbox_list(Namespace(slug=EPIC))['inbox_state']
 
         assert {present, absent} == INBOX_STATES
+
+
+class TestInboxListStateUnderConcurrentDrain:
+    """``inbox_state`` and ``count`` report ONE observation, not two.
+
+    The defect this pins: ``inbox_state`` was re-derived from a second
+    ``is_dir()`` call at return time, AFTER the enumeration loop had already
+    run. Under the concurrent writer/drain scenario this module documents, a
+    drain that removes ``inbox/`` between the two observations produced a
+    self-contradictory payload — ``count`` greater than zero (the scan DID
+    look and DID find messages) alongside ``inbox_state: missing`` (asserting
+    it could not look). Capturing the discriminator once, before the loop,
+    makes the two fields consistent by construction.
+    """
+
+    def test_should_not_pair_a_non_zero_count_with_the_missing_state(
+        self, plan_context, tmp_path, monkeypatch
+    ):
+        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_inbox_write(_write_args(payload_file=_payload(tmp_path)))
+        inbox = _inbox_dir(plan_context)
+        real_list_messages = _inbox.list_messages
+
+        def draining_list_messages(directory):
+            # The deterministic seam for "a concurrent drain retired the queue
+            # and removed inbox/ after our enumeration read it": the removal
+            # fires when the generator is exhausted, so every message is still
+            # read successfully and only the return-time observation changes.
+            yield from real_list_messages(directory)
+            shutil.rmtree(inbox)
+
+        monkeypatch.setattr(_inbox, 'list_messages', draining_list_messages)
+
+        result = cmd_inbox_list(Namespace(slug=EPIC))
+
+        assert not inbox.exists(), (
+            'the seam did not fire — the assertion below would pass vacuously '
+            'against an inbox/ that was never removed'
+        )
+        assert result['count'] == 1
+        assert result['inbox_state'] == 'present'
 
 
 # =============================================================================

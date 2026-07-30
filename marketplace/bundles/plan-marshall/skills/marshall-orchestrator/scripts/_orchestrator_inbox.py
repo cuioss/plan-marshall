@@ -668,9 +668,13 @@ def cmd_inbox_list(args: Any) -> dict[str, Any]:
     there but has no ``inbox/`` directory, so the enumeration could not look),
     and ``inbox_state: present`` with ``count: 0`` (it looked and found
     nothing). ``inbox_dir`` reports the absolute path the enumeration actually
-    scanned. An absent ``inbox/`` is NOT a fault — the verb still returns
-    ``status: success`` so a drain is never aborted by it; the discriminator
-    rides the payload, not the status.
+    scanned. The ``inbox_state`` discriminator is captured ONCE, immediately
+    before the enumeration loop, so it reports the same observation the
+    enumeration itself acted on: under a concurrent drain that removes
+    ``inbox/`` mid-scan, the payload can never pair a non-zero ``count`` with
+    ``inbox_state: missing``. An absent ``inbox/`` is NOT a fault — the verb
+    still returns ``status: success`` so a drain is never aborted by it; the
+    discriminator rides the payload, not the status.
     """
     invalid = _validate_identifier(args.slug)
     if invalid:
@@ -683,6 +687,7 @@ def cmd_inbox_list(args: Any) -> dict[str, Any]:
             slug=args.slug,
         )
     inbox_dir = root / INBOX_SUBDIR
+    inbox_present = inbox_dir.is_dir()
     messages: list[dict[str, Any]] = []
     for path in list_messages(inbox_dir):
         try:
@@ -720,7 +725,7 @@ def cmd_inbox_list(args: Any) -> dict[str, Any]:
         'slug': args.slug,
         'store': ORCHESTRATOR_STORE,
         'inbox_dir': str(inbox_dir),
-        'inbox_state': 'present' if inbox_dir.is_dir() else 'missing',
+        'inbox_state': 'present' if inbox_present else 'missing',
         'count': len(messages),
         'invalid_count': sum(1 for row in messages if not row['valid']),
         'messages': messages,
