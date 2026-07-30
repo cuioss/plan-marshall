@@ -1,0 +1,118 @@
+= Code Intelligence
+:nofooter:
+:toc: left
+:toclevels: 2
+
+xref:../../README.md[Plan Marshall] » xref:README.adoc[Concepts]
+
+"Which modules depend on which?" sounds like a question a tool that has already crawled the whole repository should be able to answer. For a long time Plan Marshall answered it with a Maven-shaped guess buried in a query handler, and returned an empty graph on every project that was not a Maven reactor — without ever mentioning that it had nothing to look with.
+
+Code intelligence is the substrate underneath those questions: what Plan Marshall knows about the shape of a codebase, how much of it costs a subprocess, and — the part that turned out to matter most — how a caller can tell a real answer from a missing capability.
+
+== The tier ladder
+
+The substrate is built in tiers, cheapest first. Each tier is a strictly larger claim about the codebase, and each costs strictly more to produce, so they are worth naming separately rather than collapsing into "the architecture data".
+
+[source,text]
+----
+┌───────────────────────────────────────────────────────────────┐
+│ Tier 2 — symbol intelligence                    NOT BUILT     │
+│   call graphs, symbol references, type relations              │
+├───────────────────────────────────────────────────────────────┤
+│ Tier 1 — module edges                    RESOLVER-DERIVED     │
+│   which modules depend on which, with per-edge provenance     │
+├───────────────────────────────────────────────────────────────┤
+│ Tier 0 — the crawl                        SUBPROCESS-FREE     │
+│   module set + per-module metadata; no edges at all           │
+└───────────────────────────────────────────────────────────────┘
+----
+
+*Tier 0* is the crawl. It walks the filesystem, parses each build descriptor with the standard library, and yields the module set plus per-module metadata — coordinates, paths, packages, source counts, canonical commands. It deliberately invokes no build tool, so a fifty-module reactor crawls in fifty cheap reads rather than fifty JVM startups. What Tier 0 does not produce is a single edge: knowing that `core` and `api` both exist says nothing about whether one depends on the other.
+
+*Tier 1* is the edge set — module-to-module dependency edges, each carrying the identity of whatever derived it. This is the tier the derivation-resolver seam ships, and it is what the `graph`, `path`, `neighbors`, and `impact` verbs traverse, plus the adjacency surfaces of `overview` and `module` / `info`.
+
+*Tier 2* is symbol-level intelligence — call graphs, symbol references, type relations. It is not built. It appears on the ladder so the tiers read as a ladder rather than as a finished set, and so the gap between "Plan Marshall knows the module graph" and "Plan Marshall understands the code" stays explicit.
+
+== The resolver seam
+
+Edge derivation is an extension point rather than core logic, because there is no domain-neutral way to derive an edge. A Maven reactor derives edges from `groupId:artifactId` coordinates. A documentation tree derives them from cross-document references. A Python package derives them from import statements. Each of those is domain knowledge already owned by the bundle that understands that data, and none generalises to the others.
+
+So core owns the merge, the provenance, and the traversal, and owns none of the derivation. A *derivation resolver* is a bundle-supplied implementor that answers exactly one question — which modules depend on which — by returning `(from, to)` module-name pairs plus notes describing anything it deliberately refused to answer.
+
+=== Why a third axis
+
+The seam is a third, independent axis rather than a face on an existing one. Plan Marshall already had two:
+
+* *Axis-A* — skill loading. "What skills does this domain load?" Declared by `ExtensionBase`, subclassed by language and content domain bundles.
+* *Axis-B* — the file-to-build map. "What build does a changed file trigger?" Declared by `BuildExtensionBase`, subclassed by build-system skills.
+
+Those two hierarchies are deliberately disjoint — xref:../adr/004-The_file-to-build_contract_is_owned_by_build-system_extensions_not_languagecontent_domains.adoc[ADR-004] keeps them that way — and that disjointness is what forces a third axis. The Maven coordinate join belongs to `build-maven`, which subclasses `BuildExtensionBase` and not `ExtensionBase`, so a resolver hook on `ExtensionBase` would have been structurally unreachable from the one bundle that most needed it. Folding edge derivation into Axis-B instead would have been the mirror error: a future markdown resolver would have to masquerade as a build system to declare an edge.
+
+`DerivationResolverBase` therefore inherits from neither and is inherited by neither. An implementor from either hierarchy opts in by multiple inheritance, which is the only shape reachable from both sides.
+
+== N-resolver union
+
+Several resolvers are active at once and the graph is the union of their edge sets. The union needs no conflict rule, because no conflict is expressible: an edge is an unweighted `(from, to)` boolean, so union is idempotent and commutative.
+
+The nearest thing to a conflict is duplicate *identity*, not duplicate value. A markdown resolver deriving an edge from a cross-document reference and a Python resolver deriving the same module pair from an import statement have not disagreed — they have independently corroborated. That case collapses into one edge carrying both producer ids, which is also exactly what a caller needs in order to trust it.
+
+[source,text]
+----
+   resolver: maven        resolver: markdown       resolver: python
+        │                        │                        │
+   (core → util)            (core → util)            (api → core)
+        │                        │                        │
+        └───────────┬────────────┘                        │
+                    ▼                                     ▼
+      ┌─────────────────────────────┐     ┌─────────────────────────────┐
+      │ from: core                  │     │ from: api                   │
+      │ to:   util                  │     │ to:   core                  │
+      │ producers: [markdown,maven] │     │ producers: [python]         │
+      └─────────────────────────────┘     └─────────────────────────────┘
+                    corroborated                    single-sourced
+                          resolver_count: 3
+----
+
+== The provenance contract
+
+Every edge names its producers and every response names the resolvers that ran. That buys one specific property, which is the reason the seam is shaped the way it is:
+
+[cols="1,3"]
+|===
+| Response | Meaning
+
+| `resolver_count: 0`, `edges: []`
+| *No resolver ran.* The empty graph is an absence of capability, not a finding.
+
+| `resolver_count: N`, `edges: []`
+| *N resolvers ran and found nothing.* The empty graph is a real, positive answer.
+|===
+
+Those two states are indistinguishable without the count, and they warrant opposite reactions: the first means "install a resolver", the second means "there are genuinely no edges here". An unqualified empty list reports both as the second. This is the same fail-closed reporting discipline xref:../adr/009-Status_reporting_fails_closed_with_an_explicit_unknown_state.adoc[ADR-009] establishes and that the `find` and `which-module` verbs already apply through their `truncated` and `elided` flags — a confident-looking answer has to carry the evidence that makes it confident.
+
+Two obligations follow. First, *every edge carries a non-empty `producers[]`* — including edges core adds itself, which is why a declared `internal_dependencies` entry is stamped `declared` and a virtual-sibling cross-link is stamped `sibling-cross-link`. No edge in any response is producer-less. Second, *every suppressed edge is reported*, through the `notes[]` half of a resolver's return.
+
+The suppression channel exists because of a specific failure. A resolver keys its derivation on some identity — a Maven coordinate, a document path, a package name — and two modules can claim the same key. Resolving that by insertion order silently drops one module and every edge pointing at it, and which module survives depends on map iteration order: a non-deterministic answer presented as a confident one. A resolver facing an ambiguous key therefore emits no edge for it and reports the collision, so an ambiguous key stays distinguishable from an absent one.
+
+== The honest limit
+
+[CAUTION]
+====
+*The provenance contract makes an answer auditable; it does not make it correct.*
+
+`resolver_count: 2` tells a caller that two resolvers ran and names them. It does not tell the caller that either one understood the project. A resolver that parses the wrong file, or matches on the wrong key, reports `status: ok` with an edge count and contributes a confidently-labelled wrong edge. Provenance narrows "why is this graph empty?" to a mechanical answer; it does not review the derivation.
+
+The tier ladder has its own limit: Tier 1 stops at module granularity. "Module `api` depends on module `core`" is often too coarse to act on — the interesting question is usually which symbol, in which file. That is Tier 2, and Tier 2 is not built.
+
+Finally, the seam derives edges only for module sets that Tier 0 discovered. A resolver cannot invent a node: the merge drops any pair whose endpoints are not both known module names. A dependency on something the crawl never found is not an edge, and is not reported as one.
+====
+
+== Related
+
+* link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-derivation-resolver.md[`ext-point-derivation-resolver.md`] — the canonical four-face contract: declaration, discovery, dispatch, null-on-absent resolution, the union semantics, and the generic ambiguous-identity-key obligation every resolver is bound by.
+* xref:extension-architecture.adoc[Concepts › Extension Architecture] — the plumbing seam this extension point plugs into, and the three-axis split it completes.
+* xref:build-management.adoc[Concepts › Build Management] — the `ext-point-build` surface whose `discover_modules()` output is Tier 0, and therefore the map every resolver reads.
+* link:../../marketplace/bundles/plan-marshall/skills/build-maven/SKILL.md[`build-maven/SKILL.md`] — the one shipped resolver: the Maven coordinate join, re-homed from `manage-architecture` onto the seam.
+* link:../../marketplace/bundles/plan-marshall/skills/manage-architecture/standards/client-api.md[`client-api.md`] — the `graph` / `path` / `neighbors` / `impact` response contracts that carry `resolvers[]` and `resolver_count`.
+* link:../../marketplace/bundles/plan-marshall/skills/manage-architecture/standards/architecture-persistence.md[`architecture-persistence.md`] — the persisted module-graph format, including the `{from, to, producers[]}` edge shape.
+* xref:../adr/009-Status_reporting_fails_closed_with_an_explicit_unknown_state.adoc[ADR-009] — the fail-closed reporting discipline the provenance contract applies to edge derivation.

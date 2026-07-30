@@ -65,7 +65,9 @@ extension-api/
     ├── extension-contract.md       # Extension API contract (core methods, overview, examples)
     ├── ext-point-build.md          # Build system extension point contract
     ├── ext-point-build-verify-step.md # Phase-5 build/verify command step contract
+    ├── ext-point-derivation-resolver.md # Module-edge derivation (Axis-C) contract
     ├── ext-point-domain-bundle.md  # Domain bundle shape contract (plan-marshall-plugin marker)
+    ├── ext-point-domain-verb.md    # Domain-verb extension point contract
     ├── ext-point-dynamic-level-executor.md # Per-level agent variant emission contract
     ├── ext-point-execution-context-workflow.md # Dispatchable workflow document contract
     ├── ext-point-finalize-step.md  # Phase-6 finalize step contract
@@ -119,12 +121,13 @@ All extensions **must** inherit from `ExtensionBase` and implement required meth
 
 ## Extension Points
 
-Each extension point has a dedicated contract document with formal parameters, pre-conditions, and post-conditions. All 15 contracts:
+Each extension point has a dedicated contract document with formal parameters, pre-conditions, and post-conditions. All 16 contracts:
 
 | Extension Point | Declared Via | Contract |
 |-----------------|--------------|----------|
 | Build System | `discover_modules()` + `ExecuteConfig` | [ext-point-build.md](standards/ext-point-build.md) |
 | Build Verify Step | frontmatter `implements:` on step documents | [ext-point-build-verify-step.md](standards/ext-point-build-verify-step.md) |
+| Derivation Resolver (module-edge derivation) | `DerivationResolverBase` subclass (multiple inheritance) | [ext-point-derivation-resolver.md](standards/ext-point-derivation-resolver.md) |
 | Domain Bundle | `skills/plan-marshall-plugin/` marker skill + `extension.py` | [ext-point-domain-bundle.md](standards/ext-point-domain-bundle.md) |
 | Domain Verb | `provides_domain_verb()` | [ext-point-domain-verb.md](standards/ext-point-domain-verb.md) |
 | Dynamic Level Executor | frontmatter `implements:` on agent files | [ext-point-dynamic-level-executor.md](standards/ext-point-dynamic-level-executor.md) |
@@ -195,7 +198,7 @@ For understanding the complete system architecture, reference these documents:
 | Document | Purpose | When to Read |
 |----------|---------|--------------|
 | [extension-contract.md](standards/extension-contract.md) | Core extension API contract (ExtensionBase, get_skill_domains, examples) | Creating or modifying an extension |
-| [ext-point-*.md](standards/) | Individual extension point contracts (14 documents) | Implementing a specific extension point |
+| [ext-point-*.md](standards/) | Individual extension point contracts (16 documents) | Implementing a specific extension point |
 | [marshal-json-reference.md](standards/marshal-json-reference.md) | Central marshal.json config path reference | Understanding where extension config is stored |
 | [module-discovery.md](standards/module-discovery.md) | Module discovery + output specification | Implementing `discover_modules()` |
 | [canonical-commands.md](standards/canonical-commands.md) | Command vocabulary and resolution | Implementing `discover_modules()` commands |
