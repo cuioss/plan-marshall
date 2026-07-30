@@ -24,15 +24,39 @@ Every fixture below is built so the truncated reading and the whole-body reading
 give **different answers**, which is what makes these assertions regressions
 rather than restatements.
 
+The second defect being regressed
+---------------------------------
+
+Reaching the whole body was necessary but not sufficient. The band was then
+decided by a fan-out short-circuit that fired on **markdown bold** — ``_GLOB_RE``
+matched a bare ``**`` — and it returned the *narrow-ish* ``single_module``. Since
+orchestrator specs are saturated with ``**bold**``, essentially every orchestrated
+plan banded ``single_module`` regardless of how many paths it named, the path-count
+thresholds were unreachable, and ``single_module`` then satisfied
+``narrow_and_concrete`` — suppressing S3/S4 (→ ``light``) *and* projecting the
+``minimal`` posture, which drops the security audit. The fixtures below pin all
+three halves at the entry point: bold is not fan-out, a real fan-out marker
+**widens** to ``multi_module``, and a large concrete spec routes ``deep`` with a
+non-``minimal`` posture.
+
 Scenarios
 ---------
 
-1. ``test_orchestrated_spec_with_many_paths_and_glob_scores_single_module`` —
-   the spec's dropped region names more than three distinct paths and a glob.
-2. ``test_absent_request_declares_unknown_and_routes_deep`` — an unscoreable
+1. ``test_orchestrated_spec_with_many_paths_and_glob_bands_multi_module`` — the
+   spec's dropped region names five distinct paths and a real glob.
+2. ``test_bolded_spec_with_three_paths_bands_surgical_and_routes_light`` — the
+   markdown-bold regression, and simultaneously the mirror false-positive guard:
+   genuinely surgical work is NOT over-escalated.
+3. ``test_bolded_spec_with_ten_paths_bands_multi_module_and_routes_deep`` — the
+   live reproduction, with the persisted posture asserted non-``minimal``.
+4. ``test_spec_whose_only_fan_out_signal_is_a_real_glob_routes_deep`` — a single
+   counted path plus one genuine ``test/**`` glob still widens to ``deep``.
+5. ``test_absent_request_declares_unknown_and_routes_deep`` — an unscoreable
    body yields a declared unknown that fires S2 and resolves ``deep``
    (fail-closed).
-3. ``test_bare_filename_is_excluded_from_the_count_by_the_counter_not_the_reader``
+6. ``test_empty_request_file_declares_unknown`` — a present-but-empty file
+   reaches the same declared unknown as an absent one.
+7. ``test_bare_filename_is_excluded_from_the_count_by_the_counter_not_the_reader``
    — the bare-filename exclusion is a counter decision, asserted as intended.
 
 No ``conftest.py`` is introduced and no fixture code is shared with
@@ -108,6 +132,30 @@ def _write_references(plan_dir: Path) -> None:
     )
 
 
+def _write_marshal(fixture_dir: Path) -> None:
+    """Write the minimal marshal.json every route-level fixture below relies on.
+
+    Written explicitly rather than relying on the file's absence: S4 reads
+    ``plan.phase-2-refine.compatibility`` and the gate reads
+    ``plan.phase-1-init.deep_lane``, so an absent file would leave both route
+    verdicts depending on default-resolution behaviour instead of on stated
+    inputs. ``deprecation`` keeps S4 quiet and ``auto`` lets the signal set decide,
+    which is what makes each lane assertion attributable to the band alone.
+    """
+    (fixture_dir / 'marshal.json').write_text(
+        json.dumps(
+            {
+                'plan': {
+                    'phase-1-init': {'deep_lane': 'auto'},
+                    'phase-2-refine': {'compatibility': 'deprecation'},
+                }
+            },
+            indent=2,
+        ),
+        encoding='utf-8',
+    )
+
+
 def _write_status(plan_dir: Path) -> None:
     plan_dir.mkdir(parents=True, exist_ok=True)
     (plan_dir / 'status.json').write_text(
@@ -153,19 +201,21 @@ _MANY_PATHS_REGION = (
 )
 
 
-def test_orchestrated_spec_with_many_paths_and_glob_scores_single_module(plan_context):
-    """An orchestrated spec with N>3 paths and a glob bands single_module, not surgical.
+def test_orchestrated_spec_with_many_paths_and_glob_bands_multi_module(plan_context):
+    """An orchestrated spec with five paths and a real glob bands multi_module.
 
     The regression, stated as the two readings of one file:
 
     - truncated  -> 1 path (the boilerplate citation), no glob -> ``surgical``
-    - whole body -> 5 distinct paths and a glob marker         -> ``single_module``
+    - whole body -> 5 distinct paths and a real fan-out marker -> ``multi_module``
 
-    Both the band and ``distinct_path_count`` are asserted. The count is the
-    falsifiable half: a band alone could come out right for the wrong reason
-    (the glob short-circuit fires before any counting), so pinning the count
-    proves the scored text actually reached the surface list rather than merely
-    tripping the fan-out marker.
+    The band moved from ``single_module`` to ``multi_module`` when the fan-out
+    marker stopped narrowing: a pattern is a declared inability to enumerate the
+    file set, so it must widen. Both the band and ``distinct_path_count`` are
+    asserted. The count is the falsifiable half: a band alone could come out right
+    for the wrong reason (the fan-out short-circuit fires before any counting), so
+    pinning the count proves the scored text actually reached the surface list
+    rather than merely tripping the marker.
     """
     plan_dir = plan_context.plan_dir_for('plrb-many-paths')
     _write_orchestrated_request(plan_dir, _MANY_PATHS_REGION)
@@ -174,7 +224,7 @@ def test_orchestrated_spec_with_many_paths_and_glob_scores_single_module(plan_co
     result = cmd_scope_estimate_heuristic(_scope_args('plrb-many-paths', persist=True))
 
     assert result['status'] == 'success'
-    assert result['scope_estimate'] == 'single_module'
+    assert result['scope_estimate'] == 'multi_module'
     assert result['scope_resolved'] is True
     # 4 explicit targets + the boilerplate citation. The glob entry contributes
     # the fan-out marker but no path.
@@ -186,7 +236,185 @@ def test_orchestrated_spec_with_many_paths_and_glob_scores_single_module(plan_co
     )
     # The persisted value is what the router's S2 signal later reads.
     refs = json.loads((plan_dir / 'references.json').read_text())
-    assert refs['scope_estimate'] == 'single_module'
+    assert refs['scope_estimate'] == 'multi_module'
+
+
+# =============================================================================
+# Scenario 2 — a bold-saturated spec with exactly three paths stays surgical
+# =============================================================================
+
+# A realistically bold-saturated orchestrated spec whose whole body carries
+# exactly THREE distinct paths — the preamble citation plus TWO directory-qualified
+# targets — and no fan-out marker. Bold is applied to headings, labels and the path
+# list entries, the shapes an orchestrator spec actually uses, because a bare `**`
+# alternative in `_GLOB_RE` matched every one of them.
+_BOLDED_TWO_TARGET_REGION = (
+    '## Objective\n'
+    '\n'
+    '**Make the band scale-truthful.** The sensor must stop reading **bold** prose\n'
+    'as a glob, because the marker check short-circuits **ahead of** the count.\n'
+    '\n'
+    '## Deliverables\n'
+    '\n'
+    '1. **Tighten the marker** so it requires path adjacency.\n'
+    '2. **Extend the band** with a real large band.\n'
+    '\n'
+    '## Expected Surface\n'
+    '\n'
+    '- **`pkg/alpha/one.py`** — the sensor\n'
+    '- **`pkg/beta/two.py`** — its caller\n'
+)
+
+
+def test_bolded_spec_with_three_paths_bands_surgical_and_routes_light(plan_context):
+    """A bold-saturated spec naming three paths bands surgical and routes light.
+
+    Two things at once, both load-bearing:
+
+    - **The markdown-bold regression.** Pre-fix this body tripped ``_GLOB_RE``'s
+      bare ``**`` alternative and short-circuited to ``single_module`` without ever
+      counting. Asserting ``fan_out_marker is False`` and a count of 3 proves the
+      count is now reachable, which is the precondition for the whole band
+      extension being anything other than vacuous.
+    - **The mirror false-positive guard.** ``_SURGICAL_MAX_PATHS`` is deliberately
+      untouched by this plan, so genuinely bounded work must still route ``light``
+      with the ``minimal`` posture. A fix that widened the band for large requests
+      by over-escalating small ones would trade one wrong verdict for another.
+    """
+    plan_dir = plan_context.plan_dir_for('plrb-bold-three')
+    _write_orchestrated_request(plan_dir, _BOLDED_TWO_TARGET_REGION)
+    _write_references(plan_dir)
+    _write_status(plan_dir)
+    _write_marshal(plan_context.fixture_dir)
+
+    scope_result = cmd_scope_estimate_heuristic(_scope_args('plrb-bold-three', persist=True))
+
+    # The boilerplate citation plus two qualified targets.
+    assert scope_result['distinct_path_count'] == 3, sorted(scope_result['distinct_paths'])
+    assert scope_result['scope_estimate'] == 'surgical'
+
+    route_result = cmd_planning_lane_route(_route_args('plrb-bold-three', persist=True))
+
+    # Provenance is the direct evidence that bold is not fan-out: had the bare
+    # `**` alternative survived, the marker would have short-circuited the band
+    # before the count was ever taken.
+    assert route_result['scope_provenance']['fan_out_marker'] is False
+    assert route_result['scope_provenance']['band_rule'] == (
+        'path_count_at_or_below_surgical_max'
+    )
+    assert route_result['planning_lane'] == 'light'
+    assert route_result['fired_signals'] == []
+    # The mirror guard on the posture axis: bounded work keeps its cheap posture.
+    assert route_result['execution_profile'] == 'minimal'
+
+
+# =============================================================================
+# Scenario 3 — a bolded spec naming ten paths is large, and must route deep
+# =============================================================================
+
+# The live reproduction: a bold-saturated spec naming TEN directory-qualified
+# targets and NO fan-out marker, so the band is decided purely by the path count
+# crossing the multi_module floor.
+_BOLDED_TEN_PATH_REGION = (
+    '## Objective\n'
+    '\n'
+    '**Sweep the tier value across the tree.** Ten modules are **in scope** here.\n'
+    '\n'
+    '## Expected Surface\n'
+    '\n'
+    + ''.join(f'- **`pkg/mod{i}/file{i}.py`** — target {i}\n' for i in range(10))
+)
+
+
+def test_bolded_spec_with_ten_paths_bands_multi_module_and_routes_deep(plan_context):
+    """A bolded ten-path spec bands multi_module, fires S2, routes deep, and is not minimal.
+
+    The live reproduction of the under-routed population. Pre-fix this body banded
+    ``single_module`` on the bold short-circuit, S2 stayed quiet, the
+    ``narrow_and_concrete`` carve-out suppressed S3/S4, and the posture collapsed
+    to ``minimal``. Post-fix the count is reachable and crosses the
+    ``multi_module`` floor, so the request is finally described at its real scale.
+
+    The persisted ``execution_profile`` is asserted, not just the projection: the
+    security-gate suppression path has to be closed at the surface phase-1-init
+    actually writes, not only in the pure function.
+    """
+    plan_dir = plan_context.plan_dir_for('plrb-bold-ten')
+    _write_orchestrated_request(plan_dir, _BOLDED_TEN_PATH_REGION)
+    _write_references(plan_dir)
+    _write_status(plan_dir)
+    _write_marshal(plan_context.fixture_dir)
+
+    scope_result = cmd_scope_estimate_heuristic(_scope_args('plrb-bold-ten', persist=True))
+
+    assert scope_result['scope_estimate'] == 'multi_module'
+    # Ten targets + the boilerplate citation.
+    assert scope_result['distinct_path_count'] == 11, sorted(scope_result['distinct_paths'])
+
+    route_result = cmd_planning_lane_route(_route_args('plrb-bold-ten', persist=True))
+
+    # The band came from the COUNT, not from bold tripping the marker — which is
+    # what makes this the reproduction of the under-routed population rather than
+    # an incidental pass.
+    assert route_result['scope_provenance']['fan_out_marker'] is False
+    assert route_result['scope_provenance']['band_rule'] == (
+        'path_count_at_or_above_multi_module_floor'
+    )
+    assert route_result['planning_lane'] == 'deep'
+    assert 'S2:scope_estimate' in route_result['fired_signals']
+    assert route_result['execution_profile'] != 'minimal'
+    status = json.loads((plan_dir / 'status.json').read_text())
+    assert status['metadata']['execution_profile'] != 'minimal'
+
+
+# =============================================================================
+# Scenario 4 — a genuine glob is the ONLY fan-out signal, and still widens
+# =============================================================================
+
+# One counted path (the preamble citation) and one genuine `test/**` glob. Under
+# the pre-fix table a real glob banded `single_module` — narrow — so this shape
+# routed light with a minimal posture despite declaring an unbounded file set.
+_REAL_GLOB_ONLY_REGION = (
+    '## Objective\n'
+    '\n'
+    'Rewrite the fixtures wholesale.\n'
+    '\n'
+    '## Expected Surface\n'
+    '\n'
+    '- everything under `test/plan-marshall/manage-status/**`\n'
+)
+
+
+def test_spec_whose_only_fan_out_signal_is_a_real_glob_routes_deep(plan_context):
+    """A real fan-out marker widens to multi_module and routes deep on ONE counted path.
+
+    The truthful-negative case, end to end: "I cannot enumerate the file set" must
+    not be reported as a narrow verdict. The path count here is 1 — inside the
+    surgical range — so the ``deep`` outcome is attributable to the marker alone,
+    which is exactly the inversion this plan removes.
+    """
+    plan_dir = plan_context.plan_dir_for('plrb-real-glob')
+    _write_orchestrated_request(plan_dir, _REAL_GLOB_ONLY_REGION)
+    _write_references(plan_dir)
+    _write_status(plan_dir)
+    _write_marshal(plan_context.fixture_dir)
+
+    scope_result = cmd_scope_estimate_heuristic(_scope_args('plrb-real-glob', persist=True))
+
+    # A single counted path — inside the surgical range — so only the marker can
+    # be responsible for the widening.
+    assert scope_result['distinct_path_count'] == 1, sorted(scope_result['distinct_paths'])
+    assert scope_result['scope_estimate'] == 'multi_module'
+
+    route_result = cmd_planning_lane_route(_route_args('plrb-real-glob', persist=True))
+
+    assert route_result['scope_provenance']['fan_out_marker'] is True
+    assert route_result['scope_provenance']['band_rule'] == 'fan_out_marker'
+    assert route_result['planning_lane'] == 'deep'
+    assert 'S2:scope_estimate' in route_result['fired_signals']
+    assert route_result['execution_profile'] != 'minimal'
+    status = json.loads((plan_dir / 'status.json').read_text())
+    assert status['metadata']['execution_profile'] != 'minimal'
 
 
 # =============================================================================

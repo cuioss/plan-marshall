@@ -24,13 +24,19 @@ Coverage:
 - ``project_profile_pure`` — the execution-profile posture projection: the
   ``full`` / ``minimal`` / ``auto`` recommendation as a pure function of the same
   signals, the ``profile`` key on the route return, ``--persist`` writing
-  ``status.metadata.execution_profile``, and the independence invariant that
-  ``deep_lane=always`` does NOT coerce the posture to ``full``.
-- ``scope_estimate_from_request_pure`` — the pre-route coarse scope classifier:
-  surgical for one-to-three distinct file paths with no glob, single_module for
-  many paths / a glob / an ambiguous pathless request, ``none`` as the DECLARED
-  UNKNOWN for an unscoreable body (plus the invariant that the unknown biases S2
-  deep), distinct-path dedup, and the zero-architecture-call invariant.
+  ``status.metadata.execution_profile``, the independence invariant that
+  ``deep_lane=always`` does NOT coerce the posture to ``full``, and the mirrored
+  negative that a concrete but NON-narrow change never projects ``minimal`` (the
+  security-gate half of the shared-predicate defect).
+- ``classify_scope_pure`` / ``scope_estimate_from_request_pure`` — the pre-route
+  coarse scope classifier over the whole band table: ``surgical`` for one-to-three
+  distinct file paths with no fan-out marker, ``single_module`` for the 4–7 middle
+  band and for an ambiguous pathless request, ``multi_module`` for a real fan-out
+  marker or eight-or-more distinct paths, ``none`` as the DECLARED UNKNOWN for an
+  unscoreable body (plus the invariant that the unknown biases S2 deep). Also the
+  band boundaries at 3/4 and 7/8, markdown bold NOT registering as fan-out,
+  distinct-path dedup, the ``scope_provenance`` explanation block, and the
+  zero-architecture-call invariant.
 - ``_read_request_body`` — the whole-body, heading-blind read: text below a
   nested ``## `` heading is reached, only the host ``# Request`` title line is
   stripped, and an absent / title-only / non-UTF-8 ``request.md`` degrades to the
@@ -66,6 +72,7 @@ cmd_planning_lane_route = _mod.cmd_planning_lane_route
 cmd_planning_lane_escalate = _mod.cmd_planning_lane_escalate
 evaluate_signals_pure = _mod.evaluate_signals_pure
 project_profile_pure = _mod.project_profile_pure
+classify_scope_pure = _mod.classify_scope_pure
 scope_estimate_from_request_pure = _mod.scope_estimate_from_request_pure
 cmd_scope_estimate_heuristic = _mod.cmd_scope_estimate_heuristic
 
@@ -863,8 +870,8 @@ def test_read_request_body_counts_targets_the_truncating_read_could_not_reach(pl
 
     Pins the end-to-end consequence of the read change on the same fixture: the
     truncated head region carries exactly one path — a citation — which would
-    band ``surgical``; the whole body carries five, which bands
-    ``single_module``.
+    band ``surgical``; the whole body carries five, which lands in the 4–7 middle
+    band, ``single_module``.
     """
     plan_dir = plan_context.plan_dir_for('pl-read-target-count')
     _write_ingested_request(plan_dir)
@@ -1005,7 +1012,7 @@ def test_profile_generative_broad_change_projects_full(change_type, scope_estima
 
 
 def test_profile_narrow_concrete_breaking_change_projects_minimal():
-    """A narrow, concretely-specified breaking generative change projects minimal.
+    """A surgical, concretely-specified breaking generative change projects minimal.
 
     The narrow-and-concrete predicate dominates: a bounded surgical fix stays
     ``minimal`` even when its change_type reads generative and its compatibility
@@ -1013,7 +1020,7 @@ def test_profile_narrow_concrete_breaking_change_projects_minimal():
     ``test_profile_generative_broad_change_projects_full``.)
     """
     posture = project_profile_pure(
-        scope_estimate='single_module',
+        scope_estimate='surgical',
         change_type='feature',
         compatibility='breaking',
         request_concrete=True,
@@ -1022,11 +1029,17 @@ def test_profile_narrow_concrete_breaking_change_projects_minimal():
     assert posture == 'minimal'
 
 
-@pytest.mark.parametrize('scope_estimate', ['surgical', 'single_module'])
-def test_profile_narrow_concrete_nongenerative_change_projects_minimal(scope_estimate):
-    """A non-generative, narrow, concretely-specified change projects minimal."""
+def test_profile_narrow_concrete_nongenerative_change_projects_minimal():
+    """A non-generative, SURGICAL, concretely-specified change projects minimal.
+
+    ``surgical`` is the sole member of ``_NARROW_SCOPE_ESTIMATES``, so this case is
+    no longer parametrized over ``single_module``: the middle band does not earn
+    the carve-out. See
+    ``test_profile_non_narrow_concrete_change_does_not_project_minimal`` for the
+    mirrored negative.
+    """
     posture = project_profile_pure(
-        scope_estimate=scope_estimate,
+        scope_estimate='surgical',
         change_type='bug_fix',
         compatibility='deprecation',
         request_concrete=True,
@@ -1048,20 +1061,42 @@ def test_profile_narrow_nongenerative_but_vague_request_projects_auto():
 
 
 def test_profile_generative_narrow_concrete_change_projects_minimal():
-    """A generative but narrow, concretely-specified change projects minimal.
+    """A generative but SURGICAL, concretely-specified change projects minimal.
 
     Under the narrow-and-concrete carve-out the bounded, well-anchored generative
     change is recommended ``minimal`` — the narrow, concrete bound dominates the
-    generative signal.
+    generative signal. Narrowness is now literal: only ``surgical`` qualifies.
     """
     posture = project_profile_pure(
-        scope_estimate='single_module',
+        scope_estimate='surgical',
         change_type='feature',
         compatibility='deprecation',
         request_concrete=True,
     )
 
     assert posture == 'minimal'
+
+
+@pytest.mark.parametrize('scope_estimate', ['single_module', 'multi_module'])
+@pytest.mark.parametrize('change_type', ['bug_fix', 'feature'])
+def test_profile_non_narrow_concrete_change_does_not_project_minimal(scope_estimate, change_type):
+    """The mirrored negative: a concrete but NON-narrow change never projects minimal.
+
+    This is the security-gate half of the defect. ``_NARROW_SCOPE_ESTIMATES`` is
+    shared verbatim with ``evaluate_signals_pure``, so before the narrowing a
+    ``single_module`` band collapsed the posture to ``minimal`` — which drops the
+    security audit, the sonar round-trip and the self-review — purely on the
+    strength of a catch-all band. Asserting the lane alone would have left this
+    path live, so the posture is pinned independently here.
+    """
+    posture = project_profile_pure(
+        scope_estimate=scope_estimate,
+        change_type=change_type,
+        compatibility='breaking',
+        request_concrete=True,
+    )
+
+    assert posture != 'minimal'
 
 
 def test_profile_projection_is_deterministic_over_the_signal_set():
@@ -1153,13 +1188,19 @@ def test_route_without_persist_does_not_write_execution_profile(plan_context):
 
 
 # =============================================================================
-# scope_estimate_from_request_pure — pre-route coarse scope classifier (D2)
+# classify_scope_pure — pre-route coarse scope classifier (D2)
 # =============================================================================
 #
-# A pure, ZERO-architecture-call classifier that counts distinct file-path
-# references and emits one of the two narrow bands the light lane cares about
-# (surgical / single_module). It is a pre-route guess; the deep-lane refine
+# A pure, ZERO-architecture-call classifier over two measurements — the count of
+# distinct file-path references and the presence of a fan-out marker — emitting
+# one of four bands: none (declared unknown) / surgical (1-3 paths, no fan-out) /
+# single_module (4-7 paths, or a pathless non-empty body) / multi_module (a real
+# fan-out marker, or >= 8 paths). It is a pre-route guess; the deep-lane refine
 # Step 9 module-mapping derivation overwrites it when the deep lane runs.
+#
+# The band line is scale-truthful in BOTH directions, which is the property these
+# tests exist to pin: it can say "large" (multi_module) and it can say "I cannot
+# bound this" (a fan-out marker WIDENS, it does not narrow).
 
 
 def _ns_scope(plan_id: str, *, persist: bool = False) -> Namespace:
@@ -1190,8 +1231,13 @@ def test_scope_pure_repeated_path_counts_once():
     assert scope_estimate_from_request_pure(body) == 'surgical'
 
 
-def test_scope_pure_single_module_for_more_than_three_paths():
-    """More than three distinct file paths classifies single_module (not surgical)."""
+def test_scope_pure_single_module_for_the_four_to_seven_middle_band():
+    """Four-to-seven distinct file paths classifies single_module — the middle band.
+
+    Five paths is neither ``surgical`` (>3) nor ``multi_module`` (<8). The middle
+    band is deliberately NOT narrow: it does not earn the S3/S4 carve-out and does
+    not project the ``minimal`` posture.
+    """
     body = 'Touch a/one.py, b/two.py, c/three.py, d/four.py, and e/five.py.'
     assert scope_estimate_from_request_pure(body) == 'single_module'
 
@@ -1202,11 +1248,59 @@ def test_scope_pure_single_module_for_more_than_three_paths():
         'Sweep every skills/*/SKILL.md across the bundle.',
         'Rewrite all **/*.py under the module.',
         'Apply the change to marketplace/bundles/*/plugin.json everywhere.',
+        'Rewrite the fixtures under test/plan-marshall/manage-status/** wholesale.',
     ],
 )
-def test_scope_pure_glob_disqualifies_surgical(body):
-    """A glob / pattern fan-out marker classifies single_module even with few paths."""
-    assert scope_estimate_from_request_pure(body) == 'single_module'
+def test_scope_pure_fan_out_marker_bands_multi_module(body):
+    """A real fan-out marker bands multi_module — it WIDENS, it does not narrow.
+
+    The inversion this replaces: a genuine glob used to band ``single_module``,
+    i.e. a declared inability to enumerate the file set was reported as a narrow
+    verdict. An unbounded set cannot be a bounded one, so the marker must widen.
+    """
+    assert scope_estimate_from_request_pure(body) == 'multi_module'
+
+
+@pytest.mark.parametrize(
+    'body',
+    [
+        'Fix **the parser** in a/b/one.py so **bold** prose stops confusing it.',
+        '**Objective**\n\n**Root cause:** the regex in pkg/mod.py is too loose.',
+        '- **`c/d/two.py`** — the target\n- **`e/f/three.py`** — its test\n',
+    ],
+)
+def test_scope_pure_markdown_bold_is_not_a_fan_out_marker(body):
+    """Markdown ``**bold**`` does NOT register as fan-out — the load-bearing precision fix.
+
+    ``_GLOB_RE``'s ``**`` alternatives are path-adjacent (``/**`` / ``**/``). Before
+    that tightening a bare ``**`` matched markdown bold, and because the marker
+    check short-circuits AHEAD of the path count, a bold-saturated orchestrator
+    spec banded on its own — making the path-count thresholds unreachable for
+    essentially the entire orchestrated-plan population. Any band extension is
+    vacuous without this, so the precision is pinned directly.
+    """
+    band, provenance = classify_scope_pure(body)
+
+    assert provenance['fan_out_marker'] is False
+    assert band == 'surgical'
+
+
+@pytest.mark.parametrize(
+    ('path_count', 'expected_band'),
+    [(3, 'surgical'), (4, 'single_module'), (7, 'single_module'), (8, 'multi_module')],
+)
+def test_scope_pure_band_boundaries_at_three_four_and_seven_eight(path_count, expected_band):
+    """The two band boundaries are pinned on both sides: 3/4 and 7/8 distinct paths.
+
+    A threshold asserted only from its interior can drift by one without any test
+    noticing, so each boundary is asserted from the band below AND the band above.
+    """
+    body = 'Touch ' + ', '.join(f'dir{i}/file{i}.py' for i in range(path_count)) + '.'
+
+    band, provenance = classify_scope_pure(body)
+
+    assert provenance['distinct_path_count'] == path_count
+    assert band == expected_band
 
 
 @pytest.mark.parametrize('body', ['', None])
@@ -1264,6 +1358,100 @@ def test_scope_unknown_is_a_deep_biasing_s2_value():
     )
     assert verdict['lane'] == 'deep'
     assert 'S2:scope_estimate' in verdict['fired_signals']
+
+
+# --- scope_provenance — why the band came out as it did -----------------------
+#
+# The operator-facing half of the fix (arm 1 of the surfacing question): the route
+# return and the decision-log line explain the band rather than only asserting it.
+# No new prompt and no new override seam — --lane-override / S6 already exists.
+
+
+@pytest.mark.parametrize(
+    ('body', 'expected_rule', 'expected_count', 'expected_fan_out'),
+    [
+        ('', 'unscoreable_body', 0, False),
+        (
+            'Sweep test/plan-marshall/x/test_x.py and every marketplace/bundles/*/plugin.json.',
+            'fan_out_marker',
+            1,
+            True,
+        ),
+        (
+            'Touch ' + ', '.join(f'dir{i}/file{i}.py' for i in range(8)) + '.',
+            'path_count_at_or_above_multi_module_floor',
+            8,
+            False,
+        ),
+        ('Touch a/one.py, b/two.py, c/three.py, d/four.py.', 'path_count_middle_band', 4, False),
+        ('Fix a/one.py.', 'path_count_at_or_below_surgical_max', 1, False),
+        ('Make the thing better, somehow.', 'pathless_non_empty_body', 0, False),
+    ],
+)
+def test_classify_scope_pure_reports_the_band_rule_that_fired(
+    body, expected_rule, expected_count, expected_fan_out
+):
+    """Every row of the band table reports its own ``band_rule`` plus both measurements.
+
+    One case per table row, so a future row that stops being reachable — a
+    vacuous band — shows up as a failing case rather than as silently dead code.
+    """
+    _band, provenance = classify_scope_pure(body)
+
+    assert provenance == {
+        'distinct_path_count': expected_count,
+        'fan_out_marker': expected_fan_out,
+        'band_rule': expected_rule,
+    }
+
+
+def test_classify_scope_pure_band_and_provenance_cannot_disagree():
+    """``scope_estimate_from_request_pure`` is a projection of ``classify_scope_pure``.
+
+    The band and its explanation come from ONE decision, so the thin wrapper can
+    never drift from the provenance-bearing classifier.
+    """
+    body = 'Rewrite all **/*.py under the module.'
+
+    assert scope_estimate_from_request_pure(body) == classify_scope_pure(body)[0]
+
+
+def test_route_surfaces_scope_provenance(plan_context):
+    """The route return carries scope_provenance alongside BOTH verdicts.
+
+    The operator reading one surface sees the lane, the posture, and the band rule
+    that drove them — the whole point of surfacing provenance rather than adding a
+    prompt.
+    """
+    plan_dir = _light_setup(plan_context, 'pl-provenance')
+    _write_request(plan_dir, 'Fix marketplace/bundles/plan-marshall/skills/x/scripts/x.py.')
+
+    result = cmd_planning_lane_route(_ns_route('pl-provenance'))
+
+    assert result['scope_provenance'] == {
+        'distinct_path_count': 1,
+        'fan_out_marker': False,
+        'band_rule': 'path_count_at_or_below_surgical_max',
+    }
+    # Both verdicts are on the same return, next to the provenance that explains them.
+    assert result['planning_lane'] == 'light'
+    assert result['execution_profile'] == 'minimal'
+
+
+def test_route_surfaces_scope_provenance_under_the_deep_lane_short_circuit(plan_context):
+    """Provenance is a property of the request body, so the deep_lane gate cannot erase it.
+
+    ``deep_lane=always`` replaces the signal-scored verdict, but the band
+    explanation must survive — otherwise the one configuration most likely to hide
+    a miscalibrated band is also the one that stops reporting it.
+    """
+    _light_setup(plan_context, 'pl-provenance-always')
+    _write_marshal(plan_context.fixture_dir, compatibility='deprecation', deep_lane='always')
+
+    result = cmd_planning_lane_route(_ns_route('pl-provenance-always'))
+
+    assert result['decision_predicate'] == 'plan.phase-1-init.deep_lane=always'
+    assert result['scope_provenance']['band_rule'] == 'path_count_at_or_below_surgical_max'
 
 
 # --- Settled path-counter semantics ------------------------------------------
@@ -1357,17 +1545,40 @@ def test_scope_heuristic_persists_surgical_to_references(plan_context):
     assert refs['base_branch'] == 'main'
 
 
-def test_scope_heuristic_persists_single_module_for_broad_request(plan_context):
-    """A many-path request persists single_module."""
-    plan_dir = plan_context.plan_dir_for('pl-scope-broad')
+def test_scope_heuristic_persists_single_module_for_the_middle_band(plan_context):
+    """A five-path request persists single_module — the 4–7 middle band, end to end."""
+    plan_dir = plan_context.plan_dir_for('pl-scope-middle')
     _write_request(plan_dir, 'Touch a/one.py, b/two.py, c/three.py, d/four.py, e/five.py.')
     _write_references(plan_dir, scope_estimate=None)
 
-    result = cmd_scope_estimate_heuristic(_ns_scope('pl-scope-broad', persist=True))
+    result = cmd_scope_estimate_heuristic(_ns_scope('pl-scope-middle', persist=True))
 
     assert result['scope_estimate'] == 'single_module'
     refs = json.loads((plan_dir / 'references.json').read_text())
     assert refs['scope_estimate'] == 'single_module'
+
+
+def test_scope_heuristic_persists_multi_module_for_a_large_request(plan_context):
+    """An eight-path request persists multi_module — the band that used to be unreachable.
+
+    End-to-end proof that the upper segment of the path-count line now exists: the
+    persisted value is a deep-biasing S2 band, so a large concrete request stops
+    routing light.
+    """
+    plan_dir = plan_context.plan_dir_for('pl-scope-large')
+    _write_request(
+        plan_dir,
+        'Touch ' + ', '.join(f'dir{i}/file{i}.py' for i in range(8)) + '.',
+    )
+    _write_references(plan_dir, scope_estimate=None)
+
+    result = cmd_scope_estimate_heuristic(_ns_scope('pl-scope-large', persist=True))
+
+    assert result['scope_estimate'] == 'multi_module'
+    assert result['distinct_path_count'] == 8
+    refs = json.loads((plan_dir / 'references.json').read_text())
+    assert refs['scope_estimate'] == 'multi_module'
+    assert 'multi_module' in _mod._DEEP_SCOPE_ESTIMATES
 
 
 def test_scope_heuristic_without_persist_does_not_write(plan_context):
