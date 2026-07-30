@@ -33,6 +33,7 @@ the move; only the file's location changed.
 """
 
 import importlib.util
+import re
 import sys
 import tempfile
 from datetime import datetime, timedelta
@@ -6506,6 +6507,49 @@ _CHECKS_DOC_DIR = (
     / 'checks'
 )
 
+_SKILL_DOC = (
+    PROJECT_ROOT
+    / '.claude'
+    / 'skills'
+    / 'audit-archived-plan-retrospectives'
+    / 'SKILL.md'
+)
+
+# The prose annotation a SKILL.md summary-table row carries when its check runs
+# over the shipping partition. Matched case-insensitively so both the leading
+# `Runs over ...` and the mid-sentence `Also runs over ...` phrasings count.
+_SHIPPING_ANNOTATION = 'runs over the shipping partition'
+
+# Each summary-table row links its sub-document as `checks/{check-name}.md`; the
+# link is the row's machine-readable identity (the leading prose cell is a title,
+# not a check name).
+_CHECK_DOC_LINK_RE = re.compile(r'checks/([a-z0-9-]+)\.md')
+
+
+def _skill_md_shipping_annotated_checks() -> set[str]:
+    """Return the SKILL.md summary-table rows annotated as shipping-partitioned.
+
+    Scans ONLY the ``## Available checks`` section (so an annotation mentioned in
+    the surrounding narrative cannot leak in) and collects the check name from
+    each annotated row's ``checks/{name}.md`` sub-document link.
+    """
+    lines = _SKILL_DOC.read_text(encoding='utf-8').splitlines()
+    heading = next(
+        (i for i, ln in enumerate(lines) if ln.strip() == '## Available checks'),
+        None,
+    )
+    assert heading is not None, 'SKILL.md has no "## Available checks" section'
+    annotated: set[str] = set()
+    for line in lines[heading + 1:]:
+        if line.startswith('## '):
+            break
+        if not line.startswith('|') or _SHIPPING_ANNOTATION not in line.lower():
+            continue
+        match = _CHECK_DOC_LINK_RE.search(line)
+        assert match is not None, f'annotated row carries no checks/ link: {line}'
+        annotated.add(match.group(1))
+    return annotated
+
 
 def _write_shipping_plan(
     repo_root: Path,
@@ -6673,7 +6717,11 @@ class TestDeliveryCostPartitionContract:
       set-based exact cover cannot see a duplicated entry) and can genuinely fail.
     - `test_documentation_is_in_lock_step_with_the_partition` iterates the two
       live constants rather than a copied filename list, so a membership change
-      moves the documentation obligation with it.
+      moves the documentation obligation with it. It guards BOTH hand-maintained
+      prose mirrors of the membership: the per-check `checks/{name}.md`
+      sub-documents AND the `SKILL.md` "Available checks" summary table, whose
+      shipping-partition row annotations are asserted equal to the live
+      `DELIVERY_COST_CHECKS` frozenset.
     """
 
     def test_delivery_cost_checks_are_declared_checks(self):
@@ -6729,3 +6777,12 @@ class TestDeliveryCostPartitionContract:
 
         assert missing == [], missing
         assert stray == [], stray
+
+        # The SKILL.md "Available checks" table is the SECOND hand-maintained
+        # prose mirror of the same membership. Its shipping-partition row
+        # annotations must be exactly DELIVERY_COST_CHECKS — no more (a row
+        # annotated for a check the code does not partition), no fewer (a
+        # partitioned check whose row lost, or never gained, the annotation).
+        assert _skill_md_shipping_annotated_checks() == set(
+            audit.DELIVERY_COST_CHECKS
+        )
