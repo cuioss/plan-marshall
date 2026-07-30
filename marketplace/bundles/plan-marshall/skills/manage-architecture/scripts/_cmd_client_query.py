@@ -790,10 +790,17 @@ def _derive_edges(
     try:
         from _derivation_merge import merge_resolver_edges
         from extension_discovery import discover_derivation_resolvers
+
+        # The CALL belongs inside the guard, not just the imports:
+        # discover_derivation_resolvers() performs its OWN deferred
+        # ``from extension_base import DerivationResolverBase``, so an unavailable
+        # script-shared path raises here rather than at the import lines above.
+        # Outside the guard that would turn every graph-family verb into
+        # status: error, contradicting the zero-resolver fallback documented above.
+        resolvers = discover_derivation_resolvers()
     except ImportError:
         return [], []
 
-    resolvers = discover_derivation_resolvers()
     if not resolvers:
         return [], []
 
