@@ -6,11 +6,10 @@ import subprocess  # noqa: I001
 from pathlib import Path
 
 import pytest
-# The shared resolver-contract fixtures live under ``test/plan-marshall/``, which
-# the root conftest puts on ``sys.path`` for every bundle's tests. mypy resolves
-# that helper only while checking the plan-marshall test tree, so the import is
-# ignored here rather than duplicating the helper per bundle.
-from _resolve_project_dir_fixtures import (  # type: ignore[import-not-found]
+# The shared resolver-contract fixtures live under ``test/_shared/``, the
+# bundle-neutral home for cross-bundle test helpers (also on mypy_path), so
+# the helper is imported here rather than duplicated per bundle.
+from _resolve_project_dir_fixtures import (
     assert_sentinel_accepted,
     assert_worktree_face_routes_through_resolver,
 )
