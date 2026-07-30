@@ -29,7 +29,7 @@
     },
     "phase-3-outline": {
       "plan_without_asking": false,
-      "effort": "level-4",
+      "effort": "level-5",
       "q_gate_validation": "once"
     },
     "phase-4-plan": {
@@ -51,8 +51,8 @@
         "default:verify:coverage": {}
       },
       "effort": {
-        "default": "level-4",
-        "verification-feedback": "level-3"
+        "default": "level-5",
+        "verification-feedback": "level-4"
       },
       "cost_size_token_table": {
         "XS": "5K",
@@ -131,7 +131,7 @@
           "lane": "standard"
         },
         "default:lessons-capture": {
-          "lane": "minimal"
+          "lane": "off"
         },
         "default:finalize-step-preference-emitter": {
           "preference_min_recurrence": 2,
@@ -172,9 +172,9 @@
         }
       },
       "effort": {
-        "default": "level-3",
-        "verification-feedback": "level-3",
-        "post-run-review": "level-4"
+        "default": "level-5",
+        "verification-feedback": "level-5",
+        "post-run-review": "level-5"
       }
     },
     "finding_raw_input_max_bytes": 65536
@@ -304,9 +304,10 @@
       "lessons_superseded_days": 0,
       "temp_on_maintenance": true,
       "plugin_cache_keep_versions": 5,
-      "plugin_cache_keep_days": 3
+      "plugin_cache_keep_days": 3,
+      "no_plan_body_days": 7
     },
-    "provisioned_version": "0.1.1266",
-    "config_seed_fingerprint": "ccb21c71"
+    "provisioned_version": "0.1.1275",
+    "config_seed_fingerprint": "59c217c3"
   }
 }
