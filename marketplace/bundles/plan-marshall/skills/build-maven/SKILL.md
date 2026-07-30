@@ -82,6 +82,19 @@ Reads `pom.xml` `<modules>` declarations from the parent POM.
 
 Whole-tree gates such as `integration-tests` and `e2e` live only in the `verification_steps` end-of-phase-5 sweep, never in the module-scoped per-deliverable build. The phase-5-execute canonical-verify step reads the canonical from its `default:verify:{canonical}` step ID and resolves it through `architecture resolve --command {canonical}`, which consults this discover-derived profile-to-canonical mapping. For the exact step-invocation shape — how the parameterized canonical-verify step invokes the resolved `integration-tests` target, honours its `execution_tier` / `bash_timeout_seconds`, and reports pass/skip/fail — see the central standard at [`../phase-5-execute/standards/canonical_verify.md`](../phase-5-execute/standards/canonical_verify.md) (do NOT inline-copy the invocation shape here).
 
+## Module-edge derivation (Axis-C derivation resolver)
+
+`extension.py`'s `BuildExtension` subclasses **both** `BuildExtensionBase` (Axis-B, the file-to-build map above) and `DerivationResolverBase` (Axis-C, module-edge derivation), so this skill also answers *which modules depend on which* for the `graph` / `path` / `neighbors` / `impact` query family and the adjacency surfaces of `overview` and `module` / `info`.
+
+The resolver id is `maven`. Its derivation is the **coordinate join**: each module publishes a `groupId:artifactId` in its `metadata`, each module names its dependencies as `groupId:artifactId:scope` strings, and an edge exists wherever a dependency coordinate matches another module's published coordinate (matched on the first two colon-separated parts, so the scope segment is ignored). This join previously lived inline in `manage-architecture`; it belongs here because the coordinate contract is Maven domain knowledge, and core owns the merge, the provenance, and the traversal rather than the derivation.
+
+Two behaviours are worth naming because they are contract obligations rather than implementation detail:
+
+- **An ambiguous coordinate yields no edge and a reported collision.** When two distinct modules claim the same `groupId:artifactId`, the resolver emits no edge for that coordinate and reports it in `notes[]`. A last-write-wins pick would silently drop one module and every edge pointing at it, with the survivor decided by map iteration order.
+- **The enriched overlay is not consulted.** The precedence of a curated or discovered `internal_dependencies` declaration over a derived edge set is core's ruling, applied ahead of the resolver call.
+
+The contract itself — the four faces, the N-resolver union semantics, the anti-vacuity provenance property, and the generic ambiguous-identity-key obligation that binds every resolver — is owned by [`../extension-api/standards/ext-point-derivation-resolver.md`](../extension-api/standards/ext-point-derivation-resolver.md) and is deliberately not restated here.
+
 ## Canonical invocations
 
 The canonical argparse surface for `maven.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".

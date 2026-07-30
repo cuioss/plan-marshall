@@ -342,6 +342,36 @@ def test_impact_unknown_module_raises():
 # =============================================================================
 # CLI handler tests
 # =============================================================================
+#
+# Every graph-family payload carries the resolver-provenance pair
+# (``resolvers`` / ``resolver_count``). Resolver discovery is REGISTRY-WIDE, not
+# fixture-scoped: whichever resolvers this tree registers run against these
+# fixtures, so pinning the exact registry contents here would make a shape test
+# fail whenever a new resolver ships. These tests therefore assert the stable
+# payload exactly and check the provenance pair's own invariant separately; the
+# anti-vacuity semantics of the pair are owned by
+# test_graph_resolver_provenance.py, which injects stub resolvers to pin them.
+#
+# The fixtures' edges all come from declared ``internal_dependencies``, so a
+# registered resolver reporting zero edges here is the truthful answer.
+
+
+def _split_provenance(result: dict) -> tuple[dict, list, int]:
+    """Split a graph-family payload into (stable_payload, resolvers, resolver_count)."""
+    payload = dict(result)
+    return payload, payload.pop('resolvers'), payload.pop('resolver_count')
+
+
+def _assert_provenance_self_consistent(resolvers: list, resolver_count: int) -> None:
+    """Every response's resolver_count must equal the length of its resolver report list.
+
+    This is what keeps a zero-edge answer non-vacuous: the count is derived from
+    the reports rather than asserted independently of them, so a response can
+    never claim resolvers ran without naming them.
+    """
+    assert resolver_count == len(resolvers)
+    for record in resolvers:
+        assert set(record) == {'id', 'edge_count', 'status', 'notes'}
 
 
 def test_cmd_path_returns_toon_shape():
@@ -349,17 +379,14 @@ def test_cmd_path_returns_toon_shape():
         _create_chain_graph(tmpdir)
         args = Namespace(project_dir=tmpdir, source='alpha', target='gamma')
         result = cmd_path(args)
-        assert result == {
+        payload, resolvers, resolver_count = _split_provenance(result)
+        assert payload == {
             'status': 'success',
             'source': 'alpha',
             'target': 'gamma',
             'path': ['alpha', 'beta', 'gamma'],
-            # No derivation resolver is registered against these fixtures — the
-            # edges come from declared internal_dependencies. resolver_count: 0
-            # is therefore the truthful provenance, not a missing field.
-            'resolvers': [],
-            'resolver_count': 0,
         }
+        _assert_provenance_self_consistent(resolvers, resolver_count)
 
 
 def test_cmd_path_unreachable_returns_null_path():
@@ -367,14 +394,16 @@ def test_cmd_path_unreachable_returns_null_path():
         _create_disconnected_graph(tmpdir)
         args = Namespace(project_dir=tmpdir, source='lefty', target='righty')
         result = cmd_path(args)
-        assert result == {
+        payload, resolvers, resolver_count = _split_provenance(result)
+        assert payload == {
             'status': 'success',
             'source': 'lefty',
             'target': 'righty',
             'path': None,
-            'resolvers': [],
-            'resolver_count': 0,
         }
+        # An unreachable path is only a positive answer alongside its provenance:
+        # without it, "no path" and "no resolver ran" would read identically.
+        _assert_provenance_self_consistent(resolvers, resolver_count)
 
 
 def test_cmd_path_unknown_module_returns_error():
@@ -392,14 +421,14 @@ def test_cmd_neighbors_returns_shape():
         _create_fan_out_graph(tmpdir)
         args = Namespace(project_dir=tmpdir, module='hub', depth=1)
         result = cmd_neighbors(args)
-        assert result == {
+        payload, resolvers, resolver_count = _split_provenance(result)
+        assert payload == {
             'status': 'success',
             'module': 'hub',
             'depth': 1,
             'neighbors': ['a', 'b', 'c', 'hub'],
-            'resolvers': [],
-            'resolver_count': 0,
         }
+        _assert_provenance_self_consistent(resolvers, resolver_count)
 
 
 def test_cmd_neighbors_clamps_depth_in_response():
@@ -415,13 +444,13 @@ def test_cmd_impact_returns_shape():
         _create_diamond_graph(tmpdir)
         args = Namespace(project_dir=tmpdir, module='api')
         result = cmd_impact(args)
-        assert result == {
+        payload, resolvers, resolver_count = _split_provenance(result)
+        assert payload == {
             'status': 'success',
             'module': 'api',
             'impact': ['app', 'core', 'service'],
-            'resolvers': [],
-            'resolver_count': 0,
         }
+        _assert_provenance_self_consistent(resolvers, resolver_count)
 
 
 # =============================================================================
