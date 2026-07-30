@@ -356,7 +356,7 @@ Each extension point has its own contract document with formal parameters, pre-c
 | Recipe | `provides_recipes()` | [ext-point-recipe.md](ext-point-recipe.md) | 4 |
 | Provider | `*_provider.py` | [ext-point-provider.md](ext-point-provider.md) | 4 |
 | Domain Verb | `provides_domain_verb()` | [ext-point-domain-verb.md](ext-point-domain-verb.md) | 1 |
-| Derivation Resolver | `DerivationResolverBase` subclass | [ext-point-derivation-resolver.md](ext-point-derivation-resolver.md) | 1 |
+| Derivation Resolver | `DerivationResolverBase` subclass | [ext-point-derivation-resolver.md](ext-point-derivation-resolver.md) | see [§ Current implementations](ext-point-derivation-resolver.md#current-implementations) |
 
 See each document for the complete contract, implementation template, and current implementations.
 
