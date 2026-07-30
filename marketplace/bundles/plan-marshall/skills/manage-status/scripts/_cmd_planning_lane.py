@@ -100,6 +100,61 @@ _FENCE_RE = re.compile(r'```')
 _CLI_RE = re.compile(r'python3\s+\.plan/execute-script\.py')
 _NOTATION_RE = re.compile(r'\bmanage-[a-z-]+\b')
 
+# Adversarial-input defense (CWE-1333 / ReDoS): ``_PATH_RE``'s leading class
+# (``[\w./-]``) overlaps the literal ``/`` it is followed by, so running it
+# over unbounded adversarial repetition — e.g. a single ``"a/" * N`` line with
+# no terminating extension, or many such lines back to back — costs O(N^2)
+# backtracking. Measured empirically: ~3s at a 20KB adversarial body, growing
+# quadratically; ~145s at a 10MB adversarial body split into many boundary-
+# length lines. ``request.md`` is untrusted-ish (it embeds an ingested spec
+# body verbatim — see ``_read_request_body``), so an adversarial or merely
+# malformed body must not be able to hang this deterministic, synchronous,
+# phase-1-init-blocking router. Every ``_PATH_RE`` application therefore goes
+# through ``_safe_path_scan`` below: it scans per LINE (never the raw,
+# unbounded body), skips any single line longer than ``_MAX_SCAN_LINE_CHARS``
+# — generous enough that a legitimate sentence citing several full
+# repo-relative paths never trips it, while still bounding a single line's
+# worst-case backtracking to well under a second — and stops once the running
+# total of scanned characters reaches ``_MAX_SCAN_BUDGET_CHARS``, which caps
+# the number of full-length adversarial lines the scan can ever pay for.
+# Together the two bounds keep worst-case cost under ~1s regardless of how
+# large or adversarially-repetitive the body is (verified empirically for
+# both a single giant line and many boundary-length lines). A skipped line or
+# an exhausted budget sets ``scan_incomplete=True`` rather than silently
+# reading as "nothing left to find"; ``classify_scope_pure`` folds that into a
+# WIDENING verdict (multi_module), the same conservative direction this
+# module's other unscoreable-body / fan-out-marker rules already take.
+_MAX_SCAN_LINE_CHARS = 2000
+_MAX_SCAN_BUDGET_CHARS = 50_000
+
+
+def _safe_path_scan(body: str) -> tuple[set[str], bool]:
+    """Return ``(distinct_paths, scan_incomplete)`` from a ReDoS-bounded ``_PATH_RE`` scan.
+
+    The single choke point every ``_PATH_RE`` consumer in this module goes
+    through (``_distinct_paths``, and — via it — ``_request_is_concrete``'s
+    path-anchor check). See the ReDoS-defense comment above
+    ``_MAX_SCAN_LINE_CHARS`` for why the scan is bounded this way.
+    ``scan_incomplete`` is True when at least one line was skipped (too long)
+    or the character budget was exhausted before the whole body was scanned;
+    callers MUST treat that as a signal to widen, never as evidence of an
+    accurate (lower) count.
+    """
+    paths: set[str] = set()
+    scan_incomplete = False
+    budget = _MAX_SCAN_BUDGET_CHARS
+    for line in body.split('\n'):
+        if budget <= 0:
+            scan_incomplete = True
+            break
+        if len(line) > _MAX_SCAN_LINE_CHARS:
+            scan_incomplete = True
+            continue
+        paths.update(m.group(0) for m in _PATH_RE.finditer(line))
+        budget -= len(line)
+    return paths, scan_incomplete
+
+
 # S7 — the author's own written scale warning. When a request says in prose that
 # the work is large, that statement outranks any cheap band this module can
 # compute from path counts: the author knows things the sensor cannot see.
@@ -129,6 +184,14 @@ def _distinct_paths(body: str) -> set[str]:
     Callers guard the empty-``body`` case themselves and layer their own
     downstream ``sorted()`` / ``len()`` on the returned set.
 
+    The extraction runs through ``_safe_path_scan`` and is therefore
+    ReDoS-bounded (see the comment above ``_MAX_SCAN_LINE_CHARS``): on a body
+    too large or adversarially-repetitive to scan in full, this returns
+    whatever distinct paths the bounded scan found, which may UNDERCOUNT the
+    true total. A caller that needs to distinguish an accurate count from a
+    possibly-truncated one should call ``_safe_path_scan`` directly and read
+    its ``scan_incomplete`` flag (``classify_scope_pure`` does exactly this).
+
     What this counter counts — settled, not incidental:
 
     - **Path strings, not work targets.** The scan is purely lexical and has no
@@ -156,7 +219,8 @@ def _distinct_paths(body: str) -> set[str]:
     ``_read_request_body``; that change alters WHICH TEXT is scanned, never how
     a match is judged.
     """
-    return {m.group(0) for m in _PATH_RE.finditer(body)}
+    paths, _ = _safe_path_scan(body)
+    return paths
 
 
 # --- Pre-route scope_estimate heuristic --------------------------------------
@@ -255,7 +319,7 @@ def _request_is_concrete(body: str) -> bool:
     """
     if not body:
         return False
-    if _PATH_RE.search(body):
+    if _distinct_paths(body):
         return True
     if _FENCE_RE.search(body):
         return True
@@ -345,18 +409,26 @@ def classify_scope_pure(body: str | None) -> tuple[str, dict[str, Any]]:
     | Band | Predicate | ``band_rule`` |
     |------|-----------|---------------|
     | ``none`` | body absent / unreadable / empty | ``unscoreable_body`` |
+    | ``multi_module`` | the body could not be safely scanned in full | ``scan_incomplete`` |
     | ``multi_module`` | a fan-out marker is present | ``fan_out_marker`` |
     | ``multi_module`` | ``>= _MULTI_MODULE_MIN_PATHS`` distinct paths | ``path_count_at_or_above_multi_module_floor`` |
     | ``single_module`` | more than ``_SURGICAL_MAX_PATHS`` distinct paths | ``path_count_middle_band`` |
     | ``surgical`` | 1..``_SURGICAL_MAX_PATHS`` distinct paths, no fan-out | ``path_count_at_or_below_surgical_max`` |
     | ``single_module`` | no path at all, non-empty body | ``pathless_non_empty_body`` |
 
-    Two rows carry the scale-truthfulness the band line exists for:
+    Three rows carry the scale-truthfulness the band line exists for:
 
     - ``none`` is a DECLARED UNKNOWN. The body is unscoreable, and a scorer that
       read zero bytes must not emit a band, so this reports "cannot tell" instead
       of guessing. ``none`` is in ``_DEEP_SCOPE_ESTIMATES``, so S2 reads the
       unknown as a deep-biasing signal.
+    - ``scan_incomplete`` is the ReDoS-defense counterpart of the same
+      discipline: ``_safe_path_scan`` (see its comment for the CWE-1333
+      rationale) bounds how much of the body the DISTINCT-path count can
+      safely cover, and a body too large or adversarially-repetitive to scan
+      in full must not have its (possibly undercounted) partial total read as
+      an accurate narrow band — so this row wins BEFORE the path-count rows
+      below are even consulted.
     - A fan-out marker bands ``multi_module``, NOT a narrow band. A pattern is a
       declared inability to enumerate the file set, so it must widen the band; the
       inverse — reporting an unbounded fan-out as a bounded change — is the
@@ -365,8 +437,9 @@ def classify_scope_pure(body: str | None) -> tuple[str, dict[str, Any]]:
     The band remains a cheap pre-route guess: the deep-lane refine Step 9
     module-mapping derivation overwrites it with the measured band when the deep
     lane runs. Under the whole-body read the fan-out marker and the path count
-    both see the entire request, so neither can be hidden by a truncated
-    fragment; that widening is one-directional and therefore conservative.
+    both see the entire request (up to the ReDoS-defense bound), so neither can
+    be hidden by a truncated fragment; that widening is one-directional and
+    therefore conservative.
     """
     if not body:
         return UNKNOWN, {
@@ -374,9 +447,12 @@ def classify_scope_pure(body: str | None) -> tuple[str, dict[str, Any]]:
             'fan_out_marker': False,
             'band_rule': 'unscoreable_body',
         }
+    distinct_paths, scan_incomplete = _safe_path_scan(body)
+    distinct_path_count = len(distinct_paths)
     fan_out_marker = bool(_GLOB_RE.search(body))
-    distinct_path_count = len(_distinct_paths(body))
-    if fan_out_marker:
+    if scan_incomplete:
+        band, band_rule = MULTI_MODULE, 'scan_incomplete'
+    elif fan_out_marker:
         band, band_rule = MULTI_MODULE, 'fan_out_marker'
     elif distinct_path_count >= _MULTI_MODULE_MIN_PATHS:
         band, band_rule = MULTI_MODULE, 'path_count_at_or_above_multi_module_floor'
