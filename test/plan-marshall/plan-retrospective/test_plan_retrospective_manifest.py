@@ -883,14 +883,14 @@ class TestRoutingDecisionsAspect:
             manifest_body=_manifest_with_steps_and_log(['push', 'create-pr'], []),
             plan_id='routing-misprune',
         )
-        _write_status_metadata(plan_dir, {'execution_profile': 'auto', 'planning_lane': 'light'})
+        _write_status_metadata(plan_dir, {'execution_profile': 'standard', 'planning_lane': 'light'})
         diff = _write_diff(tmp_path, ['marketplace/bundles/plan-marshall/skills/x/scripts/x.py'])
 
         result = _run_routing(plan_id, '--diff-file', str(diff))
 
         assert result.success, result.stderr
         data = result.toon()
-        assert data['posture'] == 'auto'
+        assert data['posture'] == 'standard'
         sonar = _mis_prune(data['mis_prune_checks'], 'sonar-roundtrip')
         assert sonar is not None
         assert sonar['status'] == 'fail'
@@ -922,7 +922,7 @@ class TestRoutingDecisionsAspect:
             manifest_body=_manifest_with_steps_and_log(['push', 'create-pr'], []),
             plan_id='routing-nofoot',
         )
-        _write_status_metadata(plan_dir, {'execution_profile': 'auto'})
+        _write_status_metadata(plan_dir, {'execution_profile': 'standard'})
 
         result = _run_routing(plan_id)
 
@@ -981,7 +981,7 @@ class TestRoutingDecisionsAspect:
             manifest_body=_manifest_with_steps_and_log(['push'], []),
             plan_id='routing-boundary',
         )
-        _write_status_metadata(plan_dir, {'execution_profile': 'auto'})
+        _write_status_metadata(plan_dir, {'execution_profile': 'standard'})
 
         result = _run_routing(plan_id)
 

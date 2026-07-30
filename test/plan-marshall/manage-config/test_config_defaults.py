@@ -398,7 +398,7 @@ def test_seed_finalize_steps_infra_elements_carry_lane_ask():
 
 
 def test_seed_finalize_steps_default_on_non_infra_steps_have_no_lane_key():
-    """A default_on:true non-infra step seeds no `lane` override (absent → auto)."""
+    """A default_on:true non-infra step seeds no `lane` override (absent → standard)."""
     seeded = _config_defaults_mod._seed_finalize_steps()
 
     for step_id in ('default:finalize-step-simplify', 'default:finalize-step-security-audit'):
@@ -790,7 +790,7 @@ def test_cost_size_token_table_seed_matches_consumer_default():
 #
 # Three operator-facing knobs added to the lane mechanism:
 #   - lane_selection (ask|auto) under DEFAULT_PLAN_INIT
-#   - the per-element lane override validator (off|minimal|auto|full|ask)
+#   - the per-element lane override validator (off|minimal|standard|full|ask)
 #   - lane_prune_thresholds (confidence_complete, linear_change_max_deliverables)
 #     under DEFAULT_PLAN_INIT
 # The per-element vocabulary itself (lane.class enum, prune-predicate names) lives
@@ -847,9 +847,9 @@ def test_validate_lane_selection_rejects_unknown_value():
 
 
 def test_valid_lane_override_enumerates_five_values():
-    """VALID_LANE_OVERRIDE must enumerate exactly off|minimal|auto|full|ask."""
+    """VALID_LANE_OVERRIDE must enumerate exactly off|minimal|standard|full|ask."""
     assert _config_defaults_mod.VALID_LANE_OVERRIDE == (
-        'off', 'minimal', 'auto', 'full', 'ask'
+        'off', 'minimal', 'standard', 'full', 'ask'
     )
 
 
@@ -3204,7 +3204,7 @@ def test_migrate_qgate_auto_omits_lane_but_removes_legacy_key():
 
     p6 = live['plan']['phase-6-finalize']
     assert 'qgate' not in p6
-    # auto is the lane default — the owning step is NOT materialized with a lane.
+    # standard is the lane default — the owning step is NOT materialized with a lane.
     assert 'default:pre-push-quality-gate' not in p6['steps']
     # The removal is still reported so sync-defaults persists the change.
     assert migrated

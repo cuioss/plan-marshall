@@ -22,7 +22,7 @@ Coverage:
   all-light default, the S6 override, and the importability of the S5 regex
   constants and ``_request_is_concrete`` for downstream consumers.
 - ``project_profile_pure`` — the execution-profile posture projection: the
-  ``full`` / ``minimal`` / ``auto`` recommendation as a pure function of the same
+  ``full`` / ``minimal`` / ``standard`` recommendation as a pure function of the same
   signals, the ``profile`` key on the route return, ``--persist`` writing
   ``status.metadata.execution_profile``, the independence invariant that
   ``deep_lane=always`` does NOT coerce the posture to ``full``, and the mirrored
@@ -1000,7 +1000,7 @@ def test_concreteness_and_scope_consume_the_identical_body(plan_context, monkeyp
 # project_profile_pure — execution-profile posture projection
 # =============================================================================
 #
-# The posture projection recommends minimal / auto / full over the SAME signals
+# The posture projection recommends minimal / standard / full over the SAME signals
 # the lane verdict scores. It is a pure derivation (no I/O, no cognition) and is
 # independent of the deep_lane ceremony gate (deep_lane governs planning depth,
 # not the profile — §4.2 of the lane-selection outline).
@@ -1057,8 +1057,8 @@ def test_profile_narrow_concrete_nongenerative_change_projects_minimal():
     assert posture == 'minimal'
 
 
-def test_profile_narrow_nongenerative_but_vague_request_projects_auto():
-    """A narrow non-generative change with a vague request falls back to auto."""
+def test_profile_narrow_nongenerative_but_vague_request_projects_standard():
+    """A narrow non-generative change with a vague request falls back to standard."""
     posture = project_profile_pure(
         scope_estimate='surgical',
         change_type='bug_fix',
@@ -1066,7 +1066,7 @@ def test_profile_narrow_nongenerative_but_vague_request_projects_auto():
         request_concrete=False,
     )
 
-    assert posture == 'auto'
+    assert posture == 'standard'
 
 
 def test_profile_generative_narrow_concrete_change_projects_minimal():
@@ -1128,7 +1128,7 @@ def test_evaluate_signals_pure_emits_profile_projection():
     result = _pure(scope_estimate='multi_module', change_type='feature')
 
     assert result['profile']['recommended_posture'] == 'full'
-    assert result['profile']['candidate_postures'] == ['minimal', 'auto', 'full']
+    assert result['profile']['candidate_postures'] == ['minimal', 'standard', 'full']
 
 
 def test_route_surfaces_execution_profile(plan_context):
@@ -1142,7 +1142,7 @@ def test_route_surfaces_execution_profile(plan_context):
 
     assert result['execution_profile'] == 'full'
     assert result['profile']['recommended_posture'] == 'full'
-    assert result['profile']['candidate_postures'] == ['minimal', 'auto', 'full']
+    assert result['profile']['candidate_postures'] == ['minimal', 'standard', 'full']
 
 
 def test_route_projects_minimal_for_narrow_concrete_change(plan_context):

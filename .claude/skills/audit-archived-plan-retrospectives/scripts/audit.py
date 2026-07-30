@@ -962,7 +962,7 @@ class PlanInputs:
     planning_lane: str | None = None
     track: str | None = None
     # lane-lever-effectiveness input: the execution-profile POSTURE the plan ran
-    # under (`status.json::metadata.execution_profile`, one of minimal|auto|full).
+    # under (`status.json::metadata.execution_profile`, one of minimal|standard|full).
     # None when the plan predates the #811 execution-profile field.
     execution_profile: str | None = None
     # Shipping-partition LABEL: the reason recorded when the plan was archived

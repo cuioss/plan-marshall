@@ -70,7 +70,14 @@ _SKIP_DIR_PARTS = {'__pycache__', '.git', '.plan', 'node_modules', 'target'}
 
 
 def _iter_text_files(roots):
-    """Yield every text-bearing source file under ``roots`` (excluding self)."""
+    """Yield every text-bearing source file under ``roots`` (excluding self).
+
+    The skip-dir test is applied to the path RELATIVE to ``root``. Testing the
+    absolute ``path.parts`` makes the whole sweep vacuous whenever the checkout
+    itself lives under a directory named like a skip part — which is exactly the
+    case for a plan worktree (``.../.plan/local/worktrees/<plan>``), where every
+    absolute path carries ``.plan`` as a part and every file would be skipped.
+    """
     for root in roots:
         if not root.is_dir():
             continue
@@ -81,7 +88,7 @@ def _iter_text_files(roots):
                 continue
             if path.name == _SELF_NAME:
                 continue
-            if any(part in _SKIP_DIR_PARTS for part in path.parts):
+            if any(part in _SKIP_DIR_PARTS for part in path.relative_to(root).parts):
                 continue
             yield path
 

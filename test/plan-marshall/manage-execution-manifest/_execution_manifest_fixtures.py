@@ -146,7 +146,7 @@ def fake_lane_blocks() -> dict[str, dict[str, str]]:
         'push': {'class': 'core', 'tier': 'minimal', 'cost_size': 'XS'},
         'archive-plan': {'class': 'core', 'tier': 'minimal', 'cost_size': 'XS'},
         'sonar-roundtrip': {
-            'class': 'prunable', 'tier': 'auto', 'prunable_when': 'no_code_delta', 'cost_size': 'L',
+            'class': 'prunable', 'tier': 'standard', 'prunable_when': 'no_code_delta', 'cost_size': 'L',
         },
         'finalize-step-security-audit': {'class': 'adversarial', 'tier': 'full', 'cost_size': 'L'},
         'plan-marshall:plan-retrospective': {'class': 'prunable', 'tier': 'full', 'cost_size': 'L'},

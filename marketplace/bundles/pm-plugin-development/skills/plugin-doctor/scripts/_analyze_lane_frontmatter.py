@@ -59,7 +59,7 @@ RULE_DESCRIPTOR = RuleDescriptor(
 # extension-api/standards/ext-point-lane-element.md. Mirrored here as the
 # structural validation set (a closed enum, so drift is a contract change).
 _VALID_CLASSES = ('derived-state', 'core', 'adversarial', 'prunable')
-_VALID_TIERS = ('minimal', 'auto', 'full')
+_VALID_TIERS = ('minimal', 'standard', 'full')
 _VALID_COST_SIZES = ('XS', 'S', 'M', 'L', 'XL', 'XXL')
 
 

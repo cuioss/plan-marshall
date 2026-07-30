@@ -937,7 +937,7 @@ class TestSecurityClassInactivePreFilter:
 # ``_apply_unresolved_ask_provider_drop`` drops an UNRESOLVED ``lane:ask`` infra
 # element (automatic-review / sonar-roundtrip) from the phase-6 candidate list
 # when its provider is absent. The seed lane for both elements is ``ask``; a
-# steward answer overwrites the override to off/auto/full, so an effective tier
+# steward answer overwrites the override to off/standard/full, so an effective tier
 # still equal to ``ask`` at compose is the unresolved case. These tests exercise
 # the pure helper directly (no compose round-trip) so the full truth table and
 # the no-op contracts are pinned at the unit boundary. See
@@ -1156,7 +1156,7 @@ class TestScopeGatedFinalizeDeclaredLaneImmunity:
         # ``auto`` is the defer value, so the implicit gate still drops.
         candidates = [_RETROSPECTIVE, 'push']
         kept, dropped, immune = _apply_scope_gated_finalize(
-            candidates, 'single_module', _lane_map(_RETROSPECTIVE, 'auto')
+            candidates, 'single_module', _lane_map(_RETROSPECTIVE, 'standard')
         )
         assert _RETROSPECTIVE not in kept
         assert dropped == [_RETROSPECTIVE]

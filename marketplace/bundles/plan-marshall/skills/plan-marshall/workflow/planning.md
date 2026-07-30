@@ -145,7 +145,7 @@ The `base_branch` init input is **optional** and applies only to the init action
 - Step 5c recipe-match propose — recipe options / No recipe
 - Step 7 ambiguous domain — candidate domains
 - Step 8c sibling collision — Proceed / Rename / Abort
-- Step 8d posture — minimal / auto / full
+- Step 8d posture — minimal / standard / full
 
 Because init runs inline, the six prompts fire and resolve in-context in step order — the Tier 1 recipe-match prompt (Step 5c) resolves BEFORE the Tier 2 planning-lane router (Step 8b), so the router consumes the recipe's lane seed instead of an unset `change_type`/`scope_estimate`. Init persists `request.md`, `status.json`, and `references.json` under `.plan/local/plans/{plan_id}/`, and the orchestrator holds `plan_id`, `domain`, and `planning_lane` in-context on completion. The `recipe_key`, `request_aspect`, and `execution_profile` metadata resolved by the inline prompts are persisted to `status.metadata` by the steps themselves.
 

@@ -231,7 +231,7 @@ def test_simplify_step_no_longer_declares_a_simplify_run_at_all_param(plan_conte
 #
 # `list-ask-lane` enumerates the finalize steps whose lane override is still
 # `ask` (the two seeded adversarial infra elements); `set-lane` persists the
-# operator's resolved off/auto/full answer as the step's lane override. Together
+# operator's resolved off/standard/full answer as the step's lane override. Together
 # they back the marshall-steward mandatory prompt at setup + update-config.
 # =============================================================================
 
@@ -271,15 +271,15 @@ def test_set_lane_persists_off_and_resolves_the_ask(plan_context):
     assert get_result['params']['lane'] == 'off'
 
 
-def test_set_lane_accepts_auto_and_full(plan_context):
-    """set-lane accepts each resolved value (off/auto/full)."""
+def test_set_lane_accepts_standard_and_full(plan_context):
+    """set-lane accepts each resolved value (off/standard/full)."""
     _cmd_init_mod.cmd_init(Namespace(force=False))
 
-    auto_result = cmd_set_lane(
-        Namespace(step_id='default:sonar-roundtrip', lane='auto')
+    standard_result = cmd_set_lane(
+        Namespace(step_id='default:sonar-roundtrip', lane='standard')
     )
-    assert auto_result['status'] == 'success'
-    assert auto_result['lane'] == 'auto'
+    assert standard_result['status'] == 'success'
+    assert standard_result['lane'] == 'standard'
 
     full_result = cmd_set_lane(
         Namespace(step_id='plan-marshall:automatic-review', lane='full')
@@ -294,7 +294,7 @@ def test_set_lane_accepts_auto_and_full(plan_context):
 
 
 def test_set_lane_rejects_non_resolved_lane_values(plan_context):
-    """set-lane rejects `ask` / `minimal` / bogus — only off/auto/full resolve an ask."""
+    """set-lane rejects `ask` / `minimal` / bogus — only off/standard/full resolve an ask."""
     _cmd_init_mod.cmd_init(Namespace(force=False))
 
     for bad in ('ask', 'minimal', 'bogus', ''):
@@ -328,7 +328,7 @@ def test_finalize_steps_set_lane_cli_rejects_invalid_lane_choice():
     result = run_script(
         SCRIPT_PATH, 'finalize-steps', 'set-lane', '--step-id', 'plan-marshall:automatic-review', '--lane', 'bogus'
     )
-    assert result.returncode == 2, '--lane choices must reject a non-off/auto/full value at argparse'
+    assert result.returncode == 2, '--lane choices must reject a non-off/standard/full value at argparse'
 
 
 def test_finalize_steps_set_lane_cli_requires_step_id_and_lane():

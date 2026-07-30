@@ -98,8 +98,9 @@ def _migrate_retired_step_keys(live: dict, renamed: list[str]) -> dict:
 
 # Legacy run_at_all → lane migration (D7). Maps each of the four finalize
 # ceremony gates' retired run_at_all values onto the per-element ``lane`` override
-# channel: ``never→off``, ``always→minimal``, and ``auto→`` omit (``auto`` is the
-# lane default — an absent override resolves to ``auto``, so no key is written).
+# channel: ``never→off``, ``always→minimal``, and ``auto→`` omit (``standard`` is
+# the lane default — an absent override resolves to ``standard``, so no key is
+# written).
 # The mapping table below covers only the two force values; ``auto`` (and any
 # malformed value) falls through to "omit" while STILL removing the retired key so
 # a re-run is a no-op.
@@ -330,7 +331,7 @@ def _materialize_finalize_lanes(live: dict, materialized: list[str], added: list
       — the frontmatter-class default the composer would apply with no override,
       resolved via :func:`_resolve_finalize_step_lane` +
       :func:`_effective_lane_tier` (declared ``tier`` ▸ class default: ``core`` /
-      ``derived-state`` → ``minimal``, ``adversarial`` / ``prunable`` → ``auto``).
+      ``derived-state`` → ``minimal``, ``adversarial`` / ``prunable`` → ``standard``).
       This is a semantic no-op — it surfaces the implicit default as an explicit
       value, changing nothing operationally.
     - **Unresolvable pre-existing step** — the frontmatter lane cannot be resolved

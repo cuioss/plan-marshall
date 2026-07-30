@@ -841,7 +841,7 @@ def _log_scope_gated_finalize_subtraction(plan_id: str, scope_estimate: str, dro
 # gate's finalize step in (`always`), out (`never`), or defers to the existing
 # decision machinery (`auto`, the default no-op). Each gate's effective decision
 # is derived from its owning step's per-element `lane` override
-# (`steps[<owner>].lane` — `off`→`never`, `minimal`→`always`, `auto`/absent→`auto`),
+# (`steps[<owner>].lane` — `off`→`never`, `minimal`→`always`, `standard`/absent→`auto`),
 # NOT from a flat run-at-all sibling. Each gate maps to exactly one finalize step:
 #
 #   self_review    → default:pre-submission-self-review
@@ -1320,8 +1320,8 @@ def _log_step_execution_tier_stamping(plan_id: str, records: list[dict[str, str]
 #
 # Every lane-participating phase-6 element self-declares a ``lane:`` frontmatter
 # block (``class`` / ``tier`` / ``prunable_when`` / ``cost_size``). The operator
-# postures ``minimal`` / ``auto`` / ``full`` are cutoffs over those
-# self-classifying elements on the lattice ``minimal ⊏ auto ⊏ full``. The closed
+# postures ``minimal`` / ``standard`` / ``full`` are cutoffs over those
+# self-classifying elements on the lattice ``minimal ⊏ standard ⊏ full``. The closed
 # enums, the class→default-tier table, and the resolution rules are owned by
 # ``extension-api/standards/ext-point-lane-element.md`` — this composer is the
 # single resolver that reads each element's block and applies the posture cutoff.
@@ -1379,7 +1379,7 @@ def _apply_lane_resolution(
 ) -> tuple[list[str], list[dict[str, str]], list[tuple[str, str]]]:
     """Resolve the phase-6 step list under ``posture`` — returns (kept, dropped, warnings).
 
-    ``full`` is a no-op (keep everything). For ``minimal`` / ``auto`` each
+    ``full`` is a no-op (keep everything). For ``minimal`` / ``standard`` each
     lane-participating element is kept iff ``effective_tier ⊑ posture``; an
     element with no ``lane:`` block is not lane-participating and is always kept.
     The q-gate is never a phase-6 finalize step, so it is never reached here.
@@ -1698,7 +1698,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     #      AND the live footprint is empty. No change_type leg — fails toward
     #      inclusion. Shares no helper with simplify_inactive.
     #   5. scope_gated_finalize — drop heavyweight phase-6 review/audit steps by
-    #      scope_estimate; a step carrying an explicitly declared, non-auto
+    #      scope_estimate; a step carrying an explicitly declared, non-standard
     #      per-element `lane` override is immune (declared-lane immunity).
     # Every subtraction a pre-filter makes is REPORTED: each returns either a
     # ``{step, reason}`` record list (one record per dropped step) or, for a
@@ -1766,7 +1766,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # drops only plan-retrospective. It runs after the other pre-filters and
     # before the six-row matrix, so it only ever narrows the candidate list.
     #
-    # Declared-lane immunity: a step carrying an explicitly declared, non-auto
+    # Declared-lane immunity: a step carrying an explicitly declared, non-standard
     # per-element `lane` override is never dropped here. This gate is IMPLICIT
     # (it infers intent from the scope estimate) and it runs BEFORE ceremony
     # selection and lane resolution, where only the four ceremony gates can be
@@ -1781,12 +1781,12 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # Pre-filter 6 (unresolved_ask_provider_drop, D6): drop an UNRESOLVED
     # lane:ask infra element (automatic-review / sonar-roundtrip) when its
     # provider is genuinely absent. Both infra elements seed lane:ask; a
-    # steward-persisted answer overwrites the override to off/auto/full, so an
+    # steward-persisted answer overwrites the override to off/standard/full, so an
     # effective tier still equal to ``ask`` at compose means the operator never
     # answered. When the corresponding provider is also absent
     # (_read_ci_provider() is None for automatic-review; _read_sonar_provider()
     # is None for sonar-roundtrip) the element is dropped. A RESOLVED ask
-    # (off/auto/full) and a provider-configured ask both survive; the
+    # (off/standard/full) and a provider-configured ask both survive; the
     # off-override-on-floor-step immunity semantic — a weakening off on a
     # core / derived-state floor element is ignored, not dropped (owned by the
     # later lane-resolution pass) — is untouched. Runs at the candidate-narrowing
@@ -1934,7 +1934,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # operator-set `always` overrides the implicit scope gate. The transform never
     # touches `automatic-review`, leaving the bot-review invariant intact. Each
     # gate's decision is derived from its owning step's per-element `lane` override
-    # (`steps[<owner>].lane` — `off`→`never`, `minimal`→`always`, `auto`/absent→
+    # (`steps[<owner>].lane` — `off`→`never`, `minimal`→`always`, `standard`/absent→
     # `auto`), not a flat phase-level sibling. `plan_id` is forwarded so the gates
     # resolve that override from the SAME merged plan-local-over-marshal map the
     # scope gate's immunity predicate reads — the symmetric-pair obligation: a
@@ -1951,8 +1951,8 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # the pre-lane composition path). Each element's ``lane:`` block (class / tier
     # / cost_size — owned by extension-api/standards/ext-point-lane-element.md)
     # plus its per-element marshal.json ``lane`` override resolves keep/drop under
-    # the posture cutoff: ``minimal`` keeps only the tier-minimal floor, ``auto``
-    # additionally keeps tier-auto elements and drops tier-full ones, ``full``
+    # the posture cutoff: ``minimal`` keeps only the tier-minimal floor, ``standard``
+    # additionally keeps tier-standard elements and drops tier-full ones, ``full``
     # keeps everything. A weakening ``off`` override of a derived-state / core
     # floor element is IMMUNE — the ``off`` is ignored, the element is KEPT at its
     # class-default tier, and an informational warning records the neutralized
@@ -2186,7 +2186,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
             plan_id,
             '(plan-marshall:manage-execution-manifest:compose) scope_gated_finalize immunity — '
             f'kept {immune_step} despite scope_estimate={args.scope_estimate}: the step declares an '
-            'explicit non-auto lane override, which the implicit scope gate must not silently '
+            'explicit non-standard lane override, which the implicit scope gate must not silently '
             'override',
         )
     for dropped_step in unresolved_ask_dropped:
@@ -2574,7 +2574,7 @@ def _build_parser() -> argparse.ArgumentParser:
     lanes_sub = lanes_parser.add_subparsers(dest='lanes_verb', required=True, help='lanes operation')
     lanes_preview = lanes_sub.add_parser(
         'preview',
-        help='Resolve minimal/auto/full phase-6 step sets + cost sums in one TOON',
+        help='Resolve minimal/standard/full phase-6 step sets + cost sums in one TOON',
         allow_abbrev=False,
     )
     add_plan_id_arg(lanes_preview)

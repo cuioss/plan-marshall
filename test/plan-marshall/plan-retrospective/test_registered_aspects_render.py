@@ -291,7 +291,7 @@ class TestConditionalFragmentActuallyRenders:
             'status': 'success',
             'aspect': 'routing-decisions',
             'manifest_present': True,
-            'posture': 'auto',
+            'posture': 'standard',
             'planning_lane': 'deep',
             'mis_prune_checks': [
                 {'check': 'mis_prune:sonar-roundtrip', 'status': 'pass',

@@ -115,15 +115,15 @@ The pre-filters run in this order:
 2. **`pre_push_quality_gate_inactive`** — drops `pre-push-quality-gate` ONLY on a positive `not_necessary` build verdict. An `unknown` verdict keeps the step.
 3. **`simplify_inactive`** — drops `finalize-step-simplify` when `change_type ∉ {feature, bug_fix, tech_debt, enhancement}` OR `affected_files_count == 0`.
 3b. **`security_class_inactive`** — drops a **security-class** step (any candidate whose source doc declares `persona: persona-security-expert`) only when `affected_files_count == 0` **AND** the live footprint is resolvable-and-empty. It shares no helper and no gate with `simplify_inactive`: there is no `change_type` leg, so the gate fails toward inclusion. An UNRESOLVABLE footprint is no evidence and keeps the step.
-4. **`scope_gated_finalize`** — drops heavyweight phase-6 review/audit steps by `scope_estimate`: `surgical` drops `plan-retrospective`, `pre-submission-self-review`, and `plugin-doctor`; `single_module` drops only `plan-retrospective`. A step declaring an explicit non-`auto` per-element `lane` override — in EITHER declaration channel — is immune and is never dropped here.
+4. **`scope_gated_finalize`** — drops heavyweight phase-6 review/audit steps by `scope_estimate`: `surgical` drops `plan-retrospective`, `pre-submission-self-review`, and `plugin-doctor`; `single_module` drops only `plan-retrospective`. A step declaring an explicit non-`standard` per-element `lane` override — in EITHER declaration channel — is immune and is never dropped here.
 5. **`unresolved_ask_provider_drop`** — drops an UNRESOLVED `lane: ask` infra element (`plan-marshall:automatic-review` / `default:sonar-roundtrip`) when its corresponding provider is genuinely absent (no CI provider for `automatic-review`; no Sonar provider for `sonar-roundtrip`). A resolved ask (`off`/`auto`/`full`) and a provider-configured ask both survive. Documented in its own subsection below.
 
 Each row that emits a Phase 6 list (whether by intersection, subtraction, or pass-through) operates on the already-filtered candidate list, so the resulting `phase_6.steps` will never contain a step removed by any pre-filter that ran before the row matrix.
 
 After the six-row matrix runs, three post-matrix transforms inspect the matrix output before the manifest is persisted, in this order:
 
-1. **`ceremony_finalize_selection`** — applies the four `plan.phase-6-finalize` ceremony gates (`self_review` / `qgate` / `simplify` / `security_audit`), each derived from its owning step's per-element `lane` override (`off→never`, `minimal→always`, `auto/absent→auto`), to the final `phase_6.steps`, forcing each gate's step in (`always`), out (`never`), or deferring (`auto`). It NEVER touches `plan-marshall:automatic-review`. Documented in its own subsection below.
-2. **Execution-profile lane resolution** — applies the `minimal ⊏ auto ⊏ full` posture cutoff from `status.metadata.execution_profile` to the lane-participating steps, dropping every element whose effective tier exceeds the posture. `plan-marshall:automatic-review` participates in this pass like any other lane element — its keep/drop is governed purely by its configured `lane` and lane tier, with no separate downstream force-add guard. Documented in its own subsection below.
+1. **`ceremony_finalize_selection`** — applies the four `plan.phase-6-finalize` ceremony gates (`self_review` / `qgate` / `simplify` / `security_audit`), each derived from its owning step's per-element `lane` override (`off→never`, `minimal→always`, `standard/absent→auto`), to the final `phase_6.steps`, forcing each gate's step in (`always`), out (`never`), or deferring (`auto`). It NEVER touches `plan-marshall:automatic-review`. Documented in its own subsection below.
+2. **Execution-profile lane resolution** — applies the `minimal ⊏ standard ⊏ full` posture cutoff from `status.metadata.execution_profile` to the lane-participating steps, dropping every element whose effective tier exceeds the posture. `plan-marshall:automatic-review` participates in this pass like any other lane element — its keep/drop is governed purely by its configured `lane` and lane tier, with no separate downstream force-add guard. Documented in its own subsection below.
 3. **`frontmatter_order_sort`** — reorders the final `phase_6.steps` into ascending frontmatter `order` (stable sort via `_sort_steps_by_frontmatter_order`; order-unresolvable entries stay pinned at their original index), so `archive-plan` (order 1000) is the terminal barrier regardless of seed order. This sort is the sole ordering authority — `plan-marshall:automatic-review` (order 30) is placed deterministically before the plan-mutating tail by its frontmatter order, so no separate placement validator is needed. Documented in its own subsection below.
 
 The sort is asserted by the [`phase_6_order_violation`](#post-compose-assertion-phase_6_order_violation) gate, which fails the compose when the sorted list is not verifiably ascending.
@@ -245,7 +245,7 @@ When the plan has any change surface, the pre-filter is a no-op and emits no log
 - **`scope_estimate == 'single_module'`** — drops only `plan-marshall:plan-retrospective`.
 - **`scope_estimate ∈ {none, multi_module, broad}`** — no implicit subtraction; the full candidate set survives into the matrix.
 
-**Declared-lane immunity**: membership in a drop set is not sufficient to drop. A step carrying an explicitly declared, non-`auto` per-element `lane` override is **immune** — the scope gate keeps it whatever the `scope_estimate` says. The rule follows from what the two signals are: this gate is IMPLICIT, inferring "you probably do not want this" from the scope estimate, while a `lane` override is the operator stating what they do want. An implicit inference must never silently override an explicit declaration.
+**Declared-lane immunity**: membership in a drop set is not sufficient to drop. A step carrying an explicitly declared, non-`standard` per-element `lane` override is **immune** — the scope gate keeps it whatever the `scope_estimate` says. The rule follows from what the two signals are: this gate is IMPLICIT, inferring "you probably do not want this" from the scope estimate, while a `lane` override is the operator stating what they do want. An implicit inference must never silently override an explicit declaration.
 
 **The declaration source is the MERGED map, not marshal alone.** Immunity is resolved from `_read_merged_phase_6_step_map(plan_id)`, which overlays the plan-local `status.metadata.finalize_step_overrides` map onto the project-wide `marshal.json::plan.phase-6-finalize.steps` map — plan-local wins per step key, merged per knob (shallow), so a plan-local `lane` does not erase a marshal-side sibling param on the same step. An operator's answer captured for THIS plan therefore grants immunity exactly as a project-wide declaration does, and appears in the same `scope_gated_finalize_immune` list. Both channels, their identical shape and enum, and the full precedence ordering are the contract-of-record in [`ext-point-lane-element.md`](../../extension-api/standards/ext-point-lane-element.md) § "Per-element override knob" — not restated here.
 
@@ -261,7 +261,7 @@ The immunity is load-bearing rather than cosmetic because of WHERE this pre-filt
 
 ```text
 (plan-marshall:manage-execution-manifest:compose) scope_gated_finalize subtraction — scope_estimate={value}, dropped {step} from phase_6.steps
-(plan-marshall:manage-execution-manifest:compose) scope_gated_finalize immunity — kept {step} despite scope_estimate={value}: the step declares an explicit non-auto lane override, which the implicit scope gate must not silently override
+(plan-marshall:manage-execution-manifest:compose) scope_gated_finalize immunity — kept {step} despite scope_estimate={value}: the step declares an explicit non-standard lane override, which the implicit scope gate must not silently override
 ```
 
 The immunity line exists so a retention is as visible as a subtraction — a step surviving a gate that names it is otherwise indistinguishable from a gate that never ran. The composer surfaces both lists as `scope_gated_finalize_dropped` and `scope_gated_finalize_immune` in the `compose` result.
@@ -274,11 +274,11 @@ When `scope_estimate ∈ {none, multi_module, broad}`, the pre-filter is a no-op
 
 **Type**: Composition-time candidate-narrowing pre-filter (deliverable 6). Runs *after* `scope_gated_finalize` and *before* every row of the six-row matrix, so it only ever narrows the candidate list.
 
-**Condition**: For each of the two infra-dependent adversarial elements (`plan-marshall:automatic-review`, `default:sonar-roundtrip`), the element's EFFECTIVE lane tier is still literally `ask` (the UNRESOLVED case — the seed value is `ask`, and a steward-persisted answer overwrites it to `off`/`auto`/`full`, so an effective tier still equal to `ask` at compose means the operator never answered) AND the corresponding provider is genuinely absent (`_read_ci_provider() is None` for `automatic-review`; `_read_sonar_provider() is None` for `sonar-roundtrip`).
+**Condition**: For each of the two infra-dependent adversarial elements (`plan-marshall:automatic-review`, `default:sonar-roundtrip`), the element's EFFECTIVE lane tier is still literally `ask` (the UNRESOLVED case — the seed value is `ask`, and a steward-persisted answer overwrites it to `off`/`standard`/`full`, so an effective tier still equal to `ask` at compose means the operator never answered) AND the corresponding provider is genuinely absent (`_read_ci_provider() is None` for `automatic-review`; `_read_sonar_provider() is None` for `sonar-roundtrip`).
 
 **Effect**: the unresolved-ask infra element whose provider is absent is dropped from `phase_6_candidates`. This closes the sync-defaults-without-steward provenance gap where a materialized-but-unanswered infra element would otherwise reach the finalize pipeline on a project that has no bots / no Sonar. The pre-filter:
 
-- MUST NOT drop a RESOLVED ask — an effective tier of `off`/`auto`/`full` keeps the element (`off` is handled by the later lane-resolution pass; `auto`/`full` keep it per posture).
+- MUST NOT drop a RESOLVED ask — an effective tier of `off`/`standard`/`full` keeps the element (`off` is handled by the later lane-resolution pass; `standard`/`full` keep it per posture).
 - MUST NOT drop when the provider IS configured — an `ask` whose provider exists is kept (the operator merely has not answered yet, but the infra is present).
 - MUST NOT alter the `off`-override-on-floor-step immunity semantic (a weakening `off` on a `core` / `derived-state` floor element is ignored, not dropped) — that path is owned by the lane-resolution pass and is untouched.
 
@@ -354,10 +354,10 @@ The six-bucket classifier above (`_classify_paths_via_extensions`) and the `buil
 
 | Gate | Owning step (its `lane` override) | Derived run decision |
 |------|-----------------------------------|----------------------|
-| `self_review` | `default:pre-submission-self-review` | `off→never` \| `minimal→always` \| `auto`/absent→`auto` (default) |
-| `qgate` | `default:pre-push-quality-gate` (finalize blocking-findings re-capture) | `off→never` \| `minimal→always` \| `auto`/absent→`auto` (default) |
-| `simplify` | `default:finalize-step-simplify` (holistic post-implementation simplification sweep) | `off→never` \| `minimal→always` \| `auto`/absent→`auto` (default) |
-| `security_audit` | `default:finalize-step-security-audit` (proactive security sweep) | `off→never` \| `minimal→always` \| `auto`/absent→`auto` (default) |
+| `self_review` | `default:pre-submission-self-review` | `off→never` \| `minimal→always` \| `standard`/absent→`auto` (default) |
+| `qgate` | `default:pre-push-quality-gate` (finalize blocking-findings re-capture) | `off→never` \| `minimal→always` \| `standard`/absent→`auto` (default) |
+| `simplify` | `default:finalize-step-simplify` (holistic post-implementation simplification sweep) | `off→never` \| `minimal→always` \| `standard`/absent→`auto` (default) |
+| `security_audit` | `default:finalize-step-security-audit` (proactive security sweep) | `off→never` \| `minimal→always` \| `standard`/absent→`auto` (default) |
 
 **Gate resolution**: each gate's run decision is derived from its owning step's per-element `lane` override (`steps[<owner>].lane`), read via `_read_finalize_gates(plan_id)` → `_read_step_owned_knob(owner, knob, plan_id)`. That reader and the lane-override reader behind the scope gate's immunity predicate are a symmetric pair over the same field, so both consume the merged map — widening only one would let a plan-local `lane` grant scope-gate immunity while leaving the ceremony gate deaf to it. The `lane` value maps to the ceremony run-at-all decision the transform consumes: `off` → `never` (force out), `minimal` → `always` (force in), and every other value (`auto` / `full` / `ask` / absent) → `auto` (defer to the pre-filter machinery). There is no flat phase-level `qgate` sibling and no step-owned run-at-all param — the four ceremony gates ride the same per-element `lane` override channel the other lane elements use.
 
@@ -389,21 +389,21 @@ When all four gates resolve to `auto` (the default), the transform is a no-op an
 
 **Type**: Composition-time post-matrix transform (NOT a pre-filter). Runs *after* the six-row matrix, the change-type / scope pre-filters, and `ceremony_finalize_selection` have produced the final `phase_6.steps`, and *before* the frontmatter-order sort.
 
-**Posture source**: `status.metadata.execution_profile`, one of `minimal` / `auto` / `full`. An absent or invalid value resolves to `full`, which is a no-op — every plan that never chose a posture composes exactly as it did before the lane mechanism existed (the back-compat default).
+**Posture source**: `status.metadata.execution_profile`, one of `minimal` / `standard` / `full`. An absent or invalid value resolves to `full`, which is a no-op — every plan that never chose a posture composes exactly as it did before the lane mechanism existed (the back-compat default).
 
-**Contract ownership**: the closed `lane.class` enum (`derived-state` / `core` / `adversarial` / `prunable`), the class→default-tier table, the resolution lattice `minimal ⊏ auto ⊏ full`, the per-element override vocabulary (`off | minimal | auto | full | ask`), and the `cost_size` binding are owned by [`extension-api/standards/ext-point-lane-element.md`](../../extension-api/standards/ext-point-lane-element.md). This section documents only how the composer consumes them. Do not restate the enums here.
+**Contract ownership**: the closed `lane.class` enum (`derived-state` / `core` / `adversarial` / `prunable`), the class→default-tier table, the resolution lattice `minimal ⊏ standard ⊏ full`, the per-element override vocabulary (`off | minimal | standard | full | ask`), and the `cost_size` binding are owned by [`extension-api/standards/ext-point-lane-element.md`](../../extension-api/standards/ext-point-lane-element.md). This section documents only how the composer consumes them. Do not restate the enums here.
 
 **Per-element resolution**: for each step in `phase_6.steps` the composer resolves the element's `lane:` frontmatter block (built-in steps via the standards / workflow doc; `project:` steps via the project-local `{bare}/SKILL.md`). It then resolves the effective tier — per-element `marshal.json` `lane` override ▸ declared `lane.tier` ▸ class default — and keeps the element iff `effective_tier ⊑ posture`:
 
 - `minimal` keeps only the tier-`minimal` floor (`core` / `derived-state`, plus the `minimal`-deviated `lessons-capture` / `lessons-housekeeping`);
-- `auto` additionally keeps tier-`auto` elements and drops tier-`full` ones (`security-audit`, `plan-retrospective`);
+- `standard` additionally keeps tier-`standard` elements and drops tier-`full` ones (`security-audit`, `plan-retrospective`);
 - `full` keeps everything.
 
 An element with no `lane:` block is not lane-participating and is always kept. An `off` override on an `adversarial` / `prunable` element drops it cleanly (a real opt-out). An `off` override on a `derived-state` / `core` floor element is **immune** — it is ignored, the element is KEPT at its class-default tier, and an informational note records that the weakening override was neutralized (the lane-selection design §5 — `minimal` must never drop required derived state, so the correctness floor cannot be weakened away). An `ask` effective tier keeps the element at compose time (the `phase-1-init` dialogue owns the per-element prompt).
 
 **`plan-marshall:automatic-review` is governed purely by its lane**: this pass resolves `plan-marshall:automatic-review` exactly like any other adversarial lane element — kept iff its effective tier ⊑ posture, with its per-element `marshal.json` `lane` override taking precedence over the class default. There is no separate downstream force-add guard that re-asserts it: a `minimal` posture that drops it, or an `off` override, is honored as the operator's decision. **The q-gate is never a phase-6 finalize step, so the lane pass never touches it** — the adversarial q-gate is always kept.
 
-**Twice-compose timing**: `compose` runs at init (provisional `auto` footprint prunes) and again at end-of-phase-4 (idempotent re-compose with firm signals). The posture and the `minimal` / `full` shapes are fixed at init; only `auto`'s footprint-gated prunes can move on the second call, in the safe more-validation direction, and that refinement is **logged, never re-prompted**.
+**Twice-compose timing**: `compose` runs at init (provisional `standard` footprint prunes) and again at end-of-phase-4 (idempotent re-compose with firm signals). The posture and the `minimal` / `full` shapes are fixed at init; only `standard`'s footprint-gated prunes can move on the second call, in the safe more-validation direction, and that refinement is **logged, never re-prompted**.
 
 **Decision log lines** (in addition to the row + pre-filter lines):
 
@@ -468,7 +468,7 @@ The `order`-resolution verdicts backing the gate live in `_manifest_validation._
 **What the preview applies** (in composer order), because each depends only on marshal configuration:
 
 1. `unresolved_ask_provider_drop` — decided by the per-element lane override plus provider presence.
-2. The posture lane cutoff, per posture (`minimal` / `auto` / `full`).
+2. The posture lane cutoff, per posture (`minimal` / `standard` / `full`).
 3. The frontmatter-order sort — included because `compose` sorts its final list, so an unsorted preview would report a different ORDER for an identical membership.
 
 **What the preview cannot apply**: the remaining pre-filters, the six-row matrix, and `ceremony_finalize_selection` all read PLAN inputs (`change_type` / `scope_estimate` / `track` / `affected_files_count` / `commit_and_push` / the live footprint) that do not exist at preview time — the preview runs at the init dialogue, before those values are settled.

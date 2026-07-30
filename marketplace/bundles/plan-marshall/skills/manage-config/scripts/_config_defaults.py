@@ -309,7 +309,7 @@ DEFAULT_FINDING_RAW_INPUT_MAX_BYTES = 65536
 # gate's decision in; `never` forces it out. The four finalize ceremony gates
 # (`qgate`, `self_review`, `simplify`, `security_audit`) do NOT ride this enum —
 # each is governed by its owning step's `steps.<step>.lane` override
-# (`off`/`minimal`/`auto`). Planning-time q-gate validation is governed by the
+# (`off`/`minimal`/`standard`). Planning-time q-gate validation is governed by the
 # distinct `q_gate_validation` knob (see :data:`VALID_Q_GATE_VALIDATION` below).
 VALID_GATE_MODE = ('auto', 'always', 'never')
 
@@ -378,10 +378,9 @@ def validate_q_gate_validation(value: str, field_name: str) -> None:
 # ---------------------------------------------------------------------------
 
 # `lane_selection` (`plan.phase-1-init.lane_selection`) — whether init PROMPTS
-# for the execution-profile posture or silently takes the computed `auto`
-# posture.
-#   - 'ask'  (default): surface the minimal/auto/full posture dialogue at init.
-#   - 'auto':           skip the dialogue and take the `auto` projection silently.
+# for the execution-profile posture or silently takes the computed projection.
+#   - 'ask'  (default): surface the minimal/standard/full posture dialogue at init.
+#   - 'auto':           skip the dialogue and take the computed projection silently.
 # Mirrors the sibling deep_lane / finalize_without_asking ask/auto family.
 VALID_LANE_SELECTION = ('ask', 'auto')
 
@@ -408,16 +407,16 @@ def validate_lane_selection(value: str) -> None:
 #                element — honored, but a derived-state weakening additionally
 #                emits a correctness warning at compose time).
 #   - 'minimal': force-keep in every posture (promote to the floor).
-#   - 'auto' / 'full': pin the element's effective tier on the lattice.
+#   - 'standard' / 'full': pin the element's effective tier on the lattice.
 #   - 'ask':     always surface the element individually in the init dialogue.
 # The shipped per-element default lives in each element's frontmatter `lane:`
 # block; this override is absent by default — marshal.json carries only the
 # project / meta overrides.
-VALID_LANE_OVERRIDE = ('off', 'minimal', 'auto', 'full', 'ask')
+VALID_LANE_OVERRIDE = ('off', 'minimal', 'standard', 'full', 'ask')
 
 
 def validate_lane_override(value: str, field_name: str = 'lane') -> None:
-    """Validate a per-element lane override (``off|minimal|auto|full|ask``).
+    """Validate a per-element lane override (``off|minimal|standard|full|ask``).
 
     Args:
         value: The candidate override value.
@@ -434,7 +433,7 @@ def validate_lane_override(value: str, field_name: str = 'lane') -> None:
 
 
 # Prune-predicate thresholds (`plan.phase-1-init.lane_prune_thresholds`) — the
-# tunable numeric thresholds the `auto` posture evaluates its prunable-element
+# tunable numeric thresholds the `standard` posture evaluates its prunable-element
 # predicates against at manifest-compose time. The predicate NAMES are owned by
 # the central standard's Prune-predicates table; only the numeric predicates
 # carry a threshold here (`no_code_delta` / `footprint_no_lesson_component` are
@@ -547,11 +546,11 @@ DEFAULT_PLAN_INIT = {
     # `manage-config plan phase-1-init get --field auto_route_recipe_threshold`.
     'auto_route_recipe_threshold': 0.6,
     # Execution-profile lane prompt gate (ask|auto). `ask` (default) surfaces the
-    # minimal/auto/full posture dialogue at init; `auto` takes the computed `auto`
+    # minimal/standard/full posture dialogue at init; `auto` takes the computed
     # projection silently. Validated by validate_lane_selection. Read via
     # `manage-config plan phase-1-init get --field lane_selection`.
     'lane_selection': 'ask',
-    # Tunable numeric thresholds the `auto` posture evaluates its prunable-element
+    # Tunable numeric thresholds the `standard` posture evaluates its prunable-element
     # predicates against at manifest-compose time (confidence_complete confidence
     # floor; linear_change deliverable-count ceiling). Validated by
     # validate_lane_prune_thresholds. Read via
@@ -930,7 +929,7 @@ def validate_sonar_touched_file_cleanup(value: str) -> None:
 #                                      immunity, not a step-owned knob)
 # The four finalize ceremony gates (qgate, self_review, simplify, security_audit)
 # no longer ride a run-at-all param: each is governed by its owning step's
-# `steps.<step>.lane` override (`off`/`minimal`/`auto`). Phase-level knobs with no
+# `steps.<step>.lane` override (`off`/`minimal`/`standard`). Phase-level knobs with no
 # single owning step (checks_wait_timeout_seconds, max_iterations,
 # finalize_without_asking, loop_back_without_asking, effort, …) stay flat siblings
 # of `steps`.
@@ -960,7 +959,7 @@ def _seed_finalize_steps() -> dict:
     - Every ``default_on: false`` step seeds a ``lane: off`` override so its
       exclusion is expressed as ``lane: off`` rather than absence from the seed.
     - Every ``default_on: true`` non-infra step carries no ``lane`` key (absent
-      override resolves to the ``auto`` posture).
+      override resolves to the ``standard`` posture).
 
     The cross-bundle modules are imported lazily here (not at module top level) so
     importing ``_config_defaults`` never pulls in the extension-api parser — the
@@ -1011,7 +1010,7 @@ DEFAULT_PLAN_FINALIZE = {
     # Finalize-qgate now rides `steps['pre-push-quality-gate'].lane` — the same
     # per-element `lane` override channel the other three ceremony gates
     # (`self_review`, `simplify`, `security_audit`) use — resolved by the
-    # manifest ceremony transform (`off→never`, `minimal→always`, `auto/absent→auto`).
+    # manifest ceremony transform (`off→never`, `minimal→always`, `standard/absent→auto`).
     # Default timeout (seconds) for the CI-completion polling commands consumed
     # by tools-integration-ci/scripts/ci_base.py (`ci checks wait`,
     # `ci pr wait-for-comments`, `ci checks wait-for-status-flip`, and the two

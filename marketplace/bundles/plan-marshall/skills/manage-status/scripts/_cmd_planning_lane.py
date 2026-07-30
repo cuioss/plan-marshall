@@ -36,7 +36,7 @@ short-circuits the evaluation: ``always`` forces deep, ``never`` forces light
 is also ``never``), ``auto`` (the default) defers to the signals.
 
 The router also projects a RECOMMENDED execution-profile posture
-(``minimal`` / ``auto`` / ``full``) over the SAME signals via
+(``minimal`` / ``standard`` / ``full``) over the SAME signals via
 ``project_profile_pure``. The projection is a pure derivation that adds no
 discovery and no cognition; it is independent of the ``deep_lane`` gate_mode gate
 (``deep_lane=always`` governs planning depth, NOT the profile — see
@@ -62,13 +62,13 @@ from plan_logging import log_entry
 LIGHT = 'light'
 DEEP = 'deep'
 
-# Execution-profile postures (the lane lattice minimal ⊏ auto ⊏ full). The
+# Execution-profile postures (the lane lattice minimal ⊏ standard ⊏ full). The
 # planning-lane router projects a RECOMMENDED posture over the same signals it
 # already scores for the {light, deep} verdict; the projection is independent of
 # the deep_lane gate_mode gate (deep_lane governs planning DEPTH, not the profile
 # — see ext-point-lane-element.md and §4.2 of the lane-selection outline).
 MINIMAL = 'minimal'
-AUTO = 'auto'
+STANDARD = 'standard'
 FULL = 'full'
 
 # Scope bands that read as broad-surface for the profile projection (a superset
@@ -412,7 +412,7 @@ def project_profile_pure(
 
     A deterministic function of the SAME signals the lane verdict scores (it
     adds no discovery and no cognition). It recommends a posture on the
-    ``minimal ⊏ auto ⊏ full`` lattice:
+    ``minimal ⊏ standard ⊏ full`` lattice:
 
     - ``minimal`` — a ``surgical`` AND concretely specified change: mechanical,
       well-anchored, low-stakes. This is the same narrow-and-concrete predicate
@@ -427,7 +427,7 @@ def project_profile_pure(
       feature_breaking}``) that is also broad (``scope_estimate`` ∈ multi_module
       / broad) OR clean-slate breaking, and NOT narrow-and-concrete. These are
       the correctly-deep features where the adversarial ceremony earns its cost.
-    - ``auto`` — everything else (the generic recommendation / default).
+    - ``standard`` — everything else (the generic recommendation / default).
 
     The recommendation is exactly that — a default the operator overrides. It is
     independent of the ``deep_lane`` gate_mode gate (which governs planning depth,
@@ -441,7 +441,7 @@ def project_profile_pure(
     breaking = compatibility == 'breaking'
     if generative and (broad or breaking):
         return FULL
-    return AUTO
+    return STANDARD
 
 
 def evaluate_signals_pure(
@@ -539,7 +539,7 @@ def evaluate_signals_pure(
         },
         'profile': {
             'recommended_posture': recommended_posture,
-            'candidate_postures': [MINIMAL, AUTO, FULL],
+            'candidate_postures': [MINIMAL, STANDARD, FULL],
         },
     }
 

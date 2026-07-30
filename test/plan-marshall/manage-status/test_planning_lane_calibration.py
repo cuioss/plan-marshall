@@ -261,8 +261,8 @@ def test_unknown_scope_still_scores_deep():
     assert 'S2:scope_estimate' in result['fired_signals']
 
 
-def test_unknown_scope_projects_auto():
-    """(iii) An unknown scope is neither narrow-and-concrete nor generative-broad → auto."""
+def test_unknown_scope_projects_standard():
+    """(iii) An unknown scope is neither narrow-and-concrete nor generative-broad → standard."""
     posture = project_profile_pure(
         scope_estimate=None,
         change_type='bug_fix',
@@ -270,7 +270,7 @@ def test_unknown_scope_projects_auto():
         request_concrete=True,
     )
 
-    assert posture == 'auto'
+    assert posture == 'standard'
 
 
 def test_narrow_non_concrete_free_form_still_scores_deep():

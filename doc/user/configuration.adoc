@@ -205,12 +205,12 @@ The net effect is light planning plus a minimal execution profile with the bot-r
 [#execution-profile-lane-selection]
 === Execution-profile lane selection
 
-The **execution profile** is an operator-facing, cost-visible posture — `minimal`, `auto`, or `full` — chosen at plan init that decides how much ceremony (phase-6 finalize steps, adversarial validators, retrospectives) a plan runs. It is a separate axis from the `deep_lane` planning-depth gate above: `deep_lane: always` forces a deep *planning* lane without forcing a `full` *profile*. Every phase / finalize-step element self-declares its lane membership through a `lane:` frontmatter block (`class` / `tier` / `cost_size`); the postures are cutoffs over that lattice, so the posture→steps mapping stays derived, never a maintained list. The `manage-execution-manifest lanes preview` verb resolves all three postures (kept step set + summed token cost) for the init dialogue.
+The **execution profile** is an operator-facing, cost-visible posture — `minimal`, `standard`, or `full` — chosen at plan init that decides how much ceremony (phase-6 finalize steps, adversarial validators, retrospectives) a plan runs. It is a separate axis from the `deep_lane` planning-depth gate above: `deep_lane: always` forces a deep *planning* lane without forcing a `full` *profile*. Every phase / finalize-step element self-declares its lane membership through a `lane:` frontmatter block (`class` / `tier` / `cost_size`); the postures are cutoffs over that lattice, so the posture→steps mapping stays derived, never a maintained list. The `manage-execution-manifest lanes preview` verb resolves all three postures (kept step set + summed token cost) for the init dialogue.
 
 The three postures:
 
 * **`minimal`** — only the tier-`minimal` floor (push, create-pr, ci-verify, branch-cleanup, record-metrics, archive, lessons capture, and the meta-project derived-state steps). No adversarial validators, no security audit, no retrospectives — appropriate for docs / mechanical changes.
-* **`auto`** (the projection) — keeps the adversarial validators and prunes the structurally-empty prunable steps (e.g. sonar when there is no code delta); drops the `full`-only steps (security-audit, plan-retrospective).
+* **`standard`** (the projection) — keeps the adversarial validators and prunes the structurally-empty prunable steps (e.g. sonar when there is no code delta); drops the `full`-only steps (security-audit, plan-retrospective).
 * **`full`** — every configured step.
 
 Four `marshal.json` knobs govern the mechanism:
@@ -219,9 +219,9 @@ Four `marshal.json` knobs govern the mechanism:
 |===
 | Config key | Default | What it controls
 
-| `plan.phase-1-init.lane_selection` | `ask` | Whether init PROMPTS for the posture (`ask`) or takes the computed `auto` projection silently (`auto`). Mirrors the `deep_lane` / `finalize_without_asking` ask/auto family.
-| `plan.phase-<phase>.steps.<step>.lane` | _(per element)_ | Per-element override pinning any single lane element, value ∈ `off` \| `minimal` \| `auto` \| `full` \| `ask` (`off` = never run; `minimal` = force-keep in every posture; `ask` = always prompt). Nested under the owning step in the keyed map, like other step-owned params. The shipped default lives in each element's frontmatter `lane:` block; this override is the project-level pin.
-| `plan.phase-1-init.lane_prune_thresholds` | `{confidence_complete: 95, linear_change_max_deliverables: 1}` | The tunable bounds for `auto`'s numeric prune predicates — `confidence_complete` (prune `refine` when the post-init confidence proxy is ≥ this value, int 0–100, matching the refine `confidence_threshold`) and `linear_change_max_deliverables` (treat the plan as a linear change, pruning 4-plan decomposition, when the deliverable count is ≤ this value). Tighten to prune more aggressively, loosen to keep more steps.
+| `plan.phase-1-init.lane_selection` | `ask` | Whether init PROMPTS for the posture (`ask`) or takes the computed projection silently (`auto`). Mirrors the `deep_lane` / `finalize_without_asking` ask/auto family.
+| `plan.phase-<phase>.steps.<step>.lane` | _(per element)_ | Per-element override pinning any single lane element, value ∈ `off` \| `minimal` \| `standard` \| `full` \| `ask` (`off` = never run; `minimal` = force-keep in every posture; `ask` = always prompt). Nested under the owning step in the keyed map, like other step-owned params. The shipped default lives in each element's frontmatter `lane:` block; this override is the project-level pin.
+| `plan.phase-1-init.lane_prune_thresholds` | `{confidence_complete: 95, linear_change_max_deliverables: 1}` | The tunable bounds for `standard`'s numeric prune predicates — `confidence_complete` (prune `refine` when the post-init confidence proxy is ≥ this value, int 0–100, matching the refine `confidence_threshold`) and `linear_change_max_deliverables` (treat the plan as a linear change, pruning 4-plan decomposition, when the deliverable count is ≤ this value). Tighten to prune more aggressively, loosen to keep more steps.
 | `plan.phase-5-execute.cost_size_token_table` | `{XS: 5K, …, XXL: 520K}` | The six-size token table the dialogue sums for the per-posture cost preview — see <<per-envelope-packing-budget,the cost-size token table below>> (shared with the task bin-packer).
 |===
 
