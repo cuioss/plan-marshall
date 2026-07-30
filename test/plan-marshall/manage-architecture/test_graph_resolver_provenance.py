@@ -22,6 +22,7 @@ precedence branches do not shadow the resolver) and a NON-EMPTY ``dependencies``
 list (so the lazy Maven enrichment short-circuits and no subprocess runs).
 """
 
+import sys
 import tempfile
 
 import extension_discovery
@@ -33,6 +34,12 @@ _architecture_core = load_script_module(
     'plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core'
 )
 _cmd_client = load_script_module('plan-marshall', 'manage-architecture', '_cmd_client.py', '_cmd_client')
+# _cmd_client.py's own `from _cmd_client_query import ...` (re-run on every load
+# because _cmd_client pops the stale submodule first) registers the fresh
+# instance in sys.modules — fetching it there (rather than a second
+# load_script_module call) guarantees the SAME module object whose globals
+# _derive_edges / _enriched_dependencies actually close over.
+_cmd_client_query = sys.modules['_cmd_client_query']
 
 save_project_meta = _architecture_core.save_project_meta
 save_module_derived = _architecture_core.save_module_derived
@@ -494,3 +501,110 @@ def test_module_markdown_provenance_line_states_when_no_resolver_registered(no_r
 
         assert '## Internal Dependencies' in rendered
         assert 'no derivation resolver is registered' in rendered
+
+
+# =============================================================================
+# 8. Declared-module enrichment skip (bdc2a8 self-review fix)
+# =============================================================================
+#
+# _derive_edges must not pay a Maven enrichment run for a module whose
+# internal_dependencies are already DECLARED (curated or crawl-time):
+# _build_deps_and_producers discards that module's resolver-derived edges
+# unconditionally once a declaration exists, so materializing its dependency
+# list via _enrich_maven_module_cached would spend a subprocess on output
+# nothing reads. _declared_dependencies is the single precedence check shared
+# by both _derive_edges (gates the enrich) and _build_deps_and_producers
+# (gates the resolved-edge branch) — the two sites disagreeing was the defect.
+
+
+def test_declared_module_skips_enrichment_undeclared_module_enriches(monkeypatch):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed(
+            tmpdir,
+            {
+                # Declared (crawl-time internal_dependencies) — dependencies left
+                # empty exactly as the cheap crawl leaves it. The only thing that
+                # could still trigger an enrich call is the module NOT being
+                # declared, so this module must produce zero enrich calls.
+                'declared': {
+                    'name': 'declared',
+                    'paths': {'module': 'declared'},
+                    'dependencies': [],
+                    'internal_dependencies': ['other'],
+                    'commands': {},
+                },
+                # Undeclared — empty dependencies, no internal_dependencies at
+                # either source, so it MUST fall through to enrichment.
+                'undeclared': {
+                    'name': 'undeclared',
+                    'paths': {'module': 'undeclared'},
+                    'dependencies': [],
+                    'commands': {},
+                },
+                'other': _module('other'),
+            },
+        )
+        _register(monkeypatch, _StubResolver('maven', edges=[]))
+
+        enrich_calls: list[str] = []
+
+        def _spy_enrich(module_name, derived, project_dir):
+            enrich_calls.append(module_name)
+            return None
+
+        monkeypatch.setattr(_cmd_client_query, '_enrich_maven_module_cached', _spy_enrich)
+
+        get_module_graph(tmpdir)
+
+        assert 'declared' not in enrich_calls
+        assert 'undeclared' in enrich_calls
+
+
+def test_declared_module_edges_and_producers_unaffected_by_resolver_probe(monkeypatch):
+    """A declared module's resolver-visible ``dependencies`` are irrelevant to
+    the final graph: ``_build_deps_and_producers`` always uses the declared
+    list and stamps ``declared``, discarding whatever a resolver derives for
+    that module. This is the CORRECTNESS CONSTRAINT the fix relies on:
+    skipping enrichment for a declared module changes only its resolver
+    INPUT, never any emitted edge or producer.
+    """
+
+    class _ProbeResolver:
+        """Mimics a coordinate-join resolver: emits an edge for every module
+        whose (possibly enriched) ``dependencies`` is non-empty."""
+
+        def derivation_resolver_id(self) -> str:
+            return 'probe'
+
+        def derive_edges(self, derived_by_name, enriched_by_name):
+            edges = []
+            for name, data in derived_by_name.items():
+                if data.get('dependencies') and name != 'other':
+                    edges.append((name, 'other'))
+            return edges, []
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed(
+            tmpdir,
+            {
+                # 'dependencies' happens to be non-empty here (as it would be
+                # after a real enrich ran) — the probe resolver would derive an
+                # edge from it, but the declared internal_dependencies must
+                # still win over whatever the resolver contributes.
+                'declared': {
+                    'name': 'declared',
+                    'paths': {'module': 'declared'},
+                    'dependencies': ['org.example:other:compile'],
+                    'internal_dependencies': ['other'],
+                    'commands': {},
+                },
+                'other': _module('other'),
+            },
+        )
+        records = [{'origin': 'stub-probe', 'id': 'probe', 'module': _ProbeResolver()}]
+        monkeypatch.setattr(extension_discovery, 'discover_derivation_resolvers', lambda: records)
+
+        result = get_module_graph(tmpdir)
+
+        edges = {(e['from'], e['to']): e['producers'] for e in result['edges']}
+        assert edges == {('other', 'declared'): ['declared']}

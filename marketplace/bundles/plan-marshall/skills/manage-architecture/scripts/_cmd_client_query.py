@@ -717,6 +717,32 @@ _PRODUCER_DECLARED = 'declared'
 _PRODUCER_SIBLING_CROSS_LINK = 'sibling-cross-link'
 
 
+def _declared_dependencies(
+    mod_name: str,
+    mod_data: dict[str, Any],
+    enriched_by_name: dict[str, dict[str, Any]],
+) -> list[str] | None:
+    """Return ``mod_name``'s DECLARED internal-dependency list, or ``None``.
+
+    The single place that decides declaration precedence, shared by
+    :func:`_derive_edges` (which uses a ``None`` result to gate lazy Maven
+    enrichment) and :func:`_build_deps_and_producers` (which uses it to gate
+    the resolved-edge branch) — the two sites disagreeing was the defect this
+    helper closes.
+
+    Precedence: ``enriched.json``'s LLM-curated ``internal_dependencies``
+    overlay wins over the crawl-time ``derived.json`` declaration. Returns the
+    declared list sorted+deduped, or ``None`` when the module carries no
+    declaration at either source.
+    """
+    enriched_mod = enriched_by_name.get(mod_name, {})
+    if 'internal_dependencies' in enriched_mod:
+        return sorted(set(enriched_mod['internal_dependencies']))
+    if 'internal_dependencies' in mod_data:
+        return sorted(set(mod_data['internal_dependencies']))
+    return None
+
+
 def _derive_edges(
     derived_by_name: dict[str, dict[str, Any]],
     enriched_by_name: dict[str, dict[str, Any]],
@@ -731,12 +757,23 @@ def _derive_edges(
     :func:`_build_internal_deps_map` — the Maven join is now the Maven resolver.
 
     A resolver is a pure function of its arguments (no subprocess, no filesystem
-    access), so the lazily-enriched dependency list is materialized HERE, before
-    dispatch: the cheap crawl leaves ``dependencies`` empty, and a resolver that
-    read the raw crawl output would see nothing to join against. Each module's
-    ``dependencies`` is filled from :func:`_enriched_dependencies` (memoized, at
-    most one Maven run per module per CLI invocation) on a shallow copy, so the
-    caller's map is never mutated.
+    access), so the resolved dependency list is materialized HERE, before
+    dispatch. Enrichment is paid ONLY for a module whose resolver edges can
+    actually be consumed downstream: :func:`_build_deps_and_producers` discards
+    a module's resolver-derived edges entirely once that module has a declared
+    ``internal_dependencies`` (curated or crawl-time) — a declaration always
+    wins — so materializing that module's dependency list via
+    :func:`_enriched_dependencies` would spend a ``mvn dependency:tree`` run on
+    output nothing reads. :func:`_declared_dependencies` is consulted first
+    (shared with the consuming precedence check below), and only a module for
+    which it returns ``None`` pays the lazy-enrichment cost; a declared
+    module's dependency list is taken as-is from the cheap crawl (``derived``'s
+    ``dependencies``, typically empty and unused as a resolver INPUT). A
+    skipped module still resolves correctly as an edge TARGET for every other
+    module, since coordinates (``group_id``/``artifact_id``) live in
+    ``metadata``, not ``dependencies`` — the Maven resolver's coordinate map is
+    built from every module's ``metadata`` regardless of which modules'
+    ``dependencies`` were enriched.
 
     The extension-api import is deferred and guarded, matching the
     ``_maven_cmd_discover`` idiom in :func:`_enrich_maven_module_cached`:
@@ -760,11 +797,16 @@ def _derive_edges(
     if not resolvers:
         return [], []
 
-    # Materialize the resolved dependency list so resolvers stay pure.
+    # Materialize the resolved dependency list so resolvers stay pure. Skip the
+    # Maven enrich for a module that already has a declaration — its resolver
+    # edges would be discarded by _build_deps_and_producers anyway.
     resolver_input: dict[str, dict[str, Any]] = {}
     for mod_name, mod_data in derived_by_name.items():
         module_view = dict(mod_data)
-        module_view['dependencies'] = _enriched_dependencies(mod_name, mod_data, project_dir)
+        if _declared_dependencies(mod_name, mod_data, enriched_by_name) is not None:
+            module_view['dependencies'] = mod_data.get('dependencies') or []
+        else:
+            module_view['dependencies'] = _enriched_dependencies(mod_name, mod_data, project_dir)
         resolver_input[mod_name] = module_view
 
     return merge_resolver_edges(resolvers, resolver_input, enriched_by_name)
@@ -817,16 +859,9 @@ def _build_deps_and_producers(
     producers_by_edge: dict[tuple[str, str], list[str]] = {}
 
     for mod_name, mod_data in derived_by_name.items():
-        enriched_mod = enriched_by_name.get(mod_name, {})
-        if 'internal_dependencies' in enriched_mod:
-            deps = sorted(set(enriched_mod['internal_dependencies']))
-            declared = True
-        elif 'internal_dependencies' in mod_data:
-            deps = sorted(set(mod_data['internal_dependencies']))
-            declared = True
-        else:
-            deps = sorted(resolved_deps.get(mod_name, set()))
-            declared = False
+        declared_deps = _declared_dependencies(mod_name, mod_data, enriched_by_name)
+        declared = declared_deps is not None
+        deps = declared_deps if declared_deps is not None else sorted(resolved_deps.get(mod_name, set()))
 
         deps_map[mod_name] = deps
         for dep in deps:
