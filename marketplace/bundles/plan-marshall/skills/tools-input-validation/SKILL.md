@@ -19,14 +19,14 @@ mode: knowledge
 - Do not bypass validation in scripts that accept user/LLM input
 
 **Constraints:**
-- All plan IDs must match `^[a-z][a-z0-9-]*$`
+- All plan IDs must match `^[a-z][a-z0-9-]*$`, with the single documented exception of the `NO_PLAN` sentinel
 - Relative paths must reject absolute paths and traversal sequences
 - Use raising validators for fail-fast behavior, bool validators for conditional logic
 
 ## What This Skill Provides
 
 - Canonical regex constants for the full identifier vocabulary (single source of truth)
-- Plan ID validation (kebab-case format)
+- Plan ID validation (kebab-case format, plus the `NO_PLAN` plan-less carve-out)
 - Lesson, session, task, component, hash, phase, field, module, package, domain, and resource-name validators
 - Relative path validation (rejects absolute paths and traversal)
 - Enum membership validation
@@ -51,10 +51,11 @@ Import `input_validation` module in Python scripts that:
 **Raising Validators** (return validated value or raise ValueError)
 
 **1. validate_plan_id(plan_id: str) -> str**
-- **Purpose**: Validate plan_id matches `^[a-z][a-z0-9-]*$`
+- **Purpose**: Validate plan_id matches `^[a-z][a-z0-9-]*$`, or is the `NO_PLAN` sentinel
 - **Input**: `plan_id` string
 - **Output**: The validated plan_id string
 - **Raises**: `ValueError` if invalid
+- **Note**: the sentinel carve-out is tested **ahead of** `PLAN_ID_RE` and this function is the single canonical place it lives — never re-implement it in a caller. See § "The `NO_PLAN` sentinel (plan_id carve-out)"
 
 **2. validate_relative_path(file_path: str) -> str**
 - **Purpose**: Reject absolute paths and `..` traversal
@@ -86,6 +87,7 @@ Import `input_validation` module in Python scripts that:
 - **Purpose**: Check if plan_id is valid (no exception)
 - **Input**: `plan_id` string
 - **Output**: `True` if valid, `False` otherwise
+- **Note**: delegates to `validate_plan_id`, so it inherits the `NO_PLAN` carve-out
 
 **7. is_valid_relative_path(file_path: str) -> bool**
 - **Purpose**: Check if file path is valid relative path (no exception)
@@ -202,21 +204,23 @@ message: Plan ID contains invalid characters: bad!!id
 
 ## Canonical Identifier Registry
 
-| Identifier | Regex | Builder |
-|------------|-------|---------|
-| `plan_id` | `^[a-z][a-z0-9-]*$` | `add_plan_id_arg` |
-| `lesson_id` | `^[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{2}-[0-9]+$` | `add_lesson_id_arg` |
-| `session_id` | `^[A-Za-z0-9_-]{1,128}$` | `add_session_id_arg` |
-| `task_number` | `^[0-9]+$` | `add_task_number_arg` |
-| `task_id` | `^TASK-[0-9]+$` | `add_task_id_arg` |
-| `component` | `^[a-z0-9-]+(:[a-z0-9-]+)*$` | `add_component_arg` |
-| `hash_id` | `^[a-f0-9]{4,}$` | `add_hash_id_arg` |
-| `phase_id` | `^[1-6]-(init\|refine\|outline\|plan\|execute\|finalize)$` | `add_phase_arg` |
-| `field_name` | `^[a-z][a-z0-9_]*$` | `add_field_arg` |
-| `module_name` | `^[a-z][a-z0-9_-]*$` | `add_module_arg` |
-| `package_name` | `^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*$` | `add_package_arg` |
-| `domain_name` | `^[a-z][a-z0-9-]*$` | `add_domain_arg` |
-| `resource_name` | `^[a-zA-Z0-9_-]+$` | `add_name_arg` |
+The `Carve-out` column is part of the contract, not a footnote: a value listed there is accepted by the identifier's `validate_*` function even though the `Regex` column rejects it. Exactly one identifier has one.
+
+| Identifier | Regex | Builder | Carve-out |
+|------------|-------|---------|-----------|
+| `plan_id` | `^[a-z][a-z0-9-]*$` | `add_plan_id_arg` | `NO_PLAN` — accepted by `validate_plan_id` (and `is_valid_plan_id` by delegation), **not** matched by `PLAN_ID_RE`. See § below |
+| `lesson_id` | `^[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{2}-[0-9]+$` | `add_lesson_id_arg` | none |
+| `session_id` | `^[A-Za-z0-9_-]{1,128}$` | `add_session_id_arg` | none |
+| `task_number` | `^[0-9]+$` | `add_task_number_arg` | none |
+| `task_id` | `^TASK-[0-9]+$` | `add_task_id_arg` | none |
+| `component` | `^[a-z0-9-]+(:[a-z0-9-]+)*$` | `add_component_arg` | none |
+| `hash_id` | `^[a-f0-9]{4,}$` | `add_hash_id_arg` | none |
+| `phase_id` | `^[1-6]-(init\|refine\|outline\|plan\|execute\|finalize)$` | `add_phase_arg` | none |
+| `field_name` | `^[a-z][a-z0-9_]*$` | `add_field_arg` | none |
+| `module_name` | `^[a-z][a-z0-9_-]*$` | `add_module_arg` | none |
+| `package_name` | `^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*$` | `add_package_arg` | none |
+| `domain_name` | `^[a-z][a-z0-9-]*$` | `add_domain_arg` | none |
+| `resource_name` | `^[a-zA-Z0-9_-]+$` | `add_name_arg` | none |
 
 ### The `NO_PLAN` sentinel (plan_id carve-out)
 
@@ -230,7 +234,9 @@ The literal is **defined once** in `script-shared`'s `marketplace_paths.py` and 
 
 The uppercase spelling is deliberate: it is unrepresentable in the kebab-case grammar, so no real plan id can ever collide with it. The carve-out is evaluated **ahead of** the `PLAN_ID_RE` test inside `validate_plan_id`, which is the single canonical place it exists — `PLAN_ID_RE` itself is unchanged, and the carve-out MUST NOT be duplicated into any caller. `is_valid_plan_id` inherits it by delegation.
 
-Routing a caller through `NO_PLAN` is correct **only** when that caller genuinely has no plan (the steward landing cycle and other plan-less entry points). A mistyped real plan id must be corrected, never substituted with the sentinel. `file_ops.resolve_plan_context` resolves the sentinel to `{base_dir}/plans/NO_PLAN`, materializes it on first use (directory **and** `status.json`), and always presents the main checkout as its worktree face.
+Routing a caller through `NO_PLAN` is correct **only** when that caller genuinely has no plan (the steward landing cycle and other plan-less entry points). A mistyped real plan id must be corrected, never substituted with the sentinel. This is why a `plan_not_found` failure surfaces the sentinel as a `hint` **paired with** a `hint_caveat` — the hint alone would turn every typo into a silent write against the shared sentinel directory.
+
+**Validation is not resolution.** This skill owns only the CLI boundary: `validate_plan_id` decides whether a string is an acceptable `plan_id`, and stops there. Turning an accepted `plan_id` into a plan directory and a working-tree root is the job of the single resolution entry point, `file_ops.resolve_plan_context` — it resolves the sentinel to `{base_dir}/plans/NO_PLAN`, materializes it on demand under `ensure=True` (directory **and** `status.json`), and always presents the main checkout as its worktree face. Every plan-id consumer resolves through that function, including `script-shared`'s `resolve_project_dir`, which delegates to it rather than resolving a worktree itself. See [`tools-file-ops/SKILL.md`](../tools-file-ops/SKILL.md) § "Plan-Context Resolution" for the resolver contract.
 
 The constants are exported from `input_validation.py` as `PLAN_ID_RE`, `LESSON_ID_RE`, etc., so consumers can reuse the canonical regex without re-deriving it. The `add_<id>_arg(parser)` builders wire `type=validate_<id>` into argparse so malformed input is rejected at the CLI boundary; pair them with `parse_args_with_toon_errors()` to centralise the `status: error / error: invalid_<field>` output path.
 
@@ -242,14 +248,15 @@ A handful of canonical regexes intentionally reject inputs that pre-canonical sc
 - `--task-number` validates against `TASK_NUMBER_RE` then coerces to `int`, so downstream consumers still receive an int.
 - `--lesson-id` is repeatable (`action='append'`); each element is validated independently and any malformed value fails the whole invocation.
 
-When adding a new identifier-shaped flag, use the matching `add_<id>_arg(parser)` builder and add a row to the registry table above. Pair the builders with `parse_args_with_toon_errors()` for the canonical `status: error / error: invalid_<field>` output path.
+When adding a new identifier-shaped flag, use the matching `add_<id>_arg(parser)` builder and add a row to the registry table above — including its `Carve-out` cell, which reads `none` unless the validator genuinely accepts a value the regex rejects. Pair the builders with `parse_args_with_toon_errors()` for the canonical `status: error / error: invalid_<field>` output path.
 
 ## Python Usage
 
 ```python
 from input_validation import is_valid_plan_id, validate_enum
 
-# Plan ID validation (alphanumeric + hyphens, 1-64 chars)
+# Plan ID validation: kebab-case per PLAN_ID_RE (leading lowercase letter, then
+# lowercase letters / digits / hyphens; no length bound), plus the NO_PLAN carve-out
 if not is_valid_plan_id(args.plan_id):
     output_error('invalid_plan_id', f'Invalid plan_id format: {args.plan_id}')
     sys.exit(1)

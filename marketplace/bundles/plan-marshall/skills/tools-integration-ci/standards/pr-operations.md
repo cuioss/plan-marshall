@@ -92,6 +92,15 @@ written directly by the main context with its native Write tool, and the `pr
 create` subcommand consumes the prepared file. No multi-line markdown crosses
 the shell boundary, so the host platform's shell-heading heuristic never fires.
 
+`--plan-id` is required on both `pr prepare-body` and `pr create`; the body store
+is the **only** body channel. A caller with no plan is not an exception to the
+three steps — it runs the identical sequence with `--plan-id NO_PLAN`, the
+plan-less sentinel, which resolves to the shared plan-less body store and binds
+to the main checkout. Use the sentinel only when the caller genuinely has no
+plan; a `--plan-id` that failed to resolve must be corrected, not replaced with
+the sentinel. See [`tools-integration-ci/SKILL.md`](../SKILL.md) § "The
+`NO_PLAN` sentinel — one plan-less convention for every `--plan-id` verb".
+
 ### Step 1: Allocate Scratch Body Path
 
 ```bash
@@ -100,7 +109,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr prepare
 ```
 
 Read the `path` field from the returned TOON. It is the canonical, script-owned
-location for the PR body, bound to this plan and kind.
+location for the PR body, bound to this plan (or to the sentinel) and kind.
 
 ### Step 2: Write the PR Body
 
@@ -474,7 +483,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci branch del
     --remote-only --branch {branch_name}
 ```
 
-When the cwd's remote configuration does not match the target, bind subprocesses to a different checkout via the standard router flags: prefer `--plan-id <plan>` (auto-resolves the worktree via `manage-status get-worktree-path`), or fall back to the legacy `--project-dir <path>` escape hatch. The two flags are mutually exclusive — see `tools-integration-ci/SKILL.md` § "Worktree-Aware Invocation" for the full two-state contract and `workflow-integration-git/standards/worktree-handling.md` for the worktree-specific path convention.
+When the cwd's remote configuration does not match the target, bind subprocesses to a different checkout via the standard router flags: prefer `--plan-id <plan>` (resolves the worktree through `file_ops.resolve_plan_context`, which owns the single `manage-status get-worktree-path` invocation), or fall back to the legacy `--project-dir <path>` escape hatch. `--plan-id NO_PLAN` binds to the main checkout. The two flags are mutually exclusive — see `tools-integration-ci/SKILL.md` § "Worktree-Aware Invocation" for the full routing contract and `workflow-integration-git/standards/worktree-handling.md` for the worktree-specific path convention.
 
 ### Step 2: Process Result
 

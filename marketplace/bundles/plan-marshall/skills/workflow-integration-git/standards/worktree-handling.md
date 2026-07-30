@@ -1,6 +1,6 @@
 # Worktree Handling
 
-Single canonical reference for the worktree mechanism used by plan-marshall: why it exists, where worktrees live, how they propagate through agent dispatch, the git invocation rule that applies inside them, the never-edit-main-checkout invariant, the cleanup ordering, and the `--plan-id` three-state contract that replaces per-call path forwarding.
+Single canonical reference for the worktree mechanism used by plan-marshall: why it exists, where worktrees live, how they propagate through agent dispatch, the git invocation rule that applies inside them, the never-edit-main-checkout invariant, the cleanup ordering, and the `--plan-id` four-state contract that replaces per-call path forwarding.
 
 This document is the source of truth. Sibling skills and standards reference it rather than duplicating the narrative. The per-call-site rule (e.g., "use `git -C` here", "pass `--plan-id` to the build wrapper there") stays at the call site; the worktree-specific application of that rule lives here.
 
@@ -69,7 +69,7 @@ Every script and skill that consumes `worktree_path` reads it as a boolean disk-
 | `use_worktree == true` AND `worktree_path` unset | pre-materialization (phases 1-4) — the worktree does not yet exist | bind to main checkout for this call; do NOT auto-create the worktree from outside Step 2.5 |
 | `use_worktree == true` AND `worktree_path` non-empty | post-materialization — worktree exists on disk | bind to `worktree_path`; all rules below apply |
 
-The phase-handshake worktree assertion (`_resolve_worktree_assertion`, exercised by both `phase_handshake capture` and `phase_handshake verify --strict`) is the fail-loud guard, and it consults the **same** `_worktree_materialized` predicate — so the assertion and the invariant-applicability gate can never disagree on whether the worktree is in play. Every phase boundary captures and verifies handshake invariants (including the `1-init` capture and the `verify` before `2-refine`), so the assertion *is* invoked during phases 1-4 — but for the on-main planning phases (`1-init` / `2-refine` / `3-outline` / `4-plan`) the predicate reports "not yet materialized" for an empty path, so the assertion treats the empty `worktree_path` as the legitimate pre-materialization state and passes. From phase-5 onward — and whenever the boundary phase is unknown (the fail-closed default) — the predicate reports "materialized", so an empty path while `use_worktree == true` is `worktree_unresolved`. A *set-but-broken* path (missing directory, non-worktree, or stale toplevel) is `worktree_unresolved` at every phase, planning phases included, independent of the predicate. Under cwd-pinning the common path never needs to consult this signal — the inherited cwd binds the caller to the correct tree. The `--plan-id` two-state contract documented below covers the residual escape-hatch callers that still resolve explicitly: invoked with `--plan-id`, they resolve internally and fall back to the cwd-relative plan root when the worktree is not yet materialized.
+The phase-handshake worktree assertion (`_resolve_worktree_assertion`, exercised by both `phase_handshake capture` and `phase_handshake verify --strict`) is the fail-loud guard, and it consults the **same** `_worktree_materialized` predicate — so the assertion and the invariant-applicability gate can never disagree on whether the worktree is in play. Every phase boundary captures and verifies handshake invariants (including the `1-init` capture and the `verify` before `2-refine`), so the assertion *is* invoked during phases 1-4 — but for the on-main planning phases (`1-init` / `2-refine` / `3-outline` / `4-plan`) the predicate reports "not yet materialized" for an empty path, so the assertion treats the empty `worktree_path` as the legitimate pre-materialization state and passes. From phase-5 onward — and whenever the boundary phase is unknown (the fail-closed default) — the predicate reports "materialized", so an empty path while `use_worktree == true` is `worktree_unresolved`. A *set-but-broken* path (missing directory, non-worktree, or stale toplevel) is `worktree_unresolved` at every phase, planning phases included, independent of the predicate. Under cwd-pinning the common path never needs to consult this signal — the inherited cwd binds the caller to the correct tree. The `--plan-id` four-state contract documented below covers the residual escape-hatch callers that still resolve explicitly: invoked with `--plan-id`, they resolve internally and fall back to the cwd-relative plan root when the worktree is not yet materialized.
 
 ### Pre-Materialization Bypass
 
@@ -245,21 +245,38 @@ After step 1, every git call MUST switch from `git -C {worktree_path}` to `git -
 
 On any plan abort or failure path, do NOT auto-remove the worktree — leave it in place so the user can inspect, salvage, or replay. Worktree removal happens only on successful cleanup.
 
-## The `--plan-id` Three-State Contract
+## The `--plan-id` Four-State Contract
 
 Build wrappers (`build-maven`, `build-pyproject`, `build-npm`, `build-gradle`), CI scripts (`tools-integration-ci`), the Sonar wrapper (`workflow-integration-sonar`), and any other Bucket B script that touches a working tree accept `--plan-id` as their working-tree binding flag, with `--project-dir` retained as an explicit override.
 
-The contract has three states:
+The contract has four states — the enumerated rows below are the complete set:
 
 | Invocation | Resolution | Effective working tree |
 |------------|-----------|------------------------|
-| `--plan-id X` (preferred) | Script calls `manage-status get-worktree-path --plan-id X` internally, binds subprocesses to the resolved path. | The worktree at `<project_root>/.plan/local/worktrees/X/`. |
+| `--plan-id X` (preferred) | Script resolves through `file_ops.resolve_plan_context`, the single plan-context resolver that owns the one `manage-status get-worktree-path` invocation in the codebase, and binds subprocesses to the resolved `worktree_path`. | The worktree at `<project_root>/.plan/local/worktrees/X/`. |
+| `--plan-id NO_PLAN` (plan-less sentinel) | The same resolver, taking its sentinel branch. The sentinel has no worktree face at all: `has_worktree` is `False` and `worktree_path` is the checkout root. | The **main checkout**, always — the sentinel never binds to a worktree. |
 | `--project-dir <abs>` (override) | Script binds subprocesses verbatim to `<abs>`. Used when a caller already holds an absolute path — e.g., post-worktree-removal cleanup, fixture-driven test invocations. | The supplied absolute path. |
 | Neither flag | Script binds subprocesses to the plan root resolved cwd-relatively (the nearest ancestor of cwd containing `.plan/local`; ADR-002). | The cwd-resolved tree — main in phases 1-4, the pinned worktree in phase-5+. |
 
 `--plan-id` and `--project-dir` are **mutually exclusive at every call site**; passing both is a hard error.
 
 When a script invoked with `--plan-id X` resolves an empty path (i.e., the plan exists but `metadata.use_worktree == false`), the script falls back to the cwd-relative plan root — the plan opted out of worktree mode at init time, and the caller's `--plan-id` becomes a no-op for path resolution.
+
+`NO_PLAN` is an accepted `--plan-id` value because `validate_plan_id` carves it out ahead of the kebab-case regex (see [`tools-input-validation/SKILL.md`](../../tools-input-validation/SKILL.md) § "The `NO_PLAN` sentinel (plan_id carve-out)"). It is correct only for a caller that genuinely has no plan; a `--plan-id` that failed to resolve must be corrected rather than replaced with the sentinel, which is why the `plan_not_found` envelope ships its sentinel `hint` together with a `hint_caveat`.
+
+### Documented resolver exemptions
+
+The resolver-bypass guard (plugin-doctor rule `plan-path-in-scripts`, form C) reports a working-tree-binding consumer that re-derives a worktree path by hand. Its exemptions are deliberate and come in **two different mechanisms** — a doc that claims a flat zero-bypass invariant here would be wrong:
+
+| Mechanism | Surface | Why it is exempt |
+|-----------|---------|------------------|
+| Whitelist (permanent, by design) | `tools-file-ops/file_ops.py` | It IS the canonical source — the implementation of `resolve_plan_context` itself. |
+| Whitelist (permanent, by design) | `manage-status/manage-status.py` | It is the canonical PRODUCER of `get-worktree-path`, the command the resolver shells out to. Routing it through the resolver would close a cycle. |
+| Named baseline-straggler set (shrink-only) | a specific enumerated set of consumers, including `platform-runtime/claude_runtime.py` | Deferred, not permitted. `claude_runtime`'s `_resolve_worktree_status_json` is a layout-convention probe on the session-title hook path, where the resolver would put a subprocess behind every terminal repaint — so that one stays a direct path computation on purpose. |
+
+The straggler set may only **shrink**: removing an entry records a migration, and adding one would license a new un-migrated consumer. Its authoritative contents, the population-derivation arms, and the guard's known limitation (the population is not self-closing) are owned by [`pm-plugin-development:plugin-doctor` rule-catalog.md](../../../../pm-plugin-development/skills/plugin-doctor/references/rule-catalog.md) § `plan-path-in-scripts` — not restated here, so this document cannot drift from the live set.
+
+Every other plan-id-to-working-tree consumer resolves through `resolve_plan_context`.
 
 Bucket A `manage-*` scripts MUST NOT accept `--plan-id` for cwd binding — they resolve `.plan/` via the uniform cwd walk-up regardless of how the script was invoked. (Many `manage-*` scripts already accept `--plan-id` as a *plan-identifier* argument that selects which plan's metadata to read or write — that usage is unrelated to the cwd contract here.) See [`tools-script-executor/standards/cwd-policy.md`](../../tools-script-executor/standards/cwd-policy.md) for the authoritative single uniform cwd-relative rule and the merge-lock exception.
 
@@ -271,7 +288,7 @@ Three verbs — `force-push-with-lease`, `switch-and-pull`, and `prune-local-and
 
 All three verbs accept `--plan-id` as the primary resolution path and `--project-dir` as the escape hatch. They are mutually exclusive; passing both is a hard error.
 
-**Primary path (`--plan-id`)**: The verb calls `manage-status get-worktree-path --plan-id {plan_id}` internally to resolve the working tree. For `force-push-with-lease`, the resolved path is the **worktree** (the branch lives there until `worktree-remove` runs). For `switch-and-pull` and `prune-local-and-remote-ref`, the verb derives the **main checkout** root via the uniform cwd-relative resolution (`file_ops.get_base_dir()` / `marketplace_paths._find_plan_root_from_cwd()`) because those operations run after worktree removal, when cwd is back on main.
+**Primary path (`--plan-id`)**: The verb resolves the working tree through `file_ops.resolve_plan_context`, the single plan-context resolver that owns the one `manage-status get-worktree-path` invocation. For `force-push-with-lease`, the resolved path is the **worktree** (the branch lives there until `worktree-remove` runs). For `switch-and-pull` and `prune-local-and-remote-ref`, the verb derives the **main checkout** root via the uniform cwd-relative resolution (`file_ops.get_base_dir()` / `marketplace_paths._find_plan_root_from_cwd()`) because those operations run after worktree removal, when cwd is back on main.
 
 **Escape hatch (`--project-dir [--branch|--head]`)**: Useful in post-worktree-removal cleanup, non-plan contexts, or fixture-driven test invocations where the caller already holds the path. All git calls use `git -C {project_dir}`.
 
@@ -279,7 +296,7 @@ All three verbs accept `--plan-id` as the primary resolution path and `--project
 
 Pushes the feature branch to `origin` with `--force-with-lease` — a lease violation indicates the remote moved since the last fetch and is surfaced as `status: rejected` / `error_type: push_rejected_non_fast_forward` rather than silently overwriting remote state.
 
-Resolution: `--plan-id` → `worktree_path` and `worktree_branch` from `manage-status get-worktree-path`.
+Resolution: `--plan-id` → `worktree_path` and `worktree_branch` from `resolve_plan_context`.
 
 **Output** (success):
 ```toon
@@ -322,7 +339,7 @@ Safety invariants:
 3. `show-ref` guard before `update-ref -d` — targeted ref deletion only; no `git fetch --prune`.
 4. `local_only` mode skips all remote-tracking ref operations.
 
-Resolution: `--plan-id` → `worktree_branch` from `manage-status get-worktree-path`, and main checkout root via the uniform cwd-relative resolution (`file_ops.get_base_dir()`).
+Resolution: `--plan-id` → `worktree_branch` from `resolve_plan_context`, and main checkout root via the uniform cwd-relative resolution (`file_ops.get_base_dir()`).
 
 **Output** (success — full deletion):
 ```toon
@@ -367,7 +384,7 @@ See `phase-6-finalize/standards/branch-cleanup.md` for the canonical sequencing 
 
 ### Resolution
 
-`--plan-id X` resolves the worktree path via `manage-status get-worktree-path`. Every git invocation issued by the verb uses `git -C {worktree_path} <subcommand>` per the rule above; the main checkout is never modified.
+`--plan-id X` resolves the worktree path via `resolve_plan_context`. Every git invocation issued by the verb uses `git -C {worktree_path} <subcommand>` per the rule above; the main checkout is never modified.
 
 ### The 8-State Matrix
 

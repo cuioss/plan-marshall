@@ -126,18 +126,22 @@ git_present: true
 
 ---
 
-## PR Operations (github.py / gitlab.py)
+## PR Operations (github_ops.py / gitlab_ops.py)
 
 Every PR subcommand returns the standard envelope: success shape (`status: success`, `operation: {op}`, plus the identifiers listed in the "Response fields" column) and error shape (`status: error`, `operation: {op}`, `error: ...`, `context: {cli exit reason}`).
 
+**Bodies are never passed as arguments.** Every body-bearing verb takes `--plan-id` (plus an optional `--slot`) and reads the body from the scratch file its paired `prepare-body` / `prepare-comment` call allocated. There is no `--body` and no `--body-file` argument on this surface; a plan-less caller passes `--plan-id NO_PLAN`. See [`../SKILL.md`](../SKILL.md) § "The `NO_PLAN` sentinel — one plan-less convention for every `--plan-id` verb".
+
 | Subcommand | Required args | Optional flags | Response fields |
 |------------|---------------|----------------|-----------------|
-| `pr create` | `--title`, `--body` | `--base` (default `main`), `--draft` | `pr_number`, `pr_url` |
+| `pr prepare-body` | `--plan-id` | `--for create\|edit`, `--slot` | `path` |
+| `pr prepare-comment` | `--plan-id` | `--for reply\|thread-reply`, `--slot` | `path` |
+| `pr create` | `--title`, `--plan-id` | `--slot`, `--base` (default: repo default), `--head`, `--draft`, `--label` (repeatable) | `pr_number`, `pr_url` |
 | `pr view` | — (uses current branch) | — | `pr_number`, `pr_url`, `state`, `title`, `head_branch`, `base_branch`, `is_draft`, `mergeable`, `merge_state`, `review_decision` |
 | `pr list` | — | `--head {branch}`, `--state open\|closed\|all` (default `open`) | `total`, `state_filter`, `head_filter`, `prs[N]{number,url,title,state,head_branch,base_branch}` |
-| `pr reply` | `--pr-number`, `--body` | — | `pr_number` |
+| `pr reply` | `--pr-number`, `--plan-id` | `--slot` | `pr_number` |
 | `pr resolve-thread` | `--thread-id` (GitLab also requires `--pr-number`) | — | `thread_id` |
-| `pr thread-reply` | `--pr-number`, `--thread-id`, `--body` | — | `pr_number`, `thread_id` |
+| `pr thread-reply` | `--pr-number`, `--thread-id`, `--plan-id` | `--slot` | `pr_number`, `thread_id` |
 | `pr reviews` | `--pr-number` | — | `pr_number`, `review_count`, `reviews[N]{user,state,submitted_at}` |
 | `pr comments` | `--pr-number` | `--unresolved-only` | `provider`, `pr_number`, `total`, `unresolved`, `comments[N]{id,author,body,path,line,resolved,created_at}` |
 | `pr wait-for-comments` | `--pr-number` | `--timeout` (default 300), `--interval` (default 30) | `pr_number`, `timed_out`, `duration_sec`, `polls`, `baseline_count`, `final_count`, `new_count`, `rate_limited_bots[N]{bot_kind,rate_limit_class,eta}` |
@@ -164,7 +168,7 @@ The PR operations normalize responses from `gh` (JSON) and `glab` (JSON) into th
 
 ---
 
-## CI Operations (github.py / gitlab.py)
+## CI Operations (github_ops.py / gitlab_ops.py)
 
 ### checks status
 
@@ -341,7 +345,7 @@ In both examples the two failing checks (`verify / verify` and `lint`) carry dis
 
 ---
 
-## Issue Operations (github.py / gitlab.py)
+## Issue Operations (github_ops.py / gitlab_ops.py)
 
 ### issue create
 
@@ -366,7 +370,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci issue crea
 | Argument | Required | Description |
 |----------|----------|-------------|
 | `--title` | Yes | Issue title |
-| `--plan-id` | Yes | Plan identifier; binds the prepared-body scratch path |
+| `--plan-id` | Yes | Plan identifier; binds the prepared-body scratch path. `NO_PLAN` routes a genuinely plan-less caller through the shared plan-less body store |
 | `--slot` | No | Prepared-body slot selector (must match the `prepare-body` call) |
 | `--labels` | No | Comma-separated labels |
 
@@ -442,7 +446,8 @@ The following subcommands all return the standard success shape (`status: succes
 | `pr update-branch --pr-number N` | `--pr-number` | — | Updates PR branch with base branch (GitHub REST API). |
 | `pr close --pr-number N` | `--pr-number` | — | Closes without merging. |
 | `pr ready --pr-number N` | `--pr-number` | — | Marks a draft as ready for review. |
-| `pr edit --pr-number N` | `--pr-number` | `--title`, `--body` | Edits title and/or body. |
+| `pr edit --pr-number N` | `--pr-number`, `--plan-id` | `--title`, `--slot` | Edits title and/or body; the body comes from the `pr prepare-body --for edit` scratch file. At least one of `--title` or a prepared body must be supplied. |
+| `pr merge-queue` | _exactly one of_ `--pr-number` _or_ `--head` | — | Enqueues into the platform merge queue / merge train; success adds `enqueued: true` (GitLab may add `merge_train_car_id`). Takes no `--strategy` / `--delete-branch`. |
 | `checks rerun --run-id ID` | `--run-id` | — | Re-runs a failed workflow. |
 | `checks logs --run-id ID` | `--run-id` | — | Success adds `log_lines` and `content` with the log output. |
 | `issue close --issue N` | `--issue` | — | Closes the issue. |
@@ -478,6 +483,28 @@ context: <additional_context>
 | Network error | Connection timed out |
 | Invalid PR number | PR 999 not found |
 | Permission denied | No write access to repository |
+| `plan_not_found` | The `--plan-id` on a body-store verb does not resolve to an initialized plan. Carries `hint` + `hint_caveat` — see below |
+
+### `plan_not_found` and the sentinel hint
+
+A body-store verb whose `--plan-id` does not resolve returns the `plan_not_found`
+envelope. It is the only error on this surface that carries advice, and it carries
+the advice in **two** fields that must be read together:
+
+```toon
+status: error
+error: plan_not_found
+message: "plan 'typoed-id' not found: no status.json (expected at ...)"
+plan_id: typoed-id
+plan_dir: <resolved path>
+hint: "Genuinely plan-less callers pass --plan-id NO_PLAN to route through the shared plan-less sentinel."
+hint_caveat: "NO_PLAN is correct ONLY for callers that have no plan at all. If this id was meant to name a real plan, correct the id — do NOT substitute the sentinel."
+```
+
+The `hint` is correct **only** for a genuinely plan-less caller; `hint_caveat` states
+the condition. Acting on the hint without checking the caveat turns every mistyped
+plan id into a silent write against the shared sentinel directory, which is why the
+two fields ship together and why a consumer must never surface one without the other.
 
 ---
 
