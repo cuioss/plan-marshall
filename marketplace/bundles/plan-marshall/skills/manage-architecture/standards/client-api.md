@@ -758,6 +758,17 @@ matches one non-`/` character, `[seq]` matches one character from the
 sequence. Patterns are matched against the full inventory path with
 `fnmatch.fnmatchcase`, not the basename.
 
+> **`find` matches path NAMES, not file CONTENT.** A pattern that looks like a
+> token you expect to find *inside* a file (an enum value, a config key, a
+> renamed identifier) only matches when that literal string also appears in
+> the file's PATH — `find` never opens a file and greps its body. A `count: 0`
+> result therefore proves only that no path matched the pattern; it is NOT
+> evidence that no file in the tree contains that string. When the actual goal
+> is a content search, `find`/`which-module`/`files` cannot answer it — reach
+> for a dedicated content-sweep test (a `rglob` + regex walk over the text
+> files, one assertion per token) instead, or return the coverage gap to the
+> caller rather than reading a zero-result `find` as a clean population.
+
 **Truthful truncation**: an in-scope elided category is self-scanned uncapped
 against the module's real worktree rather than contributing only its sample.
 When the self-scan is impossible (a disk-derived / fixture module with no
