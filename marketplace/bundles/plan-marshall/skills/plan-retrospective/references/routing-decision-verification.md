@@ -14,7 +14,7 @@ The predicate definitions (the closed `prunable_when` vocabulary, the class→de
 
 | Fact | Meaning |
 |------|---------|
-| `posture` | the chosen `execution_profile` (`minimal` / `auto` / `full`) |
+| `posture` | the chosen `execution_profile` (`minimal` / `standard` / `full`) |
 | `planning_lane` | the resolved `light` / `deep` planning lane |
 | `mis_prune_checks[]` | one per prunable step: `pass` (step ran / predicate still holds), `skip` (no realized footprint, or a recorded non-predicate removal cause), `inconclusive` (removal cause unestablishable), or **`fail`** (predicate now false — a mis-prune). Every row also carries `removal_cause` — see [Removal cause precedes predicate re-evaluation](#removal-cause-precedes-predicate-re-evaluation) |
 | `cost_preview` | `predicted_tokens` (init preview) vs `actual_tokens` (`execution_log` sum) and the signed `delta_tokens` / `delta_pct` |
@@ -24,7 +24,7 @@ The predicate definitions (the closed `prunable_when` vocabulary, the class→de
 
 ## Removal cause precedes predicate re-evaluation
 
-**A removal fact never implies a removal cause.** A prunable step can leave `phase_6.steps` through several recorded mechanisms that are all orthogonal to the realized footprint — the posture-tier cutoff, an unresolved `lane: ask` with no provider, an inactive simplify step, and a ceremony-finalize selection resolving `never`. Inferring "the prune predicate fired" from the bare fact that the step is absent is therefore unsound, and it manufactured a false `fail` on every auto/minimal-posture plan whose footprint touched production code.
+**A removal fact never implies a removal cause.** A prunable step can leave `phase_6.steps` through several recorded mechanisms that are all orthogonal to the realized footprint — the posture-tier cutoff, an unresolved `lane: ask` with no provider, an inactive simplify step, and a ceremony-finalize selection resolving `never`. Inferring "the prune predicate fired" from the bare fact that the step is absent is therefore unsound, and it manufactured a false `fail` on every standard/minimal-posture plan whose footprint touched production code.
 
 The script consults the recorded decision log FIRST and re-evaluates a predicate only for a step whose removal no recorded mechanism explains. The verdicts are mutually exclusive and jointly exhaustive over an absent step:
 
@@ -58,7 +58,7 @@ The judgment fragment carries the LLM verdict (`posture_verdict`, `proposed_less
 status: success
 aspect: routing-decisions
 manifest_present: true
-posture: minimal | auto | full
+posture: minimal | standard | full
 planning_lane: light | deep
 posture_verdict: UNDER-PROVISIONED | OVER-PROVISIONED | correct
 mis_prune_checks[N]: [ {check, status, predicate, removal_cause, detail}, ... ]

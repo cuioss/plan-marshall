@@ -20,7 +20,7 @@ this module only adds the preset writer.
 ``default:sonar-roundtrip``): ``list-ask-lane`` enumerates the finalize steps
 whose effective lane override is still ``ask`` (unresolved), and ``set-lane``
 persists the operator's resolved answer (``off`` = no bots / Sonar;
-``auto`` / ``full`` = has them) as the step's ``lane`` override. A steward-set
+``standard`` / ``full`` = has them) as the step's ``lane`` override. A steward-set
 answer is a RESOLVED ask that the compose-time drop-when-no-provider safety net
 never drops.
 
@@ -63,9 +63,9 @@ _PLAN_LOCAL_STEP_MAP_KEY = 'finalize_step_overrides'
 # The lane values an operator may persist when RESOLVING an ask-tier infra
 # element. ``ask`` and ``minimal`` are deliberately excluded: ``ask`` is the
 # unresolved seed the steward is resolving (persisting it would be a no-op), and
-# ``minimal`` is not an operator-facing answer for these auto-tier adversarial
-# infra elements. ``off`` = "no bots / no Sonar"; ``auto`` / ``full`` = "has them".
-_RESOLVED_ASK_LANE_VALUES: tuple[str, ...] = ('off', 'auto', 'full')
+# ``minimal`` is not an operator-facing answer for these standard-tier adversarial
+# infra elements. ``off`` = "no bots / no Sonar"; ``standard`` / ``full`` = "has them".
+_RESOLVED_ASK_LANE_VALUES: tuple[str, ...] = ('off', 'standard', 'full')
 
 
 def _known_finalize_steps() -> frozenset[str]:
@@ -188,7 +188,7 @@ def cmd_finalize_steps_list_ask_lane(args) -> dict:
 
     Returns the finalize steps whose effective ``lane`` override is still ``ask``
     (the UNRESOLVED case — the seed is ``ask`` and a steward-persisted answer
-    overwrites it to ``off`` / ``auto`` / ``full``). The marshall-steward flow
+    overwrites it to ``off`` / ``standard`` / ``full``). The marshall-steward flow
     surfaces these steps in a mandatory prompt at setup and update-config; the
     two seeded infra elements (``plan-marshall:automatic-review`` /
     ``default:sonar-roundtrip``) are the canonical members.
@@ -282,7 +282,7 @@ def _set_lane_plan_local(plan_id: str, step_id: str, lane: str) -> dict:
 
 
 def cmd_finalize_steps_set_lane(args) -> dict:
-    """Handle ``finalize-steps set-lane --step-id <id> --lane <off|auto|full> [--plan-id <p>]``.
+    """Handle ``finalize-steps set-lane --step-id <id> --lane <off|standard|full> [--plan-id <p>]``.
 
     Persists the operator's RESOLVED answer as the finalize step's ``lane``
     override, preserving any other params on the step and materializing the step
@@ -295,10 +295,10 @@ def cmd_finalize_steps_set_lane(args) -> dict:
       for that plan only, leaving marshal.json byte-unchanged.
 
     The lane value is validated against :data:`_RESOLVED_ASK_LANE_VALUES` (``off``
-    / ``auto`` / ``full``) on BOTH channels, and the step id is re-validated
+    / ``standard`` / ``full``) on BOTH channels, and the step id is re-validated
     against the discovered finalize-step universe (defence in depth, mirroring the
     preset writer). That writer enum is a deliberate SUBSET of the reader's
-    ``LANE_OVERRIDES``: ``off`` / ``auto`` / ``full`` are the resolved answers an
+    ``LANE_OVERRIDES``: ``off`` / ``standard`` / ``full`` are the resolved answers an
     operator dialogue produces, while ``minimal`` and ``ask`` are seed values only
     shipped frontmatter and marshal seeding emit. A writer emitting a subset of a
     valid enum is not the two-readers-disagreeing drift — both readers accept the

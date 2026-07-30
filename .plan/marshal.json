@@ -80,14 +80,14 @@
           "lane": "minimal"
         },
         "project:finalize-step-plugin-doctor": {
-          "lane": "auto"
+          "lane": "standard"
         },
         "default:pre-submission-self-review": {
           "drop_review_on_scope_gate": false,
-          "lane": "auto"
+          "lane": "standard"
         },
         "default:finalize-step-simplify": {
-          "lane": "auto"
+          "lane": "standard"
         },
         "default:finalize-step-security-audit": {
           "lane": "full"
@@ -128,7 +128,7 @@
           "lane": "full"
         },
         "project:finalize-step-review-retrospective": {
-          "lane": "auto"
+          "lane": "standard"
         },
         "default:lessons-capture": {
           "lane": "minimal"

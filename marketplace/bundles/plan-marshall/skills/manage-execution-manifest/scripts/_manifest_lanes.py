@@ -16,18 +16,18 @@ from _step_key_canonical import canonicalize_step_key
 from constants import FILE_STATUS
 from file_ops import get_marshal_path, get_plan_dir, read_json
 
-LANE_TIERS = ('minimal', 'auto', 'full')
-LANE_OVERRIDES = ('off', 'minimal', 'auto', 'full', 'ask')
+LANE_TIERS = ('minimal', 'standard', 'full')
+LANE_OVERRIDES = ('off', 'minimal', 'standard', 'full', 'ask')
 
 # Lattice rank for the ``effective_tier ⊑ posture`` comparison.
-_TIER_RANK = {'minimal': 0, 'auto': 1, 'full': 2}
+_TIER_RANK = {'minimal': 0, 'standard': 1, 'full': 2}
 
 # class → default tier (ext-point-lane-element.md § The closed lane.class enum).
 _CLASS_DEFAULT_TIER = {
     'derived-state': 'minimal',
     'core': 'minimal',
-    'adversarial': 'auto',
-    'prunable': 'auto',
+    'adversarial': 'standard',
+    'prunable': 'standard',
 }
 
 # Floor classes immune to a weakening ``off`` override: the mandatory finalize
@@ -138,7 +138,7 @@ def _lane_override_for(step_id: str, overrides: dict[str, dict] | None) -> str |
 
     The phase-6 candidate ids are bare-normalized; the map keys preserve
     ``default:`` / ``project:`` prefixes, so match on the prefix-stripped key.
-    Returns the override value when valid (``off|minimal|auto|full|ask``), else
+    Returns the override value when valid (``off|minimal|standard|full|ask``), else
     ``None``.
     """
     if not overrides:
@@ -165,7 +165,7 @@ def _effective_lane_tier(lane: dict[str, str], override: str | None) -> tuple[st
     """
     if override == 'off' and lane.get('class') not in _IMMUNE_TO_OFF_CLASSES:
         return None, True
-    if override in ('minimal', 'auto', 'full'):
+    if override in ('minimal', 'standard', 'full'):
         return override, False
     if override == 'ask':
         return 'ask', False

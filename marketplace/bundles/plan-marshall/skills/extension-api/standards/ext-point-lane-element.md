@@ -8,7 +8,7 @@ The **lane-element contract** is the per-element substrate the execution-profile
 selection feature resolves over. Every workflow element that the lane mechanism can keep or
 prune — each phase skill, each phase-6 finalize step, each q-gate / adversarial validator —
 **self-declares its lane membership** through a `lane:` frontmatter block. The operator-facing
-postures `minimal` / `auto` / `full` are *cutoffs* over those self-classifying elements, so the
+postures `minimal` / `standard` / `full` are *cutoffs* over those self-classifying elements, so the
 posture→steps mapping stays **derived, not maintained**: an element changes lane behavior by
 editing its own frontmatter, never by editing a central keep/drop list.
 
@@ -26,7 +26,7 @@ Each lane-participating element declares one block in its SKILL.md / step-doc YA
 ```yaml
 lane:
   class: derived-state | core | adversarial | prunable
-  tier: minimal | auto | full            # optional — defaults from class
+  tier: minimal | standard | full        # optional — defaults from class
   prunable_when: <predicate-id>          # required for class: prunable; ignored otherwise
   cost_size: XS | S | M | L | XL | XXL   # required — drives the §cost dialogue preview
 ```
@@ -34,7 +34,7 @@ lane:
 | Sub-field | Required | Rule |
 |-----------|----------|------|
 | `class` | Yes | The primary declaration. One of the **closed** enum `derived-state \| core \| adversarial \| prunable`. Drives the `tier` and `prunable?` defaults. |
-| `tier` | No | The element's effective default cutoff on the `minimal ⊏ auto ⊏ full` lattice. Defaults from `class` (table below); set explicitly only to deviate (e.g. `security-audit` deviates to `full`). |
+| `tier` | No | The element's effective default cutoff on the `minimal ⊏ standard ⊏ full` lattice. Defaults from `class` (table below); set explicitly only to deviate (e.g. `security-audit` deviates to `full`). |
 | `prunable_when` | Conditional | **Required** when `class: prunable` — names a predicate from the [Prune predicates](#prune-predicates) table. Ignored (and SHOULD be omitted) for any other class. |
 | `cost_size` | Yes | One of the **closed** six-size scale `XS \| S \| M \| L \| XL \| XXL`. The scale is owned by [`phase-4-plan/standards/cost-sizing.md`](../../phase-4-plan/standards/cost-sizing.md); the lane dialogue sums each resolved element's `cost_size` through the `cost_size_token_table` to produce the per-posture cost preview. |
 
@@ -49,12 +49,12 @@ class value is a contract change to this document, not a per-element choice.
 |---------|----------------|-----------|---------|----------|
 | **derived-state** | `minimal` | no — a weakening `off` is **immune** (ignored; the element stays at its class-default tier) | correctness-required derived output; dropping it ships a broken artifact | deploy-target, sync-plugin-cache |
 | **core** | `minimal` | no — a weakening `off` is **immune** (ignored; the element stays at its class-default tier) | always-on plan machinery; the leanest floor | push, create-pr, ci-verify, branch-cleanup, record-metrics, archive |
-| **adversarial** | `auto` | no | a validator that finds real defects; never predicate-pruned by the lane | outline scope-validator (1st pass), automatic-review, sonar-roundtrip, self-review, security-audit-as-finder |
-| **prunable** | `auto` | yes — via `prunable_when` | conditional overhead that a firm-signal predicate can skip | lessons-housekeeping, refine, 4-plan decomposition |
+| **adversarial** | `standard` | no | a validator that finds real defects; never predicate-pruned by the lane | outline scope-validator (1st pass), automatic-review, sonar-roundtrip, self-review, security-audit-as-finder |
+| **prunable** | `standard` | yes — via `prunable_when` | conditional overhead that a firm-signal predicate can skip | lessons-housekeeping, refine, 4-plan decomposition |
 
 ## The resolution lattice
 
-`minimal` is the **floor** of the lattice `minimal ⊏ auto ⊏ full`. A `minimal`-tier element runs
+`minimal` is the **floor** of the lattice `minimal ⊏ standard ⊏ full`. A `minimal`-tier element runs
 under *every* posture (it is the leanest posture an operator can pick), so `core` /
 `derived-state` elements are on by default in all three lanes — that is how "archiving is always
 part of the plan" holds without a dedicated `always` level.
@@ -71,7 +71,7 @@ For each element, the composer resolves in this order:
    declared `lane.tier` / class default, and an informational note records that the weakening
    override was neutralized. An `off` on an `adversarial` / `prunable` element is a real opt-out
    that drops it cleanly.
-2. **element runs iff** `effective_tier ⊑ posture` on `minimal ⊏ auto ⊏ full` (posture = the
+2. **element runs iff** `effective_tier ⊑ posture` on `minimal ⊏ standard ⊏ full` (posture = the
    init-chosen global preset).
 3. if effective tier is `ask` → surface this element **individually** in the init dialogue.
 4. if `class == prunable` **and** the element's `prunable_when` predicate **holds at firm-signal
@@ -81,7 +81,7 @@ For each element, the composer resolves in this order:
 So:
 
 - `minimal` = "only the tier-`minimal` floor";
-- `auto` = "run every element whose tier ⊑ `auto`, **minus** any `prunable` element whose
+- `standard` = "run every element whose tier ⊑ `standard`, **minus** any `prunable` element whose
   predicate fires";
 - `full` = "everything configured."
 
@@ -96,7 +96,7 @@ So:
 ### Per-element override knob
 
 Any element is pinned through a nested step-param channel (the same shape finalize-step params
-use), value ∈ `off | minimal | auto | full | ask`
+use), value ∈ `off | minimal | standard | full | ask`
 (`off` = never run; `minimal` = force-keep in every posture; `ask` = always prompt).
 
 There are **two declaration channels** with the same shape, the same key forms, and the same enum —
@@ -149,7 +149,7 @@ rather than a concrete tier, so their inclusion is answered per-project rather t
 
 - **Resolution at setup.** `marshall-steward` ALWAYS prompts about both elements at setup and at
   update-config (enumerated via `manage-config finalize-steps list-ask-lane`), persisting the
-  operator's answer as a concrete override — `off` (no bots / no Sonar), `auto`, or `full` (has
+  operator's answer as a concrete override — `off` (no bots / no Sonar), `standard`, or `full` (has
   them) — via `manage-config finalize-steps set-lane`. A persisted answer is a **RESOLVED** ask.
 - **Compose-time drop-when-no-provider safety net.** When the operator never answered — the
   effective tier is still literally `ask` at compose (the **UNRESOLVED** case) — the composer's
@@ -158,8 +158,8 @@ rather than a concrete tier, so their inclusion is answered per-project rather t
   `sonar-roundtrip` when no Sonar provider is configured). This closes the
   sync-defaults-without-steward provenance gap where a materialized-but-unanswered infra element
   would otherwise reach the finalize pipeline on a project that has no bots / no Sonar.
-- **What is never dropped.** A RESOLVED ask (`off` / `auto` / `full`) is never touched by this
-  pre-filter — `off` is handled by the normal lane-resolution pass; `auto` / `full` keep the
+- **What is never dropped.** A RESOLVED ask (`off` / `standard` / `full`) is never touched by this
+  pre-filter — `off` is handled by the normal lane-resolution pass; `standard` / `full` keep the
   element per posture. An `ask` whose provider IS configured is also kept (the operator merely has
   not answered yet, but the infra exists). The `off`-override-on-floor-step immunity semantic (a
   weakening `off` on a `core` / `derived-state` element is ignored, not dropped) is untouched.
@@ -168,9 +168,9 @@ The pre-filter mechanics live in [`manage-execution-manifest/standards/decision-
 
 ## Prune predicates
 
-`class: prunable` elements name one predicate in `prunable_when`. `auto` evaluates the predicate
+`class: prunable` elements name one predicate in `prunable_when`. `standard` evaluates the predicate
 against the firm footprint at compose time; a true predicate skips the element even when its tier
-is in posture. The predicate set is the declarative source of `auto`'s conditional skips — there
+is in posture. The predicate set is the declarative source of `standard`'s conditional skips — there
 is no hard-coded skip list.
 
 | `prunable_when` | Prune when | Source signal |
@@ -195,9 +195,9 @@ changed) is a standalone improvement, not part of this contract; the lane only *
 | finalize-step-sync-baseline | core | minimal |
 | lessons-capture | core | minimal |
 | lessons-housekeeping | prunable | **minimal** |
-| refine · 4-plan task-decomposition · simplify | prunable | auto |
-| outline/plan q-gate · self-review · automatic-review · sonar-roundtrip · plugin-doctor *(meta)* | adversarial | auto |
-| review-retrospective *(meta)* | prunable | auto |
+| refine · 4-plan task-decomposition · simplify | prunable | standard |
+| outline/plan q-gate · self-review · automatic-review · sonar-roundtrip · plugin-doctor *(meta)* | adversarial | standard |
+| review-retrospective *(meta)* | prunable | standard |
 | security-audit | adversarial | **full** |
 | plan-retrospective *(meta)* | prunable | **full** |
 

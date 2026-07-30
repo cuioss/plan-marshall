@@ -318,7 +318,7 @@ Write the `phase-6-finalize` step list from a named preset, and read/write the p
 
 The plan-scoped channel exists so an answer given about one plan does not silently become policy for every later plan. Both channels carry the same shape and the same enum, and the composer merges them (plan-local ▸ marshal, per step key, per knob) into the ONE map every per-element reader consults — see [`extension-api/standards/ext-point-lane-element.md`](../../extension-api/standards/ext-point-lane-element.md) § "Per-element override knob".
 
-`--lane` accepts `off` / `auto` / `full`. This writer enum is a deliberate SUBSET of the reader's `off|minimal|auto|full|ask`: those three are the resolved answers an operator dialogue produces, while `minimal` and `ask` are seed values only shipped frontmatter and marshal seeding emit. A writer emitting a subset of a valid enum is not reader-writer drift — both readers accept the full enum.
+`--lane` accepts `off` / `standard` / `full`. This writer enum is a deliberate SUBSET of the reader's `off|minimal|standard|full|ask`: those three are the resolved answers an operator dialogue produces, while `minimal` and `ask` are seed values only shipped frontmatter and marshal seeding emit. A writer emitting a subset of a valid enum is not reader-writer drift — both readers accept the full enum.
 
 An existing declaration map that cannot be parsed as the documented shape is an explicit error, never a silent overwrite.
 

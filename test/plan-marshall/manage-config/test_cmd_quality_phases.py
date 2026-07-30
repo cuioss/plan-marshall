@@ -1167,7 +1167,7 @@ def test_finalize_step_set_lane_round_trips_under_owning_step(plan_context):
     """`step set --param lane` writes the ceremony gate's lane override and round-trips.
 
     The simplify gate's on/off is now the owning step's `lane` override
-    (`off→never`, `minimal→always`, `auto/absent→auto`), not a `simplify`
+    (`off→never`, `minimal→always`, `standard/absent→auto`), not a `simplify`
     run-at-all param.
     """
     create_marshal_json(plan_context.fixture_dir, _marshal_without_finalize_section())

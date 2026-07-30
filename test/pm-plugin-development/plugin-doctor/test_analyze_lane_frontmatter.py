@@ -82,7 +82,7 @@ class TestValidLaneBlocks:
         scoped = _bundle_dir(tmp_path)
         _write(
             scoped / 'c.md',
-            _frontmatter('lane:\n  class: prunable\n  tier: auto\n  prunable_when: no_code_delta\n  cost_size: L\n'),
+            _frontmatter('lane:\n  class: prunable\n  tier: standard\n  prunable_when: no_code_delta\n  cost_size: L\n'),
         )
         assert analyze_lane_frontmatter(tmp_path) == []
 
@@ -142,7 +142,7 @@ class TestInvalidLaneBlocks:
 
     def test_prunable_without_prunable_when_is_flagged(self, tmp_path: Path) -> None:
         scoped = _bundle_dir(tmp_path)
-        _write(scoped / 'a.md', _frontmatter('lane:\n  class: prunable\n  tier: auto\n  cost_size: L\n'))
+        _write(scoped / 'a.md', _frontmatter('lane:\n  class: prunable\n  tier: standard\n  cost_size: L\n'))
         findings = analyze_lane_frontmatter(tmp_path)
         assert len(findings) == 1
         assert 'prunable_when' in findings[0]['description']
@@ -193,7 +193,7 @@ class TestNonParticipatingFiles:
         scoped = _bundle_dir(tmp_path)
         _write(
             scoped / 'recipe.md',
-            '---\nname: recipe-demo\nlane:\n  profile: auto\n  steps:\n    sonar-roundtrip: off\n---\n',
+            '---\nname: recipe-demo\nlane:\n  profile: standard\n  steps:\n    sonar-roundtrip: off\n---\n',
         )
         assert analyze_lane_frontmatter(tmp_path) == []
 

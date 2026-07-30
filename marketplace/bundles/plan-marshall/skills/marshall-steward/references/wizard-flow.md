@@ -461,18 +461,18 @@ AskUserQuestion:
     - label: "No"
       description: "Not used — exclude this element (lane: off)"
     - label: "Yes"
-      description: "Used — include at the default posture (lane: auto)"
+      description: "Used — include at the default posture (lane: standard)"
     - label: "Yes, always"
       description: "Used and always run regardless of posture (lane: full)"
   multiSelect: false
 ```
 
 Persist the answer as the element's resolved lane override (`No` → `off`;
-`Yes` → `auto`; `Yes, always` → `full`):
+`Yes` → `standard`; `Yes, always` → `full`):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  finalize-steps set-lane --step-id {element_id} --lane {off|auto|full}
+  finalize-steps set-lane --step-id {element_id} --lane {off|standard|full}
 ```
 
 Emit one STEWARD audit entry per element answered (per the audit-trail contract

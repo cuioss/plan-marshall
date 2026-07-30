@@ -42,7 +42,7 @@ again.
 ``always`` is the only path that RE-ADDS a step a pre-filter already dropped, and
 it covers only these four gates. It is not the only way an operator declaration
 survives an implicit gate: ``scope_gated_finalize``'s declared-lane immunity keeps
-a step carrying an explicit non-``auto`` ``lane`` from being dropped at all. That
+a step carrying an explicit non-``standard`` ``lane`` from being dropped at all. That
 mechanism (prevent the drop) is distinct from this one (undo the drop), and it is
 the only one available to the steps this transform does not cover — see
 ``test_decision_rules.py`` for its coverage.
@@ -155,7 +155,7 @@ _GATE_OWNER_STEP = {
 }
 
 # The four ceremony gates whose value is written as the owning step's ``lane``
-# override (``off``/``minimal``/``auto``). Any other step-folded knob a caller
+# override (``off``/``minimal``/``standard``). Any other step-folded knob a caller
 # passes is written under its own param key verbatim.
 _CEREMONY_LANE_GATES = frozenset({'qgate', 'self_review', 'simplify', 'security_audit'})
 
@@ -169,7 +169,7 @@ def _seed_marshal(
 
     Every ceremony gate (``qgate`` / ``self_review`` / ``simplify`` /
     ``security_audit``) is written as its owning finalize step's ``lane`` override
-    (``off``/``minimal``/``auto``) nested under the step's param object in
+    (``off``/``minimal``/``standard``) nested under the step's param object in
     ``plan.phase-6-finalize.steps`` (the id-keyed map the reader consumes via
     ``_read_step_owned_knob``); any other step-folded knob writes under its own
     param key. There is no flat phase-level ``qgate`` sibling. Callers pass
@@ -485,7 +485,7 @@ class TestCeremonyFinalizeAlways:
     def test_always_still_readds_a_step_the_scope_gate_dropped(self, plan_context):
         """``always`` remains the re-add path when the step carries NO lane declaration.
 
-        Immunity only covers a step the operator declared a non-``auto`` lane for.
+        Immunity only covers a step the operator declared a non-``standard`` lane for.
         Here the ``self_review`` gate is forced in through the ceremony channel
         while the owning step declares no lane, so ``scope_gated_finalize`` drops
         it on a surgical plan and the ``always`` transform genuinely re-adds it —
@@ -1189,7 +1189,7 @@ class TestCeremonyFinalizeDeterminism:
 
     def test_repeated_compose_is_deterministic(self, plan_context):
         _seed_marshal(
-            finalize_gates={'self_review': 'minimal', 'qgate': 'off', 'simplify': 'auto'}
+            finalize_gates={'self_review': 'minimal', 'qgate': 'off', 'simplify': 'standard'}
         )
         _stub_footprint(_FOOTPRINT)
 
@@ -1279,7 +1279,7 @@ class TestCeremonyFinalizeAdrPropose:
 # ``lane_warnings``. A ``lane: off`` on a ``class: adversarial`` / ``prunable``
 # step remains a real opt-out that DROPS it. The retired "off honored-but-warning"
 # drop of a floor element is gone. Composed under each pruning posture
-# (``minimal`` / ``auto``); ``full`` is a no-op lane pass (verified separately).
+# (``minimal`` / ``standard``); ``full`` is a no-op lane pass (verified separately).
 # =============================================================================
 
 
@@ -1296,8 +1296,8 @@ _IMMUNE_OFF_LANE_BLOCKS = {
     'archive-plan': {'class': 'core', 'tier': 'minimal', 'cost_size': 'XS'},
     'project:finalize-step-deploy-target': {'class': 'derived-state', 'tier': 'minimal', 'cost_size': 'XS'},
     'project:finalize-step-sync-plugin-cache': {'class': 'derived-state', 'tier': 'minimal', 'cost_size': 'XS'},
-    'sonar-roundtrip': {'class': 'adversarial', 'tier': 'auto', 'cost_size': 'L'},
-    'plan-marshall:plan-retrospective': {'class': 'prunable', 'tier': 'auto', 'cost_size': 'L'},
+    'sonar-roundtrip': {'class': 'adversarial', 'tier': 'standard', 'cost_size': 'L'},
+    'plan-marshall:plan-retrospective': {'class': 'prunable', 'tier': 'standard', 'cost_size': 'L'},
 }
 
 # The mandatory floor: every ``core`` / ``derived-state`` step named in the D2
@@ -1362,7 +1362,7 @@ def _seed_marshal_lane_overrides(candidates, off_steps):
 class TestCeremonyFinalizeImmuneOff:
     """A hand-written floor ``off`` is neutralised; an opt-out ``off`` still drops."""
 
-    @pytest.mark.parametrize('posture', ['minimal', 'auto'])
+    @pytest.mark.parametrize('posture', ['minimal', 'standard'])
     def test_floor_off_is_immune_kept_with_warning(self, plan_context, monkeypatch, posture):
         _patch_immune_off_lanes(monkeypatch)
         candidates = _IMMUNE_FLOOR_STEPS + _OPT_OUT_STEPS
@@ -1437,7 +1437,7 @@ class TestCeremonyFinalizeImmuneOff:
         assert result['lane_warnings'] == []
 
     def test_opt_out_off_drop_is_attributable_to_off_under_auto(self, plan_context, monkeypatch):
-        """Under ``auto`` an adversarial (tier-auto) step is KEPT without an override
+        """Under ``standard`` an adversarial (tier-standard) step is KEPT without an override
         but DROPPED once a hand-written ``off`` is set — the drop is the off, not the
         posture cutoff."""
         _patch_immune_off_lanes(monkeypatch)
@@ -1446,10 +1446,10 @@ class TestCeremonyFinalizeImmuneOff:
             'record-metrics', 'archive-plan', 'sonar-roundtrip',
         ]
 
-        # Baseline: no override → sonar-roundtrip (tier auto) survives auto posture.
+        # Baseline: no override → sonar-roundtrip (tier standard) survives standard posture.
         _seed_marshal_lane_overrides(candidates, off_steps=[])
         _stub_footprint(_FOOTPRINT)
-        _write_execution_profile(plan_context, 'immune-off-baseline', 'auto')
+        _write_execution_profile(plan_context, 'immune-off-baseline', 'standard')
         baseline = cmd_compose(
             _compose_ns(
                 plan_id='immune-off-baseline',
@@ -1465,7 +1465,7 @@ class TestCeremonyFinalizeImmuneOff:
 
         # With off → the adversarial step drops cleanly (no warning).
         _seed_marshal_lane_overrides(candidates, off_steps=['sonar-roundtrip'])
-        _write_execution_profile(plan_context, 'immune-off-optout', 'auto')
+        _write_execution_profile(plan_context, 'immune-off-optout', 'standard')
         dropped = cmd_compose(
             _compose_ns(
                 plan_id='immune-off-optout',

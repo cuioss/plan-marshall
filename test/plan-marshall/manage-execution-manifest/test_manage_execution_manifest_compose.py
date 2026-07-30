@@ -4151,7 +4151,7 @@ class TestScopeGatedFinalizePreFilter:
             )
         )
         assert result is not None and result['status'] == 'success'
-        # No candidate declares an explicit non-auto per-element lane override, so
+        # No candidate declares an explicit non-standard per-element lane override, so
         # nothing is immune to the surgical scope gate.
         assert result['scope_gated_finalize_immune'] == []
         dropped = result['scope_gated_finalize_dropped']
@@ -4345,7 +4345,7 @@ def test_envelope_count_absent_reads_cleanly_round_trip(plan_context):
 # Execution-profile lane resolution (deliverable 5)
 # =============================================================================
 #
-# The lane resolver projects the operator posture (minimal / auto / full) over
+# The lane resolver projects the operator posture (minimal / standard / full) over
 # each phase-6 element's self-declared ``lane:`` frontmatter block. The unit
 # cases below exercise the pure resolution helpers with canned lane blocks; the
 # integration cases drive ``cmd_compose`` / ``cmd_lanes_preview`` end-to-end with
@@ -4370,7 +4370,7 @@ def _patch_element_lane(monkeypatch, blocks=None):
     'lane,override,expected',
     [
         ({'class': 'core'}, None, ('minimal', False)),         # class default
-        ({'class': 'adversarial'}, None, ('auto', False)),     # class default
+        ({'class': 'adversarial'}, None, ('standard', False)),  # class default
         ({'class': 'adversarial', 'tier': 'full'}, None, ('full', False)),  # declared tier
         ({'class': 'core'}, 'full', ('full', False)),          # override wins
         ({'class': 'core'}, 'off', ('minimal', False)),        # immune floor: off ignored → class default
@@ -4393,9 +4393,9 @@ def test_effective_lane_tier_precedence(lane, override, expected):
     'lane,posture,expected_keep',
     [
         ({'class': 'core', 'tier': 'minimal'}, 'minimal', True),     # floor runs everywhere
-        ({'class': 'prunable', 'tier': 'auto'}, 'minimal', False),  # auto tier above minimal
-        ({'class': 'prunable', 'tier': 'auto'}, 'auto', True),      # auto tier at auto
-        ({'class': 'adversarial', 'tier': 'full'}, 'auto', False),  # full tier above auto
+        ({'class': 'prunable', 'tier': 'standard'}, 'minimal', False),  # standard tier above minimal
+        ({'class': 'prunable', 'tier': 'standard'}, 'standard', True),  # standard tier at standard
+        ({'class': 'adversarial', 'tier': 'full'}, 'standard', False),  # full tier above standard
         ({'class': 'adversarial', 'tier': 'full'}, 'full', True),   # full tier at full
     ],
 )
@@ -4429,7 +4429,7 @@ def test_lane_keep_off_override_immune_for_core_floor():
 
 def test_lane_keep_off_override_drops_adversarial_cleanly():
     """An ``off`` override of a non-floor adversarial element drops it — no warning (real opt-out)."""
-    keep, warning = _lane_keep_decision({'class': 'adversarial', 'tier': 'auto'}, 'off', 'auto')
+    keep, warning = _lane_keep_decision({'class': 'adversarial', 'tier': 'standard'}, 'off', 'standard')
 
     assert keep is False
     assert warning is None
@@ -4437,7 +4437,7 @@ def test_lane_keep_off_override_drops_adversarial_cleanly():
 
 def test_lane_keep_off_override_drops_prunable_cleanly():
     """An ``off`` override of a non-floor prunable element drops it — no warning (real opt-out)."""
-    keep, warning = _lane_keep_decision({'class': 'prunable', 'tier': 'auto'}, 'off', 'auto')
+    keep, warning = _lane_keep_decision({'class': 'prunable', 'tier': 'standard'}, 'off', 'standard')
 
     assert keep is False
     assert warning is None
@@ -4485,7 +4485,7 @@ def test_apply_lane_resolution_full_is_noop(monkeypatch):
 
 
 def test_apply_lane_resolution_minimal_keeps_only_floor(monkeypatch):
-    """Minimal keeps only the tier-minimal floor; auto/full-tier elements drop."""
+    """Minimal keeps only the tier-minimal floor; standard/full-tier elements drop."""
     _patch_element_lane(monkeypatch)
     kept, dropped, _warnings = _apply_lane_resolution(_LANE_STEPS, 'minimal', None, 'p')
 
@@ -4497,10 +4497,10 @@ def test_apply_lane_resolution_minimal_keeps_only_floor(monkeypatch):
     }
 
 
-def test_apply_lane_resolution_auto_drops_only_full_tier(monkeypatch):
-    """Auto keeps minimal + auto tiers and drops the two full-tier elements."""
+def test_apply_lane_resolution_standard_drops_only_full_tier(monkeypatch):
+    """Standard keeps minimal + standard tiers and drops the two full-tier elements."""
     _patch_element_lane(monkeypatch)
-    kept, dropped, _warnings = _apply_lane_resolution(_LANE_STEPS, 'auto', None, 'p')
+    kept, dropped, _warnings = _apply_lane_resolution(_LANE_STEPS, 'standard', None, 'p')
 
     assert _dropped_steps(dropped) == {
         'finalize-step-security-audit',
@@ -4572,10 +4572,10 @@ def test_apply_lane_resolution_derived_state_off_override_is_immune(monkeypatch)
 
 def test_apply_lane_resolution_adversarial_off_override_drops_cleanly(monkeypatch):
     """An ``off`` marshal override of a non-floor adversarial element drops it with NO
-    warning — the opt-out is a real drop (auto posture would otherwise keep it)."""
+    warning — the opt-out is a real drop (standard posture would otherwise keep it)."""
     _patch_element_lane(monkeypatch)
     overrides = {'sonar-roundtrip': {'lane': 'off'}}
-    kept, dropped, warnings = _apply_lane_resolution(_LANE_STEPS, 'auto', overrides, 'p')
+    kept, dropped, warnings = _apply_lane_resolution(_LANE_STEPS, 'standard', overrides, 'p')
 
     assert 'sonar-roundtrip' in _dropped_steps(dropped)
     assert 'sonar-roundtrip' not in kept
@@ -4602,7 +4602,7 @@ def _lanes_preview_ns(plan_id: str, steps: list[str]) -> Namespace:
 
 
 def test_lanes_preview_resolves_all_three_postures(plan_context, monkeypatch):
-    """lanes preview returns the minimal/auto/full step MEMBERSHIP + cost sums in one result."""
+    """lanes preview returns the minimal/standard/full step MEMBERSHIP + cost sums in one result."""
     _patch_element_lane(monkeypatch)
     result = cmd_lanes_preview(_lanes_preview_ns('lanes-preview', _LANE_STEPS))
 
@@ -4615,12 +4615,12 @@ def test_lanes_preview_resolves_all_three_postures(plan_context, monkeypatch):
     assert set(lanes['minimal']['phase_6_steps']) == {
         'push', 'archive-plan', 'project:finalize-step-deploy-target',
     }
-    assert set(lanes['auto']['phase_6_steps']) == {
+    assert set(lanes['standard']['phase_6_steps']) == {
         'push', 'archive-plan', 'sonar-roundtrip', 'project:finalize-step-deploy-target',
     }
-    # Cost sums are order-independent: XS=5K, L=130K → full=405K, auto=145K, minimal=15K.
+    # Cost sums are order-independent: XS=5K, L=130K → full=405K, standard=145K, minimal=15K.
     assert lanes['full']['cost_sum_tokens'] == 405000
-    assert lanes['auto']['cost_sum_tokens'] == 145000
+    assert lanes['standard']['cost_sum_tokens'] == 145000
     assert lanes['minimal']['cost_sum_tokens'] == 15000
 
 
@@ -4636,7 +4636,7 @@ def test_lanes_preview_membership_agrees_with_apply_lane_resolution(plan_context
     result = cmd_lanes_preview(_lanes_preview_ns('lanes-agree', _LANE_STEPS))
     assert result is not None
 
-    for posture in ('minimal', 'auto', 'full'):
+    for posture in ('minimal', 'standard', 'full'):
         kept, _dropped, _warnings = _apply_lane_resolution(_LANE_STEPS, posture, None, 'lanes-agree')
         assert set(result['lanes'][posture]['phase_6_steps']) == set(kept)
 
@@ -4654,7 +4654,7 @@ def test_lanes_preview_applies_the_composer_ordering_authority(plan_context, mon
     result = cmd_lanes_preview(_lanes_preview_ns('lanes-order', _LANE_STEPS))
     assert result is not None
 
-    for posture in ('minimal', 'auto', 'full'):
+    for posture in ('minimal', 'standard', 'full'):
         kept, _dropped, _warnings = _apply_lane_resolution(_LANE_STEPS, posture, None, 'lanes-order')
         assert result['lanes'][posture]['phase_6_steps'] == _mem._sort_steps_by_frontmatter_order(kept)
 
@@ -4722,7 +4722,7 @@ def test_compose_absent_profile_defaults_to_full_no_pruning(plan_context):
 
 
 def test_compose_minimal_profile_prunes_phase_6_to_floor(plan_context, monkeypatch):
-    """A minimal posture prunes the auto/full-tier finalize steps from phase_6.steps."""
+    """A minimal posture prunes the standard/full-tier finalize steps from phase_6.steps."""
     _patch_element_lane(monkeypatch)
     plan_id = 'lane-minimal-compose'
     _write_status_metadata(plan_context, plan_id, {'execution_profile': 'minimal'})
@@ -4751,11 +4751,11 @@ def test_compose_minimal_profile_prunes_phase_6_to_floor(plan_context, monkeypat
     assert all(record['reason'] for record in result['lane_dropped'])
 
 
-def test_compose_auto_profile_drops_only_full_tier(plan_context, monkeypatch):
-    """An auto posture keeps tier-auto finalize steps and drops only the full-tier ones."""
+def test_compose_standard_profile_drops_only_full_tier(plan_context, monkeypatch):
+    """A standard posture keeps tier-standard finalize steps and drops only the full-tier ones."""
     _patch_element_lane(monkeypatch)
-    plan_id = 'lane-auto-compose'
-    _write_status_metadata(plan_context, plan_id, {'execution_profile': 'auto'})
+    plan_id = 'lane-standard-compose'
+    _write_status_metadata(plan_context, plan_id, {'execution_profile': 'standard'})
 
     result = cmd_compose(
         _compose_ns(
@@ -4768,7 +4768,7 @@ def test_compose_auto_profile_drops_only_full_tier(plan_context, monkeypatch):
     )
 
     assert result is not None
-    assert result['execution_profile'] == 'auto'
+    assert result['execution_profile'] == 'standard'
     manifest = read_manifest(plan_id)
     assert 'sonar-roundtrip' in manifest['phase_6']['steps']
     assert 'finalize-step-security-audit' not in manifest['phase_6']['steps']
@@ -5055,11 +5055,11 @@ def test_project_step_resolves_from_working_tree_not_file_anchor(monkeypatch, tm
 #
 # Both adversarial infra elements (automatic-review, sonar-roundtrip) seed
 # ``lane: ask``. A steward-persisted answer overwrites the override to
-# off/auto/full; an effective tier still equal to ``ask`` at compose means the
+# off/standard/full; an effective tier still equal to ``ask`` at compose means the
 # operator never answered (UNRESOLVED). When unresolved AND the corresponding
 # provider is absent (no CI provider for automatic-review; no Sonar provider for
 # sonar-roundtrip), the ``_apply_unresolved_ask_provider_drop`` pre-filter drops
-# the element at the candidate-narrowing stage. A resolved (off/auto/full) ask
+# the element at the candidate-narrowing stage. A resolved (off/standard/full) ask
 # and a provider-configured ask both survive. These compose round-trip tests
 # exercise the pre-filter end-to-end through cmd_compose; the pure-function truth
 # table is pinned directly in test_decision_rules.py.
@@ -5185,20 +5185,20 @@ class TestUnresolvedAskProviderDropCompose:
         steps = read_manifest('d6-resolved-full')['phase_6']['steps']
         assert 'automatic-review' in steps and 'sonar-roundtrip' in steps
 
-    def test_resolved_auto_ask_survives_even_without_provider(self, plan_context):
-        """An auto-resolved ask survives even when the provider is absent — only an
+    def test_resolved_standard_ask_survives_even_without_provider(self, plan_context):
+        """A standard-resolved ask survives even when the provider is absent — only an
         UNRESOLVED ``ask`` is provider-gated by this pre-filter."""
         steps_map = {
             'push': {},
-            'plan-marshall:automatic-review': {'lane': 'auto'},
-            'default:sonar-roundtrip': {'lane': 'auto'},
+            'plan-marshall:automatic-review': {'lane': 'standard'},
+            'default:sonar-roundtrip': {'lane': 'standard'},
             'archive-plan': {},
         }
         _seed_marshal_with_finalize_steps(steps_map, ci_provider=None, sonar_provider=False)
-        result = cmd_compose(_compose_ns(plan_id='d6-resolved-auto', phase_6_steps=None))
+        result = cmd_compose(_compose_ns(plan_id='d6-resolved-standard', phase_6_steps=None))
         assert result is not None and result['status'] == 'success'
         assert result['unresolved_ask_provider_dropped'] == []
-        steps = read_manifest('d6-resolved-auto')['phase_6']['steps']
+        steps = read_manifest('d6-resolved-standard')['phase_6']['steps']
         assert 'automatic-review' in steps and 'sonar-roundtrip' in steps
 
 

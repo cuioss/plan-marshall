@@ -758,7 +758,7 @@ def test_sync_defaults_no_renames_reported_for_clean_config(plan_context):
 # provisioning re-stamp. The fill rule is provenance-driven:
 #   - a PRE-EXISTING lane-less step (not in `added`) is filled with its
 #     frontmatter-class effective lane (a semantic no-op: `core` /
-#     `derived-state` → `minimal`, `adversarial` / `prunable` → `auto`);
+#     `derived-state` → `minimal`, `adversarial` / `prunable` → `standard`);
 #   - a FRESHLY deep-merged default row (in `added`) that lacks a lane is filled
 #     with `lane: off` (opt-in);
 #   - a step already carrying an explicit `lane` is left untouched (idempotent);
@@ -769,7 +769,7 @@ def test_sync_defaults_no_renames_reported_for_clean_config(plan_context):
 
 # Frontmatter-class anchors (pinned to the real phase-6-finalize step docs):
 #   default:push                        → class core       → effective minimal
-#   default:pre-submission-self-review  → class adversarial → effective auto
+#   default:pre-submission-self-review  → class adversarial → effective standard
 #   default:archive-plan                → class core       → effective minimal
 _CORE_STEP = 'default:push'
 _ADVERSARIAL_STEP = 'default:pre-submission-self-review'
@@ -785,7 +785,7 @@ def test_sync_defaults_materializes_preexisting_steps_to_effective_lane(plan_con
 
     `default:push` (class core) materializes to `minimal`; the pre-existing
     `default:pre-submission-self-review` (class adversarial) materializes to
-    `auto`. Both are pre-existing (present in the input, not freshly merged), so
+    `standard`. Both are pre-existing (present in the input, not freshly merged), so
     the fill surfaces the composer's own default — a semantic no-op — never `off`.
     Both are reported in `materialized`.
     """
@@ -801,11 +801,11 @@ def test_sync_defaults_materializes_preexisting_steps_to_effective_lane(plan_con
     steps = config['plan']['phase-6-finalize']['steps']
     # pre-existing core → minimal (a no-op surfacing of the class default)
     assert steps[_CORE_STEP]['lane'] == 'minimal'
-    # pre-existing adversarial → auto (never off, because it pre-existed)
-    assert steps[_ADVERSARIAL_STEP]['lane'] == 'auto'
+    # pre-existing adversarial → standard (never off, because it pre-existed)
+    assert steps[_ADVERSARIAL_STEP]['lane'] == 'standard'
     # both are reported with their annotated dotted-path fill entry
     assert _materialized_entry(_CORE_STEP, 'minimal') in result['materialized']
-    assert _materialized_entry(_ADVERSARIAL_STEP, 'auto') in result['materialized']
+    assert _materialized_entry(_ADVERSARIAL_STEP, 'standard') in result['materialized']
     assert result['materialized_count'] == len(result['materialized'])
 
 
@@ -847,7 +847,7 @@ def test_sync_defaults_materializes_wholesale_copied_steps_subtree_to_off(plan_c
     (`plan.phase-6-finalize.steps`) in `added`, never the per-step leaf paths, so
     `_materialize_finalize_lanes` misclassified every wholesale-copied row as
     pre-existing and filled it with its frontmatter-class effective lane
-    (`minimal` / `auto`) instead of the required `lane: off`, violating the
+    (`minimal` / `standard`) instead of the required `lane: off`, violating the
     "infra steps must be opt-in" principle. With the per-descendant recording
     fix (`_record_added_paths`), each freshly-copied config-less step is
     recognised as newly-added and materialised to `off`.
@@ -869,7 +869,7 @@ def test_sync_defaults_materializes_wholesale_copied_steps_subtree_to_off(plan_c
     assert steps[_CORE_STEP]['lane'] == 'off'
     assert steps['default:archive-plan']['lane'] == 'off'
     # the config-less adversarial step, likewise freshly-copied, is `off` too,
-    # not its effective `auto` lane.
+    # not its effective `standard` lane.
     assert steps[_ADVERSARIAL_STEP]['lane'] == 'off'
     # the per-step leaf dotted path was recorded in `added` (the fix) — not just
     # the subtree root — and the step is reported as materialised to off.

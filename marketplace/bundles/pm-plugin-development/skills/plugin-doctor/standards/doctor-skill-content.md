@@ -137,7 +137,7 @@ The `analyze_lane_frontmatter` analyzer (`_analyze_lane_frontmatter.py`, rule id
 - `class` is present and is one of the closed enum `derived-state | core | adversarial | prunable`;
 - `cost_size` is present and is one of the six-size scale `XS | S | M | L | XL | XXL`;
 - `prunable_when` is present when (and only meaningfully when) `class: prunable`;
-- `tier` (optional) is one of `minimal | auto | full`.
+- `tier` (optional) is one of `minimal | standard | full`.
 
 **Predicate scope**: the rule validates every `lane:` block that exists; it does NOT require a given element to declare one. The closed enums, the class→default-tier table, and the `prunable_when` predicate vocabulary are owned by [`plan-marshall:extension-api/standards/ext-point-lane-element.md`](../../../../plan-marshall/skills/extension-api/standards/ext-point-lane-element.md) — the analyzer mirrors those enums as the structural backstop and links to that contract in every finding. The `manage-execution-manifest` lane resolver consumes these blocks, so a malformed one would make the composer mis-resolve or silently mis-prune the element.
 

@@ -29,6 +29,7 @@ from _cmd_effort import (
 )
 from _cmd_ext_defaults import cmd_ext_defaults
 from _cmd_finalize_steps import (
+    _RESOLVED_ASK_LANE_VALUES,
     cmd_finalize_steps_apply_preset,
     cmd_finalize_steps_list_ask_lane,
     cmd_finalize_steps_set_lane,
@@ -685,7 +686,7 @@ def main() -> int:
         allow_abbrev=False,
     )
 
-    # set-lane: persist a resolved lane override (off/auto/full) for a finalize
+    # set-lane: persist a resolved lane override (off/standard/full) for a finalize
     # step — the write side of the steward always-prompt flow. `--plan-id` is a
     # CHANNEL SELECTOR, not a second verb: absent it writes the project-wide
     # marshal.json map (unchanged behaviour), present it writes that one plan's
@@ -693,7 +694,7 @@ def main() -> int:
     # all, so one plan's answer never leaks into every later plan.
     finalize_steps_set_lane = finalize_steps_sub.add_parser(
         'set-lane',
-        help='Persist a resolved lane override (off/auto/full) for a finalize step, '
+        help='Persist a resolved lane override (off/standard/full) for a finalize step, '
         'project-wide or (with --plan-id) for one plan',
         allow_abbrev=False,
     )
@@ -706,8 +707,8 @@ def main() -> int:
     finalize_steps_set_lane.add_argument(
         '--lane',
         required=True,
-        choices=['off', 'auto', 'full'],
-        help='Resolved lane override: off (no bots/Sonar) or auto/full (has them). These are the '
+        choices=list(_RESOLVED_ASK_LANE_VALUES),
+        help='Resolved lane override: off (no bots/Sonar) or standard/full (has them). These are the '
         'resolved answers an operator dialogue produces; the reader enum additionally accepts the '
         'seed values minimal/ask, which only shipped frontmatter and marshal seeding emit',
     )

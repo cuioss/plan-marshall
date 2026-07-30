@@ -30,9 +30,9 @@ from typing import Any
 # the §4.9 precedence chain: recipe seed < operator posture < coverage-cell
 # adversarial floor). The element-lane contract is owned by
 # extension-api/standards/ext-point-lane-element.md.
-_VALID_RECIPE_POSTURES = ('minimal', 'auto', 'full')
+_VALID_RECIPE_POSTURES = ('minimal', 'standard', 'full')
 # Per-element override vocabulary a recipe seed may carry under ``steps:``.
-_VALID_LANE_OVERRIDES = ('off', 'minimal', 'auto', 'full', 'ask')
+_VALID_LANE_OVERRIDES = ('off', 'minimal', 'standard', 'full', 'ask')
 
 # Confidence floor below which a recipe is dropped from the suggestion
 # list — keeps the LLM dispatch fallback as the responsible path for
@@ -202,7 +202,7 @@ def _parse_recipe_lane_block(text: str) -> dict[str, Any] | None:
     an optional ``steps`` map of per-element overrides, e.g.::
 
         lane:
-          profile: auto
+          profile: standard
           steps:
             sonar-roundtrip: off
 

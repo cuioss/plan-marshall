@@ -132,10 +132,13 @@ is its length, and an empty `renamed[]` means no retired key was present.
 unified `lane` knob; `migrated_count` is its length. `materialized[]` lists each
 `plan.phase-6-finalize.steps` entry whose lane was made explicit by the
 materialization pass — a pre-existing lane-less step annotated with its resolved
-frontmatter-class effective lane (`...=minimal` / `...=auto`), a freshly-merged
+frontmatter-class effective lane (`...=minimal` / `...=standard`), a freshly-merged
 default step annotated with `...=off` (opt-in); `materialized_count` is its length,
-and an empty `materialized[]` means every finalize step already carried an explicit
-`lane` (idempotent re-run). The
+and an empty `materialized[]` means every RESOLVABLE lane-less finalize step already
+carried an explicit `lane` (idempotent re-run). A lane-less step whose frontmatter
+lane cannot be resolved to a concrete lattice tier — an external `bundle:skill` step,
+or one whose source doc is missing or declares no `lane:` block — is deliberately left
+untouched and is NOT reported in `materialized[]`. The
 config is persisted whenever `added[]`, `renamed[]`, or the provisioning stamps
 changed.
 
@@ -371,7 +374,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 **Pattern**: Read-Process
 
-The three surviving lifecycle gates ride the `gate_mode` enum (`auto|always|never`, validated at set-time by `validate_gate_mode`) as flat knobs under their owning phase — read/written through the standard `plan <phase> get/set --field <knob>` verb. The automation knobs are boolean. The four finalize ceremony gates (`qgate` / `self_review` / `simplify` / `security_audit`) no longer ride a run-at-all knob — each is governed by its owning finalize step's per-element `steps.<step>.lane` override (`off`/`minimal`/`auto`), set via `step set --step-id <owning-step> --param lane --value <value>`. Distribution:
+The three surviving lifecycle gates ride the `gate_mode` enum (`auto|always|never`, validated at set-time by `validate_gate_mode`) as flat knobs under their owning phase — read/written through the standard `plan <phase> get/set --field <knob>` verb. The automation knobs are boolean. The four finalize ceremony gates (`qgate` / `self_review` / `simplify` / `security_audit`) no longer ride a run-at-all knob — each is governed by its owning finalize step's per-element `steps.<step>.lane` override (`off`/`minimal`/`standard`), set via `step set --step-id <owning-step> --param lane --value <value>`. Distribution:
 
 | Knob | Location | Read via |
 |------|----------|----------|
@@ -716,7 +719,7 @@ The three surviving lifecycle gates ride the `gate_mode` enum as flat phase-loca
 | `escalation` | `phase-1-init` | Whether the hard-escalation safety ratchet (explosion / build-break / premise) stays live. `auto` keeps it live; `never` is the explicit full-speed-full-risk opt-in. |
 | `revalidation` | `phase-2-refine` | Whether the premise / narrative-vs-code safety check runs (light lane + deep refine). |
 
-**Finalize ceremony gates (per-element `lane` override, not run-at-all):** the four finalize ceremony gates — `qgate`, `self_review`, `simplify`, `security_audit` — are each governed by their owning step's `steps.<step>.lane` override (`off`/`minimal`/`auto`), resolved by the manifest ceremony transform (`off→never`, `minimal→always`, `auto`/absent`→auto`). Set via `plan phase-6-finalize step set --step-id <owning-step> --param lane --value <value>`. The owning steps are `pre-push-quality-gate` (qgate), `default:pre-submission-self-review` (self_review), `default:finalize-step-simplify` (simplify), `default:finalize-step-security-audit` (security_audit).
+**Finalize ceremony gates (per-element `lane` override, not run-at-all):** the four finalize ceremony gates — `qgate`, `self_review`, `simplify`, `security_audit` — are each governed by their owning step's `steps.<step>.lane` override, resolved by the manifest ceremony transform: `off` → `never`, `minimal` → `always`, and every other accepted lane value (`standard`, `full`, `ask`, or an absent override) → `auto`. Set via `plan phase-6-finalize step set --step-id <owning-step> --param lane --value <value>`. The owning steps are `pre-push-quality-gate` (qgate), `default:pre-submission-self-review` (self_review), `default:finalize-step-simplify` (simplify), `default:finalize-step-security-audit` (security_audit).
 
 **Flat phase-1-init recipe-match knobs (under `phase-1-init`):**
 
@@ -731,10 +734,10 @@ The lane mechanism's per-element vocabulary (the closed `lane.class` enum, the c
 
 | Field | Type | Default | Meaning |
 |-------|------|---------|---------|
-| `lane_selection` | enum(`ask`\|`auto`) | `ask` | Whether init PROMPTS for the execution-profile posture (`ask` surfaces the minimal/auto/full dialogue) or silently takes the computed `auto` projection (`auto`). Validated by `validate_lane_selection`. Mirrors the `deep_lane` / `finalize_without_asking` ask/auto family. |
-| `lane_prune_thresholds` | dict(`confidence_complete`, `linear_change_max_deliverables`) | `{confidence_complete: 95, linear_change_max_deliverables: 1}` | Tunable numeric thresholds the `auto` posture evaluates its prunable-element predicates against at manifest-compose time. `confidence_complete` (int 0–100) is the post-init confidence floor that prunes `refine`; `linear_change_max_deliverables` (int ≥ 1) is the deliverable-count ceiling that prunes the 4-plan decomposition element. The boolean predicates (`no_code_delta`, `footprint_no_lesson_component`) carry no threshold. Validated by `validate_lane_prune_thresholds` (exact key set; ranges enforced). |
+| `lane_selection` | enum(`ask`\|`auto`) | `ask` | Whether init PROMPTS for the execution-profile posture (`ask` surfaces the minimal/standard/full dialogue) or silently takes the computed projection (`auto`). Validated by `validate_lane_selection`. Mirrors the `deep_lane` / `finalize_without_asking` ask/auto family. |
+| `lane_prune_thresholds` | dict(`confidence_complete`, `linear_change_max_deliverables`) | `{confidence_complete: 95, linear_change_max_deliverables: 1}` | Tunable numeric thresholds the `standard` posture evaluates its prunable-element predicates against at manifest-compose time. `confidence_complete` (int 0–100) is the post-init confidence floor that prunes `refine`; `linear_change_max_deliverables` (int ≥ 1) is the deliverable-count ceiling that prunes the 4-plan decomposition element. The boolean predicates (`no_code_delta`, `footprint_no_lesson_component`) carry no threshold. Validated by `validate_lane_prune_thresholds` (exact key set; ranges enforced). |
 
-**Per-element lane override** (`plan.<phase>.steps.<step>.lane`, value ∈ `off`\|`minimal`\|`auto`\|`full`\|`ask`, validated by `validate_lane_override`): pins any lane-participating element to a fixed posture cutoff via the same nested step-param channel finalize-step params use — `off` never runs it (a `derived-state`/`core` weakening additionally emits a correctness warning at compose time, but is honored), `minimal` force-keeps it in every posture, `auto`/`full` pin its tier, `ask` always surfaces it individually in the init dialogue. Absent by default — the shipped per-element default lives in each element's frontmatter `lane:` block, and `marshal.json` carries only the project / meta overrides.
+**Per-element lane override** (`plan.<phase>.steps.<step>.lane`, value ∈ `off`\|`minimal`\|`standard`\|`full`\|`ask`, validated by `validate_lane_override`): pins any lane-participating element to a fixed posture cutoff via the same nested step-param channel finalize-step params use — `off` never runs it (a `derived-state`/`core` weakening additionally emits a correctness warning at compose time, but is honored), `minimal` force-keeps it in every posture, `standard`/`full` pin its tier, `ask` always surfaces it individually in the init dialogue. Absent by default — the shipped per-element default lives in each element's frontmatter `lane:` block, and `marshal.json` carries only the project / meta overrides.
 
 **Flat finalize automation knobs (boolean, under `phase-6-finalize`):**
 

@@ -17,15 +17,18 @@ The signal set (DQ1 of the planning-lanes solution outline):
 | S4 | ``compatibility`` | ``marshal.json plan.phase-2-refine.compatibility`` | == breaking **AND NOT** narrow-and-concrete |
 | S5 | request concreteness | regex over ``request.md`` body | NO file path AND NO concrete fix signal |
 | S6 | explicit override | ``status.metadata.planning_lane_override`` | == deep forces deep (one-way) |
+| S7 | author risk prose | regex over ``request.md`` body | body carries an explicit scale warning |
 
-``deep`` IFF (S1 ∨ S2 ∨ S3 ∨ S4 ∨ S5 ∨ S6-deep); otherwise ``light``.
+``deep`` IFF (S1 ∨ S2 ∨ S3 ∨ S4 ∨ S5 ∨ S6-deep ∨ S7); otherwise ``light``.
 
-The narrow-and-concrete carve-out: when ``scope_estimate ∈ {surgical,
-single_module}`` AND the request is concrete, S3 (generative change_type) and S4
-(breaking compatibility) are suppressed so they cannot force ``deep`` *alone* for
-a positively-bounded, well-specified request. The carve-out relaxes ONLY this
-co-firing — S1/S2/S5 (the unknown-to-deep defaults) and S6 (explicit override)
-still bias ``deep`` unchanged, so the conservative unknown case is untouched.
+The narrow-and-concrete carve-out: when ``scope_estimate == surgical`` AND the
+request is concrete, S3 (generative change_type) and S4 (breaking compatibility)
+are suppressed so they cannot force ``deep`` *alone* for a positively-bounded,
+well-specified request. The carve-out demands ACTUAL narrowness — ``single_module``
+is the catch-all middle band, not a bounded verdict, so it does NOT earn the
+carve-out. The carve-out relaxes ONLY this co-firing — S1/S2/S5 (the
+unknown-to-deep defaults), S6 (explicit override) and S7 (author risk prose) still
+bias ``deep`` unchanged, so the conservative unknown case is untouched.
 
 ``plan.phase-1-init.deep_lane`` is read BEFORE the signal set and
 short-circuits the evaluation: ``always`` forces deep, ``never`` forces light
@@ -33,7 +36,7 @@ short-circuits the evaluation: ``always`` forces deep, ``never`` forces light
 is also ``never``), ``auto`` (the default) defers to the signals.
 
 The router also projects a RECOMMENDED execution-profile posture
-(``minimal`` / ``auto`` / ``full``) over the SAME signals via
+(``minimal`` / ``standard`` / ``full``) over the SAME signals via
 ``project_profile_pure``. The projection is a pure derivation that adds no
 discovery and no cognition; it is independent of the ``deep_lane`` gate_mode gate
 (``deep_lane=always`` governs planning depth, NOT the profile — see
@@ -59,23 +62,28 @@ from plan_logging import log_entry
 LIGHT = 'light'
 DEEP = 'deep'
 
-# Execution-profile postures (the lane lattice minimal ⊏ auto ⊏ full). The
+# Execution-profile postures (the lane lattice minimal ⊏ standard ⊏ full). The
 # planning-lane router projects a RECOMMENDED posture over the same signals it
 # already scores for the {light, deep} verdict; the projection is independent of
 # the deep_lane gate_mode gate (deep_lane governs planning DEPTH, not the profile
 # — see ext-point-lane-element.md and §4.2 of the lane-selection outline).
 MINIMAL = 'minimal'
-AUTO = 'auto'
+STANDARD = 'standard'
 FULL = 'full'
 
 # Scope bands that read as broad-surface for the profile projection (a superset
 # trigger toward keeping full ceremony when combined with a generative change).
 _BROAD_SCOPE_ESTIMATES = frozenset({'multi_module', 'broad'})
-# Scope bands that read as narrow/localized for the minimal recommendation.
-_NARROW_SCOPE_ESTIMATES = frozenset({'surgical', 'single_module'})
+# The ONE scope band that reads as genuinely narrow/localized — the sole member,
+# so the narrow-and-concrete carve-out requires actual boundedness. Shared
+# verbatim by evaluate_signals_pure (the lane verdict) and project_profile_pure
+# (the posture projection), so this frozenset governs BOTH by construction:
+# widening it would re-suppress S3/S4 *and* re-collapse the posture to minimal.
+_NARROW_SCOPE_ESTIMATES = frozenset({'surgical'})
 
 # S2 — scope_estimate values that bias deep (broad-surface / unknown bands).
-# surgical / single_module bias light.
+# surgical / single_module do not fire S2; of the two only surgical additionally
+# earns the narrow-and-concrete carve-out over S3/S4.
 _DEEP_SCOPE_ESTIMATES = frozenset({'multi_module', 'broad', 'none'})
 
 # S3 — change_type values that bias deep (generative, broad-surface).
@@ -92,14 +100,97 @@ _FENCE_RE = re.compile(r'```')
 _CLI_RE = re.compile(r'python3\s+\.plan/execute-script\.py')
 _NOTATION_RE = re.compile(r'\bmanage-[a-z-]+\b')
 
+# Adversarial-input defense (CWE-1333 / ReDoS): ``_PATH_RE``'s leading class
+# (``[\w./-]``) overlaps the literal ``/`` it is followed by, so running it
+# over unbounded adversarial repetition — e.g. a single ``"a/" * N`` line with
+# no terminating extension, or many such lines back to back — costs O(N^2)
+# backtracking. Measured empirically: ~3s at a 20KB adversarial body, growing
+# quadratically; ~145s at a 10MB adversarial body split into many boundary-
+# length lines. ``request.md`` is untrusted-ish (it embeds an ingested spec
+# body verbatim — see ``_read_request_body``), so an adversarial or merely
+# malformed body must not be able to hang this deterministic, synchronous,
+# phase-1-init-blocking router. Every ``_PATH_RE`` application therefore goes
+# through ``_safe_path_scan`` below: it scans per LINE (never the raw,
+# unbounded body), skips any single line longer than ``_MAX_SCAN_LINE_CHARS``
+# — generous enough that a legitimate sentence citing several full
+# repo-relative paths never trips it, while still bounding a single line's
+# worst-case backtracking to well under a second — and stops once the running
+# total of scanned characters reaches ``_MAX_SCAN_BUDGET_CHARS``, which caps
+# the number of full-length adversarial lines the scan can ever pay for.
+# Together the two bounds keep worst-case cost under ~1s regardless of how
+# large or adversarially-repetitive the body is (verified empirically for
+# both a single giant line and many boundary-length lines). A skipped line or
+# an exhausted budget sets ``scan_incomplete=True`` rather than silently
+# reading as "nothing left to find"; ``classify_scope_pure`` folds that into a
+# WIDENING verdict (multi_module), the same conservative direction this
+# module's other unscoreable-body / fan-out-marker rules already take.
+_MAX_SCAN_LINE_CHARS = 2000
+_MAX_SCAN_BUDGET_CHARS = 50_000
+
+
+def _safe_path_scan(body: str) -> tuple[set[str], bool]:
+    """Return ``(distinct_paths, scan_incomplete)`` from a ReDoS-bounded ``_PATH_RE`` scan.
+
+    The single choke point every ``_PATH_RE`` consumer in this module goes
+    through (``_distinct_paths``, and — via it — ``_request_is_concrete``'s
+    path-anchor check). See the ReDoS-defense comment above
+    ``_MAX_SCAN_LINE_CHARS`` for why the scan is bounded this way.
+    ``scan_incomplete`` is True when at least one line was skipped (too long)
+    or the character budget was exhausted before the whole body was scanned;
+    callers MUST treat that as a signal to widen, never as evidence of an
+    accurate (lower) count.
+    """
+    paths: set[str] = set()
+    scan_incomplete = False
+    budget = _MAX_SCAN_BUDGET_CHARS
+    for line in body.split('\n'):
+        if budget <= 0:
+            scan_incomplete = True
+            break
+        if len(line) > _MAX_SCAN_LINE_CHARS:
+            scan_incomplete = True
+            continue
+        paths.update(m.group(0) for m in _PATH_RE.finditer(line))
+        budget -= len(line)
+    return paths, scan_incomplete
+
+
+# S7 — the author's own written scale warning. When a request says in prose that
+# the work is large, that statement outranks any cheap band this module can
+# compute from path counts: the author knows things the sensor cannot see.
+# Case-insensitive and word-boundary anchored, mirroring the S5 pattern exactly.
+#
+# ``epic`` carries ONE extra guard, for the same reason ``_GLOB_RE``'s ``**``
+# alternatives are path-adjacent: an alternative that matches document CHROME
+# instead of request CONTENT makes the whole signal fire vacuously. Every ingested
+# orchestrator plan spec opens with an ``epic:`` metadata key, so a bare ``\bepic\b``
+# would fire S7 for the entire orchestrated population and the signal would mean
+# "is orchestrator-authored" rather than "the author warned about scale" — and no
+# orchestrated request, however genuinely surgical, could ever route light again.
+# The ``(?!\s*:)`` lookahead therefore excludes the metadata-key form while keeping
+# every prose use (``… the truthful-signals epic.``, ``an epic-sized rename``).
+_RISK_PROSE_RE = re.compile(
+    r'\b(?:multi-PR|codebase-wide|largest|riskiest|expect a split|foundation|campaign)\b'
+    r'|\bepic\b(?!\s*:)',
+    re.IGNORECASE,
+)
+
 
 def _distinct_paths(body: str) -> set[str]:
     """Return the DISTINCT repo-relative file paths ``_PATH_RE`` extracts from ``body``.
 
     The single source of the distinct-path extraction shared by
-    ``scope_estimate_from_request_pure`` and ``cmd_scope_estimate_heuristic``.
+    ``classify_scope_pure`` and ``cmd_scope_estimate_heuristic``.
     Callers guard the empty-``body`` case themselves and layer their own
     downstream ``sorted()`` / ``len()`` on the returned set.
+
+    The extraction runs through ``_safe_path_scan`` and is therefore
+    ReDoS-bounded (see the comment above ``_MAX_SCAN_LINE_CHARS``): on a body
+    too large or adversarially-repetitive to scan in full, this returns
+    whatever distinct paths the bounded scan found, which may UNDERCOUNT the
+    true total. A caller that needs to distinguish an accurate count from a
+    possibly-truncated one should call ``_safe_path_scan`` directly and read
+    its ``scan_incomplete`` flag (``classify_scope_pure`` does exactly this).
 
     What this counter counts — settled, not incidental:
 
@@ -109,11 +200,11 @@ def _distinct_paths(body: str) -> set[str]:
       architecture discovery and cognition this module is defined to exclude,
       so the sensor DECLARES ITS INAPPLICABILITY for that discrimination rather
       than faking it. The residual is documented, bounded, and one-directional:
-      citations inflate the count, inflation pushes the band from ``surgical``
-      toward ``single_module``, and ``single_module`` is the WIDER band — so the
-      error mode is conservative (more planning ceremony), never a silent
-      narrowing. Consumers MUST read the count as "distinct path-shaped strings
-      in the request", never as "files this plan will change".
+      citations inflate the count, and inflation only ever pushes the band UP the
+      ``surgical`` → ``single_module`` → ``multi_module`` line — so the error mode
+      is conservative (more planning ceremony), never a silent narrowing.
+      Consumers MUST read the count as "distinct path-shaped strings in the
+      request", never as "files this plan will change".
     - **A directory separator is REQUIRED, deliberately.** ``_PATH_RE`` matches
       only ``dir/name.ext``, so a bare filename (``_cmd_planning_lane.py``,
       ``agents.md``) is intentionally NOT counted. This is a decision, not an
@@ -128,17 +219,20 @@ def _distinct_paths(body: str) -> set[str]:
     ``_read_request_body``; that change alters WHICH TEXT is scanned, never how
     a match is judged.
     """
-    return {m.group(0) for m in _PATH_RE.finditer(body)}
+    paths, _ = _safe_path_scan(body)
+    return paths
 
 
 # --- Pre-route scope_estimate heuristic --------------------------------------
-# Coarse scope bands the pre-route heuristic emits (the two narrow bands the
-# light lane cares about). This is a pre-route GUESS from cheap request signals,
-# never the authoritative scope — the deep-lane refine Step 9 module-mapping
-# derivation overwrites it with the accurate band (multi_module / broad) when
-# the deep lane runs.
+# Coarse scope bands the pre-route heuristic emits. The band line is scale-
+# truthful in both directions: it can report a bounded change (surgical) AND a
+# large one (multi_module), so "I cannot bound this" never reads as "it is
+# small". This is still a pre-route GUESS from cheap request signals, never the
+# authoritative scope — the deep-lane refine Step 9 module-mapping derivation
+# overwrites it with the measured band when the deep lane runs.
 SURGICAL = 'surgical'
 SINGLE_MODULE = 'single_module'
+MULTI_MODULE = 'multi_module'
 # The declared-unknown band emitted when the request body is unscoreable (absent,
 # unreadable, or empty). It is a member of _DEEP_SCOPE_ESTIMATES, so S2 reads it
 # as a deep-biasing signal — an unscoreable request never yields a confident
@@ -149,10 +243,18 @@ UNKNOWN = 'none'
 # At most this many distinct file-path references still reads as a surgical,
 # tightly-bounded change.
 _SURGICAL_MAX_PATHS = 3
-# A glob / pattern fan-out marker (``**``, ``/*``, ``*/``, ``*.ext``) disqualifies
-# the surgical band even with few explicit paths — a pattern implies fan-out
-# across an unbounded file set.
-_GLOB_RE = re.compile(r'\*\*|/\*|\*/|\*\.[A-Za-z0-9]+')
+# From this many distinct file-path references upward the request reads as
+# multi-module. The floor is anchored on the smallest counted instance in the
+# observed under-routed population that fired ZERO deep signals.
+_MULTI_MODULE_MIN_PATHS = 8
+# A glob / pattern fan-out marker (``/**``, ``**/``, ``/*``, ``*/``, ``*.ext``)
+# bands multi_module even with few explicit paths — a pattern implies fan-out
+# across an unbounded file set, and an unbounded set cannot be a bounded one.
+# The ``**`` alternatives are deliberately PATH-ADJACENT (``/**`` or ``**/``):
+# a bare ``**`` also matches markdown bold, and because the marker check
+# short-circuits ahead of the path count, a bold-saturated request body would
+# otherwise decide the band on its own and make the count unreachable.
+_GLOB_RE = re.compile(r'/\*\*|\*\*/|/\*|\*/|\*\.[A-Za-z0-9]+')
 
 # The host document's own top-level title line (``# Request: {title}``). It is
 # the ONLY line removed from the scored body — it is ``request.md`` chrome, not
@@ -217,7 +319,7 @@ def _request_is_concrete(body: str) -> bool:
     """
     if not body:
         return False
-    if _PATH_RE.search(body):
+    if _distinct_paths(body):
         return True
     if _FENCE_RE.search(body):
         return True
@@ -226,6 +328,20 @@ def _request_is_concrete(body: str) -> bool:
     if _NOTATION_RE.search(body):
         return True
     return False
+
+
+def _request_has_risk_prose(body: str) -> bool:
+    """S7 — the request body carries an explicit author scale warning.
+
+    Mirrors ``_request_is_concrete``: a single module-level regex over the same
+    whole body, so the two signals are corroborating readings of one document. An
+    empty (unscoreable) body has no warning to report and returns False — the
+    unknown case is already handled by S2 and S5, which both bias deep, so S7 adds
+    no second opinion there.
+    """
+    if not body:
+        return False
+    return bool(_RISK_PROSE_RE.search(body))
 
 
 def _read_scope_estimate(plan_id: str) -> str | None:
@@ -275,48 +391,91 @@ def _read_deep_lane_gate() -> str:
     return 'auto'
 
 
-def scope_estimate_from_request_pure(body: str | None) -> str:
-    """Classify a coarse ``scope_estimate`` from the request body — pure, I/O-free.
+def classify_scope_pure(body: str | None) -> tuple[str, dict[str, Any]]:
+    """Classify the coarse scope band AND explain it — pure, I/O-free.
 
-    Counts the DISTINCT repo-relative file-path references ``_PATH_RE`` extracts
-    from the body and classifies with ZERO architecture queries (the same
-    zero-discovery invariant the lane router itself preserves):
+    Returns ``(scope_estimate, scope_provenance)``, where the provenance block
+    carries ``distinct_path_count``, ``fan_out_marker`` and ``band_rule`` — the
+    two measurements the band table reads plus the identifier of the row that
+    fired. The single source of the band decision: ``scope_estimate_from_request_pure``
+    is a thin projection of the first element, so band and explanation can never
+    drift apart.
 
-    - ``none`` — a DECLARED UNKNOWN. The body is unscoreable: ``request.md`` was
-      absent, unreadable, or empty. A scorer that reads zero bytes must not emit
-      a band, so this case reports "cannot tell" instead of guessing. ``none`` is
-      in ``_DEEP_SCOPE_ESTIMATES``, so S2 reads the unknown as a deep-biasing
-      signal.
-    - ``surgical`` — between one and three distinct file paths AND no glob /
-      pattern fan-out marker (``**``, ``/*``, ``*.ext``). A tightly-bounded,
-      explicitly-named change.
-    - ``single_module`` — everything else with a non-empty body: no explicit path
-      (an ambiguous ask), a glob/pattern present (unbounded fan-out), or more
-      than three distinct paths. This is the coarse default; the deep-lane refine
-      Step 9 module-mapping derivation overwrites it with the accurate band
-      (``multi_module`` / ``broad``) when the deep lane runs.
+    The band table, scored from the DISTINCT repo-relative file-path references
+    ``_PATH_RE`` extracts plus the ``_GLOB_RE`` fan-out marker, with ZERO
+    architecture queries (the same zero-discovery invariant the lane router
+    itself preserves):
 
-    The classified vocabulary is deliberately limited to the two narrow bands the
-    light lane cares about, plus the declared unknown — the heuristic is a cheap
-    pre-route guess, not the authoritative scope estimate.
+    | Band | Predicate | ``band_rule`` |
+    |------|-----------|---------------|
+    | ``none`` | body absent / unreadable / empty | ``unscoreable_body`` |
+    | ``multi_module`` | the body could not be safely scanned in full | ``scan_incomplete`` |
+    | ``multi_module`` | a fan-out marker is present | ``fan_out_marker`` |
+    | ``multi_module`` | ``>= _MULTI_MODULE_MIN_PATHS`` distinct paths | ``path_count_at_or_above_multi_module_floor`` |
+    | ``single_module`` | more than ``_SURGICAL_MAX_PATHS`` distinct paths | ``path_count_middle_band`` |
+    | ``surgical`` | 1..``_SURGICAL_MAX_PATHS`` distinct paths, no fan-out | ``path_count_at_or_below_surgical_max`` |
+    | ``single_module`` | no path at all, non-empty body | ``pathless_non_empty_body`` |
 
-    Note on the ``_GLOB_RE`` disqualifier under the whole-body read: the
-    disqualifier's RULE is unchanged, but the whole-body read enlarges the text
-    it sees, so a fan-out marker anywhere in the request now disqualifies
-    ``surgical`` where a truncated fragment might have hidden it. That widening
-    is one-directional (toward the wider band) and therefore conservative.
-    ``_GLOB_RE``'s own precision — notably that its ``**`` alternative also
-    matches markdown bold — is a separate counting-precision question this
-    change deliberately does NOT alter.
+    Three rows carry the scale-truthfulness the band line exists for:
+
+    - ``none`` is a DECLARED UNKNOWN. The body is unscoreable, and a scorer that
+      read zero bytes must not emit a band, so this reports "cannot tell" instead
+      of guessing. ``none`` is in ``_DEEP_SCOPE_ESTIMATES``, so S2 reads the
+      unknown as a deep-biasing signal.
+    - ``scan_incomplete`` is the ReDoS-defense counterpart of the same
+      discipline: ``_safe_path_scan`` (see its comment for the CWE-1333
+      rationale) bounds how much of the body the DISTINCT-path count can
+      safely cover, and a body too large or adversarially-repetitive to scan
+      in full must not have its (possibly undercounted) partial total read as
+      an accurate narrow band — so this row wins BEFORE the path-count rows
+      below are even consulted.
+    - A fan-out marker bands ``multi_module``, NOT a narrow band. A pattern is a
+      declared inability to enumerate the file set, so it must widen the band; the
+      inverse — reporting an unbounded fan-out as a bounded change — is the
+      silent-narrowing failure this table rules out by construction.
+
+    The band remains a cheap pre-route guess: the deep-lane refine Step 9
+    module-mapping derivation overwrites it with the measured band when the deep
+    lane runs. Under the whole-body read the fan-out marker and the path count
+    both see the entire request (up to the ReDoS-defense bound), so neither can
+    be hidden by a truncated fragment; that widening is one-directional and
+    therefore conservative.
     """
     if not body:
-        return UNKNOWN
-    if _GLOB_RE.search(body):
-        return SINGLE_MODULE
-    distinct_paths = _distinct_paths(body)
-    if 1 <= len(distinct_paths) <= _SURGICAL_MAX_PATHS:
-        return SURGICAL
-    return SINGLE_MODULE
+        return UNKNOWN, {
+            'distinct_path_count': 0,
+            'fan_out_marker': False,
+            'band_rule': 'unscoreable_body',
+        }
+    distinct_paths, scan_incomplete = _safe_path_scan(body)
+    distinct_path_count = len(distinct_paths)
+    fan_out_marker = bool(_GLOB_RE.search(body))
+    if scan_incomplete:
+        band, band_rule = MULTI_MODULE, 'scan_incomplete'
+    elif fan_out_marker:
+        band, band_rule = MULTI_MODULE, 'fan_out_marker'
+    elif distinct_path_count >= _MULTI_MODULE_MIN_PATHS:
+        band, band_rule = MULTI_MODULE, 'path_count_at_or_above_multi_module_floor'
+    elif distinct_path_count > _SURGICAL_MAX_PATHS:
+        band, band_rule = SINGLE_MODULE, 'path_count_middle_band'
+    elif distinct_path_count >= 1:
+        band, band_rule = SURGICAL, 'path_count_at_or_below_surgical_max'
+    else:
+        band, band_rule = SINGLE_MODULE, 'pathless_non_empty_body'
+    return band, {
+        'distinct_path_count': distinct_path_count,
+        'fan_out_marker': fan_out_marker,
+        'band_rule': band_rule,
+    }
+
+
+def scope_estimate_from_request_pure(body: str | None) -> str:
+    """Return just the coarse ``scope_estimate`` band for ``body``.
+
+    The band-only projection of ``classify_scope_pure`` — see that function for
+    the band table and the provenance contract.
+    """
+    return classify_scope_pure(body)[0]
 
 
 def project_profile_pure(
@@ -329,19 +488,22 @@ def project_profile_pure(
 
     A deterministic function of the SAME signals the lane verdict scores (it
     adds no discovery and no cognition). It recommends a posture on the
-    ``minimal ⊏ auto ⊏ full`` lattice:
+    ``minimal ⊏ standard ⊏ full`` lattice:
 
-    - ``minimal`` — a narrow (surgical / single_module) AND concretely specified
-      change. A mechanical, well-anchored, low-stakes change. This is the same
-      narrow-and-concrete predicate the lane verdict's S3/S4 carve-out uses, so a
-      bounded surgical fix stays ``minimal`` even when its ``change_type`` reads
-      generative or its ``compatibility`` reads breaking — the narrow, concrete
-      bound dominates.
+    - ``minimal`` — a ``surgical`` AND concretely specified change: mechanical,
+      well-anchored, low-stakes. This is the same narrow-and-concrete predicate
+      the lane verdict's S3/S4 carve-out uses — the ONE shared
+      ``_NARROW_SCOPE_ESTIMATES`` frozenset — so a bounded surgical fix stays
+      ``minimal`` even when its ``change_type`` reads generative or its
+      ``compatibility`` reads breaking; the narrow, concrete bound dominates.
+      Because the frozenset is shared verbatim, ``single_module`` and
+      ``multi_module`` cannot collapse the posture to ``minimal`` here without
+      also suppressing S3/S4 in the lane verdict, and neither does.
     - ``full`` — a generative change (``change_type ∈ {feature,
       feature_breaking}``) that is also broad (``scope_estimate`` ∈ multi_module
       / broad) OR clean-slate breaking, and NOT narrow-and-concrete. These are
       the correctly-deep features where the adversarial ceremony earns its cost.
-    - ``auto`` — everything else (the generic recommendation / default).
+    - ``standard`` — everything else (the generic recommendation / default).
 
     The recommendation is exactly that — a default the operator overrides. It is
     independent of the ``deep_lane`` gate_mode gate (which governs planning depth,
@@ -355,7 +517,7 @@ def project_profile_pure(
     breaking = compatibility == 'breaking'
     if generative and (broad or breaking):
         return FULL
-    return AUTO
+    return STANDARD
 
 
 def evaluate_signals_pure(
@@ -364,9 +526,10 @@ def evaluate_signals_pure(
     compatibility: str | None,
     plan_source: str | None,
     request_concrete: bool,
+    risk_prose: bool = False,
     override: str | None = None,
 ) -> dict[str, Any]:
-    """Score the S1–S6 signal set into a lane verdict — pure, I/O-free.
+    """Score the S1–S7 signal set into a lane verdict — pure, I/O-free.
 
     Takes the realized signal values directly (the reads happen in the caller)
     and returns the ``{lane, fired_signals, signals, profile}`` dict that drives
@@ -375,11 +538,18 @@ def evaluate_signals_pure(
     init dialogue consumes it as the default recommendation. Importable by
     downstream consumers (e.g. the audit retrospective check) so the routing
     thresholds are never duplicated.
+
+    ``risk_prose`` (S7) defaults to False so a consumer that scores only the
+    band-and-metadata signals keeps working; the default is the ABSENCE of a
+    warning, which is the neutral value — it can never manufacture a deep verdict
+    a caller did not supply evidence for.
     """
     # Carve-out — the positively-bounded case. A request that is BOTH narrowly
-    # scoped (scope_estimate ∈ {surgical, single_module}) AND concretely
-    # specified is well-bounded enough that S3 (generative change_type) and S4
-    # (breaking compatibility) firing *alone* must not force deep. The carve-out
+    # scoped (scope_estimate ∈ _NARROW_SCOPE_ESTIMATES, i.e. surgical) AND
+    # concretely specified is well-bounded enough that S3 (generative
+    # change_type) and S4 (breaking compatibility) firing *alone* must not force
+    # deep. single_module is the catch-all middle band, so it does NOT earn the
+    # carve-out: large concrete work keeps its S3/S4 escalation. The carve-out
     # relaxes ONLY this co-firing: S1/S2/S5 (the unknown-to-deep defaults) and
     # S6 (explicit override) are unaffected, so the conservative unknown case
     # keeps biasing deep unchanged.
@@ -400,6 +570,13 @@ def evaluate_signals_pure(
     s4_deep = compatibility == 'breaking' and not narrow_and_concrete
     # S6 — explicit user override to deep is one-way.
     s6_deep = override == DEEP
+    # S7 — the author's own written scale warning. Deliberately OUTSIDE the
+    # narrow-and-concrete carve-out: the carve-out exists to stop a cheap band
+    # plus a generative change_type from forcing deep, but S7 is not a cheap
+    # inference — it is the author stating the scale. An explicit warning
+    # therefore outranks the band, even for a surgical, concretely-specified
+    # request.
+    s7_deep = risk_prose
 
     fired = []
     if s1_deep:
@@ -414,6 +591,8 @@ def evaluate_signals_pure(
         fired.append('S5:concreteness')
     if s6_deep:
         fired.append('S6:override')
+    if s7_deep:
+        fired.append('S7:risk_prose')
 
     lane = DEEP if fired else LIGHT
     recommended_posture = project_profile_pure(
@@ -431,25 +610,29 @@ def evaluate_signals_pure(
             'change_type': change_type,
             'compatibility': compatibility,
             'request_concrete': request_concrete,
+            'risk_prose': risk_prose,
             'planning_lane_override': override,
         },
         'profile': {
             'recommended_posture': recommended_posture,
-            'candidate_postures': [MINIMAL, AUTO, FULL],
+            'candidate_postures': [MINIMAL, STANDARD, FULL],
         },
     }
 
 
 def _evaluate_signals(plan_id: str, metadata: dict[str, Any]) -> dict[str, Any]:
-    """Read S1–S6 signals from disk and delegate scoring to the pure helper.
+    """Read S1–S7 signals from disk and delegate scoring to the pure helper.
 
-    Returns the dict produced by ``evaluate_signals_pure``:
+    Returns the dict produced by ``evaluate_signals_pure`` — ``lane`` (the
+    aggregate ``{light|deep}`` verdict), ``fired_signals`` (the deep-bias signals
+    that fired), ``signals`` (the resolved S1-S7 input values) and ``profile``
+    (the projected posture) — plus one key this reader adds:
 
-    - ``lane`` — the aggregate ``{light|deep}`` verdict.
-    - ``fired_signals`` — the list of deep-bias signals that fired.
-    - ``signals`` — the resolved S1-S6 input values (``plan_source``,
-      ``scope_estimate``, ``change_type``, ``compatibility``,
-      ``request_concrete``, ``planning_lane_override``).
+    - ``scope_provenance`` — the ``classify_scope_pure`` explanation of the band
+      the request body scores to (``distinct_path_count``, ``fan_out_marker``,
+      ``band_rule``). It explains the band THIS BODY would produce; the S2 signal
+      value itself is read from ``references.json``, which a later phase's
+      module-mapping derivation may have overwritten with a measured band.
     """
     plan_source = metadata.get('plan_source')
     change_type = metadata.get('change_type')
@@ -459,15 +642,20 @@ def _evaluate_signals(plan_id: str, metadata: dict[str, Any]) -> dict[str, Any]:
     compatibility = _read_compatibility()
     body = _read_request_body(plan_id)
     concrete = _request_is_concrete(body)
+    risk_prose = _request_has_risk_prose(body)
+    _, scope_provenance = classify_scope_pure(body)
 
-    return evaluate_signals_pure(
+    evaluation = evaluate_signals_pure(
         scope_estimate=scope_estimate,
         change_type=change_type,
         compatibility=compatibility,
         plan_source=plan_source,
         request_concrete=concrete,
+        risk_prose=risk_prose,
         override=override,
     )
+    evaluation['scope_provenance'] = scope_provenance
+    return evaluation
 
 
 def cmd_planning_lane_route(args: argparse.Namespace) -> dict[str, Any]:
@@ -477,6 +665,13 @@ def cmd_planning_lane_route(args: argparse.Namespace) -> dict[str, Any]:
     before the signal evaluation (a CLI-init convenience). ``--persist`` writes
     the resolved lane into ``status.metadata.planning_lane`` and emits one
     decision-log line naming every signal value and the winning predicate.
+
+    The return and that decision-log line both carry ``scope_provenance``
+    (``distinct_path_count``, ``fan_out_marker``, ``band_rule``) alongside BOTH
+    verdicts — ``planning_lane`` and ``execution_profile`` — so an operator reading
+    either surface sees not just the two decisions but the band rule that drove
+    them. The pre-existing override seam (``--lane-override`` / S6) is the way to
+    disagree with the verdict; the provenance block is observability, not a gate.
     """
     plan_id: str = args.plan_id
     lane_override: str | None = getattr(args, 'lane_override', None)
@@ -518,6 +713,9 @@ def cmd_planning_lane_route(args: argparse.Namespace) -> dict[str, Any]:
     # NOT coerce the profile (deep_lane=always does not force `full` — §4.2).
     signal_evaluation = _evaluate_signals(plan_id, metadata)
     profile = signal_evaluation['profile']
+    # Band provenance is a property of the request body, not of the deep_lane
+    # gate, so it survives both short-circuit branches below unchanged.
+    scope_provenance = signal_evaluation['scope_provenance']
 
     evaluation: dict[str, Any]
     if ceremony == 'always':
@@ -564,6 +762,7 @@ def cmd_planning_lane_route(args: argparse.Namespace) -> dict[str, Any]:
             f'(plan-marshall:manage-status:planning-lane) Routed planning_lane={lane} '
             f'(predicate={decision}, fired={fired or "none"}, '
             f'ceremony.deep_lane={ceremony}, execution_profile={recommended_posture}, '
+            f'scope_provenance={scope_provenance}, '
             f'signals={evaluation["signals"]})'
         ),
     )
@@ -578,6 +777,7 @@ def cmd_planning_lane_route(args: argparse.Namespace) -> dict[str, Any]:
         'signals': evaluation['signals'],
         'execution_profile': recommended_posture,
         'profile': profile,
+        'scope_provenance': scope_provenance,
         'persisted': persisted,
         'classification_validation': {
             'mismatch_count': classification_validation.get('mismatch_count', 0),
@@ -591,8 +791,9 @@ def cmd_scope_estimate_heuristic(args: argparse.Namespace) -> dict[str, Any]:
     """Classify a coarse ``scope_estimate`` from the request and persist it.
 
     Reads the WHOLE ``request.md`` narrative (see ``_read_request_body``),
-    classifies it via ``scope_estimate_from_request_pure`` (distinct-file-path
-    count, ZERO architecture queries), and with ``--persist`` writes it to
+    classifies it via ``classify_scope_pure`` (fan-out marker plus
+    distinct-file-path count, ZERO architecture queries), and with
+    ``--persist`` writes it to
     ``references.json``'s ``scope_estimate`` field — the same field
     ``_read_scope_estimate`` (the router's S2 signal source) reads. Run at
     phase-1-init BEFORE the planning-lane route so the router reads a real
@@ -618,7 +819,7 @@ def cmd_scope_estimate_heuristic(args: argparse.Namespace) -> dict[str, Any]:
         }
 
     body = _read_request_body(plan_id)
-    scope_estimate = scope_estimate_from_request_pure(body)
+    scope_estimate, scope_provenance = classify_scope_pure(body)
     scope_resolved = scope_estimate != UNKNOWN
     distinct_paths = sorted(_distinct_paths(body)) if body else []
 
@@ -642,7 +843,9 @@ def cmd_scope_estimate_heuristic(args: argparse.Namespace) -> dict[str, Any]:
             'INFO',
             (
                 f'(plan-marshall:manage-status:scope-estimate-heuristic) {verdict} '
-                f'(distinct_paths={len(distinct_paths)}, glob={bool(_GLOB_RE.search(body))}, '
+                f'(distinct_paths={len(distinct_paths)}, '
+                f'glob={scope_provenance["fan_out_marker"]}, '
+                f'band_rule={scope_provenance["band_rule"]}, '
                 f'scope_resolved={scope_resolved}) '
                 f'— pre-route coarse guess over the whole request body, deep-lane Step 9 may overwrite'
             ),

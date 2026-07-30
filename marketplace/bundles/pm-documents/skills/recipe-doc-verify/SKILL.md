@@ -5,7 +5,7 @@ user-invocable: false
 mode: workflow
 implements: plan-marshall:extension-api/standards/ext-point-recipe
 lane:
-  profile: auto
+  profile: standard
   steps:
     sonar-roundtrip: off
 metadata:

@@ -465,7 +465,8 @@ def main() -> int:
         'scope-estimate-heuristic',
         help='Deterministic pre-route scope_estimate classifier for phase-1-init (no LLM, no architecture calls)',
         description=(
-            "Classify a coarse scope_estimate (surgical | single_module | none) from "
+            "Classify a coarse scope_estimate "
+            "(surgical | single_module | multi_module | none) from "
             "the WHOLE request.md body by counting distinct file-path references, "
             "with ZERO architecture queries. The scored text is heading-blind — the "
             "entire file minus its own '# Request' title line, with no section "
@@ -546,7 +547,7 @@ def main() -> int:
         description=(
             "Resolve planning_lane in {light, deep} from cheap field reads + a "
             "request.md regex (zero codebase discovery, zero LLM cognition). "
-            "'route' evaluates the DQ1 signal set (S1-S6): default is light; any "
+            "'route' evaluates the DQ1 signal set (S1-S7): default is light; any "
             "deep-precondition signal forces deep; plan.phase-1-init."
             "deep_lane (always|never|auto) short-circuits the signals. 'escalate' "
             "is the one-way light->deep ratchet — it sets planning_lane=deep + "
@@ -606,8 +607,10 @@ def main() -> int:
             "Deterministic classification-validation gate. Cross-checks the plan's "
             "change_type and scope_estimate against cheap request signals and emits a "
             "phase-1-init Q-Gate finding (recorded against 2-refine) on a mismatch. "
-            "Flags two classes — feature-as-bug_fix and non-empty-affected_files with "
-            "a null scope_estimate — and NEVER blocks routing. Also runs automatically "
+            "Flags three classes — feature-as-bug_fix, non-empty-affected_files with "
+            "a null scope_estimate, and scale-mismatch-light-routing (a surgical "
+            "scope_estimate over a request body the scope sensor reads as "
+            "multi_module) — and NEVER blocks routing. Also runs automatically "
             "as a pre-route pass inside 'planning-lane route'."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,

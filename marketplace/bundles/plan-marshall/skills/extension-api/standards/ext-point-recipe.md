@@ -59,11 +59,11 @@ the cell floor) override it.
 
 The seed is declared as a `lane:` frontmatter block carrying a `profile` posture and an
 optional `steps:` map of per-element overrides in the override vocabulary
-(`off | minimal | auto | full | ask`):
+(`off | minimal | standard | full | ask`):
 
 ```yaml
 lane:
-  profile: auto
+  profile: standard
   steps:
     sonar-roundtrip: off
 ```

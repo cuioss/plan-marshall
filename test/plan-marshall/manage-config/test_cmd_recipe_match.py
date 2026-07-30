@@ -483,9 +483,9 @@ def _write_recipe_with_lane(skills_dir: Path, name: str, *, description: str, la
 
 def test_parse_recipe_lane_block_profile_and_steps():
     """The recipe lane block parser captures the profile posture and step overrides."""
-    text = '---\nname: recipe-x\nlane:\n  profile: auto\n  steps:\n    sonar-roundtrip: off\n---\n'
+    text = '---\nname: recipe-x\nlane:\n  profile: standard\n  steps:\n    sonar-roundtrip: off\n---\n'
     block = _parse_recipe_lane_block(text)
-    assert block == {'profile': 'auto', 'steps': {'sonar-roundtrip': 'off'}}
+    assert block == {'profile': 'standard', 'steps': {'sonar-roundtrip': 'off'}}
 
 
 def test_parse_recipe_lane_block_profile_only():
@@ -513,8 +513,8 @@ def test_normalize_recipe_lane_seed_all_invalid_returns_none():
 
 def test_read_recipe_lane_seed_from_direct_lane_key():
     """An extension recipe carrying a `lane` dict directly is read without file resolution."""
-    recipe = {'key': 'x', 'lane': {'profile': 'auto', 'steps': {'sonar-roundtrip': 'off'}}}
-    assert read_recipe_lane_seed(recipe) == {'profile': 'auto', 'steps': {'sonar-roundtrip': 'off'}}
+    recipe = {'key': 'x', 'lane': {'profile': 'standard', 'steps': {'sonar-roundtrip': 'off'}}}
+    assert read_recipe_lane_seed(recipe) == {'profile': 'standard', 'steps': {'sonar-roundtrip': 'off'}}
 
 
 def test_read_recipe_lane_seed_absent_yields_none():
@@ -532,14 +532,14 @@ def test_recipe_match_surfaces_lane_seed(plan_context, tmp_path, monkeypatch):
         skills_dir,
         'recipe-pangolin',
         description='pangolin zephyr quokka',
-        lane_block='lane:\n  profile: auto\n  steps:\n    sonar-roundtrip: off\n',
+        lane_block='lane:\n  profile: standard\n  steps:\n    sonar-roundtrip: off\n',
     )
     monkeypatch.chdir(tmp_path)
 
     result = cmd_recipe_match(_ns('pangolin zephyr quokka recipe-pangolin'))
 
     match = next(m for m in result['matches'] if m['key'] == 'pangolin')
-    assert match['lane_seed'] == {'profile': 'auto', 'steps': {'sonar-roundtrip': 'off'}}
+    assert match['lane_seed'] == {'profile': 'standard', 'steps': {'sonar-roundtrip': 'off'}}
 
 
 def test_recipe_match_without_lane_seed_omits_key(plan_context, tmp_path, monkeypatch):

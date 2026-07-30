@@ -428,7 +428,7 @@ _SCOPE_GATED_SINGLE_MODULE_DROP = frozenset(
 
 # Owning finalize step ids for the four ceremony gates. Each ceremony gate is
 # governed by its owning step's per-element ``lane`` override
-# (``off``/``minimal``/``auto``) stored nested under the owning step's param object
+# (``off``/``minimal``/``standard``) stored nested under the owning step's param object
 # in marshal.json's ``phase-6-finalize.steps`` keyed map. There is no flat
 # phase-level ``qgate`` sibling — every ceremony gate rides its owning step's
 # ``lane``.
@@ -483,7 +483,7 @@ def _read_step_owned_knob(owner_step_id: str, knob: str, plan_id: str) -> object
 
 
 def _has_declared_lane_override(step_id: str, marshal_phase_6_map: dict[str, dict] | None) -> bool:
-    """Return True when ``step_id`` carries an explicitly declared, non-``auto`` lane.
+    """Return True when ``step_id`` carries an explicitly declared, non-``standard`` lane.
 
     The declared-lane predicate the implicit scope gate consults before dropping
     anything. A per-element ``lane`` override is the operator's DECLARATION about
@@ -493,14 +493,14 @@ def _has_declared_lane_override(step_id: str, marshal_phase_6_map: dict[str, dic
     that plan's ``status.metadata.finalize_step_overrides`` is therefore immune to
     :func:`_apply_scope_gated_finalize` exactly as a marshal-declared ``lane``
     already is, and is reported in the same ``scope_gated_immune`` list.
-    ``auto`` is the defer value that expresses no such declaration
+    ``standard`` is the defer value that expresses no such declaration
     and leaves the implicit machinery its say. Every other valid override
     (``off`` / ``minimal`` / ``full`` / ``ask``) is a declaration, so the element
     belongs to the lane machinery and the scope gate must not silently pre-empt
     it — the lane-resolution pass (and, for an unresolved ``ask``, the
     ``unresolved_ask_provider_drop`` pre-filter) decides.
 
-    ``ask`` counts as declared here only in the trivial sense that it is non-``auto``;
+    ``ask`` counts as declared here only in the trivial sense that it is non-``standard``;
     it is seeded on the two infra elements alone (``automatic-review`` /
     ``sonar-roundtrip``), neither of which is a member of any scope-gate drop set,
     so the classification is not load-bearing for this pre-filter.
@@ -513,10 +513,10 @@ def _has_declared_lane_override(step_id: str, marshal_phase_6_map: dict[str, dic
             where no declaration can exist, so nothing is immune.
 
     Returns:
-        ``True`` when a valid non-``auto`` ``lane`` override is declared for the step.
+        ``True`` when a valid non-``standard`` ``lane`` override is declared for the step.
     """
     override = _lane_override_for(step_id, marshal_phase_6_map)
-    return override is not None and override != 'auto'
+    return override is not None and override != 'standard'
 
 
 def _apply_scope_gated_finalize(
@@ -537,7 +537,7 @@ def _apply_scope_gated_finalize(
     - Any other scope value → no implicit subtraction.
 
     **Declared-lane immunity.** A step that carries an explicitly declared,
-    non-``auto`` per-element ``lane`` override — in EITHER declaration channel,
+    non-``standard`` per-element ``lane`` override — in EITHER declaration channel,
     plan-local ``status.metadata.finalize_step_overrides`` or project-wide
     marshal.json, merged by :func:`_read_merged_phase_6_step_map` — is NEVER dropped
     here, whatever the scope estimate says
@@ -633,7 +633,7 @@ _CEREMONY_GATE_OWNER_STEP: dict[str, str] = {
 
 # Per-element ``lane`` override → ceremony run-at-all decision. ``off`` forces the
 # ceremony step out (``never``); ``minimal`` force-keeps it in (``always``);
-# every other value (``auto`` / ``full`` / ``ask`` / absent / malformed) defers
+# every other value (``standard`` / ``full`` / ``ask`` / absent / malformed) defers
 # to the pre-filter machinery (``auto``).
 _LANE_TO_CEREMONY_VALUE: dict[str, str] = {
     'off': 'never',
@@ -659,7 +659,7 @@ def _read_finalize_gates(plan_id: str) -> dict[str, str]:
 
     The ``lane`` value maps to the run-at-all decision the ceremony transform
     consumes: ``off`` → ``never`` (force out), ``minimal`` → ``always`` (force
-    in), and every other value (``auto`` / ``full`` / ``ask`` / absent) → ``auto``
+    in), and every other value (``standard`` / ``full`` / ``ask`` / absent) → ``auto``
     (defer to the pre-filter machinery).
 
     Args:
@@ -847,15 +847,15 @@ def _apply_unresolved_ask_provider_drop(
     resolve its EFFECTIVE lane tier from the marshal.json per-element ``lane``
     override via :func:`_effective_lane_tier`. The seed value for both elements
     is ``ask``, and a steward-persisted answer overwrites it to
-    ``off``/``auto``/``full``; so an effective tier still equal to ``ask`` at
+    ``off``/``standard``/``full``; so an effective tier still equal to ``ask`` at
     compose is the UNRESOLVED case (the operator never answered). When the
     element is unresolved AND its corresponding provider is absent
     (``ci_provider is None`` for ``automatic-review``; ``sonar_provider is
     None`` for ``sonar-roundtrip``), the element is DROPPED.
 
-    Never drops a RESOLVED ask (effective tier ``off``/``auto``/``full`` — the
+    Never drops a RESOLVED ask (effective tier ``off``/``standard``/``full`` — the
     ``off`` case is already handled by the lane-resolution pass; a resolved
-    ``auto``/``full`` keeps the element here). Never drops when the provider IS
+    ``standard``/``full`` keeps the element here). Never drops when the provider IS
     configured. Elements other than the two infra elements pass through
     untouched. Consistent with the composer's "rows and pre-filters only ever
     narrow" architecture, this only removes candidates — it never re-adds.

@@ -4,7 +4,7 @@
 
 **The defect.** ``_apply_scope_gated_finalize`` is an IMPLICIT gate — it infers
 "you probably do not want this" from ``scope_estimate``. Its one escape hatch is
-declared-lane immunity: a step carrying an explicit non-``auto`` per-element
+declared-lane immunity: a step carrying an explicit non-``standard`` per-element
 ``lane`` is never dropped. Before the fix that immunity predicate could only see
 a declaration written into project-wide ``marshal.json``, so an operator's
 answer *for this plan* — which must never leak into every later plan — was
