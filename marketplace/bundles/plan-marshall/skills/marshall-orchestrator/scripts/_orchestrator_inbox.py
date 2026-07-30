@@ -367,6 +367,52 @@ def list_messages(inbox_dir: Path) -> list[Path]:
     return [path for _, _, path in entries]
 
 
+class InboxCounts(NamedTuple):
+    """The derived inbox tallies :func:`inbox_counts` returns.
+
+    ``present`` is the same *which kind of zero* discriminator
+    :func:`cmd_inbox_list` reports as ``inbox_state``: when it is ``False`` both
+    counts are zero because the directory could not be looked at, not because
+    the queue was empty.
+    """
+
+    queued: int
+    archived: int
+    present: bool
+
+
+def inbox_counts(inbox_dir: Path) -> InboxCounts:
+    """Count the epic's queued and archived messages, derived from the filesystem.
+
+    The derivation seam behind ``resume-summary``'s inbox line. Both counts come
+    from the SAME filename grammar the channel allocates with
+    (:data:`_MESSAGE_NAME_RE`): the queued count re-uses :func:`list_messages`
+    (so it agrees with ``inbox list`` by construction rather than by a parallel
+    re-implementation), and the archived count applies the same shape filter to
+    ``inbox/archive/``.
+
+    Args:
+        inbox_dir: The epic's ``inbox/`` directory.
+
+    Returns:
+        An :class:`InboxCounts`. An absent ``inbox/`` yields
+        ``(0, 0, present=False)`` — *could not look* — rather than the
+        indistinguishable ``(0, 0, present=True)`` an empty queue yields. A
+        not-yet-created ``archive/`` simply contributes ``0``.
+    """
+    if not inbox_dir.is_dir():
+        return InboxCounts(0, 0, False)
+    archive_dir = inbox_dir / INBOX_ARCHIVE_SUBDIR
+    archived = 0
+    if archive_dir.is_dir():
+        archived = sum(
+            1
+            for entry in archive_dir.iterdir()
+            if entry.is_file() and _MESSAGE_NAME_RE.match(entry.name) is not None
+        )
+    return InboxCounts(len(list_messages(inbox_dir)), archived, True)
+
+
 def resolve_message_path(inbox_dir: Path, name: str) -> tuple[Path, str]:
     """Resolve one message name to its path, probing the archive second.
 

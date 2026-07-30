@@ -113,6 +113,10 @@ python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator
   --slug SLUG
 ```
 
+Generates the START-HERE markdown block the LLM pastes verbatim between the `BEGIN/END GENERATED: resume-summary` markers in `epic.md`. Returns it as `summary`, plus the derived `inbox_queued`, `inbox_archived`, and `inbox_state` fields. The block carries, in order: `**Resume anchor**` (the operator's prose, rendered VERBATIM), `**Phase**`, `**Inbox (derived)**`, the `**Running**` / `**Parked**` groups, the `**Queue**` (staged, in `plans[]` order), and a residual per-status line for every other status value — so no plan is ever invisible. A terminal row missing a result link carries the `(!) missing: …` completeness marker.
+
+The inbox counts are the one part NOT read out of `status.json`: they are **derived at render time** from the epic's `inbox/` directory, and they are **authoritative over any count sentence in the `resume_anchor` prose**. The derived line is kept SEPARATE from the anchor line on purpose — a stale narrative count then sits visibly beside the live one instead of outranking it, and the anchor is never silently rewritten. An absent `inbox/` renders that fact explicitly rather than rendering `0 queued`, the same *which zero is this* rule `inbox list`'s `inbox_state` enforces; `inbox_state` is drawn from the same closed `present` / `missing` vocabulary, so the two verbs are directly reconcilable without parsing the markdown block.
+
 ### archive
 
 ```bash

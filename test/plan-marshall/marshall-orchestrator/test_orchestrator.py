@@ -13,7 +13,11 @@ group's envelope schema and handler surface have theirs
   fixture status.json, plus the error envelopes (missing status, unknown
   plan, unknown field, unpaired flags, mutually-exclusive write forms).
 - ``resume-summary``: START-HERE block generation derived purely from
-  status.json (resume anchor, phase, running/parked plans, ordered queue).
+  status.json (resume anchor, phase, running/parked plans, ordered queue), plus
+  the render-time-derived inbox counts — which come from the epic's ``inbox/``
+  directory rather than from the anchor's prose, keep the two zeros
+  (``present`` / ``missing``) distinct, and sit beside a stale anchor sentence
+  that is still rendered verbatim.
 - CLI boundary: the three verbs above driven through the ``orchestrator.py``
   entry point with constructed argv at the subprocess boundary
   (``run_script``); the ``inbox`` group's CLI wiring is covered in
@@ -34,6 +38,7 @@ _orch = load_script_module(
 
 cmd_scaffold = _orch.cmd_scaffold
 cmd_queue = _orch.cmd_queue
+cmd_inbox_list = _orch.cmd_inbox_list
 cmd_resume_summary = _orch.cmd_resume_summary
 EPIC_SUBDIRS = _orch.EPIC_SUBDIRS
 PLAN_ROW_FIELDS = _orch.PLAN_ROW_FIELDS
@@ -110,6 +115,28 @@ def _write_status(
 
 def _read_status_file(path: Path) -> dict:
     return dict(json.loads(path.read_text(encoding='utf-8')))
+
+
+def _seed_inbox(
+    plan_context, slug: str, queued: int = 0, archived: int = 0, extra_names: tuple = ()
+) -> Path:
+    """Create the epic's ``inbox/`` with ``queued`` live and ``archived`` retired messages.
+
+    Names follow the channel's ``{sender}-{NNN}.md`` grammar so the derivation
+    counts them; ``extra_names`` seeds off-shape files that MUST NOT be counted.
+    """
+    inbox = _epic_dir(plan_context, slug) / 'inbox'
+    inbox.mkdir(parents=True, exist_ok=True)
+    for index in range(1, queued + 1):
+        (inbox / f'sender-{index:03d}.md').write_text('queued', encoding='utf-8')
+    if archived or extra_names:
+        archive = inbox / 'archive'
+        archive.mkdir(exist_ok=True)
+        for index in range(1, archived + 1):
+            (archive / f'retired-{index:03d}.md').write_text('gone', encoding='utf-8')
+        for name in extra_names:
+            (archive / name).write_text('off shape', encoding='utf-8')
+    return inbox
 
 
 # =============================================================================
@@ -517,6 +544,163 @@ class TestResumeSummary:
 
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_slug'
+
+
+# =============================================================================
+# resume-summary — inbox counts derived at render time, beside the narrative
+# =============================================================================
+
+
+class TestResumeSummaryDerivedInbox:
+    """The counts come from the filesystem, never from the anchor's prose.
+
+    The defect this pins: the START-HERE block carried only the operator's
+    ``resume_anchor`` sentence, so a narrative "inbox drained 8/8" outranked a
+    queue that still held messages. The derived line now sits beside the anchor
+    and is authoritative over it.
+    """
+
+    def test_should_render_the_derived_inbox_line_from_the_filesystem(
+        self, plan_context
+    ):
+        _write_status(plan_context, 'inbox-count-epic')
+        _seed_inbox(plan_context, 'inbox-count-epic', queued=2, archived=3)
+
+        result = cmd_resume_summary(Namespace(slug='inbox-count-epic'))
+
+        assert '**Inbox (derived)**: 2 queued, 3 archived' in result['summary']
+
+    def test_should_surface_the_counts_as_top_level_payload_fields(self, plan_context):
+        # A caller reconciles against ``inbox list`` without parsing markdown.
+        _write_status(plan_context, 'inbox-fields-epic')
+        _seed_inbox(plan_context, 'inbox-fields-epic', queued=1, archived=4)
+
+        result = cmd_resume_summary(Namespace(slug='inbox-fields-epic'))
+
+        assert result['inbox_queued'] == 1
+        assert result['inbox_archived'] == 4
+        assert result['inbox_state'] == 'present'
+
+    def test_should_render_an_empty_queue_as_a_present_zero(self, plan_context):
+        # Looked, found nothing — distinct from the absent-directory case below.
+        _write_status(plan_context, 'inbox-empty-epic')
+        _seed_inbox(plan_context, 'inbox-empty-epic')
+
+        result = cmd_resume_summary(Namespace(slug='inbox-empty-epic'))
+
+        assert '**Inbox (derived)**: 0 queued, 0 archived' in result['summary']
+        assert result['inbox_state'] == 'present'
+
+    def test_should_render_an_absent_inbox_explicitly_not_as_zero_queued(
+        self, plan_context
+    ):
+        # Could not look. Rendering "0 queued" here would be the same collapse
+        # deliverable 2 removed from ``inbox list``.
+        _write_status(plan_context, 'inbox-absent-epic')
+        assert not (_epic_dir(plan_context, 'inbox-absent-epic') / 'inbox').exists()
+
+        result = cmd_resume_summary(Namespace(slug='inbox-absent-epic'))
+
+        assert '**Inbox (derived)**: no inbox directory' in result['summary']
+        assert '0 queued' not in result['summary']
+        assert result['inbox_state'] == 'missing'
+        assert result['inbox_queued'] == 0
+
+    def test_should_not_answer_the_two_zeros_with_equal_summaries(self, plan_context):
+        # The two zeros agree on every count yet MUST NOT render identically.
+        _write_status(plan_context, 'zero-looked-epic')
+        _seed_inbox(plan_context, 'zero-looked-epic')
+        _write_status(plan_context, 'zero-blind-epic')
+
+        looked = cmd_resume_summary(Namespace(slug='zero-looked-epic'))
+        could_not_look = cmd_resume_summary(Namespace(slug='zero-blind-epic'))
+
+        assert looked['inbox_queued'] == could_not_look['inbox_queued'] == 0
+        assert looked['inbox_archived'] == could_not_look['inbox_archived'] == 0
+        assert looked['summary'] != could_not_look['summary']
+        assert looked['inbox_state'] != could_not_look['inbox_state']
+
+    def test_should_keep_a_stale_anchor_verbatim_beside_the_derived_truth(
+        self, plan_context
+    ):
+        # The whole point of the deliverable: the operator's prose is NEVER
+        # silently rewritten, and the live count sits visibly next to it so the
+        # contradiction is readable instead of hidden.
+        _write_status(
+            plan_context,
+            'stale-anchor-epic',
+            resume_anchor='inbox drained 8/8 — nothing queued',
+        )
+        _seed_inbox(plan_context, 'stale-anchor-epic', queued=3)
+
+        result = cmd_resume_summary(Namespace(slug='stale-anchor-epic'))
+
+        summary = result['summary']
+        assert '**Resume anchor**: inbox drained 8/8 — nothing queued' in summary
+        assert '**Inbox (derived)**: 3 queued, 0 archived' in summary
+        assert result['inbox_queued'] == 3
+
+    def test_should_render_the_derived_line_separately_from_the_anchor_line(
+        self, plan_context
+    ):
+        # Separate LINES, so neither can be mistaken for the other's authority.
+        _write_status(plan_context, 'separate-lines-epic')
+        _seed_inbox(plan_context, 'separate-lines-epic', queued=1)
+
+        lines = cmd_resume_summary(Namespace(slug='separate-lines-epic'))['summary']
+
+        anchor_line = next(
+            line for line in lines.split('\n') if line.startswith('**Resume anchor**')
+        )
+        assert 'Inbox (derived)' not in anchor_line
+
+    def test_should_agree_with_inbox_list_for_the_same_epic(self, plan_context):
+        # Cross-verb reconciliation: the two surfaces are derived from the SAME
+        # directory through the same filename grammar, so a caller comparing
+        # them can never be told two different stories about one queue. Anchored
+        # against a stale narrative so the disagreement is with the PROSE only.
+        _write_status(
+            plan_context,
+            'cross-verb-epic',
+            resume_anchor='inbox drained 8/8 — nothing queued',
+        )
+        _seed_inbox(plan_context, 'cross-verb-epic', queued=4, archived=2)
+
+        summary = cmd_resume_summary(Namespace(slug='cross-verb-epic'))
+        listed = cmd_inbox_list(Namespace(slug='cross-verb-epic'))
+
+        assert summary['inbox_queued'] == listed['count'] == 4
+        assert summary['inbox_state'] == listed['inbox_state'] == 'present'
+
+    def test_should_agree_with_inbox_list_on_the_absent_inbox_state(self, plan_context):
+        # The agreement holds on the *could not look* zero too — both verbs draw
+        # ``inbox_state`` from the same closed present/missing vocabulary.
+        cmd_scaffold(Namespace(slug='cross-verb-absent-epic'))
+        _write_status(plan_context, 'cross-verb-absent-epic')
+        (_epic_dir(plan_context, 'cross-verb-absent-epic') / 'inbox').rmdir()
+
+        summary = cmd_resume_summary(Namespace(slug='cross-verb-absent-epic'))
+        listed = cmd_inbox_list(Namespace(slug='cross-verb-absent-epic'))
+
+        assert summary['inbox_state'] == listed['inbox_state'] == 'missing'
+        assert summary['inbox_queued'] == listed['count'] == 0
+
+    def test_should_only_count_files_matching_the_channel_filename_grammar(
+        self, plan_context
+    ):
+        # The archived tally uses the SAME shape filter the channel allocates
+        # with, so an unrelated file dropped into archive/ never inflates it.
+        _write_status(plan_context, 'shape-filter-epic')
+        _seed_inbox(
+            plan_context,
+            'shape-filter-epic',
+            archived=2,
+            extra_names=('README.md', 'notes.txt', 'sender-nn.md'),
+        )
+
+        result = cmd_resume_summary(Namespace(slug='shape-filter-epic'))
+
+        assert result['inbox_archived'] == 2
 
 
 # =============================================================================
