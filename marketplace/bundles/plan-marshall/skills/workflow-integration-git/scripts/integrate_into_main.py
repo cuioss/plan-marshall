@@ -67,20 +67,19 @@ from __future__ import annotations
 import importlib.util
 import os
 import shutil
-import subprocess
 from argparse import Namespace
 from pathlib import Path
 from typing import Any
 
 from file_ops import (
-    get_executor_path,
+    WorktreeResolutionError,
     get_worktree_root,
+    resolve_plan_context,
 )
 from marketplace_paths import (
     PLAN_DIR_NAME,
     resolve_main_anchored_path,
 )
-from toon_parser import parse_toon
 from triage_helpers import (
     ErrorCode,
     create_workflow_cli,
@@ -125,7 +124,8 @@ def _load_merge_lock() -> Any:
 # Resolves the SOURCE worktree path so the move-back is correct from ANY cwd
 # (worktree or main). Two resolution paths are tried in order, mirroring the
 # sibling git-workflow.py ``cmd_locate_plan_checkout``:
-#   1. The canonical ``manage-status get-worktree-path`` channel, which reads
+#   1. The canonical channel — ``file_ops.resolve_plan_context``, which owns the
+#      ``manage-status get-worktree-path`` shell-out and thereby reads
 #      ``status.metadata.worktree_path`` from the plan's ``status.json``. This
 #      succeeds for a not-yet-moved plan whose status.json is still on main.
 #   2. A structural ``get_worktree_root() / {plan_id}`` filesystem probe for the
@@ -152,77 +152,34 @@ _EXPECTED_ERROR_SUBSTRINGS = (
 def _resolve_worktree_path_via_status_channel(
     plan_id: str,
 ) -> tuple[Path | None, dict | None]:
-    """Resolve the worktree path via the ``manage-status get-worktree-path`` channel.
+    """Resolve the worktree path via the canonical plan-context channel.
 
     Returns ``(path, None)`` on success, ``(None, error_dict)`` on failure. The
     error dict is a fully-formed TOON-shaped payload (``NOT_FOUND`` code). A
     caller that wants the structural fallback inspects the error message against
     :data:`_EXPECTED_ERROR_SUBSTRINGS` to distinguish a recoverable
     channel-could-not-resolve case from a critical infrastructure failure.
+
+    The classification the caller depends on is preserved deliberately, and it
+    is preserved STRUCTURALLY where it can be: a plan that resolves but declares
+    no worktree yields the verbatim "No worktree configured" message via the
+    ``has_worktree`` face, so that recoverable case never depends on matching
+    the resolver's error text. Only the genuinely-failed resolution surfaces the
+    resolver's message, which for the moved-in-from-main case carries
+    manage-status's own ``status.json not found`` — still inside
+    :data:`_EXPECTED_ERROR_SUBSTRINGS`, so the structural probe stays reachable.
     """
     try:
-        executor = get_executor_path()
-    except RuntimeError as exc:
+        context = resolve_plan_context(plan_id, ensure=False)
+        has_worktree = context.has_worktree
+    except WorktreeResolutionError as exc:
         return None, make_error(
-            f'cannot resolve plan-marshall executor: {exc}',
-            code=ErrorCode.NOT_FOUND,
-            plan_id=plan_id,
-        )
-    if not executor.exists():
-        return None, make_error(
-            'plan-marshall executor not available (.plan/execute-script.py missing)',
+            str(exc),
             code=ErrorCode.NOT_FOUND,
             plan_id=plan_id,
         )
 
-    try:
-        result = subprocess.run(
-            [
-                'python3',
-                str(executor),
-                'plan-marshall:manage-status:manage-status',
-                'get-worktree-path',
-                '--plan-id',
-                plan_id,
-            ],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
-        return None, make_error(
-            f'manage-status get-worktree-path failed: {exc}',
-            code=ErrorCode.NOT_FOUND,
-            plan_id=plan_id,
-        )
-
-    if result.returncode != 0:
-        return None, make_error(
-            (result.stderr or result.stdout).strip()
-            or 'manage-status get-worktree-path failed',
-            code=ErrorCode.NOT_FOUND,
-            plan_id=plan_id,
-        )
-
-    try:
-        parsed = parse_toon(result.stdout)
-    except Exception as exc:  # noqa: BLE001 — defensive against TOON drift
-        return None, make_error(
-            f'failed to parse manage-status output: {exc}',
-            code=ErrorCode.NOT_FOUND,
-            plan_id=plan_id,
-        )
-
-    if parsed.get('status') == 'error' or parsed.get('error'):
-        return None, make_error(
-            parsed.get('message') or 'manage-status reported an error',
-            code=ErrorCode.NOT_FOUND,
-            plan_id=plan_id,
-        )
-
-    use_worktree = bool(parsed.get('use_worktree'))
-    worktree_path_value = parsed.get('worktree_path') or ''
-    if not use_worktree or not worktree_path_value:
+    if not has_worktree:
         return None, make_error(
             'No worktree configured for this plan — '
             'status.metadata.use_worktree is false or worktree_path is unset',
@@ -230,7 +187,15 @@ def _resolve_worktree_path_via_status_channel(
             plan_id=plan_id,
         )
 
-    return Path(str(worktree_path_value)), None
+    try:
+        return Path(context.worktree_path), None
+    except WorktreeResolutionError:
+        return None, make_error(
+            'No worktree configured for this plan — '
+            'status.metadata.use_worktree is false or worktree_path is unset',
+            code=ErrorCode.NOT_FOUND,
+            plan_id=plan_id,
+        )
 
 
 def _structural_worktree_probe(plan_id: str) -> Path | None:

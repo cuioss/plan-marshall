@@ -3,9 +3,13 @@
 
 Every Bucket B (worktree-scoped) script that historically accepted
 ``--project-dir`` must also accept ``--plan-id`` and auto-resolve the
-worktree path through ``manage-status get-worktree-path``. This module
-implements the canonical contract so the 27 consumer scripts share a
-single implementation instead of 27 copies.
+worktree path. This module implements the canonical routing contract so
+consumer scripts share a single implementation instead of one copy each.
+
+The worktree face itself is NOT resolved here — it is delegated to
+``file_ops.resolve_plan_context``, which owns the single
+``manage-status get-worktree-path`` invocation in the codebase. This
+module is the argv/flag layer on top of that resolver.
 
 Two-state contract (per script):
 
@@ -35,12 +39,13 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
 import sys
-from pathlib import Path
 
-from file_ops import get_executor_path
-from marketplace_paths import _find_plan_root_from_cwd
+from file_ops import (
+    WorktreeResolutionError,
+    cwd_checkout_root,
+    resolve_plan_context,
+)
 
 
 class MutuallyExclusiveArgsError(ValueError):
@@ -51,138 +56,6 @@ class MutuallyExclusiveArgsError(ValueError):
     ``status: error`` / ``error: mutually_exclusive_args`` payload rather
     than letting the exception propagate.
     """
-
-
-class WorktreeResolutionError(RuntimeError):
-    """Raised when ``--plan-id`` resolution fails.
-
-    Indicates that ``manage-status get-worktree-path`` returned an error
-    payload (e.g., ``worktree_unresolved``) — the metadata is corrupt or
-    the plan was created without seeding worktree state. The caller
-    should surface the underlying message verbatim.
-    """
-
-
-def _executor_path() -> Path:
-    """Locate ``.plan/execute-script.py`` relative to the main checkout.
-
-    Delegates to ``file_ops.get_executor_path()``, which resolves the executor
-    cwd-relatively via the uniform cwd rule (ADR-002) — worktree-resident during
-    phase-5+, main during the finalize regenerate-on-main path.
-    """
-    try:
-        return get_executor_path()
-    except RuntimeError as exc:
-        raise WorktreeResolutionError(
-            'Cannot locate executor — not inside a git checkout. '
-            "Pass --project-dir explicitly or run from a checkout that contains '.plan/execute-script.py'."
-        ) from exc
-
-
-def _query_worktree_path(plan_id: str) -> tuple[bool, str]:
-    """Return ``(use_worktree, worktree_path)`` for a plan id.
-
-    Spawns ``manage-status get-worktree-path`` and parses its TOON output
-    via the lightweight ``json``-style fallback below. The
-    ``manage-status`` script is Bucket A (cwd-agnostic), so executor
-    invocation works from any worktree.
-
-    Raises:
-        WorktreeResolutionError: when the script returns a non-success
-            status or stdout cannot be parsed.
-    """
-    executor = _executor_path()
-    cmd = [
-        sys.executable,
-        str(executor),
-        'plan-marshall:manage-status:manage-status',
-        'get-worktree-path',
-        '--plan-id',
-        plan_id,
-    ]
-    try:
-        completed = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=15,
-            check=False,
-        )
-    except (subprocess.TimeoutExpired, FileNotFoundError) as exc:
-        raise WorktreeResolutionError(
-            f"Failed to invoke manage-status get-worktree-path for plan_id='{plan_id}': {exc}"
-        ) from exc
-
-    if completed.returncode != 0:
-        stderr = (completed.stderr or '').strip()
-        raise WorktreeResolutionError(
-            f"manage-status get-worktree-path failed (exit {completed.returncode}) for plan_id='{plan_id}': {stderr}"
-        )
-
-    use_worktree, worktree_path = _parse_get_worktree_path_output(completed.stdout)
-    return use_worktree, worktree_path
-
-
-def _parse_get_worktree_path_output(stdout: str) -> tuple[bool, str]:
-    """Parse the TOON payload produced by manage-status get-worktree-path.
-
-    The output is a flat key/value document with the shape::
-
-        status: success
-        plan_id: X
-        use_worktree: false
-        worktree_path: ""
-
-    Rather than pulling in the full ``toon_parser`` (which would create a
-    cycle for the foundational helper), we walk the lines manually — the
-    payload is shallow and the contract is owned by ``_status_query.py``.
-    """
-    use_worktree = False
-    worktree_path = ''
-    saw_status_success = False
-    error_field: str | None = None
-    message_field: str | None = None
-    for raw_line in stdout.splitlines():
-        line = raw_line.strip()
-        if not line or ':' not in line:
-            continue
-        key, _, value = line.partition(':')
-        key = key.strip()
-        value = value.strip()
-        if value.startswith('"') and value.endswith('"'):
-            value = value[1:-1]
-        if key == 'status' and value == 'success':
-            saw_status_success = True
-        elif key == 'use_worktree':
-            use_worktree = value.lower() == 'true'
-        elif key == 'worktree_path':
-            worktree_path = value
-        elif key == 'error':
-            error_field = value
-        elif key == 'message':
-            message_field = value
-    if not saw_status_success:
-        raise WorktreeResolutionError(
-            f"manage-status get-worktree-path returned non-success: error='{error_field}' message='{message_field}'"
-        )
-    return use_worktree, worktree_path
-
-
-def _main_checkout_root() -> str:
-    """Return the checkout root as an absolute path string.
-
-    Used as the fallback when neither ``--plan-id`` nor ``--project-dir``
-    is supplied (or when ``--plan-id`` resolves to ``use_worktree=false``).
-    Resolved cwd-relatively via the uniform cwd rule (ADR-002): the nearest
-    ancestor of cwd containing ``.plan/local``.
-    """
-    root = _find_plan_root_from_cwd()
-    if root is None:
-        # Last-ditch fallback: caller is operating outside any resolvable
-        # plan root (rare; usually a test fixture). Use cwd so the historical
-        # behaviour of ``--project-dir=.`` is preserved.
-        return os.path.abspath(os.getcwd())
-    return str(root)
 
 
 def resolve_project_dir(
@@ -227,20 +100,17 @@ def resolve_project_dir(
 
     if plan_id_supplied:
         assert plan_id is not None  # for mypy
-        use_worktree, worktree_path = _query_worktree_path(plan_id)
-        if use_worktree:
-            if not worktree_path:
-                raise WorktreeResolutionError(
-                    f"Plan '{plan_id}' reports use_worktree=true but worktree_path is empty."
-                )
-            return os.path.abspath(worktree_path)
-        return _main_checkout_root()
+        # Delegate the worktree face to the consolidated resolver so
+        # ``manage-status get-worktree-path`` is invoked from exactly one
+        # place. ``ensure=False`` keeps this a routing lookup: resolving a
+        # working tree must not materialize or existence-check the plan.
+        return resolve_plan_context(plan_id, ensure=False).worktree_path
 
     if project_dir_supplied:
         assert project_dir is not None  # for mypy
         return os.path.abspath(project_dir)
 
-    return _main_checkout_root()
+    return cwd_checkout_root()
 
 
 def add_plan_id_arg(parser, *, help_text: str | None = None) -> None:

@@ -92,10 +92,20 @@ def validate_domain_inclusion(always_on: object, file_globs: object) -> None:
 # UNION: a version survives when ANY keep-rule holds, so the knobs only widen it
 # and never force a delete. See `manage-config/standards/data-model.md` for the
 # canonical field semantics.
+#
+# `no_plan_body_days` (default 7) ages out prepared CI body files under the
+# plan-less `NO_PLAN` sentinel. Its default is deliberately the LONGEST in this
+# block: the sentinel is shared and permanent — it is never archived, so nothing
+# else ever ages its contents — and a body file is live scratch state for an
+# in-flight plan-less PR or issue operation. 7 is therefore well clear of
+# `logs_days` (1), which would reap a body mid-operation, and no shorter than
+# `archived_plans_days` (5), so a plan-less body never outlives its plan-bound
+# equivalent by less than a real plan's own retention.
 DEFAULT_SYSTEM_RETENTION = {
     'logs_days': 1,
     'archived_plans_days': 5,
     'lessons_superseded_days': 0,
+    'no_plan_body_days': 7,
     'temp_on_maintenance': True,
     'plugin_cache_keep_versions': 5,
     'plugin_cache_keep_days': 3,

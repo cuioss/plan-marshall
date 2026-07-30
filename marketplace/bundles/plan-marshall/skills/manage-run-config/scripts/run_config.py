@@ -15,7 +15,7 @@ import statistics
 from pathlib import Path
 from typing import Any
 
-from constants import VALID_WARNING_CATEGORIES
+from constants import CLEANUP_TARGET_ALL, CLEANUP_TARGETS, VALID_WARNING_CATEGORIES
 from file_ops import output_toon, read_json, safe_main, write_json
 from input_validation import check_field_type, check_required_fields
 from marketplace_paths import resolve_main_anchored_path
@@ -792,6 +792,9 @@ Examples:
   # Dry-run cleanup for a specific target
   %(prog)s cleanup --dry-run --target logs
 
+  # Age out orphaned prepared-body files under the plan-less NO_PLAN sentinel
+  %(prog)s cleanup --target no-plan-bodies
+
   # Show cleanup status
   %(prog)s cleanup-status
 """,
@@ -977,8 +980,8 @@ Examples:
     p_cleanup.add_argument('--dry-run', action='store_true', help='Show what would be deleted without deleting')
     p_cleanup.add_argument(
         '--target',
-        choices=['all', 'temp', 'logs', 'archived-plans'],
-        default='all',
+        choices=list(CLEANUP_TARGETS),
+        default=CLEANUP_TARGET_ALL,
         help='Clean specific target only (default: all)',
     )
     p_cleanup.set_defaults(func=cmd_cleanup)

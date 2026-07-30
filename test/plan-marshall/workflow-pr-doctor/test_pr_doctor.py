@@ -821,7 +821,9 @@ def test_main_without_project_dir_leaves_unset(clean_project_dir, capture_run):
 
 def test_main_plan_id_resolves_via_manage_status(clean_project_dir, capture_run):
     """Router-level --plan-id auto-resolves to the persisted worktree path."""
-    import resolve_project_dir as _routing
+    # The manage-status shell-out seam lives in file_ops; resolve_project_dir
+    # delegates the worktree face to file_ops.resolve_plan_context.
+    import file_ops as _resolver_core
 
     argv = [
         'pr_doctor.py',
@@ -833,7 +835,7 @@ def test_main_plan_id_resolves_via_manage_status(clean_project_dir, capture_run)
     ]
 
     with patch.object(
-        _routing,
+        _resolver_core,
         '_query_worktree_path',
         return_value=(True, '/tmp/wt-pr-doctor'),
     ):
@@ -869,7 +871,7 @@ def test_main_emits_mutually_exclusive_error_on_both_flags(clean_project_dir):
 
 def test_main_plan_id_use_worktree_false_falls_back_to_main_checkout(clean_project_dir, capture_run):
     """``use_worktree=false`` resolution surfaces the main checkout root."""
-    import resolve_project_dir as _routing
+    import file_ops as _resolver_core
 
     argv = [
         'pr_doctor.py',
@@ -881,8 +883,8 @@ def test_main_plan_id_use_worktree_false_falls_back_to_main_checkout(clean_proje
     ]
 
     with (
-        patch.object(_routing, '_query_worktree_path', return_value=(False, '')),
-        patch.object(_routing, '_main_checkout_root', return_value='/tmp/main-stub'),
+        patch.object(_resolver_core, '_query_worktree_path', return_value=(False, '')),
+        patch.object(_resolver_core, 'cwd_checkout_root', return_value='/tmp/main-stub'),
     ):
         _run_main_with_argv(argv)
 

@@ -116,19 +116,34 @@ See the `tools-integration-ci` Canonical invocations (`repo` → `label ensure`)
 the verb shape. This guarantees the label exists so the labelled PR create below
 does not fail on a missing label.
 
-**(b) Create the PR via the plan-less `--body-file` path**, labelled
-`skip-bot-review`. Author the PR body to a `.plan/temp/` file first (permission
-pre-approved via `Write(.plan/**)`; no plan directory is required), then pass it:
+**(b) Create the PR via the plan-less `NO_PLAN` sentinel**, labelled
+`skip-bot-review`. The steward has no plan directory, so it passes the sentinel
+as its `--plan-id` and uses the ordinary prepare → write → create body-store
+sequence — the sentinel resolves to the shared plan-less body store and is
+materialized on first use:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr prepare-body \
+  --plan-id NO_PLAN --slot steward-landing
+```
+
+Read the `path` field from the returned TOON and author the PR body to it with
+the `Write` tool (the path is under `.plan/`, pre-approved via
+`Write(.plan/**)`), then create the PR:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create \
   --title "chore(steward): land steward-maintained artifacts" \
-  --body-file {repo_root}/.plan/temp/steward-landing-pr-body.md \
+  --plan-id NO_PLAN --slot steward-landing \
   --label skip-bot-review --base {base} --head {branch}
 ```
 
-See the `tools-integration-ci` Canonical invocations (`pr`) — the plan-less
-`--body-file` body source is mutually exclusive with `--plan-id`.
+See the `tools-integration-ci` Canonical invocations (`pr`) for the verb shape,
+and [`tools-integration-ci/SKILL.md`](../../tools-integration-ci/SKILL.md) § "The
+`NO_PLAN` sentinel — one plan-less convention for every `--plan-id` verb" for the
+sentinel contract. `--plan-id` is required on both verbs and the body store is
+the only body channel; `NO_PLAN` is what makes that single channel serve a
+plan-less caller like the steward.
 
 **(c) Merge via the platform merge queue** — WITHOUT `--delete-branch`. The
 required merge queue rejects `--delete-branch`, so branch cleanup is left to the

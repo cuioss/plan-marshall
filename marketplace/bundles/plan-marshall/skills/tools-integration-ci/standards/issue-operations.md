@@ -1,6 +1,24 @@
 # Issue Operations
 
-Issue lifecycle operations: create, comment, view, close.
+Issue lifecycle operations: create, comment, view, close — plus the two
+path-allocate verbs the body-consuming pair depends on, `prepare-body` and
+`prepare-comment`. The group also carries two polling verbs, `wait-for-close`
+and `wait-for-label`; their flags are listed in
+[leaf-command-reference.md](leaf-command-reference.md) and the pattern they
+implement is in [blocking-wait-pattern.md](blocking-wait-pattern.md).
+
+## Plan-less callers: `--plan-id NO_PLAN`
+
+`--plan-id` is required on all four body-store verbs here (`prepare-body`,
+`create`, `prepare-comment`, `comment`) and the body store is their only body
+channel. A caller with no plan runs the identical steps with `--plan-id
+NO_PLAN`, the plan-less sentinel: it resolves to the shared plan-less body
+store and binds to the main checkout. Use it only when the caller genuinely has
+no plan — a `--plan-id` that failed to resolve must be corrected, never replaced
+with the sentinel. The semantics are identical for every verb and are stated
+once in [`tools-integration-ci/SKILL.md`](../SKILL.md) § "The `NO_PLAN` sentinel
+— one plan-less convention for every `--plan-id` verb"; they are not repeated
+per workflow below.
 
 ---
 

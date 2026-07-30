@@ -27,7 +27,11 @@ Subcommands:
     issue view      View issue details
     issue close     Close an issue
 
-Usage (bodies supplied via path-allocate pattern: prepare-body → write file → consume):
+Usage (bodies supplied via path-allocate pattern: prepare-body → write file → consume).
+``--plan-id`` is the ONLY body route on every body-taking verb, and the sentinel
+``NO_PLAN`` is an accepted value: a genuinely plan-less caller passes
+``--plan-id NO_PLAN`` and gets the shared plan-less body store, so no verb needs
+a second plan-less convention of its own:
     python3 github.py pr prepare-body --plan-id EXAMPLE-PLAN [--for create|edit] [--slot name]
     python3 github.py pr prepare-comment --plan-id EXAMPLE-PLAN [--for reply|thread-reply] [--slot name]
     python3 github.py issue prepare-body --plan-id EXAMPLE-PLAN [--slot name]

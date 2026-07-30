@@ -219,7 +219,7 @@ On the idempotent already-configured path, `enable` self-heals the ruleset's `by
 ## Canonical invocations
 
 The canonical argparse surface for the three CLI scripts owned by this skill,
-`github_ops.py`, `github_pr.py`, and `github_re_review.py`. The D4 plugin-doctor analyzer
+`github_ops.py`, `github_pr.py`, and `github_re_review.py`. The plugin-doctor analyzer
 (`_analyze_manage_invocation.py`) reads this section as source-of-truth for markdown
 notation occurrences across the marketplace. Consuming skills xref this section by
 name (e.g., "see `workflow-integration-github` Canonical invocations →
@@ -231,6 +231,19 @@ Both `github_ops` and `github_pr` accept the top-level `--plan-id PLAN_ID` /
 `--project-dir DIR` routing pair (mutually exclusive) consumed before argparse runs.
 `github_re_review` accepts the same `--project-dir DIR` routing flag; its
 `re-review` subcommand declares its own `--plan-id` (accepted for routing uniformity).
+
+**`--plan-id NO_PLAN`** is accepted wherever `--plan-id` is — both as the top-level
+routing flag (it binds to the main checkout, never to a worktree) and as the
+verb-scoped body-store binding on the ten body-bearing verbs below (`pr prepare-body`,
+`pr prepare-comment`, `pr create`, `pr edit`, `pr reply`, `pr thread-reply`,
+`issue prepare-body`, `issue prepare-comment`, `issue create`, `issue comment`).
+The sentinel is the one plan-less
+convention on this surface: there is no `--body-file` and no per-verb escape hatch,
+and it is correct only for a caller that genuinely has no plan — a `--plan-id` that
+failed to resolve must be corrected instead. The semantics are stated once in
+[`tools-integration-ci/SKILL.md`](../tools-integration-ci/SKILL.md) § "The `NO_PLAN`
+sentinel — one plan-less convention for every `--plan-id` verb" and are not repeated
+per verb below.
 
 ### github_ops pr view
 
@@ -349,6 +362,25 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github
   [--strategy {merge|squash|rebase}]
 ```
 
+### github_ops pr safe-merge
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops pr safe-merge \
+  (--pr-number N | --head BRANCH) \
+  [--strategy {merge|squash|rebase}] [--delete-branch] [--admin-merge-on-stuck-state] \
+  [--poll-timeout SECS] [--poll-interval SECS]
+```
+
+### github_ops pr merge-queue
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops pr merge-queue \
+  (--pr-number N | --head BRANCH)
+```
+
+Takes no `--strategy` / `--delete-branch` — the queue's own configuration decides
+the merge method and the platform deletes the head branch after the queue merge.
+
 ### github_ops pr update-branch
 
 ```bash
@@ -443,6 +475,24 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github
   --plan-id PLAN_ID [--slot SLOT]
 ```
 
+### github_ops issue prepare-comment
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops issue prepare-comment \
+  --plan-id PLAN_ID [--slot SLOT]
+```
+
+### github_ops issue comment
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops issue comment \
+  --issue REF --plan-id PLAN_ID [--slot SLOT]
+```
+
+The comment body is supplied via the path-allocate pattern — call
+`issue prepare-comment` first, write the body to the returned path, then run
+`issue comment`.
+
 ### github_ops issue view
 
 ```bash
@@ -480,6 +530,25 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github
 ```
 
 `--remote-only` is a required, explicit flag.
+
+### github_ops repo merge-queue probe
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops repo merge-queue probe
+```
+
+### github_ops repo merge-queue enable
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops repo merge-queue enable
+```
+
+### github_ops repo label ensure
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops repo label ensure \
+  --label TEXT [--color HEX] [--description TEXT]
+```
 
 ### github_pr fetch-comments
 

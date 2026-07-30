@@ -18,9 +18,13 @@ import tempfile
 from pathlib import Path
 
 import pytest
+from _resolve_project_dir_fixtures import (
+    assert_sentinel_accepted,
+    assert_worktree_face_routes_through_resolver,
+)
 from file_ops import format_toon_value
 
-from conftest import load_script_module
+from conftest import get_script_path, load_script_module, run_script
 
 _architecture_core = load_script_module('plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core')
 
@@ -571,3 +575,41 @@ def test_format_toon_value_string():
 def test_format_toon_value_int():
     """format_toon_value converts int to string."""
     assert format_toon_value(42) == '42'
+
+
+# =============================================================================
+# Resolver-migration contract
+# =============================================================================
+#
+# ``architecture.py`` is the CLI that binds a project root before every command
+# module in this skill reads from it. Its worktree face must come from the ONE
+# resolver, and the ``NO_PLAN`` sentinel must be accepted, so a plan-less
+# invocation resolves against the main checkout instead of failing.
+
+_architecture_cli = load_script_module(
+    'plan-marshall', 'manage-architecture', 'architecture.py', 'architecture_cli_under_test'
+)
+
+
+def _resolve_project_dir_via_cli(plan_id):
+    """Resolve exactly as ``architecture.main`` does, via the CLI's own symbol."""
+    return _architecture_cli.resolve_project_dir(plan_id, '.', default='.')
+
+
+def test_worktree_binding_routes_through_the_resolver():
+    """The CLI's worktree face reaches the single ``get-worktree-path`` seam."""
+    assert_worktree_face_routes_through_resolver(_resolve_project_dir_via_cli)
+
+
+def test_no_plan_sentinel_is_accepted():
+    """``--plan-id NO_PLAN`` resolves to the main checkout without shelling out."""
+    assert_sentinel_accepted(_resolve_project_dir_via_cli)
+
+
+def test_cli_declares_both_routing_flags():
+    """The two-state routing surface is declared on the real top-level parser."""
+    script = get_script_path('plan-marshall', 'manage-architecture', 'architecture.py')
+    result = run_script(script, '--help')
+    combined = result.stdout + result.stderr
+    assert '--plan-id' in combined, 'architecture CLI does not declare --plan-id'
+    assert '--project-dir' in combined, 'architecture CLI does not declare --project-dir'

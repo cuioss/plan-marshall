@@ -26,6 +26,7 @@ from file_ops import (  # noqa: F401
     get_plan_dir,
     output_toon,
     require_plan_exists,
+    resolve_plan_context,
     safe_main,
 )
 from input_validation import (  # noqa: F401
@@ -152,8 +153,16 @@ def prepare_body(plan_id: str, kind: str, slot: str | None = None) -> dict[str, 
     # directory that doesn't exist (and was never initialised by phase-1).
     # Without this guard the `path.parent.mkdir(parents=True, ...)` below
     # silently creates an orphan plan tree just to hold a scratch body file.
+    #
+    # ``ensure=True`` is what makes the plan-less path work WITHOUT a second
+    # guard: for a real plan id the resolver applies exactly the
+    # ``require_plan_exists`` check this replaced (same ``PlanNotFoundError``),
+    # while the ``NO_PLAN`` sentinel is materialized on demand — directory AND
+    # ``status.json`` — so it satisfies that same check rather than needing a
+    # carve-out around it. A sentinel special case here would be the second
+    # plan-less convention this deliverable exists to remove.
     try:
-        require_plan_exists(plan_id)
+        resolve_plan_context(plan_id, ensure=True)
     except PlanNotFoundError as exc:
         return {
             'status': 'error',
@@ -583,8 +592,11 @@ def extract_routing_args(argv: list[str]) -> tuple[str | None, list[str]]:
         ``(resolved_project_dir, remaining_argv)``. ``resolved_project_dir``
         is ``None`` when neither flag was supplied (callers preserve the
         previous "inherit cwd" behaviour); otherwise it is an absolute
-        path resolved via ``manage-status get-worktree-path`` for
-        ``--plan-id`` or returned verbatim for ``--project-dir``.
+        path resolved through ``file_ops.resolve_plan_context`` — the single
+        plan-context resolver, which owns the ``manage-status
+        get-worktree-path`` channel — for ``--plan-id``, or returned verbatim
+        for ``--project-dir``. The ``NO_PLAN`` sentinel is an accepted
+        ``--plan-id`` value and resolves to the main checkout.
 
     Side effects:
         Prints a structured TOON error and exits with code 2 when both
@@ -1273,45 +1285,24 @@ def add_pr_create_args(
 ) -> None:
     """Add 'pr create' sub-parser.
 
-    The PR body comes from exactly ONE of two mutually-exclusive sources:
+    The PR body comes from ONE source: the plan-bound body store. Callers first
+    run ``pr prepare-body --plan-id {id}`` to allocate a scratch path, write the
+    body content to that path with their native Write/Edit tools, then invoke
+    ``pr create --plan-id {id}``. No multi-line body content crosses the shell
+    boundary.
 
-    - **Plan-bound body store** (``--plan-id`` [+ ``--slot``]): callers first run
-      ``pr prepare-body --plan-id {id}`` to allocate a scratch path, write the
-      body content to that path with their native Write/Edit tools, then invoke
-      ``pr create --plan-id {id}``.
-    - **Plan-less body file** (``--body-file PATH``): the body is read directly
-      from an explicit file path — the plan-less / steward path that has no plan
-      directory. No multi-line body content crosses the shell boundary in either
-      case.
-
-    ``--plan-id`` is NO LONGER forced ``required=True`` here; the handler
-    (``cmd_pr_create``) validates that exactly one body source is supplied.
+    A genuinely plan-less caller — the steward landing cycle, an ad-hoc
+    invocation outside any plan — passes ``--plan-id NO_PLAN``: the sentinel
+    resolves to the shared plan-less directory, so the SAME body store serves
+    it. That is why the second plan-less convention (``--body-file``) is gone:
+    it existed only because a plan-less caller had no plan directory to
+    allocate a body in, and the sentinel removes that gap. ``pr create`` now
+    registers its body arguments exactly like the five verbs already using
+    :func:`add_body_consumer_args`.
     """
     pr_create = pr_subparsers.add_parser('create', help='Create a pull request', allow_abbrev=False)
     pr_create.add_argument('--title', required=True, help='PR title')
-    # Body source: EXACTLY ONE of --plan-id (plan-bound body store) or --body-file
-    # (plan-less body file). A required mutually-exclusive group enforces the
-    # "exactly one" contract at the parser level — supplying neither raises (group
-    # required), supplying both raises (mutually exclusive). The handler
-    # re-validates for direct-Namespace callers that bypass the parser.
-    body_source = pr_create.add_mutually_exclusive_group(required=True)
-    body_source.add_argument(
-        '--plan-id',
-        help='Plan identifier bound to the prepared body file (plan-bound body source; '
-        'mutually exclusive with --body-file)',
-    )
-    body_source.add_argument(
-        '--body-file',
-        dest='body_file',
-        metavar='PATH',
-        help='Path to a file containing the PR body (plan-less body source; mutually '
-        'exclusive with --plan-id). Used by the steward landing cycle, which has no plan dir.',
-    )
-    pr_create.add_argument(
-        '--slot',
-        default=None,
-        help='Optional body slot identifier matching the prior prepare-body call (default: "default")',
-    )
+    add_body_consumer_args(pr_create)
     pr_create.add_argument('--base', help='Base/target branch (default: repo default)')
     pr_create.add_argument('--draft', action='store_true', help='Create as draft PR')
     pr_create.add_argument(

@@ -1651,8 +1651,10 @@ class TestPRTwoStateRoutingContract:
 
     def test_main_plan_id_sets_default_cwd_via_manage_status_resolution(self):
         """Router-level --plan-id auto-routes to the persisted worktree path."""
+        # file_ops holds the manage-status shell-out seam; resolve_project_dir
+        # delegates the worktree face to it via resolve_plan_context.
         import ci_base
-        import resolve_project_dir as _routing
+        import file_ops as _resolver_core
 
         saved_argv = sys.argv
         saved_cwd = ci_base.get_default_cwd()
@@ -1667,7 +1669,11 @@ class TestPRTwoStateRoutingContract:
                 '999',
             ]
             with (
-                patch.object(_routing, '_query_worktree_path', return_value=(True, '/tmp/wt-pr-resolved')),
+                patch.object(
+                    _resolver_core,
+                    '_query_worktree_path',
+                    return_value=(True, '/tmp/wt-pr-resolved'),
+                ),
                 patch('github_pr._github.fetch_pr_comments_data') as mock_fetch,
             ):
                 mock_fetch.return_value = {

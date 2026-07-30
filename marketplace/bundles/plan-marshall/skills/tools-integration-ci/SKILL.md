@@ -30,7 +30,7 @@ Unified CI provider abstraction using **static routing** - one script per provid
 - PR operations (create, view, merge, auto-merge, safe-merge, merge-queue, close, ready, edit)
 - PR review operations (comments, wait-for-comments, reply, resolve-thread, thread-reply, reviews)
 - CI status, wait, rerun, and logs (with automatic failure-log download + error-extraction filtering)
-- Issue operations (create, view, close)
+- Issue operations (create, comment, prepare-body, prepare-comment, view, close, wait-for-close, wait-for-label)
 - Repo operations (merge-queue probe/enable — platform merge queue / merge train; label ensure — idempotent create-if-missing)
 - Unified TOON output format across providers
 
@@ -72,13 +72,15 @@ tools-integration-ci/
 ├── standards/
 │   ├── architecture.md          # Static routing, skill boundaries
 │   ├── api-contract.md          # Shared TOON output formats
+│   ├── blocking-wait-pattern.md # Script-side blocking wait instead of shell sleep
 │   ├── github-impl.md           # GitHub-specific: gh CLI
 │   ├── gitlab-impl.md           # GitLab-specific: glab CLI
 │   ├── health-setup.md          # Provider detection, verification, config persistence
+│   ├── leaf-command-reference.md # Consolidated cheat sheet of every leaf subcommand
 │   ├── pr-operations.md         # PR create, view, merge, auto-merge, safe-merge, merge-queue, close, ready, edit
 │   ├── pr-review-operations.md  # PR comments, reply, resolve-thread, thread-reply, reviews
 │   ├── ci-operations.md         # CI status, wait, rerun, logs
-│   └── issue-operations.md      # Issue create, view, close
+│   └── issue-operations.md      # Issue create, comment, prepare-body, prepare-comment, view, close, waits
 └── scripts/
     ├── ci_health.py             # Detection & verification
     ├── ci.py                    # Provider-agnostic passthrough router (+ router-level `barrier` verb)
@@ -128,15 +130,27 @@ branch-aware operations (`pr view`, `ci status`, `pr create`, `pr merge`,
 …) resolve HEAD against the specified checkout instead of the Python
 process cwd.
 
-The router implements the canonical two-state contract:
+The router implements the canonical `--plan-id` / `--project-dir` routing
+contract — five cases, no others:
 
 * `--plan-id X` and `--project-dir Y` together — error
   `mutually_exclusive_args`. Pick one.
-* `--plan-id X` only — auto-resolve via `manage-status get-worktree-path`.
-  When `use_worktree=true` the persisted worktree path is used; when
-  `use_worktree=false` (or metadata absent) the main checkout is used.
+* `--plan-id X` only — auto-resolve through `file_ops.resolve_plan_context`,
+  which owns the single `manage-status get-worktree-path` invocation.
+  When `use_worktree=true` the persisted worktree path is used; when the
+  query succeeds and reports `use_worktree=false`, the main checkout is
+  used. A resolution FAILURE is not a silent fallback: when the
+  worktree-state query cannot be answered — metadata absent, corrupt, or
+  never seeded, or `use_worktree=true` with an empty persisted path — the
+  resolver raises `WorktreeResolutionError`, and the router emits a
+  structured TOON error and exits 2. It does NOT degrade to the main
+  checkout.
+* `--plan-id NO_PLAN` only — the plan-less sentinel. Binds to the main
+  checkout, always; the sentinel never resolves to a worktree.
 * `--project-dir Y` only — explicit override (legacy / escape hatch).
-* Neither — main checkout via `git rev-parse --show-toplevel`.
+* Neither — no resolution happens at all. The router returns without a
+  resolved path and never sets the process-global default cwd, so every
+  `gh`/`glab` subprocess inherits the caller's Python process cwd.
 
 ```bash
 # Preferred: bind the call to a plan's worktree by id.
@@ -160,6 +174,49 @@ the branch you want to operate on. See
 `workflow-integration-git/standards/worktree-handling.md` for the
 worktree-specific application of this rule (path convention, dispatch
 protocol, two-state contract reference).
+
+---
+
+## The `NO_PLAN` sentinel — one plan-less convention for every `--plan-id` verb
+
+`--plan-id NO_PLAN` is accepted **uniformly** wherever this skill takes a `--plan-id`.
+It is one rule for the whole surface, not a per-verb affordance, and it is the ONLY
+plan-less convention: there is no `--body-file`, no `--no-plan` switch, and no
+verb-specific escape hatch.
+
+Two distinct places take `--plan-id`, and the sentinel applies to both:
+
+| Position | Verbs | What `NO_PLAN` means there |
+|----------|-------|----------------------------|
+| Top-level routing flag (before the command pair) | any `ci` invocation | Bind the `gh`/`glab` subprocess cwd to the main checkout |
+| Verb-scoped body-store binding | the ten verbs below | Allocate/consume the body from the shared plan-less body store |
+
+The ten body-store verbs, all with identical sentinel semantics:
+
+| Group | Verbs |
+|-------|-------|
+| `pr` | `prepare-body`, `prepare-comment`, `create`, `edit`, `reply`, `thread-reply` |
+| `issue` | `prepare-body`, `prepare-comment`, `create`, `comment` |
+
+Semantics, once, for all of them:
+
+- The sentinel resolves to the shared plan-less plan directory, which is
+  materialized on demand — directory **and** `status.json`, because the
+  plan-existence check treats a directory without `status.json` as absent.
+- Its working-tree face is always the main checkout.
+- The prepare/consume pairing is unchanged: `prepare-*` allocates a scratch path,
+  the caller writes the body there with its native Write tool, and the consuming
+  verb reads it. `--slot` disambiguates concurrent bodies exactly as for a real plan.
+- Use it **only** when the caller genuinely has no plan. A `--plan-id` that failed to
+  resolve returns `plan_not_found` carrying both a sentinel `hint` and a
+  `hint_caveat`: a mistyped real plan id must be corrected, never replaced with the
+  sentinel — otherwise a typo becomes a silent write into the shared directory.
+
+The identifier-grammar carve-out that makes `NO_PLAN` an acceptable `--plan-id`
+value lives in [`tools-input-validation/SKILL.md`](../tools-input-validation/SKILL.md)
+§ "The `NO_PLAN` sentinel (plan_id carve-out)"; the resolution contract lives in
+[`tools-file-ops/SKILL.md`](../tools-file-ops/SKILL.md) § "Plan-Context Resolution".
+Neither is restated per verb.
 
 ---
 
@@ -253,10 +310,10 @@ Sub-verbs: `view`, `list`, `reply`, `resolve-thread`, `thread-reply`, `reviews`,
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create \
-  --title TITLE (--plan-id PLAN_ID [--slot SLOT] | --body-file PATH) [--base BASE] [--draft] [--head HEAD] [--label LABEL ...]
+  --title TITLE --plan-id PLAN_ID [--slot SLOT] [--base BASE] [--draft] [--head HEAD] [--label LABEL ...]
 ```
 
-`pr create` takes the PR body from exactly ONE of two mutually-exclusive sources: the **plan-bound body store** (`--plan-id` [+ `--slot`], consuming a prepared `pr prepare-body` scratch file) OR an explicit **plan-less body file** (`--body-file PATH`, read directly — the steward landing-cycle path that has no plan directory). Supplying neither, or both, is rejected. `--label` is repeatable and passes through to the created PR (e.g. `--label skip-bot-review`).
+`pr create` takes the PR body from ONE source: the plan-bound body store. Run `pr prepare-body --plan-id {id}` to allocate a scratch path, write the body to that path with the Write tool, then call `pr create --plan-id {id}` — no multi-line body content crosses the shell boundary. A genuinely plan-less caller passes `--plan-id NO_PLAN` and uses the same store (see § "The `NO_PLAN` sentinel" below). `--plan-id` is required; there is no second body channel. `--label` is repeatable and passes through to the created PR (e.g. `--label skip-bot-review`).
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr safe-merge \

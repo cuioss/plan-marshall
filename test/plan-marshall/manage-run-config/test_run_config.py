@@ -691,7 +691,13 @@ def test_warning_list_empty_config(plan_context):
 # =============================================================================
 
 # Default retention config for cleanup tests
-DEFAULT_RETENTION = {'logs_days': 1, 'archived_plans_days': 5, 'lessons_superseded_days': 0, 'temp_on_maintenance': True}
+DEFAULT_RETENTION = {
+    'logs_days': 1,
+    'archived_plans_days': 5,
+    'lessons_superseded_days': 0,
+    'no_plan_body_days': 7,
+    'temp_on_maintenance': True,
+}
 
 
 def setup_marshal_json(fixture_dir, retention=None):

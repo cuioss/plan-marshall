@@ -61,20 +61,17 @@ def test_issue_subcommand_help():
 
 
 def test_pr_create_help():
-    """Test pr create help shows the two mutually-exclusive body sources.
+    """Test pr create help shows the ONE body source: the plan-bound store.
 
-    The body comes from EXACTLY ONE of --plan-id (plan-bound body store) or
-    --body-file (plan-less body file); both must appear in help. The legacy inline
-    --body flag is asserted absent at the parser level by test_ci_base.py
-    (test_pr_create_parser_rejects_body_and_body_file), not here — ``--body-file``
-    legitimately contains the substring ``--body`` so a bare substring check would
-    false-positive.
+    Mirrors the GitHub provider's assertion exactly — both providers share the
+    ``add_pr_create_args`` registrar, so a divergence here would mean one
+    provider's advertised surface drifted from the abstraction.
     """
     result = run_script(SCRIPT_PATH, 'pr', 'create', '--help')
     assert result.success, f'pr create --help failed: {result.stderr}'
     assert '--title' in result.stdout
     assert '--plan-id' in result.stdout
-    assert '--body-file' in result.stdout
+    assert '--body-file' not in result.stdout
 
 
 def test_pr_create_missing_required():
@@ -82,6 +79,63 @@ def test_pr_create_missing_required():
     result = run_script(SCRIPT_PATH, 'pr', 'create')
     assert not result.success, 'Expected failure without --title'
     assert 'title' in result.stderr.lower() or 'required' in result.stderr.lower()
+
+
+def test_pr_create_handler_has_a_single_body_source():
+    """Provider parity: one store call, and no surviving ``body_file`` path.
+
+    The GitLab half of the symmetric residue this deliverable owes; the sibling
+    assertion lives in the GitHub suite and is deliberately identical. The two
+    ``cmd_pr_create`` handlers are kept in lock-step so the CI abstraction
+    presents one contract per verb — an asymmetry here is exactly the drift the
+    pair exists to catch.
+
+    Asserted structurally over the handler's AST rather than behaviourally: a
+    behavioural test can only observe the branch that RUNS, so a dormant
+    ``body_file`` branch reachable from a direct-Namespace caller would stay
+    invisible to it.
+    """
+    import ast  # noqa: PLC0415
+
+    from conftest import get_scripts_dir  # noqa: PLC0415
+
+    source = (
+        get_scripts_dir('plan-marshall', 'workflow-integration-gitlab') / 'gitlab_ops.py'
+    ).read_text(encoding='utf-8')
+    handler = next(
+        (
+            node
+            for node in ast.walk(ast.parse(source))
+            if isinstance(node, ast.FunctionDef) and node.name == 'cmd_pr_create'
+        ),
+        None,
+    )
+    assert handler is not None, 'cmd_pr_create not found in gitlab_ops.py'
+
+    called = {
+        node.func.id
+        for node in ast.walk(handler)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+    }
+    assert 'read_and_consume_body' in called, (
+        'gitlab_ops.py::cmd_pr_create no longer resolves the body through the store'
+    )
+
+    # ``body_file`` can survive as a local name, as an attribute access
+    # (``args.body_file`` — the dormant guard this test's docstring cites,
+    # still reachable from a direct-Namespace caller), OR as the string key of
+    # a ``getattr(args, "body_file", None)`` read — check all three spellings.
+    identifiers = {node.id for node in ast.walk(handler) if isinstance(node, ast.Name)}
+    identifiers |= {node.attr for node in ast.walk(handler) if isinstance(node, ast.Attribute)}
+    literals = {
+        node.value
+        for node in ast.walk(handler)
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+    }
+    assert 'body_file' not in identifiers, (
+        'gitlab_ops.py::cmd_pr_create retains a body_file local or attribute access'
+    )
+    assert 'body_file' not in literals, 'gitlab_ops.py::cmd_pr_create retains a body_file lookup'
 
 
 def test_pr_reviews_missing_required():

@@ -56,6 +56,20 @@ def resolve_home() -> Path:
 
 # Central configuration
 PLAN_DIR_NAME = os.environ.get('PLAN_DIR_NAME', '.plan')
+
+# The plan-less sentinel — the single canonical definition. Its literal
+# uppercase spelling is deliberate: it is visually unmistakable against real
+# kebab-case plan ids, and it CANNOT be produced by ``PLAN_ID_RE``, so no real
+# plan can ever collide with it.
+#
+# It lives HERE, in the pure-stdlib script-shared foundation, rather than in
+# ``input_validation`` — because ``file_ops`` needs it and ``file_ops`` must
+# import cleanly on the BOOTSTRAP path, where only ``script-shared``,
+# ``ref-toon-format`` and ``tools-file-ops`` are on ``sys.path`` and
+# ``tools-input-validation`` is NOT. ``input_validation`` re-exports it (the
+# validator carve-out is still that module's contract), so the constant has one
+# definition and two documented import surfaces.
+NO_PLAN_SENTINEL = 'NO_PLAN'
 MARKETPLACE_BUNDLES_PATH = 'marketplace/bundles'
 # ``CLAUDE_DIR`` is retained ONLY as the global/project ``.claude`` settings
 # anchor (Gap 1 territory) and to compose the Claude-default fallback roots

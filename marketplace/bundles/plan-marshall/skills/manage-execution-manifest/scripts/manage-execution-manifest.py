@@ -152,14 +152,16 @@ from _references_core import (
     resolve_base_ref,
 )
 from _step_key_canonical import canonicalize_step_key
-from constants import FILE_REFERENCES, FILE_STATUS
+from constants import FILE_REFERENCES
 from file_ops import (
+    WorktreeResolutionError,
     get_executor_path,
     get_marshal_path,
     get_plan_dir,
     output_toon,
     output_toon_error,
     read_json,
+    resolve_plan_context,
     safe_main,
 )
 from input_validation import (
@@ -591,9 +593,9 @@ def _resolve_footprint(plan_id: str) -> list[str] | None:
     ``extension_base._resolve_plan_footprint``, and kept in lock-step with it: the
     return distinguishes the same two materially different states.
 
-    - ``None`` — the footprint is **unresolvable** (no ``status.json``, malformed
-      status, absent/empty ``worktree_path``, ``worktree_path`` not a directory, or
-      the diff walk raising). This is the normal condition during early compose at
+    - ``None`` — the footprint is **unresolvable** (the plan is not worktree-bound,
+      the plan-context resolver raises, ``worktree_path`` is not a directory, or
+      the diff walk raises). This is the normal condition during early compose at
       phase-4-plan, *before* phase-5-execute Step 2.5 materialises the worktree.
       Every consumer treats it as **no evidence** — never as "nothing there" — so
       an unresolvable footprint fails toward inclusion at each gate rather than
@@ -603,20 +605,22 @@ def _resolve_footprint(plan_id: str) -> list[str] | None:
     Collapsing the two into one empty list is the defect this split fixes: the
     absence of evidence read as evidence of absence silently dropped gates the
     operator never opted out of.
+
+    The worktree is resolved through the ONE plan-context resolver
+    (``file_ops.resolve_plan_context``); the footprint is then derived live via
+    ``compute_plan_branch_diff`` (``{base}...HEAD`` ∪ porcelain). ``has_worktree``
+    is the gate rather than a truthiness test on the path: the resolver's
+    ``worktree_path`` falls back to the main checkout for a plan that is not
+    worktree-bound, so gating on the path would start deriving a main-checkout
+    footprint instead of reporting the unresolvable state.
     """
-    status_path = get_plan_dir(plan_id) / FILE_STATUS
-    if not status_path.exists():
+    context = resolve_plan_context(plan_id, ensure=False)
+    try:
+        if not context.has_worktree:
+            return None
+        worktree = Path(context.worktree_path)
+    except WorktreeResolutionError:
         return None
-    status = read_json(status_path, default={})
-    if not isinstance(status, dict):
-        return None
-    metadata = status.get('metadata', {})
-    if not isinstance(metadata, dict):
-        return None
-    worktree_path = metadata.get('worktree_path', '')
-    if not isinstance(worktree_path, str) or not worktree_path:
-        return None
-    worktree = Path(worktree_path)
     if not worktree.is_dir():
         return None
 

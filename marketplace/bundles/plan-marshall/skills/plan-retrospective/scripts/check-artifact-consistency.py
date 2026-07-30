@@ -45,6 +45,7 @@ from _plan_parsing import (
 from _references_core import (
     compute_plan_branch_diff,
     resolve_base_ref,
+    resolve_live_worktree,
 )
 from file_ops import base_path, output_toon, safe_main
 from input_validation import (
@@ -109,41 +110,36 @@ def _load_references(plan_dir: Path) -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
-def _resolve_footprint(plan_dir: Path) -> set[str]:
+def _resolve_footprint(plan_dir: Path, plan_id: str | None = None) -> set[str]:
     """Resolve the plan footprint for an archived (or live) plan.
 
     Three-tier resolution, in order:
 
-    1. **Live diff** — when ``status.metadata.worktree_path`` resolves to a git
-       worktree on disk, derive the footprint via ``compute_plan_branch_diff``
+    1. **Live diff** — when ``plan_id`` names a live plan whose worktree the ONE
+       resolver (:func:`_references_core.resolve_live_worktree`) resolves to a
+       directory on disk, derive the footprint via ``compute_plan_branch_diff``
        (``{base}...HEAD`` ∪ porcelain). This is the single source of truth for a
        plan whose worktree still exists.
     2. **Legacy key** — fall back to ``references.modified_files`` when present
        (archived plans created before the ledger was removed still carry it).
     3. **Empty** — when neither resolves, treat the footprint as empty.
 
+    Archived mode passes ``plan_id=None`` and therefore skips tier 1 entirely:
+    an archived plan's recorded worktree names a directory finalize has already
+    removed. Tier 1 is reached through the resolver rather than by re-reading
+    ``status.metadata.worktree_path`` here.
+
     Returns a set of repo-relative path strings.
     """
     refs = _load_references(plan_dir)
 
-    status_path = plan_dir / 'status.json'
-    if status_path.exists():
+    worktree = resolve_live_worktree(plan_id)
+    if worktree is not None:
+        base_ref = resolve_base_ref(None, refs)
         try:
-            status = json.loads(status_path.read_text(encoding='utf-8'))
-        except (OSError, json.JSONDecodeError):
-            status = {}
-        if isinstance(status, dict):
-            metadata = status.get('metadata', {})
-            if isinstance(metadata, dict):
-                worktree_path = metadata.get('worktree_path', '')
-                if isinstance(worktree_path, str) and worktree_path:
-                    worktree = Path(worktree_path)
-                    if worktree.is_dir():
-                        base_ref = resolve_base_ref(None, refs)
-                        try:
-                            return compute_plan_branch_diff(worktree, base_ref)
-                        except subprocess.CalledProcessError:
-                            pass  # fall through to the legacy-key read
+            return compute_plan_branch_diff(worktree, base_ref)
+        except subprocess.CalledProcessError:
+            pass  # fall through to the legacy-key read
 
     legacy = refs.get('modified_files', [])
     if isinstance(legacy, str):
@@ -246,7 +242,10 @@ def _declaration_state_per_deliverable(solution_content: str) -> list[dict[str, 
 
 
 def check_affected_files_recall(
-    solution_content: str, plan_dir: Path, deliverables: list[dict[str, str]]
+    solution_content: str,
+    plan_dir: Path,
+    deliverables: list[dict[str, str]],
+    plan_id: str | None = None,
 ) -> tuple[str, str, dict[str, Any]]:
     """Return ``(status, message, details)`` for the affected-files recall check.
 
@@ -307,7 +306,7 @@ def check_affected_files_recall(
         except (OSError, json.JSONDecodeError) as e:
             return 'fail', f'references.json unreadable: {e}', {'declared': len(declared)}
 
-    actual = _resolve_footprint(plan_dir)
+    actual = _resolve_footprint(plan_dir, plan_id)
 
     found = declared & actual
     missing = declared - actual
@@ -442,8 +441,9 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
         findings.append({'severity': 'error', 'message': tm_message})
 
     # Affected-files recall
+    live_plan_id = args.plan_id if args.mode == 'live' else None
     rec_status, rec_message, rec_details = check_affected_files_recall(
-        solution_content, plan_dir, deliverables
+        solution_content, plan_dir, deliverables, live_plan_id
     )
     checks.append({'name': 'affected_files_recall', 'status': rec_status, 'message': rec_message})
     details['affected_files_recall'] = rec_details
@@ -456,7 +456,7 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     # must agree on the source of truth (live diff, then the legacy
     # ``modified_files`` key for older archived plans, then empty).
     outline_files = set(extract_affected_files_per_deliverable(solution_content))
-    references_files = _resolve_footprint(plan_dir)
+    references_files = _resolve_footprint(plan_dir, live_plan_id)
     exact_status, exact_message, outline_only, references_only = check_affected_files_exact_match(
         outline_files, references_files
     )

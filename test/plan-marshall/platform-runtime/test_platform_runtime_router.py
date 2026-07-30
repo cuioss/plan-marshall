@@ -951,3 +951,100 @@ class TestMain:
             code = main(["health-check", "--checks", "all"])
         assert code == 0
         mock_make.assert_called_once_with("claude")
+
+
+# =============================================================================
+# Resolver-migration contract — the deliberate NON-migration of the hook probe
+# =============================================================================
+#
+# ``claude_runtime._resolve_worktree_status_json`` is the one worktree-shaped
+# helper in this skill, and it is deliberately NOT routed through
+# ``file_ops.resolve_plan_context``. Two facts make that the correct outcome
+# rather than a straggler:
+#
+# 1. It is a LAYOUT-CONVENTION probe, not a re-derivation. It reads nothing from
+#    ``status.metadata`` and shells out to nothing; it composes the documented
+#    ADR-002 moved-plan-dir path and asks the filesystem whether it exists.
+#    Neither of the two re-derivation forms the migration eliminates is present.
+# 2. It runs on the session/title HOOK path, which repaints on ordinary editor
+#    events. Routing it through the resolver would put a ``manage-status``
+#    SUBPROCESS behind every repaint — a cost the resolver's own docstring calls
+#    out as the reason its worktree face is lazy in the first place.
+#
+# The tests below pin BOTH halves so the exemption cannot silently rot: a future
+# reader who "completes the migration" here breaks the no-subprocess assertion,
+# and a future reader who re-introduces a metadata read breaks the other.
+
+
+def _claude_runtime_module():
+    import claude_runtime
+
+    return claude_runtime
+
+
+def test_worktree_status_probe_spawns_no_subprocess(tmp_path, monkeypatch):
+    """The hook-path probe resolves by layout alone — no subprocess, ever."""
+    claude_runtime = _claude_runtime_module()
+    monkeypatch.chdir(tmp_path)
+
+    def _forbidden(*_args, **_kwargs):
+        raise AssertionError(
+            '_resolve_worktree_status_json spawned a subprocess; it runs on the '
+            'session-title hook path and must stay a pure layout probe.'
+        )
+
+    monkeypatch.setattr(claude_runtime.subprocess, 'run', _forbidden)
+
+    assert claude_runtime._resolve_worktree_status_json('some-plan') is None
+
+
+def test_worktree_status_probe_finds_the_moved_plan_dir(tmp_path, monkeypatch):
+    """The probe resolves the ADR-002 moved plan dir purely from the layout."""
+    claude_runtime = _claude_runtime_module()
+    monkeypatch.chdir(tmp_path)
+
+    plan_id = 'moved-plan'
+    resident = (
+        tmp_path
+        / claude_runtime._PLAN_DIR_NAME
+        / 'local'
+        / 'worktrees'
+        / plan_id
+        / claude_runtime._PLAN_DIR_NAME
+        / 'local'
+        / 'plans'
+        / plan_id
+    )
+    resident.mkdir(parents=True)
+    (resident / 'status.json').write_text(json.dumps({'plan': {}}), encoding='utf-8')
+
+    resolved = claude_runtime._resolve_worktree_status_json(plan_id)
+
+    assert resolved is not None, 'the probe failed to find the moved plan dir'
+    assert Path(resolved).resolve() == (resident / 'status.json').resolve()
+
+
+def test_worktree_status_probe_reads_no_persisted_worktree_path(tmp_path, monkeypatch):
+    """The probe never consults ``status.metadata.worktree_path``.
+
+    A metadata-reading probe would be a re-derivation of the worktree face and
+    would belong behind the resolver. Seeding a status.json whose metadata names
+    a DIFFERENT worktree proves the probe ignores it: the answer stays keyed to
+    the layout, not to the persisted value.
+    """
+    claude_runtime = _claude_runtime_module()
+    monkeypatch.chdir(tmp_path)
+
+    decoy = tmp_path / 'decoy-worktree'
+    decoy.mkdir()
+    main_plan = tmp_path / claude_runtime._PLAN_DIR_NAME / 'local' / 'plans' / 'metadata-plan'
+    main_plan.mkdir(parents=True)
+    (main_plan / 'status.json').write_text(
+        json.dumps({'metadata': {'use_worktree': True, 'worktree_path': str(decoy)}}),
+        encoding='utf-8',
+    )
+
+    assert claude_runtime._resolve_worktree_status_json('metadata-plan') is None, (
+        'the probe followed status.metadata.worktree_path — it must resolve by '
+        'layout convention only, or it belongs behind the single resolver'
+    )

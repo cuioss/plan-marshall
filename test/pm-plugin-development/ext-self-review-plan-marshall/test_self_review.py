@@ -6,6 +6,13 @@ import subprocess  # noqa: I001
 from pathlib import Path
 
 import pytest
+# The shared resolver-contract fixtures live under ``test/_shared/``, the
+# bundle-neutral home for cross-bundle test helpers (also on mypy_path), so
+# the helper is imported here rather than duplicated per bundle.
+from _resolve_project_dir_fixtures import (
+    assert_sentinel_accepted,
+    assert_worktree_face_routes_through_resolver,
+)
 from _self_review_patterns import CANDIDATE_LISTS, candidate_list_prose
 from self_review import (
     _build_parser,
@@ -2327,6 +2334,7 @@ class TestCountsTotalInvariant:
         assert int(counts['total']) == included_sum
         assert 'ordinal_references' not in self._EXCLUDED_FROM_TOTAL
 
+
     def test_scan_derived_keys_included_in_total(self, tmp_path):
         # An uncommitted .py diff carrying the scan-versus-anchor derivation
         # triggers the scan_derived_keys detector, which IS summed into
@@ -2384,6 +2392,92 @@ class TestCountsTotalInvariant:
             if k != 'total' and k not in self._EXCLUDED_FROM_TOTAL
         )
         assert int(counts['total']) == included_sum
+
+
+# =============================================================================
+# Resolver-migration contract
+# =============================================================================
+#
+# ``surface`` is the one verb here that binds a working tree. Its ``--plan-id``
+# branch resolves through ``resolve_project_dir``, which delegates the worktree
+# face to ``file_ops.resolve_plan_context``. The assertions below go through the
+# SCRIPT's own imported symbol, so they state that THIS script routes through
+# the resolver — not merely that the shared helper does.
+#
+# ``--project-dir`` remains a first-class escape hatch here (unlike most Bucket
+# B scripts, ``self_review`` legitimately needs ``--plan-id`` for its
+# modified-files lookup even when the path is supplied), so the no-resolution
+# case is pinned too.
+
+
+class TestSurfaceResolverMigration:
+    def test_plan_id_branch_routes_through_the_resolver(self):
+        """The worktree face reaches the single ``get-worktree-path`` seam."""
+        import self_review
+
+        assert_worktree_face_routes_through_resolver(
+            lambda plan_id: self_review.resolve_project_dir(plan_id, None, default=None)
+        )
+
+    def test_no_plan_sentinel_is_accepted(self):
+        """``--plan-id NO_PLAN`` resolves to the main checkout without shelling out.
+
+        The plan-less path matters for this verb specifically: a pre-submission
+        self-review is exactly the kind of ad-hoc, plan-less invocation the
+        sentinel exists to serve.
+        """
+        import self_review
+
+        assert_sentinel_accepted(
+            lambda plan_id: self_review.resolve_project_dir(plan_id, None, default=None)
+        )
+
+    def test_explicit_project_dir_bypasses_resolution_entirely(self, tmp_path, monkeypatch, capsys):
+        """``--project-dir`` short-circuits before any worktree resolution.
+
+        The escape hatch must not pay (or fail on) a plan resolution: a caller
+        who already knows the path supplies it, and ``--plan-id`` is then only a
+        lookup key for the modified-files read. The seam is armed to RAISE, so a
+        resolution that happens at all fails the test — which is what makes this
+        a genuine short-circuit assertion rather than one satisfied by a
+        resolution whose result is merely discarded.
+
+        Driven IN-PROCESS (``_cmd_surface`` directly, not ``run_script``): a
+        subprocess would not inherit the monkeypatched seam, leaving the guard
+        armed in this process and unarmed in the one under test.
+        """
+        import file_ops  # noqa: PLC0415
+        import self_review
+
+        repo = tmp_path / 'repo'
+        _init_repo(repo)
+        _commit(repo, 'base', {'base.txt': 'base\n'})
+
+        def _forbidden(_plan_id):
+            raise AssertionError('--project-dir still consulted the worktree resolver')
+
+        monkeypatch.setattr(file_ops, '_query_worktree_path', _forbidden)
+
+        # Build the namespace from the REAL parser rather than hand-rolling a
+        # Namespace: the handler reads options (``--contract-radius``) that a
+        # hand-built stand-in silently omits, and every such omission is an
+        # AttributeError that reads as a resolver failure it is not.
+        args = _build_parser().parse_args(
+            [
+                'surface',
+                '--plan-id',
+                'escape-hatch-plan',
+                '--project-dir',
+                str(repo),
+                '--base-branch',
+                'main',
+            ]
+        )
+        rc = self_review._cmd_surface(args)
+
+        out = capsys.readouterr().out
+        assert rc == 0, out
+        assert 'worktree_resolution_failed' not in out
 
 
 # =============================================================================

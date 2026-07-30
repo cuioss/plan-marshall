@@ -26,6 +26,7 @@ Usage:
         validate_skill_notation,
         is_valid_plan_id,
         is_valid_relative_path,
+        NO_PLAN_SENTINEL,
         # Lesson-ID reference scanner (live-anchored)
         scan_lesson_id_tokens,
         verify_lesson_ids_exist,
@@ -38,6 +39,20 @@ Usage:
 import re
 import sys
 from pathlib import Path
+
+# The plan-less sentinel. Its literal uppercase spelling is deliberate: it is
+# visually unmistakable against real kebab-case plan ids, and it CANNOT be
+# produced by PLAN_ID_RE, so no real plan can ever collide with it. The value
+# is carved out inside validate_plan_id AHEAD of the PLAN_ID_RE test — the
+# regex itself stays byte-unchanged, and the carve-out lives in that ONE
+# canonical validator and MUST NOT be duplicated into any caller.
+#
+# The literal is DEFINED in marketplace_paths (the pure-stdlib script-shared
+# foundation) and re-exported here, because file_ops also needs it and file_ops
+# must import cleanly on the bootstrap path where tools-input-validation is not
+# yet on sys.path. Re-exporting keeps `from input_validation import
+# NO_PLAN_SENTINEL` valid for validation callers against ONE definition.
+from marketplace_paths import NO_PLAN_SENTINEL
 
 # --- Canonical identifier regexes (single source of truth) ---
 
@@ -71,9 +86,16 @@ RESOURCE_NAME_RE = re.compile(r'^[a-zA-Z0-9_-]+$')
 def validate_plan_id(plan_id: str) -> str:
     """Validate plan_id is kebab-case: starts with letter, then letters/digits/hyphens.
 
+    The ``NO_PLAN`` sentinel is accepted as a carve-out evaluated AHEAD of the
+    PLAN_ID_RE test — it names the plan-less routing target and is deliberately
+    unrepresentable in the kebab-case grammar, so the regex still rejects it on
+    its own. This is the single canonical place the carve-out exists.
+
     Returns the validated value for chaining.
     Raises ValueError if invalid.
     """
+    if plan_id == NO_PLAN_SENTINEL:
+        return plan_id
     if not plan_id or not PLAN_ID_RE.match(plan_id):
         raise ValueError(f'Invalid plan_id format: {plan_id!r}. Must match {PLAN_ID_RE.pattern}')
     return plan_id

@@ -19,6 +19,9 @@ import subprocess
 from argparse import Namespace
 from pathlib import Path
 
+import file_ops
+from _resolve_project_dir_fixtures import patch_query_worktree_path
+
 from conftest import PROJECT_ROOT
 
 _SCRIPTS_DIR = (
@@ -237,7 +240,14 @@ def test_known_conflict_emits_finding(plan_context):
 
 
 def test_main_checkout_flow_skips(plan_context):
-    """use_worktree=false skips entirely with reason=main_checkout_flow."""
+    """``use_worktree=false`` skips entirely with reason=main_checkout_flow.
+
+    The verdict is now derived STRUCTURALLY from the resolver's ``has_worktree``
+    face, not from a hand-read of ``status.metadata.use_worktree``, so the seam
+    stubbed here is ``file_ops._query_worktree_path`` — the one place the
+    ``get-worktree-path`` channel is invoked. The ``status.json`` written below
+    is a decoy that must not steer the outcome.
+    """
     plan_dir = plan_context.plan_dir_for('br-mainco')
     _write_status_main_checkout(plan_dir)
     args = Namespace(
@@ -247,9 +257,127 @@ def test_main_checkout_flow_skips(plan_context):
         no_emit=True,
         skip_fetch=True,
     )
-    result = cmd_baseline_reconcile(args)
+    with patch_query_worktree_path(False) as mock:
+        result = cmd_baseline_reconcile(args)
+
     assert result['status'] == 'skipped'
     assert result['reason'] == 'main_checkout_flow'
+    assert mock.call_count == 1, (
+        'the skip verdict did not come from the resolver seam — the reason is '
+        'still being derived from a local status read'
+    )
+
+
+def test_unresolvable_plan_skips_as_status_not_found(plan_context, monkeypatch):
+    """An unresolvable plan maps to ``status_not_found``, derived structurally.
+
+    The skip-reason vocabulary is unchanged by the migration, but it is now
+    reached by CATCHING ``WorktreeResolutionError`` rather than by matching the
+    resolver's error TEXT. Raising an error whose message shares no wording with
+    the reason proves the mapping is structural: a text-matching implementation
+    would fall through to a different reason.
+    """
+    plan_context.plan_dir_for('br-unresolvable')
+
+    def _raise(_plan_id):
+        raise file_ops.WorktreeResolutionError('totally unrelated wording')
+
+    monkeypatch.setattr(file_ops, '_query_worktree_path', _raise)
+    args = Namespace(
+        plan_id='br-unresolvable',
+        base_branch='main',
+        worktree_path=None,
+        no_emit=True,
+        skip_fetch=True,
+    )
+    result = cmd_baseline_reconcile(args)
+
+    assert result['status'] == 'skipped'
+    assert result['reason'] == 'status_not_found'
+
+
+def test_empty_persisted_worktree_path_skips_as_worktree_path_missing(plan_context):
+    """An EMPTY persisted path is classified upstream, as ``worktree_path_missing``.
+
+    ``PlanContext._resolve_worktree_face`` raises ``WorktreeResolutionError``
+    when ``use_worktree=true`` and the persisted path is empty, so
+    ``_worktree_target``'s ``except`` arm claims this case before the directory
+    guard below it can run. Pinning the reason here is what keeps the guard from
+    re-acquiring a dead ``not worktree_path`` half: a predicate that also tried
+    to classify emptiness would be advertising a verdict this test proves is
+    unreachable.
+    """
+    plan_context.plan_dir_for('br-empty-worktree')
+    args = Namespace(
+        plan_id='br-empty-worktree',
+        base_branch='main',
+        worktree_path=None,
+        no_emit=True,
+        skip_fetch=True,
+    )
+    with patch_query_worktree_path(True, ''):
+        result = cmd_baseline_reconcile(args)
+
+    assert result['status'] == 'skipped'
+    assert result['reason'] == 'worktree_path_missing', (
+        'the empty persisted worktree_path was classified by the directory '
+        'guard rather than by the resolver error it actually raises'
+    )
+
+
+def test_non_directory_worktree_path_skips_as_not_a_directory(plan_context):
+    """A NON-EMPTY path that is not a directory is the guard's reachable case.
+
+    This is the scenario the surviving ``is_dir()`` predicate exists for — a
+    worktree removed or relocated after its path was persisted — and running it
+    proves the classification is live rather than vestigial.
+    """
+    plan_dir = plan_context.plan_dir_for('br-stale-worktree')
+    missing_worktree = plan_dir / 'removed-worktree'
+    assert not missing_worktree.exists()
+    args = Namespace(
+        plan_id='br-stale-worktree',
+        base_branch='main',
+        worktree_path=None,
+        no_emit=True,
+        skip_fetch=True,
+    )
+    with patch_query_worktree_path(True, str(missing_worktree)):
+        result = cmd_baseline_reconcile(args)
+
+    assert result['status'] == 'skipped'
+    assert result['reason'] == 'worktree_path_not_a_directory'
+
+
+def test_worktree_path_override_bypasses_the_resolver_entirely(plan_context):
+    """``--worktree-path`` is the escape hatch: it short-circuits resolution.
+
+    ``_worktree_target`` keeps its argument-adapter role after the migration —
+    the override is applied BEFORE the resolver is consulted, so a caller with an
+    explicit path never pays (or fails on) a plan resolution. Pinning the
+    zero-call count is what distinguishes the adapter from a re-deriver.
+    """
+    plan_dir = plan_context.plan_dir_for('br-override-noresolve')
+    fixture_root = plan_dir / 'fixture'
+    fixture_root.mkdir(parents=True, exist_ok=True)
+    _, worktree, _ = _setup_remote_and_worktree(fixture_root)
+
+    args = Namespace(
+        plan_id='br-override-noresolve',
+        base_branch='main',
+        worktree_path=str(worktree),
+        no_emit=True,
+        skip_fetch=False,
+    )
+    with patch_query_worktree_path(True) as mock:
+        result = cmd_baseline_reconcile(args)
+
+    assert result['status'] == 'success'
+    assert result['worktree_path'] == str(worktree)
+    assert mock.call_count == 0, (
+        'the --worktree-path override still consulted the resolver; the escape '
+        'hatch must short-circuit resolution'
+    )
 
 
 def test_worktree_path_override_used_without_status(plan_context):

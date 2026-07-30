@@ -11,8 +11,11 @@ Two modes:
   ``local_and_remote``  (default) — delete local branch AND remote-tracking ref.
   ``local_only``        — delete only the local branch; skip remote-tracking ref.
 
-Primary path  (``--plan-id``): resolves the project directory and head branch
-              from ``manage-status get-worktree-path``.
+Primary path  (``--plan-id``): resolves the head branch through
+              ``file_ops.resolve_plan_context`` — the single plan-context
+              resolver — and the project directory from the cwd-relative
+              checkout root (this verb prunes refs in the checkout the working
+              directory is in, not in the plan's worktree).
 Escape hatch  (``--project-dir`` + ``--head``): uses the supplied path and
               branch name directly.
 
@@ -26,7 +29,6 @@ Safety invariants (§5.3 of design.md):
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 
 from git_provider import run_git
@@ -34,22 +36,6 @@ from git_provider import run_git
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
-
-
-def _find_executor() -> Path | None:
-    """Locate ``.plan/execute-script.py`` relative to the main checkout.
-
-    Note: This function is intentionally duplicated across ``_cmd_force_push.py``,
-    ``_cmd_prune_ref.py``, and ``_cmd_switch_and_pull.py`` to maintain module
-    independence (private helpers must not cross module boundaries). Keep the
-    implementations in sync when modifying this logic.
-    """
-    try:
-        from file_ops import get_executor_path
-        candidate = get_executor_path()
-        return candidate if candidate.exists() else None
-    except (ImportError, RuntimeError):
-        return None
 
 
 def _resolve_project_dir_and_head(args) -> tuple[Path | None, str | None, dict | None]:
@@ -69,95 +55,44 @@ def _resolve_project_dir_and_head(args) -> tuple[Path | None, str | None, dict |
         envelope['project_dir'] = project_dir_arg
 
     if plan_id:
-        executor = _find_executor()
-        if executor is None:
-            return None, None, {
-                **envelope,
-                'status': 'error',
-                'error_type': 'plan_not_found',
-                'message': 'plan-marshall executor not available (.plan/execute-script.py missing)',
-            }
-
         try:
-            result = subprocess.run(
-                ['python3', str(executor), 'plan-marshall:manage-status:manage-status',
-                 'get-worktree-path', '--plan-id', plan_id],
-                capture_output=True,
-                text=True,
-                timeout=30,
+            from file_ops import (
+                WorktreeResolutionError,
+                cwd_checkout_root,
+                resolve_plan_context,
             )
-        except FileNotFoundError:
+        except ImportError as exc:
             return None, None, {
                 **envelope,
                 'status': 'error',
                 'error_type': 'plan_not_found',
-                'message': 'python3 not found on PATH',
-            }
-        except subprocess.TimeoutExpired:
-            return None, None, {
-                **envelope,
-                'status': 'error',
-                'error_type': 'plan_not_found',
-                'message': 'manage-status get-worktree-path timed out',
-            }
-
-        if result.returncode != 0:
-            return None, None, {
-                **envelope,
-                'status': 'error',
-                'error_type': 'plan_not_found',
-                'message': (result.stderr or result.stdout).strip() or 'manage-status failed',
+                'message': f'file_ops module unavailable: {exc}',
             }
 
         try:
-            from toon_parser import parse_toon
-            parsed = parse_toon(result.stdout)
-        except Exception as exc:  # noqa: BLE001
+            head_branch = resolve_plan_context(plan_id, ensure=False).worktree_branch
+        except WorktreeResolutionError as exc:
             return None, None, {
                 **envelope,
                 'status': 'error',
                 'error_type': 'plan_not_found',
-                'message': f'failed to parse manage-status output: {exc}',
+                'message': str(exc),
             }
 
-        if parsed.get('status') == 'error' or parsed.get('error'):
-            return None, None, {
-                **envelope,
-                'status': 'error',
-                'error_type': 'plan_not_found',
-                'message': parsed.get('message') or 'plan resolution failed',
-            }
-
-        head_branch = parsed.get('worktree_branch') or ''
         if not head_branch:
             return None, None, {
                 **envelope,
                 'status': 'error',
                 'error_type': 'worktree_not_materialized',
-                'message': 'worktree_branch absent from manage-status response',
+                'message': 'plan has no recorded feature branch to prune',
             }
 
         # For prune-local-and-remote-ref, we operate on the checkout the working
-        # directory is in. Derive the checkout root via the uniform cwd rule
-        # (ADR-002): the nearest ancestor of cwd containing ``.plan/local``.
-        try:
-            from marketplace_paths import _find_plan_root_from_cwd
-            main_root = _find_plan_root_from_cwd()
-            if main_root is None:
-                return None, None, {
-                    **envelope,
-                    'status': 'error',
-                    'error_type': 'plan_not_found',
-                    'message': 'cannot resolve checkout root from cwd',
-                }
-            return main_root, head_branch, None
-        except ImportError:
-            return None, None, {
-                **envelope,
-                'status': 'error',
-                'error_type': 'plan_not_found',
-                'message': 'marketplace_paths module unavailable',
-            }
+        # directory is in — NOT on the plan's worktree, which this verb is
+        # typically called to clean up AFTER. The checkout root comes from the
+        # uniform cwd rule (ADR-002): the nearest ancestor of cwd containing
+        # ``.plan/local``.
+        return Path(cwd_checkout_root()), head_branch, None
 
     elif project_dir_arg:
         if not head_arg:

@@ -337,52 +337,60 @@ class TestWorktreeInvariantGating:
     - **Signal 1** (unconditional): a non-empty worktree value on the captured
       row proves the worktree was materialized when the phase captured —
       independent of the phase ordinal.
-    - **Signal 2** (phase-gated): ``use_worktree`` / ``worktree_path`` in the
-      plan's current metadata. Under the ADR-002 deferred-materialization model
-      the worktree is not created until phase-5-execute, so Signal 2 is gated
-      on ``phase >= 5-execute``. For phases 1-4 (and the un-phased default
-      where ``phase is None``) Signal 2 is suppressed: the worktree is not yet
-      materialized, so an empty captured worktree value is expected — not a
-      missing invariant.
+    - **Signal 2** (phase-gated): the plan is worktree-routed, resolved by
+      ``plan_is_worktree_routed`` and passed in as a BOOLEAN. Under the ADR-002
+      deferred-materialization model the worktree is not created until
+      phase-5-execute, so Signal 2 is gated on ``phase >= 5-execute``. For
+      phases 1-4 (and the un-phased default where ``phase is None``) Signal 2 is
+      suppressed: the worktree is not yet materialized, so an empty captured
+      worktree value is expected — not a missing invariant.
+
+    Signal 2's first parameter is a ``bool``, never a metadata dict. It
+    previously took the raw ``status.metadata`` mapping and re-derived the
+    worktree face inline by testing ``worktree_path`` / ``use_worktree``; that
+    resolution now belongs to ``plan_is_worktree_routed``, which asks
+    ``file_ops.resolve_plan_context`` for a live plan. These tests therefore pass
+    ``True`` / ``False`` explicitly — a metadata dict would still "work" by
+    truthiness while asserting nothing about the real contract.
     """
 
-    def test_expected_invariants_includes_worktree_when_metadata_worktree_routed_at_execute(self):
-        """Signal 2 at phase >= 5-execute: worktree-routed metadata → worktree invariants."""
-        metadata = {'worktree_path': '/some/worktree'}
+    def test_expected_invariants_includes_worktree_when_routed_at_execute(self):
+        """Signal 2 at phase >= 5-execute: worktree-routed → worktree invariants."""
         phase_values = {'main_sha': 'abc123', 'worktree_sha': None, 'worktree_dirty': ''}
 
-        expected = _summarize.expected_invariants(metadata, '5-execute', phase_values)
+        expected = _summarize.expected_invariants(True, '5-execute', phase_values)
 
         assert 'worktree_sha' in expected
         assert 'worktree_dirty' in expected
         assert 'main_sha' in expected
 
-    def test_expected_invariants_includes_worktree_on_use_worktree_flag_at_execute(self):
-        """Signal 2 fires on ``use_worktree`` alone (no worktree_path yet) at phase >= 5-execute."""
-        metadata = {'use_worktree': True}
+    def test_expected_invariants_includes_worktree_with_no_captured_values(self):
+        """Signal 2 fires on the routing verdict alone, with no captured values."""
         phase_values = {'main_sha': 'abc123'}
 
-        expected = _summarize.expected_invariants(metadata, '5-execute', phase_values)
+        expected = _summarize.expected_invariants(True, '5-execute', phase_values)
 
         assert 'worktree_sha' in expected
         assert 'worktree_dirty' in expected
 
     def test_expected_invariants_includes_worktree_when_row_carries_value(self):
-        """Signal 1: row carries worktree_sha → include worktree invariants."""
-        metadata: dict[str, object] = {}
+        """Signal 1: row carries worktree_sha → include worktree invariants.
+
+        Signal 1 is independent of the routing verdict, so ``False`` is passed
+        deliberately — the row's own value is the proof.
+        """
         phase_values = {'main_sha': 'abc123', 'worktree_sha': 'def456'}
 
-        expected = _summarize.expected_invariants(metadata, '5-execute', phase_values)
+        expected = _summarize.expected_invariants(False, '5-execute', phase_values)
 
         assert 'worktree_sha' in expected
         assert 'worktree_dirty' in expected
 
     def test_expected_invariants_excludes_worktree_for_main_checkout_plan(self):
         """Neither signal → main-checkout plan, no worktree invariants expected."""
-        metadata: dict[str, object] = {}
         phase_values = {'main_sha': 'abc123'}
 
-        expected = _summarize.expected_invariants(metadata, '3-outline', phase_values)
+        expected = _summarize.expected_invariants(False, '3-outline', phase_values)
 
         assert 'worktree_sha' not in expected
         assert 'worktree_dirty' not in expected
@@ -391,18 +399,16 @@ class TestWorktreeInvariantGating:
     def test_signal2_suppressed_for_pre_execute_phases(self):
         """Regression: Signal 2 is gated off for phases 1-4.
 
-        A worktree-routed plan (``worktree_path`` / ``use_worktree`` set) whose
-        captured row carries no worktree value must NOT expect worktree
-        invariants while the phase is below ``5-execute`` — the worktree is not
-        yet materialized under ADR-002, so an empty captured value is expected,
-        not a missing invariant. Exercises every pre-5 planning phase to pin
-        the gate boundary.
+        A worktree-routed plan whose captured row carries no worktree value must
+        NOT expect worktree invariants while the phase is below ``5-execute`` —
+        the worktree is not yet materialized under ADR-002, so an empty captured
+        value is expected, not a missing invariant. Exercises every pre-5
+        planning phase to pin the gate boundary.
         """
-        metadata = {'worktree_path': '/some/worktree', 'use_worktree': True}
         phase_values = {'main_sha': 'abc123', 'worktree_sha': '', 'worktree_dirty': ''}
 
         for phase in ('1-init', '2-refine', '3-outline', '4-plan'):
-            expected = _summarize.expected_invariants(metadata, phase, phase_values)
+            expected = _summarize.expected_invariants(True, phase, phase_values)
             assert 'worktree_sha' not in expected, (
                 f'Signal 2 must be suppressed for {phase} (< 5-execute), got {expected}'
             )
@@ -421,9 +427,7 @@ class TestWorktreeInvariantGating:
         un-phased default set — otherwise the top-level ``expected_invariants``
         TOON field would carry a guaranteed false-positive.
         """
-        metadata = {'worktree_path': '/some/worktree', 'use_worktree': True}
-
-        expected = _summarize.expected_invariants(metadata)
+        expected = _summarize.expected_invariants(True)
 
         assert 'worktree_sha' not in expected, expected
         assert 'worktree_dirty' not in expected, expected
@@ -438,17 +442,40 @@ class TestWorktreeInvariantGating:
         materialized at phase-5-execute and an empty captured value is then a
         real capture gap.
         """
-        metadata = {'worktree_path': '/some/worktree', 'use_worktree': True}
         phase_values = {'main_sha': 'abc123', 'worktree_sha': '', 'worktree_dirty': ''}
 
         for phase in ('5-execute', '6-finalize'):
-            expected = _summarize.expected_invariants(metadata, phase, phase_values)
+            expected = _summarize.expected_invariants(True, phase, phase_values)
             assert 'worktree_sha' in expected, (
                 f'Signal 2 must fire for {phase} (>= 5-execute), got {expected}'
             )
             assert 'worktree_dirty' in expected, (
                 f'Signal 2 must fire for {phase} (>= 5-execute), got {expected}'
             )
+
+    def test_metadata_dict_is_not_an_accepted_routing_verdict(self):
+        """Guard: the first parameter is a bool, not a metadata mapping.
+
+        Before the migration this parameter was the raw ``status.metadata`` dict
+        and the function re-derived routing from its keys. Passing a mapping now
+        must NOT be interpretable as a routing verdict by key content — a
+        main-checkout metadata dict is non-empty and would read as truthy, which
+        is exactly how a stale caller would silently invert the gate. Asserting
+        both dicts behave identically pins that no key is consulted.
+        """
+        phase_values = {'main_sha': 'abc123', 'worktree_sha': '', 'worktree_dirty': ''}
+
+        routed_shape = _summarize.expected_invariants(
+            {'worktree_path': '/wt', 'use_worktree': True}, '5-execute', phase_values
+        )
+        main_checkout_shape = _summarize.expected_invariants(
+            {'title': 'no worktree keys at all'}, '5-execute', phase_values
+        )
+
+        assert routed_shape == main_checkout_shape, (
+            'expected_invariants must not read keys off its first parameter — '
+            'the routing verdict is resolved by plan_is_worktree_routed'
+        )
 
     def test_run_includes_worktree_invariants_for_worktree_routed_plan(
         self, tmp_path, monkeypatch

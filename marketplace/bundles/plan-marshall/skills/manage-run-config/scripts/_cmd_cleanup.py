@@ -17,13 +17,26 @@ from pathlib import Path
 from typing import Any
 
 # Direct imports - PYTHONPATH set by executor
-from constants import DIR_ARCHIVED, DIR_LOGS
+from _config_defaults import DEFAULT_SYSTEM_RETENTION
+from constants import (
+    CI_BODIES_DIRNAME,
+    CLEANUP_TARGET_ALL,
+    CLEANUP_TARGET_ARCHIVED_PLANS,
+    CLEANUP_TARGET_LOGS,
+    CLEANUP_TARGET_NO_PLAN_BODIES,
+    CLEANUP_TARGET_TEMP,
+    DIR_ARCHIVED,
+    DIR_LOGS,
+    DIR_PLANS,
+    DIR_WORK,
+)
 from file_ops import (
     get_base_dir,
     get_marshal_path,
     get_temp_dir,
     output_toon,
 )
+from marketplace_paths import NO_PLAN_SENTINEL
 
 # Configuration — delegate to file_ops for consistent path resolution.
 # PLAN_BASE_DIR holds runtime state (logs/, archived-plans/) in
@@ -32,6 +45,12 @@ from file_ops import (
 PLAN_BASE_DIR = get_base_dir()
 MARSHAL_JSON = get_marshal_path()
 TEMP_DIR = get_temp_dir()
+
+# `CI_BODIES_DIRNAME` (the `<plan>/work/ci-bodies/` directory half, whose layout
+# `tools-integration-ci.get_body_path` owns) and `CLEANUP_TARGETS` (the closed
+# `cleanup --target` set `cmd_clean` dispatches on and `run_config.py` turns into
+# its argparse `choices`) are both declared in `constants` and imported above —
+# one declaration each, so neither can drift from its second consumer.
 
 
 @dataclass
@@ -44,6 +63,8 @@ class CleanupStats:
     logs_bytes: int = 0
     archived_plans_deleted: int = 0
     archived_plans_bytes: int = 0
+    no_plan_bodies_deleted: int = 0
+    no_plan_bodies_bytes: int = 0
 
 
 def get_retention_settings() -> dict[str, Any] | None:
@@ -79,7 +100,16 @@ def get_retention_settings() -> dict[str, Any] | None:
         )
         return None
 
-    retention: dict[str, Any] = config['system']['retention']
+    retention: dict[str, Any] = dict(config['system']['retention'])
+    # Backfill retention keys the persisted marshal.json predates. A project
+    # whose config was written before a key joined DEFAULT_SYSTEM_RETENTION —
+    # and which has not re-run `manage-config sync-defaults` since — carries no
+    # entry for it, so the direct indexing below (and in cmd_status / cmd_clean)
+    # would raise an unhandled KeyError instead of producing a structured TOON
+    # result. Defaults come from DEFAULT_SYSTEM_RETENTION so this normalization
+    # cannot drift from the canonical values.
+    for key, default in DEFAULT_SYSTEM_RETENTION.items():
+        retention.setdefault(key, default)
     return retention
 
 
@@ -198,6 +228,61 @@ def clean_archived_plans(max_age_days: int, dry_run: bool = False) -> tuple[int,
     return deleted, total_bytes
 
 
+def get_no_plan_bodies_dir() -> Path:
+    """Return the sentinel plan's prepared-CI-body directory.
+
+    ``{base}/plans/NO_PLAN/work/ci-bodies``. Derived from ``PLAN_BASE_DIR`` for
+    the same reason its three sibling targets are: this module resolves every
+    cleanable location from that one root, so the whole cleanup surface stays
+    patchable at a single seam. The result is path-identical to
+    ``file_ops.get_plan_dir(NO_PLAN_SENTINEL) / 'work' / 'ci-bodies'`` because
+    ``get_plan_dir`` joins the same ``get_base_dir()`` root — a parity the test
+    suite asserts directly, so this local derivation can never silently drift
+    away from the resolver that produces the files.
+    """
+    return PLAN_BASE_DIR / DIR_PLANS / NO_PLAN_SENTINEL / DIR_WORK / CI_BODIES_DIRNAME
+
+
+def clean_no_plan_bodies(max_age_days: int, dry_run: bool = False) -> tuple[int, int]:
+    """Clean aged prepared-body files from the plan-less sentinel directory.
+
+    The sentinel (``NO_PLAN``) is a SHARED, PERMANENT directory: unlike a real
+    plan it is never archived, so the body files plan-less callers prepare
+    under it accumulate with nothing to age them out. This target is that
+    missing lifecycle.
+
+    Only the ``*.md`` body FILES are removed. The sentinel directory itself,
+    its ``work/`` subtree, and its ``status.json`` marker are NEVER deleted —
+    removing ``status.json`` would make ``resolve_plan_context`` treat the
+    sentinel as not-found and break every plan-less ``prepare_body`` caller
+    until the next materialization. A missing sentinel directory is a clean
+    ``(0, 0)`` no-op, never an error: a project where no plan-less body was
+    ever prepared simply has nothing to clean.
+
+    Returns:
+        (files_deleted, bytes_freed)
+    """
+    bodies_dir = get_no_plan_bodies_dir()
+    if not bodies_dir.exists():
+        return 0, 0
+
+    deleted = 0
+    total_bytes = 0
+
+    for body_file in bodies_dir.glob('*.md'):
+        if get_path_age_days(body_file) > max_age_days:
+            try:
+                size = body_file.stat().st_size
+                if not dry_run:
+                    body_file.unlink()
+                deleted += 1
+                total_bytes += size
+            except OSError:
+                pass
+
+    return deleted, total_bytes
+
+
 def get_status() -> dict[str, Any] | None:
     """
     Get status of all cleanable directories.
@@ -255,11 +340,31 @@ def get_status() -> dict[str, Any] | None:
                     except OSError:
                         pass
 
+    # Sentinel prepared-body stats
+    bodies_dir = get_no_plan_bodies_dir()
+    no_plan_bodies_total = 0
+    no_plan_bodies_old = 0
+    no_plan_bodies_old_bytes = 0
+    if bodies_dir.exists():
+        for f in bodies_dir.glob('*.md'):
+            no_plan_bodies_total += 1
+            if get_path_age_days(f) > retention['no_plan_body_days']:
+                no_plan_bodies_old += 1
+                try:
+                    no_plan_bodies_old_bytes += f.stat().st_size
+                except OSError:
+                    pass
+
     return {
         'retention': retention,
         'temp': {'files': temp_files, 'bytes': temp_bytes},
         'logs': {'total': logs_total, 'old': logs_old, 'old_bytes': logs_old_bytes},
         'archived_plans': {'total': archived_total, 'old': archived_old, 'old_bytes': archived_old_bytes},
+        'no_plan_bodies': {
+            'total': no_plan_bodies_total,
+            'old': no_plan_bodies_old,
+            'old_bytes': no_plan_bodies_old_bytes,
+        },
     }
 
 
@@ -274,26 +379,34 @@ def cmd_clean(args: argparse.Namespace) -> dict[str, Any] | None:
     stats = CleanupStats()
 
     # Clean temp
-    if target in ('all', 'temp') and retention.get('temp_on_maintenance', True):
+    if target in (CLEANUP_TARGET_ALL, CLEANUP_TARGET_TEMP) and retention.get('temp_on_maintenance', True):
         files, bytes_freed = clean_temp(dry_run)
         stats.temp_files = files
         stats.temp_bytes = bytes_freed
 
     # Clean logs
-    if target in ('all', 'logs'):
+    if target in (CLEANUP_TARGET_ALL, CLEANUP_TARGET_LOGS):
         deleted, bytes_freed = clean_logs(retention['logs_days'], dry_run)
         stats.logs_deleted = deleted
         stats.logs_bytes = bytes_freed
 
     # Clean archived plans
-    if target in ('all', 'archived-plans'):
+    if target in (CLEANUP_TARGET_ALL, CLEANUP_TARGET_ARCHIVED_PLANS):
         deleted, bytes_freed = clean_archived_plans(retention['archived_plans_days'], dry_run)
         stats.archived_plans_deleted = deleted
         stats.archived_plans_bytes = bytes_freed
 
+    # Clean aged prepared-body files under the plan-less sentinel
+    if target in (CLEANUP_TARGET_ALL, CLEANUP_TARGET_NO_PLAN_BODIES):
+        deleted, bytes_freed = clean_no_plan_bodies(retention['no_plan_body_days'], dry_run)
+        stats.no_plan_bodies_deleted = deleted
+        stats.no_plan_bodies_bytes = bytes_freed
+
     # Output
     status = 'dry_run' if dry_run else 'success'
-    total_bytes = stats.temp_bytes + stats.logs_bytes + stats.archived_plans_bytes
+    total_bytes = (
+        stats.temp_bytes + stats.logs_bytes + stats.archived_plans_bytes + stats.no_plan_bodies_bytes
+    )
 
     return {
         'status': status,
@@ -304,6 +417,8 @@ def cmd_clean(args: argparse.Namespace) -> dict[str, Any] | None:
         'logs_bytes': stats.logs_bytes,
         'archived_plans_deleted': stats.archived_plans_deleted,
         'archived_plans_bytes': stats.archived_plans_bytes,
+        'no_plan_bodies_deleted': stats.no_plan_bodies_deleted,
+        'no_plan_bodies_bytes': stats.no_plan_bodies_bytes,
         'total_bytes_freed': total_bytes,
     }
 
@@ -320,6 +435,7 @@ def cmd_status(args: argparse.Namespace) -> dict[str, Any] | None:
         'retention_logs_days': status['retention']['logs_days'],
         'retention_archived_plans_days': status['retention']['archived_plans_days'],
         'retention_temp_on_maintenance': status['retention']['temp_on_maintenance'],
+        'retention_no_plan_body_days': status['retention']['no_plan_body_days'],
         'temp_files': status['temp']['files'],
         'temp_bytes': status['temp']['bytes'],
         'logs_total': status['logs']['total'],
@@ -328,4 +444,7 @@ def cmd_status(args: argparse.Namespace) -> dict[str, Any] | None:
         'archived_plans_total': status['archived_plans']['total'],
         'archived_plans_old': status['archived_plans']['old'],
         'archived_plans_old_bytes': status['archived_plans']['old_bytes'],
+        'no_plan_bodies_total': status['no_plan_bodies']['total'],
+        'no_plan_bodies_old': status['no_plan_bodies']['old'],
+        'no_plan_bodies_old_bytes': status['no_plan_bodies']['old_bytes'],
     }

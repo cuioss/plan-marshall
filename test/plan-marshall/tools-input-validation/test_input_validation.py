@@ -4,6 +4,8 @@
 
 import pytest
 from input_validation import (  # noqa: I001
+    NO_PLAN_SENTINEL,
+    PLAN_ID_RE,
     add_session_id_arg,
     is_valid_component,
     is_valid_domain_name,
@@ -106,6 +108,66 @@ class TestValidatePlanId:
 
     def test_bool_empty(self):
         assert is_valid_plan_id('') is False
+
+
+# =============================================================================
+# Test: the NO_PLAN sentinel carve-out
+# =============================================================================
+
+
+class TestNoPlanSentinelCarveOut:
+    """The sentinel is a CARVE-OUT, not a loosening of the plan-id grammar.
+
+    Two assertions are load-bearing TOGETHER and neither is sufficient alone:
+
+    * ``validate_plan_id`` ACCEPTS ``NO_PLAN`` — the plan-less routing target
+      must survive the validator every consumer runs its ``--plan-id`` through.
+    * ``PLAN_ID_RE`` still REJECTS ``NO_PLAN`` on its own — the regex is
+      byte-unchanged, so the sentinel remains unrepresentable in the kebab-case
+      grammar and no real plan id can ever collide with it.
+
+    A test asserting only acceptance would pass just as happily against a
+    LOOSENED regex (e.g. one that started admitting uppercase), which would
+    silently widen the grammar for every plan id in the system and open a real
+    collision surface. The rejection assertion is what makes the pair a proof
+    that the carve-out is a carve-out.
+    """
+
+    def test_validator_accepts_the_sentinel(self):
+        assert validate_plan_id(NO_PLAN_SENTINEL) == NO_PLAN_SENTINEL
+
+    def test_bool_validator_accepts_the_sentinel(self):
+        assert is_valid_plan_id(NO_PLAN_SENTINEL) is True
+
+    def test_regex_itself_still_rejects_the_sentinel(self):
+        """The anti-loosening half: the grammar did NOT widen to admit it."""
+        assert PLAN_ID_RE.match(NO_PLAN_SENTINEL) is None
+
+    def test_regex_still_rejects_uppercase_generally(self):
+        """The carve-out is exactly one value, not an uppercase allowance."""
+        assert PLAN_ID_RE.match('NO_PLANNED') is None
+        assert PLAN_ID_RE.match('MyPlan') is None
+
+    def test_validator_rejects_sentinel_lookalikes(self):
+        """Only the exact literal is carved out — no prefix/case/suffix drift."""
+        for lookalike in ('no_plan', 'No_Plan', 'NO_PLAN2', 'NO_PLANX', ' NO_PLAN', 'NO-PLAN'):
+            with pytest.raises(ValueError, match='Invalid plan_id'):
+                validate_plan_id(lookalike)
+
+    def test_sentinel_literal_is_the_documented_value(self):
+        assert NO_PLAN_SENTINEL == 'NO_PLAN'
+
+    def test_sentinel_is_the_single_shared_definition(self):
+        """input_validation re-exports the constant, it does not re-declare it.
+
+        The literal is DEFINED in ``marketplace_paths`` so that ``file_ops`` can
+        reach it on the bootstrap path (where ``tools-input-validation`` is not
+        yet on ``sys.path``). Two independent literals would drift; identity
+        against the defining module is what rules that out.
+        """
+        import marketplace_paths
+
+        assert NO_PLAN_SENTINEL is marketplace_paths.NO_PLAN_SENTINEL
 
 
 # =============================================================================

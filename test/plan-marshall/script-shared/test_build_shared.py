@@ -29,6 +29,11 @@ sys.path.insert(0, str(_SCRIPT_DIR.parent))
 
 _build_shared = importlib.import_module('_build_shared')
 _resolve_project_dir = importlib.import_module('resolve_project_dir')
+# The worktree/checkout-root resolution these tests exercise now lives in
+# file_ops (resolve_project_dir is the argv/flag layer on top of it), and
+# marketplace_paths owns the distinctly-named git-common-dir resolver.
+file_ops = importlib.import_module('file_ops')
+marketplace_paths = importlib.import_module('marketplace_paths')
 
 
 class TestGetBashTimeout:
@@ -50,35 +55,51 @@ class TestGetBashTimeout:
         assert _build_shared.OUTER_TIMEOUT_BUFFER == 30
 
 
-class TestResolveProjectDirExecutorPath:
-    """Tests for resolve_project_dir._executor_path().
+class TestWorktreeQueryExecutorPath:
+    """Executor resolution behind the worktree query now lives in file_ops.
 
-    _executor_path() delegates to file_ops.get_executor_path() (cwd-relative
-    resolution via the uniform cwd rule, ADR-002) and re-wraps a RuntimeError
-    (no git repo) into WorktreeResolutionError so callers can surface the
-    message verbatim.
+    ``resolve_project_dir`` no longer owns an ``_executor_path`` helper: the
+    executor lookup moved into ``file_ops._query_worktree_path``, which is the
+    SINGLE place in the codebase that invokes ``manage-status
+    get-worktree-path``. It still re-wraps a RuntimeError from
+    ``get_executor_path`` (no git repo) into ``WorktreeResolutionError`` so
+    callers can surface the message verbatim, and that re-wrap is what these
+    tests pin.
     """
-
-    def test_returns_resolved_executor_path(self, tmp_path, monkeypatch):
-        """When get_executor_path succeeds, _executor_path returns its result."""
-        executor = tmp_path / 'execute-script.py'
-        monkeypatch.setattr(_resolve_project_dir, 'get_executor_path', lambda: executor)
-        result = _resolve_project_dir._executor_path()
-        assert result == executor
 
     def test_runtime_error_wrapped_in_worktree_resolution_error(self, monkeypatch):
         """A RuntimeError from get_executor_path becomes WorktreeResolutionError."""
         def _raise():
             raise RuntimeError('no git repository')
-        monkeypatch.setattr(_resolve_project_dir, 'get_executor_path', _raise)
-        with pytest.raises(_resolve_project_dir.WorktreeResolutionError, match='Cannot locate executor'):
-            _resolve_project_dir._executor_path()
+        monkeypatch.setattr(file_ops, 'get_executor_path', _raise)
+        with pytest.raises(file_ops.WorktreeResolutionError, match='Cannot locate executor'):
+            file_ops._query_worktree_path('some-plan')
+
+    def test_resolve_project_dir_reexports_the_error_type(self):
+        """resolve_project_dir surfaces file_ops' error type, not a private clone.
+
+        Consumers catch ``resolve_project_dir.WorktreeResolutionError``; after
+        the consolidation that name MUST be the very same class object as
+        ``file_ops.WorktreeResolutionError``, or an ``except`` in a Bucket B
+        script would silently stop catching the error the resolver raises.
+        """
+        assert _resolve_project_dir.WorktreeResolutionError is file_ops.WorktreeResolutionError
+
+    def test_executor_path_helper_is_gone_from_resolve_project_dir(self):
+        """The private helper MUST NOT survive as a second implementation.
+
+        Anti-vacuity guard for the consolidation: if ``_executor_path`` were
+        restored on ``resolve_project_dir`` the tests above would still pass
+        while the duplication the consolidation removed had quietly returned.
+        """
+        assert not hasattr(_resolve_project_dir, '_executor_path')
+        assert not hasattr(_resolve_project_dir, '_query_worktree_path')
 
 
-class TestResolveProjectDirMainCheckoutRoot:
-    """Tests for resolve_project_dir._main_checkout_root().
+class TestCwdCheckoutRoot:
+    """Tests for file_ops.cwd_checkout_root().
 
-    _main_checkout_root() is the fallback returned when neither --plan-id nor
+    ``cwd_checkout_root()`` is the fallback returned when neither --plan-id nor
     --project-dir is supplied, and when --plan-id resolves to use_worktree=false.
     Under the uniform cwd rule (ADR-002) it resolves cwd-relatively via
     marketplace_paths._find_plan_root_from_cwd() — the nearest ancestor of cwd
@@ -89,30 +110,58 @@ class TestResolveProjectDirMainCheckoutRoot:
     def test_returns_cwd_relative_plan_root(self, tmp_path, monkeypatch):
         """When _find_plan_root_from_cwd resolves a root, it is returned verbatim."""
         plan_root = tmp_path / 'checkout'
-        monkeypatch.setattr(_resolve_project_dir, '_find_plan_root_from_cwd', lambda: plan_root)
-        result = _resolve_project_dir._main_checkout_root()
+        monkeypatch.setattr(file_ops, '_find_plan_root_from_cwd', lambda: plan_root)
+        result = file_ops.cwd_checkout_root()
         assert result == str(plan_root)
 
     def test_falls_back_to_cwd_when_plan_root_unresolvable(self, tmp_path, monkeypatch):
         """When no .plan/local ancestor exists, the absolute cwd is the last-ditch fallback."""
-        monkeypatch.setattr(_resolve_project_dir, '_find_plan_root_from_cwd', lambda: None)
+        monkeypatch.setattr(file_ops, '_find_plan_root_from_cwd', lambda: None)
         monkeypatch.chdir(tmp_path)
-        result = _resolve_project_dir._main_checkout_root()
+        result = file_ops.cwd_checkout_root()
         # tmp_path may be a symlink target on macOS; compare resolved absolute paths.
         assert result == os.path.abspath(os.getcwd())
 
-    def test_neither_flag_routes_through_main_checkout_root(self, monkeypatch):
+    def test_is_distinct_from_marketplace_paths_main_checkout_root(self):
+        """The cwd-relative resolver is NOT marketplace_paths.main_checkout_root.
+
+        ``marketplace_paths`` exports a same-shaped-sounding
+        ``main_checkout_root`` that resolves via ``git --git-common-dir`` (always
+        MAIN, even from a linked worktree) and returns a ``Path``. This one is
+        the cwd-relative rule and returns a ``str``, resolving to the WORKTREE
+        during phase-5+. Pinning the distinction keeps a future rename from
+        silently collapsing two opposite worktree semantics into one name.
+        """
+        assert file_ops.cwd_checkout_root is not marketplace_paths.main_checkout_root
+        assert isinstance(file_ops.cwd_checkout_root(), str)
+
+    def test_neither_flag_routes_through_cwd_checkout_root(self, monkeypatch):
         """resolve_project_dir(None, None) delegates to the cwd-relative resolver."""
-        monkeypatch.setattr(_resolve_project_dir, '_main_checkout_root', lambda: '/tmp/cwd-relative-root')
+        monkeypatch.setattr(_resolve_project_dir, 'cwd_checkout_root', lambda: '/tmp/cwd-relative-root')
         resolved = _resolve_project_dir.resolve_project_dir(None, '.', default='.')
         assert resolved == '/tmp/cwd-relative-root'
 
-    def test_plan_id_use_worktree_false_routes_through_main_checkout_root(self, monkeypatch):
-        """--plan-id with use_worktree=false falls back to the cwd-relative resolver."""
-        monkeypatch.setattr(_resolve_project_dir, '_query_worktree_path', lambda _pid: (False, ''))
-        monkeypatch.setattr(_resolve_project_dir, '_main_checkout_root', lambda: '/tmp/cwd-relative-root')
+    def test_plan_id_use_worktree_false_routes_through_cwd_checkout_root(self, monkeypatch):
+        """--plan-id with use_worktree=false falls back to the cwd-relative resolver.
+
+        The patch targets are both in ``file_ops``: the shell-out seam
+        (``_query_worktree_path``) and the fallback the resolver reaches through
+        the module global inside ``PlanContext._resolve_worktree_face``. The
+        delegation chain from ``resolve_project_dir`` through
+        ``resolve_plan_context`` runs for real.
+        """
+        monkeypatch.setattr(file_ops, '_query_worktree_path', lambda _pid: (False, ''))
+        monkeypatch.setattr(file_ops, 'cwd_checkout_root', lambda: '/tmp/cwd-relative-root')
         resolved = _resolve_project_dir.resolve_project_dir('some-plan', '.', default='.')
         assert resolved == '/tmp/cwd-relative-root'
+
+    def test_plan_id_use_worktree_true_returns_absolute_worktree_path(self, monkeypatch):
+        """--plan-id with use_worktree=true returns the persisted worktree path."""
+        monkeypatch.setattr(
+            file_ops, '_query_worktree_path', lambda _pid: (True, '/tmp/wt-shared-resolved')
+        )
+        resolved = _resolve_project_dir.resolve_project_dir('some-plan', '.', default='.')
+        assert resolved == '/tmp/wt-shared-resolved'
 
 
 class TestCmdRunCommonSafetyNet:

@@ -4,18 +4,33 @@
 
 These verbs live under ``plan-marshall:workflow-integration-git`` with a
 stricter contract than the historical scattered helpers: ``--plan-id`` is mandatory
-for ``worktree-path``/``worktree-create``/``worktree-remove`` and resolution
-flows through ``manage-status get-worktree-path`` so the persisted
-``status.metadata.worktree_path`` is the single source of truth.
+for ``worktree-path``/``worktree-create``/``worktree-remove``, and worktree
+resolution flows through ``file_ops.resolve_plan_context`` — the single
+plan-context resolver, which owns the one ``manage-status get-worktree-path``
+invocation in the codebase.
+
+Two stubbing seams, deliberately distinct:
+
+* ``file_ops._query_worktree_path`` — the WORKTREE face (path + presence).
+  Stubbed via ``patch_query_worktree_path`` for a single plan, or
+  ``patch_query_worktree_path_map`` when one call resolves several plans
+  (``worktree-list`` walks the whole census).
+* ``git_workflow._manage_status_call`` — everything still on the manage-status
+  channel: the ``list`` census and the ``metadata --get --field
+  worktree_branch`` reads.
+
+Stubbing them at their own seams (rather than one shared ``get-worktree-path``
+stub) is what keeps the real resolution chain executing under the test.
 
 The tests below split into two tiers:
 
 * **CLI subprocess tests** exercise argparse plumbing — missing ``--plan-id``
   must be rejected — and a smoke test for ``worktree-create`` against a real
   git repo so ``git worktree add`` runs end-to-end.
-* **Direct-import tests** monkeypatch ``_manage_status_call`` so the
-  resolution chain (``worktree-path``/``worktree-remove``/``worktree-list``)
-  can be exercised without spinning up a separate plan-marshall executor.
+* **Direct-import tests** stub the two seams above so the resolution chain
+  (``worktree-path``/``worktree-remove``/``worktree-list``/
+  ``locate-plan-checkout``) can be exercised without spinning up a separate
+  plan-marshall executor.
 
 A sibling ``_fixtures.py`` is intentionally not introduced — the helpers are
 small and stay co-located with the test cases. The pre-existing
@@ -33,6 +48,10 @@ from argparse import Namespace
 from pathlib import Path
 
 import pytest
+from _resolve_project_dir_fixtures import (
+    patch_query_worktree_path,
+    patch_query_worktree_path_map,
+)
 from toon_parser import parse_toon
 
 from conftest import get_script_path, run_script
@@ -221,12 +240,13 @@ class TestWorktreeRequiresPlanId:
 
 
 class TestWorktreePathResolution:
-    """``cmd_worktree_path`` reads ``status.metadata.worktree_path`` through
-    ``manage-status get-worktree-path`` (no filesystem heuristics).
+    """``cmd_worktree_path`` resolves through ``file_ops.resolve_plan_context``.
 
-    These tests exercise the resolution branches by stubbing
-    ``_manage_status_call`` so the contract with manage-status is decoupled
-    from the executor-bootstrapping required for a full integration run.
+    No filesystem heuristics and no local ``status.json`` read: the verb asks
+    the single resolver for the presence face (``has_worktree``) and then the
+    path face. These tests exercise the resolution branches by stubbing the ONE
+    seam beneath both — ``file_ops._query_worktree_path`` — so the whole
+    delegation chain runs for real while the executor bootstrap does not.
     """
 
     def test_returns_persisted_path_when_use_worktree_true(
@@ -236,69 +256,44 @@ class TestWorktreePathResolution:
         worktree = tmp_path / '.plan' / 'local' / 'worktrees' / 'my-plan'
         worktree.mkdir(parents=True)
 
-        _stub_manage_status_call(
-            monkeypatch,
-            {
-                ('get-worktree-path', '--plan-id', 'my-plan'): (
-                    0,
-                    {
-                        'status': 'success',
-                        'plan_id': 'my-plan',
-                        'use_worktree': True,
-                        'worktree_path': str(worktree),
-                    },
-                    '',
-                )
-            },
-        )
+        with patch_query_worktree_path(True, str(worktree)) as mock:
+            result = cmd_worktree_path(Namespace(plan_id='my-plan'))
 
-        result = cmd_worktree_path(Namespace(plan_id='my-plan'))
         assert result['status'] == 'success'
         assert result['plan_id'] == 'my-plan'
         assert result['worktree_path'] == str(worktree)
         assert result['exists'] is True
+        assert mock.call_count == 1, 'resolution did not go through the resolver seam'
 
     def test_returns_plan_resolution_failed_when_use_worktree_false(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """When ``use_worktree==false``, no path is returned and the
-        verb surfaces ``plan_resolution_failed`` so callers can fall
-        back to the main checkout instead of guessing a path."""
-        _stub_manage_status_call(
-            monkeypatch,
-            {
-                ('get-worktree-path', '--plan-id', 'no-wt'): (
-                    0,
-                    {
-                        'status': 'success',
-                        'plan_id': 'no-wt',
-                        'use_worktree': False,
-                        'worktree_path': '',
-                    },
-                    '',
-                )
-            },
-        )
+        """A plan with no DEDICATED worktree is refused, not answered with main.
 
-        result = cmd_worktree_path(Namespace(plan_id='no-wt'))
+        ``worktree-path`` is a worktree verb: silently returning the main
+        checkout would be a fabrication. The refusal is decided STRUCTURALLY via
+        the resolver's ``has_worktree`` face — which is the whole reason that
+        face exists, since ``worktree_path`` alone cannot distinguish "no
+        worktree" from "a worktree that happens to be the checkout root".
+        """
+        with patch_query_worktree_path(False) as mock:
+            result = cmd_worktree_path(Namespace(plan_id='no-wt'))
+
         assert result['status'] == 'error'
         assert result['error'] == 'plan_resolution_failed'
+        assert 'No worktree configured' in result['message']
+        assert mock.call_count == 1
 
-    def test_propagates_manage_status_error(
+    def test_propagates_resolver_error(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """A non-zero exit from manage-status surfaces as
-        ``plan_resolution_failed`` with the stderr message preserved."""
-        _stub_manage_status_call(
-            monkeypatch,
-            {
-                ('get-worktree-path', '--plan-id', 'broken'): (
-                    1,
-                    '',
-                    'plan not found',
-                )
-            },
-        )
+        """A resolver failure surfaces as ``plan_resolution_failed``, message intact."""
+        import file_ops  # noqa: PLC0415
+
+        def _raise(_plan_id):
+            raise file_ops.WorktreeResolutionError('plan not found')
+
+        monkeypatch.setattr(file_ops, '_query_worktree_path', _raise)
 
         result = cmd_worktree_path(Namespace(plan_id='broken'))
         assert result['status'] == 'error'
@@ -441,20 +436,12 @@ class TestWorktreeRemove:
         plan_dir.mkdir(parents=True)
         (plan_dir / 'status.json').write_text('{}')
 
-        # Stub the resolution + branch-name reads.
+        # The worktree PATH now comes from the resolver seam; the branch NAME is
+        # still a manage-status metadata read, so the two are stubbed at their
+        # two different seams rather than at one shared get-worktree-path stub.
         _stub_manage_status_call(
             monkeypatch,
             {
-                ('get-worktree-path', '--plan-id', 'rm-me'): (
-                    0,
-                    {
-                        'status': 'success',
-                        'plan_id': 'rm-me',
-                        'use_worktree': True,
-                        'worktree_path': str(worktree),
-                    },
-                    '',
-                ),
                 ('metadata', '--plan-id', 'rm-me', '--get', '--field', 'worktree_branch'): (
                     0,
                     {'status': 'success', 'value': 'feature/rm-me'},
@@ -475,9 +462,8 @@ class TestWorktreeRemove:
 
         monkeypatch.setattr(git_workflow, 'run_git', fake_run_git)
 
-        result = cmd_worktree_remove(
-            Namespace(plan_id='rm-me', force=False)
-        )
+        with patch_query_worktree_path(True, str(worktree)):
+            result = cmd_worktree_remove(Namespace(plan_id='rm-me', force=False))
 
         assert result['status'] == 'success'
         assert result['action'] == 'removed'
@@ -501,18 +487,14 @@ class TestWorktreeRemove:
         ``cmd_worktree_remove`` must surface ``plan_resolution_failed``
         and never call ``git worktree remove``."""
 
+        import file_ops  # noqa: PLC0415
+
         monkeypatch.setattr(git_workflow, '_find_plan_root_from_cwd', lambda: tmp_path)
 
-        _stub_manage_status_call(
-            monkeypatch,
-            {
-                ('get-worktree-path', '--plan-id', 'ghost'): (
-                    1,
-                    '',
-                    'plan does not exist',
-                ),
-            },
-        )
+        def _raise(_plan_id):
+            raise file_ops.WorktreeResolutionError('plan does not exist')
+
+        monkeypatch.setattr(file_ops, '_query_worktree_path', _raise)
 
         called = []
 
@@ -559,28 +541,12 @@ class TestWorktreeList:
             }
         )
 
+        # The census (``manage-status list``) and the per-plan branch read stay
+        # on the manage-status channel; the per-plan worktree verdict now comes
+        # from the resolver, so it is stubbed with a PER-PLAN-ID map — the two
+        # plans must receive different verdicts in the same call.
         responses: dict[tuple[str, ...], tuple[int, dict | str, str]] = {
             ('list',): (0, list_payload, ''),
-            ('get-worktree-path', '--plan-id', 'with-worktree'): (
-                0,
-                {
-                    'status': 'success',
-                    'plan_id': 'with-worktree',
-                    'use_worktree': True,
-                    'worktree_path': str(worktree_a),
-                },
-                '',
-            ),
-            ('get-worktree-path', '--plan-id', 'no-worktree'): (
-                0,
-                {
-                    'status': 'success',
-                    'plan_id': 'no-worktree',
-                    'use_worktree': False,
-                    'worktree_path': '',
-                },
-                '',
-            ),
             ('metadata', '--plan-id', 'with-worktree', '--get', '--field', 'worktree_branch'): (
                 0,
                 {'status': 'success', 'value': 'feature/with-worktree'},
@@ -591,7 +557,14 @@ class TestWorktreeList:
         _stub_manage_status_call(monkeypatch, responses)
         monkeypatch.setattr(git_workflow, 'get_worktree_root', lambda: tmp_path)
 
-        result = cmd_worktree_list(Namespace())
+        with patch_query_worktree_path_map(
+            {
+                'with-worktree': (True, str(worktree_a)),
+                'no-worktree': (False, ''),
+            }
+        ):
+            result = cmd_worktree_list(Namespace())
+
         assert result['status'] == 'success'
         ids = [w['plan_id'] for w in result['worktrees']]
         assert ids == ['with-worktree']
@@ -656,23 +629,10 @@ class TestLocatePlanCheckout:
         self._seed_plan_status_json(worktree, 'moved-plan')
 
         monkeypatch.setattr(git_workflow, '_find_plan_root_from_cwd', lambda: main_root)
-        _stub_manage_status_call(
-            monkeypatch,
-            {
-                ('get-worktree-path', '--plan-id', 'moved-plan'): (
-                    0,
-                    {
-                        'status': 'success',
-                        'plan_id': 'moved-plan',
-                        'use_worktree': True,
-                        'worktree_path': str(worktree),
-                    },
-                    '',
-                )
-            },
-        )
 
-        result = cmd_locate_plan_checkout(Namespace(plan_id='moved-plan'))
+        with patch_query_worktree_path(True, str(worktree)):
+            result = cmd_locate_plan_checkout(Namespace(plan_id='moved-plan'))
+
         assert result['status'] == 'success'
         assert result['plan_id'] == 'moved-plan'
         assert result['location'] == 'worktree'
@@ -710,21 +670,17 @@ class TestLocatePlanCheckout:
         # The structural probe resolves ``get_worktree_root() / {plan_id}``.
         monkeypatch.setattr(git_workflow, 'get_worktree_root', lambda: worktree_root)
 
-        # The canonical manage-status channel CANNOT resolve the moved-in plan:
-        # main's status.json no longer holds it, so get-worktree-path returns an
-        # expected "not found" error (masked to not_found, not propagated). This
-        # forces the primary path to yield no worktree_path and exercises the
+        # The canonical resolver CANNOT resolve the moved-in plan: main's
+        # status.json no longer holds it, so resolution raises an expected
+        # "not found" error (masked to not_found, not propagated). This forces
+        # the primary path to yield no worktree_path and exercises the
         # structural-probe fallback.
-        _stub_manage_status_call(
-            monkeypatch,
-            {
-                ('get-worktree-path', '--plan-id', 'probe-plan'): (
-                    1,
-                    '',
-                    'plan probe-plan not found',
-                )
-            },
-        )
+        import file_ops  # noqa: PLC0415
+
+        def _raise(_plan_id):
+            raise file_ops.WorktreeResolutionError('plan probe-plan not found')
+
+        monkeypatch.setattr(file_ops, '_query_worktree_path', _raise)
 
         result = cmd_locate_plan_checkout(Namespace(plan_id='probe-plan'))
         assert result['status'] == 'success'
@@ -743,12 +699,15 @@ class TestLocatePlanCheckout:
 
         monkeypatch.setattr(git_workflow, '_find_plan_root_from_cwd', lambda: current_root)
 
-        # No worktree resolution should be needed; stub returns a failure to
-        # prove the current-checkout branch short-circuits before manage-status.
-        _stub_manage_status_call(
-            monkeypatch,
-            {('get-worktree-path', '--plan-id', 'here-plan'): (1, '', 'should not be called')},
-        )
+        # No worktree resolution should be needed; the seam raises so the test
+        # fails loudly if the current-checkout branch does NOT short-circuit
+        # before the resolver is consulted.
+        import file_ops  # noqa: PLC0415
+
+        def _forbidden(_plan_id):
+            raise AssertionError('the current-checkout branch consulted the resolver')
+
+        monkeypatch.setattr(file_ops, '_query_worktree_path', _forbidden)
 
         result = cmd_locate_plan_checkout(Namespace(plan_id='here-plan'))
         assert result['status'] == 'success'
@@ -765,23 +724,10 @@ class TestLocatePlanCheckout:
         (current_root / '.plan' / 'local').mkdir(parents=True)
 
         monkeypatch.setattr(git_workflow, '_find_plan_root_from_cwd', lambda: current_root)
-        _stub_manage_status_call(
-            monkeypatch,
-            {
-                ('get-worktree-path', '--plan-id', 'ghost-plan'): (
-                    0,
-                    {
-                        'status': 'success',
-                        'plan_id': 'ghost-plan',
-                        'use_worktree': False,
-                        'worktree_path': '',
-                    },
-                    '',
-                )
-            },
-        )
 
-        result = cmd_locate_plan_checkout(Namespace(plan_id='ghost-plan'))
+        with patch_query_worktree_path(False):
+            result = cmd_locate_plan_checkout(Namespace(plan_id='ghost-plan'))
+
         assert result['status'] == 'success'
         assert result['plan_id'] == 'ghost-plan'
         assert result['location'] == 'not_found'
@@ -801,23 +747,10 @@ class TestLocatePlanCheckout:
         worktree.mkdir(parents=True)
 
         monkeypatch.setattr(git_workflow, '_find_plan_root_from_cwd', lambda: main_root)
-        _stub_manage_status_call(
-            monkeypatch,
-            {
-                ('get-worktree-path', '--plan-id', 'stale-plan'): (
-                    0,
-                    {
-                        'status': 'success',
-                        'plan_id': 'stale-plan',
-                        'use_worktree': True,
-                        'worktree_path': str(worktree),
-                    },
-                    '',
-                )
-            },
-        )
 
-        result = cmd_locate_plan_checkout(Namespace(plan_id='stale-plan'))
+        with patch_query_worktree_path(True, str(worktree)):
+            result = cmd_locate_plan_checkout(Namespace(plan_id='stale-plan'))
+
         assert result['status'] == 'success'
         assert result['location'] == 'not_found'
 
