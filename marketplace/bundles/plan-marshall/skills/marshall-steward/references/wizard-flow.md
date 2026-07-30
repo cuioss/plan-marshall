@@ -468,7 +468,7 @@ AskUserQuestion:
 ```
 
 Persist the answer as the element's resolved lane override (`No` → `off`;
-`Yes` → `auto`; `Yes, always` → `full`):
+`Yes` → `standard`; `Yes, always` → `full`):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \

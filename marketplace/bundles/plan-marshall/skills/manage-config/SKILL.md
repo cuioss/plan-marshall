@@ -134,8 +134,11 @@ unified `lane` knob; `migrated_count` is its length. `materialized[]` lists each
 materialization pass — a pre-existing lane-less step annotated with its resolved
 frontmatter-class effective lane (`...=minimal` / `...=standard`), a freshly-merged
 default step annotated with `...=off` (opt-in); `materialized_count` is its length,
-and an empty `materialized[]` means every finalize step already carried an explicit
-`lane` (idempotent re-run). The
+and an empty `materialized[]` means every RESOLVABLE lane-less finalize step already
+carried an explicit `lane` (idempotent re-run). A lane-less step whose frontmatter
+lane cannot be resolved to a concrete lattice tier — an external `bundle:skill` step,
+or one whose source doc is missing or declares no `lane:` block — is deliberately left
+untouched and is NOT reported in `materialized[]`. The
 config is persisted whenever `added[]`, `renamed[]`, or the provisioning stamps
 changed.
 
@@ -716,7 +719,7 @@ The three surviving lifecycle gates ride the `gate_mode` enum as flat phase-loca
 | `escalation` | `phase-1-init` | Whether the hard-escalation safety ratchet (explosion / build-break / premise) stays live. `auto` keeps it live; `never` is the explicit full-speed-full-risk opt-in. |
 | `revalidation` | `phase-2-refine` | Whether the premise / narrative-vs-code safety check runs (light lane + deep refine). |
 
-**Finalize ceremony gates (per-element `lane` override, not run-at-all):** the four finalize ceremony gates — `qgate`, `self_review`, `simplify`, `security_audit` — are each governed by their owning step's `steps.<step>.lane` override (`off`/`minimal`/`standard`), resolved by the manifest ceremony transform (`off→never`, `minimal→always`, `standard`/absent`→auto`). Set via `plan phase-6-finalize step set --step-id <owning-step> --param lane --value <value>`. The owning steps are `pre-push-quality-gate` (qgate), `default:pre-submission-self-review` (self_review), `default:finalize-step-simplify` (simplify), `default:finalize-step-security-audit` (security_audit).
+**Finalize ceremony gates (per-element `lane` override, not run-at-all):** the four finalize ceremony gates — `qgate`, `self_review`, `simplify`, `security_audit` — are each governed by their owning step's `steps.<step>.lane` override, resolved by the manifest ceremony transform: `off` → `never`, `minimal` → `always`, and every other accepted lane value (`standard`, `full`, `ask`, or an absent override) → `auto`. Set via `plan phase-6-finalize step set --step-id <owning-step> --param lane --value <value>`. The owning steps are `pre-push-quality-gate` (qgate), `default:pre-submission-self-review` (self_review), `default:finalize-step-simplify` (simplify), `default:finalize-step-security-audit` (security_audit).
 
 **Flat phase-1-init recipe-match knobs (under `phase-1-init`):**
 

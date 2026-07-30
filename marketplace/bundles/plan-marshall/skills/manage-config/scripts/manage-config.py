@@ -29,6 +29,7 @@ from _cmd_effort import (
 )
 from _cmd_ext_defaults import cmd_ext_defaults
 from _cmd_finalize_steps import (
+    _RESOLVED_ASK_LANE_VALUES,
     cmd_finalize_steps_apply_preset,
     cmd_finalize_steps_list_ask_lane,
     cmd_finalize_steps_set_lane,
@@ -706,7 +707,7 @@ def main() -> int:
     finalize_steps_set_lane.add_argument(
         '--lane',
         required=True,
-        choices=['off', 'standard', 'full'],
+        choices=list(_RESOLVED_ASK_LANE_VALUES),
         help='Resolved lane override: off (no bots/Sonar) or standard/full (has them). These are the '
         'resolved answers an operator dialogue produces; the reader enum additionally accepts the '
         'seed values minimal/ask, which only shipped frontmatter and marshal seeding emit',

@@ -913,7 +913,7 @@ AskUserQuestion:
   question: "Which execution posture should this plan use? (recommended: {projected_posture})"
   options:
     - label: "full"    description: "{full_count} steps · ≈{full_tokens} tok — full security audit + retrospectives"
-    - label: "auto"    description: "{auto_count} steps · ≈{auto_tokens} tok — skips sonar / lessons-housekeeping"
+    - label: "standard" description: "{standard_count} steps · ≈{standard_tokens} tok — skips sonar / lessons-housekeeping"
     - label: "minimal" description: "{minimal_count} steps · ≈{minimal_tokens} tok — no security audit, no retrospectives; appropriate for docs / mechanical changes"
 ```
 

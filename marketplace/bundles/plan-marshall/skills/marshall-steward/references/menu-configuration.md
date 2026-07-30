@@ -397,7 +397,7 @@ AskUserQuestion:
   multiSelect: false
 ```
 
-Persist the answer (`No` → `off`; `Yes` → `auto`; `Yes, always` → `full`):
+Persist the answer (`No` → `off`; `Yes` → `standard`; `Yes, always` → `full`):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
