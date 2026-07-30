@@ -10,7 +10,13 @@ from pathlib import Path
 from typing import Any, TypedDict, cast
 
 from constants import FILE_REFERENCES
-from file_ops import get_plan_dir, read_json, write_json
+from file_ops import (
+    WorktreeResolutionError,
+    get_plan_dir,
+    read_json,
+    resolve_plan_context,
+    write_json,
+)
 
 # =============================================================================
 # Type Definitions
@@ -158,6 +164,42 @@ def resolve_base_ref(explicit: str | None, refs: dict) -> str:
         if val:
             return val
     return 'main'
+
+
+def resolve_live_worktree(plan_id: str | None) -> Path | None:
+    """Resolve ``plan_id``'s live worktree through the ONE plan-context resolver.
+
+    The single shared entry point for footprint consumers that need the plan's
+    working tree. Every one of them previously reconstructed it by reading
+    ``status.metadata.worktree_path`` out of the plan's own ``status.json`` —
+    a hand-rolled re-derivation of the worktree face that
+    ``file_ops.resolve_plan_context`` now owns.
+
+    ``has_worktree`` is the gate rather than a truthiness test on the resolved
+    path: the resolver's ``worktree_path`` falls back to the main checkout for a
+    plan that is not worktree-bound, so gating on the path would hand callers a
+    main-checkout footprint where they previously got "no worktree".
+
+    Args:
+        plan_id: The live plan identifier, or ``None`` for an ARCHIVED plan. An
+            archived plan has no live worktree to resolve — its recorded path
+            names a directory finalize already removed — so ``None`` is answered
+            with ``None`` and the caller falls through to its next tier.
+
+    Returns:
+        The worktree directory, or ``None`` when the plan binds no worktree, the
+        resolution fails, or the resolved path is not a directory.
+    """
+    if not plan_id:
+        return None
+    try:
+        context = resolve_plan_context(plan_id, ensure=False)
+        if not context.has_worktree:
+            return None
+        worktree = Path(context.worktree_path)
+    except WorktreeResolutionError:
+        return None
+    return worktree if worktree.is_dir() else None
 
 
 def compute_plan_branch_diff(worktree: Path, base_ref: str) -> set[str]:

@@ -57,6 +57,7 @@ from _analyze_manage_invocation import scan_manage_invocation
 from _analyze_mutates_source_order import analyze_mutates_source_order
 from _analyze_persona_binding_resolves import analyze_persona_binding_resolves
 from _analyze_persona_profile_uniqueness import analyze_persona_profile_uniqueness
+from _analyze_plan_path_in_scripts import analyze_plan_path_in_scripts
 from _analyze_plugin_json import analyze_plugin_json_orphans
 from _analyze_provides_method_table import analyze_provides_method_table
 from _analyze_resolver_matrix_coverage import analyze_resolver_matrix_coverage
@@ -254,6 +255,14 @@ class RuleRunner:
         emit(
             'analyze_sys_path_bootstrap',
             scoped(analyze_sys_path_bootstrap(root)),
+        )
+        # plan-path-in-scripts — forms A + B are per-file, form C is
+        # population-derived over the whole tree. The analyzer takes the
+        # marketplace root (it joins `bundles/` itself), so it receives
+        # ``root.parent`` rather than the bundles root every other rule takes.
+        emit(
+            'analyze_plan_path_in_scripts',
+            scoped(analyze_plan_path_in_scripts(root.parent)),
         )
         # agentfile-hygiene cluster — the two deterministic backstop rules
         # (line-budget + directory-tree) that embody the rubric owned by

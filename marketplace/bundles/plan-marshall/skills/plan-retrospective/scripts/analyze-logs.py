@@ -43,6 +43,7 @@ from typing import Any
 from _references_core import (
     compute_plan_branch_diff,
     resolve_base_ref,
+    resolve_live_worktree,
 )
 from file_ops import base_path, output_toon, safe_main
 from input_validation import (
@@ -134,18 +135,24 @@ def resolve_logs_dir(mode: str, plan_id: str | None, archived_plan_path: str | N
     return resolve_plan_dir(mode, plan_id, archived_plan_path) / 'logs'
 
 
-def resolve_footprint(plan_dir: Path) -> list[str]:
+def resolve_footprint(plan_dir: Path, plan_id: str | None = None) -> list[str]:
     """Resolve the plan footprint for the ARTIFACT-coverage regression check.
 
     Three-tier resolution, in order:
 
-    1. **Live diff** — when ``status.metadata.worktree_path`` resolves to a git
-       worktree on disk, derive the footprint via ``compute_plan_branch_diff``
+    1. **Live diff** — when ``plan_id`` names a live plan whose worktree the
+       ONE resolver (:func:`_references_core.resolve_live_worktree`) resolves to
+       a directory on disk, derive the footprint via ``compute_plan_branch_diff``
        (``{base}...HEAD`` ∪ porcelain).
     2. **Legacy key** — fall back to ``references.modified_files`` when present
        (archived plans created before the ledger was removed still carry it).
     3. **Empty** — when neither resolves, return an empty list so the regression
        check cannot falsely fire for plans that recorded no footprint.
+
+    Archived mode passes ``plan_id=None`` and therefore skips tier 1 entirely:
+    an archived plan's recorded worktree names a directory finalize has already
+    removed, so the tier could only ever miss. Tier 1 is reached through the
+    resolver rather than by re-reading ``status.metadata.worktree_path`` here.
 
     A missing or unreadable references file is treated defensively, mirroring the
     other reads in the retrospective pipeline.
@@ -164,24 +171,13 @@ def resolve_footprint(plan_dir: Path) -> list[str]:
         if isinstance(loaded, dict):
             refs = loaded
 
-    status_path = plan_dir / 'status.json'
-    if status_path.exists():
+    worktree = resolve_live_worktree(plan_id)
+    if worktree is not None:
+        base_ref = resolve_base_ref(None, refs)
         try:
-            status = json.loads(status_path.read_text(encoding='utf-8'))
-        except (OSError, json.JSONDecodeError):
-            status = {}
-        if isinstance(status, dict):
-            metadata = status.get('metadata', {})
-            if isinstance(metadata, dict):
-                worktree_path = metadata.get('worktree_path', '')
-                if isinstance(worktree_path, str) and worktree_path:
-                    worktree = Path(worktree_path)
-                    if worktree.is_dir():
-                        base_ref = resolve_base_ref(None, refs)
-                        try:
-                            return sorted(compute_plan_branch_diff(worktree, base_ref))
-                        except subprocess.CalledProcessError:
-                            pass  # fall through to the legacy-key read
+            return sorted(compute_plan_branch_diff(worktree, base_ref))
+        except subprocess.CalledProcessError:
+            pass  # fall through to the legacy-key read
 
     raw = refs.get('modified_files', [])
     if isinstance(raw, str):
@@ -802,7 +798,7 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     # Build slowest-scripts list deterministically: sort by duration desc, then notation.
     slowest = sorted(durations, key=lambda x: (-x[1], x[0]))[:3]
 
-    footprint = resolve_footprint(plan_dir)
+    footprint = resolve_footprint(plan_dir, args.plan_id if args.mode == 'live' else None)
     findings: list[dict[str, str]] = []
     if footprint and artifact_entries == 0:
         findings.append(

@@ -32,6 +32,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from _references_core import resolve_live_worktree
 from file_ops import base_path, output_toon, safe_main
 from input_validation import (
     add_plan_id_arg,
@@ -124,10 +125,23 @@ def resolve_plan_dir(mode: str, plan_id: str | None, archived_plan_path: str | N
     raise ValueError(f'Unknown mode: {mode!r}')
 
 
-def load_status_metadata(plan_dir: Path) -> dict[str, Any]:
-    """Used solely to detect ``worktree_path`` so worktree-only invariants are
-    expected for worktree plans.
+def plan_is_worktree_routed(plan_dir: Path, plan_id: str | None = None) -> bool:
+    """Whether the plan is worktree-routed, so worktree-only invariants apply.
+
+    Two sources, in order:
+
+    1. **The ONE resolver** — for a live plan, ``resolve_live_worktree`` answers
+       whether a worktree is actually bound. This replaces the previous
+       hand-rolled read of ``status.metadata.worktree_path``, which re-derived
+       the worktree face out of the plan's own status file.
+    2. **The recorded intent flag** — an ARCHIVED plan (``plan_id=None``) has no
+       live worktree left to resolve, so the ``use_worktree`` flag recorded at
+       plan-init is the only available evidence and is read from the archived
+       ``status.json`` snapshot.
     """
+    if resolve_live_worktree(plan_id) is not None:
+        return True
+
     json_path = plan_dir / 'status.json'
     if json_path.exists():
         try:
@@ -135,10 +149,10 @@ def load_status_metadata(plan_dir: Path) -> dict[str, Any]:
             if isinstance(data, dict):
                 metadata = data.get('metadata')
                 if isinstance(metadata, dict):
-                    return metadata
+                    return bool(metadata.get('use_worktree'))
         except (OSError, json.JSONDecodeError):
             pass
-    return {}
+    return False
 
 
 def load_handshake_rows(plan_dir: Path) -> list[dict[str, Any]] | None:
@@ -190,7 +204,7 @@ def project_rows_to_phase_map(
 
 
 def expected_invariants(
-    metadata: dict[str, Any],
+    worktree_routed: bool,
     phase: str | None = None,
     phase_values: dict[str, Any] | None = None,
 ) -> tuple[str, ...]:
@@ -198,21 +212,22 @@ def expected_invariants(
 
     Worktree-only invariants are included when the worktree can be proven
     materialized for this phase. Two signals decide this — the captured row's
-    values come first, the plan's current metadata is the phase-gated fallback:
+    values come first, the plan's worktree routing is the phase-gated fallback:
 
     1. If ``phase_values`` carries a non-empty ``worktree_sha`` OR
        ``worktree_dirty`` value, the row itself proves the worktree was
        materialized when the phase captured. Include
        ``_WORKTREE_INVARIANTS`` (unconditional — independent of ``phase``).
-    2. Otherwise, if the phase is at or after ``5-execute`` AND the plan's
-       current metadata reports ``use_worktree`` (a non-empty
-       ``worktree_path`` once phase-5 materializes the worktree), the plan is
-       worktree-routed and an empty captured value represents a real capture
-       gap. Include ``_WORKTREE_INVARIANTS``. Under the ADR-002 deferred-
-       materialization model the worktree is not created until phase-5-execute,
-       so phases 1-4 never capture worktree values; Signal 2 is gated off there
-       (and for the un-phased default where ``phase is None``) to avoid a
-       guaranteed false-positive "missing worktree invariant" finding.
+    2. Otherwise, if the phase is at or after ``5-execute`` AND
+       ``worktree_routed`` is true (resolved by
+       :func:`plan_is_worktree_routed`, which asks the ONE resolver for a live
+       plan and falls back to the recorded ``use_worktree`` flag for an archived
+       one), an empty captured value represents a real capture gap. Include
+       ``_WORKTREE_INVARIANTS``. Under the ADR-002 deferred-materialization
+       model the worktree is not created until phase-5-execute, so phases 1-4
+       never capture worktree values; Signal 2 is gated off there (and for the
+       un-phased default where ``phase is None``) to avoid a guaranteed
+       false-positive "missing worktree invariant" finding.
 
     ``phase_steps_complete`` is appended only when ``phase`` is provided
     and ``_phase_steps_complete_applies(phase)`` returns ``True`` — i.e.
@@ -233,7 +248,7 @@ def expected_invariants(
     if (
         not include_worktree
         and _phase_at_or_after_execute(phase)
-        and (metadata.get('worktree_path') or metadata.get('use_worktree'))
+        and worktree_routed
     ):
         # Signal 2: the plan is worktree-routed AND the phase is at or after
         # 5-execute, so the worktree is materialized → an empty captured value
@@ -289,11 +304,13 @@ def detect_drift(phase_map: dict[str, dict[str, Any]]) -> list[dict[str, str]]:
 
 def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     plan_dir = resolve_plan_dir(args.mode, args.plan_id, args.archived_plan_path)
-    metadata = load_status_metadata(plan_dir)
+    worktree_routed = plan_is_worktree_routed(
+        plan_dir, args.plan_id if args.mode == 'live' else None
+    )
     rows = load_handshake_rows(plan_dir)
     # Un-phased default used only for the no-handshakes-found path where there
     # is no phase to pass; per-phase expected sets are computed inside the loop.
-    default_expected = expected_invariants(metadata)
+    default_expected = expected_invariants(worktree_routed)
 
     phases_out: list[dict[str, Any]] = []
     findings: list[dict[str, str]] = []
@@ -311,7 +328,7 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
         phase_map = project_rows_to_phase_map(rows)
 
     for phase, values in phase_map.items():
-        expected = expected_invariants(metadata, phase, values)
+        expected = expected_invariants(worktree_routed, phase, values)
         present = sorted(k for k, v in values.items() if v not in (None, ''))
         missing = sorted(set(expected) - set(present))
         phases_out.append(

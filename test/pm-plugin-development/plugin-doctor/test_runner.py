@@ -61,8 +61,11 @@ _alc = _load('_analyze_literal_count.py', '_alc_runner_test')
 _armc = _load('_analyze_resolver_matrix_coverage.py', '_armc_runner_test')
 
 
-# The pre-D5 cmd_quality_gate emission order, captured verbatim. This is the
-# byte-identical golden snapshot the runner must reproduce.
+# The canonical quality-gate emission order, captured verbatim. This is the
+# golden snapshot the runner must reproduce exactly: a rule that silently drops
+# out of the dispatch (or lands in the wrong position) fails here rather than
+# degrading into a registered-but-never-invoked rule that emits no CI signal.
+# Adding a rule to the dispatch REQUIRES adding its label here, in position.
 GOLDEN_QG_LABELS = [
     'scan_argparse_safety',
     'validate_extension_contracts',
@@ -88,6 +91,7 @@ GOLDEN_QG_LABELS = [
     'fenced-code-no-language',
     'analyze_fail_closed_gate_reads',
     'analyze_sys_path_bootstrap',
+    'analyze_plan_path_in_scripts',
     'analyze_agentfile_line_budget',
     'analyze_agentfile_directory_tree',
     'scan_manage_invocation',

@@ -3,7 +3,7 @@
 """Tests for the ``plan-path-in-scripts`` rule analyzer.
 
 The analyzer detects drift from the canonical ``tools-file-ops:file_ops``
-path helpers via AST analysis.  Two forms are detected:
+path helpers via AST analysis.  Three forms are detected:
 
 - **Form A** (literal bypass): an ``ast.Constant`` string node whose value
   contains ``.plan/plans/`` (without ``/local/``).
@@ -11,10 +11,16 @@ path helpers via AST analysis.  Two forms are detected:
   or ``os.path.dirname(__file__)`` chain joined against a ``.plan``-domain
   subdirectory name (``plans``, ``lessons-learned``, ``logs``,
   ``archived-plans``, ``workspace``).
+- **Form C** (resolver bypass): a working-tree-binding consumer that
+  re-derives a worktree path by hand instead of routing through
+  ``file_ops.resolve_plan_context``.
 
 Exemptions asserted not-flagged:
   * ``sys.path.insert`` / ``sys.path.append`` bootstrap chains (form B).
   * ``file_ops.py`` (the canonical source — whitelist entry).
+  * ``manage-status.py`` (the canonical ``get-worktree-path`` producer —
+    whitelist entry, form C).
+  * The named baseline straggler set (form C only).
 
 Test layers:
   * End-to-end scan distinguishing a production hit from a whitelisted hit.
@@ -31,11 +37,16 @@ Test layers:
   * Form B parent-walking re-derivation detected.
   * ``sys.path.insert`` bootstrap exemption NOT flagged.
   * ``file_ops.py`` canonical-source exemption NOT flagged.
+  * Form C: a bypassing consumer flagged, a compliant one not, a baseline
+    member suppressed, and the docstring/prose exemption honoured.
+  * Form C anti-vacuity, anchored to the REAL marketplace tree rather than a
+    fixture, so the guard cannot pass vacuously against live data.
 """
 
+import ast
 from pathlib import Path
 
-from conftest import load_script_module
+from conftest import MARKETPLACE_ROOT, load_script_module
 
 
 def _load_module(name: str, filename: str):
@@ -52,6 +63,19 @@ _classify = _appis._classify
 _scan_file = _appis._scan_file
 RULE_ID = _appis.RULE_ID
 _PLAN_DOMAIN_DIRS = _appis._PLAN_DOMAIN_DIRS
+
+# Form C surface.
+derive_working_tree_binding_population = _appis.derive_working_tree_binding_population
+find_resolver_bypasses = _appis.find_resolver_bypasses
+routes_through_resolver = _appis.routes_through_resolver
+collect_bypass_signals = _appis.collect_bypass_signals
+binding_arms = _appis.binding_arms
+baseline_stragglers = _appis.baseline_stragglers
+skill_key = _appis.skill_key
+
+# ``MARKETPLACE_ROOT`` is the bundles root; the analyzer joins ``bundles/``
+# itself, so the real-tree assertions anchor on its parent.
+REAL_MARKETPLACE = MARKETPLACE_ROOT.parent
 
 
 # ---------------------------------------------------------------------------
@@ -653,4 +677,398 @@ class TestFileOpsExemption:
         findings = analyze_plan_path_in_scripts(mp)
         assert findings == [], (
             'file_ops.py parent-chain must be whitelisted and produce no findings'
+        )
+
+
+# ===========================================================================
+# Form C fixtures — resolver bypass
+# ===========================================================================
+#
+# Every fixture below is a controlled pair or triple: the fixtures differ in
+# exactly the property under test, so a passing assertion pins that property
+# rather than an incidental difference.
+
+# A working-tree-binding consumer that re-derives the worktree by shelling out
+# to the command the resolver owns.
+_BYPASSER_SHELL_OUT = '''"""Re-derives the worktree by shelling out."""
+
+import subprocess
+
+
+def _resolve_worktree_path(plan_id):
+    result = subprocess.run(
+        ['python3', '.plan/execute-script.py', 'b:s:x', 'get-worktree-path'],
+        capture_output=True,
+    )
+    return result.stdout
+
+
+def build(parser):
+    parser.add_argument('--project-dir', help='project directory')
+'''
+
+# The same consumer, re-deriving via a status-metadata read instead.
+_BYPASSER_METADATA_READ = '''"""Re-derives the worktree by reading status metadata."""
+
+
+def _resolve_worktree_path(status):
+    metadata = status.get('metadata', {})
+    return metadata.get('worktree_path')
+
+
+def build(parser):
+    parser.add_argument('--project-dir', help='project directory')
+'''
+
+# Byte-for-byte the same PRIVATE HELPER NAME as the bypassers, but the body
+# delegates to the resolver. This is the controlled negative that proves the
+# verdict is body-based and not name-based.
+_COMPLIANT_ADAPTER = '''"""A CLI argument adapter that delegates to the resolver."""
+
+from file_ops import resolve_plan_context
+
+
+def _resolve_worktree_path(plan_id, project_dir):
+    if project_dir:
+        return project_dir
+    return resolve_plan_context(plan_id).worktree_path
+
+
+def build(parser):
+    parser.add_argument('--project-dir', help='project directory')
+'''
+
+# Binds no working tree at all — declares only --plan-id. Out of the
+# population, which is what distinguishes the corrected Bucket-B derivation
+# from the rejected --plan-id argparse walk.
+_PLAN_ID_ONLY = '''"""A plan-scoped consumer that binds no working tree."""
+
+
+def build(parser):
+    parser.add_argument('--plan-id', help='plan id')
+'''
+
+# Names both the flag and the command in PROSE only.
+_PROSE_ONLY = '''"""Documents get-worktree-path and --project-dir without using either.
+
+The resolver shells out to get-worktree-path. Callers may pass --project-dir
+to override the working tree.
+"""
+
+
+def noop():
+    return None
+'''
+
+
+def _write_consumer(mp: Path, skill: str, filename: str, body: str) -> Path:
+    """Materialize one bundle script under ``mp`` at a real skill-shaped path."""
+    return _write_py(mp / 'bundles' / 'b1' / 'skills' / skill / 'scripts' / filename, body)
+
+
+class TestFormCPopulationDerivation:
+    """The population is derived from the working-tree-binding arms."""
+
+    def test_project_dir_flag_arm(self, tmp_path: Path) -> None:
+        mp = _make_marketplace(tmp_path)
+        py = _write_consumer(mp, 's1', 'a.py', _BYPASSER_SHELL_OUT)
+        assert 'project_dir_flag' in binding_arms(ast.parse(py.read_text(encoding='utf-8')))
+
+    def test_worktree_path_shell_out_arm(self, tmp_path: Path) -> None:
+        mp = _make_marketplace(tmp_path)
+        py = _write_consumer(mp, 's1', 'a.py', _BYPASSER_SHELL_OUT)
+        arms = binding_arms(ast.parse(py.read_text(encoding='utf-8')))
+        assert 'worktree_path_shell_out' in arms
+
+    def test_private_rederiver_arm(self, tmp_path: Path) -> None:
+        mp = _make_marketplace(tmp_path)
+        py = _write_consumer(mp, 's1', 'a.py', _BYPASSER_METADATA_READ)
+        assert 'private_rederiver' in binding_arms(ast.parse(py.read_text(encoding='utf-8')))
+
+    def test_resolver_ref_arm_keeps_migrated_consumer_in_population(
+        self, tmp_path: Path
+    ) -> None:
+        """The migration-stable arm: a migrated consumer stays in the population.
+
+        Without this arm a migration that replaces a hand-rolled binding with a
+        resolver call would EVICT the consumer from the population, so the guard
+        would stop watching exactly the files a migration just fixed.
+        """
+        mp = _make_marketplace(tmp_path)
+        py = _write_consumer(mp, 's1', 'a.py', _COMPLIANT_ADAPTER)
+        arms = binding_arms(ast.parse(py.read_text(encoding='utf-8')))
+        assert 'resolver_ref' in arms
+        population = derive_working_tree_binding_population(mp)
+        assert py in population
+
+    def test_plan_id_only_consumer_is_out_of_population(self, tmp_path: Path) -> None:
+        """A --plan-id declaration alone does NOT put a script in the population.
+
+        This pins the corrected Bucket-B derivation against the rejected
+        --plan-id argparse-declaration walk.
+        """
+        mp = _make_marketplace(tmp_path)
+        py = _write_consumer(mp, 's1', 'a.py', _PLAN_ID_ONLY)
+        assert binding_arms(ast.parse(py.read_text(encoding='utf-8'))) == []
+        assert derive_working_tree_binding_population(mp) == []
+
+    def test_prose_only_mention_is_out_of_population(self, tmp_path: Path) -> None:
+        """Naming the flag / command in a docstring does not bind a working tree."""
+        mp = _make_marketplace(tmp_path)
+        py = _write_consumer(mp, 's1', 'a.py', _PROSE_ONLY)
+        assert binding_arms(ast.parse(py.read_text(encoding='utf-8'))) == []
+        assert derive_working_tree_binding_population(mp) == []
+
+    def test_whitelisted_file_excluded_from_population(self, tmp_path: Path) -> None:
+        mp = _make_marketplace(tmp_path)
+        _write_py(
+            mp
+            / 'bundles'
+            / 'plan-marshall'
+            / 'skills'
+            / 'tools-file-ops'
+            / 'scripts'
+            / 'file_ops.py',
+            _BYPASSER_SHELL_OUT,
+        )
+        assert derive_working_tree_binding_population(mp) == []
+
+    def test_empty_tree_population_is_empty(self, tmp_path: Path) -> None:
+        mp = _make_marketplace(tmp_path)
+        assert derive_working_tree_binding_population(mp) == []
+
+
+class TestFormCVerdict:
+    """The verdict is body-based: a signal without a resolver reference."""
+
+    def test_shell_out_bypasser_flagged(self, tmp_path: Path) -> None:
+        mp = _make_marketplace(tmp_path)
+        py = _write_consumer(mp, 's1', 'a.py', _BYPASSER_SHELL_OUT)
+        findings = find_resolver_bypasses(mp, apply_baseline=False)
+        assert len(findings) == 1
+        assert findings[0]['file'] == str(py)
+        assert findings[0]['form'] == 'C'
+        assert findings[0]['signal'] == 'worktree_path_shell_out'
+        assert findings[0]['rule_id'] == RULE_ID
+
+    def test_metadata_read_bypasser_flagged(self, tmp_path: Path) -> None:
+        mp = _make_marketplace(tmp_path)
+        _write_consumer(mp, 's1', 'a.py', _BYPASSER_METADATA_READ)
+        findings = find_resolver_bypasses(mp, apply_baseline=False)
+        assert len(findings) == 1
+        assert findings[0]['signal'] == 'worktree_path_metadata_read'
+
+    def test_metadata_subscript_read_flagged(self, tmp_path: Path) -> None:
+        """A subscript read is the same re-derivation as a ``.get`` read."""
+        mp = _make_marketplace(tmp_path)
+        _write_consumer(
+            mp,
+            's1',
+            'a.py',
+            'def _resolve_worktree_path(metadata):\n'
+            "    return metadata['worktree_path']\n",
+        )
+        findings = find_resolver_bypasses(mp, apply_baseline=False)
+        assert len(findings) == 1
+        assert findings[0]['signal'] == 'worktree_path_metadata_read'
+
+    def test_compliant_adapter_with_identical_helper_name_not_flagged(
+        self, tmp_path: Path
+    ) -> None:
+        """The load-bearing negative control: same helper NAME, delegating BODY.
+
+        ``_BYPASSER_SHELL_OUT`` and ``_COMPLIANT_ADAPTER`` both define
+        ``_resolve_worktree_path`` and both declare ``--project-dir``. They
+        differ ONLY in what the body does, so a name-pattern detector would flag
+        both. Form C must flag neither on name alone.
+        """
+        mp = _make_marketplace(tmp_path)
+        py = _write_consumer(mp, 's1', 'a.py', _COMPLIANT_ADAPTER)
+        tree = ast.parse(py.read_text(encoding='utf-8'))
+        assert 'private_rederiver' in binding_arms(tree)
+        assert routes_through_resolver(tree)
+        assert find_resolver_bypasses(mp, apply_baseline=False) == []
+
+    def test_prose_mention_of_command_not_flagged(self, tmp_path: Path) -> None:
+        mp = _make_marketplace(tmp_path)
+        _write_consumer(mp, 's1', 'a.py', _PROSE_ONLY)
+        assert find_resolver_bypasses(mp, apply_baseline=False) == []
+
+    def test_signals_carry_line_numbers(self, tmp_path: Path) -> None:
+        mp = _make_marketplace(tmp_path)
+        py = _write_consumer(mp, 's1', 'a.py', _BYPASSER_METADATA_READ)
+        signals = collect_bypass_signals(ast.parse(py.read_text(encoding='utf-8')))
+        assert signals
+        assert all(line > 0 for line, _signal in signals)
+
+    def test_form_c_findings_reach_the_rule_entry_point(self, tmp_path: Path) -> None:
+        """A form-C bypass surfaces through the rule's public entry point.
+
+        Form C is population-derived rather than per-file, so it runs once over
+        the tree AFTER the per-file scan. This pins that it is actually reached
+        from ``analyze_plan_path_in_scripts`` — the function the quality-gate
+        dispatch calls — and not only from ``find_resolver_bypasses`` directly.
+        """
+        mp = _make_marketplace(tmp_path)
+        _write_consumer(mp, 's1', 'a.py', _BYPASSER_SHELL_OUT)
+        findings = analyze_plan_path_in_scripts(mp)
+        assert [f.get('form') for f in findings] == ['C']
+
+
+class TestFormCBaselineSuppression:
+    """The baseline straggler set suppresses a bypasser, and only a member."""
+
+    def test_baseline_member_suppressed(self, tmp_path: Path) -> None:
+        mp = _make_marketplace(tmp_path)
+        member = sorted(baseline_stragglers())[0]
+        skill, filename = member.split('/', 1)
+        _write_consumer(mp, skill, filename, _BYPASSER_SHELL_OUT)
+
+        assert find_resolver_bypasses(mp, apply_baseline=False), (
+            'the fixture must bypass before the baseline is applied'
+        )
+        assert find_resolver_bypasses(mp, apply_baseline=True) == [], (
+            'a baseline member must be suppressed'
+        )
+
+    def test_non_member_at_same_filename_not_suppressed(self, tmp_path: Path) -> None:
+        """Suppression keys on ``{skill}/{filename}``, not the filename alone."""
+        mp = _make_marketplace(tmp_path)
+        member = sorted(baseline_stragglers())[0]
+        _skill, filename = member.split('/', 1)
+        _write_consumer(mp, 'some-other-skill', filename, _BYPASSER_SHELL_OUT)
+        assert len(find_resolver_bypasses(mp, apply_baseline=True)) == 1
+
+    def test_skill_key_derivation(self, tmp_path: Path) -> None:
+        path = tmp_path / 'bundles' / 'b' / 'skills' / 'my-skill' / 'scripts' / 'x.py'
+        assert skill_key(path) == 'my-skill/x.py'
+
+    def test_skill_key_degrades_to_filename_without_skills_segment(
+        self, tmp_path: Path
+    ) -> None:
+        assert skill_key(tmp_path / 'flat' / 'x.py') == 'x.py'
+
+
+class TestFormCAntiVacuityAgainstRealTree:
+    """Anti-vacuity properties asserted against the REAL marketplace tree.
+
+    These are anchored to live data rather than a fixture on purpose: every
+    fixture-based assertion above passes just as well against a detector that
+    can never fire on the real corpus. A guard that is green because it watches
+    nothing is the failure mode these four properties exist to rule out.
+    """
+
+    def test_property_1_derived_population_is_non_empty(self) -> None:
+        population = derive_working_tree_binding_population(REAL_MARKETPLACE)
+        assert population, (
+            'the working-tree-binding population derived from the real tree is '
+            'empty — the form-C guard would watch nothing'
+        )
+
+    def test_property_2_baseline_is_strict_subset_of_population(self) -> None:
+        """Every baseline member must be a derived population member, and the
+        population must be strictly larger — the guard must watch more than its
+        own exemptions.
+        """
+        population_keys = {
+            skill_key(p) for p in derive_working_tree_binding_population(REAL_MARKETPLACE)
+        }
+        baseline = baseline_stragglers()
+        orphans = sorted(baseline - population_keys)
+        assert not orphans, (
+            f'baseline entries outside the derived population: {orphans} — the '
+            'exemption set and the population disagree on what binds a worktree'
+        )
+        assert baseline < population_keys, (
+            'the baseline is not a STRICT subset — the guard watches nothing '
+            'beyond its own exemptions'
+        )
+
+    def test_property_3_no_phantom_baseline_entries(self) -> None:
+        """Every baseline entry resolves to a file that still exists.
+
+        A renamed or deleted file would leave a phantom exemption behind, which
+        silently un-guards its successor while still reading as a deliberate,
+        documented deferral.
+        """
+        phantoms = []
+        for member in sorted(baseline_stragglers()):
+            skill, filename = member.split('/', 1)
+            # Resolved straight off disk — deliberately NOT via the derived
+            # population, so this stays independent of property 2's orphan check.
+            matches = list(MARKETPLACE_ROOT.glob(f'*/skills/{skill}/scripts/{filename}'))
+            if not any(m.is_file() for m in matches):
+                phantoms.append(member)
+        assert not phantoms, (
+            f'phantom baseline entries (no such file in the tree): {phantoms}'
+        )
+
+    def test_property_4_raw_bypassing_set_is_non_empty(self) -> None:
+        """Before the baseline is subtracted, the guard flags something real.
+
+        This is the anti-vacuity proof proper: it asserts the detector's
+        predicate actually fires against the live corpus. If this ever goes
+        empty, every remaining form-C assertion is vacuous and the baseline set
+        should be retired rather than kept as decoration.
+        """
+        raw = find_resolver_bypasses(REAL_MARKETPLACE, apply_baseline=False)
+        assert raw, (
+            'the form-C detector flags nothing against the real tree even '
+            'before exemptions — the predicate never fires'
+        )
+        assert all(f['form'] == 'C' for f in raw)
+        assert all(
+            f['signal'] in ('worktree_path_shell_out', 'worktree_path_metadata_read')
+            for f in raw
+        )
+
+    def test_real_tree_is_clean_after_baseline(self) -> None:
+        """With exemptions applied the real tree carries no form-C finding.
+
+        Paired with property 4 this is the meaningful green: the guard fires on
+        the corpus and every firing is a named, enumerated deferral.
+        """
+        remaining = find_resolver_bypasses(REAL_MARKETPLACE, apply_baseline=True)
+        assert remaining == [], (
+            'un-baselined resolver bypasses in the real tree: '
+            f'{sorted(skill_key(Path(f["file"])) for f in remaining)}'
+        )
+
+    def test_whole_rule_is_clean_against_real_tree(self) -> None:
+        """All three forms together report nothing against the real tree."""
+        assert analyze_plan_path_in_scripts(REAL_MARKETPLACE) == []
+
+    def test_canonical_producer_is_whitelisted(self) -> None:
+        """manage-status.py owns ``get-worktree-path`` and must stay exempt.
+
+        Routing the producer through the resolver would close a cycle, since the
+        resolver shells out to this very command.
+        """
+        producer = (
+            MARKETPLACE_ROOT
+            / 'plan-marshall'
+            / 'skills'
+            / 'manage-status'
+            / 'scripts'
+            / 'manage-status.py'
+        )
+        assert producer.is_file(), 'the canonical producer moved — revisit the whitelist'
+        assert is_whitelisted(producer)
+
+    def test_private_name_helpers_survive_as_delegating_adapters(self) -> None:
+        """The body-based property, asserted against the real tree.
+
+        Real helpers keep ``_resolve_worktree*`` / ``_resolve_project_dir*``
+        names as CLI argument adapters. A name-pattern detector would flag
+        precisely those escape hatches, so this asserts at least one such helper
+        exists in the population AND is correctly classified as delegating.
+        """
+        adapters = []
+        for path in derive_working_tree_binding_population(REAL_MARKETPLACE):
+            tree = ast.parse(path.read_text(encoding='utf-8'), filename=str(path))
+            if 'private_rederiver' in binding_arms(tree) and routes_through_resolver(tree):
+                adapters.append(skill_key(path))
+        assert adapters, (
+            'no delegating private-name adapter found in the population — the '
+            'body-based-vs-name-based distinction is untested against live data'
         )

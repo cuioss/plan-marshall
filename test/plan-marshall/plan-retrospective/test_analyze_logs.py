@@ -1018,9 +1018,16 @@ def _init_repo(repo: Path) -> None:
 
 
 class TestResolveFootprintTiers:
-    """``resolve_footprint`` resolves live diff, then the legacy key, then empty."""
+    """``resolve_footprint`` resolves live diff, then the legacy key, then empty.
 
-    def test_tier1_live_diff_when_worktree_resolves(self, tmp_path):
+    Tier 1 reaches the worktree through the ONE plan-context resolver
+    (``_references_core.resolve_live_worktree``), keyed on ``plan_id``. It no
+    longer re-reads ``status.metadata.worktree_path`` out of the plan's own
+    status file, so these tests stub the resolver rather than writing a
+    ``status.json`` the function does not consult.
+    """
+
+    def test_tier1_live_diff_when_worktree_resolves(self, tmp_path, monkeypatch):
         """A resolvable git worktree yields the live ``{base}...HEAD`` ∪ porcelain set."""
         repo = tmp_path / 'wt'
         _init_repo(repo)
@@ -1036,14 +1043,70 @@ class TestResolveFootprintTiers:
         plan_dir = tmp_path / 'plan'
         plan_dir.mkdir()
         (plan_dir / 'references.json').write_text(json.dumps({'base_branch': 'main'}))
+
+        asked = []
+
+        def _resolve(plan_id):
+            asked.append(plan_id)
+            return repo
+
+        monkeypatch.setattr(_analyze_logs, 'resolve_live_worktree', _resolve)
+
+        footprint = _analyze_logs.resolve_footprint(plan_dir, 'demo-plan')
+        assert 'committed.py' in footprint
+        assert 'uncommitted.py' in footprint
+        assert 'base.txt' not in footprint
+        assert asked == ['demo-plan'], (
+            'tier 1 must reach the worktree through the resolver, keyed on plan_id'
+        )
+
+    def test_tier1_skipped_in_archived_mode(self, tmp_path, monkeypatch):
+        """``plan_id=None`` skips tier 1 — an archived worktree no longer exists.
+
+        The resolver is still called (it owns the ``None`` short-circuit), but it
+        answers ``None``, so resolution falls through to the legacy key.
+        """
+        plan_dir = tmp_path / 'plan'
+        plan_dir.mkdir()
+        (plan_dir / 'references.json').write_text(
+            json.dumps({'modified_files': ['legacy/a.py']})
+        )
+
+        asked = []
+
+        def _resolve(plan_id):
+            asked.append(plan_id)
+            return None
+
+        monkeypatch.setattr(_analyze_logs, 'resolve_live_worktree', _resolve)
+
+        assert _analyze_logs.resolve_footprint(plan_dir, None) == ['legacy/a.py']
+        assert asked == [None]
+
+    def test_status_metadata_worktree_path_is_no_longer_consulted(self, tmp_path):
+        """A recorded ``worktree_path`` alone must NOT produce a live footprint.
+
+        This pins the removal of the hand-rolled re-derivation: before the
+        migration a ``status.json`` carrying a resolvable ``worktree_path`` was
+        enough to reach tier 1. Now only the resolver can, so the same status
+        file falls through to the legacy key.
+        """
+        repo = tmp_path / 'wt'
+        _init_repo(repo)
+        (repo / 'base.txt').write_text('base\n')
+        _git(repo, 'add', '-A')
+        _git(repo, 'commit', '-m', 'base')
+
+        plan_dir = tmp_path / 'plan'
+        plan_dir.mkdir()
+        (plan_dir / 'references.json').write_text(
+            json.dumps({'base_branch': 'main', 'modified_files': ['legacy/a.py']})
+        )
         (plan_dir / 'status.json').write_text(
             json.dumps({'metadata': {'worktree_path': str(repo)}})
         )
 
-        footprint = _analyze_logs.resolve_footprint(plan_dir)
-        assert 'committed.py' in footprint
-        assert 'uncommitted.py' in footprint
-        assert 'base.txt' not in footprint
+        assert _analyze_logs.resolve_footprint(plan_dir, None) == ['legacy/a.py']
 
     def test_tier2_legacy_key_when_no_worktree(self, tmp_path):
         """No worktree → fall back to the legacy ``modified_files`` key."""
@@ -1065,8 +1128,10 @@ class TestResolveFootprintTiers:
         footprint = _analyze_logs.resolve_footprint(plan_dir)
         assert footprint == []
 
-    def test_tier2_fallback_when_worktree_not_a_git_dir(self, tmp_path, outside_repo_dir):
-        """A worktree_path that is not a git tree falls through to the legacy key."""
+    def test_tier2_fallback_when_worktree_not_a_git_dir(
+        self, tmp_path, outside_repo_dir, monkeypatch
+    ):
+        """A resolved directory that is not a git tree falls through to the legacy key."""
         # ``plain`` must be OUTSIDE the repo: pytest's tmp_path now roots under
         # the repo-local --basetemp, where it IS a git tree and the tier-1 live
         # footprint would resolve instead of falling through to the legacy key.
@@ -1078,11 +1143,9 @@ class TestResolveFootprintTiers:
         (plan_dir / 'references.json').write_text(
             json.dumps({'modified_files': ['legacy/a.py']})
         )
-        (plan_dir / 'status.json').write_text(
-            json.dumps({'metadata': {'worktree_path': str(plain)}})
-        )
+        monkeypatch.setattr(_analyze_logs, 'resolve_live_worktree', lambda plan_id: plain)
 
-        footprint = _analyze_logs.resolve_footprint(plan_dir)
+        footprint = _analyze_logs.resolve_footprint(plan_dir, 'demo-plan')
         assert footprint == ['legacy/a.py']
 
 

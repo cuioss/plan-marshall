@@ -104,23 +104,84 @@ class TestPhaseStepsCompleteApplies:
         assert _si._phase_steps_complete_applies('6-finalize') is True
 
 
-class TestLoadStatusMetadata:
-    def test_missing_status_returns_empty(self, tmp_path):
-        assert _si.load_status_metadata(tmp_path) == {}
+class TestPlanIsWorktreeRouted:
+    """The archived-plan fallback tier of ``plan_is_worktree_routed``.
 
-    def test_malformed_status_returns_empty(self, tmp_path):
+    ``plan_id=None`` (archived mode) skips the live-resolver tier entirely — an
+    archived plan's recorded worktree names a directory finalize already removed
+    — so these cases exercise the recorded-``use_worktree``-flag fallback read
+    from the archived ``status.json`` snapshot.
+
+    The predicate replaced a ``load_status_metadata`` helper that returned the
+    raw metadata dict so the caller could re-derive the worktree face out of
+    ``status.metadata.worktree_path`` by hand. Routing that resolution through
+    ``file_ops.resolve_plan_context`` collapsed the helper to the boolean the
+    caller actually consumed, so these assert the boolean contract.
+    """
+
+    def test_missing_status_returns_false(self, tmp_path):
+        assert _si.plan_is_worktree_routed(tmp_path) is False
+
+    def test_malformed_status_returns_false(self, tmp_path):
         (tmp_path / 'status.json').write_text('{ broken', encoding='utf-8')
-        assert _si.load_status_metadata(tmp_path) == {}
+        assert _si.plan_is_worktree_routed(tmp_path) is False
 
-    def test_status_without_metadata_returns_empty(self, tmp_path):
+    def test_status_without_metadata_returns_false(self, tmp_path):
         (tmp_path / 'status.json').write_text(json.dumps({'title': 'x'}), encoding='utf-8')
-        assert _si.load_status_metadata(tmp_path) == {}
+        assert _si.plan_is_worktree_routed(tmp_path) is False
 
-    def test_metadata_returned(self, tmp_path):
+    def test_recorded_use_worktree_flag_returns_true(self, tmp_path):
+        (tmp_path / 'status.json').write_text(
+            json.dumps({'metadata': {'use_worktree': True}}), encoding='utf-8'
+        )
+        assert _si.plan_is_worktree_routed(tmp_path) is True
+
+    def test_recorded_worktree_path_alone_returns_false(self, tmp_path):
+        """A recorded ``worktree_path`` is NO LONGER the routing signal.
+
+        The archived fallback reads the ``use_worktree`` INTENT flag, not the
+        recorded path — the path names a directory finalize has removed, so
+        trusting it was the hand-rolled re-derivation the migration eliminated.
+        """
         (tmp_path / 'status.json').write_text(
             json.dumps({'metadata': {'worktree_path': '/wt'}}), encoding='utf-8'
         )
-        assert _si.load_status_metadata(tmp_path) == {'worktree_path': '/wt'}
+        assert _si.plan_is_worktree_routed(tmp_path) is False
+
+    def test_archived_mode_forwards_none_and_falls_back_to_the_flag(
+        self, tmp_path, monkeypatch
+    ):
+        """Archived mode forwards ``plan_id=None``, so the resolver tier misses.
+
+        The recorded observation is what the resolver is ASKED, not merely the
+        returned verdict: an archived plan must never be resolved against a
+        live worktree, and the fallback must then read the intent flag.
+        """
+        asked: list[str | None] = []
+
+        def _record(plan_id):
+            asked.append(plan_id)
+            return None
+
+        monkeypatch.setattr(_si, 'resolve_live_worktree', _record)
+        (tmp_path / 'status.json').write_text(
+            json.dumps({'metadata': {'use_worktree': True}}), encoding='utf-8'
+        )
+        assert _si.plan_is_worktree_routed(tmp_path, None) is True
+        assert asked == [None]
+
+    def test_live_resolver_hit_short_circuits_the_flag_read(self, tmp_path, monkeypatch):
+        """A resolved live worktree wins without any status.json read.
+
+        The status file deliberately records ``use_worktree: false`` — if the
+        result is still True, the verdict came from the resolver rather than
+        from the recorded flag.
+        """
+        monkeypatch.setattr(_si, 'resolve_live_worktree', lambda plan_id: tmp_path)
+        (tmp_path / 'status.json').write_text(
+            json.dumps({'metadata': {'use_worktree': False}}), encoding='utf-8'
+        )
+        assert _si.plan_is_worktree_routed(tmp_path, 'live-plan') is True
 
 
 class TestLoadHandshakeRows:
