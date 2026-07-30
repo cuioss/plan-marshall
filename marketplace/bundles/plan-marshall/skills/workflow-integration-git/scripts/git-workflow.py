@@ -804,17 +804,21 @@ def _resolve_worktree_path_for_plan(plan_id: str) -> tuple[Path | None, dict | N
             ),
         }
 
+    # Still reachable despite the has_worktree check above: that check caches
+    # the (use_worktree, worktree_path) query, so no SECOND query happens here —
+    # but PlanContext._resolve_worktree_face raises on its own when
+    # use_worktree is true and the persisted worktree_path is EMPTY. The
+    # message must therefore be the exception's own text: "No worktree
+    # configured" is provably false at this point (has_worktree just returned
+    # true), and would send the caller looking for the wrong defect.
     try:
         return Path(context.worktree_path), None
-    except WorktreeResolutionError:
+    except WorktreeResolutionError as exc:
         return None, {
             'status': 'error',
             'plan_id': plan_id,
             'error': 'plan_resolution_failed',
-            'message': (
-                'No worktree configured for this plan — '
-                'status.metadata.use_worktree is false or worktree_path is unset'
-            ),
+            'message': str(exc),
         }
 
 

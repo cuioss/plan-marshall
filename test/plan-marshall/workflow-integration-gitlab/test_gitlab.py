@@ -121,15 +121,20 @@ def test_pr_create_handler_has_a_single_body_source():
         'gitlab_ops.py::cmd_pr_create no longer resolves the body through the store'
     )
 
-    # ``body_file`` can survive as a local name OR as the string key of a
-    # ``getattr(args, "body_file", None)`` read — check both spellings.
+    # ``body_file`` can survive as a local name, as an attribute access
+    # (``args.body_file`` — the dormant guard this test's docstring cites,
+    # still reachable from a direct-Namespace caller), OR as the string key of
+    # a ``getattr(args, "body_file", None)`` read — check all three spellings.
     identifiers = {node.id for node in ast.walk(handler) if isinstance(node, ast.Name)}
+    identifiers |= {node.attr for node in ast.walk(handler) if isinstance(node, ast.Attribute)}
     literals = {
         node.value
         for node in ast.walk(handler)
         if isinstance(node, ast.Constant) and isinstance(node.value, str)
     }
-    assert 'body_file' not in identifiers, 'gitlab_ops.py::cmd_pr_create retains a body_file local'
+    assert 'body_file' not in identifiers, (
+        'gitlab_ops.py::cmd_pr_create retains a body_file local or attribute access'
+    )
     assert 'body_file' not in literals, 'gitlab_ops.py::cmd_pr_create retains a body_file lookup'
 
 

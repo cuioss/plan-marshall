@@ -697,9 +697,11 @@ def collect_bypass_signals(tree: ast.Module) -> list[tuple[int, str]]:
       its own code (an argv list handed to subprocess). The resolver owns that
       command; a consumer invoking it is re-deriving the worktree face.
     - ``worktree_path_metadata_read`` — the module reads the ``worktree_path``
-      key out of status metadata, by subscript (``metadata['worktree_path']``)
-      or by ``.get('worktree_path')``. That is the same re-derivation done
-      without a subprocess.
+      key out of status metadata, by ``Load`` subscript
+      (``metadata['worktree_path']``) or by ``.get('worktree_path')``. That is
+      the same re-derivation done without a subprocess. A ``Store`` subscript
+      (``payload['worktree_path'] = resolved``) is NOT a read — that is an
+      emitting producer writing the resolved path out.
 
     Docstrings are excluded so a module that merely DESCRIBES the command in
     prose is not flagged for documenting it.
@@ -715,10 +717,18 @@ def collect_bypass_signals(tree: ast.Module) -> list[tuple[int, str]]:
                 signals.append((getattr(node, 'lineno', 0), 'worktree_path_shell_out'))
             continue
 
-        # metadata['worktree_path']
+        # metadata['worktree_path'] — a READ only. A Store subscript
+        # (``payload['worktree_path'] = resolved``) is an emitting producer
+        # writing the resolved path out, which is the opposite of re-deriving
+        # it; gating on ``ast.Load`` is what tells the two apart, mirroring
+        # ``_worktree_path_key_read_lines`` in test_resolver_migration.py.
         if isinstance(node, ast.Subscript):
             key = node.slice
-            if isinstance(key, ast.Constant) and key.value == _WORKTREE_PATH_KEY:
+            if (
+                isinstance(node.ctx, ast.Load)
+                and isinstance(key, ast.Constant)
+                and key.value == _WORKTREE_PATH_KEY
+            ):
                 signals.append((getattr(node, 'lineno', 0), 'worktree_path_metadata_read'))
             continue
 

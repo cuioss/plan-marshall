@@ -142,7 +142,9 @@ contract — five cases, no others:
 * `--plan-id NO_PLAN` only — the plan-less sentinel. Binds to the main
   checkout, always; the sentinel never resolves to a worktree.
 * `--project-dir Y` only — explicit override (legacy / escape hatch).
-* Neither — main checkout via `git rev-parse --show-toplevel`.
+* Neither — no resolution happens at all. The router returns without a
+  resolved path and never sets the process-global default cwd, so every
+  `gh`/`glab` subprocess inherits the caller's Python process cwd.
 
 ```bash
 # Preferred: bind the call to a plan's worktree by id.

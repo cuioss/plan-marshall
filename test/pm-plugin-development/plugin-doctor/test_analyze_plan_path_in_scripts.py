@@ -1010,11 +1010,24 @@ class TestFormCAntiVacuityAgainstRealTree:
         predicate actually fires against the live corpus. If this ever goes
         empty, every remaining form-C assertion is vacuous and the baseline set
         should be retired rather than kept as decoration.
+
+        Going empty is the EXPECTED end state, not a detector regression: the
+        raw set shrinks by one every time a ``_BASELINE_STRAGGLERS`` entry is
+        migrated onto the resolver, so migrating the last straggler turns this
+        assertion red. The failure text below carries the retirement
+        instructions so the next author retires the baseline instead of
+        debugging the detector.
         """
         raw = find_resolver_bypasses(REAL_MARKETPLACE, apply_baseline=False)
         assert raw, (
             'the form-C detector flags nothing against the real tree even '
-            'before exemptions — the predicate never fires'
+            'before exemptions. If _BASELINE_STRAGGLERS is now empty this is '
+            'the EXPECTED end state — the migration finished. Retire the '
+            'baseline: delete _BASELINE_STRAGGLERS, drop this anti-vacuity '
+            'property and the baseline-subset properties that depend on it, '
+            'and keep test_real_tree_is_clean_after_baseline as the whole '
+            'guard. If the baseline is NOT empty, the predicate stopped '
+            'firing and the detector really did regress.'
         )
         assert all(f['form'] == 'C' for f in raw)
         assert all(

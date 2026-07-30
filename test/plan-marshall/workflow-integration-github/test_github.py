@@ -127,15 +127,21 @@ def _assert_single_body_source(bundle: str, skill: str, script: str) -> None:
         f'{script}::cmd_pr_create no longer resolves the body through the store'
     )
 
-    # ``body_file`` can survive as an attribute/local name OR as the string key of
-    # a ``getattr(args, "body_file", None)`` read — check both spellings.
+    # ``body_file`` can survive as an attribute/local name, as an attribute
+    # access (``args.body_file`` — the dormant ``if args.body_file:`` guard
+    # this assertion exists to catch, still reachable from a direct-Namespace
+    # caller), OR as the string key of a ``getattr(args, "body_file", None)``
+    # read — check all three spellings.
     identifiers = {node.id for node in ast.walk(handler) if isinstance(node, ast.Name)}
+    identifiers |= {node.attr for node in ast.walk(handler) if isinstance(node, ast.Attribute)}
     literals = {
         node.value
         for node in ast.walk(handler)
         if isinstance(node, ast.Constant) and isinstance(node.value, str)
     }
-    assert 'body_file' not in identifiers, f'{script}::cmd_pr_create retains a body_file local'
+    assert 'body_file' not in identifiers, (
+        f'{script}::cmd_pr_create retains a body_file local or attribute access'
+    )
     assert 'body_file' not in literals, f'{script}::cmd_pr_create retains a body_file lookup'
 
 

@@ -26,6 +26,7 @@ proves the directory and its ``status.json`` actually landed on disk.
 """
 
 import json
+from pathlib import Path
 
 import file_ops
 import pytest
@@ -377,3 +378,34 @@ class TestSentinelConstantIsBootstrapSafe:
 
         assert file_ops.NO_PLAN_SENTINEL is marketplace_paths.NO_PLAN_SENTINEL
         assert input_validation.NO_PLAN_SENTINEL is marketplace_paths.NO_PLAN_SENTINEL
+
+    def test_file_ops_does_not_import_input_validation_at_module_scope(self):
+        """The claimed bootstrap contract, actually pinned.
+
+        The two assertions above pass identically whether or not ``file_ops``
+        imports ``input_validation`` at module scope — ``input_validation``
+        re-exports the same object, and pytest's ``sys.path`` already carries
+        every bundle, so neither one can observe the ``ModuleNotFoundError``
+        the class docstring describes. This check reads the SOURCE instead:
+        ``input_validation`` (``tools-input-validation``) is absent from the
+        bootstrap ``sys.path``, so a module-scope import of it from
+        ``file_ops`` is the exact defect, and only a source-level assertion
+        can see it. Function-scope (lazy) imports are fine and are not
+        flagged.
+        """
+        import ast
+
+        tree = ast.parse(Path(file_ops.__file__).read_text(encoding='utf-8'))
+        module_scope_imports: list[str] = []
+        for node in tree.body:
+            if isinstance(node, ast.Import):
+                module_scope_imports.extend(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                module_scope_imports.append(node.module)
+
+        assert 'input_validation' not in module_scope_imports, (
+            'file_ops imports input_validation at module scope — that module is '
+            'NOT on the bootstrap sys.path, so every bootstrap import would fail '
+            'with ModuleNotFoundError. Import the sentinel from marketplace_paths '
+            '(script-shared) instead, or move the import inside the function.'
+        )

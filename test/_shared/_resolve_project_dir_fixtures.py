@@ -3,13 +3,11 @@
 """Shared fixtures and helpers for the two-state ``--plan-id`` /
 ``--project-dir`` contract.
 
-Re-used by the three test modules that exercise the contract:
+Re-used by every Bucket B / plan-context test suite that exercises the
+contract — the consumer set grows as scripts migrate onto the shared
+resolver, so it is deliberately not enumerated here.
 
-* ``build-pyproject/test_pyproject_build.py``
-* ``manage-references/test_manage_references_compute_footprint.py``
-* ``script-shared/test_build_cli.py``
-
-The five contract states tested across those files are:
+The five contract states tested across those suites are:
 
 * ``--plan-id X`` only, ``use_worktree=true`` → resolves to the
   persisted worktree path.

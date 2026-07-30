@@ -52,11 +52,15 @@ def _resolve_branch_and_path(args) -> tuple[str | None, Path | None, dict | None
         try:
             from file_ops import WorktreeResolutionError, resolve_plan_context
         except ImportError as exc:
+            # NOT 'plan_not_found': the plan may well exist — the failure is an
+            # environment/module problem, and reporting it as a missing plan
+            # sends the caller looking in the wrong place. Same vocabulary as
+            # the equivalent path in _cmd_baseline_reconcile.py.
             return None, None, {
                 'status': 'error',
                 'operation': 'force-push-with-lease',
                 'plan_id': plan_id,
-                'error_type': 'plan_not_found',
+                'error_type': 'status_module_unavailable',
                 'message': f'file_ops module unavailable: {exc}',
             }
 

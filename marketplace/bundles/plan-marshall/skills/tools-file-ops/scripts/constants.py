@@ -241,6 +241,41 @@ DIR_ARCHITECTURE = 'project-architecture'
 DIR_TEMP = 'temp'
 
 # ---------------------------------------------------------------------------
+# Prepared-CI-body store layout
+# ---------------------------------------------------------------------------
+# Directory half of the prepared-body layout `<plan>/work/ci-bodies/`, whose
+# shape is owned by `tools-integration-ci.get_body_path`.
+# `_cmd_cleanup.get_no_plan_bodies_dir` joins it to reach the sentinel's body
+# store. It lives here — a side-effect-free module — so a consumer (including a
+# test) can name the directory without importing `_cmd_cleanup`, whose
+# module-scope `PLAN_BASE_DIR = get_base_dir()` would bind the base directory at
+# import time.
+CI_BODIES_DIRNAME = 'ci-bodies'
+
+# ---------------------------------------------------------------------------
+# Cleanup targets (`manage-run-config cleanup --target`)
+# ---------------------------------------------------------------------------
+# The closed set of cleanup targets, in CLI order. TWO surfaces read it and
+# MUST NOT re-declare it: `_cmd_cleanup.cmd_clean` dispatches on these values,
+# and `run_config.py` builds its argparse `choices` list from
+# `CLEANUP_TARGETS`. Declaring the set here — a side-effect-free module both
+# already import — is what makes it structurally impossible for the CLI to
+# advertise a target the dispatcher dropped, or reject one it gained.
+CLEANUP_TARGET_ALL = 'all'
+CLEANUP_TARGET_TEMP = 'temp'
+CLEANUP_TARGET_LOGS = 'logs'
+CLEANUP_TARGET_ARCHIVED_PLANS = 'archived-plans'
+CLEANUP_TARGET_NO_PLAN_BODIES = 'no-plan-bodies'
+
+CLEANUP_TARGETS = (
+    CLEANUP_TARGET_ALL,
+    CLEANUP_TARGET_TEMP,
+    CLEANUP_TARGET_LOGS,
+    CLEANUP_TARGET_ARCHIVED_PLANS,
+    CLEANUP_TARGET_NO_PLAN_BODIES,
+)
+
+# ---------------------------------------------------------------------------
 # Exit codes
 # ---------------------------------------------------------------------------
 EXIT_SUCCESS = 0

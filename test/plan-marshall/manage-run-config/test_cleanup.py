@@ -8,6 +8,14 @@ import shutil
 import time
 from pathlib import Path
 
+# Layout constants, imported from the side-effect-free modules that DECLARE
+# them. Deliberately NOT from `_cmd_cleanup`: that module binds
+# `PLAN_BASE_DIR = get_base_dir()` at import time, so importing it here (at
+# collection time) would freeze the base directory before the autouse
+# PLAN_BASE_DIR sandbox fixture redirects it.
+from constants import CI_BODIES_DIRNAME, DIR_PLANS, DIR_WORK
+from marketplace_paths import NO_PLAN_SENTINEL
+
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 from conftest import get_script_path, run_script
 
@@ -227,7 +235,10 @@ def test_missing_subcommand():
 # no-plan-bodies target (NO_PLAN sentinel retention)
 # =============================================================================
 
-SENTINEL_BODIES_SUBPATH = ('plans', 'NO_PLAN', 'work', 'ci-bodies')
+#: Derived from the SAME constants ``_cmd_cleanup.get_no_plan_bodies_dir``
+#: joins, so a rename of any segment moves both sides together instead of
+#: leaving this fixture helper pointing at a path production no longer uses.
+SENTINEL_BODIES_SUBPATH = (DIR_PLANS, NO_PLAN_SENTINEL, DIR_WORK, CI_BODIES_DIRNAME)
 
 
 def sentinel_bodies_dir(fixture_dir: Path) -> Path:
@@ -384,11 +395,18 @@ def test_sentinel_body_dir_matches_plan_resolver():
     `_cmd_cleanup` derives the sentinel body directory from its own
     `PLAN_BASE_DIR` root rather than calling `get_plan_dir`, matching how its
     three sibling targets resolve. That local derivation is only safe while it
-    stays byte-identical to the resolver the producer (`ci_base.get_body_path`)
-    uses — otherwise cleanup would silently prune nothing. Both halves are
-    resolved here in one process so a divergent sub-path fails loudly.
-    """
-    import file_ops
-    from _cmd_cleanup import get_no_plan_bodies_dir
+    stays byte-identical to the resolver the producer uses — otherwise cleanup
+    would silently prune nothing.
 
-    assert get_no_plan_bodies_dir() == file_ops.get_plan_dir('NO_PLAN') / 'work' / 'ci-bodies'
+    The right-hand side is the PRODUCER itself — the parent of a real
+    `ci_base.get_body_path()` result — not a hand-reconstructed literal. A
+    reconstructed expectation would keep passing through a production layout
+    change in `get_body_path`, which is exactly the drift this test exists to
+    catch. Both halves are resolved here in one process so a divergent sub-path
+    fails loudly.
+    """
+    from _cmd_cleanup import get_no_plan_bodies_dir
+    from ci_base import BODY_KIND_PR_CREATE, get_body_path
+
+    producer_dir = get_body_path(NO_PLAN_SENTINEL, BODY_KIND_PR_CREATE).parent
+    assert get_no_plan_bodies_dir() == producer_dir

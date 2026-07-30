@@ -120,12 +120,28 @@ _PINNED_POPULATION_MEMBERS: frozenset[str] = frozenset(
 
 
 def _references_resolver(node: ast.AST) -> bool:
-    """True when ``node``'s subtree names any resolver entry point."""
+    """True when ``node``'s subtree names any resolver entry point.
+
+    Four shapes count, matching the plugin-doctor analyzer's equivalent
+    (``_references_name`` in ``_analyze_plan_path_in_scripts.py``): a bare
+    name, an attribute access, ``from … import <entry_point>`` (including an
+    aliased import such as ``from resolve_project_dir import resolve_from_args
+    as _resolve``, where the bound name never appears as a matching
+    ``ast.Name``), and ``from <entry_point> import …`` where the entry point is
+    the MODULE being imported. Without the import arms an aliased or
+    import-only reference is invisible, and such a script escapes both the
+    population-parity test and the re-deriver check.
+    """
     for sub in ast.walk(node):
         if isinstance(sub, ast.Name) and sub.id in _RESOLVER_ENTRY_POINTS:
             return True
         if isinstance(sub, ast.Attribute) and sub.attr in _RESOLVER_ENTRY_POINTS:
             return True
+        if isinstance(sub, ast.ImportFrom):
+            if sub.module in _RESOLVER_ENTRY_POINTS:
+                return True
+            if any(alias.name in _RESOLVER_ENTRY_POINTS for alias in sub.names):
+                return True
     return False
 
 

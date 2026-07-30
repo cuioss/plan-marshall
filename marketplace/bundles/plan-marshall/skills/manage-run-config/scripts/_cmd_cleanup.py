@@ -17,7 +17,18 @@ from pathlib import Path
 from typing import Any
 
 # Direct imports - PYTHONPATH set by executor
-from constants import DIR_ARCHIVED, DIR_LOGS, DIR_PLANS, DIR_WORK
+from constants import (
+    CI_BODIES_DIRNAME,
+    CLEANUP_TARGET_ALL,
+    CLEANUP_TARGET_ARCHIVED_PLANS,
+    CLEANUP_TARGET_LOGS,
+    CLEANUP_TARGET_NO_PLAN_BODIES,
+    CLEANUP_TARGET_TEMP,
+    DIR_ARCHIVED,
+    DIR_LOGS,
+    DIR_PLANS,
+    DIR_WORK,
+)
 from file_ops import (
     get_base_dir,
     get_marshal_path,
@@ -34,11 +45,11 @@ PLAN_BASE_DIR = get_base_dir()
 MARSHAL_JSON = get_marshal_path()
 TEMP_DIR = get_temp_dir()
 
-# Sub-path of the sentinel plan directory that holds prepared CI body files.
-# The layout is owned by `tools-integration-ci.get_body_path`
-# (`<plan>/work/ci-bodies/{kind}-{slot}.md`); this constant names the directory
-# half of it so the cleanup target and the producer stay legible as a pair.
-CI_BODIES_DIRNAME = 'ci-bodies'
+# `CI_BODIES_DIRNAME` (the `<plan>/work/ci-bodies/` directory half, whose layout
+# `tools-integration-ci.get_body_path` owns) and `CLEANUP_TARGETS` (the closed
+# `cleanup --target` set `cmd_clean` dispatches on and `run_config.py` turns into
+# its argparse `choices`) are both declared in `constants` and imported above —
+# one declaration each, so neither can drift from its second consumer.
 
 
 @dataclass
@@ -358,25 +369,25 @@ def cmd_clean(args: argparse.Namespace) -> dict[str, Any] | None:
     stats = CleanupStats()
 
     # Clean temp
-    if target in ('all', 'temp') and retention.get('temp_on_maintenance', True):
+    if target in (CLEANUP_TARGET_ALL, CLEANUP_TARGET_TEMP) and retention.get('temp_on_maintenance', True):
         files, bytes_freed = clean_temp(dry_run)
         stats.temp_files = files
         stats.temp_bytes = bytes_freed
 
     # Clean logs
-    if target in ('all', 'logs'):
+    if target in (CLEANUP_TARGET_ALL, CLEANUP_TARGET_LOGS):
         deleted, bytes_freed = clean_logs(retention['logs_days'], dry_run)
         stats.logs_deleted = deleted
         stats.logs_bytes = bytes_freed
 
     # Clean archived plans
-    if target in ('all', 'archived-plans'):
+    if target in (CLEANUP_TARGET_ALL, CLEANUP_TARGET_ARCHIVED_PLANS):
         deleted, bytes_freed = clean_archived_plans(retention['archived_plans_days'], dry_run)
         stats.archived_plans_deleted = deleted
         stats.archived_plans_bytes = bytes_freed
 
     # Clean aged prepared-body files under the plan-less sentinel
-    if target in ('all', 'no-plan-bodies'):
+    if target in (CLEANUP_TARGET_ALL, CLEANUP_TARGET_NO_PLAN_BODIES):
         deleted, bytes_freed = clean_no_plan_bodies(retention['no_plan_body_days'], dry_run)
         stats.no_plan_bodies_deleted = deleted
         stats.no_plan_bodies_bytes = bytes_freed

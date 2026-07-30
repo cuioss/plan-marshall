@@ -70,7 +70,12 @@ def _worktree_target(plan_id: str, override: str | None) -> tuple[str | None, st
     except WorktreeResolutionError:
         return None, 'worktree_path_missing'
 
-    if not Path(worktree_path).is_dir():
+    # The emptiness check is NOT redundant with is_dir(): on POSIX
+    # ``Path('').is_dir()`` is True (the empty string resolves to '.'), so an
+    # empty worktree_path would pass the directory guard and be handed back as
+    # a "valid" path — and the subsequent ``git -C '' ...`` would silently
+    # target the caller's cwd instead of failing loudly.
+    if not worktree_path or not Path(worktree_path).is_dir():
         return None, 'worktree_path_not_a_directory'
 
     return worktree_path, None

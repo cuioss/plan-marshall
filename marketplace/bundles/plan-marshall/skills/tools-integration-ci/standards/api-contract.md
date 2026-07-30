@@ -145,7 +145,7 @@ Every PR subcommand returns the standard envelope: success shape (`status: succe
 | `pr reviews` | `--pr-number` | — | `pr_number`, `review_count`, `reviews[N]{user,state,submitted_at}` |
 | `pr comments` | `--pr-number` | `--unresolved-only` | `provider`, `pr_number`, `total`, `unresolved`, `comments[N]{id,author,body,path,line,resolved,created_at}` |
 | `pr wait-for-comments` | `--pr-number` | `--timeout` (default 300), `--interval` (default 30) | `pr_number`, `timed_out`, `duration_sec`, `polls`, `baseline_count`, `final_count`, `new_count`, `rate_limited_bots[N]{bot_kind,rate_limit_class,eta}` |
-| `pr update-branch` | `--pr-number` | — | `pr_number` |
+| `pr update-branch` | _exactly one of_ `--pr-number` _or_ `--head` | — | `pr_number` |
 
 ### Provider Field Mapping
 
@@ -440,10 +440,10 @@ The following subcommands all return the standard success shape (`status: succes
 
 | Subcommand | Required args | Optional flags | Notes |
 |------------|---------------|----------------|-------|
-| `pr merge --pr-number N` | `--pr-number` | `--strategy merge\|squash\|rebase` (default `merge`), `--delete-branch` | Success adds `strategy`. |
-| `pr auto-merge --pr-number N` | `--pr-number` | `--strategy` | Enables auto-merge when all checks pass; success adds `enabled: true`. |
+| `pr merge` | _exactly one of_ `--pr-number` _or_ `--head` | `--strategy merge\|squash\|rebase` (default `merge`), `--delete-branch` | Success adds `strategy`. |
+| `pr auto-merge` | _exactly one of_ `--pr-number` _or_ `--head` | `--strategy` | Enables auto-merge when all checks pass; success adds `enabled: true`. |
 | `pr safe-merge` | _exactly one of_ `--pr-number` _or_ `--head` | `--strategy merge\|squash\|rebase` (default `merge`), `--delete-branch`, `--admin-merge-on-stuck-state` (GitHub-only), `--poll-timeout`, `--poll-interval` | Polls readiness then merges. Success adds `strategy`, `merge_path` (`polled_clean`\|`admin_fallback`), `polls`, `duration_sec`. The `--admin` stuck-state fallback is GitHub-only, gated by `--admin-merge-on-stuck-state` + provably-met ruleset; ignored on GitLab. |
-| `pr update-branch --pr-number N` | `--pr-number` | — | Updates PR branch with base branch (GitHub REST API). |
+| `pr update-branch` | _exactly one of_ `--pr-number` _or_ `--head` | — | Updates PR branch with base branch (GitHub REST API). |
 | `pr close --pr-number N` | `--pr-number` | — | Closes without merging. |
 | `pr ready --pr-number N` | `--pr-number` | — | Marks a draft as ready for review. |
 | `pr edit --pr-number N` | `--pr-number`, `--plan-id` | `--title`, `--slot` | Edits title and/or body; the body comes from the `pr prepare-body --for edit` scratch file. At least one of `--title` or a prepared body must be supplied. |
