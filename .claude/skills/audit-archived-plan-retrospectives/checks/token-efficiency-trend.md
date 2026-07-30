@@ -35,6 +35,14 @@ actually ran, carry the attributed value and have real retrospective spend
 excluded from the series and regression. The exclusion is therefore live only
 going forward, not for the existing archived corpus.
 
+### Corpus partition (delivery-cost check)
+
+This check runs over the SHIPPING partition of the corpus, not every scanned
+plan: a plan carrying no delivery evidence — no PR record and no footprint — is
+excluded before the check sees it, so a plan that spent tokens and delivered
+nothing cannot lift the tokens-per-phase series. See SKILL.md § "Shipping-predicate
+corpus partition" for the derived predicate.
+
 ## Chronological ordering
 
 Plans are ordered by their plan-id date prefix (`YYYY-MM-DD`) when present; when
@@ -65,6 +73,18 @@ rows[K]{plan_id,phases,total_tokens,tokens_per_phase}
 | `phases` | Count of phases carrying implementation (effective) spend — phases whose entire spend is retrospective are excluded. |
 | `total_tokens` | Sum of **effective** tokens (retrospective-excluded) across the plan's phases. |
 | `tokens_per_phase` | `total_tokens / phases` on the effective values, integer-truncated. |
+
+### Corpus-partition exclusion columns
+
+Two further block-header lines accompany the series above:
+
+| Line | Meaning |
+|------|---------|
+| `plans_excluded_non_shipping` | How many scanned plans were excluded from this check's corpus as non-shipping — a number reported SEPARATELY from `plans_in_series`. |
+| `excluded_non_shipping_plan_ids` | The excluded plans, each as `{plan_id}:{archived_reason or unrecorded}`. |
+
+An excluded plan delivered nothing, so it is absent from this check's aggregates
+by design; the count is the audit trail proving no row was silently dropped.
 
 ## How the orchestrator interprets the rows
 

@@ -30,6 +30,26 @@ timestamp falls in. See `manage-metrics/standards/data-format.md` § Per-Phase
 Fields for the field definitions and § "Exploration-share counters (absent is not
 zero)" for the persistence rule.
 
+### Corpus partition (delivery-cost check)
+
+This check runs over the SHIPPING partition of the corpus, not every scanned
+plan: a plan carrying no delivery evidence — no PR record and no footprint — is
+excluded before the check sees it, so a plan whose exploration produced no
+delivery cannot move the corpus shares. See SKILL.md § "Shipping-predicate corpus
+partition" for the derived predicate.
+
+**Two independent exclusions, never merged.** This check reports two exclusion
+sets and they count different things:
+
+| Exclusion | Columns | Reason a plan lands here |
+|-----------|---------|--------------------------|
+| Non-shipping | `plans_excluded_non_shipping` / `excluded_non_shipping_plan_ids` | The plan delivered nothing (no PR record, no footprint), so it is out of the delivery-cost corpus regardless of what it measured. |
+| Absent counters | `plans_excluded_no_counters` / `excluded_plan_ids` | The plan measured nothing (it carries no exploration counters at all), so it cannot be read as zero exploration. See the next section. |
+
+A plan can fall into either set independently; the non-shipping partition is
+applied first, so a plan excluded as non-shipping never reaches the
+absent-counter test.
+
 ## Absent is not zero — the corpus-exclusion rule
 
 **A plan whose counters are absent is EXCLUDED from the corpus. It is never
@@ -160,6 +180,20 @@ rows[K]{plan_id,change_type,phases,exploration_calls,denom_calls,turn_share,expl
 | `unclassified` | Unclassified tool calls (excluded from the denominator). |
 | `flags` | `;`-joined corpus-relative flags (empty for an unremarkable plan). |
 | `severity` | Uniform severity column: `genuine` when the row carries any flag, else `informational`. |
+
+### Corpus-partition exclusion columns
+
+Two further block-header lines accompany the block above, carrying the
+non-shipping exclusion — the OTHER exclusion set described under "Inputs the
+check reads", counting a different thing from `plans_excluded_no_counters`:
+
+| Line | Meaning |
+|------|---------|
+| `plans_excluded_non_shipping` | How many scanned plans were excluded from this check's corpus as non-shipping — a number reported SEPARATELY from `plans_in_corpus` and from `plans_excluded_no_counters`. |
+| `excluded_non_shipping_plan_ids` | The excluded plans, each as `{plan_id}:{archived_reason or unrecorded}`. |
+
+An excluded plan delivered nothing, so it is absent from this check's aggregates
+by design; the count is the audit trail proving no row was silently dropped.
 
 ## How the orchestrator interprets the rows
 

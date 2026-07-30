@@ -15,6 +15,11 @@ Per scanned plan, the script reads `references.json`:
   truth) and falling back to `affected_files` (planned) when `modified_files` is
   empty.
 
+**Corpus partition (delivery-cost check).** This check runs over the SHIPPING
+partition of the corpus, not every scanned plan: a plan carrying no delivery
+evidence — no PR record and no footprint — is excluded before the check sees it.
+See SKILL.md § "Shipping-predicate corpus partition" for the derived predicate.
+
 ## Scope-band mapping
 
 Each declared scope maps to an inclusive expected file-count band. A plan whose
@@ -41,6 +46,18 @@ rows[N]{plan_id,declared_scope,actual_file_count,mismatch}
 | `declared_scope` | The `scope_estimate` declared in `references.json` (empty when unset). |
 | `actual_file_count` | The actual touched-file count (modified, else affected). |
 | `mismatch` | Empty when the actual count is inside the declared band; otherwise `declared={scope} band=[{low},{high}] actual={n}`. |
+
+### Corpus-partition exclusion columns
+
+Two block-header lines accompany the rows above:
+
+| Line | Meaning |
+|------|---------|
+| `plans_excluded_non_shipping` | How many scanned plans were excluded from this check's corpus as non-shipping — a number reported SEPARATELY from the examined count. |
+| `excluded_non_shipping_plan_ids` | The excluded plans, each as `{plan_id}:{archived_reason or unrecorded}`. |
+
+An excluded plan delivered nothing, so it is absent from this check's aggregates
+by design; the count is the audit trail proving no row was silently dropped.
 
 ## How the orchestrator interprets the rows
 
