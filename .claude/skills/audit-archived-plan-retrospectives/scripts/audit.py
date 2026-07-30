@@ -225,6 +225,36 @@ CHECK_NAMES = [
     "cross-check-synthesis",
 ]
 
+# ---------------------------------------------------------------------------
+# Corpus partition: delivery-cost checks vs full-corpus checks
+# ---------------------------------------------------------------------------
+#
+# A DELIVERY-COST check's numbers are cost-per-delivery ratios, so an archived
+# plan that consumed budget and delivered nothing dilutes every aggregate it
+# enters. Those checks therefore run over the SHIPPING partition only (see
+# `_partition_shipping`), with the excluded plans counted and named separately
+# from the examined count so no row is silently dropped.
+#
+# `DELIVERY_COST_CHECKS` is the ONLY place membership is stated.
+# `FULL_CORPUS_CHECKS` is DERIVED as the set complement — never written out as a
+# second literal list, which would silently drift the moment `CHECK_NAMES` grows.
+# Because the complement is derived, every name in `CHECK_NAMES` lands in exactly
+# one partition by construction, and a check added later defaults into the safe,
+# unpartitioned `FULL_CORPUS_CHECKS` side rather than into an unclassified limbo.
+DELIVERY_COST_CHECKS: frozenset[str] = frozenset(
+    {
+        "token-economics",
+        "token-efficiency-trend",
+        "lane-lever-effectiveness",
+        "exploration-share",
+        "sequence-and-build-minimality",
+        "scope-estimate-accuracy",
+        "task-count-efficiency",
+        "pr-merge-velocity",
+    }
+)
+FULL_CORPUS_CHECKS: frozenset[str] = frozenset(CHECK_NAMES) - DELIVERY_COST_CHECKS
+
 # Cross-plan checks aggregate over the full scanned corpus rather than emitting
 # one row per plan. `input-integrity` is deliberately NOT here: it is per-plan
 # (one health row per plan) even though it ALSO emits a corpus data_confidence
@@ -855,6 +885,33 @@ def parse_toon_scalar(path: Path, key: str) -> str | None:
     return None
 
 
+def ci_run_manifests(plan_dir: Path) -> list[Path]:
+    """Return the plan's persisted CI-run manifests, sorted by run directory.
+
+    The single glob site for `artifacts/ci-runs/*/manifest.toon` — shared by the
+    shipping predicate and `check_pr_merge_velocity` so the scan is not
+    duplicated. An absent directory yields an empty list.
+    """
+    ci_runs = plan_dir / "artifacts" / "ci-runs"
+    if not ci_runs.is_dir():
+        return []
+    return sorted(ci_runs.glob("*/manifest.toon"))
+
+
+def plan_pr_number(plan_dir: Path) -> str:
+    """Return the plan's recorded PR number, or `""` when it has none.
+
+    The last non-empty `pr_number` scalar across the plan's CI-run manifests (the
+    runs are read in sorted order, so the newest recorded number wins).
+    """
+    pr_number = ""
+    for manifest in ci_run_manifests(plan_dir):
+        num = parse_toon_scalar(manifest, "pr_number")
+        if num:
+            pr_number = num
+    return pr_number
+
+
 def parse_metrics_partiality(metrics_path: Path) -> tuple[bool, set[str]]:
     """Read #812's recorded-partiality markers from `metrics.toon`.
 
@@ -908,6 +965,11 @@ class PlanInputs:
     # under (`status.json::metadata.execution_profile`, one of minimal|auto|full).
     # None when the plan predates the #811 execution-profile field.
     execution_profile: str | None = None
+    # Shipping-partition LABEL: the reason recorded when the plan was archived
+    # (`status.json::metadata.archived_reason`). Carried so a non-shipping
+    # exclusion is legible in the emitted read-out; it is NEVER the exclusion
+    # decision — that is derived from delivery evidence by `_plan_shipped`.
+    archived_reason: str | None = None
 
 
 def collect_inputs(plan_dir: Path) -> PlanInputs:
@@ -945,6 +1007,11 @@ def collect_inputs(plan_dir: Path) -> PlanInputs:
     if isinstance(execution_profile, str) and execution_profile.strip():
         inputs.execution_profile = execution_profile.strip()
 
+    # Shipping-partition label (never the predicate — see `_plan_shipped`).
+    archived_reason = metadata.get("archived_reason")
+    if isinstance(archived_reason, str) and archived_reason.strip():
+        inputs.archived_reason = archived_reason.strip()
+
     parsed = parse_execution_toon(plan_dir / "execution.toon")
     if parsed is not None:
         inputs.manifest_present = True
@@ -964,6 +1031,57 @@ def collect_inputs(plan_dir: Path) -> PlanInputs:
     inputs.phase_5_candidates = inputs.manifest_phase_5
     inputs.phase_6_candidates = inputs.manifest_phase_6
     return inputs
+
+
+# ---------------------------------------------------------------------------
+# Shipping predicate + corpus partition
+# ---------------------------------------------------------------------------
+#
+# The delivery-cost checks (`DELIVERY_COST_CHECKS`) divide spend by delivery, so
+# a plan that delivered nothing dilutes them. Which plans delivered is DERIVED
+# from delivery evidence, never matched against a recorded reason string: a
+# reason vocabulary drifts, and a plan carrying no reason at all must not be
+# re-admitted by that absence. `archived_reason` is carried only as the label the
+# exclusion is reported under.
+
+
+def _plan_shipped(inputs: PlanInputs) -> bool:
+    """True when the plan carries evidence that it delivered something.
+
+    Two independent pieces of delivery evidence, either sufficient:
+
+    - a PR record — a non-empty `pr_number` in any persisted CI-run manifest;
+    - a real footprint — a non-empty `references.json::modified_files`.
+    """
+    return bool(plan_pr_number(inputs.plan_dir)) or inputs.modified_files_count > 0
+
+
+def _partition_shipping(
+    all_inputs: list[PlanInputs],
+) -> tuple[list[PlanInputs], list[PlanInputs]]:
+    """Split the corpus into `(shipping, excluded)` on the shipping predicate."""
+    shipping: list[PlanInputs] = []
+    excluded: list[PlanInputs] = []
+    for inputs in all_inputs:
+        (shipping if _plan_shipped(inputs) else excluded).append(inputs)
+    return shipping, excluded
+
+
+def _exclusion_label(inputs: PlanInputs) -> str:
+    """Render one excluded plan as `{plan_id}:{archived_reason or unrecorded}`."""
+    return f"{inputs.plan_id}:{inputs.archived_reason or 'unrecorded'}"
+
+
+def _check_corpus(
+    check_name: str, all_inputs: list[PlanInputs], shipping: list[PlanInputs]
+) -> list[PlanInputs]:
+    """Select the corpus `check_name` runs over.
+
+    `DELIVERY_COST_CHECKS` membership is the live selector: a member sees the
+    shipping partition, everything else (including `input-integrity`, the
+    no-false-healthy foundation) keeps seeing every scanned plan.
+    """
+    return shipping if check_name in DELIVERY_COST_CHECKS else all_inputs
 
 
 # ---------------------------------------------------------------------------
@@ -1654,24 +1772,18 @@ def _parse_iso_seconds(value: str) -> float | None:
 
 
 def check_pr_merge_velocity(inputs: PlanInputs) -> dict[str, Any]:
-    ci_runs = inputs.plan_dir / "artifacts" / "ci-runs"
     open_ts: float | None = None
     merge_ts: float | None = None
-    pr_number = ""
-    if ci_runs.is_dir():
-        manifests = sorted(ci_runs.glob("*/manifest.toon"))
-        for manifest in manifests:
-            num = parse_toon_scalar(manifest, "pr_number")
-            if num:
-                pr_number = num
-            fetched = parse_toon_scalar(manifest, "fetched_at")
-            if fetched:
-                ts = _parse_iso_seconds(fetched)
-                if ts is not None:
-                    if open_ts is None or ts < open_ts:
-                        open_ts = ts
-                    if merge_ts is None or ts > merge_ts:
-                        merge_ts = ts
+    pr_number = plan_pr_number(inputs.plan_dir)
+    for manifest in ci_run_manifests(inputs.plan_dir):
+        fetched = parse_toon_scalar(manifest, "fetched_at")
+        if fetched:
+            ts = _parse_iso_seconds(fetched)
+            if ts is not None:
+                if open_ts is None or ts < open_ts:
+                    open_ts = ts
+                if merge_ts is None or ts > merge_ts:
+                    merge_ts = ts
     if not pr_number or open_ts is None or merge_ts is None:
         return {
             "plan_id": inputs.plan_id,
@@ -4328,6 +4440,35 @@ def _stamp_era(block: str) -> str:
     return "\n".join(lines)
 
 
+def _annotate_exclusions(block: str, excluded: list[PlanInputs]) -> str:
+    """Add the non-shipping exclusion read-out to a delivery-cost check's block.
+
+    Inserts `plans_excluded_non_shipping` and `excluded_non_shipping_plan_ids`
+    immediately after the block's `status:` line, so every partitioned check
+    reports its exclusion count as a number DISTINCT from its examined count and
+    names each excluded plan with the reason it was archived under. Blocks whose
+    check is not in `DELIVERY_COST_CHECKS` — and meta blocks carrying no `check:`
+    header — pass through unchanged.
+
+    The columns are deliberately named apart from `exploration-share`'s
+    pre-existing `excluded_plan_ids`, which counts a different exclusion (a plan
+    carrying no exploration counters at all). The two never merge.
+    """
+    header = _CHECK_HEADER_RE.search(block)
+    if header is None or header.group(1) not in DELIVERY_COST_CHECKS:
+        return block
+    labels = ";".join(_exclusion_label(i) for i in excluded)
+    lines = block.split("\n")
+    for i, line in enumerate(lines):
+        if line.startswith("status:"):
+            lines[i + 1:i + 1] = [
+                f"plans_excluded_non_shipping: {len(excluded)}",
+                f"excluded_non_shipping_plan_ids: {_cell(labels)}",
+            ]
+            break
+    return "\n".join(lines)
+
+
 def _extract_per_check_genuine(blocks: list[str]) -> dict[str, int]:
     """Map each emitted check block to its `genuine_signal_count`.
 
@@ -6701,6 +6842,11 @@ def run_checks(all_inputs: list[PlanInputs], selected: list[str], repo_root: Pat
     blocks: list[str] = []
     summary_metrics: dict[str, Any] = {}
 
+    # Corpus partition, computed once alongside the corpus reads above. Checks in
+    # DELIVERY_COST_CHECKS run over `shipping`; every other check keeps the full
+    # `all_inputs` corpus (`_check_corpus` is the single gate).
+    shipping, excluded_non_shipping = _partition_shipping(all_inputs)
+
     # cross-check-synthesis consumes the OTHER checks' RETAINED structured results.
     # When it is selected we must COMPUTE every upstream check's result even if the
     # upstream itself was not selected (e.g. `--check cross-check-synthesis`), so
@@ -6774,7 +6920,10 @@ def run_checks(all_inputs: list[PlanInputs], selected: list[str], repo_root: Pat
             )
 
     if "scope-estimate-accuracy" in selected or synth_needed:
-        rows = [check_scope_estimate(i) for i in all_inputs]
+        rows = [
+            check_scope_estimate(i)
+            for i in _check_corpus("scope-estimate-accuracy", all_inputs, shipping)
+        ]
         all_results["scope-estimate-accuracy"] = rows
         if "scope-estimate-accuracy" in selected:
             blocks.append(
@@ -6806,7 +6955,10 @@ def run_checks(all_inputs: list[PlanInputs], selected: list[str], repo_root: Pat
         )
 
     if "pr-merge-velocity" in selected:
-        rows = [check_pr_merge_velocity(i) for i in all_inputs]
+        rows = [
+            check_pr_merge_velocity(i)
+            for i in _check_corpus("pr-merge-velocity", all_inputs, shipping)
+        ]
         blocks.append(
             emit_table_block(
                 "pr-merge-velocity",
@@ -6817,7 +6969,10 @@ def run_checks(all_inputs: list[PlanInputs], selected: list[str], repo_root: Pat
         )
 
     if "task-count-efficiency" in selected or synth_needed:
-        rows = [check_task_count(i) for i in all_inputs]
+        rows = [
+            check_task_count(i)
+            for i in _check_corpus("task-count-efficiency", all_inputs, shipping)
+        ]
         all_results["task-count-efficiency"] = rows
         if "task-count-efficiency" in selected:
             blocks.append(
@@ -6839,7 +6994,9 @@ def run_checks(all_inputs: list[PlanInputs], selected: list[str], repo_root: Pat
             summary_metrics["recurring-pattern-detector_systemic"] = result["systemic_count"]
 
     if "token-efficiency-trend" in selected or synth_needed:
-        result = cross_token_trend(all_inputs)
+        result = cross_token_trend(
+            _check_corpus("token-efficiency-trend", all_inputs, shipping)
+        )
         all_results["token-efficiency-trend"] = result
         if "token-efficiency-trend" in selected:
             blocks.append(emit_trend_block(result))
@@ -6856,7 +7013,9 @@ def run_checks(all_inputs: list[PlanInputs], selected: list[str], repo_root: Pat
             ]
 
     if "token-economics" in selected or synth_needed:
-        te_result = cross_token_economics(all_inputs)
+        te_result = cross_token_economics(
+            _check_corpus("token-economics", all_inputs, shipping)
+        )
         all_results["token-economics"] = te_result
         if "token-economics" in selected:
             blocks.append(emit_token_economics_block(te_result))
@@ -6879,7 +7038,9 @@ def run_checks(all_inputs: list[PlanInputs], selected: list[str], repo_root: Pat
             summary_metrics["quality-chain_shift_left_tier1"] = th.get(1, 0)
 
     if "sequence-and-build-minimality" in selected or synth_needed:
-        sbm_result = cross_sequence_build_minimality(all_inputs)
+        sbm_result = cross_sequence_build_minimality(
+            _check_corpus("sequence-and-build-minimality", all_inputs, shipping)
+        )
         all_results["sequence-and-build-minimality"] = sbm_result
         if "sequence-and-build-minimality" in selected:
             blocks.append(emit_sequence_build_minimality_block(sbm_result))
@@ -6994,7 +7155,9 @@ def run_checks(all_inputs: list[PlanInputs], selected: list[str], repo_root: Pat
             ]
 
     if "lane-lever-effectiveness" in selected or synth_needed:
-        lle_result = cross_lane_lever_effectiveness(all_inputs)
+        lle_result = cross_lane_lever_effectiveness(
+            _check_corpus("lane-lever-effectiveness", all_inputs, shipping)
+        )
         all_results["lane-lever-effectiveness"] = lle_result
         if "lane-lever-effectiveness" in selected:
             blocks.append(emit_lane_lever_effectiveness_block(lle_result))
@@ -7005,7 +7168,9 @@ def run_checks(all_inputs: list[PlanInputs], selected: list[str], repo_root: Pat
     # exploration-share is a standalone cross-plan check (not consumed by
     # synthesis), so it is gated only on explicit selection.
     if "exploration-share" in selected:
-        es_result = cross_exploration_share(all_inputs)
+        es_result = cross_exploration_share(
+            _check_corpus("exploration-share", all_inputs, shipping)
+        )
         all_results["exploration-share"] = es_result
         blocks.append(emit_exploration_share_block(es_result))
         summary_metrics["exploration-share_flagged"] = sum(
@@ -7023,6 +7188,7 @@ def run_checks(all_inputs: list[PlanInputs], selected: list[str], repo_root: Pat
         summary_metrics["cross-check-synthesis_fired"] = syn_result["couplings_fired"]
 
     summary_metrics["plans_scanned"] = len(all_inputs)
+    summary_metrics["plans_excluded_non_shipping"] = len(excluded_non_shipping)
 
     # Era model: persist the uniform per-check genuine substrate, stamp each
     # emitted block with its `fixed_since` boundary, and (on a full sweep) surface
@@ -7030,6 +7196,7 @@ def run_checks(all_inputs: list[PlanInputs], selected: list[str], repo_root: Pat
     per_check_genuine = _extract_per_check_genuine(blocks)
     for check_name, genuine_count in per_check_genuine.items():
         summary_metrics[f"{_GENUINE_METRIC_PREFIX}{check_name}"] = genuine_count
+    blocks = [_annotate_exclusions(block, excluded_non_shipping) for block in blocks]
     blocks = [_stamp_era(block) for block in blocks]
     if set(selected) == set(CHECK_NAMES):
         proposals, runs_recorded = _retire_on_quiet_proposals(repo_root, per_check_genuine)
