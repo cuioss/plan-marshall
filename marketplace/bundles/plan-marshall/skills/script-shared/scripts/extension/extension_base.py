@@ -9,6 +9,8 @@ Provides:
     - BuildExtensionBase: Abstract base class for build-system-owned
       file-to-build extensions (Axis-B: classify_globs / classify_paths /
       classify_path_specificity / classify_build_class)
+    - DerivationResolverBase: Abstract base class for module-edge derivation
+      resolvers (Axis-C: derivation_resolver_id / derive_edges)
     - Canonical command constants (re-exported from _extension_constants):
       CMD_*, CANONICAL_COMMANDS, PROFILE_PATTERNS, APPLICABLE_PROFILES
     - Build-class vocabulary (re-exported from _extension_constants):
@@ -1313,3 +1315,96 @@ class BuildExtensionBase(ABC):  # noqa: B024 — ABC contract anchor; every Axis
         for the complete contract documentation.
         """
         return []
+
+
+class DerivationResolverBase(ABC):  # noqa: B024 — ABC contract anchor; every Axis-C method has a default
+    """Abstract base class for module-edge derivation resolvers (Axis-C).
+
+    Owns Axis-C of the extension contract: module-to-module edge derivation.
+    Where :class:`ExtensionBase` answers "what skills does this domain load"
+    (Axis-A) and :class:`BuildExtensionBase` answers "what build does a changed
+    file trigger" (Axis-B), a ``DerivationResolverBase`` subclass answers "which
+    modules depend on which" — the edge set behind the ``graph`` / ``path`` /
+    ``neighbors`` / ``impact`` query family.
+
+    The class is deliberately NOT inherited by :class:`ExtensionBase` nor by
+    :class:`BuildExtensionBase`. Those two hierarchies are disjoint — a build
+    skill's extension subclasses ``BuildExtensionBase`` only, and a language or
+    content domain extension subclasses ``ExtensionBase`` only — so a resolver
+    face declared on either one would be structurally unreachable from the
+    other. An implementor opts in by **multiple inheritance** instead::
+
+        class BuildExtension(BuildExtensionBase, DerivationResolverBase):
+            ...
+
+    which is the only shape that lets a build skill (the Maven coordinate join)
+    and a domain bundle (a future markdown or Python import resolver) each
+    provide a resolver without one masquerading as the other.
+
+    N resolvers may be active at once. The graph is the **union** of their edge
+    sets: edges are unweighted ``(from, to)`` booleans, so union is idempotent
+    and commutative and no conflict rule is expressible. A pair produced by more
+    than one resolver collapses to one edge carrying every contributing
+    resolver's id, which is exactly what the provenance contract needs.
+
+    There is no abstract method: both Axis-C methods have safe defaults, so a
+    subclass that overrides nothing is a valid (no-edge) resolver. The ``ABC``
+    base marks the class as the Axis-C contract anchor, matching
+    :class:`BuildExtensionBase`.
+
+    See ``extension-api/standards/ext-point-derivation-resolver.md`` for the
+    complete four-face contract.
+    """
+
+    def derivation_resolver_id(self) -> str:
+        """Return this resolver's stable provenance identity.
+
+        The id is stamped onto every edge this resolver produces (in the merged
+        edge's ``producers[]``) and onto the per-resolver report every
+        graph-family response carries, so a zero-edge answer is never vacuous:
+        ``resolver_count: 0`` means no resolver ran, while ``resolver_count: N``
+        means resolvers ran and found nothing.
+
+        Returns:
+            A short, stable, lower-case identity string (e.g. ``'maven'``).
+            The default is ``''`` — an empty id marks the resolver as
+            unidentifiable, and the discovery collector skips it rather than
+            producing producer-less edges.
+        """
+        return ''
+
+    def derive_edges(
+        self,
+        derived_by_name: dict,
+        enriched_by_name: dict,
+    ) -> tuple[list[tuple[str, str]], list[str]]:
+        """Derive this resolver's module-to-module edges from the module maps.
+
+        A resolver is a **pure function of its arguments**: it reads the maps it
+        is handed and performs no subprocess call and no filesystem access. Both
+        maps are pre-loaded by the caller at graph-query time and keyed by module
+        name, so a resolver never re-derives module discovery.
+
+        The ``notes`` half of the return is the required channel for any
+        condition that **suppressed** an edge — an ambiguous identity key, an
+        unresolvable reference, a malformed declaration. A resolver that drops an
+        edge silently violates the contract: the condition must be visible
+        somewhere, and the per-resolver report is where it surfaces.
+
+        Args:
+            derived_by_name: Module name → the module's derived data (the Tier-0
+                crawl output: ``metadata``, ``dependencies``, ``paths``,
+                ``packages``, ``stats``).
+            enriched_by_name: Module name → the module's enriched data (the
+                LLM-curated overlay). A resolver that has no use for the overlay
+                ignores this argument.
+
+        Returns:
+            A ``(edges, notes)`` tuple. ``edges`` is a list of ``(from, to)``
+            module-name pairs — ``from`` depends on ``to``, both drawn from the
+            keys of ``derived_by_name``. ``notes`` is a list of short strings
+            describing conditions that suppressed an edge. The default is
+            ``([], [])`` — a subclass that overrides nothing derives no edges and
+            reports no conditions.
+        """
+        return [], []

@@ -2,7 +2,9 @@
 
 Complete specification for `extension.py` files that domain bundles implement. Every domain-bundle extension **must** inherit from `ExtensionBase`, which owns Axis-A (skill-loading and the `provides_*` workflow hooks).
 
-The four **Axis-B** file-to-build classification methods — `classify_paths`, `classify_path_specificity`, `classify_globs`, `classify_build_class` — are **not** part of `ExtensionBase`. They belong to `BuildExtensionBase`, the separate ABC each code build system's extension (`build-pyproject` / `build-maven` / `build-gradle` / `build-npm`) subclasses. A language/content domain bundle cannot override them and contributes no build routes. That split is settled in [ADR-004](../../../../../../doc/adr/004-The_file-to-build_contract_is_owned_by_build-system_extensions_not_languagecontent_domains.adoc); see § [BuildExtensionBase Methods (Axis-B)](#buildextensionbase-methods-axis-b) below.
+The contract spans **three axes**, each anchored by its own ABC in `extension_base.py`. The four **Axis-B** file-to-build classification methods — `classify_paths`, `classify_path_specificity`, `classify_globs`, `classify_build_class` — are **not** part of `ExtensionBase`. They belong to `BuildExtensionBase`, the separate ABC each code build system's extension (`build-pyproject` / `build-maven` / `build-gradle` / `build-npm`) subclasses. A language/content domain bundle cannot override them and contributes no build routes. That split is settled in [ADR-004](../../../../../../doc/adr/004-The_file-to-build_contract_is_owned_by_build-system_extensions_not_languagecontent_domains.adoc); see § [BuildExtensionBase Methods (Axis-B)](#buildextensionbase-methods-axis-b) below.
+
+The two **Axis-C** module-edge derivation methods — `derivation_resolver_id`, `derive_edges` — belong to a third ABC, `DerivationResolverBase`, which inherits from neither of the other two and is inherited by neither. Because Axis-A and Axis-B are disjoint hierarchies, an implementor opts into Axis-C by **multiple inheritance** from either side; see § [DerivationResolverBase Methods (Axis-C)](#derivationresolverbase-methods-axis-c) below.
 
 ## File Location
 
@@ -354,6 +356,7 @@ Each extension point has its own contract document with formal parameters, pre-c
 | Recipe | `provides_recipes()` | [ext-point-recipe.md](ext-point-recipe.md) | 4 |
 | Provider | `*_provider.py` | [ext-point-provider.md](ext-point-provider.md) | 4 |
 | Domain Verb | `provides_domain_verb()` | [ext-point-domain-verb.md](ext-point-domain-verb.md) | 1 |
+| Derivation Resolver | `DerivationResolverBase` subclass | [ext-point-derivation-resolver.md](ext-point-derivation-resolver.md) | 1 |
 
 See each document for the complete contract, implementation template, and current implementations.
 
@@ -639,6 +642,23 @@ def _detect_applicable_profiles(self, profiles: dict,
     Default: None (no filtering)
     """
 ```
+
+---
+
+## DerivationResolverBase Methods (Axis-C)
+
+The two methods below form the **complete Axis-C contract** — the module-edge derivation surface that answers "which modules depend on which" for the `graph` / `path` / `neighbors` / `impact` query family. They are declared on `DerivationResolverBase`, a third ABC that inherits from neither `ExtensionBase` nor `BuildExtensionBase` and is inherited by neither.
+
+Because Axis-A and Axis-B are disjoint hierarchies — a build system's extension subclasses `BuildExtensionBase` only, a language/content domain extension subclasses `ExtensionBase` only — a resolver face on either one would be structurally unreachable from the other. An implementor therefore opts into Axis-C by **multiple inheritance** from whichever hierarchy it already belongs to (e.g. `class BuildExtension(BuildExtensionBase, DerivationResolverBase)`), which is the only shape that lets a build skill and a domain bundle each provide a resolver. Neither method is abstract: both carry safe defaults, so a subclass that overrides nothing is a valid no-edge resolver.
+
+| Method | Default | Owns |
+|--------|---------|------|
+| `derivation_resolver_id()` | `''` | The resolver's stable provenance identity, stamped onto every edge it produces and onto the per-resolver report every graph-family response carries. |
+| `derive_edges(derived_by_name, enriched_by_name)` | `([], [])` | The resolver's `(from, to)` module-name edge pairs, plus the `notes[]` list reporting any condition that **suppressed** an edge. |
+
+N resolvers may be active at once and the graph is the **union** of their edge sets; a pair produced by more than one resolver collapses to one edge carrying every contributing resolver's id.
+
+The complete four-face contract (declaration, discovery across both existing discovery paths, graph-query-time dispatch, and null-on-absent resolution), the sibling-Axis-C mechanism rationale (NOT a face on `ExtensionBase`, NOT a face on `BuildExtensionBase`), the N-resolver union semantics, the anti-vacuity provenance property, and the ambiguous-identity-key obligation live in [ext-point-derivation-resolver.md](ext-point-derivation-resolver.md).
 
 ---
 
