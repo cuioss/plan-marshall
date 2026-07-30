@@ -13,12 +13,13 @@ Three mismatch classes, each chosen to raise zero false positives:
 2. ``non_empty_affected_files_with_null_scope`` — ``affected_files`` non-empty
    while ``scope_estimate`` is null / empty / ``none``.
 3. ``scale_mismatch_light_routing`` — ``scope_estimate`` persisted as ``surgical``
-   while the request body reads as ``multi_module`` to the scope sensor: either it
-   names at least ``_MULTI_MODULE_MIN_PATHS`` distinct paths, or the ReDoS-bounded
-   path scan could not cover the whole body (``scan_incomplete``). The safety net
-   for the residual the pre-route sensor cannot close alone: the sensor is not the
-   only writer of ``scope_estimate``, so a narrow band can outlive a body that is
-   plainly not narrow.
+   while the request body reads as ``multi_module`` to the scope sensor. The gate
+   CALLS ``classify_scope_pure`` and consumes its band rather than re-deriving any
+   of its rows, so every widening row (``scan_incomplete``, ``fan_out_marker``, the
+   ``_MULTI_MODULE_MIN_PATHS`` path-count floor) is honoured by construction. The
+   safety net for the residual the pre-route sensor cannot close alone: the sensor
+   is not the only writer of ``scope_estimate``, so a narrow band can outlive a body
+   that is plainly not narrow.
 
 Coverage:
 - No-signal / valid input yields no finding (no false positives).
@@ -33,6 +34,12 @@ Coverage:
   in full fires the class even when the (undercounted) path total is BELOW the
   floor, and the gate's verdict is asserted against the sensor's own band for the
   same body so the two cannot drift apart.
+- Class 3's ``fan_out_marker`` propagation: a body whose only wide signal is a glob
+  fires the class even with few explicit paths.
+- Class 3 gate-vs-sensor EQUIVALENCE over one body per band row: the gate fires iff
+  the sensor bands the same body ``multi_module``. This is the anti-re-derivation
+  assertion — any future band row the gate stopped honouring breaks exactly this
+  one test, whichever row it is.
 - Class 3's deferred ``_cmd_planning_lane`` import degrades to "no finding" on
   ``ImportError`` rather than propagating out of a flag-not-block gate.
 - The gate never blocks (``blocked`` is always ``False``; ``status`` success).
@@ -48,6 +55,8 @@ import json
 from argparse import Namespace
 from pathlib import Path
 
+import pytest
+
 from conftest import load_script_module
 
 _gate = load_script_module(
@@ -61,6 +70,10 @@ _lane = load_script_module(
 )
 cmd_planning_lane_route = _lane.cmd_planning_lane_route
 classify_scope_pure = _lane.classify_scope_pure
+# The sensor's own whole-body reader. Feeding the gate's fixture through THIS, rather
+# than through the raw ``body`` string, makes the equivalence assertions below compare
+# the two verdicts over byte-identical input — the request.md template chrome included.
+read_request_body = _lane._read_request_body
 
 
 # =============================================================================
@@ -133,6 +146,11 @@ _MULTI_MODULE_MIN_PATHS = _lane._MULTI_MODULE_MIN_PATHS
 # a count, without needing a 50KB fixture to exhaust the budget instead.
 _MAX_SCAN_LINE_CHARS = _lane._MAX_SCAN_LINE_CHARS
 
+# The surgical ceiling, likewise read from the SENSOR — used to build a body that
+# lands in the ``single_module`` middle band, which is neither a narrow claim nor a
+# multi_module reading and therefore must leave class 3 silent.
+_SURGICAL_MAX_PATHS = _lane._SURGICAL_MAX_PATHS
+
 
 def _body_with_paths(count: int, *, lead: str = '') -> str:
     """Return a request body naming exactly ``count`` distinct repo-relative paths."""
@@ -150,6 +168,18 @@ def _body_with_unscannable_line(path_count: int) -> str:
     """
     unscannable = 'x' * (_MAX_SCAN_LINE_CHARS + 1)
     return f'{_body_with_paths(path_count)}\n\n{unscannable}\n'
+
+
+def _body_with_fan_out_marker(path_count: int) -> str:
+    """Return a body carrying a glob fan-out marker while naming few literal paths.
+
+    The sensor bands this ``multi_module`` on its ``fan_out_marker`` row, which it
+    evaluates BEFORE the path-count rows — a pattern declares an unbounded file set,
+    and an unbounded set cannot be a bounded one. ``path_count`` is deliberately
+    below ``_MULTI_MODULE_MIN_PATHS``, so a detector that only re-derived the count
+    (and the ``scan_incomplete`` flag) reads this as "narrow, nothing to flag".
+    """
+    return f'{_body_with_paths(path_count)} Then sweep the same rename across **/*.py.'
 
 
 def _ns(plan_id: str) -> Namespace:
@@ -464,6 +494,111 @@ def test_scale_mismatch_silent_on_an_incomplete_scan_with_a_non_narrow_band(plan
     result = run_classification_validation('cv-scale-scan-broad-band')
 
     assert 'scale_mismatch_light_routing' not in {m['mismatch'] for m in result['mismatches']}
+
+
+# -----------------------------------------------------------------------------
+# Class 3 — fan_out_marker propagation (the sibling of the scan_incomplete row)
+# -----------------------------------------------------------------------------
+
+
+def test_scale_mismatch_fires_on_a_fan_out_marker_below_the_floor(plan_context):
+    """A glob is a declared unbounded file set — the class must fire on it too.
+
+    The regression this test pins: after the ``scan_incomplete`` row was folded in,
+    the detector still re-derived only TWO of the sensor's three multi_module rows
+    and never consulted ``fan_out_marker``, which ``classify_scope_pure`` evaluates
+    BEFORE the path count. A body whose only wide signal is a glob therefore read
+    ``multi_module`` to the sensor and narrow to the gate — the same sensor/gate
+    disagreement the ``scan_incomplete`` fix closed, left open on the sibling row.
+    The fixture names only 2 literal paths so the path-count row cannot carry it.
+    """
+    plan_dir = plan_context.plan_dir_for('cv-scale-fan-out')
+    _write_request(plan_dir, _body_with_fan_out_marker(2))
+    _write_status(plan_dir, metadata={'change_type': 'tech_debt'})
+    _write_references(plan_dir, scope_estimate='surgical')
+
+    result = run_classification_validation('cv-scale-fan-out')
+
+    classes = {m['mismatch'] for m in result['mismatches']}
+    assert classes == {'scale_mismatch_light_routing'}, (
+        'a fan-out marker under the path-count floor must fall through to the '
+        'mismatch, not short-circuit past it'
+    )
+    assert result['findings_emitted'] == 1
+    assert result['status'] == 'success'
+    assert result['blocked'] is False
+
+
+# One fixture per row of ``classify_scope_pure``'s band table, narrow rows included.
+# The equivalence test below asserts the gate's verdict AGAINST the sensor's band for
+# each — no row's expected outcome is hard-coded, so the assertion stays honest even
+# if a row's own predicate changes.
+_SCALE_BAND_ROW_BODIES = [
+    ('cv-equiv-surgical', _body_with_paths(1)),
+    ('cv-equiv-middle-band', _body_with_paths(_SURGICAL_MAX_PATHS + 1)),
+    ('cv-equiv-pathless', _BUGFIX_BODY),
+    ('cv-equiv-path-floor', _body_with_paths(_MULTI_MODULE_MIN_PATHS)),
+    ('cv-equiv-scan-incomplete', _body_with_unscannable_line(2)),
+    ('cv-equiv-fan-out', _body_with_fan_out_marker(2)),
+]
+
+
+@pytest.mark.parametrize(
+    ('plan_id', 'body'),
+    _SCALE_BAND_ROW_BODIES,
+    # The plan id doubles as the case id: without it pytest would fold each body —
+    # including the 2000-character unscannable fixture — into the test name.
+    ids=[case_plan_id for case_plan_id, _ in _SCALE_BAND_ROW_BODIES],
+)
+def test_scale_mismatch_verdict_equals_the_sensor_band(plan_context, plan_id, body):
+    """The gate fires IFF the sensor bands the same body ``multi_module``.
+
+    The anti-re-derivation assertion, and the reason the production detector calls
+    ``classify_scope_pure`` instead of copying rows out of it. Three separate
+    loop-backs on this plan each added one missing row to a hand-copied predicate,
+    and each copy drifted again on the next row. This test removes the possibility
+    by construction: it never states which bodies *should* fire — it reads the
+    sensor's verdict for the very text the gate reads (``_read_request_body``, so the
+    two inputs are byte-identical) and requires the gate to agree. A future band row
+    the gate stopped honouring breaks exactly this one test, whichever row it is.
+
+    ``scope_estimate`` is pinned to ``surgical`` for every case so the narrow-claim
+    precondition is satisfied throughout and the band is the only free variable.
+    """
+    plan_dir = plan_context.plan_dir_for(plan_id)
+    _write_request(plan_dir, body)
+    _write_status(plan_dir, metadata={'change_type': 'tech_debt'})
+    _write_references(plan_dir, scope_estimate='surgical')
+
+    sensor_band, provenance = classify_scope_pure(read_request_body(plan_id))
+    result = run_classification_validation(plan_id)
+
+    fired = 'scale_mismatch_light_routing' in {m['mismatch'] for m in result['mismatches']}
+    assert fired == (sensor_band == 'multi_module'), (
+        f'gate fired={fired} but the sensor banded {sensor_band!r} '
+        f'(band_rule={provenance["band_rule"]!r}) for the same body — the gate must '
+        f'consume the sensor band, never re-derive a subset of its rows'
+    )
+
+
+def test_scale_band_row_fixtures_cover_every_multi_module_row():
+    """The equivalence fixtures exercise ALL of the sensor's widening rows.
+
+    Without this, the equivalence test could pass vacuously on a fixture set that
+    happened to miss the very row a future change breaks. Deriving the covered set
+    from the fixtures' own ``band_rule`` provenance keeps the coverage claim
+    population-derived rather than asserted from a stale list.
+    """
+    covered = {classify_scope_pure(body)[1]['band_rule'] for _, body in _SCALE_BAND_ROW_BODIES}
+
+    widening = {
+        'scan_incomplete',
+        'fan_out_marker',
+        'path_count_at_or_above_multi_module_floor',
+    }
+    assert widening <= covered
+    # And at least one non-widening row, so the IFF has a false side to prove.
+    assert covered - widening
 
 
 def test_scale_mismatch_degrades_when_the_deferred_import_fails(plan_context, monkeypatch):

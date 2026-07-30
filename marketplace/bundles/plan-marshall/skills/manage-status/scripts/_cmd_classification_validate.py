@@ -24,19 +24,17 @@ Three mismatch classes are detected, each chosen to raise zero false positives:
    deterministic data gap (no heuristic involved), so this check is exact.
 
 3. **scale_mismatch_light_routing** — a persisted ``scope_estimate`` of
-   ``surgical`` alongside a request body that reads as ``multi_module`` to the
-   sensor: either its distinct-path count has reached the ``multi_module`` floor,
-   or the body could not be safely scanned in full (``scan_incomplete``), which the
-   sensor itself bands ``multi_module`` BEFORE consulting the count because a
-   truncated total is a lower bound, not a count. This is the safety net for the one
-   residual the pre-route sensor cannot close on its own: the sensor is not the only
-   writer of ``references.scope_estimate`` (phase-2-refine's module-mapping
-   derivation and phase-3-outline's refinement both write it through the generic
-   setter), so a narrow band can outlive a body that plainly is not narrow. The
-   check is exact rather than heuristic — it compares two readings of the SAME
-   document and fires only when they genuinely disagree — and the threshold and the
-   bounded path scanner are both imported from ``_cmd_planning_lane`` rather than
-   restated, so the gate can never drift away from the sensor it is checking.
+   ``surgical`` alongside a request body that the sensor itself bands
+   ``multi_module``. This is the safety net for the one residual the pre-route
+   sensor cannot close on its own: the sensor is not the only writer of
+   ``references.scope_estimate`` (phase-2-refine's module-mapping derivation and
+   phase-3-outline's refinement both write it through the generic setter), so a
+   narrow band can outlive a body that plainly is not narrow. The check is exact
+   rather than heuristic — it compares two readings of the SAME document and fires
+   only when they genuinely disagree — and it obtains the second reading by CALLING
+   ``classify_scope_pure`` rather than re-deriving any of its band rows, so the gate
+   and the sensor are one decision by construction and no future band row can open a
+   blind spot here.
 
 The Q-Gate finding is recorded against the ``2-init`` → ``2-refine`` boundary:
 ``1-init`` is not a Q-Gate phase (the Q-Gate store opens at ``2-refine``), and
@@ -158,30 +156,29 @@ def _detect_scale_mismatch_light_routing(
     scores says it is not. Returns ``None`` otherwise, including for an unscoreable
     body (nothing to contradict).
 
-    Exact, not heuristic: it re-derives the reading from the SAME whole-body read the
-    sensor uses, so the two readings are comparable by construction and the check
-    fires only on a genuine disagreement.
+    Exact, not heuristic: the second reading is obtained by CALLING
+    ``classify_scope_pure`` on the same whole-body read the sensor uses, so the two
+    readings are comparable by construction and the check fires only on a genuine
+    disagreement.
 
-    **Scan-truthfulness — the reason this routes through ``_safe_path_scan`` and not
-    ``_distinct_paths``.** ``_distinct_paths`` DISCARDS the ``scan_incomplete`` flag,
-    returning only whatever paths the ReDoS-bounded scan managed to reach. On a body
-    too large or adversarially-repetitive to scan in full that total is an UNDERCOUNT,
-    and comparing an undercount against ``_MULTI_MODULE_MIN_PATHS`` would let this
-    detector silently return ``None`` on exactly the body ``classify_scope_pure``
-    bands ``multi_module`` — its ``scan_incomplete`` row wins BEFORE the path-count
-    rows are consulted, precisely because a partial count must never read as an
-    accurate narrow one. Reading the flag here keeps the gate on the sensor's own
-    verdict: an incomplete scan is NOT evidence of narrowness, so it falls through to
-    the mismatch rather than short-circuiting past it. Treating a truncated scan as a
-    low count would reproduce, inside this safety net, the scale-blind false negative
-    the net exists to catch.
+    **Why it calls the sensor instead of re-deriving its rows.** ``classify_scope_pure``
+    widens to ``multi_module`` on THREE independent rows — ``scan_incomplete`` (a
+    truncated scan is a lower bound, never an accurate narrow count), ``fan_out_marker``
+    (a glob names an unbounded file set), and the ``_MULTI_MODULE_MIN_PATHS`` path-count
+    floor — evaluated in that priority order. Every partial re-derivation of that table
+    reproduces, inside this safety net, the exact scale-blind false negative the net
+    exists to catch: a body whose only wide signal is one of the omitted rows reads
+    ``multi_module`` to the sensor and narrow to the gate. Consuming the sensor's own
+    band removes the copy, so a row added to the band table is honoured here with no
+    change at all. Only the human-readable evidence string branches on the returned
+    ``band_rule``, and an unrecognised rule still fires the mismatch with a generic
+    evidence line — the message degrades, the detection never does.
 
     Reachability — load-bearing, and the reason this class needs call sites beyond
     ``route``. Inside ``planning-lane route`` this check runs immediately after
-    phase-1-init Step 8a.5 wrote ``scope_estimate`` with the SAME
-    ``_safe_path_scan`` / ``_MULTI_MODULE_MIN_PATHS`` logic re-derived below, so the
-    two readings cannot disagree there and the class can never fire from that site
-    alone. It becomes reachable only where a LATER writer overwrites the band: the
+    phase-1-init Step 8a.5 wrote ``scope_estimate`` from the SAME
+    ``classify_scope_pure`` band consulted below, so the two readings cannot disagree
+    there and the class can never fire from that site alone. It becomes reachable only where a LATER writer overwrites the band: the
     phase-2-refine Step 13 ``scope_estimate`` persist (Persist and Return Results —
     Step 9 is where the value is DERIVED, not where it is re-validated) and the
     phase-3-outline light-lane persist both re-invoke ``classification-validate``
@@ -197,45 +194,55 @@ def _detect_scale_mismatch_light_routing(
     # DEFERRED IMPORT, and it must stay deferred: `_cmd_planning_lane` imports
     # `run_classification_validation` from THIS module at module scope, so a
     # top-level import back would close an import cycle and fail — at the time
-    # `_cmd_planning_lane` is mid-initialisation, `_safe_path_scan` does not exist
-    # yet. Importing here (rather than restating the threshold or the scanner) is
-    # what keeps the gate and the sensor on one definition. The `try/except
-    # ImportError` mirrors `_emit_finding`'s deferred `_findings_core` import below:
-    # `run_classification_validation` is documented flag-not-block and is called with
-    # no surrounding guard from `cmd_planning_lane_route`, so an import failure must
-    # degrade THIS one advisory check, never crash `planning-lane route`.
+    # `_cmd_planning_lane` is mid-initialisation, `classify_scope_pure` does not
+    # exist yet. Importing the sensor here (rather than restating any of its band
+    # rows) is what keeps the gate and the sensor on ONE definition of "reads as
+    # multi-module". The `try/except ImportError` mirrors `_emit_finding`'s deferred
+    # `_findings_core` import below: `run_classification_validation` is documented
+    # flag-not-block and is called with no surrounding guard from
+    # `cmd_planning_lane_route`, so an import failure must degrade THIS one advisory
+    # check, never crash `planning-lane route`.
     try:
         from _cmd_planning_lane import (  # noqa: PLC0415
             _MULTI_MODULE_MIN_PATHS,
+            MULTI_MODULE,
             _read_request_body,
-            _safe_path_scan,
+            classify_scope_pure,
         )
     except ImportError:
         return None
 
-    body = _read_request_body(plan_id)
-    if not body:
+    # The sensor's own verdict is the whole decision — no band row is re-derived
+    # here. An unscoreable (empty) body bands `none`, so it falls out below with
+    # nothing to contradict.
+    band, provenance = classify_scope_pure(_read_request_body(plan_id))
+    if band != MULTI_MODULE:
         return None
 
-    distinct_paths, scan_incomplete = _safe_path_scan(body)
-    distinct_path_count = len(distinct_paths)
-    # An incomplete scan is NOT evidence of narrowness: the count is a lower bound,
-    # and the sensor bands such a body multi_module before it ever consults the
-    # count. Only a COMPLETE scan below the floor clears the check.
-    if not scan_incomplete and distinct_path_count < _MULTI_MODULE_MIN_PATHS:
-        return None
-
-    if scan_incomplete:
+    band_rule = provenance['band_rule']
+    distinct_path_count = provenance['distinct_path_count']
+    if band_rule == 'scan_incomplete':
         evidence = (
             f'the request body could not be scanned in full — the ReDoS-bounded path scan hit its '
             f'line-length or budget limit after finding {distinct_path_count} distinct file '
             f'path(s), so that total is a lower bound, not a count. The scope sensor bands such a '
             f'body multi_module for exactly this reason'
         )
-    else:
+    elif band_rule == 'fan_out_marker':
+        evidence = (
+            f'the request body carries a glob / pattern fan-out marker alongside only '
+            f'{distinct_path_count} explicit file path(s) — a pattern names an unbounded file set, '
+            f'so the scope sensor bands the body multi_module however few paths it spells out'
+        )
+    elif band_rule == 'path_count_at_or_above_multi_module_floor':
         evidence = (
             f'the request body names {distinct_path_count} distinct file paths — at or above the '
             f'multi_module floor of {_MULTI_MODULE_MIN_PATHS}'
+        )
+    else:
+        evidence = (
+            f'the scope sensor bands the request body multi_module '
+            f'(band_rule={band_rule!r}, distinct_path_count={distinct_path_count})'
         )
 
     return {
