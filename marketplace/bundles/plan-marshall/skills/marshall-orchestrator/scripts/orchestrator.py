@@ -47,11 +47,13 @@ from _orchestrator_inbox import (
     INBOX_SUBDIR,
     KINDS,
     SENDER_TYPES,
+    InboxCounts,
     cmd_inbox_archive,
     cmd_inbox_detect,
     cmd_inbox_list,
     cmd_inbox_validate,
     cmd_inbox_write,
+    inbox_counts,
 )
 from file_ops import (
     get_archived_orchestrator_dir,
@@ -345,21 +347,51 @@ def _format_plan_line(plan: dict[str, Any]) -> str:
     return ' — '.join(parts)
 
 
-def _build_summary(status_doc: dict[str, Any]) -> str:
+def _format_inbox_line(counts: InboxCounts) -> str:
+    """Render the derived inbox line for the START-HERE block.
+
+    Kept a separate line from ``**Resume anchor**`` on purpose: the anchor is
+    the operator's prose and the inbox line is the live filesystem count, so a
+    stale narrative count sits VISIBLY BESIDE the derived one instead of
+    outranking it. An absent ``inbox/`` renders that fact explicitly rather
+    than rendering ``0 queued`` — the same *which zero is this* rule
+    ``inbox list``'s ``inbox_state`` enforces.
+    """
+    if not counts.present:
+        return '**Inbox (derived)**: no inbox directory (nothing to drain from)'
+    return (
+        f'**Inbox (derived)**: {counts.queued} queued, {counts.archived} archived'
+    )
+
+
+def _build_summary(status_doc: dict[str, Any], counts: InboxCounts) -> str:
     """Build the START-HERE markdown block, derived purely from status.json.
 
-    Renders the resume anchor, the epic phase, the running/parked plans, the
-    staged queue (in ``plans[]`` order), and a residual per-status listing for
-    every other status value — so no plan is ever invisible in the summary.
+    Renders the resume anchor, the epic phase, the derived inbox counts, the
+    running/parked plans, the staged queue (in ``plans[]`` order), and a
+    residual per-status listing for every other status value — so no plan is
+    ever invisible in the summary.
 
     Terminal rows that are missing a result link carry the gap marker
     :func:`_format_plan_line` appends, so an unreconciled landing is visible in
     the generated block rather than only in the raw status.json.
+
+    ``resume_anchor`` is rendered VERBATIM. The fix for a narrative count that
+    has gone stale is derivation beside the prose (the
+    :func:`_format_inbox_line` line), never silent rewriting of what the
+    operator wrote.
+
+    Args:
+        status_doc: The epic's parsed ``status.json`` — the machine authority.
+        counts: The filesystem-derived inbox tallies from
+            :func:`inbox_counts`. Passed in rather than derived here so this
+            helper stays a pure renderer over already-resolved inputs.
     """
     plans = status_doc.get('plans', [])
     lines = [
         f'**Resume anchor**: {status_doc.get("resume_anchor") or "(not set)"}',
         f'**Phase**: {status_doc.get("phase", "")}',
+        _format_inbox_line(counts),
     ]
     running = [p for p in plans if p.get('status') == 'running']
     parked = [p for p in plans if p.get('status') == 'parked']
@@ -389,6 +421,13 @@ def cmd_resume_summary(args: argparse.Namespace) -> dict[str, Any]:
     verbatim between the ``BEGIN/END GENERATED: resume-summary`` markers in
     ``epic.md``. It is derived purely from ``status.json`` — the machine
     authority — never from the prose already in ``epic.md``.
+
+    The inbox counts are the one part NOT read out of ``status.json``: they are
+    derived at render time from the epic's ``inbox/`` directory via
+    :func:`inbox_counts`, and they are AUTHORITATIVE over any count sentence in
+    ``resume_anchor``. ``inbox_queued`` / ``inbox_archived`` / ``inbox_state``
+    ride the payload as top-level fields so a caller can reconcile them against
+    ``inbox list`` without parsing the markdown block.
     """
     invalid = _validate_slug(args.slug)
     if invalid:
@@ -398,12 +437,16 @@ def cmd_resume_summary(args: argparse.Namespace) -> dict[str, Any]:
         return _error(
             args.slug, 'file_not_found', 'status.json not found in orchestrator store'
         )
+    counts = inbox_counts(_epic_root(args.slug, allow_archived=True) / INBOX_SUBDIR)
     return {
         'status': 'success',
         'operation': 'resume-summary',
         'slug': args.slug,
         'store': ORCHESTRATOR_STORE,
-        'summary': _build_summary(status_doc),
+        'inbox_queued': counts.queued,
+        'inbox_archived': counts.archived,
+        'inbox_state': 'present' if counts.present else 'missing',
+        'summary': _build_summary(status_doc, counts),
     }
 
 

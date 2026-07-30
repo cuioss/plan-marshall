@@ -16,6 +16,10 @@ point with constructed argv at the subprocess boundary (``run_script``), under
   once in ``test_inbox_envelope.py``'s in-process unit tests. This module's job
   at the CLI level is to prove the wiring (argv -> handler -> TOON ``error``)
   transports a rejection faithfully, not to re-enumerate the schema.
+- **``inbox validate`` resolves the archive**: a queued message reports
+  ``location: queued`` with an empty ``archive_path``, a CONSUMED one reports
+  ``location: archived`` with the resolved archived path, and ``file_not_found``
+  fires only when the message is present at NEITHER path.
 - **Drain surface**: ``inbox list`` enumerates the queue in deterministic
   (sender, sequence) order, reports a malformed message with its distinct
   validator error code instead of dropping it, and never looks inside
@@ -37,9 +41,11 @@ point with constructed argv at the subprocess boundary (``run_script``), under
   epic tree is byte-identical, and an unsafe slug is refused.
 
 The doc-contract assertions pin all three describe-side surfaces of the ledger
-write-boundary carve-out, in the same style as the existing
-``test_step_termination_contract.py`` / ``test_dispatch_roster_closure.py``
-doc-contract tests.
+write-boundary carve-out, plus the two describe-side surfaces of the
+``inbox validate`` resolution contract (``SKILL.md`` § ``### inbox validate``
+and ``standards/inbox-envelope.md`` § Drain semantics / Validator error codes),
+in the same style as the existing ``test_step_termination_contract.py`` /
+``test_dispatch_roster_closure.py`` doc-contract tests.
 """
 
 from __future__ import annotations
@@ -56,6 +62,10 @@ _ORCHESTRATION_MODEL = (
 )
 _PLAN_SPEC_TEMPLATE = (
     _PLAN_MARSHALL / 'marshall-orchestrator' / 'templates' / 'plan-spec.md'
+)
+_ORCHESTRATOR_SKILL = _PLAN_MARSHALL / 'marshall-orchestrator' / 'SKILL.md'
+_INBOX_ENVELOPE = (
+    _PLAN_MARSHALL / 'marshall-orchestrator' / 'standards' / 'inbox-envelope.md'
 )
 
 EPIC = 'contract-epic'
@@ -292,6 +302,55 @@ class TestCliCarriesRejection:
 
         assert result.returncode == 0
         assert 'error: invalid_message_name' in result.stdout
+
+
+# =============================================================================
+# inbox validate resolves the archive: consumed vs missing, through real argv
+# =============================================================================
+
+
+class TestInboxValidateResolution:
+    def test_should_report_the_queued_location_for_a_live_message(
+        self, plan_context, tmp_path
+    ):
+        _scaffold(plan_context)
+        _write(plan_context, _payload(tmp_path))
+
+        parsed = _validate(plan_context, f'{SENDER}-001.md').toon()
+
+        assert parsed['status'] == 'success'
+        assert parsed['location'] == 'queued'
+        assert parsed['archive_path'] == ''
+
+    def test_should_resolve_a_consumed_message_out_of_the_archive(
+        self, plan_context, tmp_path
+    ):
+        # The end-to-end proof that a DRAINED message no longer answers
+        # file_not_found: archival is the consume marker, and this is its
+        # read-side counterpart surviving the subprocess boundary.
+        _scaffold(plan_context)
+        _write(plan_context, _payload(tmp_path))
+        _archive(plan_context, f'{SENDER}-001.md')
+        inbox = _epic_dir(plan_context) / 'inbox'
+        assert not (inbox / f'{SENDER}-001.md').exists()
+
+        parsed = _validate(plan_context, f'{SENDER}-001.md').toon()
+
+        assert parsed['status'] == 'success'
+        assert parsed['location'] == 'archived'
+        assert parsed['archive_path'] == str(inbox / 'archive' / f'{SENDER}-001.md')
+
+    def test_should_report_file_not_found_only_when_present_at_neither_path(
+        self, plan_context
+    ):
+        _scaffold(plan_context)
+        inbox = _epic_dir(plan_context) / 'inbox'
+        assert not (inbox / f'{SENDER}-404.md').exists()
+        assert not (inbox / 'archive' / f'{SENDER}-404.md').exists()
+
+        result = _validate(plan_context, f'{SENDER}-404.md')
+
+        assert 'error: file_not_found' in result.stdout
 
 
 # =============================================================================
@@ -745,3 +804,52 @@ class TestDocContract:
 
         assert 'its PR and its inbox message' in section
         assert 'Ledger Write-Boundary' in section
+
+    def test_inbox_validate_documents_both_success_branches(self):
+        section = _section(
+            _ORCHESTRATOR_SKILL.read_text(encoding='utf-8'), '### inbox validate'
+        )
+
+        for token in ('location: queued', 'location: archived', 'archive_path'):
+            assert token in section, token
+
+    def test_inbox_validate_documents_the_narrowed_file_not_found(self):
+        section = _section(
+            _ORCHESTRATOR_SKILL.read_text(encoding='utf-8'), '### inbox validate'
+        )
+
+        assert 'file_not_found' in section
+        assert 'inbox/archive/' in section
+
+    def test_inbox_validate_still_lists_every_retained_rejection_code(self):
+        # The archive-probe change narrows file_not_found; it must not quietly
+        # drop any envelope-validation code from the documented surface.
+        section = _section(
+            _ORCHESTRATOR_SKILL.read_text(encoding='utf-8'), '### inbox validate'
+        )
+
+        for code in (
+            'missing_header_field',
+            'unknown_envelope_version',
+            'invalid_sender_type',
+            'invalid_kind',
+            'empty_payload',
+            'epic_mismatch',
+            'filename_sender_mismatch',
+            'invalid_message_name',
+        ):
+            assert code in section, code
+
+    def test_drain_semantics_records_the_read_side_of_the_consume_marker(self):
+        section = _section(_INBOX_ENVELOPE.read_text(encoding='utf-8'), '## Drain semantics')
+
+        assert 'Archival is the consume marker' in section
+        assert 'inbox validate` resolves the archive' in section
+
+    def test_validator_error_code_table_is_not_read_as_exhaustive(self):
+        section = _section(
+            _INBOX_ENVELOPE.read_text(encoding='utf-8'), '## Validator error codes'
+        )
+
+        assert 'resolution' in section
+        assert 'location' in section

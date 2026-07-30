@@ -19,8 +19,19 @@ Covers, under ``PLAN_BASE_DIR`` isolation (via ``plan_context``):
   sweep — one accepting case per settled id form, the over-acceptance and
   slug-bound guards, and one case per ``detection`` token, compared against the
   module's own token frozenset.
+- ``resolve_message_path``: the archive-probe order and its closed
+  ``MESSAGE_LOCATIONS`` vocabulary, compared against the module's own frozenset.
 - ``cmd_inbox_write`` / ``cmd_inbox_validate`` / ``cmd_inbox_detect``: the
-  handler surface, including every refusal class.
+  handler surface, including every refusal class. ``cmd_inbox_validate``'s two
+  success branches (``location: queued`` / ``location: archived``) are covered
+  here together with their success-payload field symmetry and the narrowed
+  ``file_not_found`` (present at NEITHER path).
+- ``cmd_inbox_list``'s three separately-representable zeros — ``epic_not_found``,
+  ``inbox_state: missing`` (could not look), and ``inbox_state: present`` with
+  ``count: 0`` (looked, found nothing) — plus the closed ``INBOX_STATES``
+  vocabulary compared against the module's own frozenset, and the
+  concurrent-drain race in which ``inbox/`` is removed after the enumeration
+  read it (``count`` and ``inbox_state`` must report the SAME observation).
 - ``cmd_inbox_archive``'s atomic destination claim, driven through a
   deterministically-opened check-to-claim window, plus the sender-constrained
   ``--as-name`` recovery override for a message stranded by a pre-fix sequence
@@ -31,6 +42,7 @@ Covers, under ``PLAN_BASE_DIR`` isolation (via ``plan_context``):
 """
 
 import os
+import shutil
 from argparse import Namespace
 from pathlib import Path
 
@@ -46,16 +58,20 @@ _orch = load_script_module(
 DETECTION_TOKENS = _inbox.DETECTION_TOKENS
 ENVELOPE_VERSION = _inbox.ENVELOPE_VERSION
 HEADER_FIELDS = _inbox.HEADER_FIELDS
+INBOX_STATES = _inbox.INBOX_STATES
 KINDS = _inbox.KINDS
+MESSAGE_LOCATIONS = _inbox.MESSAGE_LOCATIONS
 SENDER_TYPES = _inbox.SENDER_TYPES
 allocate_message_path = _inbox.allocate_message_path
 classify_source_id = _inbox.classify_source_id
 cmd_inbox_archive = _inbox.cmd_inbox_archive
 cmd_inbox_detect = _inbox.cmd_inbox_detect
+cmd_inbox_list = _inbox.cmd_inbox_list
 cmd_inbox_validate = _inbox.cmd_inbox_validate
 cmd_inbox_write = _inbox.cmd_inbox_write
 compose_envelope = _inbox.compose_envelope
 next_sequence = _inbox.next_sequence
+resolve_message_path = _inbox.resolve_message_path
 validate_envelope = _inbox.validate_envelope
 
 cmd_scaffold = _orch.cmd_scaffold
@@ -638,7 +654,13 @@ class TestInboxValidate:
         assert result['error'] == 'invalid_message_name'
 
     def test_should_report_a_missing_message(self, plan_context):
+        # ``file_not_found`` stays reachable, and now means present at NEITHER
+        # inbox/ nor inbox/archive/ — the assertion pins both absences so the
+        # narrowed meaning cannot be read as "the archive probe swallowed it".
         cmd_scaffold(Namespace(slug=EPIC))
+        inbox = _inbox_dir(plan_context)
+        assert not (inbox / 'absent-001.md').exists()
+        assert not (inbox / 'archive' / 'absent-001.md').exists()
 
         result = cmd_inbox_validate(Namespace(slug=EPIC, message='absent-001.md'))
 
@@ -650,6 +672,287 @@ class TestInboxValidate:
 
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_slug'
+
+    def test_should_report_the_queued_location_for_a_live_message(
+        self, plan_context, tmp_path
+    ):
+        cmd_scaffold(Namespace(slug=EPIC))
+        written = cmd_inbox_write(_write_args(payload_file=_payload(tmp_path)))
+
+        result = cmd_inbox_validate(Namespace(slug=EPIC, message=written['message']))
+
+        assert result['status'] == 'success'
+        assert result['location'] == 'queued'
+        assert result['archive_path'] == ''
+
+    def test_should_resolve_a_consumed_message_out_of_the_archive(
+        self, plan_context, tmp_path
+    ):
+        # The defect this fixes: a drained message was indistinguishable from a
+        # never-written one, because both answered ``file_not_found``.
+        cmd_scaffold(Namespace(slug=EPIC))
+        written = cmd_inbox_write(_write_args(payload_file=_payload(tmp_path)))
+        cmd_inbox_archive(_archive_args(written['message']))
+        assert not (_inbox_dir(plan_context) / written['message']).exists()
+
+        result = cmd_inbox_validate(Namespace(slug=EPIC, message=written['message']))
+
+        assert result['status'] == 'success'
+        assert result['location'] == 'archived'
+        assert result['archive_path'].endswith(f'archive/{written["message"]}')
+
+    def test_should_report_the_same_header_fields_for_both_success_branches(
+        self, plan_context, tmp_path
+    ):
+        # Success-payload field symmetry: the archived branch is not a reduced
+        # payload — it carries every field the queued branch carries, so a
+        # consumer never has to special-case where the message was found.
+        cmd_scaffold(Namespace(slug=EPIC))
+        written = cmd_inbox_write(_write_args(payload_file=_payload(tmp_path)))
+        queued = cmd_inbox_validate(Namespace(slug=EPIC, message=written['message']))
+        cmd_inbox_archive(_archive_args(written['message']))
+
+        archived = cmd_inbox_validate(Namespace(slug=EPIC, message=written['message']))
+
+        # The header fields the success payload surfaces; ``epic`` rides the
+        # payload as ``slug``, so the reported set is HEADER_FIELDS minus it.
+        reported = tuple(field for field in HEADER_FIELDS if field != 'epic')
+
+        assert set(archived) == set(queued)
+        assert {key: archived[key] for key in reported} == {
+            key: queued[key] for key in reported
+        }
+
+    def test_should_validate_an_archived_message_through_the_same_seam(
+        self, plan_context
+    ):
+        # An archived message is not trusted on account of being archived: the
+        # identical rejection codes still fire against it.
+        cmd_scaffold(Namespace(slug=EPIC))
+        archive = _inbox_dir(plan_context) / 'archive'
+        archive.mkdir(parents=True, exist_ok=True)
+        (archive / f'{SENDER}-001.md').write_text(
+            _message(envelope_version='99'), encoding='utf-8'
+        )
+
+        result = cmd_inbox_validate(Namespace(slug=EPIC, message=f'{SENDER}-001.md'))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'unknown_envelope_version'
+
+    def test_should_prefer_the_live_queue_over_the_archive(self, plan_context):
+        # Probe ORDER: with the name present at both paths, the live queue wins.
+        cmd_scaffold(Namespace(slug=EPIC))
+        inbox = _inbox_dir(plan_context)
+        (inbox / f'{SENDER}-001.md').write_text(_message(kind='landing'), encoding='utf-8')
+        archive = inbox / 'archive'
+        archive.mkdir(parents=True, exist_ok=True)
+        (archive / f'{SENDER}-001.md').write_text(
+            _message(kind='finding'), encoding='utf-8'
+        )
+
+        result = cmd_inbox_validate(Namespace(slug=EPIC, message=f'{SENDER}-001.md'))
+
+        assert result['location'] == 'queued'
+        assert result['kind'] == 'landing'
+
+
+# =============================================================================
+# cmd_inbox_list — which kind of zero a ``count: 0`` is
+# =============================================================================
+
+
+class TestInboxListState:
+    """The three separately-representable zeros of the enumeration seam.
+
+    The defect this pins: a ``count: 0`` meaning *could not look* (the epic has
+    no ``inbox/`` directory) was indistinguishable from a ``count: 0`` meaning
+    *looked, found nothing*. Both now carry a distinct ``inbox_state``, and the
+    pre-existing ``epic_not_found`` error branch remains the third zero.
+    """
+
+    def test_should_report_present_state_and_the_scanned_directory(
+        self, plan_context, tmp_path
+    ):
+        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_inbox_write(_write_args(payload_file=_payload(tmp_path)))
+
+        result = cmd_inbox_list(Namespace(slug=EPIC))
+
+        assert result['status'] == 'success'
+        assert result['inbox_state'] == 'present'
+        assert result['count'] == 1
+        assert result['inbox_dir'] == str(_inbox_dir(plan_context))
+
+    def test_should_report_present_state_for_a_genuinely_empty_queue(
+        self, plan_context
+    ):
+        # Zero #3: it looked at a real directory and found nothing.
+        cmd_scaffold(Namespace(slug=EPIC))
+        assert _inbox_dir(plan_context).is_dir()
+
+        result = cmd_inbox_list(Namespace(slug=EPIC))
+
+        assert result['status'] == 'success'
+        assert result['count'] == 0
+        assert result['inbox_state'] == 'present'
+
+    def test_should_report_missing_state_when_the_inbox_directory_is_absent(
+        self, plan_context
+    ):
+        # Zero #2: the epic tree is there but the enumeration could not look.
+        cmd_scaffold(Namespace(slug=EPIC))
+        _inbox_dir(plan_context).rmdir()
+
+        result = cmd_inbox_list(Namespace(slug=EPIC))
+
+        assert result['count'] == 0
+        assert result['inbox_state'] == 'missing'
+        # The scanned path is reported even when it does not exist, so the
+        # payload always names WHERE the enumeration looked (or would have).
+        assert result['inbox_dir'] == str(_inbox_dir(plan_context))
+
+    def test_should_not_answer_the_two_zeros_with_equal_payloads(self, plan_context):
+        # The invariant the whole deliverable exists for: a zero meaning "could
+        # not look" and a zero meaning "looked, found nothing" agree on `count`
+        # and on `status`, so they MUST differ somewhere in the payload — the
+        # discriminator is what makes them separately representable.
+        cmd_scaffold(Namespace(slug=EPIC))
+        looked = cmd_inbox_list(Namespace(slug=EPIC))
+        _inbox_dir(plan_context).rmdir()
+
+        could_not_look = cmd_inbox_list(Namespace(slug=EPIC))
+
+        assert looked['count'] == could_not_look['count'] == 0
+        assert looked['status'] == could_not_look['status'] == 'success'
+        assert looked != could_not_look
+        assert looked['inbox_dir'] == could_not_look['inbox_dir']
+
+    def test_should_stay_non_faulting_when_the_inbox_directory_is_absent(
+        self, plan_context
+    ):
+        # The discriminator rides the PAYLOAD, never the status — an absent
+        # inbox/ must not abort a drain.
+        cmd_scaffold(Namespace(slug=EPIC))
+        _inbox_dir(plan_context).rmdir()
+
+        result = cmd_inbox_list(Namespace(slug=EPIC))
+
+        assert result['status'] == 'success'
+        assert 'error' not in result
+
+    def test_should_keep_epic_not_found_as_the_third_zero(self, plan_context):
+        # Zero #1: no epic tree at all, retained unchanged as an error branch.
+        result = cmd_inbox_list(Namespace(slug='never-scaffolded'))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'epic_not_found'
+        assert 'inbox_state' not in result
+
+    def test_should_only_report_states_from_the_module_vocabulary(self, plan_context):
+        # Population-derived and two-sided: every declared state is reachable
+        # and no case reports one outside the module's own frozenset.
+        cmd_scaffold(Namespace(slug=EPIC))
+        present = cmd_inbox_list(Namespace(slug=EPIC))['inbox_state']
+        _inbox_dir(plan_context).rmdir()
+        absent = cmd_inbox_list(Namespace(slug=EPIC))['inbox_state']
+
+        assert {present, absent} == INBOX_STATES
+
+
+class TestInboxListStateUnderConcurrentDrain:
+    """``inbox_state`` and ``count`` report ONE observation, not two.
+
+    The defect this pins: ``inbox_state`` was re-derived from a second
+    ``is_dir()`` call at return time, AFTER the enumeration loop had already
+    run. Under the concurrent writer/drain scenario this module documents, a
+    drain that removes ``inbox/`` between the two observations produced a
+    self-contradictory payload — ``count`` greater than zero (the scan DID
+    look and DID find messages) alongside ``inbox_state: missing`` (asserting
+    it could not look). Capturing the discriminator once, before the loop,
+    makes the two fields consistent by construction.
+    """
+
+    def test_should_not_pair_a_non_zero_count_with_the_missing_state(
+        self, plan_context, tmp_path, monkeypatch
+    ):
+        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_inbox_write(_write_args(payload_file=_payload(tmp_path)))
+        inbox = _inbox_dir(plan_context)
+        real_list_messages = _inbox.list_messages
+
+        def draining_list_messages(directory):
+            # The deterministic seam for "a concurrent drain retired the queue
+            # and removed inbox/ after our enumeration read it": the removal
+            # fires when the generator is exhausted, so every message is still
+            # read successfully and only the return-time observation changes.
+            yield from real_list_messages(directory)
+            shutil.rmtree(inbox)
+
+        monkeypatch.setattr(_inbox, 'list_messages', draining_list_messages)
+
+        result = cmd_inbox_list(Namespace(slug=EPIC))
+
+        assert not inbox.exists(), (
+            'the seam did not fire — the assertion below would pass vacuously '
+            'against an inbox/ that was never removed'
+        )
+        assert result['count'] == 1
+        assert result['inbox_state'] == 'present'
+
+
+# =============================================================================
+# resolve_message_path — the single home of the archive-probe order
+# =============================================================================
+
+
+class TestResolveMessagePath:
+    def test_should_resolve_a_queued_message(self, tmp_path):
+        (tmp_path / f'{SENDER}-001.md').write_text('x', encoding='utf-8')
+
+        path, location = resolve_message_path(tmp_path, f'{SENDER}-001.md')
+
+        assert location == 'queued'
+        assert path == tmp_path / f'{SENDER}-001.md'
+
+    def test_should_resolve_an_archived_message(self, tmp_path):
+        archive = tmp_path / 'archive'
+        archive.mkdir()
+        (archive / f'{SENDER}-001.md').write_text('x', encoding='utf-8')
+
+        path, location = resolve_message_path(tmp_path, f'{SENDER}-001.md')
+
+        assert location == 'archived'
+        assert path == archive / f'{SENDER}-001.md'
+
+    def test_should_report_missing_when_present_at_neither_path(self, tmp_path):
+        path, location = resolve_message_path(tmp_path, f'{SENDER}-001.md')
+
+        assert location == 'missing'
+        # The live-queue candidate is returned so the caller's not-found message
+        # keeps naming the path a reader would look at first.
+        assert path == tmp_path / f'{SENDER}-001.md'
+
+    def test_should_tolerate_an_absent_inbox_directory(self, tmp_path):
+        _path, location = resolve_message_path(tmp_path / 'never-made', 'x-001.md')
+
+        assert location == 'missing'
+
+    def test_should_only_report_locations_from_the_module_vocabulary(self, tmp_path):
+        # Population-derived: compared against the module's own frozenset rather
+        # than a re-listed literal set, and two-sided — every declared location
+        # is reachable and no case reports one outside the declared set.
+        (tmp_path / 'queued-001.md').write_text('x', encoding='utf-8')
+        archive = tmp_path / 'archive'
+        archive.mkdir()
+        (archive / 'retired-001.md').write_text('x', encoding='utf-8')
+
+        observed = {
+            resolve_message_path(tmp_path, name)[1]
+            for name in ('queued-001.md', 'retired-001.md', 'absent-001.md')
+        }
+
+        assert observed == MESSAGE_LOCATIONS
 
 
 # =============================================================================

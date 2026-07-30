@@ -73,6 +73,21 @@ INBOX_SUBDIR = 'inbox'
 #: ``EPIC_SUBDIRS``, so no existing scaffold assertion moves.
 INBOX_ARCHIVE_SUBDIR = 'archive'
 
+#: The closed vocabulary :func:`resolve_message_path` reports. ``queued`` and
+#: ``archived`` are the two RESOLUTION outcomes a caller can act on; ``missing``
+#: is the third, which :func:`cmd_inbox_validate` surfaces as ``file_not_found``.
+#: These are resolution outcomes, NOT envelope-validation verdicts — a message
+#: resolved as ``archived`` is still validated through the same
+#: :func:`validate_envelope` seam as a ``queued`` one.
+MESSAGE_LOCATIONS = frozenset({'queued', 'archived', 'missing'})
+
+#: The closed vocabulary :func:`cmd_inbox_list` reports as ``inbox_state``.
+#: ``present`` means the enumeration looked at a real directory; ``missing``
+#: means it could not look because the epic has no ``inbox/`` yet. The verb
+#: stays non-faulting either way, so the two zeros are told apart by the
+#: PAYLOAD, never by the status.
+INBOX_STATES = frozenset({'present', 'missing'})
+
 #: ``{sender_id}-{NNN}.md`` — the one message-file shape the channel allocates.
 #: The sender group is non-greedy so the LAST dash-separated all-digit run is
 #: the sequence: a four-digit sequence, or a sender id that itself ends in
@@ -352,6 +367,82 @@ def list_messages(inbox_dir: Path) -> list[Path]:
     return [path for _, _, path in entries]
 
 
+class InboxCounts(NamedTuple):
+    """The derived inbox tallies :func:`inbox_counts` returns.
+
+    ``present`` is the same *which kind of zero* discriminator
+    :func:`cmd_inbox_list` reports as ``inbox_state``: when it is ``False`` both
+    counts are zero because the directory could not be looked at, not because
+    the queue was empty.
+    """
+
+    queued: int
+    archived: int
+    present: bool
+
+
+def inbox_counts(inbox_dir: Path) -> InboxCounts:
+    """Count the epic's queued and archived messages, derived from the filesystem.
+
+    The derivation seam behind ``resume-summary``'s inbox line. Both counts come
+    from the SAME filename grammar the channel allocates with
+    (:data:`_MESSAGE_NAME_RE`): the queued count re-uses :func:`list_messages`
+    (so it agrees with ``inbox list`` by construction rather than by a parallel
+    re-implementation), and the archived count applies the same shape filter to
+    ``inbox/archive/``.
+
+    Args:
+        inbox_dir: The epic's ``inbox/`` directory.
+
+    Returns:
+        An :class:`InboxCounts`. An absent ``inbox/`` yields
+        ``(0, 0, present=False)`` — *could not look* — rather than the
+        indistinguishable ``(0, 0, present=True)`` an empty queue yields. A
+        not-yet-created ``archive/`` simply contributes ``0``.
+    """
+    if not inbox_dir.is_dir():
+        return InboxCounts(0, 0, False)
+    archive_dir = inbox_dir / INBOX_ARCHIVE_SUBDIR
+    archived = 0
+    if archive_dir.is_dir():
+        archived = sum(
+            1
+            for entry in archive_dir.iterdir()
+            if entry.is_file() and _MESSAGE_NAME_RE.match(entry.name) is not None
+        )
+    return InboxCounts(len(list_messages(inbox_dir)), archived, True)
+
+
+def resolve_message_path(inbox_dir: Path, name: str) -> tuple[Path, str]:
+    """Resolve one message name to its path, probing the archive second.
+
+    The single place the archive-probe ORDER lives. A drain relocates a consumed
+    message under ``inbox/archive/`` rather than deleting it, so a name that is
+    absent from the live queue is not necessarily missing — it may have been
+    consumed. Probing ``inbox/{name}`` first and ``inbox/archive/{name}``
+    second is what makes those two states distinguishable instead of collapsing
+    both into "not found".
+
+    Args:
+        inbox_dir: The epic's ``inbox/`` directory.
+        name: A bare message filename (already guarded by
+            :func:`_is_bare_filename`).
+
+    Returns:
+        ``(path, location)`` where ``location`` is one of
+        :data:`MESSAGE_LOCATIONS`. On ``missing`` the returned path is the
+        LIVE-queue candidate, so a caller's not-found message keeps naming the
+        queue path a reader would look at first.
+    """
+    queued = inbox_dir / name
+    if queued.is_file():
+        return queued, 'queued'
+    archived = inbox_dir / INBOX_ARCHIVE_SUBDIR / name
+    if archived.is_file():
+        return archived, 'archived'
+    return queued, 'missing'
+
+
 def allocate_message_path(inbox_dir: Path, sender_id: str, text: str) -> Path:
     """Claim the next free message path and write ``text`` into it.
 
@@ -498,6 +589,22 @@ def cmd_inbox_validate(args: Any) -> dict[str, Any]:
     construction the write surface uses. The epic slug and the filename are
     both fed to :func:`validate_envelope`, so ``epic_mismatch`` and
     ``filename_sender_mismatch`` are reachable here.
+
+    Resolution probes the archive via :func:`resolve_message_path`, so a
+    CONSUMED message is distinguishable from a MISSING one. Three outcomes:
+
+    - present in ``inbox/`` → success with ``location: queued`` and an empty
+      ``archive_path``.
+    - absent from ``inbox/`` but present in ``inbox/archive/`` → success with
+      ``location: archived`` and ``archive_path`` set to the resolved archived
+      path. The archived read goes through the SAME :func:`validate_envelope`
+      seam and reports the same header fields as the queued branch.
+    - present at neither path → ``file_not_found``, which now means exactly
+      that: not queued AND not archived.
+
+    Resolution keeps using :func:`_inbox_dir` (the ``allow_archived=True`` read
+    root), so an archived EPIC still resolves as before — that fallback is
+    about the epic tree, and the archive probe here is about the message.
     """
     invalid = _validate_identifier(args.slug)
     if invalid:
@@ -509,8 +616,8 @@ def cmd_inbox_validate(args: Any) -> dict[str, Any]:
             f'--message must be a bare filename inside inbox/, got: {name}',
             slug=args.slug,
         )
-    path = _inbox_dir(args.slug) / name
-    if not path.is_file():
+    path, location = resolve_message_path(_inbox_dir(args.slug), name)
+    if location == 'missing':
         return _error(
             'file_not_found', f'inbox message not found: {path}', slug=args.slug
         )
@@ -530,6 +637,8 @@ def cmd_inbox_validate(args: Any) -> dict[str, Any]:
         'slug': args.slug,
         'store': ORCHESTRATOR_STORE,
         'message': name,
+        'location': location,
+        'archive_path': str(path) if location == 'archived' else '',
         'envelope_version': header['envelope_version'],
         'sender_type': header['sender_type'],
         'sender_id': header['sender_id'],
@@ -552,6 +661,20 @@ def cmd_inbox_list(args: Any) -> dict[str, Any]:
     a read failure never aborts the rest of the enumeration either. Consumed
     messages already moved under ``inbox/archive/`` are not enumerated, which
     is what makes a re-scan of a completed drain a no-op.
+
+    The payload also states WHICH KIND OF ZERO a ``count: 0`` is, so the
+    three zeros are separately representable: ``epic_not_found`` (no epic tree
+    at all — the retained error branch), ``inbox_state: missing`` (the epic is
+    there but has no ``inbox/`` directory, so the enumeration could not look),
+    and ``inbox_state: present`` with ``count: 0`` (it looked and found
+    nothing). ``inbox_dir`` reports the absolute path the enumeration actually
+    scanned. The ``inbox_state`` discriminator is captured ONCE, immediately
+    before the enumeration loop, so it reports the same observation the
+    enumeration itself acted on: under a concurrent drain that removes
+    ``inbox/`` mid-scan, the payload can never pair a non-zero ``count`` with
+    ``inbox_state: missing``. An absent ``inbox/`` is NOT a fault — the verb
+    still returns ``status: success`` so a drain is never aborted by it; the
+    discriminator rides the payload, not the status.
     """
     invalid = _validate_identifier(args.slug)
     if invalid:
@@ -564,6 +687,7 @@ def cmd_inbox_list(args: Any) -> dict[str, Any]:
             slug=args.slug,
         )
     inbox_dir = root / INBOX_SUBDIR
+    inbox_present = inbox_dir.is_dir()
     messages: list[dict[str, Any]] = []
     for path in list_messages(inbox_dir):
         try:
@@ -600,6 +724,8 @@ def cmd_inbox_list(args: Any) -> dict[str, Any]:
         'operation': 'inbox-list',
         'slug': args.slug,
         'store': ORCHESTRATOR_STORE,
+        'inbox_dir': str(inbox_dir),
+        'inbox_state': 'present' if inbox_present else 'missing',
         'count': len(messages),
         'invalid_count': sum(1 for row in messages if not row['valid']),
         'messages': messages,

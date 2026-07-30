@@ -47,6 +47,8 @@ python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator
 
 Paste the returned block verbatim between the generated-block markers in `epic.md`. Then read `epic.md` for the human context (Vision, Decisions, Open Defects, Watches) — any statement there that conflicts with `status.json` is stale prose; reconcile status.json → epic.md, never the reverse.
 
+**Derived-beats-narrative reconciliation rule.** The block's `**Inbox (derived)**` line and the returned `inbox_queued` / `inbox_archived` / `inbox_state` fields are derived at render time from the epic's `inbox/` directory. When they disagree with a count sentence in the `resume_anchor` prose, **the derived line wins** — the anchor is the stale party, not the filesystem. Correct the anchor via `manage-status update-field` (the Step 5 call below), in the same status.json → epic.md direction this doc already mandates; never edit the derived line to match the prose. An `inbox_state: missing` is NOT "zero queued": it means the epic has no `inbox/` directory, so nothing could be drained from it — treat it as a scaffold gap to report, not as an empty queue.
+
 ### Step 4: Verify in-flight plan states (ground truth)
 
 For each `launched` plan in the queue, verify the recorded state against ground truth within the small-ops carve-out — the plan's actual lifecycle state, its PR/CI state via read-side `plan-marshall:tools-integration-ci:ci` calls. A plan that shipped or stalled while no session was watching is reconciled now (queue transition + `epic.md` update per [`analyze.md`](analyze.md) semantics).
@@ -62,7 +64,7 @@ python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator
 
 When Step 4 changed nothing, the Step 3 block is already current and this regeneration is skipped.
 
-Report the re-anchored state to the operator: epic phase, queue summary, in-flight plans, open defects/watches, and the next action from `resume_anchor`. When Step 4's verification changed the next action, update the anchor:
+Report the re-anchored state to the operator: epic phase, queue summary, in-flight plans, open defects/watches, and the next action from `resume_anchor`. When Step 4's verification changed the next action, update the anchor. The Step 3 derived-beats-narrative rule also fires here: when the regenerated block's derived inbox counts contradict a count sentence carried in `resume_anchor`, the anchor is corrected to agree with the derived counts — the derived line is authoritative and is never edited to match the prose:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status update-field \
