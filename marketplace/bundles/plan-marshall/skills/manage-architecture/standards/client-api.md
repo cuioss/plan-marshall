@@ -99,7 +99,7 @@ The four graph-family verbs — [`graph`](#graph), [`path`](#path), [`neighbors`
 | `resolver_count: 0` + empty result | **No resolver ran.** The empty answer is an absence of capability, not a finding. |
 | `resolver_count: N` + empty result | **N resolvers ran and found nothing.** The empty answer is a real, positive result. |
 
-This is the same fail-closed reporting discipline [ADR-009](../../../../../doc/adr/009-Status_reporting_fails_closed_with_an_explicit_unknown_state.adoc) establishes and that `find` / `which-module` already apply via their `truncated` / `elided` flags: a confident-looking answer must carry the evidence that makes it confident.
+This is the same fail-closed reporting discipline [ADR-009](../../../../../../doc/adr/009-Status_reporting_fails_closed_with_an_explicit_unknown_state.adoc) establishes and that `find` / `which-module` already apply via their `truncated` / `elided` flags: a confident-looking answer must carry the evidence that makes it confident.
 
 **Edge producers**: every edge the `graph` verb emits carries a non-empty `producers[]` naming what derived it — the contributing resolver ids, or one of two reserved ids: `declared` (the edge came from a curated `enriched.internal_dependencies` or a discovered `derived.internal_dependencies` list, which take precedence over derivation) and `sibling-cross-link` (the edge was added by core's symmetric virtual-sibling augmentation after resolution). No edge in any response is producer-less.
 
