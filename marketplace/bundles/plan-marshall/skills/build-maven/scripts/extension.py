@@ -1,13 +1,22 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Build extension for plan-marshall:build-maven — the Maven file-to-build map.
+"""Build extension for plan-marshall:build-maven — file-to-build map and edge derivation.
 
-Owns Axis-B of the extension contract for the Maven build system: the
-``(pattern, role)`` build_map routes plus the ``classify_paths`` /
-``classify_path_specificity`` lookups that the manage-execution-manifest
-aggregator and the build_map seed consume. Subclasses
-:class:`BuildExtensionBase` (file-to-build only); skill-loading (Axis-A) lives
-on the Java domain extension that subclasses ``ExtensionBase``.
+Owns TWO axes of the extension contract for the Maven build system:
+
+- **Axis-B** (:class:`BuildExtensionBase`) — the ``(pattern, role)`` build_map
+  routes plus the ``classify_paths`` / ``classify_path_specificity`` lookups that
+  the manage-execution-manifest aggregator and the build_map seed consume.
+- **Axis-C** (:class:`DerivationResolverBase`) — the Maven coordinate join that
+  derives which modules depend on which. It is the re-homed form of the join that
+  previously lived inline in ``manage-architecture``: joining
+  ``metadata.group_id`` / ``artifact_id`` against every module's
+  ``groupId:artifactId:scope`` dependency strings is Maven domain knowledge, and
+  the bundle that already understands that data is the one that owns it.
+
+Skill-loading (Axis-A) is NOT here — it lives on the Java domain extension that
+subclasses ``ExtensionBase``. The two Axis-C methods are opted into by multiple
+inheritance, the only shape reachable from both otherwise-disjoint hierarchies.
 
 The Maven build extension claims Java production / test sources under the
 ``src/main`` and ``src/test`` convention, the Maven-standard resource trees
@@ -20,11 +29,15 @@ sibling build-gradle extension.
 import fnmatch
 from posixpath import basename
 
-from extension_base import BUILD_CLASS_BUILD_CONFIG_FULL, BuildExtensionBase
+from extension_base import (
+    BUILD_CLASS_BUILD_CONFIG_FULL,
+    BuildExtensionBase,
+    DerivationResolverBase,
+)
 
 
-class BuildExtension(BuildExtensionBase):
-    """Maven build-system file-to-build extension."""
+class BuildExtension(BuildExtensionBase, DerivationResolverBase):
+    """Maven build-system file-to-build extension and module-edge derivation resolver."""
 
     def get_skill_domains(self) -> list[dict]:
         """Return the domain key this build system's routes are filed under.
@@ -179,3 +192,112 @@ class BuildExtension(BuildExtensionBase):
         ):
             return BUILD_CLASS_BUILD_CONFIG_FULL
         return super().classify_build_class(path, role)
+
+    # =========================================================================
+    # Axis-C: module-edge derivation (the Maven coordinate join)
+    # =========================================================================
+
+    def derivation_resolver_id(self) -> str:
+        """Return the stable provenance identity stamped onto every Maven edge.
+
+        See extension-api/standards/ext-point-derivation-resolver.md for the
+        complete four-face contract this identity participates in.
+        """
+        return 'maven'
+
+    @staticmethod
+    def _coordinate_owners(derived_by_name: dict) -> tuple[dict[str, str], list[str]]:
+        """Map each UNAMBIGUOUS ``groupId:artifactId`` coordinate to its module.
+
+        A coordinate claimed by exactly one module resolves to that module. A
+        coordinate claimed by two or more distinct modules is **ambiguous** and is
+        left out of the map entirely, so the join emits no edge for it, and the
+        collision is reported in the returned notes.
+
+        This is the ambiguous-identity-key obligation: the pre-move join built
+        this map with a bare last-write-wins assignment, which silently dropped
+        one module and every edge pointing at it, and which module survived
+        depended on map iteration order — a non-deterministic answer presented as
+        a confident one. Abstaining and reporting is strictly better than
+        guessing, because a genuinely ambiguous coordinate cannot be attributed to
+        a single module from the coordinate alone.
+
+        Returns:
+            An ``(artifact_to_module, notes)`` tuple. ``artifact_to_module`` maps
+            each unambiguous coordinate to its owning module name. ``notes`` names
+            one suppressed coordinate per collision, sorted for determinism.
+        """
+        claimants: dict[str, set[str]] = {}
+        for mod_name, mod_data in derived_by_name.items():
+            metadata = mod_data.get('metadata', {})
+            group_id = metadata.get('group_id')
+            artifact_id = metadata.get('artifact_id')
+            if group_id and artifact_id:
+                claimants.setdefault(f'{group_id}:{artifact_id}', set()).add(mod_name)
+
+        artifact_to_module: dict[str, str] = {}
+        notes: list[str] = []
+        for coordinate in sorted(claimants):
+            owners = claimants[coordinate]
+            if len(owners) == 1:
+                artifact_to_module[coordinate] = next(iter(owners))
+                continue
+            notes.append(
+                f'ambiguous coordinate {coordinate}: claimed by '
+                f'{", ".join(sorted(owners))} — no edge emitted'
+            )
+        return artifact_to_module, notes
+
+    def derive_edges(
+        self,
+        derived_by_name: dict,
+        enriched_by_name: dict,
+    ) -> tuple[list[tuple[str, str]], list[str]]:
+        """Derive module edges by joining Maven coordinates against dependency strings.
+
+        The Maven reactor states its internal structure in coordinates: each module
+        publishes a ``groupId:artifactId`` and names its dependencies as
+        ``groupId:artifactId:scope`` strings. An edge exists wherever one module's
+        dependency coordinate matches another module's published coordinate, which
+        is what this join computes — matching on the first TWO colon-separated
+        parts so the scope segment (and any further segment) is ignored.
+
+        Behaviour is preserved from the pre-move inline join on every unambiguous
+        input, with exactly ONE deliberate divergence: a coordinate claimed by two
+        distinct modules yields no edge and a reported collision rather than a
+        silent last-write-wins pick. See :meth:`_coordinate_owners`.
+
+        Self-edges are excluded — a module's dependency on its own coordinate is
+        not a reactor edge. (The core merge drops self-edges too; excluding them
+        here keeps this resolver's own ``edge_count`` report honest.)
+
+        The enriched overlay is unused: the precedence of a curated or discovered
+        ``internal_dependencies`` declaration OVER a derived edge set is core's
+        decision, applied ahead of the resolver call, so a resolver that
+        second-guessed it would be overriding a ruling it does not own.
+
+        Args:
+            derived_by_name: Module name → derived data. Each module's
+                ``dependencies`` list is already materialized by the caller (the
+                cheap crawl leaves it empty, so the caller resolves it before
+                dispatch) — this resolver runs no subprocess and touches no file.
+            enriched_by_name: Module name → LLM-curated overlay. Unused here.
+
+        Returns:
+            An ``(edges, notes)`` tuple. ``edges`` is the sorted list of
+            ``(dependent, dependency)`` module-name pairs. ``notes`` names every
+            coordinate collision that suppressed an edge.
+        """
+        artifact_to_module, notes = self._coordinate_owners(derived_by_name)
+
+        edges: set[tuple[str, str]] = set()
+        for mod_name, mod_data in derived_by_name.items():
+            for dependency in mod_data.get('dependencies') or []:
+                parts = dependency.split(':')
+                if len(parts) < 2:
+                    continue
+                dep_module = artifact_to_module.get(f'{parts[0]}:{parts[1]}')
+                if dep_module is not None and dep_module != mod_name:
+                    edges.add((mod_name, dep_module))
+
+        return sorted(edges), notes

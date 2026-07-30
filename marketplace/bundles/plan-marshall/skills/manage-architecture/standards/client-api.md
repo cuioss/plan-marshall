@@ -81,6 +81,32 @@ modules[3]:
 
 ---
 
+## Resolver provenance (the graph family)
+
+The four graph-family verbs — [`graph`](#graph), [`path`](#path), [`neighbors`](#neighbors), and [`impact`](#impact) — all answer from the same derived edge set, and all four carry the same provenance pair so an empty answer is never vacuous. Module-edge derivation is an extension point (`DerivationResolverBase`, Axis-C): core owns the merge, the provenance, and the traversal, while each domain owns its own derivation. See [ext-point-derivation-resolver.md](../../extension-api/standards/ext-point-derivation-resolver.md) for the full contract.
+
+**Provenance fields** (present on all four verbs' success payloads):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `resolvers` | list | One `{id, edge_count, status, notes[]}` record per derivation resolver that ran. `status` is `ok` or `error`; an errored resolver contributes zero edges without aborting the others. `notes[]` reports every condition that **suppressed** an edge (an ambiguous identity key, an unresolvable reference) — a resolver that drops an edge silently violates the contract. |
+| `resolver_count` | int | `len(resolvers)`. The discriminator below. |
+
+**Zero-edge disambiguation** — the reason the pair exists. An empty result MUST be readable without inspecting the edge list:
+
+| Response | Meaning |
+|----------|---------|
+| `resolver_count: 0` + empty result | **No resolver ran.** The empty answer is an absence of capability, not a finding. |
+| `resolver_count: N` + empty result | **N resolvers ran and found nothing.** The empty answer is a real, positive result. |
+
+This is the same fail-closed reporting discipline [ADR-009](../../../../../../doc/adr/009-Status_reporting_fails_closed_with_an_explicit_unknown_state.adoc) establishes and that `find` / `which-module` already apply via their `truncated` / `elided` flags: a confident-looking answer must carry the evidence that makes it confident.
+
+**Edge producers**: every edge the `graph` verb emits carries a non-empty `producers[]` naming what derived it — the contributing resolver ids, or one of two reserved ids: `declared` (the edge came from a curated `enriched.internal_dependencies` or a discovered `derived.internal_dependencies` list, which take precedence over derivation) and `sibling-cross-link` (the edge was added by core's symmetric virtual-sibling augmentation after resolution). No edge in any response is producer-less.
+
+The rendered surfaces carry the same provenance as a one-line footer: [`overview`](#overview)'s Adjacency section and [`module --full --budget`](#module---full---budget)'s Internal Dependencies section each end with an `_Edge provenance: …_` line, which renders even when a module has no dependencies.
+
+---
+
 ### graph
 
 Get module dependency graph for ordering and parallelization.
@@ -93,6 +119,8 @@ architecture.py graph [--full]
 - `--full`: Include aggregator modules (pom-only parents). By default, modules with no source paths are filtered out.
 
 **Output**: See the "Module Graph Format" section in [architecture-persistence.md](architecture-persistence.md) for complete format specification.
+
+Each entry of `edges[]` carries `{from, to, producers[]}`, and the result carries the `resolvers[]` / `resolver_count` provenance pair — see § [Resolver provenance](#resolver-provenance-the-graph-family) for the field contract and the zero-edge disambiguation rule. An `edge_count: 0` graph with `resolver_count: 0` means no resolver ran; with `resolver_count: N` it means N resolvers ran and found no edges.
 
 **Single module output**:
 ```text
@@ -151,6 +179,9 @@ path[3]:
   - oauth-sheriff-quarkus-integration-tests
   - oauth-sheriff-quarkus
   - oauth-sheriff-core
+resolvers[1]{id,edge_count,status,notes}:
+  maven,7,ok,[]
+resolver_count: 1
 ```
 
 When `SOURCE == TARGET`, the path is a singleton `[SOURCE]`.
@@ -161,7 +192,12 @@ status: success
 source: lefty
 target: righty
 path: null
+resolvers[1]{id,edge_count,status,notes}:
+  maven,7,ok,[]
+resolver_count: 1
 ```
+
+The `resolvers[]` / `resolver_count` pair disambiguates the `null` path — see § [Resolver provenance](#resolver-provenance-the-graph-family). With `resolver_count: 0` a `null` path means no resolver ran, so there were no edges to walk in the first place; with `resolver_count: N` it means N resolvers ran and no path exists.
 
 When either module is unknown, the standard `Module not found` error envelope is returned.
 
@@ -197,9 +233,14 @@ neighbors[4]:
   - oauth-sheriff-quarkus
   - oauth-sheriff-quarkus-devui
   - oauth-sheriff-quarkus-integration-tests
+resolvers[1]{id,edge_count,status,notes}:
+  maven,7,ok,[]
+resolver_count: 1
 ```
 
 The `depth` echoed in the response is the **clamped** value — useful when callers pass `--depth 999` and want to verify the actual horizon used.
+
+The `resolvers[]` / `resolver_count` pair disambiguates a lone-module result — see § [Resolver provenance](#resolver-provenance-the-graph-family). A `neighbors` list containing only the starting module means "no resolver ran" under `resolver_count: 0`, and "N resolvers ran and this module has no neighbours within the requested depth" under `resolver_count: N`.
 
 **Use cases**:
 - Bound the working set when refactoring a module (depth 1 = direct deps; depth 2 = deps of deps)
@@ -230,9 +271,12 @@ impact[3]:
   - oauth-sheriff-quarkus
   - oauth-sheriff-quarkus-devui
   - oauth-sheriff-quarkus-integration-tests
+resolvers[1]{id,edge_count,status,notes}:
+  maven,7,ok,[]
+resolver_count: 1
 ```
 
-A leaf module (nothing depends on it) returns an empty `impact` list.
+A leaf module (nothing depends on it) returns an empty `impact` list — and the `resolvers[]` / `resolver_count` pair is what makes that empty list readable (see § [Resolver provenance](#resolver-provenance-the-graph-family)). Under `resolver_count: 0` an empty `impact` means no resolver ran, so nothing *could* have been found to depend on the module; under `resolver_count: N` it means N resolvers ran and the module genuinely has no dependents.
 
 **Use cases**:
 - Estimate blast radius before changing a low-level module
@@ -361,6 +405,8 @@ When `--full --budget N` is supplied, the command renders a **markdown** deep-di
 ... (truncated to fit budget=N; full output requires --budget {required})
 ```
 
+The **Internal Dependencies** section ends with the same one-line `_Edge provenance: …_` footer the `overview` Adjacency section carries, using identical wording. The section — and its provenance line — renders even when the module has no internal dependencies, because that is precisely the case an unqualified empty list would misrepresent as a positive finding. See § [Resolver provenance](#resolver-provenance-the-graph-family).
+
 The starting module is validated up-front: an unknown module raises the standard `Module not found` error envelope (TOON) instead of the markdown contract.
 
 **Determinism**: two consecutive invocations with the same arguments produce byte-identical output.
@@ -388,7 +434,7 @@ architecture.py overview [--budget N]
 
 1. **Project header** — name + description (from `_project.json`)
 2. **Modules** — table of `Module | Purpose | Responsibility`
-3. **Adjacency** — table of `Module | Internal Dependencies`
+3. **Adjacency** — table of `Module | Internal Dependencies`, followed by a one-line `_Edge provenance: …_` footer naming the contributing resolver ids (or stating that no resolver is registered) — see § [Resolver provenance](#resolver-provenance-the-graph-family)
 4. **Skills by Profile** — per-module skill counts (omitted if no module has `skills_by_profile`)
 
 **Truncation rule**: when the rendered output would exceed `--budget` lines, trailing sections are dropped one at a time (Skills first, then Adjacency, etc.) until the output fits, leaving room for a single marker line:

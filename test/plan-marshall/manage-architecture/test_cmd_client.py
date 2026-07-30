@@ -41,6 +41,11 @@ _modules_from_exception_or_fallback = _cmd_client._modules_from_exception_or_fal
 render_module_markdown = _cmd_client.render_module_markdown
 ModuleNotFoundInProjectError = _architecture_core.ModuleNotFoundInProjectError
 
+# ``_derive_edges`` is private to the query submodule and not re-exported by the
+# facade; reach it through the module ``_cmd_client`` just (re-)imported.
+_cmd_client_query = sys.modules['_cmd_client_query']
+_derive_edges = _cmd_client_query._derive_edges
+
 
 # =============================================================================
 # Tests for get_modules_list
@@ -1058,7 +1063,7 @@ def test_build_internal_deps_map_honours_preloaded_kwargs(monkeypatch):
         monkeypatch.setattr(_cmd_client, 'load_module_derived', tracking_load_derived)
         monkeypatch.setattr(_cmd_client, 'load_module_enriched_or_empty', tracking_load_enriched)
 
-        deps_map, module_names = _build_internal_deps_map(
+        deps_map, module_names, _resolvers = _build_internal_deps_map(
             tmpdir,
             derived_by_name=preloaded_derived,
             enriched_by_name=preloaded_enriched,
@@ -1461,7 +1466,7 @@ def test_build_internal_deps_map_cross_links_all_sibling_pairs_symmetrically():
         create_test_project_with_deps(tmpdir)
 
         # Act
-        deps_map, module_names = _build_internal_deps_map(
+        deps_map, module_names, _resolvers = _build_internal_deps_map(
             tmpdir,
             derived_by_name=derived_by_name,
             enriched_by_name=enriched_by_name,
@@ -1506,3 +1511,120 @@ def test_get_module_graph_cross_links_all_sibling_pairs_symmetrically():
     # Assert — drifted pair is repaired symmetrically by the augmentation.
     assert 'nifi-npm' in deps_of.get('nifi-maven', set())
     assert 'nifi-maven' in deps_of.get('nifi-npm', set())
+
+
+# =============================================================================
+# Axis-C seam guard: an unavailable extension-api resolves to ZERO resolvers
+# =============================================================================
+#
+# ``_derive_edges`` documents that "an unavailable extension-api resolves to zero
+# resolvers rather than an error". The guard must cover the CALL, not only the two
+# top-level imports: ``discover_derivation_resolvers()`` performs its own deferred
+# ``from extension_base import DerivationResolverBase``, so a missing script-shared
+# path raises from the call site. Left outside the guard, that turns every
+# graph-family verb (graph / path / neighbors / impact) into ``status: error``.
+
+
+def _resolver_input_modules() -> dict:
+    """Two modules that already declare ``internal_dependencies``.
+
+    A declared module takes the cheap path in ``_derive_edges`` — no lazy Maven
+    enrichment fires — so these tests never shell out to a build tool.
+    """
+    return {
+        'module-a': {'internal_dependencies': []},
+        'module-b': {'internal_dependencies': []},
+    }
+
+
+class _StubEdgeResolver:
+    """A resolver contributing one valid edge between the two known modules."""
+
+    def derive_edges(self, derived_by_name, enriched_by_name):
+        return [('module-a', 'module-b')], []
+
+
+def _stub_extension_discovery(discover):
+    """Build a stand-in ``extension_discovery`` module exposing ``discover``."""
+    import types
+
+    stub = types.ModuleType('extension_discovery')
+    stub.discover_derivation_resolvers = discover
+    return stub
+
+
+def test_derive_edges_reaches_the_merge_when_discovery_succeeds(monkeypatch):
+    """Positive control: both guarded imports resolve and the merge runs.
+
+    Without this, the zero-resolver assertions below would pass vacuously — an
+    unimportable ``_derivation_merge`` would return ``([], [])`` for the wrong
+    reason.
+    """
+    # Arrange
+    resolver = _StubEdgeResolver()
+    monkeypatch.setitem(
+        sys.modules,
+        'extension_discovery',
+        _stub_extension_discovery(
+            lambda: [{'origin': 'stub-origin', 'id': 'stub', 'module': resolver}]
+        ),
+    )
+
+    # Act
+    edges, reports = _derive_edges(_resolver_input_modules(), {}, '/nonexistent')
+
+    # Assert
+    assert edges == [{'from': 'module-a', 'to': 'module-b', 'producers': ['stub']}]
+    assert [rec['id'] for rec in reports] == ['stub']
+
+
+def test_derive_edges_returns_zero_resolvers_when_discovery_raises_import_error(monkeypatch):
+    """The documented fallback holds when the CALL — not the import — raises."""
+    # Arrange — mimics extension_discovery's own deferred import failing
+    def _raising_discovery():
+        raise ImportError("No module named 'extension_base'")
+
+    monkeypatch.setitem(
+        sys.modules, 'extension_discovery', _stub_extension_discovery(_raising_discovery)
+    )
+
+    # Act — must not propagate
+    edges, reports = _derive_edges(_resolver_input_modules(), {}, '/nonexistent')
+
+    # Assert — zero resolvers, not an error
+    assert edges == []
+    assert reports == []
+
+
+def test_derive_edges_reports_no_resolvers_when_discovery_returns_empty(monkeypatch):
+    """The empty-registry path is shape-identical to the unavailable-api path."""
+    # Arrange
+    monkeypatch.setitem(sys.modules, 'extension_discovery', _stub_extension_discovery(list))
+
+    # Act
+    edges, reports = _derive_edges(_resolver_input_modules(), {}, '/nonexistent')
+
+    # Assert
+    assert edges == []
+    assert reports == []
+
+
+def test_derive_edges_does_not_swallow_a_non_import_error(monkeypatch):
+    """The guard is deliberately narrow: only ``ImportError`` means "unavailable".
+
+    A resolver-discovery bug that raises something else is a real fault and must
+    stay visible rather than masquerading as an empty registry.
+    """
+    # Arrange
+    def _broken_discovery():
+        raise RuntimeError('boom-discovery')
+
+    monkeypatch.setitem(
+        sys.modules, 'extension_discovery', _stub_extension_discovery(_broken_discovery)
+    )
+
+    # Act / Assert
+    import pytest
+
+    with pytest.raises(RuntimeError, match='boom-discovery'):
+        _derive_edges(_resolver_input_modules(), {}, '/nonexistent')

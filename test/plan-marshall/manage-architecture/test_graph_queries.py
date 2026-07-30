@@ -218,32 +218,38 @@ def _create_diamond_graph(tmpdir: str) -> None:
 def test_path_happy_path_chain():
     with tempfile.TemporaryDirectory() as tmpdir:
         _create_chain_graph(tmpdir)
-        assert get_module_path('alpha', 'gamma', tmpdir) == ['alpha', 'beta', 'gamma']
+        path, _resolvers = get_module_path('alpha', 'gamma', tmpdir)
+        assert path == ['alpha', 'beta', 'gamma']
 
 
 def test_path_no_edge_returns_none():
     with tempfile.TemporaryDirectory() as tmpdir:
         _create_disconnected_graph(tmpdir)
-        assert get_module_path('lefty', 'righty', tmpdir) is None
+        path, _resolvers = get_module_path('lefty', 'righty', tmpdir)
+        assert path is None
 
 
 def test_path_with_cycle_terminates():
     with tempfile.TemporaryDirectory() as tmpdir:
         _create_cyclic_graph(tmpdir)
-        assert get_module_path('alpha', 'gamma', tmpdir) == ['alpha', 'beta', 'gamma']
-        assert get_module_path('beta', 'alpha', tmpdir) == ['beta', 'gamma', 'alpha']
+        forward, _ = get_module_path('alpha', 'gamma', tmpdir)
+        assert forward == ['alpha', 'beta', 'gamma']
+        around, _ = get_module_path('beta', 'alpha', tmpdir)
+        assert around == ['beta', 'gamma', 'alpha']
 
 
 def test_path_self_loop_returns_singleton():
     with tempfile.TemporaryDirectory() as tmpdir:
         _create_chain_graph(tmpdir)
-        assert get_module_path('alpha', 'alpha', tmpdir) == ['alpha']
+        path, _resolvers = get_module_path('alpha', 'alpha', tmpdir)
+        assert path == ['alpha']
 
 
 def test_path_picks_shortest_in_diamond():
     with tempfile.TemporaryDirectory() as tmpdir:
         _create_diamond_graph(tmpdir)
-        assert get_module_path('service', 'api', tmpdir) == ['service', 'api']
+        path, _resolvers = get_module_path('service', 'api', tmpdir)
+        assert path == ['service', 'api']
 
 
 def test_path_unknown_module_raises():
@@ -261,25 +267,28 @@ def test_path_unknown_module_raises():
 def test_neighbors_depth_zero_is_singleton():
     with tempfile.TemporaryDirectory() as tmpdir:
         _create_fan_out_graph(tmpdir)
-        assert get_module_neighbors('hub', 0, tmpdir) == ['hub']
+        neighbors, _resolvers = get_module_neighbors('hub', 0, tmpdir)
+        assert neighbors == ['hub']
 
 
 def test_neighbors_depth_one_fan_out():
     with tempfile.TemporaryDirectory() as tmpdir:
         _create_fan_out_graph(tmpdir)
-        assert get_module_neighbors('hub', 1, tmpdir) == ['a', 'b', 'c', 'hub']
+        neighbors, _resolvers = get_module_neighbors('hub', 1, tmpdir)
+        assert neighbors == ['a', 'b', 'c', 'hub']
 
 
 def test_neighbors_depth_three_full_closure():
     with tempfile.TemporaryDirectory() as tmpdir:
         _create_fan_out_graph(tmpdir)
-        assert get_module_neighbors('hub', 3, tmpdir) == ['a', 'a-leaf', 'b', 'b-leaf', 'c', 'hub']
+        neighbors, _resolvers = get_module_neighbors('hub', 3, tmpdir)
+        assert neighbors == ['a', 'a-leaf', 'b', 'b-leaf', 'c', 'hub']
 
 
 def test_neighbors_depth_capped():
     with tempfile.TemporaryDirectory() as tmpdir:
         _create_fan_out_graph(tmpdir)
-        result = get_module_neighbors('hub', 999, tmpdir)
+        result, _resolvers = get_module_neighbors('hub', 999, tmpdir)
         assert result == ['a', 'a-leaf', 'b', 'b-leaf', 'c', 'hub']
 
 
@@ -305,19 +314,22 @@ def test_neighbors_unknown_module_raises():
 def test_impact_reverse_closure_diamond():
     with tempfile.TemporaryDirectory() as tmpdir:
         _create_diamond_graph(tmpdir)
-        assert get_module_impact('api', tmpdir) == ['app', 'core', 'service']
+        impact, _resolvers = get_module_impact('api', tmpdir)
+        assert impact == ['app', 'core', 'service']
 
 
 def test_impact_leaf_module_empty():
     with tempfile.TemporaryDirectory() as tmpdir:
         _create_diamond_graph(tmpdir)
-        assert get_module_impact('app', tmpdir) == []
+        impact, _resolvers = get_module_impact('app', tmpdir)
+        assert impact == []
 
 
 def test_impact_excludes_self():
     with tempfile.TemporaryDirectory() as tmpdir:
         _create_cyclic_graph(tmpdir)
-        assert get_module_impact('alpha', tmpdir) == ['beta', 'gamma']
+        impact, _resolvers = get_module_impact('alpha', tmpdir)
+        assert impact == ['beta', 'gamma']
 
 
 def test_impact_unknown_module_raises():
@@ -330,6 +342,36 @@ def test_impact_unknown_module_raises():
 # =============================================================================
 # CLI handler tests
 # =============================================================================
+#
+# Every graph-family payload carries the resolver-provenance pair
+# (``resolvers`` / ``resolver_count``). Resolver discovery is REGISTRY-WIDE, not
+# fixture-scoped: whichever resolvers this tree registers run against these
+# fixtures, so pinning the exact registry contents here would make a shape test
+# fail whenever a new resolver ships. These tests therefore assert the stable
+# payload exactly and check the provenance pair's own invariant separately; the
+# anti-vacuity semantics of the pair are owned by
+# test_graph_resolver_provenance.py, which injects stub resolvers to pin them.
+#
+# The fixtures' edges all come from declared ``internal_dependencies``, so a
+# registered resolver reporting zero edges here is the truthful answer.
+
+
+def _split_provenance(result: dict) -> tuple[dict, list, int]:
+    """Split a graph-family payload into (stable_payload, resolvers, resolver_count)."""
+    payload = dict(result)
+    return payload, payload.pop('resolvers'), payload.pop('resolver_count')
+
+
+def _assert_provenance_self_consistent(resolvers: list, resolver_count: int) -> None:
+    """Every response's resolver_count must equal the length of its resolver report list.
+
+    This is what keeps a zero-edge answer non-vacuous: the count is derived from
+    the reports rather than asserted independently of them, so a response can
+    never claim resolvers ran without naming them.
+    """
+    assert resolver_count == len(resolvers)
+    for record in resolvers:
+        assert set(record) == {'id', 'edge_count', 'status', 'notes'}
 
 
 def test_cmd_path_returns_toon_shape():
@@ -337,12 +379,14 @@ def test_cmd_path_returns_toon_shape():
         _create_chain_graph(tmpdir)
         args = Namespace(project_dir=tmpdir, source='alpha', target='gamma')
         result = cmd_path(args)
-        assert result == {
+        payload, resolvers, resolver_count = _split_provenance(result)
+        assert payload == {
             'status': 'success',
             'source': 'alpha',
             'target': 'gamma',
             'path': ['alpha', 'beta', 'gamma'],
         }
+        _assert_provenance_self_consistent(resolvers, resolver_count)
 
 
 def test_cmd_path_unreachable_returns_null_path():
@@ -350,7 +394,16 @@ def test_cmd_path_unreachable_returns_null_path():
         _create_disconnected_graph(tmpdir)
         args = Namespace(project_dir=tmpdir, source='lefty', target='righty')
         result = cmd_path(args)
-        assert result == {'status': 'success', 'source': 'lefty', 'target': 'righty', 'path': None}
+        payload, resolvers, resolver_count = _split_provenance(result)
+        assert payload == {
+            'status': 'success',
+            'source': 'lefty',
+            'target': 'righty',
+            'path': None,
+        }
+        # An unreachable path is only a positive answer alongside its provenance:
+        # without it, "no path" and "no resolver ran" would read identically.
+        _assert_provenance_self_consistent(resolvers, resolver_count)
 
 
 def test_cmd_path_unknown_module_returns_error():
@@ -368,12 +421,14 @@ def test_cmd_neighbors_returns_shape():
         _create_fan_out_graph(tmpdir)
         args = Namespace(project_dir=tmpdir, module='hub', depth=1)
         result = cmd_neighbors(args)
-        assert result == {
+        payload, resolvers, resolver_count = _split_provenance(result)
+        assert payload == {
             'status': 'success',
             'module': 'hub',
             'depth': 1,
             'neighbors': ['a', 'b', 'c', 'hub'],
         }
+        _assert_provenance_self_consistent(resolvers, resolver_count)
 
 
 def test_cmd_neighbors_clamps_depth_in_response():
@@ -389,11 +444,13 @@ def test_cmd_impact_returns_shape():
         _create_diamond_graph(tmpdir)
         args = Namespace(project_dir=tmpdir, module='api')
         result = cmd_impact(args)
-        assert result == {
+        payload, resolvers, resolver_count = _split_provenance(result)
+        assert payload == {
             'status': 'success',
             'module': 'api',
             'impact': ['app', 'core', 'service'],
         }
+        _assert_provenance_self_consistent(resolvers, resolver_count)
 
 
 # =============================================================================
@@ -460,8 +517,8 @@ def test_path_deterministic_on_repeated_call():
 def test_neighbors_deterministic_sorted_output():
     with tempfile.TemporaryDirectory() as tmpdir:
         _create_fan_out_graph(tmpdir)
-        first = get_module_neighbors('hub', 2, tmpdir)
-        second = get_module_neighbors('hub', 2, tmpdir)
+        first, _ = get_module_neighbors('hub', 2, tmpdir)
+        second, _ = get_module_neighbors('hub', 2, tmpdir)
         assert first == second
         assert first == sorted(first)
 
@@ -469,8 +526,8 @@ def test_neighbors_deterministic_sorted_output():
 def test_impact_deterministic_sorted_output():
     with tempfile.TemporaryDirectory() as tmpdir:
         _create_diamond_graph(tmpdir)
-        first = get_module_impact('api', tmpdir)
-        second = get_module_impact('api', tmpdir)
+        first, _ = get_module_impact('api', tmpdir)
+        second, _ = get_module_impact('api', tmpdir)
         assert first == second
         assert first == sorted(first)
 

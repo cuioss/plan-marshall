@@ -434,6 +434,99 @@ def discover_applicable_extensions(project_root: Path) -> list[dict[str, Any]]:
     return applicable
 
 
+def discover_derivation_resolvers() -> list[dict[str, Any]]:
+    """Discover every registered ``DerivationResolverBase`` implementor (Axis-C).
+
+    The Axis-C counterpart to :func:`discover_all_extensions` (Axis-A) and
+    :func:`discover_build_extensions` (Axis-B). Because a resolver opts in by
+    MULTIPLE INHERITANCE from either existing hierarchy — those two hierarchies
+    are disjoint, so no single one of them can carry the opt-in — this collector
+    spans BOTH existing discovery paths and filters the loaded modules by
+    ``isinstance(module, DerivationResolverBase)``. Scanning only one path would
+    silently hide every resolver on the other side.
+
+    There is **no new registry, no new scan surface, and no per-resolver glob**:
+    a resolver is discovered because its bundle or build skill is already a
+    registered extension that happens to also subclass ``DerivationResolverBase``.
+
+    A resolver whose ``derivation_resolver_id()`` raises, returns a non-string,
+    returns an empty/whitespace string, or repeats an id another resolver already
+    claimed is skipped with an ``[EXTENSION]`` WARNING, matching the guarded-call
+    idiom :func:`get_workflow_extensions_from_extensions` and
+    :func:`get_retrospective_aspects_from_extensions` use. An unidentifiable
+    resolver is dropped rather than admitted, because an edge without a producer
+    id would break the provenance contract that makes a zero-edge answer
+    non-vacuous.
+
+    The id is required to be a **non-empty string** rather than merely truthy: a
+    truthy non-string id (the int ``1``) would survive a falsiness check and then
+    raise on the mixed-type ``sort`` below, aborting every graph-family query. It
+    is required to be **unique** for the same reason the merge stamps
+    ``producers[]``: two resolvers answering to one id collapse into a single
+    producer identity, so the provenance report would attribute one resolver's
+    edges to the other — silently, and precisely where the contract promises
+    every edge is attributable.
+
+    Returns:
+        One ``{origin, id, module}`` record per discovered resolver, sorted by
+        ``id`` for deterministic downstream ordering. ``origin`` is the
+        contributing bundle name (Axis-A) or build-skill name (Axis-B), carried
+        for warning context and provenance reporting.
+    """
+    from extension_base import DerivationResolverBase
+
+    candidates: list[tuple[str, Any]] = []
+    for ext in discover_all_extensions():
+        module = ext.get('module')
+        if module is not None:
+            candidates.append((ext.get('bundle', 'unknown'), module))
+    for ext in discover_build_extensions():
+        module = ext.get('module')
+        if module is not None:
+            candidates.append((ext.get('skill', 'unknown'), module))
+
+    resolvers: list[dict[str, Any]] = []
+    origin_by_id: dict[str, str] = {}
+    for origin, module in candidates:
+        if not isinstance(module, DerivationResolverBase):
+            continue
+        try:
+            resolver_id = module.derivation_resolver_id()
+        except Exception as e:
+            log_entry(
+                'script',
+                None,
+                'WARNING',
+                f'[EXTENSION] derivation_resolver_id() failed for {origin}: {e}',
+            )
+            continue
+        if not isinstance(resolver_id, str) or not resolver_id.strip():
+            log_entry(
+                'script',
+                None,
+                'WARNING',
+                f'[EXTENSION] Skipping derivation resolver from {origin}: resolver id must be a '
+                f'non-empty string, got {resolver_id!r}',
+            )
+            continue
+        resolver_id = resolver_id.strip()
+        claimed_by = origin_by_id.get(resolver_id)
+        if claimed_by is not None:
+            log_entry(
+                'script',
+                None,
+                'WARNING',
+                f'[EXTENSION] Skipping derivation resolver from {origin}: resolver id '
+                f'{resolver_id!r} is already claimed by {claimed_by}',
+            )
+            continue
+        origin_by_id[resolver_id] = origin
+        resolvers.append({'origin': origin, 'id': resolver_id, 'module': module})
+
+    resolvers.sort(key=lambda rec: rec['id'])
+    return resolvers
+
+
 def get_skill_domains_from_extensions(extensions: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Get skill domains from extensions.
 

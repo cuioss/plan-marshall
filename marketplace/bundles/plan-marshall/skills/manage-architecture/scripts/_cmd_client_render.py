@@ -63,7 +63,26 @@ def _render_modules_section(enriched_by_name: dict[str, dict[str, Any]]) -> list
     return lines
 
 
-def _render_adjacency_section(deps_map: dict[str, list[str]]) -> list[str]:
+def _resolver_provenance_line(resolver_reports: list[dict[str, Any]]) -> str:
+    """Render the one-line resolver-provenance footer for a derived-edge section.
+
+    The rendered counterpart of the ``resolvers[]`` / ``resolver_count`` pair the
+    TOON graph-family verbs carry: it keeps a rendered empty dependency list from
+    reading as a positive "nothing depends on anything" claim when in truth no
+    resolver was registered to derive an edge.
+
+    Shared verbatim by the overview Adjacency footer and the module deep-dive's
+    Internal Dependencies footer so both surfaces state provenance identically.
+    """
+    if not resolver_reports:
+        return '_Edge provenance: no derivation resolver is registered — no edges were derived._'
+    ids = ', '.join(sorted(str(rec.get('id', '')) for rec in resolver_reports))
+    return f'_Edge provenance: derived by {len(resolver_reports)} resolver(s) — {ids}._'
+
+
+def _render_adjacency_section(
+    deps_map: dict[str, list[str]], resolver_reports: list[dict[str, Any]]
+) -> list[str]:
     if not deps_map:
         return []
     lines = ['## Adjacency', '', '| Module | Internal Dependencies |', '|---|---|']
@@ -71,6 +90,8 @@ def _render_adjacency_section(deps_map: dict[str, list[str]]) -> list[str]:
         deps = deps_map[name]
         rendered = ', '.join(sorted(deps)) if deps else '—'
         lines.append(f'| {name} | {rendered} |')
+    lines.append('')
+    lines.append(_resolver_provenance_line(resolver_reports))
     lines.append('')
     return lines
 
@@ -164,7 +185,7 @@ def render_overview(project_dir: str = '.', budget: int = DEFAULT_OVERVIEW_BUDGE
     enriched_by_name: dict[str, dict[str, Any]] = {
         name: load_module_enriched_or_empty(name, project_dir) for name in module_names
     }
-    deps_map, _ = _build_internal_deps_map(
+    deps_map, _module_names, resolver_reports = _build_internal_deps_map(
         project_dir,
         derived_by_name=derived_by_name,
         enriched_by_name=enriched_by_name,
@@ -173,7 +194,7 @@ def render_overview(project_dir: str = '.', budget: int = DEFAULT_OVERVIEW_BUDGE
     sections = [
         _render_project_section(meta),
         _render_modules_section(enriched_by_name),
-        _render_adjacency_section(deps_map),
+        _render_adjacency_section(deps_map, resolver_reports),
         _render_skills_by_profile_section(enriched_by_name),
     ]
     sections = [s for s in sections if s]
@@ -227,13 +248,19 @@ def render_module_markdown(
         '',
     ]
 
-    deps_map, _ = _build_internal_deps_map(project_dir)
+    deps_map, _module_names, resolver_reports = _build_internal_deps_map(project_dir)
     deps = deps_map.get(module_name, [])
-    deps_section: list[str] = []
+    # The section renders unconditionally: the provenance line MUST appear even
+    # when the module has no dependencies, because that is precisely the case an
+    # unqualified empty list would misrepresent as a positive finding.
+    deps_section: list[str] = ['## Internal Dependencies', '']
     if deps:
-        deps_section = ['## Internal Dependencies', '']
         deps_section.extend(f'- {d}' for d in deps)
-        deps_section.append('')
+    else:
+        deps_section.append('—')
+    deps_section.append('')
+    deps_section.append(_resolver_provenance_line(resolver_reports))
+    deps_section.append('')
 
     packages = merged.get('key_packages') or merged.get('packages') or []
     packages_section: list[str] = []
