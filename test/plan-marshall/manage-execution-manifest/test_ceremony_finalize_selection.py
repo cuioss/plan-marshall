@@ -19,13 +19,25 @@ The transform NEVER touches ``automatic-review`` — the bot-review invariant is
 orthogonal and preserved.
 
 Every ceremony gate's ``lane`` override folds under its owning finalize step's
-nested param object in ``plan.phase-6-finalize.steps``: ``qgate`` →
+nested param object in ``phase-6-finalize.steps``: ``qgate`` →
 ``default:pre-push-quality-gate``; ``self_review`` →
 ``default:pre-submission-self-review``; ``simplify`` →
 ``default:finalize-step-simplify``; ``security_audit`` →
 ``default:finalize-step-security-audit``. There is no flat phase-level ``qgate``
 sibling. The internal transform name retains the ``ceremony_finalize`` prefix for
 continuity.
+
+**Two declaration channels, one merged source.** That ``steps[<owner>].lane``
+override is resolved from the MERGED plan-local-over-marshal step map, not from
+marshal.json alone: a plan-scoped answer persisted to that plan's
+``status.metadata.finalize_step_overrides`` governs the ceremony gate exactly as
+a project-wide marshal declaration does. The obligation is a SYMMETRIC PAIR — the
+same merged map feeds ``_read_step_owned_knob`` (this transform's run-at-all
+knob) and ``_lane_override_for`` (the scope gate's declared-lane immunity
+predicate) — so a declaration can never reach one reader and be invisible to the
+other. ``TestCeremonyFinalizePlanLocalChannel`` asserts the two channels resolve
+identically, which is the assertion that fails if the two readers ever diverge
+again.
 
 ``always`` is the only path that RE-ADDS a step a pre-filter already dropped, and
 it covers only these four gates. It is not the only way an operator declaration
@@ -75,10 +87,14 @@ read_manifest = _mem.read_manifest
 DEFAULT_PHASE_6_STEPS = _mem.DEFAULT_PHASE_6_STEPS
 
 # Silence the best-effort decision-log subprocess in tests.
+#
+# Every assignment MUST name an emitter that still exists: ``setattr`` on a module
+# succeeds for a name that was never defined, so a stale entry would silently
+# re-create a removed attribute instead of failing loudly.
 _mem._log_decision = lambda *a, **kw: None
 _mem._log_commit_push_omitted = lambda *a, **kw: None
 _mem._log_pre_push_quality_gate_omitted = lambda *a, **kw: None
-_mem._log_pre_submission_self_review_omitted = lambda *a, **kw: None
+_mem._log_pre_push_quality_gate_kept_unknown = lambda *a, **kw: None
 _mem._log_scope_gated_finalize_subtraction = lambda *a, **kw: None
 _mem._log_ceremony_finalize_selection = lambda *a, **kw: None
 _mem._log_candidate_source = lambda *a, **kw: None
@@ -234,20 +250,28 @@ def _seed_marshal(
     return marshal_path
 
 
-def _stub_footprint(footprint: list[str]) -> None:
-    """Stub the footprint seams so activation pre-filters see the given set.
+def _stub_footprint(footprint: list[str] | None) -> None:
+    """Stub the footprint seams so activation pre-filters see the given state.
 
-    Two pre-filters resolve the live footprint through different seams: the
-    self-review pre-filter reads the manifest module's ``_resolve_footprint``,
-    while the pre-push-quality-gate pre-filter delegates to
-    ``extension_base.should_execute_build``, which resolves the footprint via the
-    extension_base module's ``_resolve_plan_footprint``. Stub BOTH so the test
-    footprint drives every activation decision.
+    Two seams resolve the live footprint independently: the composer's own
+    ``_mem._resolve_footprint`` (the canonical-verify pre-filter, the
+    security-class gate and the build-verdict assertion) and
+    ``extension_base._resolve_plan_footprint`` (via ``should_execute_build``,
+    which the pre-push-quality-gate pre-filter delegates to). Stub BOTH so the
+    test state drives every activation decision, and keep them in lock-step —
+    they are symmetric peers that must never disagree about the same worktree.
+
+    ``footprint`` carries the resolvers' three-state return verbatim: ``None``
+    (unresolvable — no evidence), ``[]`` (resolvable and genuinely empty), or a
+    non-empty path list.
     """
     import extension_base
 
-    _mem._resolve_footprint = lambda plan_id: list(footprint)
-    extension_base._resolve_plan_footprint = lambda plan_id: list(footprint)
+    def _resolve(_plan_id):
+        return None if footprint is None else list(footprint)
+
+    _mem._resolve_footprint = _resolve
+    extension_base._resolve_plan_footprint = _resolve
 
 
 def _manifest_phase_6_steps(result: dict) -> list[str]:
@@ -256,6 +280,18 @@ def _manifest_phase_6_steps(result: dict) -> list[str]:
     manifest = read_manifest(plan_id)
     assert manifest is not None
     return list(manifest.get('phase_6', {}).get('steps', []))
+
+
+def _lane_dropped_reasons(result: dict) -> dict[str, str]:
+    """Index the ``lane_dropped`` subtraction records by step id.
+
+    ``lane_dropped`` carries ``{step, reason}`` records rather than bare ids, so
+    each drop names WHY it happened — an explicit ``off`` opt-out versus an
+    effective tier above the posture cutoff. Indexing by step keeps the
+    membership assertions readable while making the reason available to the
+    tests that need to distinguish the two.
+    """
+    return {record['step']: record['reason'] for record in result['lane_dropped']}
 
 
 def _bare(steps: list[str]) -> set[str]:
@@ -275,10 +311,23 @@ _FOOTPRINT = ['marketplace/bundles/x/skills/y/foo.py']
 
 @pytest.fixture(autouse=True)
 def _restore_footprint_resolver():
-    """Snapshot + restore ``_resolve_footprint`` so a stub never leaks across tests."""
+    """Snapshot + restore BOTH footprint seams so a stub never leaks across tests.
+
+    ``_stub_footprint`` replaces two module attributes, so restoring only
+    ``_mem._resolve_footprint`` left ``extension_base._resolve_plan_footprint``
+    pinned for the rest of the worker process. Because ``extension_base`` is a
+    shared cross-skill module, that leak reached UNRELATED test modules — a
+    sibling asserting the real resolver's return observed this file's stub
+    instead. Both seams are snapshotted and restored, symmetrically with the pair
+    that ``_stub_footprint`` sets.
+    """
+    import extension_base
+
     original = _mem._resolve_footprint
+    original_plan_footprint = extension_base._resolve_plan_footprint
     yield
     _mem._resolve_footprint = original
+    extension_base._resolve_plan_footprint = original_plan_footprint
 
 
 # =============================================================================
@@ -453,8 +502,11 @@ class TestCeremonyFinalizeAlways:
         _stub_footprint(_FOOTPRINT)
         # Force the gate value directly — the owning step is absent from the map,
         # so `_seed_marshal` cannot fold the knob onto it.
+        # ``_read_finalize_gates`` takes the plan id so it can resolve the gate's
+        # lane from the MERGED plan-local-over-marshal step map; the stub accepts
+        # (and ignores) it.
         original_gates = _mem._read_finalize_gates
-        _mem._read_finalize_gates = lambda: {
+        _mem._read_finalize_gates = lambda _plan_id: {
             'self_review': 'always', 'qgate': 'auto', 'simplify': 'auto', 'security_audit': 'auto',
         }
         try:
@@ -967,6 +1019,167 @@ class TestEnhancementGateActivation:
 
 
 # =============================================================================
+# Test: the plan-local declaration channel governs the ceremony gate
+#
+# THE R2 SYMMETRIC-PAIR REGRESSION. Two independent readers resolve the same
+# ``steps[<step>].lane`` field: ``_read_step_owned_knob`` (behind
+# ``_read_finalize_gates`` — each ceremony gate's run-at-all decision) and
+# ``_lane_override_for`` (behind ``_has_declared_lane_override`` — the scope
+# gate's declared-lane immunity predicate). Before the fix only the SECOND read
+# the plan-local channel, so an operator's plan-scoped answer could grant
+# scope-gate immunity while leaving the ceremony gate deaf to it — the step was
+# spared one subtraction and silently taken by another.
+#
+# Both now consume ONE merged plan-local-over-marshal map. The assertions below
+# are written as EQUIVALENCE between the two channels rather than as two
+# independent expectations: a plan-local declaration must produce the same
+# outcome a marshal declaration does. That framing is what fails if either reader
+# regresses to a marshal-only source, because the two channels would then
+# diverge even though each still "works" on its own.
+# =============================================================================
+
+
+def _write_plan_local_overrides(plan_context, plan_id: str, overrides: dict) -> Path:
+    """Seed ``status.metadata.finalize_step_overrides`` for ``plan_id``."""
+    plan_dir = Path(plan_context.plan_dir_for(plan_id))
+    status_path = plan_dir / 'status.json'
+    status_path.write_text(json.dumps({'metadata': {'finalize_step_overrides': overrides}}))
+    return status_path
+
+
+class TestCeremonyFinalizePlanLocalChannel:
+    """A plan-local ``lane`` governs the ceremony gate exactly as a marshal one does."""
+
+    _SELF_REVIEW_OWNER = 'default:pre-submission-self-review'
+
+    def _compose_with(self, plan_id: str, candidates: list[str]):
+        return cmd_compose(
+            _compose_ns(
+                plan_id=plan_id,
+                change_type='feature',
+                scope_estimate='multi_module',
+                affected_files_count=5,
+                phase_6_steps=','.join(candidates),
+            )
+        )
+
+    def test_plan_local_off_drops_the_gate_step_like_a_marshal_off(self, plan_context):
+        """``lane: off`` in either channel resolves the gate to ``never``.
+
+        Asserted as an equivalence: the plan-local compose and the marshal compose
+        must reach the SAME gate value and the same composed step list.
+        """
+        candidates = _phase_6_with_ceremony_steps().split(',')
+        _stub_footprint(_FOOTPRINT)
+
+        # Channel A — plan-local only; marshal declares nothing.
+        _seed_marshal(candidates=candidates)
+        _write_plan_local_overrides(
+            plan_context, 'ceremony-plan-local-off', {self._SELF_REVIEW_OWNER: {'lane': 'off'}}
+        )
+        plan_local = self._compose_with('ceremony-plan-local-off', candidates)
+
+        # Channel B — marshal only; the plan declares nothing.
+        _seed_marshal(finalize_gates={'self_review': 'off'}, candidates=candidates)
+        marshal = self._compose_with('ceremony-marshal-off', candidates)
+
+        assert plan_local is not None and marshal is not None
+        assert plan_local['ceremony_finalize_gates']['self_review'] == 'never'
+        assert (
+            plan_local['ceremony_finalize_gates']['self_review']
+            == marshal['ceremony_finalize_gates']['self_review']
+        )
+        assert 'pre-submission-self-review' not in _bare(_manifest_phase_6_steps(plan_local))
+        assert _bare(_manifest_phase_6_steps(plan_local)) == _bare(_manifest_phase_6_steps(marshal))
+
+    def test_plan_local_minimal_forces_the_gate_in_like_a_marshal_minimal(self, plan_context):
+        """``lane: minimal`` in either channel resolves the gate to ``always``."""
+        candidates = _phase_6_with_ceremony_steps().split(',')
+        _stub_footprint(_FOOTPRINT)
+
+        _seed_marshal(candidates=candidates)
+        _write_plan_local_overrides(
+            plan_context, 'ceremony-plan-local-min', {self._SELF_REVIEW_OWNER: {'lane': 'minimal'}}
+        )
+        plan_local = self._compose_with('ceremony-plan-local-min', candidates)
+
+        _seed_marshal(finalize_gates={'self_review': 'minimal'}, candidates=candidates)
+        marshal = self._compose_with('ceremony-marshal-min', candidates)
+
+        assert plan_local is not None and marshal is not None
+        assert plan_local['ceremony_finalize_gates']['self_review'] == 'always'
+        assert (
+            plan_local['ceremony_finalize_gates']['self_review']
+            == marshal['ceremony_finalize_gates']['self_review']
+        )
+
+    def test_plan_local_declaration_also_grants_scope_gate_immunity(self, plan_context):
+        """ONE declaration reaches BOTH readers — the symmetric-pair obligation.
+
+        The assertion that pins the defect directly. A plan-local ``lane`` must
+        simultaneously (a) resolve the ceremony gate and (b) appear in
+        ``scope_gated_finalize_immune``. If only the immunity predicate saw the
+        plan-local channel — the pre-fix state — the step would be spared the
+        scope gate and then dropped by a ceremony gate that never heard about the
+        declaration, which is a silent subtraction of an explicitly-declared step.
+        """
+        candidates = _phase_6_with_ceremony_steps().split(',')
+        _seed_marshal(candidates=candidates)
+        _stub_footprint(_FOOTPRINT)
+        _write_plan_local_overrides(
+            plan_context, 'ceremony-plan-local-immune', {self._SELF_REVIEW_OWNER: {'lane': 'off'}}
+        )
+
+        result = cmd_compose(
+            _compose_ns(
+                plan_id='ceremony-plan-local-immune',
+                change_type='bug_fix',
+                scope_estimate='surgical',
+                affected_files_count=2,
+                phase_6_steps=','.join(candidates),
+            )
+        )
+
+        assert result is not None and result['status'] == 'success'
+        # Reader 1 — the scope gate's immunity predicate saw the declaration.
+        assert 'pre-submission-self-review' in result['scope_gated_finalize_immune']
+        assert 'pre-submission-self-review' not in result['scope_gated_finalize_dropped']
+        # Reader 2 — the ceremony gate saw the SAME declaration.
+        assert result['ceremony_finalize_gates']['self_review'] == 'never'
+
+    def test_plan_local_overlays_a_marshal_declaration_on_the_same_step(self, plan_context):
+        """Precedence is plan-local ▸ marshal, applied per step key."""
+        candidates = _phase_6_with_ceremony_steps().split(',')
+        _seed_marshal(finalize_gates={'self_review': 'minimal'}, candidates=candidates)
+        _stub_footprint(_FOOTPRINT)
+        _write_plan_local_overrides(
+            plan_context, 'ceremony-plan-local-wins', {self._SELF_REVIEW_OWNER: {'lane': 'off'}}
+        )
+
+        result = self._compose_with('ceremony-plan-local-wins', candidates)
+
+        assert result is not None
+        # marshal said minimal (always); the plan-local off wins → never.
+        assert result['ceremony_finalize_gates']['self_review'] == 'never'
+
+    def test_absent_plan_local_map_leaves_the_marshal_declaration_intact(self, plan_context):
+        """The merge is an OVERLAY, not a replacement — no plan-local map is a no-op.
+
+        The negative case: a merge that returned only the plan-local map would
+        silently discard every project-wide declaration for any plan that has none
+        of its own, and every positive test above would still pass.
+        """
+        candidates = _phase_6_with_ceremony_steps().split(',')
+        _seed_marshal(finalize_gates={'self_review': 'off'}, candidates=candidates)
+        _stub_footprint(_FOOTPRINT)
+
+        result = self._compose_with('ceremony-no-plan-local', candidates)
+
+        assert result is not None
+        assert result['ceremony_finalize_gates']['self_review'] == 'never'
+
+
+# =============================================================================
 # Test: determinism — same inputs → same selection
 # =============================================================================
 
@@ -1177,9 +1390,13 @@ class TestCeremonyFinalizeImmuneOff:
         for step in _IMMUNE_FLOOR_STEPS:
             assert next(iter(_bare([step]))) in composed, f'{step} must survive a floor off'
 
-        # The opt-out peers with off are dropped (never kept).
+        # The opt-out peers with off are dropped (never kept), and each drop is
+        # recorded with a reason naming the explicit opt-out rather than the
+        # posture cutoff — the two are different facts about the same removal.
+        lane_dropped = _lane_dropped_reasons(result)
         for step in _OPT_OUT_STEPS:
-            assert step in result['lane_dropped']
+            assert step in lane_dropped
+            assert "'off'" in lane_dropped[step]
             assert next(iter(_bare([step]))) not in composed
 
         # Each floor step surfaces an immune informational warning.
@@ -1244,7 +1461,7 @@ class TestCeremonyFinalizeImmuneOff:
         )
         assert baseline is not None and baseline['status'] == 'success'
         assert 'sonar-roundtrip' in _bare(_manifest_phase_6_steps(baseline))
-        assert 'sonar-roundtrip' not in baseline['lane_dropped']
+        assert 'sonar-roundtrip' not in _lane_dropped_reasons(baseline)
 
         # With off → the adversarial step drops cleanly (no warning).
         _seed_marshal_lane_overrides(candidates, off_steps=['sonar-roundtrip'])
@@ -1259,7 +1476,13 @@ class TestCeremonyFinalizeImmuneOff:
             )
         )
         assert dropped is not None and dropped['status'] == 'success'
-        assert 'sonar-roundtrip' in dropped['lane_dropped']
+        reasons = _lane_dropped_reasons(dropped)
+        assert 'sonar-roundtrip' in reasons
+        # The recorded reason attributes the drop to the explicit off, not the
+        # posture — which is exactly what this test's name claims and what the
+        # bare-id list could never express.
+        assert "'off'" in reasons['sonar-roundtrip']
+        assert 'posture cutoff' not in reasons['sonar-roundtrip']
         assert 'sonar-roundtrip' not in _bare(_manifest_phase_6_steps(dropped))
         assert all(w['step'] != 'sonar-roundtrip' for w in dropped['lane_warnings'])
 

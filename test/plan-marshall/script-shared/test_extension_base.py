@@ -3,11 +3,13 @@
 """Tests for extension_base.py module (public API)."""
 
 import importlib.util
+import json
 import subprocess
 import typing
 from pathlib import Path
 
 import extension_base
+import pytest
 from extension_base import (
     ROLE_CONFIG,
     ROLE_PRODUCTION,
@@ -834,7 +836,14 @@ def test_tracked_basenames_cache_identity():
 
 
 def _pin_footprint(monkeypatch, globs, footprint):
-    """Redirect the two cross-skill readers so the predicate alone is exercised."""
+    """Redirect the two cross-skill readers so the predicate alone is exercised.
+
+    ``footprint`` carries the resolver's THREE-state return verbatim: ``None``
+    (unresolvable — no evidence), ``[]`` (resolvable and genuinely empty), or a
+    non-empty path list. Passing ``None`` here is what exercises the ``unknown``
+    verdict leg; it is deliberately not collapsed into ``[]`` by this helper,
+    since collapsing the two is exactly the defect the split fixes.
+    """
     monkeypatch.setattr(extension_base, '_read_build_map_globs', lambda _root=None: globs)
     monkeypatch.setattr(extension_base, '_resolve_plan_footprint', lambda _plan: footprint)
 
@@ -932,15 +941,17 @@ def test_command_free_empty_build_map_is_not_necessary(monkeypatch):
     assert 'canonical_command' not in verdict
 
 
-def test_command_free_empty_footprint_is_not_necessary(monkeypatch):
-    """The empty-footprint branch is reachable command-free and carries its own reason.
+def test_command_free_resolvable_empty_footprint_is_not_necessary(monkeypatch):
+    """A RESOLVABLE-and-empty footprint is the positive ``not_necessary`` answer.
 
-    This branch is the one that makes a COMPOSE-TIME consultation structurally
-    unsafe (the footprint is empty before the worktree materialises), so it must
-    stay distinguishable by its reason text rather than collapsing into the
-    generic no-match reason.
+    This is the ``[]`` half of the resolver's two-state split: the worktree was
+    located and its diff is genuinely empty, so "nothing changed" is a real,
+    substantiated observation. It must stay distinguishable by its reason text
+    both from the generic no-match reason AND from the ``unknown`` reason the
+    UNRESOLVABLE half now produces — collapsing those two is the defect the split
+    fixes.
     """
-    # Arrange — globs registered, nothing changed yet.
+    # Arrange — globs registered, worktree resolvable, diff genuinely empty.
     _pin_footprint(monkeypatch, ['scripts/*.py'], [])
 
     # Act
@@ -950,6 +961,267 @@ def test_command_free_empty_footprint_is_not_necessary(monkeypatch):
     assert verdict['decision'] == 'not_necessary'
     assert 'footprint is empty' in verdict['reason']
     assert 'canonical_command' not in verdict
+
+
+# =============================================================================
+# The third verdict: ``unknown`` (ADR-009 — an unsubstantiated verdict must not
+# read as a positive one).
+#
+# ``_resolve_plan_footprint`` returns ``None`` when the footprint cannot be
+# resolved at all, which is the NORMAL state at phase-4-plan compose, before
+# phase-5-execute Step 2.5 materialises the worktree. That state is no evidence
+# either way about what changed, so it yields a distinct ``unknown`` rather than
+# the vacuously-positive ``not_necessary`` that a single collapsed empty list
+# used to produce. Every consumer must branch on all three values; dropping a
+# build gate requires the POSITIVE ``not_necessary`` answer.
+# =============================================================================
+
+
+def test_command_free_unresolvable_footprint_is_unknown(monkeypatch):
+    """An UNRESOLVABLE footprint yields ``unknown``, never ``not_necessary``."""
+    # Arrange — globs registered, but the footprint cannot be resolved at all.
+    _pin_footprint(monkeypatch, ['scripts/*.py'], None)
+
+    # Act
+    verdict = should_execute_build(None, 'my-plan')
+
+    # Assert
+    assert verdict['decision'] == 'unknown'
+    assert verdict['reason']
+    assert 'unresolvable' in verdict['reason']
+    assert 'canonical_command' not in verdict
+
+
+def test_unknown_and_resolvable_empty_are_distinct_verdicts(monkeypatch):
+    """``None`` and ``[]`` must NOT produce the same verdict.
+
+    The single assertion that pins the split itself. Before the fix both states
+    collapsed to one empty list and therefore to one ``not_necessary`` verdict,
+    so a gate could be dropped on the strength of a footprint nobody had
+    observed. Asserting the two verdicts differ — rather than asserting each in
+    isolation — is what fails if a future change re-collapses them.
+    """
+    # Arrange / Act — same globs, only the resolver's state differs.
+    _pin_footprint(monkeypatch, ['scripts/*.py'], None)
+    unresolvable = should_execute_build(None, 'my-plan')
+    _pin_footprint(monkeypatch, ['scripts/*.py'], [])
+    resolvable_empty = should_execute_build(None, 'my-plan')
+
+    # Assert
+    assert unresolvable['decision'] == 'unknown'
+    assert resolvable_empty['decision'] == 'not_necessary'
+    assert unresolvable != resolvable_empty
+    assert unresolvable['reason'] != resolvable_empty['reason']
+
+
+def test_unknown_verdict_echoes_the_command_label(monkeypatch):
+    """The label-not-input property holds on the ``unknown`` verdict too.
+
+    The third verdict is not a special case of the labelling contract: a
+    command-bound consumer gets the identical decision/reason with its command
+    echoed, exactly as on ``build`` and ``not_necessary``.
+    """
+    # Arrange
+    _pin_footprint(monkeypatch, ['scripts/*.py'], None)
+
+    # Act
+    command_free = should_execute_build(None, 'my-plan')
+    labelled = should_execute_build('quality-gate', 'my-plan')
+
+    # Assert
+    assert labelled['decision'] == command_free['decision'] == 'unknown'
+    assert labelled['reason'] == command_free['reason']
+    assert labelled['canonical_command'] == 'quality-gate'
+    assert {k: v for k, v in labelled.items() if k != 'canonical_command'} == command_free
+
+
+def test_empty_build_map_outranks_an_unresolvable_footprint(monkeypatch):
+    """The no-globs branch is evaluated BEFORE the footprint is resolved.
+
+    A project that registers no build globs has a substantiated answer that does
+    not depend on the footprint at all — nothing here is buildable whatever
+    changed — so it stays ``not_necessary`` even when the footprint is
+    unresolvable. Pinning the precedence keeps a future reorder from turning
+    every no-build project's verdict into ``unknown``.
+    """
+    # Arrange — no globs AND an unresolvable footprint.
+    _pin_footprint(monkeypatch, [], None)
+
+    # Act
+    verdict = should_execute_build(None, 'my-plan')
+
+    # Assert
+    assert verdict['decision'] == 'not_necessary'
+    assert 'no globs' in verdict['reason']
+
+
+# =============================================================================
+# _resolve_plan_footprint() — the unresolvable-vs-resolvable-and-empty split at
+# its source. The verdict tests above pin the CONSUMER of the split; these pin
+# the resolver itself, so a regression that reverts a ``return None`` to a
+# ``return []`` fails here rather than only showing up as a mis-shaped verdict.
+# =============================================================================
+
+
+#: The genuine resolver, captured at import time — BEFORE any test can stub it.
+#:
+#: ``extension_base`` is a shared cross-skill module, and several manifest test
+#: modules pin ``_resolve_plan_footprint`` to a stub. Under xdist those modules
+#: share a worker process with this one, so the tests below cannot assume the
+#: attribute still holds the real function when they run. They restore it from
+#: this snapshot instead of trusting global state — a test that asserts the REAL
+#: resolver's behaviour must actually be calling it.
+_REAL_RESOLVE_PLAN_FOOTPRINT = extension_base._resolve_plan_footprint
+
+
+@pytest.fixture
+def real_footprint_resolver(monkeypatch):
+    """Pin ``_resolve_plan_footprint`` to the genuine implementation for one test."""
+    monkeypatch.setattr(
+        extension_base, '_resolve_plan_footprint', _REAL_RESOLVE_PLAN_FOOTPRINT
+    )
+
+
+def _write_status(plan_dir, metadata):
+    """Write a status.json carrying ``metadata`` into ``plan_dir``."""
+    (plan_dir / 'status.json').write_text(json.dumps({'metadata': metadata}))
+
+
+def test_resolve_plan_footprint_unresolvable_when_no_status(plan_context, real_footprint_resolver):
+    """No ``status.json`` at all — nothing can be observed, so ``None``."""
+    # Arrange — plan dir exists but carries no status file.
+    plan_context.plan_dir_for('no-status')
+
+    # Act / Assert
+    assert extension_base._resolve_plan_footprint('no-status') is None
+
+
+def test_resolve_plan_footprint_unresolvable_when_status_is_not_an_object(
+    plan_context, real_footprint_resolver
+):
+    """A malformed (non-object) ``status.json`` is unresolvable, not empty."""
+    # Arrange
+    plan_dir = plan_context.plan_dir_for('bad-status')
+    (plan_dir / 'status.json').write_text('["not", "an", "object"]')
+
+    # Act / Assert
+    assert extension_base._resolve_plan_footprint('bad-status') is None
+
+
+def test_resolve_plan_footprint_unresolvable_when_metadata_is_not_a_dict(
+    plan_context, real_footprint_resolver
+):
+    """A non-dict ``metadata`` block is unresolvable, not empty."""
+    # Arrange
+    plan_dir = plan_context.plan_dir_for('bad-metadata')
+    (plan_dir / 'status.json').write_text(json.dumps({'metadata': 'nope'}))
+
+    # Act / Assert
+    assert extension_base._resolve_plan_footprint('bad-metadata') is None
+
+
+def test_resolve_plan_footprint_unresolvable_when_worktree_path_absent(
+    plan_context, real_footprint_resolver
+):
+    """An absent/empty ``worktree_path`` is the early-compose state — ``None``.
+
+    This is the load-bearing case: at phase-4-plan the worktree has not been
+    materialised yet, so ``worktree_path`` is empty. Returning ``[]`` here is
+    precisely what let a compose-time consumer read "nothing changed" off a plan
+    whose changes simply did not exist yet.
+    """
+    # Arrange — metadata present, worktree_path not yet written.
+    _write_status(plan_context.plan_dir_for('no-worktree'), {'worktree_path': ''})
+
+    # Act / Assert
+    assert extension_base._resolve_plan_footprint('no-worktree') is None
+
+
+def test_resolve_plan_footprint_unresolvable_when_worktree_path_is_not_a_dir(
+    plan_context, tmp_path, real_footprint_resolver
+):
+    """A ``worktree_path`` that does not resolve to a directory is ``None``."""
+    # Arrange
+    missing = tmp_path / 'gone'
+    _write_status(plan_context.plan_dir_for('stale-worktree'), {'worktree_path': str(missing)})
+
+    # Act / Assert
+    assert extension_base._resolve_plan_footprint('stale-worktree') is None
+
+
+def test_resolve_plan_footprint_unresolvable_when_the_diff_walk_raises(
+    plan_context, tmp_path, monkeypatch, real_footprint_resolver
+):
+    """A raising ``compute_plan_branch_diff`` is unresolvable, not empty.
+
+    The git walk failing is an absence of evidence about what changed, so it
+    joins the other unresolvable legs rather than reporting a clean empty diff.
+    """
+    # Arrange — a real directory so the is_dir() guard passes, then fail the walk.
+    worktree = tmp_path / 'wt'
+    worktree.mkdir()
+    _write_status(plan_context.plan_dir_for('raising-diff'), {'worktree_path': str(worktree)})
+
+    import _references_core
+
+    def _raise(*_args, **_kwargs):
+        raise subprocess.CalledProcessError(128, ['git', 'diff'])
+
+    monkeypatch.setattr(_references_core, 'compute_plan_branch_diff', _raise)
+
+    # Act / Assert
+    assert extension_base._resolve_plan_footprint('raising-diff') is None
+
+
+def test_resolve_plan_footprint_returns_empty_list_when_resolvable_and_clean(
+    plan_context, tmp_path, monkeypatch, real_footprint_resolver
+):
+    """A resolvable worktree with a genuinely empty diff returns ``[]``, not ``None``.
+
+    The positive half of the split. It is the only state that licenses a
+    consumer to act on "nothing changed", so it must remain distinguishable from
+    every unresolvable leg above by identity (``[] is not None``), not merely by
+    falsiness — both are falsy, which is exactly how the two collapsed before.
+    """
+    # Arrange
+    worktree = tmp_path / 'wt'
+    worktree.mkdir()
+    _write_status(plan_context.plan_dir_for('clean-worktree'), {'worktree_path': str(worktree)})
+
+    import _references_core
+
+    monkeypatch.setattr(_references_core, 'compute_plan_branch_diff', lambda *_a, **_kw: [])
+
+    # Act
+    resolved = extension_base._resolve_plan_footprint('clean-worktree')
+
+    # Assert
+    assert resolved is not None
+    assert resolved == []
+
+
+def test_resolve_plan_footprint_returns_sorted_paths_when_resolvable(
+    plan_context, tmp_path, monkeypatch, real_footprint_resolver
+):
+    """A resolvable, dirty worktree returns its footprint sorted."""
+    # Arrange
+    worktree = tmp_path / 'wt'
+    worktree.mkdir()
+    _write_status(plan_context.plan_dir_for('dirty-worktree'), {'worktree_path': str(worktree)})
+
+    import _references_core
+
+    monkeypatch.setattr(
+        _references_core,
+        'compute_plan_branch_diff',
+        lambda *_a, **_kw: ['src/z.py', 'src/a.py'],
+    )
+
+    # Act
+    resolved = extension_base._resolve_plan_footprint('dirty-worktree')
+
+    # Assert
+    assert resolved == ['src/a.py', 'src/z.py']
 
 
 # =============================================================================

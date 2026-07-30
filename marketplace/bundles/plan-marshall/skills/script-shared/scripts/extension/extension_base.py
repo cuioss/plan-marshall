@@ -463,15 +463,24 @@ def _read_build_map_globs(project_root: str | None = None) -> list[str]:
     return globs
 
 
-def _resolve_plan_footprint(plan_id: str) -> list[str]:
+def _resolve_plan_footprint(plan_id: str) -> list[str] | None:
     """Derive the live plan footprint for ``plan_id`` on demand.
 
     Reads ``status.metadata.worktree_path`` to locate the worktree, then derives
     the footprint live via ``compute_plan_branch_diff`` (``{base}...HEAD`` ∪
-    porcelain). Returns an empty list when no worktree is resolvable — the normal
-    case during early compose (phase-4-plan), *before* phase-5 materialises the
-    worktree. :func:`should_execute_build` treats an empty footprint as "nothing
-    changed" and returns ``not_necessary``.
+    porcelain).
+
+    The return distinguishes two materially different states that a single
+    empty list used to collapse:
+
+    - ``None`` — the footprint is **unresolvable**: no ``status.json``, malformed
+      status, an absent/empty ``worktree_path``, a ``worktree_path`` that is not a
+      directory, or ``compute_plan_branch_diff`` raising. This is the normal
+      condition during early compose (phase-4-plan), *before* phase-5-execute
+      Step 2.5 materialises the worktree. There is no evidence either way about
+      what changed, so :func:`should_execute_build` reports ``unknown``.
+    - ``[]`` — the worktree **is** resolvable and its diff is genuinely empty.
+      Nothing changed, so :func:`should_execute_build` reports ``not_necessary``.
 
     The cross-skill ``file_ops`` / ``_references_core`` imports are deferred
     (in-function) for the same reason as :func:`_read_build_map_globs`: this
@@ -480,6 +489,10 @@ def _resolve_plan_footprint(plan_id: str) -> list[str]:
 
     Args:
         plan_id: Plan identifier whose footprint to resolve.
+
+    Returns:
+        The sorted repo-relative footprint paths for a resolvable worktree
+        (possibly empty), or ``None`` when the footprint is unresolvable.
     """
     import json as _json
     import subprocess as _subprocess
@@ -494,22 +507,22 @@ def _resolve_plan_footprint(plan_id: str) -> list[str]:
 
     status_path = get_plan_dir(plan_id) / FILE_STATUS
     if not status_path.exists():
-        return []
+        return None
     try:
         status = read_json(status_path, default={})
     except (OSError, _json.JSONDecodeError):
-        return []
+        return None
     if not isinstance(status, dict):
-        return []
+        return None
     metadata = status.get('metadata', {})
     if not isinstance(metadata, dict):
-        return []
+        return None
     worktree_path = metadata.get('worktree_path', '')
     if not isinstance(worktree_path, str) or not worktree_path:
-        return []
+        return None
     worktree = _Path(worktree_path)
     if not worktree.is_dir():
-        return []
+        return None
 
     refs_path = get_plan_dir(plan_id) / FILE_REFERENCES
     try:
@@ -522,7 +535,7 @@ def _resolve_plan_footprint(plan_id: str) -> list[str]:
     try:
         footprint = compute_plan_branch_diff(worktree, base_ref)
     except _subprocess.CalledProcessError:
-        return []
+        return None
     return sorted(footprint)
 
 
@@ -542,9 +555,18 @@ def should_execute_build(
 
     1. Collect the build_map globs via :func:`_read_build_map_globs`.
     2. Resolve the live footprint via :func:`_resolve_plan_footprint`.
-    3. Return ``not_necessary`` (with a log-friendly ``reason``) when the
-       build_map registers no globs, OR the footprint is empty, OR the footprint
-       intersects no build glob. Otherwise return ``build``.
+    3. Return ``unknown`` (with a log-friendly ``reason``) when the footprint is
+       **unresolvable** — no evidence either way about what changed. Return
+       ``not_necessary`` (with a log-friendly ``reason``) when the build_map
+       registers no globs, OR the footprint is resolvable-and-empty, OR the
+       footprint intersects no build glob. Otherwise return ``build``.
+
+    The three-value verdict vocabulary applies ADR-009 (*status reporting fails
+    closed with an explicit unknown state*): a verdict that cannot be
+    substantiated yields a distinct ``unknown`` rather than a vacuously-positive
+    ``not_necessary``. Consumers MUST branch on all three values and MUST NOT
+    collapse ``unknown`` into either of the other two — dropping a build gate
+    requires the positive ``not_necessary`` answer.
 
     ``canonical_command`` is an OPTIONAL LABEL on the question, never an input to
     it: it takes no part in the three-step predicate above, so for a fixed plan
@@ -574,7 +596,12 @@ def should_execute_build(
             {'decision': 'not_necessary', 'reason': <log-friendly text>,
              'canonical_command': <command>}
 
-        The ``canonical_command`` key is OMITTED from both shapes when
+        The ``unknown`` shape likewise always carries a non-empty ``reason``::
+
+            {'decision': 'unknown', 'reason': <log-friendly text>,
+             'canonical_command': <command>}
+
+        The ``canonical_command`` key is OMITTED from all three shapes when
         ``canonical_command`` is ``None``.
     """
     label = {} if canonical_command is None else {'canonical_command': canonical_command}
@@ -588,6 +615,12 @@ def should_execute_build(
         }
 
     footprint = _resolve_plan_footprint(plan_id)
+    if footprint is None:
+        return {
+            'decision': 'unknown',
+            'reason': 'plan footprint unresolvable — worktree not yet materialised',
+            **label,
+        }
     if not footprint:
         return {
             'decision': 'not_necessary',

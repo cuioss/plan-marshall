@@ -6,11 +6,18 @@ Covers:
 
 - ``pre_push_quality_gate_inactive`` — re-pointed onto the centralized
   build-decision API (``extension_base.should_execute_build``). The pre-filter
-  keeps ``pre-push-quality-gate`` only when the build-decision verdict is
-  ``build``; a ``not_necessary`` verdict drops it. The decision logic itself is
+  drops ``pre-push-quality-gate`` ONLY on the positive ``not_necessary`` verdict;
+  ``build`` and ``unknown`` both KEEP it. The decision logic itself is
   exhaustively covered in ``manage-config/test_build_decision.py``; here we
   assert the consumer-site wiring (verdict → keep/drop).
-- ``pre_submission_self_review_inactive`` — footprint-gated.
+- ``pre-submission-self-review``'s survival through compose. There is no
+  footprint-gated pre-filter for this step: the vacuous
+  ``pre_submission_self_review_inactive`` predicate (which structurally never
+  fired) has been removed outright, so the step is subtracted only by
+  ``commit_push_disabled`` when no push will occur.
+- The six-row decision matrix's SUBTRACTION RECORDS: every narrowing row returns
+  one ``{step, reason}`` record per candidate it removed, so a row can no longer
+  narrow the candidate list silently.
 - The absence of any bot-enforcement guard: ``automatic-review`` is governed
   purely by its configured candidacy / ``lane`` — compose never force-adds nor
   re-orders it.
@@ -55,12 +62,20 @@ _mem = _load_module('_mem_script_decision_rules', 'manage-execution-manifest.py'
 cmd_compose = _mem.cmd_compose
 read_manifest = _mem.read_manifest
 DEFAULT_PHASE_6_STEPS = _mem.DEFAULT_PHASE_6_STEPS
+_decide = _mem._decide
 
 # Silence the best-effort decision-log subprocess in tests.
+#
+# Each assignment below MUST name an emitter that still exists. ``setattr`` on a
+# module succeeds for a name that was never defined, so a stale entry here does
+# not fail loudly — it silently resurrects a dead attribute and leaves a live
+# reference to a removed function in the tree. ``TestNoRemovedSelfReviewSymbols``
+# asserts the absence explicitly rather than relying on these patches to fail.
 _mem._log_decision = lambda *a, **kw: None
 _mem._log_commit_push_omitted = lambda *a, **kw: None
 _mem._log_pre_push_quality_gate_omitted = lambda *a, **kw: None
-_mem._log_pre_submission_self_review_omitted = lambda *a, **kw: None
+_mem._log_pre_push_quality_gate_kept_unknown = lambda *a, **kw: None
+_mem._emit_decision_log = lambda *a, **kw: None
 
 # =============================================================================
 # Helpers
@@ -126,20 +141,21 @@ def _seed_marshal(ci_provider: str | None = 'github') -> Path:
     return marshal_path
 
 
-def _stub_footprint(footprint: list[str]) -> None:
-    """Stub ``_resolve_footprint`` so the activation pre-filter sees the given set.
+def _stub_footprint(footprint: list[str] | None) -> None:
+    """Stub ``_resolve_footprint`` so the activation pre-filters see the given state.
 
-    The ``pre_submission_self_review_inactive`` pre-filter now derives the live
-    plan footprint on demand via ``compute_plan_branch_diff`` rather than reading
-    a seeded ``references.modified_files`` ledger. Tests inject the footprint by
-    replacing the module-level resolver; the autouse fixture on
-    ``TestPreSubmissionSelfReviewInactive`` restores the original after each test.
+    The composer derives the live plan footprint on demand via
+    ``compute_plan_branch_diff`` rather than reading a seeded
+    ``references.modified_files`` ledger. Tests inject the resolver's THREE-state
+    return: ``None`` (unresolvable — no evidence), ``[]`` (resolvable and
+    genuinely empty), or a non-empty path list. The module-scoped autouse
+    ``_restore_footprint_resolver`` fixture restores the original after each test.
     """
-    _mem._resolve_footprint = lambda plan_id: list(footprint)
+    _mem._resolve_footprint = lambda plan_id: None if footprint is None else list(footprint)
 
 
 # =============================================================================
-# Test: pre_submission_self_review_inactive pre-filter
+# Test: pre-submission-self-review survival (the removed vacuous pre-filter)
 # =============================================================================
 
 
@@ -156,15 +172,32 @@ def _restore_footprint_resolver():
     _mem._resolve_footprint = original
 
 
-class TestPreSubmissionSelfReviewInactive:
-    """Pre-filter keeps the step through compose (self-gates at run time); commit_and_push=false strips it upstream."""
+class TestPreSubmissionSelfReviewSurvivesCompose:
+    """No footprint gate subtracts this step; only ``commit_push_disabled`` does.
 
-    def test_keeps_step_when_footprint_empty(self, plan_context):
-        # An empty compose-time footprint (phase-4-plan, before the worktree is
-        # materialised) is NOT evidence the step is inactive — it only means the
-        # worktree is not yet materialised. The step survives compose and
-        # self-gates at run time (mirroring _apply_canonical_verify_inactive's
-        # compose-time safety), so it is KEPT and reports omitted=False.
+    The ``pre_submission_self_review_inactive`` pre-filter was VACUOUS — it
+    structurally returned ``(candidates, False)`` for every input, so no footprint
+    state could ever drop the step — and has been removed outright along with its
+    unreachable emitter and its always-``False`` compose-result key. These cases
+    pin the surviving behaviour across all three footprint states, so a future
+    re-introduction of a footprint gate here fails rather than silently dropping a
+    review step the operator never opted out of.
+    """
+
+    def test_keeps_step_when_footprint_unresolvable(self, plan_context):
+        """Early compose (no worktree yet) is no evidence — the step survives."""
+        _seed_marshal(ci_provider=None)
+        _stub_footprint(None)
+
+        ns = _compose_ns(plan_id='qg-self-review-unresolvable')
+        result = cmd_compose(ns)
+
+        assert result is not None
+        assert result['status'] == 'success'
+        assert 'pre-submission-self-review' in result_phase_6_steps(result)
+
+    def test_keeps_step_when_footprint_resolvable_and_empty(self, plan_context):
+        """A resolvable-but-empty footprint does not drop the step either."""
         _seed_marshal(ci_provider=None)
         _stub_footprint([])
 
@@ -173,7 +206,6 @@ class TestPreSubmissionSelfReviewInactive:
 
         assert result is not None
         assert result['status'] == 'success'
-        assert result['pre_submission_self_review_omitted'] is False
         assert 'pre-submission-self-review' in result_phase_6_steps(result)
 
     def test_keeps_step_when_footprint_non_empty(self, plan_context):
@@ -185,10 +217,10 @@ class TestPreSubmissionSelfReviewInactive:
 
         assert result is not None
         assert result['status'] == 'success'
-        assert result['pre_submission_self_review_omitted'] is False
         assert 'pre-submission-self-review' in result_phase_6_steps(result)
 
     def test_commit_and_push_false_strips_self_review(self, plan_context):
+        """``commit_push_disabled`` is the ONE gate that still removes the step."""
         _seed_marshal(ci_provider=None)
         _stub_footprint(['some/file.py'])
 
@@ -197,11 +229,88 @@ class TestPreSubmissionSelfReviewInactive:
 
         assert result is not None
         assert result['status'] == 'success'
-        assert result['commit_push_omitted'] is True
         steps = result_phase_6_steps(result)
         assert 'push' not in steps
         assert 'pre-push-quality-gate' not in steps
         assert 'pre-submission-self-review' not in steps
+
+    def test_commit_push_drop_is_reported_per_step(self, plan_context):
+        """Every dropped step is named, not just ``push``.
+
+        The former aggregate reporting named only ``push``, so the two push-only
+        gates vanished unnamed. Each drop now carries its own ``{step, reason}``
+        record with a non-empty reason.
+
+        The candidate CSV is built explicitly to carry all three droppable steps:
+        the gate removes the INTERSECTION of its drop set with the candidates, and
+        the default candidate list happens to contain only ``push`` — which is
+        precisely why an aggregate line looked sufficient for so long.
+        """
+        _seed_marshal(ci_provider=None)
+        _stub_footprint(['some/file.py'])
+
+        candidates = list(DEFAULT_PHASE_6_STEPS)
+        for extra in ('pre-push-quality-gate', 'pre-submission-self-review'):
+            if extra not in candidates:
+                candidates.insert(candidates.index('push'), extra)
+
+        ns = _compose_ns(
+            plan_id='qg-self-review-records',
+            commit_and_push='false',
+            phase_6_steps=','.join(candidates),
+        )
+        result = cmd_compose(ns)
+
+        assert result is not None
+        dropped = result['commit_push_dropped']
+        assert {record['step'] for record in dropped} == {
+            'push',
+            'pre-push-quality-gate',
+            'pre-submission-self-review',
+        }
+        assert all(record['reason'] for record in dropped)
+
+    def test_commit_push_dropped_is_empty_when_pushing(self, plan_context):
+        """The complementary direction: nothing is dropped when a push will occur."""
+        _seed_marshal(ci_provider=None)
+        _stub_footprint(['some/file.py'])
+
+        ns = _compose_ns(plan_id='qg-self-review-pushing', commit_and_push='true')
+        result = cmd_compose(ns)
+
+        assert result is not None
+        assert result['commit_push_dropped'] == []
+
+
+class TestNoRemovedSelfReviewSymbols:
+    """The clean break left NO reference behind, in production or in test setup.
+
+    Asserted explicitly rather than inferred from a monkeypatch failing, because
+    ``setattr`` on a module SUCCEEDS for a name that no longer exists: a stale
+    ``_mem._log_pre_submission_self_review_omitted = ...`` line in a test's setup
+    would quietly re-create the dead attribute and this suite would never notice.
+    """
+
+    def test_removed_symbols_are_absent_from_the_module(self):
+        for symbol in (
+            '_apply_pre_submission_self_review_inactive',
+            '_log_pre_submission_self_review_omitted',
+        ):
+            assert not hasattr(_mem, symbol), (
+                f'{symbol} was removed in the clean break; a surviving attribute means '
+                'some test setup re-created it via setattr'
+            )
+
+    def test_removed_compose_result_key_is_absent(self, plan_context):
+        """The always-``False`` ``pre_submission_self_review_omitted`` key is gone."""
+        _seed_marshal(ci_provider=None)
+        _stub_footprint(['some/file.py'])
+
+        ns = _compose_ns(plan_id='qg-self-review-nokey')
+        result = cmd_compose(ns)
+
+        assert result is not None
+        assert 'pre_submission_self_review_omitted' not in result
 
 
 # =============================================================================
@@ -215,13 +324,14 @@ class TestPrePushQualityGateInactive:
     The build-necessity decision was centralized into
     ``extension_base.should_execute_build`` (Axis-B strip: the four former
     consumer sites no longer each re-derive it). ``_apply_pre_push_quality_gate_inactive``
-    is now a thin consumer — it keeps ``pre-push-quality-gate`` iff the verdict
-    is ``build`` and drops it on any ``not_necessary`` verdict. The pre-filter
-    imports ``should_execute_build`` from ``extension_base`` at call time, so
-    patching it on the ``extension_base`` module object is what the pre-filter
-    observes. The decision logic itself is covered in
-    ``manage-config/test_build_decision.py``; these tests assert only the
-    consumer-site wiring.
+    is now a thin consumer over the THREE-value verdict vocabulary: it drops
+    ``pre-push-quality-gate`` only on the positive ``not_necessary`` answer, and
+    KEEPS it on both ``build`` (a real build is needed) and ``unknown`` (no
+    evidence either way). The pre-filter imports ``should_execute_build`` from
+    ``extension_base`` at call time, so patching it on the ``extension_base``
+    module object is what the pre-filter observes. The decision logic itself is
+    covered in ``manage-config/test_build_decision.py``; these tests assert only
+    the consumer-site wiring.
     """
 
     def _phase_6_with_pre_push_quality_gate(self) -> str:
@@ -283,6 +393,75 @@ class TestPrePushQualityGateInactive:
         assert result['pre_push_quality_gate_omitted'] is True
         assert 'pre-push-quality-gate' not in result_phase_6_steps(result)
 
+    def test_keeps_gate_when_verdict_is_unknown(self, plan_context, monkeypatch):
+        """An ``unknown`` verdict KEEPS the gate — fail toward inclusion.
+
+        The load-bearing regression for Defect B's consumer site. An unresolvable
+        footprint is the normal state at phase-4-plan compose; reading it as a
+        positive "nothing to build" answer is what silently dropped a quality gate
+        the operator never opted out of. ADR-009 (an unsubstantiated verdict must
+        not read as a positive one) and ADR-004 (the composer may not re-derive
+        build necessity from any other signal) both require the keep.
+        """
+        _seed_marshal(ci_provider=None)
+        _stub_footprint(None)
+        monkeypatch.setattr(
+            extension_base,
+            'should_execute_build',
+            lambda command, plan_id, project_root=None: {
+                'decision': 'unknown',
+                'reason': 'plan footprint unresolvable — worktree not yet materialised',
+                'canonical_command': command,
+            },
+        )
+
+        ns = _compose_ns(
+            plan_id='qg-pre-push-unknown',
+            phase_6_steps=self._phase_6_with_pre_push_quality_gate(),
+        )
+        result = cmd_compose(ns)
+
+        assert result is not None
+        assert result['status'] == 'success'
+        assert result['pre_push_quality_gate_omitted'] is False
+        assert result['build_verdict_decision'] == 'unknown'
+        assert 'pre-push-quality-gate' in result_phase_6_steps(result)
+
+    def test_unknown_and_not_necessary_diverge_on_the_same_gate(self, plan_context, monkeypatch):
+        """Only the verdict differs, and only ``not_necessary`` drops the gate.
+
+        The paired assertion that pins the consumer reads the decision VALUE
+        rather than "anything that is not ``build``" — the shape that would
+        collapse ``unknown`` back into a drop.
+        """
+        _seed_marshal(ci_provider=None)
+        _stub_footprint(None)
+
+        def _verdict(decision):
+            return lambda command, plan_id, project_root=None: {
+                'decision': decision,
+                'reason': f'{decision} for test',
+                'canonical_command': command,
+            }
+
+        monkeypatch.setattr(extension_base, 'should_execute_build', _verdict('unknown'))
+        kept = cmd_compose(
+            _compose_ns(
+                plan_id='qg-pre-push-diverge-unknown',
+                phase_6_steps=self._phase_6_with_pre_push_quality_gate(),
+            )
+        )
+        monkeypatch.setattr(extension_base, 'should_execute_build', _verdict('not_necessary'))
+        dropped = cmd_compose(
+            _compose_ns(
+                plan_id='qg-pre-push-diverge-not-necessary',
+                phase_6_steps=self._phase_6_with_pre_push_quality_gate(),
+            )
+        )
+
+        assert 'pre-push-quality-gate' in result_phase_6_steps(kept)
+        assert 'pre-push-quality-gate' not in result_phase_6_steps(dropped)
+
     def test_no_op_when_gate_absent_from_candidates(self, plan_context, monkeypatch):
         """The pre-filter is a no-op (and never calls the decision) when the gate
         is already absent from the candidate set — e.g. already stripped by
@@ -303,6 +482,138 @@ class TestPrePushQualityGateInactive:
         assert result['status'] == 'success'
         assert result['pre_push_quality_gate_omitted'] is False
         assert 'pre-push-quality-gate' not in result_phase_6_steps(result)
+
+
+# =============================================================================
+# Test: the six-row matrix reports every subtraction it makes
+# =============================================================================
+
+
+class TestDecideSubtractionRecords:
+    """Every narrowing row returns one ``{step, reason}`` record per removal.
+
+    Five of the six matrix rows narrow a candidate list, and every one of them
+    used to do it SILENTLY — the row returned only the body and its rule name, so
+    a step the matrix removed left no trace an operator could read. The third
+    return value closes that: the matrix's DECISIONS are unchanged, only their
+    observability is.
+
+    Each case therefore asserts the record set against the actual difference
+    between the candidates it passed in and the steps that came out, rather than
+    against a hand-written expected list. Deriving the expectation from the
+    row's own output is what keeps these from degenerating into a restatement of
+    the implementation — a row that stopped narrowing, or narrowed more, fails.
+    """
+
+    _PHASE_5 = ['quality-gate', 'module-tests', 'coverage']
+    _PHASE_6 = ['push', 'ci-wait', 'lessons-capture', 'adr-propose', 'archive-plan', 'create-pr']
+
+    def _decide_with(self, **overrides):
+        kwargs = {
+            'change_type': 'feature',
+            'track': 'complex',
+            'scope_estimate': 'multi_module',
+            'recipe_key': None,
+            'affected_files_count': 5,
+            'phase_5_candidates': list(self._PHASE_5),
+            'phase_6_candidates': list(self._PHASE_6),
+        }
+        kwargs.update(overrides)
+        return _decide(**kwargs)
+
+    @staticmethod
+    def _assert_records_match_the_removals(body, dropped, phase_5_in, phase_6_in):
+        """Assert the record set is exactly what the row actually removed.
+
+        Derived from the row's own kept lists, so the assertion cannot drift into
+        a copy of the implementation's hardcoded reason sets.
+        """
+        removed = [s for s in phase_5_in if s not in body['phase_5']['verification_steps']]
+        removed += [s for s in phase_6_in if s not in body['phase_6']['steps']]
+        assert [record['step'] for record in dropped] == removed
+        assert all(record['reason'] for record in dropped), 'every record needs a non-empty reason'
+
+    def test_early_terminate_analysis_records_every_drop(self):
+        """Rule 1 empties phase-5 outright and narrows phase-6 to the analysis minimum."""
+        body, rule, dropped = self._decide_with(change_type='analysis', affected_files_count=0)
+
+        assert rule == 'early_terminate_analysis'
+        self._assert_records_match_the_removals(body, dropped, self._PHASE_5, self._PHASE_6)
+        # Every phase-5 candidate is removed, so each must be individually named.
+        assert {r['step'] for r in dropped} >= set(self._PHASE_5)
+
+    def test_recipe_row_records_every_drop(self):
+        """Rule 2 narrows phase-5 to the core verify roles and drops legacy ci-wait."""
+        body, rule, dropped = self._decide_with(recipe_key='recipe-surgical-fix')
+
+        assert rule == 'recipe'
+        self._assert_records_match_the_removals(body, dropped, self._PHASE_5, self._PHASE_6)
+        assert 'ci-wait' in {r['step'] for r in dropped}
+
+    def test_tests_only_row_records_every_drop(self):
+        """Rule 4 narrows phase-5 to the module-tests role and leaves phase-6 whole."""
+        body, rule, dropped = self._decide_with(change_type='verification', affected_files_count=3)
+
+        assert rule == 'tests_only'
+        self._assert_records_match_the_removals(body, dropped, self._PHASE_5, self._PHASE_6)
+        assert body['phase_6']['steps'] == self._PHASE_6
+
+    def test_surgical_bug_fix_row_records_every_drop(self):
+        """Rule 5 narrows both phases, and the reason names the firing rule."""
+        body, rule, dropped = self._decide_with(
+            change_type='bug_fix', scope_estimate='surgical'
+        )
+
+        assert rule == 'surgical_bug_fix'
+        self._assert_records_match_the_removals(body, dropped, self._PHASE_5, self._PHASE_6)
+        assert all('surgical_bug_fix' in record['reason'] for record in dropped)
+
+    def test_verification_no_files_row_records_every_drop(self):
+        """Rule 6 narrows phase-6 to the analysis minimum and keeps phase-5 whole."""
+        body, rule, dropped = self._decide_with(
+            change_type='verification', affected_files_count=0
+        )
+
+        assert rule == 'verification_no_files'
+        self._assert_records_match_the_removals(body, dropped, self._PHASE_5, self._PHASE_6)
+        assert body['phase_5']['verification_steps'] == self._PHASE_5
+
+    def test_default_row_narrows_nothing_and_records_nothing(self):
+        """Rule 7 is the safe baseline: no subtraction, so no records.
+
+        The negative case matters as much as the positives — a helper that
+        emitted a record per candidate regardless of removal would pass every
+        test above and fail only here.
+        """
+        body, rule, dropped = self._decide_with()
+
+        assert rule == 'default'
+        assert dropped == []
+        assert body['phase_5']['verification_steps'] == self._PHASE_5
+        assert body['phase_6']['steps'] == self._PHASE_6
+
+    def test_records_are_surfaced_on_the_compose_result(self, plan_context):
+        """The records reach the compose result, not just ``_decide``'s return.
+
+        The end-to-end half: a record list that never left the matrix would leave
+        the drop just as invisible to an operator as before.
+        """
+        _seed_marshal(ci_provider=None)
+        _stub_footprint(['some/file.py'])
+
+        ns = _compose_ns(
+            plan_id='qg-decide-records',
+            change_type='bug_fix',
+            scope_estimate='surgical',
+            phase_5_steps='quality-gate,module-tests,coverage',
+        )
+        result = cmd_compose(ns)
+
+        assert result is not None
+        assert result['status'] == 'success'
+        records = result['decision_matrix_dropped']
+        assert records, 'a narrowing row must surface its records on the compose result'
+        assert all(record['step'] and record['reason'] for record in records)
 
 
 # =============================================================================

@@ -934,15 +934,23 @@ def check_build_verdict_consistent(
     a signal other than the authority.
 
     **Non-empty-footprint precondition (load-bearing — the empty-footprint
-    trap).** ``should_execute_build`` returns ``not_necessary`` for an EMPTY
-    footprint ("plan footprint is empty — no changed files to build"), and at
-    early compose the footprint is ALWAYS empty: ``phase-4-plan`` composes before
-    ``phase-5-execute`` Step 2.5 materializes the worktree, so nothing has been
-    changed yet. Without the explicit guard clause below, the assertion would
-    therefore fire on essentially every plan at its first compose — a gate that
-    is not merely vacuous but inverted into a permanent false alarm. The guard
-    restricts the assertion to composes that can actually observe a real
-    footprint; an empty footprint yields ``None`` (no finding) unconditionally.
+    trap).** At early compose no footprint is observable at all: ``phase-4-plan``
+    composes before ``phase-5-execute`` Step 2.5 materializes the worktree, so
+    nothing has been changed yet and the resolver reports the footprint
+    UNRESOLVABLE. The caller passes that state through as an empty list. Without
+    the explicit guard clause below, an assertion fed a verdict derived from a
+    footprint it cannot observe would fire on essentially every plan at its first
+    compose — a gate that is not merely vacuous but inverted into a permanent
+    false alarm. The guard restricts the assertion to composes that can actually
+    observe a real footprint; an empty footprint yields ``None`` (no finding)
+    unconditionally.
+
+    **Only ``not_necessary`` substantiates a contradiction.** Precondition 2 below
+    requires the verdict's ``decision`` to be exactly ``not_necessary`` — the
+    positive "nothing here can be built" claim. An ``unknown`` verdict (what an
+    unresolvable footprint now produces) asserts nothing: it reports that the
+    authority could not substantiate an answer, so it can never evidence a
+    contradiction. The two preconditions are independent and both fail open.
 
     Args:
         phase_5_steps: FINAL composed ``phase_5.verification_steps``.
@@ -958,12 +966,17 @@ def check_build_verdict_consistent(
         ``step_id``, the verdict ``reason``, and an actionable ``message``.
     """
     # Precondition 1 — the empty-footprint trap. See the docstring: at early
-    # compose the footprint is structurally empty and the verdict is therefore
-    # ALWAYS not_necessary, so an unguarded assertion fires on every plan.
+    # compose no footprint is observable at all (the resolver reports it
+    # unresolvable and the caller passes that through as an empty list), so an
+    # unguarded assertion would fire on every plan's first compose.
     if not footprint:
         return None
 
-    # Precondition 2 — no verdict is not a contradiction.
+    # Precondition 2 — only the POSITIVE ``not_necessary`` answer substantiates a
+    # contradiction. An absent or malformed verdict asserts nothing, and neither
+    # does ``unknown`` (what an unresolvable footprint produces): it reports that
+    # the authority could not substantiate an answer, not that a build is
+    # unnecessary. Both preconditions are independent and both fail open.
     if not isinstance(verdict, dict) or verdict.get('decision') != 'not_necessary':
         return None
 

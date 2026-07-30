@@ -63,7 +63,9 @@ part of the plan" holds without a dedicated `always` level.
 
 For each element, the composer resolves in this order:
 
-1. **effective tier** = per-element override (`marshal.json`) ▸ else declared `lane.tier` ▸ else
+1. **effective tier** = per-element override (plan-local `status.metadata.finalize_step_overrides` ▸
+   project-wide `marshal.json`, merged as one map — see [Per-element override
+   knob](#per-element-override-knob)) ▸ else declared `lane.tier` ▸ else
    class default. An explicit override wins **except** a weakening `off` on a `derived-state` /
    `core` floor element, which is **immune**: the `off` is ignored, the element resolves at its
    declared `lane.tier` / class default, and an informational note records that the weakening
@@ -93,9 +95,15 @@ So:
 
 ### Per-element override knob
 
-Any element is pinned through the nested `marshal.json` step-param channel (the same shape
-finalize-step params use), value ∈ `off | minimal | auto | full | ask`
-(`off` = never run; `minimal` = force-keep in every posture; `ask` = always prompt):
+Any element is pinned through a nested step-param channel (the same shape finalize-step params
+use), value ∈ `off | minimal | auto | full | ask`
+(`off` = never run; `minimal` = force-keep in every posture; `ask` = always prompt).
+
+There are **two declaration channels** with the same shape, the same key forms, and the same enum —
+one project-wide, one plan-scoped:
+
+**Channel 1 — project-wide, in `marshal.json`.** The standing override for every plan in the
+project:
 
 ```json
 "plan": { "phase-6-finalize": { "steps": {
@@ -105,8 +113,32 @@ finalize-step params use), value ∈ `off | minimal | auto | full | ask`
 }}}
 ```
 
-The shipped per-element default lives in each element's frontmatter `lane:` block; `marshal.json`
-carries only the project / meta overrides.
+**Channel 2 — plan-scoped, in `status.metadata.finalize_step_overrides`.** The operator's answer
+for ONE plan, captured beside marshal rather than inside it:
+
+```json
+"metadata": { "finalize_step_overrides": {
+  "plan-marshall:plan-retrospective": { "lane": "full" }
+}}
+```
+
+The plan-scoped channel exists because an answer given about one plan must not silently become
+policy for every later plan: writing it into `marshal.json` would leak it project-wide. It is
+written by `manage-config finalize-steps set-lane --plan-id …`, where `--plan-id` is the channel
+SELECTOR on the one writer verb — supply it and only `status.metadata` is touched, omit it and only
+`marshal.json` is. There is no second writer and no second mechanism.
+
+The shipped per-element default lives in each element's frontmatter `lane:` block; the two override
+channels carry only the project / plan overrides.
+
+**Precedence: plan-local ▸ marshal ▸ declared `lane.tier` ▸ class default.** The two channels are
+merged once, per step key, and per knob (shallow) — so a plan-local `lane` overrides the marshal
+`lane` for that step without erasing a marshal-side sibling param on the same step. The merged map
+is the single source every per-element reader consults: the same merged value drives the
+execution-profile lane resolution, the scope gate's declared-lane immunity, and the four finalize
+ceremony gates' run-at-all decision. Consumers MUST NOT resolve a per-step lane from either channel
+alone — two readers disagreeing about one field is exactly the defect the single merged source
+removes.
 
 ### Adversarial infra elements — the `ask` seed and the compose-time drop-when-no-provider safety net
 

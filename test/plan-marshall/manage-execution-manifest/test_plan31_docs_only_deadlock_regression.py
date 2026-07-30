@@ -42,6 +42,16 @@ its own site behaves; none of them proves the sites AGREE end to end, which is
 precisely where the deadlock lived. This file asserts the reachable end state
 positively — the gate returns ``fresh`` for the authority's stated reason — and
 that no build is invoked anywhere along that path.
+
+THE THIRD VERDICT MUST NOT RE-OPEN THIS. The authority's vocabulary gained an
+``unknown`` value for the case where the footprint cannot be resolved at all.
+This gate keys its exemption on the POSITIVE ``not_necessary`` answer only, so
+``unknown`` falls through to the ledger scan and BLOCKS — fail-closed. That is
+the correct direction and is asserted below: the fix for the deadlock widened the
+exemption to a footprint-derived verdict, and widening it again to "any verdict
+that is not ``build``" would turn the gate into the rubber stamp that the
+non-vacuity case at the bottom of this file exists to prevent. A plan whose
+worktree could not be inspected has NOT demonstrated that no build was needed.
 """
 
 import importlib.util
@@ -101,6 +111,13 @@ _MARKDOWN_ONLY_FOOTPRINT = [
 _NOT_NECESSARY_VERDICT = {
     'decision': 'not_necessary',
     'reason': 'plan footprint touches no build_map glob — only non-buildable files changed',
+}
+
+# The third verdict: the footprint could not be resolved, so the authority
+# reports no evidence either way rather than a positive "nothing to build".
+_UNKNOWN_VERDICT = {
+    'decision': 'unknown',
+    'reason': 'plan footprint unresolvable — worktree not yet materialised',
 }
 
 _WORKTREE_SHA = 'f' * 64
@@ -260,3 +277,55 @@ def test_a_buildable_footprint_with_the_same_manifest_still_blocks(
 
     assert result['status'] in ('stale', 'undecidable'), result
     assert result.get('reason') != _NOT_NECESSARY_VERDICT['reason']
+
+
+def test_an_unknown_verdict_does_not_reach_fresh(plan_context, monkeypatch, tmp_path) -> None:
+    """The third verdict FAILS CLOSED — ``unknown`` never grants the exemption.
+
+    Same PLAN-31 manifest, same missing ledger entry; only the verdict differs
+    from the docs-only case at the top of this file. ``unknown`` says the
+    authority could not resolve the footprint, which is not the positive
+    "nothing here needs building" that licenses skipping the ledger entry. A gate
+    keyed on ``decision != 'build'`` would return ``fresh`` here and would let any
+    plan with an unresolvable worktree walk straight past the freshness check.
+    """
+    plan_id = 'plan31-unknown-verdict'
+    _seed_plan(plan_context, plan_id)
+    calls: list = []
+    _stub_authority(monkeypatch, _UNKNOWN_VERDICT, calls)
+    monkeypatch.setattr(_freshness, 'compute_worktree_sha', lambda root: _WORKTREE_SHA)
+    monkeypatch.setattr(_freshness, 'resolve_ledger_path', lambda: tmp_path / 'absent.jsonl')
+
+    result = cmd_pre_commit_verify_freshness(Namespace(plan_id=plan_id))
+
+    assert result['status'] in ('stale', 'undecidable'), result
+    assert result['status'] != 'fresh'
+    assert result.get('reason') != _UNKNOWN_VERDICT['reason']
+
+
+def test_not_necessary_and_unknown_diverge_on_identical_inputs(
+    plan_context, monkeypatch, tmp_path
+) -> None:
+    """The paired opposite: only the decision differs, and only one reaches ``fresh``.
+
+    Comparing the two outcomes against each other — rather than asserting each
+    alone — is what fails if a future change collapses the two verdicts back into
+    one. Either direction of collapse is a real defect: treating ``unknown`` as
+    ``not_necessary`` re-opens the rubber-stamp hole, and treating
+    ``not_necessary`` as ``unknown`` re-opens the PLAN-31 deadlock itself.
+    """
+    monkeypatch.setattr(_freshness, 'compute_worktree_sha', lambda root: _WORKTREE_SHA)
+    monkeypatch.setattr(_freshness, 'resolve_ledger_path', lambda: tmp_path / 'absent.jsonl')
+
+    _seed_plan(plan_context, 'plan31-diverge-not-necessary')
+    _stub_authority(monkeypatch, _NOT_NECESSARY_VERDICT, [])
+    not_necessary = cmd_pre_commit_verify_freshness(
+        Namespace(plan_id='plan31-diverge-not-necessary')
+    )
+
+    _seed_plan(plan_context, 'plan31-diverge-unknown')
+    _stub_authority(monkeypatch, _UNKNOWN_VERDICT, [])
+    unknown = cmd_pre_commit_verify_freshness(Namespace(plan_id='plan31-diverge-unknown'))
+
+    assert not_necessary['status'] == 'fresh'
+    assert unknown['status'] != 'fresh'

@@ -53,12 +53,28 @@ read_manifest = _mem.read_manifest
 DEFAULT_PHASE_5_STEPS = _mem.DEFAULT_PHASE_5_STEPS
 DEFAULT_PHASE_6_STEPS = _mem.DEFAULT_PHASE_6_STEPS
 
+# The emitters neutralized below, snapshotted BEFORE the assignments run.
+#
+# The snapshot is load-bearing, not decoration. ``setattr`` on a module SUCCEEDS
+# for a name that was never defined, so neither direction of drift fails loudly on
+# its own: a patch naming a REMOVED emitter silently re-creates the dead attribute
+# (leaving a live reference to a deleted function in the tree), and a patch naming
+# a RENAMED emitter silently stops neutralizing anything (the real emitter then
+# shells out on every compose while the tests stay green). Reading the originals
+# first is what lets ``test_neutralized_emitters_existed_before_patching`` assert
+# on what the MODULE defined rather than on what this file just assigned.
+_NEUTRALIZED_EMITTERS = (
+    '_log_decision',
+    '_log_commit_push_omitted',
+    '_log_pre_push_quality_gate_omitted',
+    '_log_pre_push_quality_gate_kept_unknown',
+    '_emit_decision_log',
+)
+_ORIGINAL_EMITTERS = {name: getattr(_mem, name, None) for name in _NEUTRALIZED_EMITTERS}
+
 # Silence the best-effort decision-log subprocess in tests.
-_mem._log_decision = lambda *a, **kw: None
-_mem._log_commit_push_omitted = lambda *a, **kw: None
-_mem._log_pre_push_quality_gate_omitted = lambda *a, **kw: None
-_mem._log_pre_submission_self_review_omitted = lambda *a, **kw: None
-_mem._emit_decision_log = lambda *a, **kw: None
+for _name in _NEUTRALIZED_EMITTERS:
+    setattr(_mem, _name, lambda *a, **kw: None)
 
 # =============================================================================
 # Helpers
@@ -103,6 +119,44 @@ def _seed_references(plan_dir: Path, affected_files: list[str]) -> None:
 def test_log_docs_only_classifier_fired_helper_removed():
     """The ``_log_docs_only_classifier_fired`` helper no longer exists."""
     assert not hasattr(_mem, '_log_docs_only_classifier_fired')
+
+
+def test_removed_self_review_symbols_are_absent():
+    """The vacuous self-review pre-filter and its emitter left no reference behind.
+
+    Asserted explicitly, NOT inferred from a monkeypatch failing: the neutralizing
+    assignments at the top of this module use ``setattr``, which succeeds for a
+    name that no longer exists. A stale
+    ``_mem._log_pre_submission_self_review_omitted = ...`` line would therefore
+    have re-created the dead attribute and this suite would have reported green on
+    a tree that still referenced a removed function.
+    """
+    for symbol in (
+        '_apply_pre_submission_self_review_inactive',
+        '_log_pre_submission_self_review_omitted',
+    ):
+        assert not hasattr(_mem, symbol), (
+            f'{symbol} was removed in the clean break; a surviving attribute means some '
+            'test setup re-created it via setattr rather than the module defining it'
+        )
+
+
+def test_neutralized_emitters_existed_before_patching():
+    """Every neutralized name was a real module attribute BEFORE this file patched it.
+
+    The complementary half of the assertion above, and the reason
+    ``_ORIGINAL_EMITTERS`` is snapshotted at import time: asserting
+    ``hasattr(_mem, name)`` here would be VACUOUS, since the neutralizing
+    assignments have already created every one of those names by the time any
+    test runs. Only the pre-patch snapshot distinguishes "the module defines this
+    emitter" from "this test file invented it".
+    """
+    for name, original in _ORIGINAL_EMITTERS.items():
+        assert callable(original), (
+            f'{name} is neutralized at module import but the module defined no such '
+            'callable — the patch names a symbol that was renamed or removed, so it '
+            'silences nothing'
+        )
 
 
 def test_cmd_classify_affected_files_handler_removed():

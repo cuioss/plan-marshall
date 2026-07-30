@@ -17,11 +17,16 @@ default seed is write-once (an existing build_map is preserved); ``seed
 current project state.
 
 The ``build-decision`` verb is the sole build/no-build authority's CLI surface:
-it returns a structured ``build`` / ``not_necessary`` verdict (the latter
-carrying a log-friendly ``reason``) by delegating to the build-system-owned
-``should_execute_build`` helper in ``script-shared``. Every consumer site shares
-this one entry point instead of deciding build necessity from any other input
-signal. ``--command`` is an optional label on the question, not an input to it:
+it returns a structured ``build`` / ``not_necessary`` / ``unknown`` verdict (the
+latter two each carrying a log-friendly ``reason``) by delegating to the
+build-system-owned ``should_execute_build`` helper in ``script-shared``. The
+handler forwards the verdict VERBATIM and never collapses ``unknown`` into either
+other value: ``unknown`` says the footprint could not be resolved, which is no
+evidence either way, whereas ``not_necessary`` is the positive answer that
+nothing needs building. Every consumer site shares this one entry point instead
+of deciding build necessity from any other input signal, and each must branch on
+all three values. ``--command`` is an optional label on the question, not an
+input to it:
 omit it to ask the command-free plan-wide question and receive ``{decision,
 reason}`` with no ``canonical_command`` key. See ADR-004 § "Amendment:
 ``build-decision`` is the sole build/no-build authority".
@@ -133,8 +138,16 @@ def cmd_build_decision(args: argparse.Namespace) -> dict:
 
     - ``decision: build`` when the footprint touches a registered build glob.
     - ``decision: not_necessary`` (with a non-empty ``reason``) when the build_map
-      registers no globs, the footprint is empty, or the footprint intersects no
-      build glob.
+      registers no globs, the footprint is resolvable-and-empty, or the footprint
+      intersects no build glob.
+    - ``decision: unknown`` (with a non-empty ``reason``) when the footprint is
+      UNRESOLVABLE — the worktree is not yet materialised, so there is no evidence
+      either way about what changed.
+
+    The handler forwards whichever of the three the authority returned, verbatim.
+    It must not collapse ``unknown`` into ``not_necessary``: dropping a build gate
+    requires the positive answer, and treating an unsubstantiated verdict as a
+    positive one is the ADR-009 failure this vocabulary exists to prevent.
 
     ``--command`` is optional and is passed straight through as the verdict's
     echo-only label: omit it for the command-free plan-wide verdict (no

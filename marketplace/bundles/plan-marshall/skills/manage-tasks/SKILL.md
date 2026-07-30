@@ -248,10 +248,22 @@ from inside the loop.
 1. Consult the single build/no-build authority with NO canonical command
    (`should_execute_build(None, plan_id)` — the same verdict
    `manage-config build-decision --plan-id {plan_id}` returns without
-   `--command`). When `decision` is `not_necessary`, return `fresh` and forward
-   the verdict's `reason` verbatim. When `decision` is `build` — or the verdict
-   cannot be obtained at all, which degrades to `build` in the fail-closed
-   direction — fall through to the ledger-scan steps below.
+   `--command`). That verdict has **three** values, and only one of them
+   short-circuits this gate:
+
+   - `not_necessary` — the positive answer that nothing here needs building.
+     Return `fresh` and forward the verdict's `reason` verbatim. This is the
+     ONLY value that short-circuits.
+   - `unknown` — the footprint is unresolvable, so there is no evidence either
+     way. **Do NOT short-circuit to `fresh`.** Fall through to the ledger scan,
+     which decides on real evidence and returns `stale` / `undecidable` when it
+     finds none. Treating an unsubstantiated verdict as a positive one would let
+     an unverified worktree pass the gate — exactly the fail-closed discipline
+     ADR-009 requires.
+   - `build` — fall through to the ledger-scan steps below.
+
+   A verdict that cannot be obtained at all degrades to the fall-through path in
+   the same fail-closed direction.
 2. Resolve the worktree root via `status.metadata.worktree_path`; fall back to
    the current working directory when no worktree is materialised.
 3. Recompute the current working-tree sha (`compute_worktree_sha` — staged +

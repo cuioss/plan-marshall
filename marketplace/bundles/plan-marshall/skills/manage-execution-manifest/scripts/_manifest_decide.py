@@ -22,11 +22,67 @@ from _manifest_core import _role_of
 from constants import FILE_STATUS
 from file_ops import get_plan_dir, read_json
 
+#: The phase-6 minimum the two analysis-shaped rows (``early_terminate_analysis``,
+#: ``verification_no_files``) intersect down to.
+_ANALYSIS_MINIMUM = frozenset({'lessons-capture', 'adr-propose', 'archive-plan'})
+
+#: The retired phase-6 step id Rules 2 and 5 drop defensively, against project
+#: marshal.json files that still list it as a candidate.
+_LEGACY_CI_WAIT = frozenset({'ci-wait'})
+
+#: The two matrix ``role:`` values Rules 2 and 5 keep in phase-5.
+_CORE_VERIFY_ROLES = frozenset({'quality-gate', 'module-tests'})
+
 
 def _split_csv(value: str | None, default: tuple[str, ...]) -> list[str]:
     if value is None or value == '':
         return list(default)
     return [item.strip() for item in value.split(',') if item.strip()]
+
+
+def _narrow(
+    candidates: list[str],
+    keep: set[str] | frozenset[str] | None,
+    reason: str,
+    drop: set[str] | frozenset[str] | None = None,
+) -> tuple[list[str], list[dict[str, str]]]:
+    """Narrow ``candidates`` and record one ``{step, reason}`` per removed member.
+
+    The single narrowing primitive the matrix rows use, so every row reports its
+    subtraction in the shared ``{step, reason}`` shape rather than dropping
+    silently. Exactly one of ``keep`` / ``drop`` is supplied:
+
+    - ``keep`` — an allow-set; every candidate outside it is removed.
+    - ``drop`` — a deny-set; every candidate inside it is removed.
+
+    ``keep=None`` with ``drop=None`` removes every candidate (the row empties the
+    list outright).
+
+    Args:
+        candidates: The candidate step-id list the row narrows.
+        keep: Allow-set of candidate ids to retain, or ``None``.
+        reason: The log-friendly reason recorded against every removed candidate.
+        drop: Deny-set of candidate ids to remove, or ``None``.
+
+    Returns:
+        ``(kept, dropped)`` — the narrowed list, and one
+        ``{'step': ..., 'reason': ...}`` record per removed candidate, in
+        candidate order.
+    """
+    kept: list[str] = []
+    dropped: list[dict[str, str]] = []
+    for step in candidates:
+        if drop is not None:
+            removed = step in drop
+        elif keep is not None:
+            removed = step not in keep
+        else:
+            removed = True
+        if removed:
+            dropped.append({'step': step, 'reason': reason})
+        else:
+            kept.append(step)
+    return kept, dropped
 
 
 def _decide(
@@ -38,12 +94,20 @@ def _decide(
     phase_5_candidates: list[str],
     phase_6_candidates: list[str],
     task_queue_active: bool = False,
-) -> tuple[dict[str, Any], str]:
+) -> tuple[dict[str, Any], str, list[dict[str, str]]]:
     """Apply the six-row decision matrix.
 
-    Returns the manifest body (under ``phase_5`` / ``phase_6`` keys) plus the
-    name of the rule that fired (one of the six rule keys defined in
-    standards/decision-rules.md).
+    Returns the manifest body (under ``phase_5`` / ``phase_6`` keys), the name of
+    the rule that fired (one of the six rule keys defined in
+    standards/decision-rules.md), and the rule's subtraction records.
+
+    The third return value is the row's ``{step, reason}`` record list — one entry
+    per candidate the firing row removed, in the shared subtraction-record shape.
+    The matrix's DECISIONS are unchanged by this; only their observability is. The
+    caller emits one ``[STATUS]`` decision-log line per record and surfaces the
+    records in the compose result, so a row that narrows the candidate list can no
+    longer do it silently. The default row (Rule 7) narrows nothing and returns an
+    empty record list.
 
     Rows 2, 4, 5 intersect phase-5 candidates by each candidate's matrix
     ``role:`` rather than by literal step ID. The intersection mechanism is
@@ -71,16 +135,24 @@ def _decide(
     # task queue is non-empty, fall through to Rule 7 (default) so phase-5
     # iterates the queue normally — see ``task_queue_active`` rationale above.
     if change_type == 'analysis' and affected_files_count == 0 and not task_queue_active:
+        phase_5_steps, phase_5_dropped = _narrow(
+            phase_5_candidates,
+            None,
+            "decide rule 'early_terminate_analysis' skips phase_5 entirely",
+        )
+        phase_6_steps, phase_6_dropped = _narrow(
+            phase_6_candidates,
+            _ANALYSIS_MINIMUM,
+            "decide rule 'early_terminate_analysis' narrowed phase_6 to the analysis minimum",
+        )
         body = {
             'phase_5': {
                 'early_terminate': True,
-                'verification_steps': [],
+                'verification_steps': phase_5_steps,
             },
-            'phase_6': {
-                'steps': [s for s in phase_6_candidates if s in {'lessons-capture', 'adr-propose', 'archive-plan'}],
-            },
+            'phase_6': {'steps': phase_6_steps},
         }
-        return body, 'early_terminate_analysis'
+        return body, 'early_terminate_analysis', phase_5_dropped + phase_6_dropped
 
     # Rule 2: recipe path — recipe-driven plans get a slim manifest. The
     # recipe-lesson-cleanup recipe (deliverable 7) sets scope_estimate=surgical
@@ -91,29 +163,42 @@ def _decide(
     # NEVER silently suppressed by the planner — the recipe label is exactly
     # the case where the bots' job is to catch what humans miss.
     if recipe_key:
-        phase_6_steps = [s for s in phase_6_candidates if s not in {'ci-wait'}]
+        phase_5_steps, phase_5_dropped = _narrow(
+            phase_5_candidates,
+            {s for s in phase_5_candidates if _role_of(s, role_cache) in _CORE_VERIFY_ROLES},
+            "decide rule 'recipe' narrowed phase_5 to the quality-gate / module-tests roles",
+        )
+        phase_6_steps, phase_6_dropped = _narrow(
+            phase_6_candidates,
+            None,
+            "decide rule 'recipe' drops the legacy ci-wait step",
+            drop=_LEGACY_CI_WAIT,
+        )
         body = {
             'phase_5': {
                 'early_terminate': False,
-                'verification_steps': [
-                    s for s in phase_5_candidates if _role_of(s, role_cache) in {'quality-gate', 'module-tests'}
-                ],
+                'verification_steps': phase_5_steps,
             },
             'phase_6': {'steps': phase_6_steps},
         }
-        return body, 'recipe'
+        return body, 'recipe', phase_5_dropped + phase_6_dropped
 
     # Rule 4: tests-only — verification change_type with affected files. Run
     # the module-tests step but skip quality-gate; full Phase 6.
     if change_type == 'verification' and affected_files_count > 0:
+        phase_5_steps, phase_5_dropped = _narrow(
+            phase_5_candidates,
+            {s for s in phase_5_candidates if _role_of(s, role_cache) == 'module-tests'},
+            "decide rule 'tests_only' narrowed phase_5 to the module-tests role",
+        )
         body = {
             'phase_5': {
                 'early_terminate': False,
-                'verification_steps': [s for s in phase_5_candidates if _role_of(s, role_cache) == 'module-tests'],
+                'verification_steps': phase_5_steps,
             },
             'phase_6': {'steps': list(phase_6_candidates)},
         }
-        return body, 'tests_only'
+        return body, 'tests_only', phase_5_dropped
 
     # Rule 5: surgical + bug_fix / tech_debt — Q-Gate bypass already applies
     # at outline time (deliverable 4). Here the only subtraction is the
@@ -123,32 +208,43 @@ def _decide(
     # suppressed by the planner — surgical bug_fix / tech_debt is exactly
     # the case where the bots' job is to catch what humans miss.
     if scope_estimate == 'surgical' and change_type in ('bug_fix', 'tech_debt'):
-        phase_6_steps = [s for s in phase_6_candidates if s not in {'ci-wait'}]
+        rule = f'surgical_{change_type}'
+        phase_5_steps, phase_5_dropped = _narrow(
+            phase_5_candidates,
+            {s for s in phase_5_candidates if _role_of(s, role_cache) in _CORE_VERIFY_ROLES},
+            f"decide rule '{rule}' narrowed phase_5 to the quality-gate / module-tests roles",
+        )
+        phase_6_steps, phase_6_dropped = _narrow(
+            phase_6_candidates,
+            None,
+            f"decide rule '{rule}' drops the legacy ci-wait step",
+            drop=_LEGACY_CI_WAIT,
+        )
         body = {
             'phase_5': {
                 'early_terminate': False,
-                'verification_steps': [
-                    s for s in phase_5_candidates if _role_of(s, role_cache) in {'quality-gate', 'module-tests'}
-                ],
+                'verification_steps': phase_5_steps,
             },
             'phase_6': {'steps': phase_6_steps},
         }
-        rule = f'surgical_{change_type}'
-        return body, rule
+        return body, rule, phase_5_dropped + phase_6_dropped
 
     # Rule 6: verification change_type without affected files — same shape as
     # rule 1's Phase 6 minimum, but Phase 5 still runs whatever was passed.
     if change_type == 'verification' and affected_files_count == 0:
+        phase_6_steps, phase_6_dropped = _narrow(
+            phase_6_candidates,
+            _ANALYSIS_MINIMUM,
+            "decide rule 'verification_no_files' narrowed phase_6 to the analysis minimum",
+        )
         body = {
             'phase_5': {
                 'early_terminate': False,
                 'verification_steps': list(phase_5_candidates),
             },
-            'phase_6': {
-                'steps': [s for s in phase_6_candidates if s in {'lessons-capture', 'adr-propose', 'archive-plan'}],
-            },
+            'phase_6': {'steps': phase_6_steps},
         }
-        return body, 'verification_no_files'
+        return body, 'verification_no_files', phase_6_dropped
 
     # Rule 7 (default): code-shaped feature / enhancement / large change. Full
     # verification + full finalize. This is the safe baseline the request
@@ -160,7 +256,7 @@ def _decide(
         },
         'phase_6': {'steps': list(phase_6_candidates)},
     }
-    return body, 'default'
+    return body, 'default', []
 
 
 def _read_task_queue_active(plan_id: str) -> bool:

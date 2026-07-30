@@ -94,6 +94,26 @@ Separate from the auto-continuation knobs above (which decide *whether to pause*
 * `always` — force the gate in, overriding the machinery that would otherwise skip it. For the finalize gates this overrides the manifest composer's `scope_gated_finalize` drop on surgical / single-module plans.
 * `never` — skip the gate. For a finalize gate that guards a safety net this can mask real failures; `finalize.qgate` is the highest-risk (it can mask real build/test failures and push a red tree).
 
+There are **two** ways to keep a step the `scope_gated_finalize` drop would otherwise remove, and `always` is only one of them:
+
+. **Force it back in with a ceremony `always`** (above). Available only for the four ceremony gates — `self_review`, `qgate`, `simplify`, `security_audit` — because those are the only steps the ceremony transform can re-add.
+. **Declare a per-step `lane` override, which makes the step immune to the drop in the first place.** Available for *any* finalize step, including the ones no `always` covers (`plan-marshall:plan-retrospective` is the usual case). A step carrying an explicit, non-`auto` `lane` is never dropped by the scope gate, because that gate only *infers* what you probably do not want, and an inference must not override something you actually said.
+
+The `lane` declaration itself has two scopes — project-wide, or for one plan only:
+
+[source,bash]
+----
+# Project-wide: applies to every plan in this project
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config finalize-steps set-lane \
+  --step-id plan-marshall:plan-retrospective --lane full
+
+# One plan only: leaves the project config untouched
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config finalize-steps set-lane \
+  --plan-id my-plan --step-id plan-marshall:plan-retrospective --lane full
+----
+
+The `--plan-id` form exists so an answer you give about one plan does not silently become policy for all later plans: it writes only that plan's own record and leaves `marshal.json` untouched. Where both are set, the plan-scoped value wins for that plan.
+
 [cols="1,1,3", options="header"]
 |===
 | Config key | Default | What the gate controls

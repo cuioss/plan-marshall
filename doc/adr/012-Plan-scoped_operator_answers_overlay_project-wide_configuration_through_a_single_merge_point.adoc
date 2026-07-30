@@ -1,0 +1,155 @@
+= ADR-012: Plan-scoped operator answers overlay project-wide configuration through a single merge point
+:toc: left
+:toclevels: 2
+:sectnums:
+
+// adr-metadata
+// summary: An operator answer that governs one plan's step selection is persisted in that plan's own state, never in project-wide configuration, and is overlaid onto the project-wide step map by a single merge helper that every reader of that map consumes.
+// tags: configuration-scoping, operator-intent, step-subtraction, execution-manifest, symmetric-pair, single-resolver
+// affects: plan-marshall, manage-execution-manifest, manage-config, manage-status, extension-api
+// supersedes:
+// end-adr-metadata
+
+== Status
+
+Proposed
+
+== Context
+
+Manifest composition narrows a plan's step list through a population of
+subtraction predicates. Some of those predicates grant a step immunity when the
+step has been explicitly declared — the declaration is the operator's standing
+answer that the step matters. Immunity therefore needs a declaration source, and
+the choice of source is a scoping question the composer cannot dodge.
+
+The project-wide configuration file is the obvious source, because it already
+carries a per-step map with exactly the right shape. But it has the wrong
+lifetime: an answer given about one plan would persist as a project default and
+silently govern every later plan, so a one-off decision becomes a permanent
+policy nobody restated. The plan's own state has the right lifetime but did not
+carry a per-step representation at all — only a coarse scalar posture, which no
+per-step predicate can consult.
+
+A second, independent constraint applies. The per-step declaration field is read
+by more than one reader: one resolves subtraction immunity, another resolves a
+gate's run-at-all decision from the same field. Any new declaration source must
+reach both. A source that reaches only one reader produces a state where a
+declaration grants immunity at one predicate while a second predicate remains
+deaf to it — the two readers of one field disagreeing about what that field says.
+
+The structural choice point is therefore twofold: where does an operator answer
+about a single plan live, and how does a second declaration source reach every
+reader of the field it declares?
+
+== Decision
+
+An operator answer that governs a single plan is first-class, plan-scoped state.
+It is persisted in that plan's own metadata, in a per-step map that mirrors the
+project-wide map's shape, key forms, and value enum exactly. It is never written
+into project-wide configuration.
+
+The two sources are reconciled by overlay, not by branching: a single merge
+helper reads the project-wide map and the plan-local map and returns one merged
+map, with the plan-local entry winning per step key and merged per knob so a
+plan-local value does not erase a sibling parameter declared project-wide on the
+same step. Every reader of that map consumes the merged helper. The merge is
+implemented exactly once — a reader that resolves the field by any other route is
+a defect, not a variant.
+
+Two mechanisms follow from this and are load-bearing rather than incidental:
+
+* The plan-local map is *nested* (an id-keyed map of parameter objects), not flat.
+  A flat step-to-value map could feed the immunity reader but not the reader that
+  resolves arbitrary step-owned parameters from the same map, which would force
+  the two readers back apart into the asymmetry the decision forbids.
+* The writer is the same verb as the project-wide writer, with the plan
+  identifier acting as a channel selector. One declaration mechanism with two
+  destinations, never two parallel mechanisms.
+
+== Consequences
+
+=== Positive
+
+* An operator answer about one plan cannot leak into a later plan. Scope of effect
+  matches scope of intent.
+* Every reader of the per-step declaration field observes the same value, so a
+  declaration cannot be honoured at one predicate and ignored at another.
+* The declaration path is reachable end to end: a shipped writer produces the
+  state the widened readers consume, so the immunity predicate can actually fire.
+* The project-wide schema is untouched — the plan-local channel lives beside it,
+  not inside it — so tooling that reads or writes the project-wide structure needs
+  no change.
+
+=== Negative
+
+* The same logical field now has two homes, so a reader must go through the merge
+  helper to answer "what is this step's declared value" — reading either source
+  directly yields a partial answer.
+* Precedence must be understood by anyone reasoning about the effective value.
+
+=== Risks
+
+* A future reader of the per-step map added without routing through the merge
+  helper would silently reintroduce the reader-disagreement failure. The mitigation
+  is that the merge has exactly one implementation and the reader set is
+  enumerable, so a new reader that bypasses it is structurally detectable.
+* An overlay is only as truthful as its precedence rule. Merging per knob rather
+  than per step is what keeps a narrow plan-local declaration from silently
+  discarding project-wide parameters on the same step.
+
+== Alternatives Considered
+
+* *Persist the operator answer into the project-wide per-step map.* The shape is
+  already right and no new storage or merge is needed. Rejected: the lifetimes do
+  not match. An answer about one plan would become a standing project default that
+  governs every subsequent plan, converting a bounded decision into an unbounded
+  policy that nobody ever restated. Correctness of the storage shape does not
+  redeem a wrong scope.
+
+* *Widen only the immunity reader and document the asymmetry.* The cheapest change
+  that makes the reported defect go away, with a docstring recording that the peer
+  reader sees only the project-wide source. Rejected: this is the half-applied
+  symmetric-pair defect. Two readers of one field would return different answers,
+  and documenting that divergence records it as intended behaviour rather than
+  removing it — the documentation makes the defect durable instead of visible.
+
+* *Introduce a separate plan-local immunity mechanism distinct from the declaration
+  field.* A dedicated immunity list consulted only by the subtraction predicate.
+  Rejected: it creates a second mechanism expressing the same operator intent,
+  which must then be kept consistent with the first at every site that reasons
+  about declarations. The failure it avoids is smaller than the divergence it
+  guarantees.
+
+* *Derive the per-step answer from the existing coarse plan-scoped posture scalar.*
+  No new state at all. Rejected: a scalar posture has no per-step resolution, so it
+  cannot express "this specific step matters" — the exact statement immunity needs.
+
+The alternatives fall in one class: each preserves a single declaration source and
+tries to make it serve two different scopes or two different readers. The unifying
+principle is that a per-scope answer needs per-scope storage, and two sources for
+one field must be reconciled at one merge point that every reader consumes — never
+by narrowing which readers are allowed to see the second source.
+
+== Generalisation
+
+When a configuration value is answered at two different scopes, the narrower scope
+gets its own store rather than a write into the broader one, and the two are
+reconciled by an overlay with a single implementation. The diagnostic question is
+"how long should this answer outlive the thing it was given about?" — an answer
+whose lifetime is shorter than the store's lifetime does not belong in that store.
+The corollary governs readers: the moment a field has two sources, every reader of
+that field must resolve it through the same merge, because a reader that sees only
+one source does not read the field — it reads a fragment of it.
+
+== References
+
+* `plan-marshall:manage-execution-manifest` — the composer whose subtraction
+  predicates consume the merged step map, and the single home of the merge helper.
+* `plan-marshall:manage-config` — the declaration writer whose plan-identifier
+  argument selects the destination channel.
+* `plan-marshall:manage-status` — the plan-scoped metadata store that holds the
+  plan-local step map.
+* `plan-marshall:extension-api` `standards/ext-point-lane-element.md` — the
+  contract of record for the per-step declaration element and its value enum.
+* ADR-002 — the sibling scoping decision for plan-scoped *runtime* state, which
+  this record complements on the *configuration* axis.

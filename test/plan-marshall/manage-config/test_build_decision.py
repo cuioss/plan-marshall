@@ -6,14 +6,16 @@ Covers the two halves of deliverable 4:
 
 - ``should_execute_build`` (module-level in ``script-shared``/``extension_base``):
   the pure build-necessity decision over the ``build.map`` globs and
-  the live plan footprint. Both verdicts are exercised:
-    * empty build_map           -> not_necessary (reason populated)
-    * empty footprint           -> not_necessary (reason populated)
-    * footprint matches no glob -> not_necessary (reason populated)
-    * footprint intersects glob -> build
+  the live plan footprint. All THREE verdicts are exercised:
+    * empty build_map                  -> not_necessary (reason populated)
+    * resolvable-and-empty footprint   -> not_necessary (reason populated)
+    * footprint matches no glob        -> not_necessary (reason populated)
+    * UNRESOLVABLE footprint (``None``) -> unknown (reason populated)
+    * footprint intersects glob        -> build
 - ``cmd_build_decision`` (the ``manage-config build-decision`` handler): wraps
-  ``should_execute_build`` and returns its verdict as a ``status: success`` dict;
-  a missing ``--plan-id`` surfaces a structured error.
+  ``should_execute_build`` and forwards its verdict VERBATIM as a
+  ``status: success`` dict — including ``unknown``, which it must never collapse
+  into ``not_necessary``; a missing ``--plan-id`` surfaces a structured error.
 
 The footprint and build_map readers are deferred-import, cross-skill helpers; the
 tests redirect them on the ``extension_base`` module object so the decision logic
@@ -77,15 +79,38 @@ def test_empty_build_map_is_not_necessary(monkeypatch):
     assert verdict['canonical_command'] == 'quality-gate'
 
 
-def test_empty_footprint_is_not_necessary(monkeypatch):
-    """A non-empty build_map but an empty footprint -> not_necessary, reason populated."""
-    # globs exist, but nothing changed.
+def test_resolvable_empty_footprint_is_not_necessary(monkeypatch):
+    """A resolvable worktree whose diff is genuinely empty -> not_necessary.
+
+    ``[]`` is the POSITIVE answer that nothing changed — the worktree was found
+    and observed. It is the only empty-ish state that licenses dropping a build
+    gate; the unresolvable ``None`` sibling below must not reach this verdict.
+    """
+    # globs exist, worktree resolvable, nothing changed.
     monkeypatch.setattr(extension_base, '_read_build_map_globs', lambda _root=None: ['scripts/*.py'])
     monkeypatch.setattr(extension_base, '_resolve_plan_footprint', lambda _plan: [])
 
     verdict = extension_base.should_execute_build('verify', 'my-plan')
 
     assert verdict['decision'] == 'not_necessary'
+    assert verdict['reason']
+    assert verdict['canonical_command'] == 'verify'
+
+
+def test_unresolvable_footprint_is_unknown(monkeypatch):
+    """An UNRESOLVABLE footprint -> unknown, reason populated, label echoed.
+
+    The third verdict. ``_resolve_plan_footprint`` returns ``None`` when the
+    worktree cannot be located at all (the normal state at phase-4-plan compose),
+    which is no evidence either way about what changed. Reporting it as
+    ``not_necessary`` would be a positive claim the authority never substantiated.
+    """
+    monkeypatch.setattr(extension_base, '_read_build_map_globs', lambda _root=None: ['scripts/*.py'])
+    monkeypatch.setattr(extension_base, '_resolve_plan_footprint', lambda _plan: None)
+
+    verdict = extension_base.should_execute_build('verify', 'my-plan')
+
+    assert verdict['decision'] == 'unknown'
     assert verdict['reason']
     assert verdict['canonical_command'] == 'verify'
 
@@ -205,6 +230,73 @@ def test_handler_returns_not_necessary_with_reason(monkeypatch):
     assert result['status'] == 'success'
     assert result['decision'] == 'not_necessary'
     assert result['reason']
+
+
+def test_handler_forwards_the_unknown_verdict_verbatim(monkeypatch):
+    """The handler surfaces ``unknown`` as-is — it must not collapse it.
+
+    The CLI surface is the seam every consumer site reads the verdict through, so
+    a collapse here would silently restore the two-value vocabulary for all of
+    them at once even though the authority reports three.
+    """
+    monkeypatch.setattr(extension_base, '_read_build_map_globs', lambda _root=None: ['scripts/*.py'])
+    monkeypatch.setattr(extension_base, '_resolve_plan_footprint', lambda _plan: None)
+
+    result = _cmd_build_map_mod.cmd_build_decision(
+        Namespace(command='quality-gate', plan_id='my-plan', audit_plan_id=None)
+    )
+
+    assert result['status'] == 'success'
+    assert result['decision'] == 'unknown'
+    assert result['reason']
+    assert result['canonical_command'] == 'quality-gate'
+
+
+def test_handler_unknown_and_not_necessary_are_distinct(monkeypatch):
+    """Through the handler, ``None`` and ``[]`` still produce different verdicts.
+
+    The end-to-end anti-collapse assertion: it compares the two handler results
+    against each other rather than checking each in isolation, so re-collapsing
+    the resolver states anywhere between the authority and the CLI fails here.
+    """
+    monkeypatch.setattr(extension_base, '_read_build_map_globs', lambda _root=None: ['scripts/*.py'])
+
+    monkeypatch.setattr(extension_base, '_resolve_plan_footprint', lambda _plan: None)
+    unresolvable = _cmd_build_map_mod.cmd_build_decision(
+        Namespace(command=None, plan_id='my-plan', audit_plan_id=None)
+    )
+    monkeypatch.setattr(extension_base, '_resolve_plan_footprint', lambda _plan: [])
+    resolvable_empty = _cmd_build_map_mod.cmd_build_decision(
+        Namespace(command=None, plan_id='my-plan', audit_plan_id=None)
+    )
+
+    assert unresolvable['decision'] == 'unknown'
+    assert resolvable_empty['decision'] == 'not_necessary'
+    assert unresolvable['reason'] != resolvable_empty['reason']
+
+
+def test_phase5_gate_does_not_skip_on_an_unknown_verdict(monkeypatch):
+    """The phase-5 Step 11b skip keys on ``not_necessary`` ONLY, never on ``unknown``.
+
+    Companion to the two D1 anchoring cases below: the whole-tree sweep may be
+    skipped only on the positive answer. Pinning that ``unknown`` is a distinct
+    value at the exact `--command quality-gate` call shape keeps a future
+    `decision != 'build'` style consumer test from re-introducing the skip on an
+    unsubstantiated verdict.
+    """
+    # Arrange — build globs registered, footprint unresolvable.
+    monkeypatch.setattr(extension_base, '_read_build_map_globs', lambda _root=None: ['scripts/*.py'])
+    monkeypatch.setattr(extension_base, '_resolve_plan_footprint', lambda _plan: None)
+
+    # Act — the exact call shape phase-5 Step 11b issues.
+    result = _cmd_build_map_mod.cmd_build_decision(
+        Namespace(command='quality-gate', plan_id='footprint-driven-build-gating', audit_plan_id=None)
+    )
+
+    # Assert
+    assert result['status'] == 'success'
+    assert result['decision'] == 'unknown'
+    assert result['decision'] != 'not_necessary'
 
 
 def test_handler_accepts_audit_plan_id_alias(monkeypatch):

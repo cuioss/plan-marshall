@@ -77,7 +77,7 @@ DEFAULT_PHASE_6_STEPS = _mem.DEFAULT_PHASE_6_STEPS
 _mem._log_decision = lambda *a, **kw: None
 _mem._log_commit_push_omitted = lambda *a, **kw: None
 _mem._log_pre_push_quality_gate_omitted = lambda *a, **kw: None
-_mem._log_pre_submission_self_review_omitted = lambda *a, **kw: None
+_mem._log_pre_push_quality_gate_kept_unknown = lambda *a, **kw: None
 _mem._log_scope_gated_finalize_subtraction = lambda *a, **kw: None
 _mem._log_ceremony_finalize_selection = lambda *a, **kw: None
 _mem._log_candidate_source = lambda *a, **kw: None
@@ -134,18 +134,26 @@ def _restore_patched_seams():
             setattr(mod, name, value)
 
 
-def _stub_footprint(footprint: list[str]) -> None:
+def _stub_footprint(footprint: list[str] | None) -> None:
     """Pin both live-footprint seams to ``footprint``.
 
     The security-class pre-filter reads the manifest module's
     ``_resolve_footprint``; the pre-push-quality-gate pre-filter resolves through
     ``extension_base._resolve_plan_footprint``. Both are pinned so the injected
-    footprint drives every activation decision deterministically.
+    state drives every activation decision deterministically.
+
+    ``footprint`` carries the resolvers' three-state return verbatim: ``None``
+    (unresolvable — no evidence), ``[]`` (resolvable and genuinely empty), or a
+    non-empty path list. The gate treats the two falsy states DIFFERENTLY, so
+    ``None`` must not be collapsed into ``[]`` on the way in.
     """
     import extension_base
 
-    _mem._resolve_footprint = lambda plan_id: list(footprint)
-    extension_base._resolve_plan_footprint = lambda plan_id: list(footprint)
+    def _resolve(_plan_id):
+        return None if footprint is None else list(footprint)
+
+    _mem._resolve_footprint = _resolve
+    extension_base._resolve_plan_footprint = _resolve
 
 
 def _capture_decision_log() -> list[tuple[str, str]]:
@@ -337,6 +345,53 @@ def test_genuine_drop_reports_step_and_reason_in_result_and_decision_log(plan_co
         f'dropped {_SECURITY_STEP} from phase_6.steps: '
         'no declared affected files and empty live footprint'
     ]
+
+
+def test_unresolvable_footprint_keeps_the_step(plan_context):
+    """An UNRESOLVABLE live footprint is no evidence, so the step is KEPT.
+
+    The gate's drop requires BOTH signals to be genuinely empty. A footprint that
+    could not be resolved at all (the normal state at phase-4-plan compose, before
+    the worktree is materialised) is not "nothing to audit" — it is "we could not
+    look" — so it fails toward inclusion, the same discipline the absent
+    change-type leg follows.
+
+    This is the one falsy footprint state that does NOT drop, which is exactly why
+    it needs its own case: the sibling above pins ``[]`` dropping the step, and
+    both states are falsy. A predicate written as ``not live_footprint`` would
+    satisfy that sibling and silently drop a security audit on every plan whose
+    worktree was not yet inspectable.
+    """
+    plan_id = 'secclass-unresolvable'
+    _stub_footprint(None)
+    captured = _capture_decision_log()
+
+    result = _compose(plan_id, change_type='feature', affected_files_count=0)
+
+    assert result['security_class_omitted'] == []
+    assert _SECURITY_STEP in _composed_steps(plan_id)
+    assert [msg for pid, msg in captured if 'security_class_inactive' in msg] == []
+
+
+def test_unresolvable_and_resolvable_empty_footprints_diverge(plan_context):
+    """The paired opposite: identical inputs but for the footprint STATE.
+
+    Comparing the two outcomes against each other is what fails if a future change
+    re-collapses ``None`` into ``[]`` at this seam — each case asserted alone would
+    still pass against a gate that had lost the distinction in one direction.
+    """
+    _stub_footprint(None)
+    _capture_decision_log()
+    unresolvable = _compose('secclass-div-unresolvable', change_type='feature', affected_files_count=0)
+
+    _stub_footprint([])
+    _capture_decision_log()
+    resolvable_empty = _compose('secclass-div-empty', change_type='feature', affected_files_count=0)
+
+    assert unresolvable['security_class_omitted'] == []
+    assert [r['step'] for r in resolvable_empty['security_class_omitted']] == [_SECURITY_STEP]
+    assert _SECURITY_STEP in _composed_steps('secclass-div-unresolvable')
+    assert _SECURITY_STEP not in _composed_steps('secclass-div-empty')
 
 
 def test_no_omission_report_when_the_step_is_kept(plan_context):

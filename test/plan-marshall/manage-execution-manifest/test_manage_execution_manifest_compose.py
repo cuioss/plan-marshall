@@ -603,9 +603,9 @@ def test_boundary_normalization_strips_prefix_for_all_downstream_consumers(plan_
     from each ``phase_5_candidates`` and ``phase_6_candidates`` entry once at
     intake (via ``canonicalize_step_key``), and every downstream site — the
     six-row matrix, ``_apply_commit_push_disabled``,
-    ``_apply_pre_push_quality_gate_inactive``, and
-    ``_apply_pre_submission_self_review_inactive`` — consumes those already-bare
-    strings without any per-site ``canonicalize_step_key`` call.
+    ``_apply_pre_push_quality_gate_inactive``, ``_apply_security_class_inactive``
+    and ``_apply_scope_gated_finalize`` — consumes those already-bare strings
+    without any per-site ``canonicalize_step_key`` call.
 
     The test feeds a deliberately MIXED candidate list (some entries
     prefixed, some bare, plus a project-prefixed entry to demonstrate the
@@ -1330,16 +1330,45 @@ def test_compose_places_settle_steps_before_push_and_wait_steps_after(plan_conte
 # =============================================================================
 
 
+#: The three steps ``commit_push_disabled`` subtracts. ``push`` is directly
+#: disabled; the two gates go because both are only meaningful when a downstream
+#: push exists. All three must be NAMED when present — the former aggregate
+#: reporting named only ``push``, so the two gates vanished unrecorded.
+#:
+#: The gate removes the INTERSECTION of this set with the candidate list, so a
+#: test that wants to observe all three drops must put all three in the
+#: candidates. ``DEFAULT_PHASE_6_STEPS`` carries only ``push``, which is exactly
+#: how the old aggregate reporting looked adequate: the common fixture drops one
+#: step, and one step is all an aggregate line can name.
+_COMMIT_PUSH_DROP_SET = {'push', 'pre-push-quality-gate', 'pre-submission-self-review'}
+
+
+def _phase_6_with_every_commit_push_gate() -> str:
+    """Candidate CSV carrying all three steps ``commit_push_disabled`` can drop."""
+    steps = list(DEFAULT_PHASE_6_STEPS)
+    insert_at = steps.index('push')
+    for extra in ('pre-push-quality-gate', 'pre-submission-self-review'):
+        if extra not in steps:
+            steps.insert(insert_at, extra)
+    return ','.join(steps)
+
+
 @pytest.mark.parametrize(
-    'commit_and_push,expect_commit_push,expect_omitted',
+    'commit_and_push,expect_commit_push',
     [
-        ('true', True, False),
-        (None, True, False),  # Absent flag defaults to true.
-        ('false', False, True),
+        ('true', True),
+        (None, True),  # Absent flag defaults to true.
+        ('false', False),
     ],
 )
-def test_commit_and_push_pre_filter(plan_context, commit_and_push, expect_commit_push, expect_omitted):
-    """Pre-filter: commit_and_push=false drops push; true retains it."""
+def test_commit_and_push_pre_filter(plan_context, commit_and_push, expect_commit_push):
+    """Pre-filter: commit_and_push=false drops push; true retains it.
+
+    The scalar ``commit_push_omitted`` boolean is replaced by the
+    ``commit_push_dropped`` record list, so the fired/not-fired state is read as
+    "did the pre-filter record any subtraction" rather than from a separate flag
+    that could drift out of step with the actual drops.
+    """
     slug = commit_and_push or 'absent'
     plan_id = f'matrix-cap-{slug}'
     result = cmd_compose(
@@ -1349,25 +1378,32 @@ def test_commit_and_push_pre_filter(plan_context, commit_and_push, expect_commit
             scope_estimate='multi_module',
             affected_files_count=8,
             commit_and_push=commit_and_push,
+            phase_6_steps=_phase_6_with_every_commit_push_gate(),
         )
     )
     assert result is not None and result['status'] == 'success'
-    assert result['commit_push_omitted'] is expect_omitted
+    dropped_steps = {record['step'] for record in result['commit_push_dropped']}
     manifest = read_manifest(plan_id)
     assert manifest is not None
     if expect_commit_push:
+        assert dropped_steps == set()
         assert 'push' in manifest['phase_6']['steps']
     else:
+        assert dropped_steps == _COMMIT_PUSH_DROP_SET
         assert 'push' not in manifest['phase_6']['steps']
 
 
-def test_commit_and_push_false_emits_decision_log_message(plan_context):
-    """commit_and_push=false triggers the dedicated decision-log emission helper."""
-    captured: list[str] = []
+def test_commit_and_push_false_emits_one_decision_log_call_per_dropped_step(plan_context):
+    """The emitter fires ONCE PER dropped step, not once per fired pre-filter.
+
+    Per-step rather than per-pre-filter is the whole correction: the gate drops
+    three steps, and a single aggregate call could only ever name one of them.
+    """
+    captured: list[tuple[str, str, str]] = []
     original_helper = _mem._log_commit_push_omitted
 
-    def _capture(plan_id):
-        captured.append(plan_id)
+    def _capture(plan_id, step, reason):
+        captured.append((plan_id, step, reason))
 
     _mem._log_commit_push_omitted = _capture
     try:
@@ -1378,15 +1414,19 @@ def test_commit_and_push_false_emits_decision_log_message(plan_context):
                 scope_estimate='multi_module',
                 affected_files_count=4,
                 commit_and_push='false',
+                phase_6_steps=_phase_6_with_every_commit_push_gate(),
             )
         )
     finally:
         _mem._log_commit_push_omitted = original_helper
-    assert captured == ['matrix-cap-log']
+
+    assert {plan_id for plan_id, _step, _reason in captured} == {'matrix-cap-log'}
+    assert {step for _pid, step, _reason in captured} == _COMMIT_PUSH_DROP_SET
+    assert all(reason for _pid, _step, reason in captured)
 
 
 def test_commit_and_push_false_decision_log_message_matches_contract(plan_context):
-    """commit_and_push=false emits the exact decision-log line from the deliverable contract."""
+    """Each dropped step gets its own ``[STATUS]`` line naming the step and reason."""
     captured: list[tuple[str, str]] = []
     original_emit = _mem._emit_decision_log
 
@@ -1402,26 +1442,33 @@ def test_commit_and_push_false_decision_log_message_matches_contract(plan_contex
                 scope_estimate='multi_module',
                 affected_files_count=4,
                 commit_and_push='false',
+                phase_6_steps=_phase_6_with_every_commit_push_gate(),
             )
         )
     finally:
         _mem._emit_decision_log = original_emit
 
-    # Expect at least the omission entry; the rule-fired entry is also emitted.
-    omission_entries = [(pid, msg) for pid, msg in captured if 'push omitted' in msg]
-    assert len(omission_entries) == 1, f'expected one omission entry, got {captured!r}'
-    pid, msg = omission_entries[0]
-    assert pid == 'matrix-cap-msg'
-    assert msg == ('(plan-marshall:manage-execution-manifest:compose) push omitted — commit_and_push=false')
+    prefix = '(plan-marshall:manage-execution-manifest:compose) [STATUS] commit_push_disabled — dropped '
+    omission_entries = [(pid, msg) for pid, msg in captured if msg.startswith(prefix)]
+    # One line per dropped step — three, not one aggregate.
+    assert len(omission_entries) == len(_COMMIT_PUSH_DROP_SET), (
+        f'expected one line per dropped step, got {captured!r}'
+    )
+    assert {pid for pid, _msg in omission_entries} == {'matrix-cap-msg'}
+    named_steps = {msg[len(prefix):].split(' from phase_6.steps: ')[0] for _pid, msg in omission_entries}
+    assert named_steps == _COMMIT_PUSH_DROP_SET
+    # Each line carries a non-empty reason after the separator.
+    for _pid, msg in omission_entries:
+        assert msg.split(' from phase_6.steps: ', 1)[1]
 
 
 def test_commit_and_push_default_does_not_emit_omission_log(plan_context):
     """When commit_and_push is absent (defaults to true), no omission log fires."""
-    captured: list[str] = []
+    captured: list[tuple[str, str, str]] = []
     original_helper = _mem._log_commit_push_omitted
 
-    def _capture(plan_id):
-        captured.append(plan_id)
+    def _capture(plan_id, step, reason):
+        captured.append((plan_id, step, reason))
 
     _mem._log_commit_push_omitted = _capture
     try:
@@ -1509,8 +1556,13 @@ def test_commit_and_push_false_with_prefixed_input_drops_commit_push_and_pre_pus
         )
     )
     assert result is not None and result['status'] == 'success'
-    # commit_push omitted flag is True — pre-filter fired on the prefixed input.
-    assert result['commit_push_omitted'] is True
+    # The pre-filter fired on the prefixed input, and each drop is recorded by
+    # its BARE id (the boundary normalization strips the prefix before the gate
+    # sees the candidates).
+    assert {record['step'] for record in result['commit_push_dropped']} == {
+        'push',
+        'pre-push-quality-gate',
+    }
 
     manifest = read_manifest('cap-false-prefixed')
     assert manifest is not None
@@ -1634,8 +1686,10 @@ def test_cli_compose_commit_and_push_false_omits_commit_push(plan_context):
     assert result.success, f'compose failed: stderr={result.stderr!r}'
     compose_data = result.toon()
     assert compose_data['status'] == 'success'
-    # TOON parser may coerce the bool — accept both shapes defensively.
-    assert compose_data['commit_push_omitted'] in (True, 'true', 1)
+    # The scalar ``commit_push_omitted`` flag is replaced by the per-step record
+    # list, so the CLI surface is asserted on the manifest effect below plus the
+    # absence of the retired key rather than on a coerced boolean.
+    assert 'commit_push_omitted' not in compose_data
 
     read_result = run_script(SCRIPT_PATH, 'read', '--plan-id', 'cli-cap-false')
     assert read_result.success
@@ -1677,23 +1731,54 @@ def _write_marshal(
     marshal_path.write_text(json.dumps(data), encoding='utf-8')
 
 
-def _stub_footprint(footprint: list[str]) -> None:
-    """Stub the footprint seams so the activation pre-filters see the given set.
+def _stub_footprint(footprint: list[str] | None) -> None:
+    """Stub the footprint seams so the activation pre-filters see the given state.
 
     The compose pre-filters derive the live plan footprint on demand instead of
     reading a seeded ``references.modified_files`` ledger. Two distinct seams are
-    in play: the self-review pre-filter reads the manifest module's
-    ``_resolve_footprint``, while the pre-push-quality-gate pre-filter delegates
-    to ``extension_base.should_execute_build``, which resolves the footprint via
-    the extension_base module's ``_resolve_plan_footprint``. Both are replaced so
-    the injected footprint drives every activation decision. The
+    in play: the composer's own ``_mem._resolve_footprint`` (read by the
+    canonical-verify pre-filter, the security-class gate and the build-verdict
+    assertion), and ``extension_base._resolve_plan_footprint`` (read by
+    ``should_execute_build``, which the pre-push-quality-gate pre-filter
+    delegates to). Both are replaced so the injected state drives every
+    activation decision, and both are kept in lock-step because they are
+    symmetric peers that must never disagree about the same worktree.
+
+    ``footprint`` carries the resolvers' THREE-state return verbatim: ``None``
+    (unresolvable — no evidence), ``[]`` (resolvable and genuinely empty), or a
+    non-empty path list. ``None`` is deliberately NOT collapsed into ``[]`` here;
+    collapsing the two is the defect the split fixes. The
     ``TestPrePushQualityGatePreFilter`` autouse fixture restores both after each
     test.
     """
     import extension_base
 
-    _mem._resolve_footprint = lambda plan_id: list(footprint)
-    extension_base._resolve_plan_footprint = lambda plan_id: list(footprint)
+    def _resolve(_plan_id):
+        return None if footprint is None else list(footprint)
+
+    _mem._resolve_footprint = _resolve
+    extension_base._resolve_plan_footprint = _resolve
+
+
+@pytest.fixture(autouse=True)
+def _restore_footprint_seams_module_wide():
+    """Restore BOTH footprint seams after every test in this module.
+
+    ``_stub_footprint`` is called from tests inside AND outside
+    ``TestPrePushQualityGatePreFilter``, whose own class-scoped restore fixture
+    therefore cannot cover them all. ``extension_base`` is a shared cross-skill
+    module, so an unrestored stub does not merely leak within this file — it
+    reaches unrelated test modules in the same xdist worker and makes a sibling
+    asserting the REAL resolver observe this file's stub instead. Restoring
+    module-wide closes that at the source.
+    """
+    import extension_base
+
+    original_mem = _mem._resolve_footprint
+    original_plan_footprint = extension_base._resolve_plan_footprint
+    yield
+    _mem._resolve_footprint = original_mem
+    extension_base._resolve_plan_footprint = original_plan_footprint
 
 
 def _candidate_phase_6_with_pre_push() -> str:
@@ -1733,7 +1818,17 @@ class TestPrePushQualityGatePreFilter:
     # ``test_omit_line_forwards_the_verdict_reason``). A hardcoded full line here
     # would re-pin the retired invented reason.
     _OMIT_PREFIX = (
-        '(plan-marshall:manage-execution-manifest:compose) pre-push-quality-gate omitted — '
+        '(plan-marshall:manage-execution-manifest:compose) [STATUS] pre_push_quality_gate_inactive — '
+        'dropped pre-push-quality-gate from phase_6.steps: '
+    )
+    # The counterpart line: an ``unknown`` verdict KEEPS the gate, and the keep is
+    # REPORTED rather than passing silently. Without it an operator sees no
+    # difference between "the verdict said build" and "the verdict could not be
+    # substantiated" — the ADR-009 unknown-state visibility the three-value
+    # vocabulary exists to give.
+    _KEPT_UNKNOWN_PREFIX = (
+        '(plan-marshall:manage-execution-manifest:compose) [STATUS] pre_push_quality_gate_inactive — '
+        'kept pre-push-quality-gate on an unknown build verdict: '
     )
 
     @staticmethod
@@ -1755,6 +1850,10 @@ class TestPrePushQualityGatePreFilter:
     @classmethod
     def _omit_entries(cls, captured: list[tuple[str, str]]) -> list[tuple[str, str]]:
         return [entry for entry in captured if entry[1].startswith(cls._OMIT_PREFIX)]
+
+    @classmethod
+    def _kept_unknown_entries(cls, captured: list[tuple[str, str]]) -> list[tuple[str, str]]:
+        return [entry for entry in captured if entry[1].startswith(cls._KEPT_UNKNOWN_PREFIX)]
 
     def test_omit_when_activation_globs_absent(self, plan_context):
         """Config key missing → step removed and omission line emitted."""
@@ -1981,6 +2080,86 @@ class TestPrePushQualityGatePreFilter:
         # No omission entry emitted.
         assert self._omit_entries(captured) == []
 
+    def test_keep_when_footprint_unresolvable(self, plan_context):
+        """UNRESOLVABLE footprint → ``unknown`` verdict → step KEPT, keep reported.
+
+        The direct Defect B regression at the compose seam. A resolvable-but-empty
+        footprint (``test_omit_when_modified_files_empty`` above) is a positive
+        "nothing changed" observation and legitimately drops the gate; an
+        UNRESOLVABLE footprint — the normal state at phase-4-plan, before the
+        worktree is materialised — is no evidence at all and must not. Collapsing
+        the two is what silently dropped a quality gate nobody opted out of.
+        """
+        plan_id = 'pp-unresolvable'
+        _write_marshal(plan_context.fixture_dir, activation_globs=['marketplace/bundles/**/*.py'])
+        _stub_footprint(None)
+
+        captured, original = self._capture_decision_log()
+        try:
+            result = cmd_compose(
+                _compose_ns(
+                    plan_id=plan_id,
+                    change_type='feature',
+                    scope_estimate='multi_module',
+                    affected_files_count=4,
+                    phase_6_steps=_candidate_phase_6_with_pre_push(),
+                )
+            )
+        finally:
+            _mem._emit_decision_log = original
+
+        assert result is not None and result['pre_push_quality_gate_omitted'] is False
+        assert result['build_verdict_decision'] == 'unknown'
+        manifest = read_manifest(plan_id)
+        assert manifest is not None
+        assert 'pre-push-quality-gate' in manifest['phase_6']['steps']
+        # The gate is kept, and the keep is REPORTED — not silent.
+        assert self._omit_entries(captured) == []
+        kept_entries = self._kept_unknown_entries(captured)
+        assert len(kept_entries) == 1
+        assert kept_entries[0][0] == plan_id
+        # The line forwards the verdict's own reason, not an invented one.
+        assert kept_entries[0][1][len(self._KEPT_UNKNOWN_PREFIX):]
+
+    def test_unresolvable_and_resolvable_empty_diverge(self, plan_context):
+        """The paired opposite: identical marshal, only the footprint state differs.
+
+        Asserting the two outcomes against each other — rather than each in
+        isolation — is what fails if a future change re-collapses ``None`` into
+        ``[]`` at either of the two symmetric resolver seams.
+        """
+        _write_marshal(plan_context.fixture_dir, activation_globs=['marketplace/bundles/**/*.py'])
+
+        _stub_footprint(None)
+        unresolvable = cmd_compose(
+            _compose_ns(
+                plan_id='pp-diverge-unresolvable',
+                change_type='feature',
+                scope_estimate='multi_module',
+                affected_files_count=4,
+                phase_6_steps=_candidate_phase_6_with_pre_push(),
+            )
+        )
+        _stub_footprint([])
+        resolvable_empty = cmd_compose(
+            _compose_ns(
+                plan_id='pp-diverge-empty',
+                change_type='feature',
+                scope_estimate='multi_module',
+                affected_files_count=4,
+                phase_6_steps=_candidate_phase_6_with_pre_push(),
+            )
+        )
+
+        assert unresolvable is not None and resolvable_empty is not None
+        assert unresolvable['build_verdict_decision'] == 'unknown'
+        assert resolvable_empty['build_verdict_decision'] == 'not_necessary'
+        kept = read_manifest('pp-diverge-unresolvable')
+        dropped = read_manifest('pp-diverge-empty')
+        assert kept is not None and dropped is not None
+        assert 'pre-push-quality-gate' in kept['phase_6']['steps']
+        assert 'pre-push-quality-gate' not in dropped['phase_6']['steps']
+
     def test_commit_and_push_false_strips_pre_push_too(self, plan_context):
         """commit_and_push=false strips both push and pre-push-quality-gate.
 
@@ -2011,10 +2190,15 @@ class TestPrePushQualityGatePreFilter:
             _mem._emit_decision_log = original
 
         assert result is not None and result['status'] == 'success'
-        assert result['commit_push_omitted'] is True
+        assert {record['step'] for record in result['commit_push_dropped']} >= {
+            'push',
+            'pre-push-quality-gate',
+        }
         # The pre-push-quality-gate filter is a no-op once the commit_push_disabled
-        # filter has already removed the step.
+        # filter has already removed the step — it never evaluates, so it reports
+        # no verdict at all rather than a verdict it did not obtain.
         assert result['pre_push_quality_gate_omitted'] is False
+        assert result['build_verdict_decision'] is None
         manifest = read_manifest(plan_id)
         assert manifest is not None
         assert 'push' not in manifest['phase_6']['steps']
@@ -2031,8 +2215,9 @@ class TestPrePushQualityGatePreFilter:
           2. _apply_pre_push_quality_gate_inactive
           3. _decide() — which selects a row (Row 1: early_terminate, Row 2:
              recipe, Row 7: default, etc.)
-          4. _log_commit_push_omitted (if fired)
-          5. _log_pre_push_quality_gate_omitted (if fired)
+          4. _log_commit_push_omitted (once per dropped step)
+          5. _log_pre_push_quality_gate_omitted (on a not_necessary verdict) or
+             _log_pre_push_quality_gate_kept_unknown (on an unknown verdict)
           6. _log_decision (always — rule line)
 
         Even though log emission happens after _decide, the row matrix already
@@ -3847,18 +4032,18 @@ class TestScopeGatedFinalizePreFilter:
         # No scope subtraction at multi_module — the scope-gated steps survive.
         assert 'plan-marshall:plan-retrospective' in steps
         assert 'project:finalize-step-plugin-doctor' in steps
-        # pre-submission-self-review SURVIVES: the pre_submission_self_review_inactive
-        # pre-filter no longer drops on empty compose-time footprint (it self-gates at
-        # run time), and the inert multi_module scope gate makes no subtraction.
+        # pre-submission-self-review SURVIVES: no footprint-gated pre-filter drops
+        # it (the vacuous pre_submission_self_review_inactive predicate was removed
+        # outright), and the inert multi_module scope gate makes no subtraction.
         assert 'pre-submission-self-review' in steps
 
     def test_single_module_drops_only_plan_retrospective(self, plan_context):
         """single_module SCOPE gate drops only plan-retrospective; plugin-doctor
         and automatic-review are retained by the scope gate.
 
-        pre-submission-self-review SURVIVES: the pre_submission_self_review_inactive
-        pre-filter no longer drops on an empty compose-time footprint (it self-gates
-        at run time), and the single_module scope gate does not drop it."""
+        pre-submission-self-review SURVIVES: no footprint-gated pre-filter drops it
+        (the vacuous pre_submission_self_review_inactive predicate was removed
+        outright), and the single_module scope gate does not drop it."""
         result = cmd_compose(
             _compose_ns(
                 plan_id='scope-single-module',
@@ -3886,9 +4071,9 @@ class TestScopeGatedFinalizePreFilter:
         """multi_module SCOPE gate makes no subtraction — the scope-gated steps
         and automatic-review are retained by the scope gate.
 
-        pre-submission-self-review SURVIVES too: the pre_submission_self_review_inactive
-        pre-filter no longer drops on an empty compose-time footprint (it self-gates at
-        run time), and the inert multi_module scope gate makes no subtraction."""
+        pre-submission-self-review SURVIVES too: no footprint-gated pre-filter drops
+        it (the vacuous pre-filter that once claimed to was removed outright), and
+        the inert multi_module scope gate makes no subtraction."""
         result = cmd_compose(
             _compose_ns(
                 plan_id='scope-multi-module',
@@ -3908,17 +4093,16 @@ class TestScopeGatedFinalizePreFilter:
         assert 'plan-marshall:plan-retrospective' in steps
         assert 'project:finalize-step-plugin-doctor' in steps
         assert 'automatic-review' in steps
-        # pre-submission-self-review survives — the pre-filter no longer drops on an
-        # empty compose-time footprint, and the multi_module scope gate is inert.
+        # pre-submission-self-review survives — no footprint-gated pre-filter drops
+        # it, and the multi_module scope gate is inert.
         assert 'pre-submission-self-review' in steps
 
     def test_surgical_emits_one_decision_log_per_subtraction(self, plan_context):
         """surgical scope emits one decision-log line per SCOPE-GATE-dropped step.
 
-        The pre_submission_self_review_inactive pre-filter no longer drops on an
-        empty compose-time footprint, so pre-submission-self-review now reaches the
-        surgical scope gate and is subtracted there alongside the two other
-        non-guarded candidates (plan-retrospective + plugin-doctor) — three
+        No footprint-gated pre-filter removes pre-submission-self-review, so it
+        reaches the surgical scope gate and is subtracted there alongside the two
+        other non-guarded candidates (plan-retrospective + plugin-doctor) — three
         scope-gate subtractions in total."""
         captured: list[tuple[str, str]] = []
         original = _mem._emit_decision_log
@@ -4277,6 +4461,17 @@ def test_parse_cost_magnitude(raw, expected):
 
 
 # --- _apply_lane_resolution --------------------------------------------------
+#
+# ``dropped`` is a list of ``{step, reason}`` records, not bare ids: each drop
+# names the element's effective tier and the posture cutoff that removed it, so
+# the drop is diagnosable per step rather than reported as one aggregate line
+# naming the whole list at once. ``_dropped_steps`` extracts the id set so the
+# membership assertions below read the same as before.
+
+
+def _dropped_steps(dropped: list[dict[str, str]]) -> set[str]:
+    """Return the id set from a ``{step, reason}`` subtraction-record list."""
+    return {record['step'] for record in dropped}
 
 
 def test_apply_lane_resolution_full_is_noop(monkeypatch):
@@ -4295,7 +4490,11 @@ def test_apply_lane_resolution_minimal_keeps_only_floor(monkeypatch):
     kept, dropped, _warnings = _apply_lane_resolution(_LANE_STEPS, 'minimal', None, 'p')
 
     assert kept == ['push', 'archive-plan', 'project:finalize-step-deploy-target']
-    assert set(dropped) == {'sonar-roundtrip', 'finalize-step-security-audit', 'plan-marshall:plan-retrospective'}
+    assert _dropped_steps(dropped) == {
+        'sonar-roundtrip',
+        'finalize-step-security-audit',
+        'plan-marshall:plan-retrospective',
+    }
 
 
 def test_apply_lane_resolution_auto_drops_only_full_tier(monkeypatch):
@@ -4303,9 +4502,47 @@ def test_apply_lane_resolution_auto_drops_only_full_tier(monkeypatch):
     _patch_element_lane(monkeypatch)
     kept, dropped, _warnings = _apply_lane_resolution(_LANE_STEPS, 'auto', None, 'p')
 
-    assert set(dropped) == {'finalize-step-security-audit', 'plan-marshall:plan-retrospective'}
+    assert _dropped_steps(dropped) == {
+        'finalize-step-security-audit',
+        'plan-marshall:plan-retrospective',
+    }
     assert 'sonar-roundtrip' in kept
     assert 'project:finalize-step-deploy-target' in kept
+
+
+def test_apply_lane_resolution_every_drop_carries_a_reason(monkeypatch):
+    """Each dropped element names WHY it was removed, per step.
+
+    The former bare-id list meant a single aggregate log line named the whole
+    dropped set at once, so no individual drop carried its own reason. The two
+    reason shapes are distinguishable: an explicit ``off`` opt-out versus an
+    effective tier above the posture cutoff.
+    """
+    _patch_element_lane(monkeypatch)
+    _kept, dropped, _warnings = _apply_lane_resolution(_LANE_STEPS, 'minimal', None, 'p')
+
+    assert dropped, 'the minimal posture must drop something for this case to mean anything'
+    for record in dropped:
+        assert set(record) == {'step', 'reason'}
+        assert record['reason']
+        # Posture-cutoff drops name the cutoff, not an opt-out.
+        assert 'posture cutoff' in record['reason']
+
+
+def test_apply_lane_resolution_off_override_reason_names_the_opt_out(monkeypatch):
+    """An explicit ``off`` override is reported as an opt-out, not a tier cutoff.
+
+    The two reasons must stay distinguishable: "the operator turned this off" and
+    "this tier exceeds the posture" are different facts about the same drop, and
+    an operator reading the log needs to tell them apart.
+    """
+    _patch_element_lane(monkeypatch)
+    overrides = {'sonar-roundtrip': {'lane': 'off'}}
+    _kept, dropped, _warnings = _apply_lane_resolution(_LANE_STEPS, 'auto', overrides, 'p')
+
+    reason = next(r['reason'] for r in dropped if r['step'] == 'sonar-roundtrip')
+    assert "'off'" in reason
+    assert 'posture cutoff' not in reason
 
 
 def test_apply_lane_resolution_keeps_unblocked_elements(monkeypatch):
@@ -4326,7 +4563,7 @@ def test_apply_lane_resolution_derived_state_off_override_is_immune(monkeypatch)
 
     assert 'project:finalize-step-deploy-target' in kept
     assert kept == ['push', 'archive-plan', 'project:finalize-step-deploy-target']
-    assert 'project:finalize-step-deploy-target' not in dropped
+    assert 'project:finalize-step-deploy-target' not in _dropped_steps(dropped)
     assert any(
         step == 'project:finalize-step-deploy-target' and 'immune' in warning
         for step, warning in warnings
@@ -4340,7 +4577,7 @@ def test_apply_lane_resolution_adversarial_off_override_drops_cleanly(monkeypatc
     overrides = {'sonar-roundtrip': {'lane': 'off'}}
     kept, dropped, warnings = _apply_lane_resolution(_LANE_STEPS, 'auto', overrides, 'p')
 
-    assert 'sonar-roundtrip' in dropped
+    assert 'sonar-roundtrip' in _dropped_steps(dropped)
     assert 'sonar-roundtrip' not in kept
     assert all(step != 'sonar-roundtrip' for step, _ in warnings)
 
@@ -4506,9 +4743,12 @@ def test_compose_minimal_profile_prunes_phase_6_to_floor(plan_context, monkeypat
     # The D1 sort choke-point places archive-plan (order 1000) terminal among
     # the order-resolvable steps, so it now trails deploy-target.
     assert manifest['phase_6']['steps'] == ['push', 'project:finalize-step-deploy-target', 'archive-plan']
-    assert set(result['lane_dropped']) == {
+    assert _dropped_steps(result['lane_dropped']) == {
         'sonar-roundtrip', 'finalize-step-security-audit', 'plan-marshall:plan-retrospective',
     }
+    # Each surfaced record carries its own reason — the compose result is where an
+    # operator reads WHY a lane element was pruned.
+    assert all(record['reason'] for record in result['lane_dropped'])
 
 
 def test_compose_auto_profile_drops_only_full_tier(plan_context, monkeypatch):
@@ -4533,6 +4773,67 @@ def test_compose_auto_profile_drops_only_full_tier(plan_context, monkeypatch):
     assert 'sonar-roundtrip' in manifest['phase_6']['steps']
     assert 'finalize-step-security-audit' not in manifest['phase_6']['steps']
     assert 'plan-marshall:plan-retrospective' not in manifest['phase_6']['steps']
+
+
+# =============================================================================
+# Compose-result subtraction-record surface
+#
+# "Every subtraction is reported" is the normative contract: each site that
+# removes a step surfaces its removals on the compose result in the shared
+# ``{step, reason}`` shape, so no drop is visible only as an absence from
+# ``phase_6.steps``. These cases pin the FIELD SET rather than any one site's
+# behaviour — a new subtraction site that forgets to surface its records, or an
+# old field left behind by a clean break, fails here.
+# =============================================================================
+
+
+#: Every compose-result field carrying subtraction records, in the shared
+#: ``{step, reason}`` shape. Kept as one set so a site added without a
+#: corresponding result field is a visible omission rather than a silent one.
+_SUBTRACTION_RECORD_FIELDS = (
+    'commit_push_dropped',
+    'decision_matrix_dropped',
+    'security_class_omitted',
+    'lane_dropped',
+)
+
+
+def test_compose_result_exposes_every_subtraction_record_field(plan_context):
+    """Each subtraction-record field is present and carries the shared shape."""
+    result = cmd_compose(_compose_ns(plan_id='subtraction-fields'))
+
+    assert result is not None and result['status'] == 'success'
+    for field in _SUBTRACTION_RECORD_FIELDS:
+        assert field in result, f'{field} must be surfaced on the compose result'
+        assert isinstance(result[field], list)
+        for record in result[field]:
+            assert set(record) == {'step', 'reason'}, f'{field} record has the wrong shape: {record!r}'
+            assert record['step'] and record['reason']
+
+
+def test_compose_result_drops_the_retired_self_review_key(plan_context):
+    """The always-``False`` ``pre_submission_self_review_omitted`` key is gone.
+
+    A clean break, not a shim: the key reported the outcome of a pre-filter that
+    structurally never fired, so every consumer that read it read a constant.
+    """
+    result = cmd_compose(_compose_ns(plan_id='subtraction-nokey'))
+
+    assert result is not None
+    assert 'pre_submission_self_review_omitted' not in result
+
+
+def test_compose_result_drops_the_retired_commit_push_scalar(plan_context):
+    """``commit_push_omitted`` is replaced by, not duplicated alongside, the records.
+
+    Keeping both would be the two-sources-of-truth shape the record list exists to
+    remove — a scalar that can drift out of step with the drops it summarises.
+    """
+    result = cmd_compose(_compose_ns(plan_id='subtraction-noscalar', commit_and_push='false'))
+
+    assert result is not None
+    assert 'commit_push_omitted' not in result
+    assert result['commit_push_dropped']
 
 
 def test_read_execution_profile_defaults_full_when_absent(plan_context):

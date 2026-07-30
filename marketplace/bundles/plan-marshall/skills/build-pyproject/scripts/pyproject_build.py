@@ -31,6 +31,7 @@ Subcommands:
 """
 
 import json
+from dataclasses import replace
 
 from _build_check_warnings import create_check_warnings_handler
 from _build_cli import (
@@ -129,11 +130,19 @@ def cmd_resolve_test_scope(args) -> int:
     ``build.map`` globs in both modes. ``whole_tree_available`` reflects whether a
     whole-tree pytest run is structurally possible (a discoverable Python module
     set exists). Prints the resolution as TOON: ``scoped_modules[]``,
-    ``divergence_possible``, ``recommended_target``, ``whole_tree_available``.
+    ``divergence_possible``, ``recommended_target``, ``whole_tree_available``,
+    ``footprint_resolvable``.
 
     Footprint source: ``--changed-paths`` (task-scoped) supersedes the whole-plan
     footprint; when it is absent ``--plan-id`` is required to resolve the live
     plan footprint.
+
+    ``footprint_resolvable`` is ``false`` only on the whole-plan path when the
+    footprint cannot be resolved at all (no worktree materialised yet). That state
+    yields no module ownership, so it is reported as ``divergence_possible: true``
+    with ``recommended_target: null`` — the whole-tree answer. Reporting it as a
+    resolvable-but-empty footprint would instead claim ``divergence_possible:
+    false`` ("a scoped run cannot miss a regression") on no evidence whatever.
     """
     # In-process form of the manage-references compute-footprint /
     # manage-config build-map read seams — same script-shared bundle, no
@@ -145,6 +154,13 @@ def cmd_resolve_test_scope(args) -> int:
     project_dir = getattr(args, 'project_dir', None)
     globs = _read_build_map_globs(project_dir)
 
+    # ``None`` means the whole-plan footprint is UNRESOLVABLE (no worktree
+    # materialised yet), which is materially different from a resolvable-but-empty
+    # one. An unresolvable footprint yields no module ownership, so nothing can
+    # substantiate the claim that a scoped run is safe — resolving it as an empty
+    # list would report ``divergence_possible: false``, i.e. "a scoped run cannot
+    # miss a regression", on no evidence at all. Fail toward the whole tree.
+    footprint_resolvable = True
     if changed_paths is not None:
         footprint = [p.strip() for p in changed_paths.split(',') if p.strip()]
     else:
@@ -161,9 +177,13 @@ def cmd_resolve_test_scope(args) -> int:
                 )
             )
             return 2
-        footprint = _resolve_plan_footprint(plan_id)
+        resolved_footprint = _resolve_plan_footprint(plan_id)
+        footprint_resolvable = resolved_footprint is not None
+        footprint = resolved_footprint or []
 
     resolution = resolve_test_scope(footprint, globs)
+    if not footprint_resolvable:
+        resolution = replace(resolution, divergence_possible=True, recommended_target=None)
     # discover_python_modules requires a concrete project root; when project_dir
     # is absent (args constructed dynamically or a test env lacking the
     # attribute) a whole-tree run is not structurally possible.
@@ -177,6 +197,7 @@ def cmd_resolve_test_scope(args) -> int:
                 'divergence_possible': resolution.divergence_possible,
                 'recommended_target': resolution.recommended_target,
                 'whole_tree_available': whole_tree_available,
+                'footprint_resolvable': footprint_resolvable,
             }
         )
     )

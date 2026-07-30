@@ -2,20 +2,28 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Pre-filter, ceremony-finalize, and verification-command rule helpers.
 
-Extracted verbatim from ``manage-execution-manifest.py``: the marshal.json step
-map reads, the candidate-narrowing pre-filters (commit/push, simplify,
-security-audit, scope-gated finalize), the ceremony-finalize lane-driven
-selection, the CI-provider read, and the build verification-command parser. Every
-function here is log-free and calls no test-patched name; the entry re-exports
-them and keeps the patched callers.
+Extracted from ``manage-execution-manifest.py``: the per-step map reads, the
+candidate-narrowing pre-filters (commit/push, simplify, security-audit,
+scope-gated finalize), the ceremony-finalize lane-driven selection, the
+CI-provider read, and the build verification-command parser. Every function here
+is log-free and calls no test-patched name; the entry re-exports them and keeps
+the patched callers.
+
+This module is also the single home of the plan-local-over-marshal per-step
+declaration merge (:func:`_read_merged_phase_6_step_map`). It lives here because
+the merge overlays onto :func:`_read_marshal_phase_step_map` (defined here) and
+because :func:`_read_step_owned_knob` (also here) is one of the merge's two
+consumers; placing it in ``_manifest_lanes`` would invert this module's existing
+``_manifest_rules → _manifest_lanes`` import edge into a cycle.
 """
 
 import json
 import shlex
 
-from _manifest_lanes import _effective_lane_tier, _lane_override_for
+from _manifest_lanes import LANE_OVERRIDES, _effective_lane_tier, _lane_override_for
 from _step_key_canonical import canonicalize_step_key
-from file_ops import get_marshal_path, read_json
+from constants import FILE_STATUS
+from file_ops import get_marshal_path, get_plan_dir, read_json
 
 
 def _read_marshal_phase_step_map(phase_key: str) -> dict[str, dict] | None:
@@ -62,6 +70,110 @@ def _read_marshal_phase_step_map(phase_key: str) -> dict[str, dict] | None:
     return None
 
 
+#: The plan-local per-step declaration channel. Mirrors the marshal.json
+#: ``plan.phase-6-finalize.steps`` shape exactly — an id-keyed map of nested param
+#: objects, same key forms (prefixes preserved, canonicalized on read) and the same
+#: ``LANE_OVERRIDES`` enum — but lives beside marshal rather than inside it, so one
+#: plan's answer never leaks into every later plan.
+_PLAN_LOCAL_STEP_MAP_KEY = 'finalize_step_overrides'
+
+
+def _read_plan_local_phase_6_step_map(plan_id: str) -> dict[str, dict]:
+    """Read the plan-local phase-6 step map from ``status.metadata``.
+
+    Reads ``status.metadata.finalize_step_overrides`` — the plan-scoped sibling of
+    marshal.json's ``plan.phase-6-finalize.steps`` map, carrying the operator's
+    per-step answer for THIS plan only. The degrade-to-default guard shape matches
+    the sibling scalar read :func:`_manifest_lanes._read_execution_profile`: an
+    absent or malformed ``status.json`` yields ``{}`` rather than raising, so
+    compose never crashes on a plan that has no declaration.
+
+    Validation is structural and non-fatal: a non-dict map, a non-string step key,
+    a non-dict param object, and a ``lane`` value outside
+    :data:`_manifest_lanes.LANE_OVERRIDES` are each ignored. An invalid ``lane``
+    drops only that knob — the step's remaining params survive, since they are
+    read by the peer :func:`_read_step_owned_knob`.
+
+    Args:
+        plan_id: Plan identifier whose plan-local declaration map to read.
+
+    Returns:
+        The id-keyed ``{step_id: param-object}`` map (prefixes preserved), or ``{}``
+        when the plan declares none.
+    """
+    status_path = get_plan_dir(plan_id) / FILE_STATUS
+    if not status_path.exists():
+        return {}
+    try:
+        status = read_json(status_path, default={})
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(status, dict):
+        return {}
+    metadata = status.get('metadata')
+    if not isinstance(metadata, dict):
+        return {}
+    raw = metadata.get(_PLAN_LOCAL_STEP_MAP_KEY)
+    if not isinstance(raw, dict):
+        return {}
+    resolved: dict[str, dict] = {}
+    for step_id, params in raw.items():
+        if not isinstance(step_id, str) or not step_id:
+            continue
+        if not isinstance(params, dict):
+            continue
+        cleaned = {
+            knob: value
+            for knob, value in params.items()
+            if knob != 'lane' or (isinstance(value, str) and value in LANE_OVERRIDES)
+        }
+        resolved[step_id] = cleaned
+    return resolved
+
+
+def _read_merged_phase_6_step_map(plan_id: str) -> dict[str, dict] | None:
+    """Resolve the ONE merged phase-6 step map both per-step readers consume.
+
+    The single home of the plan-local-over-marshal merge. Two independent readers
+    resolve per-step declarations from ``phase-6-finalize.steps`` —
+    :func:`_manifest_lanes._lane_override_for` (behind
+    :func:`_has_declared_lane_override`, the scope gate's immunity predicate) and
+    :func:`_read_step_owned_knob` (behind :func:`_read_finalize_gates`, each
+    ceremony gate's run-at-all decision) — and both consume THIS map, so a
+    plan-local declaration can never grant scope-gate immunity while leaving the
+    ceremony gate deaf to it.
+
+    Precedence is **plan-local ▸ marshal**, applied per step key and merged **per
+    knob** (shallow), so a plan-local ``lane`` does not erase a marshal-side sibling
+    param on the same step. Step keys are matched on their canonicalized form
+    (:func:`canonicalize_step_key`), so a plan-local bare ``pre-push-quality-gate``
+    overlays the marshal-side ``default:pre-push-quality-gate`` entry rather than
+    creating a second, competing entry.
+
+    Args:
+        plan_id: Plan identifier whose plan-local declarations overlay marshal.
+
+    Returns:
+        The merged id-keyed ``{step_id: param-object}`` map, or ``None`` when
+        neither channel carries one (the CSV-fallback compose path, where no
+        declaration can exist).
+    """
+    marshal_map = _read_marshal_phase_step_map('phase-6-finalize')
+    plan_local = _read_plan_local_phase_6_step_map(plan_id)
+    if not plan_local:
+        return marshal_map
+    merged: dict[str, dict] = {key: dict(params) for key, params in (marshal_map or {}).items()}
+    by_canonical = {canonicalize_step_key(key): key for key in merged}
+    for step_id, params in plan_local.items():
+        target = by_canonical.get(canonicalize_step_key(step_id))
+        if target is None:
+            merged[step_id] = dict(params)
+            by_canonical[canonicalize_step_key(step_id)] = step_id
+        else:
+            merged[target].update(params)
+    return merged
+
+
 def _snapshot_step_params(
     final_step_ids: list[str], marshal_step_map: dict[str, dict] | None
 ) -> dict[str, dict | None]:
@@ -100,24 +212,46 @@ def _snapshot_step_params(
     }
 
 
-def _apply_commit_push_disabled(phase_6_candidates: list[str], commit_and_push: bool) -> tuple[list[str], bool]:
-    """Pre-filter: drop ``push`` when ``commit_and_push is False``.
+#: The steps `commit_push_disabled` subtracts, and the single drop reason each
+#: carries. ``push`` is the directly-disabled step; the two gates are only
+#: meaningful when a downstream push exists.
+_COMMIT_PUSH_DROP_REASON = 'commit_and_push is disabled — no downstream push exists'
+_COMMIT_PUSH_DROP_STEPS = frozenset({'push', 'pre-push-quality-gate', 'pre-submission-self-review'})
 
-    Also drops ``pre-push-quality-gate`` and ``pre-submission-self-review``
-    because both gates are only meaningful when a downstream push exists.
-    Returns the filtered list plus a flag indicating whether the pre-filter
-    fired.
+
+def _apply_commit_push_disabled(
+    phase_6_candidates: list[str], commit_and_push: bool
+) -> tuple[list[str], list[dict[str, str]]]:
+    """Pre-filter: drop ``push`` and its two push-only gates when pushing is disabled.
+
+    Subtracts ``push``, ``pre-push-quality-gate``, and
+    ``pre-submission-self-review`` when ``commit_and_push is False`` — the two
+    gates go because both are only meaningful when a downstream push exists.
+
+    Reporting follows the shared ``{step, reason}`` subtraction-record convention
+    (the shape :func:`_apply_security_class_inactive` established), so EVERY
+    dropped step is named rather than only ``push``: the caller emits one
+    ``[STATUS]`` decision-log line per record and surfaces the records in the
+    compose result.
+
+    Args:
+        phase_6_candidates: The boundary-normalized phase-6 candidate list.
+        commit_and_push: Whether the plan will commit and push.
+
+    Returns:
+        ``(kept, dropped)`` — the filtered candidate list, and one
+        ``{'step': ..., 'reason': ...}`` record per dropped step.
     """
     if commit_and_push:
-        return phase_6_candidates, False
-    fired = False
-    filtered: list[str] = []
+        return phase_6_candidates, []
+    kept: list[str] = []
+    dropped: list[dict[str, str]] = []
     for step in phase_6_candidates:
-        if step in {'push', 'pre-push-quality-gate', 'pre-submission-self-review'}:
-            fired = True
-            continue
-        filtered.append(step)
-    return filtered, fired
+        if step in _COMMIT_PUSH_DROP_STEPS:
+            dropped.append({'step': step, 'reason': _COMMIT_PUSH_DROP_REASON})
+        else:
+            kept.append(step)
+    return kept, dropped
 
 
 # Footprint roles that gate a whole-tree canonical-verify step. Each canonical
@@ -210,7 +344,7 @@ def _apply_security_class_inactive(
     phase_6_candidates: list[str],
     security_class_steps: frozenset[str] | set[str],
     affected_files_count: int,
-    live_footprint_count: int,
+    live_footprint_count: int | None,
 ) -> tuple[list[str], list[dict[str, str]]]:
     """Pre-filter: drop a security-class step only when there is no change surface at all.
 
@@ -227,6 +361,11 @@ def _apply_security_class_inactive(
     ``affected_files_count == 0`` AND ``live_footprint_count == 0``. Either signal being
     non-empty keeps the step — there is something to audit.
 
+    An UNRESOLVABLE live footprint (``live_footprint_count is None``) is **no
+    evidence**, never "nothing there", so it keeps the step unconditionally — the
+    same fail-toward-inclusion discipline the absent change-type leg follows. Only a
+    resolvable, genuinely-empty footprint (``0``) can contribute to a drop.
+
     ``security_class_steps`` is the caller-derived population (steps whose frontmatter
     declares ``persona: persona-security-expert``), not a hardcoded step id, so a future
     second security-class finalize step inherits the protection by declaring the same
@@ -236,14 +375,15 @@ def _apply_security_class_inactive(
         phase_6_candidates: The boundary-normalized phase-6 candidate list.
         security_class_steps: The candidate ids that belong to the security class.
         affected_files_count: ``references.json::affected_files`` length (declared surface).
-        live_footprint_count: Length of the live worktree footprint (live surface).
+        live_footprint_count: Length of the live worktree footprint (live surface), or
+            ``None`` when the footprint is unresolvable (no evidence — keeps the step).
 
     Returns:
         ``(kept, dropped)`` — the filtered candidate list, and one
         ``{'step': ..., 'reason': ...}`` record per dropped step so the caller can emit a
         per-drop decision-log line and surface the drop in the compose result.
     """
-    if affected_files_count > 0 or live_footprint_count > 0:
+    if affected_files_count > 0 or live_footprint_count is None or live_footprint_count > 0:
         return phase_6_candidates, []
 
     kept: list[str] = []
@@ -298,30 +438,45 @@ _SECURITY_AUDIT_OWNER_STEP = 'default:finalize-step-security-audit'
 _PRE_SUBMISSION_SELF_REVIEW_STEP = 'default:pre-submission-self-review'
 
 
-def _read_step_owned_knob(owner_step_id: str, knob: str) -> object | None:
-    """Read a step-owned knob from ``phase-6-finalize.steps`` in marshal.json.
+def _read_step_owned_knob(owner_step_id: str, knob: str, plan_id: str) -> object | None:
+    """Read a step-owned knob from the merged phase-6 step map.
 
     The step-owned knobs (each ceremony gate's ``lane`` override, plus per-step
     params such as ``final_merge_without_asking``) live nested under their owning
-    finalize step's param object in the ``phase-6-finalize.steps`` keyed map. This
-    reads ``steps[owner_step_id][knob]`` via :func:`_read_marshal_phase_step_map`
-    (which
-    preserves the full ``default:`` / ``project:`` step-id prefixes), returning
-    ``None`` when the marshal file is missing, the owning step is absent from the
-    map, or the knob is absent from the step's param object. The caller supplies
-    the canonical default for the ``None`` case.
+    finalize step's param object. This reads ``steps[owner_step_id][knob]`` from
+    :func:`_read_merged_phase_6_step_map` — the ONE merged plan-local-over-marshal
+    source (step keys canonicalized, prefixes preserved) that the peer reader
+    :func:`_manifest_lanes._lane_override_for` also consumes. Reading the merged
+    map rather than marshal alone is what keeps this reader and the lane-override
+    reader from disagreeing about the same ``steps[<step>].lane`` field: a
+    plan-local declaration reaches BOTH.
+
+    Returns ``None`` when neither channel carries a map, the owning step is absent
+    from it, or the knob is absent from the step's param object. The caller
+    supplies the canonical default for the ``None`` case.
 
     Args:
         owner_step_id: The full-prefixed finalize step id that owns the knob.
         knob: The param key to read from the owning step's nested param object.
+        plan_id: Plan identifier whose plan-local declarations overlay marshal.
 
     Returns:
         The knob's value, or ``None`` when it cannot be resolved.
     """
-    step_map = _read_marshal_phase_step_map('phase-6-finalize')
+    step_map = _read_merged_phase_6_step_map(plan_id)
     if not step_map:
         return None
     params = step_map.get(owner_step_id)
+    if not isinstance(params, dict):
+        params = next(
+            (
+                candidate
+                for key, candidate in step_map.items()
+                if isinstance(candidate, dict)
+                and canonicalize_step_key(key) == canonicalize_step_key(owner_step_id)
+            ),
+            None,
+        )
     if not isinstance(params, dict):
         return None
     return params.get(knob)
@@ -331,9 +486,14 @@ def _has_declared_lane_override(step_id: str, marshal_phase_6_map: dict[str, dic
     """Return True when ``step_id`` carries an explicitly declared, non-``auto`` lane.
 
     The declared-lane predicate the implicit scope gate consults before dropping
-    anything. A per-element ``lane`` override in marshal.json's
-    ``phase-6-finalize.steps`` map is the operator's DECLARATION about whether the
-    element runs; ``auto`` is the defer value that expresses no such declaration
+    anything. A per-element ``lane`` override is the operator's DECLARATION about
+    whether the element runs, and it is resolved from the MERGED
+    plan-local-over-marshal step map (:func:`_read_merged_phase_6_step_map`) — not
+    from marshal.json alone. An operator-named step whose answer was persisted to
+    that plan's ``status.metadata.finalize_step_overrides`` is therefore immune to
+    :func:`_apply_scope_gated_finalize` exactly as a marshal-declared ``lane``
+    already is, and is reported in the same ``scope_gated_immune`` list.
+    ``auto`` is the defer value that expresses no such declaration
     and leaves the implicit machinery its say. Every other valid override
     (``off`` / ``minimal`` / ``full`` / ``ask``) is a declaration, so the element
     belongs to the lane machinery and the scope gate must not silently pre-empt
@@ -347,8 +507,9 @@ def _has_declared_lane_override(step_id: str, marshal_phase_6_map: dict[str, dic
 
     Args:
         step_id: The boundary-normalized candidate step id.
-        marshal_phase_6_map: The marshal.json ``phase-6-finalize`` keyed step map
-            (prefixes preserved), or ``None`` on the CSV-fallback compose path —
+        marshal_phase_6_map: The MERGED ``phase-6-finalize`` keyed step map
+            (plan-local ▸ marshal, prefixes preserved), or ``None`` on the
+            CSV-fallback compose path with no plan-local declaration either —
             where no declaration can exist, so nothing is immune.
 
     Returns:
@@ -376,8 +537,11 @@ def _apply_scope_gated_finalize(
     - Any other scope value → no implicit subtraction.
 
     **Declared-lane immunity.** A step that carries an explicitly declared,
-    non-``auto`` per-element ``lane`` override is NEVER dropped here, whatever the
-    scope estimate says (:func:`_has_declared_lane_override`). This gate is
+    non-``auto`` per-element ``lane`` override — in EITHER declaration channel,
+    plan-local ``status.metadata.finalize_step_overrides`` or project-wide
+    marshal.json, merged by :func:`_read_merged_phase_6_step_map` — is NEVER dropped
+    here, whatever the scope estimate says
+    (:func:`_has_declared_lane_override`). This gate is
     IMPLICIT — it infers "you probably do not want this" from the scope estimate —
     while a ``lane`` override is the operator stating what they do want. An
     implicit inference must not silently override an explicit declaration. The
@@ -477,13 +641,16 @@ _LANE_TO_CEREMONY_VALUE: dict[str, str] = {
 }
 
 
-def _read_finalize_gates() -> dict[str, str]:
+def _read_finalize_gates(plan_id: str) -> dict[str, str]:
     """Resolve the four finalize ceremony gate values from the ``lane`` channel.
 
     Each of the four ceremony gates (``qgate`` / ``self_review`` / ``simplify`` /
     ``security_audit``) is governed by its owning finalize step's per-element
-    ``lane`` override (``steps[<owner>].lane``) in ``phase-6-finalize.steps``,
-    read via :func:`_read_step_owned_knob`. The owning steps are:
+    ``lane`` override (``steps[<owner>].lane``), read via
+    :func:`_read_step_owned_knob` from the merged plan-local-over-marshal step map.
+    ``plan_id`` is forwarded so a plan-local declaration governs the ceremony gate
+    exactly as a marshal-declared one does — the same widened source that grants
+    scope-gate immunity. The owning steps are:
 
     - ``qgate`` → ``default:pre-push-quality-gate``
     - ``self_review`` → ``default:pre-submission-self-review``
@@ -495,15 +662,19 @@ def _read_finalize_gates() -> dict[str, str]:
     in), and every other value (``auto`` / ``full`` / ``ask`` / absent) → ``auto``
     (defer to the pre-filter machinery).
 
-    Returns a ``{gate: value}`` dict for the four finalize gates; values are one
-    of ``always`` / ``never`` / ``auto``. The caller treats any value other than
-    ``always`` / ``never`` as defer.
+    Args:
+        plan_id: Plan identifier whose plan-local declarations overlay marshal.
+
+    Returns:
+        A ``{gate: value}`` dict for the four finalize gates; values are one of
+        ``always`` / ``never`` / ``auto``. The caller treats any value other than
+        ``always`` / ``never`` as defer.
     """
     resolved: dict[str, str] = dict.fromkeys(_CEREMONY_FINALIZE_GATES, _CEREMONY_FINALIZE_DEFAULT)
 
     for gate in _CEREMONY_FINALIZE_GATES:
         owner_step = _CEREMONY_GATE_OWNER_STEP[gate]
-        lane_value = _read_step_owned_knob(owner_step, 'lane')
+        lane_value = _read_step_owned_knob(owner_step, 'lane', plan_id)
         if isinstance(lane_value, str) and lane_value in _LANE_TO_CEREMONY_VALUE:
             resolved[gate] = _LANE_TO_CEREMONY_VALUE[lane_value]
 
