@@ -465,7 +465,8 @@ def main() -> int:
         'scope-estimate-heuristic',
         help='Deterministic pre-route scope_estimate classifier for phase-1-init (no LLM, no architecture calls)',
         description=(
-            "Classify a coarse scope_estimate (surgical | single_module | none) from "
+            "Classify a coarse scope_estimate "
+            "(surgical | single_module | multi_module | none) from "
             "the WHOLE request.md body by counting distinct file-path references, "
             "with ZERO architecture queries. The scored text is heading-blind — the "
             "entire file minus its own '# Request' title line, with no section "
