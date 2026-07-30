@@ -107,6 +107,8 @@ Three consequences are binding rather than stylistic. **One line per step, never
 
 The `security_class_inactive` gate below is the reference implementation of this convention; every other site reuses its shape verbatim rather than inventing a second one.
 
+**Known conformance gaps (phase-5 sites).** The rule above is normative, but two phase-5 removal sites do not yet satisfy its first clause: `canonical_verify_inactive` and the domain-seeded verify-step resolvability filter each drop a `phase_5.verification_steps` entry and emit only the `decision.log` line — neither surfaces a `{step, reason}` record in the `compose` result, and neither appears in the Outputs enumeration below. They are named here rather than left to be discovered, because an unlisted gap in a rule that claims universality is exactly the silent subtraction this section exists to prevent.
+
 The pre-filters run in this order:
 
 1. **`commit_push_disabled`** — drops `push`, `pre-push-quality-gate`, AND `pre-submission-self-review` when no push will occur, reporting one record per dropped step.

@@ -192,6 +192,6 @@ The consumer dispatcher (`phase-6-finalize/workflow/pre-submission-self-review.m
 ## Related
 
 - [`../../phase-6-finalize/workflow/pre-submission-self-review.md`](../../phase-6-finalize/workflow/pre-submission-self-review.md) — sole consumer of this ext-point's output
-- [`../../manage-execution-manifest/standards/decision-rules.md`](../../manage-execution-manifest/standards/decision-rules.md) — `commit_push_disabled` pre-filter, the only compose-time subtraction that drops the consumer step
+- [`../../manage-execution-manifest/standards/decision-rules.md`](../../manage-execution-manifest/standards/decision-rules.md) — the `commit_push_disabled` and `scope_gated_finalize` pre-filters, among the compose-time subtractions that can drop the consumer step — see that document for the authoritative set, and do not treat the two named here as exhaustive
 - [`../../tools-script-executor/standards/cwd-policy.md`](../../tools-script-executor/standards/cwd-policy.md) — Bucket B cwd contract every implementor obeys
 - [`ext-point-triage.md`](ext-point-triage.md) — sibling ext-point pattern (domain-aware finding triage)
