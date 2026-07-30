@@ -126,6 +126,15 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
   set --plan-id {plan_id} --field scope_estimate --value {scope_estimate}
 ```
 
+Then re-run the deterministic classification-validation gate, because this persist overwrites the pre-route band that phase-1-init's Step 8a.5 heuristic wrote:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status classification-validate \
+  --plan-id {plan_id}
+```
+
+The gate is **flag-not-block** — it records Q-Gate findings and never halts the lane. This call site is load-bearing for the `scale_mismatch_light_routing` class specifically: a light-lane plan never enters phase-2-refine's clarification loop, so the refine-side re-validation never runs for it, and inside `planning-lane route` the gate runs immediately after the Step 8a.5 heuristic wrote the band with the *same* measurement logic the detector re-derives — where disagreement is impossible by construction. Without this call the detector could never fire for the very population its name targets. Parse `mismatch_count` and carry any finding forward as light-lane output, not as a halt.
+
 Log completion:
 
 ```bash

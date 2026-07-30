@@ -760,6 +760,17 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
 
 The accepted enum values are `none | surgical | single_module | multi_module | broad` — the same enum documented in `manage-solution-outline:standards/solution-outline-standard.md`. The value is also returned in the Step 13 TOON below.
 
+#### Re-run the classification-validation gate after the overwrite
+
+This persist **overwrites** the pre-route `scope_estimate` that phase-1-init's Step 8a.5 heuristic wrote, so it is the first moment at which the persisted band can disagree with what the request body actually measures. Re-run the deterministic gate immediately after the overwrite:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status classification-validate \
+  --plan-id {plan_id}
+```
+
+The gate is **flag-not-block** — it never changes any resolved value and never halts refine; it only records Q-Gate findings. Running it here is what makes the `scale_mismatch_light_routing` class reachable at all: inside `planning-lane route` the gate runs immediately after the Step 8a.5 heuristic wrote the band with the *same* `_distinct_paths` / `_MULTI_MODULE_MIN_PATHS` logic the detector re-derives, so the two readings cannot disagree at that point. A detector that only ever runs where disagreement is impossible is a vacuous guard; this call site is where a genuine narrow-over-large mismatch can first exist. Parse `mismatch_count` from the return and treat any finding as refine-phase input, not a halt.
+
 ### Persist track to references.json
 
 Persist the `track` value derived from the planning lane in Step 9 (deep ⇒ complex, light ⇒ simple) so phase-4-plan and the manifest composer read a single source of truth — symmetric to the `scope_estimate` persist above:

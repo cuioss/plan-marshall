@@ -158,6 +158,19 @@ def _detect_scale_mismatch_light_routing(
     Exact, not heuristic: it re-derives the count from the SAME whole-body read the
     sensor uses, so the two readings are comparable by construction and the check
     fires only on a genuine disagreement.
+
+    Reachability — load-bearing, and the reason this class needs call sites beyond
+    ``route``. Inside ``planning-lane route`` this check runs immediately after
+    phase-1-init Step 8a.5 wrote ``scope_estimate`` with the SAME
+    ``_distinct_paths`` / ``_MULTI_MODULE_MIN_PATHS`` logic re-derived below, so the
+    two readings cannot disagree there and the class can never fire from that site
+    alone. It becomes reachable only where a LATER writer overwrites the band: the
+    phase-2-refine Step 9 module-mapping persist and the phase-3-outline light-lane
+    persist both re-invoke ``classification-validate`` immediately after their
+    overwrite for exactly this reason. The light-lane site is the one that matters
+    for this class specifically — a light-routed plan never enters refine's
+    clarification loop, so the refine-side re-validation never runs for it. Removing
+    either re-invocation turns this detector back into a guard that cannot fire.
     """
     scope = references.get('scope_estimate')
     if not isinstance(scope, str) or scope.strip().lower() != _NARROW_CLAIM_SCOPE:
