@@ -458,20 +458,47 @@ def _log_decision(plan_id: str, rule: str, body: dict[str, Any]) -> None:
     _emit_decision_log(plan_id, message)
 
 
+def _log_dropped_records(
+    plan_id: str, gate_name: str, dropped_records: list[dict[str, str]], *, target: str = ''
+) -> None:
+    """Emit one ``[STATUS]`` decision-log line per ``{step, reason}`` subtraction record.
+
+    The single emission point for the shared ``{step, reason}`` subtraction-record
+    convention — the shape ``_apply_security_class_inactive``, ``_decide``, and
+    ``_apply_lane_resolution`` all report through. Every caller that drops
+    candidates by that shape reports through here instead of re-deriving the same
+    ``dropped {step}...: {reason}`` line at its own call site.
+
+    Args:
+        plan_id: Plan identifier the log entry is written for.
+        gate_name: The gate/rule name the ``[STATUS]`` line attributes the drop to.
+        dropped_records: One ``{'step': ..., 'reason': ...}`` dict per removed step.
+        target: An optional ``' from phase_6.steps'``-style suffix naming the list
+            the record was removed from. Left empty when a rule (e.g. the decision
+            matrix) can span both phase_5 and phase_6 and no single target name
+            applies.
+    """
+    for record in dropped_records:
+        message = (
+            f'(plan-marshall:manage-execution-manifest:compose) [STATUS] {gate_name} — '
+            f'dropped {record["step"]}{target}: {record["reason"]}'
+        )
+        _emit_decision_log(plan_id, message)
+
+
 def _log_commit_push_omitted(plan_id: str, step: str, reason: str) -> None:
     """Emit ONE decision-log entry per ``commit_push_disabled`` subtraction.
 
     Per-step rather than per-pre-filter: the gate drops three steps (``push`` plus
     the two push-only gates), and the former single aggregate line named only
     ``push`` — so the two gates vanished unnamed. The caller loops the pre-filter's
-    ``{step, reason}`` records through here, reusing the shared subtraction-record
-    convention rather than inventing a second reporting shape.
+    ``{step, reason}`` records through here; this in turn delegates to
+    :func:`_log_dropped_records`, reusing the shared subtraction-record emission
+    rather than composing the same message shape a second time.
     """
-    message = (
-        '(plan-marshall:manage-execution-manifest:compose) [STATUS] commit_push_disabled — '
-        f'dropped {step} from phase_6.steps: {reason}'
+    _log_dropped_records(
+        plan_id, 'commit_push_disabled', [{'step': step, 'reason': reason}], target=' from phase_6.steps'
     )
-    _emit_decision_log(plan_id, message)
 
 
 def _log_candidate_source(plan_id: str, phase_key: str, source: str) -> None:
@@ -2147,12 +2174,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         _log_pre_push_quality_gate_kept_unknown(plan_id, pre_push_quality_gate_reason)
     if simplify_omitted:
         _log_prefilter_omitted(plan_id, 'finalize-step-simplify', args.change_type, affected_files_count)
-    for omitted in security_class_omitted:
-        _emit_decision_log(
-            plan_id,
-            '(plan-marshall:manage-execution-manifest:compose) [STATUS] security_class_inactive — '
-            f'dropped {omitted["step"]} from phase_6.steps: {omitted["reason"]}',
-        )
+    _log_dropped_records(plan_id, 'security_class_inactive', security_class_omitted, target=' from phase_6.steps')
     for dropped_step in scope_gated_dropped:
         _log_scope_gated_finalize_subtraction(plan_id, args.scope_estimate, dropped_step)
     for immune_step in scope_gated_immune:
@@ -2173,12 +2195,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         _log_ceremony_finalize_selection(plan_id, change['gate'], 'always', change['step'])
     for change in ceremony_forced_out:
         _log_ceremony_finalize_selection(plan_id, change['gate'], 'never', change['step'])
-    for dropped_record in decide_dropped:
-        _emit_decision_log(
-            plan_id,
-            f'(plan-marshall:manage-execution-manifest:compose) [STATUS] decision_matrix — '
-            f'dropped {dropped_record["step"]}: {dropped_record["reason"]}',
-        )
+    _log_dropped_records(plan_id, 'decision_matrix', decide_dropped)
     # One line per dropped element, replacing the single aggregate line that named
     # the whole list at once — an aggregate is not a per-drop record, so no
     # individual drop carried its own reason. The former `execution_profile !=
@@ -2186,13 +2203,12 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # no-op posture that produces no drops at all, so the guard could only ever
     # suppress an empty list. Removing it keeps the emission driven by the records
     # themselves rather than by a second, independently-maintained predicate.
-    for dropped_record in lane_dropped:
-        _emit_decision_log(
-            plan_id,
-            '(plan-marshall:manage-execution-manifest:compose) [STATUS] lane_resolution — '
-            f'dropped {dropped_record["step"]} from phase_6.steps '
-            f'(execution_profile={execution_profile}): {dropped_record["reason"]}',
-        )
+    _log_dropped_records(
+        plan_id,
+        'lane_resolution',
+        lane_dropped,
+        target=f' from phase_6.steps (execution_profile={execution_profile})',
+    )
     for warned_step, warning in lane_warnings:
         _emit_decision_log(
             plan_id,
