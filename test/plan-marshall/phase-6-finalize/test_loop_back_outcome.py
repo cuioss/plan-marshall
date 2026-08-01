@@ -383,14 +383,14 @@ def test_loop_back_commit_re_fires_pre_submission_self_review():
     approach for markdown-resident dispatcher logic) this test exercises the
     persisted record through ``manage-status`` and asserts the two inputs the
     documented table branches on: the step IS head-dependent (derived fact), and
-    the persisted ``head_at_completion`` no longer equals the advanced HEAD —
-    which selects the table's RE-FIRE row rather than SKIP.
+    the terminal ``done`` record actually persists the SHA its verdict was
+    computed against — without which the table has nothing to compare a later
+    HEAD against and degrades to an unconditional SKIP.
     """
     plan_id = 'loopback-d4a-self-review'
     _make_plan(plan_id)
 
     head_at_verdict = 'a' * 40
-    advanced_head = 'b' * 40
 
     cmd_mark_step_done(
         _args(
@@ -420,11 +420,4 @@ def test_loop_back_commit_re_fires_pre_submission_self_review():
         'pre-submission-self-review must declare head_dependent: true. Its verdict '
         'is a function of the plan diff, so without the declaration a loop-back '
         'commit leaves a stale done record standing as green for an unreviewed diff.'
-    )
-
-    # The documented table branches on this inequality -> RE-FIRE, not SKIP.
-    assert entry['head_at_completion'] != advanced_head, (
-        'The loop-back commit advanced HEAD past the recorded verdict SHA, so the '
-        're-entry check must select RE-FIRE. Equality here would mean the stale '
-        'verdict is treated as still valid for the new diff.'
     )
