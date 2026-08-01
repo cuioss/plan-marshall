@@ -1,6 +1,6 @@
 # Extension Point: Derivation Resolver
 
-> **Type**: Module-Edge Derivation (Axis-C) | **Hook Method**: `DerivationResolverBase` subclass | **Implementations**: see [§ Current implementations](#current-implementations) | **Status**: Shipped — the `extension_base.py` ABC is wired and `build-maven` implements it
+> **Type**: Module-Edge Derivation (Axis-C) | **Hook Method**: `DerivationResolverBase` subclass | **Implementations**: see [§ Current implementations](#current-implementations) | **Status**: Shipped — the `extension_base.py` ABC is wired and three resolvers implement it, two opting in from Axis-A and one from Axis-B
 
 ## Overview
 
@@ -25,9 +25,12 @@ ExtensionBase (Axis-A)        BuildExtensionBase (Axis-B)      DerivationResolve
   get_skill_domains()           classify_paths()                  derivation_resolver_id()
   provides_triage() ...         classify_globs() ...              derive_edges()
         ▲                              ▲                                  ▲
-        │                              │                    opted into by EITHER hierarchy
-   pm-dev-python                  build-maven ─────────────────────────────┘
-   pm-documents                   build-pyproject
+        │                              │                                  │
+   pm-plugin-development *        build-maven *                  opted into from EITHER
+   pm-dev-python *                build-pyproject                hierarchy, by multiple
+   pm-documents                                                  inheritance
+
+   * also subclasses DerivationResolverBase — see § Current implementations
 ```
 
 This follows the precedent [ext-point-domain-verb.md](ext-point-domain-verb.md) sets — an optional hook and a standalone contract doc are complements, not alternatives — and the carve-out precedent `BuildExtensionBase` itself established when Axis-B was split out of `ExtensionBase`.
@@ -99,7 +102,7 @@ This is the null-on-absent contract every extension point in this API shares: a 
 
 Several resolvers are active at once and the graph is the **union** of their edge sets. No conflict rule exists because none is expressible: an edge is an unweighted `(from, to)` boolean, so union is idempotent and commutative.
 
-The nearest thing to a conflict is duplicate **identity**, not duplicate value: a markdown resolver deriving an edge from a cross-document reference and a Python resolver deriving the same module pair from an import statement have not disagreed — they have independently corroborated. That case resolves by collapsing the duplicates into one edge carrying both producer ids, which is also exactly what the provenance contract needs.
+The nearest thing to a conflict is duplicate **identity**, not duplicate value: the `markdown` resolver deriving an edge from a cross-document reference and the `python` resolver deriving the same module pair from an import statement have not disagreed — they have independently corroborated. That case resolves by collapsing the duplicates into one edge carrying both producer ids, which is also exactly what the provenance contract needs. This is the common case rather than a hypothetical one: on the plan-marshall marketplace every edge the `python` resolver derives is also derived by `markdown`, so per-edge provenance is the only thing that keeps the import join's contribution visible at all.
 
 ```text
               resolver A            resolver B            resolver C
@@ -145,20 +148,21 @@ A resolver keys its derivation on some identity — a Maven `groupId:artifactId`
 2. Emits **no edge** for the colliding key. A genuinely ambiguous reference cannot be attributed to a single module from the key alone, and guessing is worse than abstaining.
 3. **Reports the collision** in `notes[]`, so it rides the resolver's report into the response. A genuinely ambiguous key thereby stays distinguishable from an absent one — the same anti-vacuity principle applied one level down.
 
-This obligation is stated generically because it binds every resolver, not only Maven. A future markdown resolver facing two documents that claim the same anchor, or a Python resolver facing two modules that export the same package name, is bound by the identical rule.
+This obligation is stated generically because it binds every resolver, not only Maven. The markdown resolver facing two documents that claim the same anchor, and the python resolver facing two modules that export the same package name, are bound by the identical rule. Both discharge it upstream: the `component_refs` materialization projects each reference onto a single owning bundle and stamps whether it resolved, so an unresolvable reference reaches the resolver already marked rather than being guessed at — and each resolver drops it and reports it under the `unresolved-target` category.
 
 ## Current implementations
 
-| Resolver | Id | Owner | Role |
-|----------|-----|-------|------|
-| Maven coordinate join | `maven` | `build-maven` (`BuildExtension(BuildExtensionBase, DerivationResolverBase)`) | Derives edges by joining each module's `metadata.group_id` / `artifact_id` coordinate against every module's `dependencies` strings (`groupId:artifactId:scope`, matched on the first two parts). The re-homed form of the coordinate join that previously lived inline in `manage-architecture`. It is the first producer of `notes[]`: two modules sharing one `groupId:artifactId` yield no edge for that coordinate and a reported collision. |
+Three resolvers are shipped. Two opt in from Axis-A (`ExtensionBase`) and one from Axis-B (`BuildExtensionBase`), so the discovered set exercises the span-both-hierarchies property the collector exists for.
 
-**Out of scope for this contract's current implementations** — named so the table reads as the complete shipped set rather than an open-ended promise:
+| Resolver | Id | Axis | Owner | Role |
+|----------|-----|------|-------|------|
+| Maven coordinate join | `maven` | B | `build-maven` (`BuildExtension(BuildExtensionBase, DerivationResolverBase)`) | Derives edges by joining each module's `metadata.group_id` / `artifact_id` coordinate against every module's `dependencies` strings (`groupId:artifactId:scope`, matched on the first two parts). The re-homed form of the coordinate join that previously lived inline in `manage-architecture`. It is the first producer of `notes[]`: two modules sharing one `groupId:artifactId` yield no edge for that coordinate and a reported collision. |
+| Markdown cross-reference join | `markdown` | A | `pm-plugin-development` (`Extension(ExtensionBase, DerivationResolverBase)`) | Derives edges from the four markdown reference kinds — script notation, skill references, relative-path xrefs, and `implements:` — read out of the `component_refs` field `discover_modules()` materializes. Suppressions are reported in **aggregated** form, one note per category (unresolved-target, unknown-endpoint, self-edge) with a count and a bounded sample. |
+| Python import join | `python` | A | `pm-dev-python` (`Extension(ExtensionBase, DerivationResolverBase)`) | Derives edges from AST-parsed Python imports, read out of the same `component_refs` field. Python-language knowledge belongs to the Python domain bundle rather than to a build-system bundle, which is why this resolver is Axis-A and not on `build-pyproject`. Same aggregated-notes discipline as the markdown resolver. |
 
-- **Markdown resolver** (PLAN-04) — would derive edges from cross-document references. Not implemented.
-- **Python resolver** (PLAN-05) — would derive edges from import statements. Not implemented.
+**Why the markdown and python joins are two resolvers, not one.** One bundle can register exactly one resolver — `discover_all_extensions()` resolves a single `extension.py` per bundle and `derivation_resolver_id()` returns a single string — so the split across `pm-plugin-development` and `pm-dev-python` is what makes per-edge markdown-vs-import provenance expressible at all. Collapsing them into one resolver would forfeit exactly that distinction.
 
-Both are future implementors of this same contract; neither requires a change to it.
+**Both read a pre-materialized field; neither reads the filesystem.** The detection engine that produces `component_refs` parses files from disk, so it runs at module-discovery time. A resolver is a pure function of its arguments (see § 1 Declaration), which is why the engine cannot be called from `derive_edges`. Neither resolver imports the engine, so the second registration creates no coupling between the two bundles.
 
 ## Related Specifications
 

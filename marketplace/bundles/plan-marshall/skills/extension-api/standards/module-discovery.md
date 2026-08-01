@@ -147,6 +147,23 @@ Module names are resolved in this order:
 | `dependencies` | string[] | Technology-native format (see Dependency Format below) |
 | `stats` | object | `{source_files, test_files}` |
 | `commands` | object | Canonical command name → resolved command string |
+| `component_refs` | array \| absent | **Optional, extension-specific.** The module's outbound references to other modules, pre-materialized at discovery time for Axis-C derivation resolvers to join over. Absent unless the discovering extension materializes it; consumers MUST treat absence as "no references known", never as an error. See below. |
+
+#### `component_refs` (optional, extension-specific)
+
+A derivation resolver is a pure function of its arguments — it may not read the filesystem — so an extension whose edge derivation needs cross-file analysis materializes the analysis result here, at discovery time, and its resolver reads this field instead.
+
+Each element is an object:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `target_bundle` | string | The referenced module's name, projected from whatever granularity the detecting analysis used |
+| `dep_type` | string | Reference kind: one of `script`, `skill`, `import`, `path`, `implements` |
+| `resolved` | bool | `false` when the referenced target does not exist. Unresolved references are **stamped, not dropped**, so a resolver can suppress and report them rather than silently losing them |
+
+Entries are deduplicated on the `(target_bundle, dep_type, resolved)` triple, keeping the field proportional to the module count rather than to the raw reference count. A module with no outbound references carries an empty array, not a missing key.
+
+This field is **not** part of the shared required field set: it is populated only by extensions that ship an Axis-C resolver needing it (currently `pm-plugin-development`, whose bundle modules are read by both the `markdown` and `python` resolvers). See [ext-point-derivation-resolver.md](ext-point-derivation-resolver.md) § Current implementations.
 
 ### Profile Structure (Maven)
 
@@ -323,6 +340,7 @@ Extensions providing module discovery must:
 - Use technology-native dependency format (Maven: `groupId:artifactId:scope`, npm: `name:scope`)
 - Include `commands` with resolved canonical command strings (not nested)
 - All paths project-relative (not absolute)
+- Populate `component_refs` **only** when the extension ships an Axis-C derivation resolver that joins over it. It is optional and extension-specific, never part of the shared required field set. When populated, every element must carry all three of `target_bundle`, `dep_type` (one of `script` / `skill` / `import` / `path` / `implements`), and `resolved`; unresolved references must be stamped `resolved: false` rather than dropped, and a module with no outbound references must carry an empty array rather than omit the key
 
 ---
 
