@@ -47,10 +47,8 @@ class _StubAttributor:
         self._claims = claims if claims is not None else []
         self._notes = notes if notes is not None else []
         self._raises = raises
-        self.calls = 0
 
     def claim_paths(self):
-        self.calls += 1
         if self._raises:
             raise RuntimeError('boom-claim-paths')
         return self._claims, self._notes

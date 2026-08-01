@@ -864,7 +864,7 @@ def cmd_which_module(args: argparse.Namespace) -> dict[str, Any]:
         'attributor_notes': [
             {'attributor': report['id'], 'note': note}
             for report in attributor_reports
-            for note in report.get('notes', [])
+            for note in report['notes']
         ],
         'truncated': bool(truncation_entries),
         'elided': truncation_entries,
