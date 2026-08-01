@@ -73,14 +73,14 @@ registry ``rate_limit_class``, so no bot-name literal appears here.
   stops the guard manufacturing a loop-back on findings that are pending only
   because triage has not run yet.
 - ``triage_ran == True`` (triage has run): a still-``pending`` finding on a
-  REQUIRED bot IS a real incompleteness and blocks alongside an unfetched
+  REQUIRED bot IS a real incompleteness and blocks alongside an unproven
   required bot.
 
 ``pending_bots`` and ``unproven_bots`` are emitted for visibility in BOTH modes
 and span required ∪ optional; only the REQUIRED subset contributes to
 ``complete``, and only ``pending``'s contribution additionally depends on
 ``triage_ran``. The predicate fails closed over the required set: a plan with no
-findings yet reports every required bot as unfetched and ``complete: false`` in
+findings yet reports every required bot as ``absent`` and ``complete: false`` in
 both modes, so the guard never marks the step done on an empty store. An EMPTY
 ``required_bots`` is a valid configured state — the quorum is vacuously satisfied
 and ``complete`` is true.
@@ -342,28 +342,26 @@ def _emit_toon(payload: dict) -> None:
             print(f'  {record["bot_kind"]},{record["state"]}')
 
 
+def _split_bots(raw: str | None) -> list[str]:
+    """Split a comma-joined bot list into its non-empty members.
+
+    Absent, empty, and whitespace-only values all read as the empty list, so the
+    bare-flag, omitted-flag, and explicitly-empty forms agree without a caller-side
+    emptiness check.
+    """
+    return [b.strip() for b in (raw or '').split(',') if b.strip()]
+
+
 def cmd_check(args: argparse.Namespace) -> int:
     """Run the completeness predicate and emit the summary TOON to stdout."""
-    required_bots: list[str] = []
-    if args.required_bots:
-        required_bots = [b.strip() for b in args.required_bots.split(',') if b.strip()]
-    optional_bots: list[str] = []
-    if args.optional_bots:
-        optional_bots = [b.strip() for b in args.optional_bots.split(',') if b.strip()]
-    in_progress_bots: list[str] = []
-    if args.in_progress_bots:
-        in_progress_bots = [b.strip() for b in args.in_progress_bots.split(',') if b.strip()]
-    refused_bots: list[str] = []
-    if args.refused_bots:
-        refused_bots = [b.strip() for b in args.refused_bots.split(',') if b.strip()]
     payload = check_completeness(
         args.plan_id,
-        required_bots,
-        optional_bots=optional_bots,
+        _split_bots(args.required_bots),
+        optional_bots=_split_bots(args.optional_bots),
         triage_ran=args.triage_ran,
         participated_bots=parse_participation(args.participated_bots),
-        in_progress_bots=in_progress_bots,
-        refused_bots=refused_bots,
+        in_progress_bots=_split_bots(args.in_progress_bots),
+        refused_bots=_split_bots(args.refused_bots),
     )
     _emit_toon(payload)
     return 0 if payload.get('status') == 'success' else 1
@@ -460,7 +458,7 @@ def main(argv: list[str] | None = None) -> int:
         help=(
             'Whether the dispatcher-owned unified triage has already run. Omit '
             '(the FIND-only default) so a pending finding does NOT block '
-            'completeness — only unfetched REQUIRED bots gate the mark-done. Pass '
+            'completeness — only unproven REQUIRED bots gate the mark-done. Pass '
             'it once triage has run so a still-pending required finding blocks as '
             'a real incompleteness.'
         ),

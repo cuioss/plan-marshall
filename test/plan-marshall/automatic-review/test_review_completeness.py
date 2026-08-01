@@ -1003,21 +1003,7 @@ class TestBareListFlags:
         assert 'pr-agent,absent' in result.stdout
 
     @pytest.mark.parametrize(('flag', 'dest'), _LIST_FLAGS)
-    def test_each_flag_bare_individually_resolves_to_empty_string(
-        self, plan_context, monkeypatch, flag, dest
-    ):
-        """A bare flag resolves to ``''`` — the empty list, never ``None``.
-
-        Asserted on the parsed namespace so the claim is about the parse itself
-        rather than about a downstream falsy-check that would pass for ``None``
-        too.
-        """
-        args = _parsed_check_args(monkeypatch, ['check', '--plan-id', 'rc-bare-one', flag])
-
-        assert getattr(args, dest) == ''
-
-    @pytest.mark.parametrize(('flag', 'dest'), _LIST_FLAGS)
-    def test_each_flag_bare_followed_by_another_flag(self, plan_context, monkeypatch, flag, dest):
+    def test_each_flag_bare_followed_by_another_flag(self, monkeypatch, flag, dest):
         """A bare flag does not swallow the NEXT flag as its value.
 
         The interpolation collapse rarely leaves the bare flag last on the line —
@@ -1034,7 +1020,7 @@ class TestBareListFlags:
         assert args.triage_ran is True
 
     @pytest.mark.parametrize(('flag', 'dest'), _LIST_FLAGS)
-    def test_each_flag_value_form_is_unchanged(self, plan_context, monkeypatch, flag, dest):
+    def test_each_flag_value_form_is_unchanged(self, monkeypatch, flag, dest):
         """The existing ``--flag value`` form parses exactly as before.
 
         Pairs with the bare-form cases so the relaxation is shown to ADD a form
@@ -1047,7 +1033,7 @@ class TestBareListFlags:
         assert getattr(args, dest) == 'coderabbit'
 
     @pytest.mark.parametrize(('flag', 'dest'), _LIST_FLAGS)
-    def test_bare_omitted_and_explicit_empty_agree(self, plan_context, monkeypatch, flag, dest):
+    def test_bare_omitted_and_explicit_empty_agree(self, monkeypatch, flag, dest):
         """Bare, omitted, and explicitly-empty are the same parse: ``''``.
 
         This three-way agreement is what makes the bare form safe to reach by
@@ -1060,7 +1046,7 @@ class TestBareListFlags:
 
         assert getattr(bare, dest) == getattr(omitted, dest) == getattr(explicit, dest) == ''
 
-    def test_bare_flag_still_swallows_a_following_plain_value(self, plan_context, monkeypatch):
+    def test_bare_flag_still_swallows_a_following_plain_value(self, monkeypatch):
         """WHY quoting is still mandatory: a bare flag DOES take a following plain token.
 
         ``nargs='?'`` is a parser-side backstop, not a substitute for quoting the

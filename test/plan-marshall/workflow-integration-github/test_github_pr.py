@@ -1811,7 +1811,6 @@ class TestBareClassificationFlags:
         )
 
         assert getattr(args, dest) == ''
-        assert getattr(args, dest) is not None
 
     @pytest.mark.parametrize(('flag', 'dest'), _CLASSIFICATION_FLAGS)
     def test_each_flag_bare_followed_by_the_other_flag(self, monkeypatch, flag, dest):
@@ -1862,7 +1861,6 @@ class TestBareClassificationFlags:
         )
 
         assert getattr(args, dest) == ''
-        assert getattr(args, dest) is not None
 
     def test_bare_flags_reach_the_handler_and_still_warn_but_ingest(
         self, plan_context, monkeypatch, capsys
