@@ -25,7 +25,7 @@ For common standards (timeouts, log handling, acceptable warnings), see `build-s
 
 ## Subcommands
 
-All build skills share these subcommands. The table enumerates the COMPLETE build-class surface — every subcommand each of the four wrappers registers, tool-exclusive ones included:
+All build skills share these subcommands. The table enumerates every subcommand each of the four `build_main`-routed wrappers registers, tool-exclusive ones included. It does NOT cover build-class scripts that declare their own `ArgumentParser` instead of routing through `build_main` (`build-npm/scripts/js_coverage.py`), which the executor still treats as build-class:
 
 | Subcommand | Maven | Gradle | npm | Python | Purpose |
 |------------|-------|--------|-----|--------|---------|

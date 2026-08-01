@@ -27,14 +27,22 @@ def add_project_dir_arg(parser) -> None:
     so invocations from an isolated worktree (or any non-cwd directory)
     can pin subprocess cwd without relying on the caller's working
     directory. This helper is the SINGLE declaration site for the pair:
-    the shared registrations below call it, and the two wrapper-local
+    the shared registrations below call it, and the three wrapper-local
     registrations that build their subparsers outside this module
-    (``maven.py::_register_rewrite_log`` and
-    ``gradle.py::_register_find_project``) import it rather than
-    re-declaring the flags. The universality of that claim is asserted
-    against the argparse-derived build-class roster rather than restated
-    as prose, so a subcommand registered without the pair fails a test
-    instead of silently falsifying this sentence.
+    (``maven.py::_register_rewrite_log``,
+    ``gradle.py::_register_find_project`` and
+    ``pyproject_build.py::_register_resolve_test_scope``) import it
+    rather than re-declaring the flags. The universality of that claim is
+    asserted against the argparse-derived build-class roster rather than
+    restated as prose, so a subcommand registered without the pair fails
+    a test instead of silently falsifying this sentence.
+
+    Scope of that guarantee: the roster's population is every subcommand
+    of a wrapper routed through :func:`build_main`. A build-class script
+    that declares its own ``ArgumentParser`` instead of routing through
+    ``build_main`` (``build-npm/scripts/js_coverage.py``) is outside the
+    roster even though the executor treats its notation as build-class,
+    so it hand-declares the pair and is not covered by the roster test.
 
     The two flags implement the two-state contract documented
     in ``script_shared/scripts/resolve_project_dir.py``:

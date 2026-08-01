@@ -129,11 +129,11 @@ rebuilt; consumer projects never regenerate. The executor is therefore distinct 
 moved plan directory AND the six main-anchored shared corpora below: it is independently derived
 in each tree, never a moved slot and never routed through `resolve_main_anchored_path`.
 
-=== One sanctioned main-anchored resolver utility for five shared corpora
+=== One sanctioned main-anchored resolver utility for six shared corpora
 
 A small, bounded set of `.plan/local` state is genuinely shared across sessions and must
 resolve to the MAIN checkout regardless of which worktree a caller's cwd is pinned to. There
-are exactly FIVE such corpora:
+are exactly SIX such corpora:
 
 * `merge.lock` — the cooperative finalize lock (a single lock file whose contents record the
   holder `plan_id` / session). `merge_lock.py`
@@ -149,6 +149,10 @@ are exactly FIVE such corpora:
 * `orchestrator` — the epic-orchestration store (`tools-file-ops/file_ops.py`
   `get_store_dir('orchestrator', entry_id)`), cross-plan state that outlives any single
   plan's worktree.
+* `plans/NO_PLAN/build-results` — the build results of plan-less builds
+  (`tools-file-ops/file_ops.py` `get_build_results_dir`). Only the `NO_PLAN` sentinel's build
+  results are main-anchored; a real plan's `build-results/` sits inside its plan directory and
+  therefore moves with it.
 
 [NOTE]
 ====
@@ -159,13 +163,13 @@ the host, not one repository — see ADR-008. It is therefore no longer resolved
 `resolve_main_anchored_path`.
 ====
 
-These five are reached through ONE sanctioned main-anchored resolver UTILITY:
+These six are reached through ONE sanctioned main-anchored resolver UTILITY:
 `resolve_main_anchored_path` in `script-shared/marketplace_paths.py`. It resolves a subpath
 under the MAIN checkout's `.plan/local` cwd-independently — honouring the
 `set_base_dir()` / `PLAN_BASE_DIR` test override first, then resolving via
 `git rev-parse --git-common-dir` (which points at main's `.git` even from a linked worktree).
-All five consumers CALL the utility rather than each carrying its own git-common-dir copy;
-`merge_lock.py` is one consumer among five, not the sole owner of the resolution.
+All six consumers CALL the utility rather than each carrying its own git-common-dir copy;
+`merge_lock.py` is one consumer among six, not the sole owner of the resolution.
 
 This is the SINGLE, deliberate exception to cwd-relative resolution for *per-repo* state: every
 other resolution in the codebase is uniform cwd-relative. Confining the main-anchored resolution
