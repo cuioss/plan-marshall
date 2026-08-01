@@ -306,6 +306,30 @@ def test_exclude_patterns_fail_open_when_pyproject_is_unreadable(monkeypatch, tm
     assert build._mypy_collects_any('pkg') is True
 
 
+def test_exclude_patterns_diagnostic_names_the_calling_command(monkeypatch, tmp_path, capsys):
+    """The unreadable-config diagnostic is attributed to the command that hit it.
+
+    ``_mypy_exclude_patterns`` is reachable from BOTH ``compile`` and
+    ``test-compile``. A hardcoded ``compile:`` prefix would send an operator
+    running ``test-compile`` to the wrong command, so the label is threaded from
+    the caller. The whole point is that the two commands produce DIFFERENT
+    prefixes — asserting one in isolation would pass against a hardcoded literal.
+    """
+    monkeypatch.chdir(tmp_path)
+
+    build._mypy_exclude_patterns('test-compile')
+    test_compile_err = capsys.readouterr().err
+    build._mypy_exclude_patterns('compile')
+    compile_err = capsys.readouterr().err
+
+    assert test_compile_err.startswith('test-compile: '), (
+        f'the diagnostic must name the calling command; got {test_compile_err!r}'
+    )
+    assert compile_err.startswith('compile: '), (
+        f'the diagnostic must name the calling command; got {compile_err!r}'
+    )
+
+
 def test_whole_tree_compile_omits_claude_dir_when_all_its_py_files_are_excluded(
     repo_root_cwd, monkeypatch, tmp_path
 ):

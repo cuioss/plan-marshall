@@ -149,19 +149,26 @@ def get_test_path(module: str | None) -> str:
     return str(TEST_DIR)
 
 
-def _mypy_exclude_patterns() -> list[re.Pattern[str]]:
+def _mypy_exclude_patterns(label: str = 'mypy') -> list[re.Pattern[str]]:
     """Return the compiled ``[tool.mypy] exclude`` regexes declared in pyproject.toml.
 
     Fails open by design: an unreadable config or an uncompilable pattern yields
     FEWER exclusions, so ``_mypy_collects_any`` answers "there is something to
     check" and mypy still runs. The guards built on it may suppress a mypy
     invocation only when the configuration is known and nothing survives it.
+
+    ``label`` prefixes the two diagnostics below. It is threaded from the calling
+    command rather than hardcoded because this helper is reachable from BOTH
+    ``compile`` and ``test-compile``; attributing a ``test-compile`` diagnostic to
+    ``compile`` would send an operator to the wrong command. The default is the
+    command-neutral ``mypy`` so a caller that cannot name a command still emits an
+    honest prefix rather than a wrong one.
     """
     try:
         with PYPROJECT_PATH.open('rb') as handle:
             config = tomllib.load(handle)
     except (OSError, tomllib.TOMLDecodeError) as exc:
-        print(f'compile: could not read mypy excludes from {PYPROJECT_PATH} ({exc}) — assuming none',
+        print(f'{label}: could not read mypy excludes from {PYPROJECT_PATH} ({exc}) — assuming none',
               file=sys.stderr)
         return []
     raw = config.get('tool', {}).get('mypy', {}).get('exclude', [])
@@ -172,11 +179,11 @@ def _mypy_exclude_patterns() -> list[re.Pattern[str]]:
         try:
             patterns.append(re.compile(entry))
         except re.error as exc:
-            print(f'compile: ignoring uncompilable [tool.mypy] exclude {entry!r} ({exc})', file=sys.stderr)
+            print(f'{label}: ignoring uncompilable [tool.mypy] exclude {entry!r} ({exc})', file=sys.stderr)
     return patterns
 
 
-def _mypy_collects_any(path: str) -> bool:
+def _mypy_collects_any(path: str, label: str = 'mypy') -> bool:
     """Return True when at least one file under ``path`` survives mypy's excludes.
 
     This is the exclude-AWARE emptiness predicate. "Does any ``.py`` file exist"
@@ -194,7 +201,7 @@ def _mypy_collects_any(path: str) -> bool:
         candidates = iter((target,))
     else:
         return False
-    patterns = _mypy_exclude_patterns()
+    patterns = _mypy_exclude_patterns(label)
     return any(
         not any(pattern.search(candidate.as_posix()) for pattern in patterns)
         for candidate in candidates
@@ -210,7 +217,7 @@ def _skip_empty_mypy_scope(command: str, path: str) -> bool:
     the scoped run reporting "nothing to check" merely matches that truth
     instead of surfacing mypy's exit 2 as a defect that does not exist.
     """
-    if _mypy_collects_any(path):
+    if _mypy_collects_any(path, command):
         return False
     print(f'>>> {command}: skipping mypy for {path} — no file there survives the '
           f'[tool.mypy] exclude patterns in {PYPROJECT_PATH} (nothing to type-check)')
@@ -231,7 +238,7 @@ def cmd_compile(module: str | None) -> int:
     # .py[i] files in directory '.claude'" (exit 2), which breaks CI whenever the
     # repo ships no top-level skill scripts — or ships them only under the
     # excluded .claude/worktrees/, which an exclude-blind .py count would miss.
-    if _mypy_collects_any(str(CLAUDE_DIR)):
+    if _mypy_collects_any(str(CLAUDE_DIR), 'compile'):
         paths.append(str(CLAUDE_DIR))
     return run(['uv', 'run', 'mypy'] + paths, f'compile: mypy {" ".join(paths)}', env=mypy_env)
 
