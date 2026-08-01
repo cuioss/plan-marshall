@@ -11,6 +11,9 @@ Covers:
 * :func:`_build_cli.build_main` — dispatches to the resolver before the
   selected handler reads ``args.project_dir``, so all Bucket B build
   scripts (maven, gradle, npm, pyproject_build) inherit the contract.
+* :mod:`_build_class_roster` — the argparse-derived build-class operation
+  population, cross-checked against the executor's own
+  ``_BUILD_CLASS_PREFIXES`` declaration.
 * :func:`resolve_project_dir.resolve_project_dir` — the canonical
   four-state contract:
 
@@ -34,6 +37,13 @@ import argparse
 import pytest
 
 # Cross-skill imports — PYTHONPATH is configured by the root conftest.
+from _build_class_roster import (
+    PLAN_ID_FLAG,
+    PROJECT_DIR_FLAG,
+    _subcommand_flag_pairs,
+    build_class_prefixes,
+    build_class_roster,
+)
 from _build_cli import (
     add_check_warnings_subparser,
     add_coverage_subparser,
@@ -472,3 +482,167 @@ def test_build_main_routes_the_sentinel_to_the_main_checkout(monkeypatch):
 
     assert rc == 0
     assert captured == [MAIN_CHECKOUT_ROOT]
+
+
+# =============================================================================
+# Build-class operation roster — the derived population
+# =============================================================================
+#
+# Everything below reads the population from ``_build_class_roster``, which
+# derives it by argparse introspection. No test here names a subcommand: a
+# literal name would re-introduce the hand-list the roster exists to replace,
+# and would keep passing while a wrapper silently gained or lost a subcommand.
+
+
+def _shared_helper_subcommands() -> set[str]:
+    """Return the subcommand names ``register_standard_subparsers`` alone emits.
+
+    Built by driving the declarative helper with every standard handler slot
+    filled, so the result is the MAXIMAL set the shared seam can contribute. Any
+    roster subcommand outside this set therefore came from a wrapper-local
+    ``extra_register_fns`` registration — which is what makes the comparison a
+    real coverage check rather than a name lookup.
+
+    The ``run_config_key_config`` slot takes a bare sentinel: the registration
+    only stores the object in the handler closure, and no handler runs here.
+    """
+    fns = register_standard_subparsers(
+        run_handler=lambda _args: 0,
+        parse_handler=lambda _path: ([], None, 'SUCCESS'),
+        coverage_handler=lambda _args: 0,
+        check_warnings_handler=lambda _args: 0,
+        discover_handler=lambda _root: [],
+        run_config_key_config=object(),
+    )
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(dest='command', required=True)
+    for fn in fns:
+        fn(subparsers)
+    return set(subparsers.choices)
+
+
+def test_build_class_roster_population_is_non_empty():
+    """A broken introspection path must fail, never pass as "nothing to check".
+
+    This is the load-bearing anti-vacuity guard for every roster-driven
+    assertion: a derivation that silently yielded an empty population would make
+    each of those assertions trivially true. Both levels are checked — at least
+    one wrapper, and at least one subcommand per wrapper.
+    """
+    roster = build_class_roster()
+
+    assert roster, (
+        'The build-class roster derived an EMPTY population. Every roster-driven '
+        'check downstream would pass vacuously — the wrapper discovery or the '
+        'parser capture in _build_class_roster is broken.'
+    )
+    empty = sorted(notation for notation, subcommands in roster.items() if not subcommands)
+    assert not empty, (
+        f'These build wrappers contributed no subcommands to the roster: {empty}. '
+        'A wrapper whose parser captured zero subcommands makes every per-subcommand '
+        'assertion vacuous for it.'
+    )
+
+
+def test_every_roster_notation_is_a_build_class_dispatch():
+    """No derived wrapper escapes the executor's build-class net.
+
+    The roster discovers wrappers structurally (anything routing through
+    ``_build_cli.build_main``), while ``_BUILD_CLASS_PREFIXES`` is the executor's
+    own declaration of which dispatches append a ``kind=build`` ledger row. A
+    wrapper the executor does not classify as build-class is real drift: its
+    builds would go unrecorded.
+    """
+    prefixes = build_class_prefixes()
+    unclassified = sorted(
+        notation
+        for notation in build_class_roster()
+        if not any(notation.startswith(prefix) for prefix in prefixes)
+    )
+
+    assert not unclassified, (
+        f'These build wrappers are not covered by the executor\'s '
+        f'_BUILD_CLASS_PREFIXES ({sorted(prefixes)}): {unclassified}. Their '
+        'dispatches would never append a kind=build change-ledger entry.'
+    )
+
+
+def test_every_build_class_prefix_is_represented_in_the_roster():
+    """Every declared build-class skill contributes a wrapper to the roster.
+
+    The converse direction of the check above, and the one that catches an
+    under-derived population: a prefix the executor declares but the roster never
+    reaches means a whole build tool is absent from every roster-driven
+    assertion, silently shrinking their coverage.
+    """
+    notations = list(build_class_roster())
+    unrepresented = sorted(
+        prefix
+        for prefix in build_class_prefixes()
+        if not any(notation.startswith(prefix) for notation in notations)
+    )
+
+    assert not unrepresented, (
+        f'These build-class prefixes contributed no wrapper to the roster: '
+        f'{unrepresented}. Derived notations were: {sorted(notations)}.'
+    )
+
+
+def test_roster_covers_extra_register_fn_subcommands():
+    """Subcommands registered outside the shared helper are in the population.
+
+    ``extra_register_fns`` is where the wrapper-local subparsers live — they are
+    built inside the wrapper scripts, entirely outside
+    ``register_standard_subparsers``. A roster derived only from the shared
+    seam's emission would omit them while still reporting a healthy-looking
+    population, so their presence is asserted explicitly.
+    """
+    shared = _shared_helper_subcommands()
+    beyond_shared = {
+        notation: sorted(set(subcommands) - shared)
+        for notation, subcommands in build_class_roster().items()
+        if set(subcommands) - shared
+    }
+
+    assert beyond_shared, (
+        'No roster subcommand falls outside the shared '
+        f'register_standard_subparsers emission ({sorted(shared)}), so the '
+        'extra_register_fns registrations were not captured by the derivation.'
+    )
+
+
+def test_flag_pair_boolean_is_derived_from_the_declared_options():
+    """The per-subcommand boolean reads the parser, and it discriminates.
+
+    Driven against a parser this test constructs, so the expected verdict is
+    known independently of any wrapper's current state — the check therefore
+    stays meaningful once the flag pair becomes universal across the real
+    population, where a "some subcommand reports False" assertion would go
+    vacuous (and then fail outright).
+    """
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(dest='command', required=True)
+    with_pair = subparsers.add_parser('with-pair')
+    add_project_dir_arg(with_pair)
+    subparsers.add_parser('without-pair')
+
+    pairs = _subcommand_flag_pairs(parser)
+
+    assert pairs == {'with-pair': True, 'without-pair': False}
+
+
+def test_flag_pair_boolean_requires_both_flags():
+    """Declaring only one half of the routing pair does NOT satisfy the boolean.
+
+    The pair is a two-state contract: a subcommand carrying ``--plan-id`` without
+    ``--project-dir`` (or the reverse) cannot honour it. A boolean that answered
+    on either flag alone would report such a subcommand as compliant.
+    """
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(dest='command', required=True)
+    subparsers.add_parser('plan-id-only').add_argument(PLAN_ID_FLAG, dest='plan_id')
+    subparsers.add_parser('project-dir-only').add_argument(PROJECT_DIR_FLAG, dest='project_dir')
+
+    pairs = _subcommand_flag_pairs(parser)
+
+    assert pairs == {'plan-id-only': False, 'project-dir-only': False}
