@@ -10,17 +10,26 @@ dependency engine has to run at discovery time and its component-granular
 vocabulary (``bundle:skill:script``) has to be projected onto the bundle
 granularity the architecture graph keys on before a resolver ever sees it.
 
-The fixture marketplace below is built so that all five ``DependencyType``
-values are reachable from one bundle, and so that ``resolved`` is a
-discriminating flag rather than a constant — ``alpha`` references a bundle that
-exists (``beta``) and one that does not (``gamma``).
+The fixture marketplace below is built so that every ``DependencyType`` value is
+reachable from one bundle, and so that ``resolved`` is a discriminating flag
+rather than a constant — ``alpha`` references a bundle that exists (``beta``)
+and one that does not (``gamma``).
 """
 
 import json
 import tempfile
 from pathlib import Path
 
+from _dep_detection import DependencyType
 from plugin_discover import build_component_refs, discover_plugin_modules
+
+ALL_DEP_TYPES = frozenset(member.value for member in DependencyType)
+"""Every dependency kind the authoritative :class:`DependencyType` enum declares.
+
+Derived rather than restated as literals: a sixth kind added to the enum must
+fail the round-trip sweep below (the fixture does not produce it yet) instead of
+slipping through a hand-listed set that still reads as complete.
+"""
 
 # =============================================================================
 # Fixture marketplace
@@ -195,19 +204,26 @@ def test_every_entry_carries_the_three_contract_fields():
 
 
 # =============================================================================
-# The five dependency types round-trip
+# Every dependency type round-trips
 # =============================================================================
 
 
-def test_all_five_dep_types_round_trip():
-    """script, skill, import, path and implements all survive materialization."""
+def test_every_dep_type_round_trips():
+    """Every ``DependencyType`` value survives materialization.
+
+    The expected set is derived from the enum, so a sixth kind added there turns
+    this into a red test naming the gap rather than leaving a hand-listed set of
+    five that still reads as complete while the new kind goes untested.
+    """
+    assert ALL_DEP_TYPES, 'the derived dep-type population must not be empty'
+
     with tempfile.TemporaryDirectory() as tmpdir:
         root = Path(tmpdir)
         _build_fixture_marketplace(root)
 
         refs = _modules_by_name(root)['alpha']['component_refs']
 
-        assert {ref['dep_type'] for ref in refs} == {'script', 'skill', 'import', 'path', 'implements'}
+        assert {ref['dep_type'] for ref in refs} == set(ALL_DEP_TYPES)
 
 
 # =============================================================================

@@ -10,8 +10,10 @@ and building it by hand keeps each suppression rule pinned in isolation.
 Covered:
 
 - The provenance id is ``markdown`` and both hierarchies' ``isinstance`` hold.
-- Only the four markdown reference kinds contribute; ``import`` is ignored and,
-  being out of scope rather than suppressed, produces no note.
+- Only the reference kinds this resolver declares contribute; every other
+  ``DependencyType`` kind is ignored and, being out of scope rather than
+  suppressed, produces no note. Both swept populations are derived from the
+  enum and the resolver's own declaration, never hand-listed.
 - Unresolved targets, unknown endpoints, and self-edges are each suppressed AND
   reported, in aggregated form rather than one note per dropped reference.
 - ``derive_edges`` reads no file and spawns no subprocess — the Axis-C purity
@@ -23,6 +25,7 @@ import importlib.util
 import subprocess
 from pathlib import Path
 
+from _dep_detection import DependencyType
 from extension_base import NOTE_SAMPLE_LIMIT, DerivationResolverBase, ExtensionBase
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
@@ -46,6 +49,7 @@ def _load_plugin_extension():
     path avoids the cross-bundle ``import extension`` collision.
     """
     spec = importlib.util.spec_from_file_location('plugin_dev_extension', EXTENSION_FILE)
+    assert spec is not None and spec.loader is not None, f'no import spec for {EXTENSION_FILE}'
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -53,6 +57,33 @@ def _load_plugin_extension():
 
 _extension_module = _load_plugin_extension()
 Extension = _extension_module.Extension
+
+ALL_DEP_TYPES = frozenset(member.value for member in DependencyType)
+"""Every dependency kind the authoritative :class:`DependencyType` enum declares."""
+
+MARKDOWN_DEP_TYPES = tuple(sorted(_extension_module.MARKDOWN_DEP_TYPES))
+"""The reference kinds this resolver owns, read from the resolver's own declaration."""
+
+NON_MARKDOWN_DEP_TYPES = tuple(sorted(ALL_DEP_TYPES - set(MARKDOWN_DEP_TYPES)))
+"""Every remaining enum kind — the sweep that must stay out of scope.
+
+Both populations are derived rather than hand-listed so a sixth
+``DependencyType`` lands in one of the two sweeps automatically. A restated
+tuple keeps every sweep green while the new kind goes untested and the
+markdown-vs-import resolver split goes unverified for it.
+"""
+
+NOTE_OVERFLOW = 2
+"""How far the overflow fixture below exceeds the note's sample cap.
+
+Both ends of the overflow assertion derive from ``NOTE_SAMPLE_LIMIT``: a fixture
+sized to a literal 5 stops exercising the overflow branch at all once the cap
+reaches 5, and then fails with an opaque substring mismatch rather than naming
+the cause.
+"""
+
+OVERFLOW_SAMPLE_SIZE = NOTE_SAMPLE_LIMIT + NOTE_OVERFLOW
+"""Fixture size that provably overflows the note's sample cap at any cap value."""
 
 
 # =============================================================================
@@ -108,17 +139,25 @@ def test_extension_opts_into_both_hierarchies():
 # =============================================================================
 
 
-def test_all_four_markdown_dep_types_contribute():
-    """script, skill, path and implements each yield an edge."""
+def test_the_dep_type_populations_are_non_vacuous_and_enum_derived():
+    """Anchor for every sweep below: neither population may be empty or invented.
+
+    Each sweep iterates one of the two populations, so an empty one would let
+    its sweep pass while asserting nothing, and a kind this resolver declares
+    that the authoritative enum does not know would be swept as if it were real.
+    The union check pins the split itself: every enum kind is either owned by
+    this resolver or swept as out of scope — never silently absent from both.
+    """
+    assert MARKDOWN_DEP_TYPES
+    assert NON_MARKDOWN_DEP_TYPES
+    assert set(MARKDOWN_DEP_TYPES) <= ALL_DEP_TYPES
+    assert set(MARKDOWN_DEP_TYPES) | set(NON_MARKDOWN_DEP_TYPES) == ALL_DEP_TYPES
+
+
+def test_all_markdown_dep_types_contribute():
+    """Every reference kind this resolver owns yields an edge."""
     derived = {
-        'alpha': _module(
-            [
-                _ref('beta', 'script'),
-                _ref('beta', 'skill'),
-                _ref('beta', 'path'),
-                _ref('beta', 'implements'),
-            ]
-        ),
+        'alpha': _module([_ref('beta', dep_type) for dep_type in MARKDOWN_DEP_TYPES]),
         'beta': _module([]),
     }
 
@@ -130,7 +169,7 @@ def test_all_four_markdown_dep_types_contribute():
 
 def test_each_markdown_dep_type_contributes_on_its_own():
     """No single markdown dep_type depends on another being present."""
-    for dep_type in ('script', 'skill', 'path', 'implements'):
+    for dep_type in MARKDOWN_DEP_TYPES:
         derived = {'alpha': _module([_ref('beta', dep_type)]), 'beta': _module([])}
 
         edges, notes = _derive(derived)
@@ -139,25 +178,26 @@ def test_each_markdown_dep_type_contributes_on_its_own():
         assert notes == []
 
 
-def test_import_entries_are_ignored_without_a_note():
-    """import belongs to the sibling python resolver, so it is out of scope.
+def test_non_markdown_dep_types_are_ignored_without_a_note():
+    """Every kind outside this resolver's set belongs to a sibling, so it is out of scope.
 
-    Out of scope is not the same as suppressed: an ignored import must NOT
+    Out of scope is not the same as suppressed: an ignored reference must NOT
     appear in notes[], or every report would claim a suppression that the
-    python resolver is in fact handling.
+    python resolver is in fact handling. The population is derived, so a sixth
+    ``DependencyType`` lands in this sweep instead of going untested.
     """
-    derived = {'alpha': _module([_ref('beta', 'import')]), 'beta': _module([])}
+    for dep_type in NON_MARKDOWN_DEP_TYPES:
+        derived = {'alpha': _module([_ref('beta', dep_type)]), 'beta': _module([])}
 
-    edges, notes = _derive(derived)
-
-    assert edges == []
-    assert notes == []
+        assert _derive(derived) == ([], []), f'{dep_type} leaked into the markdown resolver'
 
 
-def test_import_entry_does_not_suppress_a_sibling_markdown_edge():
-    """An ignored import leaves the same module's markdown edges intact."""
+def test_out_of_scope_entry_does_not_suppress_a_sibling_markdown_edge():
+    """An ignored out-of-scope reference leaves the same module's markdown edges intact."""
     derived = {
-        'alpha': _module([_ref('beta', 'import'), _ref('beta', 'skill')]),
+        'alpha': _module(
+            [_ref('beta', NON_MARKDOWN_DEP_TYPES[0]), _ref('beta', MARKDOWN_DEP_TYPES[0])]
+        ),
         'beta': _module([]),
     }
 
@@ -258,14 +298,22 @@ def test_many_suppressed_references_collapse_into_one_note_per_category():
 
 
 def test_aggregated_note_bounds_its_sample_and_reports_the_overflow():
-    """The sample is capped, and the omitted remainder is counted, not hidden."""
-    unresolved = [_ref(f'ghost-{index}', 'skill', resolved=False) for index in range(5)]
+    """The sample is capped, and the omitted remainder is counted, not hidden.
+
+    Both the fixture size and the expected remainder derive from
+    ``NOTE_SAMPLE_LIMIT``, so the test keeps exercising the overflow branch at
+    any cap value instead of quietly ceasing to reach it.
+    """
+    unresolved = [
+        _ref(f'ghost-{index}', 'skill', resolved=False) for index in range(OVERFLOW_SAMPLE_SIZE)
+    ]
     derived = {'alpha': _module(unresolved)}
 
     _edges, notes = _derive(derived)
 
     note = notes[0]
-    assert f'(+{5 - NOTE_SAMPLE_LIMIT} more)' in note
+    assert f'{OVERFLOW_SAMPLE_SIZE} reference(s) suppressed' in note
+    assert f'(+{NOTE_OVERFLOW} more)' in note
 
 
 def test_all_three_categories_report_side_by_side():
@@ -309,11 +357,9 @@ def test_modules_without_component_refs_contribute_nothing():
 
 
 def test_edges_are_deduplicated_across_dep_types():
-    """Four reference kinds naming one target collapse to a single edge."""
+    """Every owned reference kind naming one target collapses to a single edge."""
     derived = {
-        'alpha': _module(
-            [_ref('beta', kind) for kind in ('script', 'skill', 'path', 'implements')]
-        ),
+        'alpha': _module([_ref('beta', kind) for kind in MARKDOWN_DEP_TYPES]),
         'beta': _module([]),
     }
 

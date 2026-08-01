@@ -129,20 +129,25 @@ def test_gate_precondition_modules_carry_component_refs():
 
 
 # =============================================================================
-# The resolver roster — three resolvers spanning both hierarchies
+# The resolver roster — the shipped resolvers, spanning both hierarchies
 # =============================================================================
 
 
-def test_three_resolvers_are_discovered():
-    """The shipped roster is exactly markdown, maven, and python."""
+def test_the_expected_resolver_roster_is_discovered():
+    """The shipped roster is exactly the hand-written ``EXPECTED_RESOLVER_IDS`` pin."""
     resolvers = _pipeline()['resolvers']
 
     assert sorted(record['id'] for record in resolvers) == EXPECTED_RESOLVER_IDS
 
 
-def test_resolver_count_is_three():
-    """resolver_count is the anti-vacuity numerator carried on every response."""
-    assert len(_pipeline()['resolvers']) == 3
+def test_resolver_count_matches_the_expected_roster():
+    """resolver_count is the anti-vacuity numerator carried on every response.
+
+    The expected size comes from ``EXPECTED_RESOLVER_IDS`` — the roster pinned
+    and asserted above — rather than from a second literal that would have to be
+    remembered and updated alongside it.
+    """
+    assert len(_pipeline()['resolvers']) == len(EXPECTED_RESOLVER_IDS)
 
 
 def test_every_resolver_reports_ok():
@@ -318,7 +323,7 @@ def test_zero_resolvers_and_zero_findings_are_distinguishable():
 
     # N resolvers ran over an empty module map and legitimately found nothing.
     assert ran_edges == []
-    assert len(ran_reports) == 3
+    assert len(ran_reports) == len(EXPECTED_RESOLVER_IDS)
     assert len(ran_reports) != len(no_resolver_reports)
 
 
