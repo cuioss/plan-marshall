@@ -5,11 +5,15 @@
 Consolidates module discovery for Maven, Gradle, npm, and Python build systems.
 Delegates to build-system-specific discovery scripts in sibling skill directories
 (build-maven, build-gradle, build-npm, build-pyproject).
+
+Also the bundle's Axis-D path attributor: it declares the repo-relative trees the
+``plan-marshall`` module owns. See
+``extension-api/standards/ext-point-path-attribution.md``.
 """
 
 from pathlib import Path
 
-from extension_base import ExtensionBase
+from extension_base import ExtensionBase, PathAttributionBase
 
 # Build systems that indicate code content (vs documentation or plugin metadata)
 _CODE_BUILD_SYSTEMS = {'maven', 'gradle', 'npm', 'python'}
@@ -24,8 +28,13 @@ PACKAGE_JSON = 'package.json'
 PYPROJECT_TOML = 'pyproject.toml'
 
 
-class Extension(ExtensionBase):
-    """Build system discovery and cross-cutting development extension for plan-marshall bundle."""
+class Extension(ExtensionBase, PathAttributionBase):
+    """Build system discovery and cross-cutting development extension for plan-marshall bundle.
+
+    Opts into Axis-D (path attribution) by multiple inheritance, which is the only
+    shape that lets an Axis-A domain extension declare path claims — see
+    ``extension-api/standards/ext-point-path-attribution.md``.
+    """
 
     def get_skill_domains(self) -> list[dict]:
         """Return the general-dev domain.
@@ -97,6 +106,23 @@ class Extension(ExtensionBase):
                 },
             },
         }
+
+    def path_attributor_id(self) -> str:
+        """Return this attributor's stable provenance identity (Axis-D)."""
+        return 'plan-marshall'
+
+    def claim_paths(self) -> tuple[list[tuple[str, str]], list[str]]:
+        """Declare the repo-relative trees the ``plan-marshall`` module owns.
+
+        ``.claude/skills`` is the re-homed form of the project-local prefix map
+        that previously lived inline in ``manage-architecture``. The owner is
+        carried over verbatim from that map — this is a relocation of the claim,
+        NOT a fresh ownership ruling. Whether ``.claude/skills/**`` should instead
+        belong to ``pm-plugin-development`` is out of scope here and owned
+        elsewhere; a future reader should not read the re-homing as having settled
+        that question.
+        """
+        return [('.claude/skills', 'plan-marshall')], []
 
     def provides_recipes(self) -> list[dict]:
         """Return built-in recipes provided by plan-marshall."""

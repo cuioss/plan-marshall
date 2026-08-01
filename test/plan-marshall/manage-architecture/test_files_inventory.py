@@ -574,6 +574,13 @@ def test_module_with_no_paths_module_gets_empty_files_block():
 # than resolving to ``null`` / the root ``default`` module. Both path→module
 # surfaces (``cmd_which_module`` and the sibling ``resolve_module_for_path``)
 # are asserted to agree.
+#
+# The ``.claude/skills`` answer now comes from the Axis-D path-attribution seam
+# (rung 3 of the ladder): ``plan-marshall-plugin`` declares the claim through
+# ``PathAttributionBase.claim_paths()``, core discovers the attributors and merges
+# their claims. The hardcoded ``_PROJECT_LOCAL_PREFIX_MAP`` that previously
+# produced this answer is retired — the OWNER is unchanged, the MECHANISM is not.
+# See ``extension-api/standards/ext-point-path-attribution.md``.
 
 _TEST_PATH = 'test/plan-marshall/tools-script-executor/test_generate_executor_behavior.py'
 _CLAUDE_SKILLS_PATH = '.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py'
@@ -627,9 +634,12 @@ def test_which_module_resolves_test_path_via_paths_tests():
         assert result['module'] == 'plan-marshall'
 
 
-def test_which_module_resolves_claude_skills_path_to_plan_marshall():
+def test_which_module_resolves_claude_skills_path_through_the_attribution_seam():
     """A project-local ``.claude/skills/**`` path resolves to ``plan-marshall``
-    via the project-local prefix map rather than ``None``.
+    through the Axis-D path-attribution seam rather than ``None``.
+
+    The claim is contributed by ``plan-marshall-plugin``'s ``claim_paths()`` and
+    merged by core — not read from a hardcoded prefix map.
     """
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_containment_project(tmpdir)
@@ -642,11 +652,71 @@ def test_which_module_resolves_claude_skills_path_to_plan_marshall():
 
 def test_resolve_module_for_path_agrees_with_which_module():
     """The sibling ``resolve_module_for_path`` reader resolves both the
-    ``paths.tests`` containment case and the ``.claude/skills`` project-local map
+    ``paths.tests`` containment case and the ``.claude/skills`` attribution claim
     to ``plan-marshall`` — the two path→module surfaces agree.
+
+    This is the invariant that must survive the seam swap: both call sites reach
+    rung 3 through the same helper, so a change that moved only one of them would
+    surface here.
     """
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_containment_project(tmpdir)
 
         assert resolve_module_for_path(_TEST_PATH, tmpdir) == 'plan-marshall'
         assert resolve_module_for_path(_CLAUDE_SKILLS_PATH, tmpdir) == 'plan-marshall'
+
+
+def test_attribution_seam_falls_through_when_the_claimed_module_is_absent():
+    """A project with no ``plan-marshall`` module answers ``None`` for a claimed
+    path — the module-existence guard the retired prefix map applied at
+    resolution time, now enforced by the merge's known-module filter.
+
+    Without it, a consumer project that installed the bundle but has no
+    ``plan-marshall`` module would receive an owner it does not contain.
+    """
+    owner = _architecture_core.project_local_module_for_path(_CLAUDE_SKILLS_PATH, ['default'])
+
+    assert owner is None
+
+
+def test_attribution_seam_does_not_over_match_a_sibling_prefix():
+    """``.claude/settings.json`` sits beside the claimed ``.claude/skills`` tree
+    but does not nest inside it, so it resolves to no claim.
+
+    The nest-inside guard is what separates prefix containment from a bare string
+    ``startswith``; a sibling that merely shares the leading characters must not
+    be swept into the claim.
+    """
+    owner = _architecture_core.project_local_module_for_path('.claude/settings.json', ['plan-marshall'])
+
+    assert owner is None
+
+
+def test_attribution_seam_memoizes_the_merged_claim_set():
+    """The discovery-plus-merge result is memoized at process lifetime.
+
+    The retired constant was an O(1) tuple scan and ``resolve_module_for_path``
+    calls this helper once per changed path, so an unmemoized seam would run full
+    extension discovery N times for an N-path footprint — a lazy contract
+    silently widened into an eager one by the centralizing refactor.
+    """
+    _architecture_core.invalidate_crawl_cache()
+    assert _architecture_core._PATH_CLAIM_CACHE == {}
+
+    _architecture_core.project_local_module_for_path(_CLAUDE_SKILLS_PATH, ['plan-marshall'])
+
+    assert ('plan-marshall',) in _architecture_core._PATH_CLAIM_CACHE
+
+
+def test_invalidate_crawl_cache_drops_the_attribution_memo():
+    """The claim memo is invalidated wherever the crawl memo is.
+
+    A refresh that changes the module set must not leave a claim set merged
+    against the old one.
+    """
+    _architecture_core.project_local_module_for_path(_CLAUDE_SKILLS_PATH, ['plan-marshall'])
+    assert _architecture_core._PATH_CLAIM_CACHE != {}
+
+    _architecture_core.invalidate_crawl_cache()
+
+    assert _architecture_core._PATH_CLAIM_CACHE == {}
