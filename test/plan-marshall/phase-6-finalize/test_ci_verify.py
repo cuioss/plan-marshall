@@ -63,6 +63,39 @@ def _load_module(name: str, filename: str):
 
 
 _mod = _load_module('ci_verify', 'ci_verify.py')
+
+# manage-status seams for the D4b force-push regression, which asserts against
+# the PERSISTED head_at_completion record rather than a re-run of CI.
+from argparse import Namespace  # noqa: E402
+
+from conftest import load_script_module  # noqa: E402
+
+_ci_verify_lifecycle = load_script_module(
+    'plan-marshall', 'manage-status', '_cmd_lifecycle.py', '_ci_verify_lifecycle'
+)
+_ci_verify_mark_step = load_script_module(
+    'plan-marshall', 'manage-status', '_cmd_mark_step.py', '_ci_verify_mark_step'
+)
+_ci_verify_status_core = load_script_module(
+    'plan-marshall', 'manage-status', '_status_core.py', '_ci_verify_status_core'
+)
+
+_cmd_mark_step_done = _ci_verify_mark_step.cmd_mark_step_done
+_read_status = _ci_verify_status_core.read_status
+
+
+def _make_ci_verify_plan(plan_id: str) -> None:
+    """Create an isolated plan for a persisted-record assertion."""
+    _ci_verify_lifecycle.cmd_create(
+        Namespace(
+            plan_id=plan_id,
+            title='ci-verify HEAD-dependence regression',
+            phases='1-init,2-refine,3-outline,4-plan,5-execute,6-finalize',
+            force=False,
+        )
+    )
+
+
 verify = _mod.verify
 classify_check = _mod.classify_check
 _extract_run_id_from_url = _mod._extract_run_id_from_url
@@ -1033,17 +1066,107 @@ def test_required_steps_order_anchors_ci_verify_after_create_pr():
 
 
 # ---------------------------------------------------------------------------
-# 4. SKILL.md HEAD_DEPENDENT_STEPS includes ci-verify
+# 4. ci-verify's HEAD-dependence is a DERIVED frontmatter fact
 # ---------------------------------------------------------------------------
 
 
-def test_skill_md_declares_ci_verify_head_dependent():
+def test_ci_verify_declares_head_dependent_frontmatter_fact():
+    """Membership is declared on ci-verify's own doc, not listed in SKILL.md.
+
+    This replaces the former assertion against the hand-maintained
+    ``HEAD_DEPENDENT_STEPS`` literal. Reading the declaration off the step's own
+    authoritative doc is what makes the set derived: a step that IS
+    head-dependent can no longer be head-dependent-in-fact but absent-from-the-list.
+    """
+    content = _STANDARDS_PATH.read_text(encoding='utf-8')
+    assert re.search(r'^head_dependent:\s*true\s*$', content, re.MULTILINE), (
+        'standards/ci-verify.md must declare head_dependent: true in frontmatter '
+        'so loop-back commits re-fire the step against the new HEAD. The fact IS '
+        'the membership declaration — there is no list to be added to.'
+    )
+
+
+def test_skill_md_consumes_the_derived_fact_and_drops_the_literal():
+    """SKILL.md must consume the derived fact and carry no hand-maintained list."""
     content = _SKILL_PATH.read_text(encoding='utf-8')
-    # The HEAD_DEPENDENT_STEPS literal MUST name ci-verify.
-    pattern = r'HEAD_DEPENDENT_STEPS\s*=\s*\{[^}]*"ci-verify"[^}]*\}'
-    assert re.search(pattern, content), (
-        'SKILL.md HEAD_DEPENDENT_STEPS must include "ci-verify" so loop-'
-        'back commits re-fire the step against the new HEAD'
+
+    assert 'HEAD_DEPENDENT_STEPS' not in content, (
+        'SKILL.md still carries the retired HEAD_DEPENDENT_STEPS literal. A '
+        'surviving literal is a second source of truth that drifts from the '
+        'per-step declarations — the defect this plan removed.'
+    )
+    assert 'head_dependent: true' in content, (
+        'SKILL.md must name the derived head_dependent fact as the source of '
+        'head-dependence membership.'
+    )
+
+
+def test_force_push_supersession_invalidates_a_recorded_ci_verify_green():
+    """D4b: a force-push replaces the SHA a recorded green was computed against.
+
+    ``ci-verify``'s green is a verdict over the REMOTE state of a specific pushed
+    SHA. A force-push rewrites that SHA, so the recorded green no longer
+    describes what is on the branch — it must re-fire rather than stand as
+    verified.
+
+    The assertion is against the persisted ``head_at_completion`` comparison the
+    documented re-entry table branches on, NOT against a re-run of CI: re-running
+    CI would test the CI integration, not the invalidation rule. SKILL.md must
+    also state that a plain SHA inequality covers the force-push mechanism, so no
+    separate force-push detector is required.
+    """
+    content = _SKILL_PATH.read_text(encoding='utf-8')
+
+    # The three supersession mechanisms must be named as covered by the same
+    # SHA inequality — force-push is the one this regression pins.
+    assert 'force-push' in content, (
+        'SKILL.md must name force-push among the supersession mechanisms the '
+        '!= HEAD comparison covers. Without it a force-push reads as an '
+        'unhandled case and invites a separate detector that is not needed.'
+    )
+
+    # The governing rule: a verdict is never left green for a HEAD it was not
+    # computed against. This is what makes a superseded SHA invalidating.
+    assert 'never left standing as green' in content, (
+        'SKILL.md must state the governing rule that a head-dependent verdict is '
+        'never left standing as green for a HEAD it was not computed against.'
+    )
+
+    # Exercise the REAL persisted record: mark ci-verify green against the
+    # pre-force-push SHA, then read the record back and confirm it still carries
+    # that SHA. The rewritten HEAD therefore compares unequal, which is the input
+    # the documented table's RE-FIRE row branches on.
+    plan_id = 'ci-verify-d4b-force-push'
+    _make_ci_verify_plan(plan_id)
+
+    recorded_green_sha = 'c' * 40
+    post_force_push_head = 'd' * 40
+
+    _cmd_mark_step_done(
+        Namespace(
+            plan_id=plan_id,
+            phase='6-finalize',
+            step='ci-verify',
+            outcome='done',
+            force=False,
+            display_detail='CI green',
+            head_at_completion=recorded_green_sha,
+            loop_back_target=None,
+        )
+    )
+
+    entry = _read_status(plan_id)['metadata']['phase_steps']['6-finalize']['ci-verify']
+
+    assert entry['outcome'] == 'done'
+    assert entry['head_at_completion'] == recorded_green_sha, (
+        'The green record must persist the SHA whose remote state it verified. '
+        'Without the SHA the re-entry check cannot tell a force-pushed branch '
+        'from the one CI actually ran against.'
+    )
+    assert entry['head_at_completion'] != post_force_push_head, (
+        'The force-push rewrote the branch SHA, so the persisted green no longer '
+        'describes the pushed tree. The re-entry check must re-fire ci-verify '
+        'rather than let the superseded green stand as verified.'
     )
 
 

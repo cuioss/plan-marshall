@@ -97,11 +97,30 @@ _SKILL_STEP3_HEADING = (
 #: prefix-comparison reason.
 _SKILL_SECTION_STOP_PREFIXES = ('## ', '### ')
 
+#: Spelled-out cardinals a step-count claim can use instead of a digit. ``one``
+#: is deliberately EXCLUDED: "one step" is overwhelmingly ordinary singular prose
+#: ("dispatch one step at a time"), not a cardinality claim about a set, so
+#: including it would make the detector fire on legitimate text and force
+#: suppressions — and a detector that must be suppressed to stay green is worse
+#: than none.
+_SPELLED_CARDINALS = (
+    'two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|'
+    'fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty'
+)
+
 #: Count-bearing prose patterns. Each matched the pre-fix text:
 #:   "Of the 17 default + project finalize steps"  -> _COUNT_BEFORE_STEPS
+#:   "all six steps follow the HEAD-only table"    -> _COUNT_BEFORE_STEPS (spelled)
 #:   "**6 dispatch**" / "**11 run inline**"        -> _COUNT_BOLD_CLASSIFIER
 #:   "is not counted in the 6/17 roster above"     -> _COUNT_RATIO
-_COUNT_BEFORE_STEPS = re.compile(r'\b\d+\s[\w\s+]{0,40}?\bsteps?\b', re.IGNORECASE)
+#:
+#: The numeral branch accepts a digit OR a spelled-out cardinal. The digit branch
+#: is unchanged; the alternation is what closes the blind spot that let BOTH
+#: newly-covered HEAD-dependent sites survive every previous sweep — they spelled
+#: their count as "six", and ``\b\d+`` cannot see a word.
+_COUNT_BEFORE_STEPS = re.compile(
+    rf'\b(?:\d+|{_SPELLED_CARDINALS})\s[\w\s+]{{0,40}}?\bsteps?\b', re.IGNORECASE
+)
 _COUNT_BOLD_CLASSIFIER = re.compile(r'\d+\s+(?:dispatch|run\s+inline|inline)\b', re.IGNORECASE)
 _COUNT_RATIO = re.compile(r'\b\d+\s*/\s*\d+\s+roster\b', re.IGNORECASE)
 
@@ -254,6 +273,69 @@ def _dispatch_branch_scoped_skill_text() -> str:
     scoped = [''] * len(lines)
     scoped[start : start + len(section)] = section
     return '\n'.join(scoped)
+
+
+#: The HEAD-dependent prose region inside § "Step 3: Execute Step Pipeline".
+#: Both count claims this sweep newly covers lived here — OUTSIDE § "Dispatched
+#: workflows vs inline steps", which is the only section the existing SKILL.md
+#: sweep reads. That is why they survived every previous pass.
+#:
+#: The region is deliberately narrow: two small blocks, NOT the whole of Step 3.
+#: Step 3 legitimately says things like "applies to all five built-in
+#: agent-suitable steps", which the widened spelled-out pattern WOULD flag. A
+#: sweep that had to be suppressed to stay green would be worse than no sweep, so
+#: the scope is drawn to the prose that actually makes head-dependence claims.
+_HEAD_DEP_BLOCK_START = '**Special case — HEAD-dependent steps**'
+_HEAD_DEP_BLOCK_END = 'applies only to steps declaring'
+_HEAD_DEP_NOTE_MARKER = '**HEAD-dependent step set**'
+
+
+def _head_dependent_region() -> str:
+    """Return the SKILL.md HEAD-dependent prose region, guarded loudly.
+
+    Scoped inside § "Step 3: Execute Step Pipeline" via the shared
+    ``section_lines`` helper (whose own guard fails loudly on a heading rename),
+    then narrowed to the two head-dependence blocks. Every marker lookup asserts,
+    so a reworded marker fails the test rather than silently sweeping nothing —
+    a vacuously-empty sweep is the failure mode this guard exists to prevent.
+    """
+    text = _SKILL_DOC.read_text(encoding='utf-8')
+    section = section_lines(
+        text, _SKILL_STEP3_HEADING, stop_prefixes=_SKILL_SECTION_STOP_PREFIXES
+    )
+    assert section, (
+        f'SKILL.md section {_SKILL_STEP3_HEADING!r} parsed empty — the '
+        'HEAD-dependent sweep would be vacuous.'
+    )
+
+    start = next(
+        (i for i, line in enumerate(section) if _HEAD_DEP_BLOCK_START in line), None
+    )
+    assert start is not None, (
+        f'Marker {_HEAD_DEP_BLOCK_START!r} not found in § {_SKILL_STEP3_HEADING!r}. '
+        'The HEAD-dependent special-case block was renamed or removed — fix the '
+        'marker rather than letting the sweep silently cover nothing.'
+    )
+    end = next(
+        (i for i, line in enumerate(section) if i > start and _HEAD_DEP_BLOCK_END in line),
+        None,
+    )
+    assert end is not None, (
+        f'Closing marker {_HEAD_DEP_BLOCK_END!r} not found after '
+        f'{_HEAD_DEP_BLOCK_START!r} — the special-case block lost its closing '
+        'sentence, so the swept region is unbounded.'
+    )
+    special_case_block = section[start : end + 1]
+
+    note = [line for line in section if _HEAD_DEP_NOTE_MARKER in line]
+    assert note, (
+        f'Marker {_HEAD_DEP_NOTE_MARKER!r} not found in § {_SKILL_STEP3_HEADING!r}. '
+        'The item-1 HEAD-dependent step-set note was renamed or removed.'
+    )
+
+    region = '\n'.join(special_case_block + note)
+    assert region.strip(), 'HEAD-dependent region resolved empty — sweep would be vacuous.'
+    return region
 
 
 def _spawns_missing_concrete_emit(text: str) -> list[str]:
@@ -455,19 +537,70 @@ def test_skill_dispatch_section_carries_no_step_count_claim():
     )
 
 
+def test_skill_head_dependent_region_carries_no_step_count_claim():
+    """The HEAD-dependent prose must state membership without counting it.
+
+    Both sites this sweep newly covers lived in § "Step 3: Execute Step Pipeline",
+    outside the only SKILL.md section the existing sweep reads — and both spelled
+    their count as "six", which the digit-only pattern could not see. Either gap
+    alone was enough to hide them.
+    """
+    region = _head_dependent_region()
+
+    hits = _count_claims(region)
+
+    assert not hits, (
+        'Step-count claim(s) in the SKILL.md HEAD-dependent prose region. '
+        'Membership is derived from the head_dependent frontmatter fact, so the '
+        f'prose must not restate its size — a count is the drift shape: {hits}'
+    )
+
+
 def test_count_claim_patterns_detect_the_pre_fix_prose():
-    # Mutation guard: the sweep above is only meaningful if these patterns
+    # Mutation guard: the sweeps above are only meaningful if these patterns
     # actually fire on the exact prose this deliverable removed. Without this,
-    # a typo in the regexes would make both sweeps vacuously green.
+    # a typo in the regexes would make every sweep vacuously green.
     pre_fix_samples = [
         'Of the 17 default + project finalize steps, **6 dispatch** and **11 run inline**.',
         'is not counted in the 6/17 roster above',
         'The 11 inline steps (`finalize-step-sync-baseline`, `push`) are pure scripts.',
+        # The two spelled-out claims removed from the HEAD-dependent region. A
+        # widened pattern that silently failed to match these would leave the new
+        # sweep green while covering nothing.
+        'A dirty tree at any re-entry indicates an upstream contract violation '
+        'rather than a re-fire trigger; all six steps follow the HEAD-only table.',
+        'All other finalize steps keep the general rule above verbatim; this '
+        'special case applies only to the six steps named in `HEAD_DEPENDENT_STEPS`.',
     ]
 
     for sample in pre_fix_samples:
         assert _count_claims(sample), (
             f'Count-claim sweep failed to detect known pre-fix prose: {sample!r}'
+        )
+
+
+def test_count_claim_patterns_do_not_fire_on_ordinary_cardinal_prose():
+    """Negative control: the widening must not become unconditionally positive.
+
+    Admitting spelled-out cardinals risks turning the detector into one that
+    flags any prose containing a number word. These samples carry a cardinal in
+    an ordinary sense with no step-count claim — including the replacement prose
+    this deliverable actually wrote, so the widening is verified not to condemn
+    its own fix.
+    """
+    benign_samples = [
+        'The dispatcher retries three times before escalating to the operator.',
+        'Two shapes qualify: a step that records a pass/fail verdict over the '
+        'live worktree tree, and a settle-stage step whose edits land in the tree.',
+        'The comparison covers all three supersession mechanisms in scope.',
+        'Resolve the four required fields before invoking the persist call.',
+    ]
+
+    for sample in benign_samples:
+        assert not _count_claims(sample), (
+            f'Count-claim sweep fired on benign cardinal prose: {sample!r}. A '
+            'detector that flags ordinary text must be suppressed to stay green, '
+            'which is worse than no detector.'
         )
 
 
