@@ -53,7 +53,7 @@ from file_ops import (
     cwd_checkout_root,
     resolve_plan_context,
 )
-from marketplace_paths import NO_PLAN_SENTINEL
+from marketplace_paths import names_real_plan
 
 
 class MutuallyExclusiveArgsError(ValueError):
@@ -102,12 +102,11 @@ def resolve_project_dir(
             (manage-status error, missing worktree metadata, etc.).
     """
     project_dir_supplied = project_dir is not None and project_dir != default
-    # The ``NO_PLAN`` sentinel is truthy but is NOT a routing source, so it must
-    # be excluded here rather than only inside the branch below: counting it as
-    # "supplied" would (a) make ``--plan-id NO_PLAN --project-dir Y`` a spurious
-    # mutual-exclusion error and (b) hand the sentinel to the worktree resolver
-    # as if it named a plan.
-    plan_id_supplied = bool(plan_id) and plan_id != NO_PLAN_SENTINEL
+    # The sentinel is excluded HERE rather than only inside the branch below:
+    # counting it as "supplied" would (a) make ``--plan-id NO_PLAN
+    # --project-dir Y`` a spurious mutual-exclusion error and (b) hand the
+    # sentinel to the worktree resolver as if it named a plan.
+    plan_id_supplied = names_real_plan(plan_id)
 
     if plan_id_supplied and project_dir_supplied:
         raise MutuallyExclusiveArgsError(

@@ -63,7 +63,7 @@ from _build_server_protocol import (  # noqa: E402
     read_log_verdict,
 )
 from _build_shared import cmd_run_common  # noqa: E402
-from marketplace_paths import NO_PLAN_SENTINEL  # noqa: E402
+from marketplace_paths import NO_PLAN_SENTINEL, names_real_plan  # noqa: E402
 from plan_logging import log_entry  # noqa: E402
 from toon_parser import serialize_toon  # noqa: E402
 
@@ -194,11 +194,9 @@ def _record_resolution(
         reason: The degradation / refusal reason, or ``None`` when the
             resolution carries none.
         notation: The executor notation the daemon re-runs for this build.
-        plan_id: Submitting plan id; falsy or the ``NO_PLAN`` sentinel for a
-            plan-less build (the work-log emission is skipped, the stderr
-            emission is not). The sentinel is truthy, so it is named
-            explicitly — a falsiness-only guard would start writing a
-            plan-less build's routing record into a ``NO_PLAN`` work log.
+        plan_id: Submitting plan id; anything :func:`names_real_plan` rejects is
+            a plan-less build (the work-log emission is skipped, the stderr
+            emission is not).
     """
     # The wait mechanism this build-arm record names, drawn from the same closed
     # vocabulary the CI arm uses so one ``mechanism=`` log query matches both
@@ -219,7 +217,7 @@ def _record_resolution(
         f'reason={reason}, notation={notation}, plan={plan_id}, mechanism={mechanism})'
     )
     print(message, file=sys.stderr)
-    if plan_id and plan_id != NO_PLAN_SENTINEL:
+    if names_real_plan(plan_id):
         # Every fallback and refusal logs at WARNING — matching the client's
         # existing level convention; a clean resolution stays INFO.
         level = 'WARNING' if resolved == 'fail-loud' or reason is not None else 'INFO'

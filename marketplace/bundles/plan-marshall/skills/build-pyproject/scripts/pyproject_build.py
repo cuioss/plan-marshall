@@ -47,7 +47,7 @@ from _pyproject_cmd_discover import discover_python_modules
 from _pyproject_cmd_parse import parse_log, slice_failure_details
 from _pyproject_execute import _CONFIG, cmd_run
 from _test_scope_divergence import resolve_test_scope
-from marketplace_paths import NO_PLAN_SENTINEL
+from marketplace_paths import names_real_plan
 from toon_parser import serialize_toon
 
 # --- Tool-specific configuration inlined from former wrapper files ---
@@ -167,14 +167,11 @@ def cmd_resolve_test_scope(args) -> int:
     if changed_paths is not None:
         footprint = [p.strip() for p in changed_paths.split(',') if p.strip()]
     else:
-        plan_id = getattr(args, 'plan_id', None)
-        # The NO_PLAN sentinel is rejected alongside the falsy cases: it is
-        # TRUTHY, so a bare ``if not plan_id`` would go vacuous the moment
-        # ``build_main`` started resolving an absent ``--plan-id`` to it, and
-        # the handler would proceed to resolve a footprint for a plan named
-        # NO_PLAN — a footprint no plan-less caller has. The error shape is
-        # unchanged: a footprint-less invocation still fails closed.
-        if not plan_id or plan_id == NO_PLAN_SENTINEL:
+        plan_id: str = getattr(args, 'plan_id', None) or ''
+        # The sentinel is refused alongside the falsy cases — it names no plan
+        # whose footprint could be resolved. The error shape is unchanged: a
+        # footprint-less invocation still fails closed.
+        if not names_real_plan(plan_id):
             print(
                 serialize_toon(
                     {

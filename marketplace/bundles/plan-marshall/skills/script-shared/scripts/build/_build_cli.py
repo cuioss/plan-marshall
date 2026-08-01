@@ -84,7 +84,7 @@ def add_project_dir_arg(parser) -> None:
     add_plan_id_arg(parser)
 
 
-def add_root_arg(parser, *, help_text: str = 'Project root directory') -> None:
+def add_root_arg(parser) -> None:
     """Attach the ``--root`` flag with a ``None`` sentinel default.
 
     ``default=None`` is a load-bearing SENTINEL, not a missing default — the
@@ -96,12 +96,11 @@ def add_root_arg(parser, *, help_text: str = 'Project root directory') -> None:
 
     Args:
         parser: The subparser to extend.
-        help_text: Lead sentence of the flag's help string.
     """
     parser.add_argument(
         '--root',
         default=None,
-        help=f'{help_text}. When omitted, the root resolved from --plan-id / --project-dir is used.',
+        help='Project root directory. When omitted, the root resolved from --plan-id / --project-dir is used.',
     )
 
 
@@ -621,9 +620,8 @@ def build_main(
     # Deliberately AFTER the resolution above: the sentinel is not a routing
     # source, so the mutual-exclusion and worktree-resolution error paths keep
     # observing the caller's actual flags. The sentinel is truthy, so every
-    # downstream ``plan_id`` guard tests for it explicitly rather than relying
-    # on falsiness — see the guard sites in ``_build_queue_slot``,
-    # ``_build_execute_factory``, ``_build_shared`` and ``pyproject_build``.
+    # downstream "is this build plan-bound?" guard reads
+    # ``marketplace_paths.names_real_plan`` rather than plain falsiness.
     if hasattr(args, 'plan_id'):
         args.plan_id = args.plan_id or NO_PLAN_SENTINEL
 

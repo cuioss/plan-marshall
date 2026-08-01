@@ -71,7 +71,7 @@ from _build_server_registry import (
     registry_dir,
 )
 from _ledger_core import KIND_JOB, append_entry, job_record, read_entries
-from marketplace_paths import NO_PLAN_SENTINEL, main_checkout_root
+from marketplace_paths import NO_PLAN_SENTINEL, main_checkout_root, names_real_plan
 from plan_logging import log_entry
 from triage_helpers import ErrorCode, make_error, print_toon, safe_main
 from worktree_sha import compute_worktree_sha
@@ -241,14 +241,12 @@ def _handshake(sock_path: Path) -> tuple[dict[str, Any] | None, str | None]:
 def _audit_log(plan_id: str, level: str, message: str) -> None:
     """Write one captured work-log entry for a build-server interaction outcome.
 
-    No-ops for a plan-less build — an empty ``plan_id`` OR the ``NO_PLAN``
-    sentinel, which is the value a plan-less submission now carries on the wire
-    and in the ledger. The sentinel is TRUTHY, so it is named explicitly: a
-    falsiness-only guard would start writing a plan-less build's interaction
-    outcomes into a ``NO_PLAN`` work log, which is a behaviour change, not a
-    no-op. Otherwise it delegates to the same ``plan_logging`` substrate the
-    ``manage-logging`` work verb writes through, so no interaction outcome is
-    emitted only at an uncaptured Python log level and silently lost.
+    No-ops for a plan-less build — anything :func:`names_real_plan` rejects,
+    which includes the ``NO_PLAN`` sentinel a plan-less submission carries on
+    the wire and in the ledger. Otherwise it delegates to the same
+    ``plan_logging`` substrate the ``manage-logging`` work verb writes through,
+    so no interaction outcome is emitted only at an uncaptured Python log level
+    and silently lost.
 
     Secrets discipline: callers pass ONLY non-secret correlation fields
     (``job_id`` / ``job_status`` / ``reason`` / ``notation`` / ``attached`` /
@@ -262,7 +260,7 @@ def _audit_log(plan_id: str, level: str, message: str) -> None:
             for a fallback / refusal.
         message: The pre-formatted, secret-free outcome message.
     """
-    if not plan_id or plan_id == NO_PLAN_SENTINEL:
+    if not names_real_plan(plan_id):
         return
     log_entry('work', plan_id, level, message)
 
@@ -514,11 +512,7 @@ def run_wait(args: Namespace) -> dict[str, Any]:
     if not job_id:
         return make_error(
             'no --job-id given and no kind=job ledger row to re-attach to'
-            + (
-                f' for plan {args.plan_id}'
-                if args.plan_id and args.plan_id != NO_PLAN_SENTINEL
-                else ''
-            ),
+            + (f' for plan {args.plan_id}' if names_real_plan(args.plan_id) else ''),
             code=ErrorCode.NOT_FOUND,
         )
 

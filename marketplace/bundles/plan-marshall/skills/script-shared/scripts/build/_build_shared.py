@@ -36,7 +36,7 @@ from _build_result import (
     success_result,
     timeout_result,
 )
-from marketplace_paths import NO_PLAN_SENTINEL
+from marketplace_paths import names_real_plan
 
 # ---------------------------------------------------------------------------
 # Canonical command generation (merged from _build_commands.py)
@@ -533,9 +533,9 @@ def cmd_run_common(
         project_dir: Project root directory for warning pattern lookup.
         parser_needs_command: If True, passes command string as second arg to parser_fn.
         plan_id: The plan owning the finding store. Producer-side finding
-            storage and green-build reconciliation engage ONLY for a real plan
-            id — a falsy value or the ``NO_PLAN`` sentinel suppresses both, so
-            a plan-less build parses and formats exactly as it always has.
+            storage and green-build reconciliation engage ONLY when
+            :func:`names_real_plan` accepts it, so a plan-less build parses and
+            formats exactly as it always has.
 
     Returns:
         Exit code (0 for success, 1 for failure).
@@ -623,10 +623,9 @@ def cmd_run_common(
             # Genuine success — terminalize any pending build findings from a
             # prior failing run: the build is now green, so build-error /
             # test-failure / lint-issue findings are stale and must be
-            # bulk-resolved before returning. The NO_PLAN sentinel is truthy
-            # but owns no finding store, so it is excluded explicitly —
-            # a plan-less build reconciles nothing, exactly as before.
-            if plan_id and plan_id != NO_PLAN_SENTINEL:
+            # bulk-resolved before returning. A plan-less build owns no finding
+            # store and reconciles nothing, exactly as before.
+            if names_real_plan(plan_id):
                 try:
                     _reconcile_pending_build_findings(plan_id=plan_id, command_str=command_str)
                 except Exception as e:
@@ -667,10 +666,9 @@ def cmd_run_common(
         # Always-on: every parsed issue (build-error / test-failure /
         # lint-issue) is appended to the per-type finding store before any
         # mode-specific warning filtering is applied. Producer-side mismatch
-        # (parsed != stored) is surfaced as a Q-Gate finding. The NO_PLAN
-        # sentinel is truthy but owns no finding store, so it is excluded
-        # explicitly — a plan-less build stores nothing, exactly as before.
-        if plan_id and plan_id != NO_PLAN_SENTINEL:
+        # (parsed != stored) is surfaced as a Q-Gate finding. A plan-less build
+        # owns no finding store and stores nothing, exactly as before.
+        if names_real_plan(plan_id):
             count_seen, count_stored, store_failures = _store_build_findings(
                 plan_id=plan_id,
                 tool_name=tool_name,
