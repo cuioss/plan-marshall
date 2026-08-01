@@ -112,13 +112,37 @@ Evidence is therefore taken from observed publish shapes only. Check state remai
 *orthogonal* question of whether a bot's review window is still open (`in_progress` in the failure
 taxonomy above) — that is a timing signal, not participation evidence.
 
+#### Normative prohibition — a check conclusion is not evidence and not a handled record
+
+A review bot's **check conclusion** — the terminal `SUCCESS` / `FAILURE` state `github_pr
+bot_completion` reports for that bot's registry `completion_check_name` — is subject to two
+prohibitions, both normative:
+
+1. **A check conclusion is NOT participation evidence and MUST NOT be substituted for a declared
+   `participation_evidence` publish shape.** No caller may synthesise a `{bot_kind}:{evidence_kind}`
+   pair from a check conclusion, feed a check-derived pseudo-kind to `review_completeness
+   --participated-bots`, or otherwise let a concluded check stand in for an observed publish shape.
+   The admissible vocabulary is closed to the publish shapes in the table above, and no check state is
+   a member of it. A `SUCCESS` conclusion on a bot that published nothing is `absent`, not
+   `participated`.
+2. **A check conclusion is NOT a findings-handled record.** A concluded check says nothing about
+   whether the bot's comments were fetched, filed, or triaged. It MUST NOT be read as discharging the
+   unhandled-comment predicate, and it MUST NOT be recorded as, or substituted for, a
+   `pr-comment` finding's resolution.
+
+**`in_progress_bots` is the ONLY legitimate consumer of `bot_completion` output.** The verb exists to
+answer the timing question — is this bot's review window still open? — and its output flows to exactly
+one destination: the `--in-progress-bots` observation set that resolves a required bot to the
+`in_progress` taxonomy member. Any other consumption of a `bot_completion` return is a contract
+violation.
+
 ### Evidence for a bot that edits one comment in place
 
 A bot that re-reviews by **editing its single persistent comment** rather than posting a new one
 declares `participation_requires_update: true`. For such a bot the comment's continued existence
 proves only that it reviewed **once, at some earlier HEAD** — after a force-push the unchanged
 comment would silently credit it with reviewing code it never saw. Its evidence therefore requires
-either **first presence** (the comment is newly observed) or observed **`updated_at` movement`**.
+either **first presence** (the comment is newly observed) or observed **`updated_at` movement**.
 
 ## Participation is not review quality
 

@@ -86,8 +86,16 @@ both modes, so the guard never marks the step done on an empty store. An EMPTY
 and ``complete`` is true.
 
 Usage:
-    review_completeness.py check --plan-id <id> --required-bots <csv> [--optional-bots <csv>] [--participated-bots <csv>] [--in-progress-bots <csv>] [--refused-bots <csv>] [--triage-ran]
+    review_completeness.py check --plan-id <id> [--required-bots [<csv>]] [--optional-bots [<csv>]] [--participated-bots [<csv>]] [--in-progress-bots [<csv>]] [--refused-bots [<csv>]] [--triage-ran]
     review_completeness.py --help
+
+Every list flag above takes an OPTIONAL value: it may be supplied bare (the flag
+with no value at all), which reads exactly the same as omitting it — the empty
+list. A caller that interpolates an empty variable into the command line
+therefore produces the empty-list reading rather than an argparse rejection. The
+relaxation is a parser-robustness change ONLY: an empty required-bots list is
+still the vacuously-satisfied quorum, and no empty list ever launders an
+unproven bot into a pass.
 
 Subcommands:
     check  Report whether every REQUIRED bot's PARTICIPATION is proven and triaged.
@@ -381,25 +389,33 @@ def main(argv: list[str] | None = None) -> int:
     check_parser.add_argument('--plan-id', required=True)
     check_parser.add_argument(
         '--required-bots',
+        nargs='?',
+        const='',
         default='',
         help=(
             'Comma-separated review-bot kinds whose participation is REQUIRED. '
             'These and only these form the completeness quorum — a required '
             "bot's silence blocks the mark-done. An empty list is a valid "
-            'configured state (quorum vacuously satisfied).'
+            'configured state (quorum vacuously satisfied). May be supplied bare '
+            '(no value), which reads as the empty list.'
         ),
     )
     check_parser.add_argument(
         '--optional-bots',
+        nargs='?',
+        const='',
         default='',
         help=(
             'Comma-separated review-bot kinds whose participation is OPTIONAL. '
             'Classified and reported for visibility but NEVER gating: an optional '
-            "bot's silence is not a failure and never blocks the mark-done."
+            "bot's silence is not a failure and never blocks the mark-done. May be "
+            'supplied bare (no value), which reads as the empty list.'
         ),
     )
     check_parser.add_argument(
         '--participated-bots',
+        nargs='?',
+        const='',
         default='',
         help=(
             'Comma-separated EVIDENCE-TYPED participation pairs, each '
@@ -408,26 +424,33 @@ def main(argv: list[str] | None = None) -> int:
             'declared participation_evidence publish shapes; a bare bot_kind with '
             'no evidence_kind is rejected, because unqualified presence does not '
             'prove a bot reviewed this diff. This proves PARTICIPATION only, never '
-            'review quality.'
+            'review quality. May be supplied bare (no value), which reads as the '
+            'empty list — zero proven participants, never a pass.'
         ),
     )
     check_parser.add_argument(
         '--in-progress-bots',
+        nargs='?',
+        const='',
         default='',
         help=(
             'Comma-separated review-bot kinds whose review was still running '
             '(completion check not yet terminal) when the poll budget expired. '
-            'A required bot here is classified in_progress and blocks.'
+            'A required bot here is classified in_progress and blocks. May be '
+            'supplied bare (no value), which reads as the empty list.'
         ),
     )
     check_parser.add_argument(
         '--refused-bots',
+        nargs='?',
+        const='',
         default='',
         help=(
             'Comma-separated review-bot kinds observed publishing a refusal '
             'notice. Supply only the observation — the refusal is split into '
             "refused_awaitable / refused_hard from each bot's registry "
-            'rate_limit_class, never by the caller.'
+            'rate_limit_class, never by the caller. May be supplied bare (no '
+            'value), which reads as the empty list.'
         ),
     )
     check_parser.add_argument(

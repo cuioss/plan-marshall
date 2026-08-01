@@ -555,13 +555,21 @@ Then proceed to "Producer: FIND" below, which surfaces whatever the regenerated 
 
 Call the producer-side `fetch_findings` verb once. It fetches PR review comments, applies pre-filters (already-resolved threads, obvious text noise, and cross-iteration duplicate comments), and files one `pr-comment` finding per surviving comment into the per-plan findings store with the untrusted comment body quarantined under `raw_input.{body}` — the trusted structured metadata (`thread_id`, `comment_id`, `kind`, `author`, `path`, `line`) goes in the finding's `detail`.
 
-Read `required_bots` and `optional_bots` off the same execution-manifest step-params snapshot already fetched for `review_bot_buffer_seconds` and the `re_review_*` knobs (`manage-execution-manifest step-params get --plan-id {plan_id} --phase 6-finalize --step-id plan-marshall:automatic-review`; both default EMPTY) and forward them as `--required-bots {required_bots} --optional-bots {optional_bots}` on the `fetch_findings` call. The two lists carry CLASSIFICATION, not admission: a comment whose derived `bot_kind` is in neither list is **still ingested** and the run records a warning naming the unclassified bot. This is the warn-but-ingest rule — silence from an unclassified bot is never silently dropped. See [`standards/bot-participation-contract.md`](standards/bot-participation-contract.md).
+Read `required_bots` and `optional_bots` off the same execution-manifest step-params snapshot already fetched for `review_bot_buffer_seconds` and the `re_review_*` knobs (`manage-execution-manifest step-params get --plan-id {plan_id} --phase 6-finalize --step-id plan-marshall:automatic-review`; both default EMPTY) and forward them as `--required-bots "{required_bots}" --optional-bots "{optional_bots}"` on the `fetch_findings` call. The two lists carry CLASSIFICATION, not admission: a comment whose derived `bot_kind` is in neither list is **still ingested** and the run records a warning naming the unclassified bot. This is the warn-but-ingest rule — silence from an unclassified bot is never silently dropped. See [`standards/bot-participation-contract.md`](standards/bot-participation-contract.md).
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr \
   fetch_findings --pr-number {pr_number} --plan-id {plan_id} \
-  --required-bots {required_bots} --optional-bots {optional_bots}
+  --required-bots "{required_bots}" --optional-bots "{optional_bots}"
 ```
+
+Every interpolated list-flag placeholder above is **double-quoted**. Both lists default EMPTY, so an
+unquoted `--required-bots {required_bots}` collapses to a bare `--required-bots` whenever the value is
+empty, and the next token on the line is consumed as its value. The quotes keep an empty value on the
+command line as an explicit empty string; the flags additionally accept a bare form (see
+[`../workflow-integration-github/SKILL.md`](../workflow-integration-github/SKILL.md) § Canonical
+invocations → `github_pr fetch_findings`), so the two defences are complementary — never rely on
+either alone.
 
 (For GitLab projects the equivalent producer is `plan-marshall:workflow-integration-gitlab:gitlab_pr fetch_findings`. Provider selection is whichever matches `manage-providers` for the plan's host; only one of the two is invoked per finalize run. A `status: unconfigured` return means the provider is not authenticated — fail loud, never a silent zero-findings success. **Provider asymmetry:** `gitlab_pr fetch_findings` declares neither `--required-bots` nor `--optional-bots`, so the GitLab call takes only `--pr-number` / `--plan-id` — the required/optional classification is a GitHub-only capability until the GitLab provider grows the flags.)
 
@@ -608,10 +616,18 @@ Invoke WITHOUT `--triage-ran` — triage has not run at this FIND step, so only 
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:automatic-review:review_completeness check \
-  --plan-id {plan_id} --required-bots {required_bots} --optional-bots {optional_bots} \
-  --participated-bots {participated_bots} --in-progress-bots {in_progress_bots} \
-  --refused-bots {refused_bots}
+  --plan-id {plan_id} --required-bots "{required_bots}" --optional-bots "{optional_bots}" \
+  --participated-bots "{participated_bots}" --in-progress-bots "{in_progress_bots}" \
+  --refused-bots "{refused_bots}"
 ```
+
+Every interpolated list-flag placeholder above is **double-quoted**. All five sets are legitimately
+empty in normal operation — a plan with no optional bots, no in-progress bots, and no refusals is the
+common case — and an unquoted `--refused-bots {refused_bots}` with an empty value collapses to a bare
+`--refused-bots`, which then swallows whatever token follows it (or trips an argparse rejection at the
+end of the line). The quotes keep an empty value on the command line as an explicit empty string; the
+flags additionally accept a bare form (see § Canonical invocations → `review_completeness — check`),
+so the two defences are complementary — never rely on either alone.
 
 Read `participation_complete`, `pending_bots`, `unproven_bots`, and `bot_states` from the returned TOON. `bot_states` carries one `{bot_kind, state}` row per classified bot, each resolving to exactly one state: the five closed non-participation members (`absent`, `in_progress`, `refused_awaitable`, `refused_hard`, `participated_but_empty`) or `participated`. `pending_bots` is reported for visibility but does NOT gate the mark-done at this FIND step (the `--triage-ran` flag is omitted). The predicate is fail-closed over the required set — a plan with no observations reports every required bot as `absent` and `participation_complete: false`, and a bot whose registry record declares no `participation_evidence` can never be proven a participant.
 
@@ -625,6 +641,32 @@ Read `participation_complete`, `pending_bots`, `unproven_bots`, and `bot_states`
     decision --plan-id {plan_id} --level WARNING \
     --message "(plan-marshall:automatic-review) force-done with unproven review participation: pending_bots={pending_bots} unproven_bots={unproven_bots} bot_states={bot_states} — reason: {reason}"
   ```
+
+- **UNKNOWN verdict** — the `review_completeness check` call exited **non-zero**, OR its return carries
+  **no `participation_complete` field at all**. This is an UNKNOWN verdict, explicitly **NOT `false`**
+  and emphatically not `true`: the predicate never ran to a verdict, so nothing was proven and nothing
+  was disproven. A crashed gate that is read as a pass is the failure this row exists to make
+  structurally impossible — an argparse rejection (exit 2), an unhandled exception, or a truncated
+  return must never be collapsed into "no blocking bot found". On UNKNOWN the step MUST:
+
+  1. **Log at ERROR**, naming the observed exit code and the captured stderr verbatim:
+
+     ```bash
+     python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+       work --plan-id {plan_id} --level ERROR \
+       --message "[ERROR] (plan-marshall:automatic-review) review_completeness check returned an UNKNOWN verdict: exit_code={exit_code}, stderr={stderr} — participation is neither proven nor disproven; recording loop_back"
+     ```
+
+  2. **Record Branch C** (`--outcome loop_back`) for this pass, so the step re-fires on the next
+     phase-6-finalize entry against the same question.
+  3. **NOT record Branch A.** A `done` record on an UNKNOWN verdict would assert a participation
+     verdict the predicate never produced.
+
+  **The Force-done-with-an-explicit-recorded-reason escape hatch is UNAVAILABLE for an UNKNOWN
+  verdict.** The hatch exists for an operator who has *seen* the blocking bots and their states and
+  decided to proceed anyway — it presupposes a verdict. An UNKNOWN verdict names no bots and no states,
+  so there is nothing for the operator to weigh and the WARNING decision-log entry the hatch mandates
+  could not be truthfully written. Repair the failing call and re-run; do not force past it.
 
 The `re_review_on_loopback` default (`false`) is unchanged by this guard. Leaving loop-back re-review off stays safe because the D1 pre-merge review-completeness barrier re-derives BOTH predicates immediately before merge/enqueue: it re-fetches from the provider and blocks on any unhandled comment, **and** it re-evaluates `review_completeness` over `required_bots` and blocks when a required bot's participation against the merge HEAD is unproven. This step-done completeness guard and that barrier are the two nets that make a default-off `re_review_on_loopback` safe.
 
@@ -764,7 +806,14 @@ The canonical argparse surface for the invocable script this skill registers: `r
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:automatic-review:review_completeness check \
-  --plan-id PLAN_ID --required-bots REQUIRED_BOTS [--optional-bots OPTIONAL_BOTS] \
-  [--participated-bots PARTICIPATED_BOTS] [--in-progress-bots IN_PROGRESS_BOTS] \
-  [--refused-bots REFUSED_BOTS] [--triage-ran]
+  --plan-id PLAN_ID [--required-bots [REQUIRED_BOTS]] [--optional-bots [OPTIONAL_BOTS]] \
+  [--participated-bots [PARTICIPATED_BOTS]] [--in-progress-bots [IN_PROGRESS_BOTS]] \
+  [--refused-bots [REFUSED_BOTS]] [--triage-ran]
 ```
+
+All five list flags take an OPTIONAL value: each may be supplied bare (the flag with no value at
+all), which reads as the empty list — identical to omitting it. Callers interpolating a possibly-empty
+variable MUST still double-quote the placeholder; the bare form is the parser-side backstop, not a
+licence to leave the interpolation unquoted. An empty `--required-bots` is the vacuously-satisfied
+quorum; an empty `--participated-bots` is zero proven participants and can never produce a pass for a
+non-empty required set.
