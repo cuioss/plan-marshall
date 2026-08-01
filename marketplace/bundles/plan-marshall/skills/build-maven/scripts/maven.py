@@ -19,6 +19,7 @@ Subcommands:
 
 from _build_check_warnings import create_check_warnings_handler
 from _build_cli import (
+    add_project_dir_arg,
     build_main,
     register_standard_subparsers,
     safe_main,
@@ -67,7 +68,17 @@ def cmd_rewrite_log(args) -> int:
 
 
 def _register_rewrite_log(subparsers) -> None:
-    """Register the additive 'rewrite-log' subcommand (Signal B log-parse consumption)."""
+    """Register the additive 'rewrite-log' subcommand (Signal B log-parse consumption).
+
+    This subparser is built here rather than through the shared
+    ``register_standard_subparsers`` helper, so it attaches the canonical
+    ``--project-dir`` / ``--plan-id`` routing pair by calling the shared
+    ``add_project_dir_arg`` — the pair keeps exactly one declaration site.
+    ``rewrite-log`` reads its log through an explicit ``--log`` and has no
+    root-style flag, so there is no precedence question here: the pair
+    participates only in the two-state resolution ``build_main`` already
+    applies.
+    """
     rewrite_parser = subparsers.add_parser(
         'rewrite-log',
         help='Consume the OpenRewrite #118 log-parse signal from a captured build log (fail-closed)',
@@ -80,6 +91,7 @@ def _register_rewrite_log(subparsers) -> None:
         default='toon',
         help='Output format (default: toon)',
     )
+    add_project_dir_arg(rewrite_parser)
     rewrite_parser.set_defaults(func=cmd_rewrite_log)
 
 

@@ -21,8 +21,11 @@ Subcommands:
 
 from _build_check_warnings import create_check_warnings_handler
 from _build_cli import (
+    add_project_dir_arg,
+    add_root_arg,
     build_main,
     register_standard_subparsers,
+    resolve_root_arg,
     safe_main,
 )
 from _build_coverage_report import create_coverage_report_handler
@@ -48,14 +51,34 @@ cmd_check_warnings = create_check_warnings_handler(
 
 
 def _register_find_project(subparsers):
+    """Register the wrapper-local 'find-project' subcommand.
+
+    Built here rather than through the shared ``register_standard_subparsers``
+    helper, so it attaches the canonical ``--project-dir`` / ``--plan-id``
+    routing pair by calling the shared ``add_project_dir_arg`` — the pair keeps
+    exactly one declaration site. ``--root`` uses the same sentinel-default
+    precedence rule the shared ``discover`` registration uses (explicit
+    ``--root`` wins, otherwise the resolved routing root applies).
+    ``--project-path`` is a distinct flag inside the mutually-exclusive
+    selector group and is untouched by the pair.
+    """
     find_parser = subparsers.add_parser(
         'find-project', help='Find Gradle project path from project name', allow_abbrev=False
     )
     find_group = find_parser.add_mutually_exclusive_group(required=True)
     find_group.add_argument('--project-name', help='Project name to search for')
     find_group.add_argument('--project-path', help='Explicit project path to validate')
-    find_parser.add_argument('--root', default='.', help='Project root directory')
-    find_parser.set_defaults(func=cmd_find_project)
+    add_root_arg(find_parser)
+    add_project_dir_arg(find_parser)
+
+    def _cmd_find_project(args):
+        # ``build_main`` has already rewritten ``args.project_dir`` to the
+        # resolved routing root; collapse the two sources to the single value
+        # ``cmd_find_project`` reads.
+        args.root = resolve_root_arg(args)
+        return cmd_find_project(args)
+
+    find_parser.set_defaults(func=_cmd_find_project)
 
 
 def main() -> int:

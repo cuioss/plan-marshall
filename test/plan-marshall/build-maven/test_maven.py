@@ -175,6 +175,44 @@ def test_run_rejects_both_plan_id_and_project_dir():
     assert data.get('error') == 'mutually_exclusive_args'
 
 
+def test_rewrite_log_subcommand_accepts_the_routing_pair():
+    """``rewrite-log`` declares the pair even though its subparser is wrapper-local.
+
+    ``rewrite-log`` is built inline in ``maven.py``, entirely outside
+    ``register_standard_subparsers`` — so it does not inherit the pair from the
+    shared registration and had to opt in explicitly. That is exactly the class
+    of subcommand a shared-seam-only reading of the surface misses.
+    """
+    result = run_script(SCRIPT_PATH, 'rewrite-log', '--help')
+    assert result.success, f'Script failed: {result.stderr}'
+    assert '--plan-id' in result.stdout, 'maven rewrite-log must declare --plan-id'
+    assert '--project-dir' in result.stdout, 'maven rewrite-log must declare --project-dir'
+
+
+def test_rewrite_log_rejects_both_plan_id_and_project_dir():
+    """The pair on ``rewrite-log`` is the SAME contract, not a new error shape.
+
+    Declaring the flags is only half of it: they have to route through the same
+    ``build_main`` resolution every other build subcommand uses, so the
+    both-supplied case yields the existing ``mutually_exclusive_args`` payload
+    and exit 2 rather than some subcommand-local rejection.
+    """
+    result = run_script(
+        SCRIPT_PATH,
+        'rewrite-log',
+        '--log',
+        'nonexistent.log',
+        '--plan-id',
+        'task-routing-canonical',
+        '--project-dir',
+        '/tmp/explicit',
+    )
+    assert result.returncode == 2, f'Expected exit 2 (mutually_exclusive_args), got {result.returncode}'
+    data = result.toon_or_error()
+    assert data.get('status') == 'error'
+    assert data.get('error') == 'mutually_exclusive_args'
+
+
 def test_parse_subcommand_independent_of_routing_flags():
     """parse must keep working without either routing flag (no project_dir)."""
     # Pre-existing behaviour: ``parse --log <missing>`` returns a

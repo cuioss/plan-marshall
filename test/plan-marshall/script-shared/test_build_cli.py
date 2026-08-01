@@ -47,6 +47,7 @@ from _build_class_roster import (
 from _build_cli import (
     add_check_warnings_subparser,
     add_coverage_subparser,
+    add_discover_subparser,
     add_parse_subparser,
     add_project_dir_arg,
     add_run_subparser,
@@ -646,3 +647,152 @@ def test_flag_pair_boolean_requires_both_flags():
     pairs = _subcommand_flag_pairs(parser)
 
     assert pairs == {'plan-id-only': False, 'project-dir-only': False}
+
+
+def test_every_build_class_subcommand_declares_the_routing_pair():
+    """THE universality gate: no build-class subcommand lacks the routing pair.
+
+    Written against the derived roster, never against a list of subcommand
+    names — a subcommand added to any wrapper (through the shared helper or
+    through ``extra_register_fns``) joins the population automatically and fails
+    here if it was registered without the pair. A hand-list would keep passing
+    while covering less than it claims.
+
+    The population size is asserted alongside the verdict because this
+    assertion's own shape (``no subcommand is missing the pair``) is trivially
+    satisfied by an empty population: an anti-vacuity re-check here keeps THIS
+    test meaningful on its own, rather than relying on a sibling test's guard
+    still existing.
+    """
+    roster = build_class_roster()
+    population = [
+        (notation, subcommand) for notation, subcommands in roster.items() for subcommand in subcommands
+    ]
+
+    assert population, (
+        'The build-class roster derived an EMPTY population, so the '
+        'universality verdict below would hold vacuously.'
+    )
+
+    missing = {
+        notation: sorted(name for name, declares_pair in subcommands.items() if not declares_pair)
+        for notation, subcommands in roster.items()
+        if not all(subcommands.values())
+    }
+
+    assert not missing, (
+        f'These build-class subcommands do not declare BOTH {PLAN_ID_FLAG} and '
+        f'{PROJECT_DIR_FLAG}: {missing}. Every build-class dispatch appends a '
+        'kind=build ledger row, so a subcommand without the pair cannot attribute '
+        'its build to the plan that caused it. Attach the pair through '
+        '_build_cli.add_project_dir_arg at the registration site.'
+    )
+
+
+# =============================================================================
+# ``--root`` precedence against the resolved routing root
+# =============================================================================
+#
+# ``discover`` is the one shared subcommand that declared a root-style flag
+# BEFORE it gained the routing pair, so the two sources have to be reconciled.
+# The rule (``_build_cli.resolve_root_arg``): an explicit ``--root`` wins
+# verbatim, otherwise the root ``build_main`` resolved from
+# ``--plan-id`` / ``--project-dir`` applies. The ``None`` sentinel default on
+# ``--root`` is what makes an explicit ``--root .`` distinguishable from an
+# unsupplied flag — without it, both would arrive as ``'.'``.
+
+_EXPLICIT_ROOT = '/tmp/test-explicit-discover-root'
+
+
+def _capturing_discover_fn(captured: list[str]):
+    """Return a discover handler that records the project root it was given."""
+
+    def discover(project_root: str) -> list:
+        captured.append(project_root)
+        return []
+
+    return discover
+
+
+def _run_discover(monkeypatch, argv_tail: list[str]) -> list[str]:
+    """Drive ``discover`` end-to-end through ``build_main`` and return the roots seen.
+
+    End-to-end rather than against the helper in isolation: the fallback value is
+    the root ``build_main`` writes into ``args.project_dir``, so a test that
+    called ``resolve_root_arg`` on a hand-built namespace would never exercise
+    the resolution step that supplies it.
+    """
+    captured: list[str] = []
+
+    def register(subparsers):
+        add_discover_subparser(subparsers, _capturing_discover_fn(captured))
+
+    monkeypatch.setattr('sys.argv', ['gradle.py', 'discover', *argv_tail])
+    rc = build_main('Gradle build', [register])
+
+    assert rc == 0
+    return captured
+
+
+def test_discover_root_default_is_the_none_sentinel():
+    """``--root`` defaults to ``None``, not to ``'.'``.
+
+    The sentinel IS the mechanism: with a ``'.'`` default the unsupplied case is
+    indistinguishable from an explicit ``--root .``, and the precedence rule
+    below could not be expressed at all.
+    """
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(dest='command', required=True)
+    add_discover_subparser(subparsers, lambda _root: [])
+
+    assert parser.parse_args(['discover']).root is None
+    assert parser.parse_args(['discover', '--root', '.']).root == '.'
+
+
+def test_discover_explicit_root_wins_over_resolved_project_dir(monkeypatch):
+    """An explicitly-supplied ``--root`` is used verbatim, routing flag or not."""
+    captured = _run_discover(
+        monkeypatch,
+        ['--root', _EXPLICIT_ROOT, '--project-dir', CANONICAL_PROJECT_DIR],
+    )
+
+    assert captured == [_EXPLICIT_ROOT]
+
+
+def test_discover_without_root_falls_back_to_resolved_project_dir(monkeypatch):
+    """Absent ``--root``, the root resolved from ``--project-dir`` applies."""
+    captured = _run_discover(monkeypatch, ['--project-dir', CANONICAL_PROJECT_DIR])
+
+    assert len(captured) == 1
+    assert captured[0].endswith(CANONICAL_PROJECT_DIR.lstrip('/'))
+
+
+def test_discover_without_root_follows_plan_id_to_the_worktree(monkeypatch):
+    """``discover --plan-id X`` enumerates X's worktree, not the caller's cwd.
+
+    This is the behaviour the deliverable exists to produce: before the pair was
+    declared, a plan-scoped discover silently enumerated whatever directory the
+    process happened to start in, and the resulting module list was attributed to
+    the plan anyway.
+    """
+    with patch_query_worktree_path(use_worktree=True, worktree_path=CANONICAL_WORKTREE):
+        captured = _run_discover(monkeypatch, ['--plan-id', CANONICAL_PLAN_ID])
+
+    assert len(captured) == 1
+    assert captured[0].endswith(CANONICAL_WORKTREE.lstrip('/'))
+
+
+def test_discover_explicit_dot_root_is_distinguishable_from_unsupplied(monkeypatch):
+    """An explicit ``--root .`` and an unsupplied ``--root`` take different paths.
+
+    The pair of runs is the whole point of the sentinel: ``--root .`` stays the
+    caller-relative ``'.'``, while omitting it resolves through the routing pair
+    to the checkout root. A ``'.'`` argparse default would collapse both runs to
+    the same value and make the distinction unobservable.
+    """
+    with patch_main_checkout_root(MAIN_CHECKOUT_ROOT):
+        explicit = _run_discover(monkeypatch, ['--root', '.'])
+        unsupplied = _run_discover(monkeypatch, [])
+
+    assert explicit == ['.']
+    assert unsupplied == [MAIN_CHECKOUT_ROOT]

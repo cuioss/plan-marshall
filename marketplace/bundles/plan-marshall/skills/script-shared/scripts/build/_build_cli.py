@@ -22,10 +22,20 @@ from file_ops import safe_main  # noqa: F401  # canonical entry-point wrapper
 def add_project_dir_arg(parser) -> None:
     """Attach the standard --project-dir / --plan-id argument pair to a subparser.
 
-    All build subcommands accept ``--project-dir`` and ``--plan-id`` so
-    invocations from an isolated worktree (or any non-cwd directory)
+    Every build-class subcommand accepts ``--project-dir`` and ``--plan-id``
+    so invocations from an isolated worktree (or any non-cwd directory)
     can pin subprocess cwd without relying on the caller's working
-    directory. The two flags implement the two-state contract documented
+    directory. This helper is the SINGLE declaration site for the pair:
+    the shared registrations below call it, and the two wrapper-local
+    registrations that build their subparsers outside this module
+    (``maven.py::_register_rewrite_log`` and
+    ``gradle.py::_register_find_project``) import it rather than
+    re-declaring the flags. The universality of that claim is asserted
+    against the argparse-derived build-class roster rather than restated
+    as prose, so a subcommand registered without the pair fails a test
+    instead of silently falsifying this sentence.
+
+    The two flags implement the two-state contract documented
     in ``script_shared/scripts/resolve_project_dir.py``:
 
     * ``--plan-id X`` and ``--project-dir Y`` together — error
@@ -57,6 +67,50 @@ def add_project_dir_arg(parser) -> None:
     from resolve_project_dir import add_plan_id_arg
 
     add_plan_id_arg(parser)
+
+
+def add_root_arg(parser, *, help_text: str = 'Project root directory') -> None:
+    """Attach the ``--root`` flag with a ``None`` sentinel default.
+
+    ``default=None`` is a load-bearing SENTINEL, not a missing default — the
+    same pattern ``--timeout`` uses in ``add_run_subparser`` below. It is the
+    only way :func:`resolve_root_arg` can tell an explicit ``--root .`` from an
+    unsupplied flag, which is what lets a subcommand declaring BOTH ``--root``
+    and the ``--project-dir`` / ``--plan-id`` routing pair give the explicit
+    flag precedence rather than guessing.
+
+    Args:
+        parser: The subparser to extend.
+        help_text: Lead sentence of the flag's help string.
+    """
+    parser.add_argument(
+        '--root',
+        default=None,
+        help=f'{help_text}. When omitted, the root resolved from --plan-id / --project-dir is used.',
+    )
+
+
+def resolve_root_arg(args) -> str:
+    """Return the effective project root for a subcommand declaring ``--root``.
+
+    Precedence: an explicitly-supplied ``--root`` wins verbatim; otherwise the
+    root ``build_main`` already resolved into ``args.project_dir`` from the
+    ``--plan-id`` / ``--project-dir`` pair applies. That fallback is what makes
+    ``discover --plan-id X`` enumerate modules in X's worktree instead of
+    silently enumerating the caller's cwd.
+
+    Args:
+        args: The parsed namespace, carrying ``root`` and (after
+            :func:`build_main` resolution) ``project_dir``.
+
+    Returns:
+        The project root path to hand to the subcommand's handler.
+    """
+    root: str | None = getattr(args, 'root', None)
+    if root is not None:
+        return root
+    project_dir: str | None = getattr(args, 'project_dir', None)
+    return project_dir or '.'
 
 
 def add_run_subparser(
@@ -261,7 +315,12 @@ def add_discover_subparser(subparsers, discover_fn, *, help_text: str = 'Discove
     """Add standard 'discover' subparser with common arguments.
 
     All build skills share the same discover subparser pattern:
-    --root, --format.
+    --root, --format, plus the canonical --project-dir / --plan-id routing
+    pair. ``--root`` and the routing pair are reconciled by
+    :func:`resolve_root_arg` before the handler runs: an explicit ``--root``
+    wins, and otherwise the resolved routing root applies, so
+    ``discover --plan-id X`` enumerates X's worktree rather than the caller's
+    cwd.
 
     Args:
         subparsers: argparse subparsers object.
@@ -273,15 +332,20 @@ def add_discover_subparser(subparsers, discover_fn, *, help_text: str = 'Discove
         The created discover subparser.
     """
     discover_parser = subparsers.add_parser('discover', help=help_text, allow_abbrev=False)
-    discover_parser.add_argument('--root', default='.', help='Project root directory')
+    add_root_arg(discover_parser)
     discover_parser.add_argument(
         '--format',
         choices=['toon', 'json'],
         default='toon',
         help='Output format (default: toon)',
     )
+    add_project_dir_arg(discover_parser)
 
     def _cmd_discover(args):
+        # ``build_main`` has already rewritten ``args.project_dir`` to the
+        # resolved routing root; collapse the two sources to the single value
+        # ``cmd_discover_common`` reads.
+        args.root = resolve_root_arg(args)
         return cmd_discover_common(args, discover_fn)
 
     discover_parser.set_defaults(func=_cmd_discover)
@@ -329,6 +393,12 @@ def add_run_config_key_subparser(subparsers, config, *, help_text: str = 'Comput
         default='toon',
         help='Output format (default: toon)',
     )
+    # ``run-config-key`` is a pure key computation and reads no path, so the
+    # resolved ``--project-dir`` is inert here. The pair is declared anyway so
+    # the routing/ledger contract is uniform across the whole build-class
+    # surface rather than two-tier — a reader never has to look up whether a
+    # given build subcommand happens to accept --plan-id.
+    add_project_dir_arg(key_parser)
 
     def _cmd_run_config_key(args) -> int:
         key_suffix = config.command_key_fn(args.command_args)
