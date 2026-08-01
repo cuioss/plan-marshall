@@ -286,6 +286,7 @@ query($owner: String!, $repo: String!, $pr: Int!) {
               body
               author { login }
               createdAt
+              updatedAt
             }
           }
         }
@@ -297,6 +298,7 @@ query($owner: String!, $repo: String!, $pr: Int!) {
           body
           author { login }
           submittedAt
+          updatedAt
         }
       }
       comments(first: 100) {
@@ -320,13 +322,13 @@ def fetch_pr_comments_data(pr_number: int, unresolved_only: bool = False) -> dic
     Returns dict with 'status' key ('success' or 'error').
     Importable by other scripts for direct data access without subprocess.
 
-    Every comment record carries ``updated_at`` beside ``created_at`` — the
-    edit timestamp, or an empty string when the provider omits it (review
-    bodies and inline thread comments do not expose one). It is what makes a
-    persistent comment that is EDITED in place — rather than reposted — visible
-    as fresh activity to a consumer comparing against a trigger time; a
-    ``created_at``-only comparison would silently report no new activity from
-    the second edit onward.
+    Every record kind (``inline`` / ``review_body`` / ``issue_comment``) carries
+    ``updated_at`` beside ``created_at`` — the edit timestamp the provider
+    reported, or an empty string when the provider genuinely returned none. It is
+    what makes a persistent comment that is EDITED in place — rather than
+    reposted — visible as fresh activity to a consumer comparing against a
+    trigger time; a ``created_at``-only comparison would silently report no new
+    activity from the second edit onward.
     """
     # Check auth
     is_auth, err = check_auth()

@@ -286,7 +286,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-
 
 | Script Output | Action |
 |--------------|--------|
-| `status: success`, `timed_out: false` | New comment(s) detected — proceed to the completion-aware poll |
+| `status: success`, `timed_out: false` | Review activity detected — either new comment(s) (`new_count > 0`) or an in-place re-review edit by a `participation_requires_update` bot (`movement_matched_bots[]` non-empty, `new_count` may be 0) — proceed to the completion-aware poll |
 | `status: success`, `timed_out: true` | No new comment within timeout — proceed to the completion-aware poll anyway (the producer will surface whatever is on the PR) |
 | `status: error` | Treat as warning, log, proceed to the completion-aware poll best-effort |
 

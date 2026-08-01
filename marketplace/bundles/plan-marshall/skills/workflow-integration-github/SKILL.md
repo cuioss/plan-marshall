@@ -320,8 +320,46 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github
   --pr-number N [--timeout SECS] [--interval SECS]
 ```
 
+The poll ends as soon as EITHER arm of a two-arm completion predicate fires:
+
+- **count-growth arm** — the unresolved-comment count grows past the baseline. This is the only arm
+  consulted for a bot whose registry record declares `participation_requires_update: false`, because
+  such a bot appends a NEW comment per review and the count growth IS its movement signal.
+- **movement arm** — a bot declaring `participation_requires_update: true` EDITED its persistent
+  comment after the wait started: a comment authored by that bot (resolved through the registry
+  login map), not a refusal notice, whose later of `updated_at` / `created_at` strictly post-dates
+  the wait-start time. Such a bot re-reviews in place, so the count never grows and the count arm
+  alone could only ever run to the full timeout.
+
+Both arms are registry-derived — no bot is named in the predicate path. The movement arm fails closed:
+a non-`dict` element in the fetched comment list is filtered, and an unparseable or absent timestamp is
+a NON-match, never a match-anything wildcard.
+
 Alongside the poll fields (`timed_out`, `duration_sec`, `polls`, `baseline_count`, `final_count`,
-`new_count`) the return carries **`rate_limited_bots[]`** — one record per REGISTERED bot whose newest
+`new_count`) the return carries **`movement_matched_bots[]`**, **`detector_answerable`**,
+**`unanswerable_reason`**, and **`rate_limited_bots[]`**.
+
+**`movement_matched_bots[]`** names one record per bot the movement arm matched, so the caller learns
+WHICH bot's edit ended the wait rather than inferring it. Empty when the count arm fired alone, or on a
+timeout:
+
+```toon
+movement_matched_bots[N]{bot_kind}:
+```
+
+A match proves a re-review **ARRIVED** — it says nothing about whether the diff was reviewed well, and
+must never be read or rendered as evidence of review quality.
+
+**`detector_answerable`** / **`unanswerable_reason`** distinguish a timeout whose observable could
+never have moved from one where the bots were simply silent — without them both return an identical
+bare `timed_out: true`. The signal is computed from the REGISTRY ALONE and is independent of the
+observed comment set: it is `false` in exactly two states, which `unanswerable_reason` names — no bot
+kinds are registered at all, or every registered bot declares an empty `participation_evidence` (the
+fail-closed never-provable state). `unanswerable_reason` is `""` when answerable. An await that merely
+starts with zero comments, or whose bots stay silent, is `detector_answerable: true` — a genuine
+timeout, NOT an unanswerable one.
+
+**`rate_limited_bots[]`** names one record per REGISTERED bot whose newest
 comment on the PR is a rate-limit / service notice posted in place of a review:
 
 ```toon
