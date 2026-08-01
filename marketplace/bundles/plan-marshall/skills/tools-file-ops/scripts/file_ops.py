@@ -598,6 +598,36 @@ def get_plan_dir(plan_id: str) -> Path:
     return resolve_plan_context(plan_id, ensure=False).plan_dir
 
 
+def get_build_results_dir(plan_id: str) -> Path:
+    """Get the build-results directory of the plan that caused a build.
+
+    Build output belongs to the plan that ran it: ``{plan_dir}/build-results``,
+    resolved through the same :func:`get_plan_dir` computation every other
+    plan-scoped artifact uses, so a plan's build results move with its plan
+    directory into and out of the pinned worktree (ADR-002).
+
+    The ``NO_PLAN`` sentinel is the one exception: it resolves through
+    :func:`marketplace_paths.resolve_main_anchored_path`, so a plan-less
+    build's results land under the MAIN checkout's sentinel plan directory
+    instead of inside whichever worktree happened to be the current working
+    directory. A plan-less build is owned by no worktree, and cwd-relative
+    resolution would scatter its results across every worktree that ran one.
+
+    This is the single owner of the build-results path — no other module
+    derives it.
+
+    Args:
+        plan_id: Plan identifier, or the ``NO_PLAN`` sentinel.
+
+    Returns:
+        Path to ``{plan_dir}/build-results/``. The directory is NOT created
+        here; writers create it as they place output.
+    """
+    if plan_id == NO_PLAN_SENTINEL:
+        return resolve_main_anchored_path(f'plans/{NO_PLAN_SENTINEL}') / 'build-results'
+    return get_plan_dir(plan_id) / 'build-results'
+
+
 class WorktreeResolutionError(RuntimeError):
     """Raised when the worktree face of a plan context cannot be resolved.
 

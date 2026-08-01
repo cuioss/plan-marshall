@@ -30,7 +30,11 @@ def mock_npm_project():
     """
     with tempfile.TemporaryDirectory() as td:
         temp_dir = Path(td)
-        (temp_dir / '.plan' / 'temp' / 'build-output' / 'default').mkdir(parents=True)
+        # No log directory is pre-created: the production resolver owns the
+        # build-results path and creates its own directories as it places
+        # output. Pre-creating one here would only mask a resolver that failed
+        # to create the directory it resolved.
+        (temp_dir / '.plan').mkdir(parents=True)
         (temp_dir / 'package.json').write_text('{"name": "test", "version": "1.0.0"}')
         previous = os.environ.get('PLAN_BASE_DIR')
         os.environ['PLAN_BASE_DIR'] = str(temp_dir / '.plan')

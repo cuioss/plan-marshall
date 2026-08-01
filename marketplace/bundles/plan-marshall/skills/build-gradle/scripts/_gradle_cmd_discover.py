@@ -38,6 +38,7 @@ from _build_discover import (
     discover_sources,
 )
 from _build_shared import build_canonical_commands
+from marketplace_paths import NO_PLAN_SENTINEL
 from plan_logging import log_entry
 
 # =============================================================================
@@ -198,6 +199,9 @@ def _get_gradle_metadata(module_path: str, project_root: Path) -> dict | None:
         command_key='gradle:discover',
         default_timeout=120,
         project_dir=str(project_root),
+        # The published discover_handler(project_root) contract carries no plan
+        # id, so discovery output is attributed to the sentinel, not to a plan.
+        plan_id=NO_PLAN_SENTINEL,
     )
 
     if result['status'] != 'success':
@@ -226,6 +230,9 @@ def _get_quality_tasks(project_root: Path) -> list:
         command_key='gradle:discover-tasks',
         default_timeout=120,
         project_dir=str(project_root),
+        # The published discover_handler(project_root) contract carries no plan
+        # id, so discovery output is attributed to the sentinel, not to a plan.
+        plan_id=NO_PLAN_SENTINEL,
     )
 
     if result['status'] != 'success':

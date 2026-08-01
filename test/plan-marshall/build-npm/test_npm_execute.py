@@ -23,6 +23,10 @@ NPX_COMMANDS = _npm_execute_mod.NPX_COMMANDS
 detect_command_type = _npm_execute_mod.detect_command_type
 execute_direct = _npm_execute_mod.execute_direct
 
+#: The plan these builds are attributed to. ``plan_id`` is keyword-only and
+#: mandatory on the factory-generated ``execute_direct``.
+_PLAN_ID = 'npm-execute-test-plan'
+
 
 def test_config_tool_name():
     """Config has correct tool name."""
@@ -64,7 +68,7 @@ def test_config_declares_the_outer_floor_as_a_literal_300(tmp_path, monkeypatch)
 
     monkeypatch.setattr(_factory, 'execute_direct_base', _recorder)
 
-    execute_direct(args='run test', command_key='npm:run_test', project_dir=str(tmp_path))
+    execute_direct(args='run test', command_key='npm:run_test', project_dir=str(tmp_path), plan_id=_PLAN_ID)
 
     assert calls[0]['min_timeout'] == 300
 

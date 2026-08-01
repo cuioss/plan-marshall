@@ -65,7 +65,7 @@ def test_format_toon_success_basic():
         'status': 'success',
         'exit_code': 0,
         'duration_seconds': 45,
-        'log_file': '.plan/temp/build-output/default/maven.log',
+        'log_file': '.plan/local/plans/my-plan/build-results/default/maven.log',
         'command': './mvnw clean verify',
     }
     output = format_toon(result)
@@ -73,7 +73,7 @@ def test_format_toon_success_basic():
     assert 'status: success' in output
     assert 'exit_code: 0' in output
     assert 'duration_seconds: 45' in output
-    assert 'log_file: .plan/temp/build-output/default/maven.log' in output
+    assert 'log_file: .plan/local/plans/my-plan/build-results/default/maven.log' in output
     assert 'command: ./mvnw clean verify' in output
 
 
@@ -82,7 +82,7 @@ def test_format_toon_success_field_order():
     result = {
         'command': './mvnw clean verify',
         'status': 'success',
-        'log_file': '.plan/temp/build-output/default/maven.log',
+        'log_file': '.plan/local/plans/my-plan/build-results/default/maven.log',
         'exit_code': 0,
         'duration_seconds': 45,
     }

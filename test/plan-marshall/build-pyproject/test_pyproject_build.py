@@ -36,6 +36,10 @@ BUILD_SCRIPT = (
 # Tier 2 direct imports via importlib for uniform import style
 import importlib.util  # noqa: E402
 
+#: The plan these foundation-API builds are attributed to. ``plan_id`` is
+#: keyword-only and mandatory on ``execute_direct``.
+_PLAN_ID = 'pyproject-build-test-plan'
+
 
 def _load_pyproject_build():
     """Load pyproject_build module with minimal mocking.
@@ -185,9 +189,9 @@ def test_execute_direct_absent_wrapper_resolves_system_fallback():
     at the real subprocess seam (that sibling test mocks the factory base; this
     one drives execute_direct through subprocess.run)."""
     with BuildContext() as ctx:
-        # No ./pw wrapper in the project dir; pwx absent from PATH.
-        plan_temp = ctx.temp_dir / '.plan' / 'temp' / 'build-output' / 'default'
-        plan_temp.mkdir(parents=True)
+        # No ./pw wrapper in the project dir; pwx absent from PATH. No log
+        # directory is pre-created: the production resolver creates its own,
+        # and create_log_file is patched out below in any case.
 
         # Mock subprocess.run to return success
         mock_result = MagicMock()
@@ -199,7 +203,11 @@ def test_execute_direct_absent_wrapper_resolves_system_fallback():
             patch('_build_execute.create_log_file', return_value=str(ctx.temp_dir / 'test.log')),
         ):
             result = execute_direct(
-                args='verify', command_key='python:verify', default_timeout=300, project_dir=str(ctx.temp_dir)
+                args='verify',
+                command_key='python:verify',
+                default_timeout=300,
+                project_dir=str(ctx.temp_dir),
+                plan_id=_PLAN_ID,
             )
 
             assert result['status'] == 'success'
@@ -215,9 +223,8 @@ def test_execute_direct_returns_success_on_zero_exit():
         pw.write_text('#!/bin/bash\necho "success"')
         pw.chmod(0o755)
 
-        # Create .plan/temp directory for log file
-        plan_temp = ctx.temp_dir / '.plan' / 'temp' / 'build-output' / 'default'
-        plan_temp.mkdir(parents=True)
+        # No log directory is pre-created: the production resolver creates its
+        # own, and create_log_file is patched out below in any case.
 
         # Mock subprocess.run to return success
         mock_result = MagicMock()
@@ -228,7 +235,11 @@ def test_execute_direct_returns_success_on_zero_exit():
             patch('_build_execute.create_log_file', return_value=str(ctx.temp_dir / 'test.log')),
         ):
             result = execute_direct(
-                args='verify', command_key='python:verify', default_timeout=300, project_dir=str(ctx.temp_dir)
+                args='verify',
+                command_key='python:verify',
+                default_timeout=300,
+                project_dir=str(ctx.temp_dir),
+                plan_id=_PLAN_ID,
             )
 
             assert result['status'] == 'success'
@@ -253,7 +264,11 @@ def test_execute_direct_returns_error_on_nonzero_exit():
             patch('_build_execute.create_log_file', return_value=str(ctx.temp_dir / 'test.log')),
         ):
             result = execute_direct(
-                args='verify', command_key='python:verify', default_timeout=300, project_dir=str(ctx.temp_dir)
+                args='verify',
+                command_key='python:verify',
+                default_timeout=300,
+                project_dir=str(ctx.temp_dir),
+                plan_id=_PLAN_ID,
             )
 
             assert result['status'] == 'error'
@@ -276,7 +291,11 @@ def test_execute_direct_returns_timeout_on_timeout():
             patch('_build_execute.create_log_file', return_value=str(ctx.temp_dir / 'test.log')),
         ):
             result = execute_direct(
-                args='verify', command_key='python:verify', default_timeout=60, project_dir=str(ctx.temp_dir)
+                args='verify',
+                command_key='python:verify',
+                default_timeout=60,
+                project_dir=str(ctx.temp_dir),
+                plan_id=_PLAN_ID,
             )
 
             assert result['status'] == 'timeout'

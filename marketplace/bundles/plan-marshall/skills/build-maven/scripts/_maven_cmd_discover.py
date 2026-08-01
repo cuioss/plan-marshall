@@ -45,6 +45,7 @@ from _build_discover import (
 )
 from _build_shared import build_canonical_commands
 from _extension_constants import PROFILE_PATTERNS
+from marketplace_paths import NO_PLAN_SENTINEL
 
 # =============================================================================
 # Profile Pipeline Utilities (Maven-specific — only Maven uses build profiles)
@@ -571,6 +572,9 @@ def _get_maven_metadata(module_path: Path, project_root: Path) -> dict | None:
         command_key='maven:discover',
         default_timeout=120,  # Cold Maven startup can take time
         project_dir=str(project_root),
+        # The published discover_handler(project_root) contract carries no plan
+        # id, so discovery output is attributed to the sentinel, not to a plan.
+        plan_id=NO_PLAN_SENTINEL,
     )
 
     if result['status'] != 'success':

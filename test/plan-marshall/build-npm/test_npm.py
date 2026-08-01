@@ -21,6 +21,11 @@ _npm_execute_mod = load_script_module('plan-marshall', 'build-npm', '_npm_execut
 detect_command_type = _npm_execute_mod.detect_command_type
 execute_direct = _npm_execute_mod.execute_direct
 
+#: The plan these API-level builds are attributed to. ``BuildContext`` points
+#: PLAN_BASE_DIR at its own fixture tree, so the log lands under that tree's
+#: plan directory rather than the real plan store.
+_PLAN_ID = 'npm-api-test-plan'
+
 
 def test_api_detect_command_type():
     """Test detect_command_type API function."""
@@ -45,7 +50,7 @@ def test_api_execute_direct_success():
     """Test execute_direct API with successful command."""
     with BuildContext() as ctx:
         result = execute_direct(
-            args='--version', command_key='test:version', default_timeout=10, project_dir=str(ctx.temp_dir)
+            args='--version', command_key='test:version', default_timeout=10, project_dir=str(ctx.temp_dir), plan_id=_PLAN_ID
         )
 
         # npm --version should succeed (npm is available in most environments)
@@ -58,13 +63,15 @@ def test_api_execute_direct_returns_log_file():
     """Test execute_direct API returns log_file (R1 compliance)."""
     with BuildContext() as ctx:
         result = execute_direct(
-            args='--version', command_key='test:log_file', default_timeout=10, project_dir=str(ctx.temp_dir)
+            args='--version', command_key='test:log_file', default_timeout=10, project_dir=str(ctx.temp_dir), plan_id=_PLAN_ID
         )
 
         # R1: All build output must go to a log file
         assert 'log_file' in result
         assert result['log_file'], 'log_file should not be empty'
-        assert '.plan/temp/build-output' in result['log_file']
+        # The log lands in the build-results directory of the plan that caused
+        # the build, not in a shared temp tree.
+        assert f'/plans/{_PLAN_ID}/build-results/' in result['log_file']
         assert 'npm-' in result['log_file']  # Build system in filename
 
 
@@ -72,7 +79,7 @@ def test_api_execute_direct_npx_command():
     """Test execute_direct API with npx command."""
     with BuildContext() as ctx:
         result = execute_direct(
-            args='--version', command_key='test:npx_version', default_timeout=10, project_dir=str(ctx.temp_dir)
+            args='--version', command_key='test:npx_version', default_timeout=10, project_dir=str(ctx.temp_dir), plan_id=_PLAN_ID
         )
 
         # --version is detected as npm not npx (starts with -)

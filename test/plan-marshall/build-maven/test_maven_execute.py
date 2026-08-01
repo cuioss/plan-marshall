@@ -21,6 +21,10 @@ import _build_execute_factory as _factory  # noqa: E402
 _CONFIG = _maven_execute_mod._CONFIG
 execute_direct = _maven_execute_mod.execute_direct
 
+#: The plan these builds are attributed to. ``plan_id`` is keyword-only and
+#: mandatory on the factory-generated ``execute_direct``.
+_PLAN_ID = 'maven-execute-test-plan'
+
 # =============================================================================
 # Config Tests
 # =============================================================================
@@ -67,7 +71,7 @@ def test_config_declares_the_outer_floor_as_a_literal_300(tmp_path, monkeypatch)
 
     monkeypatch.setattr(_factory, 'execute_direct_base', _recorder)
 
-    execute_direct(args='verify', command_key='maven:verify', project_dir=str(tmp_path))
+    execute_direct(args='verify', command_key='maven:verify', project_dir=str(tmp_path), plan_id=_PLAN_ID)
 
     assert calls[0]['min_timeout'] == 300
 
@@ -177,6 +181,7 @@ def test_execute_direct_absent_wrapper_resolves_system_binary(tmp_path, monkeypa
         args='verify',
         command_key='maven:verify',
         project_dir=str(tmp_path),
+        plan_id=_PLAN_ID,
     )
     assert result['status'] == 'success'
     assert calls[0]['wrapper'] == 'mvn'
@@ -195,7 +200,7 @@ def test_execute_direct_resolves_present_wrapper(tmp_path, monkeypatch):
 
     monkeypatch.setattr(_factory, 'execute_direct_base', _recorder)
 
-    result = execute_direct(args='verify', command_key='maven:verify', project_dir=str(tmp_path))
+    result = execute_direct(args='verify', command_key='maven:verify', project_dir=str(tmp_path), plan_id=_PLAN_ID)
 
     assert result['status'] == 'success'
     assert calls[0]['wrapper'] == './mvnw'

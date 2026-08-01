@@ -17,6 +17,7 @@ Usage:
         project_dir=".",
         tool_name="maven",
         build_command_fn=my_build_command_fn,
+        plan_id="my-plan",
         scope_fn=my_scope_fn,
         capture_strategy=CaptureStrategy.TOOL_LOG_FLAG,
     )
@@ -141,6 +142,7 @@ def execute_direct_base(
     tool_name: str,
     build_command_fn: BuildCommandFn,
     wrapper: str,
+    plan_id: str,
     capture_strategy: CaptureStrategy = CaptureStrategy.STDOUT_REDIRECT,
     scope_fn: ScopeFn | None = None,
     env_vars: dict[str, str] | None = None,
@@ -175,6 +177,10 @@ def execute_direct_base(
             Constructs the tool-specific command line. log_file is passed so
             tools like Maven can embed it via -l flag.
         wrapper: Resolved wrapper/executable path.
+        plan_id: Plan identifier the build is attributed to, or the ``NO_PLAN``
+            sentinel for a genuinely plan-less build. Forwarded to
+            :func:`create_log_file`, which places the log under that plan's
+            ``build-results/`` directory.
         capture_strategy: How output is captured to the log file.
         scope_fn: Callable(args) -> scope string for log file scoping.
             Defaults to returning 'default'.
@@ -201,7 +207,7 @@ def execute_direct_base(
 
     # Step 1: Extract scope and create log file
     scope = (scope_fn or _default_scope_fn)(args)
-    log_file = create_log_file(tool_name.lower(), scope, project_dir)
+    log_file = create_log_file(tool_name.lower(), scope, plan_id=plan_id)
     if not log_file:
         return {
             'status': 'error',

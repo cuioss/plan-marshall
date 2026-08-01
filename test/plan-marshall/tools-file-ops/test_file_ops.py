@@ -29,6 +29,7 @@ from file_ops import (
     ensure_directory,
     generate_markdown_metadata,
     get_base_dir,
+    get_build_results_dir,
     get_executor_path,
     get_metadata_content_split,
     get_plan_dir,
@@ -44,6 +45,7 @@ from file_ops import (
     set_base_dir,
     update_markdown_metadata,
 )
+from marketplace_paths import NO_PLAN_SENTINEL
 from toon_parser import parse_toon
 
 
@@ -994,3 +996,160 @@ def test_read_json_unreadable_path_degrades_to_supplied_default(tmp_path):
     directory.mkdir()
 
     assert read_json(directory, default=[]) == []
+
+
+# =============================================================================
+# get_build_results_dir tests
+# =============================================================================
+#
+# The resolver is the SINGLE owner of the build-results path. Two branches with
+# deliberately different anchoring rules meet here, and the difference is the
+# whole point of the function:
+#
+#   * a real plan id  -> cwd-relative, via get_plan_dir, so a plan's results
+#     move with its plan directory into and out of the pinned worktree;
+#   * the NO_PLAN sentinel -> MAIN-checkout-anchored, because a plan-less build
+#     is owned by no worktree and cwd-relative resolution would scatter its
+#     results across every worktree that happened to run one.
+#
+# The sentinel branch's anchoring cannot be observed under PLAN_BASE_DIR: that
+# override collapses both branches onto the same base by design. The anchoring
+# test below therefore drops the override and drives the production branch —
+# against a REAL git anchor, because the production branch resolves the main
+# checkout with ``git rev-parse --git-common-dir``. See that test's docstring
+# for why a synthetic directory (or a monkeypatched ``_main_checkout_root``)
+# cannot stand in for one here.
+
+
+def test_get_build_results_dir_for_real_plan_is_under_that_plans_dir(tmp_path, monkeypatch):
+    """A real plan id resolves to ``{plan_dir}/build-results``."""
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+
+    result = get_build_results_dir('some-plan')
+
+    assert result == get_plan_dir('some-plan') / 'build-results'
+    assert result == tmp_path / 'plans' / 'some-plan' / 'build-results'
+
+
+def test_get_build_results_dir_separates_two_plans(tmp_path, monkeypatch):
+    """Two plans never share a build-results directory."""
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+
+    assert get_build_results_dir('plan-alpha') != get_build_results_dir('plan-beta')
+
+
+def test_get_build_results_dir_for_sentinel_uses_the_sentinel_plan_dir(tmp_path, monkeypatch):
+    """The sentinel resolves under a ``NO_PLAN`` plan directory, not a bare root."""
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+
+    result = get_build_results_dir(NO_PLAN_SENTINEL)
+
+    assert result == tmp_path / 'plans' / NO_PLAN_SENTINEL / 'build-results'
+
+
+def test_get_build_results_dir_does_not_create_the_directory(tmp_path, monkeypatch):
+    """The resolver is a pure path computation — writers create the directory."""
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+
+    result = get_build_results_dir('some-plan')
+
+    assert not result.exists()
+
+
+def _git(*args: str, cwd: Path) -> None:
+    """Run one git command in ``cwd``, failing loudly with git's own stderr."""
+    completed = subprocess.run(
+        ['git', *args],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+    if completed.returncode != 0:
+        raise AssertionError(
+            f'git {" ".join(args)} failed in {cwd} (exit {completed.returncode}): '
+            f'{completed.stderr.strip()}'
+        )
+
+
+@pytest.fixture
+def real_main_checkout_and_worktree(tmp_path):
+    """Build a REAL git main checkout and a REAL linked worktree beside it.
+
+    ``resolve_main_anchored_path`` resolves the main checkout by shelling out to
+    ``git rev-parse --git-common-dir``, so main-anchoring is a property of GIT
+    STATE, not of any directory layout the test can fabricate. Two ordinary
+    directories named ``main-checkout`` and ``some-worktree`` carry no git state
+    at all: git walks straight past them to the first real repository above, and
+    the resolver — correctly — anchors there instead. Only a genuine repository
+    plus a genuine linked worktree makes ``--git-common-dir`` report the intended
+    main root while cwd sits somewhere else, which is exactly the production
+    shape this test exists to pin.
+
+    Yields:
+        ``(main_root, worktree)`` — both resolved absolute paths, each already
+        carrying the ``.plan/local`` marker the cwd walk-up looks for.
+    """
+    main_root = (tmp_path / 'main-checkout').resolve()
+    main_root.mkdir()
+    _git('init', '--quiet', cwd=main_root)
+    _git(
+        '-c', 'user.email=tests@plan-marshall.invalid',
+        '-c', 'user.name=plan-marshall tests',
+        'commit', '--allow-empty', '--quiet', '-m', 'root',
+        cwd=main_root,
+    )
+
+    worktrees_parent = tmp_path / 'worktrees'
+    worktrees_parent.mkdir()
+    worktree = (worktrees_parent / 'some-worktree').resolve()
+    _git('worktree', 'add', '--quiet', '-b', 'feature/some-worktree', str(worktree), cwd=main_root)
+
+    (main_root / '.plan' / 'local').mkdir(parents=True)
+    (worktree / '.plan' / 'local').mkdir(parents=True)
+    return main_root, worktree
+
+
+def test_sentinel_is_main_anchored_not_cwd_anchored(real_main_checkout_and_worktree, monkeypatch):
+    """The sentinel path follows the MAIN checkout, not the current directory.
+
+    This is the assertion the PLAN_BASE_DIR-based tests above structurally
+    cannot make: under that override both branches resolve to the same base, so
+    a sentinel branch that had been (wrongly) written as cwd-relative would pass
+    every one of them. Dropping the override puts the resolver on its production
+    path, where cwd and the main checkout are two different directories and the
+    difference becomes observable.
+
+    The anchor is a REAL git checkout with a REAL linked worktree (see the
+    fixture) rather than a monkeypatched ``_main_checkout_root``. Patching that
+    private symbol asserts main-anchoring against a stub whose reachability
+    depends on which ``marketplace_paths`` module object happens to be live:
+    ``file_ops`` binds ``resolve_main_anchored_path`` at import time, and this
+    suite re-registers modules in ``sys.modules`` by stem, so the patched
+    attribute and the attribute the resolver actually reads can belong to two
+    different module dicts. The stub is then silently bypassed and the real git
+    resolver runs — an order-dependent failure that says nothing about the code
+    under test. Driving the unpatched resolver against real git state removes
+    the question entirely.
+
+    A real plan id is asserted alongside as the CONTROL: it must stay
+    cwd-relative. Without that counter-case, a resolver that made *everything*
+    main-anchored would satisfy the sentinel assertion while silently breaking
+    the ADR-002 rule that plan state moves with the pinned worktree.
+    """
+    main_root, worktree = real_main_checkout_and_worktree
+
+    monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
+    monkeypatch.setattr(file_ops, '_BASE_DIR_OVERRIDE', None)
+    monkeypatch.chdir(worktree)
+
+    # Act
+    sentinel_dir = get_build_results_dir(NO_PLAN_SENTINEL)
+    plan_dir = get_build_results_dir('some-plan')
+
+    # Assert: the sentinel followed main; the real plan followed cwd.
+    assert sentinel_dir == main_root / '.plan' / 'local' / 'plans' / NO_PLAN_SENTINEL / 'build-results'
+    assert plan_dir == worktree / '.plan' / 'local' / 'plans' / 'some-plan' / 'build-results'
+    assert worktree not in sentinel_dir.parents
+    assert main_root not in plan_dir.parents

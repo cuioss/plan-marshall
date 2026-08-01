@@ -584,6 +584,69 @@ class TestFactoryCmdRunPlanIdAbsentPassthrough:
         assert double.release_calls == []
 
 
+class TestPlanIdThreadsThroughBothFactoryLayers:
+    """``plan_id`` survives BOTH factory layers on its way to the log placement.
+
+    The attribution crosses two seams inside this factory — ``cmd_run`` hands it
+    to the in-process execute closure, and that closure hands it to
+    ``execute_direct_base``, which is the call that reaches ``create_log_file``.
+    Either seam can drop it independently, and a drop is silent: the build still
+    succeeds, the log just lands under the wrong owner. Both are asserted here on
+    the CONSTRUCTED call rather than on a resulting path, so a shared default can
+    never make a dropped forward look correct.
+    """
+
+    def test_cmd_run_threads_a_real_plan_id_to_execute_direct_base(self, monkeypatch):
+        double = _QueueDouble([{'status': 'success', 'admission': 'admitted', 'id': 'P:uuid-1'}])
+        cmd_run, exec_recorder = _install(monkeypatch, double)
+
+        cmd_run(argparse.Namespace(command_args='verify', plan_id='owning-plan', format='toon'))
+
+        assert exec_recorder.calls[0]['plan_id'] == 'owning-plan'
+
+    @pytest.mark.parametrize('plan_id', [None, '', NO_PLAN_SENTINEL])
+    def test_cmd_run_threads_a_plan_less_build_as_the_sentinel(self, monkeypatch, plan_id):
+        """A plan-less build reaches the placement as NO_PLAN, never as ''.
+
+        The empty string has no owning directory; the sentinel does. This is the
+        same never-null contract the routing and ledger values carry.
+        """
+        double = _QueueDouble([])
+        cmd_run, exec_recorder = _install(monkeypatch, double)
+
+        cmd_run(argparse.Namespace(command_args='verify', plan_id=plan_id, format='toon'))
+
+        assert exec_recorder.calls[0]['plan_id'] == NO_PLAN_SENTINEL
+
+    def test_execute_direct_closure_forwards_plan_id_verbatim(self, monkeypatch, tmp_path):
+        """The second seam in isolation: the closure forwards what it was given."""
+        recorder = _ExecRecorder()
+        monkeypatch.setattr(factory, 'execute_direct_base', recorder)
+        execute_direct, _ = factory.create_execute_handlers(
+            _make_config(), lambda *_a, **_k: ([], None, 'SUCCESS')
+        )
+
+        execute_direct(
+            args='verify',
+            command_key='python:verify',
+            project_dir=str(tmp_path),
+            plan_id='owning-plan',
+        )
+
+        assert recorder.calls[0]['plan_id'] == 'owning-plan'
+
+    def test_execute_direct_closure_requires_plan_id(self, monkeypatch, tmp_path):
+        """``plan_id`` is keyword-only and mandatory on the generated closure."""
+        recorder = _ExecRecorder()
+        monkeypatch.setattr(factory, 'execute_direct_base', recorder)
+        execute_direct, _ = factory.create_execute_handlers(
+            _make_config(), lambda *_a, **_k: ([], None, 'SUCCESS')
+        )
+
+        with pytest.raises(TypeError):
+            execute_direct(args='verify', command_key='python:verify', project_dir=str(tmp_path))
+
+
 class TestResolveWrapperAutoDetect:
     """The factory-level wrapper auto-detection (the require_wrapper gate is gone).
 
@@ -606,7 +669,12 @@ class TestResolveWrapperAutoDetect:
         config = _make_config(with_resolve_fn=False)
         execute_direct, _ = self._handlers(config)
 
-        execute_direct(args='verify', command_key='python:verify', project_dir=str(tmp_path))
+        execute_direct(
+            args='verify',
+            command_key='python:verify',
+            project_dir=str(tmp_path),
+            plan_id='wrapper-detect-plan',
+        )
 
         assert recorder.ran is True
         assert recorder.calls[0]['wrapper'] == './pw'
@@ -620,7 +688,12 @@ class TestResolveWrapperAutoDetect:
         config = _make_config(with_resolve_fn=False)
         execute_direct, _ = self._handlers(config)
 
-        result = execute_direct(args='verify', command_key='python:verify', project_dir=str(tmp_path))
+        result = execute_direct(
+            args='verify',
+            command_key='python:verify',
+            project_dir=str(tmp_path),
+            plan_id='wrapper-detect-plan',
+        )
 
         assert result['status'] == 'success'
         assert recorder.calls[0]['wrapper'] == 'pwx'
@@ -635,7 +708,12 @@ class TestResolveWrapperAutoDetect:
         config = _make_config(with_resolve_fn=False)
         execute_direct, _ = self._handlers(config)
 
-        result = execute_direct(args='verify', command_key='python:verify', project_dir=str(tmp_path))
+        result = execute_direct(
+            args='verify',
+            command_key='python:verify',
+            project_dir=str(tmp_path),
+            plan_id='wrapper-detect-plan',
+        )
 
         assert result['status'] == 'success'
         assert recorder.calls[0]['wrapper'] == 'pwx'
@@ -648,7 +726,12 @@ class TestResolveWrapperAutoDetect:
         config = _make_config(with_resolve_fn=True)
         execute_direct, _ = self._handlers(config)
 
-        result = execute_direct(args='verify', command_key='python:verify', project_dir=str(tmp_path))
+        result = execute_direct(
+            args='verify',
+            command_key='python:verify',
+            project_dir=str(tmp_path),
+            plan_id='wrapper-detect-plan',
+        )
 
         assert result['status'] == 'success'
         # wrapper_resolve_fn returns 'pw' unconditionally; no FileNotFoundError.

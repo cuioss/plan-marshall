@@ -550,9 +550,14 @@ def create_execute_handlers(
             forking a local one. The wrapper only applies to the in-process leg:
             a routed build runs inside the daemon child, which re-enters this
             factory and applies the wrapper there. A wrapper MUST accept and
-            forward the full inner signature — including ``explicit_timeout`` —
-            so a caller's explicit ``--timeout`` override survives the wrapped
-            leg instead of being dropped at the wrapper boundary.
+            forward the full inner signature — naming ``explicit_timeout`` and
+            ``plan_id`` explicitly, and forwarding BOTH on EVERY inner call it
+            makes (a retry leg included). Dropping ``explicit_timeout`` loses a
+            caller's ``--timeout`` override; dropping ``plan_id`` sends the
+            build's log to the wrong plan's ``build-results/``. A wrapper that
+            forwards on its first call but not on a retry is wrong exactly when
+            the build had already gone wrong, which is the hardest case to
+            observe.
 
     Returns:
         Tuple of (execute_direct, cmd_run) functions, where ``execute_direct``
@@ -581,6 +586,8 @@ def create_execute_handlers(
         env_vars: dict[str, str] | None = None,
         working_dir: str | None = None,
         explicit_timeout: int | None = None,
+        *,
+        plan_id: str,
     ) -> DirectCommandResult:
         wrapper = _resolve_wrapper(project_dir)
 
@@ -597,6 +604,7 @@ def create_execute_handlers(
             tool_name=config.tool_name,
             build_command_fn=config.build_command_fn,
             wrapper=wrapper,
+            plan_id=plan_id,
             capture_strategy=config.capture_strategy,
             scope_fn=config.scope_fn,
             env_vars=env_vars,
@@ -738,6 +746,11 @@ def create_execute_handlers(
                     env_vars=env_vars,
                     working_dir=working_dir,
                     explicit_timeout=explicit_timeout,
+                    # Build results carry the sentinel exactly as the routing
+                    # and ledger values do (see _route_to_daemon): a plan-less
+                    # build is attributed to NO_PLAN, never to the empty
+                    # string, so its log always has an owning directory.
+                    plan_id=plan_id or NO_PLAN_SENTINEL,
                 )
         except BuildQueueTimeout as exc:
             return _emit_queue_timeout(config.tool_name, command_args, getattr(args, 'format', 'toon'), exc)

@@ -51,6 +51,11 @@ cmd_run = _pyproject_execute_mod.cmd_run
 
 import _build_execute as build_execute  # noqa: E402
 import _build_execute_factory as _factory  # noqa: E402
+from marketplace_paths import NO_PLAN_SENTINEL  # noqa: E402
+
+#: Plan id the direct ``execute_direct`` drives in this module attribute the
+#: build to. ``plan_id`` is keyword-only and mandatory on the generated closure.
+_PLAN_ID = 'pyproject-execute-test-plan'
 
 
 def test_config_tool_name():
@@ -140,7 +145,12 @@ def test_execute_direct_absent_wrapper_resolves_system_binary(tmp_path, monkeypa
 
     monkeypatch.setattr(_factory, 'execute_direct_base', _recorder)
 
-    result = execute_direct(args='verify', command_key='python:verify', project_dir=str(tmp_path))
+    result = execute_direct(
+            args='verify',
+            command_key='python:verify',
+            project_dir=str(tmp_path),
+            plan_id=_PLAN_ID,
+        )
     assert result['status'] == 'success'
     assert calls[0]['wrapper'] == 'pwx'
 
@@ -158,7 +168,12 @@ def test_execute_direct_resolves_present_wrapper(tmp_path, monkeypatch):
 
     monkeypatch.setattr(_factory, 'execute_direct_base', _recorder)
 
-    result = execute_direct(args='verify', command_key='python:verify', project_dir=str(tmp_path))
+    result = execute_direct(
+            args='verify',
+            command_key='python:verify',
+            project_dir=str(tmp_path),
+            plan_id=_PLAN_ID,
+        )
     assert result['status'] == 'success'
     assert calls[0]['wrapper'] == './pw'
 
@@ -196,7 +211,12 @@ def test_self_heal_retries_on_uv_missing(tmp_path):
     success = {'status': 'success', 'exit_code': 0, 'log_file': log_file, 'command': './pw verify'}
     fake, calls = _patched_execute_direct([failure, success])
     with patch.object(_factory, 'execute_direct_base', side_effect=fake):
-        result = execute_direct(args='verify', command_key='python:verify', project_dir=str(tmp_path))
+        result = execute_direct(
+            args='verify',
+            command_key='python:verify',
+            project_dir=str(tmp_path),
+            plan_id=_PLAN_ID,
+        )
     assert result['status'] == 'success'
     assert len(calls) == 2
     assert (tmp_path / '.pyprojectx.broken').is_dir()
@@ -215,7 +235,12 @@ def test_self_heal_retries_on_directory_not_empty(tmp_path):
     success = {'status': 'success', 'exit_code': 0, 'log_file': log_file, 'command': './pw verify'}
     fake, calls = _patched_execute_direct([failure, success])
     with patch.object(_factory, 'execute_direct_base', side_effect=fake):
-        result = execute_direct(args='verify', command_key='python:verify', project_dir=str(tmp_path))
+        result = execute_direct(
+            args='verify',
+            command_key='python:verify',
+            project_dir=str(tmp_path),
+            plan_id=_PLAN_ID,
+        )
     assert result['status'] == 'success'
     assert len(calls) == 2
     assert (tmp_path / '.pyprojectx.broken').is_dir()
@@ -228,7 +253,12 @@ def test_self_heal_skipped_for_unrelated_failure(tmp_path):
     failure = {'status': 'error', 'exit_code': 1, 'log_file': log_file, 'command': './pw verify', 'error': ''}
     fake, calls = _patched_execute_direct([failure])
     with patch.object(_factory, 'execute_direct_base', side_effect=fake):
-        result = execute_direct(args='verify', command_key='python:verify', project_dir=str(tmp_path))
+        result = execute_direct(
+            args='verify',
+            command_key='python:verify',
+            project_dir=str(tmp_path),
+            plan_id=_PLAN_ID,
+        )
     assert result is failure
     assert len(calls) == 1
     assert not (tmp_path / '.pyprojectx.broken').exists()
@@ -243,7 +273,12 @@ def test_self_heal_skipped_when_broken_dir_already_exists(tmp_path):
     failure = {'status': 'error', 'exit_code': 127, 'log_file': log_file, 'command': './pw verify', 'error': ''}
     fake, calls = _patched_execute_direct([failure])
     with patch.object(_factory, 'execute_direct_base', side_effect=fake):
-        result = execute_direct(args='verify', command_key='python:verify', project_dir=str(tmp_path))
+        result = execute_direct(
+            args='verify',
+            command_key='python:verify',
+            project_dir=str(tmp_path),
+            plan_id=_PLAN_ID,
+        )
     assert result is failure
     assert len(calls) == 1
     assert (tmp_path / '.pyprojectx').is_dir()
@@ -255,10 +290,127 @@ def test_self_heal_passthrough_on_success(tmp_path):
     success = {'status': 'success', 'exit_code': 0, 'log_file': '', 'command': './pw verify'}
     fake, calls = _patched_execute_direct([success])
     with patch.object(_factory, 'execute_direct_base', side_effect=fake):
-        result = execute_direct(args='verify', command_key='python:verify', project_dir=str(tmp_path))
+        result = execute_direct(
+            args='verify',
+            command_key='python:verify',
+            project_dir=str(tmp_path),
+            plan_id=_PLAN_ID,
+        )
     assert result is success
     assert len(calls) == 1
     assert not (tmp_path / '.pyprojectx.broken').exists()
+
+
+class TestSelfHealWrapperForwardsPlanId:
+    """The self-heal wrapper forwards ``plan_id`` on BOTH of its inner calls.
+
+    pyproject is the only build system that interposes a wrapper between the
+    factory closure and ``execute_direct_base``, and that wrapper calls the
+    inner executor TWICE on the heal path — once for the original attempt and
+    once for the retry. A wrapper that names ``plan_id`` on the first call but
+    forgets it on the retry is wrong exactly when the build had already gone
+    wrong, which is the hardest case to observe: the retry is the run that
+    actually produces the log the developer goes looking for, so its result
+    would be the one deposited under the wrong owner.
+
+    Asserting BOTH legs is the point. A first-call-only assertion is satisfied
+    by the broken wrapper, because the first call is the leg that is easy to get
+    right.
+    """
+
+    def test_first_call_forwards_plan_id(self, tmp_path):
+        (tmp_path / '.pyprojectx').mkdir()
+        success = {'status': 'success', 'exit_code': 0, 'log_file': '', 'command': './pw verify'}
+        fake, calls = _patched_execute_direct([success])
+
+        with patch.object(_factory, 'execute_direct_base', side_effect=fake):
+            execute_direct(
+                args='verify',
+                command_key='python:verify',
+                project_dir=str(tmp_path),
+                plan_id='owning-plan',
+            )
+
+        assert len(calls) == 1
+        assert calls[0]['plan_id'] == 'owning-plan'
+
+    def test_retry_call_also_forwards_plan_id(self, tmp_path):
+        (tmp_path / '.pyprojectx').mkdir()
+        log_file = _make_log(tmp_path, '/bin/sh: uv: command not found\nexit 127')
+        failure = {
+            'status': 'error',
+            'exit_code': 127,
+            'log_file': log_file,
+            'command': './pw verify',
+            'error': '',
+        }
+        success = {'status': 'success', 'exit_code': 0, 'log_file': log_file, 'command': './pw verify'}
+        fake, calls = _patched_execute_direct([failure, success])
+
+        with patch.object(_factory, 'execute_direct_base', side_effect=fake):
+            execute_direct(
+                args='verify',
+                command_key='python:verify',
+                project_dir=str(tmp_path),
+                plan_id='owning-plan',
+            )
+
+        assert len(calls) == 2, 'the heal path must have retried'
+        assert [call['plan_id'] for call in calls] == ['owning-plan', 'owning-plan']
+
+    def test_retry_forwards_the_sentinel_for_a_plan_less_build(self, tmp_path):
+        """A plan-less build's retry keeps the sentinel, not an empty string."""
+        (tmp_path / '.pyprojectx').mkdir()
+        log_file = _make_log(tmp_path, '/bin/sh: uv: command not found\nexit 127')
+        failure = {
+            'status': 'error',
+            'exit_code': 127,
+            'log_file': log_file,
+            'command': './pw verify',
+            'error': '',
+        }
+        success = {'status': 'success', 'exit_code': 0, 'log_file': log_file, 'command': './pw verify'}
+        fake, calls = _patched_execute_direct([failure, success])
+
+        with patch.object(_factory, 'execute_direct_base', side_effect=fake):
+            execute_direct(
+                args='verify',
+                command_key='python:verify',
+                project_dir=str(tmp_path),
+                plan_id=NO_PLAN_SENTINEL,
+            )
+
+        assert [call['plan_id'] for call in calls] == [NO_PLAN_SENTINEL, NO_PLAN_SENTINEL]
+
+    def test_retry_also_preserves_the_explicit_timeout(self, tmp_path):
+        """The wrapper's other droppable keyword survives the retry too.
+
+        ``explicit_timeout`` and ``plan_id`` are dropped by the same class of
+        wrapper bug. Pinning both here keeps a future signature change from
+        silently reintroducing the older of the two defects.
+        """
+        (tmp_path / '.pyprojectx').mkdir()
+        log_file = _make_log(tmp_path, '/bin/sh: uv: command not found\nexit 127')
+        failure = {
+            'status': 'error',
+            'exit_code': 127,
+            'log_file': log_file,
+            'command': './pw verify',
+            'error': '',
+        }
+        success = {'status': 'success', 'exit_code': 0, 'log_file': log_file, 'command': './pw verify'}
+        fake, calls = _patched_execute_direct([failure, success])
+
+        with patch.object(_factory, 'execute_direct_base', side_effect=fake):
+            execute_direct(
+                args='verify',
+                command_key='python:verify',
+                project_dir=str(tmp_path),
+                explicit_timeout=1800,
+                plan_id='owning-plan',
+            )
+
+        assert [call['explicit_timeout'] for call in calls] == [1800, 1800]
 
 
 # D6: Build-queue integration on the in-process leg of the shared factory
