@@ -142,6 +142,17 @@ This skill is designed to run without user prompts. Required permissions:
 
 The `resolve-dependencies.py` script tracks and resolves all dependency relationships across marketplace components.
 
+### Engine consumers
+
+The detection engine (`_dep_detection.py` / `_dep_index.py`) has two consumers:
+
+1. **The CLI verbs below** — `deps`, `rdeps`, `tree`, and `validate` answer component-granular questions on demand.
+2. **Module derived data** — `pm-plugin-development:plan-marshall-plugin`'s `discover_modules()` runs the engine once at discovery time and materializes each bundle's outbound references into a `component_refs` field on that bundle's module. An Axis-C derivation resolver then reads that pre-materialized field to contribute edges to the `manage-architecture` graph family. The materialization has to happen at discovery time because a derivation resolver is a pure function of its arguments — it may not read from disk, and this engine does.
+
+The second consumer changes granularity: the engine's vocabulary is component-granular (`bundle:skill:script`), while the architecture graph keys on module names. The materialization step therefore **projects** each reference target onto its `bundle`, and stamps whether the underlying component reference resolved. The CLI verbs are unaffected and keep answering at component granularity.
+
+For which resolvers consume the materialized field, see [`ext-point-derivation-resolver.md` § Current implementations](../../../plan-marshall/skills/extension-api/standards/ext-point-derivation-resolver.md#current-implementations) — that table is the single roster, deliberately not restated here.
+
 ### Dependency Types
 
 | Type | Pattern | Detection Method |
