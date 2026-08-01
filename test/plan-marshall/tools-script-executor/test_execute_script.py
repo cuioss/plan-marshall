@@ -589,12 +589,28 @@ def test_end_to_end_script_failure_surfaces_stdout_in_work_log():
 _BUILD_CLASS_NOTATION = 'plan-marshall:build-pyproject:pyproject_build'
 
 
-def _run_build_class_dispatch(tmp_path: Path, plan_id_argv: list[str]) -> list[dict]:
-    """Dispatch a build-class stub through a materialized executor; return the ledger."""
+def _run_build_class_dispatch(
+    tmp_path: Path,
+    plan_id_argv: list[str],
+    stub_stdout: str = 'status: success',
+    stub_exit_code: int = 0,
+) -> list[dict]:
+    """Dispatch a build-class stub through a materialized executor; return the ledger.
+
+    ``stub_stdout`` is what the stubbed build WRAPPER prints — the single
+    payload the dispatch boundary parses for ``status`` / ``command`` /
+    ``duration_seconds`` / ``outcome``. ``stub_exit_code`` is the process exit
+    the executor must propagate unchanged.
+    """
     import json
 
     stub_script = tmp_path / 'stub_build.py'
-    stub_script.write_text('#!/usr/bin/env python3\nprint("status: success")\n')
+    stub_script.write_text(
+        '#!/usr/bin/env python3\n'
+        'import sys\n'
+        f'sys.stdout.write({stub_stdout!r})\n'
+        f'sys.exit({stub_exit_code})\n'
+    )
 
     executor_path = tmp_path / 'execute-script.py'
     _materialize_executor(executor_path, _BUILD_CLASS_NOTATION, stub_script)
@@ -616,7 +632,10 @@ def _run_build_class_dispatch(tmp_path: Path, plan_id_argv: list[str]) -> list[d
         env=env,
         cwd=str(Path(__file__).parent.parent.parent.parent),
     )
-    assert result.returncode == 0, f'build-class dispatch failed: {result.stderr!r}'
+    assert result.returncode == stub_exit_code, (
+        f'the executor must propagate the stub exit code {stub_exit_code} unchanged, '
+        f'got {result.returncode} (stderr: {result.stderr!r})'
+    )
 
     ledger = fixture / 'work' / 'change-ledger.jsonl'
     assert ledger.is_file(), (
@@ -676,3 +695,78 @@ def test_build_class_dispatch_with_a_real_plan_id_stores_it_verbatim():
         entries = _run_build_class_dispatch(Path(tmp), ['--plan-id', 'a-real-plan'])
 
     assert entries[0]['plan_id'] == 'a-real-plan'
+
+
+# =============================================================================
+# Build-class dispatch boundary — the wrapper-reported command / duration / outcome
+# =============================================================================
+#
+# The row records the invocation at TWO layers and both are asserted in the same
+# test: ``args`` is the EXECUTOR argv the caller supplied, ``command`` is what
+# the build WRAPPER resolved that argv into and actually ran. A boundary that
+# stamped the executor argv into ``command`` would satisfy a
+# "``command`` is populated" assertion on its own, so the check that bites is the
+# one pinning ``command`` to the wrapper's value AND ``args`` to the argv.
+
+
+def test_build_class_dispatch_records_the_wrapper_command_not_the_executor_argv():
+    """``command`` / ``duration_seconds`` / ``outcome`` come from the WRAPPER payload."""
+    wrapper_stdout = (
+        'status: success\n'
+        'command: "./pw verify plan-marshall"\n'
+        'duration_seconds: 42\n'
+        'log_file: /tmp/python-build.log\n'
+    )
+
+    with tempfile.TemporaryDirectory() as tmp:
+        entries = _run_build_class_dispatch(
+            Path(tmp),
+            ['run', '--command-args', 'verify plan-marshall', '--plan-id', 'a-real-plan'],
+            stub_stdout=wrapper_stdout,
+        )
+
+    entry = entries[0]
+    # The wrapper's resolved command line — NOT the executor argv.
+    assert entry['command'] == './pw verify plan-marshall', (
+        f'command={entry["command"]!r}; the boundary must record what the wrapper '
+        'resolved and ran, not what the caller typed.'
+    )
+    # The executor argv layer is intact and DIFFERENT from the resolved command.
+    assert entry['args'] == 'run --command-args verify plan-marshall --plan-id a-real-plan'
+    assert entry['args'] != entry['command'], (
+        'args and command collapsed onto one value — the two layers must stay '
+        'independently recoverable from a single row.'
+    )
+    # The wrapper's measured duration, coerced to a float.
+    assert entry['duration_seconds'] == 42.0
+    # The whole payload is retained verbatim as the outcome dict.
+    assert entry['outcome']['status'] == 'success'
+    assert entry['outcome']['command'] == './pw verify plan-marshall'
+    assert entry['outcome']['log_file'] == '/tmp/python-build.log'
+
+
+def test_build_class_dispatch_with_unparseable_stdout_still_writes_a_row():
+    """A payload the boundary cannot parse degrades — it never drops the row.
+
+    Two claims held together: the row is still written (with the three
+    wrapper-sourced fields absent and the exit-code-derived ``status``), and the
+    dispatched script's exit code reaches the caller unchanged. The ledger write
+    is fire-and-forget observability; the exit code is the user-visible
+    contract, and a parse failure must not touch it.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        entries = _run_build_class_dispatch(
+            Path(tmp),
+            ['--plan-id', 'a-real-plan'],
+            stub_stdout='>>> not a TOON payload at all <<<\n\tragged\n',
+            stub_exit_code=3,
+        )
+
+    entry = entries[0]
+    assert entry['kind'] == 'build'
+    assert entry['exit_code'] == 3
+    # Nonzero exit is authoritative over any (here unparseable) stdout claim.
+    assert entry['status'] == 'error'
+    # No wrapper facts are invented from an unusable payload.
+    assert entry['command'] is None
+    assert entry['duration_seconds'] is None

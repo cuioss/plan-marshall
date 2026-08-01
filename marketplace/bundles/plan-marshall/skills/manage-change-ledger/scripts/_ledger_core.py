@@ -114,6 +114,9 @@ def build_record(
     status: str,
     worktree_sha: str | None,
     log_file: str | None,
+    command: str | None = None,
+    duration_seconds: float | None = None,
+    outcome: dict[str, Any] | None = None,
     timestamp_iso: str | None = None,
 ) -> dict[str, Any]:
     """Construct a ``kind=build`` ledger record.
@@ -131,12 +134,35 @@ def build_record(
     invoked outside any plan is recorded under the ``NO_PLAN`` sentinel; the
     caller resolves it before constructing the record, so no row can carry
     ``plan_id: null``.
+
+    **``args`` and ``command`` are two distinct layers — neither substitutes
+    for the other.** ``args`` is the EXECUTOR argv: the arguments the caller
+    handed to ``.plan/execute-script.py`` (e.g.
+    ``run --command-args "verify plan-marshall"``). ``command`` is what the
+    build WRAPPER resolved that argv into and actually ran (e.g.
+    ``./pw verify plan-marshall``). The mapping between them is the wrapper's
+    own resolution — a build-tool switch or a routing decision changes
+    ``command`` while ``args`` stays byte-identical — so a reader that needs
+    "what did the operator ask for" reads ``args`` and one that needs "what
+    actually ran" reads ``command``.
+
+    ``command``, ``duration_seconds`` and ``outcome`` are all sourced from the
+    wrapper's stdout TOON and are therefore OPTIONAL: they default to ``None``
+    and stay ``None`` when the payload is absent or unparseable (a killed or
+    crashed build), and for a hand-appended row that legitimately has no
+    resolved command, no measured duration and no wrapper payload. ``outcome``
+    is the wrapper's whole stdout TOON as a dict, retained verbatim so a
+    reader gets the wrapper's own report (log file path, per-error rows)
+    without re-reading the build log.
     """
     return {
         'kind': KIND_BUILD,
         'notation': notation,
         'plan_id': plan_id,
         'args': args,
+        'command': command,
+        'duration_seconds': duration_seconds,
+        'outcome': outcome,
         'exit_code': exit_code,
         'status': status,
         'worktree_sha': worktree_sha,

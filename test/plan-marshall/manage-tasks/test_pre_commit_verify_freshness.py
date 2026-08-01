@@ -134,11 +134,16 @@ def _build_entry(
 ) -> dict:
     """Construct a ``kind=build`` ledger record dict.
 
-    Mirrors the shape produced by ``_ledger_core.build_record``. The gate filters
-    on ``kind``, ``status`` and ``worktree_sha`` only — never ``notation``,
-    ``exit_code`` or ``plan_id`` — so those fields are parameterised to prove
-    tier/tool agnosticism. ``status=None`` omits the key entirely, modelling a
-    pre-change row (which must fail closed to ``stale``).
+    Mirrors the GATE-RELEVANT SUBSET of the shape produced by
+    ``_ledger_core.build_record`` — deliberately not the whole record. The
+    constructor also emits ``command``, ``duration_seconds`` and ``outcome``
+    (the wrapper-reported fields), which this helper omits because the gate
+    filters on ``kind``, ``status`` and ``worktree_sha`` only — never
+    ``notation``, ``exit_code``, ``plan_id``, or any of the three. The extra
+    fields are parameterised or omitted here to prove that tier/tool
+    agnosticism, so a row that lacks them must still be gated identically.
+    ``status=None`` omits the key entirely, modelling a pre-change row (which
+    must fail closed to ``stale``).
     """
     entry = {
         'kind': 'build',
