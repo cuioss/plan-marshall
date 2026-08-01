@@ -158,7 +158,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level WARNING \
-  --message "[STATUS] (project:finalize-step-plugin-doctor) scoped plugin-doctor cannot detect cross-skill divergence — scoped mode gated skill-local rules over {N} skill dir(s) only; cross-skill rules whose counterpart lives outside --paths were NOT evaluated. A cross-skill invariant broken by this change would surface first at whole-tree CI (PR #915 class)."
+  --message "[STATUS] (project:finalize-step-plugin-doctor) scoped plugin-doctor cannot detect cross-skill divergence — scoped mode gated skill-local rules over {N} skill dir(s) only. Cross-skill rules whose counterpart lives outside --paths were NOT evaluated. A cross-skill invariant broken by this change would surface first at whole-tree CI (PR #915 class)."
 ```
 
 After the WARNING is emitted, run the scoped gate:
