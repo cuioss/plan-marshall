@@ -106,8 +106,10 @@ Return TOON shape:
     status: success
     participation_complete: true|false
     proves: participation_only
-    pending_bots[N]: [bot, ...]          # emitted only when non-empty
-    unproven_bots[N]: [bot, ...]         # emitted only when non-empty
+    pending_bots[N]:                     # emitted only when non-empty
+      - bot
+    unproven_bots[N]:                    # emitted only when non-empty
+      - bot
     bot_states[N]{bot_kind,state}: ...   # one row per required ∪ optional bot
 """
 
@@ -333,10 +335,14 @@ def _emit_toon(payload: dict) -> None:
     print(f'proves: {payload["proves"]}')
     pending = payload['pending_bots']
     if pending:
-        print(f'pending_bots[{len(pending)}]: {pending}')
+        print(f'pending_bots[{len(pending)}]:')
+        for bot in pending:
+            print(f'  - {bot}')
     unproven = payload['unproven_bots']
     if unproven:
-        print(f'unproven_bots[{len(unproven)}]: {unproven}')
+        print(f'unproven_bots[{len(unproven)}]:')
+        for bot in unproven:
+            print(f'  - {bot}')
     states = payload['bot_states']
     if states:
         print(f'bot_states[{len(states)}]{{bot_kind,state}}:')
