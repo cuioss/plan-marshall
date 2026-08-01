@@ -154,6 +154,27 @@ def build_record(
     is the wrapper's whole stdout TOON as a dict, retained verbatim so a
     reader gets the wrapper's own report (log file path, per-error rows)
     without re-reading the build log.
+
+    **Secrets discipline — a DELIBERATE divergence from the build-server audit
+    log, not an oversight.** ``build_server._audit_log`` refuses to record the
+    resolved ``command``, ``exec_path``, ``project_path`` or any spec field on
+    the ground that they may carry secrets; this record deliberately keeps
+    ``command`` and the verbatim ``outcome``, both of which can. A resolved
+    build command line can carry a registry credential or a ``-D`` token, and
+    ``outcome``'s ``errors[]`` rows are lifted from the build log, which can
+    echo anything the build printed. Three properties make that acceptable HERE
+    and not there: the ledger is written to ``.plan/work/`` — inside the
+    blanket ``.plan/*`` gitignore, so no row can reach a commit or a PR; the
+    audit log's own consumers are cross-session and operator-facing whereas the
+    ledger's are the freshness gate and local inspection; and the identical text
+    is ALREADY co-resident in plaintext in the ``log_file`` this row points at,
+    so the row discloses nothing to a reader who cannot already read that log.
+    The one asymmetry a future change must respect: the build log ages out under
+    the ``build_results_days`` retention target, while the ledger is append-only
+    with no cleanup target, so the excerpt outlives the log it came from. Do NOT
+    widen this record with a field sourced from anywhere other than the wrapper
+    payload, and do NOT copy this exemption into a store that leaves the
+    machine.
     """
     return {
         'kind': KIND_BUILD,

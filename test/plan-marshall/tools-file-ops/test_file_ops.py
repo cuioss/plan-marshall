@@ -1153,3 +1153,111 @@ def test_sentinel_is_main_anchored_not_cwd_anchored(real_main_checkout_and_workt
     assert plan_dir == worktree / '.plan' / 'local' / 'plans' / 'some-plan' / 'build-results'
     assert worktree not in sentinel_dir.parents
     assert main_root not in plan_dir.parents
+
+
+# =============================================================================
+# get_build_results_dir — plan_id containment guard
+# =============================================================================
+#
+# `plan_id` reaches this join from a --plan-id CLI flag, so the resolver is a
+# trust boundary: it is the single place a build turns caller-supplied text into
+# a filesystem path it will then create and write into. `create_log_file`
+# already constrains the OTHER caller-influenced component of that same path
+# (`scope`); these cases pin the `plan_id` half of the same containment.
+
+
+@pytest.mark.parametrize(
+    'escaping_plan_id',
+    [
+        '..',
+        '../outside',
+        '../../../../tmp/pm-escape',
+        'a/../../outside',
+    ],
+)
+def test_get_build_results_dir_rejects_traversal_plan_id(tmp_path, monkeypatch, escaping_plan_id):
+    """A plan id that walks out of the plans root is refused, not resolved.
+
+    Parametrized across four traversal shapes rather than one, because they fail
+    the containment check by different routes: a bare `..`, a `..` with a
+    trailing segment, a deep multi-segment climb, and a climb that only escapes
+    after normalization. A guard that happened to catch just the leading-`..`
+    spelling would pass a single-case test while leaving the normalizing shape
+    open.
+    """
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+
+    with pytest.raises(ValueError, match='escapes the plans root'):
+        get_build_results_dir(escaping_plan_id)
+
+
+def test_get_build_results_dir_rejects_absolute_plan_id(tmp_path, monkeypatch):
+    """An ABSOLUTE plan id is refused rather than silently discarding the root.
+
+    Distinct from the traversal cases above and not covered by them: pathlib
+    drops the left-hand operand entirely when the right-hand side is absolute,
+    so `plans / '/tmp/x'` is `/tmp/x` with no `..` anywhere for a
+    segment-inspecting guard to notice. Only a containment check on the RESOLVED
+    result catches it.
+    """
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+
+    with pytest.raises(ValueError, match='escapes the plans root'):
+        get_build_results_dir(str(tmp_path / 'outside-the-store'))
+
+
+def test_get_build_results_dir_rejects_plan_dir_symlinked_out_of_the_store(tmp_path, monkeypatch):
+    """A plan directory symlinked outside the store is refused.
+
+    The escape here is on DISK, not in the string: the plan id is ordinary
+    kebab-case and passes every identifier check, but the directory it names is
+    a symlink whose target sits outside the plans root. A guard written as a
+    character blacklist over the id would wave this through; resolving before
+    comparing is what catches it.
+    """
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    outside = tmp_path / 'outside-the-store'
+    outside.mkdir()
+    plans_root = tmp_path / 'plans'
+    plans_root.mkdir()
+    (plans_root / 'escaped-plan').symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(ValueError, match='escapes the plans root'):
+        get_build_results_dir('escaped-plan')
+
+
+def test_get_build_results_dir_allows_a_contained_symlinked_plan_dir(tmp_path, monkeypatch):
+    """A symlinked plan directory that stays INSIDE the store is still allowed.
+
+    The negative control for the case above. It pins the guard as a containment
+    check rather than a blanket "no symlinks" rule, so the rejection above is
+    attributable to the escape and not merely to the indirection.
+    """
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    plans_root = tmp_path / 'plans'
+    real_plan = plans_root / 'real-plan'
+    real_plan.mkdir(parents=True)
+    (plans_root / 'aliased-plan').symlink_to(real_plan, target_is_directory=True)
+
+    result = get_build_results_dir('aliased-plan')
+
+    # Returned UNRESOLVED, so the alias the caller named is preserved.
+    assert result == plans_root / 'aliased-plan' / 'build-results'
+
+
+def test_get_build_results_dir_accepts_every_plan_id_the_validator_accepts(tmp_path, monkeypatch):
+    """No id the canonical validator admits is rejected by the containment guard.
+
+    The guard sits downstream of `validate_plan_id`, so the two must not
+    disagree: an id that passes validation and is then refused here would be a
+    build that can never run. Asserted over the grammar's edge shapes (single
+    character, digits, repeated and trailing hyphens) plus the sentinel, which
+    takes the other branch of the resolver entirely.
+    """
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    accepted = ['a', 'a1', 'plan-1', 'a--b', 'trailing-', NO_PLAN_SENTINEL]
+
+    resolved = [get_build_results_dir(plan_id) for plan_id in accepted]
+
+    assert [path.name for path in resolved] == ['build-results'] * len(accepted)
+    assert [path.parent.name for path in resolved] == accepted

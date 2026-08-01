@@ -616,16 +616,51 @@ def get_build_results_dir(plan_id: str) -> Path:
     This is the single owner of the build-results path — no other module
     derives it.
 
+    **Path-safety.** ``plan_id`` arrives from a ``--plan-id`` CLI flag, and this
+    is the one place a build turns that flag into a filesystem path, so the
+    containment check belongs here rather than at each writer. The resolved
+    directory is verified to sit inside the ``plans/`` root it was anchored on;
+    a value that escapes — ``..`` segments, an absolute path, or a plan
+    directory symlinked out of the tree — raises ``ValueError`` instead of
+    yielding a path a build would then create and write into. This is the
+    ``plan_id`` counterpart of the ``scope`` containment check in
+    :func:`_build_result.create_log_file`, which constrains the OTHER
+    caller-influenced component of the very same path; guarding one and not the
+    other would leave the join only half-constrained. It is deliberately
+    defence in depth: every production caller reaches here through an argparse
+    ``--plan-id`` that a ``validate_plan_id`` (or an equivalent downstream
+    ``manage-status`` lookup) has already rejected traversal on, so this guard
+    is expected never to fire — it exists so the path stays safe if that
+    incidental upstream check is ever refactored away. Containment is tested by
+    resolution rather than by a character blacklist, so a legitimate-but-odd
+    plan-store directory name that does not escape is never rejected.
+
     Args:
         plan_id: Plan identifier, or the ``NO_PLAN`` sentinel.
 
     Returns:
-        Path to ``{plan_dir}/build-results/``. The directory is NOT created
-        here; writers create it as they place output.
+        Path to ``{plan_dir}/build-results/``, UNRESOLVED (symlinked ancestors
+        are preserved, exactly as :func:`get_plan_dir` returns them). The
+        directory is NOT created here; writers create it as they place output.
+
+    Raises:
+        ValueError: when the resolved directory escapes the ``plans/`` root it
+            is anchored on.
     """
     if plan_id == NO_PLAN_SENTINEL:
-        return resolve_main_anchored_path(f'plans/{NO_PLAN_SENTINEL}') / 'build-results'
-    return get_plan_dir(plan_id) / 'build-results'
+        plans_root = resolve_main_anchored_path('plans')
+        results_dir = plans_root / NO_PLAN_SENTINEL / 'build-results'
+    else:
+        plans_root = base_path('plans')
+        results_dir = get_plan_dir(plan_id) / 'build-results'
+    resolved_root = plans_root.resolve()
+    if resolved_root not in results_dir.resolve().parents:
+        raise ValueError(
+            f'unsafe plan_id {plan_id!r}: the resolved build-results directory '
+            f'{str(results_dir.resolve())!r} escapes the plans root '
+            f'{str(resolved_root)!r}'
+        )
+    return results_dir
 
 
 class WorktreeResolutionError(RuntimeError):
