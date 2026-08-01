@@ -57,9 +57,9 @@ class Extension(ExtensionBase, PathAttributionBase):
 | `path_attributor_id()` | `''` | A short, stable, lower-case identity. It is stamped into every merged claim's `producers[]` and names the attributor on the per-attributor report. An empty id marks the attributor unidentifiable and discovery skips it — a producer-less claim is never emitted. |
 | `claim_paths()` | `([], [])` | Returns `(claims, notes)`. `claims` is a list of `(path_prefix, module_name)` pairs where `path_prefix` is a repo-relative directory prefix and `module_name` is the owning module. `notes` is a list of short strings describing conditions that **suppressed** a claim. |
 
-An attributor is a **pure function of its arguments**: no subprocess, no filesystem access. It declares what its bundle owns from static knowledge; it never scans the tree to discover it.
+An attributor is **stateless**: it declares what its bundle owns from static knowledge, with no subprocess call and no filesystem access. It never scans the tree to discover its own claims. (`claim_paths()` takes no arguments, so its contract is statelessness, not purity over an argument list — argument purity is the Axis-C obligation on `derive_edges(derived_by_name, enriched_by_name)`.)
 
-**Why `notes[]` rides the `claim_paths` return** rather than a separate accessor: a second method readable only after `claim_paths` had run would be temporally coupled to it, and an attributor is otherwise a pure function of its arguments. Pairing the two in one return keeps the attributor stateless.
+**Why `notes[]` rides the `claim_paths` return** rather than a separate accessor: a second method readable only after `claim_paths` had run would be temporally coupled to it, and an attributor is otherwise stateless. Pairing the two in one return keeps it that way.
 
 ### 2. Discovery
 
@@ -96,7 +96,7 @@ This is the same fail-closed reporting discipline [ADR-009](../../../../../../do
 
 ## Keyed-mapping merge semantics
 
-A path claim is a **keyed mapping**: the identity is the normalized path prefix (`rstrip('/')`), and the value is the claimed module. This is materially different from the Axis-C edge set, where an edge is an unweighted boolean and therefore no conflict is expressible. Here a value exists to disagree about, so a conflict **is** expressible, and the merge needs a rule for it:
+A path claim is a **keyed mapping**: the identity is the normalized path prefix, and the value is the claimed module. Normalization is spelling-only — surrounding whitespace removed, backslashes folded to `/`, leading `./` runs collapsed, trailing `/` stripped — and the **same normalizer runs on the candidate path at lookup time**. The symmetry is load-bearing: if only the claim side canonicalized, a covered path handed to `which-module` in an equivalent-but-different spelling (`./.plan/local`, or with a backslash separator) would answer a confident `module: null`, which is the exact vacuity this extension point exists to remove. This is materially different from the Axis-C edge set, where an edge is an unweighted boolean and therefore no conflict is expressible. Here a value exists to disagree about, so a conflict **is** expressible, and the merge needs a rule for it:
 
 | Case | Axis-C edge analogue | Path-attribution resolution |
 |------|----------------------|-----------------------------|
@@ -104,7 +104,7 @@ A path claim is a **keyed mapping**: the identity is the normalized path prefix 
 | Same normalized prefix, **different** module | *No analogue — not expressible for edges* | Emit **no** claim for that prefix, report the collision in `notes[]` |
 | Different-length prefixes, both containing the path | n/a | **Not** a collision — longest prefix wins, deterministically (see § below) |
 
-The merge applies three validity filters of its own before the union — a malformed claim candidate, a blank or root-ish prefix, and a claim naming a module absent from `module_names`. Each such drop is core suppressing a claim, so each appends its own note to that attributor's report, prefixed `merge:` so a reader can tell a core-side drop from an attributor-side one. An attributor whose candidates were all discarded would otherwise report `status: ok`, `claim_count: 0` and an empty `notes[]`: a confident zero that reads exactly like "ran and legitimately found nothing".
+The merge applies three validity filters of its own before the union — a malformed claim candidate, a prefix that does not bound a subtree inside the repository (blank, root-ish, or traversing out of the root via a leading `..` segment), and a claim naming a module absent from `module_names`. Note the boundary between the second filter and normalization: a merely dot-relative prefix such as `./doc` is **normalized to `doc`, not dropped** — its ownership intent is unambiguous, and dropping it would discard a stated declaration. Only a `..`-rooted prefix is genuinely unmatchable by any repo-relative path, so only that case is dropped. Each such drop is core suppressing a claim, so each appends its own note to that attributor's report, prefixed `merge:` so a reader can tell a core-side drop from an attributor-side one. An attributor whose candidates were all discarded would otherwise report `status: ok`, `claim_count: 0` and an empty `notes[]`: a confident zero that reads exactly like "ran and legitimately found nothing".
 
 An attributor that raises reports `status: error` with `claim_count: 0` and contributes no claims; its siblings still contribute. A `claims` value that is not a usable collection is the same broken-implementor condition and degrades to that same error report, never to an uncaught exception: a truthy non-iterable (`123`) would raise a `TypeError` on iteration, and a bare string would iterate into characters rather than pairs, so both are refused at the same guard that wraps the hook call. A **falsy** non-iterable (`0`, `None`, `[]`) is not a broken implementor — it still means "claimed nothing" and reports `status: ok`. An errored attributor never aborts the merge. Claims are returned sorted by `(prefix, module)` for byte-stable output, and every claim carries a non-empty `producers[]`.
 
@@ -122,13 +122,14 @@ The rationale here is **not** the Axis-C one. [ext-point-derivation-resolver.md]
 
 `lookup_claim(path, claims)` resolves a path to the **longest claimed prefix that contains it**. This is core's resolution *order*, not a tie-break over a collision: `.plan` claimed by one module and `.plan/local` claimed by another is a perfectly well-formed claim set with no ambiguity, and a path under `.plan/local` resolves to the latter while `.plan/marshal.json` resolves to the former. Do not read longest-prefix-wins as the resolution for the middle row of the merge table above — that row emits no claim at all, so there is nothing left for the lookup to order.
 
-Containment is **prefix nesting, not fnmatch**:
+Containment is **prefix nesting, not fnmatch**, applied after the candidate path has been put into the same canonical spelling as the claim keys:
 
 ```text
+path = normalize_spelling(path)
 path == prefix  or  path.startswith(prefix + '/')
 ```
 
-The trailing-separator half is the **nest-inside guard**. A path belongs to a claim only when it nests inside the claimed directory, so `.plans/x` does NOT resolve through a `.plan` claim even though it shares the string prefix. An fnmatch `**/`-shaped pattern is the wrong tool here for the mirror-image reason: a single `*` spans `/` in `fnmatch`, and a `**/`-prefixed glob would fail to match the bare root segment `.plan` itself.
+The trailing-separator half is the **nest-inside guard**. Normalizing the candidate first does not weaken it: normalization is spelling-only, so `./.plans/x` becomes `.plans/x` and still does not match a `.plan` claim. A path belongs to a claim only when it nests inside the claimed directory, so `.plans/x` does NOT resolve through a `.plan` claim even though it shares the string prefix. An fnmatch `**/`-shaped pattern is the wrong tool here for the mirror-image reason: a single `*` spans `/` in `fnmatch`, and a `**/`-prefixed glob would fail to match the bare root segment `.plan` itself.
 
 ## Current implementations
 

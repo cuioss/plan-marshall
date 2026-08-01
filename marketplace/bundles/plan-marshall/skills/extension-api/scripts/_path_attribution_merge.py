@@ -9,6 +9,11 @@ returns both the merged claims and a per-attributor report. It also owns
 :func:`lookup_claim`, the single shared containment matcher both consuming call
 sites use, so neither re-derives the predicate.
 
+Claim side and candidate side canonicalize path spelling through ONE shared
+normalizer. Two sides comparing paths under different spelling rules is how a
+covered path answers a confident ``None``, so the symmetry is a property of the
+module rather than a convention its callers are trusted to uphold.
+
 Unlike the Axis-C edge union, a conflict IS expressible here. A claim is a
 **keyed mapping** — the normalized path prefix is the identity and the claimed
 module is the value — so two attributors naming one prefix but different modules
@@ -43,26 +48,75 @@ _MERGE_NOTE_PREFIX = 'merge: '
 #: ownership declaration.
 _ROOT_ISH_PREFIXES = frozenset({'', '.', '..'})
 
+#: First path segment marking a prefix that traverses OUT of the repository root.
+#: A claim rooted there names a location no repo-relative candidate path can fall
+#: inside, so admitting it would raise ``claim_count`` for a claim that can never
+#: match — a confident number standing for nothing.
+_TRAVERSAL_SEGMENT = '..'
+
+
+def _normalize_spelling(raw: str) -> str:
+    """Return ``raw`` in the one canonical spelling both sides of the seam compare in.
+
+    The single shared spelling normalizer, consumed by BOTH :func:`_normalize_prefix`
+    (the claim side) and :func:`lookup_claim` (the candidate side). Sharing ONE
+    function is the whole point: the two sides applying DIFFERENT spelling rules is
+    precisely how a covered path resolves to a confident ``None`` — a claim on
+    ``.plan`` failing to match a candidate spelled ``./.plan/local`` or with a
+    backslash separator. Because ``which-module`` is the mandated structured-query
+    surface, callers hand it paths in whatever spelling they already hold, so the
+    seam must absorb the spelling difference rather than oblige the caller to.
+
+    Normalization is spelling-only: surrounding whitespace removed, backslashes
+    folded to forward slashes, leading ``./`` runs collapsed, trailing slashes
+    stripped. It resolves no symlink and touches no filesystem, and it deliberately
+    does NOT collapse ``..`` segments — whether a traversing path is admissible is a
+    POLICY question each side answers for itself, not a spelling question.
+
+    Args:
+        raw: A path or path prefix in any spelling.
+
+    Returns:
+        The canonically-spelled path.
+    """
+    spelling = raw.strip().replace('\\', '/')
+    while spelling.startswith('./'):
+        spelling = spelling[2:]
+    return spelling.rstrip('/')
+
 
 def _normalize_prefix(raw: str) -> str:
     """Return the identity key for a raw claimed path prefix.
 
-    The identity a claim is keyed on is the prefix with surrounding whitespace
-    removed, backslashes folded to forward slashes, and trailing slashes stripped
-    — so ``'.plan'``, ``'.plan/'`` and ``' .plan '`` are ONE identity rather than
-    three, and two attributors that spelled the same directory differently
-    corroborate instead of silently producing two claims.
+    The identity a claim is keyed on is the prefix in the shared canonical spelling
+    (:func:`_normalize_spelling`) — so ``'.plan'``, ``'.plan/'``, ``' .plan '`` and
+    ``'./.plan'`` are ONE identity rather than four, and two attributors that
+    spelled the same directory differently corroborate instead of silently
+    producing two claims.
+
+    A dot-relative prefix such as ``'./doc'`` is NORMALIZED to ``'doc'``, not
+    dropped: its ownership intent is unambiguous, and normalizing it makes the
+    claim real rather than discarding a stated declaration. A TRAVERSING prefix —
+    one whose first segment is ``..`` — is the case that genuinely cannot be
+    rescued: it names a location outside the repository root, so no repo-relative
+    candidate path can ever fall inside it. Admitting it would raise
+    ``claim_count`` for a claim no lookup can ever match, so it is dropped AND
+    reported through the caller's blank-prefix branch.
 
     Args:
         raw: The path prefix exactly as the attributor declared it.
 
     Returns:
         The normalized identity key, or the empty string when the prefix is
-        root-ish (blank, ``.``, ``..``, or bare ``/``) and therefore not a
-        bounded-subtree claim.
+        root-ish (blank, ``.``, ``..``, or bare ``/``) or traverses out of the
+        repository root, and is therefore not a bounded-subtree claim.
     """
-    prefix = raw.strip().replace('\\', '/').rstrip('/')
-    return '' if prefix in _ROOT_ISH_PREFIXES else prefix
+    prefix = _normalize_spelling(raw)
+    if prefix in _ROOT_ISH_PREFIXES:
+        return ''
+    if prefix.split('/', 1)[0] == _TRAVERSAL_SEGMENT:
+        return ''
+    return prefix
 
 
 def _coerce_pair(candidate: Any) -> tuple[str, str] | None:
@@ -112,8 +166,12 @@ def merge_path_claims(
 
     1. **The claim must be well-formed** — a candidate that is not a two-element
        sequence of strings is dropped rather than propagated into the map.
-    2. **The prefix must bound a subtree** — a blank or root-ish prefix would
-       attribute the whole repository to one module and is dropped.
+    2. **The prefix must bound a subtree inside the repository** — a blank or
+       root-ish prefix would attribute the whole repository to one module, and a
+       traversing prefix (first segment ``..``) names a location outside the repo
+       root that no repo-relative path can fall inside. Both are dropped. A merely
+       dot-relative prefix (``./doc``) is NOT dropped — it is normalized to
+       ``doc``, because its ownership intent is unambiguous.
     3. **The module must be a known module name** — a claim naming a module absent
        from ``module_names`` is dropped, so an attributor cannot invent an owner.
 
@@ -228,7 +286,8 @@ def merge_path_claims(
             if not prefix:
                 notes.append(
                     f'{_MERGE_NOTE_PREFIX}dropped claim ({raw_prefix!r} -> {module_name}) — '
-                    f'blank or root-ish prefix does not bound a subtree'
+                    f'blank, root-ish, or repo-escaping prefix does not bound a subtree '
+                    f'inside the repository'
                 )
                 continue
             if module_name not in known_modules:
@@ -294,6 +353,17 @@ def lookup_claim(path: str, claims: list[dict[str, Any]]) -> str | None:
 
     The single shared containment matcher for the Axis-D seam, so every consuming
     call site resolves ownership identically rather than re-deriving the predicate.
+
+    ``path`` is first put into the canonical spelling via the SAME
+    :func:`_normalize_spelling` the claim side uses, so ``'./.plan/local'``,
+    ``'.plan\\local'`` and ``'.plan/local/'`` all resolve through a ``.plan`` claim.
+    Normalizing only one side is the defect this shared call closes: the claim side
+    would canonicalize while the candidate side compared raw, and a covered path
+    handed over in an unexpected-but-equivalent spelling would answer a confident
+    ``None``. Normalization is spelling-only, so it does not weaken the nest-inside
+    guard below — ``'./.plans/x'`` normalizes to ``'.plans/x'`` and still does not
+    match a ``.plan`` claim.
+
     Containment is **prefix nesting, not fnmatch**::
 
         path == prefix or path.startswith(prefix + '/')
@@ -313,13 +383,15 @@ def lookup_claim(path: str, claims: list[dict[str, Any]]) -> str | None:
     one path, so no further tie-break is reachable.
 
     Args:
-        path: A repo-relative, forward-slashed candidate path.
+        path: A repo-relative candidate path, in any spelling — it is canonicalized
+            here rather than assumed already normalized.
         claims: The merged claim list from :func:`merge_path_claims`.
 
     Returns:
         The claimed module name for the longest containing prefix, or ``None`` when
         no claim contains ``path``.
     """
+    path = _normalize_spelling(path)
     best_module: str | None = None
     best_length = -1
     for claim in claims:

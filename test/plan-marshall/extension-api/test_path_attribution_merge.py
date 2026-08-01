@@ -17,9 +17,18 @@ properties pinned here:
   exists to prevent, and an iteration-order winner is exactly the
   non-deterministic answer the contract forbids.
 - **Every merge-side drop is reported.** Each of the three validity filters —
-  malformed candidate, blank/root-ish prefix, unknown module — appends its own
-  ``merge:``-prefixed note, so an attributor whose every candidate the merge
-  discarded never reports ``status: ok`` / ``claim_count: 0`` / ``notes: []``.
+  malformed candidate, a prefix that bounds no in-repo subtree (blank/root-ish, or
+  traversing out of the root), unknown module — appends its own ``merge:``-prefixed
+  note, so an attributor whose every candidate the merge discarded never reports
+  ``status: ok`` / ``claim_count: 0`` / ``notes: []``.
+- **Claim side and candidate side agree on spelling**, because both run the same
+  normalizer. A dot-relative or backslash-spelled candidate resolves through a
+  claim written in the canonical spelling — the asymmetry that would otherwise
+  answer a confident ``None`` for a covered path — and normalizing the candidate
+  does not weaken the nest-inside guard. On the claim side a dot-relative prefix is
+  NORMALIZED rather than dropped (its intent is unambiguous); only a ``..``-rooted
+  prefix, which no repo-relative path can fall inside, is dropped, and that drop is
+  reported.
 - A raising attributor reports ``status: error`` with ``claim_count: 0`` while
   its siblings still contribute — one broken implementor never blanks the map.
 - A ``claims`` value that is not a usable collection degrades identically,
@@ -353,6 +362,40 @@ def test_attributor_own_notes_are_preserved_alongside_merge_notes():
     assert len(_merge_notes(report)) == 1
 
 
+def test_dot_relative_claim_prefix_is_normalized_not_dropped():
+    # Arrange — a dot-relative prefix states an unambiguous ownership intent, so
+    # the merge normalizes it into a real claim rather than discarding the
+    # declaration. Dropping it would lose stated information; leaving it unnormalized
+    # would count a claim no repo-relative path can ever match.
+    attributor = _StubAttributor(claims=[('./doc', 'documentation')])
+
+    # Act
+    claims, reports = _merge_with(('alpha', attributor))
+
+    # Assert — one real claim keyed on the canonical spelling
+    assert claims == [{'prefix': 'doc', 'module': 'documentation', 'producers': ['alpha']}]
+    assert _report_for(reports, 'alpha')['claim_count'] == 1
+
+
+def test_traversing_claim_prefix_is_dropped_with_a_merge_note():
+    # Arrange — a '..'-rooted prefix names a location outside the repository root,
+    # so no repo-relative candidate path can fall inside it. Admitting it would
+    # raise claim_count for a claim that can never match.
+    attributor = _StubAttributor(claims=[('../sibling', 'plan-marshall')])
+
+    # Act
+    claims, reports = _merge_with(('alpha', attributor))
+    report = _report_for(reports, 'alpha')
+
+    # Assert — dropped AND reported; a silent drop is the failure this seam prevents
+    assert claims == []
+    assert report['claim_count'] == 0
+    notes = _merge_notes(report)
+    assert len(notes) == 1
+    assert notes[0] != ''
+    assert '../sibling' in notes[0]
+
+
 def test_a_valid_claim_survives_alongside_a_dropped_sibling():
     # Arrange
     attributor = _StubAttributor(claims=[('.plan', 'plan-marshall'), ('', 'plan-marshall')])
@@ -552,6 +595,47 @@ def test_lookup_claim_returns_none_when_no_claim_contains_the_path():
 def test_lookup_claim_returns_none_against_an_empty_claim_list():
     # Act / Assert — the null-on-absent outcome at the lookup site
     assert _merge.lookup_claim('.plan/execute-script.py', []) is None
+
+
+def test_lookup_claim_normalizes_a_dot_relative_candidate():
+    # Arrange — which-module is the mandated structured-query surface, so callers
+    # hand it whatever spelling they already hold. A leading './' on a COVERED path
+    # must not produce a confident None.
+    claims = [{'prefix': '.plan', 'module': 'plan-marshall', 'producers': ['alpha']}]
+
+    # Act / Assert
+    assert _merge.lookup_claim('./.plan/local', claims) == 'plan-marshall'
+
+
+def test_lookup_claim_normalizes_a_backslash_candidate():
+    # Arrange — a backslash separator is the same spelling difference seen from the
+    # other platform convention; the claim side already folds it, so the candidate
+    # side must too or the two sides disagree on what one path is.
+    claims = [{'prefix': '.plan', 'module': 'plan-marshall', 'producers': ['alpha']}]
+
+    # Act / Assert
+    assert _merge.lookup_claim(r'.plan\local', claims) == 'plan-marshall'
+
+
+def test_lookup_claim_tolerates_a_trailing_slash_candidate():
+    # Arrange — regression pin: a trailing slash is already absorbed by the
+    # ``prefix + '/'`` half of the containment predicate, and it must keep working
+    # once the candidate is normalized first.
+    claims = [{'prefix': '.plan', 'module': 'plan-marshall', 'producers': ['alpha']}]
+
+    # Act / Assert
+    assert _merge.lookup_claim('.plan/', claims) == 'plan-marshall'
+    assert _merge.lookup_claim('.plan/local/', claims) == 'plan-marshall'
+
+
+def test_lookup_claim_still_rejects_a_sibling_after_normalization():
+    # Arrange — normalization is spelling-only, so it must not weaken the
+    # nest-inside guard: './.plans/x' becomes '.plans/x', which is still NOT inside
+    # a '.plan' claim.
+    claims = [{'prefix': '.plan', 'module': 'plan-marshall', 'producers': ['alpha']}]
+
+    # Act / Assert
+    assert _merge.lookup_claim('./.plans/x', claims) is None
 
 
 def test_lookup_claim_consumes_the_merge_output_end_to_end():

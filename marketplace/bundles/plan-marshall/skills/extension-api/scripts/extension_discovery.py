@@ -434,6 +434,102 @@ def discover_applicable_extensions(project_root: Path) -> list[dict[str, Any]]:
     return applicable
 
 
+def _discover_implementors(
+    abc_type: type,
+    accessor_name: str,
+    entity_label: str,
+    id_label: str,
+) -> list[dict[str, Any]]:
+    """Collect every loaded extension module implementing ``abc_type``, id-validated.
+
+    The shared collector body behind :func:`discover_derivation_resolvers` (Axis-C)
+    and :func:`discover_path_attributors` (Axis-D). Both axes opt in by MULTIPLE
+    INHERITANCE from either existing hierarchy, so both must span BOTH discovery
+    paths; and both owe the identical identity contract — a non-empty string id,
+    unique across producers. Keeping ONE body means the identity validation and the
+    duplicate-id rule are written once. Two hand-maintained copies would let one
+    axis's guard drift from the other's while each still reads as correct in
+    isolation, which is exactly the drift a provenance contract cannot absorb: an
+    id rule that silently weakened on one axis would admit producer-ambiguous
+    records precisely where the contract promises every record is attributable.
+
+    The id is required to be a **non-empty string** rather than merely truthy: a
+    truthy non-string id (the int ``1``) would survive a falsiness check and then
+    raise on the mixed-type ``sort`` below, aborting every query on that axis. It is
+    required to be **unique** because two implementors answering to one id collapse
+    into a single producer identity, so a provenance report would attribute one
+    implementor's output to the other — silently.
+
+    Args:
+        abc_type: The abstract base each candidate module is ``isinstance``-tested
+            against — the opt-in marker for this axis.
+        accessor_name: Name of the zero-argument id accessor ``abc_type`` declares.
+            Passed explicitly rather than derived from ``entity_label``: deriving
+            behaviour from log wording would couple the two, so rewording a WARNING
+            would silently change which method is called.
+        entity_label: The axis noun used in the skip WARNINGs (``'derivation
+            resolver'``, ``'path attributor'``).
+        id_label: The noun for the id itself in those same WARNINGs (``'resolver
+            id'``, ``'attributor id'``).
+
+    Returns:
+        One ``{origin, id, module}`` record per discovered implementor, sorted by
+        ``id`` for deterministic downstream ordering. ``origin`` is the contributing
+        bundle name (Axis-A) or build-skill name (Axis-B), carried for warning
+        context and provenance reporting.
+    """
+    candidates: list[tuple[str, Any]] = []
+    for ext in discover_all_extensions():
+        module = ext.get('module')
+        if module is not None:
+            candidates.append((ext.get('bundle', 'unknown'), module))
+    for ext in discover_build_extensions():
+        module = ext.get('module')
+        if module is not None:
+            candidates.append((ext.get('skill', 'unknown'), module))
+
+    records: list[dict[str, Any]] = []
+    origin_by_id: dict[str, str] = {}
+    for origin, module in candidates:
+        if not isinstance(module, abc_type):
+            continue
+        try:
+            record_id = getattr(module, accessor_name)()
+        except Exception as e:
+            log_entry(
+                'script',
+                None,
+                'WARNING',
+                f'[EXTENSION] {accessor_name}() failed for {origin}: {e}',
+            )
+            continue
+        if not isinstance(record_id, str) or not record_id.strip():
+            log_entry(
+                'script',
+                None,
+                'WARNING',
+                f'[EXTENSION] Skipping {entity_label} from {origin}: {id_label} must be a '
+                f'non-empty string, got {record_id!r}',
+            )
+            continue
+        record_id = record_id.strip()
+        claimed_by = origin_by_id.get(record_id)
+        if claimed_by is not None:
+            log_entry(
+                'script',
+                None,
+                'WARNING',
+                f'[EXTENSION] Skipping {entity_label} from {origin}: {id_label} '
+                f'{record_id!r} is already claimed by {claimed_by}',
+            )
+            continue
+        origin_by_id[record_id] = origin
+        records.append({'origin': origin, 'id': record_id, 'module': module})
+
+    records.sort(key=lambda rec: rec['id'])
+    return records
+
+
 def discover_derivation_resolvers() -> list[dict[str, Any]]:
     """Discover every registered ``DerivationResolverBase`` implementor (Axis-C).
 
@@ -458,14 +554,13 @@ def discover_derivation_resolvers() -> list[dict[str, Any]]:
     id would break the provenance contract that makes a zero-edge answer
     non-vacuous.
 
-    The id is required to be a **non-empty string** rather than merely truthy: a
-    truthy non-string id (the int ``1``) would survive a falsiness check and then
-    raise on the mixed-type ``sort`` below, aborting every graph-family query. It
-    is required to be **unique** for the same reason the merge stamps
-    ``producers[]``: two resolvers answering to one id collapse into a single
-    producer identity, so the provenance report would attribute one resolver's
-    edges to the other — silently, and precisely where the contract promises
-    every edge is attributable.
+    Identity validation and the duplicate-id rule are owned by the shared collector
+    :func:`_discover_implementors`, so this axis and Axis-D cannot drift apart on
+    what a usable id is. The Axis-C consequence of admitting a bad one: a truthy
+    non-string id would raise on the mixed-type sort and abort every graph-family
+    query, and two resolvers sharing an id would collapse into one producer
+    identity, attributing one resolver's edges to the other exactly where the
+    contract promises every edge is attributable.
 
     Returns:
         One ``{origin, id, module}`` record per discovered resolver, sorted by
@@ -475,56 +570,12 @@ def discover_derivation_resolvers() -> list[dict[str, Any]]:
     """
     from extension_base import DerivationResolverBase
 
-    candidates: list[tuple[str, Any]] = []
-    for ext in discover_all_extensions():
-        module = ext.get('module')
-        if module is not None:
-            candidates.append((ext.get('bundle', 'unknown'), module))
-    for ext in discover_build_extensions():
-        module = ext.get('module')
-        if module is not None:
-            candidates.append((ext.get('skill', 'unknown'), module))
-
-    resolvers: list[dict[str, Any]] = []
-    origin_by_id: dict[str, str] = {}
-    for origin, module in candidates:
-        if not isinstance(module, DerivationResolverBase):
-            continue
-        try:
-            resolver_id = module.derivation_resolver_id()
-        except Exception as e:
-            log_entry(
-                'script',
-                None,
-                'WARNING',
-                f'[EXTENSION] derivation_resolver_id() failed for {origin}: {e}',
-            )
-            continue
-        if not isinstance(resolver_id, str) or not resolver_id.strip():
-            log_entry(
-                'script',
-                None,
-                'WARNING',
-                f'[EXTENSION] Skipping derivation resolver from {origin}: resolver id must be a '
-                f'non-empty string, got {resolver_id!r}',
-            )
-            continue
-        resolver_id = resolver_id.strip()
-        claimed_by = origin_by_id.get(resolver_id)
-        if claimed_by is not None:
-            log_entry(
-                'script',
-                None,
-                'WARNING',
-                f'[EXTENSION] Skipping derivation resolver from {origin}: resolver id '
-                f'{resolver_id!r} is already claimed by {claimed_by}',
-            )
-            continue
-        origin_by_id[resolver_id] = origin
-        resolvers.append({'origin': origin, 'id': resolver_id, 'module': module})
-
-    resolvers.sort(key=lambda rec: rec['id'])
-    return resolvers
+    return _discover_implementors(
+        abc_type=DerivationResolverBase,
+        accessor_name='derivation_resolver_id',
+        entity_label='derivation resolver',
+        id_label='resolver id',
+    )
 
 
 def discover_path_attributors() -> list[dict[str, Any]]:
@@ -553,14 +604,13 @@ def discover_path_attributors() -> list[dict[str, Any]]:
     without a producer id would break the provenance contract that makes a
     ``module: null`` answer non-vacuous.
 
-    The id is required to be a **non-empty string** rather than merely truthy: a
-    truthy non-string id (the int ``1``) would survive a falsiness check and then
-    raise on the mixed-type ``sort`` below, aborting every path lookup. It is
-    required to be **unique** for the same reason the merge stamps ``producers[]``:
-    two attributors answering to one id collapse into a single producer identity,
-    so the provenance report would attribute one attributor's claims to the other
-    — silently, and precisely where the contract promises every claim is
-    attributable.
+    Identity validation and the duplicate-id rule are owned by the shared collector
+    :func:`_discover_implementors`, so this axis and Axis-C cannot drift apart on
+    what a usable id is. The Axis-D consequence of admitting a bad one: a truthy
+    non-string id would raise on the mixed-type sort and abort every path lookup,
+    and two attributors sharing an id would collapse into one producer identity,
+    attributing one attributor's claims to the other exactly where the contract
+    promises every claim is attributable.
 
     Returns:
         One ``{origin, id, module}`` record per discovered attributor, sorted by
@@ -570,56 +620,12 @@ def discover_path_attributors() -> list[dict[str, Any]]:
     """
     from extension_base import PathAttributionBase
 
-    candidates: list[tuple[str, Any]] = []
-    for ext in discover_all_extensions():
-        module = ext.get('module')
-        if module is not None:
-            candidates.append((ext.get('bundle', 'unknown'), module))
-    for ext in discover_build_extensions():
-        module = ext.get('module')
-        if module is not None:
-            candidates.append((ext.get('skill', 'unknown'), module))
-
-    attributors: list[dict[str, Any]] = []
-    origin_by_id: dict[str, str] = {}
-    for origin, module in candidates:
-        if not isinstance(module, PathAttributionBase):
-            continue
-        try:
-            attributor_id = module.path_attributor_id()
-        except Exception as e:
-            log_entry(
-                'script',
-                None,
-                'WARNING',
-                f'[EXTENSION] path_attributor_id() failed for {origin}: {e}',
-            )
-            continue
-        if not isinstance(attributor_id, str) or not attributor_id.strip():
-            log_entry(
-                'script',
-                None,
-                'WARNING',
-                f'[EXTENSION] Skipping path attributor from {origin}: attributor id must be a '
-                f'non-empty string, got {attributor_id!r}',
-            )
-            continue
-        attributor_id = attributor_id.strip()
-        claimed_by = origin_by_id.get(attributor_id)
-        if claimed_by is not None:
-            log_entry(
-                'script',
-                None,
-                'WARNING',
-                f'[EXTENSION] Skipping path attributor from {origin}: attributor id '
-                f'{attributor_id!r} is already claimed by {claimed_by}',
-            )
-            continue
-        origin_by_id[attributor_id] = origin
-        attributors.append({'origin': origin, 'id': attributor_id, 'module': module})
-
-    attributors.sort(key=lambda rec: rec['id'])
-    return attributors
+    return _discover_implementors(
+        abc_type=PathAttributionBase,
+        accessor_name='path_attributor_id',
+        entity_label='path attributor',
+        id_label='attributor id',
+    )
 
 
 def get_skill_domains_from_extensions(extensions: list[dict[str, Any]]) -> list[dict[str, Any]]:

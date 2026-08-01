@@ -1475,9 +1475,12 @@ class PathAttributionBase(ABC):  # noqa: B024 — ABC contract anchor; every Axi
     def claim_paths(self) -> tuple[list[tuple[str, str]], list[str]]:
         """Declare the path prefixes this attributor's module owns.
 
-        An attributor is a **pure function of its arguments**: it declares what its
-        bundle owns from static knowledge and performs no subprocess call and no
-        filesystem access. It never scans the tree to discover its own claims.
+        An attributor is **stateless**: it declares what its bundle owns from static
+        knowledge and performs no subprocess call and no filesystem access. It never
+        scans the tree to discover its own claims. This hook takes no arguments, so
+        the obligation is statelessness rather than purity over an argument list —
+        argument purity is the Axis-C contract on
+        :meth:`DerivationResolverBase.derive_edges`.
 
         The ``notes`` half of the return is the required channel for any condition
         that **suppressed** a claim. An attributor that drops a claim silently
@@ -1490,10 +1493,14 @@ class PathAttributionBase(ABC):  # noqa: B024 — ABC contract anchor; every Axi
             A ``(claims, notes)`` tuple. ``claims`` is a list of
             ``(path_prefix, module_name)`` pairs, where ``path_prefix`` is a
             repo-relative directory prefix (e.g. ``'.plan'``) and ``module_name``
-            is the owning module. Containment is prefix nesting, not fnmatch, so a
-            bare root segment such as ``'.plan'`` claims ``.plan/x`` while a
-            sibling that merely shares the string prefix (``.plans/x``) is NOT
-            claimed. ``notes`` is a list of short strings describing conditions
+            is the owning module. Spelling does not matter — the merge canonicalizes
+            the prefix, and the lookup canonicalizes the candidate path with the
+            same normalizer — but a prefix that traverses out of the repository root
+            (a leading ``..`` segment) is dropped and reported, because no
+            repo-relative path can fall inside it. Containment is prefix nesting,
+            not fnmatch, so a bare root segment such as ``'.plan'`` claims
+            ``.plan/x`` while a sibling that merely shares the string prefix
+            (``.plans/x``) is NOT claimed. ``notes`` is a list of short strings describing conditions
             that suppressed a claim. The default is ``([], [])`` — a subclass that
             overrides nothing claims no paths and reports no conditions.
         """

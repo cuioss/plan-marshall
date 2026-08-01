@@ -814,6 +814,16 @@ def resolve_path_attribution(
         ``attributor_reports`` is one ``{id, claim_count, status, notes}`` dict
         per discovered attributor.
 
+    Raises:
+        RuntimeError: When the bundle resolver is misconfigured. The ``except``
+            clause above is deliberately narrowed to ``ImportError`` — a missing
+            seam is an absent capability and degrades to ``(None, [])``, whereas a
+            misconfigured resolver is a broken installation and must fail loudly
+            rather than be laundered into an indistinguishable "no attributor ran"
+            answer. Do NOT widen the guard to catch it; the sibling
+            :func:`classify_changed_path` calls its loader with no guard at all for
+            the same reason.
+
     See ``extension-api/standards/ext-point-path-attribution.md`` for the merge
     semantics, the ambiguous-ownership obligation, and the
     longest-prefix-is-resolution-order note.
