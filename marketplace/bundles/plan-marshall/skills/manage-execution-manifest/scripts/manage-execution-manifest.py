@@ -41,6 +41,7 @@ from _manifest_core import (
     _INFRA_CONFIG_DIR_TREES,  # noqa: F401
     _INFRA_CONFIG_PARENT_DIR_SUFFIXES,  # noqa: F401
     _INFRA_CONFIG_PARENT_DIRS,  # noqa: F401
+    _TEMPLATE_SUFFIX,  # noqa: F401
     DEFAULT_ENVELOPE_COUNT,  # noqa: F401
     DEFAULT_PHASE_5_STEPS,  # noqa: F401
     DEFAULT_PHASE_6_STEPS,  # noqa: F401
@@ -55,8 +56,10 @@ from _manifest_core import (
     _denormalize_step_params_for_write,  # noqa: F401
     _is_documentation_path,  # noqa: F401
     _is_infrastructure_config_path,  # noqa: F401
+    _is_template_path,  # noqa: F401
     _normalize_step_params_block,  # noqa: F401
     _role_of,  # noqa: F401
+    _strip_template_suffix,  # noqa: F401
     get_manifest_path,  # noqa: F401
     read_manifest,  # noqa: F401
     write_manifest,  # noqa: F401
@@ -186,7 +189,7 @@ def _classify_paths_via_extensions(
 ) -> tuple[str, list[str]]:
     """Classify a path list into a plan-wide change-footprint bucket.
 
-    Four-stage classifier:
+    Five-stage classifier:
 
     1. **Generic documentation recognition (extension-agnostic).** Any path
        ending in a :data:`_DOC_SUFFIXES` suffix (``.md`` / ``.adoc`` /
@@ -219,14 +222,26 @@ def _classify_paths_via_extensions(
        Running only over the residual unclaimed set makes that stealing
        structurally impossible.
 
-    4. **Remaining unclaimed → ``unknown``.** A path that no build extension
-       claimed and neither generic rule recognized is tagged ``unknown`` and
-       emits a ``[STATUS]`` decision-log warning. The stage-3 fallback narrows
-       this population without eliminating the state.
+    3b. **Generic template recognition (extension-agnostic, FALLBACK).** Every
+       path still unclaimed after stage 3 whose basename ends in
+       :data:`_TEMPLATE_SUFFIX` has its RENDER TARGET
+       (:func:`_strip_template_suffix`) tested against the two owner-less
+       predicates above — :func:`_is_documentation_path`, then
+       :func:`_is_infrastructure_config_path` — and the ORIGINAL path takes the
+       matching role. The build extensions are NOT re-consulted for the render
+       target. When neither predicate matches, the fail-closed terminal tags the
+       original path ``production``, never ``documentation_only``. A template is
+       a render source with no build owner of its own, so its role follows what
+       it renders into.
 
-    The per-path roles (the generic ``documentation`` and ``config`` tags plus
-    the build extensions' production / test / config claims) are then collapsed
-    into one of six plan-wide bucket values.
+    4. **Remaining unclaimed → ``unknown``.** A path that no build extension
+       claimed and none of the generic rules recognized is tagged ``unknown`` and
+       emits a ``[STATUS]`` decision-log warning. The stage-3 and stage-3b
+       fallbacks narrow this population without eliminating the state.
+
+    The per-path roles (the generic ``documentation`` / ``config`` /
+    template-delegated tags plus the build extensions' production / test /
+    config claims) are then collapsed into one of six plan-wide bucket values.
 
     File classification for production / test / config flows from the
     build-system-owned ``BuildExtensionBase`` subclasses, NOT the language domain
@@ -252,8 +267,9 @@ def _classify_paths_via_extensions(
         (``production_only`` / ``test_only`` / ``documentation_only`` /
         ``mixed_code`` / ``mixed_with_docs`` / ``unknown``) and
         ``unclaimed_paths`` is the list of paths no build extension claimed and
-        neither generic owner-less rule recognized (empty when bucket is
-        anything other than ``unknown``).
+        no generic owner-less rule recognized (empty when bucket is
+        anything other than ``unknown``). A template's stripped render target
+        never appears here — only the original template path can.
 
     The aggregator returns ``documentation_only`` for an empty path list as
     the conservative default (no affected files means no holistic Python
@@ -337,8 +353,32 @@ def _classify_paths_via_extensions(
         if path not in per_path_role and _is_infrastructure_config_path(path):
             per_path_role[path] = 'config'
 
-    # Stage 4 — identify the paths neither the build extensions nor either
-    # generic rule recognized, and emit a warning when the caller passed plan_id.
+    # Stage 3b — generic, extension-agnostic template recognition, run ONLY over
+    # the set still unclaimed after stage 3. A template's role follows from what
+    # it RENDERS INTO, so the render target is tested against the two
+    # already-declared, in-process owner-less predicates — and against nothing
+    # else. The build extensions are deliberately NOT re-consulted for the render
+    # target: a second aggregation pass over the stripped set would add tie-break
+    # semantics and a hot-path cost for a branch that no render target in the tree
+    # can currently reach. When neither predicate matches, the fail-closed
+    # terminal tags the ORIGINAL path ``production`` — never
+    # ``documentation_only`` — so an unrecognized render target keeps the plan on
+    # the code path rather than silently excusing it from verification. The
+    # stripped path is a classification key only: it is never reported in
+    # ``unclaimed`` and never enters the change footprint.
+    for path in code_paths:
+        if path in per_path_role or not _is_template_path(path):
+            continue
+        render_target = _strip_template_suffix(path)
+        if _is_documentation_path(render_target):
+            per_path_role[path] = 'documentation'
+        elif _is_infrastructure_config_path(render_target):
+            per_path_role[path] = 'config'
+        else:
+            per_path_role[path] = 'production'
+
+    # Stage 4 — identify the paths neither the build extensions nor any of the
+    # generic rules recognized, and emit a warning when the caller passed plan_id.
     unclaimed = [p for p in code_paths if p not in per_path_role]
     if unclaimed:
         if plan_id:
