@@ -8,15 +8,15 @@ against the per-plan ``pr-comment`` findings store: is every REQUIRED review bot
 accounted for — meaning each required bot is a PROVEN participant AND has no
 unresolved (``pending``) finding left?
 
-**The verdict proves PARTICIPATION only — never review QUALITY.** ``complete:
-true`` means every required bot was observed publishing a review artifact against
-this diff and its findings are triaged. It does NOT mean the diff was reviewed
-well, or reviewed meaningfully at all. A bot can publish a valid participation
-artifact and still miss every real defect: on #1027 PR-Agent posted its Guide —
-valid participation — while reporting "no major issues" on a diff in which
-CodeRabbit found two Major defects. **A satisfied quorum is not a reviewed diff**,
-and no caller may render it as one. Every field this module returns is named and
-documented against that ceiling.
+**The verdict proves PARTICIPATION only — never review QUALITY.**
+``participation_complete: true`` means every required bot was observed
+publishing a review artifact against this diff and its findings are triaged. It
+does NOT mean the diff was reviewed well, or reviewed meaningfully at all. A bot
+can publish a valid participation artifact and still miss every real defect: on
+#1027 PR-Agent posted its Guide — valid participation — while reporting "no
+major issues" on a diff in which CodeRabbit found two Major defects. **A
+satisfied quorum is not a reviewed diff**, and no caller may render it as one.
+Every field this module returns is named and documented against that ceiling.
 
 Participation is EVIDENCE-TYPED, not presence-typed. The caller supplies
 ``participated_bots`` as ``bot_kind:evidence_kind`` pairs produced by
@@ -32,10 +32,11 @@ review obligation. A bot declaring no evidence shape resolves FAIL-CLOSED: it ca
 never be proven a participant.
 
 **The quorum is over ``required_bots`` ONLY.** An optional bot never gates
-``complete``: its silence is not a failure, so it can never hold the step open.
-Optional bots are still classified and reported for visibility — the guard shows
-what the optional reviewers did — but their membership in ``pending_bots`` /
-``unproven_bots`` is informational and contributes nothing to ``complete``. See
+``participation_complete``: its silence is not a failure, so it can never hold
+the step open. Optional bots are still classified and reported for visibility —
+the guard shows what the optional reviewers did — but their membership in
+``pending_bots`` / ``unproven_bots`` is informational and contributes nothing to
+``participation_complete``. See
 ``automatic-review/standards/bot-participation-contract.md`` for the
 required-vs-optional semantics.
 
@@ -64,26 +65,27 @@ the closed non-participation taxonomy owned by
 not a non-participation. The refusal states are split by the refusing bot's
 registry ``rate_limit_class``, so no bot-name literal appears here.
 
-``complete`` is TRIAGE-STATE AWARE (``triage_ran``):
+``participation_complete`` is TRIAGE-STATE AWARE (``triage_ran``):
 
 - ``triage_ran == False`` (the default — the FIND-only automatic-review step,
   BEFORE the dispatcher-owned unified triage runs): a ``pending`` finding is the
   EXPECTED awaiting-triage state and does NOT count as incompleteness, so
-  ``complete`` is false only when a REQUIRED bot produced NO finding. This is what
-  stops the guard manufacturing a loop-back on findings that are pending only
-  because triage has not run yet.
+  ``participation_complete`` is false only when a REQUIRED bot produced NO
+  finding. This is what stops the guard manufacturing a loop-back on findings
+  that are pending only because triage has not run yet.
 - ``triage_ran == True`` (triage has run): a still-``pending`` finding on a
   REQUIRED bot IS a real incompleteness and blocks alongside an unproven
   required bot.
 
 ``pending_bots`` and ``unproven_bots`` are emitted for visibility in BOTH modes
 and span required ∪ optional; only the REQUIRED subset contributes to
-``complete``, and only ``pending``'s contribution additionally depends on
-``triage_ran``. The predicate fails closed over the required set: a plan with no
-findings yet reports every required bot as ``absent`` and ``complete: false`` in
-both modes, so the guard never marks the step done on an empty store. An EMPTY
-``required_bots`` is a valid configured state — the quorum is vacuously satisfied
-and ``complete`` is true.
+``participation_complete``, and only ``pending``'s contribution additionally
+depends on ``triage_ran``. The predicate fails closed over the required set: a
+plan with no findings yet reports every required bot as ``absent`` and
+``participation_complete: false`` in both modes, so the guard never marks the
+step done on an empty store. An EMPTY ``required_bots`` is a valid configured
+state — the quorum is vacuously satisfied and ``participation_complete`` is
+``true``.
 
 Usage:
     review_completeness.py check --plan-id <id> [--required-bots [<csv>]] [--optional-bots [<csv>]] [--participated-bots [<csv>]] [--in-progress-bots [<csv>]] [--refused-bots [<csv>]] [--triage-ran]

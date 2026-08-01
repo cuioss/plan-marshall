@@ -25,12 +25,14 @@ CONTRACT the components jointly implement:
 * each advertised invocation form agrees with its live argparse surface on the
   optionality of every list flag.
 
-Every set-guarding assertion derives its population from the registry (for bots)
-or from a repository scan (for call sites) rather than a hard-coded literal list,
-so a bot added or retired in a standards doc — or a fifth call site added in a
-future doc — is covered here automatically instead of silently escaping the sweep.
-Each sub-population is additionally guarded against vacuity: a scan that matched
-nothing FAILS rather than reporting a healthy aggregate over an empty set.
+Every set-guarding assertion derives its population from the registry (for bots),
+from a repository scan (for call sites), or from the live argparse surface (for
+list flags) rather than a hard-coded literal list, so a bot added or retired in a
+standards doc, a fifth call site added in a future doc, or a sixth list flag added
+to the parser is covered here automatically instead of silently escaping the
+sweep. Each sub-population is additionally guarded against vacuity: a derivation
+that matched nothing FAILS rather than reporting a healthy aggregate over an
+empty set.
 """
 
 from __future__ import annotations
@@ -59,6 +61,7 @@ import review_completeness as rc  # noqa: E402
 
 _CONTRACT_DOC = _AR_SCRIPTS.parent / 'standards' / 'bot-participation-contract.md'
 _AR_SKILL = _AR_SCRIPTS.parent / 'SKILL.md'
+_RC_SCRIPT = get_script_path('plan-marshall', 'automatic-review', 'review_completeness.py')
 
 # THIS repository's tracked config, resolved through conftest's project anchor so
 # the suite is cwd-independent.
@@ -412,16 +415,42 @@ class TestFailureTaxonomyIsExhaustive:
 
 _MARKETPLACE_DOCS = PROJECT_ROOT / 'marketplace' / 'bundles'
 
-#: The five list flags whose interpolated placeholders must be quoted. The
-#: ``review_completeness`` family may carry all five; the ``fetch_findings``
-#: family declares only the first two.
-_ALL_LIST_FLAGS = (
-    '--required-bots',
-    '--optional-bots',
-    '--participated-bots',
-    '--in-progress-bots',
-    '--refused-bots',
-)
+def _derive_list_flags() -> tuple[str, ...]:
+    """Return the ``--*-bots`` list flags the LIVE ``check`` parser declares.
+
+    Derived from the parser's own ``--help`` rendering rather than restated as a
+    literal tuple, so a sixth list flag added to ``review_completeness.py`` is
+    swept by the quoting scan and the optionality checks below without an edit
+    here. A literal would leave the new flag covered by neither, and the sweep
+    would report clean over an incomplete flag set.
+
+    Declaration order is preserved (argparse renders the usage line in
+    declaration order, and ``dict.fromkeys`` dedupes on first appearance), so the
+    ``fetch_findings`` family's two classification flags remain the leading pair.
+
+    Raises:
+        AssertionError: if the parser could not be interrogated, or if the
+            derivation matched no flag at all. An empty derivation is the vacuity
+            this guard exists to catch: every flag-set assertion below would
+            parametrize over an empty population and pass without checking
+            anything.
+    """
+    result = run_script(_RC_SCRIPT, 'check', '--help')
+    assert result.success, result.stderr
+
+    flags = tuple(dict.fromkeys(re.findall(r'--[a-z][a-z-]*-bots\b', result.stdout)))
+    assert flags, (
+        'no --*-bots flag was derived from the live review_completeness check parser — '
+        'the derivation is vacuous and every flag-set assertion below would pass over '
+        f'an empty population. usage was: {result.stdout}'
+    )
+    return flags
+
+
+#: The list flags whose interpolated placeholders must be quoted, derived from
+#: the live parser. The ``review_completeness`` family may carry all of them; the
+#: ``fetch_findings`` family declares only the first two.
+_ALL_LIST_FLAGS = _derive_list_flags()
 
 _FAMILY_A = 'review_completeness check'
 _FAMILY_B = 'github_pr fetch_findings'
@@ -462,10 +491,15 @@ _CONFIRMED_SITES = (
     ),
 )
 
-#: Matches a list flag and the token that follows it inside a fenced command.
+#: Matches a list flag and the token that follows it inside a fenced command. The
+#: alternation is built from the SAME parser-derived tuple as ``_ALL_LIST_FLAGS``
+#: rather than restated as a second literal — a sixth flag reaches the quoting
+#: scan automatically. Longest-first ordering keeps a flag that is a prefix of
+#: another from shadowing it.
 _FLAG_VALUE = re.compile(
-    r'(?P<flag>--(?:required|optional|participated|in-progress|refused)-bots)'
-    r'(?:[ \t]+(?P<value>\S+))?'
+    '(?P<flag>'
+    + '|'.join(re.escape(flag) for flag in sorted(_ALL_LIST_FLAGS, key=len, reverse=True))
+    + r')(?:[ \t]+(?P<value>\S+))?'
 )
 
 
@@ -626,7 +660,6 @@ class TestCallSitePopulation:
 # The crashed-gate-records-a-pass regression (#1063), end to end for both families
 # =============================================================================
 
-_RC_SCRIPT = get_script_path('plan-marshall', 'automatic-review', 'review_completeness.py')
 _GH_SCRIPT = get_script_path('plan-marshall', 'workflow-integration-github', 'github_pr.py')
 
 _BRANCH_CLEANUP_DOC = (

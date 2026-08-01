@@ -34,6 +34,7 @@ The store is seeded in-process via ``_findings_core.add_finding`` /
 
 from __future__ import annotations
 
+import re
 import sys
 
 import pytest
@@ -908,14 +909,37 @@ class TestLoadFailure:
 # and answered a bare flag with ``expected one argument`` / exit 2. Nothing here
 # can pass without the ``nargs='?'`` + ``const=''`` relaxation.
 
-#: The five list flags and the ``argparse`` dest each resolves to.
-_LIST_FLAGS = (
-    ('--required-bots', 'required_bots'),
-    ('--optional-bots', 'optional_bots'),
-    ('--participated-bots', 'participated_bots'),
-    ('--in-progress-bots', 'in_progress_bots'),
-    ('--refused-bots', 'refused_bots'),
-)
+def _derive_list_flags() -> tuple[tuple[str, str], ...]:
+    """Return ``(flag, dest)`` for every ``--*-bots`` flag the LIVE parser declares.
+
+    Read off the ``check`` subcommand's own ``--help`` rendering rather than
+    restated as a literal table, so a list flag added to ``review_completeness.py``
+    inherits the bare-form regression coverage below instead of silently losing it.
+    ``dest`` follows argparse's own inference rule — strip the leading ``--`` and
+    map ``-`` to ``_`` — so a flag that overrode ``dest`` explicitly would fail
+    loudly at the ``getattr`` in each consuming case rather than pass quietly.
+
+    Raises:
+        AssertionError: if the parser could not be interrogated, or if the
+            derivation matched no flag at all. An empty table would parametrize
+            every sweep below over an empty set, which reports clean while
+            checking nothing.
+    """
+    result = run_script(SCRIPT_PATH, 'check', '--help')
+    assert result.success, result.stderr
+
+    flags = tuple(dict.fromkeys(re.findall(r'--[a-z][a-z-]*-bots\b', result.stdout)))
+    assert flags, (
+        'no --*-bots flag was derived from the live check parser — the derivation is '
+        'vacuous and every parametrized sweep below would pass over an empty set. '
+        f'usage was: {result.stdout}'
+    )
+    return tuple((flag, flag[2:].replace('-', '_')) for flag in flags)
+
+
+#: The list flags and the ``argparse`` dest each resolves to, derived from the live
+#: ``check`` parser.
+_LIST_FLAGS = _derive_list_flags()
 
 
 def _parsed_check_args(monkeypatch, argv: list[str]):

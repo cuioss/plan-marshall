@@ -633,7 +633,7 @@ Read `participation_complete`, `pending_bots`, `unproven_bots`, and `bot_states`
 
 - **`participation_complete: true`** — every REQUIRED bot resolved to `participated` or `participated_but_empty`. An unproven OPTIONAL bot never blocks. Pending-but-fetched findings do NOT block here; they await the downstream dispatcher-owned unified triage. Proceed to Branch A and mark the step `done` — recording participation, never a quality claim.
 - **`participation_complete: false`** — at least one REQUIRED bot is in `unproven_bots` (`absent`, `in_progress`, or either refusal member). A pending-but-fetched bot, an optional bot, or a bot that participated-but-empty does NOT cause `false` at this FIND step. The step is **NOT markable done** on this pass. Take exactly one of two paths:
-  1. **Loop back into FIND** (default): treat the unproven participation as an un-surfaced review — re-enter the FIND pipeline (await the bot) and record Branch C (`--outcome loop_back`) for this iteration instead of Branch A. The terminal Branch A mark waits for a later pass that returns `participation_complete: true`. (This is a FIND-participation loop-back — awaiting an unproven bot review — NOT a triage loop-back; triage loop-back, including any real still-pending incompleteness after triage runs, is owned by the unified triage.)
+  1. **Loop back into FIND** (default): treat the unproven participation as an un-surfaced review — re-enter the FIND pipeline (await the bot) and record Branch C (`--outcome loop_back --loop-back-target 6-finalize`) for this iteration instead of Branch A. The terminal Branch A mark waits for a later pass that returns `participation_complete: true`. (This is a FIND-participation loop-back — awaiting an unproven bot review — NOT a triage loop-back; triage loop-back, including any real still-pending incompleteness after triage runs, is owned by the unified triage.)
   2. **Force-done with an explicit recorded reason** (escape hatch): mark the step `done` ONLY after writing a `decision`-log entry at WARNING naming the blocking bot(s), their states, and the reason. There is no silent force-done — the WARNING decision-log entry is mandatory and must precede the Branch A `mark-step-done`:
 
   ```bash
@@ -657,8 +657,11 @@ Read `participation_complete`, `pending_bots`, `unproven_bots`, and `bot_states`
        --message "[ERROR] (plan-marshall:automatic-review) review_completeness check returned an UNKNOWN verdict: exit_code={exit_code}, stderr={stderr} — participation is neither proven nor disproven; recording loop_back"
      ```
 
-  2. **Record Branch C** (`--outcome loop_back`) for this pass, so the step re-fires on the next
-     phase-6-finalize entry against the same question.
+  2. **Record Branch C** (`--outcome loop_back --loop-back-target 6-finalize`) for this pass, so the
+     step re-fires on the next phase-6-finalize entry against the same question. The target is
+     always `6-finalize`, never `5-execute`: an UNKNOWN verdict classifies no bot, so it surfaces no
+     participation gap for a fix task to close — the only defined recovery is to repair the failing
+     call and re-run the gate.
   3. **NOT record Branch A.** A `done` record on an UNKNOWN verdict would assert a participation
      verdict the predicate never produced.
 

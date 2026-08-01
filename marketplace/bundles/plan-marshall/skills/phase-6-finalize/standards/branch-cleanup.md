@@ -622,8 +622,11 @@ either alone.
 
 ##### UNKNOWN — the re-fetch itself failed
 
-When this `fetch_findings` call exits **non-zero**, the barrier's participation inputs
-(`participated_bots`, `refused_bots`) were never produced. The barrier **MUST NOT proceed to
+When this `fetch_findings` call exits **non-zero**, OR its return carries **no `participated_bots`
+field at all**, the barrier's participation inputs (`participated_bots`, `refused_bots`) were never
+produced. A zero exit is NOT sufficient on its own: a truncated or malformed return that omits the
+participation fields leaves exactly the same absent inputs as a crash, so this trigger is symmetric
+with its sibling branch below rather than exit-code-only. The barrier **MUST NOT proceed to
 Predicate 2** with absent participation inputs: feeding an empty `--participated-bots` to a predicate
 that fails closed would render every required bot `absent`, and feeding nothing at all would make the
 verdict a fiction either way. An absent input is an UNKNOWN verdict, never a `false` the operator can
@@ -635,7 +638,7 @@ Log at ERROR naming which call failed, its exit code, and its stderr verbatim, u
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level ERROR \
-  --message "[ERROR] (plan-marshall:phase-6-finalize) Pre-merge review barrier UNKNOWN: github_pr fetch_findings exited non-zero (exit_code={exit_code}, stderr={stderr}) — participation inputs absent, NOT evaluating Predicate 2; pre_merge_comment_barrier={barrier_mode} (merge blocked)"
+  --message "[ERROR] (plan-marshall:phase-6-finalize) Pre-merge review barrier UNKNOWN: github_pr fetch_findings exited non-zero or returned no participated_bots (exit_code={exit_code}, stderr={stderr}) — participation inputs absent, NOT evaluating Predicate 2; pre_merge_comment_barrier={barrier_mode} (merge blocked)"
 ```
 
 Then take the SAME blocked disposition the participation-incomplete branch takes for the configured
