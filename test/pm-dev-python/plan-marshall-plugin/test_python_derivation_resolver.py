@@ -27,7 +27,7 @@ import importlib.util
 import subprocess
 from pathlib import Path
 
-from extension_base import DerivationResolverBase, ExtensionBase
+from extension_base import NOTE_SAMPLE_LIMIT, DerivationResolverBase, ExtensionBase
 
 from conftest import MARKETPLACE_ROOT, load_script_module
 
@@ -50,7 +50,6 @@ def _load_extension_module():
 
 _extension_module = _load_extension_module()
 Extension = _extension_module.Extension
-NOTE_SAMPLE_LIMIT = _extension_module.NOTE_SAMPLE_LIMIT
 
 _discovery = load_script_module(
     'plan-marshall', 'extension-api', 'extension_discovery.py', 'extension_discovery_python_resolver'

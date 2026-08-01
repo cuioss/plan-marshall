@@ -40,10 +40,12 @@ carries no note.
 """
 
 SUPPRESSION_CATEGORIES = ('unresolved-target', 'unknown-endpoint', 'self-edge')
-"""Suppression buckets reported in ``notes[]``, in emission order."""
+"""Suppression buckets reported in ``notes[]``, in emission order.
 
-NOTE_SAMPLE_LIMIT = 3
-"""Maximum suppressed references named inline in a single aggregated note."""
+The rendering of those buckets is not this resolver's business — the shared
+``DerivationResolverBase._aggregate_notes`` renders whatever categories it is
+handed, in the order they are seeded here.
+"""
 
 
 class Extension(ExtensionBase, DerivationResolverBase):
@@ -199,38 +201,6 @@ class Extension(ExtensionBase, DerivationResolverBase):
         complete four-face contract this identity participates in.
         """
         return 'markdown'
-
-    @staticmethod
-    def _aggregate_notes(suppressed: dict[str, list[str]]) -> list[str]:
-        """Render one aggregated note per non-empty suppression category.
-
-        Aggregation is load-bearing rather than cosmetic. ``merge_resolver_edges``
-        appends one note per dropped candidate, so a per-reference note would
-        produce hundreds of entries and make the per-resolver report unreadable —
-        which would defeat the reporting obligation instead of satisfying it. One
-        note per category, carrying the full count plus a bounded sample, keeps
-        every suppression visible without drowning the report.
-
-        Args:
-            suppressed: Category name → the ``source -> target [dep_type]``
-                descriptions suppressed under it.
-
-        Returns:
-            One note per non-empty category, in :data:`SUPPRESSION_CATEGORIES`
-            order. Samples are sorted so the note is byte-stable.
-        """
-        notes: list[str] = []
-        for category in SUPPRESSION_CATEGORIES:
-            candidates = sorted(suppressed[category])
-            if not candidates:
-                continue
-            sample = ', '.join(candidates[:NOTE_SAMPLE_LIMIT])
-            overflow = len(candidates) - NOTE_SAMPLE_LIMIT
-            suffix = f' (+{overflow} more)' if overflow > 0 else ''
-            notes.append(
-                f'{category}: {len(candidates)} reference(s) suppressed - sample: {sample}{suffix}'
-            )
-        return notes
 
     def derive_edges(
         self,

@@ -10,7 +10,9 @@ Provides:
       file-to-build extensions (Axis-B: classify_globs / classify_paths /
       classify_path_specificity / classify_build_class)
     - DerivationResolverBase: Abstract base class for module-edge derivation
-      resolvers (Axis-C: derivation_resolver_id / derive_edges)
+      resolvers (Axis-C: derivation_resolver_id / derive_edges), plus the shared
+      suppression-note renderer (_aggregate_notes) and its sample cap
+      (NOTE_SAMPLE_LIMIT)
     - PathAttributionBase: Abstract base class for path-to-module ownership
       attributors (Axis-D: path_attributor_id / claim_paths)
     - Canonical command constants (re-exported from _extension_constants):
@@ -1319,6 +1321,14 @@ class BuildExtensionBase(ABC):  # noqa: B024 — ABC contract anchor; every Axis
         return []
 
 
+NOTE_SAMPLE_LIMIT = 3
+"""Maximum suppressed references named inline in a single aggregated note.
+
+The rendering cap of :meth:`DerivationResolverBase._aggregate_notes`, owned here
+rather than by each resolver so every Axis-C report caps its samples alike.
+"""
+
+
 class DerivationResolverBase(ABC):  # noqa: B024 — ABC contract anchor; every Axis-C method has a default
     """Abstract base class for module-edge derivation resolvers (Axis-C).
 
@@ -1410,6 +1420,51 @@ class DerivationResolverBase(ABC):  # noqa: B024 — ABC contract anchor; every 
             reports no conditions.
         """
         return [], []
+
+    @staticmethod
+    def _aggregate_notes(suppressed: dict[str, list[str]]) -> list[str]:
+        """Render one aggregated ``notes[]`` entry per non-empty suppression category.
+
+        The shared renderer for the reporting half of :meth:`derive_edges`. A
+        resolver that suppresses an edge MUST report it, and reporting is where
+        resolvers converge: the vocabulary of categories is each resolver's own
+        (a coordinate join collides on identity, a reference join fails to resolve
+        a target), but the rendering of "N suppressed, here are a few" is not.
+        Owning it here keeps that rendering single-sourced across every resolver
+        instead of copied per bundle.
+
+        Aggregation is load-bearing rather than cosmetic. ``merge_resolver_edges``
+        appends one note per dropped candidate, so a per-reference note would
+        produce hundreds of entries and make the per-resolver report unreadable —
+        which would defeat the reporting obligation instead of satisfying it. One
+        note per category, carrying the full count plus a bounded sample, keeps
+        every suppression visible without drowning the report.
+
+        Args:
+            suppressed: Category name → the descriptions suppressed under it. The
+                caller owns the category vocabulary; seeding the mapping with
+                every category it recognises — including the empty ones — is what
+                fixes the emission order below.
+
+        Returns:
+            One note per non-empty category, in the mapping's own key order, so a
+            caller that seeds its categories in a fixed order gets that order
+            back. Samples are sorted and capped at :data:`NOTE_SAMPLE_LIMIT`, so
+            the note is byte-stable; anything beyond the cap is counted in a
+            ``(+N more)`` suffix rather than hidden.
+        """
+        notes: list[str] = []
+        for category, entries in suppressed.items():
+            candidates = sorted(entries)
+            if not candidates:
+                continue
+            sample = ', '.join(candidates[:NOTE_SAMPLE_LIMIT])
+            overflow = len(candidates) - NOTE_SAMPLE_LIMIT
+            suffix = f' (+{overflow} more)' if overflow > 0 else ''
+            notes.append(
+                f'{category}: {len(candidates)} reference(s) suppressed - sample: {sample}{suffix}'
+            )
+        return notes
 
 
 class PathAttributionBase(ABC):  # noqa: B024 — ABC contract anchor; every Axis-D method has a default

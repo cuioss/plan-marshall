@@ -23,7 +23,7 @@ import importlib.util
 import subprocess
 from pathlib import Path
 
-from extension_base import DerivationResolverBase, ExtensionBase
+from extension_base import NOTE_SAMPLE_LIMIT, DerivationResolverBase, ExtensionBase
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 
@@ -53,7 +53,6 @@ def _load_plugin_extension():
 
 _extension_module = _load_plugin_extension()
 Extension = _extension_module.Extension
-NOTE_SAMPLE_LIMIT = _extension_module.NOTE_SAMPLE_LIMIT
 
 
 # =============================================================================
