@@ -24,10 +24,10 @@ via the root conftest's marketplace PYTHONPATH setup.
 
 import argparse
 import json
-import re
 import sys
 
 import pytest
+from _bot_flag_derivation import derive_bot_flags
 
 from conftest import get_script_path, load_script_module, run_script
 
@@ -1737,39 +1737,13 @@ def test_deduplicated_mismatch_persist_stays_benign(plan_context, monkeypatch):
 # rather than ``''``. Nothing here can pass without the ``nargs='?'`` +
 # ``const=''`` + ``default=''`` relaxation.
 
-def _derive_classification_flags() -> tuple[tuple[str, str], ...]:
-    """Return ``(flag, dest)`` for every ``--*-bots`` flag the LIVE parser declares.
-
-    Read off the ``fetch_findings`` subcommand's own ``--help`` rendering rather
-    than restated as a literal table, so a classification flag added to
-    ``github_pr.py`` inherits the bare-form regression coverage below instead of
-    silently losing it. ``dest`` follows argparse's own inference rule — strip the
-    leading ``--`` and map ``-`` to ``_`` — so a flag that overrode ``dest``
-    explicitly would fail loudly at the ``getattr`` in each consuming case rather
-    than pass quietly.
-
-    Raises:
-        AssertionError: if the parser could not be interrogated, or if the
-            derivation matched no flag at all. An empty table would parametrize
-            every sweep below over an empty set, which reports clean while
-            checking nothing.
-    """
-    script_path = get_script_path('plan-marshall', 'workflow-integration-github', 'github_pr.py')
-    result = run_script(script_path, 'fetch_findings', '--help')
-    assert result.success, result.stderr
-
-    flags = tuple(dict.fromkeys(re.findall(r'--[a-z][a-z-]*-bots\b', result.stdout)))
-    assert flags, (
-        'no --*-bots flag was derived from the live fetch_findings parser — the '
-        'derivation is vacuous and every parametrized sweep below would pass over an '
-        f'empty set. usage was: {result.stdout}'
-    )
-    return tuple((flag, flag[2:].replace('-', '_')) for flag in flags)
-
-
 #: The classification flags and the ``argparse`` dest each resolves to, derived
-#: from the live ``fetch_findings`` parser.
-_CLASSIFICATION_FLAGS = _derive_classification_flags()
+#: from the live ``fetch_findings`` parser so a flag added to the script inherits
+#: the bare-form sweeps below instead of silently losing them.
+_CLASSIFICATION_FLAGS = derive_bot_flags(
+    get_script_path('plan-marshall', 'workflow-integration-github', 'github_pr.py'),
+    'fetch_findings',
+)
 
 
 def _parsed_fetch_args(monkeypatch, argv):

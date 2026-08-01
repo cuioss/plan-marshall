@@ -45,6 +45,7 @@ from unittest.mock import patch
 
 import pytest
 
+from _bot_flag_derivation import derive_bot_flags
 from conftest import PLAN_DIR_NAME, PROJECT_ROOT, get_script_path, run_script
 
 _AR_SCRIPTS = get_script_path('plan-marshall', 'automatic-review', 'review_completeness.py').parent
@@ -415,42 +416,11 @@ class TestFailureTaxonomyIsExhaustive:
 
 _MARKETPLACE_DOCS = PROJECT_ROOT / 'marketplace' / 'bundles'
 
-def _derive_list_flags() -> tuple[str, ...]:
-    """Return the ``--*-bots`` list flags the LIVE ``check`` parser declares.
-
-    Derived from the parser's own ``--help`` rendering rather than restated as a
-    literal tuple, so a sixth list flag added to ``review_completeness.py`` is
-    swept by the quoting scan and the optionality checks below without an edit
-    here. A literal would leave the new flag covered by neither, and the sweep
-    would report clean over an incomplete flag set.
-
-    Declaration order is preserved (argparse renders the usage line in
-    declaration order, and ``dict.fromkeys`` dedupes on first appearance), so the
-    ``fetch_findings`` family's two classification flags remain the leading pair.
-
-    Raises:
-        AssertionError: if the parser could not be interrogated, or if the
-            derivation matched no flag at all. An empty derivation is the vacuity
-            this guard exists to catch: every flag-set assertion below would
-            parametrize over an empty population and pass without checking
-            anything.
-    """
-    result = run_script(_RC_SCRIPT, 'check', '--help')
-    assert result.success, result.stderr
-
-    flags = tuple(dict.fromkeys(re.findall(r'--[a-z][a-z-]*-bots\b', result.stdout)))
-    assert flags, (
-        'no --*-bots flag was derived from the live review_completeness check parser — '
-        'the derivation is vacuous and every flag-set assertion below would pass over '
-        f'an empty population. usage was: {result.stdout}'
-    )
-    return flags
-
-
 #: The list flags whose interpolated placeholders must be quoted, derived from
-#: the live parser. The ``review_completeness`` family may carry all of them; the
-#: ``fetch_findings`` family declares only the first two.
-_ALL_LIST_FLAGS = _derive_list_flags()
+#: the live ``check`` parser so a sixth flag is swept without an edit here. The
+#: ``review_completeness`` family may carry all of them; the ``fetch_findings``
+#: family declares only the first two.
+_ALL_LIST_FLAGS = tuple(flag for flag, _dest in derive_bot_flags(_RC_SCRIPT, 'check'))
 
 _FAMILY_A = 'review_completeness check'
 _FAMILY_B = 'github_pr fetch_findings'
