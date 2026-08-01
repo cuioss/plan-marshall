@@ -600,7 +600,7 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr fetch_findings \
   --pr-number N --plan-id PLAN_ID \
-  [--required-bots CSV] [--optional-bots CSV]
+  [--required-bots [CSV]] [--optional-bots [CSV]]
 ```
 
 `--required-bots` / `--optional-bots` carry the review-bot participation CLASSIFICATION, not an
@@ -609,6 +609,13 @@ the bot is reported in the return's `unclassified_bots[]` so the caller can surf
 gap (the warn-but-ingest rule). A required bot's silence is a failure that gates the completeness
 quorum; an optional bot's silence never gates. See
 [`automatic-review/standards/bot-participation-contract.md`](../automatic-review/standards/bot-participation-contract.md).
+
+Both list flags take an OPTIONAL value: each may be supplied bare (the flag with no value at all),
+which reads as the empty list — identical to omitting it. Because both lists carry classification and
+never admission, an empty list changes nothing about what is ingested; it only leaves every observed
+bot unclassified, and the warn-but-ingest prose above holds unchanged. Callers interpolating a
+possibly-empty variable MUST still double-quote the placeholder; the bare form is the parser-side
+backstop, not a licence to leave the interpolation unquoted.
 
 ### github_pr post_responses
 

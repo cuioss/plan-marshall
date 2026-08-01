@@ -44,10 +44,17 @@ status, never a silent ``done`` no-op. LLM consumers query the ledger via
 
 Usage:
     github_pr.py fetch-comments [--pr <number>] [--unresolved-only]
-    github_pr.py fetch_findings --pr-number <N> --plan-id <P>
+    github_pr.py fetch_findings --pr-number <N> --plan-id <P> [--required-bots [<csv>]] [--optional-bots [<csv>]]
     github_pr.py post_responses --pr-number <N> --plan-id <P>
     github_pr.py bot_completion --pr-number <N> --bot-kind <kind>
     github_pr.py --help
+
+``fetch_findings``'s two classification list flags take an OPTIONAL value: each
+may be supplied bare (the flag with no value at all), which reads as the empty
+list — identical to omitting it. A caller interpolating an empty variable
+therefore produces the empty-list reading rather than an argparse rejection.
+Neither list admits or drops anything, so an empty list never changes what is
+ingested; it only leaves every observed bot unclassified.
 
 Subcommands:
     fetch-comments    Fetch PR review comments (raw, no filtering or storage)
@@ -1302,22 +1309,30 @@ Examples:
                     {
                         'flags': ['--required-bots'],
                         'dest': 'required_bots',
+                        'nargs': '?',
+                        'const': '',
+                        'default': '',
                         'help': (
                             'Comma-joined bot_kinds whose participation is REQUIRED (e.g. '
                             '"coderabbit,pr-agent"). A required bot\'s silence is a failure and gates the '
                             'review-completeness quorum. This list classifies, it does NOT admit: a comment '
                             'from a bot outside both lists is still ingested and its bot is reported in '
-                            'unclassified_bots.'
+                            'unclassified_bots. May be supplied bare (no value), which reads as the empty '
+                            'list — identical to omitting it.'
                         ),
                     },
                     {
                         'flags': ['--optional-bots'],
                         'dest': 'optional_bots',
+                        'nargs': '?',
+                        'const': '',
+                        'default': '',
                         'help': (
                             'Comma-joined bot_kinds whose participation is OPTIONAL (e.g. "sourcery"). An '
                             "optional bot's silence is not a failure and never gates mark-done. Like "
                             '--required-bots this classifies rather than admits; see '
-                            'automatic-review/standards/bot-participation-contract.md.'
+                            'automatic-review/standards/bot-participation-contract.md. May be supplied bare '
+                            '(no value), which reads as the empty list — identical to omitting it.'
                         ),
                     },
                 ],

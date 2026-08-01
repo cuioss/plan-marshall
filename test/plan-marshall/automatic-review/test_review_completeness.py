@@ -36,6 +36,9 @@ from __future__ import annotations
 
 import sys
 
+import pytest
+
+from _bot_flag_derivation import derive_bot_flags
 from conftest import get_script_path, run_script
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'automatic-review', 'review_completeness.py')
@@ -887,3 +890,229 @@ class TestLoadFailure:
         assert 'status: error' in captured.out
         assert 'error: load_failure' in captured.out
         assert 'detail:' in captured.out
+
+
+# =============================================================================
+# Zero participation — every list flag may be supplied BARE
+# =============================================================================
+#
+# The defect this pins: the callers interpolate all five list flags into the
+# command line, and every one of them is legitimately empty in normal operation
+# (no optional bots, no in-progress bots, no refusals). An unquoted
+# ``--refused-bots {refused_bots}`` with an empty value collapses to a BARE
+# ``--refused-bots``, which the pre-fix parser rejected with argparse exit 2 —
+# and a crashed gate that a caller reads as a pass is a participation verdict
+# nobody produced.
+#
+# Every case below is red against the pre-fix parser by construction: the five
+# flags declared ``default=''`` with no ``nargs``, so argparse required a value
+# and answered a bare flag with ``expected one argument`` / exit 2. Nothing here
+# can pass without the ``nargs='?'`` + ``const=''`` relaxation.
+
+#: The list flags and the ``argparse`` dest each resolves to, derived from the live
+#: ``check`` parser so a flag added to the script inherits the bare-form sweeps
+#: below instead of silently losing them.
+_LIST_FLAGS = derive_bot_flags(SCRIPT_PATH, 'check')
+
+
+def _parsed_check_args(monkeypatch, argv: list[str]):
+    """Return the ``argparse.Namespace`` ``main`` built for ``argv``.
+
+    Replaces ``cmd_check`` with a recorder so the parse is observed WITHOUT
+    running the predicate. ``main`` resolves ``cmd_check`` from module globals at
+    call time (``check_parser.set_defaults(func=cmd_check)`` executes inside
+    ``main``), so patching the module attribute reaches the binding it uses.
+    """
+    captured: dict = {}
+
+    def _recorder(args):
+        captured['args'] = args
+        return 0
+
+    monkeypatch.setattr(rc, 'cmd_check', _recorder)
+    assert rc.main(argv) == 0
+    return captured['args']
+
+
+class TestBareListFlags:
+    """Every list flag accepts a bare form that reads as the empty list."""
+
+    def test_every_list_flag_bare_is_accepted(self, plan_context):
+        """All five bare at once — the exact shape the callers produce when empty.
+
+        Exits 0 with a real verdict instead of the pre-fix argparse rejection. An
+        empty ``required_bots`` is the vacuously-satisfied quorum, so the honest
+        verdict here is ``true``: there is nothing to await. The point of the case
+        is that a verdict is PRODUCED at all — see
+        ``test_zero_participation_with_required_bots_blocks`` for the arm where
+        zero observations must block.
+        """
+        plan_id = 'rc-bare-all'
+        plan_context.plan_dir_for(plan_id)
+
+        result = run_script(
+            SCRIPT_PATH,
+            'check',
+            '--plan-id',
+            plan_id,
+            '--required-bots',
+            '--optional-bots',
+            '--participated-bots',
+            '--in-progress-bots',
+            '--refused-bots',
+        )
+
+        assert result.success, result.stderr
+        assert 'expected one argument' not in result.stderr
+        assert 'status: success' in result.stdout
+        assert 'participation_complete: true' in result.stdout
+        assert 'proves: participation_only' in result.stdout
+
+    def test_zero_participation_with_required_bots_blocks(self, plan_context):
+        """Zero observations against a real required set is a BLOCK, never a pass.
+
+        The four observation flags are bare — no proven participant, nothing in
+        progress, nothing refused — while ``required_bots`` names two bots. The
+        relaxation must not buy a pass: the run completes with exit 0 and
+        ``participation_complete: false``, naming both required bots unproven.
+        """
+        plan_id = 'rc-bare-zero-participation'
+        plan_context.plan_dir_for(plan_id)
+
+        result = run_script(
+            SCRIPT_PATH,
+            'check',
+            '--plan-id',
+            plan_id,
+            '--required-bots',
+            'coderabbit,pr-agent',
+            '--optional-bots',
+            '--participated-bots',
+            '--in-progress-bots',
+            '--refused-bots',
+        )
+
+        assert result.success, result.stderr
+        assert 'status: success' in result.stdout
+        assert 'participation_complete: false' in result.stdout
+        assert 'unproven_bots[2]' in result.stdout
+        assert 'coderabbit,absent' in result.stdout
+        assert 'pr-agent,absent' in result.stdout
+
+    @pytest.mark.parametrize(('flag', 'dest'), _LIST_FLAGS)
+    def test_each_flag_bare_followed_by_another_flag(self, monkeypatch, flag, dest):
+        """A bare flag does not swallow the NEXT flag as its value.
+
+        The interpolation collapse rarely leaves the bare flag last on the line —
+        it is normally followed by the next ``--flag``. ``argparse`` treats a
+        ``-``-prefixed token as an option rather than an optional value, so the
+        bare flag still takes ``const=''`` and the following flag parses normally.
+        """
+        args = _parsed_check_args(
+            monkeypatch,
+            ['check', '--plan-id', 'rc-bare-then-flag', flag, '--triage-ran'],
+        )
+
+        assert getattr(args, dest) == ''
+        assert args.triage_ran is True
+
+    @pytest.mark.parametrize(('flag', 'dest'), _LIST_FLAGS)
+    def test_each_flag_value_form_is_unchanged(self, monkeypatch, flag, dest):
+        """The existing ``--flag value`` form parses exactly as before.
+
+        Pairs with the bare-form cases so the relaxation is shown to ADD a form
+        rather than replace one.
+        """
+        args = _parsed_check_args(
+            monkeypatch, ['check', '--plan-id', 'rc-value-form', flag, 'coderabbit']
+        )
+
+        assert getattr(args, dest) == 'coderabbit'
+
+    @pytest.mark.parametrize(('flag', 'dest'), _LIST_FLAGS)
+    def test_bare_omitted_and_explicit_empty_agree(self, monkeypatch, flag, dest):
+        """Bare, omitted, and explicitly-empty are the same parse: ``''``.
+
+        This three-way agreement is what makes the bare form safe to reach by
+        accident — a caller whose interpolation collapsed gets the reading it
+        would have got had it quoted the placeholder or omitted the flag.
+        """
+        bare = _parsed_check_args(monkeypatch, ['check', '--plan-id', 'rc-agree', flag])
+        omitted = _parsed_check_args(monkeypatch, ['check', '--plan-id', 'rc-agree'])
+        explicit = _parsed_check_args(monkeypatch, ['check', '--plan-id', 'rc-agree', flag, ''])
+
+        assert getattr(bare, dest) == getattr(omitted, dest) == getattr(explicit, dest) == ''
+
+    def test_bare_flag_still_swallows_a_following_plain_value(self, monkeypatch):
+        """WHY quoting is still mandatory: a bare flag DOES take a following plain token.
+
+        ``nargs='?'`` is a parser-side backstop, not a substitute for quoting the
+        interpolated placeholder. When the collapsed flag is followed by a plain
+        (non ``-``-prefixed) token, argparse hands that token to the bare flag —
+        so an unquoted empty ``--optional-bots`` silently steals the NEXT flag's
+        value and the value-bearing flag is left empty. The docs state the two
+        defences are complementary; this is the case that makes that concrete.
+        """
+        args = _parsed_check_args(
+            monkeypatch,
+            [
+                'check',
+                '--plan-id',
+                'rc-swallow',
+                '--optional-bots',
+                # `--required-bots "coderabbit"` with the value collapsed away in
+                # front of it: the bare --optional-bots eats 'coderabbit'.
+                'coderabbit',
+            ],
+        )
+
+        assert args.optional_bots == 'coderabbit'
+        assert args.required_bots == ''
+
+
+# =============================================================================
+# UNKNOWN verdict — a crashed predicate emits NO verdict to misread
+# =============================================================================
+
+
+class TestUnknownVerdictEmitsNoParticipationField:
+    """A non-zero exit never carries a ``participation_complete`` a caller could read.
+
+    The callers treat "non-zero exit, or a return with no ``participation_complete``
+    field" as an UNKNOWN verdict — explicitly not ``false`` and emphatically not
+    ``true``. That routing is only sound if a crashed run cannot emit a verdict
+    field at all, which is what these cases pin.
+    """
+
+    def test_argparse_rejection_emits_no_verdict(self, plan_context):
+        """An unrecognised flag exits 2 with no verdict on stdout."""
+        plan_id = 'rc-unknown-argparse'
+        plan_context.plan_dir_for(plan_id)
+
+        result = run_script(
+            SCRIPT_PATH, 'check', '--plan-id', plan_id, '--not-a-real-flag', 'x'
+        )
+
+        assert result.returncode == 2
+        assert 'participation_complete' not in result.stdout
+
+    def test_load_failure_emits_no_verdict(self, plan_context, monkeypatch, capsys):
+        """The store-failure error branch exits 1 and emits no verdict field.
+
+        ``_emit_toon`` returns immediately on the error branch, so ``status:
+        error`` is the whole payload — there is no ``participation_complete`` line
+        for a caller to mistake for a verdict.
+        """
+        plan_id = 'rc-unknown-load-failure'
+        plan_context.plan_dir_for(plan_id)
+
+        def _raise(*_args, **_kwargs):
+            raise OSError('store gone')
+
+        monkeypatch.setattr(rc, 'query_findings', _raise)
+
+        rc_exit = rc.main(['check', '--plan-id', plan_id, '--required-bots', 'coderabbit'])
+
+        captured = capsys.readouterr()
+        assert rc_exit == 1
+        assert 'participation_complete' not in captured.out

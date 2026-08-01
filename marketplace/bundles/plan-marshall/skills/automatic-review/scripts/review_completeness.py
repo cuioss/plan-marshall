@@ -8,15 +8,15 @@ against the per-plan ``pr-comment`` findings store: is every REQUIRED review bot
 accounted for — meaning each required bot is a PROVEN participant AND has no
 unresolved (``pending``) finding left?
 
-**The verdict proves PARTICIPATION only — never review QUALITY.** ``complete:
-true`` means every required bot was observed publishing a review artifact against
-this diff and its findings are triaged. It does NOT mean the diff was reviewed
-well, or reviewed meaningfully at all. A bot can publish a valid participation
-artifact and still miss every real defect: on #1027 PR-Agent posted its Guide —
-valid participation — while reporting "no major issues" on a diff in which
-CodeRabbit found two Major defects. **A satisfied quorum is not a reviewed diff**,
-and no caller may render it as one. Every field this module returns is named and
-documented against that ceiling.
+**The verdict proves PARTICIPATION only — never review QUALITY.**
+``participation_complete: true`` means every required bot was observed
+publishing a review artifact against this diff and its findings are triaged. It
+does NOT mean the diff was reviewed well, or reviewed meaningfully at all. A bot
+can publish a valid participation artifact and still miss every real defect: on
+#1027 PR-Agent posted its Guide — valid participation — while reporting "no
+major issues" on a diff in which CodeRabbit found two Major defects. **A
+satisfied quorum is not a reviewed diff**, and no caller may render it as one.
+Every field this module returns is named and documented against that ceiling.
 
 Participation is EVIDENCE-TYPED, not presence-typed. The caller supplies
 ``participated_bots`` as ``bot_kind:evidence_kind`` pairs produced by
@@ -32,17 +32,18 @@ review obligation. A bot declaring no evidence shape resolves FAIL-CLOSED: it ca
 never be proven a participant.
 
 **The quorum is over ``required_bots`` ONLY.** An optional bot never gates
-``complete``: its silence is not a failure, so it can never hold the step open.
-Optional bots are still classified and reported for visibility — the guard shows
-what the optional reviewers did — but their membership in ``pending_bots`` /
-``unfetched_bots`` is informational and contributes nothing to ``complete``. See
+``participation_complete``: its silence is not a failure, so it can never hold
+the step open. Optional bots are still classified and reported for visibility —
+the guard shows what the optional reviewers did — but their membership in
+``pending_bots`` / ``unproven_bots`` is informational and contributes nothing to
+``participation_complete``. See
 ``automatic-review/standards/bot-participation-contract.md`` for the
 required-vs-optional semantics.
 
 Two independent incompleteness classes are surfaced separately so the guard can
 name the offending bots:
 
-- ``unfetched_bots`` — bots that produced NO ``pr-comment`` finding at all AND
+- ``unproven_bots`` — bots that produced NO ``pr-comment`` finding at all AND
   are not accounted-for as *settled*. A bot whose review is still genuinely
   awaited (nothing posted, review window still open) leaves no finding, so the
   store is silent on it. Only a REQUIRED entry here blocks.
@@ -64,30 +65,39 @@ the closed non-participation taxonomy owned by
 not a non-participation. The refusal states are split by the refusing bot's
 registry ``rate_limit_class``, so no bot-name literal appears here.
 
-``complete`` is TRIAGE-STATE AWARE (``triage_ran``):
+``participation_complete`` is TRIAGE-STATE AWARE (``triage_ran``):
 
 - ``triage_ran == False`` (the default — the FIND-only automatic-review step,
   BEFORE the dispatcher-owned unified triage runs): a ``pending`` finding is the
   EXPECTED awaiting-triage state and does NOT count as incompleteness, so
-  ``complete`` is false only when a REQUIRED bot produced NO finding. This is what
-  stops the guard manufacturing a loop-back on findings that are pending only
-  because triage has not run yet.
+  ``participation_complete`` is false only when a REQUIRED bot produced NO
+  finding. This is what stops the guard manufacturing a loop-back on findings
+  that are pending only because triage has not run yet.
 - ``triage_ran == True`` (triage has run): a still-``pending`` finding on a
-  REQUIRED bot IS a real incompleteness and blocks alongside an unfetched
+  REQUIRED bot IS a real incompleteness and blocks alongside an unproven
   required bot.
 
-``pending_bots`` and ``unfetched_bots`` are emitted for visibility in BOTH modes
+``pending_bots`` and ``unproven_bots`` are emitted for visibility in BOTH modes
 and span required ∪ optional; only the REQUIRED subset contributes to
-``complete``, and only ``pending``'s contribution additionally depends on
-``triage_ran``. The predicate fails closed over the required set: a plan with no
-findings yet reports every required bot as unfetched and ``complete: false`` in
-both modes, so the guard never marks the step done on an empty store. An EMPTY
-``required_bots`` is a valid configured state — the quorum is vacuously satisfied
-and ``complete`` is true.
+``participation_complete``, and only ``pending``'s contribution additionally
+depends on ``triage_ran``. The predicate fails closed over the required set: a
+plan with no findings yet reports every required bot as ``absent`` and
+``participation_complete: false`` in both modes, so the guard never marks the
+step done on an empty store. An EMPTY ``required_bots`` is a valid configured
+state — the quorum is vacuously satisfied and ``participation_complete`` is
+``true``.
 
 Usage:
-    review_completeness.py check --plan-id <id> --required-bots <csv> [--optional-bots <csv>] [--participated-bots <csv>] [--in-progress-bots <csv>] [--refused-bots <csv>] [--triage-ran]
+    review_completeness.py check --plan-id <id> [--required-bots [<csv>]] [--optional-bots [<csv>]] [--participated-bots [<csv>]] [--in-progress-bots [<csv>]] [--refused-bots [<csv>]] [--triage-ran]
     review_completeness.py --help
+
+Every list flag above takes an OPTIONAL value: it may be supplied bare (the flag
+with no value at all), which reads exactly the same as omitting it — the empty
+list. A caller that interpolates an empty variable into the command line
+therefore produces the empty-list reading rather than an argparse rejection. The
+relaxation is a parser-robustness change ONLY: an empty required-bots list is
+still the vacuously-satisfied quorum, and no empty list ever launders an
+unproven bot into a pass.
 
 Subcommands:
     check  Report whether every REQUIRED bot's PARTICIPATION is proven and triaged.
@@ -96,8 +106,10 @@ Return TOON shape:
     status: success
     participation_complete: true|false
     proves: participation_only
-    pending_bots[N]: [bot, ...]          # emitted only when non-empty
-    unproven_bots[N]: [bot, ...]         # emitted only when non-empty
+    pending_bots[N]:                     # emitted only when non-empty
+      - bot
+    unproven_bots[N]:                    # emitted only when non-empty
+      - bot
     bot_states[N]{bot_kind,state}: ...   # one row per required ∪ optional bot
 """
 
@@ -323,10 +335,14 @@ def _emit_toon(payload: dict) -> None:
     print(f'proves: {payload["proves"]}')
     pending = payload['pending_bots']
     if pending:
-        print(f'pending_bots[{len(pending)}]: {pending}')
+        print(f'pending_bots[{len(pending)}]:')
+        for bot in pending:
+            print(f'  - {bot}')
     unproven = payload['unproven_bots']
     if unproven:
-        print(f'unproven_bots[{len(unproven)}]: {unproven}')
+        print(f'unproven_bots[{len(unproven)}]:')
+        for bot in unproven:
+            print(f'  - {bot}')
     states = payload['bot_states']
     if states:
         print(f'bot_states[{len(states)}]{{bot_kind,state}}:')
@@ -334,28 +350,26 @@ def _emit_toon(payload: dict) -> None:
             print(f'  {record["bot_kind"]},{record["state"]}')
 
 
+def _split_bots(raw: str | None) -> list[str]:
+    """Split a comma-joined bot list into its non-empty members.
+
+    Absent, empty, and whitespace-only values all read as the empty list, so the
+    bare-flag, omitted-flag, and explicitly-empty forms agree without a caller-side
+    emptiness check.
+    """
+    return [b.strip() for b in (raw or '').split(',') if b.strip()]
+
+
 def cmd_check(args: argparse.Namespace) -> int:
     """Run the completeness predicate and emit the summary TOON to stdout."""
-    required_bots: list[str] = []
-    if args.required_bots:
-        required_bots = [b.strip() for b in args.required_bots.split(',') if b.strip()]
-    optional_bots: list[str] = []
-    if args.optional_bots:
-        optional_bots = [b.strip() for b in args.optional_bots.split(',') if b.strip()]
-    in_progress_bots: list[str] = []
-    if args.in_progress_bots:
-        in_progress_bots = [b.strip() for b in args.in_progress_bots.split(',') if b.strip()]
-    refused_bots: list[str] = []
-    if args.refused_bots:
-        refused_bots = [b.strip() for b in args.refused_bots.split(',') if b.strip()]
     payload = check_completeness(
         args.plan_id,
-        required_bots,
-        optional_bots=optional_bots,
+        _split_bots(args.required_bots),
+        optional_bots=_split_bots(args.optional_bots),
         triage_ran=args.triage_ran,
         participated_bots=parse_participation(args.participated_bots),
-        in_progress_bots=in_progress_bots,
-        refused_bots=refused_bots,
+        in_progress_bots=_split_bots(args.in_progress_bots),
+        refused_bots=_split_bots(args.refused_bots),
     )
     _emit_toon(payload)
     return 0 if payload.get('status') == 'success' else 1
@@ -381,25 +395,33 @@ def main(argv: list[str] | None = None) -> int:
     check_parser.add_argument('--plan-id', required=True)
     check_parser.add_argument(
         '--required-bots',
+        nargs='?',
+        const='',
         default='',
         help=(
             'Comma-separated review-bot kinds whose participation is REQUIRED. '
             'These and only these form the completeness quorum — a required '
             "bot's silence blocks the mark-done. An empty list is a valid "
-            'configured state (quorum vacuously satisfied).'
+            'configured state (quorum vacuously satisfied). May be supplied bare '
+            '(no value), which reads as the empty list.'
         ),
     )
     check_parser.add_argument(
         '--optional-bots',
+        nargs='?',
+        const='',
         default='',
         help=(
             'Comma-separated review-bot kinds whose participation is OPTIONAL. '
             'Classified and reported for visibility but NEVER gating: an optional '
-            "bot's silence is not a failure and never blocks the mark-done."
+            "bot's silence is not a failure and never blocks the mark-done. May be "
+            'supplied bare (no value), which reads as the empty list.'
         ),
     )
     check_parser.add_argument(
         '--participated-bots',
+        nargs='?',
+        const='',
         default='',
         help=(
             'Comma-separated EVIDENCE-TYPED participation pairs, each '
@@ -408,26 +430,33 @@ def main(argv: list[str] | None = None) -> int:
             'declared participation_evidence publish shapes; a bare bot_kind with '
             'no evidence_kind is rejected, because unqualified presence does not '
             'prove a bot reviewed this diff. This proves PARTICIPATION only, never '
-            'review quality.'
+            'review quality. May be supplied bare (no value), which reads as the '
+            'empty list — zero proven participants, never a pass.'
         ),
     )
     check_parser.add_argument(
         '--in-progress-bots',
+        nargs='?',
+        const='',
         default='',
         help=(
             'Comma-separated review-bot kinds whose review was still running '
             '(completion check not yet terminal) when the poll budget expired. '
-            'A required bot here is classified in_progress and blocks.'
+            'A required bot here is classified in_progress and blocks. May be '
+            'supplied bare (no value), which reads as the empty list.'
         ),
     )
     check_parser.add_argument(
         '--refused-bots',
+        nargs='?',
+        const='',
         default='',
         help=(
             'Comma-separated review-bot kinds observed publishing a refusal '
             'notice. Supply only the observation — the refusal is split into '
             "refused_awaitable / refused_hard from each bot's registry "
-            'rate_limit_class, never by the caller.'
+            'rate_limit_class, never by the caller. May be supplied bare (no '
+            'value), which reads as the empty list.'
         ),
     )
     check_parser.add_argument(
@@ -437,7 +466,7 @@ def main(argv: list[str] | None = None) -> int:
         help=(
             'Whether the dispatcher-owned unified triage has already run. Omit '
             '(the FIND-only default) so a pending finding does NOT block '
-            'completeness — only unfetched REQUIRED bots gate the mark-done. Pass '
+            'completeness — only unproven REQUIRED bots gate the mark-done. Pass '
             'it once triage has run so a still-pending required finding blocks as '
             'a real incompleteness.'
         ),

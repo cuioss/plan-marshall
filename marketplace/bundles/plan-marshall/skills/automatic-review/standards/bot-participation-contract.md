@@ -112,6 +112,36 @@ Evidence is therefore taken from observed publish shapes only. Check state remai
 *orthogonal* question of whether a bot's review window is still open (`in_progress` in the failure
 taxonomy above) — that is a timing signal, not participation evidence.
 
+#### Normative prohibition — a check conclusion is not evidence and not a handled record
+
+A review bot's **check conclusion** — the terminal `SUCCESS` / `FAILURE` state `github_pr
+bot_completion` reports for that bot's registry `completion_check_name` — is subject to two
+prohibitions, both normative:
+
+1. **A check conclusion is NOT participation evidence and MUST NOT be substituted for a declared
+   `participation_evidence` publish shape.** No caller may synthesise a `{bot_kind}:{evidence_kind}`
+   pair from a check conclusion, feed a check-derived pseudo-kind to `review_completeness
+   --participated-bots`, or otherwise let a concluded check stand in for an observed publish shape.
+   The admissible vocabulary is closed to the publish shapes in the table above, and no check state is
+   a member of it. A `SUCCESS` conclusion on a bot that published nothing is `absent`, not
+   `participated`.
+2. **A check conclusion is NOT a findings-handled record.** A concluded check says nothing about
+   whether the bot's comments were fetched, filed, or triaged. It MUST NOT be read as discharging the
+   unhandled-comment predicate, and it MUST NOT be recorded as, or substituted for, a
+   `pr-comment` finding's resolution.
+
+**`in_progress_bots` is the ONLY legitimate consumer of `bot_completion` output _as participation
+input_.** The verb answers the timing question — is this bot's review window still open? — and the
+only observation set its return may feed is `--in-progress-bots`, which resolves a required bot to
+the `in_progress` taxonomy member. Routing a `bot_completion` return into any *other* participation
+observation set (`--participated-bots`, `--refused-bots`) is a contract violation.
+
+This scopes the evidence channel, not the poll loop. `bot_completion` is also a **control-flow**
+signal, and consuming it as one is sanctioned: the completion-aware poll documented in
+[`../SKILL.md`](../SKILL.md) branches on the return to decide whether to keep polling, settle on the
+`review_bot_buffer_seconds` fallback, or stop — none of which is participation input. Only the
+budget-exhausted branch reaches `--in-progress-bots`.
+
 ### Evidence for a bot that edits one comment in place
 
 A bot that re-reviews by **editing its single persistent comment** rather than posting a new one

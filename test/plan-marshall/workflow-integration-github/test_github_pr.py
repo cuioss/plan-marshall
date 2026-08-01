@@ -27,8 +27,9 @@ import json
 import sys
 
 import pytest
+from _bot_flag_derivation import derive_bot_flags
 
-from conftest import load_script_module
+from conftest import get_script_path, load_script_module, run_script
 
 github_pr = load_script_module('plan-marshall', 'workflow-integration-github', 'github_pr.py', 'github_pr')
 _findings_core = load_script_module('plan-marshall', 'manage-findings', '_findings_core.py', '_findings_core')
@@ -198,8 +199,12 @@ def _run_fetch_classified(pr_number, plan_id, *, required_bots=None, optional_bo
     ``required_bots`` / ``optional_bots`` are the raw comma-joined flag values
     (``'coderabbit'``, ``'coderabbit,pr-agent'``, or ``''`` for an
     answered-empty list). Their union is the CLASSIFIED set; neither list admits
-    or drops a comment. The sibling ``_run_fetch`` omits both attributes, which
-    is the never-supplied case.
+    or drops a comment. The sibling ``_run_fetch`` omits both attributes
+    entirely, which the handler's ``getattr(args, ..., None)`` reads as the
+    never-supplied case — a shape the CLI itself no longer produces, since both
+    flags now declare ``default=''`` and an omitted flag parses to the empty
+    string (see ``TestBareClassificationFlags``). Both readings are falsy and
+    drive the identical empty-classification behaviour.
     """
     args = argparse.Namespace(
         pr_number=pr_number,
@@ -1713,3 +1718,192 @@ def test_deduplicated_mismatch_persist_stays_benign(plan_context, monkeypatch):
     assert 'qgate_persist_failed' not in second
     # Dedup returns the SAME record — still in the store, so still a hash id.
     assert second['producer_mismatch_hash_id'] == first['producer_mismatch_hash_id']
+
+
+# =============================================================================
+# Bare classification flags — the interpolation-collapse the callers produce
+# =============================================================================
+#
+# ``automatic-review/SKILL.md`` and ``phase-6-finalize/standards/branch-cleanup.md``
+# interpolate ``--required-bots {required_bots} --optional-bots {optional_bots}``
+# into this verb's command line, and both knobs default EMPTY. An unquoted
+# placeholder with an empty value therefore collapses to a BARE flag, which the
+# pre-fix parser (no ``default``, no ``nargs``) answered with ``expected one
+# argument`` and argparse exit 2 — killing the producer that feeds the
+# participation quorum its evidence.
+#
+# Every case below is red against the pre-fix parser by construction: neither flag
+# accepted a bare form at all, and an omitted flag left the attribute at ``None``
+# rather than ``''``. Nothing here can pass without the ``nargs='?'`` +
+# ``const=''`` + ``default=''`` relaxation.
+
+#: The classification flags and the ``argparse`` dest each resolves to, derived
+#: from the live ``fetch_findings`` parser so a flag added to the script inherits
+#: the bare-form sweeps below instead of silently losing them.
+_CLASSIFICATION_FLAGS = derive_bot_flags(
+    get_script_path('plan-marshall', 'workflow-integration-github', 'github_pr.py'),
+    'fetch_findings',
+)
+
+
+def _parsed_fetch_args(monkeypatch, argv):
+    """Return the ``argparse.Namespace`` ``github_pr.main`` built for ``argv``.
+
+    Replaces ``cmd_fetch_findings`` with a recorder so the parse is observed
+    WITHOUT reaching the provider. ``main`` reads the handler from module globals
+    when it builds the subcommand table at call time, so patching the module
+    attribute reaches the binding it uses.
+    """
+    captured = {}
+
+    def _recorder(args):
+        captured['args'] = args
+        return {'status': 'success'}
+
+    monkeypatch.setattr(github_pr, 'cmd_fetch_findings', _recorder)
+    monkeypatch.setattr(sys, 'argv', ['github_pr.py', *argv])
+    github_pr.main()
+    return captured['args']
+
+
+class TestBareClassificationFlags:
+    """Both classification flags accept a bare form that reads as the empty list."""
+
+    def test_both_flags_bare_is_not_an_argparse_rejection(self, plan_context):
+        """The collapsed shape reaches the handler instead of exiting 2.
+
+        Asserted through the constructed-argv subprocess runner — the lowest
+        primitive that actually exercises argparse, so a parser regression cannot
+        hide behind an in-process ``Namespace`` the test built itself.
+
+        ``PATH`` is emptied so the ``gh`` binary is unresolvable and the run cannot
+        reach the network: the process gets past argparse and then fails at the
+        provider boundary, which is exactly the boundary this case is about. The
+        assertions are therefore about the ABSENCE of an argparse rejection, not
+        about the provider outcome.
+        """
+        script_path = get_script_path('plan-marshall', 'workflow-integration-github', 'github_pr.py')
+
+        result = run_script(
+            script_path,
+            'fetch_findings',
+            '--pr-number',
+            '999',
+            '--plan-id',
+            'gh-pr-bare-flags',
+            '--required-bots',
+            '--optional-bots',
+            env_overrides={'PATH': ''},
+        )
+
+        assert result.returncode != 2, result.stderr
+        assert 'expected one argument' not in result.stderr
+        assert 'unrecognized arguments' not in result.stderr
+
+    @pytest.mark.parametrize(('flag', 'dest'), _CLASSIFICATION_FLAGS)
+    def test_each_flag_bare_individually_resolves_to_empty_string(self, monkeypatch, flag, dest):
+        """A bare flag resolves to ``''`` — the empty list, never ``None``.
+
+        Asserted on the parsed namespace, because ``None`` and ``''`` are both
+        falsy to the handler's classification split: a downstream behavioural
+        assertion alone would pass for either and so would not pin the parse.
+        """
+        args = _parsed_fetch_args(
+            monkeypatch,
+            ['fetch_findings', '--pr-number', '1', '--plan-id', 'p', flag],
+        )
+
+        assert getattr(args, dest) == ''
+
+    @pytest.mark.parametrize(('flag', 'dest'), _CLASSIFICATION_FLAGS)
+    def test_each_flag_bare_followed_by_the_other_flag(self, monkeypatch, flag, dest):
+        """A bare flag does not swallow the NEXT flag as its value.
+
+        The collapse normally leaves the bare flag followed by the sibling
+        ``--flag``; argparse treats a ``-``-prefixed token as an option rather
+        than an optional value, so the bare flag takes ``const=''`` and the
+        sibling parses its own value normally.
+        """
+        other_flag = next(f for f, _ in _CLASSIFICATION_FLAGS if f != flag)
+        other_dest = next(d for f, d in _CLASSIFICATION_FLAGS if f != flag)
+
+        args = _parsed_fetch_args(
+            monkeypatch,
+            ['fetch_findings', '--pr-number', '1', '--plan-id', 'p', flag, other_flag, 'sourcery'],
+        )
+
+        assert getattr(args, dest) == ''
+        assert getattr(args, other_dest) == 'sourcery'
+
+    @pytest.mark.parametrize(('flag', 'dest'), _CLASSIFICATION_FLAGS)
+    def test_each_flag_value_form_is_unchanged(self, monkeypatch, flag, dest):
+        """The existing ``--flag value`` form parses exactly as before.
+
+        Pairs with the bare-form cases so the relaxation is shown to ADD a form
+        rather than replace one.
+        """
+        args = _parsed_fetch_args(
+            monkeypatch,
+            ['fetch_findings', '--pr-number', '1', '--plan-id', 'p', flag, 'coderabbit,pr-agent'],
+        )
+
+        assert getattr(args, dest) == 'coderabbit,pr-agent'
+
+    @pytest.mark.parametrize(('flag', 'dest'), _CLASSIFICATION_FLAGS)
+    def test_omitted_flag_now_parses_to_empty_string_not_none(self, monkeypatch, flag, dest):
+        """The omitted-flag value moved from ``None`` to ``''`` with ``default=''``.
+
+        Recorded explicitly because it is the one BEHAVIOURAL change the
+        relaxation makes to an existing invocation shape. Both values are falsy
+        and drive identical classification, so no caller behaviour changes — but
+        a future assertion that the omitted flag is ``None`` would be wrong, and
+        this pins which value is correct.
+        """
+        args = _parsed_fetch_args(
+            monkeypatch, ['fetch_findings', '--pr-number', '1', '--plan-id', 'p']
+        )
+
+        assert getattr(args, dest) == ''
+
+    def test_bare_flags_reach_the_handler_and_still_warn_but_ingest(
+        self, plan_context, monkeypatch, capsys
+    ):
+        """END-TO-END through the relaxed parser: bare flags still ingest everything.
+
+        Distinct from ``test_empty_classification_lists_still_ingest_every_bot``,
+        which hand-builds an ``argparse.Namespace`` and so proves nothing about the
+        parser: this case drives the REAL ``main`` -> parse -> handler chain with
+        both flags bare, so the value the relaxation produces is the value the
+        handler actually consumes. It pins that the relaxation does not turn
+        "classify nothing" into "drop everything" — the warn-but-ingest rule is not
+        a casualty of it.
+        """
+        plan_id = 'gh-pr-bare-warn-but-ingest'
+        _patch_provider(monkeypatch, _COMMENTS)
+        monkeypatch.setattr(
+            sys,
+            'argv',
+            [
+                'github_pr.py',
+                'fetch_findings',
+                '--pr-number',
+                '112',
+                '--plan-id',
+                plan_id,
+                '--required-bots',
+                '--optional-bots',
+            ],
+        )
+
+        github_pr.main()
+
+        emitted = capsys.readouterr().out
+        assert 'status: success' in emitted
+        assert f'count_stored: {len(_COMMENTS)}' in emitted
+        # Every participating bot is named as unclassified — warned about, not dropped.
+        for bot_kind in ('coderabbit', 'pr-agent', 'sourcery'):
+            assert bot_kind in emitted
+
+        stored = query_findings(plan_id, finding_type='pr-comment')['findings']
+        assert len(stored) == len(_COMMENTS)
+        assert {f.get('bot_kind') for f in stored} >= {'coderabbit', 'pr-agent', 'sourcery'}

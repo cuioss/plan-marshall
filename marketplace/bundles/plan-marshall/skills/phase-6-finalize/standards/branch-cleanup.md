@@ -607,10 +607,50 @@ Re-run the `github_pr fetch_findings` producer. It dedups against the already-st
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr \
   fetch_findings --pr-number {pr_number} --plan-id {plan_id} \
-  --required-bots {required_bots} --optional-bots {optional_bots}
+  --required-bots "{required_bots}" --optional-bots "{optional_bots}"
 ```
 
+Both lists default EMPTY. **The load-bearing defence is the parser, not the quoting.** The generated
+executor strips every empty-string argument before argparse sees it (`script_args = [a for a in
+script_args if a]` in `.plan/execute-script.py`), so through the executor `--required-bots ""` and a
+bare `--required-bots` are indistinguishable — the quotes do NOT survive to the parser. What makes the
+empty case safe is that each flag declares `nargs='?'` with `const=''` (see
+[`../../workflow-integration-github/SKILL.md`](../../workflow-integration-github/SKILL.md) § Canonical
+invocations → `github_pr fetch_findings`), so a bare flag reads as the empty list instead of consuming
+the next token as its own.
+
+The placeholders are still double-quoted above, and should stay quoted — quoting is what keeps a
+*non-empty* value with spaces as one argument, and it is the correct habit for any direct
+(non-executor) invocation. Just do not read it as the empty-value defence: **never rely on quoting
+alone to make an empty list safe.**
+
 > **GitLab provider asymmetry**: the GitLab producer `gitlab_pr fetch_findings` has NEITHER a `--required-bots` nor an `--optional-bots` flag (the same asymmetry the FIND stage already documents). On GitLab, invoke it without them; every comment is considered and none is classified.
+
+##### UNKNOWN — the re-fetch itself failed
+
+When this `fetch_findings` call exits **non-zero**, OR its return carries **no `participated_bots`
+field at all**, the barrier's participation inputs (`participated_bots`, `refused_bots`) were never
+produced. A zero exit is NOT sufficient on its own: a truncated or malformed return that omits the
+participation fields leaves exactly the same absent inputs as a crash, so this trigger is symmetric
+with its sibling branch below rather than exit-code-only. The barrier **MUST NOT proceed to
+Predicate 2** with absent participation inputs: feeding an empty `--participated-bots` to a predicate
+that fails closed would render every required bot `absent`, and feeding nothing at all would make the
+verdict a fiction either way. An absent input is an UNKNOWN verdict, never a `false` the operator can
+act on and never a `true`.
+
+Log at ERROR naming which call failed, its exit code, and its stderr verbatim, under the configured
+`{barrier_mode}`:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level ERROR \
+  --message "[ERROR] (plan-marshall:phase-6-finalize) Pre-merge review barrier UNKNOWN: github_pr fetch_findings exited non-zero or returned no participated_bots (exit_code={exit_code}, stderr={stderr}) — participation inputs absent, NOT evaluating Predicate 2; pre_merge_comment_barrier={barrier_mode} (merge blocked)"
+```
+
+Then take the SAME blocked disposition the participation-incomplete branch takes for the configured
+`{barrier_mode}` — `fail_into_loopback` (default) releases the merge mutex if held and records
+`branch-cleanup` as `loop_back` to `6-finalize`; `ask` releases the mutex and prompts the operator.
+The merge NEVER proceeds on an UNKNOWN verdict.
 
 #### Query for unhandled comments
 
@@ -627,13 +667,53 @@ Retain `participated_bots` and `refused_bots` from the `fetch_findings` return a
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:automatic-review:review_completeness \
-  check --plan-id {plan_id} --required-bots {required_bots} --optional-bots {optional_bots} \
-  --participated-bots {participated_bots} --refused-bots {refused_bots}
+  check --plan-id {plan_id} --required-bots "{required_bots}" --optional-bots "{optional_bots}" \
+  --participated-bots "{participated_bots}" --refused-bots "{refused_bots}"
 ```
+
+This site never passes `--in-progress-bots` — the barrier has no completion-poll observation of its
+own — so the four above are the complete set here. Each is legitimately empty in normal operation (no
+optional bots, no refusals). **The load-bearing defence is the parser, not the quoting.** The generated
+executor strips every empty-string argument before argparse sees it (`script_args = [a for a in
+script_args if a]` in `.plan/execute-script.py`), so through the executor `--refused-bots ""` arrives
+as a bare `--refused-bots` exactly as an unquoted empty placeholder would — the quotes do NOT survive
+to the parser. What makes the empty case safe is that each flag declares `nargs='?'` with `const=''`
+(see [`../../automatic-review/SKILL.md`](../../automatic-review/SKILL.md) § Canonical invocations →
+`review_completeness — check`), so a bare flag reads as the empty list instead of swallowing the next
+token or tripping an argparse rejection at end of line.
+
+The placeholders are still double-quoted above, and should stay quoted — quoting is what keeps a
+*non-empty* value with spaces as one argument, and it is the correct habit for any direct
+(non-executor) invocation. Just do not read it as the empty-value defence: **never rely on quoting
+alone to make an empty list safe.**
 
 Read `participation_complete` and `unproven_bots` from the returned TOON. The predicate is fail-closed over the REQUIRED set: a required bot that published nothing resolves to `absent` and yields `participation_complete: false`. An unproven OPTIONAL bot never blocks — a bot on a hard quota that will not clear inside this plan's lifetime belongs in `optional_bots`, which is the configured way to accept its silence, rather than in a force-done that accepts every bot's silence at once.
 
 > **`participation_complete: true` proves PARTICIPATION, never review QUALITY.** It means each required bot published an artifact against this diff — not that the diff was reviewed well. Do not render a satisfied quorum as a reviewed diff in any log line, `display_detail`, or PR-body claim. See [`../../automatic-review/standards/bot-participation-contract.md`](../../automatic-review/standards/bot-participation-contract.md) § "Participation is not review quality".
+
+##### UNKNOWN — the predicate itself failed
+
+When the `review_completeness check` call above exits **non-zero**, or its return carries **no
+`participation_complete` field at all**, the verdict is UNKNOWN — explicitly **NOT `false`** and
+emphatically not `true`. The predicate never ran to a verdict, so participation is neither proven nor
+disproven, and a barrier that reads a crashed gate as a pass is exactly the defect this branch exists
+to make structurally impossible. An argparse rejection (exit 2), an unhandled exception, or a
+truncated return are all UNKNOWN.
+
+Log at ERROR naming which call failed, its exit code, and its stderr verbatim, under the configured
+`{barrier_mode}`:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level ERROR \
+  --message "[ERROR] (plan-marshall:phase-6-finalize) Pre-merge review barrier UNKNOWN: review_completeness check exited non-zero or returned no participation_complete (exit_code={exit_code}, stderr={stderr}) — participation neither proven nor disproven; pre_merge_comment_barrier={barrier_mode} (merge blocked)"
+```
+
+Then take the SAME blocked disposition the participation-incomplete branch takes for the configured
+`{barrier_mode}` — `fail_into_loopback` (default) releases the merge mutex if held and records
+`branch-cleanup` as `loop_back` to `6-finalize`; `ask` releases the mutex and prompts the operator. The
+merge NEVER proceeds on an UNKNOWN verdict, and an UNKNOWN verdict is NEVER folded into the clean path
+below on a zero comment count.
 
 #### Clean path — zero pending findings AND participation complete
 
