@@ -247,6 +247,7 @@ def test_scoped_compile_invokes_mypy_for_every_bundle_with_surviving_files(repo_
 def test_scoped_compile_propagates_mypy_failure_when_files_survive(repo_root_cwd, monkeypatch):
     """A real mypy failure stays red — the guard never blanket-maps a non-zero exit to success."""
     collectable = _collectable(_child_dirs(BUNDLES_ROOT), BUNDLES_ROOT)
+    assert collectable, 'expected at least one bundle with type-checkable sources'
     calls: list[list[str]] = []
     monkeypatch.setattr(build, 'run', _run_recorder(calls, rc=2))
 
@@ -270,6 +271,26 @@ def test_scoped_test_compile_skips_mypy_for_every_fully_excluded_test_dir(repo_r
 
     assert results == dict.fromkeys(fully_excluded, 0)
     assert calls == [], f'mypy must not be invoked for a fully-excluded test dir; got {calls!r}'
+
+
+def test_scoped_test_compile_propagates_mypy_failure_when_files_survive(repo_root_cwd, monkeypatch):
+    """A real mypy failure stays red under test-compile — the guard's second arm.
+
+    ``cmd_compile`` and ``cmd_test_compile`` apply the identical
+    guard-then-run pattern, so pinning the propagation on the ``compile`` arm
+    alone leaves the symmetric half free to map a genuine mypy failure to
+    success. This is the ``test-compile`` mirror of
+    ``test_scoped_compile_propagates_mypy_failure_when_files_survive``.
+    """
+    collectable = _collectable(_child_dirs(TESTS_ROOT), TESTS_ROOT)
+    assert collectable, 'expected at least one test directory with type-checkable sources'
+    calls: list[list[str]] = []
+    monkeypatch.setattr(build, 'run', _run_recorder(calls, rc=2))
+
+    rc = build.cmd_test_compile(collectable[0])
+
+    assert rc == 2
+    assert len(calls) == 1, f'mypy must be invoked exactly once; got {calls!r}'
 
 
 def test_collects_any_distinguishes_surviving_from_excluded_files(repo_root_cwd, tmp_path):
@@ -304,6 +325,41 @@ def test_exclude_patterns_fail_open_when_pyproject_is_unreadable(monkeypatch, tm
 
     assert build._mypy_exclude_patterns() == []
     assert build._mypy_collects_any('pkg') is True
+
+
+@pytest.mark.parametrize(
+    ('exclude_literal', 'type_name'),
+    [('true', 'bool'), ('42', 'int'), ('{ dir = "x" }', 'dict')],
+)
+def test_exclude_patterns_fail_open_when_exclude_is_neither_string_nor_list(
+    monkeypatch, tmp_path, capsys, exclude_literal, type_name
+):
+    """A malformed ``[tool.mypy] exclude`` fails OPEN, as the docstring promises.
+
+    ``pyproject.toml`` is externally-sourced config: a typo such as
+    ``exclude = true`` slips past the ``isinstance(raw, str)`` branch and reaches
+    ``for entry in raw``, raising an unhandled ``TypeError`` out through
+    ``_mypy_collects_any`` into BOTH ``cmd_compile`` and ``cmd_test_compile``.
+    The helper documents the opposite contract, so the regression statement is
+    "no raise, zero exclusions, mypy still runs, and a diagnostic that names the
+    offending type". The parametrisation spans three non-list types so the guard
+    is type-general rather than special-cased to the reported ``bool``.
+    """
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / 'pyproject.toml').write_text(
+        f'[tool.mypy]\nexclude = {exclude_literal}\n', encoding='utf-8'
+    )
+    package = tmp_path / 'pkg'
+    package.mkdir()
+    (package / 'mod.py').write_text('z = 1\n', encoding='utf-8')
+
+    patterns = build._mypy_exclude_patterns('compile')
+
+    assert patterns == [], f'a malformed exclude must yield no exclusions; got {patterns!r}'
+    assert build._mypy_collects_any('pkg') is True, 'failing open must leave mypy something to check'
+    err = capsys.readouterr().err
+    assert err.startswith('compile: '), f'the diagnostic must name the calling command; got {err!r}'
+    assert type_name in err, f'the diagnostic must name the offending type; got {err!r}'
 
 
 def test_exclude_patterns_diagnostic_names_the_calling_command(monkeypatch, tmp_path, capsys):

@@ -152,10 +152,14 @@ def get_test_path(module: str | None) -> str:
 def _mypy_exclude_patterns(label: str = 'mypy') -> list[re.Pattern[str]]:
     """Return the compiled ``[tool.mypy] exclude`` regexes declared in pyproject.toml.
 
-    Fails open by design: an unreadable config or an uncompilable pattern yields
-    FEWER exclusions, so ``_mypy_collects_any`` answers "there is something to
-    check" and mypy still runs. The guards built on it may suppress a mypy
-    invocation only when the configuration is known and nothing survives it.
+    Fails open by design: an unreadable config, a malformed ``exclude`` value, or
+    an uncompilable pattern yields FEWER exclusions, so ``_mypy_collects_any``
+    answers "there is something to check" and mypy still runs. The guards built
+    on it may suppress a mypy invocation only when the configuration is known and
+    nothing survives it. ``pyproject.toml`` is externally-sourced config, so an
+    ``exclude`` that is neither a string nor a list (a typo such as
+    ``exclude = true``) is a real input this boundary must absorb rather than
+    raise ``TypeError`` through every caller.
 
     ``label`` prefixes the two diagnostics below. It is threaded from the calling
     command rather than hardcoded because this helper is reachable from BOTH
@@ -174,6 +178,11 @@ def _mypy_exclude_patterns(label: str = 'mypy') -> list[re.Pattern[str]]:
     raw = config.get('tool', {}).get('mypy', {}).get('exclude', [])
     if isinstance(raw, str):
         raw = [raw]
+    elif not isinstance(raw, list):
+        print(f'{label}: ignoring malformed [tool.mypy] exclude of type '
+              f'{type(raw).__name__} (expected string or list) — assuming none',
+              file=sys.stderr)
+        raw = []
     patterns: list[re.Pattern[str]] = []
     for entry in raw:
         try:
