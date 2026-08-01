@@ -8,6 +8,7 @@ description: Proactive phase-6 security-audit pass — runs the shared five-stag
 persona: persona-security-expert
 order: 9
 mutates_source: true
+head_dependent: true
 default_on: true
 presets: []
 implements: plan-marshall:extension-api/standards/ext-point-finalize-step
@@ -52,7 +53,7 @@ The action-general layer is constant; the profile × domain layer is the focused
 
 ## HEAD-dependency
 
-`finalize-step-security-audit` is a member of `HEAD_DEPENDENT_STEPS` (see `phase-6-finalize/SKILL.md`). Because it applies hardening edits directly to the worktree — which the dispatcher's commit instrumentation (`phase-6-finalize/SKILL.md` Step 3 item 5f) commits after the step records `done`, advancing HEAD — a loop-back fix task that advances HEAD past the recorded `head_at_completion` MUST re-fire this step so the audit runs against the newer tree. Capture `git rev-parse HEAD` immediately before the terminal `mark-step-done` call and forward it via `--head-at-completion {sha}`.
+`finalize-step-security-audit` declares `head_dependent: true` in its frontmatter — that fact IS the membership declaration the dispatcher's re-entry check reads (see [`../../extension-api/standards/ext-point-finalize-step.md`](../../extension-api/standards/ext-point-finalize-step.md) § "Implementor Frontmatter"). Because it applies hardening edits directly to the worktree — which the dispatcher's commit instrumentation (`phase-6-finalize/SKILL.md` Step 3 item 5f) commits after the step records `done`, advancing HEAD — a loop-back fix task that advances HEAD past the recorded `head_at_completion` MUST re-fire this step so the audit runs against the newer tree. Capture `git rev-parse HEAD` immediately before the terminal `mark-step-done` call and forward it via `--head-at-completion {sha}`.
 
 ## Inputs
 

@@ -8,6 +8,7 @@ user-invocable: false
 mode: script-executor
 allowed-tools: Bash
 order: 6
+head_dependent: true
 default_on: false
 presets: []
 implements: plan-marshall:extension-api/standards/ext-point-finalize-step
@@ -37,6 +38,10 @@ Accepts the standard finalize-step arguments:
 MUST be ordered **before** `default:commit-push` in the steps list so structural lint gates before push.
 
 In a worktree-backed plan, the gate step is preceded by a worktree-fresh-executor regeneration (Step 4 below) that rebinds notation→path resolution to the worktree's scripts. Regeneration failure is non-fatal (logged WARN) — a gate run against the still-stale executor is no worse than not regenerating, so finalize must not hard-block on a mapping refresh.
+
+## HEAD-dependency
+
+This step declares `head_dependent: true` in its frontmatter — that fact IS the membership declaration the dispatcher's re-entry check reads (see [ext-point-finalize-step.md](../../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-finalize-step.md) § "Implementor Frontmatter"). Its verdict is a structural-lint **pass/fail gate over the tree's marketplace source**, so a HEAD advance changes both the derived `--paths` scope (Step 2) and the gate's verdict. Both `--outcome done` records below assert something about the tree that a loop-back commit can falsify — the Step 5 pass asserts "the gated source is lint-clean", and the Step 3 Case (a) skip-clean asserts "the plan touched no skill" — so BOTH MUST capture the worktree HEAD immediately before their `mark-step-done` call and forward it via `--head-at-completion {sha}`. The `--outcome failed` record does NOT take the flag: the dispatcher retries `failed` records on re-entry regardless of HEAD, so the SHA carries no decision value there.
 
 ## Workflow
 
@@ -85,10 +90,26 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   --message "[STATUS] (project:finalize-step-plugin-doctor) No skill changes detected; skipping plugin-doctor quality-gate"
 ```
 
+This branch precedes Step 4, so resolve the worktree path here before capturing HEAD:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status get-worktree-path \
+  --plan-id {plan_id}
+```
+
+Capture `worktree_path` from the returned TOON (substitute `.` when it is empty — the main-checkout flow), then resolve the HEAD SHA immediately before marking done, per § HEAD-dependency:
+
+```bash
+git -C {worktree_path} rev-parse HEAD
+```
+
+Capture stdout as `{sha}` and forward it via `--head-at-completion`:
+
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step project:finalize-step-plugin-doctor --outcome done \
-  --display-detail "no skill changes detected"
+  --display-detail "no skill changes detected" \
+  --head-at-completion {sha}
 ```
 
 **Case (b) — read returns `status: error` / `error: field_not_found`** (indeterminate scope, not empty): do NOT take the skip-clean exit and do NOT record `--outcome done --display-detail "no skill changes detected"` off the broken read. Instead, fall back to gating the full plan scope so structural lint still runs: log the indeterminate-read fallback, proceed to Step 4 (resolve worktree path), then in Step 5 run the `quality-gate` with **no `--paths` scoping** (whole-tree gate) against the resolved `--marketplace-root`:
@@ -162,12 +183,19 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
   --display-detail "plugin-doctor: {total_issues} violations"
 ```
 
-On `status: pass` / `total_issues: 0`, log, record the step as done, and exit success:
+On `status: pass` / `total_issues: 0`, log, record the step as done, and exit success. Resolve the HEAD SHA immediately before marking done, per § HEAD-dependency (`{worktree_path}` is the value resolved in Step 4; substitute `.` when it is empty):
+
+```bash
+git -C {worktree_path} rev-parse HEAD
+```
+
+Capture stdout as `{sha}` and forward it via `--head-at-completion`:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step project:finalize-step-plugin-doctor --outcome done \
-  --display-detail "plugin-doctor clean: {N} skills gated"
+  --display-detail "plugin-doctor clean: {N} skills gated" \
+  --head-at-completion {sha}
 ```
 
 ## Error Handling
@@ -179,10 +207,10 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 | Worktree executor regeneration fails | Non-fatal — log WARN and gate against the existing executor; finalize does not hard-block on a mapping refresh |
 | Changed set touches a plugin-doctor / plan-doctor analyzer or rule script (F1 trigger, Step 2.5 mode 1) | Whole-tree mode: do NOT skip-clean even when no skill dir survived Step 2; run the whole-tree `quality-gate` (Step 5, no `--paths`) so a rule change that breaks an untouched skill is caught, then record the outcome from that gate run |
 | Scoped mode selected (Step 2.5 mode 3 — the common case) | Emit the loud cross-skill divergence WARNING (`[STATUS] ... scoped plugin-doctor cannot detect cross-skill divergence`) recording that cross-skill rules whose counterpart lives outside `--paths` were NOT evaluated — fired regardless of the scoped gate's pass/fail — then run the scoped `quality-gate` and record its outcome. Scoped mode never silently passes as if cross-skill rules were gated; this surfaces the PR #915 divergence class at finalize instead of first at CI |
-| `affected_files` read succeeds, zero skill paths after filtering, F1 trigger did NOT fire | Skip-clean exit (plan touched no skills) — record `mark-step-done --outcome done --display-detail "no skill changes detected"` so the `phase_steps_complete` handshake invariant counts the step as done |
+| `affected_files` read succeeds, zero skill paths after filtering, F1 trigger did NOT fire | Skip-clean exit (plan touched no skills) — record `mark-step-done --outcome done --display-detail "no skill changes detected" --head-at-completion {sha}` so the `phase_steps_complete` handshake invariant counts the step as done and a later HEAD advance re-fires it |
 | `affected_files` read returns `status: error` / `error: field_not_found` | Indeterminate: do NOT skip-clean; fall back to the whole-tree `quality-gate` (Step 5, no `--paths`) so structural lint still runs, then record the outcome from that gate run |
 | plugin-doctor `status: fail` / `total_issues > 0` | Fatal — record `mark-step-done --outcome failed --display-detail "plugin-doctor: {total_issues} violations"`, then abort finalize before `default:commit-push` |
-| plugin-doctor `status: pass` / `total_issues: 0` | Record `mark-step-done --outcome done --display-detail "plugin-doctor clean: {N} skills gated"` |
+| plugin-doctor `status: pass` / `total_issues: 0` | Record `mark-step-done --outcome done --display-detail "plugin-doctor clean: {N} skills gated" --head-at-completion {sha}` |
 
 ## Related
 

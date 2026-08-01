@@ -6,6 +6,7 @@ name: default:pre-submission-self-review
 description: Pre-submission structural self-review (symmetric pairs, regex over-fit, wording, duplication, contract drift, producer-without-consumer, source-of-truth drift, same-document contradiction, description-vs-body drift, unguarded boundary, stale count-prose, touched-claim re-check, ordinal-reference re-check, unreachable guard behind a scan-derived key) before push
 order: 7
 mutates_source: false
+head_dependent: true
 default_on: true
 presets: []
 implements:
@@ -69,6 +70,10 @@ The deterministic surfacer is pluggable via the `plan-marshall:extension-api/sta
 | `scan_derived_keys[N]{file,line,name,sequence,key_consumed}` | A function that decomposes a value into `sequence` and selects a key by first-match of a compiled pattern over it, rather than by indexing that decomposition at a position anchored on a known root; `key_consumed` flags whether some other block in the diff consumes the derived key as an identity | Unreachable-guard check (check #14) |
 
 Skills the caller MUST forward in `skills[]`: none (the workflow reads files with the `Read` tool and emits no script calls).
+
+## HEAD-dependency
+
+`pre-submission-self-review` declares `head_dependent: true` in its frontmatter — that fact IS the membership declaration the dispatcher's re-entry check reads (see [`../../extension-api/standards/ext-point-finalize-step.md`](../../extension-api/standards/ext-point-finalize-step.md) § "Implementor Frontmatter"). Its verdict is a **structural review of the plan's diff**, so the verdict is a function of that diff: a loop-back fix task that advances HEAD past the recorded `head_at_completion` produces a diff this step never examined, and a `done` record carried across that advance would stand as green for a diff no check ever ran against. The dispatcher MUST therefore re-fire this step against the newer HEAD. Capture `git rev-parse HEAD` immediately before the terminal `mark-step-done` call and forward it via `--head-at-completion {sha}`.
 
 ## Execution
 
@@ -266,10 +271,19 @@ Record the outcome on the live plan so the `phase_steps_complete` handshake inva
 
 **Branch A — findings list is empty**: read the `display_detail` returned by the workflow verbatim (the workflow computes the candidate count for the human-readable message).
 
+Immediately before invoking `mark-step-done`, resolve the worktree HEAD SHA so the dispatcher can detect a stale completion record after a downstream loop-back commit advances HEAD (see § HEAD-dependency above):
+
+```bash
+git -C {worktree_path} rev-parse HEAD
+```
+
+The `{worktree_path}` value is the path resolved by `phase-6-finalize` Step 0 (Resolve Worktree and Main Checkout Paths); do NOT re-resolve it from any other cwd or shell context. Capture the stdout as `{sha}` (a 40-character hex SHA) and forward it via `--head-at-completion`:
+
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step default:pre-submission-self-review --outcome done \
-  --display-detail "{display_detail_from_workflow}"
+  --display-detail "{display_detail_from_workflow}" \
+  --head-at-completion {sha}
 ```
 
 **Branch B — findings list is non-empty**: first persist every finding to the plan's `qgate-6-finalize.jsonl` finding store, then surface the findings in the finalize TOON output (consumed by `output-template.md`) so the operator sees `file:line` and `defect_class` per finding.
@@ -291,7 +305,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
   --display-detail "{display_detail_from_workflow}"
 ```
 
-Branch A (empty findings) persists nothing — there are no findings to write.
+Branch A (empty findings) persists nothing — there are no findings to write. Branch B does not need `--head-at-completion`: the dispatcher unconditionally retries `failed` records on re-entry regardless of HEAD, so the SHA carries no decision value here.
 
 The dispatcher's existing failure handling halts the phase on `outcome=failed`, matching the gating-step contract used by `pre-push-quality-gate`. The operator must address every finding (amend the diff: rename, tighten regex, rewrite wording, delete duplicate section, fix contract drift), re-run the step, and only then advance to `push`.
 

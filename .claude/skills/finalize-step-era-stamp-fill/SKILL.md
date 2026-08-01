@@ -12,6 +12,7 @@ default_on: false
 presets: []
 implements: plan-marshall:extension-api/standards/ext-point-finalize-step
 mutates_source: true
+head_dependent: true
 ---
 
 # Finalize Step — Era-Stamp Fill (project-local)
@@ -43,6 +44,23 @@ guessed — the guessed-PR-number / post-merge-unpushable era-stamp defect. The
 provably-invalid PR token: this step resolves it deterministically from the real
 `{pr_number}` the dispatcher already threads to finalize steps, and pushes the
 correction pre-merge so it rides the PR and is CI-covered.
+
+## HEAD-dependency
+
+`head_dependent: true` — this step's `done` record asserts a property of **tracked source**: that
+`audit.py` and its `test_audit.py` mirror carry no unresolved `PR-PENDING` sentinel. That is a
+verdict over the tree, not a record of an action performed, so it goes stale exactly the way the
+governing discriminator predicts — *would this verdict change if HEAD changed?* Yes: a loop-back
+commit landing after this step recorded `done` can introduce or restore a `PR-PENDING` token, and the
+standing record then lets the sentinel ship unresolved into `main` — precisely the guessed-PR-number
+defect this step exists to prevent. The `skipped: true` no-op path is the sharpest case, because it
+records `done` while having changed nothing.
+
+The declaration IS the membership marker the dispatcher's re-entry check reads (see
+[ext-point-finalize-step.md](../../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-finalize-step.md)
+§ "Implementor Frontmatter"). Re-firing is safe and cheap: the fill is a clean no-op when no sentinel
+is present. Capture `git rev-parse HEAD` immediately before the terminal `mark-step-done` call and
+forward it via `--head-at-completion {sha}` on the `done` outcome (Step 4).
 
 ## Ordering
 
@@ -127,11 +145,33 @@ git -C {worktree_path} push
 
 ### 4. Mark step complete
 
+On the `done` outcome, resolve the worktree HEAD SHA immediately before the `mark-step-done` call so
+the dispatcher can detect a stale record after a later loop-back commit re-introduces a sentinel
+(see § HEAD-dependency). Both `skipped: true` and `skipped: false` take this path:
+
+```bash
+git -C {worktree_path} rev-parse HEAD
+```
+
+Capture stdout as `{sha}` and forward it via `--head-at-completion`:
+
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize \
   --step project:finalize-step-era-stamp-fill \
-  --outcome {done|failed} \
+  --outcome done \
+  --display-detail "{display_detail}" \
+  --head-at-completion {sha}
+```
+
+On the `failed` outcome, omit `--head-at-completion` — the dispatcher retries `failed` records on
+re-entry regardless of HEAD, so the SHA carries no decision value:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
+  --plan-id {plan_id} --phase 6-finalize \
+  --step project:finalize-step-era-stamp-fill \
+  --outcome failed \
   --display-detail "{display_detail}"
 ```
 
@@ -145,7 +185,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 
 | Scenario | Action |
 |----------|--------|
-| No `PR-PENDING` token (`skipped: true`) | Clean no-op — `mark-step-done --outcome done` so the `phase_steps_complete` handshake counts the step |
+| No `PR-PENDING` token (`skipped: true`) | Clean no-op — `mark-step-done --outcome done --head-at-completion {sha}` so the `phase_steps_complete` handshake counts the step and a later loop-back commit that re-introduces a sentinel re-fires it |
 | `status: error` (bad pr-number / missing file) | `mark-step-done --outcome failed` surfacing the script `message`; the sentinel remains for an operator to resolve |
 | `git push` fails | Record `outcome=failed` and surface the push failure — the correction must ride the PR, so a failed push is a real finalize failure, not a silent skip |
 
