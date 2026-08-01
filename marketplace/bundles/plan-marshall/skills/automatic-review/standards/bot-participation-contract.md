@@ -130,11 +130,17 @@ prohibitions, both normative:
    unhandled-comment predicate, and it MUST NOT be recorded as, or substituted for, a
    `pr-comment` finding's resolution.
 
-**`in_progress_bots` is the ONLY legitimate consumer of `bot_completion` output.** The verb exists to
-answer the timing question — is this bot's review window still open? — and its output flows to exactly
-one destination: the `--in-progress-bots` observation set that resolves a required bot to the
-`in_progress` taxonomy member. Any other consumption of a `bot_completion` return is a contract
-violation.
+**`in_progress_bots` is the ONLY legitimate consumer of `bot_completion` output _as participation
+input_.** The verb answers the timing question — is this bot's review window still open? — and the
+only observation set its return may feed is `--in-progress-bots`, which resolves a required bot to
+the `in_progress` taxonomy member. Routing a `bot_completion` return into any *other* participation
+observation set (`--participated-bots`, `--refused-bots`) is a contract violation.
+
+This scopes the evidence channel, not the poll loop. `bot_completion` is also a **control-flow**
+signal, and consuming it as one is sanctioned: the completion-aware poll documented in
+[`../SKILL.md`](../SKILL.md) branches on the return to decide whether to keep polling, settle on the
+`review_bot_buffer_seconds` fallback, or stop — none of which is participation input. Only the
+budget-exhausted branch reaches `--in-progress-bots`.
 
 ### Evidence for a bot that edits one comment in place
 

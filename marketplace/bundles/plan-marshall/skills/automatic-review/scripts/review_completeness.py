@@ -35,14 +35,14 @@ never be proven a participant.
 ``complete``: its silence is not a failure, so it can never hold the step open.
 Optional bots are still classified and reported for visibility — the guard shows
 what the optional reviewers did — but their membership in ``pending_bots`` /
-``unfetched_bots`` is informational and contributes nothing to ``complete``. See
+``unproven_bots`` is informational and contributes nothing to ``complete``. See
 ``automatic-review/standards/bot-participation-contract.md`` for the
 required-vs-optional semantics.
 
 Two independent incompleteness classes are surfaced separately so the guard can
 name the offending bots:
 
-- ``unfetched_bots`` — bots that produced NO ``pr-comment`` finding at all AND
+- ``unproven_bots`` — bots that produced NO ``pr-comment`` finding at all AND
   are not accounted-for as *settled*. A bot whose review is still genuinely
   awaited (nothing posted, review window still open) leaves no finding, so the
   store is silent on it. Only a REQUIRED entry here blocks.
@@ -76,7 +76,7 @@ registry ``rate_limit_class``, so no bot-name literal appears here.
   REQUIRED bot IS a real incompleteness and blocks alongside an unfetched
   required bot.
 
-``pending_bots`` and ``unfetched_bots`` are emitted for visibility in BOTH modes
+``pending_bots`` and ``unproven_bots`` are emitted for visibility in BOTH modes
 and span required ∪ optional; only the REQUIRED subset contributes to
 ``complete``, and only ``pending``'s contribution additionally depends on
 ``triage_ran``. The predicate fails closed over the required set: a plan with no
