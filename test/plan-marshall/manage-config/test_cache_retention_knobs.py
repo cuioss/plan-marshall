@@ -54,6 +54,7 @@ validate_plugin_cache_retention = _config_defaults.validate_plugin_cache_retenti
 _VERSIONS_FIELD = 'plugin_cache_keep_versions'
 _DAYS_FIELD = 'plugin_cache_keep_days'
 _NO_PLAN_BODY_FIELD = 'no_plan_body_days'
+_BUILD_RESULTS_FIELD = 'build_results_days'
 
 
 # =============================================================================
@@ -238,5 +239,75 @@ def test_sync_defaults_backfills_no_plan_body_days(plan_context):
         f'sync-defaults must report the added knob; added={result["added"]}'
     )
     # Non-destructive: the operator's pre-existing values are preserved verbatim.
+    for field, value in pre_knob_retention.items():
+        assert merged[field] == value, f'sync-defaults must not overwrite {field}'
+
+
+# =============================================================================
+# build_results_days (per-plan build-output retention)
+# =============================================================================
+
+
+def test_build_results_days_is_seeded_equal_to_archived_plans_days():
+    """The knob is seeded, and seeded EQUAL to `archived_plans_days`.
+
+    A build's output belongs to the plan that caused it, so the two defaults are
+    declared from ONE value rather than two literals. Asserting the equality —
+    rather than the number — is what keeps them from drifting: a future change
+    to `archived_plans_days` alone fails here instead of silently leaving build
+    results governed by a stale window.
+    """
+    retention = _config_defaults.get_default_config()['system']['retention']
+
+    assert _BUILD_RESULTS_FIELD in retention
+    assert retention[_BUILD_RESULTS_FIELD] == retention['archived_plans_days']
+
+
+def test_retention_set_accepts_build_results_days(plan_context):
+    """The knob joins the fail-closed whitelist, so the operator can set it."""
+    create_marshal_json(plan_context.fixture_dir)
+
+    result = cmd_system(
+        Namespace(sub_noun='retention', verb='set', field=_BUILD_RESULTS_FIELD, value='21')
+    )
+
+    assert result['status'] == 'success'
+    assert result['value'] == 21
+    verify = cmd_system(Namespace(sub_noun='retention', verb='get'))
+    assert verify['retention'][_BUILD_RESULTS_FIELD] == 21
+
+
+def test_sync_defaults_backfills_build_results_days(plan_context):
+    """A marshal.json written BEFORE the knob existed acquires it on sync.
+
+    Same migration path the sentinel-body knob takes: the value arrives through
+    `sync-defaults`' non-destructive deep-merge, and every user-set value in the
+    pre-knob block survives it untouched.
+    """
+    pre_knob_retention = {
+        'logs_days': 3,
+        'archived_plans_days': 5,
+        'lessons_superseded_days': 0,
+        'no_plan_body_days': 7,
+        'temp_on_maintenance': True,
+        'plugin_cache_keep_versions': 5,
+        'plugin_cache_keep_days': 3,
+    }
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    marshal_path.parent.mkdir(parents=True, exist_ok=True)
+    marshal_path.write_text(
+        json.dumps({'system': {'retention': dict(pre_knob_retention)}}, indent=2),
+        encoding='utf-8',
+    )
+
+    result = cmd_sync_defaults(Namespace(audit_plan_id=None))
+
+    assert result['status'] == 'success'
+    merged = json.loads(marshal_path.read_text(encoding='utf-8'))['system']['retention']
+
+    assert merged[_BUILD_RESULTS_FIELD] == 5, 'the missing knob must be back-filled at its default'
+    assert any(path.endswith(_BUILD_RESULTS_FIELD) for path in result['added']), (
+        f'sync-defaults must report the added knob; added={result["added"]}'
+    )
     for field, value in pre_knob_retention.items():
         assert merged[field] == value, f'sync-defaults must not overwrite {field}'

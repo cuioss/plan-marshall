@@ -161,6 +161,7 @@ JSON structure and field definitions for project configuration.
       "archived_plans_days": 5,
       "lessons_superseded_days": 0,
       "no_plan_body_days": 7,
+      "build_results_days": 5,
       "temp_on_maintenance": true,
       "plugin_cache_keep_versions": 5,
       "plugin_cache_keep_days": 3
@@ -449,6 +450,7 @@ System-level infrastructure settings.
       "archived_plans_days": 5,
       "lessons_superseded_days": 0,
       "no_plan_body_days": 7,
+      "build_results_days": 5,
       "temp_on_maintenance": true,
       "plugin_cache_keep_versions": 5,
       "plugin_cache_keep_days": 3
@@ -467,6 +469,7 @@ System-level infrastructure settings.
 | `archived_plans_days` | int | 5 | Days to keep archived plans |
 | `lessons_superseded_days` | int | 0 | Days to keep superseded lessons before removal (`0` = remove immediately on the next maintenance pass) |
 | `no_plan_body_days` | int | 7 | Days to keep prepared CI body files under the plan-less `NO_PLAN` sentinel — see the sentinel-retention semantics below |
+| `build_results_days` | int | 5 (tracks `archived_plans_days`) | Days to keep a NON-live plan's build results — see the build-results retention semantics below |
 | `temp_on_maintenance` | bool | true | Clean temp on maintenance |
 | `plugin_cache_keep_versions` | int (`>= 1`) | 5 | Number (`N`) of numerically-newest plugin-cache version dirs kept per bundle by the `marshall-steward` `cache_retention sweep` |
 | `plugin_cache_keep_days` | int (`>= 0`) | 3 | Age (`D`, in days) below which a plugin-cache version dir is kept by the same sweep (`0` disables this arm of the union, not the union) |
@@ -474,6 +477,13 @@ System-level infrastructure settings.
 **Plugin-cache retention semantics (the canonical home).** `plugin_cache_keep_versions` (`N`) and `plugin_cache_keep_days` (`D`) are two arms of a **union** keep-set, not a conjunction: the sweep keeps a version directory when **any** keep-rule holds — the newest `N`, younger than `D` days, the newest-on-disk dir, the `system.provisioned_version` dir, the cache-root `dist-manifest.json` dir, or the version dir the sweep itself is executing from. A version is removed only when **no** rule keeps it. The knobs therefore only ever **widen** the keep-set; raising either value keeps strictly more, and neither value can force a delete. The `.orphaned_at` marker is advisory and is never consulted as a keep-or-delete oracle. Every other surface that enumerates these keys (`api-reference.md`, `manage-config/SKILL.md`, `marshall-steward/references/menu-maintenance.md`) xrefs this section rather than restating the semantics.
 
 **Sentinel-body retention semantics (the canonical home).** `no_plan_body_days` bounds the lifetime of the prepared CI body files that genuinely plan-less callers write under the `NO_PLAN` sentinel (`plans/NO_PLAN/work/ci-bodies/*.md`). The sentinel is a **shared, permanent** plan directory: unlike a real plan it is never archived, so `archived_plans_days` never reaches it and, without this knob, its body files would accumulate forever. The `manage-run-config` `cleanup` verb's `no-plan-bodies` target removes only the aged `*.md` body files; the sentinel directory, its `work/` subtree, and its `status.json` marker are **never** removed, because deleting that marker would make `resolve_plan_context` report the sentinel as not-found and break every plan-less body caller. A missing sentinel directory is a clean no-op, not an error. The default (7) is deliberately the longest in this block — longer than `logs_days` (1), which would otherwise reap a body mid-operation, and no shorter than `archived_plans_days` (5). Every other surface that enumerates this key (`api-reference.md`, `manage-config/SKILL.md`, `manage-run-config/SKILL.md`, `marshall-steward/references/menu-maintenance.md`) xrefs this section rather than restating the semantics.
+
+**Build-results retention semantics (the canonical home).** `build_results_days` bounds the lifetime of the per-plan build-results trees (`plans/{plan_id}/build-results/`) that the build wrappers write through `file_ops.get_build_results_dir`. Two rules govern it:
+
+- **Co-lifetime with the plan artifact.** A build's output belongs to the plan that caused it, so the knob tracks `archived_plans_days` rather than carrying an independent literal. The shipped default is DERIVED from the same declared value, and an absent `build_results_days` backfills from the project's *effective* `archived_plans_days` — a project that lengthened plan archival lengthens build-result retention in lock-step. An explicitly configured `build_results_days` always wins over that backfill.
+- **Live-plan guard.** The `manage-run-config` `cleanup` verb's `build-results` target enumerates plan directories from the plan store and skips a LIVE plan's tree entirely — a plan is live for as long as its directory carries a `status.json` marker. A live plan's results appear in neither the `cleanup` nor the `cleanup-status` population: they are never counted as reclaimable, not merely spared deletion. Only two populations age out — a plan directory whose `status.json` is absent, and the `NO_PLAN` sentinel, which is never archived and therefore has no other lifecycle. A finished plan does not rely on this target at all: `archive-plan` moves it under `archived-plans/`, where `archived_plans_days` ages the whole directory.
+
+Every other surface that enumerates this key (`api-reference.md`, `manage-config/SKILL.md`, `manage-run-config/SKILL.md`, `marshall-steward/references/menu-maintenance.md`) xrefs this section rather than restating the semantics.
 
 ### Provisioning Fields
 

@@ -795,6 +795,9 @@ Examples:
   # Age out orphaned prepared-body files under the plan-less NO_PLAN sentinel
   %(prog)s cleanup --target no-plan-bodies
 
+  # Age out build results; a LIVE plan's results are never touched or counted
+  %(prog)s cleanup --target build-results
+
   # Show cleanup status
   %(prog)s cleanup-status
 """,

@@ -22,6 +22,7 @@ from constants import (
     CI_BODIES_DIRNAME,
     CLEANUP_TARGET_ALL,
     CLEANUP_TARGET_ARCHIVED_PLANS,
+    CLEANUP_TARGET_BUILD_RESULTS,
     CLEANUP_TARGET_LOGS,
     CLEANUP_TARGET_NO_PLAN_BODIES,
     CLEANUP_TARGET_TEMP,
@@ -29,9 +30,11 @@ from constants import (
     DIR_LOGS,
     DIR_PLANS,
     DIR_WORK,
+    FILE_STATUS,
 )
 from file_ops import (
     get_base_dir,
+    get_build_results_dir,
     get_marshal_path,
     get_temp_dir,
     output_toon,
@@ -65,6 +68,8 @@ class CleanupStats:
     archived_plans_bytes: int = 0
     no_plan_bodies_deleted: int = 0
     no_plan_bodies_bytes: int = 0
+    build_results_deleted: int = 0
+    build_results_bytes: int = 0
 
 
 def get_retention_settings() -> dict[str, Any] | None:
@@ -100,7 +105,8 @@ def get_retention_settings() -> dict[str, Any] | None:
         )
         return None
 
-    retention: dict[str, Any] = dict(config['system']['retention'])
+    persisted: dict[str, Any] = config['system']['retention']
+    retention: dict[str, Any] = dict(persisted)
     # Backfill retention keys the persisted marshal.json predates. A project
     # whose config was written before a key joined DEFAULT_SYSTEM_RETENTION —
     # and which has not re-run `manage-config sync-defaults` since — carries no
@@ -110,6 +116,16 @@ def get_retention_settings() -> dict[str, Any] | None:
     # cannot drift from the canonical values.
     for key, default in DEFAULT_SYSTEM_RETENTION.items():
         retention.setdefault(key, default)
+    # Build results live and die with the plan artifact they belong to, so an
+    # ABSENT `build_results_days` tracks the project's *effective*
+    # `archived_plans_days` — a project that lengthened plan archival lengthens
+    # build-result retention in lock-step, instead of silently falling back to
+    # the shipped default the loop above just seeded. Membership is tested
+    # against the RAW persisted mapping, not against `retention`, because the
+    # loop above has already seeded a value there for every default key. An
+    # explicitly configured `build_results_days` therefore always wins.
+    if 'build_results_days' not in persisted:
+        retention['build_results_days'] = retention['archived_plans_days']
     return retention
 
 
@@ -283,6 +299,109 @@ def clean_no_plan_bodies(max_age_days: int, dry_run: bool = False) -> tuple[int,
     return deleted, total_bytes
 
 
+def plan_is_live(plan_dir: Path) -> bool:
+    """Return whether a plan directory belongs to a LIVE plan.
+
+    A plan is live for as long as its directory carries a readable
+    ``status.json``. That marker — not directory presence — is what the rest of
+    the system already treats as "this plan exists and is being managed":
+    ``file_ops.require_plan_exists`` guards on it, ``manage-status list`` skips
+    directories without it, and ``manage-status list-orphans`` defines an orphan
+    as exactly its absence. A finished plan does not linger here at all — the
+    finalize ``archive-plan`` step MOVES it to ``archived-plans/``, where
+    ``archived_plans_days`` ages the whole directory (build results included).
+
+    The ``NO_PLAN`` sentinel also carries a ``status.json`` marker and would
+    therefore read as live, which is why the enumeration below carves it out by
+    id rather than by this predicate: the sentinel is never archived, so nothing
+    would ever age its build results.
+    """
+    return (plan_dir / FILE_STATUS).is_file()
+
+
+def cleanable_build_results_dirs() -> list[tuple[str, Path]]:
+    """Return ``(plan_id, build_results_dir)`` for every NON-live results tree.
+
+    The plan set is ENUMERATED FROM THE PLAN STORE, never from a hand-written
+    list, so a newly created plan is covered without an edit here. Each entry's
+    path comes from :func:`file_ops.get_build_results_dir` — the single owner of
+    the build-results path — so this cleanup surface cannot drift away from the
+    resolver the build wrappers actually write through.
+
+    Two populations survive the filter:
+
+    * A plan directory whose ``status.json`` is absent (see :func:`plan_is_live`)
+      — a leftover the plan lifecycle no longer tracks.
+    * The ``NO_PLAN`` sentinel, unconditionally. It is shared and permanent —
+      never archived, exactly the condition that made the ``no-plan-bodies``
+      target necessary — so an age threshold is the only lifecycle its build
+      results can have. It is appended rather than discovered because its
+      results are main-anchored (``get_build_results_dir`` resolves the sentinel
+      through the main checkout), so a caller pinned to a worktree would
+      otherwise never see it.
+
+    A live plan appears in NEITHER the cleanup nor the ``cleanup-status``
+    population: its build results are not merely spared deletion, they are never
+    counted as reclaimable.
+    """
+    cleanable: list[tuple[str, Path]] = []
+
+    plans_dir = PLAN_BASE_DIR / DIR_PLANS
+    if plans_dir.is_dir():
+        for plan_dir in sorted(plans_dir.iterdir()):
+            if not plan_dir.is_dir() or plan_dir.name == NO_PLAN_SENTINEL:
+                continue
+            if plan_is_live(plan_dir):
+                continue
+            cleanable.append((plan_dir.name, get_build_results_dir(plan_dir.name)))
+
+    cleanable.append((NO_PLAN_SENTINEL, get_build_results_dir(NO_PLAN_SENTINEL)))
+    return cleanable
+
+
+def build_result_files(results_dir: Path) -> list[Path]:
+    """Return every regular file under one plan's build-results tree.
+
+    A missing tree is an empty list, never an error: a plan that never ran a
+    build simply has nothing to clean.
+    """
+    if not results_dir.is_dir():
+        return []
+    try:
+        return [path for path in results_dir.rglob('*') if path.is_file()]
+    except OSError:
+        return []
+
+
+def clean_build_results(max_age_days: int, dry_run: bool = False) -> tuple[int, int]:
+    """Clean aged build-result files from every non-live plan's results tree.
+
+    Only the result FILES are removed; the ``build-results`` directories
+    themselves are left in place, matching the file-scoped shape of
+    :func:`clean_logs` and :func:`clean_no_plan_bodies`.
+
+    Returns:
+        (files_deleted, bytes_freed)
+    """
+    deleted = 0
+    total_bytes = 0
+
+    for _plan_id, results_dir in cleanable_build_results_dirs():
+        for result_file in build_result_files(results_dir):
+            if get_path_age_days(result_file) <= max_age_days:
+                continue
+            try:
+                size = result_file.stat().st_size
+                if not dry_run:
+                    result_file.unlink()
+                deleted += 1
+                total_bytes += size
+            except OSError:
+                pass
+
+    return deleted, total_bytes
+
+
 def get_status() -> dict[str, Any] | None:
     """
     Get status of all cleanable directories.
@@ -355,6 +474,24 @@ def get_status() -> dict[str, Any] | None:
                 except OSError:
                     pass
 
+    # Build-results stats. The population is the CLEANABLE one — non-live plans
+    # plus the sentinel — so `total` and `old` stand in the same relation here as
+    # they do for logs (candidate population vs its aged subset). A live plan's
+    # results are absent from BOTH counts: they are never offered as
+    # safe-to-delete on this surface, not merely excluded from `old`.
+    build_results_total = 0
+    build_results_old = 0
+    build_results_old_bytes = 0
+    for _plan_id, results_dir in cleanable_build_results_dirs():
+        for result_file in build_result_files(results_dir):
+            build_results_total += 1
+            if get_path_age_days(result_file) > retention['build_results_days']:
+                build_results_old += 1
+                try:
+                    build_results_old_bytes += result_file.stat().st_size
+                except OSError:
+                    pass
+
     return {
         'retention': retention,
         'temp': {'files': temp_files, 'bytes': temp_bytes},
@@ -364,6 +501,11 @@ def get_status() -> dict[str, Any] | None:
             'total': no_plan_bodies_total,
             'old': no_plan_bodies_old,
             'old_bytes': no_plan_bodies_old_bytes,
+        },
+        'build_results': {
+            'total': build_results_total,
+            'old': build_results_old,
+            'old_bytes': build_results_old_bytes,
         },
     }
 
@@ -402,10 +544,20 @@ def cmd_clean(args: argparse.Namespace) -> dict[str, Any] | None:
         stats.no_plan_bodies_deleted = deleted
         stats.no_plan_bodies_bytes = bytes_freed
 
+    # Clean aged build results, skipping every LIVE plan's tree entirely
+    if target in (CLEANUP_TARGET_ALL, CLEANUP_TARGET_BUILD_RESULTS):
+        deleted, bytes_freed = clean_build_results(retention['build_results_days'], dry_run)
+        stats.build_results_deleted = deleted
+        stats.build_results_bytes = bytes_freed
+
     # Output
     status = 'dry_run' if dry_run else 'success'
     total_bytes = (
-        stats.temp_bytes + stats.logs_bytes + stats.archived_plans_bytes + stats.no_plan_bodies_bytes
+        stats.temp_bytes
+        + stats.logs_bytes
+        + stats.archived_plans_bytes
+        + stats.no_plan_bodies_bytes
+        + stats.build_results_bytes
     )
 
     return {
@@ -419,6 +571,8 @@ def cmd_clean(args: argparse.Namespace) -> dict[str, Any] | None:
         'archived_plans_bytes': stats.archived_plans_bytes,
         'no_plan_bodies_deleted': stats.no_plan_bodies_deleted,
         'no_plan_bodies_bytes': stats.no_plan_bodies_bytes,
+        'build_results_deleted': stats.build_results_deleted,
+        'build_results_bytes': stats.build_results_bytes,
         'total_bytes_freed': total_bytes,
     }
 
@@ -436,6 +590,7 @@ def cmd_status(args: argparse.Namespace) -> dict[str, Any] | None:
         'retention_archived_plans_days': status['retention']['archived_plans_days'],
         'retention_temp_on_maintenance': status['retention']['temp_on_maintenance'],
         'retention_no_plan_body_days': status['retention']['no_plan_body_days'],
+        'retention_build_results_days': status['retention']['build_results_days'],
         'temp_files': status['temp']['files'],
         'temp_bytes': status['temp']['bytes'],
         'logs_total': status['logs']['total'],
@@ -447,4 +602,7 @@ def cmd_status(args: argparse.Namespace) -> dict[str, Any] | None:
         'no_plan_bodies_total': status['no_plan_bodies']['total'],
         'no_plan_bodies_old': status['no_plan_bodies']['old'],
         'no_plan_bodies_old_bytes': status['no_plan_bodies']['old_bytes'],
+        'build_results_total': status['build_results']['total'],
+        'build_results_old': status['build_results']['old'],
+        'build_results_old_bytes': status['build_results']['old_bytes'],
     }

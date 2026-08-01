@@ -101,11 +101,23 @@ def validate_domain_inclusion(always_on: object, file_globs: object) -> None:
 # `logs_days` (1), which would reap a body mid-operation, and no shorter than
 # `archived_plans_days` (5), so a plan-less body never outlives its plan-bound
 # equivalent by less than a real plan's own retention.
+#
+# `build_results_days` ages out the per-plan build-results trees. A build's
+# output belongs to the plan that caused it, so it shares that plan artifact's
+# lifetime: the value is DERIVED from `_ARCHIVED_PLANS_DAYS` below rather than
+# restating its literal, so the two shipped defaults cannot drift apart. The
+# co-lifetime rule also holds for a project that RECONFIGURED plan archival —
+# `_cmd_cleanup.get_retention_settings` backfills an absent `build_results_days`
+# from the project's *effective* `archived_plans_days`, and an explicitly
+# configured value always wins over that backfill.
+_ARCHIVED_PLANS_DAYS = 5
+
 DEFAULT_SYSTEM_RETENTION = {
     'logs_days': 1,
-    'archived_plans_days': 5,
+    'archived_plans_days': _ARCHIVED_PLANS_DAYS,
     'lessons_superseded_days': 0,
     'no_plan_body_days': 7,
+    'build_results_days': _ARCHIVED_PLANS_DAYS,
     'temp_on_maintenance': True,
     'plugin_cache_keep_versions': 5,
     'plugin_cache_keep_days': 3,
