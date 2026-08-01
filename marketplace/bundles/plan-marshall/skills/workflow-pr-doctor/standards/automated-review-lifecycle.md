@@ -25,7 +25,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr wait-fo
 
 | Script Output | Action |
 |--------------|--------|
-| `status: success`, `timed_out: false` | New comment(s) detected — proceed to Step 2 |
+| `status: success`, `timed_out: false` | Review activity detected — either new comment(s) (`new_count > 0`) or an in-place re-review edit by a `participation_requires_update` bot (`movement_matched_bots[]` non-empty, `new_count` may be 0) — proceed to Step 2 |
 | `status: success`, `timed_out: true` | No new comment within timeout — proceed to Step 2 anyway (the producer at Step 2 surfaces whatever is on the PR; if nothing, the lifecycle returns `comments_total: 0`) |
 | `status: error` | Treat as warning, log, proceed to Step 2 best-effort |
 
