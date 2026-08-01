@@ -610,13 +610,19 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github
   --required-bots "{required_bots}" --optional-bots "{optional_bots}"
 ```
 
-Both interpolated list-flag placeholders are **double-quoted**. Both lists default EMPTY, so an
-unquoted `--required-bots {required_bots}` collapses to a bare `--required-bots` on an empty value and
-consumes the next token as its own. The quotes keep an empty value on the command line as an explicit
-empty string; the flags additionally accept a bare form (see
+Both lists default EMPTY. **The load-bearing defence is the parser, not the quoting.** The generated
+executor strips every empty-string argument before argparse sees it (`script_args = [a for a in
+script_args if a]` in `.plan/execute-script.py`), so through the executor `--required-bots ""` and a
+bare `--required-bots` are indistinguishable — the quotes do NOT survive to the parser. What makes the
+empty case safe is that each flag declares `nargs='?'` with `const=''` (see
 [`../../workflow-integration-github/SKILL.md`](../../workflow-integration-github/SKILL.md) § Canonical
-invocations → `github_pr fetch_findings`), so the two defences are complementary — never rely on
-either alone.
+invocations → `github_pr fetch_findings`), so a bare flag reads as the empty list instead of consuming
+the next token as its own.
+
+The placeholders are still double-quoted above, and should stay quoted — quoting is what keeps a
+*non-empty* value with spaces as one argument, and it is the correct habit for any direct
+(non-executor) invocation. Just do not read it as the empty-value defence: **never rely on quoting
+alone to make an empty list safe.**
 
 > **GitLab provider asymmetry**: the GitLab producer `gitlab_pr fetch_findings` has NEITHER a `--required-bots` nor an `--optional-bots` flag (the same asymmetry the FIND stage already documents). On GitLab, invoke it without them; every comment is considered and none is classified.
 
@@ -665,15 +671,21 @@ python3 .plan/execute-script.py plan-marshall:automatic-review:review_completene
   --participated-bots "{participated_bots}" --refused-bots "{refused_bots}"
 ```
 
-All four interpolated list-flag placeholders are **double-quoted**. This site never passes
-`--in-progress-bots` — the barrier has no completion-poll observation of its own — so the four above
-are the complete set here. Each is legitimately empty in normal operation (no optional bots, no
-refusals), and an unquoted `--refused-bots {refused_bots}` with an empty value collapses to a bare
-`--refused-bots`, swallowing whatever token follows or tripping an argparse rejection at end of line.
-The quotes keep an empty value on the command line as an explicit empty string; the flags additionally
-accept a bare form (see
-[`../../automatic-review/SKILL.md`](../../automatic-review/SKILL.md) § Canonical invocations →
-`review_completeness — check`), so the two defences are complementary — never rely on either alone.
+This site never passes `--in-progress-bots` — the barrier has no completion-poll observation of its
+own — so the four above are the complete set here. Each is legitimately empty in normal operation (no
+optional bots, no refusals). **The load-bearing defence is the parser, not the quoting.** The generated
+executor strips every empty-string argument before argparse sees it (`script_args = [a for a in
+script_args if a]` in `.plan/execute-script.py`), so through the executor `--refused-bots ""` arrives
+as a bare `--refused-bots` exactly as an unquoted empty placeholder would — the quotes do NOT survive
+to the parser. What makes the empty case safe is that each flag declares `nargs='?'` with `const=''`
+(see [`../../automatic-review/SKILL.md`](../../automatic-review/SKILL.md) § Canonical invocations →
+`review_completeness — check`), so a bare flag reads as the empty list instead of swallowing the next
+token or tripping an argparse rejection at end of line.
+
+The placeholders are still double-quoted above, and should stay quoted — quoting is what keeps a
+*non-empty* value with spaces as one argument, and it is the correct habit for any direct
+(non-executor) invocation. Just do not read it as the empty-value defence: **never rely on quoting
+alone to make an empty list safe.**
 
 Read `participation_complete` and `unproven_bots` from the returned TOON. The predicate is fail-closed over the REQUIRED set: a required bot that published nothing resolves to `absent` and yields `participation_complete: false`. An unproven OPTIONAL bot never blocks — a bot on a hard quota that will not clear inside this plan's lifetime belongs in `optional_bots`, which is the configured way to accept its silence, rather than in a force-done that accepts every bot's silence at once.
 
