@@ -126,7 +126,7 @@ finalize step — `finalize-step-sync-plugin-cache`, run after the cache sync �
 of `integrate_into_main.py`. Only the plan-marshall meta-project's own plans ever modify
 `marketplace/bundles/*/skills/*/scripts/`, so only that project ever needs the on-main mapping
 rebuilt; consumer projects never regenerate. The executor is therefore distinct from BOTH the
-moved plan directory AND the five main-anchored shared corpora below: it is independently derived
+moved plan directory AND the six main-anchored shared corpora below: it is independently derived
 in each tree, never a moved slot and never routed through `resolve_main_anchored_path`.
 
 === One sanctioned main-anchored resolver utility for five shared corpora
@@ -169,7 +169,7 @@ All five consumers CALL the utility rather than each carrying its own git-common
 
 This is the SINGLE, deliberate exception to cwd-relative resolution for *per-repo* state: every
 other resolution in the codebase is uniform cwd-relative. Confining the main-anchored resolution
-to ONE small, explicitly-enumerated utility — used by exactly five consumers — prevents a
+to ONE small, explicitly-enumerated utility — used by exactly six consumers — prevents a
 pervasive main-anchored resolution layer from re-forming; new *per-repo* cross-session shared
 state MUST route through the utility rather than re-implement git-common-dir resolution
 (machine-wide state uses the home-root tier per ADR-008). Correspondingly, the
@@ -218,9 +218,12 @@ worktree generates its own at move-in, and the on-main copy is refreshed by the 
 `finalize-step-sync-plugin-cache` step when a plan changed the marketplace script set; it is
 neither a moved slot nor a main-anchored shared resource. The genuinely-shared
 per-repo cross-session corpora — `merge.lock`, `run-configuration.json`, `lessons-learned/`,
-`merge-queue.json`, and `orchestrator/` — stay main-anchored by design, each resolved
+`merge-queue.json`, `orchestrator/`, and `plans/NO_PLAN/build-results/` — stay main-anchored by
+design, each resolved
 through the single `resolve_main_anchored_path` utility rather than via filesystem symlinks
-(the worktree's `.plan/local` is fully real, no symlinks). (The build-slot queue moved to the
+(the worktree's `.plan/local` is fully real, no symlinks). Only the `NO_PLAN` sentinel's build
+results are main-anchored; a real plan's `build-results/` sits inside its plan directory and
+therefore moves with it. (The build-slot queue moved to the
 machine-global home-root tier and is no longer main-anchored — see the NOTE above and ADR-008.) `archived-plans/` is also
 main-resident but is touched only at finalize after cwd has returned to main, so the uniform
 cwd rule suffices and it needs no resolver.
