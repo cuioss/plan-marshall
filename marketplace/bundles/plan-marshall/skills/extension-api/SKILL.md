@@ -73,6 +73,7 @@ extension-api/
     ├── ext-point-finalize-step.md  # Phase-6 finalize step contract
     ├── ext-point-lane-element.md   # Lane-element frontmatter contract — lane.{class,tier,prunable_when,cost_size} (every phase/finalize-step element)
     ├── ext-point-outline.md        # Outline extension point contract
+    ├── ext-point-path-attribution.md # Path-to-module ownership (Axis-D) contract
     ├── ext-point-provider.md       # Credential extension point contract
     ├── ext-point-recipe.md         # Recipe extension point contract
     ├── ext-point-retrospective.md  # Retrospective check contract
@@ -121,7 +122,7 @@ All extensions **must** inherit from `ExtensionBase` and implement required meth
 
 ## Extension Points
 
-Each extension point has a dedicated contract document with formal parameters, pre-conditions, and post-conditions. All 16 contracts:
+Each extension point has a dedicated contract document with formal parameters, pre-conditions, and post-conditions. All 17 contracts:
 
 | Extension Point | Declared Via | Contract |
 |-----------------|--------------|----------|
@@ -135,6 +136,7 @@ Each extension point has a dedicated contract document with formal parameters, p
 | Finalize Step | frontmatter `implements:` on finalize-step skills | [ext-point-finalize-step.md](standards/ext-point-finalize-step.md) |
 | Lane Element | `lane:` frontmatter block (every phase / finalize-step element) | [ext-point-lane-element.md](standards/ext-point-lane-element.md) |
 | Outline | `provides_outline_skill()` | [ext-point-outline.md](standards/ext-point-outline.md) |
+| Path Attribution (path-to-module ownership) | `PathAttributionBase` subclass (multiple inheritance) | [ext-point-path-attribution.md](standards/ext-point-path-attribution.md) |
 | Provider | `*_provider.py` | [ext-point-provider.md](standards/ext-point-provider.md) |
 | Recipe | `provides_recipes()` / frontmatter `implements:` | [ext-point-recipe.md](standards/ext-point-recipe.md) |
 | Retrospective | frontmatter `implements:` on check skills | [ext-point-retrospective.md](standards/ext-point-retrospective.md) |
@@ -198,7 +200,7 @@ For understanding the complete system architecture, reference these documents:
 | Document | Purpose | When to Read |
 |----------|---------|--------------|
 | [extension-contract.md](standards/extension-contract.md) | Core extension API contract (ExtensionBase, get_skill_domains, examples) | Creating or modifying an extension |
-| [ext-point-*.md](standards/) | Individual extension point contracts (16 documents) | Implementing a specific extension point |
+| [ext-point-*.md](standards/) | Individual extension point contracts (17 documents) | Implementing a specific extension point |
 | [marshal-json-reference.md](standards/marshal-json-reference.md) | Central marshal.json config path reference | Understanding where extension config is stored |
 | [module-discovery.md](standards/module-discovery.md) | Module discovery + output specification | Implementing `discover_modules()` |
 | [canonical-commands.md](standards/canonical-commands.md) | Command vocabulary and resolution | Implementing `discover_modules()` commands |
