@@ -947,6 +947,184 @@ def test_cmd_which_module_non_elided_is_not_truncated():
 
 
 # =============================================================================
+# which-module Axis-D residue reporting (attributors / attributor_count)
+# =============================================================================
+#
+# The provenance pair is ALWAYS present, exactly as ``truncated`` / ``elided``
+# are, so no caller branches on a missing key. What it buys is the residue
+# distinction that mirrors Tier 1's ``resolver_count``:
+#
+#   attributor_count: 0, module: null → no attributor ran (absence of capability)
+#   attributor_count: N, module: null → N ran and none claimed it (a real answer)
+#
+# The two states MUST be separable WITHOUT inspecting ``module`` or the claim
+# list. A path suppressed by an ownership collision answers ``module: null``
+# carrying the reporting note, never a bare confident null.
+#
+# See ``extension-api/standards/ext-point-path-attribution.md``.
+
+# ``resolve_path_attribution`` is imported by name into the handlers module, so
+# the stubs below patch it THERE (patching ``_architecture_core`` would not be
+# observed by the already-bound name).
+_cmd_client_handlers = sys.modules['_cmd_client_handlers']
+
+
+def _report(attributor_id: str, *, notes: list[str] | None = None, claim_count: int = 0) -> dict:
+    """Build a merge-shaped ``{id, claim_count, status, notes}`` attributor report."""
+    return {
+        'id': attributor_id,
+        'claim_count': claim_count,
+        'status': 'ok',
+        'notes': notes if notes is not None else [],
+    }
+
+
+def _patch_attribution(monkeypatch, owner, reports):
+    """Point ``cmd_which_module``'s seam call at a fixed ``(owner, reports)``."""
+    monkeypatch.setattr(
+        _cmd_client_handlers,
+        'resolve_path_attribution',
+        lambda path, module_names: (owner, reports),
+    )
+
+
+def test_which_module_carries_provenance_on_a_resolved_response(monkeypatch):
+    """The pair is present even when rungs 1-2 resolved before the seam mattered."""
+    _patch_attribution(monkeypatch, None, [_report('plan-marshall')])
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_inventory_project(tmpdir)
+
+        args = Namespace(project_dir=tmpdir, path='marketplace/bundles/pm-dev-java/agents/reviewer.md')
+        result = cmd_which_module(args)
+
+        assert result['module'] == 'pm-dev-java'
+        assert result['attributors'] == ['plan-marshall']
+        assert result['attributor_count'] == 1
+
+
+def test_which_module_carries_provenance_on_a_null_response(monkeypatch):
+    _patch_attribution(monkeypatch, None, [_report('plan-marshall')])
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_inventory_project(tmpdir)
+
+        args = Namespace(project_dir=tmpdir, path='nope/missing.md')
+        result = cmd_which_module(args)
+
+        assert result['module'] is None
+        assert result['attributors'] == ['plan-marshall']
+        assert result['attributor_count'] == 1
+
+
+def test_which_module_carries_provenance_on_a_truncated_response(monkeypatch):
+    """The widened shape reaches the truncated response too — no shape drifts apart."""
+    _patch_attribution(monkeypatch, None, [_report('plan-marshall')])
+    with tempfile.TemporaryDirectory() as tmpdir:
+        modules = {
+            'big': {
+                'name': 'big',
+                'paths': {'module': 'big'},
+                'files': {'source': {'elided': 9999, 'sample': ['big/a.py']}},
+            },
+        }
+        _seed_project(tmpdir, modules)
+
+        args = Namespace(project_dir=tmpdir, path='big/src/zzz_past_horizon.py')
+        result = cmd_which_module(args)
+
+        assert result['truncated'] is True
+        assert result['attributor_count'] == 1
+        assert 'attributors' in result
+
+
+def test_which_module_residue_distinction_is_observable_without_reading_module(monkeypatch):
+    """``attributor_count`` alone separates "none ran" from "ran and found nothing".
+
+    Both calls answer ``module: null``. If the only way to tell them apart were
+    to inspect ``module`` or the claim list, the distinction would not exist —
+    which is the vacuity the counter is here to eliminate.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_inventory_project(tmpdir)
+        args = Namespace(project_dir=tmpdir, path='nope/missing.md')
+
+        _patch_attribution(monkeypatch, None, [])
+        no_attributor_ran = cmd_which_module(args)
+
+        _patch_attribution(monkeypatch, None, [_report('plan-marshall'), _report('pyproject')])
+        attributors_ran_and_declined = cmd_which_module(args)
+
+        assert no_attributor_ran['module'] is None
+        assert attributors_ran_and_declined['module'] is None
+        assert no_attributor_ran['attributor_count'] == 0
+        assert attributors_ran_and_declined['attributor_count'] == 2
+        assert no_attributor_ran['attributors'] == []
+        assert attributors_ran_and_declined['attributors'] == ['plan-marshall', 'pyproject']
+
+
+def test_which_module_zero_attributors_reports_an_empty_roster(monkeypatch):
+    """No registered attributor is a first-class non-error outcome."""
+    _patch_attribution(monkeypatch, None, [])
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_inventory_project(tmpdir)
+
+        args = Namespace(project_dir=tmpdir, path='nope/missing.md')
+        result = cmd_which_module(args)
+
+        assert result['status'] == 'success'
+        assert result['attributor_count'] == 0
+        assert result['attributors'] == []
+        assert result['attributor_notes'] == []
+
+
+def test_which_module_surfaces_a_collision_note_alongside_a_null_module(monkeypatch):
+    """A suppressed-by-collision path answers null WITH the reporting note.
+
+    Without carrying the note to the consumption site, an ownership collision is
+    indistinguishable from "nobody claimed this path" — a bare confident null over
+    a condition core deliberately suppressed.
+    """
+    collision = "merge: suppressed claim on prefix 'doc' — contested by more than one module"
+    _patch_attribution(
+        monkeypatch,
+        None,
+        [_report('documentation', notes=[collision]), _report('plan-marshall', notes=[collision])],
+    )
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_inventory_project(tmpdir)
+
+        args = Namespace(project_dir=tmpdir, path='doc/whatever.adoc')
+        result = cmd_which_module(args)
+
+        assert result['module'] is None
+        assert result['attributor_count'] == 2
+        assert [row['attributor'] for row in result['attributor_notes']] == [
+            'documentation',
+            'plan-marshall',
+        ]
+        assert all('suppressed claim' in row['note'] for row in result['attributor_notes'])
+
+
+def test_which_module_resolves_through_the_seam_at_rung_three(monkeypatch):
+    """Rung 3 still resolves when rungs 1-2 miss — the seam is wired, not just reported."""
+    _patch_attribution(monkeypatch, 'plan-marshall', [_report('plan-marshall', claim_count=1)])
+    with tempfile.TemporaryDirectory() as tmpdir:
+        modules = {
+            'plan-marshall': {
+                'name': 'plan-marshall',
+                'paths': {'module': 'marketplace/bundles/plan-marshall'},
+                'files': {'skill': ['marketplace/bundles/plan-marshall/skills/x/SKILL.md']},
+            },
+        }
+        _seed_project(tmpdir, modules)
+
+        args = Namespace(project_dir=tmpdir, path='.claude/skills/foo/SKILL.md')
+        result = cmd_which_module(args)
+
+        assert result['module'] == 'plan-marshall'
+        assert result['attributor_count'] == 1
+
+
+# =============================================================================
 # Argparse wiring assertion (catches subcommand-registration regressions)
 # =============================================================================
 

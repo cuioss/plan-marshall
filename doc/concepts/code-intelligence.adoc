@@ -94,6 +94,29 @@ Two obligations follow. First, *every edge carries a non-empty `producers[]`* �
 
 The suppression channel exists because of a specific failure. A resolver keys its derivation on some identity — a Maven coordinate, a document path, a package name — and two modules can claim the same key. Resolving that by insertion order silently drops one module and every edge pointing at it, and which module survives depends on map iteration order: a non-deterministic answer presented as a confident one. A resolver facing an ambiguous key therefore emits no edge for it and reports the collision, so an ambiguous key stays distinguishable from an absent one.
 
+== The Tier-0 companion: path attribution
+
+Tier 0 yields the module set. It does not say which module owns an arbitrary path — and that second question is the one the change-footprint classifiers ask once per changed file, and the one `which-module` answers at its third resolution rung.
+
+Path attribution is an extension point for the same reason edge derivation is: there is no domain-neutral way to derive it. The `plan-marshall` bundle knows that `.plan/**` and `.claude/skills/**` are its own, a documentation bundle knows what `doc/**` is, a build bundle knows which tree its production sources live in. Each is domain knowledge already owned by the bundle that understands that tree, so core owns the merge, the provenance, and the resolution order, and owns none of the claims. `PathAttributionBase` is a fourth axis for the same structural reason `DerivationResolverBase` is a third — the implementor population straddles both existing hierarchies, so an implementor from either opts in by multiple inheritance. Ownership is not build routing: Axis-D answers which module *owns* a path, Axis-B answers what build a changed file *triggers*, and neither table feeds the other.
+
+The merge differs from the edge union in exactly one structural respect. A claim is a keyed mapping — the normalised path prefix is the identity, the claimed module is the value — so a value exists to disagree about and a conflict *is* expressible, where for an unweighted `(from, to)` boolean none was. Two attributors claiming the same prefix for different modules have genuinely contradicted, and the merge emits no claim for that prefix and reports the collision rather than letting discovery order pick a winner.
+
+The provenance residue is the same one axis over:
+
+[cols="1,3"]
+|===
+| Response | Meaning
+
+| `attributor_count: 0`, `module: null`
+| *No attributor ran.* The unattributed path is an absence of capability, not a finding.
+
+| `attributor_count: N`, `module: null`
+| *N attributors ran and none claimed this path.* The unattributed path is a real, positive answer.
+|===
+
+A `module: null` carrying a collision note is a third answer again — the ownership is disputed rather than merely unclaimed.
+
 == The honest limit
 
 [CAUTION]
@@ -110,7 +133,8 @@ Finally, the seam derives edges only for module sets that Tier 0 discovered. A r
 == Related
 
 * link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-derivation-resolver.md[`ext-point-derivation-resolver.md`] — the canonical four-face contract: declaration, discovery, dispatch, null-on-absent resolution, the union semantics, and the generic ambiguous-identity-key obligation every resolver is bound by.
-* xref:extension-architecture.adoc[Concepts › Extension Architecture] — the plumbing seam this extension point plugs into, and the three-axis split it completes.
+* link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-path-attribution.md[`ext-point-path-attribution.md`] — the Axis-D companion contract: `PathAttributionBase`, the keyed-mapping merge semantics, the ambiguous-ownership rule, and longest-prefix resolution order.
+* xref:extension-architecture.adoc[Concepts › Extension Architecture] — the plumbing seam these extension points plug into, and the four-axis split they complete.
 * xref:build-management.adoc[Concepts › Build Management] — the `ext-point-build` surface whose `discover_modules()` output is Tier 0, and therefore the map every resolver reads.
 * link:../../marketplace/bundles/plan-marshall/skills/build-maven/SKILL.md[`build-maven/SKILL.md`] — the one shipped resolver: the Maven coordinate join, re-homed from `manage-architecture` onto the seam.
 * link:../../marketplace/bundles/plan-marshall/skills/manage-architecture/standards/client-api.md[`client-api.md`] — the `graph` / `path` / `neighbors` / `impact` response contracts that carry `resolvers[]` and `resolver_count`.

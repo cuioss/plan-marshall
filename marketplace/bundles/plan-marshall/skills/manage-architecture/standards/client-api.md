@@ -693,10 +693,28 @@ architecture.py which-module --path P
 |--------|----------|---------|-------------|
 | `--path` | Yes | — | Project-relative path to look up |
 
-**Tie-breaker**: when more than one module lists the same path, the module
-with the longest `paths.module` prefix wins. This ensures a path under
-`marketplace/bundles/pm-dev-java/...` resolves to `pm-dev-java`, not the
-project-root `default` module that nominally covers `.`.
+**Resolution order** — a four-rung ladder, evaluated in order, first hit wins:
+
+1. **Exact-inventory match more specific than the root** — the path appears
+   verbatim in a module's crawled `files:` inventory and that module's
+   `paths.module` prefix is longer than 0. When more than one module lists the
+   path, the longest `paths.module` prefix wins, so a path under
+   `marketplace/bundles/pm-dev-java/...` resolves to `pm-dev-java`, not the
+   project-root `default` module that nominally covers `.`.
+2. **Longest `paths.sources ∪ paths.tests` containment prefix** — covers paths
+   the inventory does not surface as an exact match. The union with
+   `paths.tests` is what lets a `test/**` path resolve to its owning module
+   instead of falling through to the project root.
+3. **Path-attribution seam (Axis-D)** — the merged set of bundle-contributed
+   `(path_prefix, module)` claims, resolved by longest containing prefix. This
+   covers trees that sit outside every module's declared paths and are never
+   inventoried at all, such as `.claude/skills/**` and `.plan/**`. Bundles own
+   the claims; core owns the merge and the resolution order. The merge
+   semantics — corroboration collapse, ambiguous-ownership abstention, and why
+   longest-prefix-wins is resolution order rather than a collision tie-break —
+   are contracted in
+   [ext-point-path-attribution.md](../../extension-api/standards/ext-point-path-attribution.md).
+4. **Root-inventory match** — the length-0 `default` module, when present.
 
 **Truthful truncation**: the exact-inventory step reads through the self-scan
 seam, so an in-scope elided category is walked uncapped rather than trusting
@@ -705,12 +723,22 @@ its sample. The result always carries `truncated` (bool) and `elided`
 so a truthful `truncated: true` can accompany a resolved module as well as a
 `module: null` — see the `find` verb for the shared self-scan contract.
 
+**Attribution provenance**: the result likewise always carries `attributors`
+(the sorted ids of the Axis-D attributors that ran), `attributor_count` (int),
+and `attributor_notes` (list of `{attributor, note}`, empty when clean). All
+three are present on every response shape — resolved, null, and truncated
+alike — so no caller branches on a missing key.
+
 **Output** (TOON, match found):
 
 ```toon
 status: success
 path: marketplace/bundles/pm-dev-java/skills/junit-core/SKILL.md
 module: pm-dev-java
+attributors[1]:
+  - plan-marshall
+attributor_count: 1
+attributor_notes[0]:
 truncated: false
 elided[0]:
 ```
@@ -721,6 +749,10 @@ elided[0]:
 status: success
 path: nope/missing.md
 module: null
+attributors[1]:
+  - plan-marshall
+attributor_count: 1
+attributor_notes[0]:
 truncated: false
 elided[0]:
 ```
@@ -735,6 +767,19 @@ elided[0]:
 - Path matches no module: `module: null` with `status: success` — and, when no
   in-scope category was elided, `truncated: false`, so the negative is
   trustworthy rather than a bare unqualified miss.
+- **Unclaimed attribution residue**: `attributor_count` separates two states a
+  bare `module: null` collapses. The two MUST be distinguishable without
+  inspecting `module` or the claim list — the same fail-closed discipline the
+  `graph` family applies via `resolver_count`:
+
+  | Response | Meaning |
+  |----------|---------|
+  | `attributor_count: 0`, `module: null` | **No attributor ran.** The unattributed path is an absence of capability, not a finding. |
+  | `attributor_count: N`, `module: null` | **N attributors ran and none claimed this path.** A real, positive answer. |
+
+- Path whose claim was suppressed by an ownership collision: `module: null`
+  accompanied by the reporting note in `attributor_notes`, never a bare
+  confident null.
 
 ---
 

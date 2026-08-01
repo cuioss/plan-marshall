@@ -2,9 +2,11 @@
 
 Complete specification for `extension.py` files that domain bundles implement. Every domain-bundle extension **must** inherit from `ExtensionBase`, which owns Axis-A (skill-loading and the `provides_*` workflow hooks).
 
-The contract spans **three axes**, each anchored by its own ABC in `extension_base.py`. The four **Axis-B** file-to-build classification methods — `classify_paths`, `classify_path_specificity`, `classify_globs`, `classify_build_class` — are **not** part of `ExtensionBase`. They belong to `BuildExtensionBase`, the separate ABC each code build system's extension (`build-pyproject` / `build-maven` / `build-gradle` / `build-npm`) subclasses. A language/content domain bundle cannot override them and contributes no build routes. That split is settled in [ADR-004](../../../../../../doc/adr/004-The_file-to-build_contract_is_owned_by_build-system_extensions_not_languagecontent_domains.adoc); see § [BuildExtensionBase Methods (Axis-B)](#buildextensionbase-methods-axis-b) below.
+The contract spans **four axes**, each anchored by its own ABC in `extension_base.py`. The four **Axis-B** file-to-build classification methods — `classify_paths`, `classify_path_specificity`, `classify_globs`, `classify_build_class` — are **not** part of `ExtensionBase`. They belong to `BuildExtensionBase`, the separate ABC each code build system's extension (`build-pyproject` / `build-maven` / `build-gradle` / `build-npm`) subclasses. A language/content domain bundle cannot override them and contributes no build routes. That split is settled in [ADR-004](../../../../../../doc/adr/004-The_file-to-build_contract_is_owned_by_build-system_extensions_not_languagecontent_domains.adoc); see § [BuildExtensionBase Methods (Axis-B)](#buildextensionbase-methods-axis-b) below.
 
 The two **Axis-C** module-edge derivation methods — `derivation_resolver_id`, `derive_edges` — belong to a third ABC, `DerivationResolverBase`, which inherits from neither of the other two and is inherited by neither. Because Axis-A and Axis-B are disjoint hierarchies, an implementor opts into Axis-C by **multiple inheritance** from either side; see § [DerivationResolverBase Methods (Axis-C)](#derivationresolverbase-methods-axis-c) below.
+
+The two **Axis-D** path-attribution methods — `path_attributor_id`, `claim_paths` — belong to a fourth ABC, `PathAttributionBase`, which likewise inherits from none of the other three and is inherited by none, and is opted into by the same **multiple inheritance** shape; see § [PathAttributionBase Methods (Axis-D)](#pathattributionbase-methods-axis-d) below. Axis-D answers *which module owns a path*, which is a different question from Axis-B's *what build does a changed file trigger* — the two vocabularies are deliberately kept apart.
 
 ## File Location
 
@@ -357,6 +359,7 @@ Each extension point has its own contract document with formal parameters, pre-c
 | Provider | `*_provider.py` | [ext-point-provider.md](ext-point-provider.md) | 4 |
 | Domain Verb | `provides_domain_verb()` | [ext-point-domain-verb.md](ext-point-domain-verb.md) | 1 |
 | Derivation Resolver | `DerivationResolverBase` subclass | [ext-point-derivation-resolver.md](ext-point-derivation-resolver.md) | see [§ Current implementations](ext-point-derivation-resolver.md#current-implementations) |
+| Path Attribution | `PathAttributionBase` subclass | [ext-point-path-attribution.md](ext-point-path-attribution.md) | see [§ Current implementations](ext-point-path-attribution.md#current-implementations) |
 
 See each document for the complete contract, implementation template, and current implementations.
 
@@ -659,6 +662,23 @@ Because Axis-A and Axis-B are disjoint hierarchies — a build system's extensio
 N resolvers may be active at once and the graph is the **union** of their edge sets; a pair produced by more than one resolver collapses to one edge carrying every contributing resolver's id.
 
 The complete four-face contract (declaration, discovery across both existing discovery paths, graph-query-time dispatch, and null-on-absent resolution), the sibling-Axis-C mechanism rationale (NOT a face on `ExtensionBase`, NOT a face on `BuildExtensionBase`), the N-resolver union semantics, the anti-vacuity provenance property, and the ambiguous-identity-key obligation live in [ext-point-derivation-resolver.md](ext-point-derivation-resolver.md).
+
+---
+
+## PathAttributionBase Methods (Axis-D)
+
+The two methods below form the **complete Axis-D contract** — the path-to-module ownership surface that answers "which module owns this path" for `which-module`'s rung-3 resolution and for `resolve_module_for_path`. They are declared on `PathAttributionBase`, a fourth ABC that inherits from none of `ExtensionBase` / `BuildExtensionBase` / `DerivationResolverBase` and is inherited by none of them.
+
+The implementor population straddles both Axis-A and Axis-B — a build system's extension knows its own production tree, a language/content domain bundle knows its own content tree — so a face on either hierarchy would be structurally unreachable from the other. An implementor therefore opts into Axis-D by **multiple inheritance** from whichever hierarchy it already belongs to (e.g. `class Extension(ExtensionBase, PathAttributionBase)`). Neither method is abstract: both carry safe defaults, so a subclass that overrides nothing is a valid no-claim attributor.
+
+| Method | Default | Owns |
+|--------|---------|------|
+| `path_attributor_id()` | `''` | The attributor's stable provenance identity, stamped onto every claim it produces and onto the per-attributor report every `which-module` response carries. |
+| `claim_paths()` | `([], [])` | The attributor's `(path_prefix, module_name)` claims, plus the `notes[]` list reporting any condition that **suppressed** a claim. |
+
+N attributors may be active at once. A claim is a **keyed mapping** — the normalized path prefix is the identity and the module name is the value — so unlike the Axis-C edge union a conflict IS expressible: two attributors naming the same prefix but different modules yield no claim and a reported collision, while two naming the same prefix and the same module collapse to one claim carrying both producer ids. Longest-prefix-wins is core's lookup **resolution order**, not a tie-break over that collision.
+
+The complete four-face contract (declaration, discovery across both existing discovery paths, query-time dispatch, and null-on-absent resolution), the sibling-Axis-D mechanism rationale, the keyed-mapping merge semantics, the ambiguous-ownership obligation and the longest-prefix resolution-order note live in [ext-point-path-attribution.md](ext-point-path-attribution.md).
 
 ---
 

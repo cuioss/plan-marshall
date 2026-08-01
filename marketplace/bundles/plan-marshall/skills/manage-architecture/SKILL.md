@@ -41,7 +41,7 @@ scope: hybrid
 | `suggest-domains` | — | Suggest applicable skill domains for a module |
 | `info`, `module`, `modules`, `commands`, `resolve` | [client-api](standards/client-api.md) | Consumer queries |
 | `derive-verification` | [resolve-command](standards/resolve-command.md) | Derive the deterministic verification command set for a changed-artifact list (single build_map consumer) |
-| `files`, `which-module`, `find` | [client-api](standards/client-api.md) | Files-inventory readers (categorised paths, reverse lookup, glob search) |
+| `files`, `which-module`, `find` | [client-api](standards/client-api.md) | Files-inventory readers (categorised paths, reverse lookup over a four-rung ladder ending in the Axis-D path-attribution seam, glob search) |
 | `graph`, `path`, `neighbors`, `impact` | [client-api](standards/client-api.md) | Dependency graph queries (full graph, shortest path, n-hop neighborhood, reverse-dep closure) |
 | `overview` | [client-api](standards/client-api.md) | Token-bounded markdown summary of the project architecture |
 | `diff-modules` | [client-api](standards/client-api.md) | Drift detection vs a pre-snapshot (added/removed/changed/unchanged buckets) |
@@ -483,6 +483,16 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture f
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture which-module \
   --path PATH
 ```
+
+Resolves `--path` to its owning module over a four-rung ladder — exact-inventory
+match, `paths.sources ∪ paths.tests` containment, the Axis-D path-attribution
+seam, then the root module. Every response carries the fail-closed pairs
+`truncated` / `elided` and `attributors` / `attributor_count` (plus
+`attributor_notes`), so `attributor_count: 0` with `module: null` ("no attributor
+ran") stays distinguishable from `attributor_count: N` with `module: null` ("N
+ran and none claimed this path"). See
+[client-api.md](standards/client-api.md) § which-module for the full response
+contract.
 
 ### find
 

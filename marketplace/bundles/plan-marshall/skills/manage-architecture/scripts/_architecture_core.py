@@ -223,13 +223,20 @@ _CRAWL_CACHE: dict[str, dict[str, dict[str, Any]]] = {}
 def invalidate_crawl_cache(project_dir: str | None = None) -> None:
     """Clear the ``crawl_all_modules`` memo for one project, or the whole cache.
 
+    The Axis-D path-claim memo (:data:`_PATH_CLAIM_CACHE`) is dropped WHOLESALE
+    on every call, regardless of ``project_dir``. It is keyed by the known-module
+    tuple rather than by project path, so there is no per-project entry to
+    target — and a refresh that changes the module set must not leave a claim set
+    merged against the old one.
+
     Args:
-        project_dir: When given, only the entry for this project's resolved
-            absolute path is dropped. When ``None``, the entire cache is
+        project_dir: When given, only the crawl entry for this project's resolved
+            absolute path is dropped. When ``None``, the entire crawl cache is
             cleared. ``swap_data_dir`` (the ``discover --force`` atomic-swap
             path) calls this so a forced refresh re-crawls instead of returning
             stale memoized data.
     """
+    _PATH_CLAIM_CACHE.clear()
     if project_dir is None:
         _CRAWL_CACHE.clear()
         return
@@ -732,38 +739,135 @@ def classify_changed_path(
     return matches[0][2], matches[0][3]
 
 
-# Project-local path-prefix map: prefixes that sit outside every module's
-# declared ``paths.sources`` / ``paths.tests`` but still belong to a known
-# module. The meta-project's own ``.claude/skills/**`` tree (project-local
-# skills plus their tests under ``test/plan-marshall/**``) is owned by the
-# ``plan-marshall`` module — the operator-confirmed owner. Each mapping is
-# guarded by module existence at resolution time, so consumer projects that
-# have no ``plan-marshall`` module are unaffected.
-_PROJECT_LOCAL_PREFIX_MAP: tuple[tuple[str, str], ...] = (('.claude/skills', 'plan-marshall'),)
+def _load_path_attribution_seam():
+    """Import the Axis-D discovery collector, claim merge, and claim matcher.
+
+    Mirrors :func:`_load_route_matcher`'s deferred cross-skill import: the
+    ``extension-api/scripts`` dir is resolved via ``marketplace_bundles`` and
+    inserted into ``sys.path`` before importing the seam. Deferring keeps
+    ``manage-architecture`` importable in isolation — it carries no module-level
+    dependency on the extension API.
+
+    Returns:
+        A ``(discover_path_attributors, merge_path_claims, lookup_claim)`` triple.
+    """
+    import sys
+
+    from marketplace_bundles import (
+        resolve_bundle_path,
+        resolve_bundles_root,
+    )
+
+    bundles_root = resolve_bundles_root(Path(__file__))
+    ext_scripts_dir = str(resolve_bundle_path(bundles_root, 'plan-marshall', 'skills/extension-api/scripts'))
+    if ext_scripts_dir not in sys.path:
+        sys.path.insert(0, ext_scripts_dir)
+    from _path_attribution_merge import lookup_claim, merge_path_claims
+    from extension_discovery import discover_path_attributors
+
+    return discover_path_attributors, merge_path_claims, lookup_claim
+
+
+# Process-lifetime memo for the merged Axis-D attribution, keyed by the sorted
+# known-module tuple (the only input the merge validates claims against;
+# attributor discovery itself is process-global). Each value is the
+# ``(claims, attributor_reports)`` pair the merge returned.
+#
+# The memo is REQUIRED, not an optimisation. The retired hardcoded prefix map was
+# an O(1) tuple scan, and :func:`resolve_module_for_path` calls the helper below
+# once per changed path — so an unmemoized seam would run full extension
+# discovery (loading every bundle's ``extension.py`` from disk) plus the merge N
+# times for an N-path footprint, silently widening a lazy contract into an eager
+# one. :func:`invalidate_crawl_cache` drops this memo alongside the crawl memo.
+_PATH_CLAIM_CACHE: dict[tuple[str, ...], tuple[list[dict[str, Any]], list[dict[str, Any]]]] = {}
+
+
+def resolve_path_attribution(
+    path: str, module_names: list[str]
+) -> tuple[str | None, list[dict[str, Any]]]:
+    """Resolve ``path`` through the Axis-D seam and return the attributor reports.
+
+    The full-fidelity seam reader: it returns BOTH the resolved owner and the
+    per-attributor reports, so a caller can distinguish "no attributor ran" from
+    "N attributors ran and none claimed this path" — the residue distinction that
+    makes a ``module: null`` answer non-vacuous. :func:`project_local_module_for_path`
+    is the owner-only wrapper over this function; both share one memo.
+
+    A claim naming a module absent from ``module_names`` is dropped by the merge,
+    so a consumer project without that module resolves to ``None`` — the
+    module-existence guard the retired hardcoded prefix map applied at resolution
+    time.
+
+    Degrades to ``(None, [])`` when the seam cannot be imported, matching this
+    module's established "empty when absent, never raise" contract. That degraded
+    shape is indistinguishable from "no attributor is registered", which is the
+    correct reading: neither case carries evidence that any attributor ran.
+
+    Args:
+        path: A repo-relative path.
+        module_names: The list of modules known to the project — the
+            authoritative set every claim's module is validated against.
+
+    Returns:
+        An ``(owner, attributor_reports)`` pair. ``owner`` is the claimed module
+        name for the longest containing prefix, or ``None``.
+        ``attributor_reports`` is one ``{id, claim_count, status, notes}`` dict
+        per discovered attributor.
+
+    Raises:
+        RuntimeError: When the bundle resolver is misconfigured. The ``except``
+            clause above is deliberately narrowed to ``ImportError`` — a missing
+            seam is an absent capability and degrades to ``(None, [])``, whereas a
+            misconfigured resolver is a broken installation and must fail loudly
+            rather than be laundered into an indistinguishable "no attributor ran"
+            answer. Do NOT widen the guard to catch it; the sibling
+            :func:`classify_changed_path` calls its loader with no guard at all for
+            the same reason.
+
+    See ``extension-api/standards/ext-point-path-attribution.md`` for the merge
+    semantics, the ambiguous-ownership obligation, and the
+    longest-prefix-is-resolution-order note.
+    """
+    try:
+        discover_path_attributors, merge_path_claims, lookup_claim = _load_path_attribution_seam()
+    except ImportError:
+        return None, []
+
+    cache_key = tuple(sorted(module_names))
+    merged = _PATH_CLAIM_CACHE.get(cache_key)
+    if merged is None:
+        merged = merge_path_claims(discover_path_attributors(), module_names)
+        _PATH_CLAIM_CACHE[cache_key] = merged
+    claims, reports = merged
+    # The seam arrives through a deferred import, so its symbols are untyped at
+    # this boundary; pin the contracted return type here rather than leaking Any.
+    owner: str | None = lookup_claim(path, claims)
+    return owner, reports
 
 
 def project_local_module_for_path(path: str, module_names: list[str]) -> str | None:
-    """Map a project-local path prefix to its owning module.
+    """Resolve ``path`` to its owning module through the path-attribution seam.
 
-    Handles paths that sit outside every module's declared ``paths.sources`` /
-    ``paths.tests`` but still belong to a known module — currently the
-    meta-project's ``.claude/skills/**`` tree, owned by ``plan-marshall``. The
-    mapping only fires when the target module is present in ``module_names``, so
-    a consumer project without that module falls through to ``None``.
+    Rung 3 of the ``which-module`` ladder: handles paths that sit outside every
+    module's declared ``paths.sources`` / ``paths.tests`` but still belong to a
+    known module. Ownership is contributed by bundles through the Axis-D
+    ``PathAttributionBase`` extension point rather than hardcoded here — core
+    discovers the attributors, merges their claims, and resolves the longest
+    containing prefix; it owns none of the claims.
+
+    The owner-only wrapper over :func:`resolve_path_attribution`, for the callers
+    that need the answer but not the provenance.
 
     Args:
         path: A repo-relative path.
         module_names: The list of modules known to the project.
 
     Returns:
-        The owning module name when a project-local prefix contains ``path`` and
-        that module exists, else ``None``.
+        The owning module name when a claimed prefix contains ``path`` and that
+        module exists, else ``None``.
     """
-    for prefix, module in _PROJECT_LOCAL_PREFIX_MAP:
-        normalized = prefix.rstrip('/')
-        if path == normalized or path.startswith(normalized + '/'):
-            return module if module in module_names else None
-    return None
+    owner, _reports = resolve_path_attribution(path, module_names)
+    return owner
 
 
 def longest_containing_prefix(path: str, paths: dict[str, Any]) -> int | None:
@@ -838,7 +942,9 @@ def resolve_module_for_path(path: str, project_dir: str = '.', preferred_domain:
            module whose ``virtual_module.technology`` serves ``preferred_domain``
            (per :data:`_TECHNOLOGY_TO_DOMAIN`) wins; alphabetical order remains
            the fallback when no domain affinity discriminates.
-        2. Project-local prefix map (``.claude/skills/** → plan-marshall``).
+        2. Path-attribution seam (Axis-D): the merged set of bundle-contributed
+           ``(path_prefix, module)`` claims, resolved by longest containing
+           prefix. See :func:`project_local_module_for_path`.
         3. Root module (the length-0 fallback), when present.
 
     Args:
