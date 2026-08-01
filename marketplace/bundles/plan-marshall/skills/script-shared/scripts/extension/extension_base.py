@@ -1350,8 +1350,8 @@ class DerivationResolverBase(ABC):  # noqa: B024 — ABC contract anchor; every 
             ...
 
     which is the only shape that lets a build skill (the Maven coordinate join)
-    and a domain bundle (a future markdown or Python import resolver) each
-    provide a resolver without one masquerading as the other.
+    and a domain bundle (the markdown reference join, the Python import join)
+    each provide a resolver without one masquerading as the other.
 
     N resolvers may be active at once. The graph is the **union** of their edge
     sets: edges are unweighted ``(from, to)`` booleans, so union is idempotent
@@ -1406,7 +1406,10 @@ class DerivationResolverBase(ABC):  # noqa: B024 — ABC contract anchor; every 
         Args:
             derived_by_name: Module name → the module's derived data (the Tier-0
                 crawl output: ``metadata``, ``dependencies``, ``paths``,
-                ``packages``, ``stats``).
+                ``packages``, ``stats``, and the optional ``component_refs``
+                the markdown and Python resolvers join over — see
+                ``extension-api/standards/module-discovery.md`` for the field's
+                element schema and its absent-vs-empty-array contract).
             enriched_by_name: Module name → the module's enriched data (the
                 LLM-curated overlay). A resolver that has no use for the overlay
                 ignores this argument.
