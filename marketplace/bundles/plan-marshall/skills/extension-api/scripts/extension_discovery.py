@@ -527,6 +527,101 @@ def discover_derivation_resolvers() -> list[dict[str, Any]]:
     return resolvers
 
 
+def discover_path_attributors() -> list[dict[str, Any]]:
+    """Discover every registered ``PathAttributionBase`` implementor (Axis-D).
+
+    The Axis-D counterpart to :func:`discover_all_extensions` (Axis-A),
+    :func:`discover_build_extensions` (Axis-B) and
+    :func:`discover_derivation_resolvers` (Axis-C). Because an attributor opts in
+    by MULTIPLE INHERITANCE from either existing hierarchy — those two hierarchies
+    are disjoint, so no single one of them can carry the opt-in — this collector
+    spans BOTH existing discovery paths and filters the loaded modules by
+    ``isinstance(module, PathAttributionBase)``. Scanning only one path would
+    silently hide every attributor on the other side: a build skill knows its own
+    production tree and a content bundle knows its own doc tree, and both are
+    legitimate claimants.
+
+    There is **no new registry, no new scan surface, and no per-attributor glob**:
+    an attributor is discovered because its bundle or build skill is already a
+    registered extension that happens to also subclass ``PathAttributionBase``.
+
+    An attributor whose ``path_attributor_id()`` raises, returns a non-string,
+    returns an empty/whitespace string, or repeats an id another attributor
+    already claimed is skipped with an ``[EXTENSION]`` WARNING, matching the
+    guarded-call idiom :func:`discover_derivation_resolvers` uses. An
+    unidentifiable attributor is dropped rather than admitted, because a claim
+    without a producer id would break the provenance contract that makes a
+    ``module: null`` answer non-vacuous.
+
+    The id is required to be a **non-empty string** rather than merely truthy: a
+    truthy non-string id (the int ``1``) would survive a falsiness check and then
+    raise on the mixed-type ``sort`` below, aborting every path lookup. It is
+    required to be **unique** for the same reason the merge stamps ``producers[]``:
+    two attributors answering to one id collapse into a single producer identity,
+    so the provenance report would attribute one attributor's claims to the other
+    — silently, and precisely where the contract promises every claim is
+    attributable.
+
+    Returns:
+        One ``{origin, id, module}`` record per discovered attributor, sorted by
+        ``id`` for deterministic downstream ordering. ``origin`` is the
+        contributing bundle name (Axis-A) or build-skill name (Axis-B), carried
+        for warning context and provenance reporting.
+    """
+    from extension_base import PathAttributionBase
+
+    candidates: list[tuple[str, Any]] = []
+    for ext in discover_all_extensions():
+        module = ext.get('module')
+        if module is not None:
+            candidates.append((ext.get('bundle', 'unknown'), module))
+    for ext in discover_build_extensions():
+        module = ext.get('module')
+        if module is not None:
+            candidates.append((ext.get('skill', 'unknown'), module))
+
+    attributors: list[dict[str, Any]] = []
+    origin_by_id: dict[str, str] = {}
+    for origin, module in candidates:
+        if not isinstance(module, PathAttributionBase):
+            continue
+        try:
+            attributor_id = module.path_attributor_id()
+        except Exception as e:
+            log_entry(
+                'script',
+                None,
+                'WARNING',
+                f'[EXTENSION] path_attributor_id() failed for {origin}: {e}',
+            )
+            continue
+        if not isinstance(attributor_id, str) or not attributor_id.strip():
+            log_entry(
+                'script',
+                None,
+                'WARNING',
+                f'[EXTENSION] Skipping path attributor from {origin}: attributor id must be a '
+                f'non-empty string, got {attributor_id!r}',
+            )
+            continue
+        attributor_id = attributor_id.strip()
+        claimed_by = origin_by_id.get(attributor_id)
+        if claimed_by is not None:
+            log_entry(
+                'script',
+                None,
+                'WARNING',
+                f'[EXTENSION] Skipping path attributor from {origin}: attributor id '
+                f'{attributor_id!r} is already claimed by {claimed_by}',
+            )
+            continue
+        origin_by_id[attributor_id] = origin
+        attributors.append({'origin': origin, 'id': attributor_id, 'module': module})
+
+    attributors.sort(key=lambda rec: rec['id'])
+    return attributors
+
+
 def get_skill_domains_from_extensions(extensions: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Get skill domains from extensions.
 

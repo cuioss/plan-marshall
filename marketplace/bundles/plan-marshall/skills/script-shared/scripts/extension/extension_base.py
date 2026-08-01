@@ -11,6 +11,8 @@ Provides:
       classify_path_specificity / classify_build_class)
     - DerivationResolverBase: Abstract base class for module-edge derivation
       resolvers (Axis-C: derivation_resolver_id / derive_edges)
+    - PathAttributionBase: Abstract base class for path-to-module ownership
+      attributors (Axis-D: path_attributor_id / claim_paths)
     - Canonical command constants (re-exported from _extension_constants):
       CMD_*, CANONICAL_COMMANDS, PROFILE_PATTERNS, APPLICABLE_PROFILES
     - Build-class vocabulary (re-exported from _extension_constants):
@@ -1406,5 +1408,93 @@ class DerivationResolverBase(ABC):  # noqa: B024 — ABC contract anchor; every 
             describing conditions that suppressed an edge. The default is
             ``([], [])`` — a subclass that overrides nothing derives no edges and
             reports no conditions.
+        """
+        return [], []
+
+
+class PathAttributionBase(ABC):  # noqa: B024 — ABC contract anchor; every Axis-D method has a default
+    """Abstract base class for path-to-module ownership attributors (Axis-D).
+
+    Owns Axis-D of the extension contract: which module owns a given repo-relative
+    path. Where :class:`ExtensionBase` answers "what skills does this domain load"
+    (Axis-A), :class:`BuildExtensionBase` answers "what build does a changed file
+    trigger" (Axis-B), and :class:`DerivationResolverBase` answers "which modules
+    depend on which" (Axis-C), a ``PathAttributionBase`` subclass answers "which
+    module OWNS this path" — the ownership map behind ``which-module``'s rung-3
+    resolution and behind ``resolve_module_for_path``.
+
+    Ownership is deliberately NOT build routing. Axis-B classifies a path by the
+    build it triggers and expresses itself in fnmatch ``(pattern, role)`` routes;
+    an Axis-D claim is a literal directory prefix paired with the owning module.
+    Neither table feeds the other, and a path may be owned by a module that
+    triggers no build at all.
+
+    The class is inherited by none of the other three axis ABCs and inherits from
+    none of them. The legitimate implementor population straddles both Axis-A and
+    Axis-B — a build skill knows its own production tree, a language or content
+    domain bundle knows its own content tree — so a face declared on either
+    hierarchy would be structurally unreachable from the other. An implementor
+    opts in by **multiple inheritance** instead::
+
+        class Extension(ExtensionBase, PathAttributionBase):
+            ...
+
+    N attributors may be active at once. A claim is a **keyed mapping** — the
+    normalized path prefix is the identity, the module name is the value — so
+    unlike the Axis-C edge union a conflict IS expressible: two attributors
+    claiming one prefix for DIFFERENT modules yield no claim and a reported
+    collision, while two claiming it for the SAME module collapse to one claim
+    carrying both producer ids.
+
+    There is no abstract method: both Axis-D methods have safe defaults, so a
+    subclass that overrides nothing is a valid (no-claim) attributor. The ``ABC``
+    base marks the class as the Axis-D contract anchor, matching
+    :class:`BuildExtensionBase` and :class:`DerivationResolverBase`.
+
+    See ``extension-api/standards/ext-point-path-attribution.md`` for the complete
+    four-face contract.
+    """
+
+    def path_attributor_id(self) -> str:
+        """Return this attributor's stable provenance identity.
+
+        The id is stamped onto every claim this attributor produces (in the merged
+        claim's ``producers[]``) and onto the per-attributor report every
+        ``which-module`` response carries, so a ``module: null`` answer is never
+        vacuous: ``attributor_count: 0`` means no attributor ran, while
+        ``attributor_count: N`` means attributors ran and none claimed the path.
+
+        Returns:
+            A short, stable, lower-case identity string (e.g. ``'plan-marshall'``).
+            The default is ``''`` — an empty id marks the attributor as
+            unidentifiable, and the discovery collector skips it rather than
+            producing producer-less claims.
+        """
+        return ''
+
+    def claim_paths(self) -> tuple[list[tuple[str, str]], list[str]]:
+        """Declare the path prefixes this attributor's module owns.
+
+        An attributor is a **pure function of its arguments**: it declares what its
+        bundle owns from static knowledge and performs no subprocess call and no
+        filesystem access. It never scans the tree to discover its own claims.
+
+        The ``notes`` half of the return is the required channel for any condition
+        that **suppressed** a claim. An attributor that drops a claim silently
+        violates the contract: the condition must be visible somewhere, and the
+        per-attributor report is where it surfaces. Pairing the two in one return
+        (rather than exposing a second accessor readable only after
+        ``claim_paths`` has run) is what keeps the attributor stateless.
+
+        Returns:
+            A ``(claims, notes)`` tuple. ``claims`` is a list of
+            ``(path_prefix, module_name)`` pairs, where ``path_prefix`` is a
+            repo-relative directory prefix (e.g. ``'.plan'``) and ``module_name``
+            is the owning module. Containment is prefix nesting, not fnmatch, so a
+            bare root segment such as ``'.plan'`` claims ``.plan/x`` while a
+            sibling that merely shares the string prefix (``.plans/x``) is NOT
+            claimed. ``notes`` is a list of short strings describing conditions
+            that suppressed a claim. The default is ``([], [])`` — a subclass that
+            overrides nothing claims no paths and reports no conditions.
         """
         return [], []
