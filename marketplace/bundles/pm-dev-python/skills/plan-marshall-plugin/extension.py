@@ -2,18 +2,41 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Extension API for pm-dev-python bundle.
 
-Slim domain registration providing skill domains, module applicability,
-and triage for Python projects.
+Owns two axes of the extension contract:
+
+- **Axis-A** (:class:`ExtensionBase`) — slim domain registration providing skill
+  domains, module applicability, triage, and the arch-gate tool binding for
+  Python projects.
+- **Axis-C** (:class:`DerivationResolverBase`) — the ``python`` derivation
+  resolver, a pure join over the ``component_refs`` field module discovery
+  materializes. Python-import edges are Python-language knowledge, so they
+  belong to the Python domain bundle rather than to a build-system bundle.
 
 Build operations (pyproject_build) have moved to plan-marshall:build-pyproject.
 Module discovery is in plan-marshall:plan-marshall-plugin.
 """
 
-from extension_base import ExtensionBase
+from extension_base import DerivationResolverBase, ExtensionBase
+
+PYTHON_DEP_TYPE = 'import'
+"""The single reference kind this resolver owns.
+
+The markdown reference kinds (``script`` / ``skill`` / ``path`` /
+``implements``) belong to the sibling markdown resolver on
+``pm-plugin-development``. The split is the point — every derived edge names
+which of the two resolvers produced it — so a non-``import`` entry is outside
+this resolver's scope rather than an edge it suppressed, and carries no note.
+"""
+
+SUPPRESSION_CATEGORIES = ('unresolved-target', 'unknown-endpoint', 'self-edge')
+"""Suppression buckets reported in ``notes[]``, in emission order."""
+
+NOTE_SAMPLE_LIMIT = 3
+"""Maximum suppressed references named inline in a single aggregated note."""
 
 
-class Extension(ExtensionBase):
-    """Python domain extension for pm-dev-python bundle."""
+class Extension(ExtensionBase, DerivationResolverBase):
+    """Python domain extension and python-import module-edge derivation resolver."""
 
     def get_skill_domains(self) -> list[dict]:
         """Domain metadata for skill loading."""
@@ -126,3 +149,114 @@ class Extension(ExtensionBase):
     def provides_arch_gate(self) -> dict | None:
         """import-linter: Python arch-gate tool. Binding: pm-dev-python:arch-gate-python."""
         return {'tool': 'import-linter'}
+
+    # =========================================================================
+    # Axis-C: module-edge derivation (the python-import join)
+    # =========================================================================
+
+    def derivation_resolver_id(self) -> str:
+        """Return the stable provenance identity stamped onto every python edge.
+
+        See extension-api/standards/ext-point-derivation-resolver.md for the
+        complete four-face contract this identity participates in.
+        """
+        return 'python'
+
+    @staticmethod
+    def _aggregate_notes(suppressed: dict[str, list[str]]) -> list[str]:
+        """Render one aggregated note per non-empty suppression category.
+
+        Aggregation is load-bearing rather than cosmetic. ``merge_resolver_edges``
+        appends one note per dropped candidate, so a per-reference note would
+        produce hundreds of entries and make the per-resolver report unreadable —
+        which would defeat the reporting obligation instead of satisfying it. One
+        note per category, carrying the full count plus a bounded sample, keeps
+        every suppression visible without drowning the report.
+
+        Args:
+            suppressed: Category name → the ``source -> target [dep_type]``
+                descriptions suppressed under it.
+
+        Returns:
+            One note per non-empty category, in :data:`SUPPRESSION_CATEGORIES`
+            order. Samples are sorted so the note is byte-stable.
+        """
+        notes: list[str] = []
+        for category in SUPPRESSION_CATEGORIES:
+            candidates = sorted(suppressed[category])
+            if not candidates:
+                continue
+            sample = ', '.join(candidates[:NOTE_SAMPLE_LIMIT])
+            overflow = len(candidates) - NOTE_SAMPLE_LIMIT
+            suffix = f' (+{overflow} more)' if overflow > 0 else ''
+            notes.append(
+                f'{category}: {len(candidates)} reference(s) suppressed - sample: {sample}{suffix}'
+            )
+        return notes
+
+    def derive_edges(
+        self,
+        derived_by_name: dict,
+        enriched_by_name: dict,
+    ) -> tuple[list[tuple[str, str]], list[str]]:
+        """Derive module edges from materialized Python-import references.
+
+        A pure join over the ``component_refs`` field module discovery
+        materializes: each entry is a ``{target_bundle, dep_type, resolved}``
+        triple already projected onto module granularity. The engine that
+        detected those imports parses files from disk, so it runs at discovery
+        time; this method performs no file I/O and runs no subprocess, as the
+        Axis-C purity contract requires.
+
+        Only ``import`` entries contribute (:data:`PYTHON_DEP_TYPE`); the four
+        markdown reference kinds belong to the sibling markdown resolver and are
+        skipped without a note, being outside this resolver's scope rather than
+        suppressed by it.
+
+        Three conditions suppress a candidate edge, and each is reported in
+        aggregated form: an import whose target does not exist in the
+        marketplace (``unresolved-target``), a target naming no known module
+        (``unknown-endpoint``), and an import from a bundle to itself
+        (``self-edge``). Self-edges are dropped here as well as by the core
+        merge, so this resolver's own ``edge_count`` report stays honest.
+
+        This resolver reads the pre-materialized field only. It imports nothing
+        from the bundle that materializes it, so registering a second resolver
+        creates no code coupling between the two bundles.
+
+        The enriched overlay is unused: the precedence of a curated
+        ``internal_dependencies`` declaration OVER a derived edge set is core's
+        decision, applied ahead of the resolver call.
+
+        Args:
+            derived_by_name: Module name → derived data. Modules discovered by
+                another extension carry no ``component_refs`` and contribute
+                nothing.
+            enriched_by_name: Module name → LLM-curated overlay. Unused here.
+
+        Returns:
+            An ``(edges, notes)`` tuple. ``edges`` is the sorted, deduplicated
+            list of ``(dependent, dependency)`` module-name pairs. ``notes``
+            carries one aggregated entry per non-empty suppression category.
+        """
+        edges: set[tuple[str, str]] = set()
+        suppressed: dict[str, list[str]] = {category: [] for category in SUPPRESSION_CATEGORIES}
+
+        for module_name, module_data in derived_by_name.items():
+            for ref in module_data.get('component_refs') or []:
+                if ref.get('dep_type') != PYTHON_DEP_TYPE:
+                    continue
+
+                target = ref.get('target_bundle')
+                candidate = f'{module_name} -> {target} [{PYTHON_DEP_TYPE}]'
+
+                if not ref.get('resolved'):
+                    suppressed['unresolved-target'].append(candidate)
+                elif target not in derived_by_name:
+                    suppressed['unknown-endpoint'].append(candidate)
+                elif target == module_name:
+                    suppressed['self-edge'].append(candidate)
+                else:
+                    edges.add((module_name, target))
+
+        return sorted(edges), self._aggregate_notes(suppressed)
