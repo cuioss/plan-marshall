@@ -87,7 +87,7 @@ The skip-clean exit is taken ONLY when the Step 2.5 F1 trigger did NOT fire AND 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO \
-  --message "[STATUS] (project:finalize-step-plugin-doctor) No skill changes detected; skipping plugin-doctor quality-gate"
+  --message "[STATUS] (project:finalize-step-plugin-doctor) No skill changes detected. Skipping plugin-doctor quality-gate"
 ```
 
 This branch precedes Step 4, so resolve the worktree path here before capturing HEAD:
@@ -117,7 +117,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level WARNING \
-  --message "[STATUS] (project:finalize-step-plugin-doctor) affected_files read indeterminate; falling back to whole-tree plugin-doctor quality-gate"
+  --message "[STATUS] (project:finalize-step-plugin-doctor) affected_files read indeterminate. Falling back to whole-tree plugin-doctor quality-gate"
 ```
 
 ### Step 4: Regenerate a worktree-fresh executor
@@ -146,7 +146,7 @@ This mirrors `test/conftest.py::_ensure_executor_present` on CI. Regeneration fa
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level WARNING \
-  --message "[STATUS] (project:finalize-step-plugin-doctor) Worktree executor regeneration failed; gating against existing executor"
+  --message "[STATUS] (project:finalize-step-plugin-doctor) Worktree executor regeneration failed. Gating against existing executor"
 ```
 
 ### Step 5: Run the quality-gate
