@@ -7,6 +7,7 @@ name: default:finalize-step-simplify
 description: Domain-agnostic phase-6 cognitive simplification pass — reviews the plan's changeset against the minimum-viable-code anti-patterns and deletes surplus structure directly in the worktree
 order: 8
 mutates_source: true
+head_dependent: true
 default_on: true
 presets:
   - full
@@ -67,7 +68,7 @@ The step derives the plan's live footprint on demand from the worktree (via `com
 
 ## HEAD-dependency
 
-`finalize-step-simplify` is a member of `HEAD_DEPENDENT_STEPS` (see `phase-6-finalize/SKILL.md`). Because it applies edits directly to the worktree — which the dispatcher's commit instrumentation (`phase-6-finalize/SKILL.md` Step 3 item 5f) commits after the step records `done`, advancing HEAD — a loop-back fix task that advances HEAD past the recorded `head_at_completion` MUST re-fire this step so the simplification pass runs against the newer tree. Capture `git rev-parse HEAD` immediately before the terminal `mark-step-done` call and forward it via `--head-at-completion {sha}`.
+`finalize-step-simplify` declares `head_dependent: true` in its frontmatter — that fact IS the membership declaration the dispatcher's re-entry check reads (see [`../../extension-api/standards/ext-point-finalize-step.md`](../../extension-api/standards/ext-point-finalize-step.md) § "Implementor Frontmatter"). Because it applies edits directly to the worktree — which the dispatcher's commit instrumentation (`phase-6-finalize/SKILL.md` Step 3 item 5f) commits after the step records `done`, advancing HEAD — a loop-back fix task that advances HEAD past the recorded `head_at_completion` MUST re-fire this step so the simplification pass runs against the newer tree. Capture `git rev-parse HEAD` immediately before the terminal `mark-step-done` call and forward it via `--head-at-completion {sha}`.
 
 ## Workflow
 

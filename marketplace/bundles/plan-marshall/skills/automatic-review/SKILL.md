@@ -10,6 +10,7 @@ allowed-tools: Read, Bash, Skill
 order: 30
 requires: [ci-complete]
 mutates_source: true
+head_dependent: true
 default_on: true
 presets:
   - standard
@@ -600,7 +601,7 @@ Because triage is dispatcher-owned, this step never emits a `loop_back` outcome 
 
 Before returning control to the finalize pipeline, record that this step ran on the live plan so the `phase_steps_complete` handshake invariant is satisfied at phase transition time. Mark done only on the terminal pass that returns clean (or on a skip); loop-back iterations do not terminate the step.
 
-`plan-marshall:automatic-review` is one of the three HEAD-dependent steps (alongside `pre-push-quality-gate` and `sonar-roundtrip`) — see [`phase-6-finalize/SKILL.md`](../phase-6-finalize/SKILL.md) Step 3 "Special case — HEAD-dependent steps". Every `--outcome done` branch below MUST capture the worktree HEAD SHA immediately before the `mark-step-done` call and forward it via `--head-at-completion {sha}`, so the dispatcher's HEAD-dependent resumability check can detect a stale `done` record after a future loop-back commit advances HEAD. The `loop_back` branch does NOT need to persist the SHA — the dispatcher's general resumability handling for `loop_back` treats it as no-record on re-entry regardless of HEAD.
+`plan-marshall:automatic-review` declares `head_dependent: true` in its frontmatter — that fact IS the membership declaration the dispatcher's re-entry check reads (see [`../extension-api/standards/ext-point-finalize-step.md`](../extension-api/standards/ext-point-finalize-step.md) § "Implementor Frontmatter" and [`phase-6-finalize/SKILL.md`](../phase-6-finalize/SKILL.md) Step 3 "Special case — HEAD-dependent steps"). Every `--outcome done` branch below MUST capture the worktree HEAD SHA immediately before the `mark-step-done` call and forward it via `--head-at-completion {sha}`, so the dispatcher's HEAD-dependent resumability check can detect a stale `done` record after a future loop-back commit advances HEAD. The `loop_back` branch does NOT need to persist the SHA — the dispatcher's general resumability handling for `loop_back` treats it as no-record on re-entry regardless of HEAD.
 
 Pass a `--display-detail` value alongside `--outcome done` so the output-template renderer can surface the review outcome. The payload differs by branch:
 
@@ -730,7 +731,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 
 ## Resumability
 
-`plan-marshall:automatic-review` is one of the three HEAD-dependent steps in `HEAD_DEPENDENT_STEPS` (`pre-push-quality-gate`, `plan-marshall:automatic-review`, `sonar-roundtrip`) — see [`phase-6-finalize/SKILL.md`](../phase-6-finalize/SKILL.md) Step 3 "Special case — HEAD-dependent steps". The HEAD comparison guards against false-clean re-entry after a downstream loop-back commit (typically produced by `sonar-roundtrip` opening a fix task that produces a new commit, or by a `plan-marshall:automatic-review` iteration's own FIX dispositions on a previous pass) advances HEAD past the validated tree:
+`plan-marshall:automatic-review` is head-dependent by its own `head_dependent: true` frontmatter declaration — see [`phase-6-finalize/SKILL.md`](../phase-6-finalize/SKILL.md) Step 3 "Special case — HEAD-dependent steps" for the re-entry rules the declaration arms. The HEAD comparison guards against false-clean re-entry after a downstream loop-back commit (typically produced by `sonar-roundtrip` opening a fix task that produces a new commit, or by a `plan-marshall:automatic-review` iteration's own FIX dispositions on a previous pass) advances HEAD past the validated tree:
 
 | Persisted state | Live worktree HEAD | Action |
 |-----------------|--------------------|--------|

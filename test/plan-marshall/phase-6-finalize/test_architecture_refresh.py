@@ -43,6 +43,7 @@ import sys
 from typing import Any
 
 import pytest
+from _dispatch_roster import parse_roster
 from conftest import MARKETPLACE_ROOT
 
 # ---------------------------------------------------------------------------
@@ -52,6 +53,9 @@ from conftest import MARKETPLACE_ROOT
 _PHASE_6_DIR = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize'
 _PHASE_6_SKILL_MD = _PHASE_6_DIR / 'SKILL.md'
 _ARCHITECTURE_REFRESH_MD = _PHASE_6_DIR / 'standards' / 'architecture-refresh.md'
+_DISPATCH_INLINE_SPLIT_MD = _PHASE_6_DIR / 'standards' / 'dispatch-inline-split.md'
+_DISPATCHED_HEADING = '## Dispatched steps'
+_INLINE_HEADING = '## Inline steps'
 _REQUIRED_STEPS_MD = _PHASE_6_DIR / 'standards' / 'required-steps.md'
 _PHASE_1_INIT_SKILL_MD = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-1-init' / 'SKILL.md'
 
@@ -811,14 +815,44 @@ class TestCrossReferences:
         self,
         skill_md_text: str,
     ):
-        """Tier-1 prompt mode means architecture-refresh runs inline (no Task agent)."""
-        # The SKILL.md declares "Inline-only built-in steps" and lists names.
-        assert 'architecture-refresh' in skill_md_text
-        # No agent dispatch entry — it should NOT appear in the agent-suitable table.
-        # Locate the agent-suitable section heading and verify our step is absent.
+        """Tier-1 prompt mode means architecture-refresh runs inline (no Task agent).
+
+        Membership is read from ``standards/dispatch-inline-split.md`` — the single
+        source of truth — reached through the pointer ``SKILL.md`` now carries. The
+        previous form asserted the *shape* of SKILL.md's hand-maintained
+        "Inline-only built-in steps" bullet (a bare ``'architecture-refresh' in
+        skill_md_text`` substring check plus a bullet-layout split). That bullet was
+        collapsed into a pointer precisely so the membership list stops being
+        duplicated across five SKILL.md sites, so re-asserting its layout would pin
+        the duplication this change removes — and the substring check was never
+        evidence of inline classification in the first place.
+        """
+        # 1. SKILL.md's inline-only section points at the SSOT instead of listing names.
+        inline_section = skill_md_text.split('Inline-only built-in steps')[1]
+        pointer_paragraph = inline_section.split('\n\n')[0]
+        assert 'standards/dispatch-inline-split.md' in pointer_paragraph, (
+            'SKILL.md\'s "Inline-only built-in steps" section must point at '
+            'standards/dispatch-inline-split.md as the single source of truth for '
+            'inline membership, rather than re-listing the member steps'
+        )
+
+        # 2. The SSOT itself carries the classification.
+        roster_text = _DISPATCH_INLINE_SPLIT_MD.read_text(encoding='utf-8')
+        inline = parse_roster(roster_text, _INLINE_HEADING)
+        dispatched = parse_roster(roster_text, _DISPATCHED_HEADING)
+        assert inline, 'Inline roster parsed empty — the assertion would be vacuous'
+        assert 'default:architecture-refresh' in inline, (
+            'architecture-refresh requires an AskUserQuestion for its Tier-1 `prompt` '
+            'mode, which a dispatched leaf cannot fire — dispatch-inline-split.md must '
+            'classify it inline'
+        )
+        assert 'default:architecture-refresh' not in dispatched, (
+            'architecture-refresh must carry exactly one classification; it is inline'
+        )
+
+        # 3. It must still be absent from the agent-suitable dispatch table.
         section = skill_md_text.split('Agent-suitable built-in steps')[1]
         section_top = section.split('Inline-only built-in steps')[0]
-        # The agent dispatch table should NOT mention architecture-refresh.
         assert 'architecture-refresh' not in section_top, (
             'architecture-refresh must NOT appear in the agent-suitable table; '
             'it requires AskUserQuestion and runs inline.'

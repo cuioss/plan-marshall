@@ -30,7 +30,7 @@ implements:
 
 **Frontmatter is the sole source of truth for finalize-step discovery.** The `find_implementors()` scanner reads the `implements:` declaration from each candidate step doc and selects every doc whose declaration includes the canonical value above. The scanner does **not** read the markdown body for a discovery signal, and it does **not** identify a step by a directory-name or filename heuristic. A step doc whose frontmatter omits the declaration is not discovered.
 
-Beyond the `implements:` declaration, each finalize-step doc carries the following frontmatter contract — five required fields plus one conditionally-required field. These fields replace the removed `BUILT_IN_FINALIZE_STEPS` / `OPTIONAL_BUNDLE_FINALIZE_STEPS` lists and the `*_DESCRIPTIONS` maps as the per-step source of truth:
+Beyond the `implements:` declaration, each finalize-step doc carries the following frontmatter contract — five required fields plus three conditionally-required fields. These fields replace the removed `BUILT_IN_FINALIZE_STEPS` / `OPTIONAL_BUNDLE_FINALIZE_STEPS` lists and the `*_DESCRIPTIONS` maps as the per-step source of truth:
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -40,6 +40,17 @@ Beyond the `implements:` declaration, each finalize-step doc carries the followi
 | `presets` | list[str] | Yes | The named presets this step belongs to — a (possibly empty) subset of `[local, standard, full]`. The preset builder derives "step S belongs to preset P" as `P ∈ S.presets`. An empty list `[]` means the step is in no named preset. |
 | `description` | str | Yes | The human-readable discovery description (shown by `list-finalize-steps` and the wizard). This is the single source of the per-step description, replacing the removed `*_DESCRIPTIONS` maps. |
 | `mutates_source` | bool | Conditional | `true` means the step edits tracked source at runtime; such a step MUST be ordered before `default:branch-cleanup`, per [phase-6-finalize/standards/source-edit-pushability.md](../../phase-6-finalize/standards/source-edit-pushability.md). Declaring this field is **mandatory** for any step whose `order` is at or after the dynamically-resolved merge gate (`default:branch-cleanup`) and optional for a step ordered below it. |
+| `head_dependent` | bool | Conditional | `true` means the step's verdict is computed against a specific worktree HEAD, so a recorded `done` is only valid for the SHA it was computed against. Such a step MUST persist `--head-at-completion {sha}` on its terminal `mark-step-done` call, and the dispatcher's re-entry check re-fires it when HEAD has advanced (a loop-back commit, a force-push, or a rebase). The governing discriminator, applied verbatim so classification is reproducible: **"would this verdict change if HEAD changed?"** Declaring this field is **mandatory** for a step matching either of two shapes — (1) it records a pass/fail verdict over tracked source or over the remote state of that source, or (2) it is a settle-stage step whose edits land directly in the worktree (its edits were computed against the HEAD it read, so a HEAD advance supersedes them) — and optional (defaulting to `false`) otherwise. A step matching **neither** shape — one that records *an action performed* (rebase, push, PR created, archive written) and leaves no edits of its own — has no verdict to go stale and is not head-dependent. |
+| `advances_main_via_rebase` | bool | Conditional | `true` means a successful non-noop run of the step replays the worktree's history onto a newly-fetched base tip, advancing it. This is the fact that arms the dispatcher's **post-rebase step-doc re-resolution contract** (see [phase-6-finalize/SKILL.md](../../phase-6-finalize/SKILL.md) § "Post-rebase step-doc re-resolution contract"): every subsequent step's authoritative doc is re-read from the just-rebased worktree at dispatch time rather than trusting the session-start-loaded copy. Declaring this field is **mandatory** for any step that performs a rebase or merge capable of advancing the worktree's history, and optional (defaulting to `false`) otherwise. |
+
+**Consuming `head_dependent` — per-step call sites vs whole-set call sites.** The fact is declared per step, and a consumer MUST consume it at the granularity its question actually has:
+
+| Call site | Granularity | Contract |
+|-----------|-------------|----------|
+| The dispatcher's re-entry check ([phase-6-finalize/SKILL.md](../../phase-6-finalize/SKILL.md) § "Step 3: Execute Step Pipeline") | **per-step** | Resolves the `head_dependent` fact for the ONE step it is about to re-enter — a membership test, never a set materialisation. This keeps the derivation exactly as lazy as the hand-maintained literal it replaced. |
+| The derivation test guard | **whole-set** | Materialises the full head-dependent set through `find_implementors()` and asserts over it. Eagerness is the point here: the guard exists to enumerate every implementor, so a step added later is covered automatically. |
+
+A per-step call site that materialises the whole set on every loop iteration is a defect, not an implementation detail — it widens a lazy contract into an eager one for no gain.
 
 ### Addressing Surface
 
@@ -132,7 +143,7 @@ Every step doc that declares the finalize-step interface. Built-in steps live un
 | `default:create-pr` | built-in | 20 | true | `[standard, full]` |
 | `project:finalize-step-era-stamp-fill` | project | 21 | false | `[]` |
 | `default:ci-verify` | built-in | 22 | true | `[standard, full]` |
-| `default:architecture-refresh` | built-in | 25 | false | `[]` |
+| `default:architecture-refresh` | built-in | 9 | true | `[]` |
 | `default:sonar-roundtrip` | built-in | 40 | true | `[full]` |
 | `default:lessons-capture` | built-in | 60 | true | `[local, standard, full]` |
 | `default:finalize-step-preference-emitter` | built-in | 61 | true | `[]` |

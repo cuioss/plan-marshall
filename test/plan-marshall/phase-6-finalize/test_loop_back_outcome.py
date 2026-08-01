@@ -19,7 +19,14 @@ deliverable:
    ``--outcome loop_back``.
 4. The Resumability section in ``phase-6-finalize/SKILL.md`` retains the
    ``pre-push-quality-gate`` HEAD-comparison rows (steady-state vs.
-   mismatched HEAD).
+   mismatched HEAD), and membership in that comparison is read from the
+   **derived** ``head_dependent`` frontmatter fact rather than the removed
+   ``HEAD_DEPENDENT_STEPS`` literal.
+5. A loop-back commit that advances HEAD past a recorded ``done`` on
+   ``pre-submission-self-review`` re-fires the step instead of skipping it.
+   That step reviews the plan's DIFF, so a ``done`` carried across a
+   loop-back would stand as green for a diff no check ever ran against —
+   the defect that motivated deriving membership in the first place.
 
 The tests use unique ``plan_id`` values per test to avoid cross-test
 contamination (per MEMORY.md "Test Isolation Pattern").
@@ -56,6 +63,22 @@ _AUTOMATED_REVIEW_MD = (
     _REPO_ROOT / 'marketplace' / 'bundles' / 'plan-marshall'
     / 'skills' / 'automatic-review' / 'SKILL.md'
 )
+_PRE_SUBMISSION_SELF_REVIEW_MD = (
+    _REPO_ROOT / 'marketplace' / 'bundles' / 'plan-marshall'
+    / 'skills' / 'phase-6-finalize' / 'workflow' / 'pre-submission-self-review.md'
+)
+
+#: The removed hand-maintained literal. Its ABSENCE from SKILL.md is what makes
+#: membership derived rather than listed, so it is asserted absent by name.
+_RETIRED_LITERAL = 'HEAD_DEPENDENT_STEPS'
+
+
+def _declares_head_dependent(doc_path: Path) -> bool:
+    """True when a step doc declares the derived ``head_dependent: true`` fact."""
+    for line in doc_path.read_text(encoding='utf-8').splitlines():
+        if line.strip() == 'head_dependent: true':
+            return True
+    return False
 
 
 def _make_plan(plan_id: str) -> None:
@@ -328,4 +351,73 @@ def test_pre_push_quality_gate_head_compare_unchanged():
     )
     assert 'HEAD has advanced past the validated SHA' in skill_text, (
         'Mismatched-HEAD row must explain that HEAD has advanced past the validated SHA.'
+    )
+
+    # Membership is DERIVED, not listed: the hand-maintained literal must be
+    # gone from SKILL.md and the fact must be declared on the step's own doc.
+    assert _RETIRED_LITERAL not in skill_text, (
+        f'SKILL.md still carries the retired {_RETIRED_LITERAL} literal. Membership '
+        'is now the derived head_dependent frontmatter fact — a surviving literal is '
+        'a second source of truth that can drift from the declarations, which is the '
+        'exact defect this plan removed.'
+    )
+    assert 'head_dependent' in skill_text, (
+        'SKILL.md must name the derived head_dependent fact as the membership source.'
+    )
+
+
+# =============================================================================
+# Test 5 (D4a): a loop-back commit re-fires pre-submission-self-review.
+# =============================================================================
+
+
+def test_loop_back_commit_re_fires_pre_submission_self_review():
+    """A loop-back HEAD advance invalidates a recorded self-review verdict.
+
+    ``pre-submission-self-review`` is one of the three members the retired
+    hand-maintained literal OMITTED. Its verdict is a structural review of the
+    plan's DIFF, so a ``done`` record carried across a loop-back commit stands
+    as green for a diff no check ever examined — the motivating defect.
+
+    The dispatcher's re-entry decision lives in markdown, so (mirroring test 2's
+    approach for markdown-resident dispatcher logic) this test exercises the
+    persisted record through ``manage-status`` and asserts the two inputs the
+    documented table branches on: the step IS head-dependent (derived fact), and
+    the terminal ``done`` record actually persists the SHA its verdict was
+    computed against — without which the table has nothing to compare a later
+    HEAD against and degrades to an unconditional SKIP.
+    """
+    plan_id = 'loopback-d4a-self-review'
+    _make_plan(plan_id)
+
+    head_at_verdict = 'a' * 40
+
+    cmd_mark_step_done(
+        _args(
+            plan_id,
+            '6-finalize',
+            'pre-submission-self-review',
+            'done',
+            display_detail='self-review clean: 12 candidates examined, no check matched',
+            head_at_completion=head_at_verdict,
+        )
+    )
+
+    persisted = read_status(plan_id)
+    entry = persisted['metadata']['phase_steps']['6-finalize']['pre-submission-self-review']
+
+    assert entry['outcome'] == 'done'
+    assert entry['head_at_completion'] == head_at_verdict, (
+        'The terminal done record must persist the SHA the verdict was computed '
+        'against — without it the dispatcher has nothing to compare and the '
+        're-entry check degrades to an unconditional skip.'
+    )
+
+    # The step must be IN scope for the HEAD-comparison table at all. Membership
+    # is the derived frontmatter fact — this is the assertion that would have
+    # failed while the step was missing from the hand-maintained literal.
+    assert _declares_head_dependent(_PRE_SUBMISSION_SELF_REVIEW_MD), (
+        'pre-submission-self-review must declare head_dependent: true. Its verdict '
+        'is a function of the plan diff, so without the declaration a loop-back '
+        'commit leaves a stale done record standing as green for an unreviewed diff.'
     )

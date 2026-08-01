@@ -7,6 +7,7 @@ description: "Deterministic ci-verify executor — classify CI run failures into
 order: 22
 requires: [ci-complete]
 mutates_source: false
+head_dependent: true
 default_on: true
 presets:
   - standard
@@ -294,8 +295,11 @@ the newest instead of returning all rows.
 ## HEAD-dependent re-fire
 
 `ci-verify` is HEAD-dependent: a loop-back commit MUST re-fire it
-against the new HEAD's CI run. This is enforced by `ci-verify`'s
-membership in `HEAD_DEPENDENT_STEPS` in [`../SKILL.md`](../SKILL.md).
+against the new HEAD's CI run. Membership is declared, not listed —
+this doc's `head_dependent: true` frontmatter fact IS the declaration
+the dispatcher's re-entry check reads (see
+[`../../extension-api/standards/ext-point-finalize-step.md`](../../extension-api/standards/ext-point-finalize-step.md)
+§ "Implementor Frontmatter").
 The green early-return marks the step `done` with `--head-at-completion
 {sha}` (the executor resolves the worktree HEAD immediately before the
 `mark-step-done` call) so the dispatcher's HEAD-advance comparison can

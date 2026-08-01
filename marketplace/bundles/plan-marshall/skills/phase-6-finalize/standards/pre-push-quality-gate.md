@@ -6,6 +6,7 @@ name: default:pre-push-quality-gate
 description: Run quality-gate per affected bundle then one whole-tree quality-gate, then whole-tree test-compile, then gate whole-tree module-tests on scoped-vs-whole-tree divergence risk, as the last gate before push
 order: 5
 mutates_source: false
+head_dependent: true
 default_on: true
 presets:
   - full

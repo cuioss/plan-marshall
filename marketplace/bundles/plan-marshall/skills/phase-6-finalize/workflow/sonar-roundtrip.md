@@ -7,6 +7,7 @@ description: Sonar analysis roundtrip — FIND-only producer that fetches PR-sco
 order: 40
 requires: [ci-complete]
 mutates_source: true
+head_dependent: true
 default_on: true
 presets:
   - full
@@ -121,7 +122,7 @@ Take the last (most recent) JSONL row as the verified-scan attestation for this 
 
 Before returning control to the finalize pipeline, record that this step ran on the live plan so the `phase_steps_complete` handshake invariant is satisfied at phase transition time. This FIND-only step marks done on the terminal FIND pass (or fails closed on an undecidable marker); it emits no `loop_back` of its own.
 
-`sonar-roundtrip` is one of the three HEAD-dependent steps (alongside `pre-push-quality-gate` and `plan-marshall:automatic-review`) — see [`phase-6-finalize/SKILL.md`](../SKILL.md) Step 3 "Special case — HEAD-dependent steps". Every `--outcome done` branch below MUST capture the worktree HEAD SHA immediately before the `mark-step-done` call and forward it via `--head-at-completion {sha}`, so the dispatcher's HEAD-dependent resumability check can detect a stale `done` record after a unified-triage fix commit advances HEAD (re-firing this FIND against the new tree).
+`sonar-roundtrip` declares `head_dependent: true` in its frontmatter — that fact IS the membership declaration the dispatcher's re-entry check reads (see [`../../extension-api/standards/ext-point-finalize-step.md`](../../extension-api/standards/ext-point-finalize-step.md) § "Implementor Frontmatter" and [`phase-6-finalize/SKILL.md`](../SKILL.md) Step 3 "Special case — HEAD-dependent steps"). Every `--outcome done` branch below MUST capture the worktree HEAD SHA immediately before the `mark-step-done` call and forward it via `--head-at-completion {sha}`, so the dispatcher's HEAD-dependent resumability check can detect a stale `done` record after a unified-triage fix commit advances HEAD (re-firing this FIND against the new tree).
 
 Pass a `--display-detail` value alongside `--outcome done` so the output-template renderer can surface the Sonar quality gate result. The payload differs by branch:
 
@@ -176,7 +177,7 @@ Note: there is no "config disabled" branch — when the manifest excludes `sonar
 
 ## Resumability
 
-`sonar-roundtrip` is one of the three HEAD-dependent steps in `HEAD_DEPENDENT_STEPS` (`pre-push-quality-gate`, `plan-marshall:automatic-review`, `sonar-roundtrip`) — see [`phase-6-finalize/SKILL.md`](../SKILL.md) Step 3 "Special case — HEAD-dependent steps". The HEAD comparison guards against false-clean re-entry after a downstream loop-back commit (typically produced by the unified wait-region triage opening a fix task that produces a new commit) advances HEAD past the validated tree:
+`sonar-roundtrip` is head-dependent by its own `head_dependent: true` frontmatter declaration — see [`phase-6-finalize/SKILL.md`](../SKILL.md) Step 3 "Special case — HEAD-dependent steps" for the re-entry rules the declaration arms. The HEAD comparison guards against false-clean re-entry after a downstream loop-back commit (typically produced by the unified wait-region triage opening a fix task that produces a new commit) advances HEAD past the validated tree:
 
 | Persisted state | Live worktree HEAD | Action |
 |-----------------|--------------------|--------|
