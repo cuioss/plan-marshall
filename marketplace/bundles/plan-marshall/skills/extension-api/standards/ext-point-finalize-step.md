@@ -143,7 +143,7 @@ Every step doc that declares the finalize-step interface. Built-in steps live un
 | `default:create-pr` | built-in | 20 | true | `[standard, full]` |
 | `project:finalize-step-era-stamp-fill` | project | 21 | false | `[]` |
 | `default:ci-verify` | built-in | 22 | true | `[standard, full]` |
-| `default:architecture-refresh` | built-in | 9 | false | `[]` |
+| `default:architecture-refresh` | built-in | 9 | true | `[]` |
 | `default:sonar-roundtrip` | built-in | 40 | true | `[full]` |
 | `default:lessons-capture` | built-in | 60 | true | `[local, standard, full]` |
 | `default:finalize-step-preference-emitter` | built-in | 61 | true | `[]` |
