@@ -121,8 +121,14 @@ class Extension(ExtensionBase, PathAttributionBase):
         belong to ``pm-plugin-development`` is out of scope here and owned
         elsewhere; a future reader should not read the re-homing as having settled
         that question.
+
+        ``.plan`` is core's own claim, and it closes the ``module: null`` answer
+        every ``.plan/`` path previously received. The prefix is the BARE root
+        segment so prefix containment covers ``.plan/execute-script.py``,
+        ``.plan/marshal.json`` and every nested script path — an fnmatch-shaped
+        ``.plan/**`` would miss the segment itself.
         """
-        return [('.claude/skills', 'plan-marshall')], []
+        return [('.claude/skills', 'plan-marshall'), ('.plan', 'plan-marshall')], []
 
     def provides_recipes(self) -> list[dict]:
         """Return built-in recipes provided by plan-marshall."""
