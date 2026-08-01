@@ -22,6 +22,12 @@ properties pinned here:
   discarded never reports ``status: ok`` / ``claim_count: 0`` / ``notes: []``.
 - A raising attributor reports ``status: error`` with ``claim_count: 0`` while
   its siblings still contribute — one broken implementor never blanks the map.
+- A ``claims`` value that is not a usable collection degrades identically,
+  because the collection is materialized inside the same guard: a truthy
+  non-iterable would otherwise escape as an uncaught ``TypeError``, and a bare
+  string would iterate into characters rather than pairs — a broken implementor
+  misreported as a running one. A **falsy** non-iterable (``0`` / ``None`` /
+  ``[]``) is not broken and still reports ``status: ok``.
 - Claim ordering is deterministic across runs (sorted by ``(prefix, module)``).
 - ``lookup_claim`` resolves the LONGEST containing prefix, matches a bare root
   segment such as ``.plan``, and does NOT over-match a sibling path that merely
@@ -378,6 +384,58 @@ def test_raising_attributor_reports_error_and_contributes_nothing():
     assert broken_report['status'] == 'error'
     assert broken_report['claim_count'] == 0
     assert broken_report['notes'] != []
+
+
+def test_non_iterable_claims_value_reports_error_rather_than_raising():
+    # Arrange — a truthy non-iterable claims value is a broken-implementor
+    # condition of exactly the same class as a raising ``claim_paths()``:
+    # iterating it outside the guard would let a TypeError escape and blank the
+    # whole ownership map.
+    broken = _StubAttributor(claims=123)
+    healthy = _StubAttributor(claims=[('.plan', 'plan-marshall')])
+
+    # Act
+    claims, reports = _merge_with(('broken', broken), ('healthy', healthy))
+
+    # Assert — the sibling still contributes; the map is never blanked
+    assert claims == [{'prefix': '.plan', 'module': 'plan-marshall', 'producers': ['healthy']}]
+    broken_report = _report_for(reports, 'broken')
+    assert broken_report['status'] == 'error'
+    assert broken_report['claim_count'] == 0
+    assert broken_report['notes'] != []
+
+
+def test_string_claims_value_reports_error_rather_than_iterating_characters():
+    # Arrange — a bare string IS iterable, so it would NOT raise: left
+    # undefended it would silently iterate into characters and report one
+    # malformed-candidate note per character, i.e. a broken implementor
+    # misreported as a running one.
+    broken = _StubAttributor(claims='.plan')
+    healthy = _StubAttributor(claims=[('.plan', 'plan-marshall')])
+
+    # Act
+    claims, reports = _merge_with(('broken', broken), ('healthy', healthy))
+
+    # Assert — the sibling still contributes; the map is never blanked
+    assert claims == [{'prefix': '.plan', 'module': 'plan-marshall', 'producers': ['healthy']}]
+    broken_report = _report_for(reports, 'broken')
+    assert broken_report['status'] == 'error'
+    assert broken_report['claim_count'] == 0
+    assert broken_report['notes'] != []
+
+
+def test_falsy_non_iterable_claims_value_is_an_empty_claim_set_not_an_error():
+    # Arrange — the guard must NOT reclassify a legitimately empty return as a
+    # broken implementor: ``raw_claims or []`` keeps 0 / None / [] meaning
+    # "ran and claimed nothing".
+    attributor = _StubAttributor(claims=0)
+
+    # Act
+    claims, reports = _merge_with(('quiet', attributor))
+
+    # Assert — a positive negative, not an error report
+    assert claims == []
+    assert reports == [{'id': 'quiet', 'claim_count': 0, 'status': 'ok', 'notes': []}]
 
 
 def test_record_missing_its_module_key_reports_error_rather_than_raising():

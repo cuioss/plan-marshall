@@ -141,7 +141,13 @@ def merge_path_claims(
     :func:`lookup_claim` orders by prefix length at query time.
 
     An attributor that raises reports ``status: error`` with ``claim_count: 0`` and
-    contributes no claims; its siblings still contribute. An errored attributor
+    contributes no claims; its siblings still contribute. A ``claims`` value that is
+    not a usable collection — a truthy non-iterable, or a bare string that would
+    iterate into characters rather than pairs — is the same broken-implementor
+    condition and degrades to that same error report rather than escaping as an
+    uncaught ``TypeError``, because the claims are materialized inside the same
+    guard that wraps the hook call. A FALSY non-iterable (``0``, ``None``, ``[]``)
+    still means "claimed nothing" and reports ``status: ok``. An errored attributor
     never aborts the merge — a single broken implementor must not blank the
     ownership map.
 
@@ -183,6 +189,19 @@ def merge_path_claims(
         # rather than aborting the merge.
         try:
             raw_claims, raw_notes = record['module'].claim_paths()
+            # Materialize the claims collection INSIDE the guard. ``raw_claims``
+            # is extension-contributed, so a truthy non-iterable (``123``) — or a
+            # bare string, which iterates into characters rather than pairs — is a
+            # broken-implementor condition of exactly the same class as a raising
+            # ``claim_paths()``. Iterating it outside the guard would let a
+            # TypeError escape and blank the whole ownership map, which is the one
+            # outcome this merge exists to prevent.
+            if isinstance(raw_claims, str):
+                raise TypeError(
+                    'claim_paths() returned a str as its claims collection; '
+                    'expected an iterable of (path_prefix, module_name) pairs'
+                )
+            candidates = list(raw_claims or [])
         except Exception as e:
             log_entry(
                 'script',
@@ -191,12 +210,12 @@ def merge_path_claims(
                 f'[EXTENSION] claim_paths() failed for path attributor {attributor_id}: {e}',
             )
             status_by_id[attributor_id] = _STATUS_ERROR
-            notes_by_id[attributor_id] = [f'claim_paths() raised: {e}']
+            notes_by_id[attributor_id] = [f'claim_paths() failed: {e}']
             continue
 
         status_by_id[attributor_id] = _STATUS_OK
         notes = _coerce_notes(raw_notes)
-        for candidate in raw_claims or []:
+        for candidate in candidates:
             pair = _coerce_pair(candidate)
             if pair is None:
                 notes.append(
