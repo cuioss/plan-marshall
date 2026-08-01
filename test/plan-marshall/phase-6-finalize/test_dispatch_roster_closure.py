@@ -28,19 +28,38 @@ These tests pin the closure invariant and the count-free rewrite:
     that holds every dispatch branch the document has — so a
     ``dispatch-logging.md`` reference in unrelated prose (a cross-reference
     table, say) is not misread as an unbacked emit site.
+(f) Every step doc in this plan's own touched population that **self-classifies**
+    (asserts "This step is \\*\\*inline\\*\\*" / "\\*\\*dispatched\\*\\*" in its own
+    body) agrees with the roster: an inline-asserting doc's step appears under
+    ``## Inline steps`` and NOT under ``## Dispatched steps``, and vice versa.
+    This is the cross-document consistency check — the roster and the executor
+    doc are two sources that can disagree, and ``default:architecture-refresh``
+    is the case that did: its executor doc asserted inline while the roster
+    classified it dispatched.
 
 Steps are named in the roster by their exact registry key (``default:`` /
 ``project:`` / ``bundle:skill`` prefix included), so the comparison is a plain
 set equality with no normalisation heuristics.
 
-The (d) and (e) populations are **derived, never hardcoded**: (d) iterates the
-rows the roster parser finds under ``## Dispatched steps``, and (e) iterates the
+The (d), (e) and (f) populations are **derived, never hardcoded**: (d) iterates
+the rows the roster parser finds under ``## Dispatched steps``, (e) iterates the
 ``Task:`` spawns and emission-contract citations found in that ``SKILL.md``
-section. A
+section, and (f) reads each step doc's OWN self-classification sentence rather
+than asserting a ``default:architecture-refresh`` literal. A
 hardcoded roster or emit-site list would pass vacuously the moment a row or a
 dispatch branch is added, which is precisely the drift these tests exist to
-catch. Each detector carries a mutation guard asserting it fires on the exact
+catch — and an ``assert 'default:architecture-refresh' in inline`` literal would
+pass vacuously the instant the pair is fixed, detecting nothing else ever again.
+Each detector carries a mutation guard asserting it fires on the exact
 pre-fix shape, so a regex typo cannot make it vacuously green.
+
+(f)'s **file** population is deliberately bounded to the step docs this plan
+itself mutates (deliverable 1's and deliverable 2's affected step docs, plus
+``standards/architecture-refresh.md``) — it is NOT the general roster-vs-step-doc
+mismatch population, which is owned by the sibling epic
+``code-intelligence-substrate`` PLAN-121 (D5b/D5c) and spans every registered
+step. Widening (f) to all registered steps would duplicate that sibling's
+surface; the bounding is a scope decision, not an oversight.
 """
 
 from __future__ import annotations
@@ -119,6 +138,45 @@ _EMIT_LOOKBACK_LINES = 25
 
 #: How far after an emission-contract citation the concrete block may sit.
 _EMIT_LOOKAHEAD_LINES = 15
+
+#: (f) The bounded step-doc population for the cross-document consistency check:
+#: the step docs this plan's deliverable 1 and deliverable 2 touch, plus
+#: ``standards/architecture-refresh.md``. Repo-relative so ``.claude/skills/``
+#: project steps sit in the same list as the bundle-resident ones. Bounded on
+#: purpose — the all-registered-steps population belongs to the sibling epic's
+#: PLAN-121 (D5b/D5c); see the module docstring.
+_D5E_STEP_DOC_PATHS = (
+    'marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/architecture-refresh.md',
+    'marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/pre-push-quality-gate.md',
+    'marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/ci-verify.md',
+    'marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/finalize-step-simplify.md',
+    'marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/'
+    'finalize-step-security-audit.md',
+    'marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/'
+    'pre-submission-self-review.md',
+    'marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/sonar-roundtrip.md',
+    'marketplace/bundles/plan-marshall/skills/automatic-review/SKILL.md',
+    '.claude/skills/finalize-step-plugin-doctor/SKILL.md',
+    '.claude/skills/finalize-step-era-stamp-fill/SKILL.md',
+)
+
+#: A step doc's own classification claim. The wording is the canonical
+#: self-classification sentence (``architecture-refresh.md`` § "This step is
+#: **inline** …"). The bold marker is load-bearing: it distinguishes a
+#: *classification assertion* from narrative uses of the words — "This step runs
+#: as inline orchestration …" (``sonar-roundtrip.md``, ``automatic-review``) and
+#: "the dispatched prompt loads …" (``finalize-step-simplify.md``) are prose
+#: about HOW the step behaves, not a roster classification, and reading them as
+#: claims would drag this bounded check into the sibling epic's population.
+_SELF_CLASSIFICATION = re.compile(r'\bThis step is \*\*(inline|dispatched)\*\*')
+
+#: A step doc's frontmatter ``name:`` value. Searched inside the frontmatter
+#: block only — the body carries ``name: <step-name>`` lines inside dispatch
+#: prompt examples that must not be mistaken for the doc's own identity.
+_FRONTMATTER_NAME = re.compile(r'^name:\s*(.+?)\s*$', re.MULTILINE)
+
+#: Registry-key prefixes a bare frontmatter ``name:`` may resolve under.
+_REGISTRY_KEY_PREFIXES = ('', 'default:', 'project:', 'plan-marshall:')
 
 
 # ---------------------------------------------------------------------------
@@ -232,6 +290,82 @@ def _prose_only_emit_sites(text: str) -> list[str]:
         if not any(_CONCRETE_DISPATCH_EMIT.search(nxt) for nxt in window):
             prose_only.append(f'line {index + 1}: {line.strip()!r}')
     return prose_only
+
+
+def _frontmatter_name(text: str) -> str | None:
+    """Return the ``name:`` value from a doc's YAML frontmatter block, if present."""
+    if not text.startswith('---'):
+        return None
+    end = text.find('\n---', 3)
+    if end == -1:
+        return None
+    match = _FRONTMATTER_NAME.search(text[3:end])
+    return match.group(1).strip() if match else None
+
+
+def _registry_key(frontmatter_name: str, registered: set[str]) -> str | None:
+    """Resolve a doc's frontmatter ``name:`` to its registry key, or ``None``.
+
+    A step doc spells its own name bare (``architecture-refresh``,
+    ``finalize-step-plugin-doctor``) or already prefixed
+    (``default:architecture-refresh``); the registry keys carry the prefix. Try
+    each accepted prefix against the authoritative key set rather than guessing.
+    """
+    for prefix in _REGISTRY_KEY_PREFIXES:
+        candidate = f'{prefix}{frontmatter_name}'
+        if candidate in registered:
+            return candidate
+    return None
+
+
+def _step_doc_claims() -> list[tuple[str, str, str]]:
+    """Return ``(rel_path, registry_key, claim)`` for self-classifying step docs.
+
+    Iterates the bounded (f) population and reads each doc's OWN classification
+    sentence. Docs that make no classification claim contribute nothing — the
+    check is about *disagreement* between two sources, so a doc that asserts
+    nothing cannot disagree with the roster.
+    """
+    registered = _registered_steps()
+    claims: list[tuple[str, str, str]] = []
+    for rel in _D5E_STEP_DOC_PATHS:
+        text = (PROJECT_ROOT / rel).read_text(encoding='utf-8')
+        match = _SELF_CLASSIFICATION.search(text)
+        if not match:
+            continue
+        name = _frontmatter_name(text)
+        assert name, f'{rel} self-classifies but declares no frontmatter `name:`'
+        key = _registry_key(name, registered)
+        assert key, (
+            f'{rel} declares frontmatter name {name!r}, which resolves to no '
+            f'registered finalize-step key'
+        )
+        claims.append((rel, key, match.group(1)))
+    return claims
+
+
+def _classification_mismatches(
+    claims: list[tuple[str, str, str]],
+    dispatched: set[str],
+    inline: set[str],
+) -> list[str]:
+    """Return one message per step doc whose self-claim contradicts the roster.
+
+    Kept pure over its three inputs so the mutation guard can drive it with the
+    exact pre-fix roster text and claim, without touching the real documents.
+    """
+    mismatches: list[str] = []
+    for rel, key, claim in claims:
+        expected, opposite = (
+            (inline, dispatched) if claim == 'inline' else (dispatched, inline)
+        )
+        if key in expected and key not in opposite:
+            continue
+        mismatches.append(
+            f'{rel}: the step doc asserts **{claim}** for {key!r}, but the roster '
+            f'has dispatched={key in dispatched} inline={key in inline}'
+        )
+    return mismatches
 
 
 # ---------------------------------------------------------------------------
@@ -489,6 +623,135 @@ def test_concrete_emit_detectors_fire_on_the_pre_fix_prose_only_site():
 
     assert not _prose_only_emit_sites(post_fix)
     assert not _spawns_missing_concrete_emit(post_fix)
+
+
+# ---------------------------------------------------------------------------
+# (f) cross-document consistency — roster vs the step doc's own classification
+# ---------------------------------------------------------------------------
+
+
+def test_d5e_population_step_docs_all_exist():
+    # Guards the bounded population against silent shrinkage: a renamed or moved
+    # step doc would otherwise drop out of the sweep unnoticed and take its
+    # classification claim with it.
+    missing = [rel for rel in _D5E_STEP_DOC_PATHS if not (PROJECT_ROOT / rel).exists()]
+
+    assert not missing, (
+        f'Step doc(s) in the cross-document consistency population no longer exist — '
+        f'update _D5E_STEP_DOC_PATHS in the same change that moves them: {missing}'
+    )
+
+
+def test_touched_step_docs_agree_with_the_roster_classification():
+    # Arrange — the claims are READ from the docs, not asserted about a named
+    # step, so a second doc gaining a self-classification is covered for free.
+    claims = _step_doc_claims()
+    assert claims, (
+        'No step doc in the cross-document consistency population declares its own '
+        'dispatched/inline classification — the assertion would be vacuous'
+    )
+
+    # Act
+    mismatches = _classification_mismatches(
+        claims, set(_roster(_DISPATCHED_HEADING)), set(_roster(_INLINE_HEADING))
+    )
+
+    # Assert
+    assert not mismatches, (
+        f'Step doc(s) whose own classification contradicts dispatch-inline-split.md — '
+        f'the roster is the single source of truth and the executor doc states the '
+        f'reason, so the two must agree: {mismatches}'
+    )
+
+
+def test_self_classification_detector_matches_the_step_doc_sentence():
+    # Mutation guard (detector half): the (f) sweep is only meaningful if the
+    # claim regex actually fires on the canonical self-classification sentence.
+    sentence = (
+        'This step is **inline** (executed directly inside the finalize main context, '
+        'not via a separate Task agent) because the Tier-1 `prompt` mode requires an '
+        '`AskUserQuestion` interaction.'
+    )
+
+    match = _SELF_CLASSIFICATION.search(sentence)
+
+    assert match is not None, (
+        'Self-classification detector failed to match architecture-refresh.md\'s '
+        'canonical inline sentence'
+    )
+    assert match.group(1) == 'inline'
+
+    # Negative controls — narrative prose about HOW a step behaves is NOT a
+    # classification claim. Reading these as claims would pull the two
+    # dispatched wait-region producers into this bounded check and duplicate the
+    # sibling epic's roster-vs-step-doc surface.
+    narrative_not_a_claim = [
+        'This step runs as inline orchestration (producer FIND + verified-scan marker '
+        'read in main context) under a **FIND-only 15-minute (900 s) per-agent timeout '
+        'budget** enforced by the SKILL.md Step 3 dispatcher.',
+        'Domain-agnostic **by construction** — the dispatched prompt loads ONLY the '
+        'three domain-invariant foundation standards.',
+        'This step is inline because it is cheap.',
+    ]
+    for narrative in narrative_not_a_claim:
+        assert _SELF_CLASSIFICATION.search(narrative) is None, (
+            f'Self-classification detector read narrative prose as a classification '
+            f'claim: {narrative!r}'
+        )
+
+
+def test_cross_document_consistency_detector_fires_on_the_pre_fix_shape():
+    # Mutation guard (comparison half): reproduce the exact pre-fix pair — the
+    # `default:architecture-refresh` row sitting under `## Dispatched steps` with
+    # its "hybrid, classified dispatched" rationale, against
+    # architecture-refresh.md's inline self-assertion.
+    pre_fix_roster = '\n'.join(
+        [
+            '## Dispatched steps',
+            '',
+            '- `default:sonar-roundtrip` — → `phase-6-finalize` (no `--role`)',
+            '- `default:architecture-refresh` — hybrid, classified dispatched: its '
+            'Tier 0 discover + diff is deterministic inline script work, and its Tier 1 '
+            're-enrichment fans out under `phase-6-finalize` per affected module — the '
+            'only per-iteration parallel dispatch in the contract. The dispatching tier '
+            'governs the classification, so the step carries exactly one roster row.',
+            '',
+            '## Inline steps',
+            '',
+            '- `default:push` — the single push barrier',
+        ]
+    )
+    dispatched = set(parse_roster(pre_fix_roster, _DISPATCHED_HEADING))
+    inline = set(parse_roster(pre_fix_roster, _INLINE_HEADING))
+    assert 'default:architecture-refresh' in dispatched, (
+        'Fixture sanity: the pre-fix roster must place architecture-refresh under '
+        'the dispatched heading, or the guard proves nothing'
+    )
+
+    claims = [
+        (
+            'marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/'
+            'architecture-refresh.md',
+            'default:architecture-refresh',
+            'inline',
+        )
+    ]
+
+    assert _classification_mismatches(claims, dispatched, inline), (
+        'Cross-document consistency detector failed to flag the known pre-fix pair '
+        '(dispatched roster row vs inline executor-doc assertion)'
+    )
+
+    # Positive control — the post-fix rosters clear the detector, so it is not
+    # unconditionally positive.
+    post_fix_dispatched = dispatched - {'default:architecture-refresh'}
+    post_fix_inline = inline | {'default:architecture-refresh'}
+    assert not _classification_mismatches(claims, post_fix_dispatched, post_fix_inline)
+
+    # And a doc classified on BOTH rosters is still a mismatch — the check is
+    # "exactly one, and the right one", not merely "present somewhere".
+    both = inline | {'default:architecture-refresh'}
+    assert _classification_mismatches(claims, dispatched, both)
 
 
 # ---------------------------------------------------------------------------

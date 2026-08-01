@@ -20,7 +20,6 @@ Adding a new finalize step without classifying it here turns the guarding regres
 - `default:adr-propose` — → `phase-6-finalize --role post-run-review`; dispatcher-gated on the decision-shape Signal Gate
 - `plan-marshall:automatic-review` — → `phase-6-finalize` (no `--role`; tracks `phase-6-finalize.default`) — **FIND-only**: files its own `pr-comment` findings and marks done, taking no `producer` runtime input at all
 - `default:sonar-roundtrip` — → `phase-6-finalize` (no `--role`; tracks `phase-6-finalize.default`) — **FIND-only**: files its own `sonar-issue` findings and marks done, taking no `producer` runtime input at all
-- `default:architecture-refresh` — hybrid, classified dispatched: its Tier 0 discover + diff is deterministic inline script work, and its Tier 1 re-enrichment fans out under `phase-6-finalize` per affected module — the only per-iteration parallel dispatch in the contract. The dispatching tier governs the classification, so the step carries exactly one roster row.
 - `default:finalize-step-simplify` — → `phase-6-finalize` (no `--role`); holistic post-implementation simplification sweep whose edits settle onto HEAD before the push barrier
 - `default:finalize-step-security-audit` — → `phase-6-finalize` (`persona: persona-security-expert`); hardening edits settle onto HEAD before the push barrier
 - `project:finalize-step-plugin-doctor` — (meta-project only) → `phase-6-finalize --role verification-feedback` (`producer=plugin-doctor` runtime input)
@@ -38,6 +37,7 @@ The inline steps are pure scripts or trivial orchestration that earn no envelope
 
 - `default:finalize-step-sync-baseline` — early baseline rebase onto `origin/{base_branch}`
 - `default:pre-push-quality-gate` — per-bundle `quality-gate` sweep plus the whole-tree module-tests divergence gate
+- `default:architecture-refresh` — its Tier-1 `prompt` mode requires an `AskUserQuestion`, which a dispatched leaf cannot fire
 - `default:push` — the single push barrier
 - `default:ci-verify` — deterministic taxonomy-classification script (`scripts/ci_verify.py`)
 - `default:branch-cleanup` — adapts to PR mode or local-only based on `create-pr` presence
