@@ -19,6 +19,7 @@ copy the binding and defeat the patch.
 import argparse
 import json
 import re
+from datetime import UTC, datetime
 from urllib.parse import quote
 
 import bot_registry
@@ -267,6 +268,104 @@ def _detect_rate_limited_bots(comments: list[dict]) -> list[dict]:
             }
         )
     return detected
+
+
+def _detect_movement_bots(comments: list[dict], wait_start: datetime) -> list[dict]:
+    """Return one record per registered bot that EDITED a comment after ``wait_start``.
+
+    The movement arm of the wait-for-comments completion predicate. A bot that
+    re-reviews by editing its single persistent comment in place produces no
+    growth in the unresolved count, so the count arm is structurally blind to it;
+    this arm keys on timestamp movement instead. Only bots whose registry record
+    declares ``participation_requires_update: true`` are considered — for a bot
+    that appends a new comment per review, the count arm already is the movement
+    signal, and consulting this arm for it would double-count.
+
+    A bot matches when ALL of the following hold for one of its comments — the
+    FULL identity, never the author key alone:
+
+    - the comment's author resolves through ``github_re_review.bot_kind_for_author``
+      to exactly that ``bot_kind``;
+    - its body is not a refusal notice (:func:`_is_refusal_notice`) — a bot
+      editing its comment to say it could NOT review is the bot talking about
+      itself, not a re-review. Mirrors ``github_re_review._match_bot_comment``;
+    - the LATER of its ``updated_at`` and ``created_at`` is strictly after
+      ``wait_start``. Taking the later of the two is what makes an EDITED
+      persistent comment count: ``created_at`` stops advancing after the first
+      review.
+
+    **A match proves a re-review ARRIVED, not that the diff was reviewed well.**
+    The returned records report arrival only and must never be rendered as
+    evidence of review quality.
+
+    Fail-closed per ADR-009 on every divergent input: a non-``dict`` element in
+    the externally-fetched ``comments`` list is filtered rather than matched, and
+    a timestamp that fails to parse yields ``None`` from ``_parse_iso`` and is
+    dropped from the comparison — it is a NON-match, never a match-anything
+    wildcard. A comment with no parseable timestamp at all therefore never
+    matches. ``_parse_iso`` normalizes a timezone-naive stamp to UTC, so it never
+    raises against the aware ``wait_start``.
+
+    No bot-name literal appears here: the bot set, each login, and the arm
+    selection are all registry data.
+    """
+    # Deferred import for the same reason :func:`_detect_rate_limited_bots` uses
+    # one: ``github_re_review`` imports from this module at import time, so a
+    # module-level import here would close the cycle.
+    import github_re_review
+
+    matched: list[dict] = []
+    for bot_kind in bot_registry.bot_kinds():
+        if not bot_registry.participation_requires_update(bot_kind):
+            continue
+        for comment in comments:
+            if not isinstance(comment, dict):
+                continue
+            if github_re_review.bot_kind_for_author(comment.get('author')) != bot_kind:
+                continue
+            if _is_refusal_notice(str(comment.get('body') or ''), bot_kind):
+                continue
+            stamps = [
+                dt
+                for dt in (
+                    github_re_review._parse_iso(str(comment.get('updated_at') or '')),
+                    github_re_review._parse_iso(str(comment.get('created_at') or '')),
+                )
+                if dt is not None
+            ]
+            if not stamps:
+                continue
+            if max(stamps) > wait_start:
+                matched.append({'bot_kind': bot_kind})
+                break
+    return matched
+
+
+def _detector_answerability() -> tuple[bool, str]:
+    """Return ``(detector_answerable, unanswerable_reason)`` from the REGISTRY alone.
+
+    Distinguishes a timeout whose observable could never have moved from one
+    where the bots were simply silent — today both return an identical bare
+    ``timed_out: true`` (ADR-014: a working-but-empty substrate must be
+    distinguishable from an inert one).
+
+    The await is unanswerable in exactly two registry states, and
+    ``unanswerable_reason`` names which one fired:
+
+    - no bot kinds are registered at all, so no arm has a subject; or
+    - every registered bot declares an empty ``participation_evidence``, the
+      fail-closed never-provable state.
+
+    The signal is independent of the OBSERVED comment set: an await that starts
+    with zero comments, or whose bots stay silent, is ``detector_answerable:
+    true`` — a genuine timeout, not an unanswerable one.
+    """
+    bot_kinds = bot_registry.bot_kinds()
+    if not bot_kinds:
+        return False, 'no bot kinds are registered'
+    if all(not bot_registry.participation_evidence(bot_kind) for bot_kind in bot_kinds):
+        return False, 'every registered bot declares an empty participation_evidence'
+    return True, ''
 
 
 def cmd_pr_create(args: argparse.Namespace) -> dict:
@@ -649,13 +748,26 @@ def cmd_pr_comments(args: argparse.Namespace) -> dict:
 
 
 def cmd_pr_wait_for_comments(args: argparse.Namespace) -> dict:
-    """Handle 'pr wait-for-comments' — poll until new unresolved comments arrive or timeout.
+    """Handle 'pr wait-for-comments' — poll until a bot re-review lands or timeout.
 
     Replaces the blocking shell ``sleep`` previously used by workflow-pr-doctor's
-    Automated Review Lifecycle Step 2. Snapshots the unresolved-comment count
-    once, then polls on the standard CI interval and exits as soon as the count
-    grows (a new bot comment arrived) or the timeout is reached. Reuses the
-    same ``poll_until`` helper that powers ``ci wait``.
+    Automated Review Lifecycle Step 2. Snapshots the unresolved-comment count and
+    the wait-start time once, then polls on the standard CI interval and exits as
+    soon as EITHER arm of the completion predicate fires, or the timeout is
+    reached. Reuses the same ``poll_until`` helper that powers ``ci wait``:
+
+    - **count-growth arm** — the unresolved count grows past the baseline. This is
+      the only arm consulted for a bot that appends a NEW comment per review
+      (``participation_requires_update: false``).
+    - **movement arm** — a bot whose registry record declares
+      ``participation_requires_update: true`` edited its persistent comment after
+      the wait started (:func:`_detect_movement_bots`). Such a bot re-reviews in
+      place, so the count never grows and the count arm alone can only ever run to
+      the full timeout.
+
+    A timeout is reported with :func:`_detector_answerability`, so an await whose
+    observable could never have moved is distinguishable from one where the bots
+    were simply silent.
     """
     is_auth, err = github_ops.check_auth()
     if not is_auth:
@@ -669,6 +781,9 @@ def cmd_pr_wait_for_comments(args: argparse.Namespace) -> dict:
             str(initial.get('error', '')),
         )
     baseline = int(initial.get('unresolved') or 0)
+    # Aware UTC, so every comparison against a ``_parse_iso`` result (which
+    # normalizes a naive stamp to UTC) is aware-vs-aware and never raises.
+    wait_start = datetime.now(UTC)
 
     def check_fn() -> tuple[bool, dict]:
         snapshot = github_ops.fetch_pr_comments_data(args.pr_number, unresolved_only=True)
@@ -677,10 +792,18 @@ def cmd_pr_wait_for_comments(args: argparse.Namespace) -> dict:
                 'error': f'Unresolved-comment fetch failed for PR {args.pr_number}',
                 'context': str(snapshot.get('error', '')),
             }
-        return True, {'unresolved': int(snapshot.get('unresolved') or 0)}
+        # ``comments`` rides along on the SAME fetch the count comes from — no
+        # second request. ``unresolved_only`` filters resolved review THREADS
+        # only, so ``issue_comment`` records are always present.
+        return True, {
+            'unresolved': int(snapshot.get('unresolved') or 0),
+            'comments': snapshot.get('comments') or [],
+        }
 
     def is_complete_fn(data: dict) -> bool:
-        return int(data.get('unresolved', 0)) > baseline
+        if int(data.get('unresolved', 0)) > baseline:
+            return True
+        return bool(_detect_movement_bots(data.get('comments') or [], wait_start))
 
     result = github_ops.poll_until(check_fn, is_complete_fn, timeout=args.timeout, interval=args.interval)
 
@@ -692,6 +815,11 @@ def cmd_pr_wait_for_comments(args: argparse.Namespace) -> dict:
         )
 
     final_count = int(result['last_data'].get('unresolved', baseline))
+    # Recomputed from the snapshot the predicate itself settled on, so the report
+    # names the bot whose edit actually ended the wait. Empty when the count arm
+    # fired alone, or on a timeout.
+    movement_matched_bots = _detect_movement_bots(result['last_data'].get('comments') or [], wait_start)
+    detector_answerable, unanswerable_reason = _detector_answerability()
 
     # Per-bot rate-limit discriminator: after the poll settles, inspect each
     # REGISTERED bot's newest comment for a rate-limit status notice. Best-effort
@@ -713,6 +841,11 @@ def cmd_pr_wait_for_comments(args: argparse.Namespace) -> dict:
         'final_count': final_count,
         'new_count': max(final_count - baseline, 0),
         'rate_limited_bots': rate_limited_bots,
+        # Which bot's in-place edit ended the wait — arrival only, never a claim
+        # about how well the diff was reviewed.
+        'movement_matched_bots': movement_matched_bots,
+        'detector_answerable': detector_answerable,
+        'unanswerable_reason': unanswerable_reason,
     }
 
 

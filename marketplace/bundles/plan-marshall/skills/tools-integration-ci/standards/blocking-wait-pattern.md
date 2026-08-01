@@ -26,7 +26,7 @@ If any of the three criteria fail, do **not** add a new subcommand. Extend an ex
 
 ## 3. Implementation Recipe on Top of `poll_until`
 
-The shared polling primitive lives in `ci_base.py:811`:
+The shared polling primitive lives in `ci_base.py`:
 
 ```python
 def poll_until(check_fn, is_complete_fn, *, timeout, interval) -> dict
@@ -34,7 +34,9 @@ def poll_until(check_fn, is_complete_fn, *, timeout, interval) -> dict
 
 `check_fn` returns `(ok: bool, data: dict)` each iteration; `is_complete_fn(data) -> bool` decides when to stop. The helper returns `{'timed_out', 'duration_sec', 'polls', 'last_data'}` plus `'error'` on fetch failure.
 
-Model new handlers after the canonical `cmd_pr_wait_for_comments` at `github_ops.py:780`. The skeleton is:
+Model new handlers after the canonical `cmd_pr_wait_for_comments` in `_github_pr.py`. The skeleton below is abridged to the loop mechanics — it deliberately omits the live handler's response fields and its second completion arm.
+
+⚠ **The single-arm count predicate below is the LOOP SHAPE, not a model completion predicate.** Copying `count > baseline` as the whole answer is how a detector goes structurally blind: it cannot see a producer that signals by EDITING an existing row in place rather than appending a new one, so such a producer can only ever run the wait to its full timeout. The live handler therefore keys the second arm on TIMESTAMP MOVEMENT (the later of a row's `updated_at` / `created_at` passing a wait-start snapshot) for producers whose registry record declares that requirement. When you write a new handler, ask what observable the thing you are waiting for actually moves — a count, a row's content, a check state, a timestamp — and predicate on THAT.
 
 ```python
 def cmd_pr_wait_for_comments(args):
@@ -71,18 +73,18 @@ def cmd_pr_wait_for_comments(args):
     }
 ```
 
-Every new handler must: (a) snapshot the baseline exactly once before polling; (b) keep `check_fn` side-effect-free apart from the provider read; (c) keep `is_complete_fn` a pure predicate on `data`; (d) always return `operation`, `timed_out`, `duration_sec`, `polls`, plus the baseline/final snapshot fields that let callers diff what changed.
+Every new handler must: (a) snapshot the baseline exactly once before polling; (b) keep `check_fn` side-effect-free apart from the provider read; (c) keep `is_complete_fn` a pure predicate on `data`; (d) always return `operation`, `timed_out`, `duration_sec`, `polls`, plus the baseline/final snapshot fields that let callers diff what changed; (e) carry through whatever `check_fn` projects away — the count-only projection above discards per-row author and timestamps, and no predicate can recover an observable its own snapshot dropped; (f) report a wait that could never have succeeded as such, rather than as a timeout — the two claim different things ("we waited long enough" vs "this could not have worked") and demand opposite operator responses.
 
 ---
 
 ## 4. Timeout / Interval Guidance
 
-Defaults come from `ci_base.py:224-225`:
+Defaults come from `ci_base.py`:
 
 - `DEFAULT_CI_TIMEOUT = 300` seconds
 - `DEFAULT_CI_INTERVAL = 30` seconds
 
-Register both `--timeout` and `--interval` on the subcommand's argparse parser with these defaults (see `ci_base.py:475` for the `pr wait-for-comments` registration as a template). **Never hard-code a timeout or interval inside the handler body** — the handler must pass `timeout=args.timeout, interval=args.interval` straight through to `poll_until`.
+Register both `--timeout` and `--interval` on the subcommand's argparse parser with these defaults (see `ci_base.py`'s `pr wait-for-comments` registration as a template). **Never hard-code a timeout or interval inside the handler body** — the handler must pass `timeout=args.timeout, interval=args.interval` straight through to `poll_until`.
 
 Callers that need a different ceiling pass `--timeout` explicitly. For example, `workflow-pr-doctor` supplies the `review_bot_buffer_seconds` value it reads from the `plan-marshall:automatic-review` step's params in the plan-local manifest step-params snapshot, instead of the default 300, so review bots have the full buffered window to respond. The `--timeout` pass-through contract is unchanged — the value is just sourced from the manifest step-params snapshot rather than a flat config field. Callers that need faster feedback for local iteration can shrink `--interval`, but the default stays at 30 seconds to keep API quota pressure predictable.
 

@@ -192,7 +192,7 @@ See [blocking-wait-pattern.md](blocking-wait-pattern.md) for the general pattern
 
 **Pattern**: Provider-Agnostic Router (polling, replaces blocking shell sleep)
 
-Block until a new unresolved review comment is posted on the PR or the timeout elapses. Snapshots the unresolved-comment count once on entry, then polls on the standard CI interval and exits as soon as the count grows. Used by `workflow-pr-doctor`'s Automated Review Lifecycle (Step 2) in place of a bash `sleep`, which the harness blocks for long leading durations.
+Block until review activity is observed on the PR or the timeout elapses. On entry it snapshots both the unresolved-comment count and a wait-start timestamp, then polls on the standard CI interval and exits as soon as EITHER arm of a two-armed completion predicate fires: the count grows (for a bot that appends a new comment per review, `participation_requires_update: false`), OR a `participation_requires_update: true` bot's existing comment moves — the LATER of its `updated_at` / `created_at` passing the wait-start — which is how a bot that re-reviews by EDITING one persistent comment in place is detected without any count growth. Used by `workflow-pr-doctor`'s Automated Review Lifecycle (Step 2) in place of a bash `sleep`, which the harness blocks for long leading durations.
 
 ### Step 1: Resolve and Execute
 
@@ -219,12 +219,20 @@ polls: 2
 baseline_count: 1
 final_count: 2
 new_count: 1
+detector_answerable: true
+unanswerable_reason: ""
 
 rate_limited_bots[1]{bot_kind,rate_limit_class,eta}:
 coderabbit	awaitable_window	18 minutes
+
+movement_matched_bots[0]:
 ```
 
 `status: success` is returned even when `timed_out: true` — the caller should still proceed to fetch comments (`pr comments --unresolved-only`) and triage whatever did arrive. `status: error` is reserved for fetch/auth failures.
+
+`movement_matched_bots[]`, `detector_answerable`, and `unanswerable_reason` are specified per-field in [api-contract.md](api-contract.md) § "Provider Field Mapping" → `pr wait-for-comments`, which this section does not restate. The one consequence a caller must act on: a `timed_out: false` return carrying `new_count: 0` and a non-empty `movement_matched_bots[]` is the normal shape for an in-place re-review — not an anomaly — so a caller MUST NOT read `new_count == 0` as "no review arrived".
+
+⚠ **`detector_answerable` / `unanswerable_reason` are REPORTED, not yet consumed.** No caller currently branches on `detector_answerable`: the consumer tables in [`automated-review-lifecycle.md`](../../workflow-pr-doctor/standards/automated-review-lifecycle.md) and [`automatic-review/SKILL.md`](../../automatic-review/SKILL.md) route on `timed_out` alone, so an `escalate_ask` re-wait offer can still be presented for a wait that could never have succeeded. Wiring a consumer branch is deliberately outside this contract's scope — the fields exist so the distinction is LEGIBLE in the return and the logs, which is the precondition for acting on it, not the acting itself. A caller that does branch should treat `detector_answerable: false` as "re-waiting cannot help" and skip straight to escalation.
 
 `rate_limited_bots[]` (bot-agnostic, default empty) carries one `{bot_kind, rate_limit_class, eta}` record per REGISTERED reviewer bot whose newest comment on the PR is a rate-limit / service notice posted in place of a review, rather than an actual review. An empty list means no registered bot is rate-limited. It is an additive discriminator — the poll behaviour and every other field are unchanged; a caller that ignores it sees identical semantics. See [api-contract.md](api-contract.md) § "Provider Field Mapping" → `pr wait-for-comments` for the authoritative per-field contract, which this section does not restate.
 

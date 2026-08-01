@@ -118,7 +118,7 @@ A bot that re-reviews by **editing its single persistent comment** rather than p
 declares `participation_requires_update: true`. For such a bot the comment's continued existence
 proves only that it reviewed **once, at some earlier HEAD** — after a force-push the unchanged
 comment would silently credit it with reviewing code it never saw. Its evidence therefore requires
-either **first presence** (the comment is newly observed) or observed **`updated_at` movement`**.
+either **first presence** (the comment is newly observed) or observed **`updated_at` movement**.
 
 ## Participation is not review quality
 
@@ -208,6 +208,7 @@ set: doing so collapses the very distinction the two-field split exists to carry
 | `automatic-review/SKILL.md` | Both lists, to drive the completion-aware poll, the re-review trigger set, and the step-done guard. |
 | `github_pr fetch_findings` | Both lists, to classify each ingested comment and emit the unclassified-bot warning; each bot's `participation_evidence` / `participation_requires_update`, to derive the evidence-typed `participated_bots[]`; each bot's `refusal_patterns`, to branch a refusal into `refused_bots[]` rather than drop it. |
 | `review_completeness check` | `required_bots` for the quorum; `optional_bots` for reporting only; `participation_evidence` to admit each evidence pair; `rate_limit_class` to split the two refusal states. |
+| `github_ops pr wait-for-comments` | Each bot's `participation_requires_update`, to select the `updated_at`-movement arm of its completion predicate over the count-growth arm; `participation_evidence` plus `bot_kinds()`, to decide whether the await is answerable at all (`detector_answerable`). |
 | `marshall-steward` | Both lists, to ask the wizard question and record the provenance. |
 
 See [`../SKILL.md`](../SKILL.md) for the step body that applies this contract and

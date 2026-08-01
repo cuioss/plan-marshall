@@ -31,6 +31,10 @@ Scope (AAA against fixture comment payloads):
     - a genuine review merely mentioning a rate limit in prose is NOT a notice
     - human comments never contribute a record
     - the pre-existing poll fields (``timed_out`` / ``new_count`` / …) are unchanged
+    - the completion-predicate fields (``movement_matched_bots`` /
+      ``detector_answerable`` / ``unanswerable_reason``) are present and orthogonal
+      to the discriminator: a refusal is never a re-review arrival, and an await
+      that merely saw no movement stays ``detector_answerable: true``
 
 Tests never shell out to the real ``gh`` CLI: ``check_auth``,
 ``fetch_pr_comments_data``, and ``poll_until`` are monkeypatched so the handler
@@ -124,13 +128,21 @@ def _wire(monkeypatch, *, post_comments):
     with a baseline count of 1, and the post-poll full fetch with
     ``post_comments``. ``poll_until`` returns a canned grown-count result so the
     poll fields are stable and the timeout branch never sleeps.
+
+    The ``unresolved_only=True`` branch carries a ``comments`` key because the real
+    ``fetch_pr_comments_data`` always does — ``unresolved_only`` filters resolved
+    review THREADS, it never drops the record list. The completion predicate's
+    movement arm reads that list, so a fixture omitting the key would diverge from
+    the shape production returns and quietly exercise only the count arm. It is
+    EMPTY here on purpose: this file pins the rate-limit discriminator, so the
+    movement arm must contribute nothing and the count arm alone must end the poll.
     """
     monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
 
     def fake_fetch(pr_number, unresolved_only=False):
         assert pr_number == 123
         if unresolved_only:
-            return {'status': 'success', 'unresolved': 1}
+            return {'status': 'success', 'unresolved': 1, 'comments': []}
         return {'status': 'success', 'comments': post_comments}
 
     monkeypatch.setattr(github_ops, 'fetch_pr_comments_data', fake_fetch)
@@ -165,6 +177,10 @@ def test_non_coderabbit_bot_rate_limit_is_detected(monkeypatch):
     assert result['new_count'] == 1
     assert result['final_count'] == 2
     assert result['baseline_count'] == 1
+    # The completion predicate's own fields: this poll ended on the COUNT arm, so
+    # the movement arm matched nothing. A refusing bot must never register as a
+    # re-review arrival — the two signals stay orthogonal.
+    assert result['movement_matched_bots'] == []
 
 
 def test_bot_without_declared_class_fails_closed_to_unknown(monkeypatch):
@@ -282,6 +298,18 @@ def test_newer_review_supersedes_that_bots_older_notice_only(monkeypatch):
     assert result['new_count'] == 1
     assert result['duration_sec'] == 1
     assert result['polls'] == 1
+    # …and every field the widened completion predicate added is PRESENT, so this
+    # file keeps pinning the whole return shape rather than silently stopping at
+    # the fields that existed when it was written.
+    assert result['movement_matched_bots'] == []
+    # Answerability is derived from the REGISTRY alone, never from the observed
+    # comment set: these fixtures stage no bot movement at all, yet the shipped
+    # registry declares bot kinds WITH participation evidence, so the await was
+    # genuinely answerable and simply saw no movement. This asserts the
+    # not-widened boundary the operator settled — a silent await is a real
+    # timeout, not an unanswerable detector.
+    assert result['detector_answerable'] is True
+    assert result['unanswerable_reason'] == ''
 
 
 def test_human_comment_quoting_a_refusal_is_not_a_notice(monkeypatch):
