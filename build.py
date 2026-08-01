@@ -19,7 +19,10 @@ import re
 import shutil
 import subprocess
 import sys
+import tomllib
 import uuid
+from collections.abc import Iterator
+from itertools import chain
 from pathlib import Path
 
 # Base paths
@@ -27,6 +30,10 @@ BUNDLES_DIR = Path('marketplace/bundles')
 TEST_DIR = Path('test')
 CLAUDE_DIR = Path('.claude')
 TARGETS_DIR = Path('marketplace/targets')
+# mypy's exclude patterns live in [tool.mypy] here. The emptiness guards below
+# read them from this one declaration rather than restating them, so the guard
+# and mypy always answer the same question about the same file set.
+PYPROJECT_PATH = Path('pyproject.toml')
 
 # Required SPDX header on every project-owned Python file (enforced below).
 SPDX_HEADER = '# SPDX-License-Identifier: FSL-1.1-ALv2'
@@ -142,27 +149,115 @@ def get_test_path(module: str | None) -> str:
     return str(TEST_DIR)
 
 
+def _mypy_exclude_patterns(label: str = 'mypy') -> list[re.Pattern[str]]:
+    """Return the compiled ``[tool.mypy] exclude`` regexes declared in pyproject.toml.
+
+    Fails open by design: an unreadable config, a malformed ``exclude`` value, or
+    an uncompilable pattern yields FEWER exclusions, so ``_mypy_collects_any``
+    answers "there is something to check" and mypy still runs. The guards built
+    on it may suppress a mypy invocation only when the configuration is known and
+    nothing survives it. ``pyproject.toml`` is externally-sourced config, so an
+    ``exclude`` that is neither a string nor a list (a typo such as
+    ``exclude = true``) is a real input this boundary must absorb rather than
+    raise ``TypeError`` through every caller.
+
+    ``label`` prefixes the two diagnostics below. It is threaded from the calling
+    command rather than hardcoded because this helper is reachable from BOTH
+    ``compile`` and ``test-compile``; attributing a ``test-compile`` diagnostic to
+    ``compile`` would send an operator to the wrong command. The default is the
+    command-neutral ``mypy`` so a caller that cannot name a command still emits an
+    honest prefix rather than a wrong one.
+    """
+    try:
+        with PYPROJECT_PATH.open('rb') as handle:
+            config = tomllib.load(handle)
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        print(f'{label}: could not read mypy excludes from {PYPROJECT_PATH} ({exc}) — assuming none',
+              file=sys.stderr)
+        return []
+    raw = config.get('tool', {}).get('mypy', {}).get('exclude', [])
+    if isinstance(raw, str):
+        raw = [raw]
+    elif not isinstance(raw, list):
+        print(f'{label}: ignoring malformed [tool.mypy] exclude of type '
+              f'{type(raw).__name__} (expected string or list) — assuming none',
+              file=sys.stderr)
+        raw = []
+    patterns: list[re.Pattern[str]] = []
+    for entry in raw:
+        try:
+            patterns.append(re.compile(entry))
+        except re.error as exc:
+            print(f'{label}: ignoring uncompilable [tool.mypy] exclude {entry!r} ({exc})', file=sys.stderr)
+    return patterns
+
+
+def _mypy_collects_any(path: str, label: str = 'mypy') -> bool:
+    """Return True when at least one file under ``path`` survives mypy's excludes.
+
+    This is the exclude-AWARE emptiness predicate. "Does any ``.py`` file exist"
+    answers a different question and misses the case this guard exists for: a
+    bundle whose only Python file is excluded tree-wide plainly contains a
+    ``.py`` file, yet mypy collects nothing there and exits 2 with "There are no
+    .py[i] files in directory". Matching mirrors mypy's own crawl — ``re.search``
+    of each configured pattern against the POSIX path as passed on the command
+    line — so the two agree on which files are in scope.
+    """
+    target = Path(path)
+    if target.is_dir():
+        candidates: Iterator[Path] = chain(target.rglob('*.py'), target.rglob('*.pyi'))
+    elif target.is_file() and target.suffix in ('.py', '.pyi'):
+        candidates = iter((target,))
+    else:
+        return False
+    patterns = _mypy_exclude_patterns(label)
+    return any(
+        not any(pattern.search(candidate.as_posix()) for pattern in patterns)
+        for candidate in candidates
+    )
+
+
+def _skip_empty_mypy_scope(command: str, path: str) -> bool:
+    """Report whether ``command`` must skip mypy over ``path``, printing the reason.
+
+    Returns True (and explains the skip on stdout) when no file under ``path``
+    survives mypy's configured excludes. Nothing is weakened: those files are
+    excluded tree-wide, so the whole-tree run does not type-check them either —
+    the scoped run reporting "nothing to check" merely matches that truth
+    instead of surfacing mypy's exit 2 as a defect that does not exist.
+    """
+    if _mypy_collects_any(path, command):
+        return False
+    print(f'>>> {command}: skipping mypy for {path} — no file there survives the '
+          f'[tool.mypy] exclude patterns in {PYPROJECT_PATH} (nothing to type-check)')
+    return True
+
+
 def cmd_compile(module: str | None) -> int:
     """Run mypy on production sources."""
     path = get_bundle_path(module)
     mypy_env = {**os.environ, 'MYPYPATH': _compute_mypypath()}
     if module:
+        if _skip_empty_mypy_scope('compile', path):
+            return 0
         return run(['uv', 'run', 'mypy', path], f'compile: mypy {path}', env=mypy_env)
-    else:
-        paths = [path]
-        # Include .claude/ only if it exists and contains at least one .py file.
-        # Passing an empty directory makes mypy fail with "There are no .py[i]
-        # files in directory '.claude'" (exit 2), which breaks CI whenever the
-        # repo happens to not ship any top-level skill scripts there.
-        if CLAUDE_DIR.exists() and any(CLAUDE_DIR.rglob('*.py')):
-            paths.append(str(CLAUDE_DIR))
-        return run(['uv', 'run', 'mypy'] + paths, f'compile: mypy {" ".join(paths)}', env=mypy_env)
+    paths = [path]
+    # Include .claude/ only when a file there survives mypy's excludes. Passing a
+    # directory mypy collects nothing from makes it fail with "There are no
+    # .py[i] files in directory '.claude'" (exit 2), which breaks CI whenever the
+    # repo ships no top-level skill scripts — or ships them only under the
+    # excluded .claude/worktrees/, which an exclude-blind .py count would miss.
+    if _mypy_collects_any(str(CLAUDE_DIR), 'compile'):
+        paths.append(str(CLAUDE_DIR))
+    return run(['uv', 'run', 'mypy'] + paths, f'compile: mypy {" ".join(paths)}', env=mypy_env)
 
 
 def cmd_test_compile(module: str | None) -> int:
     """Run mypy on test sources."""
     path = get_test_path(module)
     mypy_env = {**os.environ, 'MYPYPATH': _compute_mypypath()}
+    if _skip_empty_mypy_scope('test-compile', path):
+        return 0
     return run(['uv', 'run', 'mypy', path], f'test-compile: mypy {path}', env=mypy_env)
 
 

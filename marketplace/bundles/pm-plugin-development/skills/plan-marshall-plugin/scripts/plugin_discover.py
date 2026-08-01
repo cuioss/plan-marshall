@@ -16,6 +16,11 @@ Packages are:
 - agents: Each .md file in agents/ (description from frontmatter)
 - commands: Each .md file in commands/ (description from frontmatter)
 
+Each module also carries ``component_refs``: its outbound references to other
+bundles, detected by the marketplace dependency engine and projected from
+component granularity onto bundle granularity. Derivation resolvers read this
+pre-materialized field instead of the filesystem.
+
 Note: This extension is specific to the plan-marshall marketplace.
 It only provides modules when marketplace.json name is 'plan-marshall'.
 Other Python projects are handled by pm-dev-python instead.
@@ -30,7 +35,9 @@ Output:
 import argparse
 import json
 import sys
+from collections import defaultdict
 from pathlib import Path
+from typing import Any
 
 # Allow direct invocation and testing — executor sets PYTHONPATH for production.
 # Resolve extension-api scripts via the validated bundles-root helper, then the
@@ -44,6 +51,7 @@ if str(EXTENSION_API_DIR) not in sys.path:
 
 from _build_discover import find_readme  # noqa: E402
 from _dep_detection import extract_frontmatter  # noqa: E402
+from _dep_index import build_dependency_index  # noqa: E402
 from file_ops import safe_main  # noqa: E402
 
 # =============================================================================
@@ -356,6 +364,56 @@ def build_commands(bundle_name: str) -> dict:
 
 
 # =============================================================================
+# Component Reference Materialization
+# =============================================================================
+
+
+def build_component_refs(project_root: Path) -> dict[str, list[dict[str, Any]]]:
+    """Materialize each bundle's outbound component references, projected to bundles.
+
+    Runs the marketplace dependency-detection engine once over the whole bundle
+    tree and projects its component-granular edges (``bundle:skill:script``)
+    down to module granularity (``bundle``), which is the vocabulary the
+    architecture graph keys on. The engine reads files from disk, so it has to
+    run here — at discovery time — and never inside a derivation resolver, which
+    the Axis-C contract requires to be a pure function of its arguments.
+
+    The engine is reused by import; none of its detection logic is duplicated.
+
+    Args:
+        project_root: Resolved absolute path to the project root.
+
+    Returns:
+        Mapping of source bundle name to its deduplicated reference list. Each
+        entry is ``{target_bundle, dep_type, resolved}``, where ``dep_type`` is a
+        ``DependencyType`` value (``script`` / ``skill`` / ``import`` / ``path``
+        / ``implements``) and ``resolved`` is False when the referenced target
+        does not exist in the marketplace. Deduplication is on the
+        ``(target_bundle, dep_type, resolved)`` triple, so each list stays
+        proportional to the bundle count rather than the raw reference count.
+        Bundles with no outbound references are absent from the mapping.
+    """
+    bundles_path = project_root / BUNDLES_DIR
+    if not bundles_path.is_dir():
+        return {}
+
+    index = build_dependency_index(bundles_path)
+
+    triples: dict[str, set[tuple[str, str, bool]]] = defaultdict(set)
+    for deps in index.forward_deps.values():
+        for dep in deps:
+            triples[dep.source.bundle].add((dep.target.bundle, dep.dep_type.value, dep.resolved))
+
+    return {
+        bundle: [
+            {'target_bundle': target_bundle, 'dep_type': dep_type, 'resolved': resolved}
+            for target_bundle, dep_type, resolved in sorted(refs)
+        ]
+        for bundle, refs in triples.items()
+    }
+
+
+# =============================================================================
 # Module Building
 # =============================================================================
 
@@ -454,6 +512,13 @@ def discover_plugin_modules(project_root: str) -> list:
     Note: This extension is specific to plan-marshall marketplace.
     Returns empty list for other Python projects (handled by pm-dev-python).
 
+    Every returned module carries a ``component_refs`` list holding its outbound
+    references to other bundles — the caller-side materialization the Axis-C
+    derivation-resolver contract requires, since a resolver may not read from
+    disk. Materialization is unconditional: no flag, environment variable, or
+    feature gate guards it. A bundle with no outbound references carries an
+    empty list, never a missing key.
+
     Args:
         project_root: Absolute path to project root.
 
@@ -468,6 +533,10 @@ def discover_plugin_modules(project_root: str) -> list:
     root = Path(project_root).resolve()
     modules = []
 
+    # One whole-tree engine run feeds every bundle's refs; per-bundle runs would
+    # re-scan the same tree once per bundle.
+    component_refs = build_component_refs(root)
+
     # Discover bundles
     plugin_files = discover_bundles(project_root)
 
@@ -475,6 +544,7 @@ def discover_plugin_modules(project_root: str) -> list:
         plugin_data = load_plugin_json(plugin_path)
         if plugin_data:
             module = build_bundle_module(plugin_path, root, plugin_data)
+            module['component_refs'] = component_refs.get(module['name'], [])
             modules.append(module)
 
     return modules

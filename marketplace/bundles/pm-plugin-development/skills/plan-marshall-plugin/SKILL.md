@@ -21,6 +21,7 @@ Domain extension providing plugin development skill registration and module disc
 
 **Constraints:**
 - Extension must implement `get_skill_domains()` from `ExtensionBase`
+- Axis-C edge derivation is opted into by multiple inheritance (`Extension(ExtensionBase, DerivationResolverBase)`); `derive_edges()` must stay a pure function of its arguments — no filesystem access, no subprocess
 - Domain identity must match the bundle name convention (plan-marshall-plugin-dev)
 - Profile-based skill organization must align with plugin.json registration
 - Module discovery must detect marketplace.json to avoid conflicts with pm-dev-python
@@ -81,13 +82,16 @@ A "default" root module provides project-wide commands (no bundle filter):
 
 Configuration in `extension.py` implements the Extension API contract:
 
-| Function | Purpose |
-|----------|---------|
-| `get_skill_domains()` | Domain metadata with profiles |
-| `discover_modules()` | Module discovery whose results feed each bundle's per-module `derived.json` under `.plan/project-architecture/{module}/` |
-| `provides_triage()` | Returns `pm-plugin-development:ext-triage-plugin` |
-| `provides_outline_skill()` | Returns `pm-plugin-development:ext-outline-workflow` |
-| `provides_retrospective_aspects()` | Returns the `wrapper-tangle` retrospective aspect (scans plan-marshall CI-wrapper sources for tangled gh/glab + local-git mutations) |
+| Function | Axis | Purpose |
+|----------|------|---------|
+| `get_skill_domains()` | A | Domain metadata with profiles |
+| `applies_to_module()` | A | Applicability verdict from `build_systems=marshall-plugin` or a marketplace-shaped module path |
+| `discover_modules()` | A | Module discovery whose results feed each bundle's per-module `derived.json` under `.plan/project-architecture/{module}/`. Each module carries a `component_refs` list of `{target_bundle, dep_type, resolved}` entries — the bundle's outbound references, detected by the marketplace dependency engine and projected from component granularity onto bundle granularity |
+| `provides_triage()` | A | Returns `pm-plugin-development:ext-triage-plugin` |
+| `provides_outline_skill()` | A | Returns `pm-plugin-development:ext-outline-workflow` |
+| `provides_retrospective_aspects()` | A | Returns the `wrapper-tangle` retrospective aspect (scans plan-marshall CI-wrapper sources for tangled gh/glab + local-git mutations) |
+| `derivation_resolver_id()` | C | Returns the stable provenance id `markdown`, stamped onto every edge this resolver produces |
+| `derive_edges()` | C | Pure join over `component_refs` yielding `(from, to)` module pairs from the four markdown reference kinds (`script`, `skill`, `path`, `implements`). `import` entries belong to the sibling python resolver. Unresolved targets, unknown endpoints, and self-edges are suppressed and reported as aggregated `notes[]` entries — one per category with a count and a bounded sample |
 
 ## Integration
 
