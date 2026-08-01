@@ -102,8 +102,12 @@ it surfaced only below the captured threshold.
   audit, and the ledger all correlate on one `job_id`.
 - **Every fallback and refusal logs at WARNING.** No `degraded` (fallback) or
   `refused` branch returns without a captured entry naming the `reason`.
-- **Plan-less builds are silent by design.** When no `--plan-id` is supplied
-  there is no per-plan work log to write to, so the logging is a no-op.
+- **Plan-less builds are silent by design.** When no `--plan-id` is supplied the
+  submission is recorded under the `NO_PLAN` sentinel (so the ledger `kind=job`
+  row is never null), but there is still no per-plan work log to write to, so
+  the logging is a no-op. The sentinel is truthy, so `_audit_log` tests for it
+  explicitly rather than relying on falsiness — it is a routing/ledger value,
+  never a plan-directory selector.
 - **The build-execute routing seam's own resolution line lands here too.** The
   routing decision (`[BUILD-SERVER] resolved build (requested=…, resolved=routed|in_process|fail-loud, reason=…)`)
   is written to the same plan work log through the same substrate, at the same

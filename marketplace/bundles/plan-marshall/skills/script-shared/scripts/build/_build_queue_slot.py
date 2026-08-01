@@ -3,8 +3,9 @@
 """Build-queue slot wrapper for the build execute path (D6).
 
 Provides :func:`build_queue_slot` — a context manager every ``cmd_run`` build
-site wraps around its ``execute_direct(...)`` call so that, **only when a
-``plan_id`` is set**, the build participates in the machine-global build queue
+site wraps around its ``execute_direct(...)`` call so that, **only when
+``plan_id`` names a real plan** (neither falsy nor the ``NO_PLAN`` sentinel),
+the build participates in the machine-global build queue
 (``plan-marshall:manage-locks:build_queue``, the bounded-``k``-slot admitter over
 the single machine-global ``build-queue.json``).
 
@@ -28,10 +29,14 @@ Behaviour:
   machine-global slot; taking a fallback slot here would double-count the build
   (stacking). The context manager therefore yields immediately without touching
   the queue — the explicit no-stacking guard.
-* **No plan_id → NO-OP passthrough.** When ``plan_id`` is falsy the context
-  manager yields immediately and does nothing else. A build invoked without a
-  plan (ad-hoc CLI run, the standalone ``run`` subcommand) therefore runs
-  completely unchanged — this is the critical backward-compatibility guarantee.
+* **No plan_id → NO-OP passthrough.** When ``plan_id`` is falsy OR is the
+  ``NO_PLAN`` sentinel the context manager yields immediately and does nothing
+  else. A build invoked without a plan (ad-hoc CLI run, the standalone ``run``
+  subcommand) therefore runs completely unchanged — this is the critical
+  backward-compatibility guarantee. The sentinel is named EXPLICITLY because it
+  is truthy: ``build_main`` now resolves every absent ``--plan-id`` to it, so a
+  falsiness-only guard would silently enrol every ad-hoc CLI build in the
+  shared machine-global queue and serialize work that has always run free.
 * **plan_id set → acquire / wait / release.** On entry it calls ``build_queue
   acquire``. On ``admitted`` it yields so the caller runs the build. On
   ``blocked`` it sleeps ``_WAIT_SECONDS`` and re-polls ``acquire`` WITHOUT
@@ -72,6 +77,7 @@ from pathlib import Path
 from typing import Any
 
 from file_ops import get_marshal_path, read_json
+from marketplace_paths import NO_PLAN_SENTINEL
 
 logger = logging.getLogger(__name__)
 
@@ -279,22 +285,24 @@ def build_queue_slot(plan_id: str | None, *, routed: bool = False) -> Iterator[N
     When ``routed`` is true this is a pure no-op passthrough — the build was
     routed to the marshalld daemon, whose child already holds the single
     machine-global slot, so acquiring a fallback slot here would stack a second
-    slot on the same build (the no-stacking guard). When ``plan_id`` is falsy
-    this is likewise a no-op passthrough — the body runs unchanged with no queue
-    interaction (the backward-compatibility guarantee for plan-less builds). When
-    ``plan_id`` is set and the build was NOT routed, the body runs only after a
-    slot is admitted on the shared machine-global ``build-queue.json``; the slot
-    is released in a ``finally`` regardless of how the body exits.
+    slot on the same build (the no-stacking guard). When ``plan_id`` is falsy OR
+    is the ``NO_PLAN`` sentinel this is likewise a no-op passthrough — the body
+    runs unchanged with no queue interaction (the backward-compatibility
+    guarantee for plan-less builds). When ``plan_id`` names a REAL plan and the
+    build was NOT routed, the body runs only after a slot is admitted on the
+    shared machine-global ``build-queue.json``; the slot is released in a
+    ``finally`` regardless of how the body exits.
 
     Args:
-        plan_id: The plan acquiring a slot, or falsy for a plan-less no-op.
+        plan_id: The plan acquiring a slot; falsy or the ``NO_PLAN`` sentinel
+            for a plan-less no-op.
         routed: When true, the build is served by the daemon — take no fallback
             slot (the explicit no-stacking guard).
 
     Raises:
         BuildQueueTimeout: when no slot is admitted within ``max_retries``.
     """
-    if routed or not plan_id:
+    if routed or not plan_id or plan_id == NO_PLAN_SENTINEL:
         yield
         return
 

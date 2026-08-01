@@ -18,6 +18,7 @@ from argparse import Namespace
 from pathlib import Path
 
 import pytest
+from _resolve_project_dir_fixtures import NO_PLAN_SENTINEL
 from conftest import get_script_path
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'build-server-client', 'build_server.py')
@@ -149,6 +150,96 @@ def test_submit_success_writes_job_id_to_ledger(home, ledger, monkeypatch):
     assert rows[0]['job_id'] == 'JOB-1'
     assert rows[0]['plan_id'] == 'p1'
     assert rows[0]['notation'] == 'a:b:c'
+
+
+# =============================================================================
+# The plan-less submit — NO_PLAN on the wire, in the ledger, and on re-attach
+# =============================================================================
+#
+# The kind=job row is on the SAME never-null contract as kind=build, so a
+# plan-less submit carries the NO_PLAN sentinel rather than '' / None. The
+# round-trip is asserted as ONE claim rather than two, because the write and the
+# re-attach read are a producer/consumer PAIR: a write that stores NO_PLAN while
+# the lookup still matches None loses every plan-less build's re-attach row, and
+# each half in isolation looks correct.
+
+
+@pytest.mark.parametrize('plan_id', [None, ''])
+def test_plan_less_submit_records_the_sentinel_and_reattaches(
+    home, ledger, monkeypatch, plan_id
+):
+    root = str(home / 'proj')
+    monkeypatch.setattr(client, '_handshake', lambda _p: ({'version': '1'}, None))
+    monkeypatch.setattr(
+        client,
+        '_call_daemon',
+        lambda _req, timeout: {'status': 'queued', 'job_id': 'JOB-NP', 'attached': False},
+    )
+
+    assert client.run_submit(_submit_args(root, plan_id=plan_id))['status'] == 'success'
+
+    rows = _job_rows()
+    assert len(rows) == 1
+    assert rows[0]['plan_id'] == NO_PLAN_SENTINEL, (
+        f'a plan-less submit stored plan_id={rows[0]["plan_id"]!r}; the kind=job '
+        'row must carry the NO_PLAN sentinel, never null or the empty string.'
+    )
+
+    # The consumer half: a later plan-less wait with no --job-id must FIND that
+    # row. This is what a write/read disagreement would silently break.
+    captured: dict[str, object] = {}
+
+    def _capture(request, timeout):
+        captured['job_id'] = request['job_id']
+        return {'status': 'success', 'job_id': request['job_id'], 'exit_code': 0}
+
+    monkeypatch.setattr(client, '_call_daemon', _capture)
+    result = client.run_wait(Namespace(job_id=None, plan_id=plan_id, bound=1))
+
+    assert captured.get('job_id') == 'JOB-NP', (
+        'the plan-less re-attach lookup did not find the row the plan-less '
+        'submit just wrote — the write and the read disagree on the sentinel.'
+    )
+    assert result['job_status'] == 'success'
+
+
+def test_plan_less_submit_writes_no_audit_log(home, ledger, monkeypatch):
+    """``_audit_log`` treats the sentinel as ABSENT — the plan-less no-op holds.
+
+    The sentinel is TRUTHY, so the pre-existing ``if not plan_id`` guard would
+    have started writing a plan-less build's interaction outcomes into a
+    ``NO_PLAN`` work log the moment the client began resolving to it.
+    """
+    root = str(home / 'proj')
+    written: list[tuple] = []
+    monkeypatch.setattr(client, 'log_entry', lambda *args: written.append(args))
+    monkeypatch.setattr(client, '_handshake', lambda _p: ({'version': '1'}, None))
+    monkeypatch.setattr(
+        client,
+        '_call_daemon',
+        lambda _req, timeout: {'status': 'queued', 'job_id': 'JOB-NP', 'attached': False},
+    )
+
+    client.run_submit(_submit_args(root, plan_id=None))
+
+    assert written == [], f'a plan-less submit wrote {written!r} to a plan work log'
+
+
+def test_a_real_plan_submit_still_writes_its_audit_log(home, ledger, monkeypatch):
+    """The carve-out is narrow — a real plan still gets its interaction record."""
+    root = str(home / 'proj')
+    written: list[tuple] = []
+    monkeypatch.setattr(client, 'log_entry', lambda *args: written.append(args))
+    monkeypatch.setattr(client, '_handshake', lambda _p: ({'version': '1'}, None))
+    monkeypatch.setattr(
+        client,
+        '_call_daemon',
+        lambda _req, timeout: {'status': 'queued', 'job_id': 'JOB-1', 'attached': False},
+    )
+
+    client.run_submit(_submit_args(root, plan_id='p1'))
+
+    assert [args[1] for args in written] == ['p1']
 
 
 def test_submit_degraded_on_impostor_socket_writes_no_ledger(home, ledger, monkeypatch):

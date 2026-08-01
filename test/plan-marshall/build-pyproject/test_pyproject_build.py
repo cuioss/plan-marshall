@@ -500,6 +500,7 @@ def test_resolve_project_dir_neither_flag_uses_main_checkout():
 
 import argparse  # noqa: E402
 
+import pytest  # noqa: E402
 from toon_parser import parse_toon  # noqa: E402
 
 # Controlled build.map globs mirroring the real repo behaviour: everything
@@ -596,13 +597,51 @@ def test_resolve_test_scope_changed_paths_supersedes_plan_footprint(capsys):
     assert out['recommended_target'] == 'plan-marshall'
 
 
-def test_resolve_test_scope_requires_a_footprint_source(capsys):
-    """Neither ``--changed-paths`` nor ``--plan-id`` → fail loud with
-    ``footprint_source_required`` (exit 2)."""
-    args = _resolve_scope_args()
-    with patch('extension_base._read_build_map_globs', return_value=_SCOPE_BUILD_MAP_GLOBS):
+@pytest.mark.parametrize('plan_id', [None, '', 'NO_PLAN'])
+def test_resolve_test_scope_requires_a_footprint_source(capsys, plan_id):
+    """No ``--changed-paths`` and no REAL ``--plan-id`` → fail loud with
+    ``footprint_source_required`` (exit 2).
+
+    ``NO_PLAN`` is the case this guard exists for now, and the direct
+    regression test for the vacuous-guard archetype: ``build_main`` resolves
+    every absent ``--plan-id`` to that sentinel, and the sentinel is TRUTHY, so
+    the original ``if not plan_id`` stopped firing exactly when it mattered —
+    the handler would go on to resolve a footprint for a plan named ``NO_PLAN``,
+    which no plan-less caller has. The guard must reject it with the SAME error
+    shape as an omitted flag; the footprint resolver must never be reached.
+    """
+    args = _resolve_scope_args(plan_id=plan_id)
+    with (
+        patch('extension_base._read_build_map_globs', return_value=_SCOPE_BUILD_MAP_GLOBS),
+        patch('extension_base._resolve_plan_footprint') as mock_plan_footprint,
+    ):
         rc = pyproject_build.cmd_resolve_test_scope(args)
     assert rc == 2
     out = parse_toon(capsys.readouterr().out)
     assert out['status'] == 'error'
     assert out['error'] == 'footprint_source_required'
+    mock_plan_footprint.assert_not_called()
+
+
+def test_resolve_test_scope_still_resolves_a_real_plan_footprint(capsys):
+    """The sentinel carve-out is narrow — a REAL ``--plan-id`` still resolves.
+
+    Without this counter-case, widening the guard to ``if not plan_id or
+    plan_id == NO_PLAN`` could degenerate into rejecting every whole-plan
+    invocation while every assertion above still passed.
+    """
+    args = _resolve_scope_args(plan_id='a-real-plan')
+    with (
+        patch('extension_base._read_build_map_globs', return_value=_SCOPE_BUILD_MAP_GLOBS),
+        patch(
+            'extension_base._resolve_plan_footprint',
+            return_value=[
+                'marketplace/bundles/plan-marshall/skills/build-pyproject/scripts/pyproject_build.py'
+            ],
+        ) as mock_plan_footprint,
+    ):
+        rc = pyproject_build.cmd_resolve_test_scope(args)
+    assert rc == 0
+    mock_plan_footprint.assert_called_once_with('a-real-plan')
+    out = parse_toon(capsys.readouterr().out)
+    assert out['recommended_target'] == 'plan-marshall'

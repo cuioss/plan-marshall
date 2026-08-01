@@ -19,7 +19,8 @@ Runtime side-effects:
     build-maven / build-gradle / build-npm), the dispatch boundary appends one
     kind=build entry to the unified change-ledger (.plan/work/change-ledger.jsonl,
     resolved via the tracked-config dir so plan-less orchestrator builds are covered too).
-    The entry stamps notation, plan_id (nullable), args, exit_code (recorded even when
+    The entry stamps notation, plan_id (never null — a build invoked outside any plan
+    is recorded under the NO_PLAN sentinel), args, exit_code (recorded even when
     non-zero), status (the truthful build outcome — success/error/timeout/killed —
     derived from the returncode and the wrapper's stdout TOON, so a timed-out build
     stamps status=timeout despite its exit code 0), worktree_sha (the working-tree
@@ -162,6 +163,7 @@ from toon_parser import parse_toon  # type: ignore[import-not-found]
 # shared-module block injected above — the writer re-uses these primitives
 # rather than re-implementing the hash or the append.
 from _ledger_core import BUILD_STATUSES, append_entry, build_record  # type: ignore[import-not-found]
+from marketplace_paths import NO_PLAN_SENTINEL  # type: ignore[import-not-found]
 from worktree_sha import compute_worktree_sha  # type: ignore[import-not-found]
 
 # ============================================================================
@@ -342,7 +344,7 @@ def _derive_build_status(exit_code: int, stdout: str) -> str:
 
 def _append_build_ledger_record(
     notation: str,
-    plan_id: str | None,
+    plan_id: str,
     script_args: list[str],
     exit_code: int,
     stdout: str,
@@ -369,7 +371,10 @@ def _append_build_ledger_record(
 
     Args:
         notation: The build-class notation that was dispatched.
-        plan_id: Resolved plan id (``None`` for an orchestrator global-tier build).
+        plan_id: Resolved plan id — never ``None``. A build dispatched outside
+            any plan (an orchestrator global-tier build, an ad-hoc CLI run)
+            carries the ``NO_PLAN`` sentinel, so every ledger row is
+            attributable.
         script_args: Arguments forwarded to the dispatched script. Joined into
             the free-form ``args`` field.
         exit_code: The build exit code (recorded even when non-zero).
@@ -533,6 +538,12 @@ def emit_dispatch_failure_work_log(
         return
 
     try:
+        # Deliberately NOT `_ledger_plan_id`: this plan_id selects a plan
+        # DIRECTORY to write into, so it stays the value the caller actually
+        # supplied and gets no NO_PLAN fallback. A caller that passes
+        # `--plan-id NO_PLAN` explicitly still lands in the sentinel's work log
+        # (the same shared plan-less store every other NO_PLAN consumer uses);
+        # a dispatch that named no plan at all writes nothing, unchanged.
         plan_id = extract_plan_id(script_args) or audit_plan_id
         if not plan_id:
             return
@@ -772,11 +783,20 @@ def main():
     subcommand = script_args[0] if script_args else ''
 
     # Resolve the plan_id for the build-class change-ledger boundary below
-    # (script-arg --plan-id or executor --audit-plan-id; may be None for an
-    # orchestrator global-tier build). The executor no longer writes any
-    # session->plan binding — that policy now lives in platform-runtime's
-    # `session bind`, fired from the manage-status phase-state-write drive seam.
+    # (script-arg --plan-id or executor --audit-plan-id; None when the dispatch
+    # named no plan at all). The executor no longer writes any session->plan
+    # binding — that policy now lives in platform-runtime's `session bind`,
+    # fired from the manage-status phase-state-write drive seam.
+    #
+    # TWO values, deliberately not one. `_active_plan_id` stays the value the
+    # CALLER supplied and is what selects a plan DIRECTORY (the script-log
+    # path below); `_ledger_plan_id` is the ROUTING/LEDGER value and falls back
+    # to the NO_PLAN sentinel so no kind=build row can carry plan_id: null.
+    # Collapsing them would redirect a plan-less build's script log from the
+    # global path into a NO_PLAN-scoped one — the sentinel is a ledger value,
+    # never a plan-directory selector.
     _active_plan_id = extract_plan_id(script_args) or audit_plan_id
+    _ledger_plan_id = _active_plan_id or NO_PLAN_SENTINEL
 
     script_path = resolve_notation(notation)
     if not script_path:
@@ -878,14 +898,17 @@ def main():
     # unconditionally on completion regardless of outcome; the stamped status
     # carries the truthful result (success/error/timeout/killed), derived from
     # the returncode and the wrapper's stdout TOON — the gate requires
-    # status == 'success'. The plan_id resolves to the same value used elsewhere
-    # in the boundary (script-arg --plan-id or executor --audit-plan-id), and may
-    # be None for an orchestrator global-tier build. The writer is
-    # fire-and-forget — see _append_build_ledger_record.
+    # status == 'success'. The row's plan_id is `_ledger_plan_id` (script-arg
+    # --plan-id or executor --audit-plan-id, falling back to the NO_PLAN
+    # sentinel), so it is NEVER null; the log path keeps taking the
+    # caller-supplied `_active_plan_id`, which stays None for a plan-less
+    # build and therefore resolves to the GLOBAL script log rather than a
+    # NO_PLAN-scoped one. The writer is fire-and-forget — see
+    # _append_build_ledger_record.
     if _is_build_class_notation(notation):
         _append_build_ledger_record(
             notation=notation,
-            plan_id=_active_plan_id,
+            plan_id=_ledger_plan_id,
             script_args=script_args,
             exit_code=exit_code,
             stdout=stdout_capture,

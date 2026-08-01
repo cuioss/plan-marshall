@@ -73,8 +73,10 @@ Every entry carries a `kind` discriminator, a `worktree_sha`, and a
 
 - **`kind=build`** — written by the executor dispatch boundary after every
   build-class invocation that runs to completion. Fields: `kind: "build"`,
-  `notation`, `plan_id` (str|null — null for an orchestrator global-tier
-  build), `args`, `exit_code` (int, recorded even when non-zero — orthogonal
+  `notation`, `plan_id` (str, **never null** — a build dispatched outside any
+  plan, including an orchestrator global-tier build, is recorded under the
+  `NO_PLAN` sentinel, so every build is attributable to the plan that caused it
+  or explicitly to none), `args`, `exit_code` (int, recorded even when non-zero — orthogonal
   diagnostic detail), `status` (the truthful build outcome of record —
   `success` | `error` | `timeout` | `killed` — derived at the boundary from
   the returncode and the wrapper's stdout TOON; a timed-out build stamps
@@ -97,7 +99,9 @@ Every entry carries a `kind` discriminator, a `worktree_sha`, and a
   verbatim), `worktree_sha` (post-commit), `timestamp_iso`.
 - **`kind=job`** — written by the `build-server-client` skill's `submit` verb at
   submit time. Fields: `kind: "job"`, `job_id` (the daemon-assigned id),
-  `plan_id` (str|null), `fingerprint` (the idempotent-submit digest the daemon
+  `plan_id` (str, **never null** — on the same contract as `kind=build`: a
+  plan-less submission carries the `NO_PLAN` sentinel, and the re-attach lookup
+  matches on that same value), `fingerprint` (the idempotent-submit digest the daemon
   scheduler keys on), `notation` (the executor notation dispatched),
   `worktree_sha`, `timestamp_iso`. Unlike `kind=build` (a completed build
   outcome) this is a **submission** record — the job may still be running — so it

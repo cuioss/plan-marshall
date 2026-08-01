@@ -4,12 +4,14 @@
 """Tests for ``script-shared/scripts/build/_build_queue_slot.py`` (D6).
 
 The build-queue slot wrapper is a pure concurrency limiter: it participates in
-the cluster build queue ONLY when a ``plan_id`` is set, and writes no
-terminal-title state. With no plan_id it is a pure no-op passthrough so plan-less
-builds run completely unchanged. These tests cover:
+the cluster build queue ONLY when ``plan_id`` names a REAL plan, and writes no
+terminal-title state. For a plan-less id — falsy OR the ``NO_PLAN`` sentinel —
+it is a pure no-op passthrough so plan-less builds run completely unchanged.
+These tests cover:
 
-* **No-op passthrough** — falsy plan_id yields immediately with ZERO queue
-  interaction (the backward-compatibility guarantee).
+* **No-op passthrough** — a falsy plan_id AND the truthy ``NO_PLAN`` sentinel
+  each yield immediately with ZERO queue interaction (the
+  backward-compatibility guarantee), while a real plan id still acquires.
 * **Admit-immediately** — an ``admitted`` acquire runs the body and releases the
   slot in the ``finally``.
 * **Block-then-admit** — a ``blocked`` acquire sleeps (mocked to 0), re-polls,
@@ -42,6 +44,7 @@ import pytest
 
 import _build_queue_slot as bqs
 from _build_queue_slot import BuildQueueTimeout, build_queue_slot
+from _resolve_project_dir_fixtures import NO_PLAN_SENTINEL
 
 
 class _QueueDouble:
@@ -80,10 +83,17 @@ def _install_queue(monkeypatch: pytest.MonkeyPatch, double: _QueueDouble) -> Non
     monkeypatch.setattr(bqs, '_release_raw', double.release)
 
 
-@pytest.mark.parametrize('plan_id', [None, ''])
+@pytest.mark.parametrize('plan_id', [None, '', NO_PLAN_SENTINEL])
 def test_no_plan_id_is_pure_noop(monkeypatch, plan_id):
-    """A falsy plan_id yields with ZERO queue interaction — plan-less builds run
-    completely unchanged."""
+    """A plan-less id yields with ZERO queue interaction — plan-less builds run
+    completely unchanged.
+
+    ``NO_PLAN`` is the case that matters and the reason "falsy is the only
+    no-op" is no longer the rule: ``build_main`` now resolves every absent
+    ``--plan-id`` to that sentinel, and the sentinel is TRUTHY. A falsiness-only
+    guard would therefore enrol every ad-hoc CLI build in the shared
+    machine-global queue and serialize work that has always run free.
+    """
     double = _QueueDouble([])
     _install_queue(monkeypatch, double)
 
@@ -94,6 +104,23 @@ def test_no_plan_id_is_pure_noop(monkeypatch, plan_id):
     assert ran is True
     assert double.acquire_calls == []
     assert double.release_calls == []
+
+
+def test_a_real_plan_id_still_acquires_a_slot(monkeypatch):
+    """The sentinel carve-out is narrow: a REAL plan id still queues.
+
+    Without this counter-case a guard that skipped the queue unconditionally
+    would satisfy every no-op assertion above while silently disabling the
+    concurrency limiter for every plan-scoped build.
+    """
+    double = _QueueDouble([{'status': 'success', 'admission': 'admitted', 'id': 'P:uuid-real'}])
+    _install_queue(monkeypatch, double)
+
+    with build_queue_slot('a-real-plan'):
+        pass
+
+    assert double.acquire_calls == ['a-real-plan']
+    assert double.released_ids == ['P:uuid-real']
 
 
 def test_queue_exposes_no_title_token_symbols():

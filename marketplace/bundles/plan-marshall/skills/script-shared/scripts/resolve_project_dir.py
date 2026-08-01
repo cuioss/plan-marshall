@@ -21,6 +21,13 @@ Two-state contract (per script):
   When ``use_worktree`` is false (or metadata absent), fall back to the
   plan root resolved cwd-relatively (the nearest ancestor of cwd
   containing ``.plan/local``; ADR-002 uniform cwd rule).
+* ``--plan-id NO_PLAN`` — the plan-less sentinel is NOT a routing source.
+  It resolves exactly like the neither-flag branch (the main-checkout
+  root, with no ``get-worktree-path`` lookup) and it is not counted as
+  "supplied" for the mutual-exclusion check, so
+  ``--plan-id NO_PLAN --project-dir Y`` stays legal and yields ``Y``.
+  This is what keeps the sentinel a routing/ledger VALUE rather than a
+  plan-directory selector.
 * ``--project-dir Y`` only — return ``Y`` verbatim. Legacy / escape
   hatch — preserved for callers that need an explicit path (test
   fixtures, ad-hoc invocations from outside any plan).
@@ -46,6 +53,7 @@ from file_ops import (
     cwd_checkout_root,
     resolve_plan_context,
 )
+from marketplace_paths import NO_PLAN_SENTINEL
 
 
 class MutuallyExclusiveArgsError(ValueError):
@@ -69,10 +77,14 @@ def resolve_project_dir(
     Implements the four-state contract documented at module top.
 
     Args:
-        plan_id: Optional plan identifier. When set, the worktree path
-            is looked up via ``manage-status get-worktree-path``.
+        plan_id: Optional plan identifier. When set to a REAL plan id the
+            worktree path is looked up via ``manage-status
+            get-worktree-path``. The ``NO_PLAN`` sentinel is treated as
+            absent — it is not a routing source, so it neither triggers
+            the lookup nor participates in the mutual-exclusion check.
         project_dir: Optional explicit project directory override.
-            Returned verbatim when set (and ``plan_id`` is not).
+            Returned verbatim when set (and ``plan_id`` is not a real
+            plan id).
         default: Sentinel used by argparse to detect "user did not pass
             ``--project-dir``". When ``project_dir`` equals ``default``,
             the value is treated as absent. Pass the same default the
@@ -90,7 +102,12 @@ def resolve_project_dir(
             (manage-status error, missing worktree metadata, etc.).
     """
     project_dir_supplied = project_dir is not None and project_dir != default
-    plan_id_supplied = bool(plan_id)
+    # The ``NO_PLAN`` sentinel is truthy but is NOT a routing source, so it must
+    # be excluded here rather than only inside the branch below: counting it as
+    # "supplied" would (a) make ``--plan-id NO_PLAN --project-dir Y`` a spurious
+    # mutual-exclusion error and (b) hand the sentinel to the worktree resolver
+    # as if it named a plan.
+    plan_id_supplied = bool(plan_id) and plan_id != NO_PLAN_SENTINEL
 
     if plan_id_supplied and project_dir_supplied:
         raise MutuallyExclusiveArgsError(

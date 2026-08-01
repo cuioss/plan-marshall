@@ -17,8 +17,10 @@ shaped identically and parsed identically.
 
 **Tracked-config-dir resolution, NOT plan-scoped.** The ledger resolves via
 :func:`file_ops.get_tracked_config_dir` (modeled on ``manage-locks``), so it
-serves plan-less orchestrator builds (a ``kind=build`` entry with ``plan_id:
-null``) just as well as plan-scoped task builds.
+serves plan-less orchestrator builds just as well as plan-scoped task builds.
+A plan-less build is recorded under the ``NO_PLAN`` sentinel, never as
+``plan_id: null``: ``plan_id`` is a required ``str`` on both
+:func:`build_record` and :func:`job_record`, so every row is attributable.
 
 **Pure-append concurrency.** :func:`append_entry` writes exactly one
 ``json.dumps(record) + '\\n'`` line per call with a single ``open(..., 'a')``.
@@ -106,7 +108,7 @@ def read_entries(path: Path | None = None) -> list[dict[str, Any]]:
 def build_record(
     *,
     notation: str,
-    plan_id: str | None,
+    plan_id: str,
     args: str | None,
     exit_code: int,
     status: str,
@@ -124,6 +126,11 @@ def build_record(
     is retained as orthogonal diagnostic detail. Both are stamped against the
     working-tree ``worktree_sha`` at capture time. A build is NOT a commit, so
     this record does NOT carry ``commit_sha`` or ``changed_paths``.
+
+    ``plan_id`` is a required ``str`` — every build is attributable. A build
+    invoked outside any plan is recorded under the ``NO_PLAN`` sentinel; the
+    caller resolves it before constructing the record, so no row can carry
+    ``plan_id: null``.
     """
     return {
         'kind': KIND_BUILD,
@@ -168,7 +175,7 @@ def change_record(
 def job_record(
     *,
     job_id: str,
-    plan_id: str | None,
+    plan_id: str,
     fingerprint: str,
     notation: str,
     worktree_sha: str | None,
@@ -189,6 +196,11 @@ def job_record(
     record — the job may still be running — so it carries no ``exit_code`` or
     ``status``. The freshness gate ignores ``kind=job`` entirely (it consumes
     only ``kind=build``); ``kind=job`` rows exist for re-attach and audit.
+
+    ``plan_id`` is a required ``str``, on the same never-null contract as
+    :func:`build_record`: a plan-less submission is recorded under the
+    ``NO_PLAN`` sentinel. The re-attach lookup matches on that same value, so
+    a plan-less submit stays recoverable.
     """
     return {
         'kind': KIND_JOB,

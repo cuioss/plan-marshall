@@ -389,7 +389,9 @@ class JobSpec:
         exec_path: The submitted tree root the executor lives under —
             ``{exec_path}/.plan/execute-script.py`` is ``command[1]``.
         project_path: The project working directory the build runs in.
-        plan_id: The submitting plan id (empty string for a plan-less build).
+        plan_id: The submitting plan id — the ``NO_PLAN`` sentinel for a
+            plan-less build (the client resolves it before constructing the
+            spec, so the wire value is never the empty string).
         fingerprint: The idempotent-submit fingerprint; empty until derived via
             :func:`compute_fingerprint` (see :func:`make_job_spec`).
     """

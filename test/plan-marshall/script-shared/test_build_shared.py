@@ -244,6 +244,99 @@ class TestCmdRunCommonSafetyNet:
         assert errors[0]['category'] == 'test_failure'
 
 
+class TestCmdRunCommonPlanIdGuards:
+    """The two ``plan_id`` guards in ``cmd_run_common`` treat NO_PLAN as ABSENT.
+
+    Both guards feed a per-plan FINDING STORE, which the ``NO_PLAN`` sentinel
+    does not own. The sentinel is TRUTHY, so a ``if plan_id:`` guard goes
+    vacuous the moment ``build_main`` starts resolving an absent ``--plan-id``
+    to it: a plan-less build would begin auto-storing parsed issues into a
+    ``NO_PLAN`` store and bulk-resolving findings in one. Today's plan-less
+    behaviour — parse and format, store nothing — is the confirmed contract.
+
+    Each guard is asserted in BOTH directions. The suppression half alone is
+    satisfied by a guard that never fires at all, which would silently disable
+    producer-side finding storage for every plan-scoped build too.
+    """
+
+    _FAILING_RESULT = {
+        'status': 'error',
+        'exit_code': 1,
+        'duration_seconds': 5,
+        'log_file': '',
+        'command': './pw module-tests plan-marshall',
+    }
+    _GREEN_RESULT = {
+        'status': 'success',
+        'exit_code': 0,
+        'duration_seconds': 5,
+        'log_file': '',
+        'command': './pw module-tests plan-marshall',
+    }
+
+    @staticmethod
+    def _parser(_log_file):
+        return [], None, 'FAILURE'
+
+    @pytest.fixture
+    def spy(self, monkeypatch):
+        """Record every call to the two guarded finding-store seams."""
+        calls: dict[str, list] = {'store': [], 'reconcile': []}
+        monkeypatch.setattr(
+            _build_shared,
+            '_store_build_findings',
+            lambda **kwargs: (calls['store'].append(kwargs['plan_id']), (0, 0, []))[1],
+        )
+        monkeypatch.setattr(
+            _build_shared,
+            '_reconcile_pending_build_findings',
+            lambda **kwargs: (calls['reconcile'].append(kwargs['plan_id']), 0)[1],
+        )
+        return calls
+
+    @pytest.mark.parametrize('plan_id', [None, '', 'NO_PLAN'])
+    def test_sentinel_suppresses_producer_side_finding_storage(self, spy, plan_id, capsys):
+        _build_shared.cmd_run_common(
+            self._FAILING_RESULT, self._parser, tool_name='python',
+            output_format='json', plan_id=plan_id,
+        )
+        capsys.readouterr()
+
+        assert spy['store'] == [], (
+            f'plan_id={plan_id!r} stored findings into a plan-less finding store'
+        )
+
+    @pytest.mark.parametrize('plan_id', [None, '', 'NO_PLAN'])
+    def test_sentinel_suppresses_green_build_reconciliation(self, spy, plan_id, capsys):
+        _build_shared.cmd_run_common(
+            self._GREEN_RESULT, self._parser, tool_name='python',
+            output_format='json', plan_id=plan_id,
+        )
+        capsys.readouterr()
+
+        assert spy['reconcile'] == [], (
+            f'plan_id={plan_id!r} bulk-resolved findings in a plan-less store'
+        )
+
+    def test_a_real_plan_id_engages_producer_side_finding_storage(self, spy, capsys):
+        _build_shared.cmd_run_common(
+            self._FAILING_RESULT, self._parser, tool_name='python',
+            output_format='json', plan_id='a-real-plan',
+        )
+        capsys.readouterr()
+
+        assert spy['store'] == ['a-real-plan']
+
+    def test_a_real_plan_id_engages_green_build_reconciliation(self, spy, capsys):
+        _build_shared.cmd_run_common(
+            self._GREEN_RESULT, self._parser, tool_name='python',
+            output_format='json', plan_id='a-real-plan',
+        )
+        capsys.readouterr()
+
+        assert spy['reconcile'] == ['a-real-plan']
+
+
 class TestRecordProducerMismatchPersist:
     """``_record_producer_mismatch`` reports a REJECTED persist to its caller.
 

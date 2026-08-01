@@ -40,6 +40,9 @@ import pytest
 from _build_class_roster import (
     PLAN_ID_FLAG,
     PROJECT_DIR_FLAG,
+    _capture_parser,
+    _iter_wrapper_scripts,
+    _load_wrapper_module,
     _subcommand_flag_pairs,
     build_class_prefixes,
     build_class_roster,
@@ -60,6 +63,7 @@ from _resolve_project_dir_fixtures import (
     CANONICAL_WORKTREE,
     MAIN_CHECKOUT_ROOT,
     NO_PLAN_SENTINEL,
+    assert_sentinel_is_not_a_routing_source,
     patch_main_checkout_root,
     patch_query_worktree_path,
 )
@@ -463,7 +467,6 @@ def test_build_main_routes_the_sentinel_to_the_main_checkout(monkeypatch):
         raise AssertionError('the NO_PLAN sentinel reached get-worktree-path')
 
     monkeypatch.setattr(_resolver_core, '_query_worktree_path', _forbidden)
-    monkeypatch.setattr(_resolver_core, 'cwd_checkout_root', lambda: MAIN_CHECKOUT_ROOT)
 
     captured: list[str] = []
 
@@ -479,10 +482,193 @@ def test_build_main_routes_the_sentinel_to_the_main_checkout(monkeypatch):
         'sys.argv',
         ['maven.py', 'run', '--command-args', 'verify', '--plan-id', NO_PLAN_SENTINEL],
     )
-    rc = build_main('Maven build', [register])
+    # Both ``cwd_checkout_root`` bindings are patched: the sentinel is resolved
+    # in ``resolve_project_dir``'s own namespace (it is not a routing source, so
+    # it never reaches the ``file_ops`` binding inside ``PlanContext``), and
+    # patching only one of the two is exactly the half-patched fixture that
+    # makes this test pass for the wrong reason.
+    with patch_main_checkout_root(MAIN_CHECKOUT_ROOT):
+        rc = build_main('Maven build', [register])
 
     assert rc == 0
     assert captured == [MAIN_CHECKOUT_ROOT]
+
+
+def test_sentinel_is_not_a_routing_source_alongside_project_dir():
+    """``--plan-id NO_PLAN --project-dir Y`` is legal and yields ``Y``.
+
+    The sentinel is TRUTHY, so a ``bool(plan_id)`` mutual-exclusion check would
+    class it as a supplied routing source and reject this pairing. That is the
+    combination a genuinely plan-less caller with an explicit tree needs, and
+    it is invisible to the sentinel test above (which supplies no
+    ``--project-dir`` and so passes either way).
+    """
+    from resolve_project_dir import resolve_project_dir
+
+    assert_sentinel_is_not_a_routing_source(
+        lambda plan_id, project_dir: resolve_project_dir(plan_id, project_dir, default='.')
+    )
+
+
+def test_real_plan_id_alongside_project_dir_still_raises():
+    """The exclusion check still fires for a REAL plan id — the carve-out is narrow.
+
+    Widening the check to exempt the sentinel must not disarm it: without this
+    counter-case, ``plan_id_supplied = False`` would satisfy the sentinel test
+    above while silently making the whole mutual-exclusion contract vacuous.
+    """
+    from resolve_project_dir import MutuallyExclusiveArgsError, resolve_project_dir
+
+    with pytest.raises(MutuallyExclusiveArgsError):
+        resolve_project_dir(CANONICAL_PLAN_ID, CANONICAL_PROJECT_DIR, default='.')
+
+
+# =============================================================================
+# Plan-id defaulting — asserted across the ENTIRE derived build-class roster
+# =============================================================================
+#
+# Every build-class dispatch appends a kind=build ledger row, so every one of
+# them must carry a resolved plan id. The check is written against the derived
+# roster rather than one sampled subcommand: a sampled check would keep passing
+# while a wrapper registered a subcommand outside the shared seam, which is the
+# exact population D3 had to widen. Each subcommand is driven through the REAL
+# ``build_main`` — the production resolution site — with its handler swapped for
+# a capture stub, so this is an end-to-end claim about the namespace a handler
+# actually receives, not about a helper called in isolation.
+
+
+def _placeholder_for(action) -> list[str]:
+    """Return the argv tokens that satisfy one required option ``action``.
+
+    Honours ``choices`` and ``type`` so the synthesized value survives argparse
+    validation for any required flag a wrapper declares, present or future.
+    """
+    if action.nargs == 0:
+        return [action.option_strings[0]]
+    if action.choices:
+        return [action.option_strings[0], str(sorted(map(str, action.choices))[0])]
+    if action.type is int:
+        return [action.option_strings[0], '0']
+    return [action.option_strings[0], 'x']
+
+
+def _minimal_argv(subcommand: str, subparser: argparse.ArgumentParser) -> list[str]:
+    """Build the shortest argv that parses for ``subcommand``, WITHOUT --plan-id.
+
+    Derived from the subparser's own required actions rather than hand-written
+    per subcommand, so a wrapper that adds a required flag stays covered. Both
+    forms of "required" are honoured: a flag carrying ``required=True``, and a
+    required mutually-exclusive GROUP (gradle's ``find-project`` declares one),
+    of which exactly one member is supplied.
+    """
+    argv = [subcommand]
+    satisfied: set[int] = set()
+    for group in getattr(subparser, '_mutually_exclusive_groups', []):
+        if not group.required or not group._group_actions:
+            continue
+        chosen = group._group_actions[0]
+        argv.extend(_placeholder_for(chosen))
+        satisfied.update(id(action) for action in group._group_actions)
+    for action in subparser._actions:
+        if action.required and action.option_strings and id(action) not in satisfied:
+            argv.extend(_placeholder_for(action))
+    return argv
+
+
+def _drive_build_main_capturing_namespace(module, argv: list[str], monkeypatch) -> argparse.Namespace:
+    """Run ``module.main()`` through the REAL ``build_main`` and return the namespace.
+
+    ``build_main`` is left in place — it is the code under test. Only the
+    handlers are swapped: each registration function is wrapped so that every
+    subparser it adds gets its ``func`` replaced by a capture stub, which keeps
+    the real parser construction and the real plan-id resolution while making
+    sure no actual build runs.
+    """
+    import _build_cli
+
+    real_build_main = _build_cli.build_main
+    captured: list[argparse.Namespace] = []
+
+    def _capture(args) -> int:
+        captured.append(args)
+        return 0
+
+    def _wrap(register_fn):
+        def wrapped(subparsers):
+            before = set(subparsers.choices)
+            register_fn(subparsers)
+            for name in set(subparsers.choices) - before:
+                subparsers.choices[name].set_defaults(func=_capture)
+
+        return wrapped
+
+    def _stub(description: str, subparser_fns: list) -> int:
+        return real_build_main(description, [_wrap(fn) for fn in subparser_fns])
+
+    monkeypatch.setattr(module, 'build_main', _stub)
+    monkeypatch.setattr('sys.argv', [module.__name__, *argv])
+    rc = module.main()
+
+    assert rc == 0, f'build_main returned {rc} for argv {argv!r}'
+    assert len(captured) == 1, f'expected exactly one handler call for {argv!r}, got {len(captured)}'
+    return captured[0]
+
+
+def test_every_build_class_subcommand_defaults_plan_id_to_the_sentinel(monkeypatch):
+    """THE defaulting gate: no build-class subcommand leaves ``plan_id`` unresolved.
+
+    Fail-first shape: before ``build_main`` resolved the flag, every one of these
+    namespaces carried ``plan_id=None`` and the kind=build ledger row it produced
+    was ``plan_id: null``. The population is the derived roster, so a subcommand
+    added to any wrapper joins this check with no edit here.
+    """
+    roster = build_class_roster()
+    population = [
+        (notation, subcommand)
+        for notation, subcommands in roster.items()
+        for subcommand in subcommands
+    ]
+    assert population, (
+        'The build-class roster derived an EMPTY population, so the defaulting '
+        'verdict below would hold vacuously.'
+    )
+
+    unresolved: list[str] = []
+    driven = 0
+    with patch_main_checkout_root():
+        for _bundle, _skill, script_path in _iter_wrapper_scripts():
+            module = _load_wrapper_module(script_path)
+            parser = _capture_parser(module)
+            for action in parser._actions:
+                if not isinstance(action, argparse._SubParsersAction):
+                    continue
+                for subcommand, subparser in action.choices.items():
+                    args = _drive_build_main_capturing_namespace(
+                        module, _minimal_argv(subcommand, subparser), monkeypatch
+                    )
+                    driven += 1
+                    if getattr(args, 'plan_id', None) != NO_PLAN_SENTINEL:
+                        unresolved.append(
+                            f'{script_path.stem}:{subcommand} -> {getattr(args, "plan_id", None)!r}'
+                        )
+
+    # The loop above re-derives the population so it can drive each subcommand;
+    # pinning its count against ``build_class_roster()`` keeps the two
+    # derivations honest. Without it, a drive loop that silently skipped a
+    # wrapper (an unparseable minimal argv, a wrapper whose main() short-circuits)
+    # would report "nothing unresolved" while covering less than it claims.
+    assert driven == len(population), (
+        f'Drove {driven} subcommand(s) but the derived roster holds '
+        f'{len(population)}; the drive loop and the roster disagree, so this '
+        'verdict covers less than the full build-class population.'
+    )
+
+    assert not unresolved, (
+        f'These build-class subcommands did NOT resolve an absent --plan-id to '
+        f'{NO_PLAN_SENTINEL!r}: {sorted(unresolved)}. Every build-class dispatch '
+        'appends a kind=build ledger row, so an unresolved plan id lands as '
+        'plan_id: null and the build becomes unattributable.'
+    )
 
 
 # =============================================================================

@@ -71,7 +71,7 @@ from _build_server_registry import (
     registry_dir,
 )
 from _ledger_core import KIND_JOB, append_entry, job_record, read_entries
-from marketplace_paths import main_checkout_root
+from marketplace_paths import NO_PLAN_SENTINEL, main_checkout_root
 from plan_logging import log_entry
 from triage_helpers import ErrorCode, make_error, print_toon, safe_main
 from worktree_sha import compute_worktree_sha
@@ -241,10 +241,14 @@ def _handshake(sock_path: Path) -> tuple[dict[str, Any] | None, str | None]:
 def _audit_log(plan_id: str, level: str, message: str) -> None:
     """Write one captured work-log entry for a build-server interaction outcome.
 
-    No-ops for a plan-less build (empty ``plan_id``) — there is no per-plan work
-    log to write to. Otherwise it delegates to the same ``plan_logging``
-    substrate the ``manage-logging`` work verb writes through, so no interaction
-    outcome is emitted only at an uncaptured Python log level and silently lost.
+    No-ops for a plan-less build — an empty ``plan_id`` OR the ``NO_PLAN``
+    sentinel, which is the value a plan-less submission now carries on the wire
+    and in the ledger. The sentinel is TRUTHY, so it is named explicitly: a
+    falsiness-only guard would start writing a plan-less build's interaction
+    outcomes into a ``NO_PLAN`` work log, which is a behaviour change, not a
+    no-op. Otherwise it delegates to the same ``plan_logging`` substrate the
+    ``manage-logging`` work verb writes through, so no interaction outcome is
+    emitted only at an uncaptured Python log level and silently lost.
 
     Secrets discipline: callers pass ONLY non-secret correlation fields
     (``job_id`` / ``job_status`` / ``reason`` / ``notation`` / ``attached`` /
@@ -252,12 +256,13 @@ def _audit_log(plan_id: str, level: str, message: str) -> None:
     ``project_path``, env, or any spec field that may carry secrets.
 
     Args:
-        plan_id: Submitting plan id; empty for a plan-less build (no-op).
+        plan_id: Submitting plan id; empty or ``NO_PLAN`` for a plan-less build
+            (no-op).
         level: Captured log level — ``INFO`` for a normal outcome, ``WARNING``
             for a fallback / refusal.
         message: The pre-formatted, secret-free outcome message.
     """
-    if not plan_id:
+    if not plan_id or plan_id == NO_PLAN_SENTINEL:
         return
     log_entry('work', plan_id, level, message)
 
@@ -304,11 +309,18 @@ def _render_job_status(response: dict[str, Any]) -> dict[str, Any]:
 
 
 def _record_job(job_id: str, plan_id: str, fingerprint: str, notation: str, project_path: str) -> None:
-    """Persist a ``kind=job`` re-attach row to the change-ledger at submit time."""
+    """Persist a ``kind=job`` re-attach row to the change-ledger at submit time.
+
+    ``plan_id`` is stored VERBATIM — a plan-less submission carries the
+    ``NO_PLAN`` sentinel, never ``None``, so the ``kind=job`` row is on the same
+    never-null contract as ``kind=build``. :func:`_latest_job_id_for_plan`
+    matches on that same verbatim value, so the write and the re-attach read
+    agree by construction.
+    """
     append_entry(
         job_record(
             job_id=job_id,
-            plan_id=plan_id or None,
+            plan_id=plan_id,
             fingerprint=fingerprint,
             notation=notation,
             worktree_sha=compute_worktree_sha(project_path),
@@ -324,7 +336,9 @@ def _latest_job_id_for_plan(plan_id: str) -> str | None:
     ledger rather than losing the running build.
 
     Args:
-        plan_id: The plan whose latest submission to recover.
+        plan_id: The plan whose latest submission to recover — the ``NO_PLAN``
+            sentinel for a plan-less submission, matched verbatim against the
+            value :func:`_record_job` wrote.
 
     Returns:
         The latest recorded ``job_id`` for the plan, or ``None`` when none exists.
@@ -341,7 +355,7 @@ def _latest_job_id_for_plan(plan_id: str) -> str | None:
         entry.get('job_id')
         for entry in entries
         if entry.get('kind') == KIND_JOB
-        and entry.get('plan_id') == (plan_id or None)
+        and entry.get('plan_id') == plan_id
         and entry.get('job_id')
     ]
     return str(matches[-1]) if matches else None
@@ -410,7 +424,11 @@ def run_submit(args: Namespace) -> dict[str, Any]:
 
     project_path = args.project_path or os.getcwd()
     exec_path = args.exec_path or project_path
-    plan_id = args.plan_id or ''
+    # A plan-less submission carries the NO_PLAN sentinel, not the empty
+    # string, so the job spec on the wire and the kind=job ledger row match the
+    # kind=build row's never-null contract. `_audit_log` treats the sentinel as
+    # absent, so the plan-less no-op it always had is preserved.
+    plan_id = args.plan_id or NO_PLAN_SENTINEL
     notation = _notation_from_command(command)
     spec = make_job_spec(
         command=command,
@@ -488,12 +506,19 @@ def run_submit(args: Namespace) -> dict[str, Any]:
 
 def run_wait(args: Namespace) -> dict[str, Any]:
     """Do one bounded long-poll, re-attaching via the ledger when no id is given."""
-    plan_id = args.plan_id or ''
+    # Same resolution as `run_submit`, and load-bearing for re-attach: the
+    # lookup below matches the ledger row VERBATIM, so an unresolved '' here
+    # would never find the NO_PLAN row a plan-less submit wrote.
+    plan_id = args.plan_id or NO_PLAN_SENTINEL
     job_id = args.job_id or _latest_job_id_for_plan(plan_id)
     if not job_id:
         return make_error(
             'no --job-id given and no kind=job ledger row to re-attach to'
-            + (f' for plan {args.plan_id}' if args.plan_id else ''),
+            + (
+                f' for plan {args.plan_id}'
+                if args.plan_id and args.plan_id != NO_PLAN_SENTINEL
+                else ''
+            ),
             code=ErrorCode.NOT_FOUND,
         )
 

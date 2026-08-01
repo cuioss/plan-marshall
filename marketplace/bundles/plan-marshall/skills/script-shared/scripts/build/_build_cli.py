@@ -17,6 +17,7 @@ from _build_format import format_toon
 from _build_parse import Issue
 from _build_shared import ParserFn, cmd_discover_common, cmd_parse_common
 from file_ops import safe_main  # noqa: F401  # canonical entry-point wrapper
+from marketplace_paths import NO_PLAN_SENTINEL
 
 
 def add_project_dir_arg(parser) -> None:
@@ -43,11 +44,17 @@ def add_project_dir_arg(parser) -> None:
     * ``--plan-id X`` only — auto-resolve the worktree face through
       ``file_ops.resolve_plan_context``, which owns the single
       ``manage-status get-worktree-path`` invocation in the codebase.
+    * ``--plan-id NO_PLAN`` — the plan-less sentinel. NOT a routing
+      source: it resolves like the neither-flag branch and does not
+      trigger the mutual-exclusion error, so ``--plan-id NO_PLAN
+      --project-dir Y`` stays legal.
     * ``--project-dir Y`` only — explicit override (legacy / escape
       hatch).
     * Neither — the cwd-relative checkout root via
       ``file_ops.cwd_checkout_root`` (nearest ``.plan/local`` ancestor of
-      cwd, per the uniform cwd rule / ADR-002).
+      cwd, per the uniform cwd rule / ADR-002). ``build_main`` then
+      resolves the absent ``--plan-id`` to ``NO_PLAN`` so every handler
+      sees a non-empty plan id.
 
     The ``--project-dir`` default stays ``'.'`` so the existing
     ``execute_direct(project_dir=args.project_dir, ...)`` call sites
@@ -599,6 +606,18 @@ def build_main(
             assert plan_id is not None  # only reachable when plan_id was supplied
             print(format_toon(emit_worktree_error(plan_id, exc)))
             return 2
+
+    # Every build-class handler downstream sees a RESOLVED plan id: an absent
+    # ``--plan-id`` becomes the ``NO_PLAN`` sentinel, so a build is always
+    # attributable (the executor's kind=build ledger row can never carry null).
+    # Deliberately AFTER the resolution above: the sentinel is not a routing
+    # source, so the mutual-exclusion and worktree-resolution error paths keep
+    # observing the caller's actual flags. The sentinel is truthy, so every
+    # downstream ``plan_id`` guard tests for it explicitly rather than relying
+    # on falsiness — see the guard sites in ``_build_queue_slot``,
+    # ``_build_execute_factory``, ``_build_shared`` and ``pyproject_build``.
+    if hasattr(args, 'plan_id'):
+        args.plan_id = args.plan_id or NO_PLAN_SENTINEL
 
     result: int = args.func(args)
     return result

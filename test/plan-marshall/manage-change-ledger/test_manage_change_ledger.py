@@ -21,6 +21,11 @@ Coverage:
   line;
 * ``append --kind change`` — stamps the change fields, storing
   ``commit_sha``/``changed_paths`` verbatim;
+* the never-null ``plan_id`` contract, asserted AT THE VERB for both
+  ``--kind build`` and ``--kind job``: an omitted ``--plan-id`` is recorded as
+  the ``NO_PLAN`` sentinel, a supplied one is stored verbatim, and the
+  ``_ledger_core`` constructors declare ``plan_id: str`` with the ``| None``
+  union removed;
 * ``query`` — round-trips both entries; ``--kind`` filters; an empty ledger
   yields ``count: 0``;
 * worktree_sha currency — the stored hash matches the ``worktree-sha`` verb's
@@ -40,6 +45,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from _resolve_project_dir_fixtures import NO_PLAN_SENTINEL
 
 from conftest import get_script_path
 
@@ -172,8 +178,83 @@ def test_append_build_records_nonzero_exit(env) -> None:
     entry = _read_ledger(env.ledger_path)[0]
     assert entry['exit_code'] == 1
     assert entry['status'] == 'error'
-    # plan_id is nullable — omitted here, stored as null.
-    assert entry['plan_id'] is None
+    # plan_id is NEVER null — an omitted flag resolves to the NO_PLAN sentinel.
+    assert entry['plan_id'] == NO_PLAN_SENTINEL
+
+
+# ---------------------------------------------------------------------------
+# The never-null plan_id contract, asserted at the CLI VERB
+# ---------------------------------------------------------------------------
+#
+# This verb is the SECOND production construction site for build_record /
+# job_record — the executor dispatch boundary is the first, and this one was
+# absent from the original enumeration precisely because the coverage stopped at
+# the constructor. Asserting through the verb (not the constructor) is what makes
+# the "no build-class operation can emit plan_id: null" claim cover both sites.
+
+
+@pytest.mark.parametrize(
+    'kind,extra',
+    [
+        ('build', ('--notation', 'plan-marshall:build-pyproject:pyproject_build',
+                   '--exit-code', '0', '--status', 'success')),
+        ('job', ('--job-id', 'J-1', '--fingerprint', 'fp-1',
+                 '--notation', 'plan-marshall:build-pyproject:pyproject_build')),
+    ],
+)
+def test_append_without_plan_id_records_the_sentinel_never_null(env, kind, extra) -> None:
+    """``append --kind {build,job}`` with NO ``--plan-id`` writes ``NO_PLAN``.
+
+    Fail-first shape: before the resolution, ``run_append`` passed
+    ``args.plan_id`` straight through and both rows landed as ``plan_id: null``.
+    """
+    result = env.run('append', '--kind', kind, *extra)
+
+    assert result.success, result.stderr
+    entry = _read_ledger(env.ledger_path)[0]
+    assert entry['kind'] == kind
+    assert entry['plan_id'] == NO_PLAN_SENTINEL, (
+        f'append --kind {kind} without --plan-id stored {entry["plan_id"]!r}; '
+        'the row must carry the NO_PLAN sentinel, never null.'
+    )
+
+
+@pytest.mark.parametrize(
+    'kind,extra',
+    [
+        ('build', ('--notation', 'plan-marshall:build-pyproject:pyproject_build',
+                   '--exit-code', '0', '--status', 'success')),
+        ('job', ('--job-id', 'J-2',)),
+    ],
+)
+def test_append_with_a_real_plan_id_stores_it_verbatim(env, kind, extra) -> None:
+    """The fallback never overwrites a supplied plan id — the carve-out is narrow."""
+    result = env.run('append', '--kind', kind, *extra, '--plan-id', 'my-plan')
+
+    assert result.success, result.stderr
+    entry = _read_ledger(env.ledger_path)[0]
+    assert entry['plan_id'] == 'my-plan'
+
+
+def test_ledger_core_constructors_declare_plan_id_as_required_str() -> None:
+    """``build_record`` / ``job_record`` no longer accept ``str | None``.
+
+    The clean break is asserted on the SIGNATURE rather than on behaviour: the
+    ``| None`` union is removed outright (not deprecated), which is what makes a
+    caller that still passes ``None`` a type error rather than a silently-null
+    row. Behaviour-only assertions cannot see this, because Python would happily
+    store the ``None`` either way.
+    """
+    import inspect
+
+    import _ledger_core
+
+    for constructor in (_ledger_core.build_record, _ledger_core.job_record):
+        annotation = inspect.signature(constructor).parameters['plan_id'].annotation
+        assert annotation == 'str', (
+            f'{constructor.__name__} declares plan_id as {annotation!r}; the '
+            'str | None union must be removed, not deprecated.'
+        )
 
 
 @pytest.mark.parametrize('build_status', ['success', 'error', 'timeout', 'killed'])

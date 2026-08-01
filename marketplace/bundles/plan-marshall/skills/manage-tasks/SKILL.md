@@ -188,8 +188,8 @@ reports `stale`.
 The ledger query filters on `kind`, `status`, and `worktree_sha` only —
 never `notation`, `exit_code`, or `plan_id` — so it is build-tool-agnostic and
 tier-agnostic: a Maven/Gradle/npm build, or an orchestrator-driven global-tier
-build with `plan_id: null`, satisfies the gate exactly as a plan-scoped
-pyproject build does. Requiring `status == success` rather than
+build recorded under the `NO_PLAN` sentinel, satisfies the gate exactly as a
+plan-scoped pyproject build does. Requiring `status == success` rather than
 `exit_code == 0` is load-bearing: the build wrapper exits 0 on timeout (the
 outcome lives in its stdout TOON, not the exit code), so an exit-code
 predicate would launder a build that never finished into a false `fresh`. A
