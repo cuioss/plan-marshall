@@ -66,16 +66,6 @@ _REFUSAL_BODY = (
 )
 
 
-def _movement_bots() -> list[str]:
-    """Registered bots that re-review by EDITING one persistent comment."""
-    return [k for k in bot_registry.bot_kinds() if bot_registry.participation_requires_update(k)]
-
-
-def _count_bots() -> list[str]:
-    """Registered bots that append a NEW comment per review."""
-    return [k for k in bot_registry.bot_kinds() if not bot_registry.participation_requires_update(k)]
-
-
 def _login_for(bot_kind: str) -> str:
     """Resolve ``bot_kind`` back to its registry login."""
     for login, kind in bot_registry.login_to_bot_kind().items():
@@ -85,8 +75,8 @@ def _login_for(bot_kind: str) -> str:
 
 
 def _the_mover() -> str:
-    """The bot the movement arm is exercised against, derived from the registry."""
-    movers = _movement_bots()
+    """A registry-derived bot that re-reviews by EDITING one persistent comment."""
+    movers = [k for k in bot_registry.bot_kinds() if bot_registry.participation_requires_update(k)]
     # Not a courtesy check: with no `participation_requires_update` bot registered
     # the movement arms below would pass vacuously against ANY implementation.
     assert movers, 'no registered bot declares participation_requires_update — movement arms would be vacuous'
@@ -94,8 +84,8 @@ def _the_mover() -> str:
 
 
 def _the_appender() -> str:
-    """A bot whose reviews append a new comment, so the count arm applies to it."""
-    appenders = _count_bots()
+    """A registry-derived bot that appends a NEW comment per review, so the count arm applies to it."""
+    appenders = [k for k in bot_registry.bot_kinds() if not bot_registry.participation_requires_update(k)]
     assert appenders, 'no registered bot declares participation_requires_update: false'
     return appenders[0]
 
