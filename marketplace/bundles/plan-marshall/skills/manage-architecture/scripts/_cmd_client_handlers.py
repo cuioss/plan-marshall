@@ -40,9 +40,9 @@ from _architecture_core import (
     load_module_enriched_or_empty,
     load_project_meta,
     longest_containing_prefix,
-    project_local_module_for_path,
     require_project_meta_result,
     resolve_module_for_path,
+    resolve_path_attribution,
 )
 from _cmd_client_build import (
     _classify_build_executable,
@@ -759,7 +759,9 @@ def cmd_which_module(args: argparse.Namespace) -> dict[str, Any]:
         2. Longest ``paths.sources ∪ paths.tests`` prefix that contains the path
            (the union of ``paths.tests`` lets a ``test/**`` path resolve to its
            owning module instead of the root).
-        3. Project-local prefix map (``.claude/skills/** → plan-marshall``).
+        3. Path-attribution seam (Axis-D): the merged set of bundle-contributed
+           ``(path_prefix, module)`` claims, resolved by longest containing
+           prefix. See ``extension-api/standards/ext-point-path-attribution.md``.
         4. Root-inventory match (the length-0 ``default`` module), when present.
 
     The exact-inventory step reads through ``_resolve_module_inventory`` (with
@@ -768,6 +770,26 @@ def cmd_which_module(args: argparse.Namespace) -> dict[str, Any]:
     ``truncated: bool`` and ``elided: list[dict]`` (empty when clean) per ADR-009
     fail-closed reporting — a truthful ``truncated: true`` can accompany a
     resolved module as well as a ``module: null``.
+
+    The result likewise always carries the Axis-D provenance pair
+    ``attributors: list[str]`` (the sorted ids of the attributors that ran) and
+    ``attributor_count: int``, plus ``attributor_notes: list[dict]`` carrying any
+    condition that suppressed a claim. Both provenance fields are present on
+    EVERY response shape — resolved, null, and truncated alike — so no caller
+    branches on a missing key, exactly as ``truncated`` / ``elided`` are. The
+    seam therefore runs on every call rather than only on rung-3 fallthrough;
+    the merge is memoized at process lifetime, so the cost is one merge per
+    process, not one per call. The distinction this buys mirrors Tier 1's
+    ``resolver_count``:
+
+        - ``attributor_count: 0`` with ``module: null`` — **no attributor ran**.
+          The unattributed path is an absence of capability, not a finding.
+        - ``attributor_count: N`` with ``module: null`` — **N attributors ran and
+          none claimed this path**. A real, positive answer.
+
+    A path whose claim was suppressed by an ownership collision answers
+    ``module: null`` accompanied by the reporting note, never a bare confident
+    null.
     """
     target = args.path
     try:
@@ -812,15 +834,21 @@ def cmd_which_module(args: argparse.Namespace) -> dict[str, Any]:
             ):
                 containment_best = candidate
 
+    # The seam runs unconditionally, not only on rung-3 fallthrough: the
+    # provenance pair below is present on every response shape, and an
+    # ``attributor_count`` reported only when rung 3 happened to be reached would
+    # read as "no attributor ran" on every path rungs 1-2 already resolved.
+    attribution_owner, attributor_reports = resolve_path_attribution(target, module_names)
+
     # 1. Exact-inventory match more specific than the root.
     if inventory_best is not None and inventory_best[0] > 0:
         resolved: str | None = inventory_best[1]
     # 2. Longest sources ∪ tests containment prefix.
     elif containment_best is not None:
         resolved = containment_best[1]
-    # 3. Project-local prefix map (.claude/skills/** → plan-marshall).
-    elif (project_local := project_local_module_for_path(target, module_names)) is not None:
-        resolved = project_local
+    # 3. Path-attribution seam (Axis-D bundle-contributed claims).
+    elif attribution_owner is not None:
+        resolved = attribution_owner
     # 4. Root-inventory match (the length-0 default module), when present.
     elif inventory_best is not None:
         resolved = inventory_best[1]
@@ -831,6 +859,13 @@ def cmd_which_module(args: argparse.Namespace) -> dict[str, Any]:
         'status': 'success',
         'path': target,
         'module': resolved,
+        'attributors': [report['id'] for report in attributor_reports],
+        'attributor_count': len(attributor_reports),
+        'attributor_notes': [
+            {'attributor': report['id'], 'note': note}
+            for report in attributor_reports
+            for note in report.get('notes', [])
+        ],
         'truncated': bool(truncation_entries),
         'elided': truncation_entries,
     }

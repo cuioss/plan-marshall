@@ -768,9 +768,10 @@ def _load_path_attribution_seam():
     return discover_path_attributors, merge_path_claims, lookup_claim
 
 
-# Process-lifetime memo for the merged Axis-D claim set, keyed by the sorted
+# Process-lifetime memo for the merged Axis-D attribution, keyed by the sorted
 # known-module tuple (the only input the merge validates claims against;
-# attributor discovery itself is process-global).
+# attributor discovery itself is process-global). Each value is the
+# ``(claims, attributor_reports)`` pair the merge returned.
 #
 # The memo is REQUIRED, not an optimisation. The retired hardcoded prefix map was
 # an O(1) tuple scan, and :func:`resolve_module_for_path` calls the helper below
@@ -778,7 +779,60 @@ def _load_path_attribution_seam():
 # discovery (loading every bundle's ``extension.py`` from disk) plus the merge N
 # times for an N-path footprint, silently widening a lazy contract into an eager
 # one. :func:`invalidate_crawl_cache` drops this memo alongside the crawl memo.
-_PATH_CLAIM_CACHE: dict[tuple[str, ...], list[dict[str, Any]]] = {}
+_PATH_CLAIM_CACHE: dict[tuple[str, ...], tuple[list[dict[str, Any]], list[dict[str, Any]]]] = {}
+
+
+def resolve_path_attribution(
+    path: str, module_names: list[str]
+) -> tuple[str | None, list[dict[str, Any]]]:
+    """Resolve ``path`` through the Axis-D seam and return the attributor reports.
+
+    The full-fidelity seam reader: it returns BOTH the resolved owner and the
+    per-attributor reports, so a caller can distinguish "no attributor ran" from
+    "N attributors ran and none claimed this path" — the residue distinction that
+    makes a ``module: null`` answer non-vacuous. :func:`project_local_module_for_path`
+    is the owner-only wrapper over this function; both share one memo.
+
+    A claim naming a module absent from ``module_names`` is dropped by the merge,
+    so a consumer project without that module resolves to ``None`` — the
+    module-existence guard the retired hardcoded prefix map applied at resolution
+    time.
+
+    Degrades to ``(None, [])`` when the seam cannot be imported, matching this
+    module's established "empty when absent, never raise" contract. That degraded
+    shape is indistinguishable from "no attributor is registered", which is the
+    correct reading: neither case carries evidence that any attributor ran.
+
+    Args:
+        path: A repo-relative path.
+        module_names: The list of modules known to the project — the
+            authoritative set every claim's module is validated against.
+
+    Returns:
+        An ``(owner, attributor_reports)`` pair. ``owner`` is the claimed module
+        name for the longest containing prefix, or ``None``.
+        ``attributor_reports`` is one ``{id, claim_count, status, notes}`` dict
+        per discovered attributor.
+
+    See ``extension-api/standards/ext-point-path-attribution.md`` for the merge
+    semantics, the ambiguous-ownership obligation, and the
+    longest-prefix-is-resolution-order note.
+    """
+    try:
+        discover_path_attributors, merge_path_claims, lookup_claim = _load_path_attribution_seam()
+    except ImportError:
+        return None, []
+
+    cache_key = tuple(sorted(module_names))
+    merged = _PATH_CLAIM_CACHE.get(cache_key)
+    if merged is None:
+        merged = merge_path_claims(discover_path_attributors(), module_names)
+        _PATH_CLAIM_CACHE[cache_key] = merged
+    claims, reports = merged
+    # The seam arrives through a deferred import, so its symbols are untyped at
+    # this boundary; pin the contracted return type here rather than leaking Any.
+    owner: str | None = lookup_claim(path, claims)
+    return owner, reports
 
 
 def project_local_module_for_path(path: str, module_names: list[str]) -> str | None:
@@ -791,39 +845,18 @@ def project_local_module_for_path(path: str, module_names: list[str]) -> str | N
     discovers the attributors, merges their claims, and resolves the longest
     containing prefix; it owns none of the claims.
 
-    A claim naming a module absent from ``module_names`` is dropped by the merge,
-    so a consumer project without that module falls through to ``None`` — the
-    module-existence guard the retired hardcoded map applied at resolution time.
-
-    Degrades to ``None`` when the seam cannot be imported, matching this module's
-    established "empty when absent, never raise" contract.
+    The owner-only wrapper over :func:`resolve_path_attribution`, for the callers
+    that need the answer but not the provenance.
 
     Args:
         path: A repo-relative path.
-        module_names: The list of modules known to the project — the
-            authoritative set every claim's module is validated against.
+        module_names: The list of modules known to the project.
 
     Returns:
         The owning module name when a claimed prefix contains ``path`` and that
         module exists, else ``None``.
-
-    See ``extension-api/standards/ext-point-path-attribution.md`` for the merge
-    semantics, the ambiguous-ownership obligation, and the
-    longest-prefix-is-resolution-order note.
     """
-    try:
-        discover_path_attributors, merge_path_claims, lookup_claim = _load_path_attribution_seam()
-    except ImportError:
-        return None
-
-    cache_key = tuple(sorted(module_names))
-    claims: list[dict[str, Any]] | None = _PATH_CLAIM_CACHE.get(cache_key)
-    if claims is None:
-        claims, _reports = merge_path_claims(discover_path_attributors(), module_names)
-        _PATH_CLAIM_CACHE[cache_key] = claims
-    # The seam arrives through a deferred import, so its symbols are untyped at
-    # this boundary; pin the contracted return type here rather than leaking Any.
-    owner: str | None = lookup_claim(path, claims)
+    owner, _reports = resolve_path_attribution(path, module_names)
     return owner
 
 
