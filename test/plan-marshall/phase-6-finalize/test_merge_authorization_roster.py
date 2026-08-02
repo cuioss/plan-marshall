@@ -148,7 +148,6 @@ def _read(path: Path) -> str:
 #: once at collection time from the authoritative document — no literal list.
 _ROWS: list[tuple[str, str]] = parse_roster_rows(_read(_BRANCH_CLEANUP), _ROSTER_HEADING)
 _ROSTER_KINDS: list[str] = [kind for kind, _ in _ROWS]
-_ROW_IDS: list[str] = list(_ROSTER_KINDS)
 
 
 def _claim(row_line: str, name: str) -> str | None:
@@ -322,7 +321,7 @@ def test_roster_is_non_empty():
     )
 
 
-@pytest.mark.parametrize('kind,row_line', _ROWS, ids=_ROW_IDS)
+@pytest.mark.parametrize('kind,row_line', _ROWS, ids=_ROSTER_KINDS)
 def test_every_row_declares_the_four_machine_checkable_claims(kind, row_line):
     """(b) Each row carries ``head_bound:``, ``bound_via:``, ``authorizes:`` and ``site:``.
 
@@ -342,7 +341,7 @@ def test_every_row_declares_the_four_machine_checkable_claims(kind, row_line):
     assert 'site:' in row_line, f'{kind} row declares no site: claim — {row_line}'
 
 
-@pytest.mark.parametrize('kind,row_line', _ROWS, ids=_ROW_IDS)
+@pytest.mark.parametrize('kind,row_line', _ROWS, ids=_ROSTER_KINDS)
 def test_every_head_bound_row_has_a_grant_site(kind, row_line):
     """(c) Every row's binding claim is cross-checked against real document content.
 
@@ -434,7 +433,7 @@ def test_every_head_bound_row_has_a_grant_site(kind, row_line):
     )
 
 
-@pytest.mark.parametrize('kind,row_line', _ROWS, ids=_ROW_IDS)
+@pytest.mark.parametrize('kind,row_line', _ROWS, ids=_ROSTER_KINDS)
 def test_out_of_class_rows_are_annotated_rather_than_silently_absent(kind, row_line):
     """(d) An out-of-class member is recorded WITH a rationale, never omitted.
 

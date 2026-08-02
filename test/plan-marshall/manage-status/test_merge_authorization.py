@@ -254,7 +254,6 @@ def test_empty_store_is_fail_closed(plan_context):
     assert result['admissible_kinds'] == []
     assert result['inadmissible_kinds'] == []
     assert result['records'] == []
-    assert all(record['verdict'] != 'valid' for record in result['records'])
 
 
 def test_malformed_record_is_lapsed_not_valid(plan_context):

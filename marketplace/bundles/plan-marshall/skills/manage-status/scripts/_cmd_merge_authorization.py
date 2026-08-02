@@ -140,13 +140,15 @@ def cmd_merge_authorization_check(args: argparse.Namespace) -> dict | None:
     inadmissible_kinds: list[str] = []
     records: list[dict[str, Any]] = []
     for kind in sorted(authorizations):
-        entry = authorizations[kind]
         # Fail-closed: only a well-formed record whose head equals the supplied
-        # HEAD is `valid`. Every other shape — a malformed entry, a record from a
+        # HEAD is `valid`. Every other shape — a malformed entry (normalized to
+        # an empty record here, so every field reads as absent), a record from a
         # superseded HEAD — resolves to `lapsed`. There is no catch-all branch
         # admitting to the authorized set.
-        granted_head = entry.get('head') if isinstance(entry, dict) else None
-        granted_class = entry.get('gap_class') if isinstance(entry, dict) else None
+        stored_entry = authorizations[kind]
+        entry: dict[str, Any] = stored_entry if isinstance(stored_entry, dict) else {}
+        granted_head = entry.get('head')
+        granted_class = entry.get('gap_class')
         verdict = VERDICT_VALID if granted_head == head else VERDICT_LAPSED
         # Admissibility narrows the ROUTING, never the REPORT. A `valid` record
         # granted over a DIFFERENT gap stays in `authorized_kinds` (it really is
@@ -166,9 +168,9 @@ def cmd_merge_authorization_check(args: argparse.Namespace) -> dict | None:
                 'verdict': verdict,
                 'gap_class': granted_class,
                 'admissible': admissible,
-                'granted_over': entry.get('granted_over') if isinstance(entry, dict) else None,
-                'reason': entry.get('reason') if isinstance(entry, dict) else None,
-                'granted_at': entry.get('granted_at') if isinstance(entry, dict) else None,
+                'granted_over': entry.get('granted_over'),
+                'reason': entry.get('reason'),
+                'granted_at': entry.get('granted_at'),
             }
         )
 

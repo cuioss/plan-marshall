@@ -441,9 +441,10 @@ def _grant(plan_id, kind, head, gap_class, granted_over, reason):
     )
 
 
-def _authorization_check(plan_id, head, gap_class=_BARRIER_GAP):
+def _authorization_check(plan_id, head):
+    """Check as the barrier does — always against the gap class IT reports."""
     return _merge_auth.cmd_merge_authorization_check(
-        argparse.Namespace(plan_id=plan_id, head=head, gap_class=gap_class)
+        argparse.Namespace(plan_id=plan_id, head=head, gap_class=_BARRIER_GAP)
     )
 
 
