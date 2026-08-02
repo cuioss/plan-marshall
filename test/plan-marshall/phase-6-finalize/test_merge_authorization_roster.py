@@ -113,11 +113,20 @@ _SITE_LINK_RE = re.compile(r'\]\(([^)]+)\)')
 #: The roster's closing claim about which verb backs the grant rows.
 _VERB_CLAIM_RE = re.compile(r'verb backing every `bound_via: grant` row is `([^`]+)`')
 
-#: The ``--kind`` value of one grant invocation.
-_KIND_ARG_RE = re.compile(r'--kind\s+([^\s\\]+)')
+#: Separator between a long option and its value. argparse accepts BOTH the
+#: space-separated form (``--kind X``) and the equals form (``--kind=X``), so a
+#: matcher that recognized only one would read a real invocation written in the
+#: other as carrying no such argument at all. That direction is fail-OPEN in
+#: guards built to be fail-closed: an unmatched ``--kind`` empties the corpus
+#: population for that block, hiding the grant site from the reverse-direction
+#: membership check and from its mutation guard.
+_ARG_SEP = r'(?:\s+|=)'
 
-#: The ``--gap-class`` value of one grant or check invocation.
-_GAP_CLASS_ARG_RE = re.compile(r'--gap-class\s+([^\s\\]+)')
+#: The ``--kind`` value of one grant invocation, in either argparse form.
+_KIND_ARG_RE = re.compile(rf'--kind{_ARG_SEP}([^\s\\]+)')
+
+#: The ``--gap-class`` value of one grant or check invocation, in either form.
+_GAP_CLASS_ARG_RE = re.compile(rf'--gap-class{_ARG_SEP}([^\s\\]+)')
 
 #: The normative rule the barrier must state in as many words.
 _INADMISSIBLE_EVIDENCE_MARKERS = ('decision', 'NEVER admissible')
@@ -202,6 +211,19 @@ def _is_form_placeholder(token: str) -> bool:
     return '{' in token or token.isupper()
 
 
+def _kinds_in(block: str) -> list[str]:
+    """Every concrete ``--kind`` value in one invocation block, in either argparse form.
+
+    The SINGLE reader of the ``--kind`` argument in this module: the corpus
+    sweep, the roster-driven site check, and the gap-class sweep all resolve
+    kinds through it. Routing every call site through one reader is what stops
+    any of them drifting back to a form-specific literal substring test — an
+    ``f'--kind {kind}' in block`` check silently misses ``--kind={kind}`` and
+    reports the site as absent rather than as present-in-another-form.
+    """
+    return [token for token in _KIND_ARG_RE.findall(block) if not _is_form_placeholder(token)]
+
+
 @lru_cache(maxsize=1)
 def _corpus_grant_kinds() -> tuple[str, ...]:
     """Every authorization kind actually granted somewhere in the marketplace.
@@ -218,9 +240,7 @@ def _corpus_grant_kinds() -> tuple[str, ...]:
         if _GRANT_VERB not in text:
             continue
         for block in _invocations(text, _GRANT_VERB):
-            for token in _KIND_ARG_RE.findall(block):
-                if not _is_form_placeholder(token):
-                    kinds.add(token)
+            kinds.update(_kinds_in(block))
     return tuple(sorted(kinds))
 
 
@@ -233,6 +253,50 @@ def _undeclared_grant_kinds(declared: set[str]) -> list[str]:
     swept out of the documents, the right is parsed out of the roster.
     """
     return [kind for kind in _corpus_grant_kinds() if kind not in declared]
+
+
+@pytest.mark.parametrize(
+    'block,expected_kind,expected_class',
+    [
+        pytest.param(
+            'merge-authorization grant --plan-id P --kind sample-override '
+            '--head abc --gap-class sample-gap\n',
+            'sample-override',
+            'sample-gap',
+            id='space-separated',
+        ),
+        pytest.param(
+            'merge-authorization grant --plan-id=P --kind=sample-override '
+            '--head=abc --gap-class=sample-gap\n',
+            'sample-override',
+            'sample-gap',
+            id='equals-separated',
+        ),
+        pytest.param(
+            'merge-authorization grant --plan-id P --kind=sample-override '
+            '--head abc --gap-class sample-gap\n',
+            'sample-override',
+            'sample-gap',
+            id='mixed-forms',
+        ),
+    ],
+)
+def test_argument_matchers_are_form_agnostic(block, expected_kind, expected_class):
+    """The ``--kind`` / ``--gap-class`` readers accept BOTH argparse forms.
+
+    argparse accepts ``--kind X`` and ``--kind=X`` interchangeably, so a matcher
+    keyed to whitespace alone reads an equals-form invocation as carrying no
+    ``--kind`` at all. That miss is fail-OPEN in guards built to be fail-closed:
+    an empty kind list for a block drops the site out of ``_corpus_grant_kinds``,
+    so ``test_every_granted_kind_is_declared_in_the_roster`` and its mutation
+    guard never see it, and ``test_every_grant_site_declares_a_gap_class``
+    short-circuits on its ``if kinds`` precondition. The equals form is pinned
+    here explicitly because it is the form no real invocation in the corpus
+    currently uses — the corpus alone would keep this passing while the matcher
+    silently lost the ability to see it.
+    """
+    assert _kinds_in(block) == [expected_kind]
+    assert _GAP_CLASS_ARG_RE.findall(block) == [expected_class]
 
 
 def test_roster_is_non_empty():
@@ -317,7 +381,7 @@ def test_every_head_bound_row_has_a_grant_site(kind, row_line):
     assert site.is_file(), f'{kind} names a site: document that does not exist: {site}'
 
     if bound_via == 'grant':
-        matching = [block for block in _invocations(_read(site), _GRANT_VERB) if f'--kind {kind}' in block]
+        matching = [block for block in _invocations(_read(site), _GRANT_VERB) if kind in _kinds_in(block)]
         assert matching, (
             f'{kind} claims bound_via: grant but no "{_GRANT_VERB}" invocation carrying '
             f'--kind {kind} exists in the document its site: claim names ({site.name}). '
@@ -465,7 +529,7 @@ def test_every_grant_site_declares_a_gap_class():
         if _GRANT_VERB not in text:
             continue
         for block in _invocations(text, _GRANT_VERB):
-            kinds = [k for k in _KIND_ARG_RE.findall(block) if not _is_form_placeholder(k)]
+            kinds = _kinds_in(block)
             if kinds and not _GAP_CLASS_ARG_RE.search(block):
                 unlabelled.append(f'{doc.relative_to(_BUNDLE_ROOT)}: --kind {kinds[0]}')
 
