@@ -53,8 +53,13 @@ Return shape (CLI emits TOON; programmatic callers consume
 
     status: success
     step_id: <the step whose return triggered the check>
+    project_dir: <the tree that was actually observed>
     clean: true|false
     offending_paths[N]: [<dirty tracked paths outside .plan/>]
+
+``project_dir`` is echoed because WHICH tree was observed is the one fact that
+distinguishes a real ``clean: true`` from the vacuous one a worktree-aimed run
+would produce; without it a log line cannot tell the two apart.
 
 ``clean: true`` with an empty ``offending_paths[]`` is the expected outcome. A
 git failure (the directory is not a repository, git is unavailable) returns
@@ -68,7 +73,7 @@ executor proxy::
     python3 .plan/execute-script.py \
       plan-marshall:phase-6-finalize:post_run_source_guard check \
       --step-id "<finalize step id>" \
-      --project-dir "<worktree or main-checkout root>"
+      --project-dir "<main checkout root>"
 """
 
 from __future__ import annotations
@@ -80,10 +85,10 @@ from pathlib import Path
 
 from toon_parser import serialize_toon
 
-#: Path prefixes whose dirty entries are NEVER offenders. Every finalize step
+#: Path prefix whose dirty entries are NEVER offenders. Every finalize step
 #: writes plan state under ``.plan/``; those writes are the normal mode of
 #: operation, not an unpushable source edit.
-_EXCLUDED_PREFIXES: tuple[str, ...] = ('.plan/',)
+_PLAN_STATE_PREFIX: str = '.plan/'
 
 #: Porcelain status letters that introduce a second (original) path field in
 #: ``-z`` output: rename and copy. Both sides are reported, because either one
@@ -92,11 +97,6 @@ _TWO_PATH_STATUSES: frozenset[str] = frozenset({'R', 'C'})
 
 #: Seconds allowed for the single ``git status`` observation.
 _GIT_TIMEOUT_SECONDS: int = 60
-
-
-def _is_excluded(path: str) -> bool:
-    """Whether a repo-relative path falls under an excluded prefix."""
-    return any(path.startswith(prefix) for prefix in _EXCLUDED_PREFIXES)
 
 
 def parse_porcelain_z(payload: str) -> list[str]:
@@ -142,21 +142,23 @@ def filter_tracked_source(paths: list[str]) -> list[str]:
         paths: Repo-relative paths decoded from a tracked-only porcelain run.
 
     Returns:
-        The sorted, de-duplicated subset that lies outside every excluded
-        prefix. Empty means the step left no unpushable tracked edit.
+        The sorted, de-duplicated subset that lies outside ``.plan/``. Empty
+        means the step left no unpushable tracked edit.
     """
-    return sorted({path for path in paths if path and not _is_excluded(path)})
+    return sorted({path for path in paths if path and not path.startswith(_PLAN_STATE_PREFIX)})
 
 
 def check_tracked_source(project_dir: Path) -> tuple[bool, list[str], str | None]:
-    """Observe real worktree state and report dirty tracked source paths.
+    """Observe real working-tree state and report dirty tracked source paths.
 
     Runs the single tracked-only ``git status`` observation against
     ``project_dir`` and applies the two-filter path predicate documented in the
     module docstring.
 
     Args:
-        project_dir: Worktree root (or main checkout) to observe.
+        project_dir: Working tree to observe. The predicate is general, but the
+            documented caller (item 5f sub-item (0)) must pass the MAIN
+            CHECKOUT — see the module docstring for why the worktree is wrong.
 
     Returns:
         A ``(clean, offending_paths, error)`` triple. ``clean`` is ``True`` when
@@ -224,7 +226,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     check_parser = sub.add_parser(
         'check',
-        help='Observe the worktree for dirty tracked source outside .plan/',
+        help='Observe a working tree for dirty tracked source outside .plan/',
         allow_abbrev=False,
     )
     check_parser.add_argument(
