@@ -307,8 +307,16 @@ def build_class_domain() -> dict[str, set[str]]:
     ``build_main`` matches a build-class prefix but never enters the roster.
 
     Subcommands come from the roster's real argparse capture where available and
-    from :func:`_subcommands_from_source` otherwise, so no notation in the
-    domain contributes an empty population by construction.
+    from :func:`_subcommands_from_source` otherwise.
+
+    **An empty subcommand set is expected for some entries, and it is ambiguous.**
+    The ``extension`` modules sit under a build-class prefix and register no CLI
+    at all, so they legitimately contribute nothing to sweep. But a script whose
+    parser is built in a way :func:`_subcommands_from_source` cannot read
+    statically ALSO yields the empty set, and the two are indistinguishable here.
+    A consumer must therefore treat "empty" as "nothing to assert", never as
+    "verified to have no subcommands" — and must anchor its anti-vacuity guard on
+    the number of assertions it actually makes, not on the size of this mapping.
     """
     prefixes = tuple(build_class_prefixes())
     roster = build_class_roster()

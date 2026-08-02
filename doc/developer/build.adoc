@@ -114,7 +114,7 @@ Three surfaces are outside the denominator on purpose even though tests exercise
 Two conditions must both be met before widening is worth revisiting:
 +
 . `build.py:cmd_coverage` widens its `--cov` set in lock-step, so the two controlling sites stay in agreement.
-. `build.py` and `marketplace/targets/**` become claimable by a `classify_paths()` predicate. Today they match none, so a deliverable that declares either resolves to the `unknown` file-type bucket and is blocked at plan time — which is what makes the widening unlandable rather than merely undesired.
+. `build.py` and `marketplace/targets/**` become claimable by a `classify_paths()` predicate. Both now match, so a deliverable declaring either resolves to `production` rather than the `unknown` file-type bucket. This condition is met — the widening is no longer unlandable, only undesired for the denominator reason above.
 
 * `[tool.ruff]` — linter/formatter configuration
 * `[tool.mypy]` — type checker configuration

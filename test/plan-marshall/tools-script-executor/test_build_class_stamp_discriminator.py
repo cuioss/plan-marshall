@@ -218,11 +218,20 @@ def test_predicate_sweep_covers_the_whole_build_class_domain_not_just_the_roster
         'subcommands -- it must see BOTH partitions or it pins only one side of the '
         'discriminator.'
     )
-    assert set(domain) - set(roster), (
-        'the derived domain adds no notation beyond the roster, so this sweep is a '
-        'restatement of the roster sweep rather than the wider check it claims to be. '
-        'If every build-class script now routes through build_main, delete this test '
-        'rather than letting it stand as a vacuous duplicate.'
+
+    # Anchor on ASSERTIONS MADE, not on notations added. Most of the notations the
+    # domain adds over the roster are CLI-less ``extension`` modules contributing
+    # zero subcommands, so a notation-count difference stays satisfied even when
+    # the sweep has degenerated into a restatement of the roster sweep -- which is
+    # precisely the state this anchor exists to catch.
+    roster_assertions = sum(len(subcommands) for subcommands in roster.values())
+    domain_assertions = swept_true + swept_false
+    assert domain_assertions > roster_assertions, (
+        f'the domain sweep made {domain_assertions} predicate assertions against the '
+        f'roster sweep\'s {roster_assertions} -- it is not actually wider, so it is a '
+        'duplicate rather than the additional coverage it claims. If every build-class '
+        'script now routes through build_main, delete this test instead of letting it '
+        'stand as a vacuous restatement.'
     )
 
 

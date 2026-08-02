@@ -56,9 +56,9 @@ The duplication is of *content*, not of *plumbing*: each backend's test module d
 
 *Where a future consolidation belongs.* `test/plan-marshall/extension-api/fixtures/coverage/` already stores fixtures organised **by format** rather than by consumer — `cobertura-high.xml`, `cobertura-low.xml`, `jacoco-high.xml`, `jacoco-low.xml`, `jest-high.json`, `jest-low.json` and `sample.lcov`, all distinct blobs. It is the natural destination. `test/plan-marshall/build-npm/coverage/` and `test/pm-dev-frontend-cui/coverage/` hold JSON and lcov, not XML, and are out of scope for an XML-fixture consolidation.
 
-*Why the cheap 3-way dedup is nevertheless deferred.* The blocker is structural, not a preference. The fixtures are `.xml` files under `test/`, and the only `classify_paths()` predicates claiming anything under `test/` are `build-pyproject`'s `test/**/*.py` / `test/*.py` (Maven claims `**/pom.xml` and nothing else there). A `.xml` path under `test/` is claimed by no registered extension, and a deliverable carrying at least one unclaimed path resolves to the `unknown` file-type bucket, which is a hard block at plan time — mixing the `.xml` moves with the claimed `.py` constant edits does not rescue it.
+*Why the cheap 3-way dedup was previously deferred, and why it no longer is.* The blocker was structural: the fixtures are `.xml` files under `test/`, and the only `classify_paths()` predicates claiming anything under `test/` were `build-pyproject`'s `test/**/*.py` / `test/*.py` (Maven claims `**/pom.xml` and nothing else there). A `.xml` path under `test/` was claimed by no registered extension, so a deliverable carrying one resolved to the `unknown` file-type bucket and was hard-blocked at plan time.
 
-Unblocking therefore requires a `classify_paths()` predicate that claims test-fixture data files — a change to the extension contract, not to the fixtures. That gap is tracked as lesson `2026-07-26-20-001` against `plan-marshall:build-pyproject`.
+That blocker is gone: `build-pyproject`'s `classify_paths()` now claims non-Python test-fixture content under the pytest roots, `test/**/*.xml` included, so such a deliverable resolves to `test` rather than `unknown`. The dedup is landable; it is simply not yet done.
 
 == Patterns
 
