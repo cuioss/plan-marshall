@@ -13,6 +13,17 @@ from the declaration alone. This seam is the runtime observation that closes
 that gap — item 5f of ``phase-6-finalize/SKILL.md`` calls it once per post-run
 band step return.
 
+**The tree passed to ``--project-dir`` is the MAIN CHECKOUT, not the plan's
+worktree.** Every ``post_run_review: true`` step is ordered after
+``default:branch-cleanup`` (70), which merges and then REMOVES the worktree, so
+by the time this guard runs the worktree path no longer exists on disk. A
+``git -C`` against it fails outright and returns ``status: error`` with
+``clean: true`` — and because the caller records nothing on the error branch,
+aiming this guard at the worktree would make its whole ``clean: false`` arm
+unreachable: a guard that can never fire. The main checkout is also the right
+tree on the merits, since that is where a post-run step's stray tracked write
+actually lands, on the merged base branch.
+
 Three design decisions this seam settles. They are stated here for the
 implementer and restated for the caller in ``phase-6-finalize/SKILL.md`` item 5f
 sub-item (0), which marks them "do NOT re-derive them" — the point is that no

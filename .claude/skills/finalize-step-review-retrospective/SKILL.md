@@ -128,12 +128,16 @@ Read both resolved and pending findings (the retrospective wants the full
 picture). The records carry first-class `author` and `kind` fields.
 
 **Zero-findings skip-clean exit**: if `filtered_count` is 0, record the step as
-done and return — there is nothing to compare. Resolve the worktree HEAD SHA
-immediately before marking done, per § HEAD-dependency (substitute `.` for
-`{worktree_path}` on the main-checkout flow):
+done and return — there is nothing to compare. Resolve the HEAD SHA immediately
+before marking done, per § HEAD-dependency. Read it from **`{main_checkout}`**:
+this step is ordered at 990, after `default:branch-cleanup` (70) has merged and
+REMOVED the worktree, so `{worktree_path}` no longer exists on disk and a
+`git -C` against it fails — leaving the mandatory `--head-at-completion`
+unresolvable. `{main_checkout}` is the tree the merge landed on and is present
+on both the worktree and no-worktree flows:
 
 ```bash
-git -C {worktree_path} rev-parse HEAD
+git -C {main_checkout} rev-parse HEAD
 ```
 
 Capture stdout as `{sha}` and forward it via `--head-at-completion`:
@@ -246,12 +250,13 @@ shell argument).
 
 ### Step 5: Record the step outcome
 
-Resolve the worktree HEAD SHA immediately before marking done, per
-§ HEAD-dependency (substitute `.` for `{worktree_path}` on the main-checkout
-flow):
+Resolve the HEAD SHA immediately before marking done, per § HEAD-dependency.
+Read it from **`{main_checkout}`** — at `order: 990` the worktree
+`default:branch-cleanup` (70) removed is gone, so `{worktree_path}` cannot be
+read; see the Step 4 note for the full reasoning:
 
 ```bash
-git -C {worktree_path} rev-parse HEAD
+git -C {main_checkout} rev-parse HEAD
 ```
 
 Capture stdout as `{sha}` and forward it via `--head-at-completion`:

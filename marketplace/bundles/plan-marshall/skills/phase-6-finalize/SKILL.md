@@ -1110,8 +1110,18 @@ FOR each step_id in manifest.phase_6.steps:
 
           ```bash
           python3 .plan/execute-script.py plan-marshall:phase-6-finalize:post_run_source_guard check \
-            --step-id {step_id} --project-dir {worktree_path}
+            --step-id {step_id} --project-dir {main_checkout}
           ```
+
+          **The tree to observe is `{main_checkout}`, never `{worktree_path}`.** Every
+          `post_run_review: true` step is ordered after `default:branch-cleanup` (70), which
+          merges and then REMOVES the worktree — so by the time this guard runs, `{worktree_path}`
+          no longer exists on disk and a `git -C` against it fails outright, returning
+          `status: error` with `clean: true`. Since (0)'s error branch records nothing, pointing
+          the guard at the worktree would make its entire `clean: false` arm structurally
+          unreachable: a guard that can never fire. `{main_checkout}` is also the correct tree on
+          the merits — a post-run step's stray tracked write lands there, on the merged base
+          branch, which is exactly the unpushable edit this guard exists to surface.
 
           The guard's three settled design decisions — do NOT re-derive them:
 
