@@ -30,7 +30,7 @@ implements:
 
 **Frontmatter is the sole source of truth for finalize-step discovery.** The `find_implementors()` scanner reads the `implements:` declaration from each candidate step doc and selects every doc whose declaration includes the canonical value above. The scanner does **not** read the markdown body for a discovery signal, and it does **not** identify a step by a directory-name or filename heuristic. A step doc whose frontmatter omits the declaration is not discovered.
 
-Beyond the `implements:` declaration, each finalize-step doc carries the following frontmatter contract — five required fields plus three conditionally-required fields. These fields replace the removed `BUILT_IN_FINALIZE_STEPS` / `OPTIONAL_BUNDLE_FINALIZE_STEPS` lists and the `*_DESCRIPTIONS` maps as the per-step source of truth:
+Beyond the `implements:` declaration, each finalize-step doc carries the following frontmatter contract — five required fields plus four conditionally-required fields. These fields replace the removed `BUILT_IN_FINALIZE_STEPS` / `OPTIONAL_BUNDLE_FINALIZE_STEPS` lists and the `*_DESCRIPTIONS` maps as the per-step source of truth:
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -42,6 +42,7 @@ Beyond the `implements:` declaration, each finalize-step doc carries the followi
 | `mutates_source` | bool | Conditional | `true` means the step edits tracked source at runtime; such a step MUST be ordered before `default:branch-cleanup`, per [phase-6-finalize/standards/source-edit-pushability.md](../../phase-6-finalize/standards/source-edit-pushability.md). Declaring this field is **mandatory** for any step whose `order` is at or after the dynamically-resolved merge gate (`default:branch-cleanup`) and optional for a step ordered below it. |
 | `head_dependent` | bool | Conditional | `true` means the step's verdict is computed against a specific worktree HEAD, so a recorded `done` is only valid for the SHA it was computed against. Such a step MUST persist `--head-at-completion {sha}` on its terminal `mark-step-done` call, and the dispatcher's re-entry check re-fires it when HEAD has advanced (a loop-back commit, a force-push, or a rebase). The governing discriminator, applied verbatim so classification is reproducible: **"would this verdict change if HEAD changed?"** Declaring this field is **mandatory** for a step matching either of two shapes — (1) it records a pass/fail verdict over tracked source or over the remote state of that source, or (2) it is a settle-stage step whose edits land directly in the worktree (its edits were computed against the HEAD it read, so a HEAD advance supersedes them) — and optional (defaulting to `false`) otherwise. A step matching **neither** shape — one that records *an action performed* (rebase, push, PR created, archive written) and leaves no edits of its own — has no verdict to go stale and is not head-dependent. |
 | `advances_main_via_rebase` | bool | Conditional | `true` means a successful non-noop run of the step replays the worktree's history onto a newly-fetched base tip, advancing it. This is the fact that arms the dispatcher's **post-rebase step-doc re-resolution contract** (see [phase-6-finalize/SKILL.md](../../phase-6-finalize/SKILL.md) § "Post-rebase step-doc re-resolution contract"): every subsequent step's authoritative doc is re-read from the just-rebased worktree at dispatch time rather than trusting the session-start-loaded copy. Declaring this field is **mandatory** for any step that performs a rebase or merge capable of advancing the worktree's history, and optional (defaulting to `false`) otherwise. |
+| `records_facts` | list[str] | Conditional | The structured fact keys the step's terminal `mark-step-done` call sites persist **between them** via `--fact KEY=VALUE` — a step-level declaration over a multi-branch step, NOT a per-branch mandate (see [Structured step facts](#structured-step-facts-records_facts) for the reconciliation rule that fixes its exact per-branch force). The governing discriminator, applied verbatim so classification is reproducible: **"what question would a retrospective or audit ask about this step that its prose summary cannot answer?"** Every declared key MUST be justified by such a consumer question, so the obligation set is derived per step rather than imposed as a uniform template. Declaring this field is **mandatory** for a step that has at least one such consumer question — including, unconditionally, any step matching the `work_performed` trigger below — and the field stays **absent** for a step whose action is fully described by its `outcome` (absence means "no obligation", not "obligation not yet written"). |
 
 **Consuming `head_dependent` — per-step call sites vs whole-set call sites.** The fact is declared per step, and a consumer MUST consume it at the granularity its question actually has:
 
@@ -51,6 +52,53 @@ Beyond the `implements:` declaration, each finalize-step doc carries the followi
 | The derivation test guard | **whole-set** | Materialises the full head-dependent set through `find_implementors()` and asserts over it. Eagerness is the point here: the guard exists to enumerate every implementor, so a step added later is covered automatically. |
 
 A per-step call site that materialises the whole set on every loop iteration is a defect, not an implementation detail — it widens a lazy contract into an eager one for no gain.
+
+### Structured step facts (`records_facts`)
+
+A step record persists its outcome as `outcome` plus a free-text `display_detail`. Prose is not queryable: a retrospective cannot ask "did this rebase replay anything?" of a sentence. `records_facts` names the structured keys a step persists through `mark-step-done --fact KEY=VALUE` so `display_detail` becomes a **rendering** of recorded facts rather than their sole record.
+
+#### Declaration is step-level, obligation is per-branch-conditional
+
+The two levels are genuinely different, and conflating them is what makes a naive reading of this field unimplementable. Frontmatter is step-level — there is exactly one block per step doc — but a step doc has multiple terminal `mark-step-done` call sites with deliberately different honest fact sets (`branch-cleanup.md` has four `--outcome done` branches plus a `loop_back` call; `sonar-roundtrip.md` has three `--outcome done` branches plus an `--outcome failed` call). The delta rule between the levels is set-valued, in both directions:
+
+- **Declaration = UNION.** `records_facts` declares the union over the step's terminal call sites of the fact keys the step *can* record. A declared key is NOT a per-branch mandate — declaring `action` for `branch-cleanup` does not oblige a branch that performed no rebase to invent one.
+- **Each branch records the honest SUBSET.** A terminal call site MUST record key `K` when that path actually performed the action or computation that produces `K`, and MUST NOT record `K` when it did not. Absence of a key on a branch is itself the honest signal that the branch has no value for it.
+- **No orphan declaration (∃-direction).** Every declared key MUST be recorded by at least one terminal call site in that doc. This is what catches a declared-but-unwired obligation.
+- **No undeclared record (∀-direction).** Every `--fact {key}=` wired at any terminal call site MUST appear in that doc's `records_facts` declaration. This is what catches wiring that drifts past the contract.
+
+These two quantified directions are the ONLY declaration-vs-wiring detector scope. A conformance test asserts these two and no third scope.
+
+#### `work_performed` — one named cross-cutting fact
+
+`work_performed` (boolean) is **exactly one fact with a fixed key**, deliberately NOT a per-step template: every other fact key stays per-step-derived from its own consumer question, and a step with a single `done` path does not declare this one either.
+
+- **Conditional trigger.** A step MUST declare `work_performed` when at least one of its `--outcome done` branches is reachable **without the step having performed its characteristic work**.
+- **Consumer question.** *"Did this step actually do its job, or did it record `done` having done nothing?"* — the question `outcome` alone cannot answer, because a `done` that scanned and found nothing and a `done` that never scanned are the same record.
+- **The one deliberate exception to the honest-subset rule.** For a step that declares it, EVERY `--outcome done` call site records `work_performed` — `true` or `false`, never omitted. The exception is load-bearing rather than cosmetic: for every other key, absence on a branch honestly means "this branch has no such value", but `work_performed` is *precisely* the fact whose absence would be ambiguous between "the branch did no work" and "the wiring forgot the fact" — which is the ambiguity the fact exists to remove.
+- **Exception scope.** The `∀ done-branches` obligation is scoped to `--outcome done` call sites only. An `--outcome failed` record is already unambiguous about non-completion via its outcome, so recording `work_performed` there is permitted (and instructed where honest) but not obligatory.
+
+#### Two-source answer contract for "did this step run?"
+
+The question decomposes into two halves with two different sources, and **neither source answers both**:
+
+| Half of the question | Authoritative source |
+|----------------------|----------------------|
+| *Was the step selected at all?* | `manifest.phase_6.steps`, persisted per-plan in `execution.toon`. A step absent from that list was never entered, and no step record exists to carry any fact. |
+| *Did the step that ran perform its work?* | `work_performed` on the step record. |
+
+The dispatcher's log marker (`[STEP] ... Executing step:`) is a source for **neither** half. Its absence is ambiguous across three distinct states — a never-selected step, a re-entry SKIP that deliberately emits no line, and a step that ran — so it can neither confirm nor refute either half. A consumer MUST NOT read marker absence as evidence that a step did not run.
+
+#### Declared obligations
+
+Each row is the step-level **union** per the reconciliation rule above — NOT a per-branch mandate. The **Provenance** column keeps the two Watch-entry-named steps distinguishable from the operator-added third, so a coverage assertion tests against the real Watch-entry anchor rather than against whatever the obligation set happens to contain.
+
+| Step | Provenance | Union of fact keys | Per-call-site carriers | Consumer question earning each key |
+|------|-----------|--------------------|------------------------|------------------------------------|
+| `default:finalize-step-sync-baseline` | Watch-entry anchor | `action`, `upstream_commit_count`, `work_performed` | `action` / `upstream_commit_count` are carried by the branch that actually rebased. The Skipped branch performs no rebase and records `work_performed=false` alone. | `action` — *"did this rebase replay anything, or was it a no-op?"* `upstream_commit_count` — *"how far behind was the branch?"* |
+| `default:branch-cleanup` | Watch-entry anchor | `action`, `upstream_commit_count`, `merge_mechanism`, `work_performed` | `action` / `upstream_commit_count` are carried only by a terminal call site whose path actually reached "Rebase Branch onto Base" and parsed its `worktree-rebase-to` TOON. `merge_mechanism` only by a path that actually merged. | The same rebase pair as above, plus `merge_mechanism` — *"which merge mechanism landed this plan?"* (`pr safe-merge` vs the `use_merge_queue` enqueue), unanswerable from prose once `use_merge_queue` made it a two-way branch. |
+| `default:sonar-roundtrip` | operator-added — NOT a Watch-entry member | `count_status`, `new_code_issue_count`, `issues_fetched`, `work_performed` | The three scan facts are carried only by the call sites that actually scanned. The no-scan branch records `work_performed=false` alone. | `count_status` — *"was the count confirmed or undecidable?"* `new_code_issue_count` — *"how many new-code issues did the confirmed scan find?"* `issues_fetched` — *"how many findings did this producer actually hand to the unified triage?"*, the question that distinguishes a confirmed non-zero count from the findings that reached the triage store, and whose disagreement with `new_code_issue_count` is itself a producer defect. |
+
+The three scan facts on `default:sonar-roundtrip` are already computed from the `sonar-scan-summary.jsonl` marker and already declared in that step's `## Output` TOON — they are discarded at the record boundary today, which is what wiring them fixes.
 
 ### Addressing Surface
 
@@ -94,10 +142,18 @@ def find_implementors(ext_point: str) -> list[dict]:
         workflow/ winning on name collision)
       - project-local .claude/skills/finalize-step-*/SKILL.md (project steps)
 
-    Each implementor record carries the step's frontmatter:
-      {name, order, default_on, presets, description, source, path}
+    Each implementor record carries:
+      {name, order, default_on, presets, canonicals, description,
+       source, path}
 
     where source is one of: built-in, bundle-optional, project.
+
+    The record is deliberately NOT the whole frontmatter — it carries the
+    fields the seeding/preset consumers need, not every declared key. The
+    conditional obligation fields (records_facts, mutates_source,
+    head_dependent, advances_main_via_rebase) are NOT on this record; a
+    consumer that needs one reads it from the step doc's frontmatter
+    directly (see extension_discovery._read_frontmatter_fields).
 
     Resolves both the source structure
     (marketplace/bundles/{bundle}/skills/...) and the versioned cache

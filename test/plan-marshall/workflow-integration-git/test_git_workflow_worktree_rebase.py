@@ -6,7 +6,12 @@ recognises (per the docstring on ``_detect_worktree_state``):
 
     1. clean         — branch already at base; rebase is a no-op.
     2. dirty         — uncommitted changes; reject without touching git.
-    3. ahead         — branch has commits base lacks; rebase succeeds.
+    3. ahead         — branch has commits base lacks. A STRICTLY-ahead branch
+                       (behind == 0) already contains base, so the rebase
+                       replays nothing and HEAD is unchanged: action ``noop``.
+                       A diverged branch (ahead > 0 AND behind > 0, which
+                       ``_detect_worktree_state`` also labels ``ahead``) does
+                       replay and moves HEAD: action ``rebased``.
     4. behind        — base has commits branch lacks; rebase fast-forwards.
     5. conflict      — rebase produces conflicts; status: conflict, with
                        conflict paths reported.
@@ -249,9 +254,21 @@ class TestRebaseToDirty:
 
 
 class TestRebaseToAhead:
-    """Branch is strictly ahead of base — rebase succeeds (no-op fast-forward)."""
+    """Branch is strictly ahead of base — the rebase replays nothing.
 
-    def test_ahead_state_rebases_successfully(self, rebase_env: dict, monkeypatch: pytest.MonkeyPatch) -> None:
+    ``ahead == 1, behind == 0`` means the branch ALREADY contains
+    ``origin/main``, so ``git rebase origin/main`` has nothing to replay and
+    leaves HEAD untouched. The honest verdict is therefore ``action: 'noop'``:
+    reporting ``'rebased'`` on this path asserts a history rewrite that provably
+    did not happen. The ``rebased`` verdict belongs to the paths where HEAD
+    actually moves — see ``TestRebaseToBehind`` (fast-forward),
+    ``TestRebaseToNoRemoteFallback`` (fast-forward onto local base), and
+    ``TestRebaseToStaleLocalBaseRegression`` (diverged, genuinely replays).
+    """
+
+    def test_ahead_state_replays_nothing_and_reports_noop(
+        self, rebase_env: dict, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         _create_branch_worktree(rebase_env['main_repo'], rebase_env['worktree'], 'feature/ahead')
         # Add a commit on the branch only.
         _commit_file(rebase_env['worktree'], 'feature.txt', 'feature\n', 'feat: add feature')
@@ -260,12 +277,36 @@ class TestRebaseToAhead:
 
         assert result['status'] == 'success'
         assert result['state'] == 'ahead'
-        assert result['action'] == 'rebased'
+        assert result['action'] == 'noop'
         assert result['ahead'] == 1
         assert result['behind'] == 0
-        assert 'rebased' in result['message']
-        # The branch tip commit must still be present in the worktree.
+        assert 'replayed no commits' in result['message']
+        # The branch's own commit must survive the no-op rebase.
         assert (rebase_env['worktree'] / 'feature.txt').exists()
+
+    def test_ahead_state_leaves_head_sha_unchanged(
+        self, rebase_env: dict, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Pin the ``noop`` verdict to history identity, not to the label alone.
+
+        The ``action`` field is only trustworthy if it is derived from evidence.
+        This asserts the evidence directly: the worktree's HEAD sha is byte-identical
+        before and after the call, and the payload's own ``pre_sha`` / ``post_sha``
+        report that same identity — so a future regression that re-hardcodes
+        ``action: 'rebased'`` cannot pass by relabelling alone.
+        """
+        _create_branch_worktree(rebase_env['main_repo'], rebase_env['worktree'], 'feature/ahead-sha')
+        _commit_file(rebase_env['worktree'], 'feature.txt', 'feature\n', 'feat: add feature')
+        head_before = _git(rebase_env['worktree'], 'rev-parse', 'HEAD').stdout.strip()
+
+        result = _invoke_rebase(rebase_env, monkeypatch)
+
+        head_after = _git(rebase_env['worktree'], 'rev-parse', 'HEAD').stdout.strip()
+        assert head_after == head_before, 'a zero-replay rebase must not move HEAD'
+        # The payload substantiates the verdict with the same two SHAs.
+        assert result['pre_sha'] == head_before
+        assert result['post_sha'] == head_after
+        assert result['action'] == 'noop'
 
 
 # ---------------------------------------------------------------------------

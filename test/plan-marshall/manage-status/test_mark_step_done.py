@@ -38,7 +38,13 @@ def _args(
     display_detail: str | None = None,
     head_at_completion: str | None = None,
     loop_back_target: str | None = None,
+    fact: list[str] | None = None,
 ) -> Namespace:
+    """Build the mark-step-done Namespace.
+
+    ``fact`` mirrors the CLI's ``action='append'`` accumulation: a list of raw
+    ``KEY=VALUE`` tokens, or ``None`` when the caller passed no ``--fact`` at all.
+    """
     return Namespace(
         plan_id=plan_id,
         phase=phase,
@@ -48,6 +54,7 @@ def _args(
         display_detail=display_detail,
         head_at_completion=head_at_completion,
         loop_back_target=loop_back_target,
+        fact=fact,
     )
 
 
@@ -752,3 +759,246 @@ def test_mark_step_force_overwrites_stale_legacy_key_without_duplicate(plan_cont
     phase_steps = persisted['metadata']['phase_steps']['6-finalize']
     assert phase_steps == {'push': {'outcome': 'skipped', 'display_detail': 'new'}}
     assert 'default:push' not in phase_steps
+
+
+# =============================================================================
+# Structured step facts (--fact KEY=VALUE)
+#
+# The facts dict is what makes a step record answer structured questions that
+# its display_detail prose cannot. These cases pin the persistence shape, the
+# omit-when-absent legacy guarantee, accumulation across repeated flags, the
+# malformed-token rejection, and facts-only change detection.
+# =============================================================================
+
+
+def test_mark_step_persists_facts_into_the_record(plan_context):
+    """A single --fact is parsed into a facts dict persisted on the entry."""
+    plan_id = 'mark-step-facts-single'
+    _make_plan(plan_id)
+    result = cmd_mark_step_done(
+        _args(
+            plan_id,
+            '6-finalize',
+            'finalize-step-sync-baseline',
+            'done',
+            display_detail='no-op rebase',
+            fact=['action=noop'],
+        )
+    )
+
+    assert result['status'] == 'success'
+    assert result['changed'] is True
+    assert result['facts'] == {'action': 'noop'}
+
+    persisted = read_status(plan_id)
+    assert persisted['metadata']['phase_steps']['6-finalize']['finalize-step-sync-baseline'] == {
+        'outcome': 'done',
+        'display_detail': 'no-op rebase',
+        'facts': {'action': 'noop'},
+    }
+
+
+def test_mark_step_multiple_fact_flags_accumulate_into_one_dict(plan_context):
+    """Repeated --fact flags accumulate into a single dict on the record."""
+    plan_id = 'mark-step-facts-multi'
+    _make_plan(plan_id)
+    result = cmd_mark_step_done(
+        _args(
+            plan_id,
+            '6-finalize',
+            'finalize-step-sync-baseline',
+            'done',
+            fact=['action=noop', 'upstream_commit_count=0', 'work_performed=true'],
+        )
+    )
+
+    assert result['status'] == 'success'
+    assert result['facts'] == {
+        'action': 'noop',
+        'upstream_commit_count': '0',
+        'work_performed': 'true',
+    }
+
+    persisted = read_status(plan_id)
+    entry = persisted['metadata']['phase_steps']['6-finalize']['finalize-step-sync-baseline']
+    assert entry['facts'] == {
+        'action': 'noop',
+        'upstream_commit_count': '0',
+        'work_performed': 'true',
+    }
+
+
+def test_mark_step_fact_value_may_contain_equals_sign(plan_context):
+    """Only the FIRST '=' separates key from value, so a value may contain '='."""
+    plan_id = 'mark-step-facts-equals'
+    _make_plan(plan_id)
+    result = cmd_mark_step_done(
+        _args(plan_id, '6-finalize', 'push', 'done', fact=['detail=a=b'])
+    )
+
+    assert result['status'] == 'success'
+    assert result['facts'] == {'detail': 'a=b'}
+
+
+def test_mark_step_omits_facts_key_when_flag_absent(plan_context):
+    """Caller omitting --fact produces the byte-identical historical record shape."""
+    plan_id = 'mark-step-facts-omitted'
+    _make_plan(plan_id)
+    result = cmd_mark_step_done(_args(plan_id, '1-init', 'step-a', 'done', display_detail='legacy'))
+
+    assert result['status'] == 'success'
+    # The result echoes the field as None, but persistence omits the key entirely.
+    assert result['facts'] is None
+
+    persisted = read_status(plan_id)
+    entry = persisted['metadata']['phase_steps']['1-init']['step-a']
+    assert entry == {'outcome': 'done', 'display_detail': 'legacy'}
+    assert 'facts' not in entry
+
+
+@pytest.mark.parametrize(
+    ('bad_token', 'plan_id'),
+    [
+        ('work_performed', 'mark-step-facts-bad-no-separator'),  # no '=' separator at all
+        ('=noop', 'mark-step-facts-bad-empty-key'),  # empty key
+    ],
+    ids=['no_separator', 'empty_key'],
+)
+def test_mark_step_rejects_malformed_fact_token(plan_context, bad_token, plan_id):
+    """A malformed --fact token is named in an invalid_fact error, never dropped."""
+    _make_plan(plan_id)
+    result = cmd_mark_step_done(
+        _args(plan_id, '6-finalize', 'push', 'done', fact=[bad_token])
+    )
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'invalid_fact'
+    assert result['offending_token'] == bad_token
+    assert bad_token in result['message']
+
+    # The rejection happens before any write.
+    persisted = read_status(plan_id)
+    assert 'phase_steps' not in persisted.get('metadata', {})
+
+
+def test_mark_step_malformed_fact_rejected_even_alongside_valid_facts(plan_context):
+    """One malformed token rejects the whole call — valid siblings are not partially applied."""
+    plan_id = 'mark-step-facts-bad-mixed'
+    _make_plan(plan_id)
+    result = cmd_mark_step_done(
+        _args(plan_id, '6-finalize', 'push', 'done', fact=['action=noop', 'bogus'])
+    )
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'invalid_fact'
+    assert result['offending_token'] == 'bogus'
+
+    persisted = read_status(plan_id)
+    assert 'phase_steps' not in persisted.get('metadata', {})
+
+
+def test_mark_step_idempotent_when_facts_match(plan_context):
+    """Re-call with identical outcome+detail+facts is a no-op (no file rewrite)."""
+    plan_id = 'mark-step-facts-idempotent'
+    _make_plan(plan_id)
+    cmd_mark_step_done(
+        _args(
+            plan_id,
+            '6-finalize',
+            'push',
+            'done',
+            display_detail='pushed',
+            fact=['work_performed=true'],
+        )
+    )
+
+    updated_before = read_status(plan_id)['updated']
+
+    second = cmd_mark_step_done(
+        _args(
+            plan_id,
+            '6-finalize',
+            'push',
+            'done',
+            display_detail='pushed',
+            fact=['work_performed=true'],
+        )
+    )
+
+    assert second['status'] == 'success'
+    assert second['changed'] is False
+    assert second['facts'] == {'work_performed': 'true'}
+    assert 'previous_outcome' not in second
+
+    assert read_status(plan_id)['updated'] == updated_before
+
+
+def test_mark_step_facts_only_change_reports_changed_true(plan_context):
+    """Changing ONLY the facts is a 'changed' overwrite, echoed via previous_facts.
+
+    This is the anti-swallow guard: without facts in the idempotency comparison a
+    facts-only re-call would report changed: false and silently discard the new
+    values.
+    """
+    plan_id = 'mark-step-facts-only-change'
+    _make_plan(plan_id)
+    cmd_mark_step_done(
+        _args(
+            plan_id,
+            '6-finalize',
+            'finalize-step-sync-baseline',
+            'done',
+            display_detail='same detail',
+            fact=['action=noop'],
+        )
+    )
+
+    second = cmd_mark_step_done(
+        _args(
+            plan_id,
+            '6-finalize',
+            'finalize-step-sync-baseline',
+            'done',
+            display_detail='same detail',
+            fact=['action=rebased'],
+        )
+    )
+
+    assert second['status'] == 'success'
+    assert second['changed'] is True
+    assert second['outcome'] == 'done'
+    assert second['display_detail'] == 'same detail'
+    assert second['facts'] == {'action': 'rebased'}
+    assert second['previous_facts'] == {'action': 'noop'}
+
+    persisted = read_status(plan_id)
+    entry = persisted['metadata']['phase_steps']['6-finalize']['finalize-step-sync-baseline']
+    assert entry['facts'] == {'action': 'rebased'}
+
+
+def test_mark_step_adding_facts_to_a_factless_record_reports_changed_true(plan_context):
+    """Going from no facts to facts is a change, with previous_facts echoed as None."""
+    plan_id = 'mark-step-facts-added'
+    _make_plan(plan_id)
+    cmd_mark_step_done(_args(plan_id, '6-finalize', 'push', 'done', display_detail='pushed'))
+
+    second = cmd_mark_step_done(
+        _args(
+            plan_id,
+            '6-finalize',
+            'push',
+            'done',
+            display_detail='pushed',
+            fact=['work_performed=true'],
+        )
+    )
+
+    assert second['status'] == 'success'
+    assert second['changed'] is True
+    assert second['facts'] == {'work_performed': 'true'}
+    assert second['previous_facts'] is None
+
+    persisted = read_status(plan_id)
+    assert persisted['metadata']['phase_steps']['6-finalize']['push']['facts'] == {
+        'work_performed': 'true'
+    }

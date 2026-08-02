@@ -392,14 +392,16 @@ See `phase-6-finalize/standards/branch-cleanup.md` for the canonical sequencing 
 |-------|-----------|--------|--------|
 | `clean` | branch and base point at same commit (ahead/behind both 0) | `success` | no-op, returns `action: noop` |
 | `dirty` | `git status --porcelain` reports any modified, staged, or untracked entries | `error` | rejects with `dirty_worktree`; caller MUST stash, commit, or discard |
-| `ahead` | branch has commits not on base; base has none branch lacks (or both diverge) | `success` | rebases commits onto base via `git rebase {base}`; returns `action: rebased` |
-| `behind` | base has commits branch lacks; branch has none base lacks | `success` | rebases to incorporate base commits via `git rebase {base}`; returns `action: rebased` |
+| `ahead` | branch has commits not on base; base has none branch lacks (or both diverge) | `success` | rebases commits onto base via `git rebase {base}`; returns `action: rebased` when the rebase replayed commits, `action: noop` when it replayed none |
+| `behind` | base has commits branch lacks; branch has none base lacks | `success` | rebases to incorporate base commits via `git rebase {base}`; returns `action: rebased` when the rebase replayed commits, `action: noop` when it replayed none |
 | `conflict` | rebase produces conflicts (`.git/rebase-merge` or `.git/rebase-apply` exists after non-zero exit) | `conflict` | leaves rebase in progress with conflict markers; caller resolves and runs `git rebase --continue` or `git rebase --abort` |
 | `detached` | `git symbolic-ref --short HEAD` returns non-zero (no checked-out branch) | `error` | rejects with `detached_head`; caller MUST check out a branch first |
 | `missing-base` | `git rev-parse --verify {base}^{commit}` returns non-zero | `error` | rejects with `missing_base`; caller MUST fetch or correct the base ref |
 | `missing-target` | resolved worktree path is not a directory on disk | `error` | rejects with `missing_target`; caller MUST recreate the worktree (e.g., `worktree-create`) |
 
 The first six states are detected by inspection before any rebase runs; `conflict` is determined by the rebase attempt itself. `clean` is a no-op; `ahead` and `behind` both attempt the rebase (the detected state is preserved in the response so callers can distinguish what was relocated).
+
+**`action` is derived from the rebase's effect, not from the detected state.** The verb compares the pre-rebase and post-rebase HEAD SHAs (returned as `pre_sha` and `post_sha`) and reports `action: rebased` only when the rebase actually replayed commits and moved HEAD; an attempted rebase that replayed nothing reports `action: noop` with `pre_sha == post_sha`. A strictly-`ahead` branch whose commits already sit on top of the base tip is the common case: the state is `ahead`, the rebase runs, and the honest verdict is `noop`. Callers that record whether work was performed MUST read `action`, never infer it from `state`. The SHA pair rides only on the two states that actually attempt a rebase (`ahead` and `behind`); the `clean` state returns `action: noop` from an early return that never runs `git rebase`, so it carries neither SHA.
 
 ### Output Contract
 
@@ -412,7 +414,9 @@ state: clean | dirty | ahead | behind | conflict | detached | missing-base | mis
 head_branch: {when detected}
 ahead: {commits ahead of base, when detected}
 behind: {commits behind base, when detected}
-action: noop | rebased   # success only
+action: noop | rebased   # success only; derived from pre_sha vs post_sha, not from state
+pre_sha: {HEAD before the rebase attempt}    # rebase-attempted success only
+post_sha: {HEAD after the rebase attempt}    # rebase-attempted success only
 conflicts[N]: [paths]    # conflict only
 error: {error_code}      # error or conflict only
 message: {human-readable summary}

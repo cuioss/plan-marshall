@@ -7,6 +7,11 @@ description: Branch cleanup — adapts to PR mode or local-only based on create-
 order: 70
 mutates_source: false
 advances_main_via_rebase: true
+records_facts:
+  - action
+  - upstream_commit_count
+  - merge_mechanism
+  - work_performed
 default_on: true
 presets:
   - local
@@ -1105,36 +1110,63 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 Before returning control to the finalize pipeline, record that this step ran on the live plan so the `phase_steps_complete` handshake invariant is satisfied at phase transition time. This MUST run while `status.json` is still under `.plan/plans/{plan_id}/` — if `default:archive-plan` appears earlier in the pipeline, ensure `mark-step-done` for `branch-cleanup` is emitted before that archive call rather than here. In the canonical order (`default:archive-plan` is last), this call runs here on the still-live plan.
 
-Pass a `--display-detail` value alongside `--outcome done` so the output-template renderer can surface the cleanup outcome. The payload differs by branch and must match the branch actually executed above:
+Pass a `--display-detail` value alongside `--outcome done` so the output-template renderer can surface the cleanup outcome. The payload differs by branch and must match the branch actually executed above.
 
-**Branch A — PR mode (rebase + merge + cleanup)** (PR was rebased onto base, merged, base branch pulled, feature branch deleted locally and on remote, worktree removed):
+### Structured facts recorded here
+
+This step declares the `records_facts` union `action`, `upstream_commit_count`, `merge_mechanism`, `work_performed`. The union is a step-level declaration, NOT a per-branch mandate — each of the four `--outcome done` call sites below records only the **honest subset** its own path produced, per [ext-point-finalize-step.md](../../extension-api/standards/ext-point-finalize-step.md) § "Structured step facts". The path conditions:
+
+| Fact | Recorded iff |
+|------|--------------|
+| `action` | The executing path reached **Rebase Branch onto Base** and parsed its `worktree-rebase-to` TOON. The value is that TOON's `action` — `noop` when the rebase replayed nothing, `rebased` when it moved HEAD. A path that never rebased records NO `action`; its absence is the honest signal, not a gap to fill. |
+| `upstream_commit_count` | Same condition as `action` — it is read from the same rebase-path payload. |
+| `merge_mechanism` | The path actually merged. Value is `pr_safe_merge` for the immediate `ci pr safe-merge`, or `merge_queue` for the `use_merge_queue` platform enqueue. A path that did not merge records NO `merge_mechanism`. |
+| `work_performed` | **Every** `--outcome done` call site below, `true` or `false`, never omitted — the one declared exception to the honest-subset rule. |
+
+`--display-detail` on every branch is a **rendering of the facts that branch recorded**. In particular it MUST NOT assert a rebase or a merge the recorded facts do not support: the fixed literal this branch previously emitted claimed a rebase unconditionally, which is exactly the defect the facts remove.
+
+The `loop_back` call site in the pre-merge comment barrier is deliberately untouched — it is not a `done` record and carries no fact obligation.
+
+**Branch A — PR mode (rebase + merge + cleanup)** (PR was rebased onto base, merged, base branch pulled, feature branch deleted locally and on remote, worktree removed). This is the only branch that reaches both the rebase and the merge, so it carries all four facts:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step branch-cleanup --outcome done \
-  --display-detail "rebased onto base, merged, cleanup complete"
+  --fact action={action} \
+  --fact upstream_commit_count={upstream_commit_count} \
+  --fact merge_mechanism={merge_mechanism} \
+  --fact work_performed=true \
+  --display-detail "{rendered_detail}"
 ```
 
-**Branch B — local-only mode** (no PR was created; only local switch-to-base-branch was performed):
+Render `{rendered_detail}` from the recorded facts, letting `action` decide the rebase clause:
+
+- `action == rebased` → `"rebased onto base, merged via {merge_mechanism}, cleanup complete"`
+- `action == noop` → `"already current with base, merged via {merge_mechanism}, cleanup complete"`
+
+**Branch B — local-only mode** (no PR was created; only the local switch-to-base-branch was performed). This path never reaches the rebase and never merges, so it records neither `action`, nor `upstream_commit_count`, nor `merge_mechanism` — but it DID perform its characteristic local cleanup, so `work_performed=true`:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step branch-cleanup --outcome done \
-  --display-detail "local-only: switched to main"
+  --fact work_performed=true \
+  --display-detail "local-only: switched to {base_branch}"
 ```
 
-**Branch C — declined by user** (interactive prompt was rejected; cleanup was not performed):
+**Branch C — declined by user** (interactive prompt was rejected; cleanup was not performed). Nothing was rebased, merged, or cleaned up, so `work_performed=false` and no other fact is recorded:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step branch-cleanup --outcome done \
+  --fact work_performed=false \
   --display-detail "declined by user"
 ```
 
-**Branch D — no PR found** (PR mode, `pr view` returned status: error — there is no PR for the current branch, so there is nothing to clean up on the remote side):
+**Branch D — no PR found** (PR mode, `pr view` returned `status: error` — there is no PR for the current branch, so there is nothing to clean up on the remote side). The path exits before the rebase and before any merge, so it records `work_performed=false` alone:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step branch-cleanup --outcome done \
+  --fact work_performed=false \
   --display-detail "no PR, nothing to clean up"
 ```

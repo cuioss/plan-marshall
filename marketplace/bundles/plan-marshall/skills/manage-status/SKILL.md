@@ -285,6 +285,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
   [--display-detail "one-line user-facing detail"] \
   [--head-at-completion <sha>] \
   [--loop-back-target {5-execute|6-finalize}] \
+  [--fact KEY=VALUE]... \
   [--force]
 ```
 
@@ -296,7 +297,17 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 - `--display-detail` (optional at CLI level, required-by-convention for phase-6-finalize steps per the phase-6-finalize interface contract): One-line user-facing detail string. Persisted as `null` when omitted.
 - `--head-at-completion` (optional): Git SHA captured at step completion. Persisted alongside outcome and consulted by resumable phase dispatchers (e.g., phase-6-finalize `pre-push-quality-gate`) to detect HEAD advancement.
 - `--loop-back-target` (REQUIRED when `--outcome=loop_back`, FORBIDDEN otherwise): Loop-back target phase. Must be one of `5-execute` (full phase rollback for fix-task-required dispositions) or `6-finalize` (inline replay for inline-fixable dispositions). See "Loop-back target classification" below.
+- `--fact` (optional, repeatable): Record one structured `KEY=VALUE` per-step fact. See "Structured step facts" below.
 - `--force` (optional): Overwrite an existing differing outcome
+
+**Structured step facts**:
+
+`--fact` is repeatable; the accumulated pairs are parsed into a single `dict[str, str]` persisted under the record's `facts` key. This is what lets `display_detail` be a *rendering* of recorded facts rather than their sole record, so a retrospective can ask structured questions of a step record instead of parsing prose.
+
+- **Parsing**: each token splits on the FIRST `=`. The value half may contain `=` and may be empty; only the key is constrained. A repeated key takes its last value.
+- **Rejection**: a token with no `=`, or with an empty key, returns `status: error`, `error: invalid_fact` with the offending token echoed as `offending_token` — a malformed fact is never silently dropped.
+- **Optionality**: omitting `--fact` entirely produces the byte-identical historical record shape (no `facts` key), so every pre-existing call site stays valid.
+- **Which keys are legal**: the keys a step may record are declared by that step's `records_facts` frontmatter obligation — see [ext-point-finalize-step.md](../extension-api/standards/ext-point-finalize-step.md) § "Structured step facts" for the governing discriminator, the declaration-is-union / obligation-is-per-branch reconciliation rule, and the `work_performed` cross-cutting fact. This command does NOT validate keys against that declaration; it only parses and persists. The declaration-vs-wiring agreement is enforced by the finalize-step contract test, not here.
 
 **Loop-back target classification**:
 
@@ -314,16 +325,17 @@ status.metadata.phase_steps[{phase}][{step}] = {
   "outcome": "done" | "skipped" | "loop_back" | "failed",
   "display_detail": <string> | null,
   "head_at_completion": <sha> | absent,
-  "loop_back_target": "5-execute" | "6-finalize" | absent
+  "loop_back_target": "5-execute" | "6-finalize" | absent,
+  "facts": {"<key>": "<value>", ...} | absent
 }
 ```
 
-Both the `metadata` and `phase_steps` containers are created on demand. A non-dict (bare-string) entry is rejected with `error: legacy_string_entry` — see conflict semantics below. The `head_at_completion` and `loop_back_target` keys are only present when the corresponding flag was supplied (per the `_build_entry` helper); `loop_back_target` is structurally guaranteed to be present iff `outcome == "loop_back"`.
+Both the `metadata` and `phase_steps` containers are created on demand. A non-dict (bare-string) entry is rejected with `error: legacy_string_entry` — see conflict semantics below. The `head_at_completion`, `loop_back_target`, and `facts` keys are only present when the corresponding flag was supplied (per the `_build_entry` helper); `loop_back_target` is structurally guaranteed to be present iff `outcome == "loop_back"`.
 
 **Semantics**:
-- **Idempotent on identical outcome AND display_detail AND head_at_completion AND loop_back_target**: If the step already has the requested outcome and all four fields match, no file write occurs and `changed: false` is returned.
-- **Detail / head / loop_back_target update**: If the outcome matches but any of `display_detail`, `head_at_completion`, or `loop_back_target` differ, the command updates the entry in place and returns `changed: true`.
-- **Conflict on differing outcome**: If the step already has a different outcome and `--force` is not supplied, the command returns `error: conflict` with the existing outcome surfaced in the response. Supplying `--force` overwrites the existing value (and detail / head / loop_back_target).
+- **Idempotent on identical outcome AND display_detail AND head_at_completion AND loop_back_target AND facts**: If the step already has the requested outcome and all five fields match, no file write occurs and `changed: false` is returned.
+- **Detail / head / loop_back_target / facts update**: If the outcome matches but any of `display_detail`, `head_at_completion`, `loop_back_target`, or `facts` differ, the command updates the entry in place and returns `changed: true`. A re-call that changes ONLY the facts is therefore reported as a change, never silently swallowed.
+- **Conflict on differing outcome**: If the step already has a different outcome and `--force` is not supplied, the command returns `error: conflict` with the existing outcome surfaced in the response. Supplying `--force` overwrites the existing value (and detail / head / loop_back_target / facts).
 - **Bare-string entry rejection**: If the existing entry is a bare string rather than a dict, the command returns `error: legacy_string_entry` and refuses to write. Only the dict shape above is accepted.
 
 > **Forward reference — `phase_steps_complete` invariant**: Downstream phase skills and verification helpers treat `status.metadata.phase_steps[{phase}]` as the authoritative record of which intra-phase steps have been marked `done` or `skipped`. A phase is considered `phase_steps_complete` when every step in the phase's declared step list has a dict entry with `outcome == 'done'`. The invariant reader rejects bare-string entries. Consumers must not fabricate entries by other means — always go through `mark-step-done`.
@@ -352,6 +364,24 @@ previous_outcome: null
 previous_display_detail: null
 ```
 
+**Output — state changed with facts** (TOON):
+```toon
+status: success
+plan_id: my-feature
+phase: 6-finalize
+step: finalize-step-sync-baseline
+outcome: done
+display_detail: no-op rebase, already current with base
+facts:
+  action: noop
+  upstream_commit_count: 0
+  work_performed: true
+changed: true
+previous_outcome: null
+previous_display_detail: null
+previous_facts: null
+```
+
 **Output — conflict** (TOON):
 ```toon
 status: error
@@ -362,6 +392,17 @@ step: discovery
 existing_outcome: skipped
 requested_outcome: done
 message: Step 'discovery' in phase '5-execute' already marked as 'skipped'; use --force to overwrite with 'done'
+```
+
+**Output — malformed fact** (TOON):
+```toon
+status: error
+plan_id: my-feature
+error: invalid_fact
+phase: 6-finalize
+step: finalize-step-sync-baseline
+offending_token: work_performed
+message: --fact expects KEY=VALUE with a non-empty KEY, got: 'work_performed'
 ```
 
 **Output — legacy drift** (TOON):
@@ -841,7 +882,7 @@ Phase set, transition rules, and phase-to-skill routing are defined in [standard
 | `metadata` | `--plan-id --get/--set --field [--value]` | Get/set metadata fields |
 | `title-token set` | `--plan-id --state {lock-waiting\|lock-owned\|build-busy} [--owner {build-hook\|merge-lock\|cli}]` | Write the `{owner, state, set_at}` record into `status.title_token`, replacing any existing record (last writer wins). `--owner` defaults to `cli`. No rendering — `manage-terminal-title` owns title composition + glyph/icon vocabulary. `build-busy` is the orchestration-busy state (🔨 icon-slot override). |
 | `title-token clear` | `--plan-id [--owner {build-hook\|merge-lock\|cli}]` | Remove the `status.title_token` record when `--owner` matches the recorded owner or the record is stale (>3600 s). A foreign-owned live record is left intact and reported as `cleared: false, reason: foreign_owner`. Idempotent — a no-op when already absent. |
-| `mark-step-done` | `--plan-id --phase --step --outcome [--display-detail] [--head-at-completion] [--loop-back-target] [--force]` | Record phase step outcome (+ optional display detail / HEAD SHA / loop-back target) in `metadata.phase_steps` |
+| `mark-step-done` | `--plan-id --phase --step --outcome [--display-detail] [--head-at-completion] [--loop-back-target] [--fact KEY=VALUE]... [--force]` | Record phase step outcome (+ optional display detail / HEAD SHA / loop-back target / repeatable structured `facts`) in `metadata.phase_steps` |
 | `assert-step-recorded` | `--plan-id --phase --step [--require-terminal]` | Read-only verdict: reports `recorded: true` iff a terminal `metadata.phase_steps[phase][step]` outcome exists. The phase-6-finalize post-dispatch guard. With `--require-terminal`, a near-miss orphan record under a different key returns `error: step_record_mismatched_key` (carrying `orphan_key`); a truly-absent record returns `error: step_record_missing`. Zero writes. |
 | `get-context` | `--plan-id` | Get combined status context |
 | `get-worktree-path` | `--plan-id` | Resolve persisted worktree path (returns empty string when `use_worktree==false`) |
@@ -991,7 +1032,9 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status delete
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id PLAN_ID --phase PHASE --step STEP_ID \
   --outcome {done|skipped|loop_back|failed} \
-  [--force] [--display-detail TEXT] [--head-at-completion SHA]
+  [--force] [--display-detail TEXT] [--head-at-completion SHA] \
+  [--loop-back-target {5-execute|6-finalize}] \
+  [--fact KEY=VALUE]...
 ```
 
 ### assert-step-recorded
@@ -1099,6 +1142,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status self-t
 | `missing_loop_back_target` | 1 | `mark-step-done`: `--outcome=loop_back` supplied without `--loop-back-target`. The flag is REQUIRED on every loop_back outcome (no backwards-compat fallback). |
 | `invalid_loop_back_target` | 1 | `mark-step-done`: `--loop-back-target` value not in `5-execute`/`6-finalize`. (Argparse `choices` normally catches this at parse time; this error fires only when the validation is bypassed at the API layer.) |
 | `unexpected_loop_back_target` | 1 | `mark-step-done`: `--loop-back-target` supplied alongside an outcome other than `loop_back`. The flag is FORBIDDEN on `done`/`skipped`/`failed` outcomes. |
+| `invalid_fact` | 1 | `mark-step-done`: a `--fact` token has no `=` separator, or an empty key. The offending token is echoed as `offending_token`; the call is rejected before any write. |
 | `step_record_missing` | 0 | `assert-step-recorded --require-terminal`: no terminal record exists under any key for the named phase (the dispatched step returned without recording a `mark-step-done` outcome). Exit code is 0 — the post-dispatch guard branches on the TOON `error` field, not the process exit code. |
 | `step_record_mismatched_key` | 0 | `assert-step-recorded --require-terminal`: the queried step has no terminal record, but a near-miss orphan terminal record exists under a different key in the same phase (the dispatched step recorded under the wrong key — e.g. a bare skill name instead of its fully-qualified manifest `step_id`). Carries `orphan_key` and `orphan_outcome`. Exit code is 0 — the guard branches on the TOON `error` field. |
 | `worktree_unresolved` | 1 | `phase_handshake verify`: `metadata.use_worktree==true` and `metadata.worktree_path` is non-empty but does not resolve on the filesystem. `get-worktree-path` does not emit this error — it returns `worktree_state: pending` for the pre-materialization state. |

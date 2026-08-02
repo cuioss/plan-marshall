@@ -401,6 +401,22 @@ def main() -> int:
             're-entry check). Forbidden when --outcome != loop_back.'
         ),
     )
+    mark_step_parser.add_argument(
+        '--fact',
+        action='append',
+        default=None,
+        metavar='KEY=VALUE',
+        dest='fact',
+        help=(
+            'Record a structured per-step fact. Repeatable — each occurrence contributes one '
+            'KEY=VALUE pair, and the accumulated pairs are persisted as a single facts dict on '
+            'the step record. The keys a step may record are declared by its records_facts '
+            'frontmatter obligation (see extension-api/standards/ext-point-finalize-step.md '
+            'and the honest-subset reconciliation rule there): a call site records only the '
+            'facts its path actually has. Optional — omitting --fact entirely writes the '
+            'historical record shape with no facts key.'
+        ),
+    )
     mark_step_parser.set_defaults(func=cmd_mark_step_done)
 
     # assert-step-recorded — read-only post-dispatch guard over phase_steps.
