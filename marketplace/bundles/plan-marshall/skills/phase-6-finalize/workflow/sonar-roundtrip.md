@@ -8,6 +8,11 @@ order: 40
 requires: [ci-complete]
 mutates_source: true
 head_dependent: true
+records_facts:
+  - count_status
+  - new_code_issue_count
+  - issues_fetched
+  - work_performed
 default_on: true
 presets:
   - full
@@ -91,7 +96,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings li
   --plan-id {plan_id} --type sonar-issue --resolution pending
 ```
 
-Read the `findings` count for the mark-step-done display. This FIND-only step does NOT triage the findings — they remain `pending` in the store for the dispatcher-owned unified wait-region triage (`producer=finalize-feedback`), which consumes the union of pending `pr-comment` ∪ `sonar-issue` findings once both wait-region producers have filed (see [`../SKILL.md`](../SKILL.md) Step 3 item 7c). An empty findings store does NOT by itself prove a clean pass: the terminal success criterion is still the confirmed PR-scoped new-code zero read from the marker (the producer may have stored zero findings because it could not confirm the count — `count_status == undecidable`), so the marker gate below is what decides Branch A vs the fail-closed path.
+Read the `findings` count and capture it as `{N}` — the number of `sonar-issue` findings this producer handed to the unified triage. It is recorded as the `issues_fetched` fact on every branch that scanned (see "Structured facts recorded here" below) and reported as `issues_fetched` in § Output. This FIND-only step does NOT triage the findings — they remain `pending` in the store for the dispatcher-owned unified wait-region triage (`producer=finalize-feedback`), which consumes the union of pending `pr-comment` ∪ `sonar-issue` findings once both wait-region producers have filed (see [`../SKILL.md`](../SKILL.md) Step 3 item 7c). An empty findings store does NOT by itself prove a clean pass: the terminal success criterion is still the confirmed PR-scoped new-code zero read from the marker (the producer may have stored zero findings because it could not confirm the count — `count_status == undecidable`), so the marker gate below is what decides Branch A vs the fail-closed path.
 
 ### Findings await the unified triage (no inline triage, no loop-back, no RESPOND here)
 
@@ -112,7 +117,17 @@ Take the last (most recent) JSONL row as the verified-scan attestation for this 
 
 - **Clean pass (Branch A)** — the row exists AND `count_status == confirmed` AND `new_code_issue_count == 0`. Only this combination satisfies the new-code-zero success criterion. Proceed to "Mark Step Complete" Branch A.
 
-- **Fail closed (undecidable or absent marker)** — `count_status == undecidable` (the producer's CE wait timed out or an auth/REST failure blocked confirmation), OR the marker file is absent / carries no row (`manage-files read` returns a not-found / empty result). An undecidable result MUST NOT be treated as a clean pass — an absent marker means "not checked," not "checked, zero issues." Fail closed: mark the step `failed` (`mark-step-done … --outcome failed --display-detail "sonar new-code count {undecidable|marker absent}"`). The `--outcome failed` record does NOT take `--head-at-completion`; on the next Phase 6 entry the resumability check sees `outcome=failed` and retries this step from scratch. The dispatcher halts the pipeline; the operator re-runs finalize once CE has settled.
+- **Fail closed (undecidable or absent marker)** — `count_status == undecidable` (the producer's CE wait timed out or an auth/REST failure blocked confirmation), OR the marker file is absent / carries no row (`manage-files read` returns a not-found / empty result). An undecidable result MUST NOT be treated as a clean pass — an absent marker means "not checked," not "checked, zero issues." Fail closed: mark the step `failed`, recording the two facts this path honestly has — the count could not be decided, and no scan result was produced:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
+    --plan-id {plan_id} --phase 6-finalize --step sonar-roundtrip --outcome failed \
+    --fact count_status=undecidable \
+    --fact work_performed=false \
+    --display-detail "sonar new-code count undecidable: {marker undecidable|marker absent}"
+  ```
+
+  Both sub-cases record `count_status=undecidable` — an absent marker is a count that could not be decided, exactly as a marker row that says so. Neither sub-case records `new_code_issue_count` or `issues_fetched`: there is no confirmed count to report, and absence of those keys is itself the honest signal. The `--outcome failed` record does NOT take `--head-at-completion`; on the next Phase 6 entry the resumability check sees `outcome=failed` and retries this step from scratch. The dispatcher halts the pipeline; the operator re-runs finalize once CE has settled.
 
 - **Confirmed non-zero (Branch B)** — `count_status == confirmed` AND `new_code_issue_count > 0`: the producer FOUND new-code issues and filed one `sonar-issue` finding per issue for the unified triage to resolve. Proceed to "Mark Step Complete" Branch B — the FIND succeeded; remediation is owned by the dispatcher-level unified triage.
 
@@ -124,9 +139,22 @@ Before returning control to the finalize pipeline, record that this step ran on 
 
 `sonar-roundtrip` declares `head_dependent: true` in its frontmatter — that fact IS the membership declaration the dispatcher's re-entry check reads (see [`../../extension-api/standards/ext-point-finalize-step.md`](../../extension-api/standards/ext-point-finalize-step.md) § "Implementor Frontmatter" and [`phase-6-finalize/SKILL.md`](../SKILL.md) Step 3 "Special case — HEAD-dependent steps"). Every `--outcome done` branch below MUST capture the worktree HEAD SHA immediately before the `mark-step-done` call and forward it via `--head-at-completion {sha}`, so the dispatcher's HEAD-dependent resumability check can detect a stale `done` record after a unified-triage fix commit advances HEAD (re-firing this FIND against the new tree).
 
-Pass a `--display-detail` value alongside `--outcome done` so the output-template renderer can surface the Sonar quality gate result. The payload differs by branch:
+Pass a `--display-detail` value alongside `--outcome done` so the output-template renderer can surface the Sonar quality gate result. The payload differs by branch.
 
-**Branch A — new-code count confirmed zero** (terminal FIND pass returns clean — the verified-scan marker gate above reported `count_status == confirmed AND new_code_issue_count == 0`; the producer found no new-code issues). Resolve the worktree HEAD before marking done:
+### Structured facts recorded here
+
+This step declares the `records_facts` union `count_status`, `new_code_issue_count`, `issues_fetched`, `work_performed`. The union is a step-level declaration, NOT a per-branch mandate — each terminal call site records only the **honest subset** its own path produced, per [ext-point-finalize-step.md](../../extension-api/standards/ext-point-finalize-step.md) § "Structured step facts". The path conditions:
+
+| Fact | Recorded iff |
+|------|--------------|
+| `count_status` | The path reached the verified-scan marker gate and read a verdict from it — `confirmed` on Branches A and B, `undecidable` on the fail-closed `--outcome failed` path above. A path that never scanned records NO `count_status`. |
+| `new_code_issue_count` | The path read a **confirmed** count from the marker. Value is that count. An undecidable verdict and a no-scan path both record NO `new_code_issue_count` — there is no number to report, and inventing a `0` would be indistinguishable from a confirmed clean scan. |
+| `issues_fetched` | Same condition as `new_code_issue_count`. Value is `{N}`, the pending `sonar-issue` findings count read in "Consumer count" above — the number this producer actually handed to the unified triage, reported as `issues_fetched` in § Output. It is recorded on Branch A too, where a confirmed zero count paired with a non-zero `{N}` is precisely the producer disagreement the fact exists to expose. |
+| `work_performed` | **Every** `--outcome done` call site below, `true` or `false`, never omitted — the one declared exception to the honest-subset rule. It is `true` only when this step actually performed its characteristic work (fetched PR-scoped new-code issues and read a marker verdict). |
+
+`--display-detail` on every branch is a **rendering of the facts that branch recorded**, never an independently-authored claim: a branch that recorded no `count_status` MUST NOT describe a scan result, and the ≤80-char one-line convention is preserved on every rendering.
+
+**Branch A — new-code count confirmed zero** (terminal FIND pass returns clean — the verified-scan marker gate above reported `count_status == confirmed AND new_code_issue_count == 0`; the producer found no new-code issues). The scan ran and produced a confirmed verdict, so this branch carries all four facts. Resolve the worktree HEAD before marking done:
 
 ```bash
 git -C {worktree_path} rev-parse HEAD
@@ -137,11 +165,15 @@ Capture stdout as `{sha}` and forward via `--head-at-completion`:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step sonar-roundtrip --outcome done \
-  --display-detail "new-code issues: 0 (confirmed)" \
+  --fact count_status=confirmed \
+  --fact new_code_issue_count=0 \
+  --fact issues_fetched={N} \
+  --fact work_performed=true \
+  --display-detail "new-code issues: 0 (confirmed), {N} filed for triage" \
   --head-at-completion {sha}
 ```
 
-**Branch B — new-code count confirmed non-zero** (the verified-scan marker gate reported `count_status == confirmed AND new_code_issue_count > 0`; the producer FILED one `sonar-issue` finding per issue for the unified triage. The FIND succeeded, so the step marks `done` — remediation is owned by the dispatcher-level unified triage). Resolve the worktree HEAD before marking done:
+**Branch B — new-code count confirmed non-zero** (the verified-scan marker gate reported `count_status == confirmed AND new_code_issue_count > 0`; the producer FILED one `sonar-issue` finding per issue for the unified triage. The FIND succeeded, so the step marks `done` — remediation is owned by the dispatcher-level unified triage). The scan ran and produced a confirmed verdict, so this branch carries the same four facts as Branch A, differing only in the confirmed count. Resolve the worktree HEAD before marking done:
 
 ```bash
 git -C {worktree_path} rev-parse HEAD
@@ -152,11 +184,15 @@ Capture stdout as `{sha}` and forward via `--head-at-completion`:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step sonar-roundtrip --outcome done \
-  --display-detail "new-code issues remain (confirmed)" \
+  --fact count_status=confirmed \
+  --fact new_code_issue_count={new_code_issue_count} \
+  --fact issues_fetched={N} \
+  --fact work_performed=true \
+  --display-detail "new-code issues: {new_code_issue_count} (confirmed), {N} filed for triage" \
   --head-at-completion {sha}
 ```
 
-**Branch C — Sonar not configured for project** (the dispatcher ran this step but the producer determined Sonar is not configured — e.g., no SonarQube/SonarCloud credentials, no project key). Resolve the worktree HEAD before marking done:
+**Branch C — Sonar not configured for project** (the dispatcher ran this step but the producer determined Sonar is not configured — e.g., no SonarQube/SonarCloud credentials, no project key — or no PR exists yet, so there is no PR-scoped new-code surface to attest). No scan was performed, so this branch records `work_performed=false` and **nothing else**: it has no `count_status`, no `new_code_issue_count`, and no `issues_fetched`, and their absence is what distinguishes "no scan performed" from "scan performed, zero new-code issues" (Branch A). Resolve the worktree HEAD before marking done:
 
 ```bash
 git -C {worktree_path} rev-parse HEAD
@@ -167,7 +203,8 @@ Capture stdout as `{sha}` and forward via `--head-at-completion`:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step sonar-roundtrip --outcome done \
-  --display-detail "Sonar not configured" \
+  --fact work_performed=false \
+  --display-detail "Sonar not configured, no scan performed" \
   --head-at-completion {sha}
 ```
 

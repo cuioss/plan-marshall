@@ -7,6 +7,10 @@ description: Early baseline rebase — rebase the worktree feature branch onto o
 order: 3
 mutates_source: true
 advances_main_via_rebase: true
+records_facts:
+  - action
+  - upstream_commit_count
+  - work_performed
 default_on: true
 presets:
   - full
@@ -203,26 +207,38 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 Record the outcome on the live plan so the `phase_steps_complete` handshake invariant is satisfied at phase transition time.
 
-**Mark Step Complete (Success)** — the rebase completed (`action: rebased`) or was a no-op (`action: noop`):
+Each terminal call site below records the **honest subset** of this step's declared `records_facts` union (`action`, `upstream_commit_count`, `work_performed`) — a branch records a key only when it actually performed the action or computation that produces it, per [ext-point-finalize-step.md](../../extension-api/standards/ext-point-finalize-step.md) § "Structured step facts". `work_performed` is the one declared exception: it is recorded on EVERY `--outcome done` call site, `true` or `false`, never omitted. `--display-detail` is a **rendering of those recorded facts**, never an independently-authored claim.
+
+**Mark Step Complete (Success)** — the rebase ran. `action: rebased` means it replayed commits and moved HEAD; `action: noop` means the branch already contained `origin/{base_branch}` and nothing was replayed. Both are success, and the recorded `action` is what distinguishes them:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step finalize-step-sync-baseline --outcome done \
-  --display-detail "rebased onto origin/{base_branch} (action={action})"
+  --fact action={action} \
+  --fact upstream_commit_count={upstream_commit_count} \
+  --fact work_performed=true \
+  --display-detail "{rendered_detail}"
 ```
 
-**Mark Step Complete (Skipped)** — the operator declined the rebase at the pre-rebase gate. The step still records `done` with an honest detail (no rebase was performed; the late `branch-cleanup` rebase remains the backstop):
+Render `{rendered_detail}` from the two recorded facts — it MUST NOT claim a rebase the `action` fact does not support:
+
+- `action == rebased` → `"rebased onto origin/{base_branch}, {upstream_commit_count} upstream commit(s)"`
+- `action == noop` → `"already current with origin/{base_branch}, no commits replayed"`
+
+**Mark Step Complete (Skipped)** — the operator declined the rebase at the pre-rebase gate. No rebase was performed, so this branch records `work_performed=false` and **records NO `action` and NO `upstream_commit_count`**: it took no rebase action, and declaring the key at step level does not oblige this branch to invent one. Absence of `action` here is itself the honest signal:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step finalize-step-sync-baseline --outcome done \
-  --display-detail "rebase skipped by operator; branch-cleanup remains the backstop"
+  --fact work_performed=false \
+  --display-detail "rebase skipped by operator, branch-cleanup remains the backstop"
 ```
 
-**Mark Step Complete (Failure)** — the rebase produced a conflict (`status: conflict`) or failed (`status: error`). The dispatcher's failure handling halts the phase on `outcome=failed`:
+**Mark Step Complete (Failure)** — the rebase produced a conflict (`status: conflict`) or failed (`status: error`). The dispatcher's failure handling halts the phase on `outcome=failed`. The rebase did not complete, so `work_performed=false` is the honest value, and no `action` verdict exists to record (the failing `worktree-rebase-to` return carries no `action` field):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step finalize-step-sync-baseline --outcome failed \
+  --fact work_performed=false \
   --display-detail "rebase onto origin/{base_branch} failed: {error_or_conflict_summary}"
 ```
