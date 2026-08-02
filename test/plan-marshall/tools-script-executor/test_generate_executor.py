@@ -935,8 +935,10 @@ def test_no_worktree_write_refusal_guard_symbol_present():
 
 
 # The executor template appends one kind=build change-ledger entry after every
-# build-class dispatch (a notation under plan-marshall:build-pyproject /
-# build-maven / build-gradle / build-npm). The freshness gate reads these
+# build-EXECUTING dispatch — a notation under plan-marshall:build-pyproject /
+# build-maven / build-gradle / build-npm, dispatched with the build-executing
+# subcommand. Build-class-ness is the conjunction of both conditions, so a query
+# verb under a build wrapper writes no row. The freshness gate reads these
 # entries to answer "was this exact working-tree state built?". The append is
 # fire-and-forget and — critically — fires AFTER the subprocess returns, never
 # before dispatch, so only completed builds (regardless of exit_code) are
@@ -954,9 +956,12 @@ def test_template_contains_build_ledger_append_at_dispatch_boundary():
         '_is_build_class_notation predicate missing from template'
     )
     # main() must guard the append behind the build-class predicate and call
-    # the appender with the resolved plan_id and exit_code.
-    assert 'if _is_build_class_notation(notation):' in source, (
-        'main() must guard the ledger append behind _is_build_class_notation(notation)'
+    # the appender with the resolved plan_id and exit_code. The guard passes BOTH
+    # conjuncts — the notation and the already-computed subcommand — so a query
+    # verb under a build wrapper cannot reach the append.
+    assert 'if _is_build_class_notation(notation, subcommand):' in source, (
+        'main() must guard the ledger append behind '
+        '_is_build_class_notation(notation, subcommand)'
     )
     assert '_append_build_ledger_record(' in source, (
         'main() must invoke _append_build_ledger_record at the dispatch boundary'
@@ -1019,7 +1024,7 @@ def test_template_build_ledger_append_fires_after_dispatch_not_before():
 
     # The call site inside main() is guarded by the predicate; locate the guard
     # and the call that follows it.
-    guard_idx = source.find('if _is_build_class_notation(notation):')
+    guard_idx = source.find('if _is_build_class_notation(notation, subcommand):')
     assert guard_idx != -1, 'build-class guard not found in main()'
 
     call_site_idx = source.find('_append_build_ledger_record(', guard_idx)
@@ -1052,24 +1057,25 @@ def test_template_build_ledger_helpers_loadable_and_predicate_works():
         '_append_build_ledger_record must be defined in the loaded template module'
     )
 
-    # Build-class notations across all four build-* skills classify as build.
+    # Build-class notations across all four build-* skills classify as build when
+    # dispatched with the build-executing subcommand.
     for build_notation in (
         'plan-marshall:build-pyproject:pyproject_build',
         'plan-marshall:build-maven:maven',
         'plan-marshall:build-gradle:gradle',
         'plan-marshall:build-npm:npm',
     ):
-        assert module._is_build_class_notation(build_notation), (
-            f'{build_notation} must classify as a build-class dispatch'
+        assert module._is_build_class_notation(build_notation, 'run'), (
+            f'{build_notation} run must classify as a build-class dispatch'
         )
 
-    # Non-build notations must NOT classify as build.
+    # Non-build notations must NOT classify as build, even with the run verb.
     for non_build_notation in (
         'plan-marshall:manage-files:manage-files',
         'plan-marshall:manage-logging:manage-logging',
         'pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory',
     ):
-        assert not module._is_build_class_notation(non_build_notation), (
+        assert not module._is_build_class_notation(non_build_notation, 'run'), (
             f'{non_build_notation} must NOT classify as a build-class dispatch'
         )
 

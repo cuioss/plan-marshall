@@ -72,7 +72,16 @@ Every entry carries a `kind` discriminator, a `worktree_sha`, and a
 `timestamp_iso` (UTC ISO-8601). Three kinds:
 
 - **`kind=build`** — written by the executor dispatch boundary after every
-  build-class invocation that runs to completion. Fields: `kind: "build"`,
+  build-**executing** invocation that runs to completion. Build-class-ness is a
+  **conjunction**: the notation must sit under a `build-*` skill AND the
+  dispatched subcommand must be the build-executing verb (`run`). A query
+  subcommand under a `build-*` skill — `parse`, `discover`, `coverage-report`,
+  `check-warnings`, `run-config-key`, `rewrite-log`, `find-project`,
+  `resolve-test-scope`, `analyze` — writes **no row**, and neither does a bare
+  `--help` dispatch that carries no subcommand at all. This is load-bearing for
+  the freshness gate below: a query exits 0 without building anything, so a row
+  stamped for it would read as proof that the current working tree was built.
+  Fields: `kind: "build"`,
   `notation`, `plan_id` (str, **never null** — a build dispatched outside any
   plan, including an orchestrator global-tier build, is recorded under the
   `NO_PLAN` sentinel, so every build is attributable to the plan that caused it

@@ -260,6 +260,149 @@ function checkConsistency(planDir) {
 
 This is the inverse of the redundant runtime type guard documented in `code-organization.md` (§ "Do Not Guard Contract-Typed Values"): the fail-closed rule adds a *missing* guard at an I/O boundary, while that rule removes a *superfluous* guard on a value the type signature already pins.
 
+## Fail-Closed Classification
+
+A *classifier* is any function that reduces evidence to a verdict another component acts on: a path-to-module map, a build-status derivation, a build/no-build decision, a freshness gate, a coverage-scope resolver, an aggregation over several producers.
+
+The sibling rule above (§ "Fail-Closed Read-Only Gate Verbs") governs the **crash** direction — an I/O failure inside a verdict path must become a structured error rather than a stack trace. This rule governs the **laundering** direction: a classifier that cannot substantiate a verdict MUST NOT emit the benign one. "I could not classify this" is an outcome in its own right, and collapsing it into "nothing to report" hands the caller a confident green it never earned. The two rules are complementary and are not restated in each other.
+
+Six concrete rules follow, each in the rule-plus-BAD/GOOD-pseudocode shape used throughout this document.
+
+### (a) Order specific rows before a catch-all
+
+An ordered match table is read top-down, so a catch-all placed above a specific row makes that row unreachable — and the unreachable row is invisible at the call site, because the table still *looks* like it covers the case. Order the table so the catch-all is reached only when no specific row applies.
+
+```text
+// BAD — the broad row is tested first and shadows every specific row below it
+PATTERNS = [
+    ("marketplace/bundles/**",        "production"),  // catch-all, listed first
+    ("marketplace/bundles/*/test/**", "test"),        // unreachable — never matches
+]
+
+// GOOD — most specific first; the catch-all is the last resort
+PATTERNS = [
+    ("marketplace/bundles/*/test/**", "test"),
+    ("marketplace/bundles/**",        "production"),
+]
+```
+
+### (b) Fail closed on undetermined, `None`, or empty state
+
+An inability to classify is its own outcome and must never collapse into the benign one. A filter that drops the unclassifiable inputs makes the empty set indistinguishable from "there was nothing to worry about", and the caller receives a confident verdict computed over a silently truncated population.
+
+```text
+// BAD — "no row matched" is laundered into "nothing can diverge"
+function resolveScope(paths) {
+    modules = paths.map(moduleOf).filter(notNull)   // unmapped paths vanish here
+    return { modules: modules, divergencePossible: modules.size > 1 }
+}
+
+// GOOD — an unmapped path is reported, and forces the conservative verdict
+function resolveScope(paths) {
+    modules = []; unmapped = []
+    for (p in paths) {
+        m = moduleOf(p)
+        if (m == null) unmapped.add(p) else modules.add(m)
+    }
+    if (unmapped.notEmpty() || modules.isEmpty()) {
+        // cannot prove coverage — say so, and fall back to the widest run
+        return { modules: modules, unmapped: unmapped, divergencePossible: true }
+    }
+    return { modules: modules, unmapped: [], divergencePossible: modules.size > 1 }
+}
+```
+
+### (c) Branch on a dispatched producer's status before folding its payload
+
+A producer that crashed, was skipped, or refused returns an empty payload — structurally identical to a producer that ran and found nothing. Read the producer's own status field first; only then fold its payload into the aggregate.
+
+```text
+// BAD — the payload is folded without reading the producer's verdict
+result = producer.run()
+findings.addAll(result.findings)   // a crashed producer contributes zero findings
+report(status = findings.isEmpty() ? "clean" : "findings")   // ... and reads as clean
+
+// GOOD — a failed producer can never read as clean
+result = producer.run()
+if (result.status != "success") {
+    return report(status = "error",
+                  reason = producer.name + " did not complete: " + result.message)
+}
+findings.addAll(result.findings)
+report(status = findings.isEmpty() ? "clean" : "findings")
+```
+
+### (d) Require an affirmative success signal, never absence-of-change
+
+"Nothing changed" is satisfied both by an operation that succeeded idempotently and by an operation that never ran. Absence-of-change is therefore not evidence of success; require the operation to report its own outcome and branch on that.
+
+```text
+// BAD — an empty diff is read as proof the fix landed
+applyFix(file)
+if (diff(file).isEmpty()) {
+    markResolved()   // equally true when applyFix silently did nothing
+}
+
+// GOOD — the operation reports whether it applied, and that is what is read
+outcome = applyFix(file)
+if (outcome.applied) markResolved() else markUnresolved(outcome.reason)
+```
+
+### (e) Exit `0` from an always-exit-`0` wrapper is necessary, not sufficient
+
+A wrapper that models its outcome in its stdout payload and always exits `0` makes the exit code a liveness signal, not a verdict. Read the wrapper's reported outcome for the verdict; a nonzero exit still wins outright, because a process failure the wrapper never got to report must not be overridden by whatever it printed before dying.
+
+```text
+// BAD — the exit code of an always-exit-0 wrapper is taken as the build verdict
+exitCode = run(buildWrapper)
+status   = (exitCode == 0) ? "success" : "error"   // a timed-out build stamps success
+
+// GOOD — nonzero exit is authoritative; otherwise the reported outcome decides
+exitCode = run(buildWrapper)
+if (exitCode < 0)  return "killed"    // terminated by a signal
+if (exitCode != 0) return "error"     // wins over any stdout claim of success
+reported = parse(buildWrapper.stdout)?.status
+return (reported in KNOWN_BUILD_STATUSES) ? reported : "success"
+```
+
+### (f) Write direction — check the persist, never refer to a store that rejected it
+
+The rules above cover the read direction. The write direction is symmetric and is the one most often missed: a producer that persists a finding MUST check the persist call's exit status, and MUST NOT emit a clean or referral signal on a failed persist. A by-reference referral ("the findings are in the store, go read them") is a promise about state the producer has not verified; when the persist was rejected, the referral points the consumer at an empty store and the finding is lost silently.
+
+```text
+// BAD — the persist result is discarded, then the caller is referred to the store
+for (f in findings) store.add(f)         // a rejection exits 0 and is never read
+return { status: "triage_required" }     // "go read the store" — which is empty
+
+// GOOD — the persist is checked, and a short readback downgrades the referral
+persisted = []
+for (f in findings) {
+    if (store.add(f).status == "success") persisted.add(f)
+}
+if (persisted.size < findings.size) {
+    return { status: "error", error: "finding_persist_failed",
+             unpersisted: findings.minus(persisted) }   // carried INLINE, not by reference
+}
+return { status: "triage_required" }
+```
+
+### Worked examples in this repository
+
+Three landed behaviours are the reference implementations of these rules:
+
+* **The build-status derivation at the executor dispatch boundary** (`_derive_build_status` in `tools-script-executor/templates/execute-script.py.template`) treats a nonzero exit code as authoritative over any stdout `status: success`, and reads the wrapper's stdout status only on a zero exit — so a timed-out build stamps `timeout` while a script that prints a success payload and exits non-zero stamps `error`. Rules (a) and (e).
+* **The pre-commit freshness gate** (`manage-tasks pre-commit-verify-freshness`) matches change-ledger rows on `status == "success"` rather than on `exit_code == 0`, and a row lacking `status` never matches — the gate fails closed to `stale` rather than admitting a row it cannot read. Rules (b) and (e).
+* **The executor preflight verdict** (`generate_executor preflight` in `tools-script-executor`) reports `marshal_status: unknown` plus a legible warning when the installed manifest cannot be resolved, instead of the `fresh` verdict it has no evidence for. Rule (b).
+
+### Accepted decisions this discipline generalises
+
+The rules above are the cross-cutting form of four decisions already accepted in this repository; consult the decision record for the reasoning rather than re-deriving it here.
+
+* **ADR-004** — content no build system builds is deliberately absent from the build map, and that absence must never propagate into classification.
+* **ADR-009** — a status report fails closed with an explicit `unknown` state rather than a vacuously fresh positive it cannot substantiate.
+* **ADR-014** — no producer may suppress an element without reporting the condition that suppressed it, so a working-but-empty result stays distinguishable from an inert one.
+* **ADR-015** — an absent identity is a stated sentinel and every presence guard becomes a meaning guard, so a null verdict is never overloaded across "determined to be nothing" and "nothing determinable".
+
 ## Symmetric Diagnostic Fields Across Sibling Branches
 
 When one runtime condition drives two sibling branches — one that fails loud with a named reason and one that silently falls back to a degraded path — the fallback branch MUST record the SAME reason literal into the audit/diagnostic field. Omitting it leaves the field at its default (e.g. `None`), so the audit line logs a value-less placeholder and the actual cause of the degradation is lost.

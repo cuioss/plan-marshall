@@ -22,9 +22,15 @@ scan below unchanged. See ADR-004 § "Amendment: ``build-decision`` is the sole
 build/no-build authority".
 
 A ``kind=build`` entry is stamped by the executor dispatch boundary after every
-build-class invocation, carrying the truthful build ``status`` (``success`` /
-``error`` / ``timeout`` / ``killed``) and the working-tree ``worktree_sha``
-captured at build time. The gate recomputes the current working-tree sha and
+build-EXECUTING invocation, carrying the truthful build ``status`` (``success``
+/ ``error`` / ``timeout`` / ``killed``) and the working-tree ``worktree_sha``
+captured at build time. The boundary predicate is a conjunction -- a notation
+under a ``build-*`` skill AND the build-executing subcommand (``run``) -- so a
+query verb under a build wrapper, and a bare ``--help`` dispatch carrying no
+subcommand, stamp NO row. That narrowing is what this gate depends on: a query
+exits 0 without building anything, so a row stamped for it would make the scan
+below answer ``fresh`` for a working tree that was never built.
+The gate recomputes the current working-tree sha and
 looks for a matching successful build entry. Matching on ``status`` rather than
 ``exit_code`` is load-bearing: the build wrapper exits 0 on timeout (the
 outcome is modeled in its stdout TOON, not the exit code), so an ``exit_code``

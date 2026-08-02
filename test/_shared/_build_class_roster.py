@@ -30,9 +30,20 @@ subcommand name anywhere in this module**:
 Consumers get ``{notation: {subcommand: declares_flag_pair}}`` from
 :func:`build_class_roster`. :func:`build_class_prefixes` is the SEPARATE,
 independently-sourced read of the executor template's ``_BUILD_CLASS_PREFIXES``
-— the executor's own definition of which dispatches are build-class. The two
-derivations deliberately share no input, so cross-checking one against the other
-is a real check rather than a restatement.
+— the NOTATION half of the executor's definition of which dispatches are
+build-class. The two derivations deliberately share no input, so cross-checking
+one against the other is a real check rather than a restatement.
+
+**Build-class-ness is a conjunction, and this module supplies only one conjunct
+directly.** The executor stamps a ``kind=build`` ledger row only when the
+notation matches ``_BUILD_CLASS_PREFIXES`` AND the dispatched subcommand is a
+member of the template's ``_BUILD_EXECUTING_SUBCOMMANDS`` allow-list. A prefix
+match alone is NOT sufficient: every wrapper also registers pure query verbs,
+and a bare ``--help`` dispatch carries no subcommand at all. The subcommand
+conjunct is testable from here without any literal name — the roster's
+per-wrapper subcommand sets ARE the population a consumer partitions against the
+executor's allow-list, which is exactly what the discriminator regression suite
+does.
 
 This file is intentionally a sibling helper (``_name.py`` style) and is NOT a
 ``conftest.py``: a ``conftest.py`` under ``test/_shared/`` would shadow the

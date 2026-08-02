@@ -592,7 +592,9 @@ def test_pm_marketplace_root_with_trailing_slash_rewrites(two_marketplace_trees,
     )
 
 
-# Truthful build-status stamping: after every build-class dispatch the boundary
+# Truthful build-status stamping: after every build-EXECUTING dispatch (a
+# build-* notation dispatched with the `run` subcommand — the conjunction the
+# boundary predicate requires) the boundary
 # appends one kind=build change-ledger row whose `status` is derived via
 # _derive_build_status — (1) negative returncode (POSIX signal death) =>
 # `killed` (reserved for this branch only); (2) any other nonzero returncode =>
@@ -623,8 +625,9 @@ os.kill(os.getpid(), signal.SIGKILL)
 def _build_fake_build_skill(root: Path, body: str) -> Path:
     """Stage a fake build-pyproject script under a marketplace-shaped tree.
 
-    The notation prefix ``plan-marshall:build-pyproject:`` is what makes the
-    executor's ``_is_build_class_notation`` boundary fire.
+    The notation prefix ``plan-marshall:build-pyproject:`` is one half of what
+    makes the executor's ``_is_build_class_notation`` boundary fire; the other
+    half is the ``run`` subcommand every dispatch below supplies.
     """
     script_dir = (
         root / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills'
