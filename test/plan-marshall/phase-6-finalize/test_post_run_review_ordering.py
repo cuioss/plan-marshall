@@ -43,7 +43,8 @@ that derivation:
     gone, so it cannot produce a pushable source edit.
 (f) Every member declares a ``mutates_source`` key **explicitly** — present, not
     merely falsy-by-absence. This is the in-module counterpart to the
-    ``mutates_source_declaration_missing`` compose-time rule; its external
+    ``mutates_source_declaration_missing`` quality-gate-time (plugin-doctor)
+    rule; its external
     backstop is
     ``test/pm-plugin-development/plugin-doctor/test_analyze_mutates_source_order.py``
     ``::test_real_marketplace_has_zero_findings``.
@@ -293,7 +294,8 @@ def test_every_member_declares_mutates_source_explicitly():
     """(f) Every derived member settles the source-mutation claim explicitly.
 
     Being ordered after the merge gate, each member falls in the band where an
-    ABSENT ``mutates_source`` key is itself a compose-time error — a silent
+    ABSENT ``mutates_source`` key is itself a quality-gate-time (plugin-doctor)
+    error — a silent
     omission is exactly how a source-mutating step slips past the ordering check
     without ever making the claim. Presence is asserted, not merely falsiness,
     because an absent key is falsy and would pass a truthiness check.
