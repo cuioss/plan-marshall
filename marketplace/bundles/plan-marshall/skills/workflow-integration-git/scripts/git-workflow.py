@@ -1278,6 +1278,15 @@ def cmd_worktree_rebase_to(args):
     observable. On conflict, the rebase is left in progress with conflict markers
     so the caller can inspect or abort. All git invocations use
     ``git -C {worktree_path}``; no working directory is implicitly assumed.
+
+    ``action`` discriminator on a successful rebase: HEAD is read immediately
+    before and after the rebase, and the two SHAs decide the verdict —
+    ``pre_sha != post_sha`` means the rebase replayed commits and yields
+    ``action: 'rebased'``; ``pre_sha == post_sha`` means the branch already
+    contained the rebase ref and the rebase replayed nothing, yielding
+    ``action: 'noop'``. Both SHAs are reported on the payload so the verdict is
+    substantiated by evidence rather than asserted. The ``clean``-state early
+    return above emits ``action: 'noop'`` without running a rebase at all.
     """
     target, error = _resolve_worktree_path_for_plan(args.plan_id)
     if error is not None:
@@ -1375,13 +1384,34 @@ def cmd_worktree_rebase_to(args):
     # is preserved in the response so callers can distinguish. Rebase onto the
     # resolved ``rebase_base`` (``origin/{base}`` when present, else local
     # ``{base}``) so a single invocation lands the branch on the remote tip.
+    #
+    # ``pre_sha`` is captured immediately before the rebase so the post-rebase
+    # verdict rests on evidence that history changed, rather than on an inference
+    # from the ``behind`` count. A strictly-``ahead`` branch (``behind == 0``)
+    # already contains ``rebase_base``, so the rebase replays nothing and leaves
+    # HEAD untouched; the diverged case (``ahead > 0 AND behind > 0``, which
+    # ``_detect_worktree_state`` also labels ``ahead``) genuinely replays and does
+    # move HEAD. Comparing the SHAs distinguishes the two without special-casing
+    # either.
+    _rc_pre, pre_sha, _pre_err = run_git(['-C', str(target), 'rev-parse', 'HEAD'])
     rc, _stdout, stderr = run_git(['-C', str(target), 'rebase', rebase_base])
     if rc == 0:
+        _rc_post, post_sha, _post_err = run_git(['-C', str(target), 'rev-parse', 'HEAD'])
+        replayed = pre_sha != post_sha
         return {
             **base_payload,
             'status': 'success',
-            'action': 'rebased',
-            'message': f'rebased {evidence.get("head_branch", "HEAD")} onto {rebase_base}',
+            'action': 'rebased' if replayed else 'noop',
+            'pre_sha': pre_sha,
+            'post_sha': post_sha,
+            'message': (
+                f'rebased {evidence.get("head_branch", "HEAD")} onto {rebase_base}'
+                if replayed
+                else (
+                    f'branch already contained {rebase_base}; '
+                    'the rebase replayed no commits and HEAD is unchanged'
+                )
+            ),
         }
 
     # Non-zero exit means rebase produced conflicts (or another git
