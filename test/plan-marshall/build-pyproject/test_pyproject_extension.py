@@ -29,6 +29,8 @@ module covers only the concrete pyproject BuildExtension's claims.
 import importlib.util
 from pathlib import Path
 
+import pytest
+
 # extension_base is importable: conftest._setup_marketplace_pythonpath() adds
 # script-shared/scripts/extension/ to sys.path.
 from extension_base import (
@@ -38,6 +40,8 @@ from extension_base import (
     BUILD_CLASSES,
     BUILD_MAP_ROLES,
     BuildExtensionBase,
+    _list_tracked_files,
+    route_matches,
 )
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
@@ -76,6 +80,31 @@ def _load_pyproject_build_extension():
 
 _EXTENSION_MODULE = _load_pyproject_build_extension()
 BuildExtension = _EXTENSION_MODULE.BuildExtension
+
+# The live blocking instance that motivated the python-source-template route: the
+# source of the generated executor, the single most-executed python artifact in
+# the repository.
+EXECUTOR_TEMPLATE = (
+    'marketplace/bundles/plan-marshall/skills/tools-script-executor/'
+    'templates/execute-script.py.template'
+)
+
+
+def _tracked() -> list[str]:
+    """Return the repository's git-tracked paths, or fail the calling test loudly.
+
+    The population-derived route assertions below are only meaningful over a real
+    tracked-file listing. ``_list_tracked_files`` returns an empty list when the
+    ``git`` invocation fails, which would turn every population assertion into a
+    vacuous pass, so the emptiness is converted into a failure here rather than
+    silently narrowing the population to nothing.
+    """
+    tracked = _list_tracked_files(str(PROJECT_ROOT))
+    assert tracked, (
+        'git ls-files returned no tracked paths - the population assertions '
+        'would pass vacuously over an empty set'
+    )
+    return tracked
 
 
 def test_build_extension_subclasses_build_extension_base():
@@ -255,6 +284,7 @@ def test_classify_globs_enumerates_production_roots_claude(monkeypatch):
         '.claude/skills/*.py',
         'marketplace/bundles/*.py',
         'marketplace/targets/*.py',
+        '*.py.template',
     }
 
 
@@ -306,6 +336,269 @@ def test_classify_globs_uses_single_star_not_recursive():
     ext = BuildExtension()
     for pattern, _role in ext.classify_globs():
         assert '**' not in pattern
+
+
+# ---------------------------------------------------------------------------
+# Python-source templates (*.py.template) -> production
+# ---------------------------------------------------------------------------
+
+
+def test_classify_paths_claims_executor_template_as_production():
+    """The executor template resolves to production instead of the unknown bucket."""
+    ext = BuildExtension()
+    result = ext.classify_paths([EXECUTOR_TEMPLATE])
+    assert result['production'] == [EXECUTOR_TEMPLATE]
+
+
+def test_classify_paths_claims_any_python_source_template_as_production():
+    """The route is the CLASS, not the one observed instance - any *.py.template matches."""
+    ext = BuildExtension()
+    paths = ['tools/gen/other.py.template', 'a.py.template']
+    result = ext.classify_paths(paths)
+    assert result['production'] == paths
+
+
+def test_classify_paths_does_not_claim_non_python_templates():
+    """Negative control: a template rendering into something other than python is not claimed."""
+    ext = BuildExtension()
+    paths = [
+        'marketplace/bundles/plan-marshall/skills/x/templates/readme.md.template',
+        'marketplace/bundles/plan-marshall/skills/x/templates/config.yml.template',
+        'marketplace/bundles/pm-dev-java/skills/junit-core/templates/unit-test-class.java.tmpl',
+    ]
+    result = ext.classify_paths(paths)
+    assert result == {'production': [], 'test': [], 'documentation': [], 'config': []}
+
+
+def test_classify_path_specificity_for_python_source_template_is_zero():
+    """A bare-basename glob carries no non-wildcard path-segment token."""
+    ext = BuildExtension()
+    assert ext.classify_path_specificity(EXECUTOR_TEMPLATE, 'production') == 0
+
+
+def test_classify_globs_covers_the_executor_template():
+    """The build_map seed carries a production route matching the executor template."""
+    ext = BuildExtension()
+    production_routes = [
+        pattern for pattern, role in ext.classify_globs() if role == 'production'
+    ]
+    assert any(route_matches(EXECUTOR_TEMPLATE, pattern) for pattern in production_routes)
+
+
+def test_classify_globs_does_not_cover_non_python_templates():
+    """Negative control: no route claims a template that renders into non-python."""
+    ext = BuildExtension()
+    routes = [pattern for pattern, _role in ext.classify_globs()]
+    for path in ('docs/readme.md.template', 'ops/config.yml.template'):
+        assert not any(route_matches(path, pattern) for pattern in routes)
+
+
+# ---------------------------------------------------------------------------
+# Production python roots the pattern table previously missed
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    'path',
+    [
+        'build.py',
+        'marketplace/bundles/plan-marshall/skills/plan-marshall-plugin/extension.py',
+        'marketplace/targets/generate.py',
+        'marketplace/targets/__init__.py',
+        'marketplace/targets/claude/emitter.py',
+    ],
+)
+def test_classify_paths_claims_production_python_outside_scripts_dirs(path):
+    """Production python at a declared root is claimed even outside a scripts/ directory.
+
+    ``marketplace/targets/__init__.py`` is the direct-child case: a ``**/`` form
+    would require a further path segment, so the single-``*`` route shape is what
+    covers both the direct child and the nested files.
+    """
+    ext = BuildExtension()
+    assert ext.classify_paths([path])['production'] == [path]
+
+
+@pytest.mark.parametrize(
+    'path',
+    [
+        'doc/example.py',
+        'doc/developer/build_notes.py',
+        'other/bundles/foo.py',
+        'marketplace/README.py',
+    ],
+)
+def test_classify_paths_does_not_claim_python_outside_the_declared_roots(path):
+    """Negative control: the production roots are anchored, not a blanket *.py claim."""
+    ext = BuildExtension()
+    assert ext.classify_paths([path]) == {
+        'production': [],
+        'test': [],
+        'documentation': [],
+        'config': [],
+    }
+
+
+def test_classify_path_specificity_for_the_added_production_roots():
+    """Each added production row scores its non-wildcard path-segment token count."""
+    ext = BuildExtension()
+    assert ext.classify_path_specificity('build.py', 'production') == 1
+    assert ext.classify_path_specificity('marketplace/targets/generate.py', 'production') == 2
+    assert (
+        ext.classify_path_specificity(
+            'marketplace/bundles/plan-marshall/skills/plan-marshall-plugin/extension.py',
+            'production',
+        )
+        == 2
+    )
+
+
+# ---------------------------------------------------------------------------
+# Non-python fixture content under the pytest roots -> test
+# ---------------------------------------------------------------------------
+
+
+def test_test_fixture_suffixes_are_the_routed_classes():
+    """Pin the routed fixture classes so the set cannot silently shrink."""
+    assert _EXTENSION_MODULE._TEST_FIXTURE_SUFFIXES == (
+        '.info',
+        '.java',
+        '.json',
+        '.lcov',
+        '.log',
+        '.toon',
+        '.xml',
+    )
+
+
+@pytest.mark.parametrize('suffix', _EXTENSION_MODULE._TEST_FIXTURE_SUFFIXES)
+@pytest.mark.parametrize('root', ('test', 'tests'))
+def test_classify_paths_claims_fixture_content_under_the_test_roots(root, suffix):
+    """Every routed fixture class under either pytest root is claimed as test."""
+    ext = BuildExtension()
+    path = f'{root}/plan-marshall/build-pyproject/fixtures/sample{suffix}'
+    assert ext.classify_paths([path])['test'] == [path]
+
+
+@pytest.mark.parametrize('suffix', _EXTENSION_MODULE._TEST_FIXTURE_SUFFIXES)
+def test_classify_paths_does_not_claim_fixture_suffixes_outside_the_test_roots(suffix):
+    """Negative control: the fixture routes are root-anchored, not suffix-only."""
+    ext = BuildExtension()
+    for path in (f'doc/developer/sample{suffix}', f'marketplace/bundles/x/data{suffix}'):
+        assert ext.classify_paths([path]) == {
+            'production': [],
+            'test': [],
+            'documentation': [],
+            'config': [],
+        }
+
+
+@pytest.mark.parametrize('suffix', _EXTENSION_MODULE._TEST_FIXTURE_SUFFIXES)
+def test_classify_path_specificity_for_fixture_routes_is_the_root_token(suffix):
+    """A fixture route's only non-wildcard path-segment token is its root."""
+    ext = BuildExtension()
+    path = f'test/plan-marshall/fixtures/sample{suffix}'
+    assert ext.classify_path_specificity(path, 'test') == 1
+
+
+def test_classify_paths_leaves_documentation_under_the_test_roots_unclaimed():
+    """Documentation classification is unchanged - docs have no build-system owner.
+
+    The aggregator recognises documentation generically BEFORE any extension is
+    consulted, so a documentation claim here would be unreachable. The fixture
+    routes are an explicit per-class enumeration precisely so they cannot absorb
+    a documentation path.
+    """
+    ext = BuildExtension()
+    docs = [
+        'test/fixtures/poc-agent.md',
+        'test/pm-documents/content/high-quality.adoc',
+        'tests/data/notes.asciidoc',
+    ]
+    assert ext.classify_paths(docs) == {
+        'production': [],
+        'test': [],
+        'documentation': [],
+        'config': [],
+    }
+
+
+@pytest.mark.parametrize('suffix', _EXTENSION_MODULE._TEST_FIXTURE_SUFFIXES)
+@pytest.mark.parametrize('root', ('test', 'tests'))
+def test_classify_globs_declares_a_test_route_per_fixture_class(root, suffix):
+    """Both Axis-B tables carry every fixture class - the two cannot drift apart."""
+    ext = BuildExtension()
+    assert (f'{root}/*{suffix}', 'test') in ext.classify_globs()
+
+
+# ---------------------------------------------------------------------------
+# Population-derived closure: the previously-unclaimed classes are now empty
+# ---------------------------------------------------------------------------
+
+
+def test_tracked_python_source_artifacts_at_the_declared_roots_are_all_claimed():
+    """No tracked python source artifact at a declared root survives unclaimed.
+
+    Population-derived from the git-tracked tree rather than from a hand-picked
+    sample, so a root the routes forgot fails here instead of passing by omission.
+    """
+    ext = BuildExtension()
+    population = [
+        path
+        for path in _tracked()
+        if path.endswith('.py.template')
+        or (
+            path.endswith(('.py', '.pyi'))
+            and (
+                path == 'build.py'
+                or path.startswith(('marketplace/bundles/', 'marketplace/targets/'))
+            )
+        )
+    ]
+    assert EXECUTOR_TEMPLATE in population
+    claimed = set(ext.classify_paths(population)['production'])
+    assert set(population) - claimed == set()
+
+
+def test_tracked_test_root_fixture_classes_are_all_claimed():
+    """No tracked fixture in a routed class survives unclaimed under either pytest root."""
+    ext = BuildExtension()
+    suffixes = _EXTENSION_MODULE._TEST_FIXTURE_SUFFIXES
+    population = [
+        path
+        for path in _tracked()
+        if path.startswith(('test/', 'tests/')) and path.endswith(suffixes)
+    ]
+    assert population, 'no tracked fixture content in the routed classes'
+    claimed = set(ext.classify_paths(population)['test'])
+    assert set(population) - claimed == set()
+
+
+def test_tracked_routed_population_is_covered_by_the_build_map_routes():
+    """The build_map seed covers the same population classify_paths() claims."""
+    ext = BuildExtension()
+    routes = [pattern for pattern, _role in ext.classify_globs()]
+    suffixes = _EXTENSION_MODULE._TEST_FIXTURE_SUFFIXES
+    population = [
+        path
+        for path in _tracked()
+        if path.endswith('.py.template')
+        or (
+            path.endswith(('.py', '.pyi'))
+            and (
+                path == 'build.py'
+                or path.startswith(('marketplace/bundles/', 'marketplace/targets/'))
+            )
+        )
+        or (path.startswith(('test/', 'tests/')) and path.endswith(suffixes))
+    ]
+    assert population
+    uncovered = [
+        path
+        for path in population
+        if not any(route_matches(path, pattern) for pattern in routes)
+    ]
+    assert uncovered == []
 
 
 def test_classify_build_class_production_maps_to_compile():
