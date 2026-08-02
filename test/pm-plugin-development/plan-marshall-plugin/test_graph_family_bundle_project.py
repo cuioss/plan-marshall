@@ -60,8 +60,25 @@ _cmd_client = load_script_module(
 )
 
 EXPECTED_RESOLVER_IDS = ['markdown', 'maven', 'python']
-"""The shipped resolver roster: one Axis-B implementor and two Axis-A ones."""
+"""The shipped resolver roster: one Axis-B implementor and two Axis-A ones.
 
+This literal is the module's SINGLE executable pin, and it is deliberate. It is
+consumed only by :func:`test_the_expected_resolver_roster_is_discovered` (which
+asserts it against ``discover_derivation_resolvers()``) and by that assertion's
+own count companion. Every other site that needs the roster derives it from the
+discovery stage instead, so adding a resolver to the registry fails the pin —
+the one place a human is meant to look — rather than silently leaving a copy of
+the roster stale somewhere downstream. Deriving the pin too would make the whole
+module vacuous: a registry that discovered nothing would satisfy a fully-derived
+assertion set.
+"""
+
+# The axis-membership sets stay hand-written on purpose. Unlike the roster, axis
+# membership is not carried on the discovered record — it is a class-hierarchy
+# property (an Axis-B resolver is a BuildExtensionBase implementor), so deriving
+# these would require isinstance checks against the build hierarchy. That is a
+# materially larger refactor than the roster-duplication these constants sit
+# next to, so they remain literals and are asserted as membership, not equality.
 AXIS_B_RESOLVER_IDS = {'maven'}
 AXIS_A_RESOLVER_IDS = {'markdown', 'python'}
 
@@ -259,11 +276,17 @@ def test_at_least_one_graph_edge_is_stamped_by_a_resolver_not_declared():
     promise. The claim that bites is that the resolver contribution survives
     the merge at all — which is exactly what the empty-declaration defect
     reduced to zero.
+
+    The ids the producers are matched against come from the discovery stage,
+    not from the roster literal: this assertion is about resolver provenance
+    surviving the consumer, so it must follow whatever the registry actually
+    yields rather than carry a second copy of the pin.
     """
-    graph = _pipeline()['graph']
+    pipeline = _pipeline()
+    resolver_ids = {record['id'] for record in pipeline['resolvers']}
 
     resolver_stamped = [
-        edge for edge in graph['edges'] if set(edge['producers']) & set(EXPECTED_RESOLVER_IDS)
+        edge for edge in pipeline['graph']['edges'] if set(edge['producers']) & resolver_ids
     ]
 
     assert resolver_stamped, (
@@ -273,11 +296,20 @@ def test_at_least_one_graph_edge_is_stamped_by_a_resolver_not_declared():
 
 
 def test_graph_response_names_the_resolvers_that_ran():
-    """The anti-vacuity numerator rides all the way to the consumer's response."""
-    graph = _pipeline()['graph']
+    """The anti-vacuity numerator rides all the way to the consumer's response.
 
-    assert graph['resolver_count'] == len(EXPECTED_RESOLVER_IDS)
-    assert sorted(report['id'] for report in graph['resolvers']) == EXPECTED_RESOLVER_IDS
+    Both sides are derived rather than pinned, and the claim survives that:
+    the expected ids come from the pipeline's ``discover_derivation_resolvers()``
+    stage while the observed ids come from the independent ``get_module_graph()``
+    call, so this remains a genuine cross-stage agreement check instead of a
+    second copy of the roster literal.
+    """
+    pipeline = _pipeline()
+    discovered_ids = sorted(record['id'] for record in pipeline['resolvers'])
+    graph = pipeline['graph']
+
+    assert graph['resolver_count'] == len(discovered_ids)
+    assert sorted(report['id'] for report in graph['resolvers']) == discovered_ids
 
 
 def test_merge_stage_produces_edges():
