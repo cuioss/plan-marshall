@@ -107,10 +107,14 @@ class BuildExtension(BuildExtensionBase):
     # path-segment tokens in the glob. The aggregator resolves multi-extension
     # overlap by comparing specificity values across claiming extensions.
     _CLASSIFY_PATTERNS: tuple[tuple[str, str, int], ...] = (
-        # Production python under any scripts/ directory. Both `*/scripts/sub/foo.py`
-        # (deep) and `*/scripts/foo.py` (direct child) variants must match — fnmatch's
-        # `**/scripts/**/*.py` requires a subdirectory after `scripts/`, so the
-        # direct-child pattern is needed alongside.
+        # Production python under any NESTED scripts/ directory. Both
+        # `*/scripts/sub/foo.py` (deep) and `*/scripts/foo.py` (direct child)
+        # variants must match — fnmatch's `**/scripts/**/*.py` requires a
+        # subdirectory after `scripts/`, so the direct-child pattern is needed
+        # alongside. Both rows need a path component BEFORE `scripts/`, so a
+        # repo-root `scripts/foo.py` matches neither — deliberately: this table
+        # claims no root that `classify_globs()` declares no route for, or
+        # `validate_tree_completeness` could never see the claimed population.
         ('**/scripts/**/*.py', 'production', 2),
         ('**/scripts/*.py', 'production', 2),
         # Production python at the roots classify_globs() already declares but this
@@ -119,8 +123,6 @@ class BuildExtension(BuildExtensionBase):
         # per root covers direct children and nested files alike.
         ('marketplace/bundles/*.py', 'production', 2),
         ('marketplace/targets/*.py', 'production', 2),
-        ('scripts/**/*.py', 'production', 1),
-        ('scripts/*.py', 'production', 1),
         ('build.py', 'production', 1),
         # Test python under any test/ or tests/ directory (deep child + direct child).
         ('test/**/*.py', 'test', 1),
