@@ -99,6 +99,15 @@ POPULATION_INLINE = 'inline'
 POPULATION_MIXED = 'mixed'
 TOKEN_POPULATIONS = (POPULATION_DISPATCHED, POPULATION_INLINE, POPULATION_MIXED)
 
+# Phase Breakdown ``Tokens`` column header. The header names a DEFAULT
+# population plus the marking convention that carries the exceptions — the
+# column is not single-population, so a bare ``Tokens (dispatched)`` would
+# assert over a mixed column exactly the single-population claim this module
+# exists to stop making. A label may state a default only when the exceptions
+# are marked per row (``_POPULATION_CELL_SUFFIX``) and the annotation under the
+# table declares that default; both hold here.
+_TOKENS_COLUMN_HEADER = 'Tokens (dispatched unless marked)'
+
 # Phase Breakdown ``Tokens`` cell suffix per population. ``dispatched`` renders
 # bare and is declared as the column's default by the annotation under the
 # table: marking every ordinary row would bury the rows that actually differ.
@@ -106,6 +115,33 @@ _POPULATION_CELL_SUFFIX = {
     POPULATION_INLINE: ' (inline)',
     POPULATION_MIXED: ' (mixed)',
 }
+
+# ``Total`` row ``Tokens`` cell suffix. The Total inherits the column's declared
+# default, so a Total fed by an ``(inline)`` row is an exception and must be
+# marked like any other: unmarked, it would assert the dispatched total it is
+# not. Deliberately NOT ``(mixed)`` — that marker already means something else
+# on a phase row (a dispatched cell whose row ALSO recorded inline spend).
+_TOTAL_CROSS_POPULATION_SUFFIX = ' (spans populations)'
+
+# The four raw ``message.usage`` fields rendered per phase, with their bullet
+# labels, in report order. Module-level so the render loop and the contract test
+# read the SAME population: a fifth usage field added here must render under the
+# group heading, and cannot slip in unlabelled. All four measure ONE population
+# (main-context-window, per the Token-Field Population Lattice), so the group
+# heading states that population outright rather than a default-plus-exception —
+# there is no exception to mark.
+_FOUR_FIELD_USAGE_LABELS = (
+    ('input_tokens', 'Input tokens'),
+    ('output_tokens', 'Output tokens'),
+    ('cache_read_input_tokens', 'Cache read input tokens'),
+    ('cache_creation_input_tokens', 'Cache creation input tokens'),
+)
+
+_FOUR_FIELD_GROUP_HEADING = (
+    '- **Main-context-window usage**: raw `message.usage` summed over this phase\'s parent '
+    'turns and the subagent transcripts attributed to the same window. Every bullet below '
+    'measures that one population'
+)
 
 # Phase Details ``Total tokens`` bullet qualifier per population. Every rendered
 # total names its own population, so the bullet stays legible without reading
@@ -1097,7 +1133,7 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         'Worked',
         'Reported (wall)',
         'Idle',
-        'Tokens',
+        _TOKENS_COLUMN_HEADER,
         'Tool Uses',
         'Billing (cost)',
     )
@@ -1150,15 +1186,20 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         # Declare the population at the point of render. The cell carries the
         # marker; the annotation under the table declares the unmarked default
         # and spells out what each marker means, so a reader never has to infer
-        # the population from a column header that names a total, not a measured
-        # population.
+        # the population from the column header's default.
+        #
+        # A phase is collected for the annotation ONLY when its cell actually
+        # carries the marker. An absent cell renders `-`, takes no suffix, and
+        # contributes nothing to the Total — naming it under "Marked `(inline)`"
+        # would assert a marker the reader cannot find, and would make the Total
+        # look cross-population when no inline figure fed it.
         population = _token_population(phase)
-        if population == POPULATION_INLINE:
-            inline_population_phases.append(phase_name)
-        elif population == POPULATION_MIXED:
-            mixed_population_phases.append(phase_name)
         if tokens_str != '-':
             tokens_str += _POPULATION_CELL_SUFFIX.get(population, '')
+            if population == POPULATION_INLINE:
+                inline_population_phases.append(phase_name)
+            elif population == POPULATION_MIXED:
+                mixed_population_phases.append(phase_name)
 
         tool_uses = _numeric(phase.get('tool_uses'))
         tool_uses_str = str(int(tool_uses)) if tool_uses is not None else '-'
@@ -1198,6 +1239,13 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     total_wall_str = _total_str(wall_values, lambda n: format_duration(float(n)), is_duration=True)
     total_idle_str = _total_str(idle_values, lambda n: format_duration(float(n)), is_duration=True)
     total_tokens_str = _total_str(tokens_values, lambda n: f'{n:,}')
+    # The Total is a cell in the same column and inherits the same declared
+    # default, so it takes the same marking discipline as every other cell: when
+    # an `(inline)` row fed the sum, the Total spans populations and says so.
+    # Only `(inline)` rows cross-contaminate the sum — a `(mixed)` row's cell is
+    # the dispatched figure, with its inline spend deliberately excluded.
+    if inline_population_phases and total_tokens_str != '-':
+        total_tokens_str += _TOTAL_CROSS_POPULATION_SUFFIX
     total_tool_uses_str = _total_str(tool_uses_values, str)
     total_billing_str = _total_str(billing_values, lambda n: f'{n:,}')
 
@@ -1248,22 +1296,35 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     # Population annotation: the Tokens column is NOT single-population, and the
     # Total row therefore is not a dispatched total. Say so where the figures are
     # rendered rather than leaving the reader to infer it from a field name.
-    if inline_population_phases:
-        lines.append(
-            '> Tokens population: an unmarked cell is a dispatched-subagent measurement. '
-            'Marked `(inline)` — the phase dispatched nothing, so the cell is the '
-            'main-context-window measurement enrich folded into total_tokens (also recorded '
-            f'under its own name as inline_main_context_tokens): {", ".join(inline_population_phases)}. '
-            'The **Total** therefore sums more than one population and is not a dispatched total.'
-        )
-        lines.append('')
-    if mixed_population_phases:
-        lines.append(
-            '> Marked `(mixed)` — the cell is the phase\'s dispatched-subagent total; the inline '
-            'main-context spend measured in the same window is recorded separately as '
-            'inline_main_context_tokens and is excluded from both the cell and the **Total**: '
-            f'{", ".join(mixed_population_phases)}.'
-        )
+    #
+    # ONE annotation line carries the default and every exception together: the
+    # default declaration is the key to the column header's "unless marked"
+    # clause, and a key separated from the markers it explains (by a blockquote
+    # break) is a key the reader has to reassemble. Assembling the clauses means
+    # the default renders whenever ANY marker appears — including a report whose
+    # only exceptions are `(mixed)`, which a gate on the inline case alone would
+    # leave with markers and no key.
+    if inline_population_phases or mixed_population_phases:
+        population_clauses = [
+            '> Tokens population: an unmarked cell is a dispatched-subagent measurement — '
+            'the default this column header declares.'
+        ]
+        if inline_population_phases:
+            population_clauses.append(
+                'Marked `(inline)` — the phase dispatched nothing, so the cell is the '
+                'main-context-window measurement enrich folded into total_tokens (also recorded '
+                f'under its own name as inline_main_context_tokens): {", ".join(inline_population_phases)}. '
+                'The **Total** therefore sums more than one population and is not a dispatched '
+                'total; its cell is marked `(spans populations)`.'
+            )
+        if mixed_population_phases:
+            population_clauses.append(
+                'Marked `(mixed)` — the cell is the phase\'s dispatched-subagent total; the inline '
+                'main-context spend measured in the same window is recorded separately as '
+                'inline_main_context_tokens and is excluded from both the cell and the **Total**: '
+                f'{", ".join(mixed_population_phases)}.'
+            )
+        lines.append(' '.join(population_clauses))
         lines.append('')
 
     # Phase details
@@ -1372,17 +1433,20 @@ def cmd_generate(args: argparse.Namespace) -> dict:
             lines.append(f'- **Tool uses**: {int(tool_uses)}')
 
         # Four-field usage view (sourced by `enrich` from subagent-transcript +
-        # parent-window `message.usage` walks). Rendered per phase when present.
-        _four_field_labels = (
-            ('input_tokens', 'Input tokens'),
-            ('output_tokens', 'Output tokens'),
-            ('cache_read_input_tokens', 'Cache read input tokens'),
-            ('cache_creation_input_tokens', 'Cache creation input tokens'),
-        )
-        for field, label in _four_field_labels:
+        # parent-window `message.usage` walks). Rendered per phase when present,
+        # nested under a heading that names the population all four measure: an
+        # API field name states no population at all, so these bullets were the
+        # only rendered token figures carrying no population claim whatsoever.
+        # The heading is the leaner form — one statement for four bullets — and
+        # the nesting is what scopes it to them rather than to the whole list.
+        four_field_bullets: list[str] = []
+        for field, label in _FOUR_FIELD_USAGE_LABELS:
             value = phase.get(field)
             if isinstance(value, (int, float)) and value:
-                lines.append(f'- **{label}**: {int(value):,}')
+                four_field_bullets.append(f'  - **{label}**: {int(value):,}')
+        if four_field_bullets:
+            lines.append(_FOUR_FIELD_GROUP_HEADING)
+            lines.extend(four_field_bullets)
 
         billing = phase.get('billing_weighted_total')
         if isinstance(billing, (int, float)) and billing:

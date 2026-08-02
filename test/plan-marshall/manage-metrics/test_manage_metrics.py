@@ -346,6 +346,11 @@ def test_generate_three_column_header_order(plan_context):
     Worked, Reported (wall), Idle come first, then the two work measures, then
     the derived-cost column — which is last precisely because it is not a work
     measure and must not read as one.
+
+    The Tokens header is asserted as a LITERAL, not read back from
+    ``_TOKENS_COLUMN_HEADER``: the rendered string is a reader-facing contract,
+    and deriving the expectation from the constant under test would assert only
+    that the code equals itself.
     """
     cmd_start_phase(_ns_start_phase('metrics-gen-cols', '1-init'))
     cmd_end_phase(_ns_end_phase('metrics-gen-cols', '1-init', total_tokens=1000, tool_uses=3))
@@ -358,10 +363,35 @@ def test_generate_three_column_header_order(plan_context):
         'Worked',
         'Reported (wall)',
         'Idle',
-        'Tokens',
+        'Tokens (dispatched unless marked)',
         'Tool Uses',
         'Billing (cost)',
     ]
+
+
+def test_tokens_column_header_names_a_default_not_a_single_population(plan_context):
+    """The Tokens header states a DEFAULT population plus the marking convention.
+
+    The column is not single-population — an inline phase's cell carries a
+    main-context-window figure — so a bare ``Tokens (dispatched)`` would assert
+    over a mixed column exactly the single-population claim this report exists
+    to stop making. The header must name the default AND signal that exceptions
+    are marked.
+    """
+    cmd_start_phase(_ns_start_phase('metrics-header-default', '1-init'))
+    cmd_end_phase(_ns_end_phase('metrics-header-default', '1-init', total_tokens=1000))
+    cmd_generate(_ns_generate('metrics-header-default'))
+
+    header = _phase_breakdown_header(
+        (plan_context.plan_dir_for('metrics-header-default') / 'metrics.md').read_text()
+    )
+    tokens_col = [c.strip() for c in header.strip('|').split('|')][4]
+    assert tokens_col == 'Tokens (dispatched unless marked)'
+    # The population is named, and it is named as a default rather than as an
+    # unqualified property of every cell in the column.
+    assert 'dispatched' in tokens_col
+    assert 'unless marked' in tokens_col
+    assert tokens_col != 'Tokens (dispatched)'
 
 
 def test_generate_worked_rollup_uses_max_not_sum(plan_context):
@@ -3214,6 +3244,117 @@ def test_dispatched_only_report_carries_no_population_annotation(plan_context):
     assert '(inline)' not in report
     assert '(mixed)' not in report
     assert manage_metrics._POPULATION_BULLET_NOTE[manage_metrics.POPULATION_DISPATCHED] in report
+
+
+def _total_tokens_cell(report: str) -> str:
+    """Return the Tokens cell of the Phase Breakdown ``**Total**`` row."""
+    total_line = next(ln for ln in report.splitlines() if ln.startswith('| **Total**'))
+    return [c.strip() for c in total_line.strip('|').split('|')][4]
+
+
+def test_total_row_is_marked_when_an_inline_row_fed_the_sum(plan_context, monkeypatch):
+    """The Total inherits the column default, so a cross-population sum is marked.
+
+    The column header declares `dispatched` as the unmarked default. A Total fed
+    by an `(inline)` row is therefore an exception like any other cell, and an
+    unmarked one would assert precisely the dispatched-total claim the annotation
+    directly beneath it denies — the partition-labelled-a-whole defect, relocated
+    from the field name to the Total row.
+    """
+    plan_id = 'population-total-spans'
+    cmd_start_phase(_ns_start_phase(plan_id, '1-init'))
+    cmd_end_phase(_ns_end_phase(plan_id, '1-init'))
+    cmd_start_phase(_ns_start_phase(plan_id, '5-execute'))
+    cmd_end_phase(_ns_end_phase(plan_id, '5-execute', total_tokens=42000))
+
+    _run_enrich_with_buckets(plan_id, monkeypatch, {'1-init': _INLINE_BUCKET})
+    cmd_generate(_ns_generate(plan_id))
+    report = (plan_context.plan_dir_for(plan_id) / 'metrics.md').read_text(encoding='utf-8')
+
+    assert '(spans populations)' in _total_tokens_cell(report)
+    # The annotation states the marker, so the reader has its key.
+    assert '`(spans populations)`' in report
+    assert 'not a dispatched total' in report
+
+
+def test_total_row_is_unmarked_when_every_contributing_row_is_dispatched(plan_context, monkeypatch):
+    """Matched negative control: a single-population Total takes NO marker.
+
+    Without this, the positive assertion above would pass over an implementation
+    that marked the Total unconditionally — which would state "spans
+    populations" on a Total that spans exactly one, and prove nothing about the
+    discriminator driving it.
+    """
+    plan_id = 'population-total-single'
+    cmd_start_phase(_ns_start_phase(plan_id, '5-execute'))
+    cmd_end_phase(_ns_end_phase(plan_id, '5-execute', total_tokens=42000))
+    cmd_start_phase(_ns_start_phase(plan_id, '6-finalize'))
+    cmd_end_phase(_ns_end_phase(plan_id, '6-finalize', total_tokens=88000))
+
+    # 6-finalize is `mixed` — a dispatched cell whose row ALSO records inline
+    # spend that the cell EXCLUDES. A mixed row therefore does NOT make the Total
+    # cross-population, and the Total must stay unmarked despite a marker being
+    # present in the table.
+    _run_enrich_with_buckets(plan_id, monkeypatch, {'6-finalize': _INLINE_BUCKET})
+    cmd_generate(_ns_generate(plan_id))
+    report = (plan_context.plan_dir_for(plan_id) / 'metrics.md').read_text(encoding='utf-8')
+
+    assert '(mixed)' in report, 'fixture must actually produce a marked row'
+    assert '(spans populations)' not in _total_tokens_cell(report)
+    assert '(spans populations)' not in report
+
+
+def test_four_message_usage_bullets_render_under_the_main_context_heading(
+    plan_context, monkeypatch
+):
+    """Every `message.usage` bullet names its population — via a group heading.
+
+    An API field name states no population at all, so these four were the only
+    rendered token figures carrying no population claim whatsoever.
+
+    The bullet set is derived from `_FOUR_FIELD_USAGE_LABELS` — the same tuple
+    the render loop iterates — rather than from four hand-written names, so a
+    fifth usage field added later cannot render unlabelled and still pass. It is
+    deliberately NOT derived from `_INLINE_MAIN_CONTEXT_FIELDS`, which holds only
+    three fields (it excludes `cache_read_input_tokens`) and would silently leave
+    the cache-read bullet uncovered.
+    """
+    plan_id = 'population-four-field-group'
+    cmd_start_phase(_ns_start_phase(plan_id, '2-refine'))
+    cmd_end_phase(_ns_end_phase(plan_id, '2-refine', total_tokens=42000))
+
+    _run_enrich_with_buckets(plan_id, monkeypatch, {'2-refine': _INLINE_BUCKET})
+    cmd_generate(_ns_generate(plan_id))
+    report = (plan_context.plan_dir_for(plan_id) / 'metrics.md').read_text(encoding='utf-8')
+    lines = report.splitlines()
+
+    assert 'Main-context-window' in manage_metrics._FOUR_FIELD_GROUP_HEADING
+    # Assert presence before indexing: a bare `.index()` on a missing heading
+    # raises ValueError, which reports the absence as a crash rather than as the
+    # contract failure it is.
+    assert manage_metrics._FOUR_FIELD_GROUP_HEADING in lines, (
+        'the four message.usage bullets rendered with no population heading'
+    )
+    heading_idx = lines.index(manage_metrics._FOUR_FIELD_GROUP_HEADING)
+
+    # Every field the render loop knows about, whose fixture value is non-zero,
+    # renders as a nested bullet inside the group the heading opens.
+    expected = [
+        f'  - **{label}**: {int(_INLINE_BUCKET[field]):,}'
+        for field, label in manage_metrics._FOUR_FIELD_USAGE_LABELS
+        if _INLINE_BUCKET.get(field)
+    ]
+    assert expected, 'fixture must exercise at least one four-field bullet'
+    assert lines[heading_idx + 1: heading_idx + 1 + len(expected)] == expected
+
+    # No four-field bullet may escape the group by rendering at top level. The
+    # nested form starts with two spaces, so a PREFIX test is what discriminates
+    # them — an exact-membership test would match neither form and assert nothing.
+    for _field, label in manage_metrics._FOUR_FIELD_USAGE_LABELS:
+        top_level = f'- **{label}**:'
+        assert not any(ln.startswith(top_level) for ln in lines), (
+            f'{label} rendered outside the population group'
+        )
 
 
 def test_every_declared_population_has_a_bullet_note():

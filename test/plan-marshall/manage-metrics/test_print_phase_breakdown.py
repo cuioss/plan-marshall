@@ -166,6 +166,34 @@ class TestExtractedSectionCarriesBillingColumn:
         assert '119,003' in section
 
 
+class TestExtractedSectionCarriesPopulationQualifiedHeader:
+    """The extracted breakdown names the population its Tokens column measures.
+
+    The breakdown section is what the finalize summary inlines, so it is where
+    most readers meet the Tokens figure. A qualifier that survives only in the
+    full metrics.md — and is lost by the extraction the summary actually uses —
+    would leave that reader with the bare, population-silent column this plan
+    exists to remove.
+    """
+
+    def test_extracted_section_header_names_the_default_population(self, plan_context):
+        _seed_metrics_md('metrics-population-header')
+
+        content = (
+            plan_context.plan_dir_for('metrics-population-header') / 'metrics.md'
+        ).read_text(encoding='utf-8')
+        section = _extract_phase_breakdown_section(content)
+
+        assert section is not None
+        header = next(ln for ln in section.splitlines() if ln.startswith('| Phase'))
+        tokens_col = [c.strip() for c in header.strip('|').split('|')][4]
+        assert tokens_col == 'Tokens (dispatched unless marked)'
+        # Not the bare column, and not a single-population claim over a column
+        # that carries inline rows too.
+        assert tokens_col != 'Tokens'
+        assert tokens_col != 'Tokens (dispatched)'
+
+
 class TestExtractPhaseBreakdownSection:
     """Unit tests for the pure-string helper."""
 
@@ -565,7 +593,7 @@ class TestEndToEndPhaseBreakdownRendering:
             'Worked',
             'Reported (wall)',
             'Idle',
-            'Tokens',
+            'Tokens (dispatched unless marked)',
             'Tool Uses',
             'Billing (cost)',
         ]

@@ -41,10 +41,10 @@ The lattice has two directions and **both halves are first-class**. A field that
 | `dispatch_boundary_total` | `cmd_generate` via `_read_dispatch_boundary_totals` | dispatched-subagent | Sum of the `total_tokens` column across the phase's recorded dispatch-boundary rows. **Partial-capable** — the file may hold fewer rows than the phase had dispatches, so the sum is a floor unless `dispatch_boundary_rows_recorded` covers `subagent_samples` | `Dispatch-boundary total` bullet, which states the measure's coverage and whether it won; may also supply the `Tokens` cell under the reconciliation rule |
 | `dispatch_boundary_rows_recorded` | `cmd_generate` via `_read_dispatch_boundary_totals` | per-dispatch | Count of data rows summed into `dispatch_boundary_total`. Persisted whenever the file held rows, including when they sum to zero | The coverage clause of the `Dispatch-boundary total` bullet |
 | `subagent_total_tokens` | `cmd_enrich` | dispatched-subagent | Sum of `<usage>` totals across the dispatches attributed to the phase window | Named in the reconciliation annotation when it wins the maximum, and supplies the `Tokens` cell when it does |
-| `input_tokens` | `cmd_enrich` | main-context-window | `message.usage.input_tokens` summed across the phase window's parent turns and its attributed subagent transcripts | own bullet |
-| `output_tokens` | `cmd_enrich` | main-context-window | `message.usage.output_tokens`, same dual-source attribution | own bullet |
-| `cache_read_input_tokens` | `cmd_enrich` | main-context-window | `message.usage.cache_read_input_tokens`, same dual-source attribution | own bullet |
-| `cache_creation_input_tokens` | `cmd_enrich` | main-context-window | `message.usage.cache_creation_input_tokens`, same dual-source attribution | own bullet |
+| `input_tokens` | `cmd_enrich` | main-context-window | `message.usage.input_tokens` summed across the phase window's parent turns and its attributed subagent transcripts | own bullet, nested under the `Main-context-window usage` heading that names the population |
+| `output_tokens` | `cmd_enrich` | main-context-window | `message.usage.output_tokens`, same dual-source attribution | own bullet, under the same heading |
+| `cache_read_input_tokens` | `cmd_enrich` | main-context-window | `message.usage.cache_read_input_tokens`, same dual-source attribution | own bullet, under the same heading |
+| `cache_creation_input_tokens` | `cmd_enrich` | main-context-window | `message.usage.cache_creation_input_tokens`, same dual-source attribution | own bullet, under the same heading |
 | `billing_weighted_total` | `cmd_enrich` | derived-cost | `input + output + round(0.1 × cache_read) + round(1.25 × cache_creation)` over the four-field view | First-class `Billing (cost)` column with its own Total, plus the `Billing-weighted total` bullet. Aggregated into the `total_billing_weighted` return field — never into `total_tokens` |
 | `inline_main_context_tokens` | `cmd_enrich` (written on BOTH the inline-only and the mixed branch) | main-context-window | `input + output + cache_creation`, EXCLUDING `cache_read`, so the figure matches the dispatched-`<usage>` total definition | `Inline main-context tokens` bullet, whose text states whether the figure stands alongside a dispatched total (mixed) or IS the folded `total_tokens` (inline) |
 | `exploration_tool_calls` | `cmd_enrich` | main-context-window | Count of phase-window tool calls classified *exploration* | own bullet, on a presence test |
@@ -291,11 +291,12 @@ prevent that, and they are written together, never apart:
   own population, so the inline measurement is never readable ONLY through a
   dispatched-population field.
 - `total_tokens_population` states which population `total_tokens` measures on
-  this row, and **every render site prints it** — an `(inline)` / `(mixed)`
-  suffix on the Phase Breakdown `Tokens` cell, a population annotation under the
-  table (which also states that a `Total` containing an `inline` row sums more
-  than one population), and a population qualifier on the Phase Details
-  `Total tokens` bullet.
+  this row, and **every render site prints it** — the `Tokens (dispatched unless
+  marked)` column header declaring the default, an `(inline)` / `(mixed)` suffix
+  on the Phase Breakdown `Tokens` cell, a `(spans populations)` marker on the
+  `Total` cell when an `inline` row fed the sum, a population annotation under
+  the table declaring the default and naming the marked phases, and a population
+  qualifier on the Phase Details `Total tokens` bullet.
 
 `total_tokens` is **explicit-wins** on both non-inline signatures: a value
 recorded by a dispatched step's `<usage>` / the accumulator is never overwritten.
@@ -427,32 +428,46 @@ The `generate` command produces a markdown report with per-phase rows:
 ```markdown
 # Plan Metrics: my-feature
 
-| Phase | Worked | Reported (wall) | Idle | Tokens          | Tool Uses | Billing (cost) |
-|-------|--------|-----------------|------|-----------------|-----------|----------------|
+| Phase | Worked | Reported (wall) | Idle | Tokens (dispatched unless marked) | Tool Uses | Billing (cost) |
+|-------|--------|-----------------|------|-----------------------------------|-----------|----------------|
 | 1-init | 2m 30s | 3m 0s | 30s | 25,514 (inline) | 12 | 41,003 |
 | 2-refine | 4m 0s | 5m 30s | 1m 30s | 42,000 | 8 | 78,000 |
 | 3-outline | 7m 0s | 8m 15s | 1m 15s | 68,000 | 25 | 96,400 |
-| **Total** | **13m 30s** | **16m 45s** | **3m 15s** | **135,514** | **45** | **215,403** |
+| **Total** | **13m 30s** | **16m 45s** | **3m 15s** | **135,514 (spans populations)** | **45** | **215,403** |
 
-> Tokens population: an unmarked cell is a dispatched-subagent measurement. Marked `(inline)` — the phase dispatched nothing, so the cell is the main-context-window measurement enrich folded into total_tokens (also recorded under its own name as inline_main_context_tokens): 1-init. The **Total** therefore sums more than one population and is not a dispatched total.
+> Tokens population: an unmarked cell is a dispatched-subagent measurement — the default this column header declares. Marked `(inline)` — the phase dispatched nothing, so the cell is the main-context-window measurement enrich folded into total_tokens (also recorded under its own name as inline_main_context_tokens): 1-init. The **Total** therefore sums more than one population and is not a dispatched total; its cell is marked `(spans populations)`.
 
 ## 2-refine
 
 - **Total tokens**: 42,000 (dispatched-subagent population — summed from the dispatched leaves' `<usage>` envelopes)
-- Input tokens: 38,000
-- Output tokens: 4,000
-- Cache read input tokens: 210,000
-- Cache creation input tokens: 12,000
+- **Main-context-window usage**: raw `message.usage` summed over this phase's parent turns and the subagent transcripts attributed to the same window. Every bullet below measures that one population
+  - **Input tokens**: 38,000
+  - **Output tokens**: 4,000
+  - **Cache read input tokens**: 210,000
+  - **Cache creation input tokens**: 12,000
 - **Billing-weighted total**: 78,000 (derived-cost population — input + output + 0.1 × cache_read + 1.25 × cache_creation. What this phase cost to buy, over the main-context window; a different question from the dispatched work the Tokens column measures, so the two are never summed)
 ```
 
 The four-field usage view and the billing-weighted total are rendered per phase (each phase that carries them gets its own bullet list), not as a single plan-level "Session Enrichment" block. Each four-field bullet renders only when its underlying value is present and non-zero.
 
-Every rendered `total_tokens` figure carries its population: the `Tokens` cell takes an `(inline)` / `(mixed)` suffix (an unmarked cell is dispatched), the annotation under the table declares that default and names the marked phases, and the `Total tokens` bullet carries the population qualifier shown above. See § Inline Main-Context Attribution for the three signatures and the `total_tokens_population` discriminator that drives all three render sites.
+The four `message.usage` bullets are **nested under a `Main-context-window usage` heading** that names the population all four measure. An API field name states no population at all, so without the heading these were the only rendered token figures carrying no population claim. The heading states its population outright rather than as a default-plus-exception, because all four fields measure that one population on every row — there is no exception to mark. The bullet-label set is `_FOUR_FIELD_USAGE_LABELS` in `manage-metrics.py`: a usage field added there renders under the same heading and cannot slip in unlabelled.
+
+### Default-plus-exception labelling of the `Tokens` column
+
+The `Tokens` column is **not** single-population — an inline phase's cell carries a main-context-window figure (see § Inline Main-Context Attribution) — so its header names a default plus the marking convention that carries the exceptions: `Tokens (dispatched unless marked)`. A bare `Tokens (dispatched)` would assert a single population over a mixed column, which is the mislabel this contract exists to prevent.
+
+A label may state a default population only when **both** guards hold, and they hold here:
+
+1. **Every exception is marked at the row level.** A phase cell takes an `(inline)` / `(mixed)` suffix; an unmarked cell is dispatched. A phase is named in the annotation only when its cell actually carries the marker — a cell that renders `-` contributes nothing to the Total and is not claimed as marked.
+2. **The annotation declares the default.** The `> Tokens population: …` line renders whenever any marker appears (including a report whose only exceptions are `(mixed)`), so a marker is never printed without its key. It is ONE blockquote carrying the default and every exception clause together — a key split from the markers it explains is a key the reader has to reassemble. A wholly-dispatched report renders no annotation at all, because it has no exception to key.
+
+The **Total** row is a cell in the same column and inherits the same default, so it takes the same discipline: when an `(inline)` row fed the sum it is marked `(spans populations)`. Only `(inline)` rows cross-contaminate the Total — a `(mixed)` row's cell is the dispatched figure with its inline spend deliberately excluded. The distinct marker is deliberate: `(mixed)` already means something else on a phase row.
+
+Every rendered `total_tokens` figure therefore carries its population: the column header states the default, the `Tokens` cell takes an `(inline)` / `(mixed)` suffix, the Total takes `(spans populations)` when it spans them, the annotation under the table declares the default and names the marked phases, and the `Total tokens` bullet carries the exact per-row population qualifier shown above. The bullet states its row's population outright — it needs no default, so it does **not** take a `(dispatched)` label that would be false on an `inline` row. See § Inline Main-Context Attribution for the three signatures and the `total_tokens_population` discriminator that drives every render site.
 
 ### Duration Formatting
 
-The Phase Breakdown table carries three time columns in this order — `Worked`, `Reported (wall)`, `Idle` — followed by `Tokens`, `Tool Uses`, and `Billing (cost)`. Each time cell is formatted as `Xm Ys`. A cell renders `-` when its underlying value is absent or zero (the symmetric per-cell present/absent rule), and **every column is aggregated independently** under the same symmetric rule, so each Total carries its own `(n=k/6)` partiality marker. See the Worked, Reported (Wall), and Idle Time subsection above for how each time quantity is derived.
+The Phase Breakdown table carries three time columns in this order — `Worked`, `Reported (wall)`, `Idle` — followed by `Tokens (dispatched unless marked)`, `Tool Uses`, and `Billing (cost)`. Each time cell is formatted as `Xm Ys`. A cell renders `-` when its underlying value is absent or zero (the symmetric per-cell present/absent rule), and **every column is aggregated independently** under the same symmetric rule, so each Total carries its own `(n=k/6)` partiality marker. See the Worked, Reported (Wall), and Idle Time subsection above for how each time quantity is derived.
 
 `Billing (cost)` carries the per-phase `billing_weighted_total` — a **derived-cost** measure of what the phase cost to buy over the main-context window. It is a different question from the dispatched work `Tokens` measures, so the two columns are never summed into one another: `generate` returns the billing aggregate as its own `total_billing_weighted` field alongside `total_tokens`.
 
