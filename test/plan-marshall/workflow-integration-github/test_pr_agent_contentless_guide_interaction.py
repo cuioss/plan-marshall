@@ -1,0 +1,373 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
+# ruff: noqa: I001, E402
+"""End-to-end regression tests for PR-Agent's contentless Guide, producer + aggregator.
+
+On a clean PR, PR-Agent posts exactly one persistent ``## PR Reviewer Guide 🔍``
+``issue_comment``. Before the fix that comment survived the producer pre-filter and
+was filed as a pending hand-triage ``pr-comment`` finding, and the review
+retrospective then mapped the ``accepted`` disposition it always closes with into
+the ``false_positive`` bucket while dividing ``pct_resolved_as_fixed`` by
+``raw_total`` — so a reviewer that behaved correctly scored 100% false-positive /
+0.0% resolved-as-fixed.
+
+This module exercises the producer and the aggregator TOGETHER, which is what
+makes it distinct from the co-located unit tests: ``test_github_pr.py`` drives
+``_is_obvious_noise`` / ``_is_contentless_boilerplate`` in isolation and
+``test_review_retrospective.py`` drives ``aggregate()`` in isolation, while the
+arms here run ``cmd_fetch_findings``'s genuine ``_findings_core`` round-trip
+against a real findings store and feed its outcome into ``aggregate()``.
+
+Five arms:
+
+1. **Clean-PR arm** — the fully clean Guide is dropped, files no finding, and —
+   the load-bearing assertion — PR-Agent is STILL credited as a participant.
+2. **Mixed arm** — the same clean assertions plus one ``<details>`` focus-area
+   finding is stored IN FULL: there is no partial-body suppression.
+3. **Deviating-assertion arm** — a 🔒 row naming a concrete concern is stored; the
+   predicate fails open on a CHANGED required marker.
+4. **Partial-clean / docs-only arm** — the 🧪 clean assertion absent is stored; the
+   predicate fails open on a MISSING required marker. This arm enforces the
+   ``all(required)`` conjunction, so weakening the registry list to the 🔒 row
+   alone turns it red instead of silently widening the suppression.
+5. **Interaction arm** — the clean-PR arm's post-fix outcome fed into
+   ``aggregate()``: a suppressed Guide yields no ``reviewers[]`` row at all, and a
+   SURVIVING PR-Agent record resolved ``accepted`` scores in neither quality
+   bucket with ``pct_resolved_as_fixed is None`` — never ``0.0``.
+
+The findings store is REAL (isolated via the ``plan_context`` ``PLAN_BASE_DIR``
+sandbox); only the GitHub provider surface (``check_auth``,
+``fetch_pr_comments_data``, ``fetch_pr_head_sha``) is monkeypatched. The
+aggregator ships as a project-local script under ``.claude/skills/`` which
+``conftest.get_script_path`` cannot reach, so it is imported through the same
+``PROJECT_ROOT``-relative ``sys.path`` prologue ``test_review_retrospective.py``
+uses.
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+
+import bot_registry
+import pytest
+
+from conftest import PROJECT_ROOT, load_script_module
+
+_SCRIPTS_DIR = (
+    PROJECT_ROOT
+    / '.claude'
+    / 'skills'
+    / 'finalize-step-review-retrospective'
+    / 'scripts'
+)
+if str(_SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS_DIR))
+
+import review_retrospective as rr  # type: ignore[import-untyped]  # noqa: E402
+
+github_pr = load_script_module('plan-marshall', 'workflow-integration-github', 'github_pr.py', 'github_pr')
+_findings_core = load_script_module('plan-marshall', 'manage-findings', '_findings_core.py', '_findings_core')
+
+query_findings = _findings_core.query_findings
+
+_PR_AGENT_LOGIN = 'cuioss-review-bot'
+_PR_AGENT_REQUIRED_MARKERS = bot_registry.contentless_review_markers('pr-agent')
+
+
+# ---------------------------------------------------------------------------
+# Guide bodies — the four observable shapes
+# ---------------------------------------------------------------------------
+
+_GUIDE_HEADER = (
+    '## PR Reviewer Guide 🔍\n'
+    '\n'
+    'Here are some key observations to aid the review process:\n'
+    '\n'
+    '| | |\n'
+    '|---|---|\n'
+)
+
+# (1) The fully clean Guide: both clean assertions, no <details>.
+_CLEAN_GUIDE = _GUIDE_HEADER + (
+    '| 🔒 | **No security concerns identified** |\n'
+    '| 🧪 | **PR contains tests** |\n'
+)
+
+# (2) The same clean assertions PLUS one focus-area finding.
+_GUIDE_WITH_FINDING = _CLEAN_GUIDE + (
+    '| ⚡ | **Recommended focus areas for review** |\n'
+    '\n'
+    '<details><summary>Unbounded retry</summary>\n'
+    '<strong>The retry loop has no ceiling</strong>\n'
+    'A persistent upstream failure will spin forever.\n'
+    '</details>\n'
+)
+
+# (3) A CHANGED required marker: the 🔒 row names a concrete concern instead of
+# asserting a clean result. No <details> anywhere.
+_GUIDE_DEVIATING_ASSERTION = _GUIDE_HEADER + (
+    '| 🔒 | **Token value reaches the log sink at L42** |\n'
+    '| 🧪 | **PR contains tests** |\n'
+)
+
+# (4) A MISSING required marker: the docs-only shape — the 🔒 clean assertion is
+# present, the 🧪 one is absent entirely.
+_GUIDE_DOCS_ONLY = _GUIDE_HEADER + (
+    '| 🔒 | **No security concerns identified** |\n'
+)
+
+
+def _guide_comment(body, comment_id='guide-1'):
+    """A ``cuioss-review-bot`` issue_comment carrying ``body`` — PR-Agent's one shape."""
+    return {
+        'id': comment_id,
+        'author': _PR_AGENT_LOGIN,
+        'thread_id': '',
+        'kind': 'issue_comment',
+        'body': body,
+        'resolved': False,
+    }
+
+
+def _patch_provider(monkeypatch, comments):
+    """Monkeypatch only the GitHub provider surface — the findings store stays real."""
+    monkeypatch.setattr(github_pr._github, 'check_auth', lambda: (True, ''))
+    monkeypatch.setattr(
+        github_pr._github,
+        'fetch_pr_comments_data',
+        lambda pr_number, unresolved_only=False: {
+            'status': 'success',
+            'provider': 'github',
+            'comments': list(comments),
+            'total': len(comments),
+            'unresolved': len(comments),
+        },
+    )
+    monkeypatch.setattr(github_pr._github, 'fetch_pr_head_sha', lambda pr_number: 'deadbeef')
+
+
+def _run_fetch(pr_number, plan_id):
+    args = argparse.Namespace(pr_number=pr_number, plan_id=plan_id)
+    return github_pr.cmd_fetch_findings(args)
+
+
+def _stored(plan_id):
+    findings: list[dict] = query_findings(plan_id, finding_type='pr-comment')['findings']
+    return findings
+
+
+def _raw_body(finding):
+    """Return the quarantined ``raw_input.body`` the producer persisted."""
+    raw_input = finding.get('raw_input') or {}
+    return raw_input.get('body', '')
+
+
+def test_guide_fixtures_track_the_declared_marker_set():
+    """The four Guide shapes stay in step with the registry they exercise.
+
+    Each arm below is meaningful only relative to the DECLARED required-marker
+    set: arm 1 needs every marker present, arm 4 needs exactly one absent. Were a
+    marker added to ``pr-agent.md`` without the fixtures moving, arm 1 would stop
+    exercising the drop while still passing for the wrong reason.
+    """
+    assert _PR_AGENT_REQUIRED_MARKERS
+    for marker in _PR_AGENT_REQUIRED_MARKERS:
+        assert marker in _CLEAN_GUIDE
+        assert marker in _GUIDE_WITH_FINDING
+    assert '<details>' in _GUIDE_WITH_FINDING
+    assert '<details>' not in _CLEAN_GUIDE
+    # Arms 3 and 4 each break the conjunction in a DIFFERENT way — one marker
+    # changed, one marker removed — so exactly one required marker is absent from
+    # each and neither carries a disqualifying marker.
+    for deviating in (_GUIDE_DEVIATING_ASSERTION, _GUIDE_DOCS_ONLY):
+        absent = [m for m in _PR_AGENT_REQUIRED_MARKERS if m not in deviating]
+        assert len(absent) == 1
+        assert '<details>' not in deviating
+
+
+# ---------------------------------------------------------------------------
+# Arm 1 — the clean Guide is dropped, participation survives
+# ---------------------------------------------------------------------------
+
+
+def test_clean_guide_is_dropped_but_still_credits_participation(plan_context, monkeypatch):
+    """A fully clean Guide files no finding, yet PR-Agent is still a proven participant.
+
+    The drop is the point of the fix; the surviving participation is what keeps it
+    safe. ``participated_bots`` is derived from the raw comment list BEFORE the
+    pre-filter runs, so suppressing the bot's only comment removes its findings
+    without removing its evidence — the bot resolves to the already-defined
+    ``participated_but_empty`` taxonomy member rather than to ``absent``. A drop
+    that also erased participation would turn a clean review into a completeness
+    failure and hold the finalize step open forever.
+    """
+    plan_id = 'pr-agent-clean-guide-dropped'
+    _patch_provider(monkeypatch, [_guide_comment(_CLEAN_GUIDE)])
+
+    result = _run_fetch(1201, plan_id)
+
+    assert result['status'] == 'success'
+    assert result['count_stored'] == 0
+    # Counted as noise, NOT as a refusal and NOT as a self-response: a clean
+    # review is routine successful-review boilerplate, the class ignore_patterns
+    # already serves.
+    assert result['count_skipped_noise'] == 1
+    assert result['count_skipped_refusal'] == 0
+    assert result['count_skipped_self_response'] == 0
+    # A legitimate non-store — expected_stored accounts for it, so no
+    # (producer-mismatch) Q-Gate false-positive.
+    assert result['producer_mismatch_hash_id'] is None
+    # The load-bearing assertion: participation is untouched by the drop.
+    assert {'bot_kind': 'pr-agent', 'evidence_kind': 'issue_comment'} in result['participated_bots']
+    assert result['refused_bots'] == []
+
+    assert _stored(plan_id) == []
+
+
+# ---------------------------------------------------------------------------
+# Arm 2 — a finding-bearing Guide is stored in full
+# ---------------------------------------------------------------------------
+
+
+def test_guide_with_a_finding_is_stored_byte_identical(plan_context, monkeypatch):
+    """One ``<details>`` finding vetoes the drop, and the stored body is unmodified.
+
+    The byte-identical assertion closes the partial-suppression risk the rejected
+    ``ignore_patterns`` route would have carried: the layer either drops the whole
+    comment or leaves it entirely alone. It never edits a body to strip the
+    boilerplate rows out of a Guide that also carries real content — an operator
+    triaging the finding sees exactly what the reviewer wrote.
+    """
+    plan_id = 'pr-agent-guide-with-finding-stored'
+    _patch_provider(monkeypatch, [_guide_comment(_GUIDE_WITH_FINDING)])
+
+    result = _run_fetch(1202, plan_id)
+
+    assert result['status'] == 'success'
+    assert result['count_stored'] == 1
+    # The contentless layer did not fire — the counter did not move.
+    assert result['count_skipped_noise'] == 0
+    assert result['producer_mismatch_hash_id'] is None
+
+    stored = _stored(plan_id)
+    assert len(stored) == 1
+    assert _raw_body(stored[0]) == _GUIDE_WITH_FINDING
+
+
+# ---------------------------------------------------------------------------
+# Arms 3 and 4 — the conjunction fails open, both ways
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ('arm', 'body'),
+    [
+        ('deviating-assertion', _GUIDE_DEVIATING_ASSERTION),
+        ('docs-only-partial-clean', _GUIDE_DOCS_ONLY),
+    ],
+    # Explicit ids: without them pytest derives the id from the `body` operand and
+    # inlines the whole escaped Guide into every test id. `arm` doubles as the
+    # plan_id suffix below, so it is hyphen-cased to satisfy `validate_plan_id`'s
+    # ^[a-z][a-z0-9-]*$ — an underscore there is rejected at the findings-store
+    # boundary, not at parametrize time.
+    ids=['deviating-assertion', 'docs-only-partial-clean'],
+)
+def test_guide_missing_or_changing_a_required_marker_is_stored(plan_context, monkeypatch, arm, body):
+    """A Guide that deviates from the declared clean shape is filed, not dropped.
+
+    Two DIFFERENT halves of the ``all(required)`` conjunction:
+
+    - ``deviating-assertion`` CHANGES a required marker — the 🔒 row names a
+      concrete concern instead of asserting a clean result. That is a real
+      security finding and dropping it would destroy the highest-value output of
+      the three-bot set.
+    - ``docs-only-partial-clean`` REMOVES a required marker — the 🧪 clean
+      assertion is absent, the shape a docs-only PR produces. Its retention is the
+      accepted residual behind operator decision Q1: the drop requires EVERY
+      declared marker, and this arm turns red if the registry list is ever
+      weakened to the 🔒 row alone.
+    """
+    plan_id = f'pr-agent-guide-{arm}'
+    _patch_provider(monkeypatch, [_guide_comment(body)])
+
+    result = _run_fetch(1203, plan_id)
+
+    assert result['status'] == 'success'
+    assert result['count_stored'] == 1
+    assert result['count_skipped_noise'] == 0
+    assert result['producer_mismatch_hash_id'] is None
+
+    stored = _stored(plan_id)
+    assert len(stored) == 1
+    assert _raw_body(stored[0]) == body
+
+
+# ---------------------------------------------------------------------------
+# Arm 5 — the interaction: neither a false score nor a vacuous one
+# ---------------------------------------------------------------------------
+
+
+def test_suppressed_guide_produces_no_reviewer_row_at_all(plan_context, monkeypatch):
+    """With its only comment dropped, PR-Agent contributes zero records — so no score.
+
+    The first half of the interaction. ``aggregate()`` emits a ``reviewers[]`` row
+    only for an author that produced at least one record, so a reviewer whose
+    single clean Guide was suppressed cannot be scored at all — there is no row to
+    misread. This is fed the REAL post-fetch store rather than a hand-built record
+    list, which is what makes it an interaction test.
+    """
+    plan_id = 'pr-agent-suppressed-guide-no-row'
+    _patch_provider(monkeypatch, [_guide_comment(_CLEAN_GUIDE)])
+
+    fetch_result = _run_fetch(1204, plan_id)
+    assert fetch_result['count_stored'] == 0
+
+    report = rr.aggregate(_stored(plan_id))
+
+    assert report['total_findings'] == 0
+    assert report['reviewer_count'] == 0
+    assert report['reviewers'] == []
+
+
+def test_surviving_guide_record_scores_neither_false_positive_nor_vacuous_zero():
+    """The second half: a surviving Guide resolved ``accepted`` is not a wrong claim.
+
+    A Guide that DOES carry content survives the producer and is triaged; the
+    disposition it closes with is ``accepted`` — the reviewer said something valid
+    that the triage absorbed without a code change. Both defects are pinned at
+    once:
+
+    - ``false_positives_count == 0`` — an acknowledgement is not evidence the
+      reviewer was wrong; only ``rejected`` is.
+    - ``pct_resolved_as_fixed is None`` — the record is META (``issue_comment``),
+      so it contributes to neither the numerator nor the denominator. The old
+      ``raw_total`` denominator reported a confident ``0.0`` here, which is the
+      second half of the reported symptom.
+
+    ``None`` and ``0.0`` are the assertion that matters: they are both falsy, so a
+    test written as ``not row['pct_resolved_as_fixed']`` would pass against the
+    defect. The identity check is deliberate.
+    """
+    report = rr.aggregate([
+        {
+            'author': _PR_AGENT_LOGIN,
+            'kind': 'issue_comment',
+            'title': 'PR Reviewer Guide',
+            'resolution': 'accepted',
+        }
+    ])
+
+    rows = [row for row in report['reviewers'] if row['author'] == _PR_AGENT_LOGIN]
+    assert len(rows) == 1
+    row = rows[0]
+
+    assert row['raw_total'] == 1
+    assert row['meta_count'] == 1
+    assert row['actionable_count'] == 0
+    assert row['accepted'] == 1
+    assert row['false_positives_count'] == 0
+    assert row['positives_count'] == 0
+    assert row['resolved_actionable_count'] == 0
+    assert row['pct_resolved_as_fixed'] is None
+    assert row['pct_resolved_as_fixed'] != 0.0
