@@ -30,13 +30,15 @@ Runtime side-effects:
     command the wrapper resolved that argv into and actually ran — a different layer
     from args), duration_seconds (the wrapper's measured build duration), outcome (the
     wrapper's whole stdout TOON as a dict), exit_code (recorded even when
-    non-zero), status (the truthful build outcome — success/error/timeout/killed —
-    derived from the returncode and the wrapper's stdout TOON, so a timed-out build
-    stamps status=timeout despite its exit code 0), worktree_sha (the working-tree
-    currency hash), log_file, and timestamp_iso. The stdout payload is parsed exactly
-    once and feeds status, command, duration_seconds and outcome together; an absent or
-    unparseable payload leaves those three None and the status derivation falls back to
-    the exit code.
+    non-zero), status (the truthful build outcome —
+    success/error/timeout/killed/unknown — derived from the returncode and the
+    wrapper's stdout TOON, so a timed-out build stamps status=timeout despite its exit
+    code 0, and an exit-0 dispatch whose payload carries no wrapper-claimable status
+    stamps status=unknown rather than a green nothing substantiates), worktree_sha (the
+    working-tree currency hash), log_file, and timestamp_iso. The stdout payload is
+    parsed exactly once and feeds status, command, duration_seconds and outcome
+    together; an absent or unparseable payload leaves those three None and the status
+    derivation falls back to the exit code (nonzero -> error, zero -> unknown).
     The write is fire-and-forget — any failure is swallowed and never alters the dispatched
     script's exit code, stdout, or stderr.
 
@@ -174,7 +176,11 @@ from toon_parser import parse_toon  # type: ignore[import-not-found]
 # manage-change-ledger. Both directories are placed on sys.path by the
 # shared-module block injected above — the writer re-uses these primitives
 # rather than re-implementing the hash or the append.
-from _ledger_core import BUILD_STATUSES, append_entry, build_record  # type: ignore[import-not-found]
+from _ledger_core import (  # type: ignore[import-not-found]
+    WRAPPER_CLAIMABLE_BUILD_STATUSES,
+    append_entry,
+    build_record,
+)
 from marketplace_paths import NO_PLAN_SENTINEL  # type: ignore[import-not-found]
 from worktree_sha import compute_worktree_sha  # type: ignore[import-not-found]
 
@@ -400,19 +406,28 @@ def _derive_build_status(exit_code: int, payload: dict | None) -> str:
        stdout TOON claims (a contradictory ``status: success`` /
        nonzero-exit combination stamps ``error``).
     3. ``exit_code == 0`` AND the parsed stdout payload carries a ``status``
-       that is a known build status (see ``BUILD_STATUSES``) →
-       that status, EXCEPT ``killed``. This closes the false-fresh hole: the
-       build wrapper reports ``status: timeout`` on stdout while the PROCESS
-       exits 0, so the stdout TOON — not the exit code — carries the real
-       outcome. A stdout claim of ``killed`` at exit 0 stamps ``error``: the
-       wrapper's stdout vocabulary never includes ``killed`` (see
-       ``_ledger_core.BUILD_STATUSES``), so the claim is untrustworthy — but
-       it must not launder into ``success`` either.
-    4. Else (``exit_code == 0``) → ``success``.
+       the WRAPPER is entitled to claim (see
+       ``_ledger_core.WRAPPER_CLAIMABLE_BUILD_STATUSES``) → that status. This
+       closes the false-fresh hole: the build wrapper reports
+       ``status: timeout`` on stdout while the PROCESS exits 0, so the stdout
+       TOON — not the exit code — carries the real outcome. A stdout claim of
+       ``killed`` at exit 0 stamps ``error``: ``killed`` is derived-only, so
+       the claim is untrustworthy — but it must not launder into ``success``
+       either.
+    4. Else (``exit_code == 0`` with no claimable status on the payload —
+       absent, unparseable, null, or a value outside the wrapper's
+       vocabulary) → ``unknown``. **Never ``success``.** Exit 0 alone proves
+       the process ended, not that a build ran and passed; the wrapper models
+       its verdict in the payload, so a payload this function cannot read
+       leaves the outcome UNDETERMINED. Stamping ``success`` there would mint
+       the exact false-fresh ``kind=build`` row
+       ``pre-commit-verify-freshness`` accepts as proof the tree was built.
+       ``unknown`` is derived-only and is NOT ``success``, so the gate fails
+       closed on it.
 
     Defensive by construction: a malformed / absent stdout TOON reaches this
     function as ``payload=None`` (see :func:`_parse_build_payload`) and falls
-    through to the exit-code branch. A payload whose ``status`` is not a
+    through to the ``unknown`` branch. A payload whose ``status`` is not a
     string is likewise ignored rather than compared, so no shape of parsed
     stdout can raise here.
 
@@ -423,7 +438,8 @@ def _derive_build_status(exit_code: int, payload: dict | None) -> str:
             unparseable.
 
     Returns:
-        One of ``success`` / ``error`` / ``timeout`` / ``killed``.
+        One of ``success`` / ``error`` / ``timeout`` / ``killed`` /
+        ``unknown``.
     """
     if exit_code < 0:
         return 'killed'
@@ -433,9 +449,9 @@ def _derive_build_status(exit_code: int, payload: dict | None) -> str:
     if candidate is not None:
         if candidate == 'killed':
             return 'error'
-        if candidate in BUILD_STATUSES:
+        if candidate in WRAPPER_CLAIMABLE_BUILD_STATUSES:
             return candidate
-    return 'success'
+    return 'unknown'
 
 
 def _append_build_ledger_record(
@@ -1011,9 +1027,11 @@ def main():
     # it ran no build, and a row stamped for it would satisfy the freshness gate
     # without anything having been built. Records are appended unconditionally
     # on completion regardless of outcome; the stamped status
-    # carries the truthful result (success/error/timeout/killed), derived from
-    # the returncode and the wrapper's stdout TOON — the gate requires
-    # status == 'success'. The row's plan_id is `_ledger_plan_id` (script-arg
+    # carries the truthful result (success/error/timeout/killed/unknown),
+    # derived from the returncode and the wrapper's stdout TOON — the gate
+    # requires status == 'success', and `unknown` (exit 0 with no
+    # wrapper-claimable status on the payload) is deliberately not it.
+    # The row's plan_id is `_ledger_plan_id` (script-arg
     # --plan-id or executor --audit-plan-id, falling back to the NO_PLAN
     # sentinel), so it is NEVER null; the log path keeps taking the
     # caller-supplied `_active_plan_id`, which stays None for a plan-less

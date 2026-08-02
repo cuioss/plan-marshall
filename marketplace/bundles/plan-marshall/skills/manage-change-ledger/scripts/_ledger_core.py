@@ -45,13 +45,26 @@ KIND_BUILD = 'build'
 KIND_CHANGE = 'change'
 KIND_JOB = 'job'
 
-# The truthful build-outcome vocabulary carried by every kind=build entry's
-# `status` field. Mirrors the build wrapper's stdout TOON vocabulary
-# (success/error/timeout — see script-shared/scripts/build/_build_shared.py)
-# plus `killed` for a child terminated by a POSIX signal (negative returncode
-# at the executor dispatch boundary). The freshness gate requires
-# status == 'success'; exit_code is retained as orthogonal diagnostic detail.
-BUILD_STATUSES = frozenset({'success', 'error', 'timeout', 'killed'})
+# The statuses a build WRAPPER may claim for itself in its stdout TOON — the
+# wrapper's own vocabulary (see script-shared/scripts/build/_build_shared.py).
+# The executor dispatch boundary compares a payload's `status` against THIS set
+# and no wider one, so a wrapper can never mint a derived-only verdict below.
+WRAPPER_CLAIMABLE_BUILD_STATUSES = frozenset({'success', 'error', 'timeout'})
+
+# The statuses ONLY the executor dispatch boundary derives; a wrapper claiming
+# one is not believed, because each records the ABSENCE of the very evidence a
+# claim would be. `killed` marks a child terminated by a POSIX signal (negative
+# returncode). `unknown` marks an exit-0 dispatch whose payload carried no
+# claimable status — the outcome is undetermined, and deriving `success` there
+# would be a confident green over a signal that was never read.
+DERIVED_ONLY_BUILD_STATUSES = frozenset({'killed', 'unknown'})
+
+# The full truthful build-outcome vocabulary carried by every kind=build entry's
+# `status` field: the wrapper-claimable statuses plus the boundary-derived ones.
+# The freshness gate requires status == 'success', so every other member —
+# `unknown` included — fails it closed; exit_code is retained as orthogonal
+# diagnostic detail.
+BUILD_STATUSES = WRAPPER_CLAIMABLE_BUILD_STATUSES | DERIVED_ONLY_BUILD_STATUSES
 
 
 def resolve_ledger_path() -> Path:
@@ -124,8 +137,12 @@ def build_record(
     Written by the executor dispatch boundary after every build-class
     invocation. ``status`` is the outcome of record — one of
     :data:`BUILD_STATUSES` (``success`` / ``error`` / ``timeout`` /
-    ``killed``), derived truthfully at the dispatch boundary (a timed-out
-    build carries ``status: timeout`` despite its exit code 0). ``exit_code``
+    ``killed`` / ``unknown``), derived truthfully at the dispatch boundary (a
+    timed-out build carries ``status: timeout`` despite its exit code 0, and an
+    exit-0 dispatch whose payload carried no claimable status carries
+    ``status: unknown`` rather than a green it cannot substantiate).
+    ``killed`` and ``unknown`` are :data:`DERIVED_ONLY_BUILD_STATUSES` — the
+    boundary produces them, a wrapper never claims them. ``exit_code``
     is retained as orthogonal diagnostic detail. Both are stamped against the
     working-tree ``worktree_sha`` at capture time. A build is NOT a commit, so
     this record does NOT carry ``commit_sha`` or ``changed_paths``.

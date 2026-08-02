@@ -89,10 +89,16 @@ Every entry carries a `kind` discriminator, a `worktree_sha`, and a
   (the three wrapper-reported fields — see **`args` vs `command`** below),
   `exit_code` (int, recorded even when non-zero — orthogonal
   diagnostic detail), `status` (the truthful build outcome of record —
-  `success` | `error` | `timeout` | `killed` — derived at the boundary from
-  the returncode and the wrapper's stdout TOON; a timed-out build stamps
-  `status: timeout` despite its exit code 0, and a child killed by a POSIX
-  signal stamps `status: killed`), `worktree_sha`, `log_file`,
+  `success` | `error` | `timeout` | `killed` | `unknown` — derived at the
+  boundary from the returncode and the wrapper's stdout TOON; a timed-out build
+  stamps `status: timeout` despite its exit code 0, a child killed by a POSIX
+  signal stamps `status: killed`, and an exit-0 dispatch whose payload carries
+  no wrapper-claimable status stamps `status: unknown` rather than a `success`
+  nothing substantiates. `killed` and `unknown` are **derived-only**: the
+  dispatch boundary produces them, and a wrapper that prints either in its own
+  stdout TOON is not believed — the boundary reads a payload claim against the
+  narrower wrapper vocabulary (`success` | `error` | `timeout`) alone. Every
+  member other than `success` fails the freshness gate closed), `worktree_sha`, `log_file`,
   `timestamp_iso`. A build is NOT a commit, so a `kind=build` entry does NOT
   carry `commit_sha` or `changed_paths`. The stamp is **tier-agnostic** —
   written at the executor dispatch boundary, it fires identically for an
@@ -171,7 +177,7 @@ python3 .plan/execute-script.py plan-marshall:manage-change-ledger:manage-change
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-change-ledger:manage-change-ledger append \
-  --kind build --notation NOTATION --exit-code EXIT_CODE --status {success|error|timeout|killed} \
+  --kind build --notation NOTATION --exit-code EXIT_CODE --status {error|killed|success|timeout|unknown} \
   [--plan-id PLAN_ID] [--args ARGS] [--log-file LOG_FILE] \
   [--worktree-root WORKTREE_ROOT] [--worktree-sha WORKTREE_SHA]
 ```
@@ -235,7 +241,10 @@ job as `success`. Every call site already holds the sha at call time (the
 - `timeout` — a matching row carries `status: timeout` (a clean timeout is
   never classified as a kill).
 - `success` — a matching row carries `status: success`.
-- `undecidable` — anything else.
+- `undecidable` — anything else, which includes a matching row carrying
+  `status: unknown`. That row records an outcome the dispatch boundary could
+  not determine, so it supports no verdict of its own and must not be read as
+  either a kill or a success.
 
 The classifier reads the ledger through `_ledger_core.read_entries` — never a
 re-implemented JSONL read.

@@ -23,8 +23,12 @@ build/no-build authority".
 
 A ``kind=build`` entry is stamped by the executor dispatch boundary after every
 build-EXECUTING invocation, carrying the truthful build ``status`` (``success``
-/ ``error`` / ``timeout`` / ``killed``) and the working-tree ``worktree_sha``
-captured at build time. The boundary predicate is a conjunction -- a notation
+/ ``error`` / ``timeout`` / ``killed`` / ``unknown``) and the working-tree
+``worktree_sha`` captured at build time. ``unknown`` is the boundary's verdict
+for an exit-0 dispatch whose payload carried no wrapper-claimable status; like
+every other non-``success`` member of the vocabulary it never satisfies the
+``status == 'success'`` match below, so an unreadable payload fails the gate
+closed instead of minting a false-fresh row. The boundary predicate is a conjunction -- a notation
 under a ``build-*`` skill AND the build-executing subcommand (``run``) -- so a
 query verb under a build wrapper, and a bare ``--help`` dispatch carrying no
 subcommand, stamp NO row. That narrowing is what this gate depends on: a query

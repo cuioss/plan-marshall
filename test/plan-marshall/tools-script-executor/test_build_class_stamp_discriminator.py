@@ -14,6 +14,15 @@ as proof that the working tree was built. A pure query verb under a build wrappe
 building anything, so a row stamped for it satisfies that gate with no build
 having run. That is a confident green derived from an undetermined signal.
 
+The same gate is reachable by a second route this module also pins: a dispatch
+that IS build-executing, exits 0, and reports a payload the boundary cannot read
+as a verdict. Exit 0 proves only that the process ended, so the boundary derives
+the derived-only ``unknown`` rather than ``success`` -- and the gate refuses that
+row exactly as it refuses a missing one. ``unknown`` is never wrapper-claimable:
+the boundary reads a stdout claim against the narrower
+``WRAPPER_CLAIMABLE_BUILD_STATUSES`` alone, so no wrapper can author its own
+undetermined verdict.
+
 The subcommand population is DERIVED, never declared: ``build_class_roster()``
 introspects each wrapper's real argparse parser, so a subcommand added to any
 wrapper later joins these assertions with no edit here. The notation population
@@ -336,12 +345,31 @@ def test_ledger_path_is_redirected_away_from_production(_isolated_ledger):
 # =============================================================================
 
 
-def _dispatch(tmp_path: Path, notation: str, argv: list[str], ledger_root: Path | None = None) -> list[dict]:
+#: What the stub wrapper prints on stdout by default -- a well-formed payload
+#: claiming the wrapper-claimable ``success`` status, which is exactly what a
+#: pure query verb also prints.
+_SUCCESS_STUB_STDOUT = 'status: success'
+
+#: A stdout payload the dispatch boundary cannot read as a build verdict: it
+#: parses to no usable ``status``, so the wrapper reported NOTHING about the
+#: outcome while the process still exited 0.
+_UNREADABLE_STUB_STDOUT = 'this line is not a TOON status payload'
+
+
+def _dispatch(
+    tmp_path: Path,
+    notation: str,
+    argv: list[str],
+    ledger_root: Path | None = None,
+    stub_stdout: str = _SUCCESS_STUB_STDOUT,
+) -> list[dict]:
     """Dispatch a stubbed build wrapper through a rendered executor; return the ledger rows.
 
-    The stub prints a ``status: success`` payload and exits 0 -- exactly what a
-    pure query verb does -- so the ONLY thing distinguishing the two cases below
-    is the dispatched subcommand.
+    The stub prints ``stub_stdout`` and exits 0. With the default payload that is
+    exactly what a pure query verb does -- so the ONLY thing distinguishing the
+    two discriminator cases below is the dispatched subcommand. The
+    ``unknown``-derivation tests pass :data:`_UNREADABLE_STUB_STDOUT` instead,
+    holding the exit code at 0 and varying only what the wrapper reported.
 
     ``ledger_root`` defaults to a fresh directory under ``tmp_path``; the
     freshness-gate tests pass their OWN root instead, so the gate reads back the
@@ -350,7 +378,10 @@ def _dispatch(tmp_path: Path, notation: str, argv: list[str], ledger_root: Path 
     """
     stub_script = tmp_path / 'stub_build.py'
     stub_script.write_text(
-        '#!/usr/bin/env python3\nimport sys\nsys.stdout.write("status: success")\nsys.exit(0)\n',
+        '#!/usr/bin/env python3\n'
+        'import sys\n'
+        f'sys.stdout.write({stub_stdout!r})\n'
+        'sys.exit(0)\n',
         encoding='utf-8',
     )
 
@@ -516,4 +547,155 @@ def test_freshness_gate_reports_fresh_after_a_build_executing_dispatch(tmp_path,
     assert verdict['status'] == 'fresh', (
         f'the freshness gate reported {verdict["status"]!r} after a real build-executing '
         'dispatch; the negative case above would then pass for the wrong reason.'
+    )
+
+
+# =============================================================================
+# The derived-only `unknown` verdict: exit 0 + an unreadable payload
+# =============================================================================
+
+
+def test_unknown_is_derived_only_and_never_wrapper_claimable():
+    """``unknown`` sits in the derived-only half of the vocabulary, not the claimable half.
+
+    The split is the enforcement point for "derived-only": the dispatch boundary
+    compares a wrapper's stdout claim against
+    ``WRAPPER_CLAIMABLE_BUILD_STATUSES`` alone, so a value absent from that set
+    can only ever be produced BY the boundary. Pinning the partition here means
+    a later edit that quietly moves ``unknown`` into the claimable set -- which
+    would let a wrapper author its own undetermined verdict -- turns this red.
+    """
+    from _ledger_core import (
+        BUILD_STATUSES,
+        DERIVED_ONLY_BUILD_STATUSES,
+        WRAPPER_CLAIMABLE_BUILD_STATUSES,
+    )
+
+    assert 'unknown' in DERIVED_ONLY_BUILD_STATUSES
+    assert 'unknown' not in WRAPPER_CLAIMABLE_BUILD_STATUSES, (
+        'unknown became wrapper-claimable; a build wrapper could then assert the '
+        'very verdict that exists to record the ABSENCE of a readable assertion.'
+    )
+    assert not (WRAPPER_CLAIMABLE_BUILD_STATUSES & DERIVED_ONLY_BUILD_STATUSES), (
+        'the claimable and derived-only halves overlap, so "derived-only" no longer '
+        'names a distinct guarantee.'
+    )
+    assert BUILD_STATUSES == WRAPPER_CLAIMABLE_BUILD_STATUSES | DERIVED_ONLY_BUILD_STATUSES, (
+        'the full kind=build vocabulary is no longer the union of its two halves -- a '
+        'row status exists that neither half accounts for.'
+    )
+
+
+@pytest.mark.parametrize(
+    ('payload', 'case'),
+    [
+        (None, 'payload absent or unparseable'),
+        ({}, 'payload carries no status field'),
+        ({'status': ''}, 'status is empty'),
+        ({'status': None}, 'status is null'),
+        ({'status': {'nested': 'block'}}, 'status is not a string'),
+        ({'status': 'finished'}, 'status is outside the wrapper vocabulary'),
+        ({'status': 'unknown'}, 'wrapper claims the derived-only value itself'),
+    ],
+)
+def test_derive_build_status_returns_unknown_for_an_unreadable_exit_zero_payload(payload, case):
+    """Exit 0 with no wrapper-claimable status derives ``unknown``, never ``success``.
+
+    Exit 0 proves the process ended, not that a build ran and passed -- the
+    wrapper models its verdict in the payload. Every row below is a distinct way
+    the payload can fail to carry that verdict, and each one previously fell
+    through to a confident ``success``, minting the false-fresh ``kind=build``
+    row the freshness gate accepts as proof the tree was built.
+    """
+    executor = _load_executor_module()
+
+    derived = executor._derive_build_status(0, payload)
+
+    assert derived == 'unknown', (
+        f'exit 0 with {case} derived {derived!r}; the outcome is undetermined, so the '
+        'boundary must stamp the derived-only unknown.'
+    )
+    assert derived != 'success'
+
+
+@pytest.mark.parametrize('claimed', ['success', 'error', 'timeout'])
+def test_derive_build_status_still_honours_a_wrapper_claimable_status(claimed):
+    """Matched positive control: a readable claim is still read at exit 0.
+
+    Without this the derivation could have collapsed to "always unknown at exit
+    0" and the negative cases above would pass for the wrong reason -- and the
+    load-bearing timeout case (the wrapper exits 0 and reports ``timeout`` on
+    stdout) would silently stop being honoured.
+    """
+    executor = _load_executor_module()
+
+    assert executor._derive_build_status(0, {'status': claimed}) == claimed
+
+
+def test_exit_zero_dispatch_with_an_unreadable_payload_stamps_unknown(tmp_path):
+    """End to end: the row a real dispatch writes carries ``unknown``, not ``success``.
+
+    The unit cases above pin the pure function; this pins that the boundary
+    actually threads that verdict onto the persisted ledger row. Only the stub's
+    stdout differs from
+    :func:`test_run_dispatch_still_appends_the_build_row` -- the notation, the
+    subcommand and the exit code are identical -- so the stamped status is the
+    single variable under test.
+    """
+    notation, subcommand = _a_build_executing_subcommand()
+
+    entries = _dispatch(tmp_path, notation, [subcommand], stub_stdout=_UNREADABLE_STUB_STDOUT)
+
+    build_rows = [entry for entry in entries if entry.get('kind') == 'build']
+    assert len(build_rows) == 1, (
+        f'{notation} {subcommand} wrote {len(build_rows)} kind=build row(s); an exit-0 '
+        'dispatch must still stamp exactly one, only with an honest status.'
+    )
+    assert build_rows[0]['status'] == 'unknown', (
+        f'the row carries status={build_rows[0]["status"]!r} for a payload the boundary '
+        'could not read; only unknown is truthful there.'
+    )
+
+
+def test_freshness_gate_is_not_fresh_after_an_unknown_stamped_dispatch(tmp_path, monkeypatch):
+    """The gate refuses an ``unknown`` row stamped at the CURRENT worktree sha.
+
+    This is the property the derived-only value exists for: the row matches the
+    gate's ``kind`` and ``worktree_sha`` filters exactly -- it is stamped by the
+    same dispatch, against the same tree, in the same run -- so ONLY the status
+    withholds ``fresh``. Its matched positive control is
+    :func:`test_freshness_gate_reports_fresh_after_a_build_executing_dispatch`,
+    which drives the identical path with a genuine ``success`` row and DOES pass
+    the gate; without that pairing this assertion could hold because the fixture
+    never wrote a matching row at all.
+    """
+    notation, subcommand = _a_build_executing_subcommand()
+    ledger_root = tmp_path / 'gate-base'
+    ledger_root.mkdir()
+    monkeypatch.setenv('PLAN_BASE_DIR', str(ledger_root))
+
+    import file_ops
+
+    monkeypatch.setattr(file_ops, '_BASE_DIR_OVERRIDE', ledger_root, raising=False)
+    monkeypatch.chdir(PROJECT_ROOT)
+
+    entries = _dispatch(
+        tmp_path,
+        notation,
+        [subcommand],
+        ledger_root=ledger_root,
+        stub_stdout=_UNREADABLE_STUB_STDOUT,
+    )
+    build_rows = [entry for entry in entries if entry.get('kind') == 'build']
+    assert len(build_rows) == 1 and build_rows[0]['status'] == 'unknown', (
+        f'fixture precondition failed: expected one unknown-stamped row, got {build_rows!r}. '
+        'Without it the verdict below would be withheld for the wrong reason.'
+    )
+
+    verdict = _freshness_verdict(monkeypatch, 'discriminator-regression-plan')
+
+    assert verdict['status'] != 'fresh', (
+        f'the freshness gate reported {verdict["status"]!r} on the strength of an '
+        'unknown-stamped row; an undetermined build outcome must never read as proof '
+        'the working tree was built.'
     )

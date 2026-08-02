@@ -193,7 +193,10 @@ plan-scoped pyproject build does. Requiring `status == success` rather than
 `exit_code == 0` is load-bearing: the build wrapper exits 0 on timeout (the
 outcome lives in its stdout TOON, not the exit code), so an exit-code
 predicate would launder a build that never finished into a false `fresh`. A
-row lacking `status` never matches — the gate fails closed to `stale`. The
+row lacking `status` never matches — the gate fails closed to `stale` — and
+neither does a row carrying the boundary-derived `unknown` (an exit-0 dispatch
+whose stdout payload the boundary could not read), so an unreadable build report
+fails closed exactly as a missing one does. The
 `kind=build` entry is stamped by the executor dispatch boundary after every
 build-class invocation that runs to completion. See
 [`../manage-change-ledger/SKILL.md`](../manage-change-ledger/SKILL.md) for the

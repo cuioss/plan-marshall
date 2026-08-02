@@ -369,13 +369,23 @@ A wrapper that models its outcome in its stdout payload and always exits `0` mak
 exitCode = run(buildWrapper)
 status   = (exitCode == 0) ? "success" : "error"   // a timed-out build stamps success
 
-// GOOD — nonzero exit is authoritative; otherwise the reported outcome decides
+// GOOD — nonzero exit is authoritative; an unreadable report is undetermined
 exitCode = run(buildWrapper)
 if (exitCode < 0)  return "killed"    // terminated by a signal
 if (exitCode != 0) return "error"     // wins over any stdout claim of success
 reported = parse(buildWrapper.stdout)?.status
-return (reported in KNOWN_BUILD_STATUSES) ? reported : "success"
+// CLAIMABLE_STATUSES is what the WRAPPER may say about itself — narrower than
+// the full vocabulary, which also holds the verdicts only this boundary derives.
+return (reported in CLAIMABLE_STATUSES) ? reported : "unknown"
 ```
+
+The final line is the load-bearing one. Defaulting an unrecognised report to
+`"success"` reinstates the very fail-open the clause forbids, one layer in: exit
+`0` proves the process ended, not that the work ran and passed, so a report this
+boundary cannot read leaves the outcome **undetermined**. `"unknown"` is a
+derived-only peer of `"killed"` — a verdict this boundary produces, never a
+status the wrapper may claim for itself — and it must not satisfy any gate that
+accepts `"success"`, so a downstream freshness check fails closed on it.
 
 ### (f) Write direction — check the persist, never refer to a store that rejected it
 
@@ -402,7 +412,7 @@ return { status: "triage_required" }
 
 Three landed behaviours are the reference implementations of these rules:
 
-* **The build-status derivation at the executor dispatch boundary** (`_derive_build_status` in `tools-script-executor/templates/execute-script.py.template`) treats a nonzero exit code as authoritative over any stdout `status: success`, and reads the wrapper's stdout status only on a zero exit — so a timed-out build stamps `timeout` while a script that prints a success payload and exits non-zero stamps `error`. Rules (a) and (e).
+* **The build-status derivation at the executor dispatch boundary** (`_derive_build_status` in `tools-script-executor/templates/execute-script.py.template`) treats a nonzero exit code as authoritative over any stdout `status: success`, and reads the wrapper's stdout status only on a zero exit — so a timed-out build stamps `timeout` while a script that prints a success payload and exits non-zero stamps `error`. On a zero exit whose payload carries no *wrapper-claimable* status it stamps the derived-only `unknown`, never `success`, so an unreadable report can never mint a false-fresh row. Rules (a), (b) and (e).
 * **The pre-commit freshness gate** (`manage-tasks pre-commit-verify-freshness`) matches change-ledger rows on `status == "success"` rather than on `exit_code == 0`, and a row lacking `status` never matches — the gate fails closed to `stale` rather than admitting a row it cannot read. Rules (b) and (e).
 * **The executor preflight verdict** (`generate_executor preflight` in `tools-script-executor`) reports `marshal_status: unknown` plus a legible warning when the installed manifest cannot be resolved, instead of the `fresh` verdict it has no evidence for. Rule (b).
 

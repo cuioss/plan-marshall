@@ -970,11 +970,26 @@ def test_template_contains_build_ledger_append_at_dispatch_boundary():
 
 def test_template_build_ledger_uses_shared_primitives():
     """The append must reuse the manage-change-ledger writer and the shared
-    worktree-sha helper rather than re-implementing the hash or the append."""
+    worktree-sha helper rather than re-implementing the hash or the append.
+
+    The status symbol pinned here is ``WRAPPER_CLAIMABLE_BUILD_STATUSES``, NOT
+    the full ``BUILD_STATUSES`` vocabulary. That narrowing is the enforcement
+    point for the derived-only statuses: the boundary compares a wrapper's
+    stdout claim against the claimable half alone, so importing the wider set
+    here would let a wrapper mint ``killed`` or ``unknown`` for itself.
+    """
     source = TEMPLATE_PATH.read_text(encoding='utf-8')
 
-    assert 'from _ledger_core import BUILD_STATUSES, append_entry, build_record' in source, (
-        'template must import BUILD_STATUSES + append_entry + build_record from the manage-change-ledger core'
+    expected_import = (
+        'from _ledger_core import (  # type: ignore[import-not-found]\n'
+        '    WRAPPER_CLAIMABLE_BUILD_STATUSES,\n'
+        '    append_entry,\n'
+        '    build_record,\n'
+        ')'
+    )
+    assert expected_import in source, (
+        'template must import WRAPPER_CLAIMABLE_BUILD_STATUSES + append_entry + build_record '
+        'from the manage-change-ledger core'
     )
     assert 'from worktree_sha import compute_worktree_sha' in source, (
         'template must import compute_worktree_sha from the shared script-shared helper'

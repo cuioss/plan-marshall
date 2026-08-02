@@ -547,7 +547,12 @@ def test_build_class_dispatch_writes_orchestrator_tier_kind_build_entry(tmp_path
     assert entry['plan_id'] is None, 'orchestrator/global-tier build stamps plan_id: null'
     assert entry['worktree_sha'] == 'feedfacecafe0001'
     assert entry['exit_code'] == 0
-    assert entry['status'] == 'success', 'empty stdout + exit_code 0 derives status=success'
+    assert entry['status'] == 'unknown', (
+        'empty stdout + exit_code 0 derives status=unknown: exit 0 proves the process '
+        'ended, not that a build ran and passed, and an empty payload carries no '
+        'wrapper-claimable verdict to read. Deriving success here would mint the '
+        'false-fresh row pre-commit-verify-freshness accepts as proof of a build.'
+    )
     assert entry['notation'] == 'plan-marshall:build-pyproject:pyproject_build'
 
 
