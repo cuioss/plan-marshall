@@ -21,9 +21,28 @@ Classification rules (kind -> actionability):
 
 Resolution -> quality mapping (positives vs false-positives):
 - fixed                      -> true positive (real issue caught) -> positives
-- accepted / taken_into_account -> acknowledged-without-change     -> false_positives
+- rejected                   -> the reviewer was wrong            -> false_positives
+- accepted / taken_into_account -> acknowledged-without-change    -> NEITHER bucket
 - suppressed                 -> borderline
 - pending                    -> unresolved / excluded
+
+`accepted` and `taken_into_account` are acknowledgements: the reviewer said
+something valid that the triage absorbed without a code change. They are tallied
+in their own per-reviewer fields and are evidence of neither a caught defect nor a
+wrong claim. `rejected` is the one disposition that means the reviewer was wrong,
+so it is what drives `false_positives_count`.
+
+Percentage denominator:
+`pct_resolved_as_fixed` divides `actionable_fixed_count` by
+`resolved_actionable_count` — the RESOLVED ACTIONABLE set, never `raw_total`.
+Both operands filter on the same `_is_actionable` predicate, so META records
+cannot dilute the ratio, and both exclude `pending`, so a record still awaiting
+triage is not counted as evidence against the reviewer. The numerator is a strict
+subset of the denominator by construction, so the value can never exceed 100.
+When `resolved_actionable_count` is 0 the metric is `None` (emitted as TOON
+`null`), NOT `0.0`: a reviewer with no resolved actionable comments has no rate to
+report, and reporting a confident `0.0` would be exactly the wrong-number failure
+this metric exists to avoid.
 
 Records lacking an `author` are bucketed under `unattributed`.
 
@@ -46,7 +65,12 @@ from typing import Any
 
 # Resolution buckets.
 _POSITIVE_RESOLUTIONS = {'fixed'}
-_FALSE_POSITIVE_RESOLUTIONS = {'accepted', 'taken_into_account'}
+_FALSE_POSITIVE_RESOLUTIONS = {'rejected'}
+
+# The canonical resolution enum minus `pending` — every state in which a finding
+# has actually been decided. This is the membership test behind
+# `resolved_actionable_count`, the `pct_resolved_as_fixed` denominator.
+_RESOLVED_RESOLUTIONS = frozenset({'fixed', 'rejected', 'accepted', 'taken_into_account', 'suppressed'})
 
 # CodeRabbit's status-summary review_body is META, not actionable. Detected by the
 # author login plus the status-summary signature in the title/detail.
@@ -95,11 +119,14 @@ def _empty_reviewer() -> dict[str, Any]:
         'fixed': 0,
         'accepted': 0,
         'taken_into_account': 0,
+        'rejected': 0,
         'suppressed': 0,
         'pending': 0,
         'positives_count': 0,
         'false_positives_count': 0,
-        'pct_resolved_as_fixed': 0.0,
+        'resolved_actionable_count': 0,
+        'actionable_fixed_count': 0,
+        'pct_resolved_as_fixed': None,
         'by_kind': defaultdict(int),
     }
 
@@ -113,15 +140,22 @@ def aggregate(records: list[dict[str, Any]]) -> dict[str, Any]:
 
         total_findings: N
         reviewers[]{author,raw_total,actionable_count,meta_count,fixed,accepted,
-                    taken_into_account,suppressed,pending,positives_count,
-                    false_positives_count,pct_resolved_as_fixed}
+                    taken_into_account,rejected,suppressed,pending,
+                    positives_count,false_positives_count,
+                    resolved_actionable_count,actionable_fixed_count,
+                    pct_resolved_as_fixed}
         by_author_kind[]{author,kind,count}
         mappings: { kind->actionability, resolution->quality }
 
     `raw_total` and `actionable_count` are DISTINCT fields: meta comments
     (CodeRabbit status-summary review_body + walkthrough issue_comment + unknown
     kind) are counted into raw_total and meta_count but never inflate
-    actionable_count.
+    actionable_count. `resolved_actionable_count` and `actionable_fixed_count` are
+    narrower still — both filter on that same `actionable_count` predicate AND on
+    the record's resolution, and together they are the denominator and numerator of
+    `pct_resolved_as_fixed`. `raw_total` feeds no ratio; it is a volume field only.
+    Both operands are emitted as first-class fields so the percentage's denominator
+    is visible to the reader rather than implied.
     """
     per_reviewer: dict[str, dict[str, Any]] = defaultdict(_empty_reviewer)
     per_author_kind: dict[tuple[str, str], int] = defaultdict(int)
@@ -136,13 +170,14 @@ def aggregate(records: list[dict[str, Any]]) -> dict[str, Any]:
         bucket['by_kind'][kind] += 1
         per_author_kind[(author, kind)] += 1
 
-        if _is_actionable(record):
+        actionable = _is_actionable(record)
+        if actionable:
             bucket['actionable_count'] += 1
         else:
             bucket['meta_count'] += 1
 
-        # Resolution buckets — only count the canonical five.
-        if resolution in ('fixed', 'accepted', 'taken_into_account', 'suppressed', 'pending'):
+        # Resolution buckets — only count the canonical six.
+        if resolution in ('fixed', 'accepted', 'taken_into_account', 'rejected', 'suppressed', 'pending'):
             bucket[resolution] += 1
 
         if resolution in _POSITIVE_RESOLUTIONS:
@@ -150,11 +185,25 @@ def aggregate(records: list[dict[str, Any]]) -> dict[str, Any]:
         elif resolution in _FALSE_POSITIVE_RESOLUTIONS:
             bucket['false_positives_count'] += 1
 
+        # The pct_resolved_as_fixed operands — both gated on the SAME actionability
+        # result computed above, so no second notion of "is this a real review
+        # comment" can drift from `_is_actionable`.
+        if actionable and resolution in _RESOLVED_RESOLUTIONS:
+            bucket['resolved_actionable_count'] += 1
+        if actionable and resolution in _POSITIVE_RESOLUTIONS:
+            bucket['actionable_fixed_count'] += 1
+
     reviewers: list[dict[str, Any]] = []
     for author in sorted(per_reviewer):
         bucket = per_reviewer[author]
         raw_total = bucket['raw_total']
-        pct = round(100.0 * bucket['fixed'] / raw_total, 1) if raw_total else 0.0
+        resolved_actionable = bucket['resolved_actionable_count']
+        # `None` — never 0.0 — when nothing resolved-and-actionable was measured.
+        pct = (
+            round(100.0 * bucket['actionable_fixed_count'] / resolved_actionable, 1)
+            if resolved_actionable
+            else None
+        )
         reviewers.append({
             'author': author,
             'raw_total': raw_total,
@@ -163,10 +212,13 @@ def aggregate(records: list[dict[str, Any]]) -> dict[str, Any]:
             'fixed': bucket['fixed'],
             'accepted': bucket['accepted'],
             'taken_into_account': bucket['taken_into_account'],
+            'rejected': bucket['rejected'],
             'suppressed': bucket['suppressed'],
             'pending': bucket['pending'],
             'positives_count': bucket['positives_count'],
             'false_positives_count': bucket['false_positives_count'],
+            'resolved_actionable_count': resolved_actionable,
+            'actionable_fixed_count': bucket['actionable_fixed_count'],
             'pct_resolved_as_fixed': pct,
         })
 
@@ -189,8 +241,9 @@ def aggregate(records: list[dict[str, Any]]) -> dict[str, Any]:
         },
         'resolution_quality': {
             'fixed': 'true_positive',
-            'accepted': 'false_positive',
-            'taken_into_account': 'false_positive',
+            'accepted': 'acknowledged',
+            'taken_into_account': 'acknowledged',
+            'rejected': 'false_positive',
             'suppressed': 'borderline',
             'pending': 'excluded',
         },

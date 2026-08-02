@@ -106,7 +106,7 @@ _RESPONDABLE_RESOLUTIONS = frozenset({'fixed', 'suppressed', 'accepted', 'taken_
 # PRE-FILTER CONFIGURATION (shared defaults + per-bot additions)
 # ============================================================================
 #
-# The producer noise pre-filter is a two-layer, data-not-code composition:
+# The producer noise pre-filter is a three-layer, data-not-code composition:
 #
 #   1. SHARED / DEFAULT layer — the ``ignore`` category in comment-patterns.json.
 #      These are bot-agnostic acknowledgment/automation regexes (lgtm, approved,
@@ -124,7 +124,19 @@ _RESPONDABLE_RESOLUTIONS = frozenset({'fixed', 'suppressed', 'accepted', 'taken_
 #      sourced from the registry at runtime, so adding/adjusting a bot's noise
 #      drops is a pure standards-doc edit — no change here.
 #
-# A surviving comment (matched by neither layer) becomes a ``pr-comment`` finding.
+#   3. CONTENTLESS BOILERPLATE layer — each bot's ``contentless_review_markers``
+#      and ``actionable_content_markers`` from the same registry. Unlike layer 2
+#      this one is CONDITIONAL on the whole body: it drops a comment only when
+#      EVERY ``contentless_review_markers`` entry is present AND no
+#      ``actionable_content_markers`` entry is. It exists for a bot whose single
+#      review comment carries both its findings and its clean-result assertions,
+#      so no unconditional whole-body marker can express "this review found
+#      nothing" without also dropping the reviews that found something. Empty
+#      ``contentless_review_markers`` is the fail-closed default and the state
+#      every bot that has not opted in is in.
+#
+# A surviving comment (matched by none of the three layers) becomes a
+# ``pr-comment`` finding.
 
 PATTERNS: dict[str, Any] = load_skill_config(__file__, 'comment-patterns.json')
 
@@ -207,10 +219,37 @@ def cmd_fetch_comments(args):
 # ============================================================================
 
 
+def _is_contentless_boilerplate(body: str, bot_kind: str | None) -> bool:
+    """True if ``body`` is ``bot_kind``'s review boilerplate carrying no content.
+
+    The predicate is a CONJUNCTION over the bot's registry
+    ``contentless_review_markers`` vetoed by ANY ``actionable_content_markers``
+    entry: every required marker must be present in the body, and no
+    disqualifying marker may be. Both lists are literal substrings, stripped
+    before matching so an incidentally-indented registry value still matches the
+    raw body (the project's normalize-both-sides-of-a-registry-comparison rule).
+
+    An empty ``contentless_review_markers`` short-circuits to ``False`` — the
+    fail-closed default, and the state every bot that has not declared a clean
+    shape is in. The conjunction is what keeps the drop safe: a body that
+    deviates from the declared clean shape in ANY way (a missing marker, a
+    changed marker, one actionable marker present) is left in place, so the
+    predicate can only ever fail open.
+    """
+    required = [marker.strip() for marker in bot_registry.contentless_review_markers(bot_kind or '')]
+    required = [marker for marker in required if marker]
+    if not required:
+        return False
+    if not all(marker in body for marker in required):
+        return False
+    disqualifying = [marker.strip() for marker in bot_registry.actionable_content_markers(bot_kind or '')]
+    return not any(marker in body for marker in disqualifying if marker)
+
+
 def _is_obvious_noise(body: str, bot_kind: str | None = None) -> bool:
     """Pre-filter: True if the comment body is shared or per-bot noise.
 
-    Two layers (see PRE-FILTER CONFIGURATION above):
+    Three layers (see PRE-FILTER CONFIGURATION above):
 
     1. SHARED — the bot-agnostic ``ignore`` regexes (lgtm, approved, ``[bot]``
        signatures, …) matched case-insensitively against the lowered body.
@@ -220,9 +259,23 @@ def _is_obvious_noise(body: str, bot_kind: str | None = None) -> bool:
        fragments the bot emits on a *successful* review (a walkthrough heading, a
        marketing footer, a no-op review line), so only that bot's own comments are
        dropped.
+    3. CONTENTLESS BOILERPLATE — ``_is_contentless_boilerplate``: that same bot's
+       registry ``contentless_review_markers`` (ALL required) vetoed by any
+       ``actionable_content_markers`` entry. Layer 2 cannot express this case: for
+       a bot whose one comment carries both its findings and its clean-result
+       assertions, an unconditional whole-body marker would drop the reviews that
+       found something too.
 
-    One further pipeline-noise class is folded in ahead of the two layers, reusing
-    an existing data source rather than new patterns:
+    A layer-3 drop is counted in ``count_skipped_noise`` and given NO counter of
+    its own, because it is routine successful-review boilerplate — the same class
+    ``ignore_patterns`` already serves, differing only in being conditional on the
+    whole body. That is unlike a REFUSAL (positive evidence the bot declined; its
+    own ``count_skipped_refusal``) and unlike a SELF-RESPONSE (pipeline-authored
+    re-ingestion; its own ``count_skipped_self_response``), both of which answer
+    questions the noise count must not absorb.
+
+    One further pipeline-noise class is folded in ahead of the three layers,
+    reusing an existing data source rather than new patterns:
 
     - REGISTERED TRIGGER — a comment whose whitespace-stripped body EQUALS a
       registered bot re-review trigger (``github_re_review.is_registered_trigger_comment``,
@@ -239,15 +292,16 @@ def _is_obvious_noise(body: str, bot_kind: str | None = None) -> bool:
     refusal, not infer absence from silence. Folding ``refusal_patterns`` into this
     drop set collapsed exactly the distinction the two-field split was created for,
     and let a PR whose every required reviewer refused report a clean, complete
-    review. ``ignore_patterns`` alone belongs here.
+    review. ``ignore_patterns`` and the contentless-marker pair belong here;
+    ``refusal_patterns`` does not.
 
     Used by ``fetch_findings`` to drop obvious automated/acknowledgment noise
     before each surviving comment is persisted as a ``pr-comment`` finding. This
     is intentionally permissive — the goal is only to skip the most obvious
     noise, not to make the final classification decision (that belongs to the LLM
     consumer). Human comments (``bot_kind is None``) are checked against the
-    shared layer and the registered-trigger recognizer; the per-bot literal-marker
-    layer stays reviewer-bot-scoped.
+    shared layer and the registered-trigger recognizer; the per-bot
+    literal-marker layers stay reviewer-bot-scoped.
     """
     if not body:
         return True
@@ -258,7 +312,9 @@ def _is_obvious_noise(body: str, bot_kind: str | None = None) -> bool:
     if any(p.search(body_lower) for p in _COMPILED_IGNORE):
         return True
     if bot_kind:
-        return any(marker in body for marker in bot_registry.ignore_patterns(bot_kind))
+        if any(marker in body for marker in bot_registry.ignore_patterns(bot_kind)):
+            return True
+        return _is_contentless_boilerplate(body, bot_kind)
     return False
 
 

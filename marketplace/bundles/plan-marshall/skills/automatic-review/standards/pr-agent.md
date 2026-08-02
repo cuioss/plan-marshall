@@ -36,8 +36,8 @@ Sample size is **one review** — see "Signal calibration" below before generali
 The fenced-YAML block below is the machine-readable per-bot record. It is data, not frontmatter.
 Consumers read `bot_kind`, `author_login`, `trigger_comment`, `completion_check_name`,
 `honors_skip_label`, `participation_evidence`, `participation_requires_update`, `ignore_patterns`,
-`refusal_patterns`, `rate_limit_class`, `rate_limit_eta_patterns`, and `severity_map` from it; the
-prose sections carry the rationale.
+`refusal_patterns`, `contentless_review_markers`, `actionable_content_markers`, `rate_limit_class`,
+`rate_limit_eta_patterns`, and `severity_map` from it; the prose sections carry the rationale.
 
 ```yaml
 bot_kind: pr-agent
@@ -70,6 +70,25 @@ ignore_patterns:
                                   # finding. Suppressed at source by final_update_message = false
                                   # in cuioss/pr-agent-settings; this pattern covers the ones
                                   # already posted and any recurrence if that setting is lost.
+# contentless_review_markers: CONFIRMED on #103 — the three literals the Guide carries when it
+# found nothing: the heading that identifies the review, plus the 🔒 and 🧪 rows' clean
+# assertions. EVERY entry is REQUIRED — the producer's contentless test is a CONJUNCTION over
+# this whole list, not a disjunction, so a Guide missing any one of them is left in place and
+# hand-triaged. The 🧪 clean assertion in particular MUST NOT be dropped from the list as an
+# anti-noise optimization: per "Consumer stage" the negative 🧪 form is itself an actionable
+# low-severity coverage signal, its literal text is UNVERIFIED at n=1, and keying on the
+# presence of the observed positive literal is what makes the drop fail OPEN on every shape
+# that was never observed.
+contentless_review_markers:
+  - "## PR Reviewer Guide"        # CONFIRMED on #103 — the heading that identifies the review
+  - "**No security concerns identified**"   # CONFIRMED on #103 — the 🔒 row's clean assertion
+  - "**PR contains tests**"       # CONFIRMED on #103 — the 🧪 row's clean assertion
+# actionable_content_markers: ANY entry present disqualifies the contentless drop, whatever the
+# list above says.
+actionable_content_markers:
+  - "<details>"                   # CONFIRMED on #103 — the structural carrier of every ⚡
+                                  # focus-area finding; one occurrence means the Guide carries
+                                  # real content and is filed unchanged
 refusal_patterns:                 # EMPTY — no refusal of any kind observed on #103. Fail-closed: a
                                   # refusal is never claimed without positive evidence, so this bot's
                                   # non-participation resolves to absent / in_progress, never refused.
@@ -135,16 +154,36 @@ PR-Agent-specific code anywhere:
   because this doc declares `bot_kind: pr-agent`.
 - `github_re_review.py` derives its login→bot_kind map (`cuioss-review-bot` → `pr-agent`) and its
   generic re-review strategy (posting `/review`) from the registry.
-- `github_pr.py` applies this doc's `ignore_patterns` as the per-bot producer filter.
+- `github_pr.py` applies this doc's `ignore_patterns` as the per-bot producer filter, and its
+  `contentless_review_markers` / `actionable_content_markers` pair as the content-aware layer
+  beneath it.
 
 ## Producer stage — what to DROP before it becomes a finding
 
 The `ignore_patterns` above drop the two comment kinds that are not reviews at all: the `/help`
 commands reference and `/ask` answers.
 
-Note what is deliberately **not** dropped: the `## PR Reviewer Guide 🔍` comment itself. That
-header identifies the review and carries every finding — PR-Agent has no separate marker comment,
-and matching on it would drop the entire review.
+**The `## PR Reviewer Guide 🔍` comment is dropped conditionally, on content — never by
+`ignore_patterns`.** A bare-heading `ignore_patterns` entry would be wrong: that layer is a
+whole-body substring test whose match drops the entire comment, and this bot has no separate
+marker comment — the header identifies the review *and* carries every finding, so matching on it
+would drop real findings along with the boilerplate.
+
+The conditional rule the producer applies instead: the Guide is dropped **only** when every
+`contentless_review_markers` entry is present in the body AND no `actionable_content_markers`
+entry is. In every other case it is left untouched and filed as a `pr-comment` finding exactly as
+before — a `<details>` focus-area finding, a 🔒 row naming a concrete concern, a 🧪 row that is
+not the clean assertion, or a missing heading all leave the comment in place. The predicate can
+therefore only ever fail *open*.
+
+**Accepted residual:** on a docs-only PR the Guide carries the 🔒 clean assertion but not the 🧪
+one, so the conjunction does not hold and the comment is retained and hand-triaged even though its
+content is of little value there. That residue is accepted deliberately, in preference to a looser
+predicate that could drop a real coverage signal.
+
+Dropping the Guide here does not make the bot look absent: `participated_bots` is computed from
+the raw comment list *before* the pre-filter runs, so a suppressed clean Guide resolves PR-Agent to
+`participated_but_empty` — see [`bot-participation-contract.md`](bot-participation-contract.md).
 
 ## Rate-limit class — `unknown` (UNVERIFIED)
 

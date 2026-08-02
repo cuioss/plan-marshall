@@ -36,9 +36,13 @@ Two layers of review-quality signal:
 - **Deterministic signal** (from the aggregator): per reviewer — raw total
   comments; ACTIONABLE count (kind=inline + substantive review_body) reported
   SEPARATELY from raw total; meta/non-actionable count (CodeRabbit status-summary
-  review_body + walkthrough issue_comment); resolution buckets; %-resolved-as-fixed;
-  positives (resolution=`fixed`); false-positives (resolution in
-  {`accepted`, `taken_into_account`}); suppressed=borderline; pending=excluded.
+  review_body + walkthrough issue_comment); resolution buckets; %-resolved-as-fixed
+  **over the resolved actionable set** (`actionable_fixed_count` ÷
+  `resolved_actionable_count`, never over `raw_total`); positives
+  (resolution=`fixed`); false-positives (resolution in {`rejected`} — the one
+  disposition that means the reviewer was wrong); acknowledged-without-change
+  (resolution in {`accepted`, `taken_into_account`}) reported separately and
+  counted in NEITHER quality bucket; suppressed=borderline; pending=excluded.
 - **LLM qualitative signal** (this body): signal-to-noise (real bug/design issue
   vs nitpick vs style/lint/markdownlint trivia); depth and usefulness; accuracy of
   the deterministic false-positive inference; and a comparative verdict (which
@@ -121,12 +125,18 @@ python3 .plan/execute-script.py default-bundle:finalize-step-review-retrospectiv
 Parse the TOON. Key fields:
 
 - `total_findings`, `reviewer_count`
-- `reviewers[]{author,raw_total,actionable_count,meta_count,fixed,accepted,taken_into_account,suppressed,pending,positives_count,false_positives_count,pct_resolved_as_fixed}`
+- `reviewers[]{author,raw_total,actionable_count,meta_count,fixed,accepted,taken_into_account,rejected,suppressed,pending,positives_count,false_positives_count,resolved_actionable_count,actionable_fixed_count,pct_resolved_as_fixed}`
 - `by_author_kind[]{author,kind,count}` — the per-`(author, kind)` breakdown
 - `kind_actionability` and `resolution_quality` — the mapping legends
 
 `raw_total` and `actionable_count` are DISTINCT — the meta comments never inflate
-`actionable_count`. These numbers are authoritative; do NOT recompute them.
+`actionable_count`. `pct_resolved_as_fixed` is `actionable_fixed_count` ÷
+`resolved_actionable_count`, both emitted beside it so the denominator is visible.
+A `null` `pct_resolved_as_fixed` means **"no resolved actionable comments"** — the
+reviewer's records were all META, all still pending, or both. It MUST NOT be read
+as, or rendered as, `0%`: a `null` is the absence of a measurement, whereas `0%`
+asserts the reviewer got everything wrong. These numbers are authoritative; do NOT
+recompute them.
 
 ### Step 3: LLM qualitative-judgment pass
 
@@ -137,9 +147,15 @@ deterministic metrics (from Step 2), produce per reviewer:
   trivia.
 - **Depth / usefulness** — how substantive and actionable the comments were.
 - **False-positive accuracy** — did the deterministic false-positive inference
-  (resolution in {`accepted`, `taken_into_account`}) genuinely read as noise in
-  the comment bodies, or were any of those acknowledged-without-change comments
-  actually valuable?
+  (resolution in {`rejected`}) genuinely read as a wrong claim in the comment
+  bodies, or was the rejection a scope call on a correct observation?
+- **Acknowledged vs false-positive sanity check** — read the
+  acknowledged-without-change comments (resolution in {`accepted`,
+  `taken_into_account`}) and confirm they belong in NEITHER quality bucket: an
+  acknowledgement means the reviewer said something valid that the triage absorbed
+  without a code change, so it is evidence of neither a caught defect nor a wrong
+  claim. Flag any that actually read as a wrong claim — those were mis-triaged and
+  belong on `rejected`.
 
 Then a comparative verdict: which reviewer added more value on this PR and why.
 This pass AUGMENTS — never replaces or overrides — the Step 2 counts.
@@ -148,9 +164,12 @@ This pass AUGMENTS — never replaces or overrides — the Step 2 counts.
 
 Write `review-retrospective.md` under the plan dir, containing BOTH the
 deterministic per-reviewer metrics table (raw vs actionable vs meta,
-positives/false-positives, %-resolved-as-fixed) from Step 2 AND the LLM sections
-from Step 3 as NAMED sections — `## Qualitative Quality Assessment` (per reviewer)
-and `## Comparative Verdict`:
+positives/false-positives/acknowledged, %-resolved-as-fixed) from Step 2 AND the
+LLM sections from Step 3 as NAMED sections — `## Qualitative Quality Assessment`
+(per reviewer) and `## Comparative Verdict`. Render a `null`
+`pct_resolved_as_fixed` as `n/a` — never as `0%` — and put the denominator beside
+every rendered value (e.g. `40.0% (2/5 resolved actionable)`, `n/a (0 resolved
+actionable)`) so the reader can see what the percentage was measured over:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-files:manage-files write \

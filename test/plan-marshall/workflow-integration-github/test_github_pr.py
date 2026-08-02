@@ -13,6 +13,11 @@ alike:
        distinct — keying on ``(bot_kind, comment_id)`` rather than ``comment_id``
        alone means a second bot's identically-numbered comment is NOT wrongly
        deduped against the first bot's.
+    3. The pre-filter's CONTENTLESS BOILERPLATE layer (``_is_contentless_boilerplate``
+       and ``_is_obvious_noise``'s layer 3), driven directly with a body string and
+       a ``bot_kind`` — the fail-closed empty-marker short-circuit, the
+       ``all(required)`` conjunction member-by-member, the ``any(disqualifying)``
+       veto, the strip-before-compare normalization, and the layer ordering.
 
 The findings store is REAL (isolated via the autouse ``plan_context``
 ``PLAN_BASE_DIR`` sandbox); only the GitHub provider surface (``check_auth``,
@@ -26,6 +31,7 @@ import argparse
 import json
 import sys
 
+import bot_registry
 import pytest
 from _bot_flag_derivation import derive_bot_flags
 
@@ -1907,3 +1913,174 @@ class TestBareClassificationFlags:
         stored = query_findings(plan_id, finding_type='pr-comment')['findings']
         assert len(stored) == len(_COMMENTS)
         assert {f.get('bot_kind') for f in stored} >= {'coderabbit', 'pr-agent', 'sourcery'}
+
+
+# =============================================================================
+# Pre-filter layer 3 — contentless review boilerplate
+# =============================================================================
+#
+# Driven directly with a body string and a bot_kind: no provider monkeypatching
+# and no findings-store round-trip, so these assert the predicate itself rather
+# than an end-to-end ingest outcome.
+#
+# The required-marker set is read FROM THE REGISTRY rather than restated here, so
+# a marker added to (or dropped from) ``pr-agent.md`` changes the covered
+# population automatically instead of leaving a hand-written list one member
+# short of the real one.
+
+_PR_AGENT_REQUIRED_MARKERS = bot_registry.contentless_review_markers('pr-agent')
+
+# PR-Agent's Guide in its CLEAN shape: the heading plus both clean assertions, and
+# no ``<details>`` focus-area finding. This is the one body the producer may drop.
+_PR_AGENT_CLEAN_GUIDE = (
+    '## PR Reviewer Guide 🔍\n'
+    '\n'
+    'Here are some key observations to aid the review process:\n'
+    '\n'
+    '| | |\n'
+    '|---|---|\n'
+    '| 🔒 | **No security concerns identified** |\n'
+    '| 🧪 | **PR contains tests** |\n'
+)
+
+# The same clean assertions PLUS one focus-area finding. ``<details>`` is the
+# structural carrier of every finding PR-Agent emits, so its presence proves the
+# Guide has content whatever the clean rows say.
+_PR_AGENT_GUIDE_WITH_FINDING = _PR_AGENT_CLEAN_GUIDE + (
+    '\n'
+    '| ⚡ | **Recommended focus areas for review** |\n'
+    '\n'
+    '<details><summary>Unbounded retry</summary>\n'
+    '<strong>The retry loop has no ceiling</strong>\n'
+    'A persistent 500 will spin forever.\n'
+    '</details>\n'
+)
+
+
+def test_clean_guide_fixture_carries_every_declared_required_marker():
+    """The fixture stays in step with the registry it is meant to exercise.
+
+    Without this guard a marker added to ``pr-agent.md`` would leave the
+    conjunction cases below asserting ``False`` for the trivial reason that the
+    fixture never carried the new marker — the whole layer-3 suite would keep
+    passing while covering nothing.
+    """
+    assert _PR_AGENT_REQUIRED_MARKERS
+    for marker in _PR_AGENT_REQUIRED_MARKERS:
+        assert marker in _PR_AGENT_CLEAN_GUIDE
+
+
+@pytest.mark.parametrize('bot_kind', ['coderabbit', 'sourcery', 'not-a-registered-bot', None])
+def test_empty_required_markers_short_circuit_to_false(bot_kind):
+    """A bot declaring no clean shape can never have a comment dropped by layer 3.
+
+    This is the fail-closed default and the state EVERY bot other than PR-Agent
+    is in — including an unregistered kind and the human path (``bot_kind`` is
+    ``None``). It is asserted against a body that carries PR-Agent's every
+    required marker, so the ``False`` can only come from the empty-required
+    short-circuit and not from a failed marker match.
+    """
+    assert bot_registry.contentless_review_markers(bot_kind or '') == []
+    assert github_pr._is_contentless_boilerplate(_PR_AGENT_CLEAN_GUIDE, bot_kind) is False
+
+
+def test_clean_guide_is_contentless_boilerplate():
+    """Every required marker present and no disqualifying marker — the drop case."""
+    assert github_pr._is_contentless_boilerplate(_PR_AGENT_CLEAN_GUIDE, 'pr-agent') is True
+
+
+@pytest.mark.parametrize('missing', _PR_AGENT_REQUIRED_MARKERS)
+def test_removing_any_single_required_marker_fails_the_conjunction(missing):
+    """The predicate is ``all(required)`` — one absent marker is enough to keep the comment.
+
+    One case PER MARKER rather than one representative case, so the set is
+    covered member-by-member: weakening the registry list to the 🔒 row alone
+    (operator decision Q1's rejected shortcut) turns the corresponding case red
+    instead of silently widening the suppression. The docs-only PR — whose Guide
+    carries the 🔒 clean assertion but not the 🧪 one — is exactly this shape.
+    """
+    body = _PR_AGENT_CLEAN_GUIDE.replace(missing, '')
+
+    assert missing not in body
+    assert github_pr._is_contentless_boilerplate(body, 'pr-agent') is False
+
+
+def test_any_actionable_marker_vetoes_the_drop():
+    """A ``<details>`` finding disqualifies the drop even with every clean marker present.
+
+    The veto is what keeps the predicate fail-OPEN: a Guide that asserts a clean
+    security row while also carrying a focus-area finding is a review WITH
+    content, and dropping it would destroy real review signal.
+    """
+    for marker in _PR_AGENT_REQUIRED_MARKERS:
+        assert marker in _PR_AGENT_GUIDE_WITH_FINDING
+    assert '<details>' in _PR_AGENT_GUIDE_WITH_FINDING
+
+    assert github_pr._is_contentless_boilerplate(_PR_AGENT_GUIDE_WITH_FINDING, 'pr-agent') is False
+
+
+def test_registry_markers_are_stripped_before_matching(monkeypatch):
+    """Incidental whitespace around a registry value must not break the match.
+
+    The registry values are markdown-quoted inside a fenced data block, so a
+    stray leading/trailing space is a plausible data edit. Both sides of the
+    comparison are normalized — the project's normalize-both-sides-of-a-
+    registry-comparison rule — so such a value still matches the raw body.
+    Without the strip the required marker would never be found and the layer
+    would silently stop firing.
+    """
+    monkeypatch.setattr(
+        github_pr.bot_registry,
+        'contentless_review_markers',
+        lambda bot_kind: [f'  {marker}  ' for marker in _PR_AGENT_REQUIRED_MARKERS],
+    )
+    monkeypatch.setattr(
+        github_pr.bot_registry,
+        'actionable_content_markers',
+        lambda bot_kind: ['  <details>  '],
+    )
+
+    assert github_pr._is_contentless_boilerplate(_PR_AGENT_CLEAN_GUIDE, 'pr-agent') is True
+    # The disqualifying marker is stripped on the same path — a padded veto entry
+    # must still veto, not silently stop matching.
+    assert github_pr._is_contentless_boilerplate(_PR_AGENT_GUIDE_WITH_FINDING, 'pr-agent') is False
+
+
+def test_obvious_noise_drops_the_clean_guide_via_layer_three():
+    """``_is_obvious_noise`` returns True for the clean Guide and False for the finding-bearing one.
+
+    Layer 3 is reached through the public pre-filter, not only through the helper
+    — the wiring is what makes the fix take effect in ``cmd_fetch_findings``.
+    """
+    assert github_pr._is_obvious_noise(_PR_AGENT_CLEAN_GUIDE, 'pr-agent') is True
+    assert github_pr._is_obvious_noise(_PR_AGENT_GUIDE_WITH_FINDING, 'pr-agent') is False
+
+
+def test_layer_three_is_consulted_only_after_layers_one_and_two_miss(monkeypatch):
+    """Ordering: a body already matched by layer 1 or layer 2 never reaches layer 3.
+
+    Asserted by spying on ``_is_contentless_boilerplate`` rather than on the
+    return value, because all three layers return ``True`` — a return-value
+    assertion could not tell which layer produced it, and would pass just as
+    happily if layer 3 ran first.
+    """
+    calls = []
+    real = github_pr._is_contentless_boilerplate
+
+    def _spy(body, bot_kind):
+        calls.append(bot_kind)
+        return real(body, bot_kind)
+
+    monkeypatch.setattr(github_pr, '_is_contentless_boilerplate', _spy)
+
+    # Layer 1 — a shared, bot-agnostic acknowledgment regex.
+    assert github_pr._is_obvious_noise('LGTM, nothing further from me.', 'pr-agent') is True
+    assert calls == []
+
+    # Layer 2 — PR-Agent's own literal ignore marker.
+    assert github_pr._is_obvious_noise('## PR Agent Walkthrough\n\nAvailable commands.', 'pr-agent') is True
+    assert calls == []
+
+    # Neither matches — only now is layer 3 consulted.
+    assert github_pr._is_obvious_noise(_PR_AGENT_CLEAN_GUIDE, 'pr-agent') is True
+    assert calls == ['pr-agent']
