@@ -245,6 +245,17 @@ EXECUTION_LOG_KEY = 'execution_log'
 # segment) for structural role-based intersection in the 7-row decision matrix.
 # There are no longer any legacy fixed-name IDs and no per-step
 # ``standards/{name}.md`` role-files to read.
+#
+# The phase-6 tuple is written in ASCENDING ``order`` sequence, mirroring each
+# step doc's frontmatter ``order`` fact — the authoritative source the composer
+# and the finalize dispatcher both read. This tuple is only a candidate SET, but
+# a sequence that disagrees with the frontmatter reads as a second, competing
+# statement of the pipeline order, so it is kept in lock-step: when a step's
+# ``order`` moves, this sequence moves with it. Resolve the live values with
+# ``manage-config list-finalize-steps`` rather than sorting from memory.
+# ``lessons-capture`` (991), ``record-metrics`` (998) and ``archive-plan`` (1000)
+# sit after the merge gate ``branch-cleanup`` (70) because they report on the
+# finished run and read evidence the gate produces.
 DEFAULT_PHASE_5_STEPS = ('verify:quality-gate', 'verify:module-tests')
 DEFAULT_PHASE_6_STEPS = (
     'finalize-step-simplify',
@@ -254,9 +265,9 @@ DEFAULT_PHASE_6_STEPS = (
     'ci-verify',
     'automatic-review',
     'sonar-roundtrip',
-    'lessons-capture',
     'adr-propose',
     'branch-cleanup',
+    'lessons-capture',
     'record-metrics',
     'archive-plan',
 )
