@@ -70,7 +70,14 @@ _SCRIPTS_DIR = (
 if str(_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_DIR))
 
-import review_retrospective as rr  # type: ignore[import-untyped]  # noqa: E402
+# A bare ``type: ignore`` is deliberate here, not laziness: mypy resolves this
+# project-local import differently depending on which roots are on its search
+# path, so it raises ``import-untyped`` in some environments and
+# ``import-not-found`` in others (locally vs CI). A code-scoped ignore is
+# therefore "unused" in whichever environment raises the OTHER code, and
+# ``--warn-unused-ignores`` turns that into a hard error. The bare form is used
+# in both.
+import review_retrospective as rr  # type: ignore  # noqa: E402
 
 github_pr = load_script_module('plan-marshall', 'workflow-integration-github', 'github_pr.py', 'github_pr')
 _findings_core = load_script_module('plan-marshall', 'manage-findings', '_findings_core.py', '_findings_core')
