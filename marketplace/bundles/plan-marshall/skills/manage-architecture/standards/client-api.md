@@ -538,7 +538,8 @@ npm,python3 .plan/execute-script.py plan-marshall:build-npm:npm run --command-ar
 | `resolve` | Executable command | Full python3 invocation |
 | `files` | Module file inventory | Categorised paths, optionally filtered by `--category` |
 | `which-module` | Reverse path lookup | Owning module for a given path |
-| `find` | Glob inventory search | Cross-module path matches |
+| `find` | Glob inventory search (PATH) | Cross-module path matches |
+| `search` | Content inventory search (BODY) | Cross-module file hits with `match_count`, plus `files_scanned` / `unreadable[]` |
 | `diff-modules` | Snapshot diff | `added`/`removed`/`changed`/`unchanged` module buckets |
 | `descriptor-regression-check` | Commit-gate regression predicate | `regressive` (bool) + `violations` list |
 
@@ -806,13 +807,16 @@ sequence. Patterns are matched against the full inventory path with
 > **`find` matches path NAMES, not file CONTENT.** A pattern that looks like a
 > token you expect to find *inside* a file (an enum value, a config key, a
 > renamed identifier) only matches when that literal string also appears in
-> the file's PATH — `find` never opens a file and greps its body. A `count: 0`
-> result therefore proves only that no path matched the pattern; it is NOT
-> evidence that no file in the tree contains that string. When the actual goal
-> is a content search, `find`/`which-module`/`files` cannot answer it — reach
-> for a dedicated content-sweep test (a `rglob` + regex walk over the text
-> files, one assertion per token) instead, or return the coverage gap to the
-> caller rather than reading a zero-result `find` as a clean population.
+> the file's PATH — `find` never opens a file and scans its body. This is the
+> verb behaving exactly as designed, not a defect. A `count: 0` result
+> therefore proves only that no path matched the pattern; it is NOT evidence
+> that no file in the tree contains that string. When the actual goal is a
+> content search, use [`search --content`](#search) — the sibling reader that
+> answers "which file *contains* X" over the same inventory. Returning the
+> coverage gap to the caller remains the residual fallback, but only for trees
+> the inventory does not cover (see `search`'s inventory-scope boundary); it is
+> no longer the first resort, and a zero-result `find` must still never be read
+> as a clean population.
 
 **Truthful truncation**: an in-scope elided category is self-scanned uncapped
 against the module's real worktree rather than contributing only its sample.
@@ -869,6 +873,150 @@ elided[1]{module,category,elided_count,sample_size}:
 - Recognised category that no module populates: returns `status: success`
   with `count: 0`. The discriminator is vocabulary membership, not whether
   any module's `files` block carries the key.
+
+---
+
+### search
+
+Cross-module **content** search across the inventory — the sibling of
+[`find`](#find). `find` answers *which PATH matches*; `search --content`
+answers *which file CONTAINS*. Both read the same module-attributed inventory
+through the same seam, so hits carry identical `module` / `category`
+attribution and the same ADR-009 truncation reporting; only the per-file
+predicate differs.
+
+This is the sanctioned content-search path for a dispatched leaf whose `Grep` /
+`Glob` tools are unavailable and whose Bash file-search commands are refused by
+the PreToolUse enforcement hook.
+
+```bash
+architecture.py search --content --pattern P [--category CATEGORY] [--literal]
+```
+
+**Options**:
+
+| Option | Required | Default | Description |
+|--------|----------|---------|-------------|
+| `--content` | Yes | — | Mode selector. Argparse-**required**, so a bare `search --pattern X` is rejected at parse time rather than silently defaulting to a mode. |
+| `--pattern` | Yes | — | Pattern matched against each file's body. A Python regex by default; a fixed string under `--literal`. |
+| `--category` | No | (all) | Restrict search to one category. Same vocabulary and same unrecognised-name error as the [`files`](#files) verb's `--category` option. |
+| `--literal` | No | `false` | Match `--pattern` verbatim (`re.escape`) instead of compiling it as a regex. |
+
+**Pattern semantics**: the pattern is compiled with `re.compile`, so regex
+metacharacters are active by default. `--literal` escapes the pattern first,
+which is what makes a string full of shell metacharacters (`$(…)`, `;`, backticks)
+match exactly and safely. No caller input ever reaches a shell — the search is a
+Python-side walk over the inventory, never a subprocess.
+
+**Payload boundary — no line bodies.** A hit reports only *where* it is
+(`module`, `category`, `path`) and *how strongly* (`match_count`, the number of
+non-overlapping matches in that file). The response deliberately carries **no
+matching line text and no line numbers**. Returning line bodies would make the
+response size a function of the corpus's match density rather than of its file
+count, so one broad sweep could emit an unbounded payload into the caller's
+context. `match_count` is what replaces the lines: rank the hit list by it and
+spend a `Read` only on the few files that matter.
+
+**Inventory-scope boundary.** The search covers the crawled file inventory, so
+it excludes — by construction, not by omission — always-ignored directories
+(`.git`, `node_modules`, `target`, caches), dotfile trees outside the
+`.gitignore` / `.editorconfig` allowlist (so `.claude/**` and `.github/**` are
+NOT searched), and anything a `.gitignore` rule excludes. A zero result means
+*"not in any inventoried file"*, which is not the same claim as *"not in the
+tree"*. Untracked-but-not-ignored files ARE searched: the walk is
+gitignore-aware, not `git ls-files`-backed, so the verb also works outside a git
+worktree.
+
+**Anti-vacuity fields.** `count: 0` is never confident on its own. Every
+successful response also carries:
+
+| Field | Why it is required |
+|-------|--------------------|
+| `files_scanned` (int) | `count: 0` with `files_scanned: 0` means *nothing was searched*; `count: 0` with `files_scanned: N` means *N files were searched and the pattern is genuinely absent*. The two are never the same observable condition. |
+| `unreadable` (list of `{path, reason}`, empty when clean) | A file skipped for a decode error (`reason: decode_error`, e.g. a binary file) or an OS error (`reason: os_error`, e.g. an inventoried path no longer on disk) is REPORTED, never silently dropped. |
+| `truncated` / `elided` | The same fail-closed pair `find` and `which-module` carry (ADR-009). |
+
+**Output** (TOON, clean):
+
+```toon
+status: success
+pattern: HARNESS_BASH_CEILING
+literal: false
+category: null
+count: 2
+results[2]{module,category,path,match_count}:
+  plan-marshall,script,marketplace/bundles/plan-marshall/skills/manage-architecture/scripts/_cmd_client.py,1
+  plan-marshall,script,marketplace/bundles/plan-marshall/skills/manage-architecture/scripts/_cmd_client_build.py,3
+files_scanned: 4215
+unreadable[0]:
+truncated: false
+elided[0]:
+```
+
+**Output** (TOON, genuinely-absent token — a trustworthy negative):
+
+```toon
+status: success
+pattern: NO_SUCH_TOKEN
+literal: false
+category: null
+count: 0
+results[0]:
+files_scanned: 4215
+unreadable[0]:
+truncated: false
+elided[0]:
+```
+
+`files_scanned: 4215` is what makes this negative meaningful: 4215 files really
+were opened and none contained the token.
+
+**Output** (TOON, a file could not be read):
+
+```toon
+status: success
+pattern: TOKEN
+literal: true
+category: source
+count: 1
+results[1]{module,category,path,match_count}:
+  pkg,source,pkg/good.py,1
+files_scanned: 1
+unreadable[1]{path,reason}:
+  pkg/blob.bin,decode_error
+truncated: false
+elided[0]:
+```
+
+**Output** (TOON, invalid pattern):
+
+```toon
+status: error
+error: invalid_pattern
+pattern: "[unclosed"
+literal: false
+message: "unterminated character set at position 0"
+```
+
+**Edge cases**:
+
+- Invalid regex: `status: error, error: invalid_pattern` carrying the compile
+  `message` — never a confident `count: 0`. The same pattern under `--literal`
+  is a legitimate query, because the escape happens before the compile.
+- Unrecognised category (not a member of `FILE_CATEGORIES`): `status: error`,
+  `error: unknown_category`, plus the sorted `valid_categories` vocabulary —
+  identical to the `files` and `find` payload.
+- Recognised category that no module populates: `status: success` with
+  `count: 0`. `--category` also narrows what is READ, so `files_scanned` shrinks
+  with it.
+- `--content` omitted: argparse rejects the call (exit 2) before any handler
+  runs. The mode stays explicit at every call site, which is what lets a future
+  `--symbol` / `--path` mode land without minting a sibling verb or rewriting
+  shipped calls.
+- Binary or undecodable file: skipped and reported in `unreadable[]`, not
+  counted in `files_scanned`.
+- No `mode` field is echoed in the response: `--content` is the only mode today,
+  so a `mode: content` key would be constant-valued and therefore vacuous.
 
 ---
 
