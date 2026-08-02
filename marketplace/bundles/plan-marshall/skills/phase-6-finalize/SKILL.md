@@ -693,7 +693,7 @@ FOR each step_id in manifest.phase_6.steps:
 
   4b. Lessons-capture Signal Gate (B4 — run BEFORE dispatching the step if step_id == "lessons-capture"):
 
-      The deterministic three-signal Signal Gate is evaluated at dispatcher level so the envelope spawn cost is avoided when all three signals are zero. The dispatcher computes the precondition; the LLM workflow body is the recording loop only. When all three signals are zero, short-circuit and record `outcome=skipped`.
+      The deterministic three-signal Signal Gate is evaluated at dispatcher level so the envelope spawn cost is avoided when all three signals are zero. The dispatcher computes the precondition; the LLM workflow body is the recording loop only. When all three signals are zero AND the run is not orchestrated, short-circuit and record `outcome=skipped` — an orchestrated run is dispatched even at zero signals, per the orchestration carve-out in item 4b.b below.
 
       a0. Resolve orchestration context (runs BEFORE the three-zero short-circuit):
 
