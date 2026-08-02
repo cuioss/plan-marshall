@@ -17,27 +17,38 @@ default.
 
 ## Grounding source
 
-Every field and every consumer-stage shape below is stated against **one observed review**, and
-each is marked CONFIRMED, CORRECTED, or UNVERIFIED against it. Nothing here is written from
+Every field and every consumer-stage shape below is stated against **two observed reviews**, and
+each is marked CONFIRMED, CORRECTED, or UNVERIFIED against them. Nothing here is written from
 assumption about how the bot "probably" behaves.
 
-| | |
-|---|---|
-| Repository / PR | `cuioss/API-Sheriff` PR **#103** |
-| Comment | `issue_comment` id `IC_kwDOPatrT88AAAABLvbeow` |
-| Author (as the provider reports it) | `cuioss-review-bot` |
-| Posted | `2026-07-26T09:27:15Z` |
-| Heading | `## PR Reviewer Guide 🔍` |
+| | Review A — the finding-bearing shape | Review B — the clean shape |
+|---|---|---|
+| Repository / PR | `cuioss/API-Sheriff` PR **#103** | `cuioss/plan-marshall` PR **#1078** |
+| Comment | `issue_comment` id `IC_kwDOPatrT88AAAABLvbeow` | `issue_comment` id `IC_kwDOQ3xasM8AAAABM2TS9g` |
+| Author (as the provider reports it) | `cuioss-review-bot` | `cuioss-review-bot` |
+| Posted | `2026-07-26T09:27:15Z` | not recorded on the observation |
+| Heading | `## PR Reviewer Guide 🔍` | `## PR Reviewer Guide 🔍` |
 
-Sample size is **one review** — see "Signal calibration" below before generalizing from it.
+**Review B is the only observation of the RAW API body**, captured verbatim from the quarantined
+`raw_input.body` of the `pr-comment` finding it produced. Review A was recorded from its GitHub
+*rendering*, which is why its assertion literals were written in markdown-bold form and why the
+`contentless_review_markers` derived from them matched no real body at all — see the CORRECTED
+annotation on that field. Review B verbatim:
+
+```text
+## PR Reviewer Guide 🔍  <table> <tr><td>🧪&nbsp;<strong>PR contains tests</strong></td></tr> <tr><td>🔒&nbsp;<strong>No security concerns identified</strong></td></tr> <tr><td>⚡&nbsp;<strong>No major issues detected</strong></td></tr> </table>
+```
+
+Sample size is **two reviews**, only one of which carried a finding — see "Signal calibration"
+below before generalizing from them.
 
 ## Registry data block
 
 The fenced-YAML block below is the machine-readable per-bot record. It is data, not frontmatter.
 Consumers read `bot_kind`, `author_login`, `trigger_comment`, `completion_check_name`,
 `honors_skip_label`, `participation_evidence`, `participation_requires_update`, `ignore_patterns`,
-`refusal_patterns`, `rate_limit_class`, `rate_limit_eta_patterns`, and `severity_map` from it; the
-prose sections carry the rationale.
+`refusal_patterns`, `contentless_review_markers`, `actionable_content_markers`, `rate_limit_class`,
+`rate_limit_eta_patterns`, and `severity_map` from it; the prose sections carry the rationale.
 
 ```yaml
 bot_kind: pr-agent
@@ -70,11 +81,44 @@ ignore_patterns:
                                   # finding. Suppressed at source by final_update_message = false
                                   # in cuioss/pr-agent-settings; this pattern covers the ones
                                   # already posted and any recurrence if that setting is lost.
-refusal_patterns:                 # EMPTY — no refusal of any kind observed on #103. Fail-closed: a
-                                  # refusal is never claimed without positive evidence, so this bot's
-                                  # non-participation resolves to absent / in_progress, never refused.
-rate_limit_class: unknown         # UNVERIFIED — no refusal of any kind observed on #103. Fail-closed
-                                  # per ADR-009: never assume a refusal is awaitable without evidence.
+# contentless_review_markers: CORRECTED against #1078 — the three literals the Guide carries when
+# it found nothing: the heading that identifies the review, plus the 🔒 and 🧪 rows' clean
+# assertions, each as BARE INNER TEXT. The bare form is load-bearing, not a style choice: the two
+# assertions live inside an HTML <table>, where GitHub renders no markdown, so the raw API body
+# carries <strong>No security concerns identified</strong> — never the markdown-bold **…** these
+# entries previously declared. The bare inner text is a substring of BOTH renderings, so the entry
+# holds whichever form the bot emits. The superseded **-wrapped literals matched no observed body
+# at all, which made the whole conjunction dead: two of three required markers could never be
+# found, so the predicate returned False on every real clean Guide. EVERY entry is REQUIRED — the
+# producer's contentless test is a CONJUNCTION over this whole list, not a disjunction, so a Guide
+# missing any one of them is left in place and hand-triaged. The 🧪 clean assertion in particular
+# MUST NOT be dropped from the list as an anti-noise optimization: per "Consumer stage" the
+# negative 🧪 form is itself an actionable low-severity coverage signal, and keying on the presence
+# of the observed positive literal is what makes the drop fail OPEN on every shape that was never
+# observed. The ⚡ row's clean literal "No major issues detected" is deliberately NOT a required
+# entry — see "Consumer stage" for why it is recorded but not conjoined.
+contentless_review_markers:
+  - "## PR Reviewer Guide"        # CONFIRMED on #103 and #1078 — the heading that identifies the
+                                  # review. It sits OUTSIDE the table, so it is markdown in the
+                                  # raw body too and needs no rendering-independent form.
+  - "No security concerns identified"   # CONFIRMED on #1078 — the 🔒 row's clean assertion, as
+                                  # the inner text of <strong>No security concerns identified</strong>
+  - "PR contains tests"           # CONFIRMED on #1078 — the 🧪 row's clean assertion, as the
+                                  # inner text of <strong>PR contains tests</strong>
+# actionable_content_markers: ANY entry present disqualifies the contentless drop, whatever the
+# list above says.
+actionable_content_markers:
+  - "<details>"                   # CONFIRMED on #103 — the structural carrier of every ⚡
+                                  # focus-area finding; one occurrence means the Guide carries
+                                  # real content and is filed unchanged. Absent from #1078's clean
+                                  # body, which is what makes that body droppable.
+refusal_patterns:                 # EMPTY — no refusal of any kind observed on #103 or #1078.
+                                  # Fail-closed: a refusal is never claimed without positive evidence,
+                                  # so this bot's non-participation resolves to absent / in_progress,
+                                  # never refused.
+rate_limit_class: unknown         # UNVERIFIED — no refusal of any kind observed on #103 or #1078.
+                                  # Fail-closed per ADR-009: never assume a refusal is awaitable
+                                  # without evidence.
 rate_limit_eta_patterns:
 # severity_map: an ASSIGNMENT map, NOT a parse map — see the section below.
 severity_map:
@@ -135,16 +179,45 @@ PR-Agent-specific code anywhere:
   because this doc declares `bot_kind: pr-agent`.
 - `github_re_review.py` derives its login→bot_kind map (`cuioss-review-bot` → `pr-agent`) and its
   generic re-review strategy (posting `/review`) from the registry.
-- `github_pr.py` applies this doc's `ignore_patterns` as the per-bot producer filter.
+- `github_pr.py` applies this doc's `ignore_patterns` as the per-bot producer filter, and its
+  `contentless_review_markers` / `actionable_content_markers` pair as the content-aware layer
+  beneath it.
 
 ## Producer stage — what to DROP before it becomes a finding
 
 The `ignore_patterns` above drop the two comment kinds that are not reviews at all: the `/help`
 commands reference and `/ask` answers.
 
-Note what is deliberately **not** dropped: the `## PR Reviewer Guide 🔍` comment itself. That
-header identifies the review and carries every finding — PR-Agent has no separate marker comment,
-and matching on it would drop the entire review.
+**The `## PR Reviewer Guide 🔍` comment is dropped conditionally, on content — never by
+`ignore_patterns`.** A bare-heading `ignore_patterns` entry would be wrong: that layer is a
+whole-body substring test whose match drops the entire comment, and this bot has no separate
+marker comment — the header identifies the review *and* carries every finding, so matching on it
+would drop real findings along with the boilerplate.
+
+The conditional rule the producer applies instead: the Guide is dropped **only** when every
+`contentless_review_markers` entry is present in the body AND no `actionable_content_markers`
+entry is. In every other case it is left untouched and filed as a `pr-comment` finding exactly as
+before — a `<details>` focus-area finding, a 🔒 row naming a concrete concern, a 🧪 row that is
+not the clean assertion, or a missing heading all leave the comment in place. The predicate can
+therefore only ever fail *open*.
+
+**Match the assertions on their BARE INNER TEXT, never on a rendering.** The 🔒 and 🧪 assertions
+sit inside an HTML `<table>`, and GitHub renders no markdown inside HTML — so the raw API body the
+producer matches against carries `<strong>PR contains tests</strong>`, while the *rendered* comment
+a human reads looks like `**PR contains tests**`. A marker written in the rendered form matches
+nothing, and because the predicate is a conjunction, a single such marker silently disables the
+whole layer: the drop never fires, every clean Guide is filed as a pending finding, and the failure
+is invisible because failing OPEN is also the predicate's designed safe direction. The registry
+entries therefore carry the inner text alone, which is a substring of both renderings.
+
+**Accepted residual:** on a docs-only PR the Guide carries the 🔒 clean assertion but not the 🧪
+one, so the conjunction does not hold and the comment is retained and hand-triaged even though its
+content is of little value there. That residue is accepted deliberately, in preference to a looser
+predicate that could drop a real coverage signal.
+
+Dropping the Guide here does not make the bot look absent: `participated_bots` is computed from
+the raw comment list *before* the pre-filter runs, so a suppressed clean Guide resolves PR-Agent to
+`participated_but_empty` — see [`bot-participation-contract.md`](bot-participation-contract.md).
 
 ## Rate-limit class — `unknown` (UNVERIFIED)
 
@@ -172,33 +245,41 @@ The `ignore_patterns` entry `**[Persistent review]` is NOT a refusal: it is a co
 and it is *updated in place* on re-review rather than reposted. A pipeline stage that counts inline
 review comments will conclude this bot found nothing.
 
-**Observed body structure** (#103): an HTML `<table>` of `<tr><td>` rows. Each focus-area finding
-is a `<details>` element whose `<summary>` carries a deep-link `<a>`, then a `<strong>Title</strong>`,
-then prose — followed by a fenced code excerpt (`java` on #103).
+**Observed body structure** (#103 and #1078): an HTML `<table>` of `<tr><td>` rows. Each cell is an
+emoji, a `&nbsp;`, and a `<strong>` assertion; the two are separated by nothing else. Each
+focus-area finding is a `<details>` element whose `<summary>` carries a deep-link `<a>`, then a
+`<strong>Title</strong>`, then prose — followed by a fenced code excerpt (`java` on #103).
 
-The rows are **bold assertion statements**, not `label: value` pairs — there is no bare `No` to
-read as an empty field:
+The rows are **assertion statements**, not `label: value` pairs — there is no bare `No` to read as
+an empty field. They are emphasized with `<strong>`, NOT with markdown `**` (markdown is not
+rendered inside the HTML table), so every match below is on the inner text:
 
-| Row | Observed on #103 |
-|---|---|
-| 🔒 | `🔒 **No security concerns identified**` |
-| 🧪 | `🧪 **PR contains tests**` |
-| ⚡ | `⚡ **Recommended focus areas for review**` |
+| Row | Assertion inner text | Raw body form |
+|---|---|---|
+| 🔒 clean | `No security concerns identified` | `🔒&nbsp;<strong>No security concerns identified</strong>` — CONFIRMED on #1078 |
+| 🧪 clean | `PR contains tests` | `🧪&nbsp;<strong>PR contains tests</strong>` — CONFIRMED on #1078 |
+| ⚡ clean | `No major issues detected` | `⚡&nbsp;<strong>No major issues detected</strong>` — CONFIRMED on #1078 |
+| ⚡ with findings | `Recommended focus areas for review` | CONFIRMED on #103 from its rendering; its raw markup was not captured |
+
+The ⚡ clean literal is recorded here but deliberately absent from `contentless_review_markers`:
+adding it would make the drop require a clean ⚡ row, and the docs-only shape (which the "Accepted
+residual" note above already retains) would be joined by every Guide whose ⚡ row is phrased
+differently — a needless narrowing of a predicate the 🔒 and 🧪 rows already anchor.
 
 Extract accordingly:
 
-1. **🔒 row** — the charter field, and an assertion either way. `**No security concerns
-   identified**` is the bot asserting a clean result, not an empty field: it is accounted-for, not
-   a finding. A row naming a concrete input or state IS a finding — assign `high` via
-   `severity_concern` in the map above.
+1. **🔒 row** — the charter field, and an assertion either way. `No security concerns identified`
+   is the bot asserting a clean result, not an empty field: it is accounted-for, not a finding. A
+   row naming a concrete input or state IS a finding — assign `high` via `severity_concern` in the
+   map above.
 2. **⚡ row** — the findings themselves, one `<details>` each: a deep-link, a bold title, prose, and
    usually a fenced excerpt. Capped at `num_max_findings` (5 centrally). Assign `medium` absent
-   other signal.
-3. **🧪 row** — a coverage assertion. `**PR contains tests**` is clean; the negative form on a
+   other signal. `No major issues detected` in this row is a clean assertion, not a finding.
+3. **🧪 row** — a coverage assertion. `PR contains tests` is clean; the negative form on a
    behavioural change is a cheap, actionable coverage signal (assign `low`).
 
-Match on the row's **emoji plus its bold assertion text**, never on a `label: value` split — the
-observed body has no such split.
+Match on the row's **emoji plus its assertion inner text**, never on a `label: value` split and
+never on a markdown rendering — the observed body has no such split, and its emphasis is HTML.
 
 Fields suppressed centrally and therefore not expected: intro text, tool-usage help, estimated
 effort, score, ticket compliance, can-be-split, and the security/effort review labels.
@@ -259,13 +340,14 @@ authoritative envelope-field contract; it is not restated here.
 
 ## Signal calibration
 
-Recorded honestly from the one observed review (#103):
+Recorded honestly from the one observed review that produced a finding at all (#103):
 
 - PR-Agent produced **exactly one** focus-area finding, which the maintainer determined to be a
   **false positive** (a plausible-sounding mechanism on a branch that cannot be reached).
 - CodeRabbit produced **twelve** valid findings on the same PR, with **zero overlap**.
 
-The two are complementary rather than redundant on this sample, but the sample is **n=1**. Do not
+The two are complementary rather than redundant on this sample, but the sample is **n=1**: #1078
+raised no finding at all, so it grounds the body SHAPE without adding to the quality sample. Do not
 read a quality ranking into it, and do not weaken the shared triage rules on its basis.
 
 ## Trust boundary

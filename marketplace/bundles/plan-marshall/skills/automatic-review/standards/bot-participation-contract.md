@@ -231,12 +231,68 @@ The producer therefore treats a recognised refusal as a **three-way branch**, no
 This is also why `refusal_patterns` must never be unioned into the producer's `ignore_patterns` drop
 set: doing so collapses the very distinction the two-field split exists to carry.
 
+### The three per-bot marker lists answer three different questions
+
+A bot's registry doc declares three independent marker surfaces. They are easy to confuse because all
+three are literal-substring lists read by the same producer, but each drives a different outcome and
+none is a superset of another:
+
+| Marker surface | Match semantics | Outcome |
+|----------------|-----------------|---------|
+| `ignore_patterns` | **Any** entry present in the body. | **Unconditional drop.** The comment is a routine section of a successful review (a walkthrough, a tips block, a `/help` echo) and is never a finding, whatever else the body carries. |
+| `refusal_patterns` | **Any** entry present in the body. | **A branch, never a drop.** The comment is the bot declining to review; it is excluded from findings AND from `participated_bots[]`, counted under `count_skipped_refusal`, and surfaced in `refused_bots[]` (see the table above). |
+| `contentless_review_markers` + `actionable_content_markers` | **Every** `contentless_review_markers` entry present **and** no `actionable_content_markers` entry present. | **A conditional drop.** The comment is a real review that found nothing, so it is dropped as noise (`count_skipped_noise`) — but only when the body is *fully* clean. A single actionable marker, or one missing required marker, leaves the comment in place and it is filed as a finding in full. |
+
+The pair is a conjunction over `contentless_review_markers` precisely so it cannot be widened by
+accident: weakening the list to one representative marker would silently broaden the suppression.
+An empty `contentless_review_markers` is the fail-closed default — the layer never fires for a bot
+that declares none, which is every bot that has not opted in.
+
+**The drop itself never removes participation evidence.** `participated_bots[]` is derived from the
+raw comment list *before* the producer's pre-filter runs, so suppressing a bot's only comment removes
+its findings without removing its participation evidence. On a fetch where the bot is credited, it
+therefore lands on the `participated_but_empty` member of the failure taxonomy above — *"Accounted-for,
+not a failure. The bot did its pass and had nothing actionable to say."* — which is exactly what a
+clean review is. Reading *the drop* as `absent` would turn a successful review into a completeness
+failure.
+
+That is a claim about the drop in isolation, and it is deliberately **not** an absolute: it does not
+say a dropped comment can never resolve to `absent`. Credit still has to clear the movement
+requirement below, and `review_completeness.classify_bot()` assigns `participated_but_empty` only to a
+bot present in `proven_participants` — a bot absent from `participated_bots[]` falls through to
+`absent`, an unproven state that blocks the quorum. For a bot declaring
+`participation_requires_update` (today, only PR-Agent, the sole bot that opts into the contentless
+drop) an unchanged clean comment is credited on the fetch that first observes it and denied on every
+later fetch, so in the steady state a dropped clean Guide does resolve to `absent`. That is the
+intended reading of a stale unchanged comment, not a defect in the drop.
+
+**Surviving the drop is not the same as being exempt from the movement requirement.** For a bot
+declaring `participation_requires_update` the evidence that survives the drop must still show **first
+presence or `updated_at` movement** (§ "Evidence for a bot that edits one comment in place"). Keeping
+that requirement live across a drop takes an explicit mechanism, because first presence is answered
+from what the plan has already **observed** — and the natural record of an observation is the
+`pr-comment` finding the comment produced, which a dropped comment by definition does not produce.
+The producer therefore records each noise-dropped comment's `(bot_kind, comment_id)` key in a
+plan-scoped **observation sidecar** kept beside the findings store, and evaluates first presence
+against the **union** of the stored-finding keys and the recorded dropped keys. A dropped comment is
+consequently first-present exactly once — on the fetch that first observed it — after which only a
+real `updated_at` edit credits the bot again.
+
+The sidecar holds **observation keys, not findings**: they are never returned by a findings query,
+never enter the pending-findings gate, and never reach operator triage, so the triage queue stays as
+clean as the drop intends. Recording them as findings in any resolution state would put routine
+clean-review boilerplate back in front of the operator, which is the defect the drop exists to
+remove. Without the record the two halves collide: read from the stored findings alone, the
+first-presence arm stays permanently satisfied for every dropped comment, so a bot whose one stale
+comment never changed would be credited as a proven participant on every fetch — the exact false
+positive `participation_requires_update` exists to close.
+
 ## Consumers
 
 | Consumer | What it reads |
 |----------|---------------|
 | `automatic-review/SKILL.md` | Both lists, to drive the completion-aware poll, the re-review trigger set, and the step-done guard. |
-| `github_pr fetch_findings` | Both lists, to classify each ingested comment and emit the unclassified-bot warning; each bot's `participation_evidence` / `participation_requires_update`, to derive the evidence-typed `participated_bots[]`; each bot's `refusal_patterns`, to branch a refusal into `refused_bots[]` rather than drop it. |
+| `github_pr fetch_findings` | Both lists, to classify each ingested comment and emit the unclassified-bot warning; each bot's `participation_evidence` / `participation_requires_update`, to derive the evidence-typed `participated_bots[]`; each bot's `refusal_patterns`, to branch a refusal into `refused_bots[]` rather than drop it; each bot's `contentless_review_markers` / `actionable_content_markers`, to drop a fully clean review comment as noise. |
 | `review_completeness check` | `required_bots` for the quorum; `optional_bots` for reporting only; `participation_evidence` to admit each evidence pair; `rate_limit_class` to split the two refusal states. |
 | `github_ops pr wait-for-comments` | Each bot's `participation_requires_update`, to select the `updated_at`-movement arm of its completion predicate over the count-growth arm; `participation_evidence` plus `bot_kinds()`, to decide whether the await is answerable at all (`detector_answerable`). |
 | `marshall-steward` | Both lists, to ask the wizard question and record the provenance. |

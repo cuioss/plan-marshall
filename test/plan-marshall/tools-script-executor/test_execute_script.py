@@ -601,6 +601,12 @@ def _run_build_class_dispatch(
     payload the dispatch boundary parses for ``status`` / ``command`` /
     ``duration_seconds`` / ``outcome``. ``stub_exit_code`` is the process exit
     the executor must propagate unchanged.
+
+    Every caller's ``plan_id_argv`` MUST lead with the build-executing subcommand
+    (``run``): the dispatch boundary is a CONJUNCTION of the build-class notation
+    prefix and that subcommand, so a dispatch without it stamps no ledger row at
+    all and the row assertions below would fail for an unrelated reason. The
+    narrowing itself is covered in test_build_class_stamp_discriminator.py.
     """
     import json
 
@@ -652,7 +658,7 @@ def test_build_class_dispatch_without_plan_id_records_the_sentinel():
     the build was unattributable.
     """
     with tempfile.TemporaryDirectory() as tmp:
-        entries = _run_build_class_dispatch(Path(tmp), [])
+        entries = _run_build_class_dispatch(Path(tmp), ['run'])
 
     assert len(entries) == 1, f'expected exactly one kind=build row, got {entries!r}'
     assert entries[0]['kind'] == 'build'
@@ -672,7 +678,7 @@ def test_build_class_dispatch_without_plan_id_keeps_the_global_script_log():
     missing-directory fallback.
     """
     with tempfile.TemporaryDirectory() as tmp:
-        entries = _run_build_class_dispatch(Path(tmp), [])
+        entries = _run_build_class_dispatch(Path(tmp), ['run'])
 
     log_file = entries[0]['log_file']
     assert 'NO_PLAN' not in log_file, (
@@ -692,7 +698,7 @@ def test_build_class_dispatch_with_a_real_plan_id_stores_it_verbatim():
     in the opposite direction.
     """
     with tempfile.TemporaryDirectory() as tmp:
-        entries = _run_build_class_dispatch(Path(tmp), ['--plan-id', 'a-real-plan'])
+        entries = _run_build_class_dispatch(Path(tmp), ['run', '--plan-id', 'a-real-plan'])
 
     assert entries[0]['plan_id'] == 'a-real-plan'
 
@@ -757,7 +763,7 @@ def test_build_class_dispatch_with_unparseable_stdout_still_writes_a_row():
     with tempfile.TemporaryDirectory() as tmp:
         entries = _run_build_class_dispatch(
             Path(tmp),
-            ['--plan-id', 'a-real-plan'],
+            ['run', '--plan-id', 'a-real-plan'],
             stub_stdout='>>> not a TOON payload at all <<<\n\tragged\n',
             stub_exit_code=3,
         )

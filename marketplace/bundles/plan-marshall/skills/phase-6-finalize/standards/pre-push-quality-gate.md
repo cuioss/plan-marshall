@@ -152,7 +152,7 @@ Only the module-scoped form resolves — `architecture resolve --command test-co
 
 The whole-tree invocation is therefore obtained by taking the architecture-resolved module-scoped `executable` and dropping its module argument — the executable, the notation, and the `run --command-args` shape all still come from the resolver, so this is **not** a hard-coded build command. This is a deliberate, recorded bypass of the default-scope resolve, not an oversight. The unblocking condition is registering `test-compile` in `_build_commands` plus an `architecture discover` refresh so the persisted inventory picks it up; that registration is deliberately NOT done here, being a production change to build-system discovery and outside a gate-document change.
 
-**Adjacent item deliberately not covered.** `build.py:392` registers the `verify` subparser with `help='Full verification (quality-gate + module-tests)'`, while `cmd_verify` chains quality-gate → **test-compile** → module-tests. The help text denies exactly the behaviour this gate now achieves parity with. It is not fixed here because `build.py` matches no `_CLASSIFY_PATTERNS` entry in `build-pyproject`'s `classify_paths()` (while the same extension's `classify_globs()` does route it), so any deliverable declaring `build.py` resolves to the `unknown` file-type bucket and blocks at plan time.
+**Adjacent item deliberately not covered.** `build.py` registers the `verify` subparser with `help='Full verification (quality-gate + module-tests)'`, while `cmd_verify` chains quality-gate → **test-compile** → module-tests. The help text denies exactly the behaviour this gate now achieves parity with. It is not fixed here purely as a scope boundary — correcting a build-system help string is a production change to `build.py`, not a gate-document change. The former blocker no longer applies: `build.py` now matches a `_CLASSIFY_PATTERNS` entry in `build-pyproject`'s `classify_paths()`, so a deliverable declaring it resolves to `production` rather than the `unknown` file-type bucket.
 
 ### Whole-tree module-tests divergence gate
 
@@ -165,9 +165,17 @@ The guards above run mypy + ruff over production sources and mypy over `test/` �
      resolve-test-scope --plan-id {plan_id}
    ```
 
-   Parse `scoped_modules`, `divergence_possible`, `recommended_target`, and `whole_tree_available` from the TOON output. See [`build-pyproject/SKILL.md`](../../build-pyproject/SKILL.md) § "Canonical invocations" → `resolve-test-scope` for the seam's argument surface and output contract.
+   Parse `scoped_modules`, `divergence_possible`, `recommended_target`, `unresolved_paths`, and `whole_tree_available` from the TOON output. See [`build-pyproject/SKILL.md`](../../build-pyproject/SKILL.md) § "Canonical invocations" → `resolve-test-scope` for the seam's argument surface and output contract.
 
-2. **`whole_tree_available == false`** (no discoverable pytest module set — e.g. a non-Python project) → do NOT run pytest. Emit a loud, footprint-specific WARNING naming the un-gated modules and the PLAN-08 divergence class, then proceed to **Mark Step Complete (Success)** (honest degradation, never a silent skip). Mirror the wording shape of the `finalize-step-plugin-doctor` cross-skill divergence WARNING:
+2. **Diagnosable-WARNING branch — `unresolved_paths` non-empty** → emit exactly one `[WARNING]` naming the paths and continue to the routing branches below. These are footprint entries the seam could not map to a registered module, so the coverage it can claim for them is *none*; the seam already reports them as `divergence_possible: true`, which routes the run through the whole-tree arm, but the suppression itself must reach a human rather than dying in the TOON (ADR-014). This is the same "an unresolvable derivation is never a silent drop and never a hard fail" contract the `derive_gate_bundles` `unresolved` branch establishes in § "Derive unique bundle set" above — same idiom, different derivation:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+     work --plan-id {plan_id} --level WARNING \
+     --message "[WARNING] (plan-marshall:pre-push-quality-gate) Footprint paths resolved to no registered module: {unresolved_paths} — proceeding whole-tree; scoped coverage for these paths is not determinable."
+   ```
+
+3. **`whole_tree_available == false`** (no discoverable pytest module set — e.g. a non-Python project) → do NOT run pytest. Emit a loud, footprint-specific WARNING naming the un-gated modules and the PLAN-08 divergence class, then proceed to **Mark Step Complete (Success)** (honest degradation, never a silent skip). Mirror the wording shape of the `finalize-step-plugin-doctor` cross-skill divergence WARNING:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -175,7 +183,7 @@ The guards above run mypy + ruff over production sources and mypy over `test/` �
      --message "[WARNING] (plan-marshall:pre-push-quality-gate) Whole-tree module-tests unavailable for footprint modules {scoped_modules} — the scoped-green / whole-tree-red divergence class (PLAN-08) is UN-GATED at finalize for this push. Proceeding on honest degradation."
    ```
 
-3. **`divergence_possible == true` and `whole_tree_available == true`** → run whole-tree `module-tests` (no module arg — the whole tree is the authority):
+4. **`divergence_possible == true` and `whole_tree_available == true`** → run whole-tree `module-tests` (no module arg — the whole tree is the authority):
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build \
@@ -184,7 +192,17 @@ The guards above run mypy + ruff over production sources and mypy over `test/` �
 
    On `status: error` (whole-tree red), the scoped-green / whole-tree-red regression is **caught here instead of at CI**: record the failing tests and proceed to **Mark Step Complete (Failure)**, which halts the phase before push. On `status: success`, proceed to **Mark Step Complete (Success)**.
 
-4. **`divergence_possible == false`** → a single isolated module cannot diverge from the whole tree (match by equivalence). Run scoped `module-tests {recommended_target}` — do NOT pay the whole-tree cost:
+5. **`scoped_modules` is empty** → run **no pytest at all**. This branch MUST be evaluated BEFORE branch 6: `divergence_possible == false` holds for *zero* scoped modules as well as for exactly one, and `recommended_target` is populated only in the one-module case — so collapsing the two lets branch 6 interpolate a null target and invoke `module-tests None`, which the build wrapper exits `0` on and the gate then reads as a pass. Reaching this branch means the seam returned the one legitimate benign verdict: an empty footprint, which genuinely has nothing to test (a non-empty footprint that resolves to no module arrives at branch 4 with `divergence_possible: true`). Record the skip attributably, then proceed to **Mark Step Complete (Success)**:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+     work --plan-id {plan_id} --level INFO \
+     --message "[STATUS] (plan-marshall:pre-push-quality-gate) module-tests skipped — the live footprint ({files}) resolves to zero scoped modules, so there is no pytest target to run and no whole-tree escalation is warranted."
+   ```
+
+   `{files}` is the live footprint read in § "Read the live footprint" above, so the skip names the evidence it rests on rather than being an unattributable silence.
+
+6. **`divergence_possible == false` and exactly one scoped module** → that single isolated module cannot diverge from the whole tree (match by equivalence), and `recommended_target` is non-null precisely in this case. The `exactly one` precondition is load-bearing, not decorative: it is what branch 5 above peels off first. Run scoped `module-tests {recommended_target}` — do NOT pay the whole-tree cost:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build \
@@ -216,6 +234,14 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
   --head-at-completion {sha}
 ```
 
+**Detail variant — module-tests skipped (zero scoped modules).** When the module-tests gate concluded via branch 5 (no pytest ran because the footprint resolves to zero scoped modules), use the shorter variant below instead, so the skip is legible in the step record rather than indistinguishable from a green pytest run:
+
+```text
+--display-detail "{N} bundles + whole-tree gates green, module-tests skipped (no module)"
+```
+
+The variant is deliberately shorter than the default one. Against the `display_detail` length ceiling owned by [`ref-workflow-architecture/standards/agents.md`](../../ref-workflow-architecture/standards/agents.md) (do not restate the number here — read it there), the default string already reaches 75 characters before `{N}` expands, leaving room for only a small bundle count; the skip variant reaches 67 before expansion and therefore stays inside the ceiling for any count this gate can produce. Size any further variant the same way — against its **worst-case placeholder expansion**, never against its literal form. A placeholder-bearing string that fits as written is not evidence that it fits once the placeholder expands.
+
 The persisted `head_at_completion` field is consumed by phase-6-finalize Step 3's resumable re-entry check: when the worktree HEAD has advanced past `{sha}` (typically because `automated-review` or `sonar-roundtrip` opened a loop-back fix-task that produced a new commit), the dispatcher re-fires this gate against the newer HEAD instead of skipping it.
 
 **Branch B — at least one bundle's quality-gate failed OR the whole-tree quality-gate failed OR test-compile failed OR the module-tests gate failed**:
@@ -226,4 +252,4 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
   --display-detail "{quality-gate failed for {bundle} | whole-tree quality-gate red | test-compile red | whole-tree module-tests red | scoped module-tests red for {recommended_target}}"
 ```
 
-Use `quality-gate failed for {bundle}` when a bundle's `quality-gate` failed, `whole-tree quality-gate red` when the whole-tree `quality-gate` arm caught a finding only whole-tree scope can see (the plugin-doctor pass, the `.claude/` ruff coverage, or the `marketplace/targets` SPDX coverage), `test-compile red` when the whole-tree `test-compile` gate caught a test-tree type error, `whole-tree module-tests red` when the whole-tree module-tests divergence gate caught a scoped-green / whole-tree-red regression, or `scoped module-tests red for {recommended_target}` when the step-4 scoped `module-tests {recommended_target}` run failed on a non-divergent footprint. The failure branch does not need `--head-at-completion`: the dispatcher unconditionally retries `failed` records on re-entry regardless of HEAD, so the SHA carries no decision value here. The dispatcher's existing failure handling halts the phase on `outcome=failed` and surfaces the offending file/line (or failing test) through the finalize TOON, matching the contract used by the other gating steps.
+Use `quality-gate failed for {bundle}` when a bundle's `quality-gate` failed, `whole-tree quality-gate red` when the whole-tree `quality-gate` arm caught a finding only whole-tree scope can see (the plugin-doctor pass, the `.claude/` ruff coverage, or the `marketplace/targets` SPDX coverage), `test-compile red` when the whole-tree `test-compile` gate caught a test-tree type error, `whole-tree module-tests red` when the whole-tree module-tests divergence gate caught a scoped-green / whole-tree-red regression, or `scoped module-tests red for {recommended_target}` when the branch-6 scoped `module-tests {recommended_target}` run failed on a non-divergent single-module footprint. The failure branch does not need `--head-at-completion`: the dispatcher unconditionally retries `failed` records on re-entry regardless of HEAD, so the SHA carries no decision value here. The dispatcher's existing failure handling halts the phase on `outcome=failed` and surfaces the offending file/line (or failing test) through the finalize TOON, matching the contract used by the other gating steps.

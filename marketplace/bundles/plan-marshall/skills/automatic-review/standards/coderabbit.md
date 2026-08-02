@@ -16,8 +16,11 @@ The fenced-YAML block below is the machine-readable per-bot record. It is data, 
 a fenced code block that plugin-doctor treats as an example, not an executable directive. Consumers
 read `bot_kind`, `author_login`, `trigger_comment`, `completion_check_name`, `honors_skip_label`,
 `participation_evidence`, `participation_requires_update`, `ignore_patterns`, `refusal_patterns`,
-`rate_limit_class`, `rate_limit_eta_patterns`, and `severity_map` from it; the prose sections that
-follow carry the rationale.
+`contentless_review_markers`, `actionable_content_markers`, `rate_limit_class`,
+`rate_limit_eta_patterns`, and `severity_map` from it; the prose sections that follow carry the
+rationale. CodeRabbit declares neither `contentless_review_markers` nor
+`actionable_content_markers`, so the producer's content-aware layer never fires for it — the
+empty list is the fail-closed default and this bot's ingest behaviour is unchanged by it.
 
 ```yaml
 bot_kind: coderabbit

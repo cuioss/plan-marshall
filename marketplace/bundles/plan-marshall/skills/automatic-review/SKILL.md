@@ -21,7 +21,7 @@ implements:
 configurable:
   - key: required_bots
     default: ""
-    description: Comma-separated list of review-bot kinds whose participation is REQUIRED. A required bot's silence is a failure — it gates the step-done participation quorum. Each entry MUST have a machine-readable registry doc at standards/{bot_kind}.md (bot_kind, author_login, trigger_comment, completion_check_name, honors_skip_label, participation_evidence, participation_requires_update, ignore_patterns, refusal_patterns, severity_map). The default is EMPTY so a never-asked key stays distinguishable from an answered-empty value — see standards/bot-participation-contract.md for the required-vs-optional semantics, the ask posture, the evidence taxonomy, and the five-member failure taxonomy.
+    description: Comma-separated list of review-bot kinds whose participation is REQUIRED. A required bot's silence is a failure — it gates the step-done participation quorum. Each entry MUST have a machine-readable registry doc at standards/{bot_kind}.md (bot_kind, author_login, trigger_comment, completion_check_name, honors_skip_label, participation_evidence, participation_requires_update, ignore_patterns, refusal_patterns, contentless_review_markers, actionable_content_markers, severity_map). The default is EMPTY so a never-asked key stays distinguishable from an answered-empty value — see standards/bot-participation-contract.md for the required-vs-optional semantics, the ask posture, the evidence taxonomy, and the five-member failure taxonomy.
   - key: optional_bots
     default: ""
     description: Comma-separated list of review-bot kinds whose participation is OPTIONAL. An optional bot's silence is not a failure and never gates mark-done. Same registry-doc requirement as required_bots. The default is EMPTY so a never-asked key stays distinguishable from an answered-empty value. A bot in NEITHER list is warned about but STILL ingested — see standards/bot-participation-contract.md.
@@ -128,14 +128,16 @@ Each entry in either list maps one-to-one to a machine-readable registry doc at
 `standards/{bot_kind}.md` under this skill's `standards/` directory — there is no hard-coded bot
 list in the pipeline. Each registry doc carries a fenced-YAML data block (`bot_kind`,
 `author_login`, `trigger_comment`, `completion_check_name`, `honors_skip_label`, `ignore_patterns[]`,
-`refusal_patterns[]`, `rate_limit_class`, `rate_limit_eta_patterns[]`, `severity_map`) plus the
+`refusal_patterns[]`, `contentless_review_markers[]`, `actionable_content_markers[]`,
+`rate_limit_class`, `rate_limit_eta_patterns[]`, `severity_map`) plus the
 producer / consumer / trust boundary / disposition rationale for that bot, and links to the org
 signal/noise source-of-truth rather than duplicating it.
 
 The single generic loader `scripts/bot_registry.py` parses every `standards/{bot_kind}.md` data
 block at runtime and exposes the derived registry (`bot_kinds()`, the login→bot_kind map, each
 bot's `trigger_comment`, `completion_check_name`, `honors_skip_label`, `ignore_patterns`,
-`rate_limit_class`, `rate_limit_eta_patterns`, and `severity_map`). The producer
+`contentless_review_markers`, `actionable_content_markers`, `rate_limit_class`,
+`rate_limit_eta_patterns`, and `severity_map`). The producer
 (`github_pr.py` noise pre-filter), the finding store (`_findings_core.BOT_KINDS`), the re-review
 strategy registry (`github_re_review.py` — both its trigger comments and the `refusal_class` /
 `refusal_eta` it surfaces on a detected refusal), and the per-bot rate-limit detector

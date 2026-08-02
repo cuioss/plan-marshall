@@ -80,6 +80,37 @@ Divide input space into equivalence classes and test one representative from eac
 * Invalid equivalence classes (at least one test each)
 * Boundary values between classes
 
+## Testing a Classifier
+
+A classifier reduces two or more orthogonal input axes to a single verdict — a per-item conclusion and a run-level condition, a producer's payload and that producer's own status, a parsed value and whether the parse succeeded. Two coverage rules apply to that shape specifically; neither is implied by the line/branch thresholds above, because both defects they catch occur in code every metric already reports as covered.
+
+### Test the cells, not the diagonal
+
+Exercise the **cross product** of the axes, not a convenient one-to-one pairing. Pairing each specific input with the ordinary condition, and the fallback condition with only the generic inputs, visits every input and every condition while never visiting the cell in which one shadows the other. Row-ordering and precedence defects live exclusively in those unvisited cells, so the suite stays green and the coverage tool reports every row as covered while the misordered fallback is unreachable in production.
+
+```text
+Axes: conclusion in {cancelled, action_required, stale, failure}
+      condition  in {completed, deadline_exceeded}
+
+Diagonal (insufficient) — cancelled x completed, action_required x completed,
+                          stale x completed, failure x deadline_exceeded
+  Every conclusion appears and every condition appears, yet a fallback row
+  ordered ahead of the specific rows is still never reached by any test.
+
+Full matrix (required) — all 4 x 2 cells
+  cancelled x deadline_exceeded fails the moment the fallback shadows it.
+```
+
+When the full cross product is too large to enumerate, partition each axis first (see § "Equivalence Partitioning") and take the cross product of the *partitions* — never drop an axis.
+
+### The discriminating input for a fail-closed unit is a failure, not an absence
+
+A unit required to fail closed is not pinned by a test that feeds it a successful-but-empty result. A producer that errored and a producer that ran and found nothing return structurally identical empty payloads, so a zero-findings *success* input passes against the correct implementation and the fail-open one alike — it discriminates nothing. The test that discriminates feeds an explicit **error** result and asserts the verdict is non-clean.
+
+The same applies to every conservative default: assert it by supplying the undetermined state (an unmapped status value, an unparseable timestamp, an unresolvable path), not by supplying a clean one and observing that nothing was reported.
+
+For the production-side rules these tests pin, see [`ref-code-quality/standards/error-handling.md`](../../ref-code-quality/standards/error-handling.md) § "Fail-Closed Classification".
+
 ## Coverage Analysis Workflow
 
 ### Step 1: Identify Gaps

@@ -1406,8 +1406,8 @@ class DerivationResolverBase(ABC):  # noqa: B024 — ABC contract anchor; every 
         Args:
             derived_by_name: Module name → the module's derived data (the Tier-0
                 crawl output: ``metadata``, ``dependencies``, ``paths``,
-                ``packages``, ``stats``, and the optional ``component_refs``
-                the markdown and Python resolvers join over — see
+                ``packages``, ``stats``, and the optional ``component_refs`` —
+                the cross-reference data a resolver may join over; see
                 ``extension-api/standards/module-discovery.md`` for the field's
                 element schema and its absent-vs-empty-array contract).
             enriched_by_name: Module name → the module's enriched data (the

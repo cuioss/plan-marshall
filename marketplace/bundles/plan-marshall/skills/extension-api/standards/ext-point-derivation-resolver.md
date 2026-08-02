@@ -1,6 +1,6 @@
 # Extension Point: Derivation Resolver
 
-> **Type**: Module-Edge Derivation (Axis-C) | **Hook Method**: `DerivationResolverBase` subclass | **Implementations**: see [§ Current implementations](#current-implementations) | **Status**: Shipped — the `extension_base.py` ABC is wired and three resolvers implement it, two opting in from Axis-A and one from Axis-B
+> **Type**: Module-Edge Derivation (Axis-C) | **Hook Method**: `DerivationResolverBase` subclass | **Implementations**: see [§ Current implementations](#current-implementations) | **Status**: Shipped — the `extension_base.py` ABC is wired and implementors exist on both hierarchies
 
 ## Overview
 
@@ -26,12 +26,12 @@ ExtensionBase (Axis-A)        BuildExtensionBase (Axis-B)      DerivationResolve
   provides_triage() ...         classify_globs() ...              derive_edges()
         ▲                              ▲                                  ▲
         │                              │                                  │
-   pm-plugin-development *        build-maven *                  opted into from EITHER
-   pm-dev-python *                build-pyproject                hierarchy, by multiple
+   pm-plugin-development          build-maven                    opted into from EITHER
+   pm-dev-python                  build-pyproject                hierarchy, by multiple
    pm-documents                                                  inheritance
-
-   * also subclasses DerivationResolverBase — see § Current implementations
 ```
+
+The Axis-A and Axis-B bundle names illustrate what each hierarchy is for; which of them currently also subclass `DerivationResolverBase` is enumerated once, in [§ Current implementations](#current-implementations).
 
 This follows the precedent [ext-point-domain-verb.md](ext-point-domain-verb.md) sets — an optional hook and a standalone contract doc are complements, not alternatives — and the carve-out precedent `BuildExtensionBase` itself established when Axis-B was split out of `ExtensionBase`.
 
@@ -74,6 +74,8 @@ Resolvers are discovered by `discover_derivation_resolvers()` in `extension_disc
 
 There is **no new registry, no new scan surface, and no per-resolver glob**. A resolver is discovered because its bundle is already a registered extension that happens to also subclass `DerivationResolverBase`. Results are returned sorted by resolver id for deterministic downstream ordering. A resolver whose `derivation_resolver_id()` raises or returns empty is skipped with an `[EXTENSION]` WARNING, matching the existing per-hook guarded-call idiom.
 
+**One bundle registers at most one resolver.** The cardinality is structural, not a convention: `discover_all_extensions()` resolves a single `extension.py` per bundle and `derivation_resolver_id()` returns a single string, so a bundle has exactly one resolver identity to stamp. Two derivations that must stay distinguishable in `producers[]` therefore have to live in two bundles.
+
 ### 3. Dispatch
 
 Resolvers are dispatched at **graph-query time**, not at discovery time. The caller loads the derived and enriched module maps once, then hands both to every discovered resolver and merges the results:
@@ -91,6 +93,8 @@ The merge:
 4. Returns edges sorted by `(from, to)` for byte-stable output, plus one `{id, edge_count, status, notes[]}` report per resolver.
 
 A resolver that raises reports `status: error` with `edge_count: 0` and contributes no edges; its siblings still contribute. An errored resolver never aborts the merge.
+
+**Declared dependencies take precedence over derived ones.** After the merge, core discards a module's resolver-derived edges entirely when that module carries a **non-empty** declared `internal_dependencies` — from the `enriched.json` curated overlay, else from the crawl-time `derived.json` — and stamps that module's edges `declared` rather than with the contributing resolver ids. An **empty** `internal_dependencies` is not a declaration: `architecture init` seeds an empty list into every module, so an empty container is indistinguishable from unset, carries no assertion, and suppresses nothing. Every declared-wins discard is reported on the losing resolver's report, prefixed `declared:` (see [§ Suppression must be reported, never silent](#suppression-must-be-reported-never-silent)), so a resolver author can distinguish "a declaration overrode my edges" from "my derivation produced none".
 
 ### 4. Null-on-absent resolution
 
@@ -140,6 +144,8 @@ The `notes[]` half of the `derive_edges` return is the **required channel** for 
 
 The obligation binds **core as well as the resolver**. The merge applies three validity filters of its own — a malformed candidate pair, a self-edge, an endpoint naming no known module — and each of those is core suppressing an edge. Every such drop appends its own note to that resolver's report, prefixed `merge:` so a reader can tell a core-side drop from a resolver-side one. A resolver whose candidates were all discarded by the merge would otherwise report `status: ok`, `edge_count: 0` and an empty `notes[]`: a confident zero that reads exactly like "ran and legitimately found nothing".
 
+The declared-wins precedence branch (see [§ 3 Dispatch](#3-dispatch)) is the second core-side suppression and discharges the same obligation with its own `declared:` prefix. Its notes are appended AFTER the merge returns, so a resolver's `edge_count` still counts what it derived while the report says which of those edges a declaration then overrode.
+
 ### The ambiguous-identity-key obligation
 
 A resolver keys its derivation on some identity — a Maven `groupId:artifactId` coordinate, a document path, a package name. When **two distinct module names claim the same identity key**, the resolver:
@@ -152,7 +158,7 @@ This obligation is stated generically because it binds every resolver, not only 
 
 ## Current implementations
 
-Three resolvers are shipped. Two opt in from Axis-A (`ExtensionBase`) and one from Axis-B (`BuildExtensionBase`), so the discovered set exercises the span-both-hierarchies property the collector exists for.
+Resolvers are shipped on both hierarchies — some opting in from Axis-A (`ExtensionBase`), some from Axis-B (`BuildExtensionBase`) — so the discovered set exercises the span-both-hierarchies property the collector exists for. The table below is the one place the shipped roster is enumerated.
 
 | Resolver | Id | Axis | Owner | Role |
 |----------|-----|------|-------|------|
@@ -160,7 +166,7 @@ Three resolvers are shipped. Two opt in from Axis-A (`ExtensionBase`) and one fr
 | Markdown cross-reference join | `markdown` | A | `pm-plugin-development` (`Extension(ExtensionBase, DerivationResolverBase)`) | Derives edges from the four markdown reference kinds — script notation, skill references, relative-path xrefs, and `implements:` — read out of the `component_refs` field `discover_modules()` materializes. Suppressions are reported in **aggregated** form, one note per category (unresolved-target, unknown-endpoint, self-edge) with a count and a bounded sample. |
 | Python import join | `python` | A | `pm-dev-python` (`Extension(ExtensionBase, DerivationResolverBase)`) | Derives edges from AST-parsed Python imports, read out of the same `component_refs` field. Python-language knowledge belongs to the Python domain bundle rather than to a build-system bundle, which is why this resolver is Axis-A and not on `build-pyproject`. Same aggregated-notes discipline as the markdown resolver. |
 
-**Why the markdown and python joins are two resolvers, not one.** One bundle can register exactly one resolver — `discover_all_extensions()` resolves a single `extension.py` per bundle and `derivation_resolver_id()` returns a single string — so the split across `pm-plugin-development` and `pm-dev-python` is what makes per-edge markdown-vs-import provenance expressible at all. Collapsing them into one resolver would forfeit exactly that distinction.
+**Why the markdown and python joins are two resolvers, not one.** The one-resolver-per-bundle cardinality (see [§ 2 Discovery](#2-discovery)) means the split across `pm-plugin-development` and `pm-dev-python` is what makes per-edge markdown-vs-import provenance expressible at all. Collapsing them into one resolver would forfeit exactly that distinction.
 
 **Both read a pre-materialized field; neither reads the filesystem.** The detection engine that produces `component_refs` parses files from disk, so it runs at module-discovery time. A resolver is a pure function of its arguments (see § 1 Declaration), which is why the engine cannot be called from `derive_edges`. Neither resolver imports the engine, so the second registration creates no coupling between the two bundles.
 
