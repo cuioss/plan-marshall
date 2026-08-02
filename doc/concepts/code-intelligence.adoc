@@ -70,7 +70,6 @@ The nearest thing to a conflict is duplicate *identity*, not duplicate value. A 
       │ producers: [markdown,maven] │     │ producers: [python]         │
       └─────────────────────────────┘     └─────────────────────────────┘
                     corroborated                    single-sourced
-                          resolver_count: 3
 ----
 
 == The provenance contract
@@ -136,7 +135,7 @@ Finally, the seam derives edges only for module sets that Tier 0 discovered. A r
 * link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-path-attribution.md[`ext-point-path-attribution.md`] — the Axis-D companion contract: `PathAttributionBase`, the keyed-mapping merge semantics, the ambiguous-ownership rule, and longest-prefix resolution order.
 * xref:extension-architecture.adoc[Concepts › Extension Architecture] — the plumbing seam these extension points plug into, and the four-axis split they complete.
 * xref:build-management.adoc[Concepts › Build Management] — the `ext-point-build` surface whose `discover_modules()` output is Tier 0, and therefore the map every resolver reads.
-* link:../../marketplace/bundles/plan-marshall/skills/build-maven/SKILL.md[`build-maven/SKILL.md`] — the one shipped resolver: the Maven coordinate join, re-homed from `manage-architecture` onto the seam.
+* link:../../marketplace/bundles/plan-marshall/skills/build-maven/SKILL.md[`build-maven/SKILL.md`] — the Axis-B coordinate join, re-homed from `manage-architecture` onto the seam.
 * link:../../marketplace/bundles/plan-marshall/skills/manage-architecture/standards/client-api.md[`client-api.md`] — the `graph` / `path` / `neighbors` / `impact` response contracts that carry `resolvers[]` and `resolver_count`.
 * link:../../marketplace/bundles/plan-marshall/skills/manage-architecture/standards/architecture-persistence.md[`architecture-persistence.md`] — the persisted module-graph format, including the `{from, to, producers[]}` edge shape.
 * xref:../adr/009-Status_reporting_fails_closed_with_an_explicit_unknown_state.adoc[ADR-009] — the fail-closed reporting discipline the provenance contract applies to edge derivation.

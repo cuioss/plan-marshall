@@ -716,6 +716,11 @@ def _apply_sibling_cross_links(
 _PRODUCER_DECLARED = 'declared'
 _PRODUCER_SIBLING_CROSS_LINK = 'sibling-cross-link'
 
+#: Prefix marking a note the DECLARED-WINS precedence branch appended, mirroring
+#: the merge's own ``merge: `` prefix so a report reader can tell a core-side
+#: discard from a resolver-side suppression.
+_DECLARED_NOTE_PREFIX = 'declared: '
+
 
 def _declared_dependencies(
     mod_name: str,
@@ -730,16 +735,25 @@ def _declared_dependencies(
     the resolved-edge branch) — the two sites disagreeing was the defect this
     helper closes.
 
-    Precedence: ``enriched.json``'s LLM-curated ``internal_dependencies``
-    overlay wins over the crawl-time ``derived.json`` declaration. Returns the
-    declared list sorted+deduped, or ``None`` when the module carries no
-    declaration at either source.
+    A declaration is a NON-EMPTY list, at BOTH sources. ``architecture init``
+    seeds ``"internal_dependencies": []`` into every module's ``enriched.json``,
+    so an empty container is indistinguishable from unset and cannot carry an
+    assertion: it declares nothing and must not suppress derived edges. An
+    explicit "this module has no internal dependencies" override, should one ever
+    be needed, must arrive as a stated sentinel rather than by re-overloading the
+    empty list.
+
+    Precedence: ``enriched.json``'s LLM-curated ``internal_dependencies`` overlay
+    wins over the crawl-time ``derived.json`` declaration. Returns the declared
+    list sorted+deduped, or ``None`` when neither source carries a non-empty
+    declaration.
     """
-    enriched_mod = enriched_by_name.get(mod_name, {})
-    if 'internal_dependencies' in enriched_mod:
-        return sorted(set(enriched_mod['internal_dependencies']))
-    if 'internal_dependencies' in mod_data:
-        return sorted(set(mod_data['internal_dependencies']))
+    enriched_declared = enriched_by_name.get(mod_name, {}).get('internal_dependencies')
+    if enriched_declared:
+        return sorted(set(enriched_declared))
+    derived_declared = mod_data.get('internal_dependencies')
+    if derived_declared:
+        return sorted(set(derived_declared))
     return None
 
 
@@ -760,15 +774,20 @@ def _derive_edges(
     access), so the resolved dependency list is materialized HERE, before
     dispatch. Enrichment is paid ONLY for a module whose resolver edges can
     actually be consumed downstream: :func:`_build_deps_and_producers` discards
-    a module's resolver-derived edges entirely once that module has a declared
-    ``internal_dependencies`` (curated or crawl-time) — a declaration always
-    wins — so materializing that module's dependency list via
+    a module's resolver-derived edges entirely once that module has a NON-EMPTY
+    declared ``internal_dependencies`` (curated or crawl-time) — such a
+    declaration wins — so materializing that module's dependency list via
     :func:`_enriched_dependencies` would spend a ``mvn dependency:tree`` run on
     output nothing reads. :func:`_declared_dependencies` is consulted first
     (shared with the consuming precedence check below), and only a module for
     which it returns ``None`` pays the lazy-enrichment cost; a declared
     module's dependency list is taken as-is from the cheap crawl (``derived``'s
-    ``dependencies``, typically empty and unused as a resolver INPUT). A
+    ``dependencies``, typically empty and unused as a resolver INPUT). Because
+    the SAME helper gates both sites, the skip population and the discard
+    population cannot drift: a module is enriched exactly when its derived edges
+    are consumed. Treating an empty declaration as no declaration therefore
+    widens both together — the extra enrichment produces edges that are now
+    read, not compute-then-discard waste. A
     skipped module still resolves correctly as an edge TARGET for every other
     module, since coordinates (``group_id``/``artifact_id``) live in
     ``metadata``, not ``dependencies`` — the Maven resolver's coordinate map is
@@ -805,7 +824,7 @@ def _derive_edges(
         return [], []
 
     # Materialize the resolved dependency list so resolvers stay pure. Skip the
-    # Maven enrich for a module that already has a declaration — its resolver
+    # Maven enrich for a module carrying a non-empty declaration — its resolver
     # edges would be discarded by _build_deps_and_producers anyway.
     resolver_input: dict[str, dict[str, Any]] = {}
     for mod_name, mod_data in derived_by_name.items():
@@ -817,6 +836,33 @@ def _derive_edges(
         resolver_input[mod_name] = module_view
 
     return merge_resolver_edges(resolvers, resolver_input, enriched_by_name)
+
+
+def _declared_suppression_notes(
+    mod_name: str,
+    resolved_targets: list[str],
+    resolved_producers: dict[tuple[str, str], list[str]],
+) -> dict[str, str]:
+    """Return one ``resolver_id → note`` entry per resolver a declaration discarded.
+
+    A non-empty declaration replaces ``mod_name``'s resolver-derived edge set
+    outright, so every resolver that contributed one of ``resolved_targets``
+    loses that contribution. Each such resolver gets a note naming the module and
+    the targets it derived, so the overwrite reaches the report instead of
+    vanishing behind a confident ``status: ok`` / ``edge_count: N``.
+    """
+    targets_by_resolver: dict[str, list[str]] = {}
+    for target in resolved_targets:
+        for producer in resolved_producers.get((mod_name, target), []):
+            targets_by_resolver.setdefault(producer, []).append(target)
+    return {
+        producer: (
+            f'{_DECLARED_NOTE_PREFIX}discarded {len(targets)} derived edge(s) for module '
+            f'{mod_name} — its non-empty declared internal_dependencies takes precedence: '
+            f'{", ".join(sorted(targets))}'
+        )
+        for producer, targets in targets_by_resolver.items()
+    }
 
 
 def _build_deps_and_producers(
@@ -831,8 +877,9 @@ def _build_deps_and_producers(
     own copy of the coordinate join before the resolver seam landed.
 
     Resolution order per module (the precedence branches are retained AHEAD of
-    the resolver call — a curated or discovered declaration always wins over a
-    derived one):
+    the resolver call — a curated or discovered NON-EMPTY declaration wins over a
+    derived one; see :func:`_declared_dependencies` for why an empty one declares
+    nothing):
 
     1. ``enriched.{X}.internal_dependencies`` (LLM-curated) → stamped
        ``declared``.
@@ -840,6 +887,11 @@ def _build_deps_and_producers(
        ``declared``.
     3. The resolver seam's derived edges → stamped with the contributing
        resolver ids.
+
+    A declaration that wins DISCARDS that module's resolver-derived edges, so
+    each contributing resolver's report gains a ``declared: ``-prefixed
+    suppression note — the ADR-014 obligation that no discard is silent, and the
+    same obligation the merge already honours with its ``merge: ``-prefixed notes.
 
     Symmetric virtual-sibling cross-linking then runs as post-resolution
     augmentation, and any edge it adds that no earlier source produced is stamped
@@ -864,11 +916,18 @@ def _build_deps_and_producers(
 
     deps_map: dict[str, list[str]] = {}
     producers_by_edge: dict[tuple[str, str], list[str]] = {}
+    suppression_notes: dict[str, list[str]] = {}
 
     for mod_name, mod_data in derived_by_name.items():
         declared_deps = _declared_dependencies(mod_name, mod_data, enriched_by_name)
         declared = declared_deps is not None
-        deps = declared_deps if declared_deps is not None else sorted(resolved_deps.get(mod_name, set()))
+        resolved_targets = sorted(resolved_deps.get(mod_name, set()))
+        deps = declared_deps if declared_deps is not None else resolved_targets
+
+        if declared and resolved_targets:
+            notes = _declared_suppression_notes(mod_name, resolved_targets, resolved_producers)
+            for producer, note in notes.items():
+                suppression_notes.setdefault(producer, []).append(note)
 
         deps_map[mod_name] = deps
         for dep in deps:
@@ -877,6 +936,14 @@ def _build_deps_and_producers(
                 producers_by_edge[pair] = [_PRODUCER_DECLARED]
             else:
                 producers_by_edge[pair] = resolved_producers.get(pair, [_PRODUCER_DECLARED])
+
+    # Carry every declared-wins discard onto the report of the resolver that lost
+    # the edges, so a declaration can never blank a resolver's contribution
+    # silently.
+    for report in resolver_reports:
+        discarded = suppression_notes.get(report.get('id', ''))
+        if discarded:
+            report['notes'] = [*report.get('notes', []), *discarded]
 
     # Post-resolution augmentation: symmetric virtual-sibling cross-linking.
     # See _apply_sibling_cross_links for the full rationale.
