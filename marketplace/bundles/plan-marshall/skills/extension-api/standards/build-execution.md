@@ -136,24 +136,27 @@ All build output **must** go to a log file, not stdout/stderr.
 - Compact result returned to caller
 - Persistent record for debugging
 
-**Log file location**: `.plan/temp/build-output/{scope}/{build-system}-{timestamp}.log`
+**Log file location**: `.plan/local/plans/{plan_id}/build-results/{scope}/{build-system}-{timestamp}.log`
 
 | Component | Values | Example |
 |-----------|--------|---------|
+| `{plan_id}` | The plan that caused the build, or `NO_PLAN` | `my-feature-plan`, `NO_PLAN` |
 | `{scope}` | `default` (root) or module name | `default`, `core-api` |
 | `{build-system}` | `maven`, `gradle`, `npm` | `maven` |
 | `{timestamp}` | `YYYY-MM-DD-HHMMSS` | `2026-01-03-141523` |
 
 **Examples**:
-- `.plan/temp/build-output/default/maven-2026-01-03-141523.log` - root Maven build
-- `.plan/temp/build-output/core-api/maven-2026-01-03-141530.log` - module build
-- `.plan/temp/build-output/default/npm-2026-01-03-141545.log` - npm build
+- `.plan/local/plans/my-feature-plan/build-results/default/maven-2026-01-03-141523.log` - root Maven build
+- `.plan/local/plans/my-feature-plan/build-results/core-api/maven-2026-01-03-141530.log` - module build
+- `.plan/local/plans/NO_PLAN/build-results/default/npm-2026-01-03-141545.log` - plan-less npm build
 
-Using `.plan/temp/` ensures:
-- Already gitignored
-- Part of temp cleanup maintenance
-- Module-scoped logs easy to find
-- Build system clearly identified
+Scoping the output to the resolving plan ensures:
+- A build's output lives with the plan that caused it, so it is a durable, attributable artifact rather than shared scratch
+- The results move with the plan directory into and out of its pinned worktree (ADR-002)
+- Already gitignored, and aged by the `build_results_days` retention knob (`manage-run-config cleanup --target build-results`), which never touches a LIVE plan's results
+- Module-scoped logs easy to find, build system clearly identified
+
+`file_ops.get_build_results_dir(plan_id)` is the single owner of this path — no other module derives it. The `NO_PLAN` sentinel is its one branch: a plan-less build belongs to no worktree, so the sentinel resolves through the MAIN checkout rather than cwd-relatively, keeping plan-less results from scattering across every worktree that ran one.
 
 ### R2: Wrapper Preference
 
@@ -354,7 +357,8 @@ result: DirectCommandResult = execute_direct(
     args="help:all-profiles dependency:tree -DoutputType=text",
     command_key="maven:discover-modules",
     default_timeout=120,
-    project_dir="."
+    project_dir=".",
+    plan_id=plan_id,          # required keyword; NO_PLAN_SENTINEL when plan-less
 )
 
 if result["status"] == "success":
@@ -370,10 +374,18 @@ All `execute_direct()` implementations use this **minimal, unified signature**:
 |-----------|------|----------|---------|-------------|
 | `args` | string | Yes | - | Complete build arguments (all routing embedded) |
 | `command_key` | string | Yes | - | Key for timeout learning (e.g., `"maven:verify"`) |
-| `default_timeout` | int | No | 300 | Default timeout in seconds |
+| `default_timeout` | int | No | per-tool | Default timeout in seconds |
 | `project_dir` | string | No | `.` | Project root directory |
+| `env_vars` | dict\[str, str\] \| None | No | `None` | Extra environment variables for the child process |
+| `working_dir` | string \| None | No | `None` | Working directory override for the child process |
+| `explicit_timeout` | int \| None | No | `None` | Caller-supplied bound that overrides the learned timeout |
+| `plan_id` | string | **Yes** (keyword-only) | *none* | The plan the build belongs to; `NO_PLAN_SENTINEL` when genuinely plan-less |
 
 **Key principle**: The `args` parameter contains **all** build-specific options. No separate parameters for modules, profiles, workspaces, or wrappers. Wrappers are auto-detected internally.
+
+**`plan_id` has NO default, by design.** It is keyword-only and required, so every call site must state its choice in source rather than inheriting a silent fallback. A genuinely plan-less caller passes `NO_PLAN_SENTINEL` as a visible literal — the decision then appears in the diff at the call site instead of being inferred from a parameter default. The value determines where the build's log lands (see [R1: Log File Output](#r1-log-file-output)), so a dropped `plan_id` misattributes a real plan's build output rather than merely losing a label.
+
+**Wrapper obligation**: a `wrap_execute_fn` wrapper that re-declares the full inner signature MUST forward `plan_id` at EVERY inner call, including any post-recovery retry. Forwarding it on the first call only makes the parameter correct on the happy path and wrong exactly when a build has already gone wrong.
 
 ### Return Value: DirectCommandResult
 
@@ -428,8 +440,8 @@ def execute_direct(...) -> DirectCommandResult:
 status	success
 exit_code	0
 duration_seconds	45
-log_file	.plan/temp/build-output/default/maven-2026-01-03-141523.log
-command	./mvnw -l .plan/temp/build-output/... clean verify
+log_file	.plan/local/plans/my-feature-plan/build-results/default/maven-2026-01-03-141523.log
+command	./mvnw -l .plan/local/plans/my-feature-plan/build-results/... clean verify
 ```
 
 Error case with parsed issues (`--mode actionable`):
@@ -437,8 +449,8 @@ Error case with parsed issues (`--mode actionable`):
 status	error
 exit_code	1
 duration_seconds	23
-log_file	.plan/temp/build-output/default/maven-2026-01-03-141530.log
-command	./mvnw -l .plan/temp/build-output/... clean verify
+log_file	.plan/local/plans/my-feature-plan/build-results/default/maven-2026-01-03-141530.log
+command	./mvnw -l .plan/local/plans/my-feature-plan/build-results/... clean verify
 error	build_failed
 
 errors[2]{file,line,message,category}:
@@ -459,7 +471,7 @@ Timeout case carrying the test evidence the run produced before the kill:
 status	timeout
 exit_code	-1
 duration_seconds	600
-log_file	.plan/temp/build-output/default/python-2026-01-03-141540.log
+log_file	.plan/local/plans/my-feature-plan/build-results/default/python-2026-01-03-141540.log
 command	./pw module-tests
 error	timeout
 timeout_used_seconds	600
@@ -491,8 +503,8 @@ src/Helper.java    25    raw type usage    [accepted]
   "status": "success",
   "exit_code": 0,
   "duration_seconds": 45,
-  "log_file": ".plan/temp/build-output/default/maven-2026-01-03-141523.log",
-  "command": "./mvnw -l .plan/temp/build-output/... clean verify"
+  "log_file": ".plan/local/plans/my-feature-plan/build-results/default/maven-2026-01-03-141523.log",
+  "command": "./mvnw -l .plan/local/plans/my-feature-plan/build-results/... clean verify"
 }
 ```
 
@@ -502,8 +514,8 @@ Error case with parsed issues:
   "status": "error",
   "exit_code": 1,
   "duration_seconds": 23,
-  "log_file": ".plan/temp/build-output/default/maven-2026-01-03-141530.log",
-  "command": "./mvnw -l .plan/temp/build-output/... clean verify",
+  "log_file": ".plan/local/plans/my-feature-plan/build-results/default/maven-2026-01-03-141530.log",
+  "command": "./mvnw -l .plan/local/plans/my-feature-plan/build-results/... clean verify",
   "error": "build_failed",
   "errors": [
     {"file": "src/Main.java", "line": 15, "message": "cannot find symbol: class Foo", "category": "compilation"},
@@ -526,7 +538,7 @@ Timeout case carrying the test evidence the run produced before the kill:
   "status": "timeout",
   "exit_code": -1,
   "duration_seconds": 600,
-  "log_file": ".plan/temp/build-output/default/python-2026-01-03-141540.log",
+  "log_file": ".plan/local/plans/my-feature-plan/build-results/default/python-2026-01-03-141540.log",
   "command": "./pw module-tests",
   "error": "timeout",
   "timeout_used_seconds": 600,
@@ -593,7 +605,7 @@ if result['status'] == 'error':
 │                              │                                               │
 │                              ▼                                               │
 │  2. EXECUTION (execute_direct)                                               │
-│     a. create_log_file(build_system, scope, project_dir)                    │
+│     a. create_log_file(build_system, scope, plan_id=plan_id)                │
 │     b. timeout_get(command_key, default, project_dir)                       │
 │     c. detect_wrapper(project_dir)                                          │
 │     d. subprocess.run(cmd, timeout=timeout, cwd=project_dir)               │
@@ -623,7 +635,7 @@ if result['status'] == 'error':
 | `.plan/architecture/<module>/derived.json` | manage-architecture | Raw discovered module facts including command strings |
 | `.plan/architecture/<module>/enriched.json` | manage-architecture | LLM-enriched per-module view (post-enrichment) |
 | `.plan/run-configuration.json` | run-config | Learned timeouts, acceptable warnings |
-| `.plan/temp/build-output/{scope}/{system}-{ts}.log` | build scripts | Raw build output (timestamped) |
+| `.plan/local/plans/{plan_id}/build-results/{scope}/{system}-{ts}.log` | build scripts | Raw build output (timestamped), scoped to the plan that caused the build; `NO_PLAN` for a plan-less build |
 
 ## Error Handling
 

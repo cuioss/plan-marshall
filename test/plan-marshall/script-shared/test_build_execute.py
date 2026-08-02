@@ -12,7 +12,9 @@ import subprocess
 import tempfile
 from unittest.mock import MagicMock, mock_open, patch
 
+import pytest
 from _build_execute import MIN_TIMEOUT, CaptureStrategy, execute_direct_base
+from marketplace_paths import NO_PLAN_SENTINEL
 
 
 def _build_command_fn(wrapper, args, log_file):
@@ -28,6 +30,12 @@ def _scope_fn(args):
     return parts[0] if parts else 'default'
 
 
+#: Plan id the shared helper attributes its builds to. Every result the
+#: primitive produces belongs to a plan, so the helper names one explicitly
+#: rather than defaulting the attribution away.
+_PLAN_ID = 'build-execute-test-plan'
+
+
 def _call_execute(
     args='clean verify',
     command_key='test:verify',
@@ -40,6 +48,7 @@ def _call_execute(
     project_dir=None,
     explicit_timeout=None,
     min_timeout=MIN_TIMEOUT,
+    plan_id=_PLAN_ID,
 ):
     """Call execute_direct_base with sensible test defaults."""
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -52,6 +61,7 @@ def _call_execute(
             tool_name='test',
             build_command_fn=_build_command_fn,
             wrapper='/usr/bin/test-tool',
+            plan_id=plan_id,
             capture_strategy=capture_strategy,
             scope_fn=scope_fn,
             env_vars=env_vars,
@@ -444,6 +454,76 @@ class TestCustomScopeFn:
         assert call_args[1] == 'default'
 
 
+class TestPlanIdReachesCreateLogFile:
+    """``plan_id`` threads from the primitive's signature into ``create_log_file``.
+
+    This is the lower of the two layers the attribution has to survive: the
+    caller hands ``execute_direct_base`` a plan id, and the log placement call
+    must receive that exact id as a keyword. Asserting on the constructed call
+    (rather than on a resulting path) pins the forwarding itself, so a layer
+    that silently drops the id cannot pass by coincidence of a shared default.
+    """
+
+    @patch('_build_execute.timeout_set')
+    @patch('_build_execute.subprocess.run')
+    @patch('_build_execute.timeout_get', return_value=300)
+    @patch('_build_execute.create_log_file')
+    def test_plan_id_forwarded_as_keyword(self, mock_log_file, mock_tget, mock_run, mock_tset):
+        mock_log_file.return_value = '/tmp/test.log'
+        mock_run.return_value = MagicMock(returncode=0)
+
+        _call_execute(plan_id='owning-plan')
+
+        mock_log_file.assert_called_once()
+        assert mock_log_file.call_args.kwargs['plan_id'] == 'owning-plan'
+
+    @patch('_build_execute.timeout_set')
+    @patch('_build_execute.subprocess.run')
+    @patch('_build_execute.timeout_get', return_value=300)
+    @patch('_build_execute.create_log_file')
+    def test_sentinel_plan_id_is_forwarded_unchanged(self, mock_log_file, mock_tget, mock_run, mock_tset):
+        """A plan-less build forwards the sentinel, never an empty string."""
+        mock_log_file.return_value = '/tmp/test.log'
+        mock_run.return_value = MagicMock(returncode=0)
+
+        _call_execute(plan_id=NO_PLAN_SENTINEL)
+
+        assert mock_log_file.call_args.kwargs['plan_id'] == NO_PLAN_SENTINEL
+
+    @patch('_build_execute.timeout_set')
+    @patch('_build_execute.subprocess.run')
+    @patch('_build_execute.timeout_get', return_value=300)
+    @patch('_build_execute.create_log_file')
+    def test_plan_id_is_independent_of_project_dir(self, mock_log_file, mock_tget, mock_run, mock_tset):
+        """Attribution follows the plan, not the directory the build runs in.
+
+        The relocation's whole point: ``project_dir`` still selects the
+        subprocess cwd, while ``plan_id`` alone selects where the result lands.
+        """
+        mock_log_file.return_value = '/tmp/test.log'
+        mock_run.return_value = MagicMock(returncode=0)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            _call_execute(project_dir=tmpdir, plan_id='owning-plan')
+
+        assert mock_log_file.call_args.kwargs['plan_id'] == 'owning-plan'
+        assert tmpdir not in str(mock_log_file.call_args)
+
+    def test_plan_id_is_required(self):
+        """Omitting ``plan_id`` is a TypeError — the attribution has no default."""
+        with pytest.raises(TypeError):
+            execute_direct_base(
+                args='verify',
+                command_key='test:verify',
+                default_timeout=300,
+                project_dir='.',
+                tool_name='test',
+                build_command_fn=_build_command_fn,
+                wrapper='/usr/bin/test-tool',
+                capture_strategy=CaptureStrategy.STDOUT_REDIRECT,
+            )
+
+
 class TestEnvVarsInjection:
     """Tests for environment variable injection."""
 
@@ -773,6 +853,7 @@ class TestWorkingDir:
                 tool_name='test',
                 build_command_fn=_build_command_fn,
                 wrapper='/usr/bin/test-tool',
+                plan_id=_PLAN_ID,
                 capture_strategy=CaptureStrategy.STDOUT_REDIRECT,
             )
 
@@ -820,6 +901,7 @@ class TestProjectDirPropagation:
             tool_name='test',
             build_command_fn=_build_command_fn,
             wrapper='/usr/bin/test-tool',
+            plan_id=_PLAN_ID,
             capture_strategy=CaptureStrategy.STDOUT_REDIRECT,
         )
 
@@ -859,6 +941,7 @@ class TestProjectDirPropagation:
             tool_name='test',
             build_command_fn=_build_command_fn,
             wrapper='/usr/bin/test-tool',
+            plan_id=_PLAN_ID,
             capture_strategy=CaptureStrategy.STDOUT_REDIRECT,
         )
 
@@ -907,6 +990,7 @@ def test_execute_direct_base_honours_resolved_worktree_path(monkeypatch):
                 tool_name='test',
                 build_command_fn=_build_command_fn,
                 wrapper='/usr/bin/test-tool',
+                plan_id=_PLAN_ID,
                 capture_strategy=CaptureStrategy.STDOUT_REDIRECT,
             )
 
@@ -940,6 +1024,7 @@ def test_execute_direct_base_honours_main_checkout_fallback(monkeypatch):
                 tool_name='test',
                 build_command_fn=_build_command_fn,
                 wrapper='/usr/bin/test-tool',
+                plan_id=_PLAN_ID,
                 capture_strategy=CaptureStrategy.STDOUT_REDIRECT,
             )
 
@@ -973,6 +1058,7 @@ def test_execute_direct_base_preserves_explicit_project_dir(monkeypatch):
                 tool_name='test',
                 build_command_fn=_build_command_fn,
                 wrapper='/usr/bin/test-tool',
+                plan_id=_PLAN_ID,
                 capture_strategy=CaptureStrategy.STDOUT_REDIRECT,
             )
 

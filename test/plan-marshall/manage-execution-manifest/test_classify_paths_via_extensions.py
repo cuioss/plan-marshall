@@ -4,10 +4,13 @@
 
 Covers per-extension dispatch, longest-glob-wins overlap resolution, the
 alphabetical tie-break on domain key, the six-bucket plan-wide vocabulary,
-the unclaimed-path ``unknown`` branch, the empty-input default, and the
+the unclaimed-path ``unknown`` branch, the empty-input default, the
 stage-3 generic owner-less infrastructure-config fallback (its family
 membership, its never-steal-a-claim ordering, and the D3(b) Q-Gate-outcome
-assertion against the real discovered build-extension set).
+assertion against the real discovered build-extension set), and the stage-3b
+generic owner-less template rule (render-target delegation to the two
+in-process predicates, the fail-closed ``production`` terminal, exactly-once
+suffix stripping, never-steal ordering, and the suffix-only membership bound).
 
 ``_classify_paths_via_extensions`` is the seed-source aggregator consumed by the
 build_map seeding path; the advisory docs-only compose branch that previously
@@ -46,6 +49,8 @@ def _load_module(name: str, filename: str):
 _manifest_mod = _load_module('manage_execution_manifest', 'manage-execution-manifest.py')
 _classify_paths_via_extensions = _manifest_mod._classify_paths_via_extensions
 _is_infrastructure_config_path = _manifest_mod._is_infrastructure_config_path
+_is_template_path = _manifest_mod._is_template_path
+_strip_template_suffix = _manifest_mod._strip_template_suffix
 
 # Silence the best-effort decision-log subprocess in the aggregator tests.
 _manifest_mod._emit_decision_log = lambda *a, **kw: None
@@ -582,3 +587,173 @@ def test_d3b_infra_only_footprint_falsifies_the_phase_4_qgate_blocking_predicate
     )
     assert bucket != 'unknown'
     assert unclaimed == []
+
+
+# =============================================================================
+# Stage 3b — generic owner-less template recognition (fallback)
+# =============================================================================
+
+#: The one ``.template`` file in the tree, and the path whose blocking
+#: ``unknown`` classification this rule exists to clear. Copied verbatim.
+_EXECUTOR_TEMPLATE = (
+    'marketplace/bundles/plan-marshall/skills/tools-script-executor/'
+    'templates/execute-script.py.template'
+)
+
+#: A production probe an inline fake claims, used by :func:`_resolved_role` to
+#: separate the three roles stage 3b can assign. Deliberately not a template and
+#: not a doc so it contributes exactly one ``production`` role and nothing else.
+_PROD_PROBE = 'pkg/prod_probe.py'
+
+
+def _resolved_role(path: str, extensions=()) -> str:
+    """Return the footprint role the classifier assigned to ``path``.
+
+    The aggregator exposes only the plan-wide bucket, and the collapse is lossy:
+    a lone ``config`` and a lone ``documentation`` both read as
+    ``documentation_only``. Two probes separate them, because ``config`` is
+    excluded from the collapse while ``documentation`` is not:
+
+    Reading ``[path]`` alone, then ``[probe, path]``:
+
+    * ``production`` -> production_only, production_only
+    * ``test`` -> test_only, mixed_code
+    * ``documentation`` -> documentation_only, mixed_with_docs
+    * ``config`` -> documentation_only, production_only
+
+    Reading the role through the PUBLIC classifier output — rather than reaching
+    into ``per_path_role`` — keeps these assertions statements about the
+    aggregator's observable behaviour.
+    """
+    alone, unclaimed = _classify_paths_via_extensions([path], extensions=list(extensions))
+    if unclaimed:
+        return 'unknown'
+    if alone == 'production_only':
+        return 'production'
+    if alone == 'test_only':
+        return 'test'
+
+    probe_ext = _FakeExtension(
+        'probe',
+        claims={'production': [_PROD_PROBE], 'test': [], 'documentation': [], 'config': []},
+    )
+    paired, _ = _classify_paths_via_extensions(
+        [_PROD_PROBE, path], extensions=[probe_ext, *extensions]
+    )
+    if paired == 'mixed_with_docs':
+        return 'documentation'
+    if paired == 'production_only':
+        return 'config'
+    return f'indeterminate(alone={alone}, paired={paired})'
+
+
+def test_executor_template_resolves_to_a_code_bucket_not_unknown():
+    """The motivating case: the executor template stops blocking on ``unknown``.
+
+    Asserted against the REAL discovered extension set, because the fact being
+    relied on is that no SHIPPED build extension claims this path — build-pyproject's
+    patterns require a literal ``scripts/`` segment and the template lives under
+    ``templates/``. A fake-extension run could not establish that.
+    """
+    extensions = _real_build_extensions()
+    assert extensions, 'discover_build_extensions() returned no build extensions'
+
+    bucket, unclaimed = _classify_paths_via_extensions(
+        [_EXECUTOR_TEMPLATE], extensions=extensions
+    )
+
+    assert unclaimed == [], 'the executor template must not reach the unclaimed set'
+    assert bucket == 'production_only', (
+        'the executor template must take the fail-closed production terminal, '
+        f'got bucket={bucket!r}'
+    )
+
+
+def test_documentation_render_target_wins_by_delegation():
+    """A ``.md`` render target delegates to the doc predicate, not the terminal."""
+    assert _resolved_role('docs/guide.md.template') == 'documentation'
+
+
+def test_infrastructure_config_render_target_wins_by_delegation():
+    """A CI-workflow render target delegates to the infra-config predicate."""
+    assert _resolved_role('.github/workflows/ci.yml.template') == 'config'
+
+
+def test_unrecognized_render_target_takes_the_fail_closed_production_terminal():
+    """Neither predicate matching yields ``production`` — never ``documentation_only``.
+
+    The paired assertion against the delegating siblings above is what makes this
+    a terminal rather than a blanket default: the same stage returns three
+    different roles depending on what the render target is.
+    """
+    assert _resolved_role('pkg/mystery.xyz.template') == 'production'
+
+
+def test_extension_claim_on_a_template_path_is_never_stolen_by_stage_3b():
+    """A ``.template`` path a build extension claims in stage 2 keeps its role.
+
+    ``test`` is the discriminator: stage 3b can only ever assign
+    ``documentation`` / ``config`` / ``production``, so observing ``test`` proves
+    the path never reached the stage — the residual-set-only placement held.
+    """
+    template_path = 'pkg/thing.py.template'
+    claiming_ext = _FakeExtension(
+        'python',
+        claims={'production': [], 'test': [template_path], 'documentation': [], 'config': []},
+    )
+
+    assert _resolved_role(template_path, extensions=[claiming_ext]) == 'test'
+
+
+def test_render_target_is_never_re_offered_to_the_build_extensions():
+    """Delegation consults the two in-process predicates ONLY.
+
+    The fake claims the RENDER TARGET (``pkg/scripts/x.py``) under ``test`` — a
+    role the stage's terminal can never produce — and does not claim the template
+    path itself. A stage that re-ran ``classify_paths()`` over the stripped set
+    would therefore report ``test``; the terminal reports ``production``.
+    """
+    template_path = 'pkg/scripts/x.py.template'
+    render_target = 'pkg/scripts/x.py'
+    target_claiming_ext = _FakeExtension(
+        'python',
+        claims={'production': [], 'test': [render_target], 'documentation': [], 'config': []},
+    )
+
+    assert _resolved_role(template_path, extensions=[target_claiming_ext]) == 'production'
+
+
+def test_strip_template_suffix_removes_exactly_one_level():
+    """The stripper is single-shot, and leaves a non-template path untouched."""
+    assert _strip_template_suffix('docs/guide.md.template.template') == 'docs/guide.md.template'
+    assert _strip_template_suffix('docs/guide.md.template') == 'docs/guide.md'
+    assert _strip_template_suffix('docs/guide.md') == 'docs/guide.md'
+
+
+def test_double_suffix_render_target_is_re_tested_not_recursed():
+    """``x.template.template`` classifies against ``x.template``, not against ``x``.
+
+    The single-suffix sibling is asserted alongside it deliberately: it
+    delegates to ``documentation``, so the ``production`` verdict on the
+    double-suffix path is the absence of recursion rather than a default that
+    would have applied either way.
+    """
+    assert _resolved_role('docs/guide.md.template.template') == 'production'
+    assert _resolved_role('docs/guide.md.template') == 'documentation'
+
+
+def test_template_membership_is_a_basename_suffix_and_nothing_wider():
+    """The stage cannot widen beyond a basename ending in ``.template``.
+
+    A path merely CONTAINING the token, or sitting under a directory named for
+    it, is not a template — it stays ``unknown``, so the rule's blast radius is
+    the suffix alone.
+    """
+    assert _is_template_path('pkg/x.py.template')
+    assert not _is_template_path('pkg/x.template.py')
+    assert not _is_template_path('templates/x.py')
+
+    for path in ('pkg/mystery.template.xyz', 'templates/mystery.xyz', 'mystery.xyz'):
+        bucket, unclaimed = _classify_paths_via_extensions([path], extensions=[])
+        assert bucket == 'unknown', path
+        assert unclaimed == [path], path

@@ -21,11 +21,14 @@ Every declared floor is ALSO bounded above: `min_timeout + OUTER_TIMEOUT_BUFFER`
 ### Log File Pattern
 
 ```text
-.plan/temp/build-output/{scope}/{tool}-{YYYY-MM-DD-HHmmss}.log
+.plan/local/plans/{plan_id}/build-results/{scope}/{tool}-{YYYY-MM-DD-HHmmss}.log
 ```
 
+- `{plan_id}`: The plan that caused the build, or the `NO_PLAN` sentinel for a plan-less build
 - `{scope}`: Module name or `default` for root builds
 - `{tool}`: Build system name (maven, gradle, npm, python)
+
+The path is resolved solely by `file_ops.get_build_results_dir(plan_id)` — no other module derives it. See [`build-execution.md`](build-execution.md#r1-log-file-output) § R1: Log File Output for the plan-scoping contract and the sentinel's main-checkout anchoring.
 
 ### Output Capture
 

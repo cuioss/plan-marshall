@@ -153,21 +153,27 @@ Clean all directories based on retention settings from marshal.json:
 python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config cleanup
 ```
 
-The verb cleans four targets, selectable individually via `--target`: `temp`, `logs`, `archived-plans`, and `no-plan-bodies` (`--target all`, the default, runs every one).
+The verb cleans five targets, selectable individually via `--target`: `temp`, `logs`, `archived-plans`, `no-plan-bodies`, and `build-results` (`--target all`, the default, runs every one).
 
 `no-plan-bodies` ages out the prepared CI body files that plan-less callers write under the `NO_PLAN` sentinel. The sentinel is a shared, permanent plan directory — it is never archived, so nothing else ever ages its contents, and without this target those body files accumulate indefinitely. The target removes only the aged `*.md` body files inside `work/ci-bodies/`; it never removes the sentinel directory, its `work/` subtree, or its `status.json` marker, because deleting that marker would make the sentinel resolve as not-found and break every plan-less `pr`/`issue` body caller. A project where no plan-less body was ever prepared has no sentinel directory at all, which is a clean no-op rather than an error.
 
-**Output (TOON)**:
+`build-results` ages out the per-plan build-output trees, guarded so it can never reap a running plan's results. It enumerates plan directories from the plan store and skips a LIVE plan's tree entirely — a plan is live for as long as its directory carries a `status.json` marker — so a live plan's results are never counted as reclaimable by `cleanup-status` either. Only a plan directory whose `status.json` is absent, and the never-archived `NO_PLAN` sentinel, are subject to the age threshold; a finished plan is aged instead by `archived_plans_days` once `archive-plan` has moved it under `archived-plans/`.
+
+**Output (TOON)** — a flat per-target count/bytes pair, with `status: dry_run` instead of `success` under `--dry-run`:
 ```toon
 status: success
-operation: cleanup
-dry_run: false
-
-deleted[4]{category,count,size_bytes}:
-logs	3	512
-archived_plans	2	8192
-temp	5	1024
-no_plan_bodies	2	4096
+target: all
+temp_files: 5
+temp_bytes: 1024
+logs_deleted: 3
+logs_bytes: 512
+archived_plans_deleted: 2
+archived_plans_bytes: 8192
+no_plan_bodies_deleted: 2
+no_plan_bodies_bytes: 4096
+build_results_deleted: 4
+build_results_bytes: 16384
+total_bytes_freed: 29824
 ```
 
 ### Retention Settings
@@ -180,6 +186,7 @@ Configurable via marshal.json:
 | `archived_plans_days` | 5 | Delete archived plans older than N days |
 | `lessons_superseded_days` | 0 | Delete superseded lesson stubs older than N days; tombstones at `.tombstones/{id}.json` are preserved |
 | `no_plan_body_days` | 7 | Delete prepared CI body files older than N days under the plan-less `NO_PLAN` sentinel. The sentinel directory, its `work/` subtree and its `status.json` are never removed — only the aged body files inside `work/ci-bodies/` |
+| `build_results_days` | 5 (tracks `archived_plans_days`) | Delete a NON-live plan's build results older than N days. Tracks the project's *effective* `archived_plans_days` when unset, since build output shares its plan artifact's lifetime (see [`manage-config` data-model.md](../../manage-config/standards/data-model.md)) |
 | `temp_on_maintenance` | true | Clean temp directory on maintenance |
 | `plugin_cache_keep_versions` | 5 | Keep the N numerically-newest plugin-cache version dirs per bundle — one arm of the `cache_retention sweep` keep-union (see [`manage-config` data-model.md](../../manage-config/standards/data-model.md)) |
 | `plugin_cache_keep_days` | 3 | Keep plugin-cache version dirs younger than D days — the other knob-driven arm of the same keep-union (see [`manage-config` data-model.md](../../manage-config/standards/data-model.md)) |

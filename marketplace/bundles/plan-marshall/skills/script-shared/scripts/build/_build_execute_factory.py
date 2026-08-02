@@ -63,6 +63,7 @@ from _build_server_protocol import (  # noqa: E402
     read_log_verdict,
 )
 from _build_shared import cmd_run_common  # noqa: E402
+from marketplace_paths import NO_PLAN_SENTINEL, names_real_plan  # noqa: E402
 from plan_logging import log_entry  # noqa: E402
 from toon_parser import serialize_toon  # noqa: E402
 
@@ -181,9 +182,9 @@ def _record_resolution(
     configures no handler, so a ``logger.info`` call is discarded by Python's
     last-resort WARNING threshold and the line is lost. It is therefore emitted
     twice — unconditionally to stderr (``[EXEC]`` parity, and the only sink a
-    plan-less build has), and to the plan's captured work log when a ``plan_id``
-    is present (mirroring ``build_server._audit_log``, which likewise no-ops for
-    a plan-less build).
+    plan-less build has), and to the plan's captured work log when ``plan_id``
+    names a REAL plan (mirroring ``build_server._audit_log``, which likewise
+    no-ops for a plan-less build).
 
     Args:
         requested: The caller's ``execution_mode`` (``auto`` / ``in_process`` /
@@ -193,8 +194,9 @@ def _record_resolution(
         reason: The degradation / refusal reason, or ``None`` when the
             resolution carries none.
         notation: The executor notation the daemon re-runs for this build.
-        plan_id: Submitting plan id; falsy for a plan-less build (the work-log
-            emission is skipped, the stderr emission is not).
+        plan_id: Submitting plan id; anything :func:`names_real_plan` rejects is
+            a plan-less build (the work-log emission is skipped, the stderr
+            emission is not).
     """
     # The wait mechanism this build-arm record names, drawn from the same closed
     # vocabulary the CI arm uses so one ``mechanism=`` log query matches both
@@ -215,7 +217,7 @@ def _record_resolution(
         f'reason={reason}, notation={notation}, plan={plan_id}, mechanism={mechanism})'
     )
     print(message, file=sys.stderr)
-    if plan_id:
+    if names_real_plan(plan_id):
         # Every fallback and refusal logs at WARNING — matching the client's
         # existing level convention; a clean resolution stays INFO.
         level = 'WARNING' if resolved == 'fail-loud' or reason is not None else 'INFO'
@@ -308,12 +310,16 @@ def _route_to_daemon(
     command = ['python3', str(Path(exec_root) / '.plan' / 'execute-script.py'), notation, *sys.argv[1:]]
     command_str = ' '.join(command)
 
+    # Routing and ledger values DO carry the sentinel: a plan-less build is
+    # submitted as ``NO_PLAN``, never as the empty string, so the daemon's
+    # kind=job row matches the kind=build row's never-null contract.
+    routing_plan_id = plan_id or NO_PLAN_SENTINEL
     submit = client.run_submit(
         Namespace(
             command=json.dumps(command),
             exec_path=exec_root,
             project_path=exec_root,
-            plan_id=plan_id or '',
+            plan_id=routing_plan_id,
         )
     )
     if submit.get('status') != 'success':
@@ -324,7 +330,7 @@ def _route_to_daemon(
     # Bounded long-poll: re-issue wait on a live `running` return — NEVER sleep
     # or background the wait (a reaped wait costs one re-poll, not the build).
     while True:
-        waited = client.run_wait(Namespace(job_id=job_id, plan_id=plan_id or '', bound=None))
+        waited = client.run_wait(Namespace(job_id=job_id, plan_id=routing_plan_id, bound=None))
         if waited.get('status') == 'degraded':
             return None, str(waited.get('reason') or 'wait_degraded')
         if str(waited.get('job_status', '')) == 'running':
@@ -395,7 +401,9 @@ def _emit_daemon_required(
         'tool': tool_name,
         'command': command_args,
         'reason': reason,
-        'plan_id': plan_id or '',
+        # The envelope reports the sentinel, not the empty string — the error
+        # payload is a ledger/audit value on the same never-null contract.
+        'plan_id': plan_id or NO_PLAN_SENTINEL,
     }
     return _emit_error_envelope(output_format, output)
 
@@ -540,9 +548,14 @@ def create_execute_handlers(
             forking a local one. The wrapper only applies to the in-process leg:
             a routed build runs inside the daemon child, which re-enters this
             factory and applies the wrapper there. A wrapper MUST accept and
-            forward the full inner signature — including ``explicit_timeout`` —
-            so a caller's explicit ``--timeout`` override survives the wrapped
-            leg instead of being dropped at the wrapper boundary.
+            forward the full inner signature — naming ``explicit_timeout`` and
+            ``plan_id`` explicitly, and forwarding BOTH on EVERY inner call it
+            makes (a retry leg included). Dropping ``explicit_timeout`` loses a
+            caller's ``--timeout`` override; dropping ``plan_id`` sends the
+            build's log to the wrong plan's ``build-results/``. A wrapper that
+            forwards on its first call but not on a retry is wrong exactly when
+            the build had already gone wrong, which is the hardest case to
+            observe.
 
     Returns:
         Tuple of (execute_direct, cmd_run) functions, where ``execute_direct``
@@ -571,6 +584,8 @@ def create_execute_handlers(
         env_vars: dict[str, str] | None = None,
         working_dir: str | None = None,
         explicit_timeout: int | None = None,
+        *,
+        plan_id: str,
     ) -> DirectCommandResult:
         wrapper = _resolve_wrapper(project_dir)
 
@@ -587,6 +602,7 @@ def create_execute_handlers(
             tool_name=config.tool_name,
             build_command_fn=config.build_command_fn,
             wrapper=wrapper,
+            plan_id=plan_id,
             capture_strategy=config.capture_strategy,
             scope_fn=config.scope_fn,
             env_vars=env_vars,
@@ -714,9 +730,10 @@ def create_execute_handlers(
             _record_resolution(execution_mode, 'in_process', fallback_reason, notation, plan_id)
 
         # In-process fallback: acquire a build-queue slot on the single
-        # machine-global queue file when a plan_id is set; NO-OP passthrough
-        # otherwise (plan-less builds run unchanged). The slot is released in the
-        # context manager's finally.
+        # machine-global queue file when plan_id names a REAL plan; NO-OP
+        # passthrough for a falsy id or the NO_PLAN sentinel (plan-less builds
+        # run unqueued, unchanged). The slot is released in the context
+        # manager's finally.
         try:
             with build_queue_slot(plan_id):
                 result = in_process_execute(
@@ -727,6 +744,11 @@ def create_execute_handlers(
                     env_vars=env_vars,
                     working_dir=working_dir,
                     explicit_timeout=explicit_timeout,
+                    # Build results carry the sentinel exactly as the routing
+                    # and ledger values do (see _route_to_daemon): a plan-less
+                    # build is attributed to NO_PLAN, never to the empty
+                    # string, so its log always has an owning directory.
+                    plan_id=plan_id or NO_PLAN_SENTINEL,
                 )
         except BuildQueueTimeout as exc:
             return _emit_queue_timeout(config.tool_name, command_args, getattr(args, 'format', 'toon'), exc)

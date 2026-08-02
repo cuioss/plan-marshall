@@ -17,8 +17,10 @@ shaped identically and parsed identically.
 
 **Tracked-config-dir resolution, NOT plan-scoped.** The ledger resolves via
 :func:`file_ops.get_tracked_config_dir` (modeled on ``manage-locks``), so it
-serves plan-less orchestrator builds (a ``kind=build`` entry with ``plan_id:
-null``) just as well as plan-scoped task builds.
+serves plan-less orchestrator builds just as well as plan-scoped task builds.
+A plan-less build is recorded under the ``NO_PLAN`` sentinel, never as
+``plan_id: null``: ``plan_id`` is a required ``str`` on both
+:func:`build_record` and :func:`job_record`, so every row is attributable.
 
 **Pure-append concurrency.** :func:`append_entry` writes exactly one
 ``json.dumps(record) + '\\n'`` line per call with a single ``open(..., 'a')``.
@@ -106,12 +108,15 @@ def read_entries(path: Path | None = None) -> list[dict[str, Any]]:
 def build_record(
     *,
     notation: str,
-    plan_id: str | None,
+    plan_id: str,
     args: str | None,
     exit_code: int,
     status: str,
     worktree_sha: str | None,
     log_file: str | None,
+    command: str | None = None,
+    duration_seconds: float | None = None,
+    outcome: dict[str, Any] | None = None,
     timestamp_iso: str | None = None,
 ) -> dict[str, Any]:
     """Construct a ``kind=build`` ledger record.
@@ -124,12 +129,61 @@ def build_record(
     is retained as orthogonal diagnostic detail. Both are stamped against the
     working-tree ``worktree_sha`` at capture time. A build is NOT a commit, so
     this record does NOT carry ``commit_sha`` or ``changed_paths``.
+
+    ``plan_id`` is a required ``str`` — every build is attributable. A build
+    invoked outside any plan is recorded under the ``NO_PLAN`` sentinel; the
+    caller resolves it before constructing the record, so no row can carry
+    ``plan_id: null``.
+
+    **``args`` and ``command`` are two distinct layers — neither substitutes
+    for the other.** ``args`` is the EXECUTOR argv: the arguments the caller
+    handed to ``.plan/execute-script.py`` (e.g.
+    ``run --command-args "verify plan-marshall"``). ``command`` is what the
+    build WRAPPER resolved that argv into and actually ran (e.g.
+    ``./pw verify plan-marshall``). The mapping between them is the wrapper's
+    own resolution — a build-tool switch or a routing decision changes
+    ``command`` while ``args`` stays byte-identical — so a reader that needs
+    "what did the operator ask for" reads ``args`` and one that needs "what
+    actually ran" reads ``command``.
+
+    ``command``, ``duration_seconds`` and ``outcome`` are all sourced from the
+    wrapper's stdout TOON and are therefore OPTIONAL: they default to ``None``
+    and stay ``None`` when the payload is absent or unparseable (a killed or
+    crashed build), and for a hand-appended row that legitimately has no
+    resolved command, no measured duration and no wrapper payload. ``outcome``
+    is the wrapper's whole stdout TOON as a dict, retained verbatim so a
+    reader gets the wrapper's own report (log file path, per-error rows)
+    without re-reading the build log.
+
+    **Secrets discipline — a DELIBERATE divergence from the build-server audit
+    log, not an oversight.** ``build_server._audit_log`` refuses to record the
+    resolved ``command``, ``exec_path``, ``project_path`` or any spec field on
+    the ground that they may carry secrets; this record deliberately keeps
+    ``command`` and the verbatim ``outcome``, both of which can. A resolved
+    build command line can carry a registry credential or a ``-D`` token, and
+    ``outcome``'s ``errors[]`` rows are lifted from the build log, which can
+    echo anything the build printed. Three properties make that acceptable HERE
+    and not there: the ledger is written to ``.plan/work/`` — inside the
+    blanket ``.plan/*`` gitignore, so no row can reach a commit or a PR; the
+    audit log's own consumers are cross-session and operator-facing whereas the
+    ledger's are the freshness gate and local inspection; and the identical text
+    is ALREADY co-resident in plaintext in the ``log_file`` this row points at,
+    so the row discloses nothing to a reader who cannot already read that log.
+    The one asymmetry a future change must respect: the build log ages out under
+    the ``build_results_days`` retention target, while the ledger is append-only
+    with no cleanup target, so the excerpt outlives the log it came from. Do NOT
+    widen this record with a field sourced from anywhere other than the wrapper
+    payload, and do NOT copy this exemption into a store that leaves the
+    machine.
     """
     return {
         'kind': KIND_BUILD,
         'notation': notation,
         'plan_id': plan_id,
         'args': args,
+        'command': command,
+        'duration_seconds': duration_seconds,
+        'outcome': outcome,
         'exit_code': exit_code,
         'status': status,
         'worktree_sha': worktree_sha,
@@ -168,7 +222,7 @@ def change_record(
 def job_record(
     *,
     job_id: str,
-    plan_id: str | None,
+    plan_id: str,
     fingerprint: str,
     notation: str,
     worktree_sha: str | None,
@@ -189,6 +243,11 @@ def job_record(
     record — the job may still be running — so it carries no ``exit_code`` or
     ``status``. The freshness gate ignores ``kind=job`` entirely (it consumes
     only ``kind=build``); ``kind=job`` rows exist for re-attach and audit.
+
+    ``plan_id`` is a required ``str``, on the same never-null contract as
+    :func:`build_record`: a plan-less submission is recorded under the
+    ``NO_PLAN`` sentinel. The re-attach lookup matches on that same value, so
+    a plan-less submit stays recoverable.
     """
     return {
         'kind': KIND_JOB,

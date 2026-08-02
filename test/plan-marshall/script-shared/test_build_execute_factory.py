@@ -28,6 +28,7 @@ their subject and re-arm it with ``@pytest.mark.allow_daemon_routing``.
 """
 
 import argparse
+import json
 
 import _build_execute as build_execute
 import _build_execute_factory as factory
@@ -43,6 +44,7 @@ from _build_cli import (
 )
 from _build_execute import CaptureStrategy
 from _build_execute_factory import default_command_key_fn
+from _resolve_project_dir_fixtures import NO_PLAN_SENTINEL
 
 
 class TestDefaultCommandKeyFnEmpty:
@@ -548,9 +550,15 @@ class TestFactoryCmdRunQueueSaturated:
 
 class TestFactoryCmdRunPlanIdAbsentPassthrough:
     """plan_id-absent: pure passthrough — the build runs with ZERO queue
-    interaction (the backward-compatibility guarantee for plan-less builds)."""
+    interaction (the backward-compatibility guarantee for plan-less builds).
 
-    @pytest.mark.parametrize('plan_id', [None, ''])
+    ``NO_PLAN`` is included because ``build_main`` now resolves every absent
+    ``--plan-id`` to that TRUTHY sentinel: it is the value a plan-less build
+    actually arrives here with, so it — not the falsy cases — is what a
+    falsiness-only guard would silently start queueing.
+    """
+
+    @pytest.mark.parametrize('plan_id', [None, '', NO_PLAN_SENTINEL])
     def test_no_plan_id_runs_build_with_no_queue_interaction(self, monkeypatch, plan_id):
         double = _QueueDouble([])  # any acquire would record a call
         cmd_run, exec_recorder = _install(monkeypatch, double)
@@ -576,6 +584,69 @@ class TestFactoryCmdRunPlanIdAbsentPassthrough:
         assert double.release_calls == []
 
 
+class TestPlanIdThreadsThroughBothFactoryLayers:
+    """``plan_id`` survives BOTH factory layers on its way to the log placement.
+
+    The attribution crosses two seams inside this factory — ``cmd_run`` hands it
+    to the in-process execute closure, and that closure hands it to
+    ``execute_direct_base``, which is the call that reaches ``create_log_file``.
+    Either seam can drop it independently, and a drop is silent: the build still
+    succeeds, the log just lands under the wrong owner. Both are asserted here on
+    the CONSTRUCTED call rather than on a resulting path, so a shared default can
+    never make a dropped forward look correct.
+    """
+
+    def test_cmd_run_threads_a_real_plan_id_to_execute_direct_base(self, monkeypatch):
+        double = _QueueDouble([{'status': 'success', 'admission': 'admitted', 'id': 'P:uuid-1'}])
+        cmd_run, exec_recorder = _install(monkeypatch, double)
+
+        cmd_run(argparse.Namespace(command_args='verify', plan_id='owning-plan', format='toon'))
+
+        assert exec_recorder.calls[0]['plan_id'] == 'owning-plan'
+
+    @pytest.mark.parametrize('plan_id', [None, '', NO_PLAN_SENTINEL])
+    def test_cmd_run_threads_a_plan_less_build_as_the_sentinel(self, monkeypatch, plan_id):
+        """A plan-less build reaches the placement as NO_PLAN, never as ''.
+
+        The empty string has no owning directory; the sentinel does. This is the
+        same never-null contract the routing and ledger values carry.
+        """
+        double = _QueueDouble([])
+        cmd_run, exec_recorder = _install(monkeypatch, double)
+
+        cmd_run(argparse.Namespace(command_args='verify', plan_id=plan_id, format='toon'))
+
+        assert exec_recorder.calls[0]['plan_id'] == NO_PLAN_SENTINEL
+
+    def test_execute_direct_closure_forwards_plan_id_verbatim(self, monkeypatch, tmp_path):
+        """The second seam in isolation: the closure forwards what it was given."""
+        recorder = _ExecRecorder()
+        monkeypatch.setattr(factory, 'execute_direct_base', recorder)
+        execute_direct, _ = factory.create_execute_handlers(
+            _make_config(), lambda *_a, **_k: ([], None, 'SUCCESS')
+        )
+
+        execute_direct(
+            args='verify',
+            command_key='python:verify',
+            project_dir=str(tmp_path),
+            plan_id='owning-plan',
+        )
+
+        assert recorder.calls[0]['plan_id'] == 'owning-plan'
+
+    def test_execute_direct_closure_requires_plan_id(self, monkeypatch, tmp_path):
+        """``plan_id`` is keyword-only and mandatory on the generated closure."""
+        recorder = _ExecRecorder()
+        monkeypatch.setattr(factory, 'execute_direct_base', recorder)
+        execute_direct, _ = factory.create_execute_handlers(
+            _make_config(), lambda *_a, **_k: ([], None, 'SUCCESS')
+        )
+
+        with pytest.raises(TypeError):
+            execute_direct(args='verify', command_key='python:verify', project_dir=str(tmp_path))
+
+
 class TestResolveWrapperAutoDetect:
     """The factory-level wrapper auto-detection (the require_wrapper gate is gone).
 
@@ -598,7 +669,12 @@ class TestResolveWrapperAutoDetect:
         config = _make_config(with_resolve_fn=False)
         execute_direct, _ = self._handlers(config)
 
-        execute_direct(args='verify', command_key='python:verify', project_dir=str(tmp_path))
+        execute_direct(
+            args='verify',
+            command_key='python:verify',
+            project_dir=str(tmp_path),
+            plan_id='wrapper-detect-plan',
+        )
 
         assert recorder.ran is True
         assert recorder.calls[0]['wrapper'] == './pw'
@@ -612,7 +688,12 @@ class TestResolveWrapperAutoDetect:
         config = _make_config(with_resolve_fn=False)
         execute_direct, _ = self._handlers(config)
 
-        result = execute_direct(args='verify', command_key='python:verify', project_dir=str(tmp_path))
+        result = execute_direct(
+            args='verify',
+            command_key='python:verify',
+            project_dir=str(tmp_path),
+            plan_id='wrapper-detect-plan',
+        )
 
         assert result['status'] == 'success'
         assert recorder.calls[0]['wrapper'] == 'pwx'
@@ -627,7 +708,12 @@ class TestResolveWrapperAutoDetect:
         config = _make_config(with_resolve_fn=False)
         execute_direct, _ = self._handlers(config)
 
-        result = execute_direct(args='verify', command_key='python:verify', project_dir=str(tmp_path))
+        result = execute_direct(
+            args='verify',
+            command_key='python:verify',
+            project_dir=str(tmp_path),
+            plan_id='wrapper-detect-plan',
+        )
 
         assert result['status'] == 'success'
         assert recorder.calls[0]['wrapper'] == 'pwx'
@@ -640,7 +726,12 @@ class TestResolveWrapperAutoDetect:
         config = _make_config(with_resolve_fn=True)
         execute_direct, _ = self._handlers(config)
 
-        result = execute_direct(args='verify', command_key='python:verify', project_dir=str(tmp_path))
+        result = execute_direct(
+            args='verify',
+            command_key='python:verify',
+            project_dir=str(tmp_path),
+            plan_id='wrapper-detect-plan',
+        )
 
         assert result['status'] == 'success'
         # wrapper_resolve_fn returns 'pw' unconditionally; no FileNotFoundError.
@@ -755,19 +846,142 @@ class _ResultCapture:
 class _FakeBuildServerClient:
     """A faked build-server client: preflight ready, submit accepted, and a
     scripted ``wait`` payload — so the routed path runs end-to-end through the
-    real ``_daemon_result_to_direct`` cross-check under ``execution_mode=daemon``."""
+    real ``_daemon_result_to_direct`` cross-check under ``execution_mode=daemon``.
+
+    Every ``plan_id`` the routing seam forwards is recorded on
+    :attr:`forwarded_plan_ids`, so a test can assert WHICH value reached the
+    daemon rather than only that routing happened."""
 
     def __init__(self, wait_payload: dict):
         self._wait_payload = wait_payload
+        self.forwarded_plan_ids: list[tuple[str, str]] = []
 
     def run_preflight(self, _ns):
         return {'preflight': 'ready'}
 
-    def run_submit(self, _ns):
+    def run_submit(self, ns):
+        self.forwarded_plan_ids.append(('submit', ns.plan_id))
         return {'status': 'success', 'job_id': 'J1'}
 
-    def run_wait(self, _ns):
+    def run_wait(self, ns):
+        self.forwarded_plan_ids.append(('wait', ns.plan_id))
         return self._wait_payload
+
+
+# =============================================================================
+# The NO_PLAN sentinel across the routing / audit seams
+# =============================================================================
+#
+# Two OPPOSITE dispositions live in this module, and both are asserted below
+# because getting either backwards is silent:
+#
+# * ``_record_resolution`` treats the sentinel as ABSENT — it writes no plan
+#   work log (a plan-less build has none), while its stderr line still fires.
+# * ``_route_to_daemon`` FORWARDS the sentinel — routing and ledger values do
+#   carry NO_PLAN, so the daemon's kind=job row matches the kind=build row's
+#   never-null contract.
+
+
+class TestRecordResolutionSentinelSuppressesWorkLog:
+    """``_record_resolution``: the sentinel suppresses the work-log write only."""
+
+    def _capture_log_entries(self, monkeypatch) -> list[tuple]:
+        written: list[tuple] = []
+        monkeypatch.setattr(
+            factory, 'log_entry', lambda *args: written.append(args)
+        )
+        return written
+
+    @pytest.mark.parametrize('plan_id', [None, '', NO_PLAN_SENTINEL])
+    def test_plan_less_writes_no_work_log_but_still_emits_stderr(
+        self, monkeypatch, capsys, plan_id
+    ):
+        written = self._capture_log_entries(monkeypatch)
+
+        factory._record_resolution('auto', 'in_process', 'socket_absent', 'n', plan_id)
+
+        assert written == [], (
+            f'plan_id={plan_id!r} wrote {written!r} to a plan work log; a '
+            'plan-less build has no per-plan log to write to.'
+        )
+        err = capsys.readouterr().err
+        assert '[BUILD-SERVER] resolved build' in err, (
+            'the stderr emission is the ONLY sink a plan-less build has and '
+            'must fire unconditionally'
+        )
+
+    def test_a_real_plan_id_still_writes_the_work_log(self, monkeypatch):
+        """The carve-out is narrow — a real plan still gets its routing record.
+
+        Without this counter-case a guard that suppressed the write outright
+        would satisfy every assertion above while silently deleting the routing
+        diagnostic for every plan-scoped build.
+        """
+        written = self._capture_log_entries(monkeypatch)
+
+        factory._record_resolution('auto', 'in_process', 'socket_absent', 'n', 'a-real-plan')
+
+        assert len(written) == 1
+        assert written[0][1] == 'a-real-plan'
+
+
+class TestRouteToDaemonForwardsTheSentinel:
+    """``_route_to_daemon``: the sentinel IS the routing value, not an empty string."""
+
+    @pytest.mark.allow_daemon_routing
+    @pytest.mark.parametrize('plan_id', [None, '', NO_PLAN_SENTINEL])
+    def test_plan_less_routing_forwards_the_sentinel(self, monkeypatch, tmp_path, plan_id):
+        monkeypatch.delenv(factory.MARSHALLD_JOB_ENV, raising=False)
+        log = tmp_path / 'job.log'
+        log.write_text('status: success\nexit_code: 0\n')
+        client = _FakeBuildServerClient(
+            {'job_status': 'success', 'log_file': str(log), 'duration_seconds': 1}
+        )
+        monkeypatch.setattr(factory, '_load_build_server', lambda: client)
+
+        routed, reason = factory._route_to_daemon(_make_config(), str(tmp_path), plan_id)
+
+        assert routed is not None, f'routing did not happen (reason={reason!r})'
+        assert client.forwarded_plan_ids == [
+            ('submit', NO_PLAN_SENTINEL),
+            ('wait', NO_PLAN_SENTINEL),
+        ], (
+            f'plan_id={plan_id!r} was forwarded as {client.forwarded_plan_ids!r}; '
+            'a plan-less build must submit and wait under the NO_PLAN sentinel '
+            "so the daemon's kind=job row is never null / empty."
+        )
+
+    @pytest.mark.allow_daemon_routing
+    def test_a_real_plan_id_is_forwarded_verbatim(self, monkeypatch, tmp_path):
+        """The fallback must not overwrite a real plan id."""
+        monkeypatch.delenv(factory.MARSHALLD_JOB_ENV, raising=False)
+        log = tmp_path / 'job.log'
+        log.write_text('status: success\nexit_code: 0\n')
+        client = _FakeBuildServerClient(
+            {'job_status': 'success', 'log_file': str(log), 'duration_seconds': 1}
+        )
+        monkeypatch.setattr(factory, '_load_build_server', lambda: client)
+
+        factory._route_to_daemon(_make_config(), str(tmp_path), 'a-real-plan')
+
+        assert client.forwarded_plan_ids == [
+            ('submit', 'a-real-plan'),
+            ('wait', 'a-real-plan'),
+        ]
+
+
+class TestEmitDaemonRequiredReportsTheSentinel:
+    """The ``daemon_required`` envelope carries NO_PLAN, never the empty string."""
+
+    @pytest.mark.parametrize('plan_id', [None, '', NO_PLAN_SENTINEL])
+    def test_plan_less_envelope_reports_the_sentinel(self, monkeypatch, capsys, plan_id):
+        monkeypatch.setattr(factory, 'log_entry', lambda *_a: None)
+
+        rc = factory._emit_daemon_required('python', 'verify', 'json', 'socket_absent', 'n', plan_id)
+
+        assert rc == 1
+        payload = json.loads(capsys.readouterr().out)
+        assert payload['plan_id'] == NO_PLAN_SENTINEL
 
 
 class TestCmdRunExecutionModeVerdict:

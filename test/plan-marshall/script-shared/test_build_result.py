@@ -3,8 +3,11 @@
 """Tests for build_result.py module."""
 
 import importlib.util
-import tempfile
 from pathlib import Path
+
+import pytest
+from file_ops import get_build_results_dir
+from marketplace_paths import NO_PLAN_SENTINEL
 
 _SCRIPTS_DIR = (
     Path(__file__).parent.parent.parent.parent
@@ -37,8 +40,6 @@ STATUS_ERROR = _build_result_mod.STATUS_ERROR
 STATUS_SUCCESS = _build_result_mod.STATUS_SUCCESS
 STATUS_TIMEOUT = _build_result_mod.STATUS_TIMEOUT
 TIMESTAMP_FORMAT = _build_result_mod.TIMESTAMP_FORMAT
-_get_log_base_dir = _build_result_mod._get_log_base_dir
-_resolve_log_base_dir = _build_result_mod._resolve_log_base_dir
 create_log_file = _build_result_mod.create_log_file
 error_result = _build_result_mod.error_result
 success_result = _build_result_mod.success_result
@@ -46,9 +47,10 @@ timeout_result = _build_result_mod.timeout_result
 validate_result = _build_result_mod.validate_result
 
 
-def test_log_base_dir():
-    """_get_log_base_dir() returns expected value."""
-    assert _get_log_base_dir() == '.plan/temp/build-output'
+#: Plan id used by the placement tests. Resolves under the autouse
+#: ``_plan_base_dir_sandbox`` PLAN_BASE_DIR redirect, so every log this module
+#: creates lands in the per-test sandbox rather than the real plan store.
+_PLAN_ID = 'build-result-placement-plan'
 
 
 def test_timestamp_format():
@@ -80,75 +82,129 @@ def test_required_fields():
 
 def test_create_log_file_creates():
     """Creates log file in expected location."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        log_file = create_log_file('maven', 'default', tmpdir)
-        assert log_file is not None
-        assert Path(log_file).exists()
+    log_file = create_log_file('maven', 'default', plan_id=_PLAN_ID)
+    assert log_file is not None
+    assert Path(log_file).exists()
 
 
 def test_create_log_file_creates_directories():
     """Creates intermediate directories."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        log_file = create_log_file('maven', 'core-api', tmpdir)
-        assert log_file is not None
-        assert Path(log_file).parent.name == 'core-api'
+    log_file = create_log_file('maven', 'core-api', plan_id=_PLAN_ID)
+    assert log_file is not None
+    assert Path(log_file).parent.name == 'core-api'
+
+
+def test_create_log_file_lands_under_resolving_plans_build_results():
+    """The log lands under ``{plan_dir}/build-results/{scope}/`` for a real plan.
+
+    The placement assertion for the relocation: the result belongs to the plan
+    that caused the build, so the path must be the one
+    :func:`file_ops.get_build_results_dir` owns for that plan id — not a shared
+    temp tree. Fails against the pre-relocation code, which resolved the base
+    from the project directory and never consulted the plan id at all.
+    """
+    # Arrange
+    expected_base = get_build_results_dir(_PLAN_ID).resolve()
+
+    # Act
+    log_file = create_log_file('maven', 'core-api', plan_id=_PLAN_ID)
+
+    # Assert
+    assert log_file is not None
+    path = Path(log_file).resolve()
+    assert path.parent == expected_base / 'core-api'
+    assert path.parent.parent.name == 'build-results'
+    assert path.parent.parent.parent.name == _PLAN_ID
+
+
+def test_create_log_file_lands_under_sentinel_plan_dir_for_no_plan():
+    """A plan-less build's log lands under the ``NO_PLAN`` sentinel plan dir.
+
+    The sentinel is a real attribution, not an absent one: the result still has
+    an owning directory, resolved by the same single owner of the path.
+    """
+    # Arrange
+    expected_base = get_build_results_dir(NO_PLAN_SENTINEL).resolve()
+
+    # Act
+    log_file = create_log_file('maven', 'default', plan_id=NO_PLAN_SENTINEL)
+
+    # Assert
+    assert log_file is not None
+    path = Path(log_file).resolve()
+    assert path.parent == expected_base / 'default'
+    assert NO_PLAN_SENTINEL in path.parts
 
 
 def test_create_log_file_path_pattern():
     """Log file follows expected path pattern."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        log_file = create_log_file('maven', 'default', tmpdir)
-        path = Path(log_file)
+    log_file = create_log_file('maven', 'default', plan_id=_PLAN_ID)
+    path = Path(log_file)
 
-        assert '.plan/temp/build-output' in str(path)
-        assert '/default/' in str(path)
-        assert path.name.startswith('maven-')
-        assert path.suffix == '.log'
+    assert 'build-results' in path.parts
+    assert '/default/' in str(path)
+    assert path.name.startswith('maven-')
+    assert path.suffix == '.log'
 
 
 def test_create_log_file_different_build_systems():
     """Works with different build system names."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        maven_log = create_log_file('maven', 'default', tmpdir)
-        gradle_log = create_log_file('gradle', 'default', tmpdir)
-        npm_log = create_log_file('npm', 'default', tmpdir)
+    maven_log = create_log_file('maven', 'default', plan_id=_PLAN_ID)
+    gradle_log = create_log_file('gradle', 'default', plan_id=_PLAN_ID)
+    npm_log = create_log_file('npm', 'default', plan_id=_PLAN_ID)
 
-        assert 'maven-' in maven_log
-        assert 'gradle-' in gradle_log
-        assert 'npm-' in npm_log
+    assert 'maven-' in maven_log
+    assert 'gradle-' in gradle_log
+    assert 'npm-' in npm_log
 
 
 def test_create_log_file_different_scopes():
     """Creates files in different scope directories."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        default_log = create_log_file('maven', 'default', tmpdir)
-        core_log = create_log_file('maven', 'core-api', tmpdir)
+    default_log = create_log_file('maven', 'default', plan_id=_PLAN_ID)
+    core_log = create_log_file('maven', 'core-api', plan_id=_PLAN_ID)
 
-        assert '/default/' in default_log
-        assert '/core-api/' in core_log
+    assert '/default/' in default_log
+    assert '/core-api/' in core_log
+
+
+def test_create_log_file_separates_results_by_plan():
+    """Two plans' results land in two different directories.
+
+    The point of the relocation is attribution: a build run by one plan must
+    not deposit its log in another plan's directory.
+    """
+    # Act
+    first = create_log_file('maven', 'default', plan_id='plan-alpha')
+    second = create_log_file('maven', 'default', plan_id='plan-beta')
+
+    # Assert
+    assert first is not None
+    assert second is not None
+    assert Path(first).parent != Path(second).parent
+    assert 'plan-alpha' in Path(first).parts
+    assert 'plan-beta' in Path(second).parts
 
 
 def test_create_log_file_returns_absolute():
     """Returns absolute path."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        log_file = create_log_file('maven', 'default', tmpdir)
-        assert Path(log_file).is_absolute()
+    log_file = create_log_file('maven', 'default', plan_id=_PLAN_ID)
+    assert Path(log_file).is_absolute()
 
 
-def test_create_log_file_rejects_parent_escape_scope(tmp_path):
+def test_create_log_file_rejects_parent_escape_scope():
     """A ..-escape scope is rejected: no log dir is created outside the base.
 
-    Fails against the pre-fix code (which builds ``base / scope`` unguarded,
-    letting ``../../../escaped`` climb out of the sanctioned base) and passes
-    once the containment guard fails closed with ``None``.
+    The containment guard survives the relocation — the base it constrains is
+    now the plan's ``build-results`` directory, but an escaping scope must
+    still fail closed with ``None`` rather than climbing out of it.
     """
-    # Arrange: base resolves to {project_dir}/.plan/temp/build-output, so a
-    # three-level ``..`` climb lands back at project_dir/escaped — outside base.
-    project_dir = str(tmp_path)
-    escaped = tmp_path / 'escaped'
+    # Arrange: base is {plan_dir}/build-results, so a three-level ``..`` climb
+    # lands at {base_dir}/escaped — outside the sanctioned base.
+    base = get_build_results_dir(_PLAN_ID).resolve()
+    escaped = base.parent.parent.parent / 'escaped'
 
     # Act
-    log_file = create_log_file('maven', '../../../escaped', project_dir)
+    log_file = create_log_file('maven', '../../../escaped', plan_id=_PLAN_ID)
 
     # Assert: guard fails closed and nothing was created outside the base.
     assert log_file is None
@@ -158,34 +214,47 @@ def test_create_log_file_rejects_parent_escape_scope(tmp_path):
 def test_create_log_file_rejects_absolute_scope(tmp_path):
     """An absolute-path scope is rejected and creates no file outside the base.
 
-    Fails against the pre-fix code (an absolute ``scope`` replaces the base
-    entirely under ``Path`` join semantics, so the log lands at the attacker's
-    absolute path) and passes once the guard fails closed with ``None``.
+    An absolute ``scope`` replaces the base entirely under ``Path`` join
+    semantics, so the guard must reject it rather than let the log land at the
+    attacker's absolute path.
     """
     # Arrange: a tmp-scoped absolute path we can inspect for non-creation.
-    project_dir = str(tmp_path)
     evil_target = tmp_path / 'evil_target'
 
     # Act
-    log_file = create_log_file('maven', str(evil_target), project_dir)
+    log_file = create_log_file('maven', str(evil_target), plan_id=_PLAN_ID)
 
     # Assert: guard fails closed and the escaping absolute dir was not created.
     assert log_file is None
     assert not evil_target.exists()
 
 
-def test_create_log_file_legitimate_scope_stays_contained(tmp_path):
+def test_create_log_file_legitimate_scope_stays_contained():
     """A legitimate single-segment scope still resolves strictly under the base."""
     # Arrange
-    project_dir = str(tmp_path)
-    base = _resolve_log_base_dir(project_dir).resolve()
+    base = get_build_results_dir(_PLAN_ID).resolve()
 
     # Act
-    log_file = create_log_file('maven', 'core-api', project_dir)
+    log_file = create_log_file('maven', 'core-api', plan_id=_PLAN_ID)
 
     # Assert
     assert log_file is not None
     assert base in Path(log_file).resolve().parents
+
+
+def test_create_log_file_requires_plan_id_keyword():
+    """``plan_id`` is keyword-only and mandatory — no positional third argument.
+
+    Pins the signature change itself: a build result with no owning plan is not
+    a valid state, so a caller cannot omit the attribution, and the old
+    ``create_log_file(system, scope, project_dir)`` positional form must no
+    longer be accepted.
+    """
+    with pytest.raises(TypeError):
+        create_log_file('maven', 'default')
+
+    with pytest.raises(TypeError):
+        create_log_file('maven', 'default', '/some/project/dir')
 
 
 def test_success_result_basic():

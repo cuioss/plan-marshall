@@ -7,16 +7,22 @@ Re-used by every Bucket B / plan-context test suite that exercises the
 contract — the consumer set grows as scripts migrate onto the shared
 resolver, so it is deliberately not enumerated here.
 
-The five contract states tested across those suites are:
+The six contract states tested across those suites are:
 
 * ``--plan-id X`` only, ``use_worktree=true`` → resolves to the
   persisted worktree path.
 * ``--plan-id X`` only, ``use_worktree=false`` → falls back to the
   cwd-relative checkout root (``file_ops.cwd_checkout_root``).
+* ``--plan-id NO_PLAN`` (the sentinel state) → resolves to the
+  main-checkout / cwd checkout root with NO worktree lookup. The
+  sentinel is NOT a routing source, so it is also not counted as
+  "supplied" for the mutual-exclusion check: ``--plan-id NO_PLAN
+  --project-dir Y`` stays legal and yields ``Y``.
 * ``--project-dir Y`` only → returns ``Y`` verbatim (legacy / escape
   hatch).
 * Neither flag → returns the main checkout root.
-* Both flags → ``MutuallyExclusiveArgsError``.
+* Both flags (a REAL plan id plus ``--project-dir``) →
+  ``MutuallyExclusiveArgsError``.
 
 This file is intentionally a sibling helper (``_fixtures.py`` style) and
 is NOT a ``conftest.py`` — placing a ``conftest.py`` under
@@ -283,4 +289,31 @@ def assert_sentinel_accepted(resolve: Any) -> None:
     assert mock.call_count == 0, (
         'The NO_PLAN sentinel reached manage-status get-worktree-path '
         f'{mock.call_count} times; the sentinel carve-out must never shell out.'
+    )
+
+
+def assert_sentinel_is_not_a_routing_source(resolve_pair: Any) -> None:
+    """Assert ``--plan-id NO_PLAN`` alongside ``--project-dir Y`` stays legal.
+
+    The sentinel is TRUTHY, so a ``bool(plan_id)`` mutual-exclusion check would
+    class it as a supplied routing source and reject the combination that every
+    plan-less caller with an explicit tree needs. This is the half of the
+    sentinel contract :func:`assert_sentinel_accepted` cannot see — that one
+    passes whether or not the exclusion check excludes the sentinel, because it
+    never supplies ``--project-dir``.
+
+    Args:
+        resolve_pair: A callable ``(plan_id, project_dir) -> str`` bound through
+            the script under test, mirroring the single-argument ``resolve``
+            the sibling assertions take.
+    """
+    with patch_query_worktree_path(True) as mock:
+        resolved = resolve_pair(NO_PLAN_SENTINEL, CANONICAL_PROJECT_DIR)
+    assert resolved.endswith(CANONICAL_PROJECT_DIR.lstrip('/')), (
+        f'--plan-id NO_PLAN --project-dir {CANONICAL_PROJECT_DIR!r} resolved to '
+        f'{resolved!r}; the sentinel must not displace the explicit override.'
+    )
+    assert mock.call_count == 0, (
+        'The NO_PLAN sentinel reached manage-status get-worktree-path '
+        f'{mock.call_count} times; it is not a routing source.'
     )

@@ -7,7 +7,11 @@ Tests the unified run command that combines execute + parse on failure:
 - Failure output with parsed errors
 - --mode parameter filtering
 - --format parameter for output format
-- Log file location (.plan/temp/build-output/)
+- Log file location (the resolving plan's build-results/ directory)
+
+These invocations pass no ``--plan-id``, so ``build_main`` resolves the absent
+flag to the ``NO_PLAN`` sentinel and the logs land under that sentinel plan's
+directory — the plan-less build is still attributed, just to no real plan.
 """
 
 import json
@@ -37,8 +41,11 @@ def mock_gradle_project(monkeypatch, mock_script: str = 'gradlew-success.sh'):
     """
     with tempfile.TemporaryDirectory() as td:
         temp_dir = Path(td)
-        # Create .plan directory for log files (new standard location)
-        (temp_dir / '.plan' / 'temp' / 'build-output' / 'default').mkdir(parents=True)
+        # Only the PLAN_BASE_DIR root is staged. The log directory itself is
+        # NOT pre-created: the production resolver owns the build-results path
+        # and creates its own directories as it places output, so pre-creating
+        # one would mask a resolver that failed to create what it resolved.
+        (temp_dir / '.plan').mkdir(parents=True)
         # Copy mock wrapper to temp_dir as gradlew
         mock_path = MOCKS_DIR / mock_script
         if mock_path.exists():
@@ -103,13 +110,13 @@ def test_run_mode_errors(monkeypatch):
 def test_run_with_module_routing(monkeypatch):
     """Test run with module routing embedded in command-args."""
     with mock_gradle_project(monkeypatch, 'gradlew-success.sh') as temp_dir:
-        # Create scope directory for the module
-        (temp_dir / '.plan' / 'temp' / 'build-output' / 'core').mkdir(parents=True)
         result = run_script(SCRIPT_PATH, 'run', '--command-args', ':core:clean :core:test', cwd=temp_dir)
 
         assert result.returncode == 0, f'Should succeed: {result.stderr}'
-        # Log file should be in the core scope
-        assert '.plan/temp/build-output/core/gradle-' in result.stdout, 'Log file should be in core scope'
+        # Log file should be in the core scope, under the resolving plan's dir.
+        assert '/plans/NO_PLAN/build-results/core/gradle-' in result.stdout, (
+            'Log file should be in the core scope of the resolving plan'
+        )
 
 
 def test_run_format_json(monkeypatch):
@@ -139,12 +146,14 @@ def test_run_format_toon_default(monkeypatch):
 
 
 def test_run_log_file_location(monkeypatch):
-    """Test log file is created in .plan/temp/build-output/."""
+    """Test the log is created in the resolving plan's build-results directory."""
     with mock_gradle_project(monkeypatch, 'gradlew-success.sh') as temp_dir:
         result = run_script(SCRIPT_PATH, 'run', '--command-args', 'clean test', cwd=temp_dir)
 
         assert result.returncode == 0, f'Should succeed: {result.stderr}'
-        assert '.plan/temp/build-output/' in result.stdout, 'Log should be in .plan/temp/build-output/'
+        assert '/plans/NO_PLAN/build-results/' in result.stdout, (
+            "Log should be under the resolving plan's build-results directory"
+        )
         assert 'gradle-' in result.stdout, 'Log file should have gradle- prefix'
 
 

@@ -104,14 +104,14 @@ def test_a_main_dirty_filter_excludes_dot_plan_paths() -> None:
     """
     raw = [
         '.plan/local/plans/some-plan/work/log',
-        '.plan/temp/build-output/x',
+        '.plan/local/plans/other-plan/build-results/default/python-2026-01-01-000000.log',
         'marketplace/bundles/foo/README.md',
         'src/main.py',
     ]
     filtered = inv._filter_main_dirty_paths(raw)
 
     assert '.plan/local/plans/some-plan/work/log' not in filtered
-    assert '.plan/temp/build-output/x' not in filtered
+    assert '.plan/local/plans/other-plan/build-results/default/python-2026-01-01-000000.log' not in filtered
     assert 'marketplace/bundles/foo/README.md' in filtered
     assert 'src/main.py' in filtered
 

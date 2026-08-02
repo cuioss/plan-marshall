@@ -34,8 +34,11 @@ def mock_maven_project(mock_script: str = 'mvnw-success.sh'):
         temp_dir = Path(td)
         # Create target directory for log files
         (temp_dir / 'target').mkdir()
-        # Create .plan directory for log files (new standard location)
-        (temp_dir / '.plan' / 'temp' / 'build-output' / 'default').mkdir(parents=True)
+        # Only the PLAN_BASE_DIR root is staged. The log directory itself is
+        # NOT pre-created: the production resolver owns the build-results path
+        # and creates its own directories as it places output, so pre-creating
+        # one would mask a resolver that failed to create what it resolved.
+        (temp_dir / '.plan').mkdir(parents=True)
         # Copy mock wrapper to temp_dir as mvnw
         mock_path = MOCKS_DIR / mock_script
         if mock_path.exists():

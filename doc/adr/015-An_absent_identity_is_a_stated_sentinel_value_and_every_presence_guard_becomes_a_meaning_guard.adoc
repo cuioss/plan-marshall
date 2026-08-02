@@ -1,0 +1,132 @@
+= ADR-015: An absent identity is a stated sentinel value, and every presence guard becomes a meaning guard
+:toc: left
+:toclevels: 2
+:sectnums:
+
+// adr-metadata
+// Progressive-disclosure metadata block (see manage-adr SKILL.md → "ADR Template
+// Structure"). Read by `manage-adr.py scan` so a caller can assess an ADR's
+// relevance without reading the full file. List fields are comma-separated.
+// summary: An absent optional identity is represented as a stated sentinel value rather than null, so every record is attributable. Because the sentinel is truthy, every predicate that tested presence is re-expressed as a meaning test through one named TypeGuard, never an inline truthiness check.
+// tags: sentinel, nullability, vacuous-guard, typeguard, attributability, single-predicate
+// affects: plan-marshall, script-shared, tools-file-ops, manage-change-ledger, build-pyproject, build-maven, build-gradle, build-npm
+// supersedes:
+// end-adr-metadata
+
+== Status
+
+Proposed
+
+== Context
+
+An operation that is recorded in an audit or traceability store often carries an
+optional identity — the plan a build belongs to, the epic an entry was raised
+under. Some invocations genuinely have no such identity: an ad-hoc build run
+outside any plan is a real, legitimate case, not an error.
+
+Representing that absence as `null` collapses two distinct situations into one
+value. A row whose identity is `null` may mean "this operation genuinely had no
+owner" or "the caller that produced this row never supplied one." Those are
+different facts with different remedies, and a reader of the store cannot tell
+them apart. The consequence is not merely cosmetic: a gap in attribution is
+invisible precisely because absence is the same shape as a caller's omission, so
+the class of callers that never contributed an identity stays undetected for as
+long as `null` remains a legal value.
+
+The structural choice point is therefore how an absent identity is represented
+in a record whose purpose is attribution — and, once that representation
+changes, what happens to every predicate written against the old one.
+
+== Decision
+
+**An absent optional identity is a stated sentinel value, never null.** A record
+field that must never be null takes `identity or SENTINEL` at the point of
+write, so every row in the store carries a value the reader can act on and the
+field's type narrows from optional to required.
+
+**Because the sentinel is a truthy value, presence is no longer a proxy for
+meaning.** Every predicate that previously asked "was an identity supplied?" by
+testing truthiness must be re-expressed as "does this identity name a real
+owner?" That re-expression is routed through exactly one named predicate rather
+than being open-coded at each site.
+
+The two idioms are complements and both are correct in their own place:
+
+* `identity or SENTINEL` — the write-side idiom, for a record or wire field that
+  must never be null.
+* the named meaning-guard predicate — the read-side idiom, for the code paths
+  that need a real owner: a real directory, a real store, a real queue slot.
+
+The meaning-guard is declared as a type guard, not a plain boolean predicate.
+This is load-bearing rather than stylistic: the inline truthiness check being
+replaced also narrowed the optional type to its non-optional form as a side
+effect, and a plain boolean helper silently discards that narrowing at every
+call site.
+
+== Consequences
+
+=== Positive
+
+* Every row in the store is attributable. A reader can distinguish an operation
+  that genuinely had no owner from one whose owner was never supplied, because
+  only the former carries the sentinel and the latter can no longer occur.
+* The record field narrows from optional to required, so downstream readers lose
+  a branch rather than gaining one.
+* The meaning-guard has a single declaration site, so the rule it encodes — and
+  the reasoning behind it — lives in one place instead of being restated at
+  every consumer.
+* Declaring the guard as a type guard preserves type narrowing at every call
+  site, so adopting it costs no additional assertions in the common case.
+
+=== Negative
+
+* The two idioms must both be understood to write correct code against the
+  field. A contributor who knows only the write-side idiom will produce rows
+  correctly but may read them wrongly.
+* A small number of call sites cannot obtain narrowing from the guard's negative
+  branch and need an explicit assertion, which is local noise at those sites.
+
+=== Risks
+
+* **The residual failure mode is accepted deliberately.** A truthy sentinel
+  silently satisfies any *new* bare truthiness guard written against the field.
+  The type system cannot detect this: such a guard compiles, type-checks, and
+  simply never fires. The seam is therefore a convention enforced at review,
+  not a guarantee enforced by the compiler.
+* The same hazard applies to any future field that adopts this pattern. The
+  representation change and the guard-rewrite obligation are one decision, and
+  adopting the first half without the second reintroduces exactly the class of
+  vacuous predicate this ADR exists to prevent.
+
+== Alternatives Considered
+
+**Keep the identity nullable.** Preserves every existing presence guard
+unchanged, so no guard-rewrite obligation arises and no vacuous-predicate hazard
+is introduced. It was rejected because it leaves the original problem intact:
+null rows remain unattributable, the missing-identity class of caller remains
+undetectable, and every reader of the store must carry the optional branch
+forever. The cost it avoids is a one-time sweep; the cost it retains is
+permanent and grows with the number of readers.
+
+**Use a falsy sentinel, such as the empty string.** Attractive because it gets
+the attributability benefit while leaving presence guards working as written —
+the sweep and the vacuous-guard hazard both disappear. It was rejected because
+a falsy sentinel is absence wearing a different type: the value still reads as
+"nothing here" to every predicate and every human, so the store regains a field
+whose two meanings are indistinguishable at a glance. That is the property the
+representation change set out to remove, so the alternative preserves the
+defect it was meant to fix while appearing to fix it.
+
+The two rejected options fall in one class: both keep absence *representable as
+falsiness*. The decision's whole content is that an absent owner is a fact worth
+stating, and a fact worth stating must be distinguishable from the absence of a
+statement — which requires it to be truthy, and which is precisely what forces
+the guard rewrite.
+
+== References
+
+* xref:002-Plan-scoped_operations_move_into_a_cwd-pinned_hermetic_worktree.adoc[ADR-002] — the main-anchoring model that governs where the sentinel's own plan-scoped state resolves.
+* xref:009-Status_reporting_fails_closed_with_an_explicit_unknown_state.adoc[ADR-009] — the sibling principle for status reporting. Related, not superseded: ADR-009 governs an unresolvable verdict in staleness reporting, whereas this ADR governs the representation of a legitimately-absent identity in an attributable record.
+* `marketplace/bundles/plan-marshall/skills/script-shared/scripts/marketplace_paths.py` — declares the sentinel and the single meaning-guard predicate.
+* `marketplace/bundles/plan-marshall/skills/manage-change-ledger/scripts/_ledger_core.py` — the record constructors whose identity field this decision narrows to required.
+* `marketplace/bundles/plan-marshall/skills/tools-file-ops/SKILL.md` — the sentinel's plan-context resolution contract.

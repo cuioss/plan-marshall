@@ -25,7 +25,7 @@ For common standards (timeouts, log handling, acceptable warnings), see `build-s
 
 ## Subcommands
 
-All build skills share these subcommands. Availability per tool:
+All build skills share these subcommands. The table enumerates every subcommand each of the four `build_main`-routed wrappers registers, tool-exclusive ones included. It does NOT cover build-class scripts that declare their own `ArgumentParser` instead of routing through `build_main` (`build-npm/scripts/js_coverage.py`), which the executor still treats as build-class:
 
 | Subcommand | Maven | Gradle | npm | Python | Purpose |
 |------------|-------|--------|-----|--------|---------|
@@ -34,7 +34,12 @@ All build skills share these subcommands. Availability per tool:
 | `coverage-report` | Yes | Yes | Yes | Yes | Parse coverage report |
 | `check-warnings` | Yes | Yes | Yes | Yes | Categorize build warnings against acceptable patterns |
 | `discover` | Yes | Yes | Yes | Yes | Discover modules with metadata |
+| `run-config-key` | Yes | Yes | Yes | Yes | Compute the canonical run-config key for a command-args string |
 | `find-project` | No | Yes | No | No | Find Gradle subproject path from name |
+| `rewrite-log` | Yes | No | No | No | Consume the OpenRewrite log-parse signal from a captured build log (fail-closed) |
+| `resolve-test-scope` | No | No | No | Yes | Resolve the scoped module set and scoped-vs-whole-tree divergence risk |
+
+**Every row declares the `--plan-id` / `--project-dir` routing pair.** The pair is universal across the build-class surface, not per-subcommand: it is registered on every subcommand of every wrapper, so no row needs — or gets — an exception column. See [`run`](#run-primary-api) below for the pair's two-state semantics; the same semantics apply verbatim on every other subcommand.
 
 ---
 
@@ -61,8 +66,8 @@ python3 .plan/execute-script.py {notation} run \
 - `--timeout` — Timeout in seconds (default: 300, adaptive via run-config, min floor: 60s)
 - `--mode` — Output mode: `actionable` (default), `structured`, `errors`
 - `--format` — Output format: `toon` (default), `json`
-- `--plan-id` — Plan identifier — auto-resolves the worktree path via `manage-status get-worktree-path`. Mutually exclusive with `--project-dir`.
-- `--project-dir` — Project root directory (default: `.`). Escape hatch / explicit override; mutually exclusive with `--plan-id`.
+- `--plan-id` — Plan identifier. **Always resolved, never null**: when supplied it auto-resolves the worktree path via `manage-status get-worktree-path`; when omitted it resolves to the `NO_PLAN` sentinel, NOT to "no plan". Omitting the flag is therefore an attribution decision, not an absence — the build's log lands under the sentinel's build-results tree and its `kind=build` ledger row is stamped `NO_PLAN`. Pass the real plan id whenever the build belongs to one. Mutually exclusive with `--project-dir`.
+- `--project-dir` — Project root directory (default: `.`). Escape hatch / explicit override for callers outside a plan-bound context; mutually exclusive with `--plan-id`.
 
 **Additional parameters (npm and Python)**:
 - `--working-dir` — Working directory for command execution (for nested frontend projects)
@@ -77,7 +82,7 @@ Success:
 status	success
 exit_code	0
 duration_seconds	45
-log_file	.plan/temp/build-output/default/{tool}-{timestamp}.log
+log_file	.plan/local/plans/{plan_id}/build-results/default/{tool}-{timestamp}.log
 command	{wrapper} {args}
 ```
 
@@ -86,7 +91,7 @@ Build Failure:
 status	error
 exit_code	1
 duration_seconds	23
-log_file	.plan/temp/build-output/default/{tool}-{timestamp}.log
+log_file	.plan/local/plans/{plan_id}/build-results/default/{tool}-{timestamp}.log
 command	{wrapper} {args}
 error	build_failed
 
@@ -247,7 +252,7 @@ npm commands are conditional on scripts present in `package.json`.
 
 Marker detection is **not** a build-tool subcommand. It is a domain-owned executable verb: the `marker-detect` verb, resolved null-on-absent from the active domain's `workflow_skill_extensions` and dispatched through its notation (`pm-dev-java-cui:search-markers` for the java-cui domain). See [`ext-point-domain-verb.md`](ext-point-domain-verb.md) for the declaration / discovery / dispatch / resolution contract, and the owning skill's SKILL.md for its argument surface and exit-code gate contract.
 
-The `parse --mode no-openrewrite` filter remains a build-tool concern and is documented under `parse` above.
+The `parse --mode no-openrewrite` filter and Maven's `rewrite-log` subcommand remain build-tool concerns; both appear in the availability table above.
 
 ---
 

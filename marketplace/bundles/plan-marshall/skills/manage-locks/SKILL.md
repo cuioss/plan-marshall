@@ -127,7 +127,8 @@ coordination files are the deliberate exceptions, but they split across two tier
   routes through the single sanctioned
   `marketplace_paths.resolve_main_anchored_path` utility — the ONE mechanism
   covering the per-repo bounded exception set (`merge.lock`, `merge-queue.json`,
-  `run-configuration.json`, `lessons-learned`, `orchestrator`). New **per-repo**
+  `run-configuration.json`, `lessons-learned`, `orchestrator`,
+  `plans/NO_PLAN/build-results`). New **per-repo**
   cross-session shared state MUST route through that utility rather than
   re-implementing git-common-dir resolution.
 - **Machine-global home root (ADR-008)** — the build queue coordinates build

@@ -36,6 +36,10 @@ BUILD_SCRIPT = (
 # Tier 2 direct imports via importlib for uniform import style
 import importlib.util  # noqa: E402
 
+#: The plan these foundation-API builds are attributed to. ``plan_id`` is
+#: keyword-only and mandatory on ``execute_direct``.
+_PLAN_ID = 'pyproject-build-test-plan'
+
 
 def _load_pyproject_build():
     """Load pyproject_build module with minimal mocking.
@@ -185,9 +189,9 @@ def test_execute_direct_absent_wrapper_resolves_system_fallback():
     at the real subprocess seam (that sibling test mocks the factory base; this
     one drives execute_direct through subprocess.run)."""
     with BuildContext() as ctx:
-        # No ./pw wrapper in the project dir; pwx absent from PATH.
-        plan_temp = ctx.temp_dir / '.plan' / 'temp' / 'build-output' / 'default'
-        plan_temp.mkdir(parents=True)
+        # No ./pw wrapper in the project dir; pwx absent from PATH. No log
+        # directory is pre-created: the production resolver creates its own,
+        # and create_log_file is patched out below in any case.
 
         # Mock subprocess.run to return success
         mock_result = MagicMock()
@@ -199,7 +203,11 @@ def test_execute_direct_absent_wrapper_resolves_system_fallback():
             patch('_build_execute.create_log_file', return_value=str(ctx.temp_dir / 'test.log')),
         ):
             result = execute_direct(
-                args='verify', command_key='python:verify', default_timeout=300, project_dir=str(ctx.temp_dir)
+                args='verify',
+                command_key='python:verify',
+                default_timeout=300,
+                project_dir=str(ctx.temp_dir),
+                plan_id=_PLAN_ID,
             )
 
             assert result['status'] == 'success'
@@ -215,9 +223,8 @@ def test_execute_direct_returns_success_on_zero_exit():
         pw.write_text('#!/bin/bash\necho "success"')
         pw.chmod(0o755)
 
-        # Create .plan/temp directory for log file
-        plan_temp = ctx.temp_dir / '.plan' / 'temp' / 'build-output' / 'default'
-        plan_temp.mkdir(parents=True)
+        # No log directory is pre-created: the production resolver creates its
+        # own, and create_log_file is patched out below in any case.
 
         # Mock subprocess.run to return success
         mock_result = MagicMock()
@@ -228,7 +235,11 @@ def test_execute_direct_returns_success_on_zero_exit():
             patch('_build_execute.create_log_file', return_value=str(ctx.temp_dir / 'test.log')),
         ):
             result = execute_direct(
-                args='verify', command_key='python:verify', default_timeout=300, project_dir=str(ctx.temp_dir)
+                args='verify',
+                command_key='python:verify',
+                default_timeout=300,
+                project_dir=str(ctx.temp_dir),
+                plan_id=_PLAN_ID,
             )
 
             assert result['status'] == 'success'
@@ -253,7 +264,11 @@ def test_execute_direct_returns_error_on_nonzero_exit():
             patch('_build_execute.create_log_file', return_value=str(ctx.temp_dir / 'test.log')),
         ):
             result = execute_direct(
-                args='verify', command_key='python:verify', default_timeout=300, project_dir=str(ctx.temp_dir)
+                args='verify',
+                command_key='python:verify',
+                default_timeout=300,
+                project_dir=str(ctx.temp_dir),
+                plan_id=_PLAN_ID,
             )
 
             assert result['status'] == 'error'
@@ -276,7 +291,11 @@ def test_execute_direct_returns_timeout_on_timeout():
             patch('_build_execute.create_log_file', return_value=str(ctx.temp_dir / 'test.log')),
         ):
             result = execute_direct(
-                args='verify', command_key='python:verify', default_timeout=60, project_dir=str(ctx.temp_dir)
+                args='verify',
+                command_key='python:verify',
+                default_timeout=60,
+                project_dir=str(ctx.temp_dir),
+                plan_id=_PLAN_ID,
             )
 
             assert result['status'] == 'timeout'
@@ -500,6 +519,7 @@ def test_resolve_project_dir_neither_flag_uses_main_checkout():
 
 import argparse  # noqa: E402
 
+import pytest  # noqa: E402
 from toon_parser import parse_toon  # noqa: E402
 
 # Controlled build.map globs mirroring the real repo behaviour: everything
@@ -596,13 +616,51 @@ def test_resolve_test_scope_changed_paths_supersedes_plan_footprint(capsys):
     assert out['recommended_target'] == 'plan-marshall'
 
 
-def test_resolve_test_scope_requires_a_footprint_source(capsys):
-    """Neither ``--changed-paths`` nor ``--plan-id`` → fail loud with
-    ``footprint_source_required`` (exit 2)."""
-    args = _resolve_scope_args()
-    with patch('extension_base._read_build_map_globs', return_value=_SCOPE_BUILD_MAP_GLOBS):
+@pytest.mark.parametrize('plan_id', [None, '', 'NO_PLAN'])
+def test_resolve_test_scope_requires_a_footprint_source(capsys, plan_id):
+    """No ``--changed-paths`` and no REAL ``--plan-id`` → fail loud with
+    ``footprint_source_required`` (exit 2).
+
+    ``NO_PLAN`` is the case this guard exists for now, and the direct
+    regression test for the vacuous-guard archetype: ``build_main`` resolves
+    every absent ``--plan-id`` to that sentinel, and the sentinel is TRUTHY, so
+    the original ``if not plan_id`` stopped firing exactly when it mattered —
+    the handler would go on to resolve a footprint for a plan named ``NO_PLAN``,
+    which no plan-less caller has. The guard must reject it with the SAME error
+    shape as an omitted flag; the footprint resolver must never be reached.
+    """
+    args = _resolve_scope_args(plan_id=plan_id)
+    with (
+        patch('extension_base._read_build_map_globs', return_value=_SCOPE_BUILD_MAP_GLOBS),
+        patch('extension_base._resolve_plan_footprint') as mock_plan_footprint,
+    ):
         rc = pyproject_build.cmd_resolve_test_scope(args)
     assert rc == 2
     out = parse_toon(capsys.readouterr().out)
     assert out['status'] == 'error'
     assert out['error'] == 'footprint_source_required'
+    mock_plan_footprint.assert_not_called()
+
+
+def test_resolve_test_scope_still_resolves_a_real_plan_footprint(capsys):
+    """The sentinel carve-out is narrow — a REAL ``--plan-id`` still resolves.
+
+    Without this counter-case, widening the guard to ``if not plan_id or
+    plan_id == NO_PLAN`` could degenerate into rejecting every whole-plan
+    invocation while every assertion above still passed.
+    """
+    args = _resolve_scope_args(plan_id='a-real-plan')
+    with (
+        patch('extension_base._read_build_map_globs', return_value=_SCOPE_BUILD_MAP_GLOBS),
+        patch(
+            'extension_base._resolve_plan_footprint',
+            return_value=[
+                'marketplace/bundles/plan-marshall/skills/build-pyproject/scripts/pyproject_build.py'
+            ],
+        ) as mock_plan_footprint,
+    ):
+        rc = pyproject_build.cmd_resolve_test_scope(args)
+    assert rc == 0
+    mock_plan_footprint.assert_called_once_with('a-real-plan')
+    out = parse_toon(capsys.readouterr().out)
+    assert out['recommended_target'] == 'plan-marshall'

@@ -243,7 +243,7 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config clean
 python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config cleanup --target no-plan-bodies
 ```
 
-`--target` selects one of four cleanable targets, or `all` (the default) to run every one:
+`--target` selects one of five cleanable targets, or `all` (the default) to run every one:
 
 | Target | Retention knob | Cleans |
 |--------|----------------|--------|
@@ -251,8 +251,13 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config clean
 | `logs` | `logs_days` | Aged `*.log` files under the runtime logs directory |
 | `archived-plans` | `archived_plans_days` | Aged archived-plan directories |
 | `no-plan-bodies` | `no_plan_body_days` | Aged prepared CI body files (`*.md`) under the plan-less `NO_PLAN` sentinel |
+| `build-results` | `build_results_days` | Aged build-result files under a NON-live plan's `build-results/` tree, and under the `NO_PLAN` sentinel's |
 
-The `no-plan-bodies` target exists because the `NO_PLAN` sentinel is a shared, permanent plan directory that is never archived — `archived_plans_days` never reaches it, so without this target the body files plan-less callers prepare would accumulate indefinitely. It removes only the aged body files; the sentinel directory, its `work/` subtree, and its `status.json` marker are never removed, and a missing sentinel directory is a clean no-op rather than an error. See [`manage-config` data-model.md](../manage-config/standards/data-model.md) § Retention Fields for the canonical knob semantics.
+The `no-plan-bodies` target exists because the `NO_PLAN` sentinel is a shared, permanent plan directory that is never archived — `archived_plans_days` never reaches it, so without this target the body files plan-less callers prepare would accumulate indefinitely. It removes only the aged body files; the sentinel directory, its `work/` subtree, and its `status.json` marker are never removed, and a missing sentinel directory is a clean no-op rather than an error.
+
+The `build-results` target ages the per-plan build-output trees, and is guarded so it can never reap a running plan's results. It enumerates plan directories from the plan store and skips a LIVE plan's tree entirely — a plan is live for as long as its directory carries a `status.json` marker. A live plan's results appear in NEITHER the `cleanup` nor the `cleanup-status` population, so they are never counted as reclaimable rather than merely spared deletion. Only a plan directory whose `status.json` is absent, and the never-archived `NO_PLAN` sentinel, are subject to the age threshold; a finished plan is aged instead by `archived_plans_days` once `archive-plan` has moved it under `archived-plans/`.
+
+See [`manage-config` data-model.md](../manage-config/standards/data-model.md) § Retention Fields for the canonical knob semantics of both targets.
 
 ---
 
@@ -389,7 +394,7 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config ci-du
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config cleanup \
-  [--dry-run] [--target {all,temp,logs,archived-plans,no-plan-bodies}]
+  [--dry-run] [--target {all,temp,logs,archived-plans,no-plan-bodies,build-results}]
 ```
 
 ### cleanup-status

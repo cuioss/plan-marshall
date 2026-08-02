@@ -12,8 +12,8 @@ Usage:
         STATUS_SUCCESS, STATUS_ERROR, STATUS_TIMEOUT
     )
 
-    # Create log file for build output
-    log_file = create_log_file("maven", "core-api", "/path/to/project")
+    # Create log file for build output, under the resolving plan's directory
+    log_file = create_log_file("maven", "core-api", plan_id="my-plan")
 
     # Build success result
     result = success_result(
@@ -28,10 +28,9 @@ Usage:
 """
 
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Literal, TypedDict
 
-from file_ops import get_temp_dir
+from file_ops import get_build_results_dir
 
 # =============================================================================
 # Type Definitions
@@ -67,7 +66,7 @@ class DirectCommandResult(TypedDict, total=False):
             "status": "success",
             "exit_code": 0,
             "duration_seconds": 45,
-            "log_file": ".plan/temp/build-output/default/maven-2026-01-06.log",
+            "log_file": ".plan/local/plans/my-plan/build-results/default/maven-2026-01-06.log",
             "command": "./mvnw clean verify",
             "wrapper": "./mvnw"
         }
@@ -77,7 +76,7 @@ class DirectCommandResult(TypedDict, total=False):
             "status": "error",
             "exit_code": 1,
             "duration_seconds": 23,
-            "log_file": ".plan/temp/build-output/default/npm-2026-01-06.log",
+            "log_file": ".plan/local/plans/my-plan/build-results/default/npm-2026-01-06.log",
             "command": "npm run test",
             "command_type": "npm",
             "error": "Build failed with exit code 1"
@@ -100,35 +99,6 @@ class DirectCommandResult(TypedDict, total=False):
 # =============================================================================
 # Constants
 # =============================================================================
-
-
-_LOG_SUBPATH = '.plan/temp/build-output'
-"""Relative sub-path for build logs under a project root.
-
-Retained for the legacy test accessor ``_get_log_base_dir``. Production
-callers should use ``_resolve_log_base_dir`` / ``get_temp_dir`` instead —
-build logs live under ``.plan/temp/build-output`` in the caller's
-project root (not the per-project global plan-marshall directory) so
-each worktree keeps its own isolated build output."""
-
-
-def _get_log_base_dir() -> str:
-    """Return the relative build-log subpath (legacy accessor)."""
-    return _LOG_SUBPATH
-
-
-def _resolve_log_base_dir(project_dir: str) -> Path:
-    """Resolve the build-log base directory to a concrete path.
-
-    Prefers a ``{project_dir}/.plan/temp/build-output`` layout when the
-    caller supplied a concrete project root (tests and production alike
-    pass one). Falls back to ``get_temp_dir('build-output')`` which
-    resolves against the repo-local tracked config dir. Either way the
-    logs stay project-local — never in the per-project global dir.
-    """
-    if project_dir and project_dir != '.' and Path(project_dir).exists():
-        return Path(project_dir) / _LOG_SUBPATH
-    return get_temp_dir('build-output')
 
 
 TIMESTAMP_FORMAT = '%Y-%m-%d-%H%M%S'
@@ -174,27 +144,32 @@ REQUIRED_FIELDS = {'status', 'exit_code', 'duration_seconds', 'log_file', 'comma
 # =============================================================================
 
 
-def create_log_file(build_system: str, scope: str = 'default', project_dir: str = '.') -> str | None:
+def create_log_file(build_system: str, scope: str = 'default', *, plan_id: str) -> str | None:
     """Create a timestamped log file for build output.
 
     Creates the directory structure if needed and returns the absolute path
-    to a new log file.
+    to a new log file. The log lands in the build-results directory of the
+    plan that caused the build, resolved by the single owner of that path,
+    :func:`file_ops.get_build_results_dir`.
 
     Args:
         build_system: Build system name (maven, gradle, npm).
         scope: Module scope or "default" for root builds.
-        project_dir: Project root directory.
+        plan_id: Plan identifier the build is attributed to, or the
+            ``NO_PLAN`` sentinel for a genuinely plan-less build. Required
+            keyword — a build result with no owning plan is not a valid
+            state, so no call site may omit the attribution.
 
     Returns:
         Absolute path to log file, or None if creation failed.
 
     Pattern:
-        .plan/temp/build-output/{scope}/{build_system}-{timestamp}.log
+        {plan_dir}/build-results/{scope}/{build_system}-{timestamp}.log
 
     Example:
-        >>> log_file = create_log_file("maven", "core-api", "/home/user/project")
+        >>> log_file = create_log_file("maven", "core-api", plan_id="my-plan")
         >>> log_file
-        '/home/user/project/.plan/temp/build-output/core-api/maven-2026-01-04-141523.log'
+        '/home/user/project/.plan/local/plans/my-plan/build-results/core-api/maven-2026-01-04-141523.log'
     """
     try:
         timestamp = datetime.now(UTC).strftime(TIMESTAMP_FORMAT)
@@ -202,7 +177,7 @@ def create_log_file(build_system: str, scope: str = 'default', project_dir: str 
 
         # Constrain the resolved log dir to the sanctioned base: reject a
         # scope that escapes the base via .. segments or an absolute path.
-        unresolved_base = _resolve_log_base_dir(project_dir)
+        unresolved_base = get_build_results_dir(plan_id)
         base = unresolved_base.resolve()
         candidate = (base / scope).resolve()
         if candidate != base and base not in candidate.parents:

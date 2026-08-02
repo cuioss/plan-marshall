@@ -57,6 +57,11 @@ from _build_execute import execute_direct_base
 from _build_shared import DEFAULT_BUILD_TIMEOUT, OUTER_TIMEOUT_BUFFER, get_bash_timeout
 from _build_execute_factory import compute_command_key
 
+#: The plan these timeout regressions attribute their builds to. ``plan_id`` is
+#: mandatory on ``execute_direct_base``; ``create_log_file`` is patched out in
+#: every case below, so the value only has to be a valid attribution.
+_PLAN_ID = 'timeout-truthfulness-test-plan'
+
 # Sibling test modules install a ``MagicMock`` under ``sys.modules['run_config']``
 # so their engine-config assertions never touch real persisted state. These
 # regression cases assert the OPPOSITE — the resolution the production path
@@ -231,6 +236,7 @@ def test_passing_near_learned_value_build_reports_success_not_timeout(
                 tool_name=config.tool_name,
                 build_command_fn=_build_command_fn,
                 wrapper=config.system_fallback,
+                plan_id=_PLAN_ID,
                 capture_strategy=config.capture_strategy,
                 min_timeout=config.min_timeout,
             )
@@ -387,6 +393,7 @@ def test_resolve_stamp_equals_the_floored_bound_the_run_measures_against(
                 tool_name=config.tool_name,
                 build_command_fn=_build_command_fn,
                 wrapper=config.system_fallback,
+                plan_id=_PLAN_ID,
                 capture_strategy=config.capture_strategy,
                 min_timeout=config.min_timeout,
             )

@@ -59,6 +59,10 @@ _GREEN_PYTEST_TAIL = '==================== 118 passed, 2 skipped in 87.5s ======
 _TOOL_DURATION = 87.5
 _WALL_CLOCK_SECONDS = 600
 
+#: The plan the driven builds are attributed to. ``plan_id`` is mandatory on
+#: ``execute_direct_base``.
+_PLAN_ID = 'timeout-evidence-test-plan'
+
 
 def _repo_root() -> Path:
     """Walk up from this file to the checkout root that owns pyproject.toml."""
@@ -188,6 +192,11 @@ def _drive_execute_direct_base(monkeypatch, tmp_path, stub_learned, floor, expli
         tool_name='python',
         build_command_fn=lambda wrapper, args, log_file: ([wrapper, args], f'{wrapper} {args}'),
         wrapper='./pw',
+        # ``create_log_file`` is stubbed signature-tolerantly above, so the
+        # attribution is inert for the timeout property under test — but
+        # ``execute_direct_base`` still requires it, because a build result
+        # with no owning plan is not a valid state.
+        plan_id=_PLAN_ID,
         min_timeout=floor,
         explicit_timeout=explicit_timeout,
     )

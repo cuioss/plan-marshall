@@ -16,7 +16,8 @@ the working directory is pinned there. The single deliberate exception mechanism
 is ``resolve_main_anchored_path`` (below), which always resolves to the main
 checkout for the bounded exception set — ``merge.lock``,
 ``run-configuration.json``, ``lessons-learned``, ``merge-queue.json``,
-``orchestrator`` — every other resolution in the codebase is cwd-relative.
+``orchestrator``, ``plans/NO_PLAN/build-results`` — every other resolution in
+the codebase is cwd-relative.
 
 Distinct from the per-repo main-anchored exception above is the machine-global
 home-root tier: ``home_root()`` returns a single ``~/.plan-marshall`` directory
@@ -32,7 +33,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeGuard
 
 
 def resolve_home() -> Path:
@@ -70,6 +71,30 @@ PLAN_DIR_NAME = os.environ.get('PLAN_DIR_NAME', '.plan')
 # validator carve-out is still that module's contract), so the constant has one
 # definition and two documented import surfaces.
 NO_PLAN_SENTINEL = 'NO_PLAN'
+
+
+def names_real_plan(plan_id: str | None) -> TypeGuard[str]:
+    """Return whether ``plan_id`` names an actual plan (not absent, not the sentinel).
+
+    The single predicate every "does this build belong to a plan?" guard reads.
+    It exists because ``NO_PLAN_SENTINEL`` is TRUTHY: once the build CLI resolves
+    an absent ``--plan-id`` to the sentinel, a bare ``if plan_id`` guard goes
+    vacuous and starts treating a plan-less build as plan-bound — enrolling it in
+    the shared build queue, writing into a ``NO_PLAN`` work log, or resolving a
+    footprint for a plan that does not exist. Naming the check once keeps that
+    reasoning in one place instead of at every guard site.
+
+    The sentinel remains a routing / ledger VALUE — ``plan_id or
+    NO_PLAN_SENTINEL`` is still the correct idiom where a row or a wire field
+    must never be null. This predicate is its complement: the guard for the code
+    paths that need a real plan DIRECTORY or store.
+
+    Declared as a ``TypeGuard[str]`` so the positive branch also narrows away
+    the ``None``, which is what the inline expression it replaced did for free.
+    """
+    return bool(plan_id) and plan_id != NO_PLAN_SENTINEL
+
+
 MARKETPLACE_BUNDLES_PATH = 'marketplace/bundles'
 # ``CLAUDE_DIR`` is retained ONLY as the global/project ``.claude`` settings
 # anchor (Gap 1 territory) and to compose the Claude-default fallback roots
@@ -465,7 +490,9 @@ def resolve_main_anchored_path(subpath: str | Path) -> Path:
     cross-session shared state MUST route through this function rather than
     re-implementing git-common-dir resolution. The bounded exception set is
     exactly: ``merge.lock``, ``run-configuration.json``, ``lessons-learned``,
-    ``merge-queue.json``, ``orchestrator``. (Machine-global state such as
+    ``merge-queue.json``, ``orchestrator``, ``plans/NO_PLAN/build-results``
+    (the plan-less build's results, which belong to no worktree — see
+    ``file_ops.get_build_results_dir``). (Machine-global state such as
     ``build-queue.json`` and ``credentials/`` is NOT in this set — it anchors to
     the host-wide ``home_root()`` tier, not a repository's main checkout.)
 

@@ -15,12 +15,16 @@ primitive. It exposes three verbs on the shared deterministic core
     freshness question arises asks "what is the current worktree state hash"
     through this verb, without re-implementing the hash or reaching into a
     private gate helper.
-  * ``append`` — the SOLE write path. ``--kind {build|change}`` selects the
+  * ``append`` — the SOLE write path. ``--kind {build|change|job}`` selects the
     entry shape; the verb stamps ``kind``, ``worktree_sha``, ``timestamp_iso``
     and the kind-specific fields via the core constructors, then appends exactly
     one JSONL line (pure-append). For ``change`` entries, ``--commit-sha`` and
     ``--changed-paths`` are stored VERBATIM — the verb does NOT compute changed
-    paths (git-sourcing is the caller's contract).
+    paths (git-sourcing is the caller's contract). For ``build`` and ``job``
+    entries an omitted ``--plan-id`` is recorded as the ``NO_PLAN`` sentinel:
+    this verb is the second production construction site for those two records
+    (the executor dispatch boundary is the first), so neither can emit a
+    ``plan_id: null`` row.
   * ``query`` — read the ledger (optional ``--kind`` / ``--exit-code`` filters),
     printing the matching entries as TOON. For inspection and tests; the
     freshness gate imports ``read_entries`` directly rather than shelling here.
@@ -57,6 +61,7 @@ from _ledger_core import (
     read_entries,
     resolve_ledger_path,
 )
+from marketplace_paths import NO_PLAN_SENTINEL
 from triage_helpers import (
     ErrorCode,
     create_workflow_cli,
@@ -97,9 +102,14 @@ def run_worktree_sha(args: Namespace) -> dict[str, Any]:
 
 
 def run_append(args: Namespace) -> dict[str, Any]:
-    """``append`` — append one ``kind=build`` or ``kind=change`` ledger entry."""
+    """``append`` — append one ``kind=build`` / ``kind=change`` / ``kind=job`` entry."""
     worktree_root = args.worktree_root or '.'
     worktree_sha = args.worktree_sha if args.worktree_sha else compute_worktree_sha(worktree_root)
+    # This verb is the SECOND production construction site for build_record /
+    # job_record (the executor dispatch boundary is the first). An omitted
+    # --plan-id resolves to the NO_PLAN sentinel here too, so the CLI path
+    # cannot emit a null-plan_id row either.
+    plan_id = args.plan_id or NO_PLAN_SENTINEL
 
     if args.kind == KIND_BUILD:
         if not args.notation:
@@ -119,7 +129,7 @@ def run_append(args: Namespace) -> dict[str, Any]:
             )
         record = build_record(
             notation=args.notation,
-            plan_id=args.plan_id,
+            plan_id=plan_id,
             args=args.args,
             exit_code=args.exit_code,
             status=args.status,
@@ -134,7 +144,7 @@ def run_append(args: Namespace) -> dict[str, Any]:
             )
         record = job_record(
             job_id=args.job_id,
-            plan_id=args.plan_id,
+            plan_id=plan_id,
             fingerprint=args.fingerprint or '',
             notation=args.notation or '',
             worktree_sha=worktree_sha,
@@ -250,9 +260,9 @@ def main() -> int:
         epilog="""
 Examples:
   manage-change-ledger.py worktree-sha [--worktree-root PATH]
-  manage-change-ledger.py append --kind build --notation NOTATION --exit-code 0 --status success [--plan-id ID] [--log-file PATH]
+  manage-change-ledger.py append --kind build --notation NOTATION --exit-code 0 --status success [--plan-id ID|NO_PLAN] [--log-file PATH]
   manage-change-ledger.py append --kind change --deliverable-id 2 --commit-sha SHA --changed-paths a,b,c
-  manage-change-ledger.py append --kind job --job-id JOB_ID [--plan-id ID] [--fingerprint FP] [--notation NOTATION]
+  manage-change-ledger.py append --kind job --job-id JOB_ID [--plan-id ID|NO_PLAN] [--fingerprint FP] [--notation NOTATION]
   manage-change-ledger.py query [--kind build|change|job] [--exit-code 0]
   manage-change-ledger.py classify-outcome --job-status killed --output-bytes 0 --worktree-sha SHA
 """,
@@ -299,7 +309,8 @@ Examples:
                     {
                         'flags': ['--plan-id'],
                         'dest': 'plan_id',
-                        'help': 'build: the plan_id (nullable — omit for an orchestrator global-tier build)',
+                        'help': 'build/job: the plan_id (never null — an omitted flag is recorded '
+                                'as the NO_PLAN sentinel, the plan-less orchestrator global-tier value)',
                     },
                     {
                         'flags': ['--args'],

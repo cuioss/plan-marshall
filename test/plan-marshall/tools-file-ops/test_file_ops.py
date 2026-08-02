@@ -29,6 +29,7 @@ from file_ops import (
     ensure_directory,
     generate_markdown_metadata,
     get_base_dir,
+    get_build_results_dir,
     get_executor_path,
     get_metadata_content_split,
     get_plan_dir,
@@ -44,6 +45,7 @@ from file_ops import (
     set_base_dir,
     update_markdown_metadata,
 )
+from marketplace_paths import NO_PLAN_SENTINEL
 from toon_parser import parse_toon
 
 
@@ -994,3 +996,268 @@ def test_read_json_unreadable_path_degrades_to_supplied_default(tmp_path):
     directory.mkdir()
 
     assert read_json(directory, default=[]) == []
+
+
+# =============================================================================
+# get_build_results_dir tests
+# =============================================================================
+#
+# The resolver is the SINGLE owner of the build-results path. Two branches with
+# deliberately different anchoring rules meet here, and the difference is the
+# whole point of the function:
+#
+#   * a real plan id  -> cwd-relative, via get_plan_dir, so a plan's results
+#     move with its plan directory into and out of the pinned worktree;
+#   * the NO_PLAN sentinel -> MAIN-checkout-anchored, because a plan-less build
+#     is owned by no worktree and cwd-relative resolution would scatter its
+#     results across every worktree that happened to run one.
+#
+# The sentinel branch's anchoring cannot be observed under PLAN_BASE_DIR: that
+# override collapses both branches onto the same base by design. The anchoring
+# test below therefore drops the override and drives the production branch —
+# against a REAL git anchor, because the production branch resolves the main
+# checkout with ``git rev-parse --git-common-dir``. See that test's docstring
+# for why a synthetic directory (or a monkeypatched ``_main_checkout_root``)
+# cannot stand in for one here.
+
+
+def test_get_build_results_dir_for_real_plan_is_under_that_plans_dir(tmp_path, monkeypatch):
+    """A real plan id resolves to ``{plan_dir}/build-results``."""
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+
+    result = get_build_results_dir('some-plan')
+
+    assert result == get_plan_dir('some-plan') / 'build-results'
+    assert result == tmp_path / 'plans' / 'some-plan' / 'build-results'
+
+
+def test_get_build_results_dir_separates_two_plans(tmp_path, monkeypatch):
+    """Two plans never share a build-results directory."""
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+
+    assert get_build_results_dir('plan-alpha') != get_build_results_dir('plan-beta')
+
+
+def test_get_build_results_dir_for_sentinel_uses_the_sentinel_plan_dir(tmp_path, monkeypatch):
+    """The sentinel resolves under a ``NO_PLAN`` plan directory, not a bare root."""
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+
+    result = get_build_results_dir(NO_PLAN_SENTINEL)
+
+    assert result == tmp_path / 'plans' / NO_PLAN_SENTINEL / 'build-results'
+
+
+def test_get_build_results_dir_does_not_create_the_directory(tmp_path, monkeypatch):
+    """The resolver is a pure path computation — writers create the directory."""
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+
+    result = get_build_results_dir('some-plan')
+
+    assert not result.exists()
+
+
+def _git(*args: str, cwd: Path) -> None:
+    """Run one git command in ``cwd``, failing loudly with git's own stderr."""
+    completed = subprocess.run(
+        ['git', *args],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+    if completed.returncode != 0:
+        raise AssertionError(
+            f'git {" ".join(args)} failed in {cwd} (exit {completed.returncode}): '
+            f'{completed.stderr.strip()}'
+        )
+
+
+@pytest.fixture
+def real_main_checkout_and_worktree(tmp_path):
+    """Build a REAL git main checkout and a REAL linked worktree beside it.
+
+    ``resolve_main_anchored_path`` resolves the main checkout by shelling out to
+    ``git rev-parse --git-common-dir``, so main-anchoring is a property of GIT
+    STATE, not of any directory layout the test can fabricate. Two ordinary
+    directories named ``main-checkout`` and ``some-worktree`` carry no git state
+    at all: git walks straight past them to the first real repository above, and
+    the resolver — correctly — anchors there instead. Only a genuine repository
+    plus a genuine linked worktree makes ``--git-common-dir`` report the intended
+    main root while cwd sits somewhere else, which is exactly the production
+    shape this test exists to pin.
+
+    Yields:
+        ``(main_root, worktree)`` — both resolved absolute paths, each already
+        carrying the ``.plan/local`` marker the cwd walk-up looks for.
+    """
+    main_root = (tmp_path / 'main-checkout').resolve()
+    main_root.mkdir()
+    _git('init', '--quiet', cwd=main_root)
+    _git(
+        '-c', 'user.email=tests@plan-marshall.invalid',
+        '-c', 'user.name=plan-marshall tests',
+        'commit', '--allow-empty', '--quiet', '-m', 'root',
+        cwd=main_root,
+    )
+
+    worktrees_parent = tmp_path / 'worktrees'
+    worktrees_parent.mkdir()
+    worktree = (worktrees_parent / 'some-worktree').resolve()
+    _git('worktree', 'add', '--quiet', '-b', 'feature/some-worktree', str(worktree), cwd=main_root)
+
+    (main_root / '.plan' / 'local').mkdir(parents=True)
+    (worktree / '.plan' / 'local').mkdir(parents=True)
+    return main_root, worktree
+
+
+def test_sentinel_is_main_anchored_not_cwd_anchored(real_main_checkout_and_worktree, monkeypatch):
+    """The sentinel path follows the MAIN checkout, not the current directory.
+
+    This is the assertion the PLAN_BASE_DIR-based tests above structurally
+    cannot make: under that override both branches resolve to the same base, so
+    a sentinel branch that had been (wrongly) written as cwd-relative would pass
+    every one of them. Dropping the override puts the resolver on its production
+    path, where cwd and the main checkout are two different directories and the
+    difference becomes observable.
+
+    The anchor is a REAL git checkout with a REAL linked worktree (see the
+    fixture) rather than a monkeypatched ``_main_checkout_root``. Patching that
+    private symbol asserts main-anchoring against a stub whose reachability
+    depends on which ``marketplace_paths`` module object happens to be live:
+    ``file_ops`` binds ``resolve_main_anchored_path`` at import time, and this
+    suite re-registers modules in ``sys.modules`` by stem, so the patched
+    attribute and the attribute the resolver actually reads can belong to two
+    different module dicts. The stub is then silently bypassed and the real git
+    resolver runs — an order-dependent failure that says nothing about the code
+    under test. Driving the unpatched resolver against real git state removes
+    the question entirely.
+
+    A real plan id is asserted alongside as the CONTROL: it must stay
+    cwd-relative. Without that counter-case, a resolver that made *everything*
+    main-anchored would satisfy the sentinel assertion while silently breaking
+    the ADR-002 rule that plan state moves with the pinned worktree.
+    """
+    main_root, worktree = real_main_checkout_and_worktree
+
+    monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
+    monkeypatch.setattr(file_ops, '_BASE_DIR_OVERRIDE', None)
+    monkeypatch.chdir(worktree)
+
+    # Act
+    sentinel_dir = get_build_results_dir(NO_PLAN_SENTINEL)
+    plan_dir = get_build_results_dir('some-plan')
+
+    # Assert: the sentinel followed main; the real plan followed cwd.
+    assert sentinel_dir == main_root / '.plan' / 'local' / 'plans' / NO_PLAN_SENTINEL / 'build-results'
+    assert plan_dir == worktree / '.plan' / 'local' / 'plans' / 'some-plan' / 'build-results'
+    assert worktree not in sentinel_dir.parents
+    assert main_root not in plan_dir.parents
+
+
+# =============================================================================
+# get_build_results_dir — plan_id containment guard
+# =============================================================================
+#
+# `plan_id` reaches this join from a --plan-id CLI flag, so the resolver is a
+# trust boundary: it is the single place a build turns caller-supplied text into
+# a filesystem path it will then create and write into. `create_log_file`
+# already constrains the OTHER caller-influenced component of that same path
+# (`scope`); these cases pin the `plan_id` half of the same containment.
+
+
+@pytest.mark.parametrize(
+    'escaping_plan_id',
+    [
+        '..',
+        '../outside',
+        '../../../../tmp/pm-escape',
+        'a/../../outside',
+    ],
+)
+def test_get_build_results_dir_rejects_traversal_plan_id(tmp_path, monkeypatch, escaping_plan_id):
+    """A plan id that walks out of the plans root is refused, not resolved.
+
+    Parametrized across four traversal shapes rather than one, because they fail
+    the containment check by different routes: a bare `..`, a `..` with a
+    trailing segment, a deep multi-segment climb, and a climb that only escapes
+    after normalization. A guard that happened to catch just the leading-`..`
+    spelling would pass a single-case test while leaving the normalizing shape
+    open.
+    """
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+
+    with pytest.raises(ValueError, match='escapes the plans root'):
+        get_build_results_dir(escaping_plan_id)
+
+
+def test_get_build_results_dir_rejects_absolute_plan_id(tmp_path, monkeypatch):
+    """An ABSOLUTE plan id is refused rather than silently discarding the root.
+
+    Distinct from the traversal cases above and not covered by them: pathlib
+    drops the left-hand operand entirely when the right-hand side is absolute,
+    so `plans / '/tmp/x'` is `/tmp/x` with no `..` anywhere for a
+    segment-inspecting guard to notice. Only a containment check on the RESOLVED
+    result catches it.
+    """
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+
+    with pytest.raises(ValueError, match='escapes the plans root'):
+        get_build_results_dir(str(tmp_path / 'outside-the-store'))
+
+
+def test_get_build_results_dir_rejects_plan_dir_symlinked_out_of_the_store(tmp_path, monkeypatch):
+    """A plan directory symlinked outside the store is refused.
+
+    The escape here is on DISK, not in the string: the plan id is ordinary
+    kebab-case and passes every identifier check, but the directory it names is
+    a symlink whose target sits outside the plans root. A guard written as a
+    character blacklist over the id would wave this through; resolving before
+    comparing is what catches it.
+    """
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    outside = tmp_path / 'outside-the-store'
+    outside.mkdir()
+    plans_root = tmp_path / 'plans'
+    plans_root.mkdir()
+    (plans_root / 'escaped-plan').symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(ValueError, match='escapes the plans root'):
+        get_build_results_dir('escaped-plan')
+
+
+def test_get_build_results_dir_allows_a_contained_symlinked_plan_dir(tmp_path, monkeypatch):
+    """A symlinked plan directory that stays INSIDE the store is still allowed.
+
+    The negative control for the case above. It pins the guard as a containment
+    check rather than a blanket "no symlinks" rule, so the rejection above is
+    attributable to the escape and not merely to the indirection.
+    """
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    plans_root = tmp_path / 'plans'
+    real_plan = plans_root / 'real-plan'
+    real_plan.mkdir(parents=True)
+    (plans_root / 'aliased-plan').symlink_to(real_plan, target_is_directory=True)
+
+    result = get_build_results_dir('aliased-plan')
+
+    # Returned UNRESOLVED, so the alias the caller named is preserved.
+    assert result == plans_root / 'aliased-plan' / 'build-results'
+
+
+def test_get_build_results_dir_accepts_every_plan_id_the_validator_accepts(tmp_path, monkeypatch):
+    """No id the canonical validator admits is rejected by the containment guard.
+
+    The guard sits downstream of `validate_plan_id`, so the two must not
+    disagree: an id that passes validation and is then refused here would be a
+    build that can never run. Asserted over the grammar's edge shapes (single
+    character, digits, repeated and trailing hyphens) plus the sentinel, which
+    takes the other branch of the resolver entirely.
+    """
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    accepted = ['a', 'a1', 'plan-1', 'a--b', 'trailing-', NO_PLAN_SENTINEL]
+
+    resolved = [get_build_results_dir(plan_id) for plan_id in accepted]
+
+    assert [path.name for path in resolved] == ['build-results'] * len(accepted)
+    assert [path.parent.name for path in resolved] == accepted

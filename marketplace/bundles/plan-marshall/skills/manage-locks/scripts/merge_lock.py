@@ -135,7 +135,8 @@ one shared lock and one shared queue. This script CALLS the single sanctioned
 main-anchored resolver :func:`marketplace_paths.resolve_main_anchored_path`, the
 ONE mechanism covering the per-repo bounded exception set (``merge.lock``,
 ``merge-queue.json``, ``run-configuration.json``, ``lessons-learned``,
-``orchestrator``). (The build-slot queue is NOT in this set — it is machine-global
+``orchestrator``, ``plans/NO_PLAN/build-results``). (The build-slot queue is NOT
+in this set — it is machine-global
 under ``home_root()`` per ADR-008, not per-repo main-anchored.) See ADR-002
 (``doc/adr/002-Plan-scoped_operations_move_into_a_cwd-pinned_hermetic_worktree.adoc``)
 and ``tools-script-executor/standards/cwd-policy.md`` for the contract.

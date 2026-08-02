@@ -11,6 +11,9 @@ Covers:
 * :func:`_build_cli.build_main` — dispatches to the resolver before the
   selected handler reads ``args.project_dir``, so all Bucket B build
   scripts (maven, gradle, npm, pyproject_build) inherit the contract.
+* :mod:`_build_class_roster` — the argparse-derived build-class operation
+  population, cross-checked against the executor's own
+  ``_BUILD_CLASS_PREFIXES`` declaration.
 * :func:`resolve_project_dir.resolve_project_dir` — the canonical
   four-state contract:
 
@@ -34,9 +37,20 @@ import argparse
 import pytest
 
 # Cross-skill imports — PYTHONPATH is configured by the root conftest.
+from _build_class_roster import (
+    PLAN_ID_FLAG,
+    PROJECT_DIR_FLAG,
+    _capture_parser,
+    _iter_wrapper_scripts,
+    _load_wrapper_module,
+    _subcommand_flag_pairs,
+    build_class_prefixes,
+    build_class_roster,
+)
 from _build_cli import (
     add_check_warnings_subparser,
     add_coverage_subparser,
+    add_discover_subparser,
     add_parse_subparser,
     add_project_dir_arg,
     add_run_subparser,
@@ -49,6 +63,7 @@ from _resolve_project_dir_fixtures import (
     CANONICAL_WORKTREE,
     MAIN_CHECKOUT_ROOT,
     NO_PLAN_SENTINEL,
+    assert_sentinel_is_not_a_routing_source,
     patch_main_checkout_root,
     patch_query_worktree_path,
 )
@@ -452,7 +467,6 @@ def test_build_main_routes_the_sentinel_to_the_main_checkout(monkeypatch):
         raise AssertionError('the NO_PLAN sentinel reached get-worktree-path')
 
     monkeypatch.setattr(_resolver_core, '_query_worktree_path', _forbidden)
-    monkeypatch.setattr(_resolver_core, 'cwd_checkout_root', lambda: MAIN_CHECKOUT_ROOT)
 
     captured: list[str] = []
 
@@ -468,7 +482,503 @@ def test_build_main_routes_the_sentinel_to_the_main_checkout(monkeypatch):
         'sys.argv',
         ['maven.py', 'run', '--command-args', 'verify', '--plan-id', NO_PLAN_SENTINEL],
     )
-    rc = build_main('Maven build', [register])
+    # Both ``cwd_checkout_root`` bindings are patched: the sentinel is resolved
+    # in ``resolve_project_dir``'s own namespace (it is not a routing source, so
+    # it never reaches the ``file_ops`` binding inside ``PlanContext``), and
+    # patching only one of the two is exactly the half-patched fixture that
+    # makes this test pass for the wrong reason.
+    with patch_main_checkout_root(MAIN_CHECKOUT_ROOT):
+        rc = build_main('Maven build', [register])
 
     assert rc == 0
     assert captured == [MAIN_CHECKOUT_ROOT]
+
+
+def test_sentinel_is_not_a_routing_source_alongside_project_dir():
+    """``--plan-id NO_PLAN --project-dir Y`` is legal and yields ``Y``.
+
+    The sentinel is TRUTHY, so a ``bool(plan_id)`` mutual-exclusion check would
+    class it as a supplied routing source and reject this pairing. That is the
+    combination a genuinely plan-less caller with an explicit tree needs, and
+    it is invisible to the sentinel test above (which supplies no
+    ``--project-dir`` and so passes either way).
+    """
+    from resolve_project_dir import resolve_project_dir
+
+    assert_sentinel_is_not_a_routing_source(
+        lambda plan_id, project_dir: resolve_project_dir(plan_id, project_dir, default='.')
+    )
+
+
+def test_real_plan_id_alongside_project_dir_still_raises():
+    """The exclusion check still fires for a REAL plan id — the carve-out is narrow.
+
+    Widening the check to exempt the sentinel must not disarm it: without this
+    counter-case, ``plan_id_supplied = False`` would satisfy the sentinel test
+    above while silently making the whole mutual-exclusion contract vacuous.
+    """
+    from resolve_project_dir import MutuallyExclusiveArgsError, resolve_project_dir
+
+    with pytest.raises(MutuallyExclusiveArgsError):
+        resolve_project_dir(CANONICAL_PLAN_ID, CANONICAL_PROJECT_DIR, default='.')
+
+
+# =============================================================================
+# Plan-id defaulting — asserted across the ENTIRE derived build-class roster
+# =============================================================================
+#
+# Every build-class dispatch appends a kind=build ledger row, so every one of
+# them must carry a resolved plan id. The check is written against the derived
+# roster rather than one sampled subcommand: a sampled check would keep passing
+# while a wrapper registered a subcommand outside the shared seam, which is the
+# exact population D3 had to widen. Each subcommand is driven through the REAL
+# ``build_main`` — the production resolution site — with its handler swapped for
+# a capture stub, so this is an end-to-end claim about the namespace a handler
+# actually receives, not about a helper called in isolation.
+
+
+def _placeholder_for(action) -> list[str]:
+    """Return the argv tokens that satisfy one required option ``action``.
+
+    Honours ``choices`` and ``type`` so the synthesized value survives argparse
+    validation for any required flag a wrapper declares, present or future.
+    """
+    if action.nargs == 0:
+        return [action.option_strings[0]]
+    if action.choices:
+        return [action.option_strings[0], str(sorted(map(str, action.choices))[0])]
+    if action.type is int:
+        return [action.option_strings[0], '0']
+    return [action.option_strings[0], 'x']
+
+
+def _minimal_argv(subcommand: str, subparser: argparse.ArgumentParser) -> list[str]:
+    """Build the shortest argv that parses for ``subcommand``, WITHOUT --plan-id.
+
+    Derived from the subparser's own required actions rather than hand-written
+    per subcommand, so a wrapper that adds a required flag stays covered. Both
+    forms of "required" are honoured: a flag carrying ``required=True``, and a
+    required mutually-exclusive GROUP (gradle's ``find-project`` declares one),
+    of which exactly one member is supplied.
+    """
+    argv = [subcommand]
+    satisfied: set[int] = set()
+    for group in getattr(subparser, '_mutually_exclusive_groups', []):
+        if not group.required or not group._group_actions:
+            continue
+        chosen = group._group_actions[0]
+        argv.extend(_placeholder_for(chosen))
+        satisfied.update(id(action) for action in group._group_actions)
+    for action in subparser._actions:
+        if action.required and action.option_strings and id(action) not in satisfied:
+            argv.extend(_placeholder_for(action))
+    return argv
+
+
+def _drive_build_main_capturing_namespace(module, argv: list[str], monkeypatch) -> argparse.Namespace:
+    """Run ``module.main()`` through the REAL ``build_main`` and return the namespace.
+
+    ``build_main`` is left in place — it is the code under test. Only the
+    handlers are swapped: each registration function is wrapped so that every
+    subparser it adds gets its ``func`` replaced by a capture stub, which keeps
+    the real parser construction and the real plan-id resolution while making
+    sure no actual build runs.
+    """
+    import _build_cli
+
+    real_build_main = _build_cli.build_main
+    captured: list[argparse.Namespace] = []
+
+    def _capture(args) -> int:
+        captured.append(args)
+        return 0
+
+    def _wrap(register_fn):
+        def wrapped(subparsers):
+            before = set(subparsers.choices)
+            register_fn(subparsers)
+            for name in set(subparsers.choices) - before:
+                subparsers.choices[name].set_defaults(func=_capture)
+
+        return wrapped
+
+    def _stub(description: str, subparser_fns: list) -> int:
+        return real_build_main(description, [_wrap(fn) for fn in subparser_fns])
+
+    monkeypatch.setattr(module, 'build_main', _stub)
+    monkeypatch.setattr('sys.argv', [module.__name__, *argv])
+    rc = module.main()
+
+    assert rc == 0, f'build_main returned {rc} for argv {argv!r}'
+    assert len(captured) == 1, f'expected exactly one handler call for {argv!r}, got {len(captured)}'
+    return captured[0]
+
+
+def test_every_build_class_subcommand_defaults_plan_id_to_the_sentinel(monkeypatch):
+    """THE defaulting gate: no build-class subcommand leaves ``plan_id`` unresolved.
+
+    Fail-first shape: before ``build_main`` resolved the flag, every one of these
+    namespaces carried ``plan_id=None`` and the kind=build ledger row it produced
+    was ``plan_id: null``. The population is the derived roster, so a subcommand
+    added to any wrapper joins this check with no edit here.
+    """
+    roster = build_class_roster()
+    population = [
+        (notation, subcommand)
+        for notation, subcommands in roster.items()
+        for subcommand in subcommands
+    ]
+    assert population, (
+        'The build-class roster derived an EMPTY population, so the defaulting '
+        'verdict below would hold vacuously.'
+    )
+
+    unresolved: list[str] = []
+    driven = 0
+    with patch_main_checkout_root():
+        for _bundle, _skill, script_path in _iter_wrapper_scripts():
+            module = _load_wrapper_module(script_path)
+            parser = _capture_parser(module)
+            for action in parser._actions:
+                if not isinstance(action, argparse._SubParsersAction):
+                    continue
+                for subcommand, subparser in action.choices.items():
+                    args = _drive_build_main_capturing_namespace(
+                        module, _minimal_argv(subcommand, subparser), monkeypatch
+                    )
+                    driven += 1
+                    if getattr(args, 'plan_id', None) != NO_PLAN_SENTINEL:
+                        unresolved.append(
+                            f'{script_path.stem}:{subcommand} -> {getattr(args, "plan_id", None)!r}'
+                        )
+
+    # The loop above re-derives the population so it can drive each subcommand;
+    # pinning its count against ``build_class_roster()`` keeps the two
+    # derivations honest. Without it, a drive loop that silently skipped a
+    # wrapper (an unparseable minimal argv, a wrapper whose main() short-circuits)
+    # would report "nothing unresolved" while covering less than it claims.
+    assert driven == len(population), (
+        f'Drove {driven} subcommand(s) but the derived roster holds '
+        f'{len(population)}; the drive loop and the roster disagree, so this '
+        'verdict covers less than the full build-class population.'
+    )
+
+    assert not unresolved, (
+        f'These build-class subcommands did NOT resolve an absent --plan-id to '
+        f'{NO_PLAN_SENTINEL!r}: {sorted(unresolved)}. Every build-class dispatch '
+        'appends a kind=build ledger row, so an unresolved plan id lands as '
+        'plan_id: null and the build becomes unattributable.'
+    )
+
+
+# =============================================================================
+# Build-class operation roster — the derived population
+# =============================================================================
+#
+# Everything below reads the population from ``_build_class_roster``, which
+# derives it by argparse introspection. No test here names a subcommand: a
+# literal name would re-introduce the hand-list the roster exists to replace,
+# and would keep passing while a wrapper silently gained or lost a subcommand.
+
+
+def _shared_helper_subcommands() -> set[str]:
+    """Return the subcommand names ``register_standard_subparsers`` alone emits.
+
+    Built by driving the declarative helper with every standard handler slot
+    filled, so the result is the MAXIMAL set the shared seam can contribute. Any
+    roster subcommand outside this set therefore came from a wrapper-local
+    ``extra_register_fns`` registration — which is what makes the comparison a
+    real coverage check rather than a name lookup.
+
+    The ``run_config_key_config`` slot takes a bare sentinel: the registration
+    only stores the object in the handler closure, and no handler runs here.
+    """
+    fns = register_standard_subparsers(
+        run_handler=lambda _args: 0,
+        parse_handler=lambda _path: ([], None, 'SUCCESS'),
+        coverage_handler=lambda _args: 0,
+        check_warnings_handler=lambda _args: 0,
+        discover_handler=lambda _root: [],
+        run_config_key_config=object(),
+    )
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(dest='command', required=True)
+    for fn in fns:
+        fn(subparsers)
+    return set(subparsers.choices)
+
+
+def test_build_class_roster_population_is_non_empty():
+    """A broken introspection path must fail, never pass as "nothing to check".
+
+    This is the load-bearing anti-vacuity guard for every roster-driven
+    assertion: a derivation that silently yielded an empty population would make
+    each of those assertions trivially true. Both levels are checked — at least
+    one wrapper, and at least one subcommand per wrapper.
+    """
+    roster = build_class_roster()
+
+    assert roster, (
+        'The build-class roster derived an EMPTY population. Every roster-driven '
+        'check downstream would pass vacuously — the wrapper discovery or the '
+        'parser capture in _build_class_roster is broken.'
+    )
+    empty = sorted(notation for notation, subcommands in roster.items() if not subcommands)
+    assert not empty, (
+        f'These build wrappers contributed no subcommands to the roster: {empty}. '
+        'A wrapper whose parser captured zero subcommands makes every per-subcommand '
+        'assertion vacuous for it.'
+    )
+
+
+def test_every_roster_notation_is_a_build_class_dispatch():
+    """No derived wrapper escapes the executor's build-class net.
+
+    The roster discovers wrappers structurally (anything routing through
+    ``_build_cli.build_main``), while ``_BUILD_CLASS_PREFIXES`` is the executor's
+    own declaration of which dispatches append a ``kind=build`` ledger row. A
+    wrapper the executor does not classify as build-class is real drift: its
+    builds would go unrecorded.
+    """
+    prefixes = build_class_prefixes()
+    unclassified = sorted(
+        notation
+        for notation in build_class_roster()
+        if not any(notation.startswith(prefix) for prefix in prefixes)
+    )
+
+    assert not unclassified, (
+        f'These build wrappers are not covered by the executor\'s '
+        f'_BUILD_CLASS_PREFIXES ({sorted(prefixes)}): {unclassified}. Their '
+        'dispatches would never append a kind=build change-ledger entry.'
+    )
+
+
+def test_every_build_class_prefix_is_represented_in_the_roster():
+    """Every declared build-class skill contributes a wrapper to the roster.
+
+    The converse direction of the check above, and the one that catches an
+    under-derived population: a prefix the executor declares but the roster never
+    reaches means a whole build tool is absent from every roster-driven
+    assertion, silently shrinking their coverage.
+    """
+    notations = list(build_class_roster())
+    unrepresented = sorted(
+        prefix
+        for prefix in build_class_prefixes()
+        if not any(notation.startswith(prefix) for notation in notations)
+    )
+
+    assert not unrepresented, (
+        f'These build-class prefixes contributed no wrapper to the roster: '
+        f'{unrepresented}. Derived notations were: {sorted(notations)}.'
+    )
+
+
+def test_roster_covers_extra_register_fn_subcommands():
+    """Subcommands registered outside the shared helper are in the population.
+
+    ``extra_register_fns`` is where the wrapper-local subparsers live — they are
+    built inside the wrapper scripts, entirely outside
+    ``register_standard_subparsers``. A roster derived only from the shared
+    seam's emission would omit them while still reporting a healthy-looking
+    population, so their presence is asserted explicitly.
+    """
+    shared = _shared_helper_subcommands()
+    beyond_shared = {
+        notation: sorted(set(subcommands) - shared)
+        for notation, subcommands in build_class_roster().items()
+        if set(subcommands) - shared
+    }
+
+    assert beyond_shared, (
+        'No roster subcommand falls outside the shared '
+        f'register_standard_subparsers emission ({sorted(shared)}), so the '
+        'extra_register_fns registrations were not captured by the derivation.'
+    )
+
+
+def test_flag_pair_boolean_is_derived_from_the_declared_options():
+    """The per-subcommand boolean reads the parser, and it discriminates.
+
+    Driven against a parser this test constructs, so the expected verdict is
+    known independently of any wrapper's current state — the check therefore
+    stays meaningful once the flag pair becomes universal across the real
+    population, where a "some subcommand reports False" assertion would go
+    vacuous (and then fail outright).
+    """
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(dest='command', required=True)
+    with_pair = subparsers.add_parser('with-pair')
+    add_project_dir_arg(with_pair)
+    subparsers.add_parser('without-pair')
+
+    pairs = _subcommand_flag_pairs(parser)
+
+    assert pairs == {'with-pair': True, 'without-pair': False}
+
+
+def test_flag_pair_boolean_requires_both_flags():
+    """Declaring only one half of the routing pair does NOT satisfy the boolean.
+
+    The pair is a two-state contract: a subcommand carrying ``--plan-id`` without
+    ``--project-dir`` (or the reverse) cannot honour it. A boolean that answered
+    on either flag alone would report such a subcommand as compliant.
+    """
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(dest='command', required=True)
+    subparsers.add_parser('plan-id-only').add_argument(PLAN_ID_FLAG, dest='plan_id')
+    subparsers.add_parser('project-dir-only').add_argument(PROJECT_DIR_FLAG, dest='project_dir')
+
+    pairs = _subcommand_flag_pairs(parser)
+
+    assert pairs == {'plan-id-only': False, 'project-dir-only': False}
+
+
+def test_every_build_class_subcommand_declares_the_routing_pair():
+    """THE universality gate: no build-class subcommand lacks the routing pair.
+
+    Written against the derived roster, never against a list of subcommand
+    names — a subcommand added to any wrapper (through the shared helper or
+    through ``extra_register_fns``) joins the population automatically and fails
+    here if it was registered without the pair. A hand-list would keep passing
+    while covering less than it claims.
+
+    The population size is asserted alongside the verdict because this
+    assertion's own shape (``no subcommand is missing the pair``) is trivially
+    satisfied by an empty population: an anti-vacuity re-check here keeps THIS
+    test meaningful on its own, rather than relying on a sibling test's guard
+    still existing.
+    """
+    roster = build_class_roster()
+    population = [
+        (notation, subcommand) for notation, subcommands in roster.items() for subcommand in subcommands
+    ]
+
+    assert population, (
+        'The build-class roster derived an EMPTY population, so the '
+        'universality verdict below would hold vacuously.'
+    )
+
+    missing = {
+        notation: sorted(name for name, declares_pair in subcommands.items() if not declares_pair)
+        for notation, subcommands in roster.items()
+        if not all(subcommands.values())
+    }
+
+    assert not missing, (
+        f'These build-class subcommands do not declare BOTH {PLAN_ID_FLAG} and '
+        f'{PROJECT_DIR_FLAG}: {missing}. Every build-class dispatch appends a '
+        'kind=build ledger row, so a subcommand without the pair cannot attribute '
+        'its build to the plan that caused it. Attach the pair through '
+        '_build_cli.add_project_dir_arg at the registration site.'
+    )
+
+
+# =============================================================================
+# ``--root`` precedence against the resolved routing root
+# =============================================================================
+#
+# ``discover`` is the one shared subcommand that declared a root-style flag
+# BEFORE it gained the routing pair, so the two sources have to be reconciled.
+# The rule (``_build_cli.resolve_root_arg``): an explicit ``--root`` wins
+# verbatim, otherwise the root ``build_main`` resolved from
+# ``--plan-id`` / ``--project-dir`` applies. The ``None`` sentinel default on
+# ``--root`` is what makes an explicit ``--root .`` distinguishable from an
+# unsupplied flag — without it, both would arrive as ``'.'``.
+
+_EXPLICIT_ROOT = '/tmp/test-explicit-discover-root'
+
+
+def _capturing_discover_fn(captured: list[str]):
+    """Return a discover handler that records the project root it was given."""
+
+    def discover(project_root: str) -> list:
+        captured.append(project_root)
+        return []
+
+    return discover
+
+
+def _run_discover(monkeypatch, argv_tail: list[str]) -> list[str]:
+    """Drive ``discover`` end-to-end through ``build_main`` and return the roots seen.
+
+    End-to-end rather than against the helper in isolation: the fallback value is
+    the root ``build_main`` writes into ``args.project_dir``, so a test that
+    called ``resolve_root_arg`` on a hand-built namespace would never exercise
+    the resolution step that supplies it.
+    """
+    captured: list[str] = []
+
+    def register(subparsers):
+        add_discover_subparser(subparsers, _capturing_discover_fn(captured))
+
+    monkeypatch.setattr('sys.argv', ['gradle.py', 'discover', *argv_tail])
+    rc = build_main('Gradle build', [register])
+
+    assert rc == 0
+    return captured
+
+
+def test_discover_root_default_is_the_none_sentinel():
+    """``--root`` defaults to ``None``, not to ``'.'``.
+
+    The sentinel IS the mechanism: with a ``'.'`` default the unsupplied case is
+    indistinguishable from an explicit ``--root .``, and the precedence rule
+    below could not be expressed at all.
+    """
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(dest='command', required=True)
+    add_discover_subparser(subparsers, lambda _root: [])
+
+    assert parser.parse_args(['discover']).root is None
+    assert parser.parse_args(['discover', '--root', '.']).root == '.'
+
+
+def test_discover_explicit_root_wins_over_resolved_project_dir(monkeypatch):
+    """An explicitly-supplied ``--root`` is used verbatim, routing flag or not."""
+    captured = _run_discover(
+        monkeypatch,
+        ['--root', _EXPLICIT_ROOT, '--project-dir', CANONICAL_PROJECT_DIR],
+    )
+
+    assert captured == [_EXPLICIT_ROOT]
+
+
+def test_discover_without_root_falls_back_to_resolved_project_dir(monkeypatch):
+    """Absent ``--root``, the root resolved from ``--project-dir`` applies."""
+    captured = _run_discover(monkeypatch, ['--project-dir', CANONICAL_PROJECT_DIR])
+
+    assert len(captured) == 1
+    assert captured[0].endswith(CANONICAL_PROJECT_DIR.lstrip('/'))
+
+
+def test_discover_without_root_follows_plan_id_to_the_worktree(monkeypatch):
+    """``discover --plan-id X`` enumerates X's worktree, not the caller's cwd.
+
+    This is the behaviour the deliverable exists to produce: before the pair was
+    declared, a plan-scoped discover silently enumerated whatever directory the
+    process happened to start in, and the resulting module list was attributed to
+    the plan anyway.
+    """
+    with patch_query_worktree_path(use_worktree=True, worktree_path=CANONICAL_WORKTREE):
+        captured = _run_discover(monkeypatch, ['--plan-id', CANONICAL_PLAN_ID])
+
+    assert len(captured) == 1
+    assert captured[0].endswith(CANONICAL_WORKTREE.lstrip('/'))
+
+
+def test_discover_explicit_dot_root_is_distinguishable_from_unsupplied(monkeypatch):
+    """An explicit ``--root .`` and an unsupplied ``--root`` take different paths.
+
+    The pair of runs is the whole point of the sentinel: ``--root .`` stays the
+    caller-relative ``'.'``, while omitting it resolves through the routing pair
+    to the checkout root. A ``'.'`` argparse default would collapse both runs to
+    the same value and make the distinction unobservable.
+    """
+    with patch_main_checkout_root(MAIN_CHECKOUT_ROOT):
+        explicit = _run_discover(monkeypatch, ['--root', '.'])
+        unsupplied = _run_discover(monkeypatch, [])
+
+    assert explicit == ['.']
+    assert unsupplied == [MAIN_CHECKOUT_ROOT]

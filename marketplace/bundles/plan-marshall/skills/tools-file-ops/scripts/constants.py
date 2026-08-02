@@ -266,6 +266,7 @@ CLEANUP_TARGET_TEMP = 'temp'
 CLEANUP_TARGET_LOGS = 'logs'
 CLEANUP_TARGET_ARCHIVED_PLANS = 'archived-plans'
 CLEANUP_TARGET_NO_PLAN_BODIES = 'no-plan-bodies'
+CLEANUP_TARGET_BUILD_RESULTS = 'build-results'
 
 CLEANUP_TARGETS = (
     CLEANUP_TARGET_ALL,
@@ -273,6 +274,7 @@ CLEANUP_TARGETS = (
     CLEANUP_TARGET_LOGS,
     CLEANUP_TARGET_ARCHIVED_PLANS,
     CLEANUP_TARGET_NO_PLAN_BODIES,
+    CLEANUP_TARGET_BUILD_RESULTS,
 )
 
 # ---------------------------------------------------------------------------

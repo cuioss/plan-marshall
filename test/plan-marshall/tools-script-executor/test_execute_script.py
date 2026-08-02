@@ -565,3 +565,208 @@ def test_end_to_end_script_failure_surfaces_stdout_in_work_log():
     assert after_detail.strip(), (
         f'detail= field rendered blank — the original undiagnosable symptom:\n{failure_lines[0]!r}'
     )
+
+
+# =============================================================================
+# Build-class dispatch boundary — the never-null plan_id / global-log contract
+# =============================================================================
+#
+# Two claims that pull in OPPOSITE directions and are asserted together, because
+# satisfying either one alone is the failure mode:
+#
+#   (a) the kind=build ledger row's plan_id is NEVER null — a plan-less build is
+#       recorded under the NO_PLAN sentinel, so every build is attributable;
+#   (b) the SCRIPT LOG for that same dispatch still resolves to the GLOBAL path,
+#       not a NO_PLAN-scoped one — the sentinel is a routing/ledger VALUE, never
+#       a plan-directory selector.
+#
+# Collapsing `_active_plan_id` and `_ledger_plan_id` into one variable satisfies
+# (a) and silently breaks (b), which is why the fixture below MATERIALIZES
+# plans/NO_PLAN/status.json: without that sentinel dir, get_log_path('NO_PLAN')
+# already falls back to the global path and assertion (b) would pass for the
+# wrong reason.
+
+_BUILD_CLASS_NOTATION = 'plan-marshall:build-pyproject:pyproject_build'
+
+
+def _run_build_class_dispatch(
+    tmp_path: Path,
+    plan_id_argv: list[str],
+    stub_stdout: str = 'status: success',
+    stub_exit_code: int = 0,
+) -> list[dict]:
+    """Dispatch a build-class stub through a materialized executor; return the ledger.
+
+    ``stub_stdout`` is what the stubbed build WRAPPER prints — the single
+    payload the dispatch boundary parses for ``status`` / ``command`` /
+    ``duration_seconds`` / ``outcome``. ``stub_exit_code`` is the process exit
+    the executor must propagate unchanged.
+    """
+    import json
+
+    stub_script = tmp_path / 'stub_build.py'
+    stub_script.write_text(
+        '#!/usr/bin/env python3\n'
+        'import sys\n'
+        f'sys.stdout.write({stub_stdout!r})\n'
+        f'sys.exit({stub_exit_code})\n'
+    )
+
+    executor_path = tmp_path / 'execute-script.py'
+    _materialize_executor(executor_path, _BUILD_CLASS_NOTATION, stub_script)
+
+    fixture = tmp_path / 'plan-base'
+    # The sentinel plan dir + its status.json sentinel: with these present,
+    # get_log_path('NO_PLAN', 'script') WOULD resolve to a NO_PLAN-scoped path,
+    # so the global-log assertion below can actually fail.
+    sentinel_logs = fixture / 'plans' / 'NO_PLAN'
+    sentinel_logs.mkdir(parents=True)
+    (sentinel_logs / 'status.json').write_text('{}')
+
+    env = _subprocess_env()
+    env['PLAN_BASE_DIR'] = str(fixture)
+    result = subprocess.run(
+        ['python3', str(executor_path), _BUILD_CLASS_NOTATION, *plan_id_argv],
+        capture_output=True,
+        text=True,
+        env=env,
+        cwd=str(Path(__file__).parent.parent.parent.parent),
+    )
+    assert result.returncode == stub_exit_code, (
+        f'the executor must propagate the stub exit code {stub_exit_code} unchanged, '
+        f'got {result.returncode} (stderr: {result.stderr!r})'
+    )
+
+    ledger = fixture / 'work' / 'change-ledger.jsonl'
+    assert ledger.is_file(), (
+        f'no kind=build ledger row was written at {ledger} '
+        f'(stderr: {result.stderr!r})'
+    )
+    return [json.loads(line) for line in ledger.read_text().splitlines() if line.strip()]
+
+
+def test_build_class_dispatch_without_plan_id_records_the_sentinel():
+    """(a) A build-class dispatch with NO ``--plan-id`` records ``NO_PLAN``.
+
+    Fail-first: before the resolution the row landed as ``plan_id: null`` and
+    the build was unattributable.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        entries = _run_build_class_dispatch(Path(tmp), [])
+
+    assert len(entries) == 1, f'expected exactly one kind=build row, got {entries!r}'
+    assert entries[0]['kind'] == 'build'
+    assert entries[0]['plan_id'] == 'NO_PLAN', (
+        f'plan-less build recorded plan_id={entries[0]["plan_id"]!r}; the row '
+        'must carry the NO_PLAN sentinel, never null.'
+    )
+
+
+def test_build_class_dispatch_without_plan_id_keeps_the_global_script_log():
+    """(b) The SAME dispatch keeps its script log on the GLOBAL path.
+
+    The sentinel is a routing/ledger value, not a plan-directory selector.
+    Passing it to ``get_log_path`` would silently redirect a plan-less build's
+    script log into ``plans/NO_PLAN/logs/`` — which this fixture materializes
+    precisely so the redirect is observable rather than masked by the
+    missing-directory fallback.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        entries = _run_build_class_dispatch(Path(tmp), [])
+
+    log_file = entries[0]['log_file']
+    assert 'NO_PLAN' not in log_file, (
+        f'the plan-less script log resolved to {log_file!r} — the sentinel was '
+        'handed to get_log_path and redirected the log into a plan dir.'
+    )
+    assert 'script-execution-' in log_file, (
+        f'expected the date-suffixed GLOBAL script log, got {log_file!r}'
+    )
+
+
+def test_build_class_dispatch_with_a_real_plan_id_stores_it_verbatim():
+    """The fallback never overwrites a supplied plan id — the carve-out is narrow.
+
+    Without this counter-case, a boundary that hard-coded ``NO_PLAN`` would
+    satisfy both assertions above while making every ledger row unattributable
+    in the opposite direction.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        entries = _run_build_class_dispatch(Path(tmp), ['--plan-id', 'a-real-plan'])
+
+    assert entries[0]['plan_id'] == 'a-real-plan'
+
+
+# =============================================================================
+# Build-class dispatch boundary — the wrapper-reported command / duration / outcome
+# =============================================================================
+#
+# The row records the invocation at TWO layers and both are asserted in the same
+# test: ``args`` is the EXECUTOR argv the caller supplied, ``command`` is what
+# the build WRAPPER resolved that argv into and actually ran. A boundary that
+# stamped the executor argv into ``command`` would satisfy a
+# "``command`` is populated" assertion on its own, so the check that bites is the
+# one pinning ``command`` to the wrapper's value AND ``args`` to the argv.
+
+
+def test_build_class_dispatch_records_the_wrapper_command_not_the_executor_argv():
+    """``command`` / ``duration_seconds`` / ``outcome`` come from the WRAPPER payload."""
+    wrapper_stdout = (
+        'status: success\n'
+        'command: "./pw verify plan-marshall"\n'
+        'duration_seconds: 42\n'
+        'log_file: /tmp/python-build.log\n'
+    )
+
+    with tempfile.TemporaryDirectory() as tmp:
+        entries = _run_build_class_dispatch(
+            Path(tmp),
+            ['run', '--command-args', 'verify plan-marshall', '--plan-id', 'a-real-plan'],
+            stub_stdout=wrapper_stdout,
+        )
+
+    entry = entries[0]
+    # The wrapper's resolved command line — NOT the executor argv.
+    assert entry['command'] == './pw verify plan-marshall', (
+        f'command={entry["command"]!r}; the boundary must record what the wrapper '
+        'resolved and ran, not what the caller typed.'
+    )
+    # The executor argv layer is intact and DIFFERENT from the resolved command.
+    assert entry['args'] == 'run --command-args verify plan-marshall --plan-id a-real-plan'
+    assert entry['args'] != entry['command'], (
+        'args and command collapsed onto one value — the two layers must stay '
+        'independently recoverable from a single row.'
+    )
+    # The wrapper's measured duration, coerced to a float.
+    assert entry['duration_seconds'] == 42.0
+    # The whole payload is retained verbatim as the outcome dict.
+    assert entry['outcome']['status'] == 'success'
+    assert entry['outcome']['command'] == './pw verify plan-marshall'
+    assert entry['outcome']['log_file'] == '/tmp/python-build.log'
+
+
+def test_build_class_dispatch_with_unparseable_stdout_still_writes_a_row():
+    """A payload the boundary cannot parse degrades — it never drops the row.
+
+    Two claims held together: the row is still written (with the three
+    wrapper-sourced fields absent and the exit-code-derived ``status``), and the
+    dispatched script's exit code reaches the caller unchanged. The ledger write
+    is fire-and-forget observability; the exit code is the user-visible
+    contract, and a parse failure must not touch it.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        entries = _run_build_class_dispatch(
+            Path(tmp),
+            ['--plan-id', 'a-real-plan'],
+            stub_stdout='>>> not a TOON payload at all <<<\n\tragged\n',
+            stub_exit_code=3,
+        )
+
+    entry = entries[0]
+    assert entry['kind'] == 'build'
+    assert entry['exit_code'] == 3
+    # Nonzero exit is authoritative over any (here unparseable) stdout claim.
+    assert entry['status'] == 'error'
+    # No wrapper facts are invented from an unusable payload.
+    assert entry['command'] is None
+    assert entry['duration_seconds'] is None

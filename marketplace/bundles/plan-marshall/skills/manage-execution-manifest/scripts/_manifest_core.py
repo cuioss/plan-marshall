@@ -9,12 +9,14 @@ step sets, canonical-verify role table) and the TOON read/write boundary
 normalization). Pure, log-free, and patched by no test; the hyphenated entry
 re-exports every name it and the test suite reference.
 
-This module also owns the two **owner-less recognition** rules the six-bucket
+This module also owns the three **owner-less recognition** rules the six-bucket
 classifier applies to content no ``BuildExtensionBase`` claims: documentation by
-suffix (:data:`_DOC_SUFFIXES` / :func:`_is_documentation_path`) and
+suffix (:data:`_DOC_SUFFIXES` / :func:`_is_documentation_path`),
 infrastructure config by family (:data:`_INFRA_CONFIG_BASENAME_GLOBS` /
 :data:`_INFRA_CONFIG_DIR_TREES` / :data:`_INFRA_CONFIG_PARENT_DIRS` /
-:func:`_is_infrastructure_config_path`).
+:func:`_is_infrastructure_config_path`), and templates by suffix
+(:data:`_TEMPLATE_SUFFIX` / :func:`_is_template_path` /
+:func:`_strip_template_suffix`).
 
 The infrastructure-config table names an owner-less **family**, not a suffix.
 Membership is deliberately NOT "any ``.yml``": it is anchored either on a
@@ -184,6 +186,45 @@ def _is_infrastructure_config_path(path: str) -> bool:
             if len(directories) >= len(parent)
         )
     return False
+
+
+# Template recognition — the third owner-less rule. A ``.template`` file is a
+# RENDER SOURCE: it has no build-system owner of its own (no BuildExtensionBase
+# declares a route for it, and none is invented), and its role follows from what
+# it renders INTO rather than from where it sits. The suffix is the whole
+# membership test — unlike the infrastructure-config family there is no location
+# or basename anchoring to do, because the suffix is already an unambiguous
+# marker of render-source intent in any tree.
+_TEMPLATE_SUFFIX = '.template'
+
+
+def _is_template_path(path: str) -> bool:
+    """Return True when ``path``'s basename ends in :data:`_TEMPLATE_SUFFIX`.
+
+    The generic, extension-agnostic template predicate consumed by
+    :func:`_classify_paths_via_extensions` as a fallback over the paths no build
+    extension claimed and neither earlier owner-less rule recognized. The test is
+    on the BASENAME, so a directory component that happens to end in the suffix
+    never makes its contents templates.
+    """
+    return PurePosixPath(path).name.endswith(_TEMPLATE_SUFFIX)
+
+
+def _strip_template_suffix(path: str) -> str:
+    """Return the render-target path for a template path.
+
+    Removes the trailing :data:`_TEMPLATE_SUFFIX` EXACTLY ONCE — a
+    ``foo.template.template`` source renders to ``foo.template``, which is itself
+    still a template, and collapsing both suffixes in one pass would classify it
+    against the wrong target. A path without the suffix is returned unchanged.
+
+    The result is a CLASSIFICATION KEY only. It is never reported as an
+    unclaimed path and never enters the change footprint; the original template
+    path is what carries the resolved role.
+    """
+    if path.endswith(_TEMPLATE_SUFFIX):
+        return path[: -len(_TEMPLATE_SUFFIX)]
+    return path
 
 
 # record-step contract. The execution log records per-step execution outcome
