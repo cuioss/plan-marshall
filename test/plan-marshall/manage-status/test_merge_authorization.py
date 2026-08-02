@@ -83,7 +83,8 @@ def _check_args(plan_id: str, head: str, gap_class: str = BARRIER_GAP) -> Namesp
 
 def _record_for(result: dict, kind: str) -> dict | None:
     """Return the per-record entry for ``kind``, or None when absent."""
-    for record in result['records']:
+    records: list[dict] = result['records']
+    for record in records:
         if record['kind'] == kind:
             return record
     return None
