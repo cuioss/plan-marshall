@@ -249,9 +249,17 @@ def test_empty_enriched_declaration_does_not_blank_the_graph():
     assert pipeline['graph']['graph']['edge_count'] > 0
 
 
-def test_graph_edges_are_stamped_by_the_resolvers_not_declared():
-    """The surviving edges carry resolver provenance, so they came through the
-    seam rather than from a declaration the precedence branch stamped."""
+def test_at_least_one_graph_edge_is_stamped_by_a_resolver_not_declared():
+    """At least one surviving edge carries resolver provenance, so the merged
+    graph is not composed purely of declarations the precedence branch stamped.
+
+    Deliberately existential, not universal: a declared edge and a cross-link
+    edge are both legitimate members of the merged graph, so requiring EVERY
+    edge to be resolver-stamped would assert something the contract does not
+    promise. The claim that bites is that the resolver contribution survives
+    the merge at all — which is exactly what the empty-declaration defect
+    reduced to zero.
+    """
     graph = _pipeline()['graph']
 
     resolver_stamped = [
