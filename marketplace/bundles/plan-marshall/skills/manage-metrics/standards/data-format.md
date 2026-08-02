@@ -45,7 +45,7 @@ The lattice has two directions and **both halves are first-class**. A field that
 | `output_tokens` | `cmd_enrich` | main-context-window | `message.usage.output_tokens`, same dual-source attribution | own bullet |
 | `cache_read_input_tokens` | `cmd_enrich` | main-context-window | `message.usage.cache_read_input_tokens`, same dual-source attribution | own bullet |
 | `cache_creation_input_tokens` | `cmd_enrich` | main-context-window | `message.usage.cache_creation_input_tokens`, same dual-source attribution | own bullet |
-| `billing_weighted_total` | `cmd_enrich` | derived-cost | `input + output + round(0.1 × cache_read) + round(1.25 × cache_creation)` over the four-field view | `Billing-weighted total` bullet |
+| `billing_weighted_total` | `cmd_enrich` | derived-cost | `input + output + round(0.1 × cache_read) + round(1.25 × cache_creation)` over the four-field view | First-class `Billing (cost)` column with its own Total, plus the `Billing-weighted total` bullet. Aggregated into the `total_billing_weighted` return field — never into `total_tokens` |
 | `inline_main_context_tokens` | `cmd_enrich` (written on BOTH the inline-only and the mixed branch) | main-context-window | `input + output + cache_creation`, EXCLUDING `cache_read`, so the figure matches the dispatched-`<usage>` total definition | `Inline main-context tokens` bullet, whose text states whether the figure stands alongside a dispatched total (mixed) or IS the folded `total_tokens` (inline) |
 | `exploration_tool_calls` | `cmd_enrich` | main-context-window | Count of phase-window tool calls classified *exploration* | own bullet, on a presence test |
 | `work_tool_calls` | `cmd_enrich` | main-context-window | Count classified *work* | own bullet, on a presence test |
@@ -427,12 +427,12 @@ The `generate` command produces a markdown report with per-phase rows:
 ```markdown
 # Plan Metrics: my-feature
 
-| Phase | Worked | Reported (wall) | Idle | Tokens          | Tool Uses |
-|-------|--------|-----------------|------|-----------------|-----------|
-| 1-init | 2m 30s | 3m 0s | 30s | 25,514 (inline) | 12 |
-| 2-refine | 4m 0s | 5m 30s | 1m 30s | 42,000 | 8 |
-| 3-outline | 7m 0s | 8m 15s | 1m 15s | 68,000 | 25 |
-| **Total** | **13m 30s** | **16m 45s** | **3m 15s** | **135,514** | **45** |
+| Phase | Worked | Reported (wall) | Idle | Tokens          | Tool Uses | Billing (cost) |
+|-------|--------|-----------------|------|-----------------|-----------|----------------|
+| 1-init | 2m 30s | 3m 0s | 30s | 25,514 (inline) | 12 | 41,003 |
+| 2-refine | 4m 0s | 5m 30s | 1m 30s | 42,000 | 8 | 78,000 |
+| 3-outline | 7m 0s | 8m 15s | 1m 15s | 68,000 | 25 | 96,400 |
+| **Total** | **13m 30s** | **16m 45s** | **3m 15s** | **135,514** | **45** | **215,403** |
 
 > Tokens population: an unmarked cell is a dispatched-subagent measurement. Marked `(inline)` — the phase dispatched nothing, so the cell is the main-context-window measurement enrich folded into total_tokens (also recorded under its own name as inline_main_context_tokens): 1-init. The **Total** therefore sums more than one population and is not a dispatched total.
 
@@ -443,7 +443,7 @@ The `generate` command produces a markdown report with per-phase rows:
 - Output tokens: 4,000
 - Cache read input tokens: 210,000
 - Cache creation input tokens: 12,000
-- **Billing-weighted total**: 78,000 (billing-cost figure, not a work-comparable measure — cache_read sums context re-reads across turns)
+- **Billing-weighted total**: 78,000 (derived-cost population — input + output + 0.1 × cache_read + 1.25 × cache_creation. What this phase cost to buy, over the main-context window; a different question from the dispatched work the Tokens column measures, so the two are never summed)
 ```
 
 The four-field usage view and the billing-weighted total are rendered per phase (each phase that carries them gets its own bullet list), not as a single plan-level "Session Enrichment" block. Each four-field bullet renders only when its underlying value is present and non-zero.
@@ -452,7 +452,9 @@ Every rendered `total_tokens` figure carries its population: the `Tokens` cell t
 
 ### Duration Formatting
 
-The Phase Breakdown table carries three time columns in this order — `Worked`, `Reported (wall)`, `Idle` — followed by `Tokens` and `Tool Uses`. Each cell is formatted as `Xm Ys`. A cell renders `-` when its underlying value is absent or zero (the symmetric per-cell present/absent rule), and the Total row sums `Worked`, `Reported (wall)`, and `Idle` independently. See the Worked, Reported (Wall), and Idle Time subsection above for how each quantity is derived.
+The Phase Breakdown table carries three time columns in this order — `Worked`, `Reported (wall)`, `Idle` — followed by `Tokens`, `Tool Uses`, and `Billing (cost)`. Each time cell is formatted as `Xm Ys`. A cell renders `-` when its underlying value is absent or zero (the symmetric per-cell present/absent rule), and **every column is aggregated independently** under the same symmetric rule, so each Total carries its own `(n=k/6)` partiality marker. See the Worked, Reported (Wall), and Idle Time subsection above for how each time quantity is derived.
+
+`Billing (cost)` carries the per-phase `billing_weighted_total` — a **derived-cost** measure of what the phase cost to buy over the main-context window. It is a different question from the dispatched work `Tokens` measures, so the two columns are never summed into one another: `generate` returns the billing aggregate as its own `total_billing_weighted` field alongside `total_tokens`.
 
 ## Valid Phase Names
 

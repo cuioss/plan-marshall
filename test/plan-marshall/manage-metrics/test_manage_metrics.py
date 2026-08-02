@@ -341,14 +341,27 @@ def _phase_breakdown_header(md_content: str) -> str:
 
 
 def test_generate_three_column_header_order(plan_context):
-    """The Phase Breakdown header lists Worked, Reported (wall), Idle in order."""
+    """The Phase Breakdown header lists the columns in their contract order.
+
+    Worked, Reported (wall), Idle come first, then the two work measures, then
+    the derived-cost column — which is last precisely because it is not a work
+    measure and must not read as one.
+    """
     cmd_start_phase(_ns_start_phase('metrics-gen-cols', '1-init'))
     cmd_end_phase(_ns_end_phase('metrics-gen-cols', '1-init', total_tokens=1000, tool_uses=3))
     cmd_generate(_ns_generate('metrics-gen-cols'))
 
     header = _phase_breakdown_header((plan_context.plan_dir_for('metrics-gen-cols') / 'metrics.md').read_text())
     cols = [c.strip() for c in header.strip('|').split('|')]
-    assert cols == ['Phase', 'Worked', 'Reported (wall)', 'Idle', 'Tokens', 'Tool Uses']
+    assert cols == [
+        'Phase',
+        'Worked',
+        'Reported (wall)',
+        'Idle',
+        'Tokens',
+        'Tool Uses',
+        'Billing (cost)',
+    ]
 
 
 def test_generate_worked_rollup_uses_max_not_sum(plan_context):
@@ -1549,8 +1562,13 @@ class TestGenerateRendersFourFieldUsage:
         assert '- **Cache read input tokens**: 10,000' in md
         assert '- **Cache creation input tokens**: 400' in md
         assert '- **Billing-weighted total**: 2,700' in md
-        # The honest-semantics note accompanies the billing line.
-        assert 'billing-cost figure, not a work-comparable measure' in md
+        # The bullet DEFINES the measure — names its population and its weights —
+        # rather than apologising for rendering it.
+        assert 'derived-cost population' in md
+        assert '0.1 × cache_read' in md
+        assert '1.25 × cache_creation' in md
+        # And the figure now also has a first-class column of its own.
+        assert 'Billing (cost)' in md
 
     def test_absent_four_fields_render_nothing(self, plan_context):
         """A phase without the four fields renders no usage-view lines (no '- **Input tokens**')."""
@@ -3360,3 +3378,114 @@ def test_boundary_bullet_declares_coverage_and_drops_the_false_parenthetical(pla
     assert 'did not win the maximum' in bullet
     # The retired claim must be gone from the whole report, not just this bullet.
     assert 'same-population max' not in report
+
+
+# =============================================================================
+# billing_weighted_total as a first-class cost figure
+# =============================================================================
+
+
+def _seed_billing_phases(plan_id: str, billing_by_phase: dict[str, int]) -> None:
+    """Record the given phases with tokens, then stamp a billing figure on each."""
+    for phase in billing_by_phase:
+        cmd_start_phase(_ns_start_phase(plan_id, phase))
+        cmd_end_phase(_ns_end_phase(plan_id, phase, total_tokens=10000))
+    data = manage_metrics.read_metrics_raw(plan_id)
+    for phase, billing in billing_by_phase.items():
+        data['phases'][phase]['billing_weighted_total'] = billing
+    manage_metrics.write_metrics(plan_id, data)
+
+
+def test_generate_returns_total_billing_weighted(plan_context):
+    """The cost aggregate is returned as its own field, never folded into tokens."""
+    plan_id = 'billing-return'
+    _seed_billing_phases(plan_id, {'4-plan': 41003, '5-execute': 78000})
+
+    result = cmd_generate(_ns_generate(plan_id))
+
+    assert result['total_billing_weighted'] == 119003
+    # The dispatched work total is the tokens sum, untouched by the cost figure.
+    assert result['total_tokens'] == 20000
+
+
+def test_billing_column_is_rendered_with_its_own_total(plan_context):
+    """The Billing column and its Total are distinct from every work column."""
+    plan_id = 'billing-column'
+    _seed_billing_phases(plan_id, {'4-plan': 41003, '5-execute': 78000})
+
+    cmd_generate(_ns_generate(plan_id))
+    report = (plan_context.plan_dir_for(plan_id) / 'metrics.md').read_text(encoding='utf-8')
+
+    header = next(line for line in report.splitlines() if line.startswith('| Phase '))
+    assert 'Billing (cost)' in header
+
+    total_row = next(line for line in report.splitlines() if line.startswith('| **Total**'))
+    cells = [cell.strip() for cell in total_row.strip().strip('|').split('|')]
+    # Last column is Billing; the Tokens column is unchanged by its presence.
+    assert '119,003' in cells[-1]
+    assert '20,000' in cells[-3]
+
+
+def test_billing_total_carries_the_partiality_marker(plan_context):
+    """A phase lacking the field makes the Billing Total render `(n=k/6)`.
+
+    The column inherits the same symmetric aggregation rule as every other
+    column, so a partial cost total cannot read as a complete one.
+    """
+    plan_id = 'billing-partial'
+    _seed_billing_phases(plan_id, {'4-plan': 41003})
+    # A second recorded phase with NO billing figure — the column is 1/6, and the
+    # phase itself renders `-`.
+    cmd_start_phase(_ns_start_phase(plan_id, '5-execute'))
+    cmd_end_phase(_ns_end_phase(plan_id, '5-execute', total_tokens=10000))
+
+    cmd_generate(_ns_generate(plan_id))
+    report = (plan_context.plan_dir_for(plan_id) / 'metrics.md').read_text(encoding='utf-8')
+
+    total_row = next(line for line in report.splitlines() if line.startswith('| **Total**'))
+    cells = [cell.strip() for cell in total_row.strip().strip('|').split('|')]
+    assert cells[-1] == '**41,003 (n=1/6)**'
+
+    execute_row = next(line for line in report.splitlines() if line.startswith('| 5-execute '))
+    execute_cells = [cell.strip() for cell in execute_row.strip().strip('|').split('|')]
+    assert execute_cells[-1] == '-'
+
+
+def test_billing_is_never_summed_into_the_tokens_total(plan_context):
+    """Matched control: a large cost figure leaves the dispatched Total unmoved.
+
+    The two measures answer different questions over different populations, so a
+    cost figure entering the work total would be a category error, not a bigger
+    number.
+    """
+    plan_id = 'billing-not-summed'
+    _seed_billing_phases(plan_id, {'5-execute': 5_000_000})
+
+    result = cmd_generate(_ns_generate(plan_id))
+    report = (plan_context.plan_dir_for(plan_id) / 'metrics.md').read_text(encoding='utf-8')
+
+    assert result['total_tokens'] == 10000
+    assert result['total_billing_weighted'] == 5_000_000
+    total_row = next(line for line in report.splitlines() if line.startswith('| **Total**'))
+    cells = [cell.strip() for cell in total_row.strip().strip('|').split('|')]
+    assert '10,000' in cells[-3]
+    assert '5,010,000' not in total_row
+
+
+def test_billing_bullet_states_the_measure_rather_than_apologising(plan_context):
+    """The bullet defines the figure; incomparability is a property, not a caveat."""
+    plan_id = 'billing-bullet'
+    _seed_billing_phases(plan_id, {'5-execute': 78000})
+
+    cmd_generate(_ns_generate(plan_id))
+    report = (plan_context.plan_dir_for(plan_id) / 'metrics.md').read_text(encoding='utf-8')
+
+    bullet = next(
+        line for line in report.splitlines() if line.startswith('- **Billing-weighted total**:')
+    )
+    assert 'derived-cost population' in bullet
+    assert '0.1 × cache_read' in bullet
+    assert '1.25 × cache_creation' in bullet
+    assert 'never summed' in bullet
+    # The retired disclaimer form is gone.
+    assert 'not a work-comparable measure' not in report

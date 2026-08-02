@@ -1072,6 +1072,11 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     idle_values: list[float] = []
     tokens_values: list[int] = []
     tool_uses_values: list[int] = []
+    # Billing is a DERIVED-COST measure, aggregated in its own column and never
+    # folded into the dispatched Tokens total: the two answer different questions
+    # (what the work cost to buy vs how much dispatched work was done) and are
+    # measured over different populations.
+    billing_values: list[int] = []
     # Phases whose Tokens cell renders a competing dispatched measure rather than
     # the recorded total_tokens. Each entry is (phase, winning_field, winning
     # value, the total_tokens it beat) so the annotation can name WHICH measure
@@ -1087,15 +1092,16 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     mixed_population_phases: list[str] = []
 
     # Two-pass build: first collect all rows as tuples, then pad to uniform per-column width.
-    header_row: tuple[str, str, str, str, str, str] = (
+    header_row: tuple[str, ...] = (
         'Phase',
         'Worked',
         'Reported (wall)',
         'Idle',
         'Tokens',
         'Tool Uses',
+        'Billing (cost)',
     )
-    data_rows: list[tuple[str, str, str, str, str, str]] = []
+    data_rows: list[tuple[str, ...]] = []
 
     for phase_name, phase in breakdown_rows:
         wall_ms = _wall_clock_ms(phase)
@@ -1159,7 +1165,14 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         if tool_uses is not None:
             tool_uses_values.append(int(tool_uses))
 
-        data_rows.append((phase_name, worked_str, wall_str, idle_str, tokens_str, tool_uses_str))
+        billing = _numeric(phase.get('billing_weighted_total'))
+        billing_str = f'{int(billing):,}' if billing is not None else '-'
+        if billing is not None:
+            billing_values.append(int(billing))
+
+        data_rows.append(
+            (phase_name, worked_str, wall_str, idle_str, tokens_str, tool_uses_str, billing_str)
+        )
 
     def _total_str(values: list, formatter, *, is_duration: bool = False) -> str:
         """Apply the symmetric Total aggregation rule.
@@ -1186,22 +1199,24 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     total_idle_str = _total_str(idle_values, lambda n: format_duration(float(n)), is_duration=True)
     total_tokens_str = _total_str(tokens_values, lambda n: f'{n:,}')
     total_tool_uses_str = _total_str(tool_uses_values, str)
+    total_billing_str = _total_str(billing_values, lambda n: f'{n:,}')
 
-    total_row: tuple[str, str, str, str, str, str] = (
+    total_row: tuple[str, ...] = (
         '**Total**',
         f'**{total_worked_str}**',
         f'**{total_wall_str}**',
         f'**{total_idle_str}**',
         f'**{total_tokens_str}**',
         f'**{total_tool_uses_str}**',
+        f'**{total_billing_str}**',
     )
 
     # Compute per-column widths across header, data rows, and the bold-marked Total row.
-    all_rows: list[tuple[str, str, str, str, str, str]] = [header_row, *data_rows, total_row]
+    all_rows: list[tuple[str, ...]] = [header_row, *data_rows, total_row]
     column_count = len(header_row)
     widths = [max(len(row[c]) for row in all_rows) for c in range(column_count)]
 
-    def _format_row(row: tuple[str, str, str, str, str, str]) -> str:
+    def _format_row(row: tuple[str, ...]) -> str:
         return '| ' + ' | '.join(cell.ljust(widths[i]) for i, cell in enumerate(row)) + ' |'
 
     separator_line = '|' + '|'.join('-' * (widths[i] + 2) for i in range(column_count)) + '|'
@@ -1371,10 +1386,16 @@ def cmd_generate(args: argparse.Namespace) -> dict:
 
         billing = phase.get('billing_weighted_total')
         if isinstance(billing, (int, float)) and billing:
+            # A DEFINITION, not a disclaimer. The previous wording read as an
+            # apology for rendering the figure at all; the incomparability with
+            # the work columns is a stated property of a first-class cost
+            # measure, not a reason to bury it.
             lines.append(
                 f'- **Billing-weighted total**: {int(billing):,} '
-                '(billing-cost figure, not a work-comparable measure — '
-                'cache_read sums context re-reads across turns)'
+                '(derived-cost population — input + output + 0.1 × cache_read + '
+                '1.25 × cache_creation. What this phase cost to buy, over the '
+                'main-context window; a different question from the dispatched '
+                'work the Tokens column measures, so the two are never summed)'
             )
 
         # Exploration-share counters. RENDER-GUARD DIVERGENCE, deliberate: these
@@ -1403,6 +1424,9 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     total_wall = sum(wall_values)
     total_idle = sum(idle_values)
     total_tokens = sum(tokens_values)
+    # Aggregated separately and returned as its own field — never added to
+    # total_tokens, which measures dispatched work rather than cost.
+    total_billing_weighted = sum(billing_values)
 
     return {
         'status': 'success',
@@ -1417,6 +1441,7 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         'total_wall_seconds': round(total_wall, 1),
         'total_idle_seconds': round(total_idle, 1),
         'total_tokens': total_tokens,
+        'total_billing_weighted': total_billing_weighted,
         'total_worked_formatted': format_duration(total_worked),
         'total_wall_formatted': format_duration(total_wall),
         'total_idle_formatted': format_duration(total_idle),
