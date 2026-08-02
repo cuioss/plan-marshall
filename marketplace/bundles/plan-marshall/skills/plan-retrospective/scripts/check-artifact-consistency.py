@@ -639,10 +639,19 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     )
     checks.append({'name': 'affected_files_recall', 'status': rec_status, 'message': rec_message})
     details['affected_files_recall'] = rec_details
-    # ``inconclusive`` is routed alongside ``fail`` the way the exact-match peer
-    # already does: an unmeasurable recall must reach the synthesizer, not be
-    # dropped into silence where it reads as a check that raised nothing.
-    if rec_status in ('fail', 'inconclusive'):
+    # Both verdicts reach ``findings`` — an unmeasurable recall must reach the
+    # synthesizer, not be dropped into silence where it reads as a check that
+    # raised nothing — but they reach it at DIFFERENT severities, exactly as the
+    # ``metrics_generated`` peer below routes its own pair. ``fail`` is a
+    # measured verdict (an Affected-files heading that parsed to no bullet, an
+    # unreadable references.json, or a recall percentage below the threshold),
+    # so it is an ``error``; ``inconclusive`` is the unmeasurable case (the
+    # footprint could not be resolved), so it is a ``warning``. Collapsing the
+    # two onto one severity erases the measured-vs-unmeasurable distinction the
+    # check exists to preserve.
+    if rec_status == 'fail':
+        findings.append({'severity': 'error', 'message': rec_message})
+    elif rec_status == 'inconclusive':
         findings.append({'severity': 'warning', 'message': rec_message})
 
     # Affected-files exact-match (strict variant, peer to recall).
