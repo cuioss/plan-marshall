@@ -118,11 +118,19 @@ def test_contentless_review_markers_only_declared_by_pr_agent():
     member-by-member rather than by one representative. An empty list for the
     other two bots is the fail-closed default that keeps their ingest behaviour
     byte-identical to before the field existed.
+
+    The two assertion entries are BARE INNER TEXT, not the ``**bold**`` a human
+    reads on GitHub: PR-Agent emits them inside an HTML ``<table>``, where no
+    markdown is rendered, so the raw API body carries ``<strong>…</strong>``. The
+    superseded ``**``-wrapped values matched no real body at all and left the
+    conjunction permanently unsatisfiable, so this assertion is exact rather than
+    a membership check — a re-wrapped value must turn it red here, at the data
+    boundary, and not only in the producer's behavioural suite.
     """
     assert bot_registry.contentless_review_markers('pr-agent') == [
         '## PR Reviewer Guide',
-        '**No security concerns identified**',
-        '**PR contains tests**',
+        'No security concerns identified',
+        'PR contains tests',
     ]
     assert bot_registry.contentless_review_markers('coderabbit') == []
     assert bot_registry.contentless_review_markers('sourcery') == []

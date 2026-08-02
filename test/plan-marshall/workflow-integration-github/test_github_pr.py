@@ -34,6 +34,7 @@ import sys
 import bot_registry
 import pytest
 from _bot_flag_derivation import derive_bot_flags
+from _pr_agent_guide_bodies import GUIDE_WITH_FINDING, OBSERVED_CLEAN_GUIDE
 
 from conftest import get_script_path, load_script_module, run_script
 
@@ -1930,31 +1931,12 @@ class TestBareClassificationFlags:
 
 _PR_AGENT_REQUIRED_MARKERS = bot_registry.contentless_review_markers('pr-agent')
 
-# PR-Agent's Guide in its CLEAN shape: the heading plus both clean assertions, and
-# no ``<details>`` focus-area finding. This is the one body the producer may drop.
-_PR_AGENT_CLEAN_GUIDE = (
-    '## PR Reviewer Guide 🔍\n'
-    '\n'
-    'Here are some key observations to aid the review process:\n'
-    '\n'
-    '| | |\n'
-    '|---|---|\n'
-    '| 🔒 | **No security concerns identified** |\n'
-    '| 🧪 | **PR contains tests** |\n'
-)
-
-# The same clean assertions PLUS one focus-area finding. ``<details>`` is the
-# structural carrier of every finding PR-Agent emits, so its presence proves the
-# Guide has content whatever the clean rows say.
-_PR_AGENT_GUIDE_WITH_FINDING = _PR_AGENT_CLEAN_GUIDE + (
-    '\n'
-    '| ⚡ | **Recommended focus areas for review** |\n'
-    '\n'
-    '<details><summary>Unbounded retry</summary>\n'
-    '<strong>The retry loop has no ceiling</strong>\n'
-    'A persistent 500 will spin forever.\n'
-    '</details>\n'
-)
+# Both Guide bodies come from ``test/_shared/_pr_agent_guide_bodies.py`` — the
+# CLEAN one is the verbatim body observed on #1078 (an HTML ``<table>`` of
+# ``<strong>`` assertions, NOT the markdown rendering a human reads), and the
+# finding-bearing one is rendered from the same markup with one ``<details>``
+# added. A local literal is what previously let these units and the registry
+# agree with each other while matching no real body at all.
 
 
 def test_clean_guide_fixture_carries_every_declared_required_marker():
@@ -1967,7 +1949,7 @@ def test_clean_guide_fixture_carries_every_declared_required_marker():
     """
     assert _PR_AGENT_REQUIRED_MARKERS
     for marker in _PR_AGENT_REQUIRED_MARKERS:
-        assert marker in _PR_AGENT_CLEAN_GUIDE
+        assert marker in OBSERVED_CLEAN_GUIDE
 
 
 @pytest.mark.parametrize('bot_kind', ['coderabbit', 'sourcery', 'not-a-registered-bot', None])
@@ -1981,12 +1963,12 @@ def test_empty_required_markers_short_circuit_to_false(bot_kind):
     short-circuit and not from a failed marker match.
     """
     assert bot_registry.contentless_review_markers(bot_kind or '') == []
-    assert github_pr._is_contentless_boilerplate(_PR_AGENT_CLEAN_GUIDE, bot_kind) is False
+    assert github_pr._is_contentless_boilerplate(OBSERVED_CLEAN_GUIDE, bot_kind) is False
 
 
 def test_clean_guide_is_contentless_boilerplate():
     """Every required marker present and no disqualifying marker — the drop case."""
-    assert github_pr._is_contentless_boilerplate(_PR_AGENT_CLEAN_GUIDE, 'pr-agent') is True
+    assert github_pr._is_contentless_boilerplate(OBSERVED_CLEAN_GUIDE, 'pr-agent') is True
 
 
 @pytest.mark.parametrize('missing', _PR_AGENT_REQUIRED_MARKERS)
@@ -1999,7 +1981,7 @@ def test_removing_any_single_required_marker_fails_the_conjunction(missing):
     instead of silently widening the suppression. The docs-only PR — whose Guide
     carries the 🔒 clean assertion but not the 🧪 one — is exactly this shape.
     """
-    body = _PR_AGENT_CLEAN_GUIDE.replace(missing, '')
+    body = OBSERVED_CLEAN_GUIDE.replace(missing, '')
 
     assert missing not in body
     assert github_pr._is_contentless_boilerplate(body, 'pr-agent') is False
@@ -2013,10 +1995,10 @@ def test_any_actionable_marker_vetoes_the_drop():
     content, and dropping it would destroy real review signal.
     """
     for marker in _PR_AGENT_REQUIRED_MARKERS:
-        assert marker in _PR_AGENT_GUIDE_WITH_FINDING
-    assert '<details>' in _PR_AGENT_GUIDE_WITH_FINDING
+        assert marker in GUIDE_WITH_FINDING
+    assert '<details>' in GUIDE_WITH_FINDING
 
-    assert github_pr._is_contentless_boilerplate(_PR_AGENT_GUIDE_WITH_FINDING, 'pr-agent') is False
+    assert github_pr._is_contentless_boilerplate(GUIDE_WITH_FINDING, 'pr-agent') is False
 
 
 def test_registry_markers_are_stripped_before_matching(monkeypatch):
@@ -2040,10 +2022,10 @@ def test_registry_markers_are_stripped_before_matching(monkeypatch):
         lambda bot_kind: ['  <details>  '],
     )
 
-    assert github_pr._is_contentless_boilerplate(_PR_AGENT_CLEAN_GUIDE, 'pr-agent') is True
+    assert github_pr._is_contentless_boilerplate(OBSERVED_CLEAN_GUIDE, 'pr-agent') is True
     # The disqualifying marker is stripped on the same path — a padded veto entry
     # must still veto, not silently stop matching.
-    assert github_pr._is_contentless_boilerplate(_PR_AGENT_GUIDE_WITH_FINDING, 'pr-agent') is False
+    assert github_pr._is_contentless_boilerplate(GUIDE_WITH_FINDING, 'pr-agent') is False
 
 
 def test_obvious_noise_drops_the_clean_guide_via_layer_three():
@@ -2052,8 +2034,8 @@ def test_obvious_noise_drops_the_clean_guide_via_layer_three():
     Layer 3 is reached through the public pre-filter, not only through the helper
     — the wiring is what makes the fix take effect in ``cmd_fetch_findings``.
     """
-    assert github_pr._is_obvious_noise(_PR_AGENT_CLEAN_GUIDE, 'pr-agent') is True
-    assert github_pr._is_obvious_noise(_PR_AGENT_GUIDE_WITH_FINDING, 'pr-agent') is False
+    assert github_pr._is_obvious_noise(OBSERVED_CLEAN_GUIDE, 'pr-agent') is True
+    assert github_pr._is_obvious_noise(GUIDE_WITH_FINDING, 'pr-agent') is False
 
 
 def test_layer_three_is_consulted_only_after_layers_one_and_two_miss(monkeypatch):
@@ -2082,5 +2064,5 @@ def test_layer_three_is_consulted_only_after_layers_one_and_two_miss(monkeypatch
     assert calls == []
 
     # Neither matches — only now is layer 3 consulted.
-    assert github_pr._is_obvious_noise(_PR_AGENT_CLEAN_GUIDE, 'pr-agent') is True
+    assert github_pr._is_obvious_noise(OBSERVED_CLEAN_GUIDE, 'pr-agent') is True
     assert calls == ['pr-agent']

@@ -18,7 +18,7 @@ makes it distinct from the co-located unit tests: ``test_github_pr.py`` drives
 arms here run ``cmd_fetch_findings``'s genuine ``_findings_core`` round-trip
 against a real findings store and feed its outcome into ``aggregate()``.
 
-Six arms:
+Seven arms:
 
 1. **Clean-PR arm** — the fully clean Guide is dropped, files no finding, and —
    the load-bearing assertion — PR-Agent is STILL credited as a participant.
@@ -40,6 +40,16 @@ Six arms:
    credited again. Both directions are asserted because the drop removes the
    comment from the findings store, which is where ``_has_update_movement``'s
    first-presence arm used to read its evidence from.
+7. **Rendering-invariance arm** — the drop must not depend on which emphasis
+   PR-Agent emits. The verbatim observed #1078 body (HTML ``<strong>`` inside a
+   ``<table>``) and the same Guide in GitHub's markdown ``**`` rendering are both
+   dropped, which is the whole reason the registry markers are BARE INNER TEXT.
+   The HTML case is the anti-vacuity pin: it is red against the superseded
+   ``**``-wrapped markers, which matched no real body at all.
+
+Every Guide body comes from ``test/_shared/_pr_agent_guide_bodies.py`` rather
+than from a literal here — see that module for why a per-suite fixture is what
+made this suite vacuous once already.
 
 The findings store is REAL (isolated via the ``plan_context`` ``PLAN_BASE_DIR``
 sandbox); only the GitHub provider surface (``check_auth``,
@@ -57,6 +67,17 @@ import sys
 
 import bot_registry
 import pytest
+from _pr_agent_guide_bodies import (
+    CLEAN_FOCUS_ROW,
+    CLEAN_SECURITY_ROW,
+    CLEAN_TESTS_ROW,
+    GUIDE_DEVIATING_ASSERTION,
+    GUIDE_DOCS_ONLY,
+    GUIDE_WITH_FINDING,
+    OBSERVED_CLEAN_GUIDE,
+    RENDERED_MARKDOWN_GUIDE,
+    guide_body,
+)
 
 from conftest import PROJECT_ROOT, load_script_module
 
@@ -89,46 +110,13 @@ _PR_AGENT_REQUIRED_MARKERS = bot_registry.contentless_review_markers('pr-agent')
 
 
 # ---------------------------------------------------------------------------
-# Guide bodies — the four observable shapes
+# Guide bodies
 # ---------------------------------------------------------------------------
-
-_GUIDE_HEADER = (
-    '## PR Reviewer Guide 🔍\n'
-    '\n'
-    'Here are some key observations to aid the review process:\n'
-    '\n'
-    '| | |\n'
-    '|---|---|\n'
-)
-
-# (1) The fully clean Guide: both clean assertions, no <details>.
-_CLEAN_GUIDE = _GUIDE_HEADER + (
-    '| 🔒 | **No security concerns identified** |\n'
-    '| 🧪 | **PR contains tests** |\n'
-)
-
-# (2) The same clean assertions PLUS one focus-area finding.
-_GUIDE_WITH_FINDING = _CLEAN_GUIDE + (
-    '| ⚡ | **Recommended focus areas for review** |\n'
-    '\n'
-    '<details><summary>Unbounded retry</summary>\n'
-    '<strong>The retry loop has no ceiling</strong>\n'
-    'A persistent upstream failure will spin forever.\n'
-    '</details>\n'
-)
-
-# (3) A CHANGED required marker: the 🔒 row names a concrete concern instead of
-# asserting a clean result. No <details> anywhere.
-_GUIDE_DEVIATING_ASSERTION = _GUIDE_HEADER + (
-    '| 🔒 | **Token value reaches the log sink at L42** |\n'
-    '| 🧪 | **PR contains tests** |\n'
-)
-
-# (4) A MISSING required marker: the docs-only shape — the 🔒 clean assertion is
-# present, the 🧪 one is absent entirely.
-_GUIDE_DOCS_ONLY = _GUIDE_HEADER + (
-    '| 🔒 | **No security concerns identified** |\n'
-)
+#
+# The four observable shapes (clean / with-finding / deviating-marker /
+# missing-marker) and the verbatim observed #1078 body live in
+# ``test/_shared/_pr_agent_guide_bodies.py``, shared with the layer-3 predicate
+# units in ``test_github_pr.py``. Only the provider-record wrapper is local.
 
 
 def _guide_comment(body, comment_id='guide-1', *, created_at=None, updated_at=None):
@@ -187,6 +175,19 @@ def _raw_body(finding):
     return raw_input.get('body', '')
 
 
+def test_guide_renderer_reproduces_the_observed_body_byte_for_byte():
+    """The renderer the derived shapes are built from matches the captured evidence.
+
+    Arms 2, 3 and 4 feed RENDERED bodies, so their realism rests entirely on
+    ``guide_body``/``guide_row`` emitting PR-Agent's actual markup. Only arm 1
+    and arm 7 feed the verbatim capture, and a renderer that drifted from it
+    would leave those three arms exercising a shape the bot never emits — which
+    is precisely the failure the ``**``-wrapped fixtures already caused once.
+    Equality against the byte-exact literal is what forecloses it.
+    """
+    assert guide_body(CLEAN_TESTS_ROW, CLEAN_SECURITY_ROW, CLEAN_FOCUS_ROW) == OBSERVED_CLEAN_GUIDE
+
+
 def test_guide_fixtures_track_the_declared_marker_set():
     """The four Guide shapes stay in step with the registry they exercise.
 
@@ -197,14 +198,14 @@ def test_guide_fixtures_track_the_declared_marker_set():
     """
     assert _PR_AGENT_REQUIRED_MARKERS
     for marker in _PR_AGENT_REQUIRED_MARKERS:
-        assert marker in _CLEAN_GUIDE
-        assert marker in _GUIDE_WITH_FINDING
-    assert '<details>' in _GUIDE_WITH_FINDING
-    assert '<details>' not in _CLEAN_GUIDE
+        assert marker in OBSERVED_CLEAN_GUIDE
+        assert marker in GUIDE_WITH_FINDING
+    assert '<details>' in GUIDE_WITH_FINDING
+    assert '<details>' not in OBSERVED_CLEAN_GUIDE
     # Arms 3 and 4 each break the conjunction in a DIFFERENT way — one marker
     # changed, one marker removed — so exactly one required marker is absent from
     # each and neither carries a disqualifying marker.
-    for deviating in (_GUIDE_DEVIATING_ASSERTION, _GUIDE_DOCS_ONLY):
+    for deviating in (GUIDE_DEVIATING_ASSERTION, GUIDE_DOCS_ONLY):
         absent = [m for m in _PR_AGENT_REQUIRED_MARKERS if m not in deviating]
         assert len(absent) == 1
         assert '<details>' not in deviating
@@ -227,7 +228,7 @@ def test_clean_guide_is_dropped_but_still_credits_participation(plan_context, mo
     failure and hold the finalize step open forever.
     """
     plan_id = 'pr-agent-clean-guide-dropped'
-    _patch_provider(monkeypatch, [_guide_comment(_CLEAN_GUIDE)])
+    _patch_provider(monkeypatch, [_guide_comment(OBSERVED_CLEAN_GUIDE)])
 
     result = _run_fetch(1201, plan_id)
 
@@ -264,7 +265,7 @@ def test_guide_with_a_finding_is_stored_byte_identical(plan_context, monkeypatch
     triaging the finding sees exactly what the reviewer wrote.
     """
     plan_id = 'pr-agent-guide-with-finding-stored'
-    _patch_provider(monkeypatch, [_guide_comment(_GUIDE_WITH_FINDING)])
+    _patch_provider(monkeypatch, [_guide_comment(GUIDE_WITH_FINDING)])
 
     result = _run_fetch(1202, plan_id)
 
@@ -276,7 +277,7 @@ def test_guide_with_a_finding_is_stored_byte_identical(plan_context, monkeypatch
 
     stored = _stored(plan_id)
     assert len(stored) == 1
-    assert _raw_body(stored[0]) == _GUIDE_WITH_FINDING
+    assert _raw_body(stored[0]) == GUIDE_WITH_FINDING
 
 
 # ---------------------------------------------------------------------------
@@ -287,8 +288,8 @@ def test_guide_with_a_finding_is_stored_byte_identical(plan_context, monkeypatch
 @pytest.mark.parametrize(
     ('arm', 'body'),
     [
-        ('deviating-assertion', _GUIDE_DEVIATING_ASSERTION),
-        ('docs-only-partial-clean', _GUIDE_DOCS_ONLY),
+        ('deviating-assertion', GUIDE_DEVIATING_ASSERTION),
+        ('docs-only-partial-clean', GUIDE_DOCS_ONLY),
     ],
     # Explicit ids: without them pytest derives the id from the `body` operand and
     # inlines the whole escaped Guide into every test id. `arm` doubles as the
@@ -328,6 +329,54 @@ def test_guide_missing_or_changing_a_required_marker_is_stored(plan_context, mon
 
 
 # ---------------------------------------------------------------------------
+# Arm 7 — the drop is invariant across the two emphasis renderings
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ('rendering', 'body'),
+    [
+        ('html-strong-observed', OBSERVED_CLEAN_GUIDE),
+        ('markdown-bold', RENDERED_MARKDOWN_GUIDE),
+    ],
+    # Explicit ids for the same reason arms 3/4 need them: without them pytest
+    # inlines the whole escaped Guide into the test id, and `rendering` doubles
+    # as the plan_id suffix, which must satisfy `validate_plan_id`.
+    ids=['html-strong-observed', 'markdown-bold'],
+)
+def test_clean_guide_is_dropped_in_either_emphasis_rendering(plan_context, monkeypatch, rendering, body):
+    """The clean Guide is dropped whether its assertions are ``<strong>`` or ``**``.
+
+    This is the ANTI-VACUITY pin, and the reason the registry markers are bare
+    inner text rather than a rendering:
+
+    - ``html-strong-observed`` feeds the VERBATIM body PR-Agent posted on #1078.
+      Its assertions sit inside an HTML ``<table>``, where GitHub renders no
+      markdown, so the raw API body carries ``<strong>PR contains tests</strong>``.
+      Against the superseded ``**PR contains tests**`` markers two of the three
+      required entries could never match, the conjunction was dead, and the whole
+      layer was inert on every real clean Guide — while every fixture-driven test
+      stayed green because the fixtures were written in the rendering too. This
+      case is red against those markers.
+    - ``markdown-bold`` feeds the same Guide as GitHub RENDERS it. That shape has
+      never been observed from this bot, so it is not a behavioural claim about
+      it — it pins the PROPERTY the bare form was chosen for: the marker is a
+      substring of both renderings, so the drop cannot be re-broken by an
+      upstream change of emphasis.
+    """
+    plan_id = f'pr-agent-guide-rendering-{rendering}'
+    _patch_provider(monkeypatch, [_guide_comment(body)])
+
+    result = _run_fetch(1207, plan_id)
+
+    assert result['status'] == 'success'
+    assert result['count_stored'] == 0
+    assert result['count_skipped_noise'] == 1
+    assert result['producer_mismatch_hash_id'] is None
+    assert _stored(plan_id) == []
+
+
+# ---------------------------------------------------------------------------
 # Arm 6 — the drop must not make participation UNCONDITIONAL
 # ---------------------------------------------------------------------------
 #
@@ -362,7 +411,7 @@ def test_second_fetch_of_an_unchanged_guide_does_not_re_credit_participation(pla
     precisely the signal the drop removed from the findings store.
     """
     plan_id = 'pr-agent-guide-unchanged-second-fetch'
-    guide = _guide_comment(_CLEAN_GUIDE, created_at=_CREATED_AT, updated_at=_CREATED_AT)
+    guide = _guide_comment(OBSERVED_CLEAN_GUIDE, created_at=_CREATED_AT, updated_at=_CREATED_AT)
     _patch_provider(monkeypatch, [guide])
 
     first = _run_fetch(1205, plan_id)
@@ -398,13 +447,13 @@ def test_guide_edited_between_fetches_credits_participation_again(plan_context, 
     movement arm on the drop path specifically, not on the stored-finding path.
     """
     plan_id = 'pr-agent-guide-edited-between-fetches'
-    unchanged = _guide_comment(_CLEAN_GUIDE, created_at=_CREATED_AT, updated_at=_CREATED_AT)
+    unchanged = _guide_comment(OBSERVED_CLEAN_GUIDE, created_at=_CREATED_AT, updated_at=_CREATED_AT)
     _patch_provider(monkeypatch, [unchanged])
     first = _run_fetch(1206, plan_id)
     assert {'bot_kind': 'pr-agent', 'evidence_kind': 'issue_comment'} in first['participated_bots']
 
     # Same comment_id — the bot edited the Guide in place rather than posting anew.
-    edited = _guide_comment(_CLEAN_GUIDE, created_at=_CREATED_AT, updated_at=_EDITED_AT)
+    edited = _guide_comment(OBSERVED_CLEAN_GUIDE, created_at=_CREATED_AT, updated_at=_EDITED_AT)
     _patch_provider(monkeypatch, [edited])
     second = _run_fetch(1206, plan_id)
 
@@ -429,7 +478,7 @@ def test_suppressed_guide_produces_no_reviewer_row_at_all(plan_context, monkeypa
     list, which is what makes it an interaction test.
     """
     plan_id = 'pr-agent-suppressed-guide-no-row'
-    _patch_provider(monkeypatch, [_guide_comment(_CLEAN_GUIDE)])
+    _patch_provider(monkeypatch, [_guide_comment(OBSERVED_CLEAN_GUIDE)])
 
     fetch_result = _run_fetch(1204, plan_id)
     assert fetch_result['count_stored'] == 0
