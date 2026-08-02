@@ -142,13 +142,18 @@ def find_implementors(ext_point: str) -> list[dict]:
         workflow/ winning on name collision)
       - project-local .claude/skills/finalize-step-*/SKILL.md (project steps)
 
-    Each implementor record carries the step's frontmatter:
-      {name, order, default_on, presets, description, records_facts,
+    Each implementor record carries:
+      {name, order, default_on, presets, canonicals, description,
        source, path}
 
-    where source is one of: built-in, bundle-optional, project, and
-    records_facts is present only for a step that declares the
-    conditional field (absent means "no structured-fact obligation").
+    where source is one of: built-in, bundle-optional, project.
+
+    The record is deliberately NOT the whole frontmatter — it carries the
+    fields the seeding/preset consumers need, not every declared key. The
+    conditional obligation fields (records_facts, mutates_source,
+    head_dependent, advances_main_via_rebase) are NOT on this record; a
+    consumer that needs one reads it from the step doc's frontmatter
+    directly (see extension_discovery._read_frontmatter_fields).
 
     Resolves both the source structure
     (marketplace/bundles/{bundle}/skills/...) and the versioned cache
