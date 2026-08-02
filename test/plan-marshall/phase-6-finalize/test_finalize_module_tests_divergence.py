@@ -57,6 +57,12 @@ _WHOLE_TREE_QG_INVOCATION = re.compile(r'run --command-args "quality-gate"')
 # The real Python build_map globs (single-``*`` fnmatch spans ``/``).
 _GLOBS = ['marketplace/bundles/*.py', 'test/*.py', 'pyproject.toml']
 
+#: The caller-enumerated registered module names ``resolve_test_scope`` takes as
+#: its third argument. The seam is pure by contract, so the set is supplied here
+#: rather than read from an inventory inside it. A derived name absent from this
+#: set resolves to NO module and lands in ``unresolved_paths``.
+_REGISTERED_MODULES = frozenset({'plan-marshall', 'pm-dev-python'})
+
 # A footprint the D1 seam classifies divergence_possible=True: it touches the
 # shared build layer, exactly the PLAN-08 cross-module regression class.
 _DIVERGENT_FOOTPRINT = [
@@ -77,15 +83,25 @@ def _gate_route(resolution, whole_tree_available: bool):
     """Model the D2 divergence-gate routing over a D1 resolution.
 
     Returns ``(route, target)`` where ``route`` is one of ``'whole_tree'`` /
-    ``'scoped'`` / ``'warn'`` and ``target`` is the module arg a scoped run
-    would carry (``None`` for the whole-tree, no-module-arg route). Mirrors the
-    branch order in ``pre-push-quality-gate.md`` § "Whole-tree module-tests
-    divergence gate".
+    ``'scoped'`` / ``'skip'`` / ``'warn'`` and ``target`` is the module arg a
+    scoped run would carry (``None`` for the whole-tree, no-module-arg route and
+    for the skip route). Mirrors the branch ORDER in
+    ``pre-push-quality-gate.md`` § "Whole-tree module-tests divergence gate" -
+    and the order is load-bearing, not incidental.
+
+    The zero-scoped-modules branch MUST be evaluated before the
+    ``divergence_possible == false`` branch: that verdict holds for ZERO scoped
+    modules as well as for exactly one, and ``recommended_target`` is populated
+    only in the one-module case. Collapsing the two lets the scoped branch
+    interpolate a null target and invoke ``module-tests None``, which the build
+    wrapper exits 0 on and the gate then reads as a pass.
     """
     if not whole_tree_available:
         return 'warn', None
     if resolution.divergence_possible:
         return 'whole_tree', None
+    if not resolution.scoped_modules:
+        return 'skip', None
     return 'scoped', resolution.recommended_target
 
 
@@ -120,7 +136,7 @@ def test_scoped_green_whole_tree_red_is_caught(footprint):
     # ``scoped_outcome`` literal below. (``recommended_target`` is ``None`` for a
     # divergent footprint, so keying it here would collide with the whole-tree
     # ``None`` key and mask the red outcome.)
-    resolution = resolve_test_scope(footprint, _GLOBS)
+    resolution = resolve_test_scope(footprint, _GLOBS, _REGISTERED_MODULES)
     runner = _InjectedRunner({None: 'error'})
 
     # Act: the gate routes on divergence risk, then the seam classifies the pair.
@@ -141,7 +157,7 @@ def test_scoped_green_whole_tree_red_is_caught(footprint):
 def test_isolated_module_stays_scoped_and_both_green_not_divergent():
     """A single isolated module runs scoped (no whole-tree cost) and is not divergent."""
     # Arrange
-    resolution = resolve_test_scope(_ISOLATED_FOOTPRINT, _GLOBS)
+    resolution = resolve_test_scope(_ISOLATED_FOOTPRINT, _GLOBS, _REGISTERED_MODULES)
     runner = _InjectedRunner({'pm-dev-python': 'success'})
 
     # Act
@@ -161,7 +177,7 @@ def test_isolated_module_stays_scoped_and_both_green_not_divergent():
 def test_whole_tree_unavailable_routes_to_warn():
     """When no pytest module set is discoverable the gate degrades to a WARNING."""
     # Arrange: a divergent footprint, but whole-tree module-tests is unavailable.
-    resolution = resolve_test_scope(_DIVERGENT_FOOTPRINT, _GLOBS)
+    resolution = resolve_test_scope(_DIVERGENT_FOOTPRINT, _GLOBS, _REGISTERED_MODULES)
 
     # Act
     route, target = _gate_route(resolution, whole_tree_available=False)
@@ -169,6 +185,53 @@ def test_whole_tree_unavailable_routes_to_warn():
     # Assert: honest degradation — warn, never a silent whole-tree skip masquerading as green.
     assert resolution.divergence_possible is True
     assert route == 'warn'
+    assert target is None
+
+
+def test_empty_footprint_skips_pytest_instead_of_interpolating_a_null_target():
+    """Zero scoped modules routes to ``skip`` — never to a scoped run with a null target.
+
+    The empty footprint is the one legitimate benign verdict from the seam
+    (``divergence_possible: false`` with ``recommended_target: None``), so it
+    shares that verdict with the single-module case while carrying NO target.
+    Branch-ordering is what keeps them apart; without it the scoped branch
+    renders ``module-tests None``, which the wrapper exits 0 on and the gate
+    reads as a pass.
+    """
+    # Arrange
+    resolution = resolve_test_scope([], _GLOBS, _REGISTERED_MODULES)
+    runner = _InjectedRunner({})
+
+    # Act
+    route, target = _gate_route(resolution, whole_tree_available=True)
+
+    # Assert
+    assert resolution.divergence_possible is False
+    assert resolution.scoped_modules == ()
+    assert resolution.recommended_target is None
+    assert route == 'skip'
+    assert target is None
+    assert runner.calls == [], 'the skip branch must invoke no pytest run at all'
+
+
+def test_unmapped_footprint_fails_closed_to_the_whole_tree_route():
+    """A non-empty footprint that maps to no registered module routes whole-tree.
+
+    The counterpart to the skip branch above, and what keeps that branch narrow:
+    "nothing to run" (empty footprint) and "cannot determine what to run"
+    (unmapped paths) must NOT collapse into one verdict.
+    """
+    # Arrange — neither path is module-owning under the registered set.
+    footprint = ['doc/developer/build.adoc', '.github/workflows/python-verify.yml']
+
+    # Act
+    resolution = resolve_test_scope(footprint, _GLOBS, _REGISTERED_MODULES)
+    route, target = _gate_route(resolution, whole_tree_available=True)
+
+    # Assert
+    assert resolution.divergence_possible is True
+    assert resolution.unresolved_paths == tuple(footprint)
+    assert route == 'whole_tree'
     assert target is None
 
 
@@ -251,6 +314,66 @@ def test_gate_document_names_all_three_whole_tree_only_dimensions():
         f'The gate document must name every whole-tree-only quality-gate '
         f'dimension so a reader knows what the arm exists to reach. '
         f'Missing: {missing}'
+    )
+
+
+def test_gate_document_orders_the_zero_scoped_modules_branch_first():
+    """The zero-scoped-modules branch must precede the ``divergence_possible == false`` one.
+
+    Order, not mere presence, is the whole point: the resolver returns
+    ``divergence_possible: false`` for ZERO scoped modules as well as for exactly
+    one, and only the one-module case populates ``recommended_target``. A gate
+    document that reaches the scoped branch first interpolates a null target and
+    renders ``module-tests None`` — which the build wrapper exits 0 on, so the
+    gate reads it as a pass. Anchored on the branch text rather than its ordinal,
+    so renumbering the list does not silently drop the assertion.
+    """
+    lines = _gate_text().splitlines()
+
+    zero_idx = next(
+        (i for i, line in enumerate(lines) if '`scoped_modules` is empty' in line),
+        None,
+    )
+    one_idx = next(
+        (i for i, line in enumerate(lines) if 'exactly one scoped module' in line),
+        None,
+    )
+
+    assert zero_idx is not None, (
+        'The gate document carries no zero-scoped-modules branch, so an empty '
+        'footprint falls through to the scoped branch and renders module-tests None'
+    )
+    assert one_idx is not None, (
+        "The scoped branch no longer states its 'exactly one scoped module' "
+        'precondition, leaving the zero/one collapse implicit again'
+    )
+    assert zero_idx < one_idx, (
+        f'The zero-scoped-modules branch (line {zero_idx + 1}) must be evaluated '
+        f'BEFORE the single-module scoped branch (line {one_idx + 1}); as ordered '
+        f'it can never be reached.'
+    )
+
+
+def test_gate_document_parses_and_discloses_unresolved_paths():
+    """``unresolved_paths`` must be parsed AND surfaced as a WARNING by the gate.
+
+    The ADR-014 disclosure only reaches a human if the gate both reads the field
+    and emits it. Asserting the parse alone would pass on a gate that read the
+    field and dropped it silently.
+    """
+    text = _gate_text()
+
+    assert '`unresolved_paths`' in text, (
+        'The gate document must parse unresolved_paths from the resolve-test-scope TOON'
+    )
+    disclosure = [
+        line
+        for line in text.splitlines()
+        if '[WARNING]' in line and 'unresolved_paths' in line
+    ]
+    assert disclosure, (
+        'The gate document must emit a [WARNING] naming the unresolved paths — '
+        'a parsed-but-undisclosed field is a silent drop (ADR-014)'
     )
 
 

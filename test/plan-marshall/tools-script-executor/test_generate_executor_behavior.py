@@ -547,7 +547,12 @@ def test_build_class_dispatch_writes_orchestrator_tier_kind_build_entry(tmp_path
     assert entry['plan_id'] is None, 'orchestrator/global-tier build stamps plan_id: null'
     assert entry['worktree_sha'] == 'feedfacecafe0001'
     assert entry['exit_code'] == 0
-    assert entry['status'] == 'success', 'empty stdout + exit_code 0 derives status=success'
+    assert entry['status'] == 'unknown', (
+        'empty stdout + exit_code 0 derives status=unknown: exit 0 proves the process '
+        'ended, not that a build ran and passed, and an empty payload carries no '
+        'wrapper-claimable verdict to read. Deriving success here would mint the '
+        'false-fresh row pre-commit-verify-freshness accepts as proof of a build.'
+    )
     assert entry['notation'] == 'plan-marshall:build-pyproject:pyproject_build'
 
 
@@ -580,13 +585,21 @@ def test_build_class_dispatch_records_non_zero_exit_code(tmp_path, monkeypatch):
 
 def test_build_class_notation_gate_scopes_the_ledger_boundary():
     """The ``_is_build_class_notation`` gate fires the ledger boundary for every
-    build-* skill and for nothing else — the boundary is build-class-scoped.
+    build-* skill dispatched with the build-executing subcommand, and for nothing
+    else — the boundary is scoped by the CONJUNCTION of notation and subcommand.
+
+    The notation half is pinned here. The subcommand half, swept over the
+    argparse-derived subcommand population of every build wrapper, lives in
+    test_build_class_stamp_discriminator.py.
     """
     module = _load_template_module()
 
-    assert module._is_build_class_notation('plan-marshall:build-pyproject:pyproject_build') is True
-    assert module._is_build_class_notation('plan-marshall:build-maven:maven') is True
-    assert module._is_build_class_notation('plan-marshall:build-gradle:gradle') is True
-    assert module._is_build_class_notation('plan-marshall:build-npm:npm') is True
-    assert module._is_build_class_notation('plan-marshall:manage-status:manage-status') is False
-    assert module._is_build_class_notation('plan-marshall:manage-change-ledger:manage-change-ledger') is False
+    assert module._is_build_class_notation('plan-marshall:build-pyproject:pyproject_build', 'run') is True
+    assert module._is_build_class_notation('plan-marshall:build-maven:maven', 'run') is True
+    assert module._is_build_class_notation('plan-marshall:build-gradle:gradle', 'run') is True
+    assert module._is_build_class_notation('plan-marshall:build-npm:npm', 'run') is True
+    assert module._is_build_class_notation('plan-marshall:manage-status:manage-status', 'run') is False
+    assert (
+        module._is_build_class_notation('plan-marshall:manage-change-ledger:manage-change-ledger', 'run')
+        is False
+    )

@@ -345,12 +345,17 @@ python3 marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/g
 
 This is the same `generate_executor — generate` surface documented under [Canonical invocations](#canonical-invocations), run against the script file by its repository path rather than through the executor notation. The `--marketplace` flag selects the marketplace-source generation mode and `--marketplace-root .` pins discovery to the current checkout root (the directory that contains `marketplace/bundles`). After the direct call succeeds, the rewritten `.plan/execute-script.py` carries the corrected preamble and the normal executor-routed commands work again.
 
-### Distinguishing the two executor-unavailable cases
+### Distinguishing the executor-unavailable cases
 
 | Case | Symptom | Recovery |
 |------|---------|----------|
 | First run (bootstrap) | `.plan/execute-script.py` does not exist | [Bootstrap Pattern](#bootstrap-pattern-before-executor-exists) — resolve the plugin root, run scripts directly |
 | Broken generated executor | `.plan/execute-script.py` exists but every invocation fails before reaching a script body | Run `generate_executor.py generate --marketplace --marketplace-root .` directly to rebuild it |
+| Interpreter-launch abort | `python3 .plan/execute-script.py …` produces **no TOON and no `status` field at all** — the interpreter aborts at `dyld` level before the executor's own preamble runs, so there is no Python-level traceback either | Same as the broken-executor row: run `generate_executor.py generate --marketplace --marketplace-root .` directly. Re-materialise the virtual environment first when its interpreter pointer is the cause (see below) |
+
+**Known divergence — a stale `pyvenv.cfg` interpreter pointer.** A virtual environment whose `pyvenv.cfg` names an interpreter that no longer resolves on disk aborts the launch at the dynamic-loader level: the process never reaches Python, so no in-process guard, retry, or error handler can observe it. This is stated as a fact about the environment, not a defect to fix here — the abort is **not repairable from inside the process that failed to launch**, and no repair of the third-party virtual-environment materialisation is attempted by this skill.
+
+**Reader-facing consequence: empty output from an executor call is never to be read as success.** A call that returns nothing has not reported a clean verdict; it has reported nothing at all, which is the undetermined state. Treat it as a failure and take the recovery above. The two supporting facts, both already established elsewhere in this repository, are worth naming together: the dispatch boundary maps a negative `returncode` (a signal-terminated process) to `status: killed`, never to `success`; and the dispatch-failure work-log emission classifies the case `script_internal_failure` and carries the loader's stderr text as its detail, so the diagnostic is legible rather than empty.
 
 ## Wait Pattern (Optional)
 

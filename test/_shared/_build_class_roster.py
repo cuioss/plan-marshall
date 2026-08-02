@@ -30,9 +30,20 @@ subcommand name anywhere in this module**:
 Consumers get ``{notation: {subcommand: declares_flag_pair}}`` from
 :func:`build_class_roster`. :func:`build_class_prefixes` is the SEPARATE,
 independently-sourced read of the executor template's ``_BUILD_CLASS_PREFIXES``
-— the executor's own definition of which dispatches are build-class. The two
-derivations deliberately share no input, so cross-checking one against the other
-is a real check rather than a restatement.
+— the NOTATION half of the executor's definition of which dispatches are
+build-class. The two derivations deliberately share no input, so cross-checking
+one against the other is a real check rather than a restatement.
+
+**Build-class-ness is a conjunction, and this module supplies only one conjunct
+directly.** The executor stamps a ``kind=build`` ledger row only when the
+notation matches ``_BUILD_CLASS_PREFIXES`` AND the dispatched subcommand is a
+member of the template's ``_BUILD_EXECUTING_SUBCOMMANDS`` allow-list. A prefix
+match alone is NOT sufficient: every wrapper also registers pure query verbs,
+and a bare ``--help`` dispatch carries no subcommand at all. The subcommand
+conjunct is testable from here without any literal name — the roster's
+per-wrapper subcommand sets ARE the population a consumer partitions against the
+executor's allow-list, which is exactly what the discriminator regression suite
+does.
 
 This file is intentionally a sibling helper (``_name.py`` style) and is NOT a
 ``conftest.py``: a ``conftest.py`` under ``test/_shared/`` would shadow the
@@ -242,6 +253,93 @@ def build_class_roster() -> dict[str, dict[str, bool]]:
 
     _ROSTER_CACHE = roster
     return roster
+
+
+def _notation_for(script_path: Path) -> str:
+    """Return the ``{bundle}:{skill}:{script}`` notation for a scripts/ path.
+
+    The layout is ``{bundle}/skills/{skill}/scripts/{script}.py``, so the bundle
+    is three levels up (past ``scripts``, the skill, and ``skills``) — not two.
+    """
+    return f'{script_path.parents[3].name}:{script_path.parents[1].name}:{script_path.stem}'
+
+
+def _subcommands_from_source(script_path: Path) -> set[str]:
+    """Return the subcommand names a script registers, derived from its source.
+
+    The roster's argparse capture (:func:`build_class_roster`) only reaches
+    scripts that route through ``_build_cli.build_main``. A script under a
+    build-class prefix that builds its parser some other way is still inside the
+    executor predicate's domain, so its subcommand population has to come from
+    somewhere — here, from ``add_parser('name')`` literals in the source.
+
+    This is a weaker derivation than running the real parser, which is why it is
+    the fallback and not the primary: it is used only for scripts the roster
+    cannot capture.
+    """
+    tree = ast.parse(script_path.read_text(encoding='utf-8'))
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if not isinstance(func, ast.Attribute) or func.attr != 'add_parser':
+            continue
+        if node.args and isinstance(node.args[0], ast.Constant):
+            value = node.args[0].value
+            if isinstance(value, str):
+                names.add(value)
+    return names
+
+
+def build_class_domain() -> dict[str, set[str]]:
+    """Return ``{notation: subcommands}`` for the executor predicate's FULL domain.
+
+    :func:`build_class_roster` answers "which build WRAPPERS exist"; this answers
+    the different and wider question the discriminator predicate actually ranges
+    over: **every** script whose notation matches ``_BUILD_CLASS_PREFIXES``,
+    whether or not it routes through ``build_main``.
+
+    The distinction is load-bearing. A sweep written against the roster alone
+    covers a strict SUBSET of the predicate's domain, so it passes while
+    asserting less than its name claims — the population-derived-detector
+    failure mode. Concretely, a script that imports ``safe_main`` rather than
+    ``build_main`` matches a build-class prefix but never enters the roster.
+
+    Subcommands come from the roster's real argparse capture where available and
+    from :func:`_subcommands_from_source` otherwise.
+
+    **An empty subcommand set is expected for some entries, and it is ambiguous.**
+    The ``extension`` modules sit under a build-class prefix and register no CLI
+    at all, so they legitimately contribute nothing to sweep. But a script whose
+    parser is built in a way :func:`_subcommands_from_source` cannot read
+    statically ALSO yields the empty set, and the two are indistinguishable here.
+    A consumer must therefore treat "empty" as "nothing to assert", never as
+    "verified to have no subcommands" — and must anchor its anti-vacuity guard on
+    the number of assertions it actually makes, not on the size of this mapping.
+    """
+    prefixes = tuple(build_class_prefixes())
+    roster = build_class_roster()
+    domain: dict[str, set[str]] = {}
+    for bundle_dir in sorted(MARKETPLACE_ROOT.iterdir()):
+        skills_dir = bundle_dir / 'skills'
+        if not skills_dir.is_dir():
+            continue
+        for skill_dir in sorted(skills_dir.iterdir()):
+            scripts_dir = skill_dir / 'scripts'
+            if not scripts_dir.is_dir():
+                continue
+            for script_path in sorted(scripts_dir.glob('*.py')):
+                if script_path.name.startswith('_'):
+                    continue
+                notation = _notation_for(script_path)
+                if not notation.startswith(prefixes):
+                    continue
+                if notation in roster:
+                    domain[notation] = set(roster[notation])
+                else:
+                    domain[notation] = _subcommands_from_source(script_path)
+    return domain
 
 
 def build_class_prefixes() -> frozenset[str]:

@@ -31,7 +31,7 @@ Covers SRP, CQS, parameter objects, package structure, immutability, refactoring
 Read: standards/error-handling.md
 ```
 
-Use when: Designing error handling, exception hierarchies, or recovery patterns.
+Use when: Designing error handling, exception hierarchies, or recovery patterns, or when writing a classifier, gate, or status derivation that must fail closed rather than emit an unsubstantiated clean verdict.
 
 **Documentation Principles** (load for API documentation work):
 ```text
@@ -75,5 +75,5 @@ class UserService:
 | Standard | Purpose |
 |----------|---------|
 | code-organization.md | SRP, CQS, package structure, refactoring triggers, complexity, maintenance |
-| error-handling.md | Exception philosophy, propagation, recovery |
+| error-handling.md | Exception philosophy, propagation, recovery, fail-closed classification discipline |
 | documentation-principles.md | What/when/how to document public APIs |

@@ -592,16 +592,20 @@ def test_pm_marketplace_root_with_trailing_slash_rewrites(two_marketplace_trees,
     )
 
 
-# Truthful build-status stamping: after every build-class dispatch the boundary
+# Truthful build-status stamping: after every build-EXECUTING dispatch (a
+# build-* notation dispatched with the `run` subcommand — the conjunction the
+# boundary predicate requires) the boundary
 # appends one kind=build change-ledger row whose `status` is derived via
 # _derive_build_status — (1) negative returncode (POSIX signal death) =>
 # `killed` (reserved for this branch only); (2) any other nonzero returncode =>
 # `error`, AUTHORITATIVE over any contradictory stdout status (a stdout
 # `status: success` with exit 1 must not launder into a fresh-looking build);
-# (3) exit 0 => the wrapper's stdout TOON `status` when it is a known build
-# status other than `killed` (the timeout fix: the wrapper exits 0 on timeout,
-# the TOON carries the truth; a stdout `killed` claim at exit 0 stamps `error`);
-# (4) else exit 0 => `success`.
+# (3) exit 0 => the wrapper's stdout TOON `status` when it is one the WRAPPER is
+# entitled to claim (the timeout fix: the wrapper exits 0 on timeout, the TOON
+# carries the truth; a stdout `killed` claim at exit 0 stamps `error`, since
+# `killed` is derived-only); (4) else exit 0 => `unknown`, NEVER `success` — a
+# payload carrying no claimable status leaves the outcome undetermined, and
+# `unknown` is the derived-only verdict that records exactly that.
 # These tests drive a rendered executor end-to-end against a fake build-class
 # script that emits controlled stdout/exit, then assert the stamped row.
 
@@ -623,8 +627,9 @@ os.kill(os.getpid(), signal.SIGKILL)
 def _build_fake_build_skill(root: Path, body: str) -> Path:
     """Stage a fake build-pyproject script under a marketplace-shaped tree.
 
-    The notation prefix ``plan-marshall:build-pyproject:`` is what makes the
-    executor's ``_is_build_class_notation`` boundary fire.
+    The notation prefix ``plan-marshall:build-pyproject:`` is one half of what
+    makes the executor's ``_is_build_class_notation`` boundary fire; the other
+    half is the ``run`` subcommand every dispatch below supplies.
     """
     script_dir = (
         root / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills'
@@ -697,8 +702,14 @@ def _run_build_dispatch(tmp_path: Path, script_body: str) -> list[dict]:
         ('status: timeout\ntimeout_used_seconds: 5\n', 0, 'timeout'),
         # Failing build: TOON error + non-zero exit.
         ('status: error\n', 1, 'error'),
-        # Malformed stdout with exit 0 falls through to the exit-code branch.
-        ('not a toon payload at all', 0, 'success'),
+        # Malformed stdout with exit 0 carries no wrapper-claimable verdict, so
+        # the outcome is UNDETERMINED and the boundary derives the derived-only
+        # `unknown` — never `success`. Exit 0 proves the process ended, not that
+        # a build ran and passed, and a `success` row here is exactly the
+        # false-fresh proof pre-commit-verify-freshness accepts.
+        ('not a toon payload at all', 0, 'unknown'),
+        # Absent stdout with exit 0 is the same undetermined state.
+        ('', 0, 'unknown'),
         # Absent stdout with non-zero exit => error.
         ('', 1, 'error'),
         # THE laundering regression: a contradictory `status: success` claim

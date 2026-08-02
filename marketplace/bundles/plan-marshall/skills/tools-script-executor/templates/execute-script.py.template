@@ -15,22 +15,30 @@ Audit logging:
                           the executor's own log entry to the plan-specific log file.
 
 Runtime side-effects:
-    After every build-class invocation (a notation under plan-marshall:build-pyproject /
-    build-maven / build-gradle / build-npm), the dispatch boundary appends one
-    kind=build entry to the unified change-ledger (.plan/work/change-ledger.jsonl,
-    resolved via the tracked-config dir so plan-less orchestrator builds are covered too).
+    After every build-EXECUTING invocation (a notation under plan-marshall:build-pyproject /
+    build-maven / build-gradle / build-npm, dispatched with the `run` subcommand), the
+    dispatch boundary appends one kind=build entry to the unified change-ledger
+    (.plan/work/change-ledger.jsonl, resolved via the tracked-config dir so plan-less
+    orchestrator builds are covered too). Build-class-ness is the CONJUNCTION of both
+    conditions: a query subcommand under a build-* skill (parse, discover, coverage-report,
+    check-warnings, run-config-key, rewrite-log, find-project, resolve-test-scope, analyze)
+    and a bare --help dispatch carrying no subcommand at all write NO row, because no build
+    ran. Stamping a row for a pure query would let pre-commit-verify-freshness read that
+    query's exit 0 as proof the current working tree was built.
     The entry stamps notation, plan_id (never null — a build invoked outside any plan
     is recorded under the NO_PLAN sentinel), args (the executor argv), command (the
     command the wrapper resolved that argv into and actually ran — a different layer
     from args), duration_seconds (the wrapper's measured build duration), outcome (the
     wrapper's whole stdout TOON as a dict), exit_code (recorded even when
-    non-zero), status (the truthful build outcome — success/error/timeout/killed —
-    derived from the returncode and the wrapper's stdout TOON, so a timed-out build
-    stamps status=timeout despite its exit code 0), worktree_sha (the working-tree
-    currency hash), log_file, and timestamp_iso. The stdout payload is parsed exactly
-    once and feeds status, command, duration_seconds and outcome together; an absent or
-    unparseable payload leaves those three None and the status derivation falls back to
-    the exit code.
+    non-zero), status (the truthful build outcome —
+    success/error/timeout/killed/unknown — derived from the returncode and the
+    wrapper's stdout TOON, so a timed-out build stamps status=timeout despite its exit
+    code 0, and an exit-0 dispatch whose payload carries no wrapper-claimable status
+    stamps status=unknown rather than a green nothing substantiates), worktree_sha (the
+    working-tree currency hash), log_file, and timestamp_iso. The stdout payload is
+    parsed exactly once and feeds status, command, duration_seconds and outcome
+    together; an absent or unparseable payload leaves those three None and the status
+    derivation falls back to the exit code (nonzero -> error, zero -> unknown).
     The write is fire-and-forget — any failure is swallowed and never alters the dispatched
     script's exit code, stdout, or stderr.
 
@@ -168,7 +176,11 @@ from toon_parser import parse_toon  # type: ignore[import-not-found]
 # manage-change-ledger. Both directories are placed on sys.path by the
 # shared-module block injected above — the writer re-uses these primitives
 # rather than re-implementing the hash or the append.
-from _ledger_core import BUILD_STATUSES, append_entry, build_record  # type: ignore[import-not-found]
+from _ledger_core import (  # type: ignore[import-not-found]
+    WRAPPER_CLAIMABLE_BUILD_STATUSES,
+    append_entry,
+    build_record,
+)
 from marketplace_paths import NO_PLAN_SENTINEL  # type: ignore[import-not-found]
 from worktree_sha import compute_worktree_sha  # type: ignore[import-not-found]
 
@@ -267,10 +279,11 @@ _DISPATCH_FAILURE_SUPPRESS_NOTATIONS = frozenset([
     'plan-marshall:manage-logging:manage-logging',
 ])
 
-# Build-class notation prefixes whose dispatches the boundary records as a
-# kind=build change-ledger entry. The match is a prefix test on the
-# bundle:skill segment, so every script under each build-* skill (e.g. the
-# pyproject_build entry point) is covered.
+# Build-class notation prefixes - the NOTATION half of the build-class test.
+# The match is a prefix test on the bundle:skill segment, so every script under
+# each build-* skill (e.g. the pyproject_build entry point) satisfies this half.
+# It is NOT sufficient on its own: see _BUILD_EXECUTING_SUBCOMMANDS below and
+# the conjunction in _is_build_class_notation.
 _BUILD_CLASS_PREFIXES = frozenset([
     'plan-marshall:build-pyproject:',
     'plan-marshall:build-maven:',
@@ -278,20 +291,47 @@ _BUILD_CLASS_PREFIXES = frozenset([
     'plan-marshall:build-npm:',
 ])
 
+# Build-executing subcommands - the SUBCOMMAND half of the build-class test.
+# Every build wrapper registers exactly one verb that actually runs a build
+# (`run`); every other registered subcommand is a pure query (parse, discover,
+# coverage-report, check-warnings, run-config-key, rewrite-log, find-project,
+# resolve-test-scope, analyze), and a bare --help dispatch carries no subcommand
+# at all. This is an ALLOW-list on purpose: a query verb added to a wrapper later
+# is excluded by default, whereas a deny-list of known query verbs would silently
+# admit it and re-open the false-fresh hole.
+_BUILD_EXECUTING_SUBCOMMANDS = frozenset([
+    'run',
+])
 
-def _is_build_class_notation(notation: str) -> bool:
-    """Return True when ``notation`` belongs to a build-class skill.
 
-    The test is a prefix match on the ``bundle:skill`` segment against
-    :data:`_BUILD_CLASS_PREFIXES`, so every script registered under a
-    ``build-*`` skill is treated as a build-class dispatch.
+def _is_build_class_notation(notation: str, subcommand: str) -> bool:
+    """Return True when this dispatch actually executes a build.
+
+    Build-class-ness is the CONJUNCTION of two conditions, BOTH required:
+
+    1. ``notation`` starts with one of :data:`_BUILD_CLASS_PREFIXES` - the
+       dispatch targets a script registered under a ``build-*`` skill.
+    2. ``subcommand`` is a member of :data:`_BUILD_EXECUTING_SUBCOMMANDS` - the
+       dispatched verb is the one that actually runs a build.
+
+    The prefix alone is NOT sufficient. Every build wrapper also registers pure
+    query verbs, and a bare ``--help`` dispatch carries no subcommand at all.
+    Those exit 0 without building anything, so stamping them ``kind=build /
+    status=success`` would let ``pre-commit-verify-freshness`` accept a query as
+    proof that the current working tree was built.
 
     Args:
         notation: Script notation (``bundle:skill:script``).
+        subcommand: The dispatched subcommand - the first argument after the
+            notation, or the empty string when none was supplied. The empty
+            string is never build-executing.
 
     Returns:
-        True when the notation starts with any build-class prefix.
+        True only when BOTH the notation prefix matches AND the subcommand is
+        build-executing.
     """
+    if subcommand not in _BUILD_EXECUTING_SUBCOMMANDS:
+        return False
     return any(notation.startswith(prefix) for prefix in _BUILD_CLASS_PREFIXES)
 
 
@@ -366,21 +406,32 @@ def _derive_build_status(exit_code: int, payload: dict | None) -> str:
        stdout TOON claims (a contradictory ``status: success`` /
        nonzero-exit combination stamps ``error``).
     3. ``exit_code == 0`` AND the parsed stdout payload carries a ``status``
-       that is a known build status (see ``BUILD_STATUSES``) →
-       that status, EXCEPT ``killed``. This closes the false-fresh hole: the
-       build wrapper reports ``status: timeout`` on stdout while the PROCESS
-       exits 0, so the stdout TOON — not the exit code — carries the real
-       outcome. A stdout claim of ``killed`` at exit 0 stamps ``error``: the
-       wrapper's stdout vocabulary never includes ``killed`` (see
-       ``_ledger_core.BUILD_STATUSES``), so the claim is untrustworthy — but
-       it must not launder into ``success`` either.
-    4. Else (``exit_code == 0``) → ``success``.
+       the WRAPPER is entitled to claim (see
+       ``_ledger_core.WRAPPER_CLAIMABLE_BUILD_STATUSES``) → that status. This
+       closes the false-fresh hole: the build wrapper reports
+       ``status: timeout`` on stdout while the PROCESS exits 0, so the stdout
+       TOON — not the exit code — carries the real outcome. A stdout claim of
+       ``killed`` at exit 0 stamps ``error``: ``killed`` is derived-only, so
+       the claim is untrustworthy — but it must not launder into ``success``
+       either.
+    4. Else (``exit_code == 0`` with no claimable status on the payload —
+       absent, unparseable, null, or a value outside the wrapper's
+       vocabulary) → ``unknown``. **Never ``success``.** Exit 0 alone proves
+       the process ended, not that a build ran and passed; the wrapper models
+       its verdict in the payload, so a payload this function cannot read
+       leaves the outcome UNDETERMINED. Stamping ``success`` there would mint
+       the exact false-fresh ``kind=build`` row
+       ``pre-commit-verify-freshness`` accepts as proof the tree was built.
+       ``unknown`` is derived-only and is NOT ``success``, so the gate fails
+       closed on it.
 
     Defensive by construction: a malformed / absent stdout TOON reaches this
-    function as ``payload=None`` (see :func:`_parse_build_payload`) and falls
-    through to the exit-code branch. A payload whose ``status`` is not a
-    string is likewise ignored rather than compared, so no shape of parsed
-    stdout can raise here.
+    function as ``payload=None`` (see :func:`_parse_build_payload`) and is
+    handled at every exit code — it falls through to the ``unknown`` branch at
+    exit 0, and to ``killed`` / ``error`` per rule 2 on a nonzero exit, so an
+    unreadable payload never resolves to ``success`` on any path. A payload
+    whose ``status`` is not a string is likewise ignored rather than compared,
+    so no shape of parsed stdout can raise here.
 
     Args:
         exit_code: The subprocess returncode observed at the boundary.
@@ -389,7 +440,8 @@ def _derive_build_status(exit_code: int, payload: dict | None) -> str:
             unparseable.
 
     Returns:
-        One of ``success`` / ``error`` / ``timeout`` / ``killed``.
+        One of ``success`` / ``error`` / ``timeout`` / ``killed`` /
+        ``unknown``.
     """
     if exit_code < 0:
         return 'killed'
@@ -399,9 +451,9 @@ def _derive_build_status(exit_code: int, payload: dict | None) -> str:
     if candidate is not None:
         if candidate == 'killed':
             return 'error'
-        if candidate in BUILD_STATUSES:
+        if candidate in WRAPPER_CLAIMABLE_BUILD_STATUSES:
             return candidate
-    return 'success'
+    return 'unknown'
 
 
 def _append_build_ledger_record(
@@ -969,20 +1021,26 @@ def main():
             audit_plan_id=audit_plan_id,
         )
 
-    # Build-class dispatch boundary: after every build-class invocation, append
-    # a kind=build entry to the unified change-ledger so the freshness gate can
-    # ask "was this exact working-tree state built?". Records are appended
-    # unconditionally on completion regardless of outcome; the stamped status
-    # carries the truthful result (success/error/timeout/killed), derived from
-    # the returncode and the wrapper's stdout TOON — the gate requires
-    # status == 'success'. The row's plan_id is `_ledger_plan_id` (script-arg
+    # Build-class dispatch boundary: after every build-EXECUTING invocation,
+    # append a kind=build entry to the unified change-ledger so the freshness
+    # gate can ask "was this exact working-tree state built?". The predicate is
+    # a CONJUNCTION - a build-* notation AND a build-executing subcommand - so a
+    # query verb (or a bare --help, which carries no subcommand) writes no row:
+    # it ran no build, and a row stamped for it would satisfy the freshness gate
+    # without anything having been built. Records are appended unconditionally
+    # on completion regardless of outcome; the stamped status
+    # carries the truthful result (success/error/timeout/killed/unknown),
+    # derived from the returncode and the wrapper's stdout TOON — the gate
+    # requires status == 'success', and `unknown` (exit 0 with no
+    # wrapper-claimable status on the payload) is deliberately not it.
+    # The row's plan_id is `_ledger_plan_id` (script-arg
     # --plan-id or executor --audit-plan-id, falling back to the NO_PLAN
     # sentinel), so it is NEVER null; the log path keeps taking the
     # caller-supplied `_active_plan_id`, which stays None for a plan-less
     # build and therefore resolves to the GLOBAL script log rather than a
     # NO_PLAN-scoped one. The writer is fire-and-forget — see
     # _append_build_ledger_record.
-    if _is_build_class_notation(notation):
+    if _is_build_class_notation(notation, subcommand):
         _append_build_ledger_record(
             notation=notation,
             plan_id=_ledger_plan_id,

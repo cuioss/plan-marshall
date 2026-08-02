@@ -204,7 +204,10 @@ def run_classify_outcome(args: Namespace) -> dict[str, Any]:
         message.
     (b) ``timeout`` — a matching row carries ``status: timeout``.
     (c) ``success`` — a matching row carries ``status: success``.
-    (d) ``undecidable`` — anything else.
+    (d) ``undecidable`` — anything else, INCLUDING a matching row carrying the
+        derived-only ``status: unknown``. That row records an outcome the
+        dispatch boundary could not determine, so it supports no verdict of its
+        own and must not be read as either a kill or a success.
     """
     entries = [
         e
