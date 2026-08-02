@@ -346,7 +346,7 @@ report(status = findings.isEmpty() ? "clean" : "findings")
 
 ### (d) Require an affirmative success signal, never absence-of-change
 
-"Nothing changed" is satisfied both by an operation that succeeded idempotently and by an operation that never ran. Absence-of-change is therefore not evidence of success; require the operation to report its own outcome and branch on that.
+"Nothing changed" is satisfied both by an operation that succeeded idempotently and by an operation that never ran. Absence-of-change is therefore not evidence of success; require the operation to report its own outcome and branch on that. Success and change are two distinct fields: the operation reports whether it succeeded independently of whether it changed anything, so `applied` / `changed` is metadata about the edit and never the success predicate.
 
 ```text
 // BAD — an empty diff is read as proof the fix landed
@@ -355,10 +355,20 @@ if (diff(file).isEmpty()) {
     markResolved()   // equally true when applyFix silently did nothing
 }
 
-// GOOD — the operation reports whether it applied, and that is what is read
-outcome = applyFix(file)
-if (outcome.applied) markResolved() else markUnresolved(outcome.reason)
+// GOOD — the operation reports its own success, and THAT is what is branched on
+outcome = applyFix(file)   // { status: "success" | "skipped" | "error", applied: bool }
+if (outcome.status == "success") {
+    markResolved()          // ran and passed — including the idempotent no-op,
+                            // which reports success with applied == false
+} else {
+    markUnresolved(outcome.reason)   // never ran (skipped), or ran and failed
+}
 ```
+
+Branching on `outcome.applied` instead would reinstate the defect one field over: a
+fix that ran and found nothing left to do reports `applied == false`, so the change
+flag routes a *success* to `markUnresolved` and makes it indistinguishable from an
+operation that never ran at all. Reading `status` is what separates the two.
 
 ### (e) Exit `0` from an always-exit-`0` wrapper is necessary, not sufficient
 
@@ -396,7 +406,7 @@ The rules above cover the read direction. The write direction is symmetric and i
 for (f in findings) store.add(f)         // a rejection exits 0 and is never read
 return { status: "triage_required" }     // "go read the store" — which is empty
 
-// GOOD — the persist is checked, and a short readback downgrades the referral
+// GOOD — each persist status is checked, and unpersisted findings are returned inline
 persisted = []
 for (f in findings) {
     if (store.add(f).status == "success") persisted.add(f)
