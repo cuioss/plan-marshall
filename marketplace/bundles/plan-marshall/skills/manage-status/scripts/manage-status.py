@@ -24,8 +24,8 @@ Usage:
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status get-routing-context --plan-id EXAMPLE-PLAN
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done --plan-id EXAMPLE-PLAN --phase 5-execute --step discovery --outcome done
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status assert-step-recorded --plan-id EXAMPLE-PLAN --phase 6-finalize --step ci-verify --require-terminal
-    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status merge-authorization grant --plan-id EXAMPLE-PLAN --kind barrier-ask-override --head 76c7200b6 --granted-over "2 unhandled, unproven_bots=pr-agent" --reason "operator accepted the gap"
-    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status merge-authorization check --plan-id EXAMPLE-PLAN --head 76c7200b6
+    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status merge-authorization grant --plan-id EXAMPLE-PLAN --kind barrier-ask-override --head 76c7200b6 --gap-class review-barrier-gap --granted-over "2 unhandled, unproven_bots=pr-agent" --reason "operator accepted the gap"
+    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status merge-authorization check --plan-id EXAMPLE-PLAN --head 76c7200b6 --gap-class review-barrier-gap
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status sibling-collision-check --plan-id EXAMPLE-PLAN
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status create --store orchestrator --plan-id example-epic --title "Epic"
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status update-field --plan-id example-epic --field resume_anchor --value "next action"
@@ -462,17 +462,23 @@ def main() -> int:
         'merge-authorization',
         help='Grant or check a HEAD-bound merge authorization in status.metadata.merge_authorizations',
         description=(
-            'Bind a merge-gate authorization to the HEAD it was granted against. '
-            "'grant' persists merge_authorizations[kind] = {head, granted_over, "
-            "reason, granted_at}; a re-grant at a new HEAD overwrites the record, "
-            'and that overwrite IS the sanctioned re-seek (there is no revoke '
-            "verb). 'check' takes no --kind — the barrier asks one question ('is "
-            "there a valid authorization for the gap I am reporting'), so the verb "
-            'returns every record with a per-record verdict (valid when '
-            'record.head equals --head, lapsed otherwise) plus authorized_kinds, '
-            'lapsed_kinds and any_authorized. An empty store returns '
-            'any_authorized: false with empty lists — fail-closed; absent is never '
-            'collapsed into valid.'
+            'Bind a merge-gate authorization to the HEAD it was granted against AND '
+            'to the gap class it was granted over. '
+            "'grant' persists merge_authorizations[kind] = {head, gap_class, "
+            "granted_over, reason, granted_at}; a re-grant at a new HEAD overwrites "
+            'the record, and that overwrite IS the sanctioned re-seek (there is no '
+            "revoke verb). 'check' takes no --kind — the caller asks one question "
+            "('is there an admissible authorization for the gap I am reporting'), so "
+            'the verb returns every record with a HEAD verdict (valid when '
+            'record.head equals --head, lapsed otherwise) AND an admissibility '
+            'verdict (valid AND record.gap_class equals --gap-class), plus '
+            'authorized_kinds, lapsed_kinds, admissible_kinds, inadmissible_kinds, '
+            'any_authorized and any_admissible. HEAD-validity alone is not '
+            'authorization: several kinds are granted at earlier sites at the SAME '
+            'HEAD over a DIFFERENT gap, so admissibility narrows the routing while '
+            'every record stays in the report. An empty store returns both '
+            'aggregates false with empty lists — fail-closed; absent is never '
+            'collapsed into valid, and a record with no gap_class matches no class.'
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         allow_abbrev=False,
@@ -501,6 +507,19 @@ def main() -> int:
         '--head', required=True, help='Git SHA the authorization is granted against.'
     )
     merge_authorization_grant_parser.add_argument(
+        '--gap-class',
+        dest='gap_class',
+        required=True,
+        help=(
+            'The gap class this ruling authorizes past — the machine token naming '
+            'WHICH gate the operator was answering (e.g. review-barrier-gap, '
+            'merge-action, red-ci-gate, rereview-timeout). Each roster row declares '
+            "the token its site must pass via its 'authorizes:' claim. Routing "
+            'compares this token; --granted-over carries the same fact as prose for '
+            'a human reader and is never compared.'
+        ),
+    )
+    merge_authorization_grant_parser.add_argument(
         '--granted-over',
         dest='granted_over',
         required=True,
@@ -517,7 +536,7 @@ def main() -> int:
 
     merge_authorization_check_parser = merge_authorization_subparsers.add_parser(
         'check',
-        help='Return every authorization record with its verdict at the supplied HEAD',
+        help='Return each record\'s HEAD verdict and its admissibility for the caller\'s gap',
         allow_abbrev=False,
     )
     add_plan_id_arg(merge_authorization_check_parser)
@@ -528,6 +547,19 @@ def main() -> int:
             'The HEAD the caller is about to merge. Every record whose head differs '
             'is lapsed. There is deliberately no --kind filter: a per-kind check '
             'would let one valid authorization mask a lapsed sibling.'
+        ),
+    )
+    merge_authorization_check_parser.add_argument(
+        '--gap-class',
+        dest='gap_class',
+        required=True,
+        help=(
+            'The gap class the CALLER is reporting. A record is admissible only when '
+            'it is valid at --head AND was granted over this same class. Required, '
+            'so no caller can fall back to routing on HEAD-validity alone — several '
+            'kinds are granted at earlier sites at the same HEAD over a different '
+            'gap. Every record is still reported regardless of class; this narrows '
+            'the routing, never the report.'
         ),
     )
     merge_authorization_check_parser.set_defaults(func=cmd_merge_authorization_check)

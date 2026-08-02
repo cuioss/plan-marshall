@@ -22,20 +22,31 @@ The tests pin:
     not theoretical: ``ROSTER_ROW`` matches Markdown list items only, so
     rendering the roster as a pipe-delimited table yields ZERO rows and silently
     disarms the whole module.
-(b) Every row declares the three machine-checkable claims (``head_bound:``,
-    ``bound_via:``, ``site:``). Without them a row is prose rather than a
-    falsifiable claim, and (c) would have nothing to check it against.
+(b) Every row declares the four machine-checkable claims (``head_bound:``,
+    ``bound_via:``, ``authorizes:``, ``site:``). Without them a row is prose
+    rather than a falsifiable claim, and (c) would have nothing to check it
+    against.
 (c) Every row's binding claim is cross-checked against real document content at
     the ``site:`` the row itself names — a ``grant`` row against a real
-    ``merge-authorization grant`` invocation carrying both ``--kind {kind}`` and
-    ``--plan-id``, a ``head_dependent`` row against its own frontmatter
-    declaration.
+    ``merge-authorization grant`` invocation carrying ``--kind {kind}``,
+    ``--plan-id`` and a ``--gap-class`` matching the row's own ``authorizes:``
+    claim, a ``head_dependent`` row against its own frontmatter declaration.
 (d) Out-of-class rows are **annotated rather than silently absent**, so a
     mechanism that does not fit the HEAD-bound class can never be hidden by
     simply not listing it.
 (e) The barrier actually consults the verb the roster claims backs every
     ``bound_via: grant`` row, and states the D4 rule that a ``decision``-log
     entry is never admissible authorization evidence.
+(h) The barrier routes on ADMISSIBILITY, not on HEAD-validity — it passes its own
+    gap class to the check, and it does not carry an ``any_authorized``-only
+    routing branch. This is the guard for the cross-kind hazard: three of the
+    four grant kinds are granted at sites that run BEFORE the barrier, at the
+    SAME HEAD, over a DIFFERENT gap, so a HEAD-only route would bypass the
+    barrier's disposition on essentially every merge. The admissible set is
+    DERIVED from the roster's ``authorizes:`` claims rather than listed here, and
+    the test asserts the inadmissible set is non-empty first — without that
+    precondition the whole check would be vacuous on a roster where every row
+    happened to share one class.
 
 Plus the **both-directions** membership check and its per-member mutation guard:
 the grant invocations that actually exist across the marketplace docs are
@@ -87,7 +98,14 @@ _CHECK_VERB = f'{_VERB} check'
 _CLAIM_RE = {
     'head_bound': re.compile(r'head_bound:\s*(\S+)'),
     'bound_via': re.compile(r'bound_via:\s*(\S+)'),
+    'authorizes': re.compile(r'authorizes:\s*(\S+)'),
 }
+
+#: The gap class the pre-merge review barrier reports. A roster row whose
+#: ``authorizes:`` claim equals this token is admissible AT THAT BARRIER; every
+#: other grant row is a ruling over some other gate's gap. Only the token itself
+#: is a constant here — WHICH rows carry it is derived from the roster.
+_BARRIER_GAP_CLASS = 'review-barrier-gap'
 
 #: The first Markdown link target inside a row's ``site:`` claim.
 _SITE_LINK_RE = re.compile(r'\]\(([^)]+)\)')
@@ -97,6 +115,9 @@ _VERB_CLAIM_RE = re.compile(r'verb backing every `bound_via: grant` row is `([^`
 
 #: The ``--kind`` value of one grant invocation.
 _KIND_ARG_RE = re.compile(r'--kind\s+([^\s\\]+)')
+
+#: The ``--gap-class`` value of one grant or check invocation.
+_GAP_CLASS_ARG_RE = re.compile(r'--gap-class\s+([^\s\\]+)')
 
 #: The normative rule the barrier must state in as many words.
 _INADMISSIBLE_EVIDENCE_MARKERS = ('decision', 'NEVER admissible')
@@ -117,6 +138,22 @@ def _claim(row_line: str, name: str) -> str | None:
     """Read one machine-checkable claim off a roster row."""
     match = _CLAIM_RE[name].search(row_line)
     return match.group(1) if match else None
+
+
+def _grant_rows() -> list[tuple[str, str]]:
+    """The roster rows whose binding mechanism is a real ``grant`` invocation."""
+    return [(kind, row) for kind, row in _ROWS if _claim(row, 'bound_via') == 'grant']
+
+
+#: Grant rows split by the barrier's own gap class — DERIVED from the roster's
+#: ``authorizes:`` claims, never listed. Adding a mechanism to the roster puts it
+#: on exactly one of these two sides automatically.
+_BARRIER_ADMISSIBLE: list[str] = [
+    kind for kind, row in _grant_rows() if _claim(row, 'authorizes') == _BARRIER_GAP_CLASS
+]
+_BARRIER_INADMISSIBLE: list[str] = [
+    kind for kind, row in _grant_rows() if _claim(row, 'authorizes') != _BARRIER_GAP_CLASS
+]
 
 
 def _rationale(row_line: str) -> str:
@@ -214,14 +251,22 @@ def test_roster_is_non_empty():
 
 
 @pytest.mark.parametrize('kind,row_line', _ROWS, ids=_ROW_IDS)
-def test_every_row_declares_the_three_machine_checkable_claims(kind, row_line):
-    """(b) Each row carries ``head_bound:``, ``bound_via:`` and ``site:``.
+def test_every_row_declares_the_four_machine_checkable_claims(kind, row_line):
+    """(b) Each row carries ``head_bound:``, ``bound_via:``, ``authorizes:`` and ``site:``.
 
-    Without all three the row is prose rather than a falsifiable claim, and the
+    Without all four the row is prose rather than a falsifiable claim, and the
     binding assertions below would have nothing to check it against.
+    ``authorizes:`` is the newest and the one that decides ROUTING: a row without
+    it declares no gap class, so no check site can tell whether the ruling covers
+    the gap it is reporting.
     """
     assert _claim(row_line, 'head_bound'), f'{kind} row declares no head_bound: claim — {row_line}'
     assert _claim(row_line, 'bound_via'), f'{kind} row declares no bound_via: claim — {row_line}'
+    assert _claim(row_line, 'authorizes'), (
+        f'{kind} row declares no authorizes: claim — {row_line}. Without a declared gap '
+        'class a check site cannot distinguish a ruling given over ITS gap from one '
+        'given over some other gate at the same HEAD.'
+    )
     assert 'site:' in row_line, f'{kind} row declares no site: claim — {row_line}'
 
 
@@ -233,10 +278,15 @@ def test_every_head_bound_row_has_a_grant_site(kind, row_line):
 
     - ``bound_via: grant`` — the kind must appear in a real
       ``merge-authorization grant`` invocation **in the document the row's own
-      ``site:`` names**, and that invocation must carry BOTH ``--kind {kind}``
-      and ``--plan-id``. ``add_plan_id_arg`` makes ``--plan-id`` required and
+      ``site:`` names**, and that invocation must carry ``--kind {kind}``,
+      ``--plan-id``, and a ``--gap-class`` equal to the row's own ``authorizes:``
+      claim. ``add_plan_id_arg`` makes ``--plan-id`` required and
       ``manage-status`` is auto-routed, so a grant site missing it is
-      simultaneously a worktree-isolation break and an argparse rejection.
+      simultaneously a worktree-isolation break and an argparse rejection. The
+      ``--gap-class`` equality is what makes ``authorizes:`` falsifiable rather
+      than decorative: it is the token routing actually compares, so a row whose
+      claim disagrees with its site's real argument mis-predicts the reach of
+      every ruling that site grants.
     - ``bound_via: head_dependent`` — asserted against its own declaration site
       instead: the step doc must declare ``head_dependent: true``.
     - ``bound_via: out_of_class`` — carries no HEAD binding by construction and
@@ -282,6 +332,18 @@ def test_every_head_bound_row_has_a_grant_site(kind, row_line):
             '(exit 2) and a silent write against the main checkout instead of the '
             'plan worktree.'
         )
+        declared_class = _claim(row_line, 'authorizes')
+        for block in matching:
+            granted_classes = _GAP_CLASS_ARG_RE.findall(block)
+            assert granted_classes == [declared_class], (
+                f'{kind} declares authorizes: {declared_class} but its "{_GRANT_VERB}" '
+                f'invocation in {site.name} passes --gap-class {granted_classes}. The '
+                'roster claim and the real argument MUST agree: routing compares the '
+                'persisted class against the class the check site reports, so a site '
+                'passing a class the roster never declared is a ruling no reader of '
+                'the roster can predict the reach of — and one omitting it entirely '
+                'is an argparse rejection (--gap-class is required).'
+            )
         return
 
     if bound_via == 'head_dependent':
@@ -385,6 +447,101 @@ def test_barrier_checks_the_authorization_verb():
             'decision-log entry is NEVER admissible authorization evidence. Without the '
             'rule stated, a later reader can reintroduce log-recall as evidence — which '
             'is how plan-marshall#1067 merged five unreviewed commits.'
+        )
+
+
+def test_every_grant_site_declares_a_gap_class():
+    """Corpus direction: no real grant invocation anywhere omits ``--gap-class``.
+
+    The roster-driven check above only reaches grant blocks at the sites its own
+    rows name. This sweeps the SAME independent corpus the membership check uses,
+    so a grant site in a document no row points at is still caught. An unlabelled
+    ruling is the fail-open shape the class exists to remove — and the parser
+    makes it an exit-2 besides.
+    """
+    unlabelled: list[str] = []
+    for doc in sorted(_BUNDLE_ROOT.rglob('*.md')):
+        text = _read(doc)
+        if _GRANT_VERB not in text:
+            continue
+        for block in _invocations(text, _GRANT_VERB):
+            kinds = [k for k in _KIND_ARG_RE.findall(block) if not _is_form_placeholder(k)]
+            if kinds and not _GAP_CLASS_ARG_RE.search(block):
+                unlabelled.append(f'{doc.relative_to(_BUNDLE_ROOT)}: --kind {kinds[0]}')
+
+    assert not unlabelled, (
+        f'These "{_GRANT_VERB}" invocations carry a concrete --kind but no --gap-class: '
+        f'{unlabelled}. --gap-class is REQUIRED by the parser, so each of these is an '
+        'argparse rejection at a merge gate; and a ruling with no declared class is one '
+        'no check site can scope, which is the fail-open direction.'
+    )
+
+
+def test_barrier_routes_on_admissibility_not_on_head_validity():
+    """(h) The barrier admits only rulings granted over ITS OWN gap.
+
+    HEAD-binding alone is not sufficient, and the roster itself proves it: read
+    the rows in execution order and three of the four grant kinds are granted at
+    sites that run BEFORE this barrier, at the SAME HEAD, over a DIFFERENT gap.
+    ``pre-merge-consent`` is granted on every interactive "Yes, merge" immediately
+    above the barrier with no rebase in between, so a barrier routing on
+    ``any_authorized`` would find a valid record on essentially every merge and
+    skip its own disposition universally — a routine merge confirmation
+    authorizing past a participation gap the operator was never shown.
+
+    The inadmissible set is asserted NON-EMPTY first. Without that precondition
+    the whole test would pass vacuously on a roster where every row happened to
+    declare the barrier's own class, which is exactly the state that makes the
+    distinction unnecessary — and the state a careless roster edit could produce.
+    """
+    text = _read(_BRANCH_CLEANUP)
+    section = '\n'.join(section_lines(text, _CHECK_HEADING, stop_prefixes=_SUBSECTION_STOPS))
+
+    assert _BARRIER_ADMISSIBLE, (
+        f'No roster row declares authorizes: {_BARRIER_GAP_CLASS}, so NOTHING could ever '
+        'satisfy this barrier and the operator would be locked out rather than re-asked. '
+        'The escape hatch must be BOUND, not removed.'
+    )
+    assert _BARRIER_INADMISSIBLE, (
+        'Every grant row declares the barrier\'s own gap class, so this test cannot '
+        'distinguish admissibility-routing from HEAD-only routing and would pass '
+        'vacuously. The cross-kind hazard is real precisely because rows like '
+        'pre-merge-consent authorize a DIFFERENT gap at the same HEAD.'
+    )
+
+    checks = _invocations(section, _CHECK_VERB)
+    for block in checks:
+        classes = _GAP_CLASS_ARG_RE.findall(block)
+        assert classes == [_BARRIER_GAP_CLASS], (
+            f'The barrier\'s "{_CHECK_VERB}" invocation passes --gap-class {classes}, not '
+            f'[{_BARRIER_GAP_CLASS!r}]. --gap-class is what scopes the admissibility '
+            'verdict to the gap THIS barrier reports; omitting it is an argparse '
+            'rejection and passing another gate\'s class answers the wrong question.'
+        )
+
+    assert 'any_admissible' in section, (
+        'The barrier subsection never mentions any_admissible. Routing on any_authorized '
+        'alone is the cross-kind fail-open: it is true whenever ANY ruling is bound to '
+        f'this tree, including the {_BARRIER_INADMISSIBLE} granted over other gaps at '
+        'this very HEAD.'
+    )
+    for kind in _BARRIER_INADMISSIBLE:
+        assert kind in section, (
+            f'The barrier subsection does not name {kind} as a ruling that does NOT '
+            'authorize past it. Naming the inadmissible siblings is what stops a later '
+            'reader from re-deriving "a valid authorization exists, therefore proceed".'
+        )
+
+    for marker in ('**`any_admissible: true`**', '**`any_admissible: false`**'):
+        assert marker in section, (
+            f'The barrier subsection carries no {marker} routing branch. Both dispositions '
+            'must be keyed to the admissibility verdict, not to HEAD-validity.'
+        )
+    for stale in ('- **`any_authorized: true`**', '- **`any_authorized: false`**'):
+        assert stale not in section, (
+            f'The barrier subsection still carries the {stale} routing branch. That is the '
+            'HEAD-only route this test exists to forbid: it resolves true on every '
+            f'interactive merge via {_BARRIER_INADMISSIBLE}.'
         )
 
 

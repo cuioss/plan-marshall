@@ -112,16 +112,26 @@ The widened hold obeys four invariants:
 
 Every mechanism by which an operator (or a policy standing in for one) authorizes advancing a tree past a merge gate. This section is the **declared population**: membership lives here and nowhere else, and the derivation guard in `test/plan-marshall/phase-6-finalize/test_merge_authorization_roster.py` parses these rows rather than carrying a hardcoded list, so a mechanism added here is covered automatically.
 
-Each row leads with its backticked `{kind}` token and carries three machine-checkable claims — `head_bound:` (is this authorization bound to a specific tree), `bound_via:` (which mechanism binds it), and `site:` (where that mechanism lives).
+Each row leads with its backticked `{kind}` token and carries four machine-checkable claims — `head_bound:` (is this authorization bound to a specific tree), `bound_via:` (which mechanism binds it), `authorizes:` (which **gap class** the ruling covers), and `site:` (where that mechanism lives).
 
-- `barrier-ask-override` — head_bound: yes — bound_via: grant — site: § Pre-Merge Review-Completeness Barrier, `{barrier_mode} == ask` → "Merge anyway (record reason)". Granted at the live HEAD alongside the existing WARNING decision-log line, and checked by the barrier before any blocked path proceeds.
-- `pre-merge-consent` — head_bound: yes — bound_via: grant — site: § Pre-Merge Confirmation Gate → "Yes, merge" (`{merge_consent} = explicit_yes`). Granted at the live HEAD so a re-rebase between consent and merge — the release-before-wait / re-acquire path — lapses the consent instead of silently carrying it onto a different tree.
-- `red-ci-override` — head_bound: yes — bound_via: grant — site: § Rebase Branch onto Base, the immediate-merge authoritative CI gate → "Merge anyway — override red CI". Granted at the live HEAD before the override proceeds.
-- `rereview-timeout-override` — head_bound: yes — bound_via: grant — site: [`branch-cleanup-rereview.md`](branch-cleanup-rereview.md) § "On re-review timeout (trigger A)" — BOTH the `re_review_on_timeout: proceed` policy branch and the `ask` → "Merge anyway — proceed unreviewed" selection. Granted at the re-resolved `{head_sha}`.
-- `automatic-review-force-done` — head_bound: yes — bound_via: head_dependent — site: [`automatic-review/SKILL.md`](../../automatic-review/SKILL.md) § "Force-done with an explicit recorded reason". Bound by that step's own `head_dependent: true` declaration and its persisted `--head-at-completion`, and the barrier re-derives participation from the provider rather than trusting the record — so it needs no grant of its own.
-- `final_merge_without_asking` — head_bound: n/a — bound_via: out_of_class — site: the `default:branch-cleanup` step param. Standing config that authorizes a *policy* rather than a specific tree, so it falls outside the HEAD-bound class and is recorded here rather than granted.
+- `barrier-ask-override` — head_bound: yes — bound_via: grant — authorizes: review-barrier-gap — site: § Pre-Merge Review-Completeness Barrier, `{barrier_mode} == ask` → "Merge anyway (record reason)". Granted at the live HEAD alongside the existing WARNING decision-log line, and checked by the barrier before any blocked path proceeds.
+- `pre-merge-consent` — head_bound: yes — bound_via: grant — authorizes: merge-action — site: § Pre-Merge Confirmation Gate → "Yes, merge" (`{merge_consent} = explicit_yes`). Granted at the live HEAD so a re-rebase between consent and merge — the release-before-wait / re-acquire path — lapses the consent instead of silently carrying it onto a different tree.
+- `red-ci-override` — head_bound: yes — bound_via: grant — authorizes: red-ci-gate — site: § Rebase Branch onto Base, the immediate-merge authoritative CI gate → "Merge anyway — override red CI". Granted at the live HEAD before the override proceeds.
+- `rereview-timeout-override` — head_bound: yes — bound_via: grant — authorizes: rereview-timeout — site: [`branch-cleanup-rereview.md`](branch-cleanup-rereview.md) § "On re-review timeout (trigger A)" — BOTH the `re_review_on_timeout: proceed` policy branch and the `ask` → "Merge anyway — proceed unreviewed" selection. Granted at the re-resolved `{head_sha}`.
+- `automatic-review-force-done` — head_bound: yes — bound_via: head_dependent — authorizes: find-step-completion — site: [`automatic-review/SKILL.md`](../../automatic-review/SKILL.md) § "Force-done with an explicit recorded reason". Bound by that step's own `head_dependent: true` declaration and its persisted `--head-at-completion`, and the barrier re-derives participation from the provider rather than trusting the record — so it needs no grant of its own.
+- `final_merge_without_asking` — head_bound: n/a — bound_via: out_of_class — authorizes: merge-action — site: the `default:branch-cleanup` step param. Standing config that authorizes a *policy* rather than a specific tree, so it falls outside the HEAD-bound class and is recorded here rather than granted.
 
 The verb backing every `bound_via: grant` row is `manage-status merge-authorization` — see `manage-status` Canonical invocations → `merge-authorization — grant` / `merge-authorization — check`.
+
+### Gap classes — why HEAD-binding alone is not authorization
+
+**`authorizes:` is what a check site routes on; `head_bound:` only says the ruling has not gone stale.** The two claims answer different questions and BOTH must hold. Every `bound_via: grant` site passes its row's `authorizes:` token as `--gap-class`, every check site passes the token for the gap IT is reporting, and a record is admissible only when the two agree at the current HEAD.
+
+Routing on HEAD-validity alone is a fail-open shape, not a conservative one. Read the rows above in EXECUTION order: `red-ci-override` is granted at the CI gate, `rereview-timeout-override` at the trigger-A timeout, and `pre-merge-consent` at the Pre-Merge Confirmation Gate — all three BEFORE the Pre-Merge Review-Completeness Barrier, and all three at the same HEAD it is about to gate, because nothing rebases in between. `pre-merge-consent` is the sharpest case: on the default interactive path it is granted on every single "Yes, merge", so a barrier that admitted any HEAD-valid record would find one on every ordinary merge and skip its own disposition universally. A routine merge confirmation, given before the operator was ever shown the participation gap, would authorize past it — the same defect the HEAD binding exists to remove, re-entered through the side door.
+
+The `check` verb stays deliberately kind-agnostic for the reason it always did: it returns EVERY record, so `lapsed_kinds` still names every expired sibling and a valid-but-wrong-gap record is reported in `inadmissible_kinds` rather than hidden. Admissibility narrows the ROUTING, never the REPORT.
+
+`--granted-over` and `--gap-class` are complementary, not redundant: `--granted-over` is free prose naming the specific gap instance the operator saw (the pending count, the `unproven_bots` list), for a human re-evaluating the ruling against a later delta; `--gap-class` is the comparable machine token naming WHICH GATE was answered. Prose is not comparable, so routing never reads it.
 
 ## Mode Detection
 
@@ -426,11 +436,11 @@ The disposition of a red gate depends on WHICH path produced it — the two path
 
     ```bash
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status merge-authorization grant \
-      --plan-id {plan_id} --kind red-ci-override --head {sha} \
+      --plan-id {plan_id} --kind red-ci-override --head {sha} --gap-class red-ci-gate \
       --granted-over "red CI on the authoritative immediate-merge gate: {red_checks}" --reason "{reason}"
     ```
 
-    The grant is in addition to the WARNING decision-log line, never in place of it.
+    The grant is in addition to the WARNING decision-log line, never in place of it. `--gap-class red-ci-gate` is this row's `authorizes:` claim: the ruling covers a red CI gate and nothing else, so it can never be read as authorization at the later review barrier, which reports a different gap.
 
 Log the rebase:
 ```bash
@@ -613,9 +623,11 @@ Record the output as `{sha}`, then grant (see `manage-status` Canonical invocati
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status merge-authorization grant \
-  --plan-id {plan_id} --kind pre-merge-consent --head {sha} \
+  --plan-id {plan_id} --kind pre-merge-consent --head {sha} --gap-class merge-action \
   --granted-over "operator confirmed merge of PR #{pr_number} at this HEAD" --reason "operator selected 'Yes, merge' at the Pre-Merge Confirmation Gate"
 ```
+
+⚠ **`--gap-class merge-action` is what keeps this consent from authorizing past the barrier below.** The operator has confirmed the MERGE ACTION; they have not been shown a review-completeness gap, because the barrier has not run yet. This grant lands at the very HEAD the barrier is about to gate with no rebase in between, so without the class it would satisfy a HEAD-only check on every interactive merge and the barrier's disposition would never fire — see § "Gap classes — why HEAD-binding alone is not authorization".
 
 Then proceed to **Merge PR (if not yet merged)** below, where the **Merge routing (`use_merge_queue`)** section performs the routed action. The authorization is symmetric with that routing:
 
@@ -786,32 +798,34 @@ On the two authorizable blocked paths, this check is a **bypass of the `{barrier
 git -C {worktree_path} rev-parse HEAD
 ```
 
-Record the output as `{sha}`, then run the check (see `manage-status` Canonical invocations → `merge-authorization — check`):
+Record the output as `{sha}`, then run the check (see `manage-status` Canonical invocations → `merge-authorization — check`). `--gap-class review-barrier-gap` names the gap THIS barrier reports — it is what makes the reply's admissibility verdict answer this barrier's question rather than some earlier gate's:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status merge-authorization check \
-  --plan-id {plan_id} --head {sha}
+  --plan-id {plan_id} --head {sha} --gap-class review-barrier-gap
 ```
 
-Read `any_authorized`, `authorized_kinds`, and `lapsed_kinds` from the returned TOON, then route:
+⚠ **Route on `any_admissible`, NEVER on `any_authorized`.** The two are different facts and the difference is load-bearing. `any_authorized` says only that SOME ruling is still bound to this tree; `any_admissible` says a ruling was granted over THIS barrier's gap and is still bound to this tree. Three of the roster's four `bound_via: grant` kinds — `pre-merge-consent`, `red-ci-override`, `rereview-timeout-override` — are granted at sites that run BEFORE this barrier, at the SAME HEAD, over a DIFFERENT gap. `pre-merge-consent` in particular is granted on every interactive "Yes, merge" immediately above, with no rebase in between, so `any_authorized` is `true` on essentially every ordinary merge. Routing on it would skip this disposition universally and let a routine merge confirmation — given before the operator was ever shown the participation gap — authorize past it. See § "Gap classes — why HEAD-binding alone is not authorization".
 
-- **`any_authorized: true`** → an operator authorization granted against THIS HEAD exists. Proceed directly to **Merge PR (if not yet merged)**, skipping the `{barrier_mode}` disposition. The mandatory decision-log line names the gap AND the authorization it is proceeding under — never a phrase that reads like a passed gate:
+Read `any_admissible`, `admissible_kinds`, `inadmissible_kinds`, and `lapsed_kinds` from the returned TOON, then route:
+
+- **`any_admissible: true`** → an operator authorization granted over THIS barrier's gap, against THIS HEAD, exists. Proceed directly to **Merge PR (if not yet merged)**, skipping the `{barrier_mode}` disposition. The mandatory decision-log line names the gap AND the authorization it is proceeding under — never a phrase that reads like a passed gate:
 
   ```bash
   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-    decision --plan-id {plan_id} --level WARNING --message "(plan-marshall:phase-6-finalize) Pre-merge review barrier: proceeding despite {gap} under authorization {authorized_kinds} granted at {sha}"
+    decision --plan-id {plan_id} --level WARNING --message "(plan-marshall:phase-6-finalize) Pre-merge review barrier: proceeding despite {gap} under authorization {admissible_kinds} granted over review-barrier-gap at {sha}"
   ```
 
   `{gap}` expands to the full reported gap (the pending count plus the entire `unproven_bots` list), so it is unbounded. The step's operator-facing `display_detail` is length-bounded (≤80 chars, ASCII, no trailing period) and MUST be checked against that placeholder's **worst-case expansion**, not its literal form — so the bounded string carries the fixed-width form `merged under {kind}, gap recorded` and the full expansion lives only in the unbounded `decision`-log line above.
 
-- **`any_authorized: false`** → the merge is REFUSED and the configured `{barrier_mode}` disposition below runs. When `lapsed_kinds` is non-empty, name it so the operator sees WHICH ruling expired and why re-asking is necessary rather than reading the prompt as a fresh, unexplained block:
+- **`any_admissible: false`** → the merge is REFUSED and the configured `{barrier_mode}` disposition below runs. **This includes the case where `any_authorized` is `true`** — a valid ruling exists but covers a different gap, which is a refusal, not a pass. Name BOTH lists when non-empty: `lapsed_kinds` shows WHICH ruling expired, and `inadmissible_kinds` shows which ruling is live but does not cover this gap, so the operator reads the prompt as an explained re-ask rather than a fresh, unexplained block — and is never left thinking their just-given consent was ignored:
 
   ```bash
   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-    decision --plan-id {plan_id} --level WARNING --message "(plan-marshall:phase-6-finalize) Pre-merge review barrier: no authorization valid at {sha} — lapsed_kinds={lapsed_kinds}; re-seek under pre_merge_comment_barrier={barrier_mode}"
+    decision --plan-id {plan_id} --level WARNING --message "(plan-marshall:phase-6-finalize) Pre-merge review barrier: no authorization admissible for review-barrier-gap at {sha} — lapsed_kinds={lapsed_kinds}, valid-but-other-gap={inadmissible_kinds}; re-seek under pre_merge_comment_barrier={barrier_mode}"
   ```
 
-**The D4 admissible-evidence rule.** The ONLY admissible evidence that an operator authorized proceeding past a reported gap is a `merge-authorization check` verdict at the CURRENT HEAD. A `decision`-log entry is **NEVER admissible** authorization evidence — including one this barrier itself wrote on a preceding pass at a different HEAD. A log entry records that a ruling was made; it does not record which tree the ruling covered, so recalling one at a later HEAD is precisely the defect this check exists to remove. Do not read, quote, or reason from `decision.log` when deciding whether to proceed past a gap.
+**The D4 admissible-evidence rule.** The ONLY admissible evidence that an operator authorized proceeding past a reported gap is a `merge-authorization check` verdict reporting that record `admissible` at the CURRENT HEAD for the CURRENT gap class. Two independent conditions, both required: the ruling must still be bound to the tree in hand, and it must have been granted over the gap being reported. A `decision`-log entry is **NEVER admissible** authorization evidence — including one this barrier itself wrote on a preceding pass at a different HEAD. A log entry records that a ruling was made; it does not record which tree the ruling covered, so recalling one at a later HEAD is precisely the defect this check exists to remove. Do not read, quote, or reason from `decision.log` when deciding whether to proceed past a gap.
 
 **Check-then-act constraint.** This check and the merge dispatch form a check-then-act pair. The check MUST be the LAST gate before the **Merge PR** routing, with no operator-wait, no merge-mutex release-and-re-acquire, and no re-rebase between it and the merge. When any of those intervenes, the check MUST be re-run against the freshly-resolved HEAD before merging — the same rule the Pre-Merge Confirmation Gate applies when it forbids reusing a pre-wait classifier run. The mitigation menu for this hazard class is owned by [`ref-code-quality/standards/code-organization.md`](../../ref-code-quality/standards/code-organization.md) § TOCTOU / check-then-act hazards.
 
@@ -819,7 +833,7 @@ Read `any_authorized`, `authorized_kinds`, and `lapsed_kinds` from the returned 
 
 When `participation_complete: false`, the merge is blocked even if `{count} == 0`. **Zero pending comments is exactly what an unreviewed diff looks like**, so this branch must never be collapsed into the clean path on a comment count alone.
 
-This is an **authorizable** blocked path: § "Authorization check — the only admissible evidence on a blocked path" above has already run, and this disposition fires only when it returned `any_authorized: false`.
+This is an **authorizable** blocked path: § "Authorization check — the only admissible evidence on a blocked path" above has already run, and this disposition fires only when it returned `any_admissible: false` for `review-barrier-gap` — including when `any_authorized` was `true` under a ruling granted over some other gap.
 
 Branch on `{barrier_mode}` using the SAME two branches as the unhandled-comment block below — `fail_into_loopback` (default) loops back into `6-finalize` so `automatic-review` re-fires and re-awaits the unproven bot, and `ask` prompts the operator. Both branches carry the same merge-mutex release obligations documented there; only the recorded message differs:
 
@@ -832,7 +846,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 #### Blocked path — one or more pending findings
 
-When the pending list is non-empty, the merge is blocked. This is the second **authorizable** blocked path: § "Authorization check — the only admissible evidence on a blocked path" above has already run, and the branches below fire only when it returned `any_authorized: false`. Branch on `{barrier_mode}` (these are the branches the participation-incomplete block above also uses):
+When the pending list is non-empty, the merge is blocked. This is the second **authorizable** blocked path: § "Authorization check — the only admissible evidence on a blocked path" above has already run, and the branches below fire only when it returned `any_admissible: false` for `review-barrier-gap` — including when `any_authorized` was `true` under a ruling granted over some other gap. Branch on `{barrier_mode}` (these are the branches the participation-incomplete block above also uses):
 
 ##### `{barrier_mode} == fail_into_loopback` (default)
 
@@ -915,11 +929,11 @@ Branch on the operator's selection:
 
   ```bash
   python3 .plan/execute-script.py plan-marshall:manage-status:manage-status merge-authorization grant \
-    --plan-id {plan_id} --kind barrier-ask-override --head {sha} \
+    --plan-id {plan_id} --kind barrier-ask-override --head {sha} --gap-class review-barrier-gap \
     --granted-over "{count} unhandled, unproven_bots={unproven_bots}" --reason "{reason}"
   ```
 
-  `--granted-over` carries the gap AS THE BARRIER REPORTED IT, so a later reader can re-evaluate the ruling against a later delta rather than re-deriving what the operator was shown. A re-grant at a new HEAD overwrites this record — that overwrite IS the sanctioned re-seek.
+  `--granted-over` carries the gap AS THE BARRIER REPORTED IT, so a later reader can re-evaluate the ruling against a later delta rather than re-deriving what the operator was shown. `--gap-class review-barrier-gap` is the machine token for the same fact — this row's `authorizes:` claim, and the ONE class the check above admits, which is why this is the only ruling that can bypass this barrier's disposition. A re-grant at a new HEAD overwrites this record — that overwrite IS the sanctioned re-seek.
 
 - **"Defer merge"** → set `{merge_consent} = deferred`, skip the **Merge PR**, **Wait for Merge CI**, **Remove Worktree**, and **Switch to Base Branch** sections, emit the `mark-step-done` payload using **Branch C — declined by user**, and return (the mutex was already released before the prompt). Log the decision:
 

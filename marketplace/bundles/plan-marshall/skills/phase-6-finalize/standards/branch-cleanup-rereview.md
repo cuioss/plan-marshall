@@ -69,7 +69,7 @@ This sub-block is evaluated ONLY when the `github_re_review re-review` call abov
 
 **Release-before-wait / re-acquire-after (widened hold)**: this trigger-A timeout gate is an operator-wait boundary. Under `merge_hold_window == full_window_release_at_waits`, BEFORE presenting any `AskUserQuestion` below, release the merge mutex if held and FIFO-re-enqueue (`merge_lock release --plan-id {plan_id}`), so the plan does not hold the lock across a human prompt (§ "Merge-Mutex Hold Window" invariant 1 in `branch-cleanup.md`). On the "Wait another {re_review_await_timeout_seconds}s" resume and on any path that continues toward the merge, RE-ACQUIRE via the FIFO poll loop and **re-validate** (`baseline-reconcile`; re-rebase when `origin/{base_branch}` advanced during the released window) before proceeding. The `merge_hold_budget_seconds` bound is checked here too: if the elapsed-since-`{hold_start}` already exceeds the budget, escalate rather than silently continuing to hold. Read `re_review_on_timeout` off the same `plan-marshall:automatic-review` `params` object returned by the `step-params get` call above (default: `ask`) and branch on its value. **Every branch is decision-logged** — a timeout is always an explicit, auditable decision; the `proceed`/"Merge anyway" outcomes log at WARNING naming the unreviewed HEAD SHA.
 
-Both branches that advance an unreviewed HEAD — the `proceed` policy branch and the `ask` → "Merge anyway — proceed unreviewed" selection — additionally **grant** a `rereview-timeout-override` bound to `{head_sha}`. The decision-log line is the honest record of the ruling; it is not, and never becomes, admissible evidence at the pre-merge barrier. See `branch-cleanup.md` § "Merge-Authorization Roster" for the full population and § "Authorization check — the only admissible evidence on a blocked path" for where these grants are checked.
+Both branches that advance an unreviewed HEAD — the `proceed` policy branch and the `ask` → "Merge anyway — proceed unreviewed" selection — additionally **grant** a `rereview-timeout-override` bound to `{head_sha}` and to the gap class `rereview-timeout`. The decision-log line is the honest record of the ruling; it is not, and never becomes, admissible evidence at the pre-merge barrier. Neither is the grant itself: this gate runs BEFORE the pre-merge review barrier and at the same HEAD, and its `--gap-class rereview-timeout` is what keeps it from being read as authorization there — the barrier checks for `review-barrier-gap` and this ruling covers a different gap. See `branch-cleanup.md` § "Merge-Authorization Roster" for the full population, § "Gap classes — why HEAD-binding alone is not authorization" for why the class is required, and § "Authorization check — the only admissible evidence on a blocked path" for where these grants are checked.
 
 - **`proceed`** (explicit opt-in to advance the unreviewed HEAD): decision-log at WARNING naming the unreviewed `{head_sha}`, **then persist the ruling as a HEAD-bound authorization**, then continue to the **Pre-Merge Confirmation Gate** below (today's silent-proceed, now an explicit, logged choice):
 
@@ -83,7 +83,7 @@ Both branches that advance an unreviewed HEAD — the `proceed` policy branch an
 
   ```bash
   python3 .plan/execute-script.py plan-marshall:manage-status:manage-status merge-authorization grant \
-    --plan-id {plan_id} --kind rereview-timeout-override --head {head_sha} \
+    --plan-id {plan_id} --kind rereview-timeout-override --head {head_sha} --gap-class rereview-timeout \
     --granted-over "no fresh bot review for this HEAD after {re_review_await_timeout_seconds}s" --reason "re_review_on_timeout=proceed policy branch"
   ```
 
@@ -142,7 +142,7 @@ Both branches that advance an unreviewed HEAD — the `proceed` policy branch an
 
     ```bash
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status merge-authorization grant \
-      --plan-id {plan_id} --kind rereview-timeout-override --head {head_sha} \
+      --plan-id {plan_id} --kind rereview-timeout-override --head {head_sha} --gap-class rereview-timeout \
       --granted-over "no fresh bot review for this HEAD after {re_review_await_timeout_seconds}s" --reason "{operator selection: Merge anyway — proceed unreviewed}"
     ```
 

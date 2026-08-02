@@ -28,6 +28,11 @@ surface (``check_auth``, ``fetch_pr_comments_data``, ``fetch_pr_head_sha``):
         does NOT authorize a merge at a later HEAD carrying commits the ruling
         never covered (the plan-marshall#1067 shape), and a re-grant at the new
         HEAD restores it, so the escape hatch is BOUND rather than removed.
+    (f) cross-kind refusal — an authorization granted over a DIFFERENT gap at the
+        SAME HEAD (the ``pre-merge-consent`` the Pre-Merge Confirmation Gate
+        grants moments earlier) does NOT satisfy this barrier, while the
+        barrier's own ``barrier-ask-override`` at that same HEAD does.
+        HEAD-binding alone is not sufficient: admissibility is per-gap.
 
 Per lesson 2026-07-09-14-001 the provider response is built from a real fixture
 shape (mirroring ``test_github_pr.py``), so a green fixture cannot diverge from
@@ -416,17 +421,29 @@ def _make_plan(plan_id):
     )
 
 
-def _grant(plan_id, kind, head, granted_over, reason):
+#: The gap class the pre-merge review barrier reports and can be authorized past.
+_BARRIER_GAP = 'review-barrier-gap'
+#: The gap class the Pre-Merge Confirmation Gate's consent authorizes — a
+#: DIFFERENT gap, granted at the same HEAD, moments before the barrier fires.
+_MERGE_ACTION_GAP = 'merge-action'
+
+
+def _grant(plan_id, kind, head, gap_class, granted_over, reason):
     return _merge_auth.cmd_merge_authorization_grant(
         argparse.Namespace(
-            plan_id=plan_id, kind=kind, head=head, granted_over=granted_over, reason=reason
+            plan_id=plan_id,
+            kind=kind,
+            head=head,
+            gap_class=gap_class,
+            granted_over=granted_over,
+            reason=reason,
         )
     )
 
 
-def _authorization_check(plan_id, head):
+def _authorization_check(plan_id, head, gap_class=_BARRIER_GAP):
     return _merge_auth.cmd_merge_authorization_check(
-        argparse.Namespace(plan_id=plan_id, head=head)
+        argparse.Namespace(plan_id=plan_id, head=head, gap_class=gap_class)
     )
 
 
@@ -452,6 +469,7 @@ def test_stale_override_does_not_satisfy_barrier_after_head_advances(plan_contex
         plan_id,
         'barrier-ask-override',
         _DOCS_ONLY_HEAD,
+        gap_class=_BARRIER_GAP,
         granted_over='0 unhandled, docs-only delta, unproven_bots=pr-agent',
         reason='operator: docs-only change, proceeding without the pr-agent review',
     )
@@ -476,6 +494,7 @@ def test_stale_override_does_not_satisfy_barrier_after_head_advances(plan_contex
     # THE property: the ruling made over HEAD A is not evidence at HEAD B.
     stale = _authorization_check(plan_id, _REBASED_HEAD)
     assert stale['any_authorized'] is False
+    assert stale['any_admissible'] is False
     assert 'barrier-ask-override' in stale['lapsed_kinds']
     assert stale['authorized_kinds'] == []
 
@@ -485,11 +504,95 @@ def test_stale_override_does_not_satisfy_barrier_after_head_advances(plan_contex
         plan_id,
         'barrier-ask-override',
         _REBASED_HEAD,
+        gap_class=_BARRIER_GAP,
         granted_over='0 unhandled, unproven_bots=pr-agent',
         reason='operator: re-asked after the rebase, accepting the gap on this tree',
     )
 
     reseeked = _authorization_check(plan_id, _REBASED_HEAD)
     assert reseeked['any_authorized'] is True
+    assert reseeked['any_admissible'] is True
     assert reseeked['authorized_kinds'] == ['barrier-ask-override']
+    assert reseeked['admissible_kinds'] == ['barrier-ask-override']
     assert reseeked['lapsed_kinds'] == []
+
+
+def test_consent_over_a_different_gap_at_the_same_head_does_not_satisfy_barrier(
+    plan_context, monkeypatch
+):
+    """The CROSS-KIND case: same HEAD, valid authorization, still inadmissible.
+
+    HEAD-binding alone does not make the barrier safe. On the default interactive
+    path the Pre-Merge Confirmation Gate grants ``pre-merge-consent`` at the LIVE
+    HEAD on every "Yes, merge", and this barrier fires immediately afterwards with
+    no rebase between them — so a barrier that routed on ``any_authorized`` alone
+    would find a valid record on EVERY interactive merge and skip its own
+    disposition universally. A routine merge confirmation, given before the
+    operator was ever shown the participation gap, would authorize past it.
+
+    The two asserts that carry the property are deliberately adjacent: the consent
+    is ``valid`` at this HEAD (so the old routing WOULD have bypassed), and it is
+    NOT ``admissible`` here (so the new routing does not). Admissibility is
+    per-gap, not merely per-HEAD.
+
+    The second half is the matched positive control at the SAME HEAD, so the
+    refusal cannot be passing because nothing is ever admissible: the barrier's
+    own ``barrier-ask-override``, granted over the gap the barrier actually
+    reported, does satisfy it.
+    """
+    plan_id = 'barrier-cross-kind'
+    _make_plan(plan_id)
+
+    # The required bot never reviewed this HEAD — the barrier reports the gap.
+    _patch_provider(monkeypatch, _CODERABBIT_ONLY)
+    result = _run_fetch(209, plan_id)
+    assert result['status'] == 'success'
+    _resolve_all_pending(plan_id)
+    assert _pending(plan_id) == []
+
+    verdict = _completeness(
+        plan_id,
+        _participation_csv(result),
+        required=['pr-agent'],
+        optional=['coderabbit'],
+    )
+    assert verdict['participation_complete'] is False
+
+    # The Pre-Merge Confirmation Gate's consent, granted at the very HEAD the
+    # barrier is about to gate — over the MERGE ACTION, not over this gap.
+    _grant(
+        plan_id,
+        'pre-merge-consent',
+        _REBASED_HEAD,
+        gap_class=_MERGE_ACTION_GAP,
+        granted_over='operator confirmed merge of PR #209 at this HEAD',
+        reason="operator selected 'Yes, merge' at the Pre-Merge Confirmation Gate",
+    )
+
+    checked = _authorization_check(plan_id, _REBASED_HEAD)
+
+    # HEAD-valid — this is exactly what `any_authorized` alone would have read as
+    # authorization, and why HEAD-binding on its own is not sufficient.
+    assert checked['any_authorized'] is True
+    assert checked['authorized_kinds'] == ['pre-merge-consent']
+    # ...yet inadmissible HERE, because it was granted over a different gap.
+    assert checked['any_admissible'] is False
+    assert checked['admissible_kinds'] == []
+    assert checked['inadmissible_kinds'] == ['pre-merge-consent']
+
+    # Matched positive control at the SAME HEAD: the barrier's own override,
+    # granted over the gap the barrier reported, IS admissible.
+    _grant(
+        plan_id,
+        'barrier-ask-override',
+        _REBASED_HEAD,
+        gap_class=_BARRIER_GAP,
+        granted_over='0 unhandled, unproven_bots=pr-agent',
+        reason='operator: accepting the participation gap on this tree',
+    )
+
+    reseeked = _authorization_check(plan_id, _REBASED_HEAD)
+    assert reseeked['any_admissible'] is True
+    assert reseeked['admissible_kinds'] == ['barrier-ask-override']
+    # The consent is still reported — never hidden, just not admissible here.
+    assert reseeked['inadmissible_kinds'] == ['pre-merge-consent']
