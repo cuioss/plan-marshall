@@ -60,6 +60,13 @@ call. A doc-wide scan would let Branch A borrow Branch B's facts and read as
 green — which is precisely the honest-subset property these tests exist to
 check. ``test_call_site_split_isolates_each_invocation`` guards that split.
 
+A block is bounded at BOTH ends. It starts at a shell **invocation line**, not
+at any line carrying the verb: a narrative sentence can name both
+``mark-step-done`` and an ``--outcome`` argument, and anchoring on the token
+alone made such a sentence parse as a factless ``done`` call site — reporting a
+correctly-wired doc as an offender.
+``test_call_site_boundary_rejects_prose_naming_both_tokens`` pins that boundary.
+
 Every regex detector carries a mutation guard asserting it fires on the exact
 pre-fix text it targets. Without them a typo'd pattern would make the
 corresponding assertion vacuously green — the recurring failure shape in this
@@ -111,6 +118,15 @@ _FACT_ARG = re.compile(r'--fact\s+([A-Za-z_][A-Za-z0-9_]*)=(\S*)')
 
 #: The ``--outcome`` value of a call-site block.
 _OUTCOME_ARG = re.compile(r'--outcome\s+([a-z_]+)')
+
+#: A call-site block STARTS at a shell **invocation line** — one that begins the
+#: command itself — never at a narrative line that merely names the verb inside a
+#: sentence. Every documented ``mark-step-done`` call site is launched through the
+#: executor (``python3 .plan/execute-script.py …``, per CLAUDE.md § "Script
+#: Execution Convention"), so "the line opens a ``python3`` command" IS the
+#: invocation boundary. Anchoring the block start here — rather than at any line
+#: carrying the verb — is what separates a call from a mention.
+_INVOCATION_START = re.compile(r'^\s*python3\s')
 
 
 # ---------------------------------------------------------------------------
@@ -168,16 +184,28 @@ def _record_for(step_name: str) -> dict:
 def _call_site_blocks(text: str) -> list[str]:
     """Return each terminal ``mark-step-done`` invocation as its OWN block.
 
-    A block starts at the line carrying the ``mark-step-done`` token and
-    extends across shell line-continuations (``\\``), so each invocation's
-    ``--outcome`` and ``--fact`` arguments stay bound to that invocation alone.
-    Prose mentions of the verb are excluded by requiring an ``--outcome``
-    argument: a sentence naming the call is not a call site.
+    A block starts at a shell **invocation line** (``_INVOCATION_START`` — a line
+    that opens a ``python3`` command) and extends across shell line-continuations
+    (``\\``), so each invocation's ``--outcome`` and ``--fact`` arguments stay
+    bound to that invocation alone. The collected block is admitted only when it
+    both carries the ``mark-step-done`` token and passes an ``--outcome``
+    argument.
+
+    Prose is excluded by the **invocation-start boundary**, NOT by the
+    ``--outcome`` requirement alone. That requirement is not sufficient on its
+    own: a single narrative sentence can name both the verb and an ``--outcome``
+    argument — ``sonar-roundtrip.md`` states that "Every ``--outcome done``
+    branch below MUST … forward it via …" while naming the ``mark-step-done``
+    call — and under a token-anchored start such a sentence was collected as a
+    factless ``done`` call site and reported as a ``work_performed`` offender. A
+    narrative line never *opens* the command, so anchoring the block start at the
+    invocation is what actually separates a call from a mention.
+    ``test_call_site_boundary_rejects_prose_naming_both_tokens`` pins that.
     """
     lines = text.splitlines()
     blocks: list[str] = []
     for index, line in enumerate(lines):
-        if _MARK_STEP_TOKEN not in line:
+        if not _INVOCATION_START.match(line):
             continue
         collected = [line]
         cursor = index
@@ -185,7 +213,7 @@ def _call_site_blocks(text: str) -> list[str]:
             cursor += 1
             collected.append(lines[cursor])
         block = '\n'.join(collected)
-        if _OUTCOME_ARG.search(block):
+        if _MARK_STEP_TOKEN in block and _OUTCOME_ARG.search(block):
             blocks.append(block)
     return blocks
 
@@ -509,3 +537,42 @@ def test_prose_mentions_are_not_counted_as_call_sites():
     )
 
     assert _call_site_blocks(prose) == []
+
+
+#: The exact narrative sentence from ``sonar-roundtrip.md`` that names BOTH the
+#: verb and an ``--outcome done`` argument. It is a claim *about* the call sites,
+#: not a call site — the false positive that made assertion (6) report
+#: ``default:sonar-roundtrip`` as an offender while the production doc was
+#: correct all along.
+_PROSE_NAMING_BOTH_TOKENS = (
+    'Every `--outcome done` branch below MUST capture the worktree HEAD SHA '
+    'immediately before the `mark-step-done` call and forward it via '
+    '`--head-at-completion {sha}`.'
+)
+
+
+def test_call_site_boundary_rejects_prose_naming_both_tokens():
+    """Guards the invocation-start boundary against the exact known regression.
+
+    The sibling guard above uses prose carrying only the verb, so it would still
+    pass under the loose token-anchored boundary — it cannot detect a loosening.
+    This one pins the harder case: a sentence carrying BOTH tokens, which the
+    ``--outcome`` requirement alone admits. The two positive controls assert the
+    sentence really does carry both, so the rejection below can never pass
+    vacuously by asserting over text that simply lacks them.
+    """
+    assert _MARK_STEP_TOKEN in _PROSE_NAMING_BOTH_TOKENS, (
+        'The pinned prose no longer names the verb, so it exercises nothing'
+    )
+    assert _OUTCOME_ARG.search(_PROSE_NAMING_BOTH_TOKENS) is not None, (
+        'The pinned prose no longer carries an --outcome argument, so it no '
+        'longer reproduces the false positive it exists to reject'
+    )
+
+    assert _call_site_blocks(_PROSE_NAMING_BOTH_TOKENS) == [], (
+        'A narrative sentence naming both `mark-step-done` and `--outcome done` '
+        'parsed as a terminal call site. It records no --fact work_performed=, '
+        'so assertion (6) reports its doc as an offender even though every real '
+        'call site in that doc is correctly wired. A call site must begin at the '
+        'invocation, never at any line carrying the verb.'
+    )
