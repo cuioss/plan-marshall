@@ -171,8 +171,7 @@ def _run_fetch(pr_number, plan_id):
 
 
 def _stored(plan_id):
-    findings: list[dict] = query_findings(plan_id, finding_type='pr-comment')['findings']
-    return findings
+    return query_findings(plan_id, finding_type='pr-comment')['findings']
 
 
 def _raw_body(finding):
@@ -475,4 +474,3 @@ def test_surviving_guide_record_scores_neither_false_positive_nor_vacuous_zero()
     assert row['positives_count'] == 0
     assert row['resolved_actionable_count'] == 0
     assert row['pct_resolved_as_fixed'] is None
-    assert row['pct_resolved_as_fixed'] != 0.0

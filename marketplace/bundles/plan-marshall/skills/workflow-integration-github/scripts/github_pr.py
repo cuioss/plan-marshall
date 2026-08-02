@@ -237,14 +237,14 @@ def _is_contentless_boilerplate(body: str, bot_kind: str | None) -> bool:
     changed marker, one actionable marker present) is left in place, so the
     predicate can only ever fail open.
     """
-    required = [marker.strip() for marker in bot_registry.contentless_review_markers(bot_kind or '')]
-    required = [marker for marker in required if marker]
+    kind = bot_kind or ''
+    required = [m.strip() for m in bot_registry.contentless_review_markers(kind) if m.strip()]
     if not required:
         return False
     if not all(marker in body for marker in required):
         return False
-    disqualifying = [marker.strip() for marker in bot_registry.actionable_content_markers(bot_kind or '')]
-    return not any(marker in body for marker in disqualifying if marker)
+    disqualifying = [m.strip() for m in bot_registry.actionable_content_markers(kind) if m.strip()]
+    return not any(marker in body for marker in disqualifying)
 
 
 def _is_obvious_noise(body: str, bot_kind: str | None = None) -> bool:
@@ -645,13 +645,13 @@ def _has_update_movement(comment: dict, observed_keys: set[tuple[str, str]], bot
     - **``updated_at`` movement** — the comment carries an ``updated_at`` that
       differs from its ``created_at``, so it has been edited since it was posted.
 
-    ``observed_keys`` is the UNION of the stored-findings keys
+    ``observed_keys`` must be every comment the plan has SEEN, whether or not it
+    produced a finding — the UNION of the stored-findings keys
     (``_existing_pr_comment_keys``) and the noise-dropped observation keys
-    (``_recorded_dropped_comment_keys``) — never the stored-findings keys alone.
-    The union is load-bearing: a comment the pre-filter drops files no finding, so
-    against the stored keys alone the first-presence arm would be satisfied on
-    every single fetch and the movement requirement would never bind. Any comment
-    the plan has SEEN closes that arm, whether or not it produced a finding.
+    (``_recorded_dropped_comment_keys``), never the stored keys alone. Passing the
+    stored keys alone leaves the first-presence arm permanently satisfied for any
+    pre-filtered comment, so the movement requirement stops binding; see
+    ``_DROPPED_COMMENT_KEYS_ARTIFACT`` above.
 
     A comment already observed, whose ``updated_at`` has not moved, yields False:
     no new review was observed. An absent ``updated_at`` degrades to "no movement"
@@ -806,15 +806,13 @@ def cmd_fetch_findings(args):
     # bot kind, thread-bearing or not — whose key is already present.
     existing_comment_keys = _existing_pr_comment_keys(query_findings, plan_id)
 
-    # The stored-findings keys alone are an INCOMPLETE record of what this plan has
-    # observed: a comment the noise pre-filter drops files no finding, so its key
-    # never appears above. The participation movement guard therefore reads the
-    # UNION of the stored keys and the noise-dropped observation keys recorded by
-    # earlier fetches; ``existing_comment_keys`` stays the input to the
-    # cross-iteration dedup (pre-filter 5), which is a different question — dedup
-    # asks "was this already STAGED as a finding?", participation asks "has this
-    # plan already SEEN this comment?". Widening dedup to the union would drop a
-    # previously-clean comment that has since gained real content.
+    # The participation movement guard reads the UNION of the stored keys and the
+    # noise-dropped observation keys recorded by earlier fetches (see
+    # ``_DROPPED_COMMENT_KEYS_ARTIFACT``). ``existing_comment_keys`` stays the input
+    # to the cross-iteration dedup (pre-filter 5), which asks a different question —
+    # dedup asks "was this already STAGED as a finding?", participation asks "has
+    # this plan already SEEN this comment?". Widening dedup to the union would drop
+    # a previously-clean comment that has since gained real content.
     recorded_dropped_keys = _recorded_dropped_comment_keys(plan_id)
     observed_comment_keys = existing_comment_keys | recorded_dropped_keys
 

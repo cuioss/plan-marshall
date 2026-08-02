@@ -67,10 +67,14 @@ from typing import Any
 _POSITIVE_RESOLUTIONS = {'fixed'}
 _FALSE_POSITIVE_RESOLUTIONS = {'rejected'}
 
-# The canonical resolution enum minus `pending` — every state in which a finding
-# has actually been decided. This is the membership test behind
-# `resolved_actionable_count`, the `pct_resolved_as_fixed` denominator.
-_RESOLVED_RESOLUTIONS = frozenset({'fixed', 'rejected', 'accepted', 'taken_into_account', 'suppressed'})
+# The canonical resolution enum — the only states that get their own per-reviewer
+# counter. `_RESOLVED_RESOLUTIONS` is it minus `pending`: every state in which a
+# finding has actually been decided, and the membership test behind
+# `resolved_actionable_count`, the `pct_resolved_as_fixed` denominator. Derived
+# rather than restated so a resolution added to the enum cannot be counted in one
+# place and silently missed in the other.
+_ALL_RESOLUTIONS = frozenset({'fixed', 'rejected', 'accepted', 'taken_into_account', 'suppressed', 'pending'})
+_RESOLVED_RESOLUTIONS = _ALL_RESOLUTIONS - {'pending'}
 
 # CodeRabbit's status-summary review_body is META, not actionable. Detected by the
 # author login plus the status-summary signature in the title/detail.
@@ -176,8 +180,8 @@ def aggregate(records: list[dict[str, Any]]) -> dict[str, Any]:
         else:
             bucket['meta_count'] += 1
 
-        # Resolution buckets — only count the canonical six.
-        if resolution in ('fixed', 'accepted', 'taken_into_account', 'rejected', 'suppressed', 'pending'):
+        # Resolution buckets — only count the canonical enum.
+        if resolution in _ALL_RESOLUTIONS:
             bucket[resolution] += 1
 
         if resolution in _POSITIVE_RESOLUTIONS:
