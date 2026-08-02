@@ -24,6 +24,10 @@ surface (``check_auth``, ``fetch_pr_comments_data``, ``fetch_pr_head_sha``):
         self-authored responses (the current cycle's unbroken run, not the PR's
         lifetime total) the producer REPORTS exhaustion as a
         ``(self-response-loop)`` Q-Gate finding instead of passing silently.
+    (e) stale-override refusal — an operator authorization granted at one HEAD
+        does NOT authorize a merge at a later HEAD carrying commits the ruling
+        never covered (the plan-marshall#1067 shape), and a re-grant at the new
+        HEAD restores it, so the escape hatch is BOUND rather than removed.
 
 Per lesson 2026-07-09-14-001 the provider response is built from a real fixture
 shape (mirroring ``test_github_pr.py``), so a green fixture cannot diverge from
@@ -375,3 +379,117 @@ def test_optional_bot_silence_does_not_block_merge(plan_context, monkeypatch):
     # The silent optional bots are still REPORTED — accepted, never hidden.
     assert 'pr-agent' in verdict['unproven_bots']
     assert 'sourcery' in verdict['unproven_bots']
+
+
+# --- Authorization binding: the stale-override refusal ------------------------
+#
+# Predicate 2 reporting `participation_complete: false` is what the barrier calls
+# a REPORTED GAP. The barrier may proceed past a reported gap only on an operator
+# authorization that is valid at the HEAD it is about to merge — never on a
+# decision-log entry recalled from an earlier pass, which is precisely how
+# plan-marshall#1067 merged five unreviewed production commits.
+
+_merge_auth = load_script_module(
+    'plan-marshall', 'manage-status', '_cmd_merge_authorization.py', '_barrier_merge_auth_cmd'
+)
+_lifecycle = load_script_module(
+    'plan-marshall', 'manage-status', '_cmd_lifecycle.py', '_barrier_merge_auth_lifecycle'
+)
+
+#: The docs-only tree the operator actually inspected when they ruled.
+_DOCS_ONLY_HEAD = 'd0c50n1ya1b2c3d4e5f60718293a4b5c6d7e8f90'
+#: The post-rebase tree carrying production commits the ruling never covered.
+_REBASED_HEAD = '76c7200b6f1e2d3c4b5a69788796a5b4c3d2e1f0'
+
+
+def _make_plan(plan_id):
+    """Create the plan status.json the merge-authorization store lives in."""
+    _lifecycle.cmd_create(
+        argparse.Namespace(
+            plan_id=plan_id,
+            title='Pre-merge barrier authorization test',
+            phases='1-init,2-refine,3-outline,4-plan,5-execute,6-finalize',
+            force=False,
+            store='plans',
+            use_worktree=False,
+        )
+    )
+
+
+def _grant(plan_id, kind, head, granted_over, reason):
+    return _merge_auth.cmd_merge_authorization_grant(
+        argparse.Namespace(
+            plan_id=plan_id, kind=kind, head=head, granted_over=granted_over, reason=reason
+        )
+    )
+
+
+def _authorization_check(plan_id, head):
+    return _merge_auth.cmd_merge_authorization_check(
+        argparse.Namespace(plan_id=plan_id, head=head)
+    )
+
+
+def test_stale_override_does_not_satisfy_barrier_after_head_advances(plan_context, monkeypatch):
+    """The plan-marshall#1067 shape, end to end.
+
+    An operator rules "merge anyway" over a docs-only delta at HEAD A. A rebase
+    then advances the branch to HEAD B carrying production commits, and the
+    required bot has NOT reviewed B — so Predicate 2 reports a gap and the
+    barrier is on an authorizable blocked path. At that point the ONLY admissible
+    evidence is an authorization valid at B: the ruling made over A must read as
+    LAPSED, leaving the barrier with nothing to proceed on.
+
+    The second half proves the hatch was bound rather than removed — re-seeking
+    at B re-authorizes, so the operator is never locked out, only re-asked about
+    a tree they have actually seen.
+    """
+    plan_id = 'barrier-stale-override'
+    _make_plan(plan_id)
+
+    # The operator rules over the docs-only tree, naming what they saw.
+    _grant(
+        plan_id,
+        'barrier-ask-override',
+        _DOCS_ONLY_HEAD,
+        granted_over='0 unhandled, docs-only delta, unproven_bots=pr-agent',
+        reason='operator: docs-only change, proceeding without the pr-agent review',
+    )
+
+    # The rebase lands production commits and the required bot has not reviewed
+    # them — Predicate 2 reports the gap the barrier must not proceed past.
+    _patch_provider(monkeypatch, _CODERABBIT_ONLY)
+    result = _run_fetch(208, plan_id)
+    assert result['status'] == 'success'
+    _resolve_all_pending(plan_id)
+    assert _pending(plan_id) == []
+
+    verdict = _completeness(
+        plan_id,
+        _participation_csv(result),
+        required=['pr-agent'],
+        optional=['coderabbit'],
+    )
+    assert verdict['participation_complete'] is False
+    assert verdict['unproven_bots'] == ['pr-agent']
+
+    # THE property: the ruling made over HEAD A is not evidence at HEAD B.
+    stale = _authorization_check(plan_id, _REBASED_HEAD)
+    assert stale['any_authorized'] is False
+    assert 'barrier-ask-override' in stale['lapsed_kinds']
+    assert stale['authorized_kinds'] == []
+
+    # The hatch is BOUND, not removed: re-seeking at the tree that will actually
+    # be merged restores authorization.
+    _grant(
+        plan_id,
+        'barrier-ask-override',
+        _REBASED_HEAD,
+        granted_over='0 unhandled, unproven_bots=pr-agent',
+        reason='operator: re-asked after the rebase, accepting the gap on this tree',
+    )
+
+    reseeked = _authorization_check(plan_id, _REBASED_HEAD)
+    assert reseeked['any_authorized'] is True
+    assert reseeked['authorized_kinds'] == ['barrier-ask-override']
+    assert reseeked['lapsed_kinds'] == []

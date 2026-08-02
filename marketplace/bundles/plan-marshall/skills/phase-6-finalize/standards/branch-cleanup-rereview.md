@@ -69,12 +69,22 @@ This sub-block is evaluated ONLY when the `github_re_review re-review` call abov
 
 **Release-before-wait / re-acquire-after (widened hold)**: this trigger-A timeout gate is an operator-wait boundary. Under `merge_hold_window == full_window_release_at_waits`, BEFORE presenting any `AskUserQuestion` below, release the merge mutex if held and FIFO-re-enqueue (`merge_lock release --plan-id {plan_id}`), so the plan does not hold the lock across a human prompt (§ "Merge-Mutex Hold Window" invariant 1 in `branch-cleanup.md`). On the "Wait another {re_review_await_timeout_seconds}s" resume and on any path that continues toward the merge, RE-ACQUIRE via the FIFO poll loop and **re-validate** (`baseline-reconcile`; re-rebase when `origin/{base_branch}` advanced during the released window) before proceeding. The `merge_hold_budget_seconds` bound is checked here too: if the elapsed-since-`{hold_start}` already exceeds the budget, escalate rather than silently continuing to hold. Read `re_review_on_timeout` off the same `plan-marshall:automatic-review` `params` object returned by the `step-params get` call above (default: `ask`) and branch on its value. **Every branch is decision-logged** — a timeout is always an explicit, auditable decision; the `proceed`/"Merge anyway" outcomes log at WARNING naming the unreviewed HEAD SHA.
 
-- **`proceed`** (explicit opt-in to advance the unreviewed HEAD): decision-log at WARNING naming the unreviewed `{head_sha}`, then continue to the **Pre-Merge Confirmation Gate** below (today's silent-proceed, now an explicit, logged choice):
+Both branches that advance an unreviewed HEAD — the `proceed` policy branch and the `ask` → "Merge anyway — proceed unreviewed" selection — additionally **grant** a `rereview-timeout-override` bound to `{head_sha}`. The decision-log line is the honest record of the ruling; it is not, and never becomes, admissible evidence at the pre-merge barrier. See `branch-cleanup.md` § "Merge-Authorization Roster" for the full population and § "Authorization check — the only admissible evidence on a blocked path" for where these grants are checked.
+
+- **`proceed`** (explicit opt-in to advance the unreviewed HEAD): decision-log at WARNING naming the unreviewed `{head_sha}`, **then persist the ruling as a HEAD-bound authorization**, then continue to the **Pre-Merge Confirmation Gate** below (today's silent-proceed, now an explicit, logged choice):
 
   ```bash
   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
     decision --plan-id {plan_id} --level WARNING \
     --message "(plan-marshall:phase-6-finalize) Branch cleanup re-review timeout (trigger A): re_review_on_timeout=proceed — advancing UNREVIEWED head_sha={head_sha} to the pre-merge gate after {re_review_await_timeout_seconds}s budget expired"
+  ```
+
+  The log line names `{head_sha}` but persists nothing, so the pre-merge barrier cannot read it as evidence. Grant the authorization against that same `{head_sha}` (see `manage-status` Canonical invocations → `merge-authorization — grant`):
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-status:manage-status merge-authorization grant \
+    --plan-id {plan_id} --kind rereview-timeout-override --head {head_sha} \
+    --granted-over "no fresh bot review for this HEAD after {re_review_await_timeout_seconds}s" --reason "re_review_on_timeout=proceed policy branch"
   ```
 
 - **`defer`** (auto-skip the merge, no prompt): decision-log, then take the SAME skip path as the interactive "No, skip merge" branch in the **Pre-Merge Confirmation Gate** below — set `{merge_consent} = deferred`, skip the **Merge PR**, **Wait for Merge CI**, **Remove Worktree**, and **Switch to Base Branch** sections, emit the `mark-step-done` payload using **Branch C — declined by user**, and return:
@@ -120,12 +130,20 @@ This sub-block is evaluated ONLY when the `github_re_review re-review` call abov
       --message "(plan-marshall:phase-6-finalize) Branch cleanup re-review timeout (trigger A): user chose to wait another {re_review_await_timeout_seconds}s — re-resolved head_sha={head_sha} (post-reacquisition) and re-issuing re-review"
     ```
 
-  - **"Merge anyway — proceed unreviewed"** → decision-log at WARNING naming the unreviewed `{head_sha}`, then continue to the **Pre-Merge Confirmation Gate** below (same effect as the `proceed` policy):
+    This branch grants nothing — it awaits a review rather than authorizing an unreviewed advance. Because it re-resolves `{head_sha}` before re-issuing, a `rereview-timeout-override` granted on a SUBSEQUENT pass through this gate is bound to the re-resolved HEAD, not the stale one captured before the wait.
+
+  - **"Merge anyway — proceed unreviewed"** → decision-log at WARNING naming the unreviewed `{head_sha}`, **then persist the ruling as a HEAD-bound authorization**, then continue to the **Pre-Merge Confirmation Gate** below (same effect as the `proceed` policy):
 
     ```bash
     python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
       decision --plan-id {plan_id} --level WARNING \
       --message "(plan-marshall:phase-6-finalize) Branch cleanup re-review timeout (trigger A): user chose merge-anyway — advancing UNREVIEWED head_sha={head_sha} to the pre-merge gate"
+    ```
+
+    ```bash
+    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status merge-authorization grant \
+      --plan-id {plan_id} --kind rereview-timeout-override --head {head_sha} \
+      --granted-over "no fresh bot review for this HEAD after {re_review_await_timeout_seconds}s" --reason "{operator selection: Merge anyway — proceed unreviewed}"
     ```
 
   - **"Defer merge"** → take the SAME skip path as the `defer` policy above (set `{merge_consent} = deferred`, skip Merge PR / Wait for Merge CI / Remove Worktree / Switch to Base Branch, emit `mark-step-done` Branch C, return). Log the decision:

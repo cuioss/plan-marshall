@@ -108,6 +108,21 @@ The widened hold obeys four invariants:
 
 `merge_hold_budget_seconds` and `merge_hold_window` are declared in this step's `configurable:` frontmatter; their seed-into-`marshal.json` assertion is owned by deliverable 6's `test_config_defaults.py` (single test owner). The narrow legacy hold is still available via `merge_hold_window == pre_merge_only` (acquire only at the Pre-Merge Gate, as the pre-widening flow did).
 
+## Merge-Authorization Roster
+
+Every mechanism by which an operator (or a policy standing in for one) authorizes advancing a tree past a merge gate. This section is the **declared population**: membership lives here and nowhere else, and the derivation guard in `test/plan-marshall/phase-6-finalize/test_merge_authorization_roster.py` parses these rows rather than carrying a hardcoded list, so a mechanism added here is covered automatically.
+
+Each row leads with its backticked `{kind}` token and carries three machine-checkable claims — `head_bound:` (is this authorization bound to a specific tree), `bound_via:` (which mechanism binds it), and `site:` (where that mechanism lives).
+
+- `barrier-ask-override` — head_bound: yes — bound_via: grant — site: § Pre-Merge Review-Completeness Barrier, `{barrier_mode} == ask` → "Merge anyway (record reason)". Granted at the live HEAD alongside the existing WARNING decision-log line, and checked by the barrier before any blocked path proceeds.
+- `pre-merge-consent` — head_bound: yes — bound_via: grant — site: § Pre-Merge Confirmation Gate → "Yes, merge" (`{merge_consent} = explicit_yes`). Granted at the live HEAD so a re-rebase between consent and merge — the release-before-wait / re-acquire path — lapses the consent instead of silently carrying it onto a different tree.
+- `red-ci-override` — head_bound: yes — bound_via: grant — site: § Rebase Branch onto Base, the immediate-merge authoritative CI gate → "Merge anyway — override red CI". Granted at the live HEAD before the override proceeds.
+- `rereview-timeout-override` — head_bound: yes — bound_via: grant — site: [`branch-cleanup-rereview.md`](branch-cleanup-rereview.md) § "On re-review timeout (trigger A)" — BOTH the `re_review_on_timeout: proceed` policy branch and the `ask` → "Merge anyway — proceed unreviewed" selection. Granted at the re-resolved `{head_sha}`.
+- `automatic-review-force-done` — head_bound: yes — bound_via: head_dependent — site: [`automatic-review/SKILL.md`](../../automatic-review/SKILL.md) § "Force-done with an explicit recorded reason". Bound by that step's own `head_dependent: true` declaration and its persisted `--head-at-completion`, and the barrier re-derives participation from the provider rather than trusting the record — so it needs no grant of its own.
+- `final_merge_without_asking` — head_bound: n/a — bound_via: out_of_class — site: the `default:branch-cleanup` step param. Standing config that authorizes a *policy* rather than a specific tree, so it falls outside the HEAD-bound class and is recorded here rather than granted.
+
+The verb backing every `bound_via: grant` row is `manage-status merge-authorization` — see `manage-status` Canonical invocations → `merge-authorization — grant` / `merge-authorization — check`.
+
 ## Mode Detection
 
 Check whether `create-pr` appears in `manifest.phase_6.steps` (already available from SKILL.md Step 2 manifest read):
@@ -401,6 +416,22 @@ The disposition of a red gate depends on WHICH path produced it — the two path
 
   - **Escalate (operator override)**: when an operator gate is warranted, fire an inline `AskUserQuestion` mirroring the trigger-A timeout gate — default **"Abort merge"**, with an explicit **"Merge anyway — override red CI"** option that decision-logs the override at WARNING before proceeding. Silent warn-and-proceed is NOT one of the options.
 
+    On the **"Merge anyway — override red CI"** selection, bind the override to the tree it was granted against. Resolve the live HEAD:
+
+    ```bash
+    git -C {worktree_path} rev-parse HEAD
+    ```
+
+    Record the output as `{sha}`, then grant (see `manage-status` Canonical invocations → `merge-authorization — grant`):
+
+    ```bash
+    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status merge-authorization grant \
+      --plan-id {plan_id} --kind red-ci-override --head {sha} \
+      --granted-over "red CI on the authoritative immediate-merge gate: {red_checks}" --reason "{reason}"
+    ```
+
+    The grant is in addition to the WARNING decision-log line, never in place of it.
+
 Log the rebase:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -572,7 +603,21 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 Set `{merge_consent} = deferred`. Skip the **Merge PR**, **Wait for Merge CI**, **Remove Worktree**, and **Switch to Base Branch** sections entirely; the rebased branch is left in place with no further mutation. Emit the `mark-step-done` payload below using **Branch C — declined by user** (deferral is the same shape from the workflow's point of view: cleanup was not completed this run, re-entry is expected) and return.
 
-**If user selects "Yes, merge"**: Set `{merge_consent} = explicit_yes` and proceed to **Merge PR (if not yet merged)** below, where the **Merge routing (`use_merge_queue`)** section performs the routed action. The authorization is symmetric with that routing:
+**If user selects "Yes, merge"**: Set `{merge_consent} = explicit_yes`, then bind the consent to the tree it was given over — the release-before-wait / re-acquire path may re-rebase between this consent and the merge, and an unbound consent would silently carry onto the different tree that produces. Resolve the live HEAD:
+
+```bash
+git -C {worktree_path} rev-parse HEAD
+```
+
+Record the output as `{sha}`, then grant (see `manage-status` Canonical invocations → `merge-authorization — grant`):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status merge-authorization grant \
+  --plan-id {plan_id} --kind pre-merge-consent --head {sha} \
+  --granted-over "operator confirmed merge of PR #{pr_number} at this HEAD" --reason "operator selected 'Yes, merge' at the Pre-Merge Confirmation Gate"
+```
+
+Then proceed to **Merge PR (if not yet merged)** below, where the **Merge routing (`use_merge_queue`)** section performs the routed action. The authorization is symmetric with that routing:
 
 - On `use_merge_queue == false` (default): the `pr safe-merge` poll-then-merge path — including its GitHub-only stuck-state admin fallback when `admin_merge_on_stuck_state` is enabled — is authorized (explicit consent was given for the merge action; the stuck-state fallback is part of the same merge intent).
 - On `use_merge_queue == true`: the ENQUEUE via `ci pr merge-queue` is authorized instead — with NO `--delete-branch` and NO direct-merge/admin fallback; the platform re-tests-and-merges against the latest base and performs the head-branch deletion itself after the queue merge.
@@ -584,6 +629,8 @@ Set `{merge_consent} = deferred`. Skip the **Merge PR**, **Wait for Merge CI**, 
 **The barrier has TWO predicates, and the second exists because the first cannot see an absence.** Unhandled-comment completeness asks whether every comment that EXISTS has been handled; a required bot that never reviewed at all publishes nothing, contributes zero pending findings, and therefore reads as *clean* to that predicate alone. Silence and satisfaction are indistinguishable to a comment count. The participation predicate below closes that by asking the complementary question — did every REQUIRED bot actually publish a review artifact against this HEAD — and both must pass before the merge proceeds.
 
 ⚠ **This barrier, not the `automatic-review` force-done escape hatch, is what authorizes a merge.** That escape hatch (SKILL.md § "Force-done with an explicit recorded reason") lets the FIND step mark itself `done` with a required bot unproven, and the resulting record is byte-identical to one earned by a genuine pass — so nothing downstream could previously distinguish *reviewed* from *forced*. Observed on plan-marshall#1045: the fix commit was reviewed by CodeRabbit and never by the required `pr-agent`, `review_completeness` returned `participation_complete: false` with `unproven_bots: [pr-agent, sourcery]`, the step went `done` through the hatch, and `final_merge_without_asking: true` carried it to merge unchallenged. Re-deriving participation HERE rather than trusting the step record means a force-done no longer buys a merge: it defers the question to a barrier that asks it again, under an operator-configured `{barrier_mode}` rather than a leaf's own judgement.
+
+Every mechanism that can authorize advancing a tree past a merge gate is enumerated in § "Merge-Authorization Roster" above, and this barrier is the single site at which they are checked. The `automatic-review` force-done hatch is recorded there as ALREADY HEAD-bound — via that step's own `head_dependent: true` declaration — which is why it needs no grant of its own here.
 
 #### Read the barrier knob and the bot participation lists
 
@@ -729,9 +776,50 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Pre-merge review barrier: clean — zero pending pr-comment findings, required-bot participation complete, proceeding to merge"
 ```
 
+#### Authorization check — the only admissible evidence on a blocked path
+
+**UNKNOWN is never authorizable — read this before the check below.** This check applies to exactly TWO blocked paths: **participation-incomplete** and **pending-findings**. It does NOT apply to either UNKNOWN branch (§ "UNKNOWN — the re-fetch itself failed" and § "UNKNOWN — the predicate itself failed"). Those two branches are untouched by the authorization mechanism: no check is run there, no grant is honoured there, and no bypass exists there. Their absolute refusal — **the merge NEVER proceeds on an UNKNOWN verdict** — stands verbatim, mirroring `automatic-review`'s rule that the force-done hatch is UNAVAILABLE for an UNKNOWN verdict. Wiring a bypass into an UNKNOWN branch would reintroduce exactly the fail-open shape this check exists to remove: an absent verdict is not a gap an operator can knowingly authorize past, because nobody knows what the gap is.
+
+On the two authorizable blocked paths, this check is a **bypass of the `{barrier_mode}` disposition**, so it is evaluated BEFORE that branching, not after it. Resolve the live HEAD:
+
+```bash
+git -C {worktree_path} rev-parse HEAD
+```
+
+Record the output as `{sha}`, then run the check (see `manage-status` Canonical invocations → `merge-authorization — check`):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status merge-authorization check \
+  --plan-id {plan_id} --head {sha}
+```
+
+Read `any_authorized`, `authorized_kinds`, and `lapsed_kinds` from the returned TOON, then route:
+
+- **`any_authorized: true`** → an operator authorization granted against THIS HEAD exists. Proceed directly to **Merge PR (if not yet merged)**, skipping the `{barrier_mode}` disposition. The mandatory decision-log line names the gap AND the authorization it is proceeding under — never a phrase that reads like a passed gate:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    decision --plan-id {plan_id} --level WARNING --message "(plan-marshall:phase-6-finalize) Pre-merge review barrier: proceeding despite {gap} under authorization {authorized_kinds} granted at {sha}"
+  ```
+
+  `{gap}` expands to the full reported gap (the pending count plus the entire `unproven_bots` list), so it is unbounded. The step's operator-facing `display_detail` is length-bounded (≤80 chars, ASCII, no trailing period) and MUST be checked against that placeholder's **worst-case expansion**, not its literal form — so the bounded string carries the fixed-width form `merged under {kind}, gap recorded` and the full expansion lives only in the unbounded `decision`-log line above.
+
+- **`any_authorized: false`** → the merge is REFUSED and the configured `{barrier_mode}` disposition below runs. When `lapsed_kinds` is non-empty, name it so the operator sees WHICH ruling expired and why re-asking is necessary rather than reading the prompt as a fresh, unexplained block:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    decision --plan-id {plan_id} --level WARNING --message "(plan-marshall:phase-6-finalize) Pre-merge review barrier: no authorization valid at {sha} — lapsed_kinds={lapsed_kinds}; re-seek under pre_merge_comment_barrier={barrier_mode}"
+  ```
+
+**The D4 admissible-evidence rule.** The ONLY admissible evidence that an operator authorized proceeding past a reported gap is a `merge-authorization check` verdict at the CURRENT HEAD. A `decision`-log entry is **NEVER** admissible authorization evidence — including one this barrier itself wrote on an earlier pass. A log entry records that a ruling was made; it does not record which tree the ruling covered, so recalling one at a later HEAD is precisely the defect this check exists to remove. Do not read, quote, or reason from `decision.log` when deciding whether to proceed past a gap.
+
+**Check-then-act constraint.** This check and the merge dispatch form a check-then-act pair. The check MUST be the LAST gate before the **Merge PR** routing, with no operator-wait, no merge-mutex release-and-re-acquire, and no re-rebase between it and the merge. When any of those intervenes, the check MUST be re-run against the freshly-resolved HEAD before merging — the same rule the Pre-Merge Confirmation Gate applies when it forbids reusing a pre-wait classifier run. The mitigation menu for this hazard class is owned by [`ref-code-quality/standards/code-organization.md`](../../ref-code-quality/standards/code-organization.md) § TOCTOU / check-then-act hazards.
+
 #### Blocked path — participation incomplete
 
 When `participation_complete: false`, the merge is blocked even if `{count} == 0`. **Zero pending comments is exactly what an unreviewed diff looks like**, so this branch must never be collapsed into the clean path on a comment count alone.
+
+This is an **authorizable** blocked path: § "Authorization check — the only admissible evidence on a blocked path" above has already run, and this disposition fires only when it returned `any_authorized: false`.
 
 Branch on `{barrier_mode}` using the SAME two branches as the unhandled-comment block below — `fail_into_loopback` (default) loops back into `6-finalize` so `automatic-review` re-fires and re-awaits the unproven bot, and `ask` prompts the operator. Both branches carry the same merge-mutex release obligations documented there; only the recorded message differs:
 
@@ -744,7 +832,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 #### Blocked path — one or more pending findings
 
-When the pending list is non-empty, the merge is blocked. Branch on `{barrier_mode}` (these are the branches the participation-incomplete block above also uses):
+When the pending list is non-empty, the merge is blocked. This is the second **authorizable** blocked path: § "Authorization check — the only admissible evidence on a blocked path" above has already run, and the branches below fire only when it returned `any_authorized: false`. Branch on `{barrier_mode}` (these are the branches the participation-incomplete block above also uses):
 
 ##### `{barrier_mode} == fail_into_loopback` (default)
 
@@ -810,12 +898,28 @@ AskUserQuestion:
 Branch on the operator's selection:
 
 - **"Re-triage now"** → take the SAME loop-back path as `fail_into_loopback` above (release the mutex per invariant 4, record `branch-cleanup` as `loop_back` to `6-finalize`, log, return).
-- **"Merge anyway (record reason)"** → RE-ACQUIRE the merge mutex and re-validate (per the release-before-wait note above), decision-log at WARNING naming the unhandled count and the operator's reason, then continue to **Merge PR (if not yet merged)** below:
+- **"Merge anyway (record reason)"** → RE-ACQUIRE the merge mutex and re-validate (per the release-before-wait note above), decision-log at WARNING naming the unhandled count and the operator's reason, **then persist the ruling as a HEAD-bound authorization**, then continue to **Merge PR (if not yet merged)** below:
 
   ```bash
   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
     decision --plan-id {plan_id} --level WARNING --message "(plan-marshall:phase-6-finalize) Pre-merge comment barrier: operator chose merge-anyway with {count} unhandled comment(s) — reason: {reason}"
   ```
+
+  The log line above is the honest record of what the operator decided and is kept verbatim — recording was never the defect. What it cannot do is *authorize*: it names no tree, so a later barrier pass at a different HEAD could recall it and merge a tree the operator never saw (the plan-marshall#1067 shape). Bind the ruling to the tree it was granted over. Because the re-acquire and re-validation above may have re-rebased, resolve the live HEAD **after** them:
+
+  ```bash
+  git -C {worktree_path} rev-parse HEAD
+  ```
+
+  Record the output as `{sha}`, then grant (see `manage-status` Canonical invocations → `merge-authorization — grant`):
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-status:manage-status merge-authorization grant \
+    --plan-id {plan_id} --kind barrier-ask-override --head {sha} \
+    --granted-over "{count} unhandled, unproven_bots={unproven_bots}" --reason "{reason}"
+  ```
+
+  `--granted-over` carries the gap AS THE BARRIER REPORTED IT, so a later reader can re-evaluate the ruling against a later delta rather than re-deriving what the operator was shown. A re-grant at a new HEAD overwrites this record — that overwrite IS the sanctioned re-seek.
 
 - **"Defer merge"** → set `{merge_consent} = deferred`, skip the **Merge PR**, **Wait for Merge CI**, **Remove Worktree**, and **Switch to Base Branch** sections, emit the `mark-step-done` payload using **Branch C — declined by user**, and return (the mutex was already released before the prompt). Log the decision:
 

@@ -1,6 +1,6 @@
 ---
 name: manage-status
-description: Manage status.json files with phase tracking, metadata, and lifecycle operations for plans, plus the lean kind=orchestrator status store for orchestrator epics
+description: Manage status.json files with phase tracking, metadata, and lifecycle operations for plans, the HEAD-bound merge-authorization record the pre-merge barrier gates on, plus the lean kind=orchestrator status store for orchestrator epics
 user-invocable: false
 mode: script-executor
 scope: plan
@@ -489,6 +489,74 @@ message: No terminal record for step 'plan-marshall:plan-retrospective' in phase
 
 Because the write key and read key are computed identically, the record/assert keys reconcile to the manifest `step_id` regardless of which spelling each caller used: a step recorded via `mark-step-done` with one variant (`default:push`) is resolved as a canonical MATCH by `assert-step-recorded` queried with the other variant (`push`) — `recorded: true`, no `step_record_mismatched_key`. The same resolver is consumed by `manage-execution-manifest`'s `record-step` handler and every manifest-bundle boundary-normalization call site, so execution-log keys, phase-step keys, and the manifest `step_id` all agree. The `step_record_mismatched_key` verdict is now reserved for a genuine mismatch — a typographic near-miss orphan (edit-distance) that is not a canonical variant — which stays the fail-loud verdict.
 
+### merge-authorization
+
+Bind a merge-gate authorization to the HEAD it was granted against, and refuse it once that HEAD moves. The record lives in `status.metadata.merge_authorizations`, keyed by authorization `kind`, beside the `phase_steps` map. It is deliberately **not** a `phase_steps` entry: those keys are the finalize step roster and feed the `phase_steps_complete` handshake, and the host step `default:branch-cleanup` correctly declares no `head_dependent` fact because it records an action performed rather than a HEAD-dependent verdict.
+
+The authorization population — which kinds exist, which are bound by `grant`, and where each grant site lives — is declared by the **Merge-Authorization Roster** in [`phase-6-finalize/standards/branch-cleanup.md`](../phase-6-finalize/standards/branch-cleanup.md), not by this parser. `--kind` accepts any non-empty token so a mechanism added to the roster later needs no parser change.
+
+#### merge-authorization grant
+
+Persist a HEAD-bound authorization record. A re-grant at a new HEAD **overwrites** the record — that overwrite IS the sanctioned re-seek, so there is no revoke verb.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status merge-authorization grant \
+  --plan-id {plan_id} \
+  --kind {kind} \
+  --head {sha} \
+  --granted-over {gap_description} \
+  --reason {reason}
+```
+
+**Parameters**:
+- `--plan-id` (required): Plan identifier
+- `--kind` (required): Authorization kind, as declared by the Merge-Authorization Roster (e.g., `barrier-ask-override`, `pre-merge-consent`, `red-ci-override`, `rereview-timeout-override`)
+- `--head` (required): Git SHA the authorization is granted against
+- `--granted-over` (required): What the authorization was granted over — the gap as the granting site saw it (e.g., the pending count and the `unproven_bots` list). Persisted verbatim so a later reader can re-evaluate the ruling against a later delta.
+- `--reason` (required): The operator's (or policy's) stated reason
+
+**Output** (TOON):
+```toon
+status: success
+plan_id: my-feature
+kind: barrier-ask-override
+head: 76c7200b6
+granted_over: 2 unhandled, unproven_bots=pr-agent
+reason: operator accepted the gap
+granted_at: "2026-01-15T14:30:00Z"
+```
+
+`previous_head` is additionally reported when the grant overwrote an earlier record.
+
+#### merge-authorization check
+
+Return every authorization record with its verdict at the supplied HEAD. There is deliberately **no `--kind` flag**: the barrier asks one question — "is there a valid authorization for the gap I am reporting" — and a per-kind filter would let one valid authorization mask a lapsed sibling.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status merge-authorization check \
+  --plan-id {plan_id} \
+  --head {sha}
+```
+
+**Parameters**:
+- `--plan-id` (required): Plan identifier
+- `--head` (required): The HEAD the caller is about to merge
+
+Per record the verdict is `valid` when `record.head` equals `--head`, and `lapsed` otherwise. The verdict is **fail-closed**: a malformed record and a record from a superseded HEAD both resolve to `lapsed`, and an empty store returns `any_authorized: false` with empty lists — `absent` is never collapsed into `valid`.
+
+**Output** (TOON):
+```toon
+status: success
+plan_id: my-feature
+head: 76c7200b6
+any_authorized: false
+authorized_kinds[0]:
+lapsed_kinds[1]:
+  - barrier-ask-override
+records[1]{kind,head,verdict,granted_over,reason,granted_at}:
+  barrier-ask-override,d4f1a02c9,lapsed,2 unhandled unproven_bots=pr-agent,operator accepted the gap,2026-01-15T14:30:00Z
+```
+
 ### get-context
 
 Get combined status context (phase, progress, metadata) in one call.
@@ -884,6 +952,8 @@ Phase set, transition rules, and phase-to-skill routing are defined in [standard
 | `title-token clear` | `--plan-id [--owner {build-hook\|merge-lock\|cli}]` | Remove the `status.title_token` record when `--owner` matches the recorded owner or the record is stale (>3600 s). A foreign-owned live record is left intact and reported as `cleared: false, reason: foreign_owner`. Idempotent — a no-op when already absent. |
 | `mark-step-done` | `--plan-id --phase --step --outcome [--display-detail] [--head-at-completion] [--loop-back-target] [--fact KEY=VALUE]... [--force]` | Record phase step outcome (+ optional display detail / HEAD SHA / loop-back target / repeatable structured `facts`) in `metadata.phase_steps` |
 | `assert-step-recorded` | `--plan-id --phase --step [--require-terminal]` | Read-only verdict: reports `recorded: true` iff a terminal `metadata.phase_steps[phase][step]` outcome exists. The phase-6-finalize post-dispatch guard. With `--require-terminal`, a near-miss orphan record under a different key returns `error: step_record_mismatched_key` (carrying `orphan_key`); a truly-absent record returns `error: step_record_missing`. Zero writes. |
+| `merge-authorization grant` | `--plan-id --kind --head --granted-over --reason` | Persist a HEAD-bound merge authorization as `metadata.merge_authorizations[{kind}] = {head, granted_over, reason, granted_at}`. A re-grant at a new HEAD overwrites the record — that overwrite IS the sanctioned re-seek, so there is no revoke verb. `--kind` accepts any non-empty token; the population is declared by the Merge-Authorization Roster in `phase-6-finalize/standards/branch-cleanup.md`, not by the parser. |
+| `merge-authorization check` | `--plan-id --head` | Return every authorization record with a per-record verdict (`valid` when `record.head` equals `--head`, `lapsed` otherwise) plus `authorized_kinds`, `lapsed_kinds`, and `any_authorized`. Deliberately takes **no** `--kind` — a per-kind filter would let one valid authorization mask a lapsed sibling. Fail-closed: a malformed or superseded record is `lapsed`, and an empty store returns `any_authorized: false` with empty lists (`absent` is never collapsed into `valid`). |
 | `get-context` | `--plan-id` | Get combined status context |
 | `get-worktree-path` | `--plan-id` | Resolve persisted worktree path (returns empty string when `use_worktree==false`) |
 | `list` | `[--filter PHASE]` | Discover all plans across the main checkout and its worktrees (each entry tagged `location: current`/`worktree`), optionally filtered by phase |
@@ -1044,6 +1114,25 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status assert
   --plan-id PLAN_ID --phase PHASE --step STEP_ID \
   [--require-terminal]
 ```
+
+### merge-authorization — grant
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status merge-authorization grant \
+  --plan-id PLAN_ID --kind KIND --head SHA \
+  --granted-over TEXT --reason TEXT
+```
+
+Writes `metadata.merge_authorizations[KIND] = {head, granted_over, reason, granted_at}` and returns that record. A re-grant at a new HEAD overwrites the previous one and additionally reports `previous_head`.
+
+### merge-authorization — check
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status merge-authorization check \
+  --plan-id PLAN_ID --head SHA
+```
+
+Returns `any_authorized`, `authorized_kinds[]`, `lapsed_kinds[]`, and a `records[]` table carrying one `verdict` per record (`valid` when `record.head` equals `--head`, `lapsed` otherwise). There is no `--kind` flag. Fail-closed: an empty store returns `any_authorized: false` with empty lists.
 
 ### change-type-heuristic
 
