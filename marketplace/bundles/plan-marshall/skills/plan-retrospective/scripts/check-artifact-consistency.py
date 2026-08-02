@@ -540,6 +540,12 @@ def check_metrics_generated(plan_dir: Path) -> tuple[str, str]:
     guaranteed to be wrong. The not-yet-produced state is reported as
     ``inconclusive`` naming the ordering instead.
 
+    The boundary is STRICT: only a producer ordered strictly later substantiates
+    "has not had its turn". At an EQUAL order the run sequence is unconstrained,
+    so the absence is not excused and falls to the measured ``fail`` branch —
+    whose message therefore claims only that the producer is not ordered strictly
+    after the consumer, never that it ran first.
+
     Both orders are resolved from discovery via :func:`_resolve_step_order`
     rather than from the order literals, so a renumbering moves the verdict with
     it and a second consumer of the same artifact needs no second hardcoded pair.
@@ -571,9 +577,9 @@ def check_metrics_generated(plan_dir: Path) -> tuple[str, str]:
 
     return (
         'fail',
-        f'metrics.md missing — {_METRICS_PRODUCER_STEP} (order {producer_order}) is '
-        f'ordered before {_METRICS_CONSUMER_STEP} (order {consumer_order}), so it has '
-        'already had its turn and produced nothing',
+        f'metrics.md missing — {_METRICS_PRODUCER_STEP} (order {producer_order}) is not '
+        f'ordered strictly after {_METRICS_CONSUMER_STEP} (order {consumer_order}), so it '
+        'is not guaranteed to run later and its absence is a genuine miss',
     )
 
 
