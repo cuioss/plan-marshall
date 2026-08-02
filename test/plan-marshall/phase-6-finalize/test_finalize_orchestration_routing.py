@@ -192,8 +192,20 @@ class TestZeroGlobalStoreWritesLessonsCapture:
         assert 'zero** `manage-lessons add` calls' in self._declaration()
 
     def test_orchestrated_branch_makes_no_architecture_enrich_call(self):
+        """Both halves are required, and neither is redundant.
+
+        The regex half proves the emission region issues no enrich call; the
+        declaration half proves the branch-selection prose SAYS so. Without the
+        prose half the guard goes vacuous the moment the region is renamed or
+        split — the regex would then search an empty span and pass.
+
+        The declaration now states the fact for the WHOLE body rather than for the
+        orchestrated branch alone: the step is ``post_run_review: true``, so no
+        branch of it can reach the hints store (see the KNOWLEDGE routing section,
+        which files the hint as owed instead of writing it).
+        """
         assert _ENRICH_CALL.search(self._branch()) is None
-        assert 'zero** `architecture enrich` calls' in self._declaration()
+        assert 'No branch of this body calls `architecture enrich`' in self._declaration()
 
     def test_declaration_leaves_the_non_orchestrated_path_unchanged(self):
         declaration = self._declaration()
@@ -397,15 +409,27 @@ class TestNonOrchestratedPathUnchanged:
             '"{N} lesson(s) recorded ({lesson_ids})"',
             '"no lessons recorded"',
             '"folded into existing lesson/plan, no new lesson"',
-            '"{N} fact(s) routed to architecture"',
+            # Branch B3 no longer routes the fact to architecture — a
+            # post-merge-ordered step cannot reach the hints store, so the hint is
+            # FILED AS OWED and the detail reports what was actually done.
+            '"{N} owed architecture hint(s) filed"',
         ):
             assert detail in text, detail
 
     def test_lessons_capture_keeps_the_actionable_knowledge_partition(self):
+        """The partition survives, and KNOWLEDGE routes to the OWED-hint artifact.
+
+        Anchored on the route rather than on ``_ENRICH_CALL`` matching somewhere in
+        the document: the body now FORBIDS that call, so its only remaining
+        occurrences are the prose forbidding it — a regex that matches the
+        prohibition would report the route as present no matter what the route
+        became.
+        """
         text = _read(_LESSONS_CAPTURE)
 
         assert 'Classify each candidate signal: ACTIONABLE vs KNOWLEDGE' in text
-        assert _ENRICH_CALL.search(text) is not None
+        assert 'The hints store is unreachable from here, so the hint is OWED, not written.' in text
+        assert 'Owed architecture hint: {module}' in text
 
     def test_retrospective_keeps_the_step_5a_dedup_gate(self):
         text = _read(_RETROSPECTIVE)
