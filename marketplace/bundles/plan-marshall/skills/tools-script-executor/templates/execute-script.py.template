@@ -426,10 +426,12 @@ def _derive_build_status(exit_code: int, payload: dict | None) -> str:
        closed on it.
 
     Defensive by construction: a malformed / absent stdout TOON reaches this
-    function as ``payload=None`` (see :func:`_parse_build_payload`) and falls
-    through to the ``unknown`` branch. A payload whose ``status`` is not a
-    string is likewise ignored rather than compared, so no shape of parsed
-    stdout can raise here.
+    function as ``payload=None`` (see :func:`_parse_build_payload`) and is
+    handled at every exit code — it falls through to the ``unknown`` branch at
+    exit 0, and to ``killed`` / ``error`` per rule 2 on a nonzero exit, so an
+    unreadable payload never resolves to ``success`` on any path. A payload
+    whose ``status`` is not a string is likewise ignored rather than compared,
+    so no shape of parsed stdout can raise here.
 
     Args:
         exit_code: The subprocess returncode observed at the boundary.
