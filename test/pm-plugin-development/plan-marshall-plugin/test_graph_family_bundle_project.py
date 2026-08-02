@@ -3,15 +3,28 @@
 """End-to-end proof that the graph family answers from derived edges.
 
 Runs the whole shipped pipeline against the plan-marshall marketplace itself —
-real module discovery, real resolver discovery over both hierarchies, and the
-real core merge — so the claim under test is "the graph is non-vacuous for this
-project", not "the seam would work if something fed it".
+real module discovery, real resolver discovery over both hierarchies, the real
+core merge, AND the real consumer that turns merged edges into a graph — so the
+claim under test is "the graph is non-vacuous for this project", not "the seam
+would work if something fed it".
 
 The pipeline exercised here is:
 
 ``discover_plugin_modules()`` (materializes ``component_refs``)
 → ``discover_derivation_resolvers()`` (spans Axis-A and Axis-B)
 → ``merge_resolver_edges()`` (validates, unions, stamps provenance)
+→ ``get_module_graph()`` (applies declared-vs-derived precedence, then layers)
+
+**The last stage is load-bearing, not decorative.** Stopping at
+``merge_resolver_edges`` proved only that edges were PRODUCED. The declared-wins
+precedence branch in ``get_module_graph`` runs AFTER the merge and can discard
+every one of them, which is exactly what shipped: an empty
+``internal_dependencies`` stub read as a declaration, so all 29 merged edges were
+thrown away while each resolver still reported ``status: ok`` with a positive
+``edge_count``. A merge-level assertion is structurally incapable of seeing that.
+The enriched overlay below therefore carries the empty-list declaration
+``architecture init`` seeds into every module, so the discarding condition exists
+in the fixture rather than being excluded by an empty ``{}``.
 
 **The gate is asserted as a separately-failing precondition.**
 ``discover_plugin_modules()`` early-returns ``[]`` for any tree that is not the
@@ -42,6 +55,9 @@ _discovery = load_script_module(
 _merge = load_script_module(
     'plan-marshall', 'extension-api', '_derivation_merge.py', 'derivation_merge_graph_e2e'
 )
+_cmd_client = load_script_module(
+    'plan-marshall', 'manage-architecture', '_cmd_client.py', 'cmd_client_graph_e2e'
+)
 
 EXPECTED_RESOLVER_IDS = ['markdown', 'maven', 'python']
 """The shipped resolver roster: one Axis-B implementor and two Axis-A ones."""
@@ -57,19 +73,40 @@ AXIS_A_RESOLVER_IDS = {'markdown', 'python'}
 _PIPELINE: dict = {}
 
 
+def _init_seeded_overlay(derived_by_name: dict) -> dict[str, dict]:
+    """The enriched overlay ``architecture init`` seeds for every module.
+
+    ``init`` writes ``"internal_dependencies": []`` into every module's
+    enriched.json, so this IS the real overlay shape a live project carries. It
+    is reproduced here rather than read off disk so the discarding condition is
+    present deterministically — an overlay loaded from a tree whose
+    ``.plan/architecture`` happens to be unmaterialized would collapse back to
+    the ``{}`` blind spot this test exists to remove.
+    """
+    return {name: {'internal_dependencies': []} for name in derived_by_name}
+
+
 def _pipeline() -> dict:
     """Run the real pipeline once and memoize its result for this module."""
     if not _PIPELINE:
         modules = discover_plugin_modules(str(PROJECT_ROOT))
         derived_by_name = {module['name']: module for module in modules}
+        enriched_by_name = _init_seeded_overlay(derived_by_name)
         resolvers = _discovery.discover_derivation_resolvers()
-        edges, reports = _merge.merge_resolver_edges(resolvers, derived_by_name, {})
+        edges, reports = _merge.merge_resolver_edges(resolvers, derived_by_name, enriched_by_name)
+        graph = _cmd_client.get_module_graph(
+            str(PROJECT_ROOT),
+            derived_by_name=derived_by_name,
+            enriched_by_name=enriched_by_name,
+        )
         _PIPELINE.update(
             modules=modules,
             derived_by_name=derived_by_name,
+            enriched_by_name=enriched_by_name,
             resolvers=resolvers,
             edges=edges,
             reports=reports,
+            graph=graph,
         )
     return _PIPELINE
 
@@ -170,12 +207,75 @@ def test_resolver_set_spans_both_hierarchies():
 
 
 # =============================================================================
-# The graph is non-empty and provenance-carrying
+# The MERGED GRAPH is non-empty — asserted at the consumer, past the discard site
 # =============================================================================
+#
+# Every assertion in this block reads get_module_graph's output, so it covers the
+# declared-vs-derived precedence branch in _build_deps_and_producers — the site
+# that discards a module's resolver-derived edges. A merge-level assertion runs
+# BEFORE that branch and cannot observe it.
 
 
-def test_impact_edge_set_is_non_empty():
-    """The graph family answers from real derived edges, not an empty substrate."""
+def test_module_graph_edge_count_is_non_empty():
+    """The graph the CLI answers from is non-empty, not merely the merge's output.
+
+    This is the claim the merge-level check could not make: the edges must
+    SURVIVE ``get_module_graph``'s declared-wins precedence branch, not just be
+    produced by the resolvers.
+    """
+    graph = _pipeline()['graph']
+
+    assert graph['graph']['edge_count'] > 0, (
+        'get_module_graph returned zero edges for the plan-marshall marketplace — '
+        'the resolvers produced edges and the consumer discarded them'
+    )
+    assert graph['edges'], 'the graph carries an edge_count but an empty edges list'
+
+
+def test_empty_enriched_declaration_does_not_blank_the_graph():
+    """The precise condition that shipped green: every module carries an empty
+    ``internal_dependencies`` in its enriched overlay — the stub ``architecture
+    init`` seeds — and the graph must STILL carry its resolver-derived edges.
+
+    An empty container declares nothing, so it cannot suppress a derived edge.
+    Before the meaning-guard fix this exact overlay reduced ``edge_count`` to 0.
+    """
+    pipeline = _pipeline()
+
+    assert all(
+        overlay['internal_dependencies'] == []
+        for overlay in pipeline['enriched_by_name'].values()
+    ), 'fixture drift: the overlay no longer carries the empty-declaration condition'
+    assert pipeline['graph']['graph']['edge_count'] > 0
+
+
+def test_graph_edges_are_stamped_by_the_resolvers_not_declared():
+    """The surviving edges carry resolver provenance, so they came through the
+    seam rather than from a declaration the precedence branch stamped."""
+    graph = _pipeline()['graph']
+
+    resolver_stamped = [
+        edge for edge in graph['edges'] if set(edge['producers']) & set(EXPECTED_RESOLVER_IDS)
+    ]
+
+    assert resolver_stamped, (
+        'no edge in the merged graph is stamped by a resolver — every surviving '
+        'edge came from a declaration or a cross-link'
+    )
+
+
+def test_graph_response_names_the_resolvers_that_ran():
+    """The anti-vacuity numerator rides all the way to the consumer's response."""
+    graph = _pipeline()['graph']
+
+    assert graph['resolver_count'] == len(EXPECTED_RESOLVER_IDS)
+    assert sorted(report['id'] for report in graph['resolvers']) == EXPECTED_RESOLVER_IDS
+
+
+def test_merge_stage_produces_edges():
+    """The MERGE stage produces edges — a strictly weaker claim than the graph
+    assertions above, kept because it localises a failure to the producing stage
+    rather than to the consumer."""
     assert _pipeline()['edges'], 'the merged edge set is empty for the plan-marshall marketplace'
 
 
@@ -272,10 +372,11 @@ def test_both_endpoints_of_every_edge_are_known_modules():
 def test_edge_list_is_byte_stable_across_two_runs():
     """Two independent merges over the same input produce identical output."""
     derived_by_name = _pipeline()['derived_by_name']
+    enriched_by_name = _pipeline()['enriched_by_name']
     resolvers = _pipeline()['resolvers']
 
-    first, _ = _merge.merge_resolver_edges(resolvers, derived_by_name, {})
-    second, _ = _merge.merge_resolver_edges(resolvers, derived_by_name, {})
+    first, _ = _merge.merge_resolver_edges(resolvers, derived_by_name, enriched_by_name)
+    second, _ = _merge.merge_resolver_edges(resolvers, derived_by_name, enriched_by_name)
 
     assert first == second
 
