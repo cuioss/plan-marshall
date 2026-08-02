@@ -253,9 +253,13 @@ EXECUTION_LOG_KEY = 'execution_log'
 # statement of the pipeline order, so it is kept in lock-step: when a step's
 # ``order`` moves, this sequence moves with it. Resolve the live values with
 # ``manage-config list-finalize-steps`` rather than sorting from memory.
-# ``lessons-capture`` (991), ``record-metrics`` (998) and ``archive-plan`` (1000)
-# sit after the merge gate ``branch-cleanup`` (70) because they report on the
-# finished run and read evidence the gate produces.
+# ``lessons-capture`` (991) and ``record-metrics`` (998) sit after the merge gate
+# ``branch-cleanup`` (70) because they declare ``post_run_review: true``: they
+# report on the finished run and read evidence only the gate produces.
+# ``archive-plan`` (1000) is ordered last for an unrelated reason and declares no
+# ``post_run_review`` fact — an archival move explicitly fails the P1
+# backward-looking-output predicate. It runs last because it moves the plan
+# directory out from under every later reader.
 DEFAULT_PHASE_5_STEPS = ('verify:quality-gate', 'verify:module-tests')
 DEFAULT_PHASE_6_STEPS = (
     'finalize-step-simplify',

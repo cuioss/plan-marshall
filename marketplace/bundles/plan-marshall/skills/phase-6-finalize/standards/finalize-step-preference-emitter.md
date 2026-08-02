@@ -243,8 +243,8 @@ Write the body with the `Write` tool, then apply it with `manage-lessons set-bod
 owed `architecture enrich` call is reconstructible without re-deriving the pattern
 from dispositions that `archive-plan` is about to move.
 
-The pairing with `lessons-capture` is deliberate and symmetric: both steps write
-the same `architecture enrich` sink, both are `post_run_review: true`, both take this same
+The pairing with `lessons-capture` is deliberate and symmetric: both steps owe hints to
+the same `architecture enrich` sink without writing it, both are `post_run_review: true`, both take this same
 discover-after-merge route, and both branch on `orchestrated` to decide whether the record
 lands in the global corpus or in the epic's inbox. Changing one without the other leaves the
 pair half-resolved.
