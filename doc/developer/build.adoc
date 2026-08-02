@@ -114,7 +114,9 @@ Three surfaces are outside the denominator on purpose even though tests exercise
 Two conditions must both be met before widening is worth revisiting:
 +
 . `build.py:cmd_coverage` widens its `--cov` set in lock-step, so the two controlling sites stay in agreement.
-. `build.py` and `marketplace/targets/**` become claimable by a `classify_paths()` predicate. Both now match, so a deliverable declaring either resolves to `production` rather than the `unknown` file-type bucket. This condition is met — the widening is no longer unlandable, only undesired for the denominator reason above.
+. `build.py` and the *Python sources* under `marketplace/targets/` become claimable by a `classify_paths()` predicate. `build.py` matches unconditionally through its own bare-basename row, and `marketplace/targets/*.py` claims the Python files under that root, so a deliverable declaring either resolves to `production` rather than the `unknown` file-type bucket. This condition is met for those files — the widening is no longer unlandable, only undesired for the denominator reason above.
++
+The claim is scoped to Python on purpose: the Python build extension's only route under that root is `marketplace/targets/*.py`, so tracked non-Python content there (the OpenCode `*.json` mapping fixtures, for instance) is claimed by no Python-build route and does not inherit this resolution. Widening the coverage denominator to the whole `marketplace/targets/**` subtree would therefore still leave a deliverable listing one of those files unresolved.
 
 * `[tool.ruff]` — linter/formatter configuration
 * `[tool.mypy]` — type checker configuration
