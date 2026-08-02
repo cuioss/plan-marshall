@@ -196,10 +196,13 @@ def test_predicate_sweep_covers_the_whole_build_class_domain_not_just_the_roster
     swept_true = 0
     swept_false = 0
     for notation, subcommands in domain.items():
-        # A zero-subcommand entry is legitimate, not vacuous: the ``extension``
-        # modules sit under a build-class prefix and register no CLI at all, so
-        # they contribute no dispatchable subcommand to partition. The
-        # anti-vacuity anchor below is therefore domain-level, not per-script.
+        # A zero-subcommand entry contributes nothing to assert, and WHY it is
+        # empty is not knowable here: the ``extension`` modules genuinely
+        # register no CLI, but a script whose subcommands are registered
+        # non-literally is indistinguishable from them (see build_class_domain).
+        # Empty therefore means "nothing to assert", never "verified to have
+        # none" — which is why the anti-vacuity anchor below counts ASSERTIONS
+        # MADE rather than trusting this mapping's size.
         for subcommand in subcommands:
             expected = subcommand in executing
             actual = executor._is_build_class_notation(notation, subcommand)
