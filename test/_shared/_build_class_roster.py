@@ -255,6 +255,85 @@ def build_class_roster() -> dict[str, dict[str, bool]]:
     return roster
 
 
+def _notation_for(script_path: Path) -> str:
+    """Return the ``{bundle}:{skill}:{script}`` notation for a scripts/ path.
+
+    The layout is ``{bundle}/skills/{skill}/scripts/{script}.py``, so the bundle
+    is three levels up (past ``scripts``, the skill, and ``skills``) — not two.
+    """
+    return f'{script_path.parents[3].name}:{script_path.parents[1].name}:{script_path.stem}'
+
+
+def _subcommands_from_source(script_path: Path) -> set[str]:
+    """Return the subcommand names a script registers, derived from its source.
+
+    The roster's argparse capture (:func:`build_class_roster`) only reaches
+    scripts that route through ``_build_cli.build_main``. A script under a
+    build-class prefix that builds its parser some other way is still inside the
+    executor predicate's domain, so its subcommand population has to come from
+    somewhere — here, from ``add_parser('name')`` literals in the source.
+
+    This is a weaker derivation than running the real parser, which is why it is
+    the fallback and not the primary: it is used only for scripts the roster
+    cannot capture.
+    """
+    tree = ast.parse(script_path.read_text(encoding='utf-8'))
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if not isinstance(func, ast.Attribute) or func.attr != 'add_parser':
+            continue
+        if node.args and isinstance(node.args[0], ast.Constant):
+            value = node.args[0].value
+            if isinstance(value, str):
+                names.add(value)
+    return names
+
+
+def build_class_domain() -> dict[str, set[str]]:
+    """Return ``{notation: subcommands}`` for the executor predicate's FULL domain.
+
+    :func:`build_class_roster` answers "which build WRAPPERS exist"; this answers
+    the different and wider question the discriminator predicate actually ranges
+    over: **every** script whose notation matches ``_BUILD_CLASS_PREFIXES``,
+    whether or not it routes through ``build_main``.
+
+    The distinction is load-bearing. A sweep written against the roster alone
+    covers a strict SUBSET of the predicate's domain, so it passes while
+    asserting less than its name claims — the population-derived-detector
+    failure mode. Concretely, a script that imports ``safe_main`` rather than
+    ``build_main`` matches a build-class prefix but never enters the roster.
+
+    Subcommands come from the roster's real argparse capture where available and
+    from :func:`_subcommands_from_source` otherwise, so no notation in the
+    domain contributes an empty population by construction.
+    """
+    prefixes = tuple(build_class_prefixes())
+    roster = build_class_roster()
+    domain: dict[str, set[str]] = {}
+    for bundle_dir in sorted(MARKETPLACE_ROOT.iterdir()):
+        skills_dir = bundle_dir / 'skills'
+        if not skills_dir.is_dir():
+            continue
+        for skill_dir in sorted(skills_dir.iterdir()):
+            scripts_dir = skill_dir / 'scripts'
+            if not scripts_dir.is_dir():
+                continue
+            for script_path in sorted(scripts_dir.glob('*.py')):
+                if script_path.name.startswith('_'):
+                    continue
+                notation = _notation_for(script_path)
+                if not notation.startswith(prefixes):
+                    continue
+                if notation in roster:
+                    domain[notation] = set(roster[notation])
+                else:
+                    domain[notation] = _subcommands_from_source(script_path)
+    return domain
+
+
 def build_class_prefixes() -> frozenset[str]:
     """Return the executor template's ``_BUILD_CLASS_PREFIXES`` set.
 

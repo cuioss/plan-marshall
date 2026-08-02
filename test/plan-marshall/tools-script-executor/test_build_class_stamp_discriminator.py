@@ -45,7 +45,7 @@ import types
 from pathlib import Path
 
 import pytest
-from _build_class_roster import build_class_prefixes, build_class_roster
+from _build_class_roster import build_class_domain, build_class_prefixes, build_class_roster
 
 from conftest import _MARKETPLACE_SCRIPT_DIRS, PROJECT_ROOT
 
@@ -160,6 +160,69 @@ def test_build_executing_subcommands_is_the_single_run_verb():
         f'the build-executing allow-list is {set(executor._BUILD_EXECUTING_SUBCOMMANDS)!r}; '
         'widening it lets another verb stamp a kind=build row that the freshness '
         'gate will accept as proof of a build.'
+    )
+
+
+def test_predicate_sweep_covers_the_whole_build_class_domain_not_just_the_roster():
+    """The sweep population must equal the predicate's domain, not a subset of it.
+
+    ``build_class_roster()`` discovers scripts that route through
+    ``_build_cli.build_main``; ``_is_build_class_notation`` accepts ANY notation
+    under ``_BUILD_CLASS_PREFIXES``. Those two sets are not the same, and where
+    the roster is the smaller one the universality sweep below silently asserts
+    less than its name claims — the population-derived-detector failure mode this
+    suite exists to prevent, pointed at the suite itself.
+
+    This test pins the containment direction that actually bites (domain not
+    covered by the roster) and sweeps the predicate over the FULL domain, so a
+    build-class script that never enters the roster still has every subcommand
+    checked.
+    """
+    executor = _load_executor_module()
+    executing = executor._BUILD_EXECUTING_SUBCOMMANDS
+    domain = build_class_domain()
+    roster = _build_class_notations()
+
+    assert domain, (
+        'no script matched the executor build-class prefixes -- the domain '
+        'derivation is vacuous and this sweep covers nothing.'
+    )
+    assert set(roster) <= set(domain), (
+        f'roster notations {sorted(set(roster) - set(domain))!r} are absent from the '
+        'derived build-class domain -- the two derivations disagree about which '
+        'notations are build-class.'
+    )
+
+    swept_true = 0
+    swept_false = 0
+    for notation, subcommands in domain.items():
+        # A zero-subcommand entry is legitimate, not vacuous: the ``extension``
+        # modules sit under a build-class prefix and register no CLI at all, so
+        # they contribute no dispatchable subcommand to partition. The
+        # anti-vacuity anchor below is therefore domain-level, not per-script.
+        for subcommand in subcommands:
+            expected = subcommand in executing
+            actual = executor._is_build_class_notation(notation, subcommand)
+            assert actual is expected, (
+                f'_is_build_class_notation({notation!r}, {subcommand!r}) returned {actual!r}, '
+                f'expected {expected!r}: a build-class row is stamped for the '
+                f'build-executing verb only, across the whole domain.'
+            )
+            if expected:
+                swept_true += 1
+            else:
+                swept_false += 1
+
+    assert swept_true and swept_false, (
+        f'the domain sweep observed {swept_true} build-executing and {swept_false} query '
+        'subcommands -- it must see BOTH partitions or it pins only one side of the '
+        'discriminator.'
+    )
+    assert set(domain) - set(roster), (
+        'the derived domain adds no notation beyond the roster, so this sweep is a '
+        'restatement of the roster sweep rather than the wider check it claims to be. '
+        'If every build-class script now routes through build_main, delete this test '
+        'rather than letting it stand as a vacuous duplicate.'
     )
 
 
