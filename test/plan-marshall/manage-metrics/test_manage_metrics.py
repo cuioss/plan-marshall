@@ -2610,13 +2610,21 @@ _SKILL_DIR = Path(SCRIPT_PATH).parent.parent
 _DATA_FORMAT_MD = _SKILL_DIR / 'standards' / 'data-format.md'
 _SKILL_MD = _SKILL_DIR / 'SKILL.md'
 
-# The populations a lattice row may name. A row that invents a fifth population
-# fails rather than silently widening the vocabulary.
+# The populations a lattice row may name. A row that invents a population outside
+# this set fails rather than silently widening the vocabulary.
+#
+# ``population-discriminated`` is the deliberate, single-member class for a field
+# whose population VARIES per row and whose row therefore carries an explicit
+# discriminator. Only ``total_tokens`` is in it (discriminated by
+# ``total_tokens_population``); admitting it as a named class is what keeps the
+# lattice from having to state one population for a field that has two — the
+# exact mislabel the lattice exists to prevent.
 _LATTICE_POPULATIONS = {
     'dispatched-subagent',
     'main-context-window',
     'per-dispatch',
     'derived-cost',
+    'population-discriminated',
 }
 
 # Phase-row fields that carry timing / bookkeeping rather than a usage
@@ -2633,6 +2641,12 @@ _NON_USAGE_ROW_FIELDS = {
     'agent_duration_seconds',
     'idle_duration_ms',
     'boundary_non_monotonic',
+    # Names which population `total_tokens` measures on this row. It is
+    # bookkeeping ABOUT a measurement, not a measurement, so it takes no lattice
+    # row of its own — it is specified in data-format.md's Per-Phase Fields
+    # table and is what makes `total_tokens`'s `population-discriminated`
+    # lattice entry readable.
+    'total_tokens_population',
 }
 
 # Dispatch-boundary columns that carry no usage measurement.
@@ -2930,3 +2944,246 @@ def test_termination_cause_check_detects_a_single_stale_site():
     ]
 
     assert len(stale) == 1, f'expected exactly one stale site to be reported, got {stale}'
+
+
+# =============================================================================
+# total_tokens population labelling
+# =============================================================================
+#
+# `total_tokens` is named for a TOTAL, not for a population, yet `cmd_enrich`
+# folds a MAIN-CONTEXT measurement into it on a phase that dispatched nothing.
+# The fold is deliberate and load-bearing (it is what keeps a zero-dispatch
+# phase countable at n=6/6 and keeps the downstream zero-token predicates off
+# it), so these tests do NOT assert the fold away. They assert the property the
+# fold must never violate: no rendered figure presents a main-context
+# measurement under a dispatched-population label, and the phase's population is
+# legible at the point of render.
+
+
+def _run_enrich_with_buckets(plan_id: str, monkeypatch, buckets: dict) -> dict:
+    """Drive the real cmd_enrich with only the runtime transcript seam stubbed.
+
+    Mirrors ``test_phase_boundary_inline._run_inline_enrich``: everything from the
+    four-field write through the inline derivation and the population stamp runs
+    for real, so these tests exercise the production branch rather than a
+    re-implementation of it.
+    """
+
+    counters = {'message_count': 7, 'four_field_phases_attributed': len(buckets)}
+
+    def _fake_op(session_id, windows):
+        return dict(buckets), counters, 'success'
+
+    monkeypatch.setattr(manage_metrics, '_run_normalized_tokens_op', _fake_op)
+    result: dict = cmd_enrich(_ns_enrich(plan_id, 'sess-population'))
+    return result
+
+
+def _phase_row(plan_id: str, phase: str) -> dict:
+    row: dict = manage_metrics.read_metrics_raw(plan_id)['phases'][phase]
+    return row
+
+
+# Four-field bucket carrying a non-zero inline attribution (input + output +
+# cache_creation = 6,000; cache_read is excluded from the derivation).
+_INLINE_BUCKET = {
+    'input_tokens': 4000,
+    'output_tokens': 1500,
+    'cache_read_input_tokens': 900000,
+    'cache_creation_input_tokens': 500,
+}
+_INLINE_SUM = 4000 + 1500 + 500
+
+
+def test_enrich_labels_a_zero_dispatch_phase_as_inline(plan_context, monkeypatch):
+    """The inline fold still happens — and the row says so, twice.
+
+    The folded figure lands in `total_tokens` (so the phase stays countable) AND
+    under its own population-honest name `inline_main_context_tokens`, with
+    `total_tokens_population: inline` naming which population `total_tokens`
+    measures here. Reading the figure ONLY through the dispatched-population
+    field is what the second record removes.
+    """
+    plan_id = 'population-inline-only'
+    cmd_start_phase(_ns_start_phase(plan_id, '1-init'))
+    cmd_end_phase(_ns_end_phase(plan_id, '1-init'))
+
+    assert _run_enrich_with_buckets(plan_id, monkeypatch, {'1-init': _INLINE_BUCKET})['enriched']
+
+    row = _phase_row(plan_id, '1-init')
+    assert row['total_tokens'] == _INLINE_SUM
+    assert row['inline_main_context_tokens'] == _INLINE_SUM
+    assert row['total_tokens_population'] == manage_metrics.POPULATION_INLINE
+
+
+def test_enrich_labels_a_dispatched_plus_inline_phase_as_mixed(plan_context, monkeypatch):
+    """A mixed phase keeps its dispatched total and records the inline part apart.
+
+    `total_tokens` stays byte-identical (explicit-wins), the inline spend is a
+    separate field of a different population, and the row reads `mixed` so a
+    consumer knows the dispatched figure does NOT cover the whole phase.
+    """
+    plan_id = 'population-mixed'
+    cmd_start_phase(_ns_start_phase(plan_id, '6-finalize'))
+    cmd_end_phase(_ns_end_phase(plan_id, '6-finalize', total_tokens=88000))
+
+    _run_enrich_with_buckets(plan_id, monkeypatch, {'6-finalize': _INLINE_BUCKET})
+
+    row = _phase_row(plan_id, '6-finalize')
+    assert row['total_tokens'] == 88000, 'the dispatched total must never be overwritten'
+    assert row['inline_main_context_tokens'] == _INLINE_SUM
+    assert row['total_tokens_population'] == manage_metrics.POPULATION_MIXED
+
+
+def test_enrich_labels_a_dispatch_only_phase_as_dispatched(plan_context, monkeypatch):
+    """No inline attribution → the row is labelled dispatched and carries no inline field."""
+    plan_id = 'population-dispatched'
+    cmd_start_phase(_ns_start_phase(plan_id, '5-execute'))
+    cmd_end_phase(_ns_end_phase(plan_id, '5-execute', total_tokens=42000))
+
+    _run_enrich_with_buckets(
+        plan_id, monkeypatch, {'5-execute': {'cache_read_input_tokens': 250000}}
+    )
+
+    row = _phase_row(plan_id, '5-execute')
+    assert row['total_tokens'] == 42000
+    assert 'inline_main_context_tokens' not in row
+    assert row['total_tokens_population'] == manage_metrics.POPULATION_DISPATCHED
+
+
+@pytest.mark.parametrize(
+    'raw',
+    [
+        None,
+        0,
+        0.0,
+        False,
+        '',
+        [],
+        {},
+        'subagent',
+        'DISPATCHED',
+    ],
+)
+def test_absent_or_unrecognised_population_reads_as_dispatched(raw):
+    """The falsy/unknown domain collapses to `dispatched`, never to a bogus marker.
+
+    A row that was never enriched carries no discriminator, and without enrich the
+    only source `total_tokens` can have had is dispatched `<usage>` / the
+    accumulator — so absent legitimately means dispatched. The falsy values and
+    the near-miss strings are covered explicitly because a truthiness or a
+    substring test over this field would classify some of them differently and
+    render a marker no reader can interpret.
+    """
+    assert manage_metrics._token_population({'total_tokens_population': raw}) == (
+        manage_metrics.POPULATION_DISPATCHED
+    )
+    assert manage_metrics._token_population({}) == manage_metrics.POPULATION_DISPATCHED
+
+
+@pytest.mark.parametrize('population', manage_metrics.TOKEN_POPULATIONS)
+def test_each_declared_population_round_trips(population):
+    """Every declared population is recognised — the guard above is not a blanket."""
+    assert manage_metrics._token_population({'total_tokens_population': population}) == population
+
+
+@pytest.mark.parametrize('population', manage_metrics.TOKEN_POPULATIONS)
+def test_total_tokens_bullet_names_its_population(plan_context, population):
+    """Every rendered `Total tokens` bullet carries a population qualifier.
+
+    Parameterized over `TOKEN_POPULATIONS` rather than a hand-listed pair, so a
+    population added later cannot render unlabelled and still pass.
+    """
+    plan_id = f'population-bullet-{population}'
+    cmd_start_phase(_ns_start_phase(plan_id, '4-plan'))
+    cmd_end_phase(_ns_end_phase(plan_id, '4-plan', total_tokens=31000))
+    data = manage_metrics.read_metrics_raw(plan_id)
+    data['phases']['4-plan']['total_tokens_population'] = population
+    manage_metrics.write_metrics(plan_id, data)
+
+    cmd_generate(_ns_generate(plan_id))
+    report = (plan_context.plan_dir_for(plan_id) / 'metrics.md').read_text(encoding='utf-8')
+
+    bullets = [line for line in report.splitlines() if line.startswith('- **Total tokens**:')]
+    assert bullets, 'no Total tokens bullet was rendered'
+    for bullet in bullets:
+        assert manage_metrics._POPULATION_BULLET_NOTE[population] in bullet
+
+
+def test_inline_phase_tokens_cell_and_annotation_declare_the_population(plan_context, monkeypatch):
+    """The breakdown never presents an inline figure as a dispatched one.
+
+    Three render sites must agree: the cell carries an `(inline)` marker, the
+    annotation under the table declares the unmarked default AND states that the
+    Total is no longer a dispatched total, and the phase's own bullet names the
+    main-context population.
+    """
+    plan_id = 'population-render-inline'
+    cmd_start_phase(_ns_start_phase(plan_id, '1-init'))
+    cmd_end_phase(_ns_end_phase(plan_id, '1-init'))
+    cmd_start_phase(_ns_start_phase(plan_id, '5-execute'))
+    cmd_end_phase(_ns_end_phase(plan_id, '5-execute', total_tokens=42000))
+
+    _run_enrich_with_buckets(plan_id, monkeypatch, {'1-init': _INLINE_BUCKET})
+    cmd_generate(_ns_generate(plan_id))
+    report = (plan_context.plan_dir_for(plan_id) / 'metrics.md').read_text(encoding='utf-8')
+
+    init_row = next(line for line in report.splitlines() if line.startswith('| 1-init '))
+    assert '(inline)' in init_row
+
+    execute_row = next(line for line in report.splitlines() if line.startswith('| 5-execute '))
+    assert '(inline)' not in execute_row and '(mixed)' not in execute_row
+
+    assert '> Tokens population:' in report
+    assert '1-init' in report.split('> Tokens population:', 1)[1].split('\n', 1)[0]
+    assert 'not a dispatched total' in report
+    assert manage_metrics._POPULATION_BULLET_NOTE[manage_metrics.POPULATION_INLINE] in report
+
+
+def test_mixed_phase_declares_its_excluded_inline_spend(plan_context, monkeypatch):
+    """A mixed row is marked, and the annotation says the inline part is excluded."""
+    plan_id = 'population-render-mixed'
+    cmd_start_phase(_ns_start_phase(plan_id, '6-finalize'))
+    cmd_end_phase(_ns_end_phase(plan_id, '6-finalize', total_tokens=88000))
+
+    _run_enrich_with_buckets(plan_id, monkeypatch, {'6-finalize': _INLINE_BUCKET})
+    cmd_generate(_ns_generate(plan_id))
+    report = (plan_context.plan_dir_for(plan_id) / 'metrics.md').read_text(encoding='utf-8')
+
+    finalize_row = next(line for line in report.splitlines() if line.startswith('| 6-finalize '))
+    assert '(mixed)' in finalize_row
+    assert '`(mixed)`' in report
+    assert 'excluded from both the cell and the **Total**' in report
+    # The inline bullet must not claim to stand alongside a dispatched total on
+    # the inline-only signature and must claim exactly that here.
+    assert 'surfaced alongside the dispatched Total tokens' in report
+
+
+def test_dispatched_only_report_carries_no_population_annotation(plan_context):
+    """Negative control: a wholly-dispatched plan gets no marker and no annotation.
+
+    Without this the marker assertions above would pass over a report that
+    annotates unconditionally, which would prove nothing about the discriminator.
+    """
+    plan_id = 'population-render-dispatched'
+    cmd_start_phase(_ns_start_phase(plan_id, '5-execute'))
+    cmd_end_phase(_ns_end_phase(plan_id, '5-execute', total_tokens=42000))
+
+    cmd_generate(_ns_generate(plan_id))
+    report = (plan_context.plan_dir_for(plan_id) / 'metrics.md').read_text(encoding='utf-8')
+
+    assert '> Tokens population:' not in report
+    assert '(inline)' not in report
+    assert '(mixed)' not in report
+    assert manage_metrics._POPULATION_BULLET_NOTE[manage_metrics.POPULATION_DISPATCHED] in report
+
+
+def test_every_declared_population_has_a_bullet_note():
+    """No population may render without a qualifier — derived, not hand-listed.
+
+    `_POPULATION_BULLET_NOTE` is indexed unconditionally at the render site, so a
+    population added to the tuple without a note would raise there. This asserts
+    the coverage directly instead of waiting for a KeyError in a report.
+    """
+    missing = set(manage_metrics.TOKEN_POPULATIONS) - set(manage_metrics._POPULATION_BULLET_NOTE)
+    assert missing == set(), f'populations with no rendered qualifier: {sorted(missing)}'

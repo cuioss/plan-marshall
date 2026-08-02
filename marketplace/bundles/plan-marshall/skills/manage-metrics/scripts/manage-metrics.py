@@ -76,6 +76,70 @@ DISPATCH_TERMINATION_CAUSES = (
     'task_batch_complete',
     'agent_returned',
 )
+
+# ---------------------------------------------------------------------------
+# Token population discriminator
+# ---------------------------------------------------------------------------
+#
+# ``total_tokens`` is named for a TOTAL, not for a population, yet the figure it
+# carries is filled from two different measurements: a dispatched phase's
+# ``<usage>`` envelopes, and — on a phase that dispatched nothing — the inline
+# main-context sum that ``cmd_enrich`` folds in. The fold is deliberate and
+# stays: it is what keeps an inline phase countable in the breakdown (the report
+# reads n=6/6, not n=5/6) and what keeps every downstream zero-token predicate
+# off a phase that really did cost something. What must NOT stay implicit is
+# that the folded figure measures a DIFFERENT population than the field's name
+# implies.
+#
+# ``total_tokens_population`` is that discriminator, persisted by ``cmd_enrich``
+# on every phase row it touches so no render site and no consumer has to infer
+# the population from a field name that does not state one.
+POPULATION_DISPATCHED = 'dispatched'
+POPULATION_INLINE = 'inline'
+POPULATION_MIXED = 'mixed'
+TOKEN_POPULATIONS = (POPULATION_DISPATCHED, POPULATION_INLINE, POPULATION_MIXED)
+
+# Phase Breakdown ``Tokens`` cell suffix per population. ``dispatched`` renders
+# bare and is declared as the column's default by the annotation under the
+# table: marking every ordinary row would bury the rows that actually differ.
+_POPULATION_CELL_SUFFIX = {
+    POPULATION_INLINE: ' (inline)',
+    POPULATION_MIXED: ' (mixed)',
+}
+
+# Phase Details ``Total tokens`` bullet qualifier per population. Every rendered
+# total names its own population, so the bullet stays legible without reading
+# the breakdown annotation first.
+_POPULATION_BULLET_NOTE = {
+    POPULATION_DISPATCHED: (
+        "dispatched-subagent population — summed from the dispatched leaves' `<usage>` envelopes"
+    ),
+    POPULATION_INLINE: (
+        'main-context-window population — this phase dispatched nothing, so enrich folded its '
+        'inline main-context spend into this field; the same figure is recorded under its own '
+        'population-honest name as inline_main_context_tokens'
+    ),
+    POPULATION_MIXED: (
+        'dispatched-subagent population — this phase ALSO ran inline main-context steps, recorded '
+        'separately as inline_main_context_tokens and NOT included here; the two populations are '
+        'measured by different methods and are not additively comparable'
+    ),
+}
+
+
+def _token_population(phase_row: dict) -> str:
+    """Return the population this phase row's ``total_tokens`` figure measures.
+
+    An un-enriched row carries no discriminator, and without ``enrich`` the only
+    source ``total_tokens`` can have had is dispatched ``<usage>`` / the
+    accumulator — so an ABSENT value reads as ``dispatched``. An unrecognised
+    value reads the same way rather than rendering a marker no reader can
+    interpret.
+    """
+    value = phase_row.get('total_tokens_population')
+    return value if value in TOKEN_POPULATIONS else POPULATION_DISPATCHED
+
+
 def _accumulator_path(plan_id: str, phase: str) -> Path:
     return get_plan_dir(plan_id) / ACCUMULATOR_FILE_TEMPLATE.format(phase=phase)
 
@@ -910,6 +974,13 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     # same-population pair) rather than the recorded total_tokens; named in the
     # reconciliation annotation under the breakdown table.
     reconciled_phases: list[str] = []
+    # Phases whose token record is NOT a plain dispatched measurement, collected
+    # so the population annotation under the table can name them. `inline` rows
+    # render a main-context-window figure in the dispatched column (the enrich
+    # fold); `mixed` rows render a dispatched figure that omits inline spend the
+    # row records separately.
+    inline_population_phases: list[str] = []
+    mixed_population_phases: list[str] = []
 
     # Two-pass build: first collect all rows as tuples, then pad to uniform per-column width.
     header_row: tuple[str, str, str, str, str, str] = (
@@ -957,6 +1028,19 @@ def cmd_generate(args: argparse.Namespace) -> dict:
             tokens_values.append(int(raw_tokens))
         else:
             tokens_str = '-'
+
+        # Declare the population at the point of render. The cell carries the
+        # marker; the annotation under the table declares the unmarked default
+        # and spells out what each marker means, so a reader never has to infer
+        # the population from a column header that names a total, not a measured
+        # population.
+        population = _token_population(phase)
+        if population == POPULATION_INLINE:
+            inline_population_phases.append(phase_name)
+        elif population == POPULATION_MIXED:
+            mixed_population_phases.append(phase_name)
+        if tokens_str != '-':
+            tokens_str += _POPULATION_CELL_SUFFIX.get(population, '')
 
         tool_uses = _numeric(phase.get('tool_uses'))
         tool_uses_str = str(int(tool_uses)) if tool_uses is not None else '-'
@@ -1027,6 +1111,27 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         )
         lines.append('')
 
+    # Population annotation: the Tokens column is NOT single-population, and the
+    # Total row therefore is not a dispatched total. Say so where the figures are
+    # rendered rather than leaving the reader to infer it from a field name.
+    if inline_population_phases:
+        lines.append(
+            '> Tokens population: an unmarked cell is a dispatched-subagent measurement. '
+            'Marked `(inline)` — the phase dispatched nothing, so the cell is the '
+            'main-context-window measurement enrich folded into total_tokens (also recorded '
+            f'under its own name as inline_main_context_tokens): {", ".join(inline_population_phases)}. '
+            'The **Total** therefore sums more than one population and is not a dispatched total.'
+        )
+        lines.append('')
+    if mixed_population_phases:
+        lines.append(
+            '> Marked `(mixed)` — the cell is the phase\'s dispatched-subagent total; the inline '
+            'main-context spend measured in the same window is recorded separately as '
+            'inline_main_context_tokens and is excluded from both the cell and the **Total**: '
+            f'{", ".join(mixed_population_phases)}.'
+        )
+        lines.append('')
+
     # Phase details
     lines.append('## Phase Details')
     lines.append('')
@@ -1065,9 +1170,13 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         if isinstance(idle_ms, (int, float)) and idle_ms:
             lines.append(f'- **Idle duration**: {format_duration(float(idle_ms) / 1000.0)}')
 
+        population = _token_population(phase)
+
         tokens = phase.get('total_tokens')
         if tokens:
-            lines.append(f'- **Total tokens**: {int(tokens):,}')
+            lines.append(
+                f'- **Total tokens**: {int(tokens):,} ({_POPULATION_BULLET_NOTE[population]})'
+            )
 
         boundary_total = phase.get('dispatch_boundary_total')
         if boundary_total:
@@ -1084,11 +1193,23 @@ def cmd_generate(args: argparse.Namespace) -> dict:
 
         inline_main_context = phase.get('inline_main_context_tokens')
         if inline_main_context:
+            # The relationship to Total tokens differs by population, so the
+            # bullet states which one applies. Claiming "surfaced alongside the
+            # dispatched total, never replacing it" on an inline-only phase
+            # would be false: there, this IS the figure Total tokens carries.
+            if population == POPULATION_INLINE:
+                relation = (
+                    'this phase dispatched nothing, so this is the same figure Total tokens '
+                    'carries, restated here under its own population-honest name'
+                )
+            else:
+                relation = (
+                    'surfaced alongside the dispatched Total tokens, which does not include it'
+                )
             lines.append(
                 f'- **Inline main-context tokens**: {int(inline_main_context):,} '
-                '(inline-step cost attributed via enrich phase-window usage — '
-                'input + output + cache_creation, excludes cache_read; surfaced '
-                'alongside the dispatched total, never replacing it)'
+                '(main-context-window population, attributed via enrich phase-window usage — '
+                f'input + output + cache_creation, excludes cache_read; {relation})'
             )
 
         tool_uses = phase.get('tool_uses')
@@ -1859,10 +1980,11 @@ def _inline_main_context_sum(phase_row: dict) -> int:
     ``input_tokens + output_tokens + cache_creation_input_tokens`` —
     ``cache_read_input_tokens`` is EXCLUDED so the figure matches the
     dispatched-``<usage>`` total definition (fed via ``end-phase
-    --total-tokens``, which also excludes cache reads). Shared by both the
-    inline-only ``total_tokens`` derivation and the mixed-phase
-    ``inline_main_context_tokens`` surfacing below — the two consumers differ
-    only in which field the sum is written to.
+    --total-tokens``, which also excludes cache reads). One derivation serves
+    both signatures below: it is always written to
+    ``inline_main_context_tokens``, and on the inline-only signature it is ALSO
+    folded into ``total_tokens`` (which the row's
+    ``total_tokens_population`` then labels ``inline``).
     """
     return sum(
         int(phase_row[field])
@@ -1933,47 +2055,62 @@ def cmd_enrich(args: argparse.Namespace) -> dict:
             if field in bucket:
                 phase_row[field] = bucket[field]
 
-        # Surface an inline phase's main-context tokens into total_tokens. A phase
-        # that ran inline in the main context (phase-1-init, and the recipe-inline
-        # refine/outline phases) produces no agent `<usage>` envelope and no
-        # accumulator, so its closing phase-boundary omitted --total-tokens and the
-        # row carries no total_tokens — yet enrich has just attributed the
-        # parent-window `message.usage` data to it. Derive total_tokens from
-        # input_tokens + output_tokens + cache_creation_input_tokens ONLY —
-        # cache_read_input_tokens is EXCLUDED so an inline phase's total_tokens
-        # matches the dispatched-phase `<usage>` total definition, which is fed via
-        # end-phase --total-tokens and excludes cache reads. Including cache_read
-        # (which runs two orders of magnitude larger — plan-13 archive: 1-init
-        # 11.16M dominated by 11.09M cache_read) would over-count the inline row by
-        # ~100x versus comparable dispatched rows. The four raw usage fields stay
-        # persisted on the row above for billing analysis; only the derived
-        # total_tokens narrows. Explicit-wins: a total_tokens already set by a
-        # dispatched phase's `<usage>` / accumulator is truthy here and is never
-        # overwritten, so this fires only on the inline-phase signature (no prior
-        # total).
+        # Attribute the phase's inline main-context spend, and RECORD which
+        # population the row's total_tokens ends up measuring.
+        #
+        # A phase that ran inline in the main context (phase-1-init, and the
+        # recipe-inline refine/outline phases) produces no agent `<usage>`
+        # envelope and no accumulator, so its closing phase-boundary omitted
+        # --total-tokens and the row carries no total_tokens — yet enrich has
+        # just attributed the parent-window `message.usage` data to it. Folding
+        # that sum into total_tokens is DELIBERATE and stays: it is what keeps
+        # the phase countable in the breakdown (the report reads n=6/6, not
+        # n=5/6) and what keeps every downstream zero-token predicate off a
+        # phase that really did cost something.
+        #
+        # What the fold must not do is present a main-context measurement under
+        # a field named for the dispatched population, so it is accompanied by
+        # two records, written together and never apart:
+        #   * inline_main_context_tokens — the same figure under its own
+        #     population-honest name, written on BOTH the inline-only and the
+        #     mixed signature, so the inline measurement is never readable ONLY
+        #     through a dispatched-population field.
+        #   * total_tokens_population — the discriminator every render site and
+        #     every consumer reads to know which population total_tokens
+        #     measures on THIS row.
+        #
+        # The sum is input_tokens + output_tokens + cache_creation_input_tokens
+        # ONLY — cache_read_input_tokens is EXCLUDED so the figure matches the
+        # dispatched-phase `<usage>` total definition, which is fed via
+        # end-phase --total-tokens and also excludes cache reads. Including
+        # cache_read (two orders of magnitude larger — plan-13 archive: 1-init
+        # 11.16M dominated by 11.09M cache_read) would over-count the inline row
+        # by ~100x versus comparable dispatched rows. The four raw usage fields
+        # stay persisted on the row above for billing analysis; only the derived
+        # figure narrows.
+        #
+        # Explicit-wins throughout: a total_tokens already set by a dispatched
+        # phase's `<usage>` / accumulator is truthy here and is NEVER
+        # overwritten. The #812 `end_time`-keyed partial verdict is untouched —
+        # a timestamps-only inline close stays non-`partial`.
+        inline_main_context = _inline_main_context_sum(phase_row)
         if not phase_row.get('total_tokens'):
-            inline_total = _inline_main_context_sum(phase_row)
-            if inline_total:
-                phase_row['total_tokens'] = inline_total
-        else:
-            # The phase already carries a dispatched total_tokens (subagent
-            # `<usage>` / accumulator). When enrich has ALSO attributed non-zero
-            # main-context four-field usage to this window, the phase ran BOTH
-            # dispatched steps AND inline main-context steps — the 6-finalize
-            # signature: an inline finalize step produces no dispatched `<usage>`
-            # envelope, yet enrich attributes the parent-window `message.usage`
-            # onto the row. Surface that inline contribution as a DISTINCT
-            # inline_main_context_tokens field, derived the same way as the
-            # inline-only branch above — input_tokens + output_tokens +
-            # cache_creation_input_tokens, EXCLUDING cache_read_input_tokens so
-            # the figure matches the dispatched-`<usage>` total definition. This
-            # NEVER overwrites total_tokens (explicit-wins); it is a per-inline
-            # attribution surfaced alongside the dispatched total, not a
-            # replacement. The #812 `end_time`-keyed partial verdict is untouched
-            # — a timestamps-only inline close stays non-`partial`.
-            inline_main_context = _inline_main_context_sum(phase_row)
+            # Inline-only signature: no dispatched total exists to preserve.
             if inline_main_context:
+                phase_row['total_tokens'] = inline_main_context
                 phase_row['inline_main_context_tokens'] = inline_main_context
+                phase_row['total_tokens_population'] = POPULATION_INLINE
+            else:
+                phase_row['total_tokens_population'] = POPULATION_DISPATCHED
+        elif inline_main_context:
+            # Mixed signature (the 6-finalize shape): dispatched steps AND
+            # inline main-context steps both ran in this window. total_tokens
+            # stays the dispatched measurement; the inline part is a separate
+            # field of a different population, not an addend.
+            phase_row['inline_main_context_tokens'] = inline_main_context
+            phase_row['total_tokens_population'] = POPULATION_MIXED
+        else:
+            phase_row['total_tokens_population'] = POPULATION_DISPATCHED
 
     write_metrics(plan_id, data)
 

@@ -14,7 +14,11 @@ All files live in `.plan/plans/{plan_id}/`. Accumulator files are created lazily
 
 ## Token-Field Population Lattice
 
-Every token- and usage-bearing field `manage-metrics.py` writes measures exactly ONE population. A figure computed over population A and rendered under a label implying population B is the defect this lattice exists to prevent, so every field below names the population it measures, the method that measured it, and whether `generate` renders it. A consumer that aggregates two fields MUST check that their populations agree first; fields of different populations are not additively comparable.
+Every token- and usage-bearing field `manage-metrics.py` writes measures exactly ONE population — with a single, explicitly-labelled exception. A figure computed over population A and rendered under a label implying population B is the defect this lattice exists to prevent, so every field below names the population it measures, the method that measured it, and whether `generate` renders it. A consumer that aggregates two fields MUST check that their populations agree first; fields of different populations are not additively comparable.
+
+**The exception is `total_tokens`, and it is a labelled one.** On a phase that dispatched nothing, `cmd_enrich` folds the inline main-context sum into `total_tokens` (see § Inline Main-Context Attribution) — a deliberate fold that keeps the phase countable rather than a silent substitution. Because the field's population therefore varies per row, its lattice entry names the `population-discriminated` class below, every such row carries `total_tokens_population` (`dispatched` / `inline` / `mixed`), and every render site prints that label. **A consumer MUST read `total_tokens_population` rather than assume the field name states a population**: `total_tokens` names a total, not a measured population.
+
+`total_tokens_population` is itself bookkeeping, not a measurement, so it takes no lattice row of its own — it is specified in the Per-Phase Fields table below. The lattice enumerates fields that MEASURE something; a discriminator that names a measurement's population is not one of them.
 
 **Populations:**
 
@@ -24,6 +28,7 @@ Every token- and usage-bearing field `manage-metrics.py` writes measures exactly
 | `main-context-window` | Context the orchestrator's own turns loaded and produced, measured from raw `message.usage` dicts in the parent transcript and in the subagent transcripts attributed to the same phase window. |
 | `per-dispatch` | One dispatch's own totals at its termination, recorded one row per dispatch. Never aggregated into a phase figure unless a named field says it is. |
 | `derived-cost` | A weighted cost figure derived from another population's fields — a billing measure, not a work measure. |
+| `population-discriminated` | The field's population **varies per row**, and the row carries an explicit discriminator naming which one applies. Exactly one field is in this class — `total_tokens`, discriminated by `total_tokens_population` (`dispatched` / `inline` / `mixed`). A consumer MUST read the discriminator; it may not infer a population from the field's name. |
 
 The lattice has two directions and **both halves are first-class**. A field that is recorded but never rendered is not a footnote: it is a measure the report declines to show, which is exactly how a larger competing figure stays invisible while a smaller one is presented as the total. Direction 2 is therefore evidence in its own right, not an appendix to Direction 1.
 
@@ -31,7 +36,7 @@ The lattice has two directions and **both halves are first-class**. A field that
 
 | Field | Producer | Population | Measurement method | Rendered as |
 |-------|----------|------------|--------------------|-------------|
-| `total_tokens` | `_close_phase_accumulating` (`end-phase` / `phase-boundary`); backfilled by `_reconcile_accumulator_into_phase`; folded by `cmd_enrich` on an inline-only phase | dispatched-subagent | Forwarded `<usage>` total (per-close delta, ADDED) or the per-phase accumulator's cumulative value (ASSIGNED) | Phase Breakdown `Tokens` cell, and the `Total tokens` bullet |
+| `total_tokens` | `_close_phase_accumulating` (`end-phase` / `phase-boundary`); backfilled by `_reconcile_accumulator_into_phase`; folded by `cmd_enrich` on an inline-only phase | population-discriminated | Dispatched rows: forwarded `<usage>` total (per-close delta, ADDED) or the per-phase accumulator's cumulative value (ASSIGNED). Inline rows: the `cmd_enrich` fold of `input + output + cache_creation`. The row's `total_tokens_population` names which applies | Phase Breakdown `Tokens` cell and the `Total tokens` bullet — both print the row's population label |
 | `tool_uses` | `_close_phase_accumulating`; backfilled by `_reconcile_accumulator_into_phase` | dispatched-subagent | Forwarded `<usage>` `tool_uses` or the accumulator's cumulative value | Phase Breakdown `Tool Uses` cell, and the `Tool uses` bullet |
 | `dispatch_boundary_total` | `cmd_generate` via `_read_dispatch_boundary_totals` | dispatched-subagent | Sum of the `total_tokens` column across the phase's recorded dispatch-boundary rows | `Dispatch-boundary total` bullet; may also supply the `Tokens` cell under the reconciliation rule |
 | `input_tokens` | `cmd_enrich` | main-context-window | `message.usage.input_tokens` summed across the phase window's parent turns and its attributed subagent transcripts | own bullet |
@@ -39,7 +44,7 @@ The lattice has two directions and **both halves are first-class**. A field that
 | `cache_read_input_tokens` | `cmd_enrich` | main-context-window | `message.usage.cache_read_input_tokens`, same dual-source attribution | own bullet |
 | `cache_creation_input_tokens` | `cmd_enrich` | main-context-window | `message.usage.cache_creation_input_tokens`, same dual-source attribution | own bullet |
 | `billing_weighted_total` | `cmd_enrich` | derived-cost | `input + output + round(0.1 × cache_read) + round(1.25 × cache_creation)` over the four-field view | `Billing-weighted total` bullet |
-| `inline_main_context_tokens` | `cmd_enrich` (mixed-phase branch) | main-context-window | `input + output + cache_creation`, EXCLUDING `cache_read`, so the figure matches the dispatched-`<usage>` total definition | `Inline main-context tokens` bullet |
+| `inline_main_context_tokens` | `cmd_enrich` (written on BOTH the inline-only and the mixed branch) | main-context-window | `input + output + cache_creation`, EXCLUDING `cache_read`, so the figure matches the dispatched-`<usage>` total definition | `Inline main-context tokens` bullet, whose text states whether the figure stands alongside a dispatched total (mixed) or IS the folded `total_tokens` (inline) |
 | `exploration_tool_calls` | `cmd_enrich` | main-context-window | Count of phase-window tool calls classified *exploration* | own bullet, on a presence test |
 | `work_tool_calls` | `cmd_enrich` | main-context-window | Count classified *work* | own bullet, on a presence test |
 | `execute_tool_calls` | `cmd_enrich` | main-context-window | Count classified *execute* | own bullet, on a presence test |
@@ -79,6 +84,8 @@ The metrics.toon file stores raw phase timing and token data as flat key-value p
 phase.1-init.start: 2026-03-27T10:00:00Z
 phase.1-init.end: 2026-03-27T10:03:00Z
 phase.1-init.total_tokens: 25514
+phase.1-init.total_tokens_population: inline
+phase.1-init.inline_main_context_tokens: 25514
 phase.1-init.duration_ms: 180000
 phase.1-init.tool_uses: 12
 phase.2-refine.start: 2026-03-27T10:03:15Z
@@ -106,7 +113,8 @@ session_message_count: 127
 | `start` | ISO 8601 timestamp | `start-phase` command |
 | `end` | ISO 8601 timestamp | `end-phase` command |
 | `close_count` | int | `end-phase` / `phase-boundary` — incremented on every close of this phase (absent read as `0`). `close_count > 1` is the **authoritative, inference-free re-entry marker**: the row was closed more than once (a finalize loop-back), so its token/tool and `duration_seconds` figures are sums across every close. `generate` reads it for the top-level `re_entered_phases` list and the `> Re-entered phases: …` marker |
-| `total_tokens` | int | Task agent `<usage>` tag (forwarded explicitly OR read from accumulator file). **Accumulating**: an explicitly-forwarded flag value is a per-close delta ADDED to the row; an accumulator-sourced value is already cumulative and is ASSIGNED |
+| `total_tokens` | int | Task agent `<usage>` tag (forwarded explicitly OR read from accumulator file). **Accumulating**: an explicitly-forwarded flag value is a per-close delta ADDED to the row; an accumulator-sourced value is already cumulative and is ASSIGNED. On an inline-only phase the field is instead filled by `enrich`'s main-context fold — read `total_tokens_population` before treating the value as a dispatched measurement |
+| `total_tokens_population` | `dispatched` \| `inline` \| `mixed` | Written by `enrich` on every phase row it touches. Names which population this row's `total_tokens` measures: `dispatched` (dispatched-subagent `<usage>` / accumulator, no inline spend attributed), `inline` (the phase dispatched nothing and `total_tokens` carries the main-context fold), `mixed` (dispatched `total_tokens` PLUS a separately-recorded `inline_main_context_tokens` the field does not include). **Absent reads as `dispatched`** — a row that was never enriched can only have been filled from dispatched sources. See Inline Main-Context Attribution below |
 | `duration_ms` | int | Task agent `<usage>` tag (agent-reported, distinct from wall-clock) |
 | `tool_uses` | int | Task agent `<usage>` tag |
 | `retrospective_tokens` | int | Tokens attributable to the plan-retrospective dispatch within the phase window (forwarded explicitly via `--retrospective-tokens` OR read from the accumulator when the finalize retrospective step seeded it). Default-absent — present only on `[6-finalize]` rows of plans where the opt-in retrospective step ran |
@@ -121,7 +129,7 @@ session_message_count: 127
 | `billing_weighted_total` | int | Derived by `enrich` from the four-field view: `input + output + round(0.1 × cache_read) + round(1.25 × cache_creation)`. A billing-cost figure, NOT a work-comparable measure |
 | `idle_duration_ms` | int | Derived by `generate` — the per-phase idle residual `max(0, wall_clock_ms - worked_ms)` |
 | `dispatch_boundary_total` | int | Derived by `generate` — the sum of the `total_tokens` column across the phase's `work/metrics-dispatch-boundaries-{phase}.toon` rows. Persisted as a DISTINCT field (it never overwrites `total_tokens`); present only when the boundary file exists and sums to a truthy value. See Dispatch-Boundary Reconciliation below |
-| `inline_main_context_tokens` | int | Derived by `enrich` — `input_tokens + output_tokens + cache_creation_input_tokens` (EXCLUDING `cache_read_input_tokens`) surfaced when a phase carries BOTH a dispatched `total_tokens` AND non-zero four-field usage (the inline-step signature). Persisted as a DISTINCT field (it never overwrites `total_tokens`). See Inline Main-Context Attribution below |
+| `inline_main_context_tokens` | int | Derived by `enrich` — `input_tokens + output_tokens + cache_creation_input_tokens` (EXCLUDING `cache_read_input_tokens`) surfaced on ANY phase whose window carries non-zero four-field usage, whether or not a dispatched `total_tokens` also exists. It is the inline measurement's own population-honest name, so the figure is never readable only through the dispatched-population `total_tokens` field. See Inline Main-Context Attribution below |
 | `boundary_non_monotonic` | `true` token | Derived by `generate` — set on a phase whose `start_time` precedes the maximum `end_time` of earlier phases in canonical order (a finalize loop-back re-entry). Read-only annotation; the recorded `start_time` / `end_time` are never rewritten. See Boundary Monotonicity below |
 | `exploration_tool_calls` | int | `enrich` tool-call walk — count of tool calls in this phase's window classified as *exploration* (locate or inspect existing state) |
 | `work_tool_calls` | int | `enrich` tool-call walk — count classified as *work* (produce or mutate state) |
@@ -205,15 +213,9 @@ to the per-phase accumulator — there is no per-step `<usage>` source. Its cost
 instead captured by `enrich`'s phase-window attribution, which sums the
 parent-window `message.usage` four-field view into the phase row.
 
-`enrich` surfaces that inline contribution as the distinct
-`inline_main_context_tokens` field on any phase that carries **both**:
-
-- a truthy dispatched `total_tokens` (recorded by a dispatched step's `<usage>` /
-  the accumulator), AND
-- non-zero four-field `message.usage` (the inline-step signature — the `6-finalize`
-  case where dispatched steps AND inline finalize steps both ran).
-
-The derivation matches the inline-only `total_tokens` narrowing:
+`enrich` writes that inline contribution to the `inline_main_context_tokens`
+field on **every** phase whose window carries non-zero four-field
+`message.usage`, using one derivation:
 
 ```text
 inline_main_context_tokens = input_tokens + output_tokens + cache_creation_input_tokens
@@ -222,17 +224,48 @@ inline_main_context_tokens = input_tokens + output_tokens + cache_creation_input
 `cache_read_input_tokens` is **excluded** so the figure matches the
 dispatched-`<usage>` total definition (which is fed via `end-phase --total-tokens`
 and excludes cache reads); including it would over-count the inline contribution
-by ~100× versus comparable dispatched rows. The field is **explicit-wins**: it is
-surfaced ALONGSIDE `total_tokens`, never overwriting it, and `generate` renders it
-as a reconciliation line under the phase total in `metrics.md`. This attribution
-does not touch the `#812` `end_time`-keyed `partial` verdict — a timestamps-only
-inline close stays non-`partial`.
+by ~100× versus comparable dispatched rows.
 
-When a phase carries four-field usage but **no** dispatched `total_tokens` (the
-pure inline-only phase — `1-init`, recipe-inline refine/outline), the same sum is
-folded directly into `total_tokens` instead (see the inline-derivation note in
-`cmd_generate` / the `enrich` writer). The `inline_main_context_tokens` field is
-the complementary case: a mixed phase where a dispatched total already exists.
+#### Two signatures, one derivation, always labelled
+
+The derivation is the same on both signatures; what differs is whether the sum is
+ALSO folded into `total_tokens`, and the row records which case applied:
+
+| Signature | Condition | `total_tokens` | `inline_main_context_tokens` | `total_tokens_population` |
+|-----------|-----------|----------------|------------------------------|---------------------------|
+| **inline-only** | non-zero four-field usage, **no** dispatched `total_tokens` (`1-init`, recipe-inline refine/outline) | the inline sum is folded in | the same sum, under its own name | `inline` |
+| **mixed** | non-zero four-field usage **and** a dispatched `total_tokens` (the `6-finalize` shape — dispatched steps and inline finalize steps both ran) | left byte-identical (explicit-wins) | the inline sum | `mixed` |
+| **dispatched** | no inline attribution | left byte-identical | not written | `dispatched` |
+
+**The inline-only fold is deliberate, not a silent substitution.** Folding the
+inline sum into `total_tokens` is what keeps a zero-dispatch phase countable in
+the Phase Breakdown — the report reads `n=6/6` rather than `n=5/6` — and what
+keeps the downstream zero-token predicates (the audit's `incomplete_recording`
+anomaly, the checkpoint budget verdict, the corpus percentile cut-points) off a
+phase that really did cost something. The defect the labelling closes is not the
+fold; it is a main-context figure being **read as** a dispatched one. Two records
+prevent that, and they are written together, never apart:
+
+- `inline_main_context_tokens` carries the figure under a name that states its
+  own population, so the inline measurement is never readable ONLY through a
+  dispatched-population field.
+- `total_tokens_population` states which population `total_tokens` measures on
+  this row, and **every render site prints it** — an `(inline)` / `(mixed)`
+  suffix on the Phase Breakdown `Tokens` cell, a population annotation under the
+  table (which also states that a `Total` containing an `inline` row sums more
+  than one population), and a population qualifier on the Phase Details
+  `Total tokens` bullet.
+
+`total_tokens` is **explicit-wins** on both non-inline signatures: a value
+recorded by a dispatched step's `<usage>` / the accumulator is never overwritten.
+This attribution does not touch the `#812` `end_time`-keyed `partial` verdict — a
+timestamps-only inline close stays non-`partial`.
+
+**Consumer rule.** `inline_main_context_tokens` and a dispatched `total_tokens`
+are measured by different methods over different populations and are **not
+additively comparable** — never sum them into a phase figure. A consumer that
+needs to know what `total_tokens` measures reads `total_tokens_population`; it
+must not infer a population from the field's name, which states a total.
 
 ### Worked, Reported (Wall), and Idle Time
 
@@ -353,16 +386,18 @@ The `generate` command produces a markdown report with per-phase rows:
 ```markdown
 # Plan Metrics: my-feature
 
-| Phase | Worked | Reported (wall) | Idle | Tokens | Tool Uses |
-|-------|--------|-----------------|------|--------|-----------|
-| 1-init | 2m 30s | 3m 0s | 30s | 25,514 | 12 |
+| Phase | Worked | Reported (wall) | Idle | Tokens          | Tool Uses |
+|-------|--------|-----------------|------|-----------------|-----------|
+| 1-init | 2m 30s | 3m 0s | 30s | 25,514 (inline) | 12 |
 | 2-refine | 4m 0s | 5m 30s | 1m 30s | 42,000 | 8 |
 | 3-outline | 7m 0s | 8m 15s | 1m 15s | 68,000 | 25 |
 | **Total** | **13m 30s** | **16m 45s** | **3m 15s** | **135,514** | **45** |
 
+> Tokens population: an unmarked cell is a dispatched-subagent measurement. Marked `(inline)` — the phase dispatched nothing, so the cell is the main-context-window measurement enrich folded into total_tokens (also recorded under its own name as inline_main_context_tokens): 1-init. The **Total** therefore sums more than one population and is not a dispatched total.
+
 ## 2-refine
 
-- Total tokens: 42,000
+- **Total tokens**: 42,000 (dispatched-subagent population — summed from the dispatched leaves' `<usage>` envelopes)
 - Input tokens: 38,000
 - Output tokens: 4,000
 - Cache read input tokens: 210,000
@@ -371,6 +406,8 @@ The `generate` command produces a markdown report with per-phase rows:
 ```
 
 The four-field usage view and the billing-weighted total are rendered per phase (each phase that carries them gets its own bullet list), not as a single plan-level "Session Enrichment" block. Each four-field bullet renders only when its underlying value is present and non-zero.
+
+Every rendered `total_tokens` figure carries its population: the `Tokens` cell takes an `(inline)` / `(mixed)` suffix (an unmarked cell is dispatched), the annotation under the table declares that default and names the marked phases, and the `Total tokens` bullet carries the population qualifier shown above. See § Inline Main-Context Attribution for the three signatures and the `total_tokens_population` discriminator that drives all three render sites.
 
 ### Duration Formatting
 
