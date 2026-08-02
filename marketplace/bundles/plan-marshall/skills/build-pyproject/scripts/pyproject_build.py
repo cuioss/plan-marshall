@@ -131,9 +131,20 @@ def _resolve_registered_modules(project_dir: str | None) -> frozenset[str]:
     anchored on the marketplace root ``find_marketplace_path()`` resolves from the
     already-available ``project_dir`` - no new inventory mechanism.
 
-    Returns an EMPTY frozenset when the marketplace root does not resolve or the
-    walk fails; the caller reads emptiness as ``modules_resolvable: false`` and
+    Returns an EMPTY frozenset in exactly the two cases the body guards: the
+    marketplace root does not resolve (``find_marketplace_path`` returns
+    ``None``), or the walk raises ``OSError`` (an unreadable or vanished
+    directory). The caller reads emptiness as ``modules_resolvable: false`` and
     fails toward the whole tree rather than silently disabling the check.
+
+    The guard is deliberately no wider than the claim above. ``find_bundles`` /
+    ``extract_bundle_name`` derive every name by ``re.match`` over a directory
+    name and touch the filesystem only through calls whose failure mode is
+    ``OSError``, so ``OSError`` is the walk's only expected failure. Anything
+    else escapes as a crash, which is loud rather than a false
+    ``modules_resolvable: true``; do NOT widen the ``except`` to a bare
+    ``Exception``, which would relabel an unforeseen bug as a routine-looking
+    ``modules_resolvable: false``.
     """
     try:
         bundles_root = find_marketplace_path(Path(project_dir) if project_dir else None)
