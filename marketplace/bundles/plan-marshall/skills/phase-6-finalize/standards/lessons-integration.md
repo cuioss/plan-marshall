@@ -47,7 +47,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 In orchestration context — a plan launched from an epic's staged plan spec — the three-gate policy and the global-store write below are **not applicable at all**, at any write-site. The plan makes zero `manage-lessons add` calls from any finalize step and routes every emitted item to its epic's `inbox/` OUTBOX instead. Classification is deferred to the orchestrator-side pickup, because only the orchestrator holds the cross-plan context that judgement needs.
 
-The write-site set is **three**, and this is the one place a reader learns it:
+The write-site set is **three**. The dispatcher enumerates the same three members at [`../SKILL.md`](../SKILL.md) Step 3 item 4b.a0, which carries the matching "MUST be added to this list" obligation for the runtime-input forwarding — a new write-site must be added in BOTH places:
 
 | Write-site | Orchestrated branch |
 |------------|---------------------|

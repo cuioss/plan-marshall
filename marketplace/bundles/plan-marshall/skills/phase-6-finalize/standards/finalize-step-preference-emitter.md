@@ -221,7 +221,8 @@ owes its epic is `lessons-capture`'s, emitted unconditionally there; a second on
 would put two landings on one run.
 
 This branch writes only under `.plan/`, so the step's `mutates_source: false` fact is unchanged
-and the dispatcher's post-step porcelain check still observes an empty tree.
+and the step never reaches the dispatcher's commit instrumentation at all — item 5f reads the
+declared `mutates_source` fact first and returns before running its porcelain check.
 
 ##### Non-orchestrated filing (`orchestrated: false`)
 
