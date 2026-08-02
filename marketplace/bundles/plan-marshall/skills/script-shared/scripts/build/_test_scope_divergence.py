@@ -18,10 +18,11 @@ reject a name that no module actually carries.
 The scope-derivation rule mirrors, in code, the bundle-derivation prose in
 ``phase-6-finalize/standards/pre-push-quality-gate.md`` section "Derive unique
 bundle set": each footprint entry's owning module is taken from path segment 2
-for ``marketplace/bundles/{bundle}/...`` and segment 1 for ``test/{bundle}/...``,
-and the derived name is kept only when it names a registered module. A path that
-yields no such name is *unresolved*: it is reported in ``unresolved_paths`` and
-it forces a whole-tree run.
+for ``marketplace/bundles/{bundle}/...`` and segment 1 for ``{root}/{bundle}/...``
+under any test root (``test/`` or its ``tests/`` sibling — see
+:data:`_TEST_ROOTS`), and the derived name is kept only when it names a
+registered module. A path that yields no such name is *unresolved*: it is
+reported in ``unresolved_paths`` and it forces a whole-tree run.
 
 Fail-closed classification discipline
 -------------------------------------
@@ -44,11 +45,29 @@ from dataclasses import dataclass
 # forces ``divergence_possible`` regardless of how many modules the scoped set
 # resolves to.
 _SHARED_BUILD_INFRA_SEGMENT = 'script-shared/scripts/build/'
-#: The bundle-neutral home for cross-bundle test helpers. It is cross-module
-#: test infrastructure by construction (every bundle's suite bare-imports from
-#: it), and its first path segment is not a module name, so it is BOTH shared
-#: infra and unresolved.
-_SHARED_TEST_INFRA_PREFIX = 'test/_shared/'
+
+#: The pytest test roots this derivation recognises. ``test/`` is this
+#: repository's root; ``tests/`` is the sibling convention. Every root-sensitive
+#: predicate below derives from this ONE tuple, so no seam in this module can
+#: recognise a root another seam does not — the asymmetry that let a ``tests/``
+#: conftest resolve to a module while escaping the shared-infra check.
+#:
+#: The set MUST equal the ``_TEST_ROOTS`` the Python build extension declares for
+#: its Axis-B tables. The two are deliberately NOT a shared import: this module's
+#: purity contract is that it imports nothing from a build extension, and the
+#: dependency would run the wrong way. A cross-check test pins them equal instead.
+_TEST_ROOTS: tuple[str, ...] = ('test', 'tests')
+
+#: ``{root}/`` prefixes, precomputed for ``str.startswith`` (which accepts a
+#: tuple). Matching on the prefix — not on the bare root — keeps ``test/`` from
+#: matching a ``tests/`` path and vice versa.
+_TEST_ROOT_PREFIXES: tuple[str, ...] = tuple(f'{root}/' for root in _TEST_ROOTS)
+
+#: The bundle-neutral homes for cross-bundle test helpers, one per test root.
+#: Each is cross-module test infrastructure by construction (every bundle's suite
+#: bare-imports from it), and its first path segment is not a module name, so
+#: such a path is BOTH shared infra and unresolved.
+_SHARED_TEST_INFRA_PREFIXES: tuple[str, ...] = tuple(f'{root}/_shared/' for root in _TEST_ROOTS)
 
 
 @dataclass(frozen=True)
@@ -98,33 +117,45 @@ class DivergenceVerdict:
 def _touches_shared_infra(path: str) -> bool:
     """Return True when ``path`` is shared / cross-module test infrastructure.
 
-    Concretely: any path under ``script-shared/scripts/build/``, any path under
-    ``test/_shared/`` (the bundle-neutral cross-bundle test-helper root), and any
-    ``conftest.py`` under ``test/`` (root ``test/conftest.py`` or a nested
-    ``test/**/conftest.py``). These are exactly the footprints where a scoped run
-    cannot see a cross-module regression.
+    Concretely: any path under ``script-shared/scripts/build/``, any path under a
+    ``{root}/_shared/`` cross-bundle test-helper root, and any ``conftest.py``
+    under a test root (root ``{root}/conftest.py`` or a nested
+    ``{root}/**/conftest.py``). These are exactly the footprints where a scoped
+    run cannot see a cross-module regression.
 
-    The ``test/`` + ``/conftest.py`` predicate already covers the root
-    ``test/conftest.py`` case (``str.endswith`` overlaps at the leading ``/``),
+    Both test-root predicates range over EVERY entry of :data:`_TEST_ROOTS`, not
+    over ``test/`` alone. That symmetry is load-bearing rather than cosmetic:
+    :func:`_module_for_path` derives a module name from either root, so a
+    ``tests/{module}/conftest.py`` recognised as module-owned but NOT recognised
+    as shared infra would yield a confident single-module verdict for a change
+    that can break every module's suite — a fail-OPEN introduced by widening
+    only one of the two seams.
+
+    The ``{root}/`` + ``/conftest.py`` predicate already covers the root
+    ``{root}/conftest.py`` case (``str.endswith`` overlaps at the leading ``/``),
     so no separate root-conftest branch is needed.
     """
     if _SHARED_BUILD_INFRA_SEGMENT in path:
         return True
-    if path.startswith(_SHARED_TEST_INFRA_PREFIX):
+    if path.startswith(_SHARED_TEST_INFRA_PREFIXES):
         return True
-    return path.startswith('test/') and path.endswith('/conftest.py')
+    return path.startswith(_TEST_ROOT_PREFIXES) and path.endswith('/conftest.py')
 
 
 def _module_for_path(path: str, registered_modules: Collection[str]) -> str | None:
     """Return the owning module/bundle for ``path``, or None if it owns none.
 
     ``marketplace/bundles/{bundle}/...`` derives segment 2 (the ``{bundle}``
-    token); ``test/{bundle}/...`` derives segment 1. Any other shape derives
-    nothing.
+    token); ``{root}/{bundle}/...`` under ANY entry of :data:`_TEST_ROOTS`
+    derives segment 1. Any other shape derives nothing.
+
+    The test-root check reads ``segments[0]`` against the root set rather than
+    prefix-matching a single literal, so ``test/`` and ``tests/`` are recognised
+    independently and neither can match the other's paths.
 
     A name is derived only when ``path`` is nested *inside* a bundle/module
     directory: ``marketplace/bundles/{bundle}/...`` needs more than three
-    segments and ``test/{bundle}/...`` needs more than two. A root-level file
+    segments and ``{root}/{bundle}/...`` needs more than two. A root-level file
     such as ``marketplace/bundles/README.md`` or ``test/conftest.py`` therefore
     derives no name and returns None.
 
@@ -143,10 +174,14 @@ def _module_for_path(path: str, registered_modules: Collection[str]) -> str | No
     segments = path.split('/')
     if path.startswith('marketplace/bundles/') and len(segments) > 3:
         derived = segments[2]
-    elif path.startswith('test/') and len(segments) > 2:
+    elif segments[0] in _TEST_ROOTS and len(segments) > 2:
         derived = segments[1]
     else:
         return None
+    # UNCHANGED fail-closed guard: widening WHICH roots yield a candidate name
+    # must never widen WHICH names are accepted. A derived name that no
+    # registered module carries is still rejected here, so the caller reports the
+    # path in ``unresolved_paths`` and falls back to the whole tree.
     return derived if derived in registered_modules else None
 
 
@@ -158,8 +193,9 @@ def resolve_test_scope(
     """Resolve the scoped module set and whether a whole-tree run is warranted.
 
     Every footprint entry contributes its owning module (segment 2 for
-    ``marketplace/bundles/...``, segment 1 for ``test/...``) whenever that
-    derived name is registered. Module ownership is derived independently of the
+    ``marketplace/bundles/...``, segment 1 for any test root in
+    :data:`_TEST_ROOTS`) whenever that derived name is registered. Module
+    ownership is derived independently of the
     ``build_map_globs`` filter: the globs answer "is this build-relevant", module
     ownership answers the different question "could a scoped run miss a
     regression", and conflating the two under-reports the span for a change whose

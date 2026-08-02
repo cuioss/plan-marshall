@@ -19,14 +19,26 @@ subprocess.
 ``resolve_test_scope`` takes the registered-module names as a third argument
 (the purity contract: the set is supplied, never read from an inventory inside
 the pure module), so every call below passes ``_REGISTERED_MODULES``.
+
+A dedicated section covers the ``tests/`` sibling root. Both root-sensitive
+seams -- ``_module_for_path`` and ``_touches_shared_infra`` -- must recognise
+the SAME roots, and the tests pin that jointly rather than one at a time: a
+``tests/{module}/conftest.py`` resolves to a module AND is shared infra, so
+widening only the first seam would turn a whole-tree verdict into a confident
+scoped one. The negative controls pin the other half of the contract: widening
+WHICH roots are recognised changed nothing about what happens to a name that
+resolves to no registered module.
 """
 
 import fnmatch
+import importlib.util
+from pathlib import Path
 
 import pytest
 
 # Cross-skill import - PYTHONPATH is configured by the root conftest.
 from _test_scope_divergence import (
+    _TEST_ROOTS,
     _module_for_path,
     _touches_shared_infra,
     classify_divergence,
@@ -70,6 +82,35 @@ _UNMAPPED_TARGETS = 'marketplace/targets/generate.py'
 _SHARED_TEST_HELPER = 'test/_shared/_build_class_roster.py'
 #: A well-formed bundle path whose bundle token names no registered module.
 _UNREGISTERED_BUNDLE = 'marketplace/bundles/not-a-real-bundle/skills/foo/scripts/bar.py'
+
+_PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
+_PYPROJECT_EXTENSION_FILE = (
+    _PROJECT_ROOT
+    / 'marketplace'
+    / 'bundles'
+    / 'plan-marshall'
+    / 'skills'
+    / 'build-pyproject'
+    / 'scripts'
+    / 'extension.py'
+)
+
+
+def _load_pyproject_extension():
+    """Load the build-pyproject extension module by explicit file path.
+
+    All four build skills ship an ``extension.py`` sharing the module basename
+    ``extension``, so ``import extension`` resolves to whichever sys.path entry
+    comes first. Loading via ``spec_from_file_location`` names the file, not the
+    basename, which is what makes the cross-check below read the intended
+    declaration.
+    """
+    spec = importlib.util.spec_from_file_location(
+        'pyproject_extension_for_root_crosscheck', _PYPROJECT_EXTENSION_FILE
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 @pytest.mark.parametrize(
@@ -366,6 +407,159 @@ def test_touches_shared_infra(path, expected):
     """_touches_shared_infra recognizes conftest, shared build infra, and test/_shared/."""
     # Arrange / Act / Assert
     assert _touches_shared_infra(path) is expected
+
+
+# =============================================================================
+# The `tests/` sibling root: recognised symmetrically, still fail-closed
+# =============================================================================
+
+#: A ``tests/``-rooted path whose segment 1 IS a registered module. Under the
+#: ``test/``-only derivation this resolved to no module at all.
+_TESTS_ROOT_REGISTERED = 'tests/plan-marshall/build-pyproject/test_x.py'
+#: The ``tests/`` sibling of the cross-bundle test-helper root.
+_TESTS_SHARED_HELPER = 'tests/_shared/_build_class_roster.py'
+#: A ``tests/``-rooted conftest under a registered module. This is the path that
+#: makes the two-seam symmetry load-bearing: it resolves to a module, so if the
+#: shared-infra predicate did NOT also recognise the root it would yield a
+#: confident single-module verdict for a change that can break every suite.
+_TESTS_NESTED_CONFTEST = 'tests/plan-marshall/build-pyproject/conftest.py'
+#: A ``tests/``-rooted path whose segment 1 names no registered module.
+_TESTS_UNREGISTERED = 'tests/not-a-real-bundle/test_y.py'
+
+
+def test_module_for_path_resolves_a_tests_rooted_path():
+    """Segment 1 under the ``tests/`` sibling root resolves exactly as under ``test/``.
+
+    The asymmetry this closes: ``_TEST_ROOTS`` declared both roots while the
+    derivation prefix-matched ``test/`` alone, so a ``tests/``-rooted path owned
+    no module.
+    """
+    assert _module_for_path(_TESTS_ROOT_REGISTERED, _REGISTERED_MODULES) == 'plan-marshall'
+    # Matched control: the original root is unchanged.
+    assert _module_for_path(_NESTED_CONFTEST, _REGISTERED_MODULES) == 'plan-marshall'
+
+
+@pytest.mark.parametrize(
+    ('path', 'case'),
+    [
+        pytest.param(_TESTS_UNREGISTERED, 'segment 1 names no registered module', id='tests_unregistered'),
+        pytest.param(_TESTS_SHARED_HELPER, 'the phantom _shared name', id='tests_shared_helper'),
+        pytest.param('tests/conftest.py', 'a root-level file owns no module', id='tests_root_file'),
+        pytest.param(_UNREGISTERED_BUNDLE, 'an unregistered bundle token', id='marketplace_unregistered'),
+    ],
+)
+def test_unmappable_paths_under_either_root_still_fail_closed(path, case):
+    """NEGATIVE CONTROL: widening WHICH roots are recognised widened nothing else.
+
+    The edit changed which roots yield a candidate name. It must NOT change what
+    happens to a name that resolves to no registered module: the path is still
+    reported in ``unresolved_paths``, still forces ``divergence_possible``, and
+    still yields no confident ``recommended_target``. Without this control, a
+    widening that also relaxed the registered-module guard would pass the
+    positive cases above while reintroducing the fail-open.
+    """
+    assert _module_for_path(path, _REGISTERED_MODULES) is None, (
+        f'{path!r} ({case}) resolved to a module; the registered-module guard was widened '
+        'along with the root set.'
+    )
+
+    resolution = resolve_test_scope([path], _GLOBS, _REGISTERED_MODULES)
+
+    assert resolution.scoped_modules == ()
+    assert resolution.unresolved_paths == (path,), (
+        'the unresolved-paths disclosure was weakened; an unmappable path must stay visible '
+        'to the consumer (ADR-014).'
+    )
+    assert resolution.divergence_possible is True
+    assert resolution.recommended_target is None
+
+
+@pytest.mark.parametrize(
+    ('path', 'expected'),
+    [
+        pytest.param(_TESTS_NESTED_CONFTEST, True, id='tests_nested_conftest_is_shared'),
+        pytest.param('tests/conftest.py', True, id='tests_root_conftest_is_shared'),
+        pytest.param(_TESTS_SHARED_HELPER, True, id='tests_shared_helper_is_shared'),
+        # Negative control: an ordinary tests/-rooted module test is NOT shared
+        # infra, so mirroring the root did not make every tests/ path shared.
+        pytest.param(_TESTS_ROOT_REGISTERED, False, id='ordinary_tests_path_not_shared'),
+    ],
+)
+def test_touches_shared_infra_mirrors_every_test_root(path, expected):
+    """The shared-infra predicate recognises the same roots the derivation does.
+
+    Mirroring BOTH seams together is what keeps the widening fail-closed. A
+    ``tests/{module}/conftest.py`` now resolves to a module; had only
+    ``_module_for_path`` been widened, this path would have produced
+    ``divergence_possible: False`` with a confident single-module target — a
+    conftest change scoped to one module's suite when it can break them all.
+    """
+    assert _touches_shared_infra(path) is expected
+
+
+def test_a_tests_rooted_conftest_still_forces_the_whole_tree():
+    """End to end: the newly-resolvable ``tests/`` conftest does NOT go scoped.
+
+    The two unit assertions above compose here into the verdict that matters.
+    Its matched positive control is
+    :func:`test_module_for_path_resolves_a_tests_rooted_path` plus the
+    ``ordinary_tests_path_not_shared`` case — together they prove the whole-tree
+    verdict comes from the shared-infra recognition, not from the path having
+    failed to resolve at all.
+    """
+    resolution = resolve_test_scope([_TESTS_NESTED_CONFTEST], _GLOBS, _REGISTERED_MODULES)
+
+    assert resolution.scoped_modules == ('plan-marshall',), (
+        'the conftest no longer resolves to its module, so the whole-tree verdict below '
+        'would hold for the wrong reason.'
+    )
+    assert resolution.unresolved_paths == ()
+    assert resolution.divergence_possible is True
+    assert resolution.recommended_target is None
+
+
+def test_an_ordinary_tests_rooted_path_can_still_resolve_confidently():
+    """POSITIVE CONTROL: the widening did not degenerate into "always divergent".
+
+    A single ``tests/``-rooted module path, touching no shared infra and leaving
+    nothing unresolved, still yields the confident scoped target -- which is the
+    whole point of recognising the root.
+    """
+    resolution = resolve_test_scope([_TESTS_ROOT_REGISTERED], _GLOBS, _REGISTERED_MODULES)
+
+    assert resolution.scoped_modules == ('plan-marshall',)
+    assert resolution.unresolved_paths == ()
+    assert resolution.divergence_possible is False
+    assert resolution.recommended_target == 'plan-marshall'
+
+
+# =============================================================================
+# Cross-check: the two independently-declared root sets must agree
+# =============================================================================
+
+
+def test_test_roots_agree_with_the_build_extension_declaration():
+    """The pure module's root set equals the Python build extension's.
+
+    The two are deliberately separate declarations -- this module's purity
+    contract forbids importing a build extension, and the dependency would run
+    the wrong way -- so nothing structural keeps them equal. This cross-check is
+    what does: it reads both real definitions and pins them identical, so a root
+    added to one and not the other is a red here rather than a silent asymmetry
+    between module-ownership derivation and the Axis-B build_map tables.
+
+    The extension is loaded by explicit file path, never ``import extension``:
+    all four build skills ship an ``extension.py`` sharing that module basename,
+    so a bare import resolves to whichever sys.path entry happens to come first.
+    """
+    _EXTENSION_TEST_ROOTS = _load_pyproject_extension()._TEST_ROOTS
+
+    assert set(_TEST_ROOTS) == set(_EXTENSION_TEST_ROOTS), (
+        f'_test_scope_divergence declares {sorted(_TEST_ROOTS)!r} while the Python build '
+        f'extension declares {sorted(_EXTENSION_TEST_ROOTS)!r}. One seam now recognises a '
+        'test root the other does not -- exactly the drift this pair was reconciled to remove.'
+    )
+    assert _TEST_ROOTS, 'the root set is empty, so this cross-check compares nothing.'
 
 
 @pytest.mark.parametrize(

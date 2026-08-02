@@ -65,7 +65,17 @@ _TEST_FIXTURE_SUFFIXES: tuple[str, ...] = (
 )
 
 # The pyprojectx test roots. ``test/`` is this repository's root; ``tests/`` is
-# the sibling convention the ``.py`` rows below already carry.
+# the sibling convention. This tuple is the SINGLE source both Axis-B tables
+# derive their test routes from — the ``.py`` rows of ``_CLASSIFY_PATTERNS``, the
+# ``.py`` routes of ``classify_globs()``, and (through ``_test_fixture_routes``)
+# the non-python fixture routes in both — so neither table can claim a root the
+# other does not.
+#
+# ``_test_scope_divergence._TEST_ROOTS`` in script-shared declares the same roots
+# for the orthogonal module-ownership derivation. The two are deliberately NOT a
+# shared import (that module's purity contract forbids importing a build
+# extension, and the dependency would run the wrong way); a cross-check test pins
+# them equal instead.
 _TEST_ROOTS: tuple[str, ...] = ('test', 'tests')
 
 
@@ -124,11 +134,11 @@ class BuildExtension(BuildExtensionBase):
         ('marketplace/bundles/*.py', 'production', 2),
         ('marketplace/targets/*.py', 'production', 2),
         ('build.py', 'production', 1),
-        # Test python under any test/ or tests/ directory (deep child + direct child).
-        ('test/**/*.py', 'test', 1),
-        ('tests/**/*.py', 'test', 1),
-        ('test/*.py', 'test', 1),
-        ('tests/*.py', 'test', 1),
+        # Test python under any test root (deep child + direct child), derived
+        # from _TEST_ROOTS so this table cannot declare a root classify_globs()
+        # does not — the same anti-drift discipline the fixture globs use.
+        *((f'{root}/**/*.py', 'test', 1) for root in _TEST_ROOTS),
+        *((f'{root}/*.py', 'test', 1) for root in _TEST_ROOTS),
         # Non-python fixture content under the same test roots, one row per
         # routed class (see _TEST_FIXTURE_SUFFIXES).
         *((glob, 'test', 1) for glob in _test_fixture_routes()),
@@ -208,10 +218,14 @@ class BuildExtension(BuildExtensionBase):
         The git-tracked completeness validator (``validate_tree_completeness``)
         reports any tracked ``.py`` these routes forgot.
 
-        The test routes cover ``test/*.py`` plus the non-python fixture content
-        pytest reads under the same roots (see :data:`_TEST_FIXTURE_SUFFIXES`);
-        both this list and ``_CLASSIFY_PATTERNS`` derive those globs from
-        :func:`_test_fixture_routes`, so the two tables cannot drift apart.
+        The test routes cover ``{root}/*.py`` for every root in
+        :data:`_TEST_ROOTS` plus the non-python fixture content pytest reads
+        under the same roots (see :data:`_TEST_FIXTURE_SUFFIXES`). Both this list
+        and ``_CLASSIFY_PATTERNS`` derive their ``.py`` test routes from
+        :data:`_TEST_ROOTS` and their fixture routes from
+        :func:`_test_fixture_routes`, so the two tables cannot drift apart about
+        WHICH roots are claimed — the asymmetry where ``_CLASSIFY_PATTERNS``
+        carried ``tests/`` rows this list did not declare.
 
         The sole config route is ``pyproject.toml`` -- ``uv.lock`` and
         ``marshal.json`` are deliberately NOT claimed, since neither triggers a
@@ -224,7 +238,7 @@ class BuildExtension(BuildExtensionBase):
             ('marketplace/bundles/*.py', 'production'),
             ('marketplace/targets/*.py', 'production'),
             ('*.py.template', 'production'),
-            ('test/*.py', 'test'),
+            *((f'{root}/*.py', 'test') for root in _TEST_ROOTS),
             *((glob, 'test') for glob in _test_fixture_routes()),
             ('pyproject.toml', 'config'),
         ]
