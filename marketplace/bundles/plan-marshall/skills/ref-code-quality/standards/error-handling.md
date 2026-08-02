@@ -304,13 +304,25 @@ function resolveScope(paths) {
         m = moduleOf(p)
         if (m == null) unmapped.add(p) else modules.add(m)
     }
-    if (unmapped.notEmpty() || modules.isEmpty()) {
+    if (unmapped.notEmpty()) {
         // cannot prove coverage — say so, and fall back to the widest run
         return { modules: modules, unmapped: unmapped, divergencePossible: true }
     }
     return { modules: modules, unmapped: [], divergencePossible: modules.size > 1 }
 }
 ```
+
+An **empty input** is a third state, and folding it into either branch above is
+its own defect. Nothing was submitted, so no coverage can be missed and there is
+nothing to widen: it falls through to `divergencePossible: false` with an empty
+`modules` set, and that is the honest verdict. Routing it into the fail-closed
+branch instead would fire the conservative widest-run fallback every time
+nothing changed — the opposite of escalating only on a trigger. The distinction
+is load-bearing at the call site: an empty `modules` set carries its own meaning
+("nothing to classify"), so a consumer MUST branch on emptiness *before* it
+reads `divergencePossible`, because an empty scope under a benign verdict means
+*run nothing*, never *run everything* (ADR-015 — every presence guard is a
+meaning guard).
 
 ### (c) Branch on a dispatched producer's status before folding its payload
 
