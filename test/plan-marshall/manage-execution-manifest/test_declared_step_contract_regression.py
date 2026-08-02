@@ -14,7 +14,9 @@ from in-memory composer internals. Three regression families:
     ``status.metadata.finalize_step_overrides``;
 (b) the composed ``phase_6.steps`` is in ascending frontmatter ``order``, asserted
     specifically for the BARE ``finalize-step-preference-emitter`` id placed
-    before ``branch-cleanup``;
+    after the merge gate ``branch-cleanup`` (the emitter declares
+    ``post_run_review: true``, so its evidence is only complete once the gate has
+    run);
 (c) ``cmd_lanes_preview`` membership equals ``cmd_compose`` membership for the
     same posture and marshal seed.
 
@@ -296,11 +298,11 @@ class TestDeclaredLaneSurvivesScopeGate:
 class TestComposedPhase6IsAscending:
     """The composed ``phase_6.steps`` is in ascending frontmatter ``order``."""
 
-    #: Seeded in the DEFECTIVE sequence: the emitter (order 61) is appended after
-    #: branch-cleanup (order 70) and archive-plan (order 1000), reproducing what
-    #: ``manage-config sync-defaults`` produces when it back-fills a default-on
-    #: step by appending it. The emitter is seeded with its BARE id — never the
-    #: ``default:``-prefixed form.
+    #: Seeded in the DEFECTIVE sequence: the emitter is appended after
+    #: ``archive-plan`` — the terminal barrier and the highest order in the set —
+    #: reproducing what ``manage-config sync-defaults`` produces when it back-fills
+    #: a default-on step by appending it. The emitter is seeded with its BARE id —
+    #: never the ``default:``-prefixed form.
     _INVERTED_SEED: dict[str, dict | None] = {
         'default:create-pr': None,
         'default:lessons-capture': None,
@@ -309,21 +311,58 @@ class TestComposedPhase6IsAscending:
         _EMITTER: None,
     }
 
-    def test_emitter_is_emitted_before_branch_cleanup(self, plan_context):
-        """The originating symptom: a source-mutating step must precede the merge gate.
+    #: Seeded with the emitter BEFORE the merge gate — the pre-reorder sequence.
+    #: The composer must move it behind the gate, so the ordering assertion below
+    #: observes the sort doing work rather than reading back its own seed.
+    _EMITTER_AHEAD_OF_GATE_SEED: dict[str, dict | None] = {
+        'default:create-pr': None,
+        _EMITTER: None,
+        'default:branch-cleanup': None,
+        'default:archive-plan': None,
+    }
 
-        ``finalize-step-preference-emitter`` declares ``mutates_source: true`` and
-        ``order: 61``; ``branch-cleanup`` (order 70) is the merge gate. A compose
-        that emits the emitter after the merge gate would run a source mutation
-        against an already-merged branch.
+    def test_emitter_is_emitted_after_branch_cleanup(self, plan_context):
+        """A post-run-review step composes AFTER the merge gate.
+
+        ``finalize-step-preference-emitter`` declares ``post_run_review: true``:
+        it generalizes the just-finished run's operator gate-dispositions into
+        durable hints, and the merge gate ``branch-cleanup`` is where the last of
+        those dispositions is taken (the pre-merge review barrier, the bot
+        re-review wait, triage and loop-back all live there). Ordered ahead of the
+        gate it would emit a confident verdict over evidence the gate had not yet
+        produced, so its place is behind it.
+
+        Both orders are RESOLVED from the live step docs through the composer's own
+        ``_resolve_step_order``, never from an order literal — the staleness this
+        test is being repaired for came from citing a number that later moved.
         """
-        _seed_marshal(self._INVERTED_SEED)
+        import _manifest_validation as _mv
+
+        emitter_order = _mv._resolve_step_order(_EMITTER)
+        gate_order = _mv._resolve_step_order('branch-cleanup')
+        assert isinstance(emitter_order, int) and isinstance(gate_order, int), (
+            'Both orders must resolve from the live docs, or the comparison below '
+            f'asserts nothing: emitter={emitter_order!r}, gate={gate_order!r}'
+        )
+        assert emitter_order > gate_order, (
+            f'{_EMITTER} declares post_run_review, so its order ({emitter_order}) '
+            f'must be strictly greater than the merge gate branch-cleanup '
+            f'({gate_order}). This is the source-of-truth premise the composed '
+            'sequence below is only the consequence of.'
+        )
+
+        # Seeded in the PRE-REORDER sequence, so a composer that failed to sort
+        # would read back the emitter ahead of the gate and fail this test.
+        _seed_marshal(self._EMITTER_AHEAD_OF_GATE_SEED)
         result = cmd_compose(_compose_ns('dsc-order-emitter'))
 
         assert result is not None and result['status'] == 'success'
         steps = _persisted_phase_6_steps('dsc-order-emitter')
         assert _EMITTER in steps and 'branch-cleanup' in steps
-        assert steps.index(_EMITTER) < steps.index('branch-cleanup')
+        assert steps.index(_EMITTER) > steps.index('branch-cleanup'), (
+            f'{_EMITTER} (order {emitter_order}) must compose after branch-cleanup '
+            f'(order {gate_order}); got {steps!r}'
+        )
 
     def test_emitter_is_carried_as_the_bare_id(self, plan_context):
         """The fixture and the emitted manifest both use the BARE id."""
@@ -351,10 +390,11 @@ class TestComposedPhase6IsAscending:
         """Non-vacuity: the pre-fix and post-fix verdicts diverge inside one run.
 
         With the emitter's ``order:`` unreadable, the composer's sort PINS it at
-        its seeded index (after the merge gate) and the legacy
-        ``_check_ascending_order`` reports NO offender — the precise silent pass
-        that let the defect ship. The compose must now fail loud instead. Both
-        halves are asserted here, so the test cannot pass under the old behaviour.
+        whatever index the seed happened to give it — a position nothing verified —
+        and the legacy ``_check_ascending_order`` skips the pinned entry and
+        reports NO offender: the precise silent pass that let the defect ship. The
+        compose must now fail loud instead. Both halves are asserted here, so the
+        test cannot pass under the old behaviour.
         """
         import _manifest_validation as _mv
 

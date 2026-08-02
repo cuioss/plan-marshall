@@ -245,6 +245,27 @@ EXECUTION_LOG_KEY = 'execution_log'
 # segment) for structural role-based intersection in the 7-row decision matrix.
 # There are no longer any legacy fixed-name IDs and no per-step
 # ``standards/{name}.md`` role-files to read.
+#
+# The phase-6 tuple is written in ASCENDING ``order`` sequence, mirroring each
+# step doc's frontmatter ``order`` fact — the authoritative source the composer
+# and the finalize dispatcher both read. This tuple is only a candidate SET, but
+# a sequence that disagrees with the frontmatter reads as a second, competing
+# statement of the pipeline order, so it is kept in lock-step: when a step's
+# ``order`` moves, this sequence moves with it. Resolve the live values with
+# ``manage-config list-finalize-steps`` rather than sorting from memory.
+# That lock-step claim is PINNED, not merely asserted in prose:
+# ``test/plan-marshall/phase-6-finalize/test_finalize_orchestration_routing.py``
+# § ``TestDefaultPhase6StepsMatchesDiscovery`` checks every entry against the
+# discovered step docs and fails when this sequence stops ascending by their
+# frontmatter ``order``. Its sibling class pins the other restatement of the same
+# source, the phase-6-finalize SKILL.md "Built-in Step Dispatch Table".
+# ``lessons-capture`` (991) and ``record-metrics`` (998) sit after the merge gate
+# ``branch-cleanup`` (70) because they declare ``post_run_review: true``: they
+# report on the finished run and read evidence only the gate produces.
+# ``archive-plan`` (1000) is ordered last for an unrelated reason and declares no
+# ``post_run_review`` fact — an archival move explicitly fails the P1
+# backward-looking-output predicate. It runs last because it moves the plan
+# directory out from under every later reader.
 DEFAULT_PHASE_5_STEPS = ('verify:quality-gate', 'verify:module-tests')
 DEFAULT_PHASE_6_STEPS = (
     'finalize-step-simplify',
@@ -254,9 +275,9 @@ DEFAULT_PHASE_6_STEPS = (
     'ci-verify',
     'automatic-review',
     'sonar-roundtrip',
-    'lessons-capture',
     'adr-propose',
     'branch-cleanup',
+    'lessons-capture',
     'record-metrics',
     'archive-plan',
 )

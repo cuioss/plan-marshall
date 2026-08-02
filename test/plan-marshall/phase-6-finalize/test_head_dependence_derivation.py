@@ -22,20 +22,27 @@ pin that derivation:
     on its own.
 (b) It contains the two long-known members ``default:pre-push-quality-gate`` and
     ``default:ci-verify``.
-(c) It contains all three members the hand-maintained literal omitted —
+(c) It contains the members the hand-maintained literal omitted —
     ``default:pre-submission-self-review``,
     ``project:finalize-step-plugin-doctor`` and
     ``project:finalize-step-era-stamp-fill``.
-(d) Every member declares the ``--head-at-completion`` persistence obligation in
+(d) It contains the project-tier members declared for the first time by the
+    project-local sweep — ``project:finalize-step-lessons-housekeeping`` and
+    ``project:finalize-step-review-retrospective``. These are a DISTINCT lower
+    bound from (c): they were never members of the retired hand-maintained
+    literal, so they are not instances of the omission defect (c) records —
+    they are steps the sweep newly brought into the derived population.
+(e) Every member declares the ``--head-at-completion`` persistence obligation in
     its own doc body. Declaring the fact without persisting the SHA would leave
     the dispatcher's re-entry check nothing to compare against, so the
     declaration and the obligation are checked together.
 
-Plus the per-member mutation guard: (c) is verified to fail for **each** required
-member independently, so a guard that passes on one omission while missing
-another cannot read as green. Without it, a single assertion over the whole set
-could be satisfied by an accident of ordering and still hide a second omission —
-the exact shape of the original defect.
+Plus the per-member mutation guard: the required-member lower bound spanning
+(b), (c) and (d) is verified to fail for **each** required member independently,
+so a guard that passes on one omission while missing another cannot read as
+green. Without it, a single assertion over the whole set could be satisfied by an
+accident of ordering and still hide a second omission — the exact shape of the
+original defect.
 
 **The population is derived from discovery, never hardcoded**, so a step added
 later is covered automatically. And this module deliberately asserts **no
@@ -78,9 +85,21 @@ _PREVIOUSLY_OMITTED_MEMBERS = (
     'project:finalize-step-era-stamp-fill',
 )
 
+#: Project-tier steps the project-local sweep declares for the FIRST time. They
+#: were never members of the retired hand-maintained literal, so they are not
+#: instances of the omission defect ``_PREVIOUSLY_OMITTED_MEMBERS`` records —
+#: keeping them in their own constant is what keeps each tuple's stated
+#: provenance true of every member it holds.
+_NEWLY_DECLARED_MEMBERS = (
+    'project:finalize-step-lessons-housekeeping',
+    'project:finalize-step-review-retrospective',
+)
+
 #: The lower bound the derived set must cover. NOT an enumeration of the set —
 #: the set is derived and may legitimately be larger.
-_REQUIRED_MEMBERS = _KNOWN_MEMBERS + _PREVIOUSLY_OMITTED_MEMBERS
+_REQUIRED_MEMBERS = (
+    _KNOWN_MEMBERS + _PREVIOUSLY_OMITTED_MEMBERS + _NEWLY_DECLARED_MEMBERS
+)
 
 #: The persistence obligation every head-dependent step's doc body must carry.
 _HEAD_AT_COMPLETION_FLAG = '--head-at-completion'
@@ -161,6 +180,24 @@ def test_derived_set_contains_previously_omitted_member(member):
     )
 
 
+@pytest.mark.parametrize('member', _NEWLY_DECLARED_MEMBERS)
+def test_derived_set_contains_newly_declared_member(member):
+    """(d) Each project-tier step declared by the sweep is derived.
+
+    Parametrized per member for the same reason (c) is: a regression that drops
+    exactly one declaration fails as one identifiable test. Kept separate from
+    (c) because these members carry a different provenance — they were newly
+    declared, not omitted from a hand-maintained list.
+    """
+    derived = _head_dependent_names()
+
+    assert member in derived, (
+        f'{member} was brought into the head-dependent population by the '
+        f'project-local sweep, so its step doc must declare {_FACT_KEY}: true in '
+        f'frontmatter. Derived set: {sorted(derived)}'
+    )
+
+
 @pytest.mark.parametrize('omitted', _REQUIRED_MEMBERS)
 def test_each_required_member_is_independently_load_bearing(omitted):
     """Mutation guard: dropping any ONE required member is detected on its own.
@@ -189,7 +226,7 @@ def test_each_required_member_is_independently_load_bearing(omitted):
 
 
 def test_every_member_declares_the_head_at_completion_obligation():
-    """(d) Every derived member's doc body carries the SHA-persistence obligation.
+    """(e) Every derived member's doc body carries the SHA-persistence obligation.
 
     The frontmatter fact arms the dispatcher's re-entry check, but the check has
     nothing to compare against unless the step actually persists the SHA it

@@ -11,6 +11,7 @@ mode: workflow
 allowed-tools: Bash, Read, Edit
 order: 4
 mutates_source: true
+head_dependent: true
 default_on: false
 presets: []
 implements: plan-marshall:extension-api/standards/ext-point-finalize-step
@@ -45,6 +46,14 @@ This step edits tracked source (its Step 4b promotions write governing-skill doc
 
 This settle-band constraint **supersedes** the former requirement to run after `plan-marshall:plan-retrospective` (order 995): pushability of source edits outranks reading a retrospective artifact that this step already treats as best-effort. See [marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/source-edit-pushability.md](../../../marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/source-edit-pushability.md) for the governing contract.
 
+## HEAD-dependency
+
+This step declares `head_dependent: true` in its frontmatter — that fact IS the membership declaration the dispatcher's re-entry check reads (see [ext-point-finalize-step.md](../../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-finalize-step.md) § "Implementor Frontmatter"; the governing discriminator lives there and is deliberately not restated here).
+
+It matches on the settle-stage shape: this is a pre-merge settle-band step whose edits land directly in the worktree (`mutates_source: true` — the Step 4b promotions write governing-skill docs). Those edits were computed against the HEAD this step read, so a HEAD advance supersedes them. Concretely, the classification in Step 3 reasons about *what the plan changed* from `modified_files` and the plan outcome; a loop-back commit landing after this step recorded `done` changes that input, so a lesson that was correctly retained against the old HEAD may be completely covered against the new one — and the standing `done` record would let the corpus ship unreconciled. The empty-corpus skip-clean exit (Step 2) is the sharpest case, because it records `done` while having changed nothing.
+
+Both `--outcome done` records therefore capture the worktree HEAD immediately before their `mark-step-done` call and forward it via `--head-at-completion {sha}`: the Step 7 completion record and the Step 2 empty-corpus skip-clean record. Re-firing is safe: the classification is a fresh read each time, and the pass is non-fatal throughout.
+
 ## Direct-file-access allowance
 
 This step is granted **direct `Read`/`Edit` access to `.plan/local/lessons-learned/**`** as a documented exception to the CLAUDE.md "`.plan/` access: scripts only" hard rule. That rule itself carves out the exception: *"Never Read/Write/Edit `.plan/` files directly unless a loaded skill's workflow explicitly documents it."* This section is that explicit documentation.
@@ -68,7 +77,7 @@ default:pre-push-quality-gate                   (5)
 default:push                                    (10)
 ```
 
-The step runs inside the pre-merge settle band, so its promotion edits are linted by `default:pre-push-quality-gate` and shipped by the single `default:push` barrier. The step itself issues **no git call** and invents no push path: the dispatcher's commit instrumentation (phase-6-finalize Step 3 item 5f) commits every settle-band mutating step's edits onto the feature branch before the barrier runs.
+The step runs inside the pre-merge settle band, so its promotion edits are linted by `default:pre-push-quality-gate` and shipped by the single `default:push` barrier. The step itself issues **no tree-mutating git call** — it reads HEAD (Steps 2 and 7) but never stages, commits, or pushes — and invents no push path: the dispatcher's commit instrumentation (phase-6-finalize Step 3 item 5f) commits every settle-band mutating step's edits onto the feature branch before the barrier runs.
 
 ## Workflow
 
@@ -107,10 +116,19 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   --message "[STATUS] (project:finalize-step-lessons-housekeeping) 0 lessons — nothing to reconcile"
 ```
 
+Resolve the worktree HEAD SHA immediately before marking done, per § HEAD-dependency (substitute `.` for `{worktree_path}` on the main-checkout flow):
+
+```bash
+git -C {worktree_path} rev-parse HEAD
+```
+
+Capture stdout as `{sha}` and forward it via `--head-at-completion`:
+
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step project:finalize-step-lessons-housekeeping --outcome done \
-  --display-detail "0 lessons — nothing to reconcile"
+  --display-detail "0 lessons — nothing to reconcile" \
+  --head-at-completion {sha}
 ```
 
 ### Step 3: Classify each lesson's coverage against the plan outcome
@@ -197,24 +215,33 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ### Step 7: Record the step outcome
 
+Resolve the worktree HEAD SHA immediately before marking done, per § HEAD-dependency (substitute `.` for `{worktree_path}` on the main-checkout flow):
+
+```bash
+git -C {worktree_path} rev-parse HEAD
+```
+
+Capture stdout as `{sha}` and forward it via `--head-at-completion`:
+
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step project:finalize-step-lessons-housekeeping --outcome done \
-  --display-detail "{N} removed, {P} promoted, {M} adapted, {K} retained"
+  --display-detail "{N} removed, {P} promoted, {M} adapted, {K} retained" \
+  --head-at-completion {sha}
 ```
 
 ## Error Handling
 
 | Scenario | Action |
 |----------|--------|
-| Empty lessons corpus | Skip-clean exit — record `mark-step-done --outcome done --display-detail "0 lessons — nothing to reconcile"` so the `phase_steps_complete` handshake counts the step as done |
+| Empty lessons corpus | Skip-clean exit — record `mark-step-done --outcome done --display-detail "0 lessons — nothing to reconcile" --head-at-completion {sha}` so the `phase_steps_complete` handshake counts the step as done and a later HEAD advance re-fires it |
 | Coverage ambiguous (including ambiguous residue home) | Retain the lesson untouched (bias to retain) and log the no-action decision via `manage-logging decision` |
 | `manage-lessons remove` failure on one lesson | Non-fatal — log the failure, leave that lesson in place, and continue with the remaining lessons. Housekeeping must never block finalize. |
 | Promotion `Edit` failure (Step 4b.1) on one lesson | Non-fatal — log the failure, leave the lesson in place, and **do NOT** proceed to the Step 4b.2 retirement for that lesson. A retirement without a successful promotion would lose the rule, so the two stay atomic-by-convention: no promotion, no retire. Continue with the remaining lessons. |
-| Promote-then-retire disposition — commit carriage | The step issues no git call. Its promotion edits are committed onto the feature branch by the dispatcher's commit instrumentation (phase-6-finalize Step 3 item 5f); because the step runs in the settle band it never writes source after the push barrier, every promotion edit it makes is still ahead of that commit and is therefore carried onto the branch — no promotion can be stranded as an uncommitted edit. |
+| Promote-then-retire disposition — commit carriage | The step issues no tree-mutating git call (its only git calls are the read-only `rev-parse HEAD` in Steps 2 and 7). Its promotion edits are committed onto the feature branch by the dispatcher's commit instrumentation (phase-6-finalize Step 3 item 5f); because the step runs in the settle band it never writes source after the push barrier, every promotion edit it makes is still ahead of that commit and is therefore carried onto the branch — no promotion can be stranded as an uncommitted edit. |
 | Adaptation `Edit` failure on one lesson | Non-fatal — log the failure, leave that lesson untouched, and continue. |
 | Missing `quality-verification-report.md` | Non-fatal — proceed using `request.md` + `modified_files` alone; log that the retrospective report was unavailable |
-| Step completes | Record `mark-step-done --outcome done --display-detail "{N} removed, {P} promoted, {M} adapted, {K} retained"` |
+| Step completes | Record `mark-step-done --outcome done --display-detail "{N} removed, {P} promoted, {M} adapted, {K} retained" --head-at-completion {sha}` |
 
 The step's posture is **non-fatal throughout**: finalize must never abort because lessons housekeeping hit a snag on an individual lesson.
 

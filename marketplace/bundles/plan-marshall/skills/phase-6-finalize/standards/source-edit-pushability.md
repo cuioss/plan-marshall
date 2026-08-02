@@ -20,6 +20,25 @@ in its frontmatter) MUST be ordered **before** `default:branch-cleanup`, and —
 its edit must be CI-covered — before `default:ci-verify` (order 22) as well, so the
 correction is part of the verified, reviewed diff that merges.
 
+## The reciprocal: pushability and post-run review are opposite sides of the merge gate
+
+The merge gate partitions the pipeline, and the two frontmatter facts sit on
+opposite sides of it:
+
+- `mutates_source: true` ⇒ the step MUST be ordered **before** `default:branch-cleanup`
+  (the contract above) — its edit is only pushable while the branch is open.
+- `post_run_review: true` ⇒ the step MUST be ordered **after** `default:branch-cleanup`
+  — its evidence is only complete once the gate has produced it.
+- **No step may declare both.** The exclusion is not an independent rule bolted
+  beside the two above; it falls out of them, because the two ordering obligations
+  are unsatisfiable together.
+
+The `post_run_review` discriminator (the two predicates P1 and P2 that decide
+membership, and the derivation of the exclusion from P2) is owned by
+[`extension-api/standards/ext-point-finalize-step.md`](../../extension-api/standards/ext-point-finalize-step.md)
+§ "Implementor Frontmatter" — consult it rather than re-deriving the classification
+here.
+
 ## The discover-after-merge rule
 
 A step that discovers a needed source edit only AFTER the branch has merged MUST NOT
@@ -34,6 +53,14 @@ number before the PR exists) is a special case of the same failure: it produces 
 unpushable or wrong edit that a later reader must silently reconcile. The correct
 shape is a deterministic, self-resolving sentinel filled by a pre-merge step from a
 value the dispatcher already provides.
+
+This rule is also the **sanctioned route for a `post_run_review: true` step that
+derives an architecture hint**. Such a step is ordered post-merge by construction,
+so an in-worktree `architecture enrich` write is unpushable by definition rather
+than by accident. It therefore names the owed hint in a follow-up artifact instead
+of writing it — the hint is scheduled and visible, and the step keeps
+`mutates_source: false` honestly rather than reproducing the very defect this
+contract exists to prevent.
 
 ## Reference implementation
 

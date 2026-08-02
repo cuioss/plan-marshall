@@ -670,8 +670,9 @@ class TestCheckEmittedStepsAscendingOrder:
     def test_unresolvable_order_builtin_is_an_offence(self, monkeypatch):
         """The arm that closes the vacuous green.
 
-        With the emitter's ``order:`` unreadable, the sort pins it after
-        ``branch-cleanup`` and ``_check_ascending_order`` reports NO offender —
+        With the emitter's ``order:`` unreadable, the sort pins it at whatever
+        index the candidate list gave it — a position nothing verified — and
+        ``_check_ascending_order`` skips the pinned entry and reports NO offender:
         the exact silent pass. This gate must report it.
         """
         import _manifest_validation as _mv
@@ -683,8 +684,8 @@ class TestCheckEmittedStepsAscendingOrder:
             lambda path: None if path.name == f'{_EMITTER}.md' else real_read(path),
         )
         pinned = _mv._sort_steps_by_frontmatter_order(['push', 'branch-cleanup', _EMITTER])
-        # Reproduce the silent-pass precondition: the entry is pinned after the
-        # merge gate AND the legacy walk sees nothing wrong.
+        # Reproduce the silent-pass precondition: the entry stays pinned at its
+        # candidate-list index AND the legacy walk sees nothing wrong.
         assert pinned.index(_EMITTER) > pinned.index('branch-cleanup')
         assert _mv._check_ascending_order(pinned) is None
 
@@ -759,14 +760,37 @@ class TestComposeAscendingOrderGateWiring:
         assert manifest is not None
         assert _mem.check_emitted_steps_ascending_order(manifest['phase_6']['steps']) is None
 
-    def test_emitter_is_composed_before_branch_cleanup(self, plan_context):
-        """The originating symptom: the emitter (61) must precede branch-cleanup (70)."""
-        candidates = ['push', 'create-pr', 'branch-cleanup', _EMITTER, 'archive-plan']
+    def test_emitter_is_composed_after_branch_cleanup(self, plan_context):
+        """A post-run-review step composes AFTER the merge gate.
+
+        The emitter declares ``post_run_review: true`` — it generalizes the
+        finished run's operator gate-dispositions, and the merge gate
+        ``branch-cleanup`` is where the last of those dispositions is taken. Both
+        orders are RESOLVED from the live step docs rather than cited as literals,
+        so this test cannot re-acquire the staleness it is being repaired for.
+        """
+        emitter_order = _mem._resolve_step_order(_EMITTER)
+        gate_order = _mem._resolve_step_order('branch-cleanup')
+        assert isinstance(emitter_order, int) and isinstance(gate_order, int), (
+            'Both orders must resolve from the live docs, or the comparison below '
+            f'asserts nothing: emitter={emitter_order!r}, gate={gate_order!r}'
+        )
+        assert emitter_order > gate_order, (
+            f'{_EMITTER} declares post_run_review, so its order ({emitter_order}) '
+            f'must be strictly greater than branch-cleanup ({gate_order}).'
+        )
+
+        # Candidates in the PRE-REORDER sequence: a composer that failed to sort
+        # would read the emitter back ahead of the gate and fail this test.
+        candidates = ['push', 'create-pr', _EMITTER, 'branch-cleanup', 'archive-plan']
         result = cmd_compose(_compose_ns('order-gate-emitter', phase_6_steps=','.join(candidates)))
 
         assert result is not None and result['status'] == 'success'
         steps = _mem.read_manifest('order-gate-emitter')['phase_6']['steps']
-        assert steps.index(_EMITTER) < steps.index('branch-cleanup')
+        assert steps.index(_EMITTER) > steps.index('branch-cleanup'), (
+            f'{_EMITTER} (order {emitter_order}) must compose after branch-cleanup '
+            f'(order {gate_order}); got {steps!r}'
+        )
 
 
 class TestRecordMetricsOrderAfterTokenConsumingSteps:

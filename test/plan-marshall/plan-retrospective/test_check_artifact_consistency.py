@@ -56,7 +56,18 @@ class TestHappyPath:
 
 
 class TestFaultInjection:
-    def test_missing_metrics_and_deliverables_fail(self, tmp_path, monkeypatch):
+    def test_missing_deliverables_fail_and_missing_metrics_is_inconclusive(
+        self, tmp_path, monkeypatch
+    ):
+        """Structural faults still ``fail``; the absent ``metrics.md`` does not.
+
+        ``metrics.md`` is produced by ``default:record-metrics``, which the LIVE
+        marketplace tree orders AFTER ``plan-marshall:plan-retrospective`` — so on
+        this real ordering the artifact has not been produced yet and its absence
+        substantiates no causal claim. The verdict is ``inconclusive``, and it
+        reaches ``findings`` at ``severity: warning`` rather than being dropped by
+        a ``fail``-only gate.
+        """
         plan_id, _ = setup_broken_plan(tmp_path, monkeypatch)
         result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
         assert result.success, result.stderr
@@ -67,12 +78,20 @@ class TestFaultInjection:
         assert sections_check['status'] == 'fail'
 
         metrics_check = _check_by_name(checks, 'metrics_generated')
-        assert metrics_check['status'] == 'fail'
+        assert metrics_check['status'] == 'inconclusive', (
+            'An absent metrics.md read BEFORE its producer has had its turn is '
+            'unmeasurable, not a failure — a fail here re-asserts that '
+            'record-metrics "did not run" about a step ordered later.'
+        )
+        assert 'ordered after' in metrics_check['message']
 
         summary = data['summary']
         assert int(summary['failed']) >= 2
         findings = data['findings']
-        assert len(findings) > 0
+        assert any(
+            f.get('severity') == 'warning' and 'ordered after' in f.get('message', '')
+            for f in findings
+        ), f'The inconclusive metrics verdict must reach findings, got {findings}'
 
     def test_missing_solution_outline_emits_error(self, tmp_path, monkeypatch):
         plan_id = 'no-outline'
@@ -556,9 +575,10 @@ class TestAffectedFilesExactMatch:
             for f in data['findings']
         ), f'Expected a warning finding for the inconclusive verdict, got {data["findings"]}'
 
-        # An inconclusive row contributes to none of the summary counters, so
-        # it can never be silently absorbed as a pass.
+        # An inconclusive row lands in its own summary bucket — never absorbed
+        # as a pass, and never counted nowhere at all.
         summary = data['summary']
+        assert int(summary['inconclusive']) >= 1
         assert int(summary['passed']) + int(summary['failed']) + int(summary['skipped']) == sum(
             1 for c in data['checks'] if c['status'] in ('pass', 'fail', 'skip')
         )
@@ -754,6 +774,166 @@ class TestAffectedFilesBulletParsing:
         assert float(details['recall_pct']) == 100.0
 
 
+def _setup_archived_plan_with_references(tmp_path: Path, references: dict, *, name: str) -> Path:
+    """Archived plan built from the happy fixture with ``references`` substituted.
+
+    Archived mode passes ``plan_id=None``, so tier 1 is skipped exactly as it is
+    for a real archived plan whose worktree finalize has already removed — which
+    makes ``references`` the sole lever over the footprint's resolution state.
+    """
+    plan_dir = tmp_path / name
+    build_happy_plan_dir(plan_dir)
+    (plan_dir / 'references.json').write_text(json.dumps(references), encoding='utf-8')
+    return plan_dir
+
+
+def _run_archived(plan_dir: Path):
+    return run_script(SCRIPT_PATH, 'run', '--archived-plan-path', str(plan_dir), '--mode', 'archived')
+
+
+class TestUnresolvableFootprintIsUnmeasurable:
+    """An unresolvable footprint yields ``inconclusive`` from BOTH peers.
+
+    The pair ``affected_files_recall`` / ``affected_files_exact_match`` consumes
+    one resolver, so hardening one alone leaves the other reporting confidently
+    from the same unmeasured input. Each peer is asserted separately, and the
+    resolved-but-empty control below proves the sentinel is not satisfied by
+    making every footprint unmeasurable.
+    """
+
+    def test_recall_reports_inconclusive_not_zero_percent(self, tmp_path):
+        plan_dir = _setup_archived_plan_with_references(
+            tmp_path, {'domains': []}, name='archived-unresolvable-recall'
+        )
+        result = _run_archived(plan_dir)
+        assert result.success, result.stderr
+        data = result.toon()
+
+        recall = _check_by_name(data['checks'], 'affected_files_recall')
+        assert recall['status'] == 'inconclusive'
+        assert 'could not be resolved' in recall['message']
+
+        details = data['details']['affected_files_recall']
+        assert details['footprint_resolved'] is False
+        assert 'recall_pct' not in details, (
+            'An unresolved footprint must yield NO percentage — a reported 0% is '
+            'the confident-zero defect this check exists to remove.'
+        )
+
+    def test_exact_match_peer_reports_inconclusive_not_set_mismatch(self, tmp_path):
+        plan_dir = _setup_archived_plan_with_references(
+            tmp_path, {'domains': []}, name='archived-unresolvable-exact'
+        )
+        result = _run_archived(plan_dir)
+        assert result.success, result.stderr
+        data = result.toon()
+
+        exact = _check_by_name(data['checks'], 'affected_files_exact_match')
+        assert exact['status'] == 'inconclusive', (
+            'The exact-match peer consumes the same resolver; a confident '
+            '"Set mismatch" here would leave the pair half-hardened.'
+        )
+        assert data['affected_files_exact_match']['status'] == 'inconclusive'
+        assert data['affected_files_exact_match']['outline_only'] == []
+        assert data['affected_files_exact_match']['references_only'] == []
+
+    def test_both_inconclusive_verdicts_reach_findings(self, tmp_path):
+        """Neither verdict may be dropped into silence on the way to the report."""
+        plan_dir = _setup_archived_plan_with_references(
+            tmp_path, {'domains': []}, name='archived-unresolvable-findings'
+        )
+        result = _run_archived(plan_dir)
+        assert result.success, result.stderr
+        data = result.toon()
+
+        unresolvable_findings = [
+            f
+            for f in data['findings']
+            if f.get('severity') == 'warning' and 'could not be resolved' in f.get('message', '')
+        ]
+        assert len(unresolvable_findings) == 2, (
+            f'Expected one warning finding per affected_files_* peer, got {data["findings"]}'
+        )
+
+    def test_resolved_but_empty_footprint_still_yields_a_measured_verdict(self, tmp_path):
+        """Negative control: ``modified_files: []`` RESOLVED, so both peers measure.
+
+        Without this control the deliverable could be satisfied by reporting
+        everything as unmeasurable. A present-but-empty key is a real answer:
+        recall measures 0% and fails, and the exact-match peer reports genuine
+        one-sided drift.
+        """
+        plan_dir = _setup_archived_plan_with_references(
+            tmp_path, {'modified_files': [], 'domains': []}, name='archived-resolved-empty'
+        )
+        result = _run_archived(plan_dir)
+        assert result.success, result.stderr
+        data = result.toon()
+
+        recall = _check_by_name(data['checks'], 'affected_files_recall')
+        assert recall['status'] == 'fail'
+        details = data['details']['affected_files_recall']
+        assert details['footprint_resolved'] is True
+        assert float(details['recall_pct']) == 0.0
+
+        exact = _check_by_name(data['checks'], 'affected_files_exact_match')
+        assert exact['status'] == 'warn'
+
+
+class TestSummaryCountsEveryEmittedStatus:
+    """``summary`` buckets reconcile against ``len(checks)`` — no verdict vanishes.
+
+    A status that lands in no bucket reads to a summary consumer as a check that
+    does not exist, which is the same unmeasurable-rendered-as-absent shape the
+    ``inconclusive`` footprint verdict removes. The reconciliation is derived
+    from the emitted ``checks``, never from a hardcoded status list, so a status
+    introduced later is covered without editing this test.
+    """
+
+    def _assert_reconciles(self, data) -> None:
+        summary = data['summary']
+        assert sum(int(v) for v in summary.values()) == len(data['checks']), (
+            f'Summary buckets {summary} do not reconcile against '
+            f'{len(data["checks"])} checks: '
+            f'{[(c["name"], c["status"]) for c in data["checks"]]}'
+        )
+
+    def test_reconciles_when_every_check_passes(self, tmp_path, monkeypatch):
+        plan_id, _ = setup_live_plan(tmp_path, monkeypatch)
+        result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
+        assert result.success, result.stderr
+        self._assert_reconciles(result.toon())
+
+    def test_reconciles_when_inconclusive_verdicts_are_emitted(self, tmp_path):
+        plan_dir = _setup_archived_plan_with_references(
+            tmp_path, {'domains': []}, name='archived-summary-inconclusive'
+        )
+        result = _run_archived(plan_dir)
+        assert result.success, result.stderr
+        data = result.toon()
+
+        assert int(data['summary']['inconclusive']) == 2
+        self._assert_reconciles(data)
+
+    def test_reconciles_when_a_warn_verdict_is_emitted(self, tmp_path):
+        """``warn`` had no bucket either — the repair covers the whole map."""
+        plan_dir = _setup_archived_plan_with_references(
+            tmp_path, {'modified_files': [], 'domains': []}, name='archived-summary-warn'
+        )
+        result = _run_archived(plan_dir)
+        assert result.success, result.stderr
+        data = result.toon()
+
+        assert int(data['summary']['warn']) == 1
+        self._assert_reconciles(data)
+
+    def test_reconciles_when_a_broken_plan_fails_checks(self, tmp_path, monkeypatch):
+        plan_id, _ = setup_broken_plan(tmp_path, monkeypatch)
+        result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
+        assert result.success, result.stderr
+        self._assert_reconciles(result.toon())
+
+
 # =============================================================================
 # Unit tests for the three-tier footprint resolver (_resolve_footprint).
 # =============================================================================
@@ -785,13 +965,20 @@ def _init_repo(repo: Path) -> None:
 
 
 class TestResolveFootprintTiers:
-    """``_resolve_footprint`` resolves live diff, then legacy key, then empty.
+    """``_resolve_footprint`` resolves live diff, then legacy key, then unresolvable.
 
     Tier 1 reaches the worktree through the ONE plan-context resolver
     (``_references_core.resolve_live_worktree``), keyed on ``plan_id``. It no
     longer re-reads ``status.metadata.worktree_path`` out of the plan's own
     status file, so these tests stub the resolver rather than writing a
     ``status.json`` the function does not consult.
+
+    Tier 3 is UNRESOLVABLE, not empty: "resolved to a genuinely empty set" and
+    "could not be resolved at all" are different answers, and the resolution
+    state is read through :func:`footprint_resolved` rather than by testing
+    emptiness. The resolved-empty control below is the negative half of that
+    pair — without it, a sentinel that made everything unmeasurable would still
+    satisfy the unresolvable assertions.
     """
 
     def test_tier1_live_diff_when_worktree_resolves(self, tmp_path, monkeypatch):
@@ -882,22 +1069,52 @@ class TestResolveFootprintTiers:
         footprint = _check_mod._resolve_footprint(plan_dir)
         assert footprint == {'legacy/a.py', 'legacy/b.py'}
 
-    def test_tier3_empty_when_neither_resolves(self, tmp_path):
-        """No worktree and no legacy key → empty footprint."""
+    def test_tier3_unresolvable_when_neither_resolves(self, tmp_path):
+        """No worktree and no legacy key → UNRESOLVABLE, never an empty set.
+
+        This is the confident-zero source: collapsing "could not resolve" into
+        ``set()`` is what let a plan with a 21/21 exact footprint score a
+        confident ``Recall 0%`` once ``branch-cleanup`` had deleted the
+        worktree the resolver measures.
+        """
         plan_dir = tmp_path / 'plan'
         plan_dir.mkdir()
         (plan_dir / 'references.json').write_text(json.dumps({'domains': []}))
 
         footprint = _check_mod._resolve_footprint(plan_dir)
-        assert footprint == set()
+        assert footprint is _check_mod.FOOTPRINT_UNRESOLVED
+        assert not _check_mod.footprint_resolved(footprint)
 
-    def test_tier2_fallback_when_worktree_not_a_git_dir(
+    def test_present_but_empty_legacy_key_is_a_resolved_empty_footprint(self, tmp_path):
+        """Negative control: ``modified_files: []`` RESOLVED — to an empty set.
+
+        The positive sibling of the tier-3 assertion above. A present-but-empty
+        key is a measured answer ("the plan touched no files"), so it must stay
+        distinguishable from the absent key, and ``footprint_resolved`` — not
+        emptiness — is what tells them apart.
+        """
+        plan_dir = tmp_path / 'plan'
+        plan_dir.mkdir()
+        (plan_dir / 'references.json').write_text(json.dumps({'modified_files': []}))
+
+        footprint = _check_mod._resolve_footprint(plan_dir)
+        assert footprint == set()
+        assert _check_mod.footprint_resolved(footprint)
+
+    def test_tier1_diff_failure_reports_unresolvable_without_legacy_fallback(
         self, tmp_path, outside_repo_dir, monkeypatch
     ):
-        """A resolved directory that is not a git tree falls through to the legacy key."""
+        """A resolved directory that is not a git tree reports UNRESOLVABLE.
+
+        The worktree resolved but the diff did not, so the legacy key would
+        answer a different question while presenting as the same measurement.
+        The legacy key is deliberately populated here: the assertion is that it
+        is NOT consulted, which is only checkable when it holds a value that
+        would have been returned under the old fall-through.
+        """
         # ``plain`` must be OUTSIDE the repo: pytest's tmp_path now roots under
         # the repo-local --basetemp, where it IS a git tree and the tier-1 live
-        # footprint would resolve instead of falling through to the legacy key.
+        # footprint would resolve instead of failing.
         plain = outside_repo_dir / 'plain'
         plain.mkdir()
 
@@ -909,4 +1126,190 @@ class TestResolveFootprintTiers:
         monkeypatch.setattr(_check_mod, 'resolve_live_worktree', lambda plan_id: plain)
 
         footprint = _check_mod._resolve_footprint(plan_dir, 'demo-plan')
-        assert footprint == {'legacy/a.py'}
+        assert footprint is _check_mod.FOOTPRINT_UNRESOLVED
+        assert not _check_mod.footprint_resolved(footprint)
+
+
+class TestMetricsGeneratedOrderingDerivedVerdict:
+    """``metrics_generated``'s absence verdict is derived from step ORDERING.
+
+    An absent ``metrics.md`` only substantiates "the producing step did not run"
+    once that step has had its turn. ``default:record-metrics`` is ordered after
+    ``plan-marshall:plan-retrospective``, so the historical
+    ``fail`` — "metrics.md missing — record-metrics step did not run" — was a
+    causal claim about a step that had not yet been reached, and was structurally
+    guaranteed to be wrong on a correctly-functioning run rather than
+    occasionally wrong.
+
+    The two verdicts are pinned as a MATCHED positive/negative control pair over
+    the same input (no ``metrics.md`` on disk), differing ONLY in the resolved
+    ordering: producer-later must be ``inconclusive`` and producer-earlier must
+    be ``fail``. Without the negative half, the repair could be satisfied by
+    making the check unconditionally inconclusive.
+
+    The orders are injected by stubbing the discovery seam the production code
+    queries, so the branches are driven through the SAME resolution path the real
+    run uses. ``test_orders_are_read_from_real_discovery`` keeps that stubbing
+    honest: it asserts the unstubbed resolver answers from the live registry, so
+    a resolver that silently returned ``None`` everywhere could not make the
+    stubbed branches read as green.
+    """
+
+    #: Read from the module under test rather than restated as literals, so
+    #: renaming a finalize step id moves the production check and this test
+    #: together. A restated literal would leave
+    #: ``test_orders_are_read_from_real_discovery`` asserting the OLD id and
+    #: failing while naming the wrong cause.
+    _PRODUCER = _check_mod._METRICS_PRODUCER_STEP
+    _CONSUMER = _check_mod._METRICS_CONSUMER_STEP
+
+    def _plan_dir_without_metrics(self, tmp_path: Path) -> Path:
+        plan_dir = tmp_path / 'plan'
+        plan_dir.mkdir()
+        return plan_dir
+
+    def _stub_orders(self, monkeypatch, *, producer, consumer) -> list[str]:
+        """Stub discovery with the given orders; return the ext-points queried.
+
+        ``None`` for either order omits that step from the discovered records —
+        the not-discoverable case, which is distinct from a discovered step whose
+        order happens to be low.
+        """
+        queried: list[str] = []
+        records = []
+        if producer is not None:
+            records.append({'name': self._PRODUCER, 'order': producer})
+        if consumer is not None:
+            records.append({'name': self._CONSUMER, 'order': consumer})
+
+        def _fake_find_implementors(ext_point):
+            queried.append(ext_point)
+            return records
+
+        monkeypatch.setattr(_check_mod, 'find_implementors', _fake_find_implementors)
+        return queried
+
+    def test_producer_ordered_later_is_inconclusive_naming_the_ordering(
+        self, tmp_path, monkeypatch
+    ):
+        """Positive half: producer after consumer → ``inconclusive``, ordering named."""
+        plan_dir = self._plan_dir_without_metrics(tmp_path)
+        queried = self._stub_orders(monkeypatch, producer=998, consumer=995)
+
+        status, message = _check_mod.check_metrics_generated(plan_dir)
+
+        assert status == 'inconclusive', (
+            'A producer ordered after the consuming retrospective has not had its '
+            f'turn, so its artifact\'s absence is unmeasurable. Got: {status} — {message}'
+        )
+        assert self._PRODUCER in message
+        assert self._CONSUMER in message
+        assert '998' in message and '995' in message, (
+            'The message must NAME the ordering it derived the verdict from, so a '
+            f'reader can tell it apart from a genuine miss: {message}'
+        )
+        assert 'did not run' not in message, (
+            'The retired causal claim must not survive on the inconclusive branch.'
+        )
+        assert queried == [_check_mod._FINALIZE_STEP_EXT_POINT] * 2, (
+            'Both orders must be resolved from the finalize-step ext-point '
+            f'registry the pipeline itself orders by, got {queried}'
+        )
+
+    def test_producer_ordered_earlier_is_fail(self, tmp_path, monkeypatch):
+        """Negative half: producer before consumer → ``fail`` on the SAME input.
+
+        Identical plan directory, identical absent artifact — only the resolved
+        ordering differs. This is what stops the repair from being satisfied by
+        an unconditionally-inconclusive check.
+        """
+        plan_dir = self._plan_dir_without_metrics(tmp_path)
+        self._stub_orders(monkeypatch, producer=10, consumer=995)
+
+        status, message = _check_mod.check_metrics_generated(plan_dir)
+
+        assert status == 'fail', (
+            'A producer ordered BEFORE the consumer has already had its turn, so a '
+            f'missing artifact is a genuine miss. Got: {status} — {message}'
+        )
+        assert '10' in message and '995' in message
+
+    def test_equal_orders_are_fail(self, tmp_path, monkeypatch):
+        """Boundary: equal orders give no guarantee the producer runs later.
+
+        Only a STRICTLY later producer substantiates "has not had its turn". At
+        equal order the run sequence is unconstrained, so the check must not
+        excuse the absence — it falls to the measured branch.
+        """
+        plan_dir = self._plan_dir_without_metrics(tmp_path)
+        self._stub_orders(monkeypatch, producer=995, consumer=995)
+
+        status, _ = _check_mod.check_metrics_generated(plan_dir)
+
+        assert status == 'fail'
+
+    def test_unresolvable_ordering_is_inconclusive_not_fail(self, tmp_path, monkeypatch):
+        """An ordering that cannot be resolved is itself an unmeasurable input."""
+        plan_dir = self._plan_dir_without_metrics(tmp_path)
+        self._stub_orders(monkeypatch, producer=None, consumer=995)
+
+        status, message = _check_mod.check_metrics_generated(plan_dir)
+
+        assert status == 'inconclusive', (
+            'Whether the producer has had its turn is unknown when its order does '
+            f'not resolve — a fail would be a confident claim from no input: {message}'
+        )
+        assert 'could not be resolved' in message
+
+    def test_discovery_failure_is_inconclusive_not_a_crash(self, tmp_path, monkeypatch):
+        """A raising registry degrades to unmeasurable, never an uncaught error.
+
+        The consistency gate is fail-closed throughout: a discovery blow-up must
+        surface as a structured verdict, not abort every remaining check.
+        """
+        plan_dir = self._plan_dir_without_metrics(tmp_path)
+
+        def _boom(ext_point):
+            raise RuntimeError('registry unavailable')
+
+        monkeypatch.setattr(_check_mod, 'find_implementors', _boom)
+
+        status, message = _check_mod.check_metrics_generated(plan_dir)
+
+        assert status == 'inconclusive'
+        assert 'could not be resolved' in message
+
+    def test_present_metrics_passes_whatever_the_ordering(self, tmp_path, monkeypatch):
+        """Control: ordering only governs the ABSENCE branch, never presence."""
+        plan_dir = self._plan_dir_without_metrics(tmp_path)
+        (plan_dir / 'metrics.md').write_text('# Metrics\n', encoding='utf-8')
+        self._stub_orders(monkeypatch, producer=998, consumer=995)
+
+        status, message = _check_mod.check_metrics_generated(plan_dir)
+
+        assert status == 'pass'
+        assert message == 'metrics.md present'
+
+    def test_orders_are_read_from_real_discovery(self):
+        """Non-vacuity: the UNSTUBBED resolver answers from the live registry.
+
+        Every branch above stubs the seam, so all of them would still read as
+        green against a resolver that always returned ``None``. This asserts the
+        real one resolves both steps to integers off the discovered records —
+        which is also what makes the production verdict ordering-derived rather
+        than literal-derived.
+        """
+        producer_order = _check_mod._resolve_step_order(self._PRODUCER)
+        consumer_order = _check_mod._resolve_step_order(self._CONSUMER)
+
+        assert isinstance(producer_order, int), (
+            f'{self._PRODUCER} must be discoverable with an integer order; '
+            'an unresolvable producer would make every stubbed branch above vacuous.'
+        )
+        assert isinstance(consumer_order, int), (
+            f'{self._CONSUMER} must be discoverable with an integer order.'
+        )
+
+    def test_unknown_step_resolves_to_none(self):
+        """The resolver reports not-discoverable rather than inventing a position."""
+        assert _check_mod._resolve_step_order('default:no-such-finalize-step') is None

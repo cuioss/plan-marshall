@@ -152,6 +152,10 @@ The materialized keyed-map step roster, each step's explicit `lane` (exclusion =
 
 ### Built-in Step Dispatch Table
 
+**This table is a restatement, not a source.** The authoritative built-in step set is each step doc's own frontmatter, discovered via `find_implementors('plan-marshall:extension-api/standards/ext-point-finalize-step')` and filtered to `source: built-in`; the table below routes exactly that set and must name each step's real doc path. Because the table is hand-maintained, the alignment is **pinned by a test rather than trusted**: `test/plan-marshall/phase-6-finalize/test_finalize_orchestration_routing.py` § `TestBuiltInStepDispatchTableMatchesDiscovery` asserts the row SET equals the discovered built-in set (both directions) and that every row's document path IS the discovered doc — so a row naming a doc that MOVED fails at quality-gate instead of silently at dispatch. Its sibling `TestDefaultPhase6StepsMatchesDiscovery` pins the same source's other restatement, `_manifest_core.DEFAULT_PHASE_6_STEPS`. When a built-in step is added, removed, or its doc relocated, update this table in the SAME change.
+
+The compose-time step-resolution gate is the complementary guard, not a substitute: it fails loud with `unresolvable_step` for a built-in whose standards doc is MISSING, so a deleted doc can never reach dispatch. It says nothing about a row that points at a real but wrong document, which is precisely what the test above covers.
+
 | Step Name | Standards Document | Description |
 |-----------|-------------------|-------------|
 | `default:finalize-step-sync-baseline` | `standards/finalize-step-sync-baseline.md` | Early baseline rebase — rebase the worktree feature branch onto `origin/{base_branch}` at the start of finalize so the downstream local gates and CI validate the actual to-be-landed tree (no force-push, no `ci wait` at this order) |
@@ -165,10 +169,10 @@ The materialized keyed-map step roster, each step's explicit `lane` (exclusion =
 | `default:architecture-refresh` | `standards/architecture-refresh.md` | Refresh architecture descriptors (tier-0 deterministic discover + diff, tier-1 LLM re-enrichment) |
 | `plan-marshall:automatic-review` | `../automatic-review/SKILL.md` | CI automated review — **FIND-only**: files PR comments via `github_pr fetch_findings`, then marks done; dispatches no triage of its own. Once both wait-region producers have filed, the dispatcher runs ONE unified triage over the union (see Step 3 item 7c below, `verification-feedback` `producer=finalize-feedback`; see [`findings-pipeline.md`](../ref-workflow-architecture/standards/findings-pipeline.md) for the architectural flow) |
 | `default:sonar-roundtrip` | `workflow/sonar-roundtrip.md` | Sonar analysis roundtrip — **FIND-only**: files new-code issues via `sonar fetch_findings`, then marks done; dispatches no triage of its own. Triage runs via the same dispatcher-owned unified pass (Step 3 item 7c, `producer=finalize-feedback`) |
-| `default:lessons-capture` | `standards/lessons-capture.md` | Record lessons learned |
+| `default:lessons-capture` | `workflow/lessons-capture.md` | Record lessons learned |
 | `default:adr-propose` | `workflow/adr-propose.md` | Propose ADRs from the plan's architectural decisions — advisory, dispatcher-gated on a decision-shape Signal Gate (see Step 3 § "Adr-propose Signal Gate") |
 | `default:branch-cleanup` | `standards/branch-cleanup.md` | Branch cleanup — adapts to PR mode or local-only based on create-pr step presence |
-| `default:finalize-step-preference-emitter` | `standards/finalize-step-preference-emitter.md` | Inline per-plan preference-learning sweep — aggregates recurring `(module, finding-class, disposition)` patterns in the just-finished plan and promotes the threshold-passing ones to durable architecture hints via `architecture enrich` |
+| `default:finalize-step-preference-emitter` | `standards/finalize-step-preference-emitter.md` | Inline per-plan preference-learning sweep — aggregates recurring `(module, finding-class, disposition)` patterns in the just-finished plan and files the threshold-passing ones as owed durable architecture hints (post-merge-ordered, so it names the owed `architecture enrich` calls rather than writing them) |
 | `default:record-metrics` | `standards/record-metrics.md` | Record final plan metrics before archive |
 | `default:finalize-step-print-phase-breakdown` | `standards/finalize-step-print-phase-breakdown.md` | Optional override mode: capture the Phase Breakdown table from metrics.md so the renderer emits it in place of the per-step [OK] block |
 | `default:archive-plan` | `standards/archive-plan.md` | Archive the completed plan |
@@ -209,7 +213,8 @@ The finalize pipeline is a **mutation-settling stage**: every LOCAL, HEAD-changi
 
 - **SETTLE (local HEAD-changing, `order < 10`)** — `finalize-step-sync-baseline` (3, rebase→HEAD), `pre-push-quality-gate` (5, gate), `project:finalize-step-plugin-doctor` / `pre-submission-self-review` / `finalize-step-simplify` / `finalize-step-security-audit` (fixes→HEAD), and `architecture-refresh` (9, derived-state — sorts LAST in the settle band so the descriptor refresh captures the code-mutating settle edits). Each mutating step's edits are committed on the feature branch by the dispatcher's commit instrumentation (Step 3 item 5f) before the barrier runs.
 - **PUSH (`order: 10`)** — the single `default:push` barrier ships the fully-settled HEAD. There is exactly ONE push.
-- **WAIT (post-push, `order > 10`)** — `create-pr`, `ci-verify`, `automatic-review`, `sonar-roundtrip` are the D4 **concurrent WAIT barrier** off that one settled HEAD (see § the wait-region narrative for the barrier mechanics — this section does not restate it). Post-push HEAD mutations that structurally REQUIRE the remote PR (era-stamp-fill's PR-number resolution, sonar/review fix application) are NOT pulled before the push — they are absorbed by the D4 bounded re-settle mutation-fixpoint. The post-wait settle band (`review-retrospective`, `lessons-capture` at 60) then runs before `branch-cleanup` (70) merges.
+- **WAIT (post-push, `order > 10`)** — `create-pr`, `ci-verify`, `automatic-review`, `sonar-roundtrip` are the D4 **concurrent WAIT barrier** off that one settled HEAD (see § the wait-region narrative for the barrier mechanics — this section does not restate it). Post-push HEAD mutations that structurally REQUIRE the remote PR (era-stamp-fill's PR-number resolution, sonar/review fix application) are NOT pulled before the push — they are absorbed by the D4 bounded re-settle mutation-fixpoint. `adr-propose` (62) then runs before `branch-cleanup` (70) merges.
+- **POST-RUN REVIEW (post-merge, `order > 70`)** — every step declaring `post_run_review: true` runs after the merge gate, because at least one input it reads is only determined at or after that gate (the merge outcome, the post-merge base-branch state, or the re-review barrier's bot comments and triage dispositions). Membership is the declared fact, never a list here — see [`../extension-api/standards/ext-point-finalize-step.md`](../extension-api/standards/ext-point-finalize-step.md) § "Implementor Frontmatter" for the P1 ∧ P2 discriminator. Such a step writes no tracked source (`mutates_source: false` is mandatory for it, and the mutual exclusion falls out of P2), so the post-merge band mutates nothing and needs no push.
 
 **Ordering authority.** The settle-before-push-before-wait sequence is NOT a compose-layer `order` field and NOT a `run_at_all` boolean — it is governed entirely by each step doc's `order:` frontmatter, resolved through the single choke-point `_manifest_validation._sort_steps_by_frontmatter_order` (consumed by BOTH the plan-local manifest composer AND `manage-config steps-sort`). To move a step between the settle stage and the wait region, edit its `order:` frontmatter (settle `< 10`, wait `> 10`); the composer and `steps-sort` re-materialize the roster and the ascending-order validator asserts the barrier holds. See the roster block above and [`extension-api/standards/ext-point-finalize-step.md`](../extension-api/standards/ext-point-finalize-step.md) for the lane/order contract.
 
@@ -566,10 +571,12 @@ For each step reference:
 | Step reference | Resolver lookup | Workflow doc |
 |----------------|-----------------|--------------|
 | `default:create-pr` | `--phase phase-6-finalize` (no `--role`; tracks `phase-6-finalize.default`) | `plan-marshall:phase-6-finalize/workflow/create-pr.md` |
-| `default:lessons-capture` | `--phase phase-6-finalize --role post-run-review` | `plan-marshall:phase-6-finalize/workflow/lessons-capture.md` |
-| `default:adr-propose` | `--phase phase-6-finalize --role post-run-review` | `plan-marshall:phase-6-finalize/workflow/adr-propose.md` |
+| `default:lessons-capture` | `--phase phase-6-finalize --role post-run-review` (derived — declares `post_run_review: true`) | `plan-marshall:phase-6-finalize/workflow/lessons-capture.md` |
+| `default:adr-propose` | `--phase phase-6-finalize` (no `--role`; tracks `phase-6-finalize.default`) | `plan-marshall:phase-6-finalize/workflow/adr-propose.md` |
 | `plan-marshall:automatic-review` | `--phase phase-6-finalize` (FIND-only; tracks `phase-6-finalize.default`) | `plan-marshall:automatic-review/SKILL.md` |
 | `default:sonar-roundtrip` | `--phase phase-6-finalize` (FIND-only; tracks `phase-6-finalize.default`) | `plan-marshall:phase-6-finalize/workflow/sonar-roundtrip.md` |
+
+**The `post-run-review` sub-key is DERIVED, not listed.** A dispatched step resolves under `--role post-run-review` **iff** its own authoritative doc declares `post_run_review: true`; every other dispatched step resolves under `phase-6-finalize.default`. Read the ONE step's fact at the point of dispatch — a per-step membership test, never a whole-set materialisation (see [`../extension-api/standards/ext-point-finalize-step.md`](../extension-api/standards/ext-point-finalize-step.md) § "Implementor Frontmatter"). Deriving the sub-key is what keeps the role key and the post-merge ordering obligation on ONE source: a step cannot be ordered as a post-run review and dispatched as something else, or vice versa. `default:adr-propose` is the discriminator's one near-miss and is recorded here so its lookup is not read as an oversight — it looks back at the plan's history (P1) but the decisions it records are settled at outline/execute time, not at or after the merge gate (P2 fails), so it is NOT a `post_run_review` member and tracks `phase-6-finalize.default`.
 
 `plan-marshall:automatic-review` and `sonar-roundtrip` are the two wait-region producers, each **FIND-only**: gated on its own `_ci_barrier` arm (the per-signal precondition — `review` / `sonar` arm respectively), the step fetches its provider's feedback and files `pr-comment` / `sonar-issue` findings to the store, then marks done. Neither step dispatches its own triage any more. The per-finding LLM triage runs ONCE at the dispatcher level as the **Wait-region unified triage** (§ item 7c below), a single `verification-feedback` dispatch with `producer=finalize-feedback` over the union of both producers' pending findings. The outer FIND wrappers resolve under `phase-6-finalize.default` since each body is now pure script execution (fetch + file), no sub-dispatch.
 
@@ -690,11 +697,13 @@ FOR each step_id in manifest.phase_6.steps:
 
   4b. Lessons-capture Signal Gate (B4 — run BEFORE dispatching the step if step_id == "lessons-capture"):
 
-      The deterministic three-signal Signal Gate is evaluated at dispatcher level so the envelope spawn cost is avoided when all three signals are zero. The dispatcher computes the precondition; the LLM workflow body is the recording loop only. When all three signals are zero, short-circuit and record `outcome=skipped`.
+      The deterministic three-signal Signal Gate is evaluated at dispatcher level so the envelope spawn cost is avoided when all three signals are zero. The dispatcher computes the precondition; the LLM workflow body is the recording loop only. When all three signals are zero AND the run is not orchestrated, short-circuit and record `outcome=skipped` — an orchestrated run is dispatched even at zero signals, per the orchestration carve-out in item 4b.b below.
 
       a0. Resolve orchestration context (runs BEFORE the three-zero short-circuit):
 
-         An orchestrated plan — one launched from an epic's staged plan spec — routes its lesson-shaped output to the epic's `inbox/` OUTBOX instead of the global lessons store. The verdict is resolved ONCE per finalize run, here, and forwarded to EVERY dispatched step whose body emits lesson-shaped output. That set is currently **two** steps: `default:lessons-capture` and `plan-marshall:plan-retrospective` (Step 5b). A future step that gains a `manage-lessons add` call site MUST be added to this list and receive the same two runtime inputs.
+         An orchestrated plan — one launched from an epic's staged plan spec — routes its lesson-shaped output to the epic's `inbox/` OUTBOX instead of the global lessons store. The verdict is resolved ONCE per finalize run, here, and consumed by EVERY step whose body emits lesson-shaped output. That set is currently **three** steps: `default:lessons-capture`, `plan-marshall:plan-retrospective` (Step 5b), and `default:finalize-step-preference-emitter` (Step 4). A future step that gains a `manage-lessons add` call site MUST be added to this list and receive the same two runtime inputs.
+
+         The two dispatched consumers receive the verdict as prompt-body runtime inputs (item c below); `default:finalize-step-preference-emitter` is an inline step, so it reads the values the dispatcher already holds — it MUST NOT re-issue either resolution call. All three run at or after `order: 991`, so the verdict resolved here is available to each of them.
 
          Read the plan's spec pointer through its canonical owner:
 
@@ -718,7 +727,7 @@ FOR each step_id in manifest.phase_6.steps:
               work --plan-id {plan_id} --level WARNING \
               --message "[VERIFY] (plan-marshall:phase-6-finalize:lessons-capture) Unrecognised orchestrator pointer {source_id} - the plan looks orchestrated but its id segment was not recognised, so no inbox message will be written"
 
-         The WARNING changes the SILENCE, not the branch: the verdict stays `orchestrated: false` and the run proceeds down the non-orchestrated path exactly as before. The two forwarded consumers (`default:lessons-capture` and `plan-marshall:plan-retrospective` Step 5b) keep receiving `orchestrated` and `epic` unchanged — `detection` is read here and is not added to their runtime inputs. Emit the WARNING for `unrecognised_id` only: `orchestrated` and `not_orchestrator_pointer` are the ordinary paths and stay quiet.
+         The WARNING changes the SILENCE, not the branch: the verdict stays `orchestrated: false` and the run proceeds down the non-orchestrated path exactly as before. All three consumers (`default:lessons-capture`, `plan-marshall:plan-retrospective` Step 5b, and `default:finalize-step-preference-emitter` Step 4) keep receiving `orchestrated` and `epic` unchanged — `detection` is read here and is not added to their runtime inputs. Emit the WARNING for `unrecognised_id` only: `orchestrated` and `not_orchestrator_pointer` are the ordinary paths and stay quiet.
 
       a. Compute three signal counts:
 
@@ -804,10 +813,12 @@ FOR each step_id in manifest.phase_6.steps:
             orchestrated: {true|false}
             epic: {slug|""}
 
-         The same two orchestration fields are ALSO forwarded on the `plan-marshall:plan-retrospective` dispatch (the DISPATCHED roster entry under `--phase phase-6-finalize --role post-run-review`, and the sole whitelisted `--session-id` recipient), so both lesson-emitting write-sites see one verdict resolved once:
+         The same two orchestration fields are ALSO forwarded on the `plan-marshall:plan-retrospective` dispatch (the DISPATCHED roster entry under `--phase phase-6-finalize --role post-run-review`, and the sole whitelisted `--session-id` recipient), so every lesson-emitting write-site sees one verdict resolved once:
 
             orchestrated: {true|false}
             epic: {slug|""}
+
+         `default:finalize-step-preference-emitter` (Step 4) is the third write-site and is INLINE, so it takes no prompt body — carry the same two values into it directly when the FOR loop reaches it at `order: 992`. It MUST NOT re-issue `request read --section source_id` or `orchestrator inbox detect`.
 
          Continue to item 5 (Dispatch with timeout wrapper).
 
@@ -885,7 +896,13 @@ FOR each step_id in manifest.phase_6.steps:
          * plan-marshall:automatic-review -> workflow: ../automatic-review/SKILL.md | --phase phase-6-finalize                              (FIND-only producer; triage is the dispatcher-owned unified pass — item 7c) | timeout: 900s
          * default:sonar-roundtrip  -> workflow: workflow/sonar-roundtrip.md  | --phase phase-6-finalize                              (FIND-only producer; triage is the dispatcher-owned unified pass — item 7c) | timeout: 900s
          * default:lessons-capture  -> workflow: workflow/lessons-capture.md  | --phase phase-6-finalize --role post-run-review       | timeout: 300s
-         * default:adr-propose      -> workflow: workflow/adr-propose.md      | --phase phase-6-finalize --role post-run-review       | timeout: 300s
+         * default:adr-propose      -> workflow: workflow/adr-propose.md      | --phase phase-6-finalize                              (no --role; P2 fails — not a post_run_review member) | timeout: 300s
+
+       The `--role post-run-review` values above are NOT a hand-maintained list: each is the
+       derived consequence of that step's own `post_run_review` frontmatter fact (see the
+       "The `post-run-review` sub-key is DERIVED, not listed" note under the resolver table
+       above). Resolve the fact for the step being dispatched rather than reading the sub-key
+       off this table.
 
        The subagent's body loads `persona-plan-marshall-agent` + the prompt's `skills[]`, then `Read`s the workflow doc and executes its steps inside the dispatch envelope. Pass `--plan-id {plan_id}` and, when an `{iteration}` counter applies, `--iteration {iteration}` as workflow-specific runtime inputs in the prompt body. The Worktree Header is conveyed via the always-required `WORKTREE` prompt-body field; the subagent resolves the worktree path internally and propagates it into any further dispatches it issues.
 
@@ -1087,7 +1104,52 @@ FOR each step_id in manifest.phase_6.steps:
       **Exec-blind contract (finalize side)**: the `6-finalize` row in `metrics.toon` is kept non-zero by `default:record-metrics`'s `end-phase` write, which reads the `metrics-accumulator-6-finalize.toon` accumulator that 5b fills on every dispatched step return — see § Phase-boundary metric bookkeeping below. 5e's per-step `execution_log[]` rows are the auditable per-step breakdown behind that aggregate, mirroring phase-5-execute Step 8c so neither phase has an exec-blind (`total_tokens==0`) path.
 
   5f. Commit instrumentation (after the step has recorded a terminal `done`/`skipped` outcome — see "Commit instrumentation contract" below):
-      The dispatcher owns EVERY commit a finalize step's edits produce. Read the step's declared `mutates_source` frontmatter fact from its authoritative doc (the `standards/{name}.md` or `workflow/{name}.md` that declares the step's `order:`). When `mutates_source` is `false` (or absent — read-only is the safe default), do nothing and proceed to item 6. When `mutates_source` is `true`, instrument the commit:
+      The dispatcher owns EVERY commit a finalize step's edits produce. Read the step's declared `mutates_source` AND `post_run_review` frontmatter facts from its authoritative doc (the `standards/{name}.md` or `workflow/{name}.md` that declares the step's `order:`) — one frontmatter read, two facts. When `mutates_source` is `false` (or absent — read-only is the safe default), run the post-run-band tracked-source guard at (0) below and then proceed to item 6. When `mutates_source` is `true`, skip (0) — a declared mutator's edits are exactly what (a)-(d) commit — and instrument the commit:
+
+      (0) **Post-run-band tracked-source guard** (fires ONLY when `post_run_review` is `true`; the two facts are mutually exclusive, so this arm is reached only on the `mutates_source: false` path): the `mutates_source: false` declaration is the ONLY thing standing between a post-run-review step and an unpushable source edit, and a declaration cannot detect a branch that violates it. A post-run-review step runs AFTER the merge gate, so a tracked-source write one of its branches makes lands as an uncommitted diff with no remaining push path. Observe the main checkout once per such step return:
+
+          ```bash
+          python3 .plan/execute-script.py plan-marshall:phase-6-finalize:post_run_source_guard check \
+            --step-id {step_id} --project-dir {main_checkout}
+          ```
+
+          **The tree to observe is `{main_checkout}`, never `{worktree_path}`.** Every
+          `post_run_review: true` step is ordered after `default:branch-cleanup` (70), which
+          merges and then REMOVES the worktree — so by the time this guard runs, `{worktree_path}`
+          no longer exists on disk and a `git -C` against it fails outright, returning
+          `status: error` with `clean: true`. Since (0)'s error branch records nothing, pointing
+          the guard at the worktree would make its entire `clean: false` arm structurally
+          unreachable: a guard that can never fire. `{main_checkout}` is also the correct tree on
+          the merits — a post-run step's stray tracked write lands there, on the merged base
+          branch, which is exactly the unpushable edit this guard exists to surface.
+
+          The guard's three settled design decisions — do NOT re-derive them:
+
+          - **Scope is the post-run band, not every step.** Before the merge gate an uncommitted tracked edit is still pushable, so the defect is reachable only after it. The guard is therefore consulted only for a step declaring `post_run_review: true`; every other `mutates_source: false` step proceeds to item 6 with no observation.
+          - **The path predicate is dirty AND tracked AND outside `.plan/`.** Every finalize step legitimately writes plan state under `.plan/`, so a bare non-empty `git status --porcelain` test would fire on every post-run step. The script composes two filters — `--untracked-files=no` (git drops untracked paths) plus an explicit `.plan/` prefix exclusion — and only what survives both is reported.
+          - **The failure action is loud and legible, but NEVER blocking.** The post-run band is advisory by design — its members are ordered after `default:branch-cleanup`, so the merge has already happened and there is nothing left for a hard failure to protect; blocking there would strand a merged branch rather than prevent a bad merge. A hard failure would therefore contradict the band's placement. The script exits `0` on every path, including `clean: false` and its own `status: error`.
+
+          Branch on the returned TOON. On `clean: true` (the expected outcome) do nothing and proceed to item 6. On `clean: false`, take BOTH non-blocking actions, then proceed to item 6 anyway:
+
+          a. Log an attributed WARNING naming the writing step and the offending tracked paths:
+
+             ```bash
+             python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+               work --plan-id {plan_id} --level WARNING \
+               --message "[STATUS] (plan-marshall:phase-6-finalize) Post-run-review step {step_id} declares mutates_source: false but left dirty TRACKED source outside .plan/: {offending_paths} — the edit ran after the merge gate and has no push path; it is NOT committed and NOT blocking"
+             ```
+
+          b. Record the observation as a finding so it survives the run:
+
+             ```bash
+             python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate add \
+               --plan-id {plan_id} --phase 6-finalize --source qgate --type anti-pattern --severity warning \
+               --component "plan-marshall:phase-6-finalize" \
+               --title "post_run_review step wrote tracked source after the merge gate" \
+               --detail "{step_id} declares mutates_source: false yet left these dirty tracked paths outside .plan/: {offending_paths}. A post-run-review step runs after the merge gate, so the edit is unpushable. Either the step must stop writing tracked source, or it does not belong in the post-run band."
+             ```
+
+          On `status: error` (the observation itself failed — not a git repository, git unavailable) the guard returns `clean: true` with an `error` field so an unusable observation never manufactures an offender. Log the `error` value at WARNING and proceed to item 6; do NOT record a finding, and do NOT treat it as a blocking failure.
 
       (a) Check the worktree for uncommitted changes the step produced:
 
@@ -1114,7 +1176,7 @@ FOR each step_id in manifest.phase_6.steps:
             --display-detail "{the step's own display_detail, preserved}"
           ```
 
-          This re-stamp is a no-op for a `mutates_source: true` step that is NOT head-dependent (`lessons-capture` is that case today: its Branch B3 `architecture enrich` writes are committed by this instrumentation, but the step declares no `head_dependent` fact, so the re-stamp is correctly skipped) — skip it whenever the step's own `head_dependent` fact is absent or false.
+          This re-stamp is a no-op for a `mutates_source: true` step that is NOT head-dependent — skip it whenever the step's own `head_dependent` fact is absent or false. Resolve that fact per step rather than inferring it from any example: `mutates_source` and `head_dependent` are independent facts, and the pairing that makes the re-stamp load-bearing is a step declaring BOTH.
 
       (c) IF the porcelain output is empty, the mutating step produced no net change — record nothing and proceed to item 6. The step's pre-commit `head_at_completion` already equals the live HEAD (no commit was made), so no re-stamp is needed.
 
@@ -1135,7 +1197,7 @@ FOR each step_id in manifest.phase_6.steps:
 
           The `push` step's freshness precondition reads this record — matching `commit_sha` against the live HEAD — to distinguish the known-safe finalize-internal re-stale from genuine un-built source drift, which stays fail-closed. Genuine drift never produces this record (no finalize-internal commit authored it), so the fail-closed path is preserved.
 
-      **Post-PR re-push**: when a `mutates_source: true` step that runs AFTER `create-pr` (e.g. `plan-marshall:automatic-review`, `sonar-roundtrip`, or `lessons-capture` on its Branch B3 `architecture enrich` write) commits a loop-back fix or enrichment via this instrumentation, the dispatcher re-invokes the `push` step so the PR HEAD advances (and, for review-bearing steps, re-review fires) inside the normal settle band instead of at the merge gate. The `push` step is a pure barrier (it carries no commit logic and is not head-dependent); the dispatcher re-invokes it explicitly here rather than relying on a HEAD-comparison re-fire. This explicit re-invocation is the **fast path**; the item-1 `branch-sync-state` parity check is the **structural backstop** — even if this re-invocation is missed (crash, session loss), the next re-entry observes `state: ahead` and re-fires the push rather than trusting the stale `done` record. Read-only (`mutates_source: false`) steps never reach item 5f's instrumentation and never trigger a re-push.
+      **Post-PR re-push**: when a `mutates_source: true` step that runs AFTER `create-pr` and BEFORE the merge gate (e.g. `plan-marshall:automatic-review` or `sonar-roundtrip` committing a loop-back fix) commits via this instrumentation, the dispatcher re-invokes the `push` step so the PR HEAD advances (and, for review-bearing steps, re-review fires) inside the normal settle band instead of at the merge gate. The `push` step is a pure barrier (it carries no commit logic and is not head-dependent); the dispatcher re-invokes it explicitly here rather than relying on a HEAD-comparison re-fire. This explicit re-invocation is the **fast path**; the item-1 `branch-sync-state` parity check is the **structural backstop** — even if this re-invocation is missed (crash, session loss), the next re-entry observes `state: ahead` and re-fires the push rather than trusting the stale `done` record. Read-only (`mutates_source: false`) steps never reach item 5f's instrumentation and never trigger a re-push.
 
   6. Capture archive result (only when step_id == "archive-plan"):
      Record the returned `archive_path` into model context alongside the pre-archive snapshot — it is consumed by Step 4 (Render Final Output Template).
@@ -1583,7 +1645,7 @@ In-step state checks (consulted by individual standards docs after dispatch — 
 | `standards/architecture-refresh.md` | `default:architecture-refresh` | Tier-0 deterministic `architecture discover --force` + `diff-modules --pre` driven `chore(architecture)` commit; Tier-1 LLM re-enrichment with `prompt`/`auto`/`disabled` modes; respects `architecture_refresh.tier_0` / `tier_1` run-config knobs and `change_type ∈ {bug_fix, verification}` shortcut |
 | `../automatic-review/SKILL.md` | `plan-marshall:automatic-review` | Review-bot comment FIND (per-signal review-arm gate; file `pr-comment` findings); the unified wait-region triage consumes them. Architectural flow: [`findings-pipeline.md`](../ref-workflow-architecture/standards/findings-pipeline.md) |
 | `workflow/sonar-roundtrip.md` | `default:sonar-roundtrip` | Sonar FIND (fetch new-code issues, file `sonar-issue` findings); the unified wait-region triage consumes them. Architectural flow: [`findings-pipeline.md`](../ref-workflow-architecture/standards/findings-pipeline.md) |
-| `standards/lessons-capture.md` | `default:lessons-capture` | manage-lesson add command |
+| `workflow/lessons-capture.md` | `default:lessons-capture` | manage-lesson add command |
 | `workflow/adr-propose.md` | `default:adr-propose` | manage-adr create command — propose ADRs from plan decisions (advisory, dispatcher-gated) |
 | `standards/branch-cleanup.md` | `default:branch-cleanup` | Branch cleanup with user confirmation — PR mode (merge + CI) or local-only (switch + pull) |
 | `standards/record-metrics.md` | `default:record-metrics` | Record final plan metrics before archive |
@@ -1613,10 +1675,11 @@ In-step state checks (consulted by individual standards docs after dispatch — 
 | `scripts/ci_complete_precondition.py` | `plan-marshall:phase-6-finalize:ci_complete_precondition` | Resolver for the `requires: [ci-complete]` frontmatter precondition, with a per-HEAD cache and a harness-ceiling clamp |
 | `scripts/derive_gate_bundles.py` | `plan-marshall:phase-6-finalize:derive_gate_bundles` | Derives the unique bundle set the pre-push quality gate runs over, from the live footprint |
 | `scripts/pr_intent_section.py` | `plan-marshall:phase-6-finalize:pr_intent_section` | Renders the distilled `## Intent` section into the generated PR body — owns the character budget and its visible truncation, and omits the section entirely (heading included) when the plan has no outline intent |
+| `scripts/post_run_source_guard.py` | `plan-marshall:phase-6-finalize:post_run_source_guard` | Runtime tracked-source guard for the `post_run_review` band (item 5f sub-item 0) — reports dirty TRACKED paths outside `.plan/` left by a step that declared `mutates_source: false`; advisory and non-blocking (always exits 0) |
 
 ## Canonical invocations
 
-The canonical argparse surface for `ci_complete_precondition.py` and `pr_intent_section.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
+The canonical argparse surface for `ci_complete_precondition.py`, `pr_intent_section.py` and `post_run_source_guard.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
 
 ### ci_complete_precondition — resolve
 
@@ -1632,6 +1695,17 @@ python3 .plan/execute-script.py plan-marshall:phase-6-finalize:ci_complete_preco
 python3 .plan/execute-script.py plan-marshall:phase-6-finalize:pr_intent_section render \
   --plan-id PLAN_ID --draft-path DRAFT_PATH --body-path BODY_PATH
 ```
+
+### post_run_source_guard — check
+
+```bash
+python3 .plan/execute-script.py plan-marshall:phase-6-finalize:post_run_source_guard check \
+  --step-id STEP_ID --project-dir MAIN_CHECKOUT
+```
+
+`--project-dir` is required and takes the MAIN CHECKOUT — it carries no default
+because every caller runs after `default:branch-cleanup` removed the worktree,
+so a cwd default would silently observe a deleted tree.
 
 ## Related
 

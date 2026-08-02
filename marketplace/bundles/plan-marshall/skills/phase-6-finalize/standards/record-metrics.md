@@ -6,6 +6,7 @@ name: default:record-metrics
 description: Record final plan metrics before archive
 order: 998
 mutates_source: false
+post_run_review: true
 default_on: true
 presets:
   - local

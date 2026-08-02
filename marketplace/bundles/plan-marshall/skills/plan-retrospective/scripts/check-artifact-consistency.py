@@ -17,11 +17,19 @@ Checks performed:
   from which no bullet could be parsed reports ``fail``, naming that
   deliverable — even when sibling deliverables declared files and the
   aggregate declared set is non-empty. ``skip`` is retained only when no
-  deliverable declares an ``Affected files`` section at all.
+  deliverable declares an ``Affected files`` section at all. When the footprint
+  itself cannot be resolved the check reports ``inconclusive``: recall is
+  unmeasurable, never a confident 0%.
 - ``affected_files_exact_match`` — the declared set and the resolved footprint
   agree exactly. A both-empty comparison substantiates nothing and reports
-  ``inconclusive``, never ``pass``.
-- ``metrics_generated`` — ``metrics.md`` exists.
+  ``inconclusive``, never ``pass``; so does an unresolvable footprint, which
+  likewise substantiates no comparison.
+- ``metrics_generated`` — ``metrics.md`` exists. Absence is a ``fail`` only when
+  the producing step has already had its turn: ``default:record-metrics`` is
+  ordered AFTER the consuming retrospective, so on a correctly-functioning run
+  the artifact does not exist yet and the check reports ``inconclusive`` naming
+  the ordering. Both orders are resolved from discovery, never from an order
+  literal.
 
 Usage:
     python3 check-artifact-consistency.py run --plan-id EXAMPLE-PLAN --mode live
@@ -35,7 +43,7 @@ import json
 import re
 import subprocess
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeGuard
 
 from _plan_parsing import (
     extract_deliverable_headings,
@@ -47,6 +55,7 @@ from _references_core import (
     resolve_base_ref,
     resolve_live_worktree,
 )
+from extension_discovery import find_implementors
 from file_ops import base_path, output_toon, safe_main
 from input_validation import (
     add_plan_id_arg,
@@ -110,7 +119,33 @@ def _load_references(plan_dir: Path) -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
-def _resolve_footprint(plan_dir: Path, plan_id: str | None = None) -> set[str]:
+#: Stated sentinel for a footprint that could NOT be resolved at all.
+#:
+#: Deliberately distinct from ``set()``, which states the opposite thing: the
+#: footprint resolved and the plan genuinely touched no files. Collapsing both
+#: outcomes to an empty set is what let a 21/21 exact footprint score a
+#: confident "Recall 0%" after ``branch-cleanup`` deleted the worktree the
+#: resolver measures — an unmeasurable input rendered as a measured zero.
+FOOTPRINT_UNRESOLVED = None
+
+
+def footprint_resolved(footprint: set[str] | None) -> TypeGuard[set[str]]:
+    """The ONE named predicate callers use to read a footprint's resolution state.
+
+    Per ADR-015, the absent identity is a stated sentinel
+    (:data:`FOOTPRINT_UNRESOLVED`) and every presence guard goes through this
+    named predicate rather than an inline truthiness check. ``not footprint`` is
+    NOT equivalent: it is also true for a resolved-but-empty footprint, which is
+    a measured result and must still yield a measured verdict.
+
+    Typed as a ``TypeGuard`` so callers branch on the predicate positively and
+    the resolved ``set[str]`` narrows for the type checker — no caller needs a
+    separate ``is not None`` restatement that could drift from this definition.
+    """
+    return footprint is not FOOTPRINT_UNRESOLVED
+
+
+def _resolve_footprint(plan_dir: Path, plan_id: str | None = None) -> set[str] | None:
     """Resolve the plan footprint for an archived (or live) plan.
 
     Three-tier resolution, in order:
@@ -119,17 +154,27 @@ def _resolve_footprint(plan_dir: Path, plan_id: str | None = None) -> set[str]:
        resolver (:func:`_references_core.resolve_live_worktree`) resolves to a
        directory on disk, derive the footprint via ``compute_plan_branch_diff``
        (``{base}...HEAD`` ∪ porcelain). This is the single source of truth for a
-       plan whose worktree still exists.
-    2. **Legacy key** — fall back to ``references.modified_files`` when present
-       (archived plans created before the ledger was removed still carry it).
-    3. **Empty** — when neither resolves, treat the footprint as empty.
+       plan whose worktree still exists. A ``CalledProcessError`` here reports
+       UNRESOLVABLE rather than falling through to the legacy read: the worktree
+       resolved but the diff failed, so the legacy key would answer a different
+       question while presenting as the same measurement.
+    2. **Legacy key** — ``references.modified_files`` when the key is PRESENT
+       (archived plans created before the ledger was removed still carry it). A
+       present-but-empty list is a resolved, genuinely-empty footprint.
+    3. **Unresolvable** — when neither tier answers, return
+       :data:`FOOTPRINT_UNRESOLVED`. Key absent and key present-but-empty are
+       different answers and are reported differently.
 
     Archived mode passes ``plan_id=None`` and therefore skips tier 1 entirely:
     an archived plan's recorded worktree names a directory finalize has already
     removed. Tier 1 is reached through the resolver rather than by re-reading
     ``status.metadata.worktree_path`` here.
 
-    Returns a set of repo-relative path strings.
+    Returns:
+        A set of repo-relative path strings when the footprint resolved (possibly
+        empty), or :data:`FOOTPRINT_UNRESOLVED` when it could not be resolved.
+        Read the distinction through :func:`footprint_resolved`, never by
+        testing emptiness.
     """
     refs = _load_references(plan_dir)
 
@@ -139,13 +184,15 @@ def _resolve_footprint(plan_dir: Path, plan_id: str | None = None) -> set[str]:
         try:
             return compute_plan_branch_diff(worktree, base_ref)
         except subprocess.CalledProcessError:
-            pass  # fall through to the legacy-key read
+            return FOOTPRINT_UNRESOLVED
 
-    legacy = refs.get('modified_files', [])
+    legacy = refs.get('modified_files')
+    if legacy is None:
+        return FOOTPRINT_UNRESOLVED
     if isinstance(legacy, str):
         legacy = [legacy]
     if not isinstance(legacy, list):
-        return set()
+        return FOOTPRINT_UNRESOLVED
     return {str(p).strip() for p in legacy if p}
 
 
@@ -251,7 +298,10 @@ def check_affected_files_recall(
 
     Recall compares the outline's declared ``Affected files:`` against the live
     plan footprint resolved via :func:`_resolve_footprint` (live diff, then the
-    legacy ``modified_files`` key for older archived plans, then empty).
+    legacy ``modified_files`` key for older archived plans, then unresolvable).
+    A footprint that could not be resolved yields ``inconclusive``: recall is
+    unmeasurable, never a confident 0%. A resolved-but-empty footprint is a
+    measured input and still yields a measured verdict.
 
     The skip-vs-fail head reads the declaration state **per deliverable** (via
     :func:`_declaration_state_per_deliverable`) rather than off the flattened
@@ -307,49 +357,86 @@ def check_affected_files_recall(
             return 'fail', f'references.json unreadable: {e}', {'declared': len(declared)}
 
     actual = _resolve_footprint(plan_dir, plan_id)
+    if footprint_resolved(actual):
+        found = declared & actual
+        missing = declared - actual
+        # ``declared`` is guaranteed non-empty here — the empty case returned
+        # ``skip`` above — so the division needs no zero guard.
+        recall = len(found) / len(declared)
 
-    found = declared & actual
-    missing = declared - actual
-    recall = len(found) / len(declared) if declared else 0.0
+        details = {
+            'declared': len(declared),
+            'found': len(found),
+            'missing': sorted(missing)[:10],
+            'recall_pct': round(recall * 100.0, 1),
+            'footprint_resolved': True,
+        }
+        if recall >= _RECALL_THRESHOLD:
+            return 'pass', f'Recall {recall * 100:.0f}% meets threshold', details
+        return (
+            'fail',
+            f'Recall {recall * 100:.0f}% below {int(_RECALL_THRESHOLD * 100)}% threshold',
+            details,
+        )
 
-    details = {
-        'declared': len(declared),
-        'found': len(found),
-        'missing': sorted(missing)[:10],
-        'recall_pct': round(recall * 100.0, 1),
-    }
-    if recall >= _RECALL_THRESHOLD:
-        return 'pass', f'Recall {recall * 100:.0f}% meets threshold', details
-    return 'fail', f'Recall {recall * 100:.0f}% below {int(_RECALL_THRESHOLD * 100)}% threshold', details
+    return (
+        'inconclusive',
+        'Plan footprint could not be resolved (no live worktree diff and no '
+        'modified_files key) — recall is unmeasurable, not 0%',
+        {
+            'declared': len(declared),
+            'deliverables': len(deliverables),
+            'footprint_resolved': False,
+        },
+    )
 
 
 def check_affected_files_exact_match(
-    outline_files: set[str], references_files: set[str]
+    outline_files: set[str], references_files: set[str] | None
 ) -> tuple[str, str, list[str], list[str]]:
     """Return ``(status, message, outline_only, references_only)`` for the exact-match check.
 
     Strict variant of the recall check: ``pass`` only when both sides are
-    non-empty and agree exactly. A both-empty comparison substantiates nothing —
-    two empty sets are trivially equal whether the plan really touched no files
-    or the parser and the footprint resolver both failed — so it reports
-    ``inconclusive`` rather than a vacuous ``pass``. Any drift — files declared
-    in the outline but missing from references, or listed in references but not
-    declared in the outline — produces a ``warn`` with both sides surfaced for
-    the retrospective synthesizer.
+    non-empty and agree exactly. Two comparisons substantiate no verdict and
+    report ``inconclusive`` rather than a confident one:
+
+    - an **unresolvable footprint** (:data:`FOOTPRINT_UNRESOLVED`) — there is no
+      right-hand side to compare against, so a ``warn`` "Set mismatch" would be a
+      confident claim of drift derived from an input that was never measured;
+    - a **both-empty** comparison — two empty sets are trivially equal whether
+      the plan really touched no files or the parser and the footprint resolver
+      both failed, so ``pass`` would be vacuous.
+
+    Reading the resolution state through :func:`footprint_resolved` keeps this
+    peer symmetric with :func:`check_affected_files_recall`: both consume the
+    same resolver and neither infers resolution state from set emptiness.
+
+    Any drift — files declared in the outline but missing from references, or
+    listed in references but not declared in the outline — produces a ``warn``
+    with both sides surfaced for the retrospective synthesizer.
     """
-    if not outline_files and not references_files:
-        return (
-            'inconclusive',
-            'Both the declared set and the resolved footprint are empty — '
-            'the comparison substantiates no verdict',
-            [],
-            [],
-        )
-    if outline_files == references_files:
-        return 'pass', 'Outline and references agree exactly', [], []
-    outline_only = sorted(outline_files - references_files)
-    references_only = sorted(references_files - outline_files)
-    return 'warn', 'Set mismatch', outline_only, references_only
+    if footprint_resolved(references_files):
+        if not outline_files and not references_files:
+            return (
+                'inconclusive',
+                'Both the declared set and the resolved footprint are empty — '
+                'the comparison substantiates no verdict',
+                [],
+                [],
+            )
+        if outline_files == references_files:
+            return 'pass', 'Outline and references agree exactly', [], []
+        outline_only = sorted(outline_files - references_files)
+        references_only = sorted(references_files - outline_files)
+        return 'warn', 'Set mismatch', outline_only, references_only
+
+    return (
+        'inconclusive',
+        'Plan footprint could not be resolved (no live worktree diff and no '
+        'modified_files key) — the comparison substantiates no verdict',
+        [],
+        [],
+    )
 
 
 def check_task_deliverable_match(deliverables: list[dict[str, str]], tasks_dir: Path) -> tuple[str, str]:
@@ -377,12 +464,146 @@ def check_task_deliverable_match(deliverables: list[dict[str, str]], tasks_dir: 
     return 'pass', f'All {len(deliverables)} deliverables covered by tasks'
 
 
+#: Summary-bucket name for the three statuses whose bucket name differs from
+#: the status itself. Every other status buckets under its own name, so a
+#: status introduced later is counted without touching this map.
+_SUMMARY_BUCKET_NAMES = {'pass': 'passed', 'fail': 'failed', 'skip': 'skipped'}
+
+
+def summarize_checks(checks: list[dict[str, str]]) -> dict[str, int]:
+    """Count every emitted check status into a named summary bucket.
+
+    The buckets are derived from ``checks`` itself rather than from a hardcoded
+    status list, so ``sum(summary.values()) == len(checks)`` holds for any
+    status the checks emit — ``warn``, ``info`` and ``inconclusive`` included.
+    A three-bucket summary counting only ``pass``/``fail``/``skip`` let every
+    other verdict land in no bucket, which reads to a summary consumer as a
+    check that does not exist: the same unmeasurable-rendered-as-absent shape
+    the ``inconclusive`` footprint verdict exists to remove.
+
+    The three legacy bucket names are seeded at zero so downstream consumers can
+    read ``passed`` / ``failed`` / ``skipped`` unconditionally; zero buckets do
+    not disturb the reconciliation.
+    """
+    summary = dict.fromkeys(_SUMMARY_BUCKET_NAMES.values(), 0)
+    for check in checks:
+        status = check['status']
+        bucket = _SUMMARY_BUCKET_NAMES.get(status, status)
+        summary[bucket] = summary.get(bucket, 0) + 1
+    return summary
+
+
+#: Finding severity per verdict for the checks that split a MEASURED failure
+#: from an UNMEASURABLE one. Both verdicts must reach ``findings`` — a verdict
+#: dropped by a ``fail``-only gate reads to the synthesizer as a check that
+#: raised nothing — but they must reach it at DIFFERENT severities, because
+#: collapsing them onto one severity erases the measured-vs-unmeasurable
+#: distinction those checks exist to preserve.
+_MEASURED_VERDICT_SEVERITY = {'fail': 'error', 'inconclusive': 'warning'}
+
+
+def _route_measured_verdict(findings: list[dict[str, str]], status: str, message: str) -> None:
+    """Append ``message`` to ``findings`` at the severity ``status`` maps to.
+
+    Shared by ``affected_files_recall`` and ``metrics_generated``, which owe the
+    identical measured-vs-unmeasurable split. One body means the two cannot drift
+    onto different severity pairings while each still reads as correct in
+    isolation. A status outside :data:`_MEASURED_VERDICT_SEVERITY` (``pass`` /
+    ``skip``) raises no finding.
+    """
+    severity = _MEASURED_VERDICT_SEVERITY.get(status)
+    if severity is not None:
+        findings.append({'severity': severity, 'message': message})
+
+
+#: The ext-point whose implementor records carry each finalize step's ``order``.
+_FINALIZE_STEP_EXT_POINT = 'plan-marshall:extension-api/standards/ext-point-finalize-step'
+
+#: The step that PRODUCES ``metrics.md``.
+_METRICS_PRODUCER_STEP = 'default:record-metrics'
+
+#: The step that CONSUMES it — the retrospective this check runs inside.
+_METRICS_CONSUMER_STEP = 'plan-marshall:plan-retrospective'
+
+
+def _resolve_step_order(step_id: str) -> int | None:
+    """Return the discovered finalize-step ``order`` for ``step_id``.
+
+    Read off the SAME registry path the finalize pipeline itself orders by —
+    ``find_implementors`` over the finalize-step ext-point — never from an order
+    literal. A hardcoded pair would have to be re-hardcoded for every further
+    consumer of the same artifact, and would silently stop describing reality the
+    moment a step is renumbered.
+
+    Returns:
+        The declared integer ``order``, or ``None`` when the step is not
+        discoverable or declares no integer order. An unresolved ordering is an
+        unmeasurable input; callers report it as such rather than inferring a
+        position from its absence.
+    """
+    try:
+        records = find_implementors(_FINALIZE_STEP_EXT_POINT)
+    except Exception:
+        return None
+    for record in records:
+        if record.get('name') == step_id:
+            order = record.get('order')
+            return order if isinstance(order, int) else None
+    return None
+
+
 def check_metrics_generated(plan_dir: Path) -> tuple[str, str]:
-    """Return ``(status, message)`` for metrics.md presence."""
+    """Return ``(status, message)`` for metrics.md presence.
+
+    Presence is a ``pass``. ABSENCE only substantiates "the producing step did
+    not run" once that step has had its turn. ``default:record-metrics`` is
+    ordered AFTER ``plan-marshall:plan-retrospective``, so on a
+    correctly-functioning run ``metrics.md`` does not exist yet when this check
+    reads for it — a ``fail`` carrying that causal claim would be structurally
+    guaranteed to be wrong. The not-yet-produced state is reported as
+    ``inconclusive`` naming the ordering instead.
+
+    The boundary is STRICT: only a producer ordered strictly later substantiates
+    "has not had its turn". At an EQUAL order the run sequence is unconstrained,
+    so the absence is not excused and falls to the measured ``fail`` branch —
+    whose message therefore claims only that the producer is not ordered strictly
+    after the consumer, never that it ran first.
+
+    Both orders are resolved from discovery via :func:`_resolve_step_order`
+    rather than from the order literals, so a renumbering moves the verdict with
+    it and a second consumer of the same artifact needs no second hardcoded pair.
+    An ordering that cannot be resolved is itself an unmeasurable input and
+    yields ``inconclusive``, never a confident ``fail``.
+    """
     metrics_path = plan_dir / 'metrics.md'
     if metrics_path.exists():
         return 'pass', 'metrics.md present'
-    return 'fail', 'metrics.md missing — record-metrics step did not run'
+
+    producer_order = _resolve_step_order(_METRICS_PRODUCER_STEP)
+    consumer_order = _resolve_step_order(_METRICS_CONSUMER_STEP)
+
+    if producer_order is None or consumer_order is None:
+        return (
+            'inconclusive',
+            f'metrics.md absent and the ordering of {_METRICS_PRODUCER_STEP} against '
+            f'{_METRICS_CONSUMER_STEP} could not be resolved from discovery — whether '
+            'the producing step has had its turn is unmeasurable',
+        )
+
+    if producer_order > consumer_order:
+        return (
+            'inconclusive',
+            f'metrics.md not produced yet — {_METRICS_PRODUCER_STEP} (order '
+            f'{producer_order}) is ordered after {_METRICS_CONSUMER_STEP} (order '
+            f'{consumer_order}), so it has not had its turn',
+        )
+
+    return (
+        'fail',
+        f'metrics.md missing — {_METRICS_PRODUCER_STEP} (order {producer_order}) is not '
+        f'ordered strictly after {_METRICS_CONSUMER_STEP} (order {consumer_order}), so it '
+        'is not guaranteed to run later and its absence is a genuine miss',
+    )
 
 
 def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
@@ -447,14 +668,19 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     )
     checks.append({'name': 'affected_files_recall', 'status': rec_status, 'message': rec_message})
     details['affected_files_recall'] = rec_details
-    if rec_status == 'fail':
-        findings.append({'severity': 'warning', 'message': rec_message})
+    # ``fail`` is a measured verdict (an Affected-files heading that parsed to no
+    # bullet, an unreadable references.json, or a recall percentage below the
+    # threshold); ``inconclusive`` is the unmeasurable case (the footprint could
+    # not be resolved). Both reach ``findings``, at the severities
+    # ``_route_measured_verdict`` owns.
+    _route_measured_verdict(findings, rec_status, rec_message)
 
     # Affected-files exact-match (strict variant, peer to recall).
     # Resolves the same live plan footprint used by
     # ``check_affected_files_recall`` via ``_resolve_footprint`` — both checks
     # must agree on the source of truth (live diff, then the legacy
-    # ``modified_files`` key for older archived plans, then empty).
+    # ``modified_files`` key for older archived plans, then unresolvable) AND on
+    # how they read its resolution state (via ``footprint_resolved``).
     outline_files = set(extract_affected_files_per_deliverable(solution_content))
     references_files = _resolve_footprint(plan_dir, live_plan_id)
     exact_status, exact_message, outline_only, references_only = check_affected_files_exact_match(
@@ -496,14 +722,13 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     # metrics.md presence
     m_status, m_message = check_metrics_generated(plan_dir)
     checks.append({'name': 'metrics_generated', 'status': m_status, 'message': m_message})
-    if m_status == 'fail':
-        findings.append({'severity': 'error', 'message': m_message})
+    # ``fail`` is the measured absence (the producer is not ordered strictly
+    # later, so it had its turn); ``inconclusive`` is the unmeasurable case (the
+    # producer runs later, or the ordering could not be resolved at all). Same
+    # split, same owner as the recall peer above.
+    _route_measured_verdict(findings, m_status, m_message)
 
-    summary = {
-        'passed': sum(1 for c in checks if c['status'] == 'pass'),
-        'failed': sum(1 for c in checks if c['status'] == 'fail'),
-        'skipped': sum(1 for c in checks if c['status'] == 'skip'),
-    }
+    summary = summarize_checks(checks)
 
     return {
         'status': 'success',

@@ -11,6 +11,7 @@ mode: workflow
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion, Skill
 order: 995
 mutates_source: false
+post_run_review: true
 default_on: false
 presets:
   - full
