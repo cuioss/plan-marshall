@@ -17,7 +17,7 @@ When enabled, the hook deterministically blocks four mechanically-checkable hard
 The hook blocks the first matching rule among four families:
 
 * **Shell-construct compounds** — a Bash command joining multiple commands with `&&`, `;`, `&`, a newline, a `for`/`while` loop, `$(...)` command substitution, or a leading `VAR=val cmd` inline env-var assignment. Use separate Bash calls or dedicated tools instead.
-* **Bash file-ops** — a Bash command whose program is `cat` / `grep` / `head` / `tail` / `find` / `ls`. Use the Read/Glob/Grep tools instead.
+* **Bash file-ops** — a Bash command whose program is `cat` / `grep` / `head` / `tail` / `find` / `ls`, or `git` whose subcommand is `grep` (global options such as `-C <path>` or `--no-pager` do not evade the check). Use the Read/Glob/Grep tools instead; for a content sweep across the project, run `architecture search --content --pattern P`. Other git subcommands — `git status`, `git diff`, `git log` and the rest — are unaffected.
 * **Generated-executor edits** — an Edit or Write whose path is the generated `.plan/execute-script.py`. Regenerate it via `/sync-plugin-cache` + `/marshall-steward` rather than editing it.
 * **Hard-coded builds** — a Bash command invoking `./pw` or a bare `mvn` / `npm` / `gradle`. Resolve build commands via the architecture API instead.
 

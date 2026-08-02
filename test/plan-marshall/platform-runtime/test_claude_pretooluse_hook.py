@@ -210,6 +210,81 @@ def test_r2_not_fired_on_substring_program() -> None:
     assert hook.evaluate(_signal2_payload("Bash", _bash("category --help"))) is None
 
 
+# -----------------------------------------------------------------------------
+# R2 — the `git grep` arm
+#
+# `git grep` reads file bodies exactly as bare `grep` does, so it joins the
+# EXISTING R2 family. The positive controls below all place the subcommand
+# somewhere other than tokens[1], which is precisely what a naive
+# `tokens[1] == "grep"` check walks past — testing only `git grep foo` would pass
+# against that vacuous guard. The negative controls are what make the boundary
+# real: a suite carrying only positives would equally pass against an
+# implementation that blocks every `git` invocation.
+# -----------------------------------------------------------------------------
+
+
+def test_r2_denies_git_grep_forms() -> None:
+    """Every global-option shape still resolves the subcommand to `grep`."""
+    for command in (
+        "git grep foo",
+        "git -C . grep foo",
+        "git --no-pager grep foo",
+        "/usr/bin/git grep foo",
+    ):
+        payload = _signal2_payload("Bash", _bash(command))
+        assert hook.evaluate(payload) == hook._R2_REASON, command
+
+
+def test_r2_denies_git_grep_past_value_taking_options() -> None:
+    """A value-taking global option consumes its value, not the subcommand slot."""
+    for command in (
+        "git -c core.pager=cat grep foo",
+        "git --git-dir=/repo/.git grep foo",
+        "git --work-tree /repo grep foo",
+        "git --literal-pathspecs grep foo",
+    ):
+        payload = _signal2_payload("Bash", _bash(command))
+        assert hook.evaluate(payload) == hook._R2_REASON, command
+
+
+def test_r2_not_fired_on_non_grep_git_subcommands() -> None:
+    """Ordinary git usage must keep working — these are not file-ops."""
+    for command in (
+        "git status",
+        "git log --oneline -5",
+        "git diff --name-only HEAD",
+        "git rev-parse HEAD",
+    ):
+        payload = _signal2_payload("Bash", _bash(command))
+        assert hook.evaluate(payload) is None, command
+
+
+def test_r2_not_fired_on_git_log_grep_option() -> None:
+    """`git log --grep=fix` is a COMMIT-MESSAGE search, and stays allowed.
+
+    The trap a sloppy substring check breaks: the string ``grep`` appears in the
+    command, but it is an option to ``log``, not the subcommand, and searching
+    commit messages is not a file-content operation. This is the single most
+    discriminating negative control in the arm.
+    """
+    payload = _signal2_payload("Bash", _bash("git log --grep=fix"))
+    assert hook.evaluate(payload) is None
+
+
+def test_r2_not_fired_on_bare_git() -> None:
+    """A `git` call with no subcommand resolves to no subcommand, so it passes."""
+    assert hook.evaluate(_signal2_payload("Bash", _bash("git"))) is None
+
+
+def test_r2_reason_names_the_sanctioned_content_search_replacement() -> None:
+    """The redirect must name the replacement, not just refuse the call.
+
+    Blocking `git grep` is only legitimate because a sanctioned content-search
+    path exists; the reason string is where the caller learns it.
+    """
+    assert "architecture search --content" in hook._R2_REASON
+
+
 # =============================================================================
 # R3 — generated-executor edit
 # =============================================================================

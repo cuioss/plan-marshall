@@ -17,7 +17,8 @@ of its own. The only logic it owns is the R1-R4 rule matchers and the
   ``&``, a newline, a ``for``/``while`` loop, ``$(...)`` command substitution, or
   a leading ``VAR=val cmd`` inline env-var assignment.
 - **R2 Bash file-ops** — a Bash command whose program is ``cat`` / ``grep`` /
-  ``head`` / ``tail`` / ``find`` / ``ls``.
+  ``head`` / ``tail`` / ``find`` / ``ls``, or ``git`` whose subcommand (after any
+  global options) is ``grep``.
 - **R3 generated-executor edit** — an Edit/Write whose path is the generated
   ``.plan/execute-script.py``.
 - **R4 hard-coded build** — a Bash command invoking ``./pw`` or a bare ``mvn`` /
@@ -81,6 +82,21 @@ _R1_LEADING_ASSIGNMENT_RE = re.compile(r"^\s*[A-Za-z_][A-Za-z0-9_]*=\S*\s+\S")
 #: R2 — Bash file-operation programs that have dedicated Read/Glob/Grep tools.
 _R2_FILE_OPS = ("cat", "grep", "head", "tail", "find", "ls")
 
+#: R2 — the ``git`` subcommand that is a file-op in disguise. ``git grep`` reads
+#: file bodies exactly as bare ``grep`` does, so it belongs to the SAME R2 family
+#: rather than a new one; the family count stays four.
+_R2_GIT_PROGRAM = "git"
+_R2_GIT_SUBCOMMAND = "grep"
+
+#: R2 — ``git`` global options that consume the FOLLOWING token as their value.
+#: Skipping them is what keeps the subcommand test from being a vacuous guard: a
+#: naive ``tokens[1] == "grep"`` check is walked past by ``git -C . grep x`` and
+#: ``git -c k=v grep x``.
+_R2_GIT_VALUE_OPTIONS = ("-C", "-c", "--git-dir", "--work-tree")
+
+#: R2 — ``git`` global options that stand alone (no value token follows).
+_R2_GIT_FLAG_OPTIONS = ("--no-pager", "--paginate", "--literal-pathspecs")
+
 #: R4 — hard-coded build invocations that must be resolved via the architecture
 #: API. ``./pw`` is matched as a literal; ``mvn`` / ``npm`` / ``gradle`` as bare
 #: leading programs or path-prefixed executables (e.g. ``/usr/local/bin/mvn``).
@@ -94,7 +110,8 @@ _R1_REASON = (
 )
 _R2_REASON = (
     "plan-marshall: use the Read/Glob/Grep tools, not Bash, for file "
-    "operations (cat/grep/head/tail/find/ls)."
+    "operations (cat/grep/head/tail/find/ls, git grep). For a content sweep "
+    "run: architecture search --content --pattern P."
 )
 _R3_REASON = (
     "plan-marshall: never edit the generated .plan/execute-script.py — "
@@ -163,14 +180,54 @@ def _match_r1_shell_construct(
     return None
 
 
+def _git_subcommand(command: str) -> str:
+    """Return ``git``'s subcommand token, skipping any global options.
+
+    ``git`` accepts global options BEFORE the subcommand, so the subcommand is
+    not reliably ``tokens[1]``. Testing that position directly would be a vacuous
+    guard — ``git -C . grep x``, ``git -c k=v grep x`` and ``git --no-pager grep
+    x`` all walk straight past it. This walker consumes each recognised global
+    option (value-taking options swallow their following token) and returns the
+    first token that is not one, lowercased.
+
+    Pure token arithmetic: no regex compilation, no filesystem access, no
+    subprocess — this runs on every tool call, so the hot path stays cheap.
+    Returns ``""`` when the tokens run out before a subcommand appears.
+    """
+    tokens = command.split()
+    index = 1
+    while index < len(tokens):
+        token = tokens[index]
+        if token in _R2_GIT_VALUE_OPTIONS:
+            index += 2  # the option plus the value token it consumes
+            continue
+        if token in _R2_GIT_FLAG_OPTIONS:
+            index += 1
+            continue
+        if token.startswith("--") and "=" in token:
+            index += 1  # inline-value form, e.g. --git-dir=... / --work-tree=...
+            continue
+        return token.lower()
+    return ""
+
+
 def _match_r2_file_ops(
     tool_name: str | None, tool_input: dict[str, Any]
 ) -> str | None:
-    """R2 — Bash command whose program is a file-op with a dedicated tool."""
+    """R2 — Bash command whose program is a file-op with a dedicated tool.
+
+    Covers both the bare file-op programs and ``git grep``, which reads file
+    bodies exactly as ``grep`` does. Non-``grep`` git subcommands are untouched:
+    ``git status``, ``git diff``, ``git log`` and friends are not file-ops and
+    must keep working.
+    """
     command = _bash_command(tool_name, tool_input)
     if command is None:
         return None
-    if _program_name(command) in _R2_FILE_OPS:
+    program = _program_name(command)
+    if program in _R2_FILE_OPS:
+        return _R2_REASON
+    if program == _R2_GIT_PROGRAM and _git_subcommand(command) == _R2_GIT_SUBCOMMAND:
         return _R2_REASON
     return None
 
