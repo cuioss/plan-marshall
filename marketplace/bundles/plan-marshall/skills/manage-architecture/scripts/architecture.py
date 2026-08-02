@@ -250,6 +250,30 @@ def main() -> int:
     )
     find_parser.add_argument('--category', help='Restrict search to a single category')
 
+    # search - Cross-module content search across the files inventory
+    search_parser = subparsers.add_parser(
+        'search',
+        help='Search the files inventory across all modules for a pattern (requires a mode flag)',
+        allow_abbrev=False,
+    )
+    search_parser.add_argument(
+        '--content',
+        action='store_true',
+        required=True,
+        help='Search file BODIES (the only mode today; required so the mode stays explicit)',
+    )
+    search_parser.add_argument(
+        '--pattern',
+        required=True,
+        help='Python regex matched against each file body (see --literal for verbatim matching)',
+    )
+    search_parser.add_argument('--category', help='Restrict search to a single category')
+    search_parser.add_argument(
+        '--literal',
+        action='store_true',
+        help='Treat --pattern as a literal string (re.escape) instead of a regex',
+    )
+
     # diff-modules - Diff per-module derived.json files against a pre-snapshot
     diff_modules_parser = subparsers.add_parser(
         'diff-modules',
@@ -440,6 +464,7 @@ def main() -> int:
         cmd_path,
         cmd_profiles,
         cmd_resolve,
+        cmd_search,
         cmd_siblings,
         cmd_which_module,
     )
@@ -486,6 +511,7 @@ def main() -> int:
         'files': cmd_files,
         'which-module': cmd_which_module,
         'find': cmd_find,
+        'search': cmd_search,
         'diff-modules': cmd_diff_modules,
         'descriptor-regression-check': cmd_descriptor_regression_check,
     }

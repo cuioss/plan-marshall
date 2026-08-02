@@ -5,22 +5,24 @@
 Extracted verbatim from ``_cmd_client``; the facade re-exports every public
 name here. Covers the CLI handlers (info, modules, graph, module, overview,
 commands, resolve, derive-verification, profiles, siblings, path, neighbors,
-impact, files, which-module, find, diff-modules, descriptor-regression-check)
-and their private helpers, including the Bucket B execution-tier augmentation,
-the files-inventory readers, the snapshot diff, and the descriptor regression
-gate.
+impact, files, which-module, find, search, diff-modules,
+descriptor-regression-check) and their private helpers, including the Bucket B
+execution-tier augmentation, the files-inventory readers, the snapshot diff, and
+the descriptor regression gate.
 
-The files-inventory readers (``find`` / ``which-module``) read through the
-``_resolve_module_inventory`` seam: an in-scope elided category is self-scanned
-uncapped against the module's real worktree, and any read path that cannot
-self-scan reports ``truncated: true`` (with the elided category names and true
-counts) instead of silently treating the writer's sample as the whole list.
+The files-inventory readers (``find`` / ``search`` / ``which-module``) read
+through the ``_resolve_module_inventory`` seam: an in-scope elided category is
+self-scanned uncapped against the module's real worktree, and any read path that
+cannot self-scan reports ``truncated: true`` (with the elided category names and
+true counts) instead of silently treating the writer's sample as the whole list.
+``find`` globs the PATH; ``search --content`` scans the file BODY.
 """
 
 import argparse
 import fnmatch
 import hashlib
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -544,7 +546,7 @@ def cmd_impact(args: argparse.Namespace) -> dict[str, Any]:
 
 
 # =============================================================================
-# Files Inventory Readers (files / which-module / find)
+# Files Inventory Readers (files / which-module / find / search)
 # =============================================================================
 
 
@@ -926,6 +928,125 @@ def cmd_find(args: argparse.Namespace) -> dict[str, Any]:
         'category': category_filter,
         'count': len(results),
         'results': results,
+        'truncated': bool(truncation_entries),
+        'elided': truncation_entries,
+    }
+
+
+def cmd_search(args: argparse.Namespace) -> dict[str, Any]:
+    """CLI handler for the ``search`` reader's ``--content`` mode.
+
+    The content-search sibling of :func:`cmd_find`: same inputs, same
+    ``iter_modules`` -> ``load_module_derived`` -> ``_resolve_module_inventory``
+    seam, same module/category attribution, same ADR-009 truncation reporting.
+    Only the per-file predicate differs — ``find`` globs the PATH, ``search
+    --content`` scans the file BODY — so a hit inside a file whose path does not
+    mention the pattern (the exact gap ``find`` cannot close) is reachable.
+
+    ``--pattern`` is compiled as a Python regex; ``--literal`` compiles
+    ``re.escape(pattern)`` instead, so a pattern carrying shell metacharacters is
+    matched verbatim. No caller input ever reaches a shell. A pattern that fails
+    to compile returns ``status: error, error: invalid_pattern`` carrying the
+    compile message — required boundary handling on untrusted caller input.
+
+    **The response carries NO matching line bodies — a settled decision, not an
+    omission.** A hit reports only *where* it is (``module``, ``category``,
+    ``path``) and *how strongly* (``match_count``, the number of non-overlapping
+    matches in that file). Returning line bodies would make the response size a
+    function of the corpus's match density rather than of its file count, so one
+    broad sweep could emit an unbounded payload into the caller's context.
+    ``match_count`` is what replaces the lines: it lets a caller rank the hit
+    list and spend a ``Read`` on the few files that matter.
+
+    Two anti-vacuity fields ride alongside the ADR-009 ``truncated`` / ``elided``
+    pair, for the same fail-closed reason the sibling verbs carry
+    ``resolver_count`` / ``attributor_count``:
+
+    * ``files_scanned`` (int) — ``count: 0`` with ``files_scanned: 0`` means
+      *nothing was searched*; ``count: 0`` with ``files_scanned: N`` means *N
+      files were searched and the pattern is genuinely absent*. The two are never
+      the same observable condition.
+    * ``unreadable`` (list of ``{path, reason}``, empty when clean) — a file
+      skipped for a decode or OS error is REPORTED, never silently suppressed
+      (ADR-014). Binary and undecodable files land here.
+
+    Deliberately NOT echoed: a ``mode`` field. ``--content`` is the only mode
+    today, so echoing it would be a constant-valued response key — vacuous now,
+    and worth adding only when a second mode makes it discriminating.
+
+    An unrecognised ``--category`` is an ``unknown_category`` error rather than a
+    confident ``count: 0`` — the same two-way split ``cmd_files`` / ``cmd_find``
+    apply, and for the same reason.
+    """
+    pattern = args.pattern
+    literal = bool(getattr(args, 'literal', False))
+    category_filter = getattr(args, 'category', None)
+
+    if category_filter and category_filter not in FILE_CATEGORIES:
+        return _unknown_category_result(category_filter)
+
+    try:
+        compiled = re.compile(re.escape(pattern) if literal else pattern)
+    except re.error as e:
+        return {
+            'status': 'error',
+            'error': 'invalid_pattern',
+            'pattern': pattern,
+            'literal': literal,
+            'message': str(e),
+        }
+
+    try:
+        module_names = iter_modules(args.project_dir)
+    except DataNotFoundError:
+        return require_project_meta_result(args.project_dir)
+    except Exception as e:
+        return {'status': 'error', 'error': str(e)}
+
+    project_path = Path(args.project_dir)
+    results: list[dict[str, Any]] = []
+    truncation_entries: list[dict[str, Any]] = []
+    unreadable: list[dict[str, str]] = []
+    files_scanned = 0
+
+    for name in module_names:
+        try:
+            derived = load_module_derived(name, args.project_dir)
+        except DataNotFoundError:
+            continue
+        pairs, module_truncations = _resolve_module_inventory(
+            name, derived, args.project_dir, category_filter
+        )
+        truncation_entries.extend(module_truncations)
+        for category, path in pairs:
+            if category_filter and category != category_filter:
+                continue
+            try:
+                text = (project_path / path).read_text(encoding='utf-8')
+            except UnicodeDecodeError:
+                unreadable.append({'path': path, 'reason': 'decode_error'})
+                continue
+            except OSError:
+                unreadable.append({'path': path, 'reason': 'os_error'})
+                continue
+            files_scanned += 1
+            match_count = sum(1 for _ in compiled.finditer(text))
+            if match_count:
+                results.append(
+                    {'module': name, 'category': category, 'path': path, 'match_count': match_count}
+                )
+
+    results.sort(key=lambda item: (item['module'], item['category'], item['path']))
+
+    return {
+        'status': 'success',
+        'pattern': pattern,
+        'literal': literal,
+        'category': category_filter,
+        'count': len(results),
+        'results': results,
+        'files_scanned': files_scanned,
+        'unreadable': unreadable,
         'truncated': bool(truncation_entries),
         'elided': truncation_entries,
     }
