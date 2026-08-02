@@ -421,7 +421,7 @@ def test_declared_internal_dependencies_are_stamped_declared(monkeypatch):
         _seed(
             tmpdir,
             {
-                'api': _module('api', internal_dependencies=[]),
+                'api': _module('api'),
                 'core': _module('core', internal_dependencies=['api']),
             },
         )
@@ -507,14 +507,18 @@ def test_module_markdown_provenance_line_states_when_no_resolver_registered(no_r
 # 8. Declared-module enrichment skip (bdc2a8 self-review fix)
 # =============================================================================
 #
-# _derive_edges must not pay a Maven enrichment run for a module whose
-# internal_dependencies are already DECLARED (curated or crawl-time):
-# _build_deps_and_producers discards that module's resolver-derived edges
-# unconditionally once a declaration exists, so materializing its dependency
-# list via _enrich_maven_module_cached would spend a subprocess on output
-# nothing reads. _declared_dependencies is the single precedence check shared
-# by both _derive_edges (gates the enrich) and _build_deps_and_producers
-# (gates the resolved-edge branch) — the two sites disagreeing was the defect.
+# _derive_edges must not pay a Maven enrichment run for a module carrying a
+# NON-EMPTY declared internal_dependencies (curated or crawl-time):
+# _build_deps_and_producers discards that module's resolver-derived edges once
+# such a declaration exists, so materializing its dependency list via
+# _enrich_maven_module_cached would spend a subprocess on output nothing reads.
+# _declared_dependencies is the single precedence check shared by both
+# _derive_edges (gates the enrich) and _build_deps_and_producers (gates the
+# resolved-edge branch) — the two sites disagreeing was the defect. Because the
+# check is shared, the skip population and the discard population cannot drift:
+# a module is enriched exactly when its derived edges are consumed. An EMPTY
+# declaration declares nothing (see § 9), so such a module is both enriched and
+# consumed.
 
 
 def test_declared_module_skips_enrichment_undeclared_module_enriches(monkeypatch):
@@ -531,6 +535,16 @@ def test_declared_module_skips_enrichment_undeclared_module_enriches(monkeypatch
                     'paths': {'module': 'declared'},
                     'dependencies': [],
                     'internal_dependencies': ['other'],
+                    'commands': {},
+                },
+                # Present-but-EMPTY declaration — declares nothing, so its derived
+                # edges are consumed and it must pay the enrichment like any other
+                # undeclared module. This is the population the meaning guard widened.
+                'empty-declared': {
+                    'name': 'empty-declared',
+                    'paths': {'module': 'empty-declared'},
+                    'dependencies': [],
+                    'internal_dependencies': [],
                     'commands': {},
                 },
                 # Undeclared — empty dependencies, no internal_dependencies at
@@ -556,17 +570,19 @@ def test_declared_module_skips_enrichment_undeclared_module_enriches(monkeypatch
 
         get_module_graph(tmpdir)
 
+        # Only a NON-EMPTY declaration buys the skip.
         assert 'declared' not in enrich_calls
+        assert 'empty-declared' in enrich_calls
         assert 'undeclared' in enrich_calls
 
 
 def test_declared_module_edges_and_producers_unaffected_by_resolver_probe(monkeypatch):
-    """A declared module's resolver-visible ``dependencies`` are irrelevant to
-    the final graph: ``_build_deps_and_producers`` always uses the declared
-    list and stamps ``declared``, discarding whatever a resolver derives for
-    that module. This is the CORRECTNESS CONSTRAINT the fix relies on:
-    skipping enrichment for a declared module changes only its resolver
-    INPUT, never any emitted edge or producer.
+    """A non-empty-declared module's resolver-visible ``dependencies`` are
+    irrelevant to the final graph: ``_build_deps_and_producers`` uses the
+    declared list and stamps ``declared``, discarding whatever a resolver
+    derives for that module. This is the CORRECTNESS CONSTRAINT the enrichment
+    skip relies on: skipping enrichment for such a module changes only its
+    resolver INPUT, never any emitted edge or producer.
     """
 
     class _ProbeResolver:
@@ -608,3 +624,115 @@ def test_declared_module_edges_and_producers_unaffected_by_resolver_probe(monkey
 
         edges = {(e['from'], e['to']): e['producers'] for e in result['edges']}
         assert edges == {('other', 'declared'): ['declared']}
+
+
+# =============================================================================
+# 9. The declared-dependency MEANING guard
+# =============================================================================
+#
+# ``architecture init`` seeds ``"internal_dependencies": []`` into every module's
+# enriched.json, so a present-but-empty list is indistinguishable from unset and
+# carries no assertion. Treating its mere PRESENCE as a declaration made every
+# module look declared-with-zero-dependencies, and the declared-wins branch then
+# discarded the entire resolver-derived edge set — a silent, total edge loss that
+# reported ``status: ok`` on every resolver. Only a NON-EMPTY list is a
+# declaration, at BOTH precedence sources, and a declaration that does discard
+# derived edges says so on the losing resolver's report.
+
+
+def test_empty_enriched_declaration_does_not_suppress_derived_edges(monkeypatch):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _create_triple(tmpdir)
+        _register(monkeypatch, _StubResolver('maven', edges=[('app', 'core')]))
+
+        # Exactly the stub `architecture init` seeds into every module.
+        result = get_module_graph(
+            tmpdir,
+            enriched_by_name={
+                'api': {'internal_dependencies': []},
+                'core': {'internal_dependencies': []},
+                'app': {'internal_dependencies': []},
+            },
+        )
+
+        assert [(e['from'], e['to']) for e in result['edges']] == [('core', 'app')]
+        assert result['edges'][0]['producers'] == ['maven']
+
+
+def test_empty_derived_declaration_does_not_suppress_derived_edges(monkeypatch):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed(
+            tmpdir,
+            {
+                'api': _module('api'),
+                'core': _module('core'),
+                'app': _module('app', internal_dependencies=[]),
+            },
+        )
+        _register(monkeypatch, _StubResolver('maven', edges=[('app', 'core')]))
+
+        result = get_module_graph(tmpdir)
+
+        assert [(e['from'], e['to']) for e in result['edges']] == [('core', 'app')]
+        assert result['edges'][0]['producers'] == ['maven']
+
+
+def test_empty_declaration_emits_no_suppression_note(monkeypatch):
+    """The negative control for the note below: nothing was discarded, so nothing
+    is reported. Without it a note that fired unconditionally would still satisfy
+    the positive assertion."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed(
+            tmpdir,
+            {
+                'api': _module('api'),
+                'core': _module('core'),
+                'app': _module('app', internal_dependencies=[]),
+            },
+        )
+        _register(monkeypatch, _StubResolver('maven', edges=[('app', 'core')]))
+
+        result = get_module_graph(tmpdir)
+
+        assert result['resolvers'][0]['notes'] == []
+
+
+def test_non_empty_declaration_still_wins_over_resolver_edges(monkeypatch):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed(
+            tmpdir,
+            {
+                'api': _module('api'),
+                'core': _module('core'),
+                'app': _module('app', internal_dependencies=['api']),
+            },
+        )
+        _register(monkeypatch, _StubResolver('maven', edges=[('app', 'core')]))
+
+        result = get_module_graph(tmpdir)
+
+        # The resolver derived app → core; the declaration says app → api and wins.
+        assert [(e['from'], e['to']) for e in result['edges']] == [('api', 'app')]
+        assert result['edges'][0]['producers'] == ['declared']
+
+
+def test_declared_wins_overwrite_is_reported_on_the_losing_resolver(monkeypatch):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed(
+            tmpdir,
+            {
+                'api': _module('api'),
+                'core': _module('core'),
+                'app': _module('app', internal_dependencies=['api']),
+            },
+        )
+        _register(monkeypatch, _StubResolver('maven', edges=[('app', 'core')]))
+
+        result = get_module_graph(tmpdir)
+
+        notes = result['resolvers'][0]['notes']
+        assert len(notes) == 1
+        assert notes[0].startswith('declared: ')
+        # The note names the module whose edges were discarded and the target it lost.
+        assert 'app' in notes[0]
+        assert 'core' in notes[0]

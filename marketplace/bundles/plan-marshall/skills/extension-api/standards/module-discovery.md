@@ -163,7 +163,7 @@ Each element is an object:
 
 Entries are deduplicated on the `(target_bundle, dep_type, resolved)` triple, keeping the field proportional to the module count rather than to the raw reference count. A module with no outbound references carries an empty array, not a missing key.
 
-This field is **not** part of the shared required field set: it is populated only by extensions that ship an Axis-C resolver needing it (currently `pm-plugin-development`, whose bundle modules are read by both the `markdown` and `python` resolvers). See [ext-point-derivation-resolver.md](ext-point-derivation-resolver.md) § Current implementations.
+This field is **not** part of the shared required field set: it is populated only by extensions whose Axis-C resolver joins over cross-reference data, and more than one resolver may join over the same module's entries. See [ext-point-derivation-resolver.md](ext-point-derivation-resolver.md) § Current implementations for which resolvers ship.
 
 ### Profile Structure (Maven)
 
