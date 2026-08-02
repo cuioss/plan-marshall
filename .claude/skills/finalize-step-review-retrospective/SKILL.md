@@ -181,6 +181,42 @@ deterministic metrics (from Step 2), produce per reviewer:
 Then a comparative verdict: which reviewer added more value on this PR and why.
 This pass AUGMENTS — never replaces or overrides — the Step 2 counts.
 
+#### Participation is UNMEASURABLE unless positively substantiated
+
+An empty or thin slice of the findings store is **not** evidence that a reviewer
+was absent, that its inline coverage was zero, or that the PR took a
+"thin-review landing". Silence and non-participation are indistinguishable to a
+comment count: a bot that reviewed and found nothing, a bot that was rate-limited,
+a bot that refused, and a bot that was never enabled all present here as the same
+zero. This is the same asymmetry the merge gate already documents for its own two
+predicates — see
+[`branch-cleanup.md`](../../../marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/branch-cleanup.md)
+§ "Pre-Merge Review-Completeness Barrier".
+
+This pass therefore MUST NOT:
+
+- infer that a reviewer was **absent** / did not participate from a zero or
+  missing slice of the store;
+- report **"zero inline coverage"**, "no findings", or any equivalent
+  quantified-absence claim about a reviewer whose participation is not
+  positively substantiated;
+- characterise the run as a **"thin-review landing"** (or any comparable
+  whole-PR quality claim) on the strength of a low aggregate count alone.
+
+Instead, classify each reviewer into exactly one of two states and report the
+state explicitly:
+
+| State | Substantiation | How the artifact reports it |
+|-------|----------------|-----------------------------|
+| **measured** | At least one record attributed to that reviewer is present in the store, so its output can be judged. | Normal per-reviewer assessment. |
+| **unmeasurable** | No record attributed to that reviewer is present. | Report participation as `unmeasurable`, naming the reviewer and stating that the store substantiates neither participation nor absence. Do NOT score it, rank it, or count it as a negative. |
+
+The **comparative verdict** MUST name every reviewer it could not measure and
+MUST scope its claim to the measured ones — a verdict silent about an
+unmeasurable reviewer reads as a verdict that measured it and found nothing.
+When NO reviewer is measurable, the verdict itself is `unmeasurable`; do not
+manufacture a ranking from an empty store.
+
 ### Step 4: Persist the retrospective artifact
 
 Write `review-retrospective.md` under the plan dir, containing BOTH the
@@ -188,6 +224,16 @@ deterministic per-reviewer metrics table (raw vs actionable vs meta,
 positives/false-positives, %-resolved-as-fixed) from Step 2 AND the LLM sections
 from Step 3 as NAMED sections — `## Qualitative Quality Assessment` (per reviewer)
 and `## Comparative Verdict`:
+
+Both LLM sections carry the participation state Step 3 assigned: every reviewer
+classified `unmeasurable` is named as such, and the comparative verdict states
+which reviewers it could not measure. The artifact's **closing recommendation**
+is bound by the same rule as the verdict — it MUST NOT recommend acting on an
+inferred absence ("drop reviewer X", "coverage was thin, tighten Y") when the
+input for that reviewer was `unmeasurable`. A recommendation derived from an
+unmeasured input is the actively-misleading shape this constraint exists to
+remove; recommend only what the measured reviewers substantiate, and say plainly
+that the rest could not be measured.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-files:manage-files write \

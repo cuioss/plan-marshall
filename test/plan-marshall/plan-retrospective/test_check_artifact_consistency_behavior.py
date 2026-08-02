@@ -297,6 +297,56 @@ class TestAffectedFilesRecall:
         assert status == 'fail'
         assert 'unreadable' in message.lower()
 
+    def test_inconclusive_when_footprint_unresolvable(self, tmp_path):
+        """No footprint could be resolved → inconclusive, and NO percentage.
+
+        A recall figure computed from an unresolved footprint is a confident
+        claim about an input that was never measured; ``0%`` is the shape that
+        defect takes.
+        """
+        status, message, details = _cac.check_affected_files_recall(
+            _outline(affected=['src/a.py']), tmp_path, _ONE_DELIVERABLE
+        )
+        assert status == 'inconclusive'
+        assert 'unmeasurable' in message
+        assert details['footprint_resolved'] is False
+        assert 'recall_pct' not in details
+
+    def test_measured_verdict_when_footprint_resolved_to_empty(self, tmp_path):
+        """Control: a present-but-empty ``modified_files`` still measures 0%.
+
+        Without this the inconclusive sentinel could be satisfied by treating
+        every empty footprint as unmeasurable, which would silence a genuine
+        zero-coverage failure.
+        """
+        (tmp_path / 'references.json').write_text(
+            json.dumps({'modified_files': []}), encoding='utf-8'
+        )
+        status, _msg, details = _cac.check_affected_files_recall(
+            _outline(affected=['src/a.py']), tmp_path, _ONE_DELIVERABLE
+        )
+        assert status == 'fail'
+        assert details['footprint_resolved'] is True
+        assert float(details['recall_pct']) == 0.0
+
+
+class TestFootprintResolvedPredicate:
+    """``footprint_resolved`` is the ONE named guard over the resolution state.
+
+    An inline truthiness check is NOT equivalent: ``not footprint`` is also true
+    for a resolved-but-empty footprint, which is a measured result. The
+    resolved-empty case below is what makes the two readings distinguishable.
+    """
+
+    def test_unresolved_sentinel_reads_unresolved(self):
+        assert _cac.footprint_resolved(_cac.FOOTPRINT_UNRESOLVED) is False
+
+    def test_resolved_empty_set_reads_resolved(self):
+        assert _cac.footprint_resolved(set()) is True
+
+    def test_resolved_non_empty_set_reads_resolved(self):
+        assert _cac.footprint_resolved({'src/a.py'}) is True
+
 
 class TestExactMatch:
     def test_pass_on_identical_non_empty_sets(self):
@@ -333,6 +383,75 @@ class TestExactMatch:
         assert status == 'warn'
         assert outline_only == ['a']
         assert references_only == ['c']
+
+    def test_inconclusive_when_footprint_unresolvable(self):
+        """No right-hand side to compare against — never a confident ``warn``.
+
+        The peer consumes the same resolver as the recall check, so an
+        unresolvable footprint that silenced only recall would still be reported
+        here as confident drift.
+        """
+        status, message, outline_only, references_only = _cac.check_affected_files_exact_match(
+            {'a', 'b'}, _cac.FOOTPRINT_UNRESOLVED
+        )
+        assert status == 'inconclusive'
+        assert 'could not be resolved' in message
+        assert outline_only == []
+        assert references_only == []
+
+
+class TestSummarizeChecks:
+    """Every emitted status lands in a bucket, and the buckets reconcile.
+
+    A status counted by no bucket reads to a summary consumer as a check that
+    does not exist — the same unmeasurable-rendered-as-absent shape the
+    ``inconclusive`` footprint verdict removes.
+    """
+
+    def test_legacy_buckets_are_present_even_at_zero(self):
+        assert _cac.summarize_checks([]) == {'passed': 0, 'failed': 0, 'skipped': 0}
+
+    def test_legacy_statuses_count_under_their_established_names(self):
+        checks = [
+            {'name': 'a', 'status': 'pass'},
+            {'name': 'b', 'status': 'pass'},
+            {'name': 'c', 'status': 'fail'},
+            {'name': 'd', 'status': 'skip'},
+        ]
+        summary = _cac.summarize_checks(checks)
+        assert summary['passed'] == 2
+        assert summary['failed'] == 1
+        assert summary['skipped'] == 1
+
+    def test_warn_info_and_inconclusive_each_get_a_bucket(self):
+        """The hole was never ``inconclusive``-only — ``warn`` and ``info`` too."""
+        checks = [
+            {'name': 'a', 'status': 'warn'},
+            {'name': 'b', 'status': 'info'},
+            {'name': 'c', 'status': 'inconclusive'},
+        ]
+        summary = _cac.summarize_checks(checks)
+        assert summary['warn'] == 1
+        assert summary['info'] == 1
+        assert summary['inconclusive'] == 1
+
+    def test_a_status_introduced_later_is_counted_without_editing_the_map(self):
+        """Buckets derive from the checks, so a new status cannot drop out."""
+        checks = [{'name': 'a', 'status': 'not_yet_invented'}]
+        summary = _cac.summarize_checks(checks)
+        assert summary['not_yet_invented'] == 1
+        assert sum(summary.values()) == len(checks)
+
+    def test_buckets_reconcile_against_the_check_count(self):
+        checks = [
+            {'name': 'a', 'status': 'pass'},
+            {'name': 'b', 'status': 'fail'},
+            {'name': 'c', 'status': 'skip'},
+            {'name': 'd', 'status': 'warn'},
+            {'name': 'e', 'status': 'info'},
+            {'name': 'f', 'status': 'inconclusive'},
+        ]
+        assert sum(_cac.summarize_checks(checks).values()) == len(checks)
 
 
 class TestTaskDeliverableMatch:
@@ -513,6 +632,61 @@ class TestCmdRunInProcess:
             f['severity'] == 'warning' and 'mismatch' in f['message'].lower()
             for f in result['findings']
         )
+
+    def test_unresolvable_footprint_yields_inconclusive_from_both_peers(self, tmp_path):
+        """The deleted-worktree shape: no footprint resolves, so neither peer measures.
+
+        ``cmd_run`` is the surface a summary consumer reads, so the assertions
+        cover the whole path: both verdicts, both findings, and the summary
+        bucket that keeps them countable.
+        """
+        plan_dir = tmp_path / 'plan'
+        plan_dir.mkdir()
+        (plan_dir / 'solution_outline.md').write_text(
+            _outline(affected=['src/a.py', 'src/b.py']), encoding='utf-8'
+        )
+        # No references.json at all → neither resolution tier answers.
+        (plan_dir / 'metrics.md').write_text('# Metrics\n', encoding='utf-8')
+        tasks = plan_dir / 'tasks'
+        tasks.mkdir()
+        (tasks / 'TASK-001.json').write_text(json.dumps({'deliverable': 1}), encoding='utf-8')
+
+        result = _cac.cmd_run(_run_args(plan_dir))
+
+        assert _check(result['checks'], 'affected_files_recall')['status'] == 'inconclusive'
+        assert _check(result['checks'], 'affected_files_exact_match')['status'] == 'inconclusive'
+
+        unresolvable = [
+            f
+            for f in result['findings']
+            if f['severity'] == 'warning' and 'could not be resolved' in f['message']
+        ]
+        assert len(unresolvable) == 2, (
+            f'Expected one warning finding per affected_files_* peer, got {result["findings"]}'
+        )
+
+        assert result['summary']['inconclusive'] == 2
+        assert sum(result['summary'].values()) == len(result['checks'])
+
+    def test_summary_reconciles_on_a_plan_that_emits_warn(self, tmp_path):
+        """``warn`` is counted too — the repaired map covers every emitted status."""
+        plan_dir = tmp_path / 'plan'
+        plan_dir.mkdir()
+        (plan_dir / 'solution_outline.md').write_text(
+            _outline(affected=['src/a.py', 'src/b.py']), encoding='utf-8'
+        )
+        (plan_dir / 'references.json').write_text(
+            json.dumps({'modified_files': ['src/a.py', 'src/c.py']}), encoding='utf-8'
+        )
+        (plan_dir / 'metrics.md').write_text('# Metrics\n', encoding='utf-8')
+        tasks = plan_dir / 'tasks'
+        tasks.mkdir()
+        (tasks / 'TASK-001.json').write_text(json.dumps({'deliverable': 1}), encoding='utf-8')
+
+        result = _cac.cmd_run(_run_args(plan_dir))
+
+        assert result['summary']['warn'] == 1
+        assert sum(result['summary'].values()) == len(result['checks'])
 
     def test_manifest_present_downgrades_warn_to_info(self, tmp_path):
         plan_dir = tmp_path / 'plan'
