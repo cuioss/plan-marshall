@@ -13,8 +13,10 @@ from the declaration alone. This seam is the runtime observation that closes
 that gap — item 5f of ``phase-6-finalize/SKILL.md`` calls it once per post-run
 band step return.
 
-Three design decisions this seam settles, each stated once here so no caller
-re-derives them:
+Three design decisions this seam settles. They are stated here for the
+implementer and restated for the caller in ``phase-6-finalize/SKILL.md`` item 5f
+sub-item (0), which marks them "do NOT re-derive them" — the point is that no
+caller derives them afresh, not that only one document carries them:
 
 1. **Scope — the post-run band only.** The guard is consulted only for a step
    declaring ``post_run_review: true``. Before the merge gate an uncommitted

@@ -222,7 +222,9 @@ would put two landings on one run.
 
 This branch writes only under `.plan/`, so the step's `mutates_source: false` fact is unchanged
 and the step never reaches the dispatcher's commit instrumentation at all — item 5f reads the
-declared `mutates_source` fact first and returns before running its porcelain check.
+declared `mutates_source` fact first and skips (a)-(d). The declaration is not trusted blind:
+this step also declares `post_run_review: true`, so item 5f's sub-item (0) observes the worktree
+on return and reports any dirty TRACKED path outside `.plan/` as a non-blocking WARNING.
 
 ##### Non-orchestrated filing (`orchestrated: false`)
 
