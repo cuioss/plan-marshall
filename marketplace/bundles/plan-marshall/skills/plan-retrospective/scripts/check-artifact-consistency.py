@@ -493,6 +493,29 @@ def summarize_checks(checks: list[dict[str, str]]) -> dict[str, int]:
     return summary
 
 
+#: Finding severity per verdict for the checks that split a MEASURED failure
+#: from an UNMEASURABLE one. Both verdicts must reach ``findings`` — a verdict
+#: dropped by a ``fail``-only gate reads to the synthesizer as a check that
+#: raised nothing — but they must reach it at DIFFERENT severities, because
+#: collapsing them onto one severity erases the measured-vs-unmeasurable
+#: distinction those checks exist to preserve.
+_MEASURED_VERDICT_SEVERITY = {'fail': 'error', 'inconclusive': 'warning'}
+
+
+def _route_measured_verdict(findings: list[dict[str, str]], status: str, message: str) -> None:
+    """Append ``message`` to ``findings`` at the severity ``status`` maps to.
+
+    Shared by ``affected_files_recall`` and ``metrics_generated``, which owe the
+    identical measured-vs-unmeasurable split. One body means the two cannot drift
+    onto different severity pairings while each still reads as correct in
+    isolation. A status outside :data:`_MEASURED_VERDICT_SEVERITY` (``pass`` /
+    ``skip``) raises no finding.
+    """
+    severity = _MEASURED_VERDICT_SEVERITY.get(status)
+    if severity is not None:
+        findings.append({'severity': severity, 'message': message})
+
+
 #: The ext-point whose implementor records carry each finalize step's ``order``.
 _FINALIZE_STEP_EXT_POINT = 'plan-marshall:extension-api/standards/ext-point-finalize-step'
 
@@ -645,20 +668,12 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     )
     checks.append({'name': 'affected_files_recall', 'status': rec_status, 'message': rec_message})
     details['affected_files_recall'] = rec_details
-    # Both verdicts reach ``findings`` — an unmeasurable recall must reach the
-    # synthesizer, not be dropped into silence where it reads as a check that
-    # raised nothing — but they reach it at DIFFERENT severities, exactly as the
-    # ``metrics_generated`` peer below routes its own pair. ``fail`` is a
-    # measured verdict (an Affected-files heading that parsed to no bullet, an
-    # unreadable references.json, or a recall percentage below the threshold),
-    # so it is an ``error``; ``inconclusive`` is the unmeasurable case (the
-    # footprint could not be resolved), so it is a ``warning``. Collapsing the
-    # two onto one severity erases the measured-vs-unmeasurable distinction the
-    # check exists to preserve.
-    if rec_status == 'fail':
-        findings.append({'severity': 'error', 'message': rec_message})
-    elif rec_status == 'inconclusive':
-        findings.append({'severity': 'warning', 'message': rec_message})
+    # ``fail`` is a measured verdict (an Affected-files heading that parsed to no
+    # bullet, an unreadable references.json, or a recall percentage below the
+    # threshold); ``inconclusive`` is the unmeasurable case (the footprint could
+    # not be resolved). Both reach ``findings``, at the severities
+    # ``_route_measured_verdict`` owns.
+    _route_measured_verdict(findings, rec_status, rec_message)
 
     # Affected-files exact-match (strict variant, peer to recall).
     # Resolves the same live plan footprint used by
@@ -707,14 +722,11 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     # metrics.md presence
     m_status, m_message = check_metrics_generated(plan_dir)
     checks.append({'name': 'metrics_generated', 'status': m_status, 'message': m_message})
-    # ``inconclusive`` reaches ``findings`` for the same reason the recall and
-    # exact-match peers route theirs: a verdict dropped by a ``fail``-only gate
-    # reads to the synthesizer as a check that raised nothing, which is the
-    # unmeasurable-rendered-as-absent shape this check exists to remove.
-    if m_status == 'fail':
-        findings.append({'severity': 'error', 'message': m_message})
-    elif m_status == 'inconclusive':
-        findings.append({'severity': 'warning', 'message': m_message})
+    # ``fail`` is the measured absence (the producer is not ordered strictly
+    # later, so it had its turn); ``inconclusive`` is the unmeasurable case (the
+    # producer runs later, or the ordering could not be resolved at all). Same
+    # split, same owner as the recall peer above.
+    _route_measured_verdict(findings, m_status, m_message)
 
     summary = summarize_checks(checks)
 
