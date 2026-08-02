@@ -76,6 +76,7 @@ Examples:
 import json
 import re
 import sys
+from pathlib import Path
 from typing import Any
 
 import bot_registry
@@ -546,7 +547,90 @@ def _existing_pr_comment_keys(query_findings, plan_id: str) -> set[tuple[str, st
     return keys
 
 
-def _has_update_movement(comment: dict, existing_keys: set[tuple[str, str]], bot_kind: str) -> bool:
+# The plan-scoped sidecar recording the ``(bot_kind, comment_id)`` keys of comments
+# the NOISE pre-filter dropped. A dropped comment files no ``pr-comment`` finding,
+# so its key never reaches ``_existing_pr_comment_keys`` — and the stored-findings
+# key set alone is therefore an INCOMPLETE record of what the plan has observed.
+# Without this sidecar the first-presence arm of ``_has_update_movement`` below
+# would be permanently satisfied for any comment the pre-filter drops, so a bot
+# declaring ``participation_requires_update`` would be credited as a proven
+# participant on EVERY fetch of one stale, unchanged comment — precisely the
+# false-positive direction that flag exists to close.
+#
+# It sits BESIDE the findings store (the same ``artifacts/`` root) rather than
+# inside ``artifacts/findings/``, and that placement is load-bearing: these are
+# observation keys, not findings. Filing them as findings — in any resolution
+# state — would put routine clean-review boilerplate back in front of operator
+# triage, into the pending-findings gate, and into the review-retrospective
+# aggregation, which is the whole class of defect the contentless drop removes.
+_DROPPED_COMMENT_KEYS_ARTIFACT = 'pr-noise-dropped-comments.jsonl'
+
+
+def _dropped_comment_keys_path(plan_id: str) -> Path:
+    """Resolve the plan-scoped sidecar path recording noise-dropped comment keys."""
+    from jsonl_store import get_artifact_path
+
+    return get_artifact_path(plan_id, _DROPPED_COMMENT_KEYS_ARTIFACT)
+
+
+def _recorded_dropped_comment_keys(plan_id: str) -> set[tuple[str, str]]:
+    """Return the ``(bot_kind, comment_id)`` keys EARLIER fetches observed and dropped as noise.
+
+    The complement of ``_existing_pr_comment_keys``: together the two cover every
+    comment this plan has actually SEEN, whether it survived into the findings
+    store or was dropped by the pre-filter. Only prior fetches contribute — the
+    current fetch's drops are appended after the participation loop has read this
+    set, so a comment observed for the first time still takes the first-presence
+    arm on the run that observed it.
+
+    A missing sidecar reads as the empty set (no fetch has run for this plan yet).
+    """
+    from jsonl_store import read_jsonl
+
+    return {
+        (str(record.get('bot_kind') or ''), str(record.get('comment_id') or ''))
+        for record in read_jsonl(_dropped_comment_keys_path(plan_id))
+    }
+
+
+def _noise_dropped_comment_keys(comments: list[dict]) -> set[tuple[str, str]]:
+    """Derive the ``(bot_kind, comment_id)`` keys the noise pre-filter drops from ``comments``.
+
+    Its OWN pass over the raw comment list, deliberately separate from the
+    per-comment filter loop in ``cmd_fetch_findings``: that loop runs AFTER the
+    participation loop, so a dropped-keys set it populated would not exist yet at
+    the point participation is evaluated. Running the derivation up front is what
+    makes the record available at both points in the same fetch.
+
+    The drop predicate is the SAME ``_is_obvious_noise`` the filter loop calls, not
+    a second copy of its rules, so the two can never disagree about what counts as
+    noise. Human comments (``bot_kind`` None) contribute ``('', comment_id)``,
+    mirroring ``_existing_pr_comment_keys``; they can never match a movement lookup,
+    which is always keyed by a non-empty bot kind.
+    """
+    keys: set[tuple[str, str]] = set()
+    for comment in comments:
+        bot_kind = bot_kind_for_author(comment.get('author') or 'unknown')
+        if _is_obvious_noise(str(comment.get('body') or ''), bot_kind):
+            keys.add((bot_kind or '', str(comment.get('id') or 'unknown')))
+    return keys
+
+
+def _record_dropped_comment_keys(plan_id: str, keys: set[tuple[str, str]]) -> None:
+    """Append newly-observed noise-dropped comment keys to the plan-scoped sidecar.
+
+    Callers pass only keys absent from ``_recorded_dropped_comment_keys``, so the
+    file accretes one row per distinct dropped comment rather than one row per
+    fetch. Sorted so the file order is deterministic.
+    """
+    from jsonl_store import append_jsonl
+
+    path = _dropped_comment_keys_path(plan_id)
+    for bot_kind, comment_id in sorted(keys):
+        append_jsonl(path, {'bot_kind': bot_kind, 'comment_id': comment_id})
+
+
+def _has_update_movement(comment: dict, observed_keys: set[tuple[str, str]], bot_kind: str) -> bool:
     """Return True when ``comment`` shows first presence or ``updated_at`` movement.
 
     The evidence qualifier for a bot that re-reviews by EDITING one persistent
@@ -555,19 +639,27 @@ def _has_update_movement(comment: dict, existing_keys: set[tuple[str, str]], bot
     it on presence alone would silently score a stale review as a fresh one after a
     force-push. Movement is established two ways, either of which suffices:
 
-    - **First presence** — the comment is not yet in the plan's recorded
+    - **First presence** — the comment is not yet in the plan's OBSERVED
       ``(bot_kind, comment_id)`` key set, so this run is observing it for the first
       time. The bot posted it during this review cycle.
     - **``updated_at`` movement** — the comment carries an ``updated_at`` that
       differs from its ``created_at``, so it has been edited since it was posted.
 
-    A comment the store already knows about, whose ``updated_at`` has not moved,
-    yields False: no new review was observed. An absent ``updated_at`` degrades to
-    "no movement" rather than being read as movement — the fail-closed direction,
-    since crediting an unverified review is the expensive error.
+    ``observed_keys`` is the UNION of the stored-findings keys
+    (``_existing_pr_comment_keys``) and the noise-dropped observation keys
+    (``_recorded_dropped_comment_keys``) — never the stored-findings keys alone.
+    The union is load-bearing: a comment the pre-filter drops files no finding, so
+    against the stored keys alone the first-presence arm would be satisfied on
+    every single fetch and the movement requirement would never bind. Any comment
+    the plan has SEEN closes that arm, whether or not it produced a finding.
+
+    A comment already observed, whose ``updated_at`` has not moved, yields False:
+    no new review was observed. An absent ``updated_at`` degrades to "no movement"
+    rather than being read as movement — the fail-closed direction, since crediting
+    an unverified review is the expensive error.
     """
     comment_id = str(comment.get('id') or 'unknown')
-    if (bot_kind, comment_id) not in existing_keys:
+    if (bot_kind, comment_id) not in observed_keys:
         return True
     updated_at = str(comment.get('updated_at') or '')
     created_at = str(comment.get('created_at') or '')
@@ -640,7 +732,11 @@ def cmd_fetch_findings(args):
     For a bot whose record sets ``participation_requires_update`` (it re-reviews by
     editing one persistent comment in place) the record additionally requires first
     presence or observed ``updated_at`` movement, so a stale unchanged comment
-    cannot credit it with reviewing code it never saw.
+    cannot credit it with reviewing code it never saw. First presence is measured
+    against every comment this plan has OBSERVED — the stored-findings keys UNIONED
+    with the noise-dropped keys recorded in the sidecar — because a comment the
+    pre-filter drops files no finding, and against the stored keys alone it would
+    read as newly-observed on every fetch forever.
 
     A bot declaring no evidence shape resolves FAIL-CLOSED — it can never be proven
     a participant. This proves PARTICIPATION only, never review QUALITY: the
@@ -710,6 +806,22 @@ def cmd_fetch_findings(args):
     # bot kind, thread-bearing or not — whose key is already present.
     existing_comment_keys = _existing_pr_comment_keys(query_findings, plan_id)
 
+    # The stored-findings keys alone are an INCOMPLETE record of what this plan has
+    # observed: a comment the noise pre-filter drops files no finding, so its key
+    # never appears above. The participation movement guard therefore reads the
+    # UNION of the stored keys and the noise-dropped observation keys recorded by
+    # earlier fetches; ``existing_comment_keys`` stays the input to the
+    # cross-iteration dedup (pre-filter 5), which is a different question — dedup
+    # asks "was this already STAGED as a finding?", participation asks "has this
+    # plan already SEEN this comment?". Widening dedup to the union would drop a
+    # previously-clean comment that has since gained real content.
+    recorded_dropped_keys = _recorded_dropped_comment_keys(plan_id)
+    observed_comment_keys = existing_comment_keys | recorded_dropped_keys
+
+    # This fetch's noise drops, derived in their own pass because the per-comment
+    # filter loop that performs the drops runs AFTER the participation loop below.
+    dropped_noise_keys = _noise_dropped_comment_keys(raw_comments)
+
     # Participation signal for the completeness guard, derived BEFORE any noise /
     # duplicate / resolved filtering so a bot whose comments were all
     # noise-filtered (count_stored 0) or all already-resolved is still credited.
@@ -743,10 +855,18 @@ def cmd_fetch_findings(args):
         if _kind not in bot_registry.participation_evidence(_bot_kind):
             continue
         if bot_registry.participation_requires_update(_bot_kind) and not _has_update_movement(
-            _comment, existing_comment_keys, _bot_kind
+            _comment, observed_comment_keys, _bot_kind
         ):
             continue
         participated[_bot_kind] = _kind
+
+    # Persist THIS fetch's noise drops so the NEXT fetch sees them as observed.
+    # Written AFTER the participation loop has read ``observed_comment_keys``, so a
+    # comment observed for the first time here still takes the first-presence arm
+    # on the run that observed it; the record only ever closes that arm on a LATER
+    # fetch — which is exactly the stale-unchanged-comment case the movement
+    # requirement exists to catch.
+    _record_dropped_comment_keys(plan_id, dropped_noise_keys - recorded_dropped_keys)
 
     # Stamp every finding with the PR HEAD SHA at ingestion time so re-review
     # matching can tell whether HEAD has advanced past the reviewed commit.

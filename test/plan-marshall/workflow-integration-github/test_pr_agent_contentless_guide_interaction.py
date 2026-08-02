@@ -18,7 +18,7 @@ makes it distinct from the co-located unit tests: ``test_github_pr.py`` drives
 arms here run ``cmd_fetch_findings``'s genuine ``_findings_core`` round-trip
 against a real findings store and feed its outcome into ``aggregate()``.
 
-Five arms:
+Six arms:
 
 1. **Clean-PR arm** — the fully clean Guide is dropped, files no finding, and —
    the load-bearing assertion — PR-Agent is STILL credited as a participant.
@@ -34,6 +34,12 @@ Five arms:
    ``aggregate()``: a suppressed Guide yields no ``reviewers[]`` row at all, and a
    SURVIVING PR-Agent record resolved ``accepted`` scores in neither quality
    bucket with ``pct_resolved_as_fixed is None`` — never ``0.0``.
+6. **Update-movement arm** — arm 1's surviving participation must not become
+   UNCONDITIONAL. Across two fetches an unchanged Guide is credited on the first
+   and NOT on the second, while a Guide edited in place between fetches is
+   credited again. Both directions are asserted because the drop removes the
+   comment from the findings store, which is where ``_has_update_movement``'s
+   first-presence arm used to read its evidence from.
 
 The findings store is REAL (isolated via the ``plan_context`` ``PLAN_BASE_DIR``
 sandbox); only the GitHub provider surface (``check_auth``,
@@ -118,9 +124,16 @@ _GUIDE_DOCS_ONLY = _GUIDE_HEADER + (
 )
 
 
-def _guide_comment(body, comment_id='guide-1'):
-    """A ``cuioss-review-bot`` issue_comment carrying ``body`` — PR-Agent's one shape."""
-    return {
+def _guide_comment(body, comment_id='guide-1', *, created_at=None, updated_at=None):
+    """A ``cuioss-review-bot`` issue_comment carrying ``body`` — PR-Agent's one shape.
+
+    ``created_at`` / ``updated_at`` are omitted entirely unless supplied, so the
+    arms that do not care about edit movement keep the exact provider record they
+    had before. The movement arm supplies both: ``updated_at == created_at`` models
+    the UNCHANGED Guide, and a later ``updated_at`` models the in-place re-review
+    edit that is PR-Agent's only way of publishing a fresh review.
+    """
+    comment = {
         'id': comment_id,
         'author': _PR_AGENT_LOGIN,
         'thread_id': '',
@@ -128,6 +141,11 @@ def _guide_comment(body, comment_id='guide-1'):
         'body': body,
         'resolved': False,
     }
+    if created_at is not None:
+        comment['created_at'] = created_at
+    if updated_at is not None:
+        comment['updated_at'] = updated_at
+    return comment
 
 
 def _patch_provider(monkeypatch, comments):
@@ -301,6 +319,93 @@ def test_guide_missing_or_changing_a_required_marker_is_stored(plan_context, mon
     stored = _stored(plan_id)
     assert len(stored) == 1
     assert _raw_body(stored[0]) == body
+
+
+# ---------------------------------------------------------------------------
+# Arm 6 — the drop must not make participation UNCONDITIONAL
+# ---------------------------------------------------------------------------
+#
+# Arm 1 pins that the drop preserves participation evidence. That is only half the
+# contract: PR-Agent declares ``participation_requires_update: true``, so its
+# evidence must ALSO show first presence or ``updated_at`` movement — a stale
+# unchanged Guide proves only that it reviewed some EARLIER HEAD.
+#
+# The drop is exactly what put those two halves in tension. ``_has_update_movement``
+# read first presence from the STORED pr-comment findings, and a dropped Guide files
+# none — so its key never entered that set, the first-presence arm was satisfied on
+# every fetch, and the movement requirement silently stopped binding. Arm 1 is
+# single-fetch and so cannot see it. Both directions are asserted below: without the
+# second case, "never credit after the first fetch" would satisfy the first one
+# while breaking every genuine re-review.
+
+_CREATED_AT = '2026-07-30T09:00:00Z'
+_EDITED_AT = '2026-07-30T11:30:00Z'
+
+
+def test_second_fetch_of_an_unchanged_guide_does_not_re_credit_participation(plan_context, monkeypatch):
+    """An unchanged clean Guide credits PR-Agent once, never again on a later fetch.
+
+    The false-positive direction, and the reason ``participation_requires_update``
+    exists: after a force-push the same Guide is still sitting on the PR having only
+    ever reviewed an earlier HEAD. Crediting it a second time reports a proven
+    participant on a diff nothing has reviewed.
+
+    Both fetches see the IDENTICAL provider record — same ``comment_id``, and
+    ``updated_at == created_at`` so no edit movement is available either. The only
+    thing that differs between them is what the plan has already observed, which is
+    precisely the signal the drop removed from the findings store.
+    """
+    plan_id = 'pr-agent-guide-unchanged-second-fetch'
+    guide = _guide_comment(_CLEAN_GUIDE, created_at=_CREATED_AT, updated_at=_CREATED_AT)
+    _patch_provider(monkeypatch, [guide])
+
+    first = _run_fetch(1205, plan_id)
+    second = _run_fetch(1205, plan_id)
+
+    # The Guide is dropped on BOTH fetches — the drop behaviour is unchanged.
+    assert first['count_stored'] == 0
+    assert second['count_stored'] == 0
+    assert first['count_skipped_noise'] == 1
+    assert second['count_skipped_noise'] == 1
+    assert _stored(plan_id) == []
+    # Neither fetch trips the producer-mismatch Q-Gate.
+    assert first['producer_mismatch_hash_id'] is None
+    assert second['producer_mismatch_hash_id'] is None
+
+    # First presence — the plan is observing this comment for the first time.
+    assert {'bot_kind': 'pr-agent', 'evidence_kind': 'issue_comment'} in first['participated_bots']
+    # Second fetch: already observed and unmoved, so there is no new review to credit.
+    assert second['participated_bots'] == []
+
+
+def test_guide_edited_between_fetches_credits_participation_again(plan_context, monkeypatch):
+    """An in-place edit between fetches IS movement, so PR-Agent is credited again.
+
+    The false-negative guard for the case above. PR-Agent re-reviews by editing its
+    one persistent comment rather than posting a new one, so ``updated_at`` movement
+    on an already-observed comment is its ONLY way of publishing a fresh review.
+    Were the observed-keys record to close the first-presence arm without leaving
+    the movement arm live, every genuine PR-Agent re-review would resolve to
+    ``absent`` and hold the completeness gate open forever.
+
+    The edited Guide is still fully clean, so it is still dropped — this asserts the
+    movement arm on the drop path specifically, not on the stored-finding path.
+    """
+    plan_id = 'pr-agent-guide-edited-between-fetches'
+    unchanged = _guide_comment(_CLEAN_GUIDE, created_at=_CREATED_AT, updated_at=_CREATED_AT)
+    _patch_provider(monkeypatch, [unchanged])
+    first = _run_fetch(1206, plan_id)
+    assert {'bot_kind': 'pr-agent', 'evidence_kind': 'issue_comment'} in first['participated_bots']
+
+    # Same comment_id — the bot edited the Guide in place rather than posting anew.
+    edited = _guide_comment(_CLEAN_GUIDE, created_at=_CREATED_AT, updated_at=_EDITED_AT)
+    _patch_provider(monkeypatch, [edited])
+    second = _run_fetch(1206, plan_id)
+
+    assert second['count_stored'] == 0
+    assert second['count_skipped_noise'] == 1
+    assert second['producer_mismatch_hash_id'] is None
+    assert {'bot_kind': 'pr-agent', 'evidence_kind': 'issue_comment'} in second['participated_bots']
 
 
 # ---------------------------------------------------------------------------

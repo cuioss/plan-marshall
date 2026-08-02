@@ -255,6 +255,27 @@ the `participated_but_empty` member of the failure taxonomy above — *"Accounte
 The bot did its pass and had nothing actionable to say."* — which is exactly what a clean review is.
 Reading a contentless drop as `absent` would turn a successful review into a completeness failure.
 
+**Surviving the drop is not the same as being exempt from the movement requirement.** For a bot
+declaring `participation_requires_update` the evidence that survives the drop must still show **first
+presence or `updated_at` movement** (§ "Evidence for a bot that edits one comment in place"). Keeping
+that requirement live across a drop takes an explicit mechanism, because first presence is answered
+from what the plan has already **observed** — and the natural record of an observation is the
+`pr-comment` finding the comment produced, which a dropped comment by definition does not produce.
+The producer therefore records each noise-dropped comment's `(bot_kind, comment_id)` key in a
+plan-scoped **observation sidecar** kept beside the findings store, and evaluates first presence
+against the **union** of the stored-finding keys and the recorded dropped keys. A dropped comment is
+consequently first-present exactly once — on the fetch that first observed it — after which only a
+real `updated_at` edit credits the bot again.
+
+The sidecar holds **observation keys, not findings**: they are never returned by a findings query,
+never enter the pending-findings gate, and never reach operator triage, so the triage queue stays as
+clean as the drop intends. Recording them as findings in any resolution state would put routine
+clean-review boilerplate back in front of the operator, which is the defect the drop exists to
+remove. Without the record the two halves collide: read from the stored findings alone, the
+first-presence arm stays permanently satisfied for every dropped comment, so a bot whose one stale
+comment never changed would be credited as a proven participant on every fetch — the exact false
+positive `participation_requires_update` exists to close.
+
 ## Consumers
 
 | Consumer | What it reads |
