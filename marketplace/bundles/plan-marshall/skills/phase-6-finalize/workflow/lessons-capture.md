@@ -106,7 +106,7 @@ python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator
 
 Staging the body with `Write` first is the same shell-safety reason the lesson three-step flow exists — the anti-pattern list below (inline `python -c`, `$(printf …)`, `#`-bearing heredocs) applies verbatim to inbox payload bodies. See [`../../marshall-orchestrator/standards/inbox-envelope.md`](../../marshall-orchestrator/standards/inbox-envelope.md) for the envelope schema, the `kind` enum, and the header-field table; do not restate them here.
 
-Branch B4 writes only under `.plan/`, so the dispatcher's post-step porcelain check observes an empty tree — matching the step's `mutates_source: false` fact and making B4 an item-5f case-(c) no-op, exactly like every other branch.
+Branch B4 writes only under `.plan/`, matching the step's `mutates_source: false` fact — so, exactly like every other branch, it never reaches the dispatcher's commit instrumentation at all (item 5f returns on the declared fact before running its porcelain check).
 
 ### Non-orchestrated execution
 
