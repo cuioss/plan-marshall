@@ -526,7 +526,7 @@ reason: operator accepted the gap
 granted_at: "2026-01-15T14:30:00Z"
 ```
 
-`previous_head` is additionally reported when the grant overwrote an earlier record.
+`previous_head` is additionally reported when the grant overwrote a record already held under the same `kind`.
 
 #### merge-authorization check
 
