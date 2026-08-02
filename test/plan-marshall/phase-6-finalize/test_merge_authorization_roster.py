@@ -47,6 +47,14 @@ The tests pin:
     the test asserts the inadmissible set is non-empty first — without that
     precondition the whole check would be vacuous on a roster where every row
     happened to share one class.
+(i) Every grant site declares a ``--gap-class``, so a site cannot fall back to
+    HEAD-only authorization by simply omitting the flag.
+(j) The ``--kind`` / ``--gap-class`` matchers are **form-agnostic** — they read
+    both the space-separated and the ``=``-joined argument forms. A matcher that
+    saw only one form would make an equals-form grant site invisible to the
+    independent corpus sweep below, i.e. fail OPEN in a guard built to fail
+    closed. No corpus invocation currently uses the equals form, so the corpus
+    alone cannot catch that regression.
 
 Plus the **both-directions** membership check and its per-member mutation guard:
 the grant invocations that actually exist across the marketplace docs are
