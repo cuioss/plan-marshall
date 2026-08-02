@@ -43,7 +43,7 @@ Profile selection happens at architecture-discovery time, signal-based per modul
 
 == Auditing what loaded
 
-Grep the work log to answer "what did task N actually load." If a skill is missing from the log, it never loaded — regardless of what the workflow body claims to have applied. The work-log line format and the `[SKILL]` category tag live in `manage-logging`'s standards; the dispatch-site instrumentation is in the execution-context agent body. Plan Marshall does not assume the LLM remembered to load anything; the log is the record of what actually happened.
+Read the work log to answer "what did task N actually load." If a skill is missing from the log, it never loaded — regardless of what the workflow body claims to have applied. The work-log line format and the `[SKILL]` category tag live in `manage-logging`'s standards; the dispatch-site instrumentation is in the execution-context agent body. Plan Marshall does not assume the LLM remembered to load anything; the log is the record of what actually happened.
 
 == Related
 

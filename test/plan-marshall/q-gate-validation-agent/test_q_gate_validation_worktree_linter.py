@@ -360,17 +360,19 @@ def test_section_2_15_has_no_unmarked_claude_worktrees_literals(section_2_15_tex
         # 1. The line itself names WL-B (the pattern subsection's own prose).
         # 2. The line carries (or its predecessor carries) an anti-pattern
         #    marker per the suppression rule.
-        # 3. The line is the rg pattern definition (inside a fenced ``rg ...``
-        #    code block that quotes the regex).
+        # 3. The line is the sweep-invocation line that quotes the regex
+        #    (inside a fenced code block defining the pattern to detect).
         if 'WL-B' in line:
             continue
         prev_line = lines[idx - 1] if idx > 0 else ''
         if _line_is_anti_pattern_marked(line, prev_line):
             continue
-        # rg/grep pattern lines that quote the regex literal are sanctioned;
-        # detect via the canonical "rg -n " prefix.
+        # A sweep-invocation line quoting the regex literal is sanctioned; the
+        # detector must name the forbidden literal in order to search for it.
+        # Keyed on the pattern flag the sweep carries, so the carve-out follows
+        # the invocation rather than a particular search program's name.
         stripped = line.lstrip()
-        if stripped.startswith('rg ') or stripped.startswith('grep '):
+        if '--pattern' in stripped:
             continue
         # Migration history references inside the explanation table also
         # carry an explicit "(TASK-4 migrated worktree storage to" marker;
@@ -409,9 +411,9 @@ def test_section_2_15_has_no_unmarked_cd_worktree_compounds(section_2_15_text: s
         prev_line = lines[idx - 1] if idx > 0 else ''
         if _line_is_anti_pattern_marked(line, prev_line):
             continue
-        # rg pattern definitions that quote the regex literal are sanctioned.
+        # Sweep-invocation lines that quote the regex literal are sanctioned.
         stripped = line.lstrip()
-        if stripped.startswith('rg ') or stripped.startswith('grep '):
+        if '--pattern' in stripped:
             continue
         violations.append((idx, line))
 

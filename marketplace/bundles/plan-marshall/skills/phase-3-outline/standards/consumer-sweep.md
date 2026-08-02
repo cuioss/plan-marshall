@@ -121,12 +121,15 @@ The deliverable's `Change per file` contained "remove `load_derived_data`" and "
 
 ### Sweep procedure
 
-`architecture find --pattern "load_derived_data"` would have returned the manage-architecture core file (already in scope) and missed the pm-dev-java reference, which lives in a file BODY rather than a path. The content sweep `architecture search --content --literal --pattern "load_derived_data"` would have surfaced:
+`architecture find --pattern "load_derived_data"` would have returned the manage-architecture core file (already in scope) and missed the pm-dev-java reference, which lives in a file BODY rather than a path. The content sweep `architecture search --content --literal --pattern "load_derived_data"` would have surfaced the two consuming files — location and hit strength, never the matching lines:
 
-```text
-marketplace/bundles/pm-dev-java/skills/manage-maven-profiles/scripts/profiles.py:14:from _architecture_core import load_derived_data
-test/pm-dev-java/manage-maven-profiles/test_profiles.py:8:from _architecture_core import load_derived_data, save_derived_data
+```toon
+results[2]{module,category,path,match_count}:
+  pm-dev-java,source,marketplace/bundles/pm-dev-java/skills/manage-maven-profiles/scripts/profiles.py,1
+  pm-dev-java,test,test/pm-dev-java/manage-maven-profiles/test_profiles.py,2
 ```
+
+`match_count` is the ranking signal: `Read` the files worth opening rather than expecting the sweep to hand back the import lines.
 
 ### Output
 

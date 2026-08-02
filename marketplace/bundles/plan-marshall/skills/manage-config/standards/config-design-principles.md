@@ -94,8 +94,11 @@ consumer that reads it.
 Apply, in the SAME task that deletes the old field:
 
 1. Ship the `get` read-path for the NEW location.
-2. Grep the codebase for the OLD field names to find every read-site before
-   deleting them.
+2. Sweep the codebase for the OLD field names to find every read-site before
+   deleting them — `architecture search --content --literal --pattern "{old_field}"`
+   answers "which file contains this string" over the module-attributed inventory
+   (see [`manage-architecture/standards/client-api.md`](../../manage-architecture/standards/client-api.md)
+   § search).
 3. Migrate the VALUES, not just the schema. When the committed `marshal.json`
    overrides a default, carry that override forward — a move-block operation that
    resets to the default instead of preserving the committed override is a silent

@@ -28,9 +28,9 @@ Verify that portability gaps from [01-finish-portability.md](01-finish-portabili
 | Check | Command | Pass | Fail |
 |-------|---------|------|------|
 | 0.1a | `git log --oneline -5` | Contains commits implementing 01 tasks | File as BLOCKED; do not proceed |
-| 0.1b | `grep -r 'platform_runtime permission' marketplace/bundles/plan-marshall/skills/tools-permission-doctor/` | At least 1 match (SKILL.md delegates to runtime; the invocation token is `plan-marshall:platform-runtime:platform_runtime permission …`) | NOTE — settings I/O lives in `claude_runtime.py`; residual `.claude/` literals are listed in [01 § Closing audit](01-finish-portability.md#closing-audit) |
-| 0.1c | `grep -r 'platform_runtime' marketplace/bundles/plan-marshall/skills/phase-5-execute/SKILL.md` | At least 1 match (session/metrics capture delegated) | BLOCKED — phase-5 must use runtime |
-| 0.1d | `grep -r 'runtime.target' marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/bootstrap_plugin.py` | At least 1 match (bootstrap reads target) | BLOCKED — bootstrap must resolve both targets |
+| 0.1b | `python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture search --content --literal --pattern 'platform_runtime permission'` | `files_scanned > 0` and `results[]` contains a `tools-permission-doctor/` path (SKILL.md delegates to runtime; the invocation token is `plan-marshall:platform-runtime:platform_runtime permission …`) | NOTE — settings I/O lives in `claude_runtime.py`; residual `.claude/` literals are listed in [01 § Closing audit](01-finish-portability.md#closing-audit) |
+| 0.1c | `python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture search --content --literal --pattern 'platform_runtime'` | `files_scanned > 0` and `results[]` contains `marketplace/bundles/plan-marshall/skills/phase-5-execute/SKILL.md` (session/metrics capture delegated) | BLOCKED — phase-5 must use runtime |
+| 0.1d | `python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture search --content --literal --pattern 'runtime.target'` | `files_scanned > 0` and `results[]` contains `marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/bootstrap_plugin.py` (bootstrap reads target) | BLOCKED — bootstrap must resolve both targets |
 
 ### 0.2 OpenCode installed and discoverable
 
@@ -58,7 +58,7 @@ python3 marketplace/targets/generate.py --target opencode --output target/openco
 | 1.1c | `ls target/opencode/skill/ \| head -20` | Directories named `{bundle}-{skill}` (e.g. `plan-marshall-phase-1-init`) | FAIL — wrong naming convention |
 | 1.1d | `ls target/opencode/agent/ \| head -20` | Agent files present | PASS if agents exist; NOTIFY if empty |
 | 1.1e | `python3 -c "import json; d=json.load(open('target/opencode/opencode.json')); print(d.keys())"` | Contains `$schema` and `skills`; `agent` present when agents exist. `instructions` is absent — it's a distributed plugin, not a project root. | FAIL — missing required keys or leaking project-level config |
-| 1.1f | `grep -r '^Skill:' target/opencode/skill/plan-marshall-phase-1-init/SKILL.md \| head -5` | Zero matches (Skill: directives rewritten) | FAIL — body transforms not applied. Ensure `OpenCodeTarget.generate()` passes `body_transformer` to `emit_bundles`. |
+| 1.1f | `Read target/opencode/skill/plan-marshall-phase-1-init/SKILL.md` and scan for lines beginning `Skill:`. (`target/` is generated output outside the crawled inventory, so `architecture search --content` does not reach it — the file is known, so `Read` is the sanctioned check.) | Zero `Skill:` directives (all rewritten) | FAIL — body transforms not applied. Ensure `OpenCodeTarget.generate()` passes `body_transformer` to `emit_bundles`. |
 | 1.1g | Regenerate idempotence: run generate again, then `diff -r target/opencode/ target/opencode-2/ \|\| echo "identical"` | No diffs (excluding timestamps/metadata) | FAIL — non-idempotent emission |
 
 ### 1.2 Deploy to OpenCode with singular→plural rename

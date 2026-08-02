@@ -323,9 +323,10 @@ resolver duplicated across 6+ analyzers collapses onto the one Gap-4 op.
 With Gaps 1-8 landed, the closing audit re-runs:
 
 ```bash
-grep -rnE '\.claude/|~/\.claude' marketplace/bundles --include='*.py' --include='*.md' \
-  | grep -v '/platform-runtime/' | grep -v '\.claude-plugin'
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture search --content --pattern '\.claude/|~/\.claude'
 ```
+
+Discard hits under `/platform-runtime/` (the sanctioned home) and under `.claude-plugin` from the returned `results[]`; the remainder is the audit set. The response reports file-level hits with a per-file `match_count` and no line bodies, so `Read` a hit to see the specific lines. Read `files_scanned` alongside `count` — a zero `count` is only meaningful over a non-empty population.
 
 The remaining hits are dominated by the accepted set — the behavioural Claude-path
 hardcodes in general skill bodies, shared runtime scripts, and authoring tools have been
@@ -334,7 +335,7 @@ categories the audit confirms:
 
 - **`platform-runtime` internals** — `claude_runtime.py` / `opencode_runtime.py` /
   `runtime_base.py` own the `.claude/` shapes, roots, and per-target layout strings by
-  design (excluded by the `-v '/platform-runtime/'` filter; the residual mentions are the
+  design (discarded by the `/platform-runtime/` filter above; the residual mentions are the
   ABC docstrings documenting what each target returns).
 - **The `script-shared/marketplace_paths.py` layout home** — the `_DEFAULT_SKILL_ROOTS` /
   Claude-default cache fallback constants are the sanctioned Gap-4/5 home that backs the
@@ -372,9 +373,10 @@ the tail of this workstream rather than re-opening the gap classes:
   `check-routing-decisions.py` — `.claude/` appears in a live `_BOOKKEEPING_PREFIXES`
   filter tuple (benign, but not in any accepted category).
 - `extension-api/scripts/extension_discovery.py` — `_scan_project_finalize_steps` builds
-  `project_root / '.claude' / 'skills'` **segment-wise**, which the audit grep cannot see
-  (Gap-4 residue). The audit should be supplemented with a segment-wise probe
-  (`grep -rn "'.claude'" marketplace/bundles --include='*.py'`) to close this blind spot.
+  `project_root / '.claude' / 'skills'` **segment-wise**, which the audit pattern above
+  cannot see (Gap-4 residue). The audit should be supplemented with a segment-wise probe
+  (`architecture search --content --literal --pattern "'.claude'"`, keeping only
+  `category: source` hits) to close this blind spot.
 
 ## Acceptance — met
 
@@ -391,7 +393,7 @@ the tail of this workstream rather than re-opening the gap classes:
 - [landed] Authoring tools (`plugin-doctor`, `tools-marketplace-inventory`) scan both layouts via
   the layout op and apply target-aware frontmatter checks; `plugin-doctor` carries the
   engine / Claude-rule-pack split (fork point documented in `plugin-doctor/references/rule-provenance.md`).
-- [met] The closing-audit grep returns accepted hits plus the tracked known-residuals list
+- [met] The closing-audit sweep returns accepted hits plus the tracked known-residuals list
   (see [§ Closing audit](#closing-audit)).
 - [met] `verify` passes on all bundles (Claude canary — no regression).
 
