@@ -38,7 +38,9 @@ The lattice has two directions and **both halves are first-class**. A field that
 |-------|----------|------------|--------------------|-------------|
 | `total_tokens` | `_close_phase_accumulating` (`end-phase` / `phase-boundary`); backfilled by `_reconcile_accumulator_into_phase`; folded by `cmd_enrich` on an inline-only phase | population-discriminated | Dispatched rows: forwarded `<usage>` total (per-close delta, ADDED) or the per-phase accumulator's cumulative value (ASSIGNED). Inline rows: the `cmd_enrich` fold of `input + output + cache_creation`. The row's `total_tokens_population` names which applies | Phase Breakdown `Tokens` cell and the `Total tokens` bullet — both print the row's population label |
 | `tool_uses` | `_close_phase_accumulating`; backfilled by `_reconcile_accumulator_into_phase` | dispatched-subagent | Forwarded `<usage>` `tool_uses` or the accumulator's cumulative value | Phase Breakdown `Tool Uses` cell, and the `Tool uses` bullet |
-| `dispatch_boundary_total` | `cmd_generate` via `_read_dispatch_boundary_totals` | dispatched-subagent | Sum of the `total_tokens` column across the phase's recorded dispatch-boundary rows | `Dispatch-boundary total` bullet; may also supply the `Tokens` cell under the reconciliation rule |
+| `dispatch_boundary_total` | `cmd_generate` via `_read_dispatch_boundary_totals` | dispatched-subagent | Sum of the `total_tokens` column across the phase's recorded dispatch-boundary rows. **Partial-capable** — the file may hold fewer rows than the phase had dispatches, so the sum is a floor unless `dispatch_boundary_rows_recorded` covers `subagent_samples` | `Dispatch-boundary total` bullet, which states the measure's coverage and whether it won; may also supply the `Tokens` cell under the reconciliation rule |
+| `dispatch_boundary_rows_recorded` | `cmd_generate` via `_read_dispatch_boundary_totals` | per-dispatch | Count of data rows summed into `dispatch_boundary_total`. Persisted whenever the file held rows, including when they sum to zero | The coverage clause of the `Dispatch-boundary total` bullet |
+| `subagent_total_tokens` | `cmd_enrich` | dispatched-subagent | Sum of `<usage>` totals across the dispatches attributed to the phase window | Named in the reconciliation annotation when it wins the maximum, and supplies the `Tokens` cell when it does |
 | `input_tokens` | `cmd_enrich` | main-context-window | `message.usage.input_tokens` summed across the phase window's parent turns and its attributed subagent transcripts | own bullet |
 | `output_tokens` | `cmd_enrich` | main-context-window | `message.usage.output_tokens`, same dual-source attribution | own bullet |
 | `cache_read_input_tokens` | `cmd_enrich` | main-context-window | `message.usage.cache_read_input_tokens`, same dual-source attribution | own bullet |
@@ -60,7 +62,6 @@ The lattice has two directions and **both halves are first-class**. A field that
 
 | Field | Producer | Population | Measurement method | Why it never surfaces |
 |-------|----------|------------|--------------------|-----------------------|
-| `subagent_total_tokens` | `cmd_enrich` | dispatched-subagent | Sum of `<usage>` totals across the dispatches attributed to the phase window | No render site and no comparison site — it can exceed the `total_tokens` that IS rendered and the report never says so |
 | `subagent_tool_uses` | `cmd_enrich` | dispatched-subagent | Sum of `<usage>` `tool_uses` across the same attributed dispatches | No render site |
 | `subagent_duration_ms` | `cmd_enrich` | dispatched-subagent | Sum of `<usage>` `duration_ms` across the same attributed dispatches | Consumed only inside `_worked_ms`'s `max()`; never rendered as a figure of its own |
 | `subagent_samples` | `cmd_enrich` | dispatched-subagent | Count of dispatch returns attributed to the phase window | No render site — yet it is the only signal that separates a measured dispatched zero from a phase that was never walked |
@@ -72,7 +73,7 @@ The lattice has two directions and **both halves are first-class**. A field that
 | `output_tokens` (dispatch-boundary column 7) | `cmd_record_dispatch_boundary` | per-dispatch | `--output-tokens` at dispatch termination, default `0` | Recorded per dispatch, never aggregated and never rendered |
 | `cache_read_input_tokens` (dispatch-boundary column 8) | `cmd_record_dispatch_boundary` | per-dispatch | `--cache-read-input-tokens` at dispatch termination, default `0` | Recorded per dispatch, never aggregated and never rendered |
 | `cache_creation_input_tokens` (dispatch-boundary column 9) | `cmd_record_dispatch_boundary` | per-dispatch | `--cache-creation-input-tokens` at dispatch termination, default `0` | Recorded per dispatch, never aggregated and never rendered |
-| `rows_recorded` | `cmd_record_dispatch_boundary` return TOON | per-dispatch | Count of data rows in the boundaries file after the append | Returned to the caller only — never persisted, so `generate` cannot read it to declare the boundary sum's coverage |
+| `rows_recorded` | `cmd_record_dispatch_boundary` return TOON | per-dispatch | Count of data rows in the boundaries file after the append | Returned to the caller only — never persisted. `generate` does not read it: it derives its own `dispatch_boundary_rows_recorded` from the file at render time |
 
 Only column 3 of the dispatch-boundary row (`total_tokens`) escapes Direction 2: `_read_dispatch_boundary_totals` sums it into `dispatch_boundary_total`. Columns 1–2 (`timestamp`, `termination_cause`) carry no usage measurement and are outside the lattice.
 
@@ -129,6 +130,7 @@ session_message_count: 127
 | `billing_weighted_total` | int | Derived by `enrich` from the four-field view: `input + output + round(0.1 × cache_read) + round(1.25 × cache_creation)`. A billing-cost figure, NOT a work-comparable measure |
 | `idle_duration_ms` | int | Derived by `generate` — the per-phase idle residual `max(0, wall_clock_ms - worked_ms)` |
 | `dispatch_boundary_total` | int | Derived by `generate` — the sum of the `total_tokens` column across the phase's `work/metrics-dispatch-boundaries-{phase}.toon` rows. Persisted as a DISTINCT field (it never overwrites `total_tokens`); present only when the boundary file exists and sums to a truthy value. See Dispatch-Boundary Reconciliation below |
+| `dispatch_boundary_rows_recorded` | int | Derived by `generate` — the number of data rows summed into `dispatch_boundary_total`. Persisted whenever the boundary file held at least one parseable row, INCLUDING when those rows sum to zero. This is the boundary measure's **coverage**: compared against `subagent_samples` it decides whether the measure is partial and therefore ineligible for the reconciliation maximum |
 | `inline_main_context_tokens` | int | Derived by `enrich` — `input_tokens + output_tokens + cache_creation_input_tokens` (EXCLUDING `cache_read_input_tokens`) surfaced on ANY phase whose window carries non-zero four-field usage, whether or not a dispatched `total_tokens` also exists. It is the inline measurement's own population-honest name, so the figure is never readable only through the dispatched-population `total_tokens` field. See Inline Main-Context Attribution below |
 | `boundary_non_monotonic` | `true` token | Derived by `generate` — set on a phase whose `start_time` precedes the maximum `end_time` of earlier phases in canonical order (a finalize loop-back re-entry). Read-only annotation; the recorded `start_time` / `end_time` are never rewritten. See Boundary Monotonicity below |
 | `exploration_tool_calls` | int | `enrich` tool-call walk — count of tool calls in this phase's window classified as *exploration* (locate or inspect existing state) |
@@ -173,33 +175,72 @@ dispatch-boundaries sum (the `total_tokens` column summed across the phase's
 dispatch-boundaries file as a reconciliation source; `plan-retrospective` also
 reads it, as an audit trail.
 
-The per-phase accumulator (`work/metrics-accumulator-{phase}.toon`) and the
-dispatch-boundaries file record the **same population**: every dispatched leaf
-appears once in each. They diverge only when a leaf's Step-8b
-`record-dispatch-boundary` fired but the accumulator fold
-(`accumulate-agent-usage`) was missed, which makes the accumulator
-*under-count* relative to the boundary sum. Because the two measure the same
-leaves, the non-double-counting reconciliation is:
+**Three** fields measure the dispatched-subagent population by three independent
+routes, and they routinely disagree:
+
+| Measure | Route |
+|---------|-------|
+| `total_tokens` | Forwarded `<usage>` flags, or the per-phase accumulator |
+| `dispatch_boundary_total` | Sum of the per-dispatch boundary rows |
+| `subagent_total_tokens` | `enrich`'s post-hoc transcript walk |
+
+They diverge when a leaf appears in one route and not another — a leaf whose
+Step-8b `record-dispatch-boundary` fired but whose accumulator fold
+(`accumulate-agent-usage`) was missed makes the accumulator *under-count*
+relative to the boundary sum. Because all three count the **same leaves**, the
+non-double-counting reconciliation is a maximum, never a sum:
 
 ```text
-reported = max(total_tokens, dispatch_boundary_total)   # NOT a sum
+reported = max(every ELIGIBLE measure of the dispatched population)   # NOT a sum
 ```
 
-Summing would double-count every leaf; `max()` recovers the under-count while
-staying safe under the same-population invariant. The reconciliation is
-**generate-side / render-time**:
+Summing would double-count every leaf; `max()` recovers whichever route
+under-counted.
+
+### Symmetry, and the two eligibility rules
+
+The rule is applied to **all three measures or to none** — never to a subset.
+Comparing only `total_tokens` against `dispatch_boundary_total` let
+`subagent_total_tokens` exceed the rendered figure with the report never saying
+so. Two eligibility rules keep the comparison honest:
+
+1. **A measure that cannot state its own coverage may not win.** Only
+   `dispatch_boundary_total` can under-cover: its file may hold fewer rows than
+   the phase had dispatches. It is marked **partial** when
+   `dispatch_boundary_rows_recorded < subagent_samples`, and a partial measure is
+   ineligible for the maximum — it is a floor, not a competing measurement.
+   Coverage is **undecidable** (not partial) when the row carries no
+   `subagent_samples`: an un-enriched row has no reference count, and treating
+   undecidable as partial would refuse the maximum on every un-enriched plan and
+   lose the accumulator-under-count recovery the reconciliation exists for.
+2. **A measure of a different population may not enter.** On a row whose
+   `total_tokens_population` is `inline`, `total_tokens` carries a
+   main-context-window measurement (see Inline Main-Context Attribution), so it
+   is excluded from the dispatched-population maximum. Admitting it would be the
+   exact cross-population mislabel the discriminator exists to prevent.
+
+An exact tie resolves to the earliest measure in the declared order
+(`total_tokens`, `dispatch_boundary_total`, `subagent_total_tokens`), so the
+render is deterministic.
+
+### Mechanics
+
+The reconciliation is **generate-side / render-time**:
 
 - The raw `total_tokens` field is left **byte-identical** on the row
   (explicit-wins — a value recorded by `end-phase` / `phase-boundary` is never
   overwritten).
-- The boundary sum is persisted as the DISTINCT `dispatch_boundary_total`
-  field.
-- When `dispatch_boundary_total > total_tokens`, the Phase Breakdown `Tokens`
-  cell renders the larger (boundary) value and feeds it to the Total, and an
-  annotation line under the table names the reconciled phases
-  (`> Tokens reconciled from dispatch boundaries …`). The Phase Details section
-  also surfaces the `Dispatch-boundary total` bullet.
-- When the boundary file is absent (sum is `0`) the reconciliation is a clean
+- The boundary sum and its row count are persisted as the DISTINCT
+  `dispatch_boundary_total` / `dispatch_boundary_rows_recorded` fields.
+- The winning measure supplies the Phase Breakdown `Tokens` cell and feeds the
+  Total. When the winner is NOT `total_tokens`, an annotation line under the
+  table names the phase, **which measure won**, its value, and the
+  `total_tokens` it beat.
+- The `Dispatch-boundary total` bullet states the measure's coverage on every
+  render (complete / partial / undecidable) and whether it won the maximum. It
+  no longer asserts an unqualified "same-population max" — a partial measure has
+  not earned that claim.
+- When the boundary file is absent (no rows) the reconciliation is a clean
   no-op — no field is persisted and the render is unchanged.
 
 The `#812` `partial` / `unrecorded_phases` completeness verdict (which keys off

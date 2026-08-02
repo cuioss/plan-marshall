@@ -140,6 +140,99 @@ def _token_population(phase_row: dict) -> str:
     return value if value in TOKEN_POPULATIONS else POPULATION_DISPATCHED
 
 
+# ---------------------------------------------------------------------------
+# Dispatched-population reconciliation
+# ---------------------------------------------------------------------------
+#
+# THREE fields measure the same dispatched-subagent population by three
+# independent routes, and they routinely disagree:
+#
+#   total_tokens           forwarded `<usage>` / the per-phase accumulator
+#   dispatch_boundary_total sum of the per-dispatch boundary rows
+#   subagent_total_tokens   enrich's post-hoc transcript walk
+#
+# Because they count the SAME leaves, they are reconciled by max(), never summed
+# — a sum double-counts every leaf. The maximum recovers whichever route
+# under-counted (#565: a leaf whose boundary row fired but whose accumulator fold
+# was missed).
+#
+# The rule is applied SYMMETRICALLY to all three or to none. Comparing only two
+# of them let the third exceed the rendered figure with the report never saying
+# so. Two eligibility rules keep the comparison honest:
+#
+#   * A measure that cannot state its own coverage may not win. Only
+#     `dispatch_boundary_total` can under-cover (its file may hold fewer rows
+#     than the phase had dispatches), so it is refused the maximum when it is
+#     PARTIAL.
+#   * A measure of a DIFFERENT population may not enter at all. On an `inline`
+#     row `total_tokens` carries a main-context measurement (see
+#     `_token_population`), so it is excluded — putting it in a
+#     dispatched-population max would be the very mislabel the discriminator
+#     exists to prevent.
+_DISPATCHED_MEASURE_FIELDS = (
+    'total_tokens',
+    'dispatch_boundary_total',
+    'subagent_total_tokens',
+)
+
+
+def _boundary_measure_is_partial(phase_row: dict) -> bool | None:
+    """Does ``dispatch_boundary_total`` under-cover the phase's dispatches?
+
+    Compares the boundary file's row count against ``subagent_samples`` — the
+    count of dispatch returns ``enrich``'s transcript walk attributed to the same
+    window. Fewer boundary rows than dispatches means the sum covers only part of
+    the population it claims to measure.
+
+    Returns ``None`` when the coverage is UNDECIDABLE: a row carrying no
+    ``subagent_samples`` was never walked by ``enrich``, so there is no reference
+    count to compare against. Undecidable is deliberately NOT partial — treating
+    it as partial would refuse the maximum on every un-enriched plan and lose the
+    accumulator-under-count recovery the reconciliation exists for.
+    """
+    samples = phase_row.get('subagent_samples')
+    if not isinstance(samples, int):
+        return None
+    rows = phase_row.get('dispatch_boundary_rows_recorded')
+    if not isinstance(rows, int):
+        return None
+    return rows < samples
+
+
+def _eligible_dispatched_measures(phase_row: dict) -> list[tuple[str, int]]:
+    """Return the dispatched-population measures eligible for the maximum.
+
+    Preserves ``_DISPATCHED_MEASURE_FIELDS`` order so an exact tie resolves
+    deterministically to the earliest-declared measure.
+    """
+    population = _token_population(phase_row)
+    boundary_partial = _boundary_measure_is_partial(phase_row)
+
+    eligible: list[tuple[str, int]] = []
+    for field in _DISPATCHED_MEASURE_FIELDS:
+        value = _coerce_numeric(phase_row.get(field))
+        if not isinstance(value, (int, float)) or not value:
+            continue
+        if field == 'total_tokens' and population == POPULATION_INLINE:
+            continue
+        if field == 'dispatch_boundary_total' and boundary_partial:
+            continue
+        eligible.append((field, int(value)))
+    return eligible
+
+
+def _reconcile_dispatched_measures(phase_row: dict) -> tuple[str, int] | None:
+    """Return the ``(field, value)`` of the largest eligible dispatched measure.
+
+    ``None`` when no measure is eligible — the inline-only row, whose single
+    token figure belongs to another population and is rendered on its own.
+    """
+    eligible = _eligible_dispatched_measures(phase_row)
+    if not eligible:
+        return None
+    return max(eligible, key=lambda item: item[1])
+
+
 def _accumulator_path(plan_id: str, phase: str) -> Path:
     return get_plan_dir(plan_id) / ACCUMULATOR_FILE_TEMPLATE.format(phase=phase)
 
@@ -181,7 +274,7 @@ def _write_accumulator(plan_id: str, phase: str, totals: dict[str, int]) -> None
     atomic_write_file(path, '\n'.join(lines) + '\n')
 
 
-def _read_dispatch_boundary_totals(plan_id: str, phase: str) -> int:
+def _read_dispatch_boundary_totals(plan_id: str, phase: str) -> tuple[int, int]:
     """Sum the ``total_tokens`` column across a phase's dispatch-boundaries file.
 
     The dispatch-boundaries file (``work/metrics-dispatch-boundaries-{phase}.toon``)
@@ -190,24 +283,32 @@ def _read_dispatch_boundary_totals(plan_id: str, phase: str) -> int:
     ``cmd_record_dispatch_boundary``). This reader sums the ``total_tokens``
     column — position 2 in the documented row schema
     ``rows[]{timestamp,termination_cause,total_tokens,...}`` — across every data
-    row and returns the total. The two header lines (``plan_id:`` / ``phase:``),
-    the ``rows[]`` schema line, and any malformed / short row are skipped.
+    row. The two header lines (``plan_id:`` / ``phase:``), the ``rows[]`` schema
+    line, and any malformed / short row are skipped.
 
-    Returns 0 when the file is absent, empty, or carries no parseable row — the
-    caller (``cmd_generate``) treats 0 as a clean no-op, so a plan that never
-    recorded a dispatch boundary reconciles to nothing.
+    Returns ``(total, rows_counted)``. The row count is returned alongside the
+    sum because the sum ALONE cannot state its own coverage: a boundary file
+    holding three of a phase's five dispatches sums to a smaller-but-honest-looking
+    figure, and without the count nothing downstream can tell that measure apart
+    from a complete one. ``rows_counted`` is what lets the reconciliation mark the
+    measure PARTIAL and refuse it the maximum.
+
+    Returns ``(0, 0)`` when the file is absent, empty, or carries no parseable
+    row — the caller (``cmd_generate``) treats that as a clean no-op, so a plan
+    that never recorded a dispatch boundary reconciles to nothing.
 
     Args:
         plan_id: Plan identifier.
         phase: Canonical phase name whose boundaries file is summed.
 
     Returns:
-        The summed ``total_tokens`` across all dispatch-boundary rows, or 0.
+        ``(summed total_tokens, number of data rows summed)``.
     """
     path = _dispatch_boundary_path(plan_id, phase)
     if not path.exists():
-        return 0
+        return 0, 0
     total = 0
+    rows = 0
     for line in path.read_text(encoding='utf-8').splitlines():
         stripped = line.strip()
         if not stripped or stripped.startswith(('plan_id:', 'phase:', 'rows[]')):
@@ -219,7 +320,8 @@ def _read_dispatch_boundary_totals(plan_id: str, phase: str) -> int:
             total += int(columns[2].strip())
         except ValueError:
             continue
-    return total
+        rows += 1
+    return total, rows
 
 
 def _resolve_token_field(
@@ -786,23 +888,23 @@ def cmd_generate(args: argparse.Namespace) -> dict:
             continue
         _reconcile_accumulator_into_phase(phases[phase_name], _read_accumulator(plan_id, phase_name))
 
-    # Reconcile each phase's recorded total against the durable
-    # dispatch-boundaries sum. The per-phase accumulator and the
-    # dispatch-boundaries file record the SAME population — every dispatched leaf
-    # appears once in each — so they are reconciled by max(), never summed (a sum
-    # would double-count every leaf). A leaf whose Step-8b
-    # record-dispatch-boundary fired but whose accumulator fold
-    # (accumulate-agent-usage) was missed makes the accumulator UNDER-count
-    # relative to the boundary sum (the #565 evidence); max() recovers that
-    # under-count. The raw total_tokens field is left byte-identical
-    # (explicit-wins — never overwritten); the boundary sum is persisted as a
-    # DISTINCT dispatch_boundary_total field, and the render below prefers the
-    # larger of the two with an explicit "reconciled from dispatch boundaries"
-    # annotation. No-op when the boundary file is absent (sum is 0).
+    # Persist each phase's dispatch-boundary sum AND the number of rows it summed.
+    # Both are DISTINCT fields — the raw total_tokens is left byte-identical
+    # (explicit-wins, never overwritten). The render below picks the largest
+    # ELIGIBLE measure across all three competing measures of the dispatched
+    # population; see the `_reconcile_dispatched_measures` block for the symmetric
+    # rule and the two eligibility conditions. No-op when the boundary file is
+    # absent (no rows, sum 0).
     for phase_name in PHASE_NAMES:
         if phase_name not in phases:
             continue
-        boundary_sum = _read_dispatch_boundary_totals(plan_id, phase_name)
+        boundary_sum, boundary_rows = _read_dispatch_boundary_totals(plan_id, phase_name)
+        if boundary_rows:
+            # The row count persists whenever the file held rows, INCLUDING the
+            # case where they sum to zero: the sum alone cannot state its own
+            # coverage, and a measure that cannot state its coverage is the one
+            # this field exists to make legible.
+            phases[phase_name]['dispatch_boundary_rows_recorded'] = boundary_rows
         if boundary_sum:
             phases[phase_name]['dispatch_boundary_total'] = boundary_sum
 
@@ -970,10 +1072,12 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     idle_values: list[float] = []
     tokens_values: list[int] = []
     tool_uses_values: list[int] = []
-    # Phases whose Tokens cell renders the dispatch-boundary sum (larger of the
-    # same-population pair) rather than the recorded total_tokens; named in the
-    # reconciliation annotation under the breakdown table.
-    reconciled_phases: list[str] = []
+    # Phases whose Tokens cell renders a competing dispatched measure rather than
+    # the recorded total_tokens. Each entry is (phase, winning_field, winning
+    # value, the total_tokens it beat) so the annotation can name WHICH measure
+    # won and by how much, instead of asserting an unqualified "same-population
+    # max" the comparison may not have earned.
+    reconciled_phases: list[tuple[str, str, int, int | None]] = []
     # Phases whose token record is NOT a plain dispatched measurement, collected
     # so the population annotation under the table can name them. `inline` rows
     # render a main-context-window figure in the dispatched column (the enrich
@@ -1011,19 +1115,27 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         if idle_val is not None:
             idle_values.append(idle_val)
 
-        # Same-population reconciliation: prefer the larger of the recorded
-        # total_tokens and the dispatch-boundary sum (never their sum). When the
-        # boundary sum is larger it recovers an accumulator under-count (#565);
-        # the phase is added to reconciled_phases so the annotation footnote
-        # below states the deliberate correction. The larger value is what feeds
-        # the Total aggregation via tokens_values.
+        # Symmetric same-population reconciliation across ALL THREE competing
+        # measures of the dispatched population (never their sum — they count the
+        # same leaves). The largest ELIGIBLE measure wins and feeds the Total via
+        # tokens_values; a partial boundary measure and a cross-population
+        # total_tokens are both ineligible. When the winner is not total_tokens,
+        # the phase is recorded so the annotation below names which measure won.
         raw_tokens = _numeric(phase.get('total_tokens'))
-        boundary_total = _numeric(phase.get('dispatch_boundary_total'))
-        if boundary_total is not None and (raw_tokens is None or boundary_total > raw_tokens):
-            reconciled_phases.append(phase_name)
-            tokens_str = f'{int(boundary_total):,}'
-            tokens_values.append(int(boundary_total))
+        winner = _reconcile_dispatched_measures(phase)
+        if winner is not None:
+            winning_field, winning_value = winner
+            if winning_field != 'total_tokens':
+                reconciled_phases.append(
+                    (phase_name, winning_field, winning_value,
+                     int(raw_tokens) if raw_tokens is not None else None)
+                )
+            tokens_str = f'{winning_value:,}'
+            tokens_values.append(winning_value)
         elif raw_tokens is not None:
+            # No eligible dispatched measure. The row still carries a figure —
+            # the inline phase's main-context total — which renders on its own
+            # and is marked `(inline)` by the population suffix below.
             tokens_str = f'{int(raw_tokens):,}'
             tokens_values.append(int(raw_tokens))
         else:
@@ -1105,9 +1217,16 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     # dispatch-boundary sum instead of the recorded total, stating the deliberate
     # under-count correction (same-population max) inline under the table.
     if reconciled_phases:
+        details = ', '.join(
+            f'{name} → {field} {value:,}'
+            + (f' (> total_tokens {beaten:,})' if beaten is not None else ' (no recorded total_tokens)')
+            for name, field, value, beaten in reconciled_phases
+        )
         lines.append(
-            '> Tokens reconciled from dispatch boundaries (same-population max, '
-            f'recovers accumulator under-count): {", ".join(reconciled_phases)}'
+            '> Tokens reconciled across the competing measures of the dispatched '
+            'population (largest eligible measure wins, never their sum, since all '
+            'three count the same leaves; a partial measure is ineligible): '
+            f'{details}'
         )
         lines.append('')
 
@@ -1180,16 +1299,37 @@ def cmd_generate(args: argparse.Namespace) -> dict:
 
         boundary_total = phase.get('dispatch_boundary_total')
         if boundary_total:
-            if phase_name in reconciled_phases:
-                lines.append(
-                    f'- **Dispatch-boundary total**: {int(boundary_total):,} '
-                    '(reconciled from dispatch boundaries; same-population max with total_tokens)'
+            # The measure states its own coverage on every render. A boundary sum
+            # that covers fewer dispatches than the phase had is a floor, and
+            # saying so is the whole point of carrying rows_recorded — the prior
+            # text asserted "same-population max" unconditionally, which a partial
+            # measure has not earned.
+            rows_recorded = phase.get('dispatch_boundary_rows_recorded')
+            samples = phase.get('subagent_samples')
+            boundary_partial = _boundary_measure_is_partial(phase)
+            if boundary_partial is None:
+                coverage = (
+                    f'{rows_recorded} row(s) recorded, coverage undecidable — the phase '
+                    'carries no subagent_samples to compare against'
+                    if isinstance(rows_recorded, int)
+                    else 'coverage undecidable'
+                )
+            elif boundary_partial:
+                coverage = (
+                    f'PARTIAL: {rows_recorded} of {samples} dispatch(es) recorded, so this '
+                    'measure is a floor and is ineligible for the reconciliation maximum'
                 )
             else:
-                lines.append(
-                    f'- **Dispatch-boundary total**: {int(boundary_total):,} '
-                    '(recorded; not preferred — smaller than total_tokens under same-population max)'
-                )
+                coverage = f'{rows_recorded} of {samples} dispatch(es) recorded — complete'
+            won = any(
+                name == phase_name and field == 'dispatch_boundary_total'
+                for name, field, _v, _b in reconciled_phases
+            )
+            outcome = 'won the reconciliation maximum' if won else 'did not win the maximum'
+            lines.append(
+                f'- **Dispatch-boundary total**: {int(boundary_total):,} '
+                f'(dispatched-subagent population; {coverage}; {outcome})'
+            )
 
         inline_main_context = phase.get('inline_main_context_tokens')
         if inline_main_context:

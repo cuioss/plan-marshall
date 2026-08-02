@@ -1052,16 +1052,24 @@ def _write_dispatch_boundaries(plan_context, plan_id: str, phase: str, totals: l
 
 
 class TestReadDispatchBoundaryTotals:
-    """Direct coverage of the _read_dispatch_boundary_totals reader."""
+    """Direct coverage of the _read_dispatch_boundary_totals reader.
+
+    The reader returns ``(sum, rows_counted)``: the sum alone cannot state its own
+    coverage, and the row count is what lets the reconciliation mark the measure
+    partial and refuse it the maximum.
+    """
 
     def test_sums_total_tokens_column_across_rows(self, plan_context):
         """The reader sums the total_tokens column (position 2) across all data rows."""
         _write_dispatch_boundaries(plan_context, 'db-read-sum', '5-execute', [1_000_000, 1_000_000])
-        assert manage_metrics._read_dispatch_boundary_totals('db-read-sum', '5-execute') == 2_000_000
+        assert manage_metrics._read_dispatch_boundary_totals('db-read-sum', '5-execute') == (
+            2_000_000,
+            2,
+        )
 
     def test_absent_file_returns_zero(self, plan_context):
-        """A missing boundary file reads as 0 (the caller's clean no-op signal)."""
-        assert manage_metrics._read_dispatch_boundary_totals('db-read-absent', '5-execute') == 0
+        """A missing boundary file reads as (0, 0) — the caller's clean no-op signal."""
+        assert manage_metrics._read_dispatch_boundary_totals('db-read-absent', '5-execute') == (0, 0)
 
     def test_header_and_malformed_rows_are_skipped(self, plan_context):
         """Header lines and a short/malformed data row are skipped, not summed or fatal."""
@@ -1077,8 +1085,13 @@ class TestReadDispatchBoundaryTotals:
             '2026-05-08T14:02:11Z,budget_yield,700\n',
             encoding='utf-8',
         )
-        # Only the two well-formed integer rows (500 + 700) contribute.
-        assert manage_metrics._read_dispatch_boundary_totals('db-read-malformed', '5-execute') == 1200
+        # Only the two well-formed integer rows (500 + 700) contribute — and the
+        # row count reports 2, not the 4 lines the file holds, so a malformed row
+        # cannot inflate the measure's apparent coverage.
+        assert manage_metrics._read_dispatch_boundary_totals('db-read-malformed', '5-execute') == (
+            1200,
+            2,
+        )
 
 
 class TestGenerateReconcilesDispatchBoundaries:
@@ -1115,9 +1128,16 @@ class TestGenerateReconcilesDispatchBoundaries:
         # The boundary sum is persisted as a DISTINCT field, never overwriting total_tokens.
         assert 'dispatch_boundary_total: 2000000' in toon
 
+        # The row count persists alongside the sum so the measure's coverage is
+        # readable without re-parsing the boundary file.
+        assert 'dispatch_boundary_rows_recorded: 2' in toon
+
         md = (plan_context.plan_dir_for('db-recon-under') / 'metrics.md').read_text()
         assert '2,000,000' in md
-        assert 'reconciled from dispatch boundaries' in md
+        # The annotation names WHICH measure won and what it beat, rather than
+        # asserting an unqualified "same-population max".
+        assert 'Tokens reconciled across the competing measures' in md
+        assert 'dispatch_boundary_total 2,000,000 (> total_tokens 89,000)' in md
         # The recorded raw total is still visible in the Phase Details section.
         assert '89,000' in md
 
@@ -3187,3 +3207,156 @@ def test_every_declared_population_has_a_bullet_note():
     """
     missing = set(manage_metrics.TOKEN_POPULATIONS) - set(manage_metrics._POPULATION_BULLET_NOTE)
     assert missing == set(), f'populations with no rendered qualifier: {sorted(missing)}'
+
+
+# =============================================================================
+# Symmetric reconciliation across the competing dispatched-population measures
+# =============================================================================
+#
+# Three fields measure the SAME dispatched leaves by three routes. The maximum is
+# applied to all three or to none: comparing only two of them let the third
+# exceed the rendered figure with the report never saying so.
+
+
+def test_subagent_total_wins_when_it_is_the_largest_eligible_measure():
+    """The third measure competes. The observed 4-plan shape: 577,452 > 439,628.
+
+    Before the symmetric rule, `subagent_total_tokens` had no comparison site at
+    all — it could exceed the figure the report rendered and nothing said so.
+    """
+    row = {
+        'total_tokens': 439628,
+        'dispatch_boundary_total': 400000,
+        'subagent_total_tokens': 577452,
+    }
+
+    assert manage_metrics._reconcile_dispatched_measures(row) == (
+        'subagent_total_tokens',
+        577452,
+    )
+
+
+def test_partial_boundary_measure_never_wins_the_maximum():
+    """A boundary sum covering fewer dispatches than the phase had is a floor.
+
+    It is the LARGEST number on the row, so a coverage-blind max would pick it.
+    """
+    row = {
+        'total_tokens': 100000,
+        'dispatch_boundary_total': 900000,
+        'dispatch_boundary_rows_recorded': 2,
+        'subagent_samples': 7,
+    }
+
+    assert manage_metrics._reconcile_dispatched_measures(row) == ('total_tokens', 100000)
+
+
+def test_complete_boundary_measure_does_win_the_maximum():
+    """Matched control: the same shape with full coverage DOES win.
+
+    Without this, the partial-exclusion test above would pass over a rule that
+    simply never lets the boundary measure win.
+    """
+    row = {
+        'total_tokens': 100000,
+        'dispatch_boundary_total': 900000,
+        'dispatch_boundary_rows_recorded': 7,
+        'subagent_samples': 7,
+    }
+
+    assert manage_metrics._reconcile_dispatched_measures(row) == (
+        'dispatch_boundary_total',
+        900000,
+    )
+
+
+def test_inline_total_tokens_is_excluded_from_the_dispatched_maximum():
+    """A main-context figure may not enter a dispatched-population comparison.
+
+    The inline figure is the larger number here, so an unfiltered max would
+    render it as the dispatched total — the exact cross-population mislabel the
+    discriminator exists to prevent.
+    """
+    row = {
+        'total_tokens': 900000,
+        'total_tokens_population': manage_metrics.POPULATION_INLINE,
+        'subagent_total_tokens': 12000,
+    }
+
+    assert manage_metrics._reconcile_dispatched_measures(row) == (
+        'subagent_total_tokens',
+        12000,
+    )
+
+
+def test_inline_only_row_has_no_eligible_dispatched_measure():
+    """A phase that dispatched nothing offers nothing to the dispatched maximum."""
+    row = {
+        'total_tokens': 60000,
+        'total_tokens_population': manage_metrics.POPULATION_INLINE,
+    }
+
+    assert manage_metrics._reconcile_dispatched_measures(row) is None
+
+
+def test_reconciliation_covers_every_declared_measure_field():
+    """The rule is applied to ALL declared measures — never to a subset.
+
+    Derived from `_DISPATCHED_MEASURE_FIELDS`: a fourth measure added to the
+    tuple without being made winnable fails here rather than silently sitting
+    outside the comparison, which is how `subagent_total_tokens` stayed invisible.
+    """
+    fields = manage_metrics._DISPATCHED_MEASURE_FIELDS
+    assert len(fields) >= 3
+
+    for index, field in enumerate(fields):
+        # Make exactly this field the strict maximum among all declared measures.
+        row: dict[str, int] = dict.fromkeys(fields, 1000)
+        row[field] = 9000 + index
+        winner = manage_metrics._reconcile_dispatched_measures(row)
+        assert winner == (field, 9000 + index), f'{field} cannot win the maximum'
+
+
+def test_reconciliation_annotation_names_the_winning_measure(plan_context):
+    """The annotation says WHICH measure won and what it beat.
+
+    The retired string asserted an unqualified "same-population max" without
+    naming the winner, so a reader could not tell which route produced the cell.
+    """
+    plan_id = 'reconcile-annotation'
+    cmd_start_phase(_ns_start_phase(plan_id, '4-plan'))
+    cmd_end_phase(_ns_end_phase(plan_id, '4-plan', total_tokens=439628))
+    data = manage_metrics.read_metrics_raw(plan_id)
+    data['phases']['4-plan']['subagent_total_tokens'] = 577452
+    manage_metrics.write_metrics(plan_id, data)
+
+    cmd_generate(_ns_generate(plan_id))
+    report = (plan_context.plan_dir_for(plan_id) / 'metrics.md').read_text(encoding='utf-8')
+
+    assert 'subagent_total_tokens 577,452' in report
+    assert '(> total_tokens 439,628)' in report
+    plan_row = next(line for line in report.splitlines() if line.startswith('| 4-plan '))
+    assert '577,452' in plan_row
+
+
+def test_boundary_bullet_declares_coverage_and_drops_the_false_parenthetical(plan_context):
+    """The bullet states its coverage instead of claiming an unearned max."""
+    plan_id = 'reconcile-bullet'
+    cmd_start_phase(_ns_start_phase(plan_id, '5-execute'))
+    cmd_end_phase(_ns_end_phase(plan_id, '5-execute', total_tokens=100000))
+    data = manage_metrics.read_metrics_raw(plan_id)
+    data['phases']['5-execute']['dispatch_boundary_total'] = 90000
+    data['phases']['5-execute']['dispatch_boundary_rows_recorded'] = 2
+    data['phases']['5-execute']['subagent_samples'] = 7
+    manage_metrics.write_metrics(plan_id, data)
+
+    cmd_generate(_ns_generate(plan_id))
+    report = (plan_context.plan_dir_for(plan_id) / 'metrics.md').read_text(encoding='utf-8')
+
+    bullet = next(
+        line for line in report.splitlines() if line.startswith('- **Dispatch-boundary total**:')
+    )
+    assert 'PARTIAL: 2 of 7 dispatch(es) recorded' in bullet
+    assert 'did not win the maximum' in bullet
+    # The retired claim must be gone from the whole report, not just this bullet.
+    assert 'same-population max' not in report
