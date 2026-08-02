@@ -43,6 +43,7 @@ Beyond the `implements:` declaration, each finalize-step doc carries the followi
 | `head_dependent` | bool | Conditional | `true` means the step's verdict is computed against a specific worktree HEAD, so a recorded `done` is only valid for the SHA it was computed against. Such a step MUST persist `--head-at-completion {sha}` on its terminal `mark-step-done` call, and the dispatcher's re-entry check re-fires it when HEAD has advanced (a loop-back commit, a force-push, or a rebase). The governing discriminator, applied verbatim so classification is reproducible: **"would this verdict change if HEAD changed?"** Declaring this field is **mandatory** for a step matching either of two shapes — (1) it records a pass/fail verdict over tracked source or over the remote state of that source, or (2) it is a settle-stage step whose edits land directly in the worktree (its edits were computed against the HEAD it read, so a HEAD advance supersedes them) — and optional (defaulting to `false`) otherwise. A step matching **neither** shape — one that records *an action performed* (rebase, push, PR created, archive written) and leaves no edits of its own — has no verdict to go stale and is not head-dependent. |
 | `advances_main_via_rebase` | bool | Conditional | `true` means a successful non-noop run of the step replays the worktree's history onto a newly-fetched base tip, advancing it. This is the fact that arms the dispatcher's **post-rebase step-doc re-resolution contract** (see [phase-6-finalize/SKILL.md](../../phase-6-finalize/SKILL.md) § "Post-rebase step-doc re-resolution contract"): every subsequent step's authoritative doc is re-read from the just-rebased worktree at dispatch time rather than trusting the session-start-loaded copy. Declaring this field is **mandatory** for any step that performs a rebase or merge capable of advancing the worktree's history, and optional (defaulting to `false`) otherwise. |
 | `records_facts` | list[str] | Conditional | The structured fact keys the step's terminal `mark-step-done` call sites persist **between them** via `--fact KEY=VALUE` — a step-level declaration over a multi-branch step, NOT a per-branch mandate (see [Structured step facts](#structured-step-facts-records_facts) for the reconciliation rule that fixes its exact per-branch force). The governing discriminator, applied verbatim so classification is reproducible: **"what question would a retrospective or audit ask about this step that its prose summary cannot answer?"** Every declared key MUST be justified by such a consumer question, so the obligation set is derived per step rather than imposed as a uniform template. Declaring this field is **mandatory** for a step that has at least one such consumer question — including, unconditionally, any step matching the `work_performed` trigger below — and the field stays **absent** for a step whose action is fully described by its `outcome` (absence means "no obligation", not "obligation not yet written"). |
+| `post_run_review` | bool | Conditional | `true` means the step looks back over the finished run and reports on it. The governing discriminator is **two predicates, both of which must hold**, applied verbatim so classification is reproducible without re-deriving it: **P1 — backward-looking output.** The step's output is a *record, assessment, or derived artifact about the just-finished run*. A step that performs or gates part of the run (a rebase, a lint gate, a push, a merge, a corpus edit, an archival move) fails P1 even when it reads the run's history as input. **P2 — post-merge evidence dependency.** At least one input the step reads is only determined **at or after** the merge gate `default:branch-cleanup` — the merge outcome, the post-merge base-branch state, the branch-cleanup re-review barrier's bot comments, or the triage dispositions that barrier produces. `post_run_review := P1 ∧ P2`. **Mutual exclusion with `mutates_source` is a consequence of P2, not a separate axiom:** a step that reads post-merge-determined evidence necessarily runs once the feature branch is already gone, so it cannot produce a pushable source edit — therefore no step may declare both `post_run_review: true` and `mutates_source: true`. Given that exclusion, such a step MUST be ordered **after** the dynamically-resolved merge gate (`default:branch-cleanup`), and MUST declare `mutates_source: false` **explicitly** rather than relying on absence — an omitted declaration at or after the merge gate is the compose-time `mutates_source_declaration_missing` error, whose rule is owned by the `mutates-source-step-post-merge-order` plugin-doctor analyzer and is not restated here. A step that derives an architecture hint but is ordered post-merge routes it through the discover-after-merge follow-up-artifact path in [phase-6-finalize/standards/source-edit-pushability.md](../../phase-6-finalize/standards/source-edit-pushability.md). Declaring this field is **mandatory** for any step satisfying `P1 ∧ P2`, and optional (defaulting to `false`) otherwise. |
 
 **Consuming `head_dependent` — per-step call sites vs whole-set call sites.** The fact is declared per step, and a consumer MUST consume it at the granularity its question actually has:
 
@@ -52,6 +53,8 @@ Beyond the `implements:` declaration, each finalize-step doc carries the followi
 | The derivation test guard | **whole-set** | Materialises the full head-dependent set through `find_implementors()` and asserts over it. Eagerness is the point here: the guard exists to enumerate every implementor, so a step added later is covered automatically. |
 
 A per-step call site that materialises the whole set on every loop iteration is a defect, not an implementation detail — it widens a lazy contract into an eager one for no gain.
+
+**`post_run_review` is consumed at the same two granularities**, under the table above rather than a second contract of its own. The dispatcher's effort-role resolution reads the ONE step it is about to dispatch to decide whether that step resolves under the `post-run-review` sub-key — a per-step membership test, never a whole-set materialisation. The derivation guard materialises the full `post_run_review` set through `find_implementors()` and asserts the ordering and mutual-exclusion invariants over it. Deriving the role key from the declared fact is what keeps the ordering obligation and the dispatch sub-key on one source instead of two hand-maintained step lists.
 
 ### Structured step facts (`records_facts`)
 
@@ -186,35 +189,35 @@ There is **no parallel glob and no second discovery structure**. The `find_imple
 
 ## Current Implementations
 
-Every step doc that declares the finalize-step interface. Built-in steps live under `phase-6-finalize/{workflow,standards}/`; bundle steps ship under their bundle's `skills/`; project steps are meta-project-local under `.claude/skills/`.
+Every step doc that declares the finalize-step interface. Built-in steps live under `phase-6-finalize/{workflow,standards}/`; bundle steps ship under their bundle's `skills/`; project steps are meta-project-local under `.claude/skills/`. Rows are listed in the discovery order `manage-config list-finalize-steps` emits (ascending `order`, then `name`), so the table diffs against that output row for row.
 
 | Name | Source | Order | default_on | presets |
 |------|--------|-------|:----------:|---------|
 | `default:finalize-step-sync-baseline` | built-in | 3 | true | `[full]` |
 | `project:finalize-step-lessons-housekeeping` | project | 4 | false | `[]` |
 | `default:pre-push-quality-gate` | built-in | 5 | true | `[full]` |
+| `project:finalize-step-plugin-doctor` | project | 6 | false | `[]` |
+| `default:pre-submission-self-review` | built-in | 7 | true | `[]` |
 | `default:finalize-step-simplify` | built-in | 8 | true | `[full]` |
+| `default:architecture-refresh` | built-in | 9 | true | `[]` |
 | `default:finalize-step-security-audit` | built-in | 9 | true | `[]` |
 | `default:push` | built-in | 10 | true | `[local, standard, full]` |
 | `default:create-pr` | built-in | 20 | true | `[standard, full]` |
 | `project:finalize-step-era-stamp-fill` | project | 21 | false | `[]` |
 | `default:ci-verify` | built-in | 22 | true | `[standard, full]` |
-| `default:architecture-refresh` | built-in | 9 | true | `[]` |
+| `plan-marshall:automatic-review` | bundle | 30 | true | `[standard, full]` |
 | `default:sonar-roundtrip` | built-in | 40 | true | `[full]` |
-| `default:lessons-capture` | built-in | 60 | true | `[local, standard, full]` |
-| `default:finalize-step-preference-emitter` | built-in | 61 | true | `[]` |
 | `default:adr-propose` | built-in | 62 | false | `[]` |
-| `default:pre-submission-self-review` | built-in | 7 | true | `[]` |
 | `default:branch-cleanup` | built-in | 70 | true | `[local, standard, full]` |
+| `project:finalize-step-deploy-target` | project | 81 | false | `[]` |
+| `project:finalize-step-sync-plugin-cache` | project | 85 | false | `[]` |
+| `project:finalize-step-review-retrospective` | project | 990 | false | `[]` |
+| `default:lessons-capture` | built-in | 991 | true | `[local, standard, full]` |
+| `default:finalize-step-preference-emitter` | built-in | 992 | true | `[]` |
+| `plan-marshall:plan-retrospective` | bundle-optional | 995 | false | `[full]` |
 | `default:record-metrics` | built-in | 998 | true | `[local, standard, full]` |
 | `default:finalize-step-print-phase-breakdown` | built-in | 999 | true | `[]` |
 | `default:archive-plan` | built-in | 1000 | true | `[local, standard, full]` |
-| `plan-marshall:automatic-review` | bundle | 30 | true | `[standard, full]` |
-| `plan-marshall:plan-retrospective` | bundle-optional | 995 | false | `[full]` |
-| `project:finalize-step-plugin-doctor` | project | 6 | false | `[]` |
-| `project:finalize-step-review-retrospective` | project | 50 | false | `[]` |
-| `project:finalize-step-deploy-target` | project | 81 | false | `[]` |
-| `project:finalize-step-sync-plugin-cache` | project | 85 | false | `[]` |
 
 Project steps carry `default_on: false` and `presets: []` because they are hand-registered in the meta-project's `phase-6-finalize.steps` array (presets ship to consumer projects, which do not have the meta-project's project-local finalize-step skills). The `plan-marshall:automatic-review` step is a default-on bundle step (`default_on: true`, member of the `standard` and `full` presets). The bundle-optional `plan-marshall:plan-retrospective` step is opt-in (`default_on: false`) and a member of the `full` preset only.
 

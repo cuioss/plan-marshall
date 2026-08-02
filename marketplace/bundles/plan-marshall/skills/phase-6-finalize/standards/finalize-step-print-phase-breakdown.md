@@ -6,6 +6,7 @@ name: default:finalize-step-print-phase-breakdown
 description: Optional finalize-summary supplement that captures the Phase Breakdown table from metrics.md, writes it directly to work/phase-breakdown-output.txt, and lets the renderer append it after the per-step [OK] list
 order: 999
 mutates_source: false
+post_run_review: true
 default_on: true
 presets: []
 implements: plan-marshall:extension-api/standards/ext-point-finalize-step

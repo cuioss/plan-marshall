@@ -4,9 +4,10 @@ lane:
   cost_size: M
 name: default:lessons-capture
 description: Capture lessons from triage findings and PR-review escalations (skipped when qgate_findings=0, pr_comments_promoted=0, and script_failure_clusters=0)
-order: 60
+order: 991
 default_on: true
-mutates_source: true
+mutates_source: false
+post_run_review: true
 presets:
   - local
   - standard
@@ -20,7 +21,7 @@ implements:
 
 Pure executor for the `lessons-capture` finalize step. Records lessons learned from the implementation. Advisory only — does not block.
 
-**Source mutation (`mutates_source: true`)**: Branch B3 (facts routed to architecture hints) is the mutating branch — each `architecture enrich` call writes the per-module `enriched.json` under the source tree, so the dispatcher's post-step porcelain check observes a dirty tree, commits the write with the step's commit-message fallback, and — because lessons-capture runs after `create-pr` — triggers the item-5f Post-PR re-push so the PR head advances inside the normal settle band instead of at the merge gate. Pure Branch A/B/B2 runs (lesson files live under `.plan/`, not the source tree) produce an empty porcelain and are the item-5f case (c) no-op.
+**Post-run review (`post_run_review: true`, `mutates_source: false`)**: this step reads the triage findings and PR-review escalations the merge gate's re-review barrier produces, so its evidence is only complete once `default:branch-cleanup` has run — `order: 991` places it after that gate. Being post-merge-ordered, the step writes NO tracked source: every branch writes under `.plan/` only (lesson files, inbox payloads), so the dispatcher's post-step porcelain check is always empty and the step is uniformly the item-5f case (c) no-op. Branch B3's architecture hints are NOT written in the worktree — an `architecture enrich` write post-merge would land as an uncommitted diff on `main`, the exact defect [`../standards/source-edit-pushability.md`](../standards/source-edit-pushability.md) exists to prevent — so B3 names each owed hint in a follow-up artifact via that document's discover-after-merge route instead.
 
 ## Exit-code convention for `manage-*` script calls
 
@@ -53,7 +54,7 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-
 
 `manage-plan-documents`' only top-level choices are `{list-types, request}` — the request read is the `request` noun's `read` sub-verb, NOT a top-level `read` (and there is no `references` noun).
 
-This step runs as a Task dispatch under the `post-run-review` sub-key (resolved via `manage-config effort resolve-target --phase phase-6-finalize --role post-run-review`) with a 5-minute (300 s) per-agent timeout budget enforced by the SKILL.md Step 3 dispatch loop. The dispatcher emits the standardized `[DISPATCH]` work-log line at the call site — see [`../../ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) for the canonical emission contract. The `post-run-review` sub-key bundles lessons-capture with retrospective — both workflows look back at the full plan history and ride the same level. On timeout the dispatcher records `outcome=failed` with `display_detail="timed out after 300s"` and continues — lessons capture is advisory and never blocks the rest of the pipeline.
+This step runs as a Task dispatch under the `post-run-review` sub-key — the dispatcher derives that sub-key from this doc's `post_run_review: true` frontmatter fact rather than from a hand-maintained step list, so the ordering obligation and the dispatch role read from one source (resolved via `manage-config effort resolve-target --phase phase-6-finalize --role post-run-review`) — with a 5-minute (300 s) per-agent timeout budget enforced by the SKILL.md Step 3 dispatch loop. The dispatcher emits the standardized `[DISPATCH]` work-log line at the call site — see [`../../ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) for the canonical emission contract. The `post-run-review` sub-key bundles lessons-capture with retrospective — both workflows look back at the full plan history and ride the same level. On timeout the dispatcher records `outcome=failed` with `display_detail="timed out after 300s"` and continues — lessons capture is advisory and never blocks the rest of the pipeline.
 
 ### `[DISPATCH]` log line (emitted by the dispatcher)
 
@@ -72,7 +73,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 Branch on the `orchestrated` runtime input before anything else. The branch supersedes the ACTIONABLE/KNOWLEDGE partition and the three-gate lesson-creation policy for the orchestrated case.
 
 - **`orchestrated: false`** — every existing path below is unchanged: the ACTIONABLE/KNOWLEDGE partition, the three-gate policy, the three-step path-allocate `manage-lessons` flow, and Branches A / B / B2 / B3. Continue at "The dispatcher-level Signal Gate…" below.
-- **`orchestrated: true`** — make **zero** `manage-lessons add` calls and **zero** `architecture enrich` calls for lesson-shaped output, and do NOT run the ACTIONABLE/KNOWLEDGE partition or the three-gate policy. Classification is deferred to the orchestrator-side pickup, because only the orchestrator holds the cross-plan context that judgement needs. Follow the message-emission contract immediately below, then record **Branch B4**.
+- **`orchestrated: true`** — make **zero** `manage-lessons add` calls for lesson-shaped output, and do NOT run the ACTIONABLE/KNOWLEDGE partition or the three-gate policy. Classification is deferred to the orchestrator-side pickup, because only the orchestrator holds the cross-plan context that judgement needs. Follow the message-emission contract immediately below, then record **Branch B4**. (No branch of this body calls `architecture enrich` — see the KNOWLEDGE routing section below for why the hints store is unreachable from a post-merge-ordered step.)
 
 #### Orchestrated emission contract
 
@@ -95,7 +96,7 @@ python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator
 
 Staging the body with `Write` first is the same shell-safety reason the lesson three-step flow exists — the anti-pattern list below (inline `python -c`, `$(printf …)`, `#`-bearing heredocs) applies verbatim to inbox payload bodies. See [`../../marshall-orchestrator/standards/inbox-envelope.md`](../../marshall-orchestrator/standards/inbox-envelope.md) for the envelope schema, the `kind` enum, and the header-field table; do not restate them here.
 
-Branch B4 writes only under `.plan/`, so the dispatcher's post-step porcelain check observes an empty tree — the `mutates_source: true` frontmatter fact is unchanged and B4 is an item-5f case-(c) no-op, exactly like Branch A.
+Branch B4 writes only under `.plan/`, so the dispatcher's post-step porcelain check observes an empty tree — matching the step's `mutates_source: false` fact and making B4 an item-5f case-(c) no-op, exactly like every other branch.
 
 ### Non-orchestrated execution
 
@@ -115,28 +116,22 @@ Skill: plan-marshall:manage-lessons
 Before running the lesson-creation policy gates, partition each candidate signal into one of two shapes. Only ACTIONABLE signals proceed to the lesson-creation gates; KNOWLEDGE signals route to the architecture-hints store instead and do NOT also create a lesson.
 
 - **ACTIONABLE** — a defect plus a corrective action (a recurrence with a "do X instead of Y" rule). These are the genuine lessons: keep the `manage-lessons add` path below.
-- **KNOWLEDGE** — a durable, non-actionable project fact with no defect + corrective-action shape (an implementation gotcha, a learned observation about how the codebase behaves, an established convention). A KNOWLEDGE fact is NOT a lesson — route it to the per-module architecture-hints store via `architecture enrich`.
+- **KNOWLEDGE** — a durable, non-actionable project fact with no defect + corrective-action shape (an implementation gotcha, a learned observation about how the codebase behaves, an established convention). A KNOWLEDGE fact is NOT a lesson — its destination is the per-module architecture-hints store.
 
-For each KNOWLEDGE signal, call the deterministic enrich verb that matches the fact's shape (each verb takes its own text flag — see `manage-architecture` SKILL.md § "enrich tip / insight / best-practice"):
+**The hints store is unreachable from here, so the hint is OWED, not written.** This step is `post_run_review: true` and runs after the merge gate, where an `architecture enrich` call would write the per-module `enriched.json` — tracked source — onto `main` as an uncommitted diff that can never ride the plan's PR. Do **not** call `architecture enrich` from this body. Instead, take the discover-after-merge route in [`../standards/source-edit-pushability.md`](../standards/source-edit-pushability.md) § "The discover-after-merge rule": name each owed hint in an explicit follow-up artifact so the enrichment is scheduled and visible rather than lost.
 
-```bash
-# implementation gotcha
-python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture enrich tip \
-  --module {module} --tip "{the durable fact}"
+File the follow-up artifact through the SAME three-step path-allocate flow documented below (`add` → Write → `set-body`), with:
 
-# learned observation
-python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture enrich insight \
-  --module {module} --insight "{the durable fact}"
+- `--component "{bundle}:{skill}"` — the component that owns the module the hint belongs to.
+- `--category improvement`.
+- `--title "Owed architecture hint: {module} — {one-line fact}"`.
 
-# established convention
-python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture enrich best-practice \
-  --module {module} --practice "{the durable fact}"
-```
+The body MUST name, per owed hint: the target `--module`, the enrich verb the fact's shape calls for (`tip` for an implementation gotcha, `insight` for a learned observation, `best-practice` for an established convention — see `manage-architecture` SKILL.md § "enrich tip / insight / best-practice"), and the verbatim hint text, so the owed `architecture enrich` call is reconstructible without re-deriving the fact.
 
-- **Module selection**: use `--module default` when the fact is cross-cutting (not specific to one bundle/module — a project-wide convention or root-level fact); use the owning module otherwise. The `default` module is the first-class home for cross-cutting project knowledge.
-- **No dual-write (breaking)**: a KNOWLEDGE signal routed to architecture does NOT also create a lesson. Routing to hints and filing a lesson are mutually exclusive per signal — this is the whole point of the partition.
+- **Module selection**: use `default` when the fact is cross-cutting (not specific to one bundle/module — a project-wide convention or root-level fact); use the owning module otherwise. The `default` module is the first-class home for cross-cutting project knowledge.
+- **The follow-up artifact is not a reclassification.** Recording an owed hint does not turn a KNOWLEDGE fact into an ACTIONABLE lesson: the artifact records *an enrichment this run could not perform*, and the fact's destination is still the hints store. The no-dual-write rule is unchanged in substance — a KNOWLEDGE signal produces exactly ONE record (the owed-hint artifact), never both an owed-hint artifact and a defect lesson for the same signal.
 
-When every candidate signal is KNOWLEDGE (only enrich calls were made, no lesson allocated), record the outcome via Branch B3 in the Mark-Step-Complete section below.
+When every candidate signal is KNOWLEDGE (only owed-hint artifacts were filed, no defect lesson allocated), record the outcome via Branch B3 in the Mark-Step-Complete section below.
 
 ### Run the lesson-creation policy gates first
 
@@ -198,7 +193,7 @@ Before returning control to the finalize pipeline, record that this step ran on 
 
 Pass a `--display-detail` value alongside `--outcome done` so the output-template renderer can surface the capture outcome. The payload differs by branch:
 
-**Branch A — one or more lessons recorded**: `{N}` is the count of `manage-lessons add` calls made in this step. `{lesson_ids}` is the comma-joined list of lesson identifiers returned by those calls (e.g. `lesson-2026-04-17-005,lesson-2026-04-17-006`).
+**Branch A — one or more lessons recorded**: `{N}` is the count of ACTIONABLE **defect lessons** allocated in this step — owed-hint follow-up artifacts (Branch B3) are counted separately and never fold into this number. `{lesson_ids}` is the comma-joined list of lesson identifiers returned by those calls (e.g. `lesson-2026-04-17-005,lesson-2026-04-17-006`).
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
@@ -222,12 +217,12 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
   --display-detail "folded into existing lesson/plan, no new lesson"
 ```
 
-**Branch B3 — facts routed to architecture hints, no new lesson recorded**: every candidate signal was KNOWLEDGE and was routed to the architecture-hints store via `architecture enrich`; no lesson was allocated. `{N}` is the count of `architecture enrich` calls made in this step.
+**Branch B3 — owed architecture hints filed, no defect lesson recorded**: every candidate signal was KNOWLEDGE and was named in an owed-hint follow-up artifact (the hints store is unreachable from this post-merge-ordered step); no defect lesson was allocated. `{N}` is the count of owed-hint artifacts filed in this step.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step lessons-capture --outcome done \
-  --display-detail "{N} fact(s) routed to architecture"
+  --display-detail "{N} owed architecture hint(s) filed"
 ```
 
 **Branch B4 — routed to epic inbox, no global-store write**: the `orchestrated: true` branch fired; every emitted item was written as one inbox message and zero `manage-lessons add` / `architecture enrich` calls were made. `{N}` is the count of `orchestrator inbox write` calls made in this step (always ≥ 1 — the `kind: landing` message is unconditional).
@@ -244,10 +239,10 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 
 ```toon
 status: success | error
-display_detail: "<{N} lessons recorded or `no lessons recorded` or `{N} fact(s) routed to architecture` or `{N} inbox message(s) -> epic {epic}`>"
+display_detail: "<{N} lessons recorded or `no lessons recorded` or `{N} owed architecture hint(s) filed` or `{N} inbox message(s) -> epic {epic}`>"
 lessons_recorded: {N}
-facts_routed: {N}
+owed_hints_filed: {N}
 inbox_messages_written: {N}
 ```
 
-`lessons_recorded` is the count of `manage-lessons add` calls made in this step (Branch A); it is `0` for Branches B, B2, B3, and B4. `facts_routed` is the count of `architecture enrich` calls made in this step (Branch B3); it is `0` when no KNOWLEDGE signals were processed and `0` on B4. `inbox_messages_written` is the count of `orchestrator inbox write` calls made in this step (Branch B4); it is `0` on every non-orchestrated branch and always `≥ 1` on B4. Downstream consumers MUST check `facts_routed` and `inbox_messages_written` to distinguish the three zero-lesson outcomes: B3 (all-KNOWLEDGE) sets a non-zero `facts_routed`, B4 (routed to the epic inbox) sets a non-zero `inbox_messages_written`, and B/B2 (nothing lesson-worthy) leaves both `0` — all three set `lessons_recorded: 0`. The `display_detail` value (≤80 chars, ASCII, no trailing period) is forwarded verbatim via `mark-step-done --display-detail` above.
+`lessons_recorded` is the count of defect lessons allocated in this step (Branch A); it is `0` for Branches B, B2, B3, and B4. `owed_hints_filed` is the count of owed-architecture-hint follow-up artifacts filed in this step (Branch B3); it is `0` when no KNOWLEDGE signals were processed and `0` on B4. `inbox_messages_written` is the count of `orchestrator inbox write` calls made in this step (Branch B4); it is `0` on every non-orchestrated branch and always `≥ 1` on B4. Downstream consumers MUST check `owed_hints_filed` and `inbox_messages_written` to distinguish the three zero-lesson outcomes: B3 (all-KNOWLEDGE) sets a non-zero `owed_hints_filed`, B4 (routed to the epic inbox) sets a non-zero `inbox_messages_written`, and B/B2 (nothing lesson-worthy) leaves both `0` — all three set `lessons_recorded: 0`. The `display_detail` value (≤80 chars, ASCII, no trailing period) is forwarded verbatim via `mark-step-done --display-detail` above.

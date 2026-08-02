@@ -8,9 +8,11 @@ description: Finalize-phase wrapper that compares the PR's automated and human r
 user-invocable: false
 mode: workflow
 allowed-tools: Bash, Read, Write
-order: 50
+order: 990
 default_on: false
 presets: []
+mutates_source: false
+post_run_review: true
 implements: plan-marshall:extension-api/standards/ext-point-finalize-step
 ---
 
@@ -58,10 +60,25 @@ list. Accepts the standard finalize-step arguments:
 - `--iteration` — finalize iteration counter (accepted for contract compliance,
   no effect)
 
-MUST be ordered (via its `order: 50` frontmatter) **after**
-`default:automated-review` (30, which stages + resolves the pr-comment findings
-this step consumes) and `default:sonar-roundtrip` (40), and **before**
-`default:lessons-capture` (60).
+MUST be ordered (via its `order: 990` frontmatter) **after**
+`plan-marshall:automatic-review` (30, which stages the pr-comment findings this
+step consumes) and `default:sonar-roundtrip` (40), and **before**
+`default:lessons-capture` (991).
+
+The lower bound is stronger than those two producers alone. This step declares
+`post_run_review: true`, so it MUST also be ordered after the merge gate
+`default:branch-cleanup` (70): the gate hosts the pre-merge review-completeness
+barrier and the bot re-review wait, which keep ADDING to the same `pr-comment`
+findings store this step reads. Ordered ahead of the gate, the step would compare
+reviewers over a store the gate had not finished filling and report a confident
+verdict about evidence that did not exist yet. `order: 990` is that placement; the
+governing contract is
+[`marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/source-edit-pushability.md`](../../../marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/source-edit-pushability.md)
+§ "The reciprocal", and the membership discriminator is owned by
+[`ext-point-finalize-step.md`](../../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-finalize-step.md)
+§ "Implementor Frontmatter". Being post-merge-ordered, the step writes no tracked
+source and declares `mutates_source: false` explicitly — the explicit declaration
+is mandatory for any step ordered at or after the merge gate.
 
 ## Reviewer comment-structure asymmetry
 

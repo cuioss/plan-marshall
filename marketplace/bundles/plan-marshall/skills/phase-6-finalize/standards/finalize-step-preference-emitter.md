@@ -3,11 +3,12 @@ lane:
   class: core
   cost_size: XS
 name: default:finalize-step-preference-emitter
-description: Per-plan preference-learning sweep — promotes recurring user gate-dispositions in the just-finished plan to durable architecture hints via the shared disposition-to-hint contract
-order: 61
+description: Per-plan preference-learning sweep — generalizes recurring user gate-dispositions in the just-finished plan into owed durable architecture hints via the shared disposition-to-hint contract
+order: 992
 default_on: true
 presets: []
-mutates_source: true
+mutates_source: false
+post_run_review: true
 implements: plan-marshall:extension-api/standards/ext-point-finalize-step
 configurable:
   - key: preference_min_recurrence
@@ -21,16 +22,18 @@ Consumer-available per-plan preference-learning pass for the
 `default:finalize-step-preference-emitter` finalize step. It reads the
 just-finished plan's finding dispositions, aggregates
 `(module, finding-class, disposition)` recurrences WITHIN this single plan,
-threshold-gates them via the `preference_min_recurrence` config knob, and routes
-the promoted patterns to `architecture enrich` — the SAME sink the meta-only
-cross-plan auditor uses, with no new store. This is the cheap per-plan path that
-ships to consumer projects via the standard finalize-step discovery mechanism;
-the richer corpus-wide path is the meta-only `audit-archived-plan-retrospectives`
-auditor (Step 4c).
+threshold-gates them via the `preference_min_recurrence` config knob, and names
+the cleared patterns as owed `architecture enrich` hints — the SAME sink the
+meta-only cross-plan auditor uses, with no new store. Because the step is
+`post_run_review: true` and runs after the merge gate, it files those hints as a
+follow-up artifact rather than writing them (see Step 4). This is the cheap
+per-plan path that ships to consumer projects via the standard finalize-step
+discovery mechanism; the richer corpus-wide path is the meta-only
+`audit-archived-plan-retrospectives` auditor (Step 4c).
 
 Domain-agnostic by construction — it reads dispositions through `manage-findings`
-and routes through `architecture enrich`, with no language- or bundle-specific
-logic.
+and generalizes them through the shared disposition-to-hint contract, with no
+language- or bundle-specific logic.
 
 ## Exit-code convention for `manage-*` script calls
 
@@ -40,9 +43,10 @@ contract unless a step explicitly states otherwise:
 - **`exit_code == 0`**: parse the returned TOON and use the value as the step describes.
 - **`exit_code != 0`**: STOP and return an error TOON to the orchestrator carrying the script's stderr verbatim. Non-zero exits include `argparse_rejection` (exit 2) — silent swallowing of `wrong_parameters` rejections is the prohibited anti-pattern; "log and continue" is equally forbidden.
 
-This step is **non-fatal**: a failure to read dispositions or to enrich never
-blocks finalize (see Error Handling). The exit-code contract above applies to the
-diagnostic reads; the enrich routing step degrades gracefully instead.
+This step is **non-fatal**: a failure to read dispositions or to file the owed-hint
+artifact never blocks finalize (see Error Handling). The exit-code contract above
+applies to the diagnostic reads; the artifact-filing step degrades gracefully
+instead.
 
 This document carries NO step-activation logic. Activation is controlled by the
 dispatcher in `phase-6-finalize/SKILL.md` Step 3, driven solely by presence of
@@ -57,25 +61,37 @@ dispatcher prepends `default:` when looking up the dispatch-table row).
 
 ## Ordering rationale
 
-`order: 61` places this step in the **settle band**: AFTER `lessons-capture`
-(order 60), so the plan's finding dispositions are settled before they are read,
-and BEFORE the merge gate `branch-cleanup` (order 70). The placement is
-load-bearing: this step promotes recurring dispositions into `architecture enrich`
-hints, which mutate tracked source, so it MUST run while the feature branch is
-still open — before the branch is squash-merged, after which the edit can no
-longer ride the PR. The step declares `mutates_source: true` accordingly; the
-governing constraint is
-[source-edit-pushability.md](source-edit-pushability.md) (the pre-merge
-source-edit pushability contract), cross-referenced here rather than restated.
-
-An `order: < 10` slot is explicitly REJECTED: that early there is nothing to
-promote, because the finding dispositions this step reads and generalizes do not
-yet exist at the start of finalize — they are only settled once `lessons-capture`
-(60) has run. The step is therefore floored at the settle band, not hoisted to
-the front of the pipeline. It still runs WELL BEFORE `record-metrics` (998) and
-`archive-plan` (1000) — the latter moves the plan directory out from under the
+This step is `post_run_review: true`: its output is a derived assessment of the
+just-finished run (P1), and the dispositions it generalizes include those triaged
+at the merge gate's re-review barrier, which are only determined at or after
+`branch-cleanup` (P2). `order: 992` therefore places it AFTER that merge gate,
+and — preserving the dependency the settle-band placement encoded — AFTER
+`lessons-capture` (991), so the plan's finding dispositions are settled before
+they are read. It still runs BEFORE `record-metrics` (998) and `archive-plan`
+(1000) — the latter moves the plan directory out from under the
 `manage-findings` read — so the plan's findings remain readable in place when it
-runs.
+runs. The governing constraint is
+[source-edit-pushability.md](source-edit-pushability.md), cross-referenced here
+rather than restated.
+
+An early (`order: < 10`) slot is explicitly REJECTED for the same reason it
+always was: that early there is nothing to promote, because the finding
+dispositions this step reads do not yet exist at the start of finalize.
+
+### Why the post-merge move does not revert `#990`
+
+`#990` moved this step from `order: 80` to the pre-merge settle band, and that
+placement was **correct for a source-mutating step**: the step then wrote tracked
+source (the per-module `enriched.json` under `.plan/project-architecture/`, via
+`architecture enrich`), and a post-merge write of tracked source lands as an
+uncommitted diff on `main` that can never ride the plan's own PR. Read the
+renumber to 992 as a package with the `mutates_source: false` flip below, never
+as a bare relocation: the source mutation is REMOVED, not relocated. With no
+source write left, the failure mode `#990` closed cannot recur — the owed
+enrichment is named in an explicit follow-up artifact instead of landing dirty on
+`main`. A future change that reintroduces an in-worktree `architecture enrich`
+call here without also moving the step back before the merge gate would
+reproduce `#990`'s defect exactly.
 
 ## Workflow
 
@@ -117,20 +133,49 @@ Read `params.preference_min_recurrence` from the returned TOON (default `2`).
 Keep only the tuples whose within-plan recurrence count is at least
 `preference_min_recurrence`. When NO tuple clears the threshold (the common
 case), skip-clean: mark the step done with a `no patterns promoted` detail and
-return — no enrich call, no error.
+return — no artifact filed, no error.
 
-### Step 4: Generalize and route the cleared patterns
+### Step 4: Generalize the cleared patterns and file the owed hints
 
 For each cleared tuple, generalize the disposition recurrence into a hint string
-and route it to `architecture enrich`, following the shared contract in
+following the shared contract in
 [`disposition-to-hint-routing.md`](disposition-to-hint-routing.md) for the
-generalization rule, the routing targets
+generalization rule, the intended routing targets
 (`architecture enrich best-practice --module {module}` for module-attributed
 patterns, `architecture enrich insight --module default` for cross-cutting
 patterns), and the "generalize, do not log raw dispositions" privacy invariant.
 This step MUST NOT restate those rules inline — the shared contract is the single
 source of truth (the meta-only cross-plan auditor's Step 4c references the same
 contract).
+
+**Do NOT call `architecture enrich` from this step.** It is `post_run_review: true`
+and runs after the merge gate, where the enrich write would put tracked source
+(`.plan/project-architecture/{module}/enriched.json`) on `main` as an uncommitted
+diff — the `#990` defect described in the Ordering rationale above. Take the
+discover-after-merge route in
+[source-edit-pushability.md](source-edit-pushability.md) § "The discover-after-merge
+rule" instead: file ONE follow-up artifact naming every owed hint, via the
+canonical `manage-lessons` three-step path-allocate flow (see
+[`../workflow/lessons-capture.md`](../workflow/lessons-capture.md) § "Gate 3 — Create"
+for the flow; do not restate it here):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons add \
+  --component "plan-marshall:phase-6-finalize" --category improvement \
+  --title "Owed architecture hints: preference-emitter, plan {plan_id}"
+```
+
+Write the body with the `Write` tool, then apply it with `manage-lessons set-body
+--lesson-id {id} --file {path}`. The body MUST name, per owed hint: the target
+`--module`, the enrich verb the shared contract selects for that pattern
+(`best-practice` or `insight`), and the verbatim generalized hint text — so the
+owed `architecture enrich` call is reconstructible without re-deriving the pattern
+from dispositions that `archive-plan` is about to move.
+
+The pairing with `lessons-capture` is deliberate and symmetric: both steps write
+the same `architecture enrich` sink, both are `post_run_review: true`, and both
+take this same route. Changing one without the other leaves the pair
+half-resolved.
 
 ### Step 5: Mark step done
 
@@ -158,7 +203,7 @@ no-ops) and skip-clean when the plan has zero promotable dispositions.
 |----------|--------|
 | No dispositions found / nothing clears the threshold | Mark `done` with `display_detail "Preference-emitter: no patterns promoted"` — skip-clean, never an error |
 | `manage-findings list` returns an error | Mark `done` with the read failure noted in `display_detail`; learning must NEVER block finalize |
-| `architecture enrich` fails for a pattern | Non-fatal: log the failure, continue with the remaining patterns, and mark `done` — a failed enrich never blocks finalize |
+| Filing the owed-hint follow-up artifact fails | Non-fatal: log the failure and mark `done` — a failed artifact write never blocks finalize |
 
 ## Related
 
