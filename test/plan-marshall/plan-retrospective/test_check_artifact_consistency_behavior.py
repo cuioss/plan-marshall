@@ -499,15 +499,66 @@ class TestTaskDeliverableMatch:
 
 
 class TestMetricsGenerated:
+    """``metrics_generated`` in-process, against the LIVE step registry.
+
+    The sibling suite's ``TestMetricsGeneratedOrderingDerivedVerdict`` owns the
+    matched positive/negative control pair over STUBBED orderings (producer-later
+    → ``inconclusive``, producer-earlier → ``fail``, equal → ``fail``,
+    unresolvable → ``inconclusive``, discovery failure → ``inconclusive``). This
+    class deliberately does not restate any of that; it covers the complementary
+    angle the stubs cannot — the verdict the check actually reaches for the
+    in-process plan directory under the ordering the live registry declares.
+    """
+
+    #: The producer/consumer pair the absence verdict is derived from — the same
+    #: two steps the production check resolves through discovery.
+    _PRODUCER = 'default:record-metrics'
+    _CONSUMER = 'plan-marshall:plan-retrospective'
+
     def test_pass_when_present(self, tmp_path):
         (tmp_path / 'metrics.md').write_text('# Metrics\n', encoding='utf-8')
         status, _msg = _cac.check_metrics_generated(tmp_path)
         assert status == 'pass'
 
-    def test_fail_when_absent(self, tmp_path):
+    def test_absence_verdict_follows_the_live_step_ordering(self, tmp_path):
+        """An absent metrics.md yields the verdict the LIVE ordering implies.
+
+        Absence only substantiates "the producing step did not run" once that
+        step has had its turn. ``default:record-metrics`` is ordered after the
+        consuming ``plan-marshall:plan-retrospective``, so on a
+        correctly-functioning run the artifact legitimately does not exist yet
+        and the honest verdict is ``inconclusive`` — not the confident ``fail``
+        this test used to pin.
+
+        The expectation is DERIVED from the orders the live registry declares
+        rather than restated as a literal, so a renumbering moves the test with
+        the behaviour instead of leaving it stale again. The message assertion
+        is what keeps it non-vacuous: an unconditional verdict cannot name the
+        two orders it never resolved, and the sibling ``test_pass_when_present``
+        above rules out an unconditional verdict in the other direction.
+        """
+        producer_order = _cac._resolve_step_order(self._PRODUCER)
+        consumer_order = _cac._resolve_step_order(self._CONSUMER)
+        assert isinstance(producer_order, int) and isinstance(consumer_order, int), (
+            'Both orders must resolve from the live registry, or the derived '
+            f'expectation below asserts nothing: producer={producer_order!r}, '
+            f'consumer={consumer_order!r}'
+        )
+
         status, message = _cac.check_metrics_generated(tmp_path)
-        assert status == 'fail'
-        assert 'missing' in message
+
+        expected = 'inconclusive' if producer_order > consumer_order else 'fail'
+        assert status == expected, (
+            f'{self._PRODUCER} (order {producer_order}) against {self._CONSUMER} '
+            f'(order {consumer_order}) implies {expected!r}; got {status!r} — {message}'
+        )
+        assert self._PRODUCER in message and self._CONSUMER in message, (
+            f'The verdict must name the pair it was derived from: {message}'
+        )
+        assert str(producer_order) in message and str(consumer_order) in message, (
+            'The verdict must name the ORDERS it was derived from — a check that '
+            f'returned an unconditional status could not have resolved them: {message}'
+        )
 
 
 def _build_consistent_plan(plan_dir: Path, affected: list[str]) -> None:
