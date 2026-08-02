@@ -235,12 +235,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     check_parser.add_argument(
         '--project-dir',
-        default='.',
+        required=True,
         dest='project_dir',
         help=(
-            'Worktree root (or main checkout) to observe. Defaults to the '
-            'current working directory, which phase-5+ pins to the active '
-            'worktree.'
+            'MAIN CHECKOUT to observe. Required, with no default: every '
+            'post_run_review step runs after branch-cleanup has removed the '
+            "plan's worktree, so defaulting to the cwd would silently observe "
+            'a deleted tree and make the check vacuous. See the module '
+            'docstring.'
         ),
     )
     check_parser.set_defaults(func=cmd_check)

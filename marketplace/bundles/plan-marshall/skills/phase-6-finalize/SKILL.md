@@ -1106,7 +1106,7 @@ FOR each step_id in manifest.phase_6.steps:
   5f. Commit instrumentation (after the step has recorded a terminal `done`/`skipped` outcome — see "Commit instrumentation contract" below):
       The dispatcher owns EVERY commit a finalize step's edits produce. Read the step's declared `mutates_source` AND `post_run_review` frontmatter facts from its authoritative doc (the `standards/{name}.md` or `workflow/{name}.md` that declares the step's `order:`) — one frontmatter read, two facts. When `mutates_source` is `false` (or absent — read-only is the safe default), run the post-run-band tracked-source guard at (0) below and then proceed to item 6. When `mutates_source` is `true`, skip (0) — a declared mutator's edits are exactly what (a)-(d) commit — and instrument the commit:
 
-      (0) **Post-run-band tracked-source guard** (fires ONLY when `post_run_review` is `true`; the two facts are mutually exclusive, so this arm is reached only on the `mutates_source: false` path): the `mutates_source: false` declaration is the ONLY thing standing between a post-run-review step and an unpushable source edit, and a declaration cannot detect a branch that violates it. A post-run-review step runs AFTER the merge gate, so a tracked-source write one of its branches makes lands as an uncommitted diff with no remaining push path. Observe the worktree once per such step return:
+      (0) **Post-run-band tracked-source guard** (fires ONLY when `post_run_review` is `true`; the two facts are mutually exclusive, so this arm is reached only on the `mutates_source: false` path): the `mutates_source: false` declaration is the ONLY thing standing between a post-run-review step and an unpushable source edit, and a declaration cannot detect a branch that violates it. A post-run-review step runs AFTER the merge gate, so a tracked-source write one of its branches makes lands as an uncommitted diff with no remaining push path. Observe the main checkout once per such step return:
 
           ```bash
           python3 .plan/execute-script.py plan-marshall:phase-6-finalize:post_run_source_guard check \
@@ -1700,8 +1700,12 @@ python3 .plan/execute-script.py plan-marshall:phase-6-finalize:pr_intent_section
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:phase-6-finalize:post_run_source_guard check \
-  --step-id STEP_ID [--project-dir PROJECT_DIR]
+  --step-id STEP_ID --project-dir MAIN_CHECKOUT
 ```
+
+`--project-dir` is required and takes the MAIN CHECKOUT — it carries no default
+because every caller runs after `default:branch-cleanup` removed the worktree,
+so a cwd default would silently observe a deleted tree.
 
 ## Related
 

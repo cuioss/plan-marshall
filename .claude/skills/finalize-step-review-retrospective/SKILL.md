@@ -89,7 +89,7 @@ It matches on the verdict shape: the step records a pass/fail-style verdict over
 
 **Why the declaration survives this step's post-merge placement (`order: 990`).** Loop-back is hosted by the merge gate `default:branch-cleanup` (70), so at 990 this step runs *after* the last point at which HEAD can advance within the run — no loop-back can follow it, and the declaration therefore no longer arms a live re-entry invalidation. Its remaining value is the recorded `--head-at-completion` **provenance stamp**: the artifact this step persists is a verdict about a specific tree, and the stamp is what ties it to that tree for anyone reading the retrospective later. This is stated explicitly so the declaration is not mistaken for a live loop-back guard, and so a future maintainer does not "fix" the apparent redundancy by deleting it — a later reordering that moves this step back above the gate would silently need the guard again.
 
-Every terminal `--outcome done` record therefore captures the worktree HEAD immediately before its `mark-step-done` call and forwards it via `--head-at-completion {sha}`: the Step 5 completion record, the Step 1 zero-findings skip-clean record, and both non-fatal Error-Handling paths that also mark done (aggregator error, artifact-write failure). Re-firing is safe and cheap: the step is non-fatal throughout and recomputes from the findings store each time.
+Every terminal `--outcome done` record therefore captures the **main-checkout** HEAD (`git -C {main_checkout} rev-parse HEAD`) immediately before its `mark-step-done` call — at `order: 990` the worktree `default:branch-cleanup` (70) removed is gone, so the worktree HEAD is unreadable and the merged base branch is the tree the verdict is about — and forwards it via `--head-at-completion {sha}`: the Step 5 completion record, the Step 1 zero-findings skip-clean record, and both non-fatal Error-Handling paths that also mark done (aggregator error, artifact-write failure). Re-firing is safe and cheap: the step is non-fatal throughout and recomputes from the findings store each time.
 
 ## Reviewer comment-structure asymmetry
 
@@ -134,7 +134,8 @@ this step is ordered at 990, after `default:branch-cleanup` (70) has merged and
 REMOVED the worktree, so `{worktree_path}` no longer exists on disk and a
 `git -C` against it fails — leaving the mandatory `--head-at-completion`
 unresolvable. `{main_checkout}` is the tree the merge landed on and is present
-on both the worktree and no-worktree flows:
+on both the worktree and no-worktree flows (§ HEAD-dependency states the same
+rule for every terminal record):
 
 ```bash
 git -C {main_checkout} rev-parse HEAD
@@ -253,7 +254,7 @@ shell argument).
 Resolve the HEAD SHA immediately before marking done, per § HEAD-dependency.
 Read it from **`{main_checkout}`** — at `order: 990` the worktree
 `default:branch-cleanup` (70) removed is gone, so `{worktree_path}` cannot be
-read; see the Step 4 note for the full reasoning:
+read; see § HEAD-dependency for the full reasoning:
 
 ```bash
 git -C {main_checkout} rev-parse HEAD
