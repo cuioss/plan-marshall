@@ -336,12 +336,17 @@ def test_ledger_path_is_redirected_away_from_production(_isolated_ledger):
 # =============================================================================
 
 
-def _dispatch(tmp_path: Path, notation: str, argv: list[str]) -> list[dict]:
+def _dispatch(tmp_path: Path, notation: str, argv: list[str], ledger_root: Path | None = None) -> list[dict]:
     """Dispatch a stubbed build wrapper through a rendered executor; return the ledger rows.
 
     The stub prints a ``status: success`` payload and exits 0 -- exactly what a
     pure query verb does -- so the ONLY thing distinguishing the two cases below
     is the dispatched subcommand.
+
+    ``ledger_root`` defaults to a fresh directory under ``tmp_path``; the
+    freshness-gate tests pass their OWN root instead, so the gate reads back the
+    same file this dispatch wrote. ``cwd`` is the repo root either way, so the
+    dispatch-time and gate-time ``worktree_sha`` are computed over the same tree.
     """
     stub_script = tmp_path / 'stub_build.py'
     stub_script.write_text(
@@ -352,8 +357,9 @@ def _dispatch(tmp_path: Path, notation: str, argv: list[str]) -> list[dict]:
     executor_path = tmp_path / 'execute-script.py'
     _render_executor(executor_path, {notation: stub_script})
 
-    ledger_root = tmp_path / 'plan-base'
-    ledger_root.mkdir()
+    if ledger_root is None:
+        ledger_root = tmp_path / 'plan-base'
+        ledger_root.mkdir()
 
     env = _subprocess_env()
     env['PLAN_BASE_DIR'] = str(ledger_root)
@@ -475,7 +481,7 @@ def test_freshness_gate_cannot_report_fresh_after_a_query_dispatch(tmp_path, mon
     monkeypatch.setattr(file_ops, '_BASE_DIR_OVERRIDE', ledger_root, raising=False)
     monkeypatch.chdir(PROJECT_ROOT)
 
-    _dispatch_into(ledger_root, tmp_path, notation, [subcommand])
+    _dispatch(tmp_path, notation, [subcommand], ledger_root=ledger_root)
 
     verdict = _freshness_verdict(monkeypatch, 'discriminator-regression-plan')
 
@@ -503,43 +509,11 @@ def test_freshness_gate_reports_fresh_after_a_build_executing_dispatch(tmp_path,
     monkeypatch.setattr(file_ops, '_BASE_DIR_OVERRIDE', ledger_root, raising=False)
     monkeypatch.chdir(PROJECT_ROOT)
 
-    _dispatch_into(ledger_root, tmp_path, notation, [subcommand])
+    _dispatch(tmp_path, notation, [subcommand], ledger_root=ledger_root)
 
     verdict = _freshness_verdict(monkeypatch, 'discriminator-regression-plan')
 
     assert verdict['status'] == 'fresh', (
         f'the freshness gate reported {verdict["status"]!r} after a real build-executing '
         'dispatch; the negative case above would then pass for the wrong reason.'
-    )
-
-
-def _dispatch_into(ledger_root: Path, tmp_path: Path, notation: str, argv: list[str]) -> None:
-    """Dispatch a stubbed build wrapper with the ledger pinned to ``ledger_root``.
-
-    Shares the stub and render shape with :func:`_dispatch` but writes into a
-    CALLER-supplied ledger root, so the freshness gate below reads the same file
-    the dispatch wrote. ``cwd`` is the repo root in both directions, so the
-    dispatch-time and gate-time ``worktree_sha`` are computed over the same tree.
-    """
-    stub_script = tmp_path / 'gate_stub_build.py'
-    stub_script.write_text(
-        '#!/usr/bin/env python3\nimport sys\nsys.stdout.write("status: success")\nsys.exit(0)\n',
-        encoding='utf-8',
-    )
-
-    executor_path = tmp_path / 'gate-execute-script.py'
-    _render_executor(executor_path, {notation: stub_script})
-
-    env = _subprocess_env()
-    env['PLAN_BASE_DIR'] = str(ledger_root)
-    result = subprocess.run(
-        ['python3', str(executor_path), notation, *argv],
-        capture_output=True,
-        text=True,
-        env=env,
-        cwd=str(PROJECT_ROOT),
-    )
-    assert result.returncode == 0, (
-        f'the executor must propagate the stub exit code 0, got {result.returncode} '
-        f'(stderr: {result.stderr!r})'
     )
