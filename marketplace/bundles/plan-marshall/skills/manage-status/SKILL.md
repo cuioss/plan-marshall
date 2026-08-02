@@ -1037,8 +1037,6 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
   [--fact KEY=VALUE]...
 ```
 
-`--loop-back-target` is REQUIRED when `--outcome=loop_back` and FORBIDDEN otherwise. `--fact` is repeatable — each occurrence contributes one pair to the record's `facts` dict.
-
 ### assert-step-recorded
 
 ```bash

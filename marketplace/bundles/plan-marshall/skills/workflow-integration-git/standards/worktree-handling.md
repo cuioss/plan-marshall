@@ -401,7 +401,7 @@ See `phase-6-finalize/standards/branch-cleanup.md` for the canonical sequencing 
 
 The first six states are detected by inspection before any rebase runs; `conflict` is determined by the rebase attempt itself. `clean` is a no-op; `ahead` and `behind` both attempt the rebase (the detected state is preserved in the response so callers can distinguish what was relocated).
 
-**`action` is derived from the rebase's effect, not from the detected state.** The verb compares the pre-rebase and post-rebase HEAD SHAs (returned as `pre_sha` and `post_sha`) and reports `action: rebased` only when the rebase actually replayed commits and moved HEAD; an attempted rebase that replayed nothing reports `action: noop` with `pre_sha == post_sha`. A strictly-`ahead` branch whose commits already sit on top of the base tip is the common case: the state is `ahead`, the rebase runs, and the honest verdict is `noop`. Callers that record whether work was performed MUST read `action`, never infer it from `state`.
+**`action` is derived from the rebase's effect, not from the detected state.** The verb compares the pre-rebase and post-rebase HEAD SHAs (returned as `pre_sha` and `post_sha`) and reports `action: rebased` only when the rebase actually replayed commits and moved HEAD; an attempted rebase that replayed nothing reports `action: noop` with `pre_sha == post_sha`. A strictly-`ahead` branch whose commits already sit on top of the base tip is the common case: the state is `ahead`, the rebase runs, and the honest verdict is `noop`. Callers that record whether work was performed MUST read `action`, never infer it from `state`. The SHA pair rides only on the two states that actually attempt a rebase (`ahead` and `behind`); the `clean` state returns `action: noop` from an early return that never runs `git rebase`, so it carries neither SHA.
 
 ### Output Contract
 
@@ -415,8 +415,8 @@ head_branch: {when detected}
 ahead: {commits ahead of base, when detected}
 behind: {commits behind base, when detected}
 action: noop | rebased   # success only; derived from pre_sha vs post_sha, not from state
-pre_sha: {HEAD before the rebase attempt}    # success only
-post_sha: {HEAD after the rebase attempt}    # success only
+pre_sha: {HEAD before the rebase attempt}    # rebase-attempted success only
+post_sha: {HEAD after the rebase attempt}    # rebase-attempted success only
 conflicts[N]: [paths]    # conflict only
 error: {error_code}      # error or conflict only
 message: {human-readable summary}

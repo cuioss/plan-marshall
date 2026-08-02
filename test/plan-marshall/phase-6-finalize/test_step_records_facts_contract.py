@@ -525,20 +525,6 @@ def test_call_site_split_isolates_each_invocation():
     assert _block_facts(blocks[1]) == {'count_status': 'undecidable'}
 
 
-def test_prose_mentions_are_not_counted_as_call_sites():
-    """Guards the call-site definition: a sentence naming the verb is not one.
-
-    Without this the ``--outcome done`` requirement in (6) could be satisfied —
-    or spuriously violated — by narrative text that merely discusses the call.
-    """
-    prose = (
-        'The dispatcher marks this step failed via `manage-status mark-step-done` '
-        'before continuing with the next manifest step.'
-    )
-
-    assert _call_site_blocks(prose) == []
-
-
 #: The exact narrative sentence from ``sonar-roundtrip.md`` that names BOTH the
 #: verb and an ``--outcome done`` argument. It is a claim *about* the call sites,
 #: not a call site — the false positive that made assertion (6) report
@@ -554,12 +540,13 @@ _PROSE_NAMING_BOTH_TOKENS = (
 def test_call_site_boundary_rejects_prose_naming_both_tokens():
     """Guards the invocation-start boundary against the exact known regression.
 
-    The sibling guard above uses prose carrying only the verb, so it would still
-    pass under the loose token-anchored boundary — it cannot detect a loosening.
-    This one pins the harder case: a sentence carrying BOTH tokens, which the
-    ``--outcome`` requirement alone admits. The two positive controls assert the
-    sentence really does carry both, so the rejection below can never pass
-    vacuously by asserting over text that simply lacks them.
+    Prose carrying only the verb would still be rejected under the loose
+    token-anchored boundary (the ``--outcome`` requirement alone excludes it), so
+    it cannot detect a loosening. This pins the harder case that can: a sentence
+    carrying BOTH tokens, which the ``--outcome`` requirement admits. The two
+    positive controls assert the sentence really does carry both, so the
+    rejection below can never pass vacuously by asserting over text that simply
+    lacks them.
     """
     assert _MARK_STEP_TOKEN in _PROSE_NAMING_BOTH_TOKENS, (
         'The pinned prose no longer names the verb, so it exercises nothing'
