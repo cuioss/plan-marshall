@@ -8,10 +8,11 @@ ships one machine-readable record — a fenced-YAML data block embedded in its
 time and exposes stable accessors so the finding store, the re-review strategy
 registry, the producer pre-filter, and the rate-limit detector DERIVE what they
 need (the bot-kind set, the login->bot_kind map, each bot's re-review trigger
-comment, its skip-label-honoring flag, its ignore patterns, its refusal patterns,
-its participation-evidence publish shapes, its severity map, its rate-limit
-class, and its rate-limit ETA patterns) instead of hard-coding three bots across
-several code files.
+comment, its completion check-run name, its skip-label-honoring flag, its ignore
+patterns, its refusal patterns, its contentless-review markers, its
+actionable-content markers, its participation-evidence publish shapes, its
+severity map, its rate-limit class, and its rate-limit ETA patterns) instead of
+hard-coding three bots across several code files.
 
 The loader is deliberately generic — there is no per-bot branch anywhere in it.
 Adding, removing, or re-configuring a bot is a pure data edit to a
@@ -34,6 +35,11 @@ Data-block shape (one per ``standards/{bot_kind}.md``)::
       - "No actionable comments were generated"
     refusal_patterns:
       - "Review limit reached"
+    contentless_review_markers:
+      - "## Review Guide"
+      - "**Nothing to report**"
+    actionable_content_markers:
+      - "<details>"
     rate_limit_eta_patterns:
       - "wait ([0-9]+ minutes)"
     severity_map:
@@ -43,6 +49,7 @@ Data-block shape (one per ``standards/{bot_kind}.md``)::
 
 Stdlib-only (no PyYAML): the block is a tightly-constrained subset — top-level
 scalars, lists (``ignore_patterns``, ``refusal_patterns``,
+``contentless_review_markers``, ``actionable_content_markers``,
 ``participation_evidence``, ``rate_limit_eta_patterns``), and one nested map
 (``severity_map``) — parsed by a small deterministic reader below. Load order is the sorted
 ``standards/*.md`` filename order, so ``bot_kinds()`` is stable across runs.
@@ -294,6 +301,39 @@ class BotRegistry:
         value = self._by_kind.get(bot_kind, {}).get('refusal_patterns', [])
         return list(value) if isinstance(value, list) else []
 
+    def contentless_review_markers(self, bot_kind: str) -> list[str]:
+        """Return the literals a CONTENTLESS review body carries (``[]`` if unknown/absent).
+
+        Every entry must be present for a body to qualify as contentless
+        boilerplate — the producer's test is a CONJUNCTION over this whole list,
+        not a disjunction. The list therefore describes one specific clean shape
+        the bot emits when it reviewed and found nothing, not a set of
+        alternatives; weakening it to a single representative marker silently
+        broadens the suppression.
+
+        An empty list is the FAIL-CLOSED default: the content-aware layer never
+        fires for a bot that declares no clean shape, so a bot that has not opted
+        in behaves exactly as it did before the layer existed. Consumed together
+        with :meth:`actionable_content_markers`, whose entries veto the drop.
+        """
+        value = self._by_kind.get(bot_kind, {}).get('contentless_review_markers', [])
+        return list(value) if isinstance(value, list) else []
+
+    def actionable_content_markers(self, bot_kind: str) -> list[str]:
+        """Return the literals that DISQUALIFY a contentless drop (``[]`` if unknown/absent).
+
+        ANY entry present in the body vetoes the contentless drop, whatever
+        :meth:`contentless_review_markers` matched — these are the structural
+        carriers of real findings (a ``<details>`` block, a severity badge), so
+        their presence proves the review has content.
+
+        An empty list means nothing vetoes. That is only ever reachable for a bot
+        that also declares a non-empty ``contentless_review_markers``, because the
+        drop short-circuits on the empty required list first.
+        """
+        value = self._by_kind.get(bot_kind, {}).get('actionable_content_markers', [])
+        return list(value) if isinstance(value, list) else []
+
     def participation_evidence(self, bot_kind: str) -> list[str]:
         """Return the publish shapes that are EVIDENCE ``bot_kind`` participated.
 
@@ -410,6 +450,16 @@ def ignore_patterns(bot_kind: str) -> list[str]:
 def refusal_patterns(bot_kind: str) -> list[str]:
     """The per-bot literal refusal-notice markers for ``bot_kind`` (``[]`` if absent)."""
     return REGISTRY.refusal_patterns(bot_kind)
+
+
+def contentless_review_markers(bot_kind: str) -> list[str]:
+    """The literals a contentless ``bot_kind`` review carries (``[]`` = fail-closed)."""
+    return REGISTRY.contentless_review_markers(bot_kind)
+
+
+def actionable_content_markers(bot_kind: str) -> list[str]:
+    """The literals that disqualify a contentless drop for ``bot_kind`` (``[]`` if absent)."""
+    return REGISTRY.actionable_content_markers(bot_kind)
 
 
 def participation_evidence(bot_kind: str) -> list[str]:

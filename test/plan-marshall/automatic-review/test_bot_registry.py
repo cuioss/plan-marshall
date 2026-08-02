@@ -14,7 +14,8 @@ Coverage:
 
 1. Shipped-standards contract — the real ``standards/*.md`` docs parse into the
    expected bot set, login map, triggers, skip-label flags, ignore patterns,
-   rate-limit classes, rate-limit ETA patterns, and severity maps.
+   contentless-review / actionable-content markers, rate-limit classes,
+   rate-limit ETA patterns, and severity maps.
 2. Derived ``BOT_KINDS`` — ``_findings_core.BOT_KINDS`` equals the registry's
    ``bot_kinds()`` (proving it is derived, not a literal).
 3. Constrained-YAML reader units — the scalar/comment/block parsers over
@@ -109,6 +110,59 @@ def test_ignore_patterns_preserve_quoted_special_characters():
     assert '<!-- This is an auto-generated comment: summarize by coderabbit.ai -->' in coderabbit
 
 
+def test_contentless_review_markers_only_declared_by_pr_agent():
+    """PR-Agent declares the clean-Guide marker set; the other two declare none.
+
+    The list is a CONJUNCTION target — every entry must be present for the
+    producer's contentless layer to fire — so all three entries are asserted
+    member-by-member rather than by one representative. An empty list for the
+    other two bots is the fail-closed default that keeps their ingest behaviour
+    byte-identical to before the field existed.
+
+    The two assertion entries are BARE INNER TEXT, not the ``**bold**`` a human
+    reads on GitHub: PR-Agent emits them inside an HTML ``<table>``, where no
+    markdown is rendered, so the raw API body carries ``<strong>…</strong>``. The
+    superseded ``**``-wrapped values matched no real body at all and left the
+    conjunction permanently unsatisfiable, so this assertion is exact rather than
+    a membership check — a re-wrapped value must turn it red here, at the data
+    boundary, and not only in the producer's behavioural suite.
+    """
+    assert bot_registry.contentless_review_markers('pr-agent') == [
+        '## PR Reviewer Guide',
+        'No security concerns identified',
+        'PR contains tests',
+    ]
+    assert bot_registry.contentless_review_markers('coderabbit') == []
+    assert bot_registry.contentless_review_markers('sourcery') == []
+
+
+def test_actionable_content_markers_only_declared_by_pr_agent():
+    """``<details>`` is PR-Agent's disqualifying marker; the other two declare none."""
+    assert bot_registry.actionable_content_markers('pr-agent') == ['<details>']
+    assert bot_registry.actionable_content_markers('coderabbit') == []
+    assert bot_registry.actionable_content_markers('sourcery') == []
+
+
+def test_contentless_markers_survive_inline_comment_stripping():
+    """Each marker's trailing ``# CONFIRMED …`` rationale is stripped, the value is not.
+
+    Every entry in PR-Agent's block carries an inline grounding comment, and one
+    of them (``## PR Reviewer Guide``) opens with the very ``#`` character that
+    starts a YAML comment. A reader that stripped from the first ``#`` rather than
+    from the first ``#`` OUTSIDE the quoted span would silently truncate the
+    heading marker to the empty string — which the producer's fail-closed
+    short-circuit would then read as "this bot declared nothing".
+    """
+    markers = bot_registry.contentless_review_markers('pr-agent')
+    for marker in markers:
+        assert marker
+        assert 'CONFIRMED' not in marker
+        assert marker == marker.strip()
+    # The quoted-``#`` case specifically: the heading keeps its markdown prefix.
+    assert '## PR Reviewer Guide' in markers
+    assert bot_registry.actionable_content_markers('pr-agent') == ['<details>']
+
+
 def test_severity_map_per_bot():
     """Each bot's marker->severity map is parsed as a nested mapping."""
     coderabbit = bot_registry.severity_map('coderabbit')
@@ -192,6 +246,12 @@ def test_module_functions_match_registry_singleton():
         assert bot_registry.trigger_comment(bot_kind) == bot_registry.REGISTRY.trigger_comment(bot_kind)
         assert bot_registry.completion_check_name(bot_kind) == bot_registry.REGISTRY.completion_check_name(bot_kind)
         assert bot_registry.ignore_patterns(bot_kind) == bot_registry.REGISTRY.ignore_patterns(bot_kind)
+        assert bot_registry.contentless_review_markers(bot_kind) == (
+            bot_registry.REGISTRY.contentless_review_markers(bot_kind)
+        )
+        assert bot_registry.actionable_content_markers(bot_kind) == (
+            bot_registry.REGISTRY.actionable_content_markers(bot_kind)
+        )
         assert bot_registry.rate_limit_class(bot_kind) == bot_registry.REGISTRY.rate_limit_class(bot_kind)
         assert bot_registry.rate_limit_eta_patterns(bot_kind) == bot_registry.REGISTRY.rate_limit_eta_patterns(
             bot_kind
@@ -350,6 +410,10 @@ def test_unknown_bot_kind_returns_empty_defaults():
     assert bot_registry.honors_skip_label('nope') is False
     assert bot_registry.ignore_patterns('nope') == []
     assert bot_registry.severity_map('nope') == {}
+    # The content-aware marker accessors fail closed for an unregistered kind too —
+    # an empty required list is what stops the producer's layer 3 from ever firing.
+    assert bot_registry.contentless_review_markers('nope') == []
+    assert bot_registry.actionable_content_markers('nope') == []
     # The rate-limit accessors fail closed for an unregistered kind too.
     assert bot_registry.rate_limit_class('nope') == 'unknown'
     assert bot_registry.rate_limit_eta_patterns('nope') == []
