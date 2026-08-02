@@ -13,6 +13,7 @@ default_on: false
 presets: []
 mutates_source: false
 post_run_review: true
+head_dependent: true
 implements: plan-marshall:extension-api/standards/ext-point-finalize-step
 ---
 
@@ -80,6 +81,16 @@ governing contract is
 source and declares `mutates_source: false` explicitly — the explicit declaration
 is mandatory for any step ordered at or after the merge gate.
 
+## HEAD-dependency
+
+This step declares `head_dependent: true` in its frontmatter — that fact IS the membership declaration the dispatcher's re-entry check reads (see [ext-point-finalize-step.md](../../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-finalize-step.md) § "Implementor Frontmatter"; the governing discriminator lives there and is deliberately not restated here).
+
+It matches on the verdict shape: the step records a pass/fail-style verdict over the **remote state of tracked source** — which reviewer added more value on this PR, computed from the `pr-comment` findings that review of the pushed diff produced. Push a different diff and the reviewers say different things, so the verdict is bound to the HEAD it was computed against.
+
+**Why the declaration survives this step's post-merge placement (`order: 990`).** Loop-back is hosted by the merge gate `default:branch-cleanup` (70), so at 990 this step runs *after* the last point at which HEAD can advance within the run — no loop-back can follow it, and the declaration therefore no longer arms a live re-entry invalidation. Its remaining value is the recorded `--head-at-completion` **provenance stamp**: the artifact this step persists is a verdict about a specific tree, and the stamp is what ties it to that tree for anyone reading the retrospective later. This is stated explicitly so the declaration is not mistaken for a live loop-back guard, and so a future maintainer does not "fix" the apparent redundancy by deleting it — a later reordering that moves this step back above the gate would silently need the guard again.
+
+Every terminal `--outcome done` record therefore captures the worktree HEAD immediately before its `mark-step-done` call and forwards it via `--head-at-completion {sha}`: the Step 5 completion record, the Step 1 zero-findings skip-clean record, and both non-fatal Error-Handling paths that also mark done (aggregator error, artifact-write failure). Re-firing is safe and cheap: the step is non-fatal throughout and recomputes from the findings store each time.
+
 ## Reviewer comment-structure asymmetry
 
 The three automated reviewers post structurally different comment layers per PR,
@@ -117,12 +128,21 @@ Read both resolved and pending findings (the retrospective wants the full
 picture). The records carry first-class `author` and `kind` fields.
 
 **Zero-findings skip-clean exit**: if `filtered_count` is 0, record the step as
-done and return — there is nothing to compare:
+done and return — there is nothing to compare. Resolve the worktree HEAD SHA
+immediately before marking done, per § HEAD-dependency (substitute `.` for
+`{worktree_path}` on the main-checkout flow):
+
+```bash
+git -C {worktree_path} rev-parse HEAD
+```
+
+Capture stdout as `{sha}` and forward it via `--head-at-completion`:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step project:finalize-step-review-retrospective \
-  --outcome done --display-detail "0 pr-comment findings — nothing to compare"
+  --outcome done --display-detail "0 pr-comment findings — nothing to compare" \
+  --head-at-completion {sha}
 ```
 
 ### Step 2: Deterministic numbers pass
@@ -180,19 +200,30 @@ shell argument).
 
 ### Step 5: Record the step outcome
 
+Resolve the worktree HEAD SHA immediately before marking done, per
+§ HEAD-dependency (substitute `.` for `{worktree_path}` on the main-checkout
+flow):
+
+```bash
+git -C {worktree_path} rev-parse HEAD
+```
+
+Capture stdout as `{sha}` and forward it via `--head-at-completion`:
+
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step project:finalize-step-review-retrospective \
-  --outcome done --display-detail "{N} reviewers compared, {M} actionable comments"
+  --outcome done --display-detail "{N} reviewers compared, {M} actionable comments" \
+  --head-at-completion {sha}
 ```
 
 ## Error Handling
 
 | Scenario | Action |
 |----------|--------|
-| Zero pr-comment findings | Skip-clean exit — `mark-step-done --outcome done --display-detail "0 pr-comment findings — nothing to compare"` so the `phase_steps_complete` handshake counts the step as done |
-| Aggregator returns `status: error` | Non-fatal — log the error, skip the qualitative pass, and `mark-step-done --outcome done` with a display detail noting the aggregator failure. The retrospective must never block finalize. |
-| `manage-files write` failure | Non-fatal — log the failure and still `mark-step-done --outcome done`. The artifact is advisory; finalize must not abort. |
+| Zero pr-comment findings | Skip-clean exit — `mark-step-done --outcome done --display-detail "0 pr-comment findings — nothing to compare" --head-at-completion {sha}` so the `phase_steps_complete` handshake counts the step as done |
+| Aggregator returns `status: error` | Non-fatal — log the error, skip the qualitative pass, and `mark-step-done --outcome done --head-at-completion {sha}` with a display detail noting the aggregator failure. The retrospective must never block finalize. |
+| `manage-files write` failure | Non-fatal — log the failure and still `mark-step-done --outcome done --head-at-completion {sha}`. The artifact is advisory; finalize must not abort. |
 
 The step's posture is **non-fatal throughout**: finalize must never abort because
 the review retrospective hit a snag.
