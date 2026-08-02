@@ -32,7 +32,7 @@ Every `manage-*` script call in this document carries the following exit-code co
 
 See also `standards/lessons-integration.md` for conceptual guidance on when and what to capture.
 
-**Dispatcher-level Signal Gate precondition (B4)**: This body NO LONGER carries the three-signal Signal Gate. The deterministic three-signal precondition (pending Q-Gate findings, automated-review outcome, script-failure clusters) has been relocated to `phase-6-finalize/SKILL.md` Step 3 § "Lessons-capture Signal Gate" (item 4b in the dispatch loop) so the envelope spawn cost is avoided when all three signals are zero. The semantics are preserved bit-for-bit: when the dispatcher observes all three counts zero, it records `mark-step-done --outcome skipped --display-detail "no lesson-bearing signals"` directly and this workflow body is NOT dispatched. Reaching this body therefore PROVES at least one signal was non-zero — the body proceeds straight into the three-step path-allocate flow below without re-evaluating any signals.
+**Dispatcher-level Signal Gate precondition (B4)**: This body NO LONGER carries the three-signal Signal Gate. The deterministic three-signal precondition (pending Q-Gate findings, automated-review outcome, script-failure clusters) has been relocated to `phase-6-finalize/SKILL.md` Step 3 § "Lessons-capture Signal Gate" (item 4b in the dispatch loop) so the envelope spawn cost is avoided when all three signals are zero. The semantics are preserved bit-for-bit: when the dispatcher observes all three counts zero AND `orchestrated: false`, it records `mark-step-done --outcome skipped --display-detail "no lesson-bearing signals"` directly and this workflow body is NOT dispatched. The short-circuit carries an **orchestration carve-out** — at `orchestrated: true` the body IS dispatched even at zero signals, because the epic is owed its unconditional `kind: landing` message. Reaching this body therefore proves EITHER that at least one signal was non-zero OR that the run is orchestrated — not that a signal was non-zero. Either way the body re-evaluates no signals: it branches on `orchestrated` first (see Execution below) and otherwise proceeds straight into the three-step path-allocate flow.
 
 **Gate counts and orchestration context as runtime inputs**: The dispatcher forwards the three observed counts AND the once-per-run orchestration verdict on the prompt body so the body never re-issues the signal queries and never re-issues the orchestration detection. The available runtime inputs are:
 
@@ -43,7 +43,7 @@ See also `standards/lessons-integration.md` for conceptual guidance on when and 
 - `signal_automated_review_count` — integer (0 or 1); 1 when the `automated-review` step had an outstanding/non-done state (outcome anything other than `done`, or its `display_detail` reports a non-zero promoted-comment count) OR when the run remediated one or more actionable review-bot findings (`manage-findings list --type pr-comment --resolution fixed` returned `filtered_count >= 1`). The remediated-in-run trigger fires the signal even when the step `outcome=done` and zero comments are outstanding at gate-evaluation time — a review-bot finding caught-and-fixed in-run is exactly the slipped-then-caught defect class lessons-capture exists to record.
 - `signal_script_failure_clusters_count` — integer; number of distinct failing script notations across three marker classes: `[FAILED]` work-log lines, `[ERROR] ... script_failure` lines (the per-call non-zero-exit marker emitted by phase error handling), and `voluntary_checkpoint → error` reclassifications (dispatch-boundary no-progress reclassifications). A notation that fails under more than one marker class counts once (union dedup by distinct notation).
 
-These counts MAY be consulted as context when authoring the lesson bodies (e.g., to focus recording on whichever signal source dominated), but the body MUST NOT re-issue `manage-findings qgate list`, `manage-status read`, or `manage-logging read --type work` to recompute them — the dispatcher already paid that cost.
+These counts MAY be consulted as context when authoring the lesson bodies (e.g., to focus recording on whichever signal source dominated), but the body MUST NOT re-issue `manage-findings qgate list`, `manage-status read`, or `manage-logging read --type work` to recompute them — the dispatcher already paid that cost. The prohibition is on re-deriving the COUNTS, not on reading the records they summarise: a body that needs a finding's or a log line's content in order to author the candidate it represents may read it.
 
 When the lesson author needs the original/clarified request as context, read it via the canonical verb chain:
 
@@ -81,6 +81,16 @@ Message granularity is **one message per emitted item** — that is what the env
 
 - Exactly **one `kind: landing` message per orchestrated finalize run**, emitted unconditionally — including at zero signals. This is why the dispatcher's three-zero short-circuit carries the orchestration carve-out.
 - **One `kind: candidate-lesson` message per candidate.** Every candidate lesson and every finding rides as `candidate-lesson`; the plan performs **no** global-vs-epic classification.
+
+**Where the candidates come from.** This branch skips the ACTIONABLE/KNOWLEDGE partition and the three-gate policy, but it does NOT skip candidate collection — those sections govern classification and allocation, not production. The candidate population is the one every branch draws on: the concrete records behind the dispatcher's three forwarded signal counts.
+
+- `signal_qgate_pending_count` — the Q-Gate findings across `2-refine`, `3-outline`, `4-plan`, `5-execute`, and `6-finalize`, pending and resolved-in-run alike.
+- `signal_automated_review_count` — the `plan-marshall:automatic-review` step's outstanding state, plus the review-bot findings the run remediated (`--type pr-comment --resolution fixed`).
+- `signal_script_failure_clusters_count` — the distinct failing script notations behind the `[FAILED]`, `[ERROR] … script_failure`, and `voluntary_checkpoint → error` markers.
+
+Each such record is one `kind: candidate-lesson` message. Reading those records for their CONTENT is not a recomputation: the must-not-recompute rule above bars re-deriving the three COUNTS, not reading the findings and log lines those counts summarise. Classification stays deferred to the orchestrator-side pickup exactly as stated above — the plan transmits candidates, it does not judge them.
+
+At zero signals there are no candidates, and the run emits the unconditional `kind: landing` message alone. That is the orchestrated-at-zero-signals case the carve-out exists to serve, and it is the only case in which this branch emits exactly one message.
 
 For each message, stage the payload body with the `Write` tool first, then write it:
 
@@ -233,7 +243,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
   --display-detail "{N} inbox message(s) -> epic {epic}"
 ```
 
-**Branch C — no lesson-bearing signals (skip)**: NOT emitted by this body. The `outcome=skipped` recording is now the dispatcher's responsibility (see `phase-6-finalize/SKILL.md` Step 3 item 4b) and fires before this workflow is dispatched. This body only runs when at least one signal was non-zero, so its `mark-step-done` calls are exclusively Branches A or B above.
+**Branch C — no lesson-bearing signals (skip)**: NOT emitted by this body. The `outcome=skipped` recording is now the dispatcher's responsibility (see `phase-6-finalize/SKILL.md` Step 3 item 4b) and fires before this workflow is dispatched — but only when `orchestrated: false`, because the three-zero short-circuit carries the orchestration carve-out (item 4b.b). This body therefore runs when at least one signal was non-zero OR when the run is orchestrated, and its `mark-step-done` calls are drawn from Branches A, B, B2, B3, and B4 above — an orchestrated run that reached this body at zero signals settles on B4, which is exactly the case a "Branches A or B only" reading would miss.
 
 ## Output
 
