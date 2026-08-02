@@ -253,6 +253,12 @@ EXECUTION_LOG_KEY = 'execution_log'
 # statement of the pipeline order, so it is kept in lock-step: when a step's
 # ``order`` moves, this sequence moves with it. Resolve the live values with
 # ``manage-config list-finalize-steps`` rather than sorting from memory.
+# That lock-step claim is PINNED, not merely asserted in prose:
+# ``test/plan-marshall/phase-6-finalize/test_finalize_orchestration_routing.py``
+# § ``TestDefaultPhase6StepsMatchesDiscovery`` checks every entry against the
+# discovered step docs and fails when this sequence stops ascending by their
+# frontmatter ``order``. Its sibling class pins the other restatement of the same
+# source, the phase-6-finalize SKILL.md "Built-in Step Dispatch Table".
 # ``lessons-capture`` (991) and ``record-metrics`` (998) sit after the merge gate
 # ``branch-cleanup`` (70) because they declare ``post_run_review: true``: they
 # report on the finished run and read evidence only the gate produces.

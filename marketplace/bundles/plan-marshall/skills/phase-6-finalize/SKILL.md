@@ -152,6 +152,10 @@ The materialized keyed-map step roster, each step's explicit `lane` (exclusion =
 
 ### Built-in Step Dispatch Table
 
+**This table is a restatement, not a source.** The authoritative built-in step set is each step doc's own frontmatter, discovered via `find_implementors('plan-marshall:extension-api/standards/ext-point-finalize-step')` and filtered to `source: built-in`; the table below routes exactly that set and must name each step's real doc path. Because the table is hand-maintained, the alignment is **pinned by a test rather than trusted**: `test/plan-marshall/phase-6-finalize/test_finalize_orchestration_routing.py` § `TestBuiltInStepDispatchTableMatchesDiscovery` asserts the row SET equals the discovered built-in set (both directions) and that every row's document path IS the discovered doc — so a row naming a doc that MOVED fails at quality-gate instead of silently at dispatch. Its sibling `TestDefaultPhase6StepsMatchesDiscovery` pins the same source's other restatement, `_manifest_core.DEFAULT_PHASE_6_STEPS`. When a built-in step is added, removed, or its doc relocated, update this table in the SAME change.
+
+The compose-time step-resolution gate is the complementary guard, not a substitute: it fails loud with `unresolvable_step` for a built-in whose standards doc is MISSING, so a deleted doc can never reach dispatch. It says nothing about a row that points at a real but wrong document, which is precisely what the test above covers.
+
 | Step Name | Standards Document | Description |
 |-----------|-------------------|-------------|
 | `default:finalize-step-sync-baseline` | `standards/finalize-step-sync-baseline.md` | Early baseline rebase — rebase the worktree feature branch onto `origin/{base_branch}` at the start of finalize so the downstream local gates and CI validate the actual to-be-landed tree (no force-push, no `ci wait` at this order) |
@@ -1100,7 +1104,42 @@ FOR each step_id in manifest.phase_6.steps:
       **Exec-blind contract (finalize side)**: the `6-finalize` row in `metrics.toon` is kept non-zero by `default:record-metrics`'s `end-phase` write, which reads the `metrics-accumulator-6-finalize.toon` accumulator that 5b fills on every dispatched step return — see § Phase-boundary metric bookkeeping below. 5e's per-step `execution_log[]` rows are the auditable per-step breakdown behind that aggregate, mirroring phase-5-execute Step 8c so neither phase has an exec-blind (`total_tokens==0`) path.
 
   5f. Commit instrumentation (after the step has recorded a terminal `done`/`skipped` outcome — see "Commit instrumentation contract" below):
-      The dispatcher owns EVERY commit a finalize step's edits produce. Read the step's declared `mutates_source` frontmatter fact from its authoritative doc (the `standards/{name}.md` or `workflow/{name}.md` that declares the step's `order:`). When `mutates_source` is `false` (or absent — read-only is the safe default), do nothing and proceed to item 6. When `mutates_source` is `true`, instrument the commit:
+      The dispatcher owns EVERY commit a finalize step's edits produce. Read the step's declared `mutates_source` AND `post_run_review` frontmatter facts from its authoritative doc (the `standards/{name}.md` or `workflow/{name}.md` that declares the step's `order:`) — one frontmatter read, two facts. When `mutates_source` is `false` (or absent — read-only is the safe default), run the post-run-band tracked-source guard at (0) below and then proceed to item 6. When `mutates_source` is `true`, skip (0) — a declared mutator's edits are exactly what (a)-(d) commit — and instrument the commit:
+
+      (0) **Post-run-band tracked-source guard** (fires ONLY when `post_run_review` is `true`; the two facts are mutually exclusive, so this arm is reached only on the `mutates_source: false` path): the `mutates_source: false` declaration is the ONLY thing standing between a post-run-review step and an unpushable source edit, and a declaration cannot detect a branch that violates it. A post-run-review step runs AFTER the merge gate, so a tracked-source write one of its branches makes lands as an uncommitted diff with no remaining push path. Observe the worktree once per such step return:
+
+          ```bash
+          python3 .plan/execute-script.py plan-marshall:phase-6-finalize:post_run_source_guard check \
+            --step-id {step_id} --project-dir {worktree_path}
+          ```
+
+          The guard's three settled design decisions — do NOT re-derive them:
+
+          - **Scope is the post-run band, not every step.** Before the merge gate an uncommitted tracked edit is still pushable, so the defect is reachable only after it. The guard is therefore consulted only for a step declaring `post_run_review: true`; every other `mutates_source: false` step proceeds to item 6 with no observation.
+          - **The path predicate is dirty AND tracked AND outside `.plan/`.** Every finalize step legitimately writes plan state under `.plan/`, so a bare non-empty `git status --porcelain` test would fire on every post-run step. The script composes two filters — `--untracked-files=no` (git drops untracked paths) plus an explicit `.plan/` prefix exclusion — and only what survives both is reported.
+          - **The failure action is loud and legible, but NEVER blocking.** The post-run band is advisory by design (see § "When to Activate This Skill" and the band's placement after the merge gate), so a hard failure would contradict it. The script exits `0` on every path, including `clean: false` and its own `status: error`.
+
+          Branch on the returned TOON. On `clean: true` (the expected outcome) do nothing and proceed to item 6. On `clean: false`, take BOTH non-blocking actions, then proceed to item 6 anyway:
+
+          a. Log an attributed WARNING naming the writing step and the offending tracked paths:
+
+             ```bash
+             python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+               work --plan-id {plan_id} --level WARNING \
+               --message "[STATUS] (plan-marshall:phase-6-finalize) Post-run-review step {step_id} declares mutates_source: false but left dirty TRACKED source outside .plan/: {offending_paths} — the edit ran after the merge gate and has no push path; it is NOT committed and NOT blocking"
+             ```
+
+          b. Record the observation as a finding so it survives the run:
+
+             ```bash
+             python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate add \
+               --plan-id {plan_id} --phase 6-finalize --source qgate --type anti-pattern --severity warning \
+               --component "plan-marshall:phase-6-finalize" \
+               --title "post_run_review step wrote tracked source after the merge gate" \
+               --detail "{step_id} declares mutates_source: false yet left these dirty tracked paths outside .plan/: {offending_paths}. A post-run-review step runs after the merge gate, so the edit is unpushable. Either the step must stop writing tracked source, or it does not belong in the post-run band."
+             ```
+
+          On `status: error` (the observation itself failed — not a git repository, git unavailable) the guard returns `clean: true` with an `error` field so an unusable observation never manufactures an offender. Log the `error` value at WARNING and proceed to item 6; do NOT record a finding, and do NOT treat it as a blocking failure.
 
       (a) Check the worktree for uncommitted changes the step produced:
 
@@ -1626,10 +1665,11 @@ In-step state checks (consulted by individual standards docs after dispatch — 
 | `scripts/ci_complete_precondition.py` | `plan-marshall:phase-6-finalize:ci_complete_precondition` | Resolver for the `requires: [ci-complete]` frontmatter precondition, with a per-HEAD cache and a harness-ceiling clamp |
 | `scripts/derive_gate_bundles.py` | `plan-marshall:phase-6-finalize:derive_gate_bundles` | Derives the unique bundle set the pre-push quality gate runs over, from the live footprint |
 | `scripts/pr_intent_section.py` | `plan-marshall:phase-6-finalize:pr_intent_section` | Renders the distilled `## Intent` section into the generated PR body — owns the character budget and its visible truncation, and omits the section entirely (heading included) when the plan has no outline intent |
+| `scripts/post_run_source_guard.py` | `plan-marshall:phase-6-finalize:post_run_source_guard` | Runtime tracked-source guard for the `post_run_review` band (item 5f sub-item 0) — reports dirty TRACKED paths outside `.plan/` left by a step that declared `mutates_source: false`; advisory and non-blocking (always exits 0) |
 
 ## Canonical invocations
 
-The canonical argparse surface for `ci_complete_precondition.py` and `pr_intent_section.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
+The canonical argparse surface for `ci_complete_precondition.py`, `pr_intent_section.py` and `post_run_source_guard.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
 
 ### ci_complete_precondition — resolve
 
@@ -1644,6 +1684,13 @@ python3 .plan/execute-script.py plan-marshall:phase-6-finalize:ci_complete_preco
 ```bash
 python3 .plan/execute-script.py plan-marshall:phase-6-finalize:pr_intent_section render \
   --plan-id PLAN_ID --draft-path DRAFT_PATH --body-path BODY_PATH
+```
+
+### post_run_source_guard — check
+
+```bash
+python3 .plan/execute-script.py plan-marshall:phase-6-finalize:post_run_source_guard check \
+  --step-id STEP_ID [--project-dir PROJECT_DIR]
 ```
 
 ## Related

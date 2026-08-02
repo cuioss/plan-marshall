@@ -53,6 +53,24 @@ Plus the per-member mutation guard: (b) is verified to fail for **each** require
 member independently, so a guard that passes on one omission while missing
 another cannot read as green.
 
+Checks (a)-(f) all read DECLARATIONS. That is the limit of what a frontmatter
+guard can prove, and it is exactly why the runtime arm below exists: a step whose
+branch writes tracked source in violation of its own ``mutates_source: false``
+declaration is invisible to every assertion above. The second half of this
+module therefore drives ``phase-6-finalize/scripts/post_run_source_guard.py`` —
+the seam item 5f of ``phase-6-finalize/SKILL.md`` calls once per post-run-band
+step return — against **real worktree state** in a real throwaway git repository:
+
+(g) A dirty TRACKED path outside ``.plan/`` is reported as an offender
+    (**positive control** — the check can fail, and fails for the right reason).
+(h) A dirty path under ``.plan/`` alone is NOT an offender (**negative control**
+    — matched to (g), since every finalize step writes plan state under
+    ``.plan/`` and a bare porcelain non-empty test would fire on all of them).
+
+The two controls are matched deliberately: (g) alone would pass for a guard that
+simply reports every dirty path, and (h) alone would pass for a guard that
+reports nothing at all. Only the pair pins the predicate.
+
 **The population is derived from discovery, never hardcoded**, so a step added
 later is covered automatically. This module deliberately asserts **no cardinality
 literal**: a hardcoded count is precisely the drift shape this plan removes. The
@@ -67,12 +85,19 @@ no second parser exists to drift from the one the registry uses. This mirrors
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 import pytest
 
 import extension_discovery
+from conftest import get_script_path, load_script_module, run_script
 from extension_discovery import find_implementors
+
+_guard = load_script_module(
+    'plan-marshall', 'phase-6-finalize', 'post_run_source_guard.py'
+)
+check_tracked_source = _guard.check_tracked_source
 
 #: The canonical ext-point value whose implementors carry the fact.
 _EXT_POINT = 'plan-marshall:extension-api/standards/ext-point-finalize-step'
@@ -318,3 +343,259 @@ def test_every_member_declares_mutates_source_explicitly():
         'claim explicitly — an omission reads as no-claim and evades the '
         f'ordering rule that governs source edits: {offenders}'
     )
+
+
+# ---------------------------------------------------------------------------
+# Runtime arm — real worktree state, not a declaration
+#
+# Everything above reads frontmatter. These tests observe an actual git
+# worktree, because the defect the declaration cannot detect is a branch that
+# violates it.
+# ---------------------------------------------------------------------------
+
+#: A tracked path that IS source — the shape whose post-merge write is
+#: unpushable and therefore the thing the guard exists to name.
+_TRACKED_SOURCE = 'marketplace/bundles/demo/skills/demo/SKILL.md'
+
+#: A tracked path under ``.plan/`` — the shape every finalize step legitimately
+#: writes, and therefore the thing the guard must NOT name.
+_PLAN_STATE = '.plan/local/status.json'
+
+
+def _git(repo: Path, *args: str) -> subprocess.CompletedProcess:
+    """Run one git command against ``repo`` with a pinned, hermetic identity.
+
+    Commit identity and signing are supplied per-invocation rather than read
+    from the ambient environment so the fixture behaves identically on a
+    developer machine with a global gitconfig and on a bare CI runner with
+    none.
+    """
+    return subprocess.run(
+        [
+            'git',
+            '-C',
+            str(repo),
+            '-c',
+            'user.name=Test',
+            '-c',
+            'user.email=test@example.invalid',
+            '-c',
+            'commit.gpgsign=false',
+            *args,
+        ],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=True,
+    )
+
+
+def _write(repo: Path, rel_path: str, content: str) -> Path:
+    """Write ``content`` to ``repo/rel_path``, creating parents as needed."""
+    target = repo / rel_path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(content, encoding='utf-8')
+    return target
+
+
+@pytest.fixture
+def committed_repo(tmp_path: Path) -> Path:
+    """A real git repository with one tracked source file and one tracked ``.plan/`` file.
+
+    Both files are committed, so the worktree starts clean and any dirt a test
+    introduces is unambiguously that test's own. ``.plan/`` is force-added
+    because an ambient global ``core.excludesFile`` could otherwise keep it
+    untracked, which would silently turn the negative control into a
+    tracked-vs-untracked test instead of the ``.plan/``-exclusion test it is
+    meant to be.
+    """
+    repo = tmp_path / 'worktree'
+    repo.mkdir()
+    _git(repo, 'init', '--initial-branch=main')
+    _write(repo, _TRACKED_SOURCE, '# demo skill\n')
+    _write(repo, _PLAN_STATE, '{"phase": "6-finalize"}\n')
+    _git(repo, 'add', '-f', _TRACKED_SOURCE, _PLAN_STATE)
+    _git(repo, 'commit', '-m', 'chore: seed worktree')
+    return repo
+
+
+def test_clean_worktree_reports_clean(committed_repo: Path):
+    """Baseline: an untouched worktree yields no offenders.
+
+    Without this, both controls below could be satisfied by a guard that is
+    simply reading a worktree that was never clean to begin with.
+    """
+    # Arrange — the fixture committed everything; nothing has been touched.
+
+    # Act
+    clean, offenders, error = check_tracked_source(committed_repo)
+
+    # Assert
+    assert error is None
+    assert clean is True
+    assert offenders == []
+
+
+def test_dirty_tracked_source_is_reported(committed_repo: Path):
+    """(g) POSITIVE CONTROL — a dirty tracked source path is named as an offender.
+
+    This is the branch the ``mutates_source: false`` declaration claims cannot
+    happen. A guard that could not fail here would make the negative control
+    below vacuous.
+    """
+    # Arrange — a post-run-band step writes tracked source after the merge gate.
+    _write(committed_repo, _TRACKED_SOURCE, '# demo skill\n\nEdited post-merge.\n')
+
+    # Act
+    clean, offenders, error = check_tracked_source(committed_repo)
+
+    # Assert
+    assert error is None
+    assert clean is False, (
+        'A dirty TRACKED source path outside .plan/ went unreported. That edit '
+        'was made after the merge gate and has no push path, which is precisely '
+        'the condition this guard exists to surface.'
+    )
+    assert offenders == [_TRACKED_SOURCE]
+
+
+def test_dirty_plan_state_alone_is_not_reported(committed_repo: Path):
+    """(h) NEGATIVE CONTROL — a dirty ``.plan/`` path alone is not an offender.
+
+    Matched to the positive control above: every finalize step writes plan
+    state, so a guard that reported this would fire on every post-run step and
+    be switched off within a run.
+    """
+    # Arrange — the ordinary plan-state write every finalize step makes.
+    _write(committed_repo, _PLAN_STATE, '{"phase": "6-finalize", "step": "done"}\n')
+
+    # Act
+    clean, offenders, error = check_tracked_source(committed_repo)
+
+    # Assert
+    assert error is None
+    assert clean is True, (
+        'A .plan/ write was reported as an unpushable source edit. .plan/ is '
+        'plan state, not source; reporting it would make the guard fire on '
+        f'every post-run-review step. Reported: {offenders}'
+    )
+    assert offenders == []
+
+
+def test_untracked_source_file_is_not_reported(committed_repo: Path):
+    """A brand-new untracked file is not an offender — the predicate is TRACKED.
+
+    The predicate is "dirty AND tracked AND outside .plan/". This pins the
+    tracked conjunct independently of the ``.plan/`` conjunct that (h) pins.
+    """
+    # Arrange — a new file that was never added to the index.
+    _write(committed_repo, 'marketplace/bundles/demo/scratch.md', 'scratch\n')
+
+    # Act
+    clean, offenders, error = check_tracked_source(committed_repo)
+
+    # Assert
+    assert error is None
+    assert clean is True
+    assert offenders == []
+
+
+def test_both_dirty_reports_only_the_tracked_source_path(committed_repo: Path):
+    """The two controls composed: the ``.plan/`` write is filtered, the source write is not.
+
+    Run separately, (g) and (h) each leave open the possibility that the guard
+    keys on "the worktree is dirty" rather than on WHICH path is dirty. Dirtying
+    both at once and asserting the exact reported set closes that.
+    """
+    # Arrange — the realistic post-run-band shape: plan state plus a stray edit.
+    _write(committed_repo, _PLAN_STATE, '{"phase": "6-finalize", "step": "done"}\n')
+    _write(committed_repo, _TRACKED_SOURCE, '# demo skill\n\nEdited post-merge.\n')
+
+    # Act
+    clean, offenders, error = check_tracked_source(committed_repo)
+
+    # Assert
+    assert error is None
+    assert clean is False
+    assert offenders == [_TRACKED_SOURCE]
+
+
+def test_renamed_tracked_source_reports_both_sides(committed_repo: Path):
+    """A staged rename of tracked source names both the old and the new path.
+
+    Porcelain reports a rename as one record carrying two paths; decoding only
+    the first would drop the destination, and decoding only the record would
+    misalign every later record in the ``-z`` stream.
+    """
+    # Arrange — stage a rename so git emits an R record with both paths.
+    renamed = 'marketplace/bundles/demo/skills/demo/RENAMED.md'
+    _git(committed_repo, 'mv', _TRACKED_SOURCE, renamed)
+
+    # Act
+    clean, offenders, error = check_tracked_source(committed_repo)
+
+    # Assert
+    assert error is None
+    assert clean is False
+    assert offenders == sorted([_TRACKED_SOURCE, renamed])
+
+
+def test_non_repository_directory_reports_error_without_inventing_offenders(
+    outside_repo_dir: Path,
+):
+    """An unusable observation degrades to ``clean`` plus an error, never to an offender.
+
+    The guard is advisory. Reporting a phantom offender because git could not
+    answer would put a WARNING and a finding on a run that did nothing wrong.
+
+    The directory comes from ``outside_repo_dir`` rather than ``tmp_path``:
+    ``build.py`` gives pytest a repo-local ``--basetemp``, so a ``tmp_path``
+    subdirectory still sits INSIDE this repository's worktree and
+    ``git -C`` there resolves the enclosing repo instead of failing — the test
+    would then silently assert against plan-marshall's own working tree.
+    """
+    # Arrange — a directory with no git repository anywhere above it.
+    plain_dir = outside_repo_dir / 'not-a-repo'
+    plain_dir.mkdir()
+
+    # Act
+    clean, offenders, error = check_tracked_source(plain_dir)
+
+    # Assert
+    assert error is not None
+    assert clean is True
+    assert offenders == []
+
+
+def test_cli_reports_offender_and_still_exits_zero(committed_repo: Path):
+    """The non-blocking contract holds at the CLI boundary, not just in-process.
+
+    Item 5f treats ``clean: false`` as a WARNING plus a finding and then
+    proceeds. A non-zero exit here would make the advisory band blocking, which
+    contradicts the band's documented placement after the merge gate.
+    """
+    # Arrange — the offending condition.
+    _write(committed_repo, _TRACKED_SOURCE, '# demo skill\n\nEdited post-merge.\n')
+    script = get_script_path('plan-marshall', 'phase-6-finalize', 'post_run_source_guard.py')
+
+    # Act
+    result = run_script(
+        script,
+        'check',
+        '--step-id',
+        'default:lessons-capture',
+        '--project-dir',
+        str(committed_repo),
+    )
+
+    # Assert
+    assert result.returncode == 0, (
+        'The guard exited non-zero on a detected offender. The post-run band is '
+        'advisory and never blocking, so the verdict rides the payload and the '
+        f'exit code stays 0. stderr: {result.stderr}'
+    )
+    payload = result.toon()
+    assert payload['status'] == 'success'
+    assert payload['step_id'] == 'default:lessons-capture'
+    assert payload['clean'] is False
+    assert _TRACKED_SOURCE in str(payload['offending_paths'])

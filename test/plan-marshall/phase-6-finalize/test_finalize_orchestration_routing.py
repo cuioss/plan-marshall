@@ -30,6 +30,14 @@ Covered:
   is unreachable from an orchestrated plan generally.
 - **Retrospective input contract**, **non-orchestrated path unchanged**, and the
   **short-circuit carve-out**.
+- **The routing registries are derived, not hand-maintained** — the SKILL.md
+  "Built-in Step Dispatch Table" and ``_manifest_core.DEFAULT_PHASE_6_STEPS`` are
+  both restatements of the same authoritative source (each step doc's own
+  frontmatter, read through ``find_implementors``). Nothing structurally prevents
+  either from drifting from it, so both are pinned here: the table's row SET and
+  its per-row DOCUMENT PATHS, and the default candidate tuple's membership and
+  ascending-``order`` sequence. Drift then fails at quality-gate rather than
+  silently at dispatch.
 """
 
 from __future__ import annotations
@@ -38,7 +46,9 @@ import json
 import re
 from pathlib import Path
 
+import _manifest_core
 from conftest import MARKETPLACE_ROOT, PROJECT_ROOT, load_script_module
+from extension_discovery import find_implementors
 
 _inbox = load_script_module(
     'plan-marshall', 'marshall-orchestrator', '_orchestrator_inbox.py', 'orchestrator_inbox'
@@ -574,3 +584,242 @@ class TestShortCircuitCarveOut:
         assert '- `orchestrated` — bool;' in text
         assert '- `epic` — string;' in text
         assert 'MUST NOT re-issue either call' in text
+
+
+# =============================================================================
+# The routing registries are derived, not hand-maintained
+#
+# Two restatements of one authoritative source (each step doc's frontmatter,
+# read through ``find_implementors``): the SKILL.md Built-in Step Dispatch Table
+# and ``_manifest_core.DEFAULT_PHASE_6_STEPS``. Neither is generated, so each is
+# pinned to the source here.
+# =============================================================================
+
+#: The ext-point whose implementors ARE the authoritative finalize step set.
+_EXT_POINT = 'plan-marshall:extension-api/standards/ext-point-finalize-step'
+
+#: The discovery ``source`` value that means "built-in finalize step". It is the
+#: table's membership rule: the table routes exactly the built-in steps, while
+#: ``project:`` steps route through the Interface Contract section and genuinely
+#: opt-in ``bundle:skill`` steps (``source: bundle-optional``) route as typed
+#: SKILL steps.
+_BUILT_IN_SOURCE = 'built-in'
+
+#: Section markers bounding the dispatch table inside SKILL.md.
+_TABLE_START = '### Built-in Step Dispatch Table'
+_TABLE_END = '### Interface Contract for External Steps'
+
+
+def _built_in_records() -> list[dict]:
+    """The authoritative built-in step records, straight from discovery."""
+    return [
+        record
+        for record in find_implementors(_EXT_POINT)
+        if record.get('source') == _BUILT_IN_SOURCE
+    ]
+
+
+def _dispatch_table_rows() -> list[tuple[str, str]]:
+    """Parse the Built-in Step Dispatch Table into ``(step_name, doc_path)`` pairs.
+
+    Reads the live SKILL.md rather than a fixture, so the guard observes the
+    table a dispatcher would actually consult. The header and separator rows are
+    dropped by requiring the first cell to be backtick-quoted, which every data
+    row is and neither structural row is.
+    """
+    block = _between(_read(_FINALIZE_SKILL), _TABLE_START, _TABLE_END)
+    rows: list[tuple[str, str]] = []
+    for line in block.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith('|'):
+            continue
+        cells = [cell.strip() for cell in stripped.strip('|').split('|')]
+        if len(cells) < 2 or not cells[0].startswith('`'):
+            continue
+        rows.append((cells[0].strip('`'), cells[1].strip('`')))
+    return rows
+
+
+def _missing_from_table(row_names: set[str]) -> list[str]:
+    """The membership predicate under test: which built-in steps the table omits.
+
+    Factored out so the mutation guard drives the SAME predicate the assertion
+    uses — a guard that re-implemented the check would prove nothing about the
+    check that actually runs.
+    """
+    return sorted(
+        record['name']
+        for record in _built_in_records()
+        if record['name'] not in row_names
+    )
+
+
+class TestBuiltInStepDispatchTableMatchesDiscovery:
+    """Pins the SKILL.md table (finding 9fdfcf) to the discovered step set.
+
+    The compose-time step-resolution gate already fails loud with
+    ``unresolvable_step`` when a built-in's standards doc is MISSING, so a
+    deleted doc cannot reach dispatch. The residual this class covers is
+    narrower and genuinely uncovered: a row naming a doc path that MOVED, and a
+    row set that has diverged from the authoritative step set in either
+    direction.
+    """
+
+    def test_table_is_non_empty(self):
+        """Anti-vacuity: every assertion below is over the parsed rows.
+
+        A parser that silently returned nothing — because the section was
+        renamed or the table reformatted — would make the set comparison
+        trivially satisfiable from one side, so emptiness is rejected on its own
+        before anything else is asserted.
+        """
+        assert _dispatch_table_rows(), (
+            f'No data rows parsed between {_TABLE_START!r} and {_TABLE_END!r} in '
+            f'{_FINALIZE_SKILL}. Every assertion in this class reads those rows, '
+            'so an empty parse would make them vacuous.'
+        )
+
+    def test_discovery_finds_built_in_steps(self):
+        """Anti-vacuity for the other side of the comparison."""
+        assert _built_in_records(), (
+            f'find_implementors({_EXT_POINT!r}) discovered no records with '
+            f'source == {_BUILT_IN_SOURCE!r}, so the table has nothing to be '
+            'compared against.'
+        )
+
+    def test_table_rows_are_exactly_the_discovered_built_in_steps(self):
+        row_names = {name for name, _ in _dispatch_table_rows()}
+        discovered = {record['name'] for record in _built_in_records()}
+
+        assert row_names == discovered, (
+            'The Built-in Step Dispatch Table has drifted from the discovered '
+            'built-in step set. Missing rows (the step exists but the table '
+            f'does not route it): {sorted(discovered - row_names)}. Stale rows '
+            '(the table routes a step discovery does not know about): '
+            f'{sorted(row_names - discovered)}'
+        )
+
+    def test_table_has_no_duplicate_rows(self):
+        names = [name for name, _ in _dispatch_table_rows()]
+
+        assert len(names) == len(set(names)), (
+            'The table lists a step more than once. Two rows for one step can '
+            'disagree on the document path, and the set comparison above cannot '
+            f'see the duplication: {sorted({n for n in names if names.count(n) > 1})}'
+        )
+
+    def test_each_row_document_path_is_the_discovered_document(self):
+        """The MOVED-doc residual: a row path that resolves elsewhere, or nowhere.
+
+        Compared against the discovered record's own ``path``, not merely
+        against "some file exists there" — a row pointing at a real but
+        different document is exactly as wrong as one pointing at nothing, and
+        an existence-only check would pass it.
+        """
+        discovered_paths = {
+            record['name']: Path(record['path']).resolve()
+            for record in _built_in_records()
+        }
+
+        mismatches = []
+        for name, doc in _dispatch_table_rows():
+            expected = discovered_paths.get(name)
+            if expected is None:
+                continue  # Reported by the set comparison above.
+            actual = (_FINALIZE / doc).resolve()
+            if actual != expected:
+                mismatches.append(f'{name}: table says {doc} -> {actual}, discovery says {expected}')
+
+        assert mismatches == [], (
+            'These table rows name a document that is not the step\'s '
+            'authoritative doc. A moved doc is the residual the compose-time '
+            'unresolvable_step gate does NOT cover, because that gate fires on a '
+            f'missing built-in, not on a mis-pointed table row: {mismatches}'
+        )
+
+    def test_each_row_is_independently_load_bearing(self):
+        """Mutation guard: dropping any ONE row is detected on its own.
+
+        Removing a single row from the parsed set must make the membership
+        predicate report exactly that step. This proves the check is sensitive
+        to each row independently, so a table that silently lost one row while
+        keeping the rest could never read as green — a claim a single set
+        equality cannot make about itself.
+
+        The population is derived inside the test body rather than at
+        parametrize time on purpose: a collection-time derivation that resolved
+        to nothing would produce zero test cases and report green, which is the
+        same vacuity this guard exists to rule out.
+        """
+        row_names = {name for name, _ in _dispatch_table_rows()}
+        required = [record['name'] for record in _built_in_records()]
+        assert required, 'Precondition failed — see test_discovery_finds_built_in_steps.'
+
+        undetected = []
+        for omitted in required:
+            assert omitted in row_names, (
+                f'Mutation guard precondition failed: {omitted} is not a table '
+                'row, so removing it proves nothing. Fix the table first.'
+            )
+            if _missing_from_table(row_names - {omitted}) != [omitted]:
+                undetected.append(omitted)
+
+        assert undetected == [], (
+            'The membership predicate did not isolate these steps when each was '
+            'removed on its own. A predicate that cannot detect every row '
+            'independently can pass while silently missing one: '
+            f'{undetected}'
+        )
+
+
+class TestDefaultPhase6StepsMatchesDiscovery:
+    """Pins ``_manifest_core.DEFAULT_PHASE_6_STEPS`` (finding 455b62 item 1).
+
+    The tuple is a candidate SET default, deliberately narrower than the
+    discovered step set — so membership is asserted as containment, not
+    equality. What IS asserted exactly is the tuple's ORDER: its own comment
+    states it is written in ascending frontmatter ``order`` and kept in lock-step
+    with it, and that claim had nothing enforcing it.
+    """
+
+    def _order_by_canonical_key(self) -> dict[str, int]:
+        return {
+            _manifest_core.canonicalize_step_key(record['name']): record['order']
+            for record in find_implementors(_EXT_POINT)
+            if isinstance(record.get('order'), int)
+        }
+
+    def test_default_set_is_non_empty(self):
+        """Anti-vacuity — an empty tuple would satisfy both assertions below."""
+        assert _manifest_core.DEFAULT_PHASE_6_STEPS
+
+    def test_every_default_step_resolves_to_a_discovered_step(self):
+        known = self._order_by_canonical_key()
+
+        unresolved = [
+            step for step in _manifest_core.DEFAULT_PHASE_6_STEPS if step not in known
+        ]
+
+        assert unresolved == [], (
+            'These default candidate steps resolve to no discovered step doc, so '
+            'composing with the defaults would seed a step the dispatcher cannot '
+            f'route: {unresolved}. Known canonical keys: {sorted(known)}'
+        )
+
+    def test_default_set_is_written_in_ascending_frontmatter_order(self):
+        known = self._order_by_canonical_key()
+        resolved = [
+            (step, known[step])
+            for step in _manifest_core.DEFAULT_PHASE_6_STEPS
+            if step in known
+        ]
+
+        orders = [order for _, order in resolved]
+
+        assert orders == sorted(orders), (
+            'DEFAULT_PHASE_6_STEPS is no longer written in ascending frontmatter '
+            'order. Its own comment states the sequence is kept in lock-step with '
+            'each step doc\'s order fact, so a sequence that disagrees reads as a '
+            'second, competing statement of the pipeline order. Resolved '
+            f'(step, order) pairs as written: {resolved}'
+        )
