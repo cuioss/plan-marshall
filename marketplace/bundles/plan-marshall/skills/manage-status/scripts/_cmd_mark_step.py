@@ -31,6 +31,19 @@ dispositions (replay the same finalize step from the resumable re-entry
 check). The flag is REQUIRED on every ``loop_back`` outcome and FORBIDDEN
 on every other outcome; the validation has no backwards-compat fallback
 (breaking-change contract per the finalize-loopback plan, Deliverable 3).
+
+The repeatable ``--fact KEY=VALUE`` flag records structured per-step facts.
+The accumulated pairs are parsed into a ``dict[str, str]`` and persisted under
+an optional ``facts`` key, following the same omit-when-absent convention as
+``head_at_completion`` / ``loop_back_target``: a caller that supplies no
+``--fact`` writes the byte-identical historical record shape. The keys a step
+may record are declared by its ``records_facts`` frontmatter obligation (see
+``extension-api/standards/ext-point-finalize-step.md``); this handler does not
+validate keys against that declaration — it only parses, rejecting a malformed
+token (no ``=``, or an empty key) with ``error: invalid_fact`` naming the
+offending token. ``facts`` participates in the idempotency comparison and in
+the ``previous_*`` echo fields, so a re-call that changes only the facts is
+reported as ``changed: true`` rather than silently swallowed.
 """
 
 import argparse
@@ -41,6 +54,27 @@ from _step_key_canonical import canonicalize_step_key
 
 VALID_OUTCOMES = ('done', 'skipped', 'loop_back', 'failed')
 VALID_LOOP_BACK_TARGETS = ('5-execute', '6-finalize')
+
+
+def _parse_facts(raw: list[str] | None) -> tuple[dict[str, str] | None, str | None]:
+    """Parse repeated ``KEY=VALUE`` tokens into a dict.
+
+    Returns ``(facts, None)`` on success — ``facts`` is ``None`` when the caller
+    supplied no ``--fact`` at all, so the persisted record keeps its historical
+    shape. Returns ``(None, offending_token)`` when a token is malformed: it
+    carries no ``=`` separator, or its key is empty. The value half MAY contain
+    ``=`` (split is on the FIRST separator only) and MAY be empty — only the key
+    is constrained. A later token for the same key overwrites the earlier one.
+    """
+    if not raw:
+        return None, None
+    facts: dict[str, str] = {}
+    for token in raw:
+        key, sep, value = token.partition('=')
+        if not sep or not key:
+            return None, token
+        facts[key] = value
+    return facts, None
 
 
 def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
@@ -74,6 +108,20 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
     display_detail = getattr(args, 'display_detail', None)
     head_at_completion = getattr(args, 'head_at_completion', None)
     loop_back_target = getattr(args, 'loop_back_target', None)
+
+    facts, bad_fact_token = _parse_facts(getattr(args, 'fact', None))
+    if bad_fact_token is not None:
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'invalid_fact',
+            'phase': phase,
+            'step': step,
+            'offending_token': bad_fact_token,
+            'message': (
+                f'--fact expects KEY=VALUE with a non-empty KEY, got: {bad_fact_token!r}'
+            ),
+        }
 
     # Loop-back target validation: required for loop_back outcomes, forbidden otherwise.
     # This is a breaking-change validation per Deliverable 3 of the finalize-loopback
@@ -155,18 +203,20 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
             ),
         }
 
-    new_entry = _build_entry(outcome, display_detail, head_at_completion, loop_back_target)
+    new_entry = _build_entry(outcome, display_detail, head_at_completion, loop_back_target, facts)
 
     if isinstance(existing, dict):
         existing_outcome = existing.get('outcome')
         existing_detail = existing.get('display_detail')
         existing_head = existing.get('head_at_completion')
         existing_loop_back_target = existing.get('loop_back_target')
+        existing_facts = existing.get('facts')
         if (
             existing_outcome == outcome
             and existing_detail == display_detail
             and existing_head == head_at_completion
             and existing_loop_back_target == loop_back_target
+            and existing_facts == facts
         ):
             return {
                 'status': 'success',
@@ -177,12 +227,14 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
                 'display_detail': display_detail,
                 'head_at_completion': head_at_completion,
                 'loop_back_target': loop_back_target,
+                'facts': facts,
                 'changed': False,
             }
         if existing_outcome == outcome and (
             existing_detail != display_detail
             or existing_head != head_at_completion
             or existing_loop_back_target != loop_back_target
+            or existing_facts != facts
         ):
             if existing_key is not None and existing_key != step:
                 phase_entry.pop(existing_key, None)
@@ -197,11 +249,13 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
                 'display_detail': display_detail,
                 'head_at_completion': head_at_completion,
                 'loop_back_target': loop_back_target,
+                'facts': facts,
                 'changed': True,
                 'previous_outcome': existing_outcome,
                 'previous_display_detail': existing_detail,
                 'previous_head_at_completion': existing_head,
                 'previous_loop_back_target': existing_loop_back_target,
+                'previous_facts': existing_facts,
             }
         if existing_outcome != outcome and not args.force:
             return {
@@ -222,11 +276,13 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
     previous_detail = None
     previous_head = None
     previous_loop_back_target = None
+    previous_facts = None
     if isinstance(existing, dict):
         previous_outcome = existing.get('outcome')
         previous_detail = existing.get('display_detail')
         previous_head = existing.get('head_at_completion')
         previous_loop_back_target = existing.get('loop_back_target')
+        previous_facts = existing.get('facts')
 
     if existing_key is not None and existing_key != step:
         phase_entry.pop(existing_key, None)
@@ -242,11 +298,13 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
         'display_detail': display_detail,
         'head_at_completion': head_at_completion,
         'loop_back_target': loop_back_target,
+        'facts': facts,
         'changed': True,
         'previous_outcome': previous_outcome,
         'previous_display_detail': previous_detail,
         'previous_head_at_completion': previous_head,
         'previous_loop_back_target': previous_loop_back_target,
+        'previous_facts': previous_facts,
     }
 
 
@@ -255,6 +313,7 @@ def _build_entry(
     display_detail: str | None,
     head_at_completion: str | None,
     loop_back_target: str | None,
+    facts: dict[str, str] | None,
 ) -> dict[str, Any]:
     """Build the phase_entry[step] dict, omitting optional keys when None.
 
@@ -263,11 +322,15 @@ def _build_entry(
     Only when a SHA is supplied does the third key appear in the persisted
     record. Same shape applies to ``loop_back_target`` — it appears only on
     ``loop_back`` outcome rows (the validation above guarantees it is always
-    present when the outcome is ``loop_back`` and never present otherwise).
+    present when the outcome is ``loop_back`` and never present otherwise) —
+    and to ``facts``, which appears only when the caller supplied at least one
+    ``--fact KEY=VALUE``.
     """
     entry: dict[str, Any] = {'outcome': outcome, 'display_detail': display_detail}
     if head_at_completion is not None:
         entry['head_at_completion'] = head_at_completion
     if loop_back_target is not None:
         entry['loop_back_target'] = loop_back_target
+    if facts:
+        entry['facts'] = facts
     return entry
