@@ -43,8 +43,8 @@ sole record. These tests pin that contract:
 (8) *(targeted anchor)* ``branch-cleanup`` Branch A no longer carries the
     unparameterized Defect-A literal.
 (9) *(targeted anchor)* ``sonar-roundtrip`` Branch C records
-    ``work_performed=false`` and **none** of the three scan facts — the
-    Defect-C distinction.
+    ``work_performed=false`` and **none** of its declared scan facts (every
+    declared key except ``work_performed``) — the Defect-C distinction.
 
 Assertions (1)-(7) are **population-derived**: the step set comes from
 ``find_implementors()`` and the obligation from each doc's own frontmatter, so a
@@ -102,9 +102,6 @@ _WATCH_ENTRY_STEPS = (
 
 #: Operator-added, NOT a Watch-entry member — asserted separately by (3).
 _OPERATOR_ADDED_STEP = 'default:sonar-roundtrip'
-
-#: The three sonar scan facts Branch C must NOT record (assertion 9).
-_SONAR_SCAN_FACTS = ('count_status', 'new_code_issue_count', 'issues_fetched')
 
 #: Defect-A: the unparameterized literal Branch A used to emit unconditionally.
 _BRANCH_A_FIXED_LITERAL = 'rebased onto base, merged, cleanup complete'
@@ -417,15 +414,32 @@ def _sonar_branch_c_block() -> str:
 
 
 def test_sonar_branch_c_records_only_that_no_work_was_performed():
-    """(9) TARGETED ANCHOR (not population-derived): the Defect-C distinction."""
+    """(9) TARGETED ANCHOR: the Defect-C distinction, over the declared scan set.
+
+    The branch is named on purpose (that is what makes this a targeted anchor),
+    but the scan-fact set it must NOT leak is DERIVED from the step's own
+    ``records_facts`` declaration — every declared key except the cross-cutting
+    ``work_performed`` is, by construction, a scan fact. A hardcoded mirror of
+    that set would silently narrow the moment the declaration grew a new
+    scan-only key, which is the set-guarding-detector failure shape the rest of
+    this module is built to avoid.
+    """
+    record = _record_for(_OPERATOR_ADDED_STEP)
+    scan_facts = set(record['facts']) - {_WORK_PERFORMED}
     facts = _block_facts(_sonar_branch_c_block())
+
+    assert scan_facts, (
+        f'{_OPERATOR_ADDED_STEP} declares no fact key besides {_WORK_PERFORMED}, '
+        f'so the leak check below has nothing to guard and would pass vacuously. '
+        f"Declared: {sorted(record['facts'])}"
+    )
 
     assert facts.get(_WORK_PERFORMED) == 'false', (
         f'sonar-roundtrip Branch C performed no scan, so it must record '
         f'--fact {_WORK_PERFORMED}=false. Recorded: {facts}'
     )
 
-    leaked = [key for key in _SONAR_SCAN_FACTS if key in facts]
+    leaked = sorted(key for key in scan_facts if key in facts)
     assert not leaked, (
         f'sonar-roundtrip Branch C records scan facts {leaked} despite never '
         f'scanning. Recording them here would collapse "no scan performed" back '
