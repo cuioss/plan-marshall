@@ -32,6 +32,7 @@ Subcommands:
 
 import json
 from dataclasses import replace
+from pathlib import Path
 
 from _build_check_warnings import create_check_warnings_handler
 from _build_cli import (
@@ -47,7 +48,8 @@ from _pyproject_cmd_discover import discover_python_modules
 from _pyproject_cmd_parse import parse_log, slice_failure_details
 from _pyproject_execute import _CONFIG, cmd_run
 from _test_scope_divergence import resolve_test_scope
-from marketplace_paths import names_real_plan
+from marketplace_bundles import extract_bundle_name, find_bundles
+from marketplace_paths import find_marketplace_path, names_real_plan
 from toon_parser import serialize_toon
 
 # --- Tool-specific configuration inlined from former wrapper files ---
@@ -118,12 +120,36 @@ def _register_pyproject_parse(subparsers) -> None:
     parse_parser.set_defaults(func=cmd_parse)
 
 
+def _resolve_registered_modules(project_dir: str | None) -> frozenset[str]:
+    """Enumerate the registered module names for ``project_dir``'s marketplace.
+
+    The registered-module set the pure ``resolve_test_scope`` helper needs to
+    reject a derived name that no module actually carries. It is resolved HERE,
+    in the handler that already performs I/O, so the pure module stays free of
+    it. The enumeration reuses the existing tested
+    ``marketplace_bundles.find_bundles()`` + ``extract_bundle_name()`` seam
+    anchored on the marketplace root ``find_marketplace_path()`` resolves from the
+    already-available ``project_dir`` - no new inventory mechanism.
+
+    Returns an EMPTY frozenset when the marketplace root does not resolve or the
+    walk fails; the caller reads emptiness as ``modules_resolvable: false`` and
+    fails toward the whole tree rather than silently disabling the check.
+    """
+    try:
+        bundles_root = find_marketplace_path(Path(project_dir) if project_dir else None)
+        if bundles_root is None:
+            return frozenset()
+        return frozenset(extract_bundle_name(bundle_dir) for bundle_dir in find_bundles(bundles_root))
+    except OSError:
+        return frozenset()
+
+
 def cmd_resolve_test_scope(args) -> int:
     """Resolve the scoped module set and scoped-vs-whole-tree divergence risk.
 
     Derives the footprint from one of two sources and delegates the resolution
     to the pure ``resolve_test_scope`` helper. When ``--changed-paths`` is
-    supplied the comma-separated list IS the footprint (a task-scoped footprint —
+    supplied the comma-separated list IS the footprint (a task-scoped footprint -
     exactly the files a single task's change touched); otherwise the whole-plan
     live footprint is read the same way ``pre-push-quality-gate.md`` does, here
     through the in-process ``script-shared`` seams that back
@@ -131,21 +157,34 @@ def cmd_resolve_test_scope(args) -> int:
     ``build.map`` globs in both modes. ``whole_tree_available`` reflects whether a
     whole-tree pytest run is structurally possible (a discoverable Python module
     set exists). Prints the resolution as TOON: ``scoped_modules[]``,
-    ``divergence_possible``, ``recommended_target``, ``whole_tree_available``,
-    ``footprint_resolvable``.
+    ``divergence_possible``, ``recommended_target``, ``unresolved_paths[]``,
+    ``whole_tree_available``, ``footprint_resolvable``, ``modules_resolvable``.
 
     Footprint source: ``--changed-paths`` (task-scoped) supersedes the whole-plan
     footprint; when it is absent a REAL ``--plan-id`` is required to resolve the
     live plan footprint. The ``NO_PLAN`` sentinel does not satisfy that
-    requirement — it names no plan whose footprint could be resolved, so it is
+    requirement - it names no plan whose footprint could be resolved, so it is
     refused with the same ``footprint_source_required`` error as an omitted flag.
 
-    ``footprint_resolvable`` is ``false`` only on the whole-plan path when the
-    footprint cannot be resolved at all (no worktree materialised yet). That state
-    yields no module ownership, so it is reported as ``divergence_possible: true``
-    with ``recommended_target: null`` — the whole-tree answer. Reporting it as a
-    resolvable-but-empty footprint would instead claim ``divergence_possible:
-    false`` ("a scoped run cannot miss a regression") on no evidence whatever.
+    Two inputs can fail to resolve, and both fail toward the whole tree through
+    the SAME ``dataclasses.replace`` call rather than through parallel branches:
+
+    * ``footprint_resolvable`` is ``false`` only on the whole-plan path when the
+      footprint cannot be resolved at all (no worktree materialised yet). That
+      state yields no module ownership, so it is reported as
+      ``divergence_possible: true`` with ``recommended_target: null`` - the
+      whole-tree answer. Reporting it as a resolvable-but-empty footprint would
+      instead claim ``divergence_possible: false`` ("a scoped run cannot miss a
+      regression") on no evidence whatever.
+    * ``modules_resolvable`` is ``false`` when the registered-module enumeration
+      failed or came back empty. Without that set every derived module name is
+      unverifiable, so a confident scoped target would rest on nothing. Failing
+      closed here is what stops "the caller could not enumerate modules" from
+      silently disabling the registered-module check.
+
+    ``unresolved_paths`` carries every footprint entry that mapped to no
+    registered module, so the suppression is disclosed to the consumer (ADR-014)
+    instead of dying inside the dataclass.
     """
     # In-process form of the manage-references compute-footprint /
     # manage-config build-map read seams — same script-shared bundle, no
@@ -187,8 +226,11 @@ def cmd_resolve_test_scope(args) -> int:
         footprint_resolvable = resolved_footprint is not None
         footprint = resolved_footprint or []
 
-    resolution = resolve_test_scope(footprint, globs)
-    if not footprint_resolvable:
+    registered_modules = _resolve_registered_modules(project_dir)
+    modules_resolvable = bool(registered_modules)
+
+    resolution = resolve_test_scope(footprint, globs, registered_modules)
+    if not footprint_resolvable or not modules_resolvable:
         resolution = replace(resolution, divergence_possible=True, recommended_target=None)
     # discover_python_modules requires a concrete project root; when project_dir
     # is absent (args constructed dynamically or a test env lacking the
@@ -202,8 +244,10 @@ def cmd_resolve_test_scope(args) -> int:
                 'scoped_modules': list(resolution.scoped_modules),
                 'divergence_possible': resolution.divergence_possible,
                 'recommended_target': resolution.recommended_target,
+                'unresolved_paths': list(resolution.unresolved_paths),
                 'whole_tree_available': whole_tree_available,
                 'footprint_resolvable': footprint_resolvable,
+                'modules_resolvable': modules_resolvable,
             }
         )
     )

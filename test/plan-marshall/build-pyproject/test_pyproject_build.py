@@ -512,10 +512,12 @@ def test_resolve_project_dir_neither_flag_uses_main_checkout():
 #
 # The ``--changed-paths`` input supplies a task-scoped footprint directly (the
 # files a single task's change touched), superseding the whole-plan live
-# footprint. ``cmd_resolve_test_scope`` splits the comma-separated list and
-# delegates to the unchanged pure ``resolve_test_scope`` helper. The build.map
-# globs are patched to controlled values so the cases are deterministic and
-# independent of the repo's live ``marshal.json``.
+# footprint. ``cmd_resolve_test_scope`` splits the comma-separated list,
+# enumerates the registered module names, and passes both to the pure
+# ``resolve_test_scope`` helper. The build.map globs are patched to controlled
+# values so the cases are deterministic and independent of the repo's live
+# ``marshal.json``; the registered-module enumeration runs for real against this
+# repository's ``marketplace/bundles`` tree unless a case patches it explicitly.
 
 import argparse  # noqa: E402
 
@@ -543,9 +545,16 @@ def _run_resolve_scope(capsys, *, changed_paths):
     return parse_toon(capsys.readouterr().out)
 
 
-def test_resolve_test_scope_changed_paths_docs_only_yields_no_target(capsys):
-    """A docs-only task-scoped footprint (no build-relevant path) resolves to an
-    empty ``scoped_modules`` set and ``recommended_target: None`` — no pytest target."""
+def test_resolve_test_scope_changed_paths_docs_only_fails_closed(capsys):
+    """A non-empty footprint that maps to no module FAILS CLOSED.
+
+    This case previously pinned the defect: it asserted ``divergence_possible is
+    False`` for ``doc/developer/build.adoc,README.md``, i.e. the affirmative claim
+    that a scoped run could not miss a regression - on a footprint whose coverage
+    could not be determined at all. Neither path is build-map-matched nor
+    module-owning, so both are now enumerated in ``unresolved_paths`` and the
+    verdict routes to the whole tree.
+    """
     out = _run_resolve_scope(
         capsys,
         changed_paths='doc/developer/build.adoc,README.md',
@@ -553,7 +562,11 @@ def test_resolve_test_scope_changed_paths_docs_only_yields_no_target(capsys):
     assert out['status'] == 'success'
     assert out['scoped_modules'] == []
     assert out['recommended_target'] is None
-    assert out['divergence_possible'] is False
+    assert out['divergence_possible'] is True
+    assert out['unresolved_paths'] == ['doc/developer/build.adoc', 'README.md']
+    # The registered-module enumeration succeeded; the fail-closed verdict comes
+    # from the unmapped paths, not from an unresolvable module set.
+    assert out['modules_resolvable'] is True
 
 
 def test_resolve_test_scope_changed_paths_single_module_resolves_target(capsys):
@@ -664,3 +677,85 @@ def test_resolve_test_scope_still_resolves_a_real_plan_footprint(capsys):
     mock_plan_footprint.assert_called_once_with('a-real-plan')
     out = parse_toon(capsys.readouterr().out)
     assert out['recommended_target'] == 'plan-marshall'
+
+
+# Registered-module enumeration: the third argument the handler threads into the
+# pure ``resolve_test_scope`` helper, plus its fail-closed counterpart.
+
+
+_SINGLE_MODULE_PATH = 'marketplace/bundles/plan-marshall/skills/build-pyproject/scripts/pyproject_build.py'
+
+
+def test_resolve_registered_modules_enumerates_the_real_bundle_names():
+    """The enumeration seam returns this repository's actual bundle names."""
+    modules = pyproject_build._resolve_registered_modules(str(PROJECT_ROOT))
+
+    assert 'plan-marshall' in modules
+    assert 'pm-dev-python' in modules
+    # A path segment that is NOT a bundle must never appear in the set - that is
+    # what makes the registered-module check able to reject ``test/_shared``.
+    assert '_shared' not in modules
+
+
+def test_resolve_registered_modules_returns_empty_without_a_marketplace_tree(tmp_path):
+    """A root carrying no ``marketplace/bundles`` enumerates nothing.
+
+    The empty return is the signal ``cmd_resolve_test_scope`` reads as
+    ``modules_resolvable: false``; the enumeration never guesses.
+    """
+    assert pyproject_build._resolve_registered_modules(str(tmp_path)) == frozenset()
+
+
+def test_resolve_test_scope_threads_the_caller_enumerated_module_set(capsys):
+    """The module set the CALLER enumerates is the one the derivation honours.
+
+    Patches the enumeration to a set that does NOT contain ``plan-marshall`` and
+    feeds a real ``plan-marshall`` path. If the derived segment were returned
+    verbatim (the pre-fix behaviour) the target would still be ``plan-marshall``;
+    threading the caller's set is what makes it unresolved instead.
+    """
+    args = _resolve_scope_args(changed_paths=_SINGLE_MODULE_PATH)
+    with (
+        patch('extension_base._read_build_map_globs', return_value=_SCOPE_BUILD_MAP_GLOBS),
+        patch.object(
+            pyproject_build,
+            '_resolve_registered_modules',
+            return_value=frozenset({'some-other-bundle'}),
+        ),
+    ):
+        rc = pyproject_build.cmd_resolve_test_scope(args)
+
+    assert rc == 0
+    out = parse_toon(capsys.readouterr().out)
+    # The enumeration itself succeeded, so this is NOT the modules_resolvable
+    # fail-closed path - it is the registered-module rejection.
+    assert out['modules_resolvable'] is True
+    assert out['scoped_modules'] == []
+    assert out['unresolved_paths'] == [_SINGLE_MODULE_PATH]
+    assert out['divergence_possible'] is True
+    assert out['recommended_target'] is None
+
+
+def test_resolve_test_scope_unenumerable_module_set_fails_closed(capsys):
+    """A caller that cannot enumerate registered modules fails toward the whole tree.
+
+    The counterpart to the case above: an EMPTY enumeration is reported as
+    ``modules_resolvable: false`` and forces ``divergence_possible: true`` /
+    ``recommended_target: None`` through the same ``dataclasses.replace`` the
+    unresolvable-footprint branch uses - never a confident scoped target. The
+    footprint is the one that resolves confidently when the enumeration works
+    (see ``test_resolve_test_scope_changed_paths_single_module_resolves_target``),
+    so the difference is attributable to the enumeration alone.
+    """
+    args = _resolve_scope_args(changed_paths=_SINGLE_MODULE_PATH)
+    with (
+        patch('extension_base._read_build_map_globs', return_value=_SCOPE_BUILD_MAP_GLOBS),
+        patch.object(pyproject_build, '_resolve_registered_modules', return_value=frozenset()),
+    ):
+        rc = pyproject_build.cmd_resolve_test_scope(args)
+
+    assert rc == 0
+    out = parse_toon(capsys.readouterr().out)
+    assert out['modules_resolvable'] is False
+    assert out['divergence_possible'] is True
+    assert out['recommended_target'] is None

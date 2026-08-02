@@ -45,8 +45,8 @@ import types
 from pathlib import Path
 
 import pytest
-
 from _build_class_roster import build_class_prefixes, build_class_roster
+
 from conftest import _MARKETPLACE_SCRIPT_DIRS, PROJECT_ROOT
 
 _SKILL_DIR = PROJECT_ROOT / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'tools-script-executor'
