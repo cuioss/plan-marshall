@@ -697,7 +697,9 @@ FOR each step_id in manifest.phase_6.steps:
 
       a0. Resolve orchestration context (runs BEFORE the three-zero short-circuit):
 
-         An orchestrated plan — one launched from an epic's staged plan spec — routes its lesson-shaped output to the epic's `inbox/` OUTBOX instead of the global lessons store. The verdict is resolved ONCE per finalize run, here, and forwarded to EVERY dispatched step whose body emits lesson-shaped output. That set is currently **two** steps: `default:lessons-capture` and `plan-marshall:plan-retrospective` (Step 5b). A future step that gains a `manage-lessons add` call site MUST be added to this list and receive the same two runtime inputs.
+         An orchestrated plan — one launched from an epic's staged plan spec — routes its lesson-shaped output to the epic's `inbox/` OUTBOX instead of the global lessons store. The verdict is resolved ONCE per finalize run, here, and consumed by EVERY step whose body emits lesson-shaped output. That set is currently **three** steps: `default:lessons-capture`, `plan-marshall:plan-retrospective` (Step 5b), and `default:finalize-step-preference-emitter` (Step 4). A future step that gains a `manage-lessons add` call site MUST be added to this list and receive the same two runtime inputs.
+
+         The two dispatched consumers receive the verdict as prompt-body runtime inputs (item c below); `default:finalize-step-preference-emitter` is an inline step, so it reads the values the dispatcher already holds — it MUST NOT re-issue either resolution call. All three run at or after `order: 991`, so the verdict resolved here is available to each of them.
 
          Read the plan's spec pointer through its canonical owner:
 
@@ -721,7 +723,7 @@ FOR each step_id in manifest.phase_6.steps:
               work --plan-id {plan_id} --level WARNING \
               --message "[VERIFY] (plan-marshall:phase-6-finalize:lessons-capture) Unrecognised orchestrator pointer {source_id} - the plan looks orchestrated but its id segment was not recognised, so no inbox message will be written"
 
-         The WARNING changes the SILENCE, not the branch: the verdict stays `orchestrated: false` and the run proceeds down the non-orchestrated path exactly as before. The two forwarded consumers (`default:lessons-capture` and `plan-marshall:plan-retrospective` Step 5b) keep receiving `orchestrated` and `epic` unchanged — `detection` is read here and is not added to their runtime inputs. Emit the WARNING for `unrecognised_id` only: `orchestrated` and `not_orchestrator_pointer` are the ordinary paths and stay quiet.
+         The WARNING changes the SILENCE, not the branch: the verdict stays `orchestrated: false` and the run proceeds down the non-orchestrated path exactly as before. All three consumers (`default:lessons-capture`, `plan-marshall:plan-retrospective` Step 5b, and `default:finalize-step-preference-emitter` Step 4) keep receiving `orchestrated` and `epic` unchanged — `detection` is read here and is not added to their runtime inputs. Emit the WARNING for `unrecognised_id` only: `orchestrated` and `not_orchestrator_pointer` are the ordinary paths and stay quiet.
 
       a. Compute three signal counts:
 
@@ -807,10 +809,12 @@ FOR each step_id in manifest.phase_6.steps:
             orchestrated: {true|false}
             epic: {slug|""}
 
-         The same two orchestration fields are ALSO forwarded on the `plan-marshall:plan-retrospective` dispatch (the DISPATCHED roster entry under `--phase phase-6-finalize --role post-run-review`, and the sole whitelisted `--session-id` recipient), so both lesson-emitting write-sites see one verdict resolved once:
+         The same two orchestration fields are ALSO forwarded on the `plan-marshall:plan-retrospective` dispatch (the DISPATCHED roster entry under `--phase phase-6-finalize --role post-run-review`, and the sole whitelisted `--session-id` recipient), so every lesson-emitting write-site sees one verdict resolved once:
 
             orchestrated: {true|false}
             epic: {slug|""}
+
+         `default:finalize-step-preference-emitter` (Step 4) is the third write-site and is INLINE, so it takes no prompt body — carry the same two values into it directly when the FOR loop reaches it at `order: 992`. It MUST NOT re-issue `request read --section source_id` or `orchestrator inbox detect`.
 
          Continue to item 5 (Dispatch with timeout wrapper).
 

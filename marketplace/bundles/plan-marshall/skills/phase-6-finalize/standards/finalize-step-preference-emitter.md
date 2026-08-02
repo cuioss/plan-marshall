@@ -59,6 +59,16 @@ dispatcher prepends `default:` when looking up the dispatch-table row).
 - `--iteration` — finalize iteration counter (accepted for contract compliance).
 - `{worktree_path}` has been resolved at finalize entry (see SKILL.md Step 0).
 
+**Orchestration context (resolved once by the dispatcher, never re-derived here)**: this step
+emits lesson-shaped output, so it consumes the same once-per-run orchestration verdict
+`lessons-capture` and `plan-retrospective` Step 5b consume. The dispatcher resolves it at
+`phase-6-finalize/SKILL.md` Step 3 item 4b.a0 (`manage-plan-documents request read --section
+source_id`, then `orchestrator inbox detect`) and still holds it when this inline step runs at
+`order: 992`, after `lessons-capture` at `991`.
+
+- `orchestrated` — bool; `true` when this plan was launched from an epic's staged plan spec. This step MUST NOT re-issue either resolution call.
+- `epic` — string; the epic slug when `orchestrated` is `true`, the empty string otherwise. Same must-not-recompute obligation.
+
 ## Ordering rationale
 
 This step is `post_run_review: true`: its output is a derived assessment of the
@@ -154,8 +164,69 @@ and runs after the merge gate, where the enrich write would put tracked source
 diff — the `#990` defect described in the Ordering rationale above. Take the
 discover-after-merge route in
 [source-edit-pushability.md](source-edit-pushability.md) § "The discover-after-merge
-rule" instead: file ONE follow-up artifact naming every owed hint, via the
-canonical `manage-lessons` three-step path-allocate flow (see
+rule" instead: name every owed hint in an explicit follow-up record so the enrichment is
+scheduled and visible rather than lost. WHERE that record is filed is decided by the
+orchestration branch below.
+
+#### Orchestration branch (evaluate FIRST)
+
+Branch on the `orchestrated` runtime input before filing anything. The branch decides the
+DESTINATION of the owed-hint record only — the generalization above and the
+`architecture enrich` prohibition are common to both branches.
+
+- **`orchestrated: false`** — unchanged: the record goes to the global lessons store via the
+  canonical `manage-lessons` three-step path-allocate flow. Continue at "Non-orchestrated
+  filing" below.
+- **`orchestrated: true`** — make **zero** `manage-lessons add` calls. The record belongs to
+  the epic that launched this plan, not to the global corpus: route it to the epic's `inbox/`
+  OUTBOX instead, exactly as `lessons-capture` and `plan-retrospective` Step 5b do at their own
+  write-sites. Follow the emission contract immediately below and skip the non-orchestrated
+  filing entirely.
+
+##### Orchestrated emission contract
+
+Message granularity is **one message per emitted item**, per
+[`../../marshall-orchestrator/standards/inbox-envelope.md`](../../marshall-orchestrator/standards/inbox-envelope.md):
+emit **one `kind: candidate-lesson` message per owed hint**. The payload is lesson-shaped —
+the same `key=value` header plus markdown body the lessons corpus uses — so the
+orchestrator-side pickup lifts it with zero transcoding. The plan performs **no**
+global-vs-epic classification; only the orchestrator holds the cross-plan context that
+judgement needs.
+
+Each payload MUST name the same three facts the non-orchestrated body names, so the owed
+`architecture enrich` call stays reconstructible without re-deriving the pattern from
+dispositions `archive-plan` is about to move: the target `--module`, the enrich verb the
+shared contract selects for that pattern (`best-practice` or `insight`), and the verbatim
+generalized hint text.
+
+For each message, stage the payload body with the `Write` tool first, then write it:
+
+```text
+Write {plan_dir}/work/inbox-payload.md
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator inbox write \
+  --slug {epic} --sender-type plan --sender-id {plan_id} --kind candidate-lesson \
+  --payload-file {plan_dir}/work/inbox-payload.md
+```
+
+Staging the body with `Write` first is the same shell-safety reason the lesson three-step flow
+exists — inline `python -c`, `$(printf …)`, and `#`-bearing heredocs are prohibited for inbox
+payload bodies exactly as they are for lesson bodies. The envelope schema, the `kind` enum, and
+the header-field table live in the standard cross-referenced above; do not restate them here.
+
+This branch emits NO `kind: landing` message. The one landing an orchestrated finalize run
+owes its epic is `lessons-capture`'s, emitted unconditionally there; a second one from here
+would put two landings on one run.
+
+This branch writes only under `.plan/`, so the step's `mutates_source: false` fact is unchanged
+and the dispatcher's post-step porcelain check still observes an empty tree.
+
+##### Non-orchestrated filing (`orchestrated: false`)
+
+File ONE follow-up artifact naming every owed hint, via the canonical `manage-lessons`
+three-step path-allocate flow (see
 [`../workflow/lessons-capture.md`](../workflow/lessons-capture.md) § "Gate 3 — Create"
 for the flow; do not restate it here):
 
@@ -173,9 +244,10 @@ owed `architecture enrich` call is reconstructible without re-deriving the patte
 from dispositions that `archive-plan` is about to move.
 
 The pairing with `lessons-capture` is deliberate and symmetric: both steps write
-the same `architecture enrich` sink, both are `post_run_review: true`, and both
-take this same route. Changing one without the other leaves the pair
-half-resolved.
+the same `architecture enrich` sink, both are `post_run_review: true`, both take this same
+discover-after-merge route, and both branch on `orchestrated` to decide whether the record
+lands in the global corpus or in the epic's inbox. Changing one without the other leaves the
+pair half-resolved.
 
 ### Step 5: Mark step done
 
@@ -203,7 +275,7 @@ no-ops) and skip-clean when the plan has zero promotable dispositions.
 |----------|--------|
 | No dispositions found / nothing clears the threshold | Mark `done` with `display_detail "Preference-emitter: no patterns promoted"` — skip-clean, never an error |
 | `manage-findings list` returns an error | Mark `done` with the read failure noted in `display_detail`; learning must NEVER block finalize |
-| Filing the owed-hint follow-up artifact fails | Non-fatal: log the failure and mark `done` — a failed artifact write never blocks finalize |
+| Filing the owed-hint record fails — either the `manage-lessons` artifact (`orchestrated: false`) or an `orchestrator inbox write` (`orchestrated: true`) | Non-fatal: log the failure and mark `done` — a failed owed-hint write never blocks finalize |
 
 ## Related
 

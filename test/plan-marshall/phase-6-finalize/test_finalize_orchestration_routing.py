@@ -4,7 +4,7 @@
 """Contract tests for the finalize orchestration routing split (deliverable 3).
 
 Named for the finalize *routing split* rather than for one step, because it pins
-BOTH lesson-emitting write-sites. In orchestration context every finalize step
+EVERY lesson-emitting write-site. In orchestration context every finalize step
 that emits lesson-shaped output routes to the epic's ``inbox/`` OUTBOX and makes
 zero global-lessons-store writes; a non-orchestrated plan's finalize behaviour is
 untouched.
@@ -13,10 +13,12 @@ Covered:
 
 - **Detection reuses the shipped seam** — ``classify_source_id`` over the pointer
   shape ``phase-1-init`` emits.
-- **Zero global-store writes at BOTH write-sites** — the orchestrated branch of
-  ``workflow/lessons-capture.md`` AND of ``plan-retrospective/SKILL.md`` Step 5b.
-  Both assertions are required: with only the first, the criterion is a vacuous
-  guard that passes green while the retrospective path leaks.
+- **Zero global-store writes at EVERY write-site** — the orchestrated branch of
+  ``workflow/lessons-capture.md``, of ``plan-retrospective/SKILL.md`` Step 5b, AND
+  of ``standards/finalize-step-preference-emitter.md`` Step 4. Every assertion is
+  required: with only the first, the criterion is a vacuous guard that passes green
+  while a sibling path leaks — which is exactly how the preference-emitter site went
+  unnoticed until the registered-step sweep below caught it.
 - **The write-site set is closed** — a sweep over every registered
   ``phase-6-finalize`` step body. **Scope**: the sweep covers the registered
   finalize step set only (``marshal.json`` -> ``plan.phase-6-finalize.steps``).
@@ -48,6 +50,7 @@ _FINALIZE = _PLAN_MARSHALL / 'phase-6-finalize'
 _FINALIZE_SKILL = _FINALIZE / 'SKILL.md'
 _LESSONS_CAPTURE = _FINALIZE / 'workflow' / 'lessons-capture.md'
 _LESSONS_INTEGRATION = _FINALIZE / 'standards' / 'lessons-integration.md'
+_PREFERENCE_EMITTER = _FINALIZE / 'standards' / 'finalize-step-preference-emitter.md'
 _RETROSPECTIVE = _PLAN_MARSHALL / 'plan-retrospective' / 'SKILL.md'
 _MARSHAL_JSON = PROJECT_ROOT / '.plan' / 'marshal.json'
 
@@ -285,14 +288,85 @@ class TestZeroGlobalStoreWritesRetrospective:
         assert 'to the epic inbox as `kind: candidate-lesson` messages' in text
 
 
-class TestBothWriteSitesNamedInOneStandard:
-    def test_standard_names_both_write_sites(self):
+class TestZeroGlobalStoreWritesPreferenceEmitter:
+    """The third write-site: the owed-hint filing in Step 4.
+
+    Mirrors ``TestZeroGlobalStoreWritesRetrospective`` in shape, and keeps BOTH
+    halves of the no-global-write assertion for the same anti-vacuity reason
+    ``test_orchestrated_branch_makes_no_architecture_enrich_call`` does: the regex
+    half proves the emission region issues no ``manage-lessons add``, the
+    declaration half proves the branch-selection prose SAYS so. Without the prose
+    half the guard goes vacuous the moment the region is renamed or split — the
+    regex would then search an empty span and pass.
+    """
+
+    def _declaration(self) -> str:
+        """The branch-selection prose that states what the branch may NOT call."""
+        return _between(
+            _read(_PREFERENCE_EMITTER),
+            '#### Orchestration branch (evaluate FIRST)',
+            '##### Orchestrated emission contract',
+        )
+
+    def _branch(self) -> str:
+        """The emission region — every invocation the orchestrated branch issues."""
+        return _between(
+            _read(_PREFERENCE_EMITTER),
+            '##### Orchestrated emission contract',
+            '##### Non-orchestrated filing',
+        )
+
+    def _non_orchestrated(self) -> str:
+        return _between(
+            _read(_PREFERENCE_EMITTER),
+            '##### Non-orchestrated filing',
+            '### Step 5: Mark step done',
+        )
+
+    def test_orchestrated_branch_makes_no_global_lessons_write(self):
+        assert _ADD_CALL.search(self._branch()) is None
+        assert 'zero** `manage-lessons add` calls' in self._declaration()
+
+    def test_orchestrated_branch_uses_the_inbox_write_verb(self):
+        assert _INBOX_WRITE.search(self._branch()) is not None
+
+    def test_orchestrated_branch_routes_every_owed_hint_as_candidate_lesson(self):
+        assert '--kind candidate-lesson' in self._branch()
+
+    def test_orchestrated_branch_emits_no_landing_message(self):
+        # The one landing per orchestrated run is lessons-capture's; a second one
+        # from here would put two landings on a single run.
+        assert 'emits NO `kind: landing` message' in self._branch()
+
+    def test_declaration_leaves_the_non_orchestrated_path_unchanged(self):
+        declaration = self._declaration()
+
+        assert '**`orchestrated: false`**' in declaration
+        assert 'unchanged' in declaration
+
+    def test_non_orchestrated_filing_still_writes_the_global_store(self):
+        # Positive control. Without it the branch could satisfy every assertion
+        # above by deleting the global-store route outright rather than branching
+        # around it — that would break every non-orchestrated plan silently.
+        assert _ADD_CALL.search(self._non_orchestrated()) is not None
+
+    def test_inputs_declare_both_runtime_inputs_as_forwarded(self):
+        text = _read(_PREFERENCE_EMITTER)
+
+        assert '- `orchestrated` — bool;' in text
+        assert '- `epic` — string;' in text
+        assert 'MUST NOT re-issue either resolution call' in text
+
+
+class TestEveryWriteSiteNamedInOneStandard:
+    def test_standard_names_every_write_site(self):
         text = _read(_LESSONS_INTEGRATION)
 
         assert '## Recording Lessons' in text
         assert '### Orchestration context' in text
         assert 'lessons-capture.md' in text
         assert 'plan-retrospective/SKILL.md' in text
+        assert 'finalize-step-preference-emitter.md' in text
 
     def test_standard_defers_classification_to_the_orchestrator(self):
         text = _read(_LESSONS_INTEGRATION)
@@ -486,11 +560,12 @@ class TestShortCircuitCarveOut:
         assert 'orchestrated: {true|false}' in item
         assert 'epic: {slug|""}' in item
 
-    def test_the_two_write_site_list_is_recorded_at_the_resolution_site(self):
+    def test_the_write_site_list_is_recorded_at_the_resolution_site(self):
         item = self._item_4b()
 
         assert 'default:lessons-capture' in item
         assert 'plan-marshall:plan-retrospective' in item
+        assert 'default:finalize-step-preference-emitter' in item
         assert 'MUST be added to this list' in item
 
     def test_body_declares_both_runtime_inputs(self):

@@ -43,7 +43,7 @@ The inline steps are pure scripts or trivial orchestration that earn no envelope
 - `default:push` — the single push barrier
 - `default:ci-verify` — deterministic taxonomy-classification script (`scripts/ci_verify.py`)
 - `default:branch-cleanup` — adapts to PR mode or local-only based on `create-pr` presence
-- `default:finalize-step-preference-emitter` — deterministic within-plan disposition aggregation routed to `architecture enrich`
+- `default:finalize-step-preference-emitter` — deterministic within-plan disposition aggregation whose owed `architecture enrich` hints are filed as a follow-up record (post-merge-ordered, so it never calls `enrich` itself)
 - `default:record-metrics` — record final plan metrics before archive
 - `default:finalize-step-print-phase-breakdown` — capture the Phase Breakdown table from `metrics.md`
 - `default:archive-plan` — archive the completed plan

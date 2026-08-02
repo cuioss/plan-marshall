@@ -45,14 +45,15 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ### Orchestration context
 
-In orchestration context — a plan launched from an epic's staged plan spec — the three-gate policy and the global-store write below are **not applicable at all**, at either write-site. The plan makes zero `manage-lessons add` calls from any finalize step and routes every emitted item to its epic's `inbox/` OUTBOX instead. Classification is deferred to the orchestrator-side pickup, because only the orchestrator holds the cross-plan context that judgement needs.
+In orchestration context — a plan launched from an epic's staged plan spec — the three-gate policy and the global-store write below are **not applicable at all**, at any write-site. The plan makes zero `manage-lessons add` calls from any finalize step and routes every emitted item to its epic's `inbox/` OUTBOX instead. Classification is deferred to the orchestrator-side pickup, because only the orchestrator holds the cross-plan context that judgement needs.
 
-The write-site set is **two**, and this is the one place a reader learns it:
+The write-site set is **three**, and this is the one place a reader learns it:
 
 | Write-site | Orchestrated branch |
 |------------|---------------------|
 | [`../workflow/lessons-capture.md`](../workflow/lessons-capture.md) § "Orchestration branch" | Zero `manage-lessons add`, zero `architecture enrich`; one `kind: landing` message per run plus one `kind: candidate-lesson` per candidate. |
 | [`../../plan-retrospective/SKILL.md`](../../plan-retrospective/SKILL.md) Step 5b | Zero `manage-lessons add`; Step 5a dedup and the `already_closed` deletion path do not run; every proposal rides as one `kind: candidate-lesson` message. |
+| [`finalize-step-preference-emitter.md`](finalize-step-preference-emitter.md) Step 4 § "Orchestration branch" | Zero `manage-lessons add`; each owed `architecture enrich` hint rides as one `kind: candidate-lesson` message. No `kind: landing` message — the one landing per run is `lessons-capture`'s. |
 
 The envelope schema is owned by [`../../marshall-orchestrator/standards/inbox-envelope.md`](../../marshall-orchestrator/standards/inbox-envelope.md) and the branch mechanics by the two documents above; neither is restated here.
 
