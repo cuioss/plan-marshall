@@ -248,12 +248,23 @@ accident: weakening the list to one representative marker would silently broaden
 An empty `contentless_review_markers` is the fail-closed default — the layer never fires for a bot
 that declares none, which is every bot that has not opted in.
 
-**A contentless drop is `participated_but_empty`, never `absent`.** `participated_bots[]` is derived
-from the raw comment list *before* the producer's pre-filter runs, so suppressing a bot's only
-comment removes its findings without removing its participation evidence. The bot therefore lands on
-the `participated_but_empty` member of the failure taxonomy above — *"Accounted-for, not a failure.
-The bot did its pass and had nothing actionable to say."* — which is exactly what a clean review is.
-Reading a contentless drop as `absent` would turn a successful review into a completeness failure.
+**The drop itself never removes participation evidence.** `participated_bots[]` is derived from the
+raw comment list *before* the producer's pre-filter runs, so suppressing a bot's only comment removes
+its findings without removing its participation evidence. On a fetch where the bot is credited, it
+therefore lands on the `participated_but_empty` member of the failure taxonomy above — *"Accounted-for,
+not a failure. The bot did its pass and had nothing actionable to say."* — which is exactly what a
+clean review is. Reading *the drop* as `absent` would turn a successful review into a completeness
+failure.
+
+That is a claim about the drop in isolation, and it is deliberately **not** an absolute: it does not
+say a dropped comment can never resolve to `absent`. Credit still has to clear the movement
+requirement below, and `review_completeness.classify_bot()` assigns `participated_but_empty` only to a
+bot present in `proven_participants` — a bot absent from `participated_bots[]` falls through to
+`absent`, an unproven state that blocks the quorum. For a bot declaring
+`participation_requires_update` (today, only PR-Agent, the sole bot that opts into the contentless
+drop) an unchanged clean comment is credited on the fetch that first observes it and denied on every
+later fetch, so in the steady state a dropped clean Guide does resolve to `absent`. That is the
+intended reading of a stale unchanged comment, not a defect in the drop.
 
 **Surviving the drop is not the same as being exempt from the movement requirement.** For a bot
 declaring `participation_requires_update` the evidence that survives the drop must still show **first
