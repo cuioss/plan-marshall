@@ -1,0 +1,157 @@
+= Code Search
+:nofooter:
+:toc: left
+:toclevels: 3
+:toc-title: Table of Contents
+:sectnums:
+:source-highlighter: highlight.js
+
+xref:../../README.md[Plan Marshall] » xref:README.adoc[User Guide]
+
+Two different questions look alike until you ask them: *"where is the file called `X`?"* and *"which files mention `X`?"*. Plan Marshall answers them with two different verbs over the same crawled inventory, and picking the wrong one is how a search comes back empty on a token that is demonstrably in the tree.
+
+This page is the operator's guide to both — when to reach for each, how to read what comes back, and what a zero result is and is not evidence of.
+
+== Which verb answers your question
+
+[cols="1,1,2", options="header"]
+|===
+| You want to know | Verb | What it looks at
+
+| Where a file *named* something lives
+| `architecture find --pattern P`
+| The inventory's PATHS. It never opens a file.
+
+| Which files *contain* some text
+| `architecture search --content --pattern P`
+| Each inventoried file's BODY.
+|===
+
+The two are siblings at the same seam: identical module and category attribution, identical truncation reporting, and only the per-file test differs — a glob against the path versus a regex against the body.
+
+The trap is `find`. A pattern that reads like something you expect to find *inside* a file — a config key, an enum value, a renamed identifier — matches only when that literal string also appears in a file's path. `find` returning `count: 0` proves that no path matched; it is not evidence that no file contains the string. That is the exact question `search --content` exists to answer.
+
+== Running a content search
+
+The mode flag is required, so the call always says what kind of search it is:
+
+[source,bash]
+----
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
+  search --content --pattern "HARNESS_BASH_CEILING"
+----
+
+Omitting `--content` is rejected before anything runs, rather than quietly defaulting to a mode.
+
+=== Options
+
+[cols="1,3", options="header"]
+|===
+| Option | What it does
+
+| `--content`
+| Required mode selector — searches file bodies.
+
+| `--pattern P`
+| The pattern. A Python regular expression by default.
+
+| `--literal`
+| Treat `--pattern` as a fixed string instead of a regex. Use this whenever the text you are looking for contains regex or shell metacharacters.
+
+| `--category C`
+| Restrict the search to one file category (`source`, `test`, `doc`, `script`, `standard`, and the rest of the inventory vocabulary). Narrows both what is searched and what is reported.
+|===
+
+`--literal` is the option worth internalising. Searching for `plan-marshall:manage-files:manage-files` or `$(pwd)` as a regex will either error out or match something you did not mean; under `--literal` the pattern matches exactly. Nothing you type ever reaches a shell — the search is a Python-side walk over the inventory, so metacharacters are a regex question and never a quoting hazard.
+
+[source,bash]
+----
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
+  search --content --literal --pattern "load_derived_data" --category source
+----
+
+== Reading the response
+
+[source,toon]
+----
+status: success
+pattern: HARNESS_BASH_CEILING
+literal: false
+category: null
+count: 2
+results[2]{module,category,path,match_count}:
+  plan-marshall,script,.../manage-architecture/scripts/_cmd_client.py,1
+  plan-marshall,script,.../manage-architecture/scripts/_cmd_client_build.py,3
+files_scanned: 4215
+unreadable[0]:
+truncated: false
+elided[0]:
+----
+
+[cols="1,3", options="header"]
+|===
+| Field | How to read it
+
+| `count`
+| How many files matched. Never read this on its own — see `files_scanned`.
+
+| `results[].module` / `.category` / `.path`
+| Where the hit is, already attributed to the owning module and file category. No second lookup needed.
+
+| `results[].match_count`
+| How many times the pattern occurs in that file. This is the ranking signal.
+
+| `files_scanned`
+| How many files were actually opened and searched. This is what makes a `count: 0` mean something.
+
+| `unreadable[]`
+| Files that were skipped because they could not be decoded (a binary) or could not be read (`decode_error` / `os_error`). Empty when the sweep was clean. A skipped file is reported, never silently dropped.
+
+| `truncated` / `elided`
+| The standard fail-closed pair. If the inventory had to elide anything, you are told.
+|===
+
+An invalid regex comes back as `status: error` with `error: invalid_pattern` and the compiler's message — it never masquerades as a confident `count: 0`. The same pattern under `--literal` is usually a perfectly good query, because the escaping happens before the compile.
+
+=== Why it lists files, not lines
+
+The response deliberately carries no matching line text and no line numbers. That is a design decision, not a missing feature.
+
+If hits came back as lines, the size of the response would scale with how *often* the pattern occurs rather than with how *many files* carry it — so one broad sweep over a large tree could dump an unbounded amount of text into an agent's context, which is the cost this substrate exists to keep down. Listing files keeps the response proportional to the answer.
+
+`match_count` is what replaces the lines. Use it to decide what is worth opening:
+
+* `match_count: 1` on a dozen files is usually an import or a single reference each — often the whole answer, with nothing left to open.
+* One file with `match_count: 47` among files with `1` is almost always the definition site or the owning module. Open that one first.
+* A `Read` on the two or three highest-count hits will normally settle the question faster than scrolling a line-oriented dump of all of them.
+
+The workflow the verb is built for is *sweep → rank → read a few*, not *sweep → read everything it printed*.
+
+== What a zero result does and does not prove
+
+This is the part worth being pedantic about, because a confident-looking empty answer is the one that misleads.
+
+`count: 0` with `files_scanned: 0` means **nothing was searched**. `count: 0` with `files_scanned: 4215` means **4215 files were opened and the pattern is genuinely absent from them**. Those are opposite conclusions, and the only thing distinguishing them is the number. Always read them together; when you report a negative result to someone else, report the population size with it.
+
+Even a well-populated negative has a boundary. The search covers the *crawled inventory*, which by construction leaves out:
+
+* always-ignored directories — `.git`, `node_modules`, `target`, and build/tool caches;
+* dotfile trees outside the allowlist — notably `.claude/**` and `.github/**` are not searched;
+* anything a `.gitignore` rule excludes — including `.plan/` and its logs.
+
+So the honest reading of a well-populated `count: 0` is *"not in any inventoried file"*, which is a narrower claim than *"not in the tree"*. If the thing you are looking for could plausibly live in a workflow file, a local setting, or a plan log, this verb will not see it and will not pretend otherwise.
+
+Two things it *does* cover that are easy to assume otherwise: untracked-but-not-ignored files are searched (the walk is gitignore-aware rather than driven by what git tracks), and the verb works outside a git worktree.
+
+== Why this verb exists
+
+A subagent dispatched to do a piece of work does not always get the same tool set the main session has. Its `Grep` and `Glob` tools may be unavailable, and the xref:enforcement-hook.adoc[enforcement hook] refuses Bash file-search programs inside a plan context. Before this verb existed, an agent in that position had no sanctioned way to answer "which file contains X" and had to hand the question back as a coverage gap.
+
+`architecture search --content` is that sanctioned path. It is also the better tool for the job in the main session: hits arrive already attributed to a module and category, and the response stays proportional to the number of matching files rather than to the number of matches.
+
+== Related
+
+* xref:enforcement-hook.adoc[User Guide › Enforcement Hook] — the optional hook that blocks Bash file-search programs inside a plan context, and points at this verb instead.
+* xref:../concepts/code-intelligence.adoc[Concepts › Code Intelligence] — where content search sits in the tier ladder, and the provenance discipline the anti-vacuity fields come from.
+* link:../../marketplace/bundles/plan-marshall/skills/manage-architecture/standards/client-api.md[`client-api.md`] — the full response contract for `search` and `find`, including every edge case and worked TOON payload.
+* xref:../adr/009-Status_reporting_fails_closed_with_an_explicit_unknown_state.adoc[ADR-009] — the fail-closed reporting rule behind `files_scanned`, `unreadable[]`, and the `truncated` / `elided` pair.
