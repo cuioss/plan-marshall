@@ -510,10 +510,13 @@ class TestMetricsGenerated:
     in-process plan directory under the ordering the live registry declares.
     """
 
-    #: The producer/consumer pair the absence verdict is derived from — the same
-    #: two steps the production check resolves through discovery.
-    _PRODUCER = 'default:record-metrics'
-    _CONSUMER = 'plan-marshall:plan-retrospective'
+    #: The producer/consumer pair the absence verdict is derived from — read
+    #: from the module under test rather than restated as literals, so renaming
+    #: a finalize step id moves the production check and this test together. A
+    #: restated literal would leave the live-registry guards below asserting the
+    #: OLD id and failing while naming the wrong cause.
+    _PRODUCER = _cac._METRICS_PRODUCER_STEP
+    _CONSUMER = _cac._METRICS_CONSUMER_STEP
 
     def test_pass_when_present(self, tmp_path):
         (tmp_path / 'metrics.md').write_text('# Metrics\n', encoding='utf-8')

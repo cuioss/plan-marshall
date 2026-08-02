@@ -1155,8 +1155,13 @@ class TestMetricsGeneratedOrderingDerivedVerdict:
     stubbed branches read as green.
     """
 
-    _PRODUCER = 'default:record-metrics'
-    _CONSUMER = 'plan-marshall:plan-retrospective'
+    #: Read from the module under test rather than restated as literals, so
+    #: renaming a finalize step id moves the production check and this test
+    #: together. A restated literal would leave
+    #: ``test_orders_are_read_from_real_discovery`` asserting the OLD id and
+    #: failing while naming the wrong cause.
+    _PRODUCER = _check_mod._METRICS_PRODUCER_STEP
+    _CONSUMER = _check_mod._METRICS_CONSUMER_STEP
 
     def _plan_dir_without_metrics(self, tmp_path: Path) -> Path:
         plan_dir = tmp_path / 'plan'
