@@ -24,6 +24,8 @@ Usage:
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status get-routing-context --plan-id EXAMPLE-PLAN
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done --plan-id EXAMPLE-PLAN --phase 5-execute --step discovery --outcome done
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status assert-step-recorded --plan-id EXAMPLE-PLAN --phase 6-finalize --step ci-verify --require-terminal
+    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status merge-authorization grant --plan-id EXAMPLE-PLAN --kind barrier-ask-override --head 76c7200b6 --gap-class review-barrier-gap --granted-over "2 unhandled, unproven_bots=pr-agent" --reason "operator accepted the gap"
+    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status merge-authorization check --plan-id EXAMPLE-PLAN --head 76c7200b6 --gap-class review-barrier-gap
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status sibling-collision-check --plan-id EXAMPLE-PLAN
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status create --store orchestrator --plan-id example-epic --title "Epic"
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status update-field --plan-id example-epic --field resume_anchor --value "next action"
@@ -43,6 +45,10 @@ from _cmd_lifecycle import (
     verify_blocks_transition,
 )
 from _cmd_mark_step import VALID_LOOP_BACK_TARGETS, cmd_mark_step_done
+from _cmd_merge_authorization import (
+    cmd_merge_authorization_check,
+    cmd_merge_authorization_grant,
+)
 from _cmd_planning_lane import (
     cmd_planning_lane_escalate,
     cmd_planning_lane_route,
@@ -450,6 +456,113 @@ def main() -> int:
         ),
     )
     assert_step_parser.set_defaults(func=cmd_assert_step_recorded)
+
+    # merge-authorization (grant | check)
+    merge_authorization_parser = subparsers.add_parser(
+        'merge-authorization',
+        help='Grant or check a HEAD-bound merge authorization in status.metadata.merge_authorizations',
+        description=(
+            'Bind a merge-gate authorization to the HEAD it was granted against AND '
+            'to the gap class it was granted over. '
+            "'grant' persists merge_authorizations[kind] = {head, gap_class, "
+            "granted_over, reason, granted_at}; a re-grant at a new HEAD overwrites "
+            'the record, and that overwrite IS the sanctioned re-seek (there is no '
+            "revoke verb). 'check' takes no --kind — the caller asks one question "
+            "('is there an admissible authorization for the gap I am reporting'), so "
+            'the verb returns every record with a HEAD verdict (valid when '
+            'record.head equals --head, lapsed otherwise) AND an admissibility '
+            'verdict (valid AND record.gap_class equals --gap-class), plus '
+            'authorized_kinds, lapsed_kinds, admissible_kinds, inadmissible_kinds, '
+            'any_authorized and any_admissible. HEAD-validity alone is not '
+            'authorization: several kinds are granted at earlier sites at the SAME '
+            'HEAD over a DIFFERENT gap, so admissibility narrows the routing while '
+            'every record stays in the report. An empty store returns both '
+            'aggregates false with empty lists — fail-closed; absent is never '
+            'collapsed into valid, and a record with no gap_class matches no class.'
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
+    )
+    merge_authorization_subparsers = merge_authorization_parser.add_subparsers(
+        dest='merge_authorization_verb', required=True
+    )
+
+    merge_authorization_grant_parser = merge_authorization_subparsers.add_parser(
+        'grant',
+        help='Persist a HEAD-bound authorization record (a re-grant overwrites)',
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(merge_authorization_grant_parser)
+    merge_authorization_grant_parser.add_argument(
+        '--kind',
+        required=True,
+        help=(
+            'Authorization kind (e.g. barrier-ask-override, pre-merge-consent, '
+            'red-ci-override, rereview-timeout-override). The membership is declared '
+            'by the Merge-Authorization Roster in phase-6-finalize/standards/'
+            'branch-cleanup.md, not by this parser.'
+        ),
+    )
+    merge_authorization_grant_parser.add_argument(
+        '--head', required=True, help='Git SHA the authorization is granted against.'
+    )
+    merge_authorization_grant_parser.add_argument(
+        '--gap-class',
+        dest='gap_class',
+        required=True,
+        help=(
+            'The gap class this ruling authorizes past — the machine token naming '
+            'WHICH gate the operator was answering (e.g. review-barrier-gap, '
+            'merge-action, red-ci-gate, rereview-timeout). Each roster row declares '
+            "the token its site must pass via its 'authorizes:' claim. Routing "
+            'compares this token; --granted-over carries the same fact as prose for '
+            'a human reader and is never compared.'
+        ),
+    )
+    merge_authorization_grant_parser.add_argument(
+        '--granted-over',
+        dest='granted_over',
+        required=True,
+        help=(
+            'What the authorization was granted over — the gap as the granting site '
+            'saw it (e.g. the pending count and the unproven_bots list). Persisted '
+            'verbatim so a later reader can re-evaluate the ruling against a later delta.'
+        ),
+    )
+    merge_authorization_grant_parser.add_argument(
+        '--reason', required=True, help="The operator's (or policy's) stated reason."
+    )
+    merge_authorization_grant_parser.set_defaults(func=cmd_merge_authorization_grant)
+
+    merge_authorization_check_parser = merge_authorization_subparsers.add_parser(
+        'check',
+        help='Return each record\'s HEAD verdict and its admissibility for the caller\'s gap',
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(merge_authorization_check_parser)
+    merge_authorization_check_parser.add_argument(
+        '--head',
+        required=True,
+        help=(
+            'The HEAD the caller is about to merge. Every record whose head differs '
+            'is lapsed. There is deliberately no --kind filter: a per-kind check '
+            'would let one valid authorization mask a lapsed sibling.'
+        ),
+    )
+    merge_authorization_check_parser.add_argument(
+        '--gap-class',
+        dest='gap_class',
+        required=True,
+        help=(
+            'The gap class the CALLER is reporting. A record is admissible only when '
+            'it is valid at --head AND was granted over this same class. Required, '
+            'so no caller can fall back to routing on HEAD-validity alone — several '
+            'kinds are granted at earlier sites at the same HEAD over a different '
+            'gap. Every record is still reported regardless of class; this narrows '
+            'the routing, never the report.'
+        ),
+    )
+    merge_authorization_check_parser.set_defaults(func=cmd_merge_authorization_check)
 
     # change-type-heuristic
     change_type_parser = subparsers.add_parser(
