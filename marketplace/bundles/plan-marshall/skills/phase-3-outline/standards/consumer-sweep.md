@@ -54,27 +54,31 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
 
 The architecture verb returns module-level matches and is the canonical first pass. Record every consumer file from the `results` list.
 
-### 2c. Run grep fallback for sub-module references
+### 2c. Run the content sweep for sub-module references
 
-The architecture inventory deliberately elides sub-module path components (e.g., script files inside `skills/{name}/scripts/`, agent loader directives inside skill markdown). To catch references the structured query misses, run a grep fallback against the worktree root:
-
-```bash
-grep -rn "{symbol}" marketplace/bundles/
-```
-
-For skill notations specifically, also sweep `marshal.json` and `.plan/`:
+`architecture find` matches PATHS only, so it cannot see a reference that lives inside a file body — a symbol used in a script under `skills/{name}/scripts/`, or an agent loader directive inside skill markdown. `architecture search --content` closes exactly that gap over the same module-attributed inventory:
 
 ```bash
-grep -rn "{bundle}:{skill}:" marshal.json .plan/
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture search --content --literal --pattern "{symbol}"
 ```
 
-For `Skill:` loader directives in markdown:
+For skill notations specifically, sweep the notation prefix:
 
 ```bash
-grep -rn "^Skill:[[:space:]]*{bundle}:{skill}" marketplace/ .claude/
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture search --content --literal --pattern "{bundle}:{skill}:"
 ```
 
-Each grep call is a separate Bash invocation (one command per call — never combined with `&&`, `;`, or pipes). Use `architecture find` first; the grep calls exist to narrow into sub-module components and content searches the architecture verb cannot resolve.
+This covers the marketplace-rooted portion. `marshal.json` and `.plan/` are OUTSIDE the crawled inventory, so the sweep does not reach them — return that residue to the caller as a coverage gap rather than reporting the notation clean.
+
+For `Skill:` loader directives in markdown, use the anchored regex form (no `--literal`, since the anchor is the point):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture search --content --pattern "^Skill:[[:space:]]*{bundle}:{skill}"
+```
+
+This likewise covers only the marketplace-rooted portion; `.claude/` is a dotfile tree outside the inventory, so its residue is the same coverage-gap return.
+
+Each call is a separate Bash invocation (one command per call — never combined with `&&`, `;`, or pipes). Use `architecture find` first for path matches; these `search --content` calls reach the sub-module body references the path glob cannot resolve. Read `files_scanned` alongside `count` so an empty result is a real empty population rather than an unsearched one — see [`manage-architecture/standards/client-api.md`](../../manage-architecture/standards/client-api.md) § search.
 
 ### 2d. Collect every consuming file
 
@@ -117,7 +121,7 @@ The deliverable's `Change per file` contained "remove `load_derived_data`" and "
 
 ### Sweep procedure
 
-`architecture find --pattern "load_derived_data"` would have returned the manage-architecture core file (already in scope) and elided the pm-dev-java sub-module reference. The grep fallback `grep -rn "load_derived_data" marketplace/bundles/` would have surfaced:
+`architecture find --pattern "load_derived_data"` would have returned the manage-architecture core file (already in scope) and missed the pm-dev-java reference, which lives in a file BODY rather than a path. The content sweep `architecture search --content --literal --pattern "load_derived_data"` would have surfaced:
 
 ```text
 marketplace/bundles/pm-dev-java/skills/manage-maven-profiles/scripts/profiles.py:14:from _architecture_core import load_derived_data
@@ -144,7 +148,7 @@ And the `Change per file` would gain explicit migration text for the cross-bundl
 - `test_profiles.py`: rewrite `create_test_derived_data` to seed via `save_project_meta` + `save_module_derived`; remove `save_derived_data` import; update module docstring to reference per-module layout.
 ```
 
-With the consumer sweep applied at outline time, TASK-9 would never have hit the `ImportError`, and scope would have stayed pinned to the deliverable's stated text. The consumer-sweep step would add roughly two seconds of outline-time grep work and save a fix-loop iteration during execute.
+With the consumer sweep applied at outline time, TASK-9 would never have hit the `ImportError`, and scope would have stayed pinned to the deliverable's stated text. The consumer-sweep step would add roughly two seconds of outline-time sweep work and save a fix-loop iteration during execute.
 
 ---
 

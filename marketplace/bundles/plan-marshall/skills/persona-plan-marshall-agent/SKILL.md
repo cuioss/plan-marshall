@@ -83,7 +83,7 @@ The 🔨 `build-busy` terminal-title bracket around such a call is **machine-own
 
 ### Bash: No file operations
 
-Never use Bash for file discovery or reading. Use the structured architecture inventory first (`architecture files --module X`, `architecture which-module --path P`, `architecture find --pattern P`); fall back to Glob, Grep, Read when narrowing to sub-module components, scanning content inside an already-known file, or when the architecture verb returns elision. See "Structured queries first" below for the full rule.
+Never use Bash for file discovery, reading, or content search. Use the structured architecture inventory first (`architecture files --module X`, `architecture which-module --path P`, `architecture find --pattern P` for a path glob, `architecture search --content --pattern P` for file content); fall back to Glob, Grep, Read when narrowing to sub-module components, scanning content inside an already-known file, or when the architecture verb returns elision. `grep` and git's `grep` subcommand via Bash are never the answer — see [`manage-architecture/standards/client-api.md`](../manage-architecture/standards/client-api.md) § search for the content-search contract, and "Structured queries first" below for the full rule.
 
 ### Skill workflow: No improvisation
 
@@ -95,7 +95,7 @@ Every skill declares its execution archetype in its frontmatter `mode` field (`k
 
 ### Structured queries first
 
-Before reaching for `Glob` or `Grep` for codebase navigation (file discovery, module identification, path resolution), consult the structured architecture inventory via `architecture files --module X`, `architecture which-module --path P`, or `architecture find --pattern P`. `Glob`/`Grep` are the fallback for sub-module component lookup, content searches inside an already-known file, or when the architecture verb returns elision — not the routine first choice. See [`agent-behavior-rules.md` § Structured queries first](standards/agent-behavior-rules.md#structured-queries-first) for the full rule and a worked example.
+Before reaching for `Glob` or `Grep` for codebase navigation (file discovery, module identification, path resolution, content search), consult the structured architecture inventory via `architecture files --module X`, `architecture which-module --path P`, `architecture find --pattern P` (matches the PATH), or `architecture search --content --pattern P` (matches the file BODY). `Glob`/`Grep` are the fallback for sub-module component lookup, content searches inside an already-known file, or when the architecture verb returns elision — not the routine first choice. See [`agent-behavior-rules.md` § Structured queries first](standards/agent-behavior-rules.md#structured-queries-first) for the full rule and a worked example.
 
 ### Never invent script subcommands
 

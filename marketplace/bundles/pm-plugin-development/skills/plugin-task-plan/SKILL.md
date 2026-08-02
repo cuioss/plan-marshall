@@ -182,8 +182,8 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks \
 #     context_skills: []
 #   verification:
 #     commands:
-#       - grep -r '```json' marketplace/bundles/plan-marshall/agents/
-#     criteria: Returns no matches (exit code 1)
+#       - python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture search --content --literal --pattern '```json'
+#     criteria: count is 0 with files_scanned > 0 (a real empty population, not an unsearched one)
 
 # Step 3: commit
 python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks \

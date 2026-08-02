@@ -38,7 +38,7 @@ A workaround occurs when the intended method fails or is unavailable, and an alt
 **What It Is**: Using different approach when intended method fails.
 
 **Examples**:
-- Using Bash grep instead of Grep tool
+- Reaching for a Bash shell search for a tree-wide content sweep instead of the intended `architecture search --content --pattern P`
 - Manual parsing instead of using parser script
 - Direct file read instead of using skill
 - Shell commands instead of dedicated tools

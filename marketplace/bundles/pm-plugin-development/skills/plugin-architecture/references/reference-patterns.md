@@ -49,14 +49,17 @@ FAIL Read: ~/git/plan-marshall/standards/file.md # Absolute path
 
 **Validation**:
 ```bash
-# Extract all Read: statements
-grep "Read references/" skill/SKILL.md
-
-# Verify each file exists
-for file in $(extracted_paths); do
-  test -f "skill/${file}" || echo "MISSING: $file"
-done
+# Find every skill that carries a Read: statement into references/
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture search --content --literal --pattern "Read references/"
 ```
+
+Then `Read` each reported `path` to extract its reference targets, and confirm each target is present in the owning skill's inventory:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture files --module {module} --category skill_doc
+```
+
+A referenced file absent from that inventory is the `MISSING` case.
 
 ## Pattern 2: Script Execution (via execute-script.py)
 
@@ -294,13 +297,25 @@ cp -r my-skill .claude/skills/
 
 ### Automated Validation
 
+Each prohibited pattern is a separate content sweep (one command per call):
+
 ```bash
-# Check for prohibited patterns
-grep -r "Read: \.\." skill/              # Escape sequences
-grep -r "bash \.\." skill/               # Escape sequences
-grep -r "Read: ~" skill/                 # Absolute paths
-grep -r "Read: /" skill/ | grep -v http # Absolute paths (exclude URLs)
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture search --content --literal --pattern "Read: .."
 ```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture search --content --literal --pattern "bash .."
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture search --content --literal --pattern "Read: ~"
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture search --content --pattern "Read: /(?!/)"
+```
+
+The first three are escape-sequence and absolute-path probes; the fourth uses a regex (no `--literal`) so a `Read: //`-style URL prefix does not register as an absolute path. A clean result is `count: 0` **with `files_scanned > 0`** — the scanned count is what distinguishes a real empty population from a sweep that searched nothing.
 
 ## Reference Summary
 

@@ -20,7 +20,13 @@ Semantic analysis of tool declarations vs actual usage in a single marketplace c
 
 ### Step 1: Read the component
 
-Read the file at `{file_path}` via the `Read` tool. For skills with sub-documents (`references/`, `standards/`), also `Grep` the skill directory for tool-invocation patterns across the whole tree — coverage analysis must include the standards/references the SKILL.md cross-references.
+Read the file at `{file_path}` via the `Read` tool. For skills with sub-documents (`references/`, `standards/`), also sweep the skill's file bodies for tool-invocation patterns across the whole tree — coverage analysis must include the standards/references the SKILL.md cross-references:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture search --content --pattern "{invocation_pattern}"
+```
+
+Each hit carries its `module`, `category` and `path`, so the sweep reports which sub-document invokes the tool without opening every file. Read the matched paths that fall under the component's own directory; `match_count` ranks which are worth reading first. See [`plan-marshall:manage-architecture/standards/client-api.md`](../../../../plan-marshall/skills/manage-architecture/standards/client-api.md) § search for the response contract.
 
 ### Step 2: Identify actual tool invocations
 
