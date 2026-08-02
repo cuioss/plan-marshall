@@ -941,9 +941,9 @@ def _build_deps_and_producers(
     # the edges, so a declaration can never blank a resolver's contribution
     # silently.
     for report in resolver_reports:
-        discarded = suppression_notes.get(report.get('id', ''))
+        discarded = suppression_notes.get(report['id'])
         if discarded:
-            report['notes'] = [*report.get('notes', []), *discarded]
+            report['notes'] = [*report['notes'], *discarded]
 
     # Post-resolution augmentation: symmetric virtual-sibling cross-linking.
     # See _apply_sibling_cross_links for the full rationale.
