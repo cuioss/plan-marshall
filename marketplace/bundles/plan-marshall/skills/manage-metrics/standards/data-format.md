@@ -12,6 +12,65 @@ Storage format specifications for plan metrics collection and reporting.
 
 All files live in `.plan/plans/{plan_id}/`. Accumulator files are created lazily — only phases that dispatch agents (and call `accumulate-agent-usage`) produce one.
 
+## Token-Field Population Lattice
+
+Every token- and usage-bearing field `manage-metrics.py` writes measures exactly ONE population. A figure computed over population A and rendered under a label implying population B is the defect this lattice exists to prevent, so every field below names the population it measures, the method that measured it, and whether `generate` renders it. A consumer that aggregates two fields MUST check that their populations agree first; fields of different populations are not additively comparable.
+
+**Populations:**
+
+| Population | Meaning |
+|------------|---------|
+| `dispatched-subagent` | Work performed by dispatched `execution-context` leaves, measured from their `<usage>` envelopes — forwarded flags, the per-phase accumulator, or the `enrich` transcript walk. |
+| `main-context-window` | Context the orchestrator's own turns loaded and produced, measured from raw `message.usage` dicts in the parent transcript and in the subagent transcripts attributed to the same phase window. |
+| `per-dispatch` | One dispatch's own totals at its termination, recorded one row per dispatch. Never aggregated into a phase figure unless a named field says it is. |
+| `derived-cost` | A weighted cost figure derived from another population's fields — a billing measure, not a work measure. |
+
+The lattice has two directions and **both halves are first-class**. A field that is recorded but never rendered is not a footnote: it is a measure the report declines to show, which is exactly how a larger competing figure stays invisible while a smaller one is presented as the total. Direction 2 is therefore evidence in its own right, not an appendix to Direction 1.
+
+### Direction 1 — recorded AND rendered
+
+| Field | Producer | Population | Measurement method | Rendered as |
+|-------|----------|------------|--------------------|-------------|
+| `total_tokens` | `_close_phase_accumulating` (`end-phase` / `phase-boundary`); backfilled by `_reconcile_accumulator_into_phase`; folded by `cmd_enrich` on an inline-only phase | dispatched-subagent | Forwarded `<usage>` total (per-close delta, ADDED) or the per-phase accumulator's cumulative value (ASSIGNED) | Phase Breakdown `Tokens` cell, and the `Total tokens` bullet |
+| `tool_uses` | `_close_phase_accumulating`; backfilled by `_reconcile_accumulator_into_phase` | dispatched-subagent | Forwarded `<usage>` `tool_uses` or the accumulator's cumulative value | Phase Breakdown `Tool Uses` cell, and the `Tool uses` bullet |
+| `dispatch_boundary_total` | `cmd_generate` via `_read_dispatch_boundary_totals` | dispatched-subagent | Sum of the `total_tokens` column across the phase's recorded dispatch-boundary rows | `Dispatch-boundary total` bullet; may also supply the `Tokens` cell under the reconciliation rule |
+| `input_tokens` | `cmd_enrich` | main-context-window | `message.usage.input_tokens` summed across the phase window's parent turns and its attributed subagent transcripts | own bullet |
+| `output_tokens` | `cmd_enrich` | main-context-window | `message.usage.output_tokens`, same dual-source attribution | own bullet |
+| `cache_read_input_tokens` | `cmd_enrich` | main-context-window | `message.usage.cache_read_input_tokens`, same dual-source attribution | own bullet |
+| `cache_creation_input_tokens` | `cmd_enrich` | main-context-window | `message.usage.cache_creation_input_tokens`, same dual-source attribution | own bullet |
+| `billing_weighted_total` | `cmd_enrich` | derived-cost | `input + output + round(0.1 × cache_read) + round(1.25 × cache_creation)` over the four-field view | `Billing-weighted total` bullet |
+| `inline_main_context_tokens` | `cmd_enrich` (mixed-phase branch) | main-context-window | `input + output + cache_creation`, EXCLUDING `cache_read`, so the figure matches the dispatched-`<usage>` total definition | `Inline main-context tokens` bullet |
+| `exploration_tool_calls` | `cmd_enrich` | main-context-window | Count of phase-window tool calls classified *exploration* | own bullet, on a presence test |
+| `work_tool_calls` | `cmd_enrich` | main-context-window | Count classified *work* | own bullet, on a presence test |
+| `execute_tool_calls` | `cmd_enrich` | main-context-window | Count classified *execute* | own bullet, on a presence test |
+| `orchestration_tool_calls` | `cmd_enrich` | main-context-window | Count classified *orchestration*; excluded from the share denominator | own bullet, on a presence test |
+| `unclassified_tool_calls` | `cmd_enrich` | main-context-window | Count of tool names outside the classifier's domain; excluded from the denominator | own bullet, on a presence test |
+| `exploration_result_bytes` | `cmd_enrich` | main-context-window | UTF-8 byte length of the `tool_result` payloads returned by *exploration* calls | own bullet, on a presence test |
+| `work_result_bytes` | `cmd_enrich` | main-context-window | Same measure for *work* calls | own bullet, on a presence test |
+| `execute_result_bytes` | `cmd_enrich` | main-context-window | Same measure for *execute* calls | own bullet, on a presence test |
+| `orchestration_result_bytes` | `cmd_enrich` | main-context-window | Same measure for *orchestration* calls; excluded from the denominator | own bullet, on a presence test |
+| `unclassified_result_bytes` | `cmd_enrich` | main-context-window | Same measure for *unclassified* calls; excluded from the denominator | own bullet, on a presence test |
+
+### Direction 2 — recorded but NEVER rendered
+
+| Field | Producer | Population | Measurement method | Why it never surfaces |
+|-------|----------|------------|--------------------|-----------------------|
+| `subagent_total_tokens` | `cmd_enrich` | dispatched-subagent | Sum of `<usage>` totals across the dispatches attributed to the phase window | No render site and no comparison site — it can exceed the `total_tokens` that IS rendered and the report never says so |
+| `subagent_tool_uses` | `cmd_enrich` | dispatched-subagent | Sum of `<usage>` `tool_uses` across the same attributed dispatches | No render site |
+| `subagent_duration_ms` | `cmd_enrich` | dispatched-subagent | Sum of `<usage>` `duration_ms` across the same attributed dispatches | Consumed only inside `_worked_ms`'s `max()`; never rendered as a figure of its own |
+| `subagent_samples` | `cmd_enrich` | dispatched-subagent | Count of dispatch returns attributed to the phase window | No render site — yet it is the only signal that separates a measured dispatched zero from a phase that was never walked |
+| `retrospective_tokens` | `_close_phase_accumulating` | dispatched-subagent | `--retrospective-tokens` flag (per-close delta, ADDED) or the accumulator's cumulative value (ASSIGNED) | No render site; read only by the audit checks that exclude deliberate-analysis spend |
+| `samples` (accumulator file) | `cmd_accumulate_agent_usage` | per-dispatch | Count of `accumulate-agent-usage` calls folded into the phase accumulator | Accumulator-local; `generate` reads the accumulator's totals but never its call count |
+| `tool_uses` (dispatch-boundary column 4) | `cmd_record_dispatch_boundary` | per-dispatch | `--tool-uses` at dispatch termination, default `0` | Recorded per dispatch, never aggregated into a phase figure and never rendered |
+| `duration_ms` (dispatch-boundary column 5) | `cmd_record_dispatch_boundary` | per-dispatch | `--duration-ms` at dispatch termination, default `0` | Recorded per dispatch, never aggregated and never rendered |
+| `input_tokens` (dispatch-boundary column 6) | `cmd_record_dispatch_boundary` | per-dispatch | `--input-tokens` (`message.usage`) at dispatch termination, default `0` | Recorded per dispatch, never aggregated and never rendered |
+| `output_tokens` (dispatch-boundary column 7) | `cmd_record_dispatch_boundary` | per-dispatch | `--output-tokens` at dispatch termination, default `0` | Recorded per dispatch, never aggregated and never rendered |
+| `cache_read_input_tokens` (dispatch-boundary column 8) | `cmd_record_dispatch_boundary` | per-dispatch | `--cache-read-input-tokens` at dispatch termination, default `0` | Recorded per dispatch, never aggregated and never rendered |
+| `cache_creation_input_tokens` (dispatch-boundary column 9) | `cmd_record_dispatch_boundary` | per-dispatch | `--cache-creation-input-tokens` at dispatch termination, default `0` | Recorded per dispatch, never aggregated and never rendered |
+| `rows_recorded` | `cmd_record_dispatch_boundary` return TOON | per-dispatch | Count of data rows in the boundaries file after the append | Returned to the caller only — never persisted, so `generate` cannot read it to declare the boundary sum's coverage |
+
+Only column 3 of the dispatch-boundary row (`total_tokens`) escapes Direction 2: `_read_dispatch_boundary_totals` sums it into `dispatch_boundary_total`. Columns 1–2 (`timestamp`, `termination_cause`) carry no usage measurement and are outside the lattice.
+
 ## Intermediate Storage (metrics.toon)
 
 The metrics.toon file stores raw phase timing and token data as flat key-value pairs:

@@ -2600,3 +2600,333 @@ def test_exploration_counter_fields_match_platform_runtime_contract():
     would drop.
     """
     assert set(manage_metrics._EXPLORATION_COUNTER_FIELDS) == _contract_counter_keys()
+
+
+# =============================================================================
+# Token-field population lattice contract
+# =============================================================================
+
+_SKILL_DIR = Path(SCRIPT_PATH).parent.parent
+_DATA_FORMAT_MD = _SKILL_DIR / 'standards' / 'data-format.md'
+_SKILL_MD = _SKILL_DIR / 'SKILL.md'
+
+# The populations a lattice row may name. A row that invents a fifth population
+# fails rather than silently widening the vocabulary.
+_LATTICE_POPULATIONS = {
+    'dispatched-subagent',
+    'main-context-window',
+    'per-dispatch',
+    'derived-cost',
+}
+
+# Phase-row fields that carry timing / bookkeeping rather than a usage
+# measurement. This is deliberately an EXCLUSION list: a newly-added persisted
+# field counts as usage-bearing — and so must be named in the lattice — unless
+# it is explicitly classified here. The failure direction is therefore "classify
+# the new field", never "silently omit it".
+_NON_USAGE_ROW_FIELDS = {
+    'start_time',
+    'end_time',
+    'close_count',
+    'duration_seconds',
+    'agent_duration_ms',
+    'agent_duration_seconds',
+    'idle_duration_ms',
+    'boundary_non_monotonic',
+}
+
+# Dispatch-boundary columns that carry no usage measurement.
+_NON_USAGE_BOUNDARY_COLUMNS = {'timestamp', 'termination_cause'}
+
+# Computed by cmd_record_dispatch_boundary and returned in its TOON, but never
+# persisted — no assignment site exposes it to the source-derived sweep below,
+# so it is named here to keep the lattice's coverage honest.
+_RETURN_ONLY_USAGE_FIELDS = {'rows_recorded'}
+
+
+def _script_source() -> str:
+    return Path(SCRIPT_PATH).read_text(encoding='utf-8')
+
+
+def _derive_boundary_columns(source: str) -> set[str]:
+    """Recover the dispatch-boundary column set from the script's header literal.
+
+    The writer builds the TOON-tabular header from a split string literal, and an
+    earlier docstring carries an abbreviated ``rows[]{...}`` form. Every candidate
+    is parsed and the abbreviated ones (which contain an ellipsis column) are
+    dropped, so the column set comes from the real header rather than the prose.
+    """
+    import re
+
+    candidates: list[set[str]] = []
+    for match in re.finditer(r'rows\[\]\{(.*?)\}', source, re.DOTALL):
+        raw = match.group(1).replace("'", '').replace('\n', '')
+        columns = {c.strip() for c in raw.split(',') if c.strip()}
+        if any(c.startswith('.') for c in columns):
+            continue
+        candidates.append(columns)
+    assert candidates, 'no dispatch-boundary rows[] header literal found in the script'
+    return max(candidates, key=len)
+
+
+def _derive_phase_row_fields(source: str) -> set[str]:
+    """Recover every literal field key the script assigns onto a phase row."""
+    import re
+
+    pattern = re.compile(
+        r"(?:phase|phase_data|phase_row|phases\[phase_name\])\['([a-z_]+)'\]\s*="
+    )
+    return set(pattern.findall(source))
+
+
+def _derive_accumulator_fields(source: str) -> set[str]:
+    """Recover the accumulator's field key set from the reader's allow-list literal."""
+    import re
+
+    match = re.search(r'if key not in \{([^}]*)\}', source, re.DOTALL)
+    assert match is not None, 'accumulator key allow-list literal not found in the script'
+    return {k.strip().strip("'") for k in match.group(1).split(',') if k.strip()}
+
+
+def _derived_usage_fields() -> set[str]:
+    """The token/usage field population, derived from the script — never hand-listed.
+
+    A newly-added token field enters this set automatically (through one of the
+    tuples, the boundary header, an assignment site, or the accumulator allow-list)
+    and therefore fails the lattice-completeness assertion until the contract
+    document names it with a population and a rendered flag.
+    """
+    source = _script_source()
+    derived: set[str] = set()
+    derived |= set(manage_metrics._EXPLORATION_COUNTER_FIELDS)
+    derived |= set(manage_metrics._INLINE_MAIN_CONTEXT_FIELDS)
+    derived |= _derive_boundary_columns(source) - _NON_USAGE_BOUNDARY_COLUMNS
+    derived |= _derive_phase_row_fields(source) - _NON_USAGE_ROW_FIELDS
+    derived |= _derive_accumulator_fields(source)
+    derived |= _RETURN_ONLY_USAGE_FIELDS
+    return derived
+
+
+def _lattice_section(content: str) -> str:
+    """Return the Token-Field Population Lattice section of data-format.md."""
+    lines = content.splitlines()
+    start = None
+    for i, line in enumerate(lines):
+        if line.strip() == '## Token-Field Population Lattice':
+            start = i
+            break
+    assert start is not None, 'data-format.md carries no Token-Field Population Lattice section'
+    end = len(lines)
+    for j in range(start + 1, len(lines)):
+        if lines[j].startswith('## '):
+            end = j
+            break
+    return '\n'.join(lines[start:end])
+
+
+def _parse_lattice_directions(content: str) -> dict[str, list[list[str]]]:
+    """Parse the lattice's per-direction table rows, keyed by direction number."""
+    import re
+
+    directions: dict[str, list[list[str]]] = {}
+    current: str | None = None
+    for line in _lattice_section(content).splitlines():
+        heading = re.match(r'^### Direction (\d+)', line)
+        if heading:
+            current = heading.group(1)
+            directions.setdefault(current, [])
+            continue
+        if current is None or not line.startswith('|'):
+            continue
+        cells = [c.strip() for c in line.strip().strip('|').split('|')]
+        if len(cells) < 5 or cells[0] == 'Field' or set(cells[0]) <= {'-', ' '}:
+            continue
+        directions[current].append(cells)
+    return directions
+
+
+def _row_field(cell: str) -> str | None:
+    """Extract the backticked field name from a lattice row's first cell."""
+    import re
+
+    match = re.search(r'`([a-z_]+)`', cell)
+    return match.group(1) if match else None
+
+
+def _fields_missing_from_lattice(content: str, derived: set[str]) -> set[str]:
+    """Return the derived fields the lattice fails to name (either direction)."""
+    named = {
+        field
+        for rows in _parse_lattice_directions(content).values()
+        for cells in rows
+        if (field := _row_field(cells[0])) is not None
+    }
+    return derived - named
+
+
+def test_lattice_names_every_usage_field_the_script_writes():
+    """No token/usage field written by manage-metrics.py is absent from the lattice."""
+    derived = _derived_usage_fields()
+    assert derived, 'the script-derived field sweep produced nothing — the guard is vacuous'
+
+    missing = _fields_missing_from_lattice(
+        _DATA_FORMAT_MD.read_text(encoding='utf-8'), derived
+    )
+
+    assert missing == set(), (
+        f'the lattice omits token/usage fields the script writes: {sorted(missing)}'
+    )
+
+
+def test_lattice_completeness_check_detects_a_removed_row():
+    """Negative control: dropping one lattice row is caught.
+
+    Guards the positive assertion above against a false pass — a completeness
+    check that cannot fail proves nothing about the table it reads.
+    """
+    content = _DATA_FORMAT_MD.read_text(encoding='utf-8')
+    derived = _derived_usage_fields()
+    victim = 'subagent_total_tokens'
+    assert victim in derived
+
+    mutated = '\n'.join(
+        line
+        for line in content.splitlines()
+        if not (line.startswith('|') and f'`{victim}`' in line)
+    )
+    assert mutated != content
+
+    assert _fields_missing_from_lattice(mutated, derived) == {victim}
+
+
+def test_lattice_carries_both_directions_with_known_populations():
+    """Both directions are populated and every row names a known population.
+
+    The "recorded but never rendered" direction is a first-class half of the
+    lattice, so an empty Direction 2 table fails here rather than reading as an
+    omitted footnote.
+    """
+    directions = _parse_lattice_directions(_DATA_FORMAT_MD.read_text(encoding='utf-8'))
+
+    assert set(directions) == {'1', '2'}, f'unexpected lattice directions: {sorted(directions)}'
+
+    offenders: list[tuple[str, str, str]] = []
+    for direction, rows in directions.items():
+        assert rows, f'Direction {direction} table carries no rows'
+        for cells in rows:
+            field = _row_field(cells[0])
+            if field is None:
+                offenders.append((direction, cells[0], 'row names no field'))
+                continue
+            if cells[2] not in _LATTICE_POPULATIONS:
+                offenders.append((direction, field, f'unknown population {cells[2]!r}'))
+            if not cells[3]:
+                offenders.append((direction, field, 'empty measurement method'))
+            if not cells[4]:
+                offenders.append((direction, field, 'empty rendered flag'))
+
+    assert offenders == [], f'malformed lattice rows: {offenders}'
+
+
+# =============================================================================
+# --termination-cause documentation-site contract
+# =============================================================================
+
+
+def _parse_termination_cause_sites(content: str) -> list[tuple[str, set[str]]]:
+    """Discover EVERY occurrence of the --termination-cause value list in SKILL.md.
+
+    Occurrences are found by scanning the document, never by a hard-coded site
+    count — a fourth documentation site added later is picked up automatically and
+    must match the enum like the rest. Two shapes are recognised: the brace-pipe
+    form used inside the fenced command blocks, and the nested bullet enumeration
+    under the ``--termination-cause`` parameter.
+    """
+    import re
+
+    sites: list[tuple[str, set[str]]] = []
+
+    for idx, match in enumerate(re.finditer(r'--termination-cause \{([^}]*)\}', content)):
+        values = {v.strip() for v in match.group(1).split('|') if v.strip()}
+        sites.append((f'brace-form-{idx + 1}', values))
+
+    lines = content.splitlines()
+    for i, line in enumerate(lines):
+        if not line.startswith('- `--termination-cause`'):
+            continue
+        values = set()
+        for follow in lines[i + 1 :]:
+            if follow.startswith('- ') or follow.startswith('#'):
+                break
+            nested = re.match(r'^\s+- `([a-z_]+)`', follow)
+            if nested:
+                values.add(nested.group(1))
+        sites.append((f'bullet-form-{i + 1}', values))
+
+    return sites
+
+
+def test_every_documented_termination_cause_site_matches_the_enum():
+    """Every discovered SKILL.md site enumerates exactly DISPATCH_TERMINATION_CAUSES.
+
+    Asserting over a single parsed list would be insufficient — that is precisely
+    what let a second and a third site drift out of sync with the live tuple.
+    """
+    expected = set(manage_metrics.DISPATCH_TERMINATION_CAUSES)
+    sites = _parse_termination_cause_sites(_SKILL_MD.read_text(encoding='utf-8'))
+
+    assert sites, 'no --termination-cause value list found in SKILL.md'
+
+    stale = [
+        (label, sorted(expected - values), sorted(values - expected))
+        for label, values in sites
+        if values != expected
+    ]
+
+    assert stale == [], (
+        'SKILL.md sites disagree with DISPATCH_TERMINATION_CAUSES '
+        f'(site, missing, unexpected): {stale}'
+    )
+
+
+def test_termination_cause_sites_cover_both_documented_shapes():
+    """More than one site exists, and both documented shapes are discovered.
+
+    Anti-vacuity guard: if the scanner silently stopped matching one shape, the
+    per-site assertion above would pass over a shrunken population.
+    """
+    sites = _parse_termination_cause_sites(_SKILL_MD.read_text(encoding='utf-8'))
+    shapes = {label.rsplit('-', 1)[0] for label, _ in sites}
+
+    assert 'brace-form' in shapes
+    assert 'bullet-form' in shapes
+    assert len(sites) > 1
+
+
+def test_termination_cause_check_detects_a_single_stale_site():
+    """Negative control: staleness at exactly ONE site is caught.
+
+    Leaving one of several documented sites behind is the recurrence this guard
+    exists for, so the check must fail on a single-site mutation rather than only
+    on a wholesale one.
+    """
+    content = _SKILL_MD.read_text(encoding='utf-8')
+    expected = set(manage_metrics.DISPATCH_TERMINATION_CAUSES)
+    victim = 'agent_returned'
+    assert victim in expected
+
+    brace_sites = [
+        label for label, _ in _parse_termination_cause_sites(content)
+        if label.startswith('brace-form')
+    ]
+    assert len(brace_sites) > 1, 'need more than one brace site to prove single-site detection'
+
+    # Drop the victim from exactly ONE brace-form occurrence.
+    mutated = content.replace(f'|{victim}}}', '}', 1)
+    assert mutated != content
+
+    stale = [
+        label for label, values in _parse_termination_cause_sites(mutated) if values != expected
+    ]
+
+    assert len(stale) == 1, f'expected exactly one stale site to be reported, got {stale}'
