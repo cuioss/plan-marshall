@@ -74,12 +74,28 @@ session_message_count: 127
 | `execute_result_bytes` | int | `enrich` tool-call walk — same measure for *execute* calls |
 | `orchestration_result_bytes` | int | `enrich` tool-call walk — same measure for *orchestration* calls. Excluded from the denominator |
 | `unclassified_result_bytes` | int | `enrich` tool-call walk — same measure for *unclassified* calls. Excluded from the denominator |
+| `cache_read_attributed_exploration` | int | `enrich` tool-call walk — the part of this phase's `cache_read_input_tokens` attributed to *exploration* payloads by turn-weighted residency |
+| `cache_read_attributed_work` | int | `enrich` tool-call walk — same attribution for *work* payloads |
+| `cache_read_attributed_execute` | int | `enrich` tool-call walk — same attribution for *execute* payloads |
+| `cache_read_attributed_orchestration` | int | `enrich` tool-call walk — same attribution for *orchestration* payloads |
+| `cache_read_attributed_unclassified` | int | `enrich` tool-call walk — same attribution for *unclassified* payloads |
+| `cache_read_unattributed` | int | `enrich` tool-call walk — the residual: the part of `cache_read_input_tokens` the walk could not tie to an observed payload, plus every flooring remainder. Always emitted with the group, including at `0` |
 
 #### Exploration-share counters (absent is not zero)
 
-The ten counters above are the inputs to the `exploration-share` audit check. Each observed tool call is classified by its tool name into one of five buckets, and both the call itself (turn share) and its result payload's byte length (payload-byte share) are accumulated into the phase window containing the call's timestamp. `exploration + work + execute` is the share denominator; `orchestration` and `unclassified` are emitted so the five buckets partition the observed population and the exclusion from the ratio stays auditable.
+The ten `*_tool_calls` / `*_result_bytes` counters above are the inputs to the `exploration-share` audit check. Each observed tool call is classified by its tool name into one of five buckets, and both the call itself (turn share) and its result payload's byte length (payload-byte share) are accumulated into the phase window containing the call's timestamp. `exploration + work + execute` is the share denominator; `orchestration` and `unclassified` are emitted so the five buckets partition the observed population and the exclusion from the ratio stays auditable.
 
 **A counter is written only when the runtime supplied it.** An absent counter is NEVER persisted as `0`, and a *measured* zero IS persisted as `0`. The two are different facts: absent means the target declined the transcript primitive and measured nothing (OpenCode exposes no transcript, so it emits no bucket at all); zero means the walk ran and found no calls in that bucket. Collapsing them would let an unmeasured plan enter the `exploration-share` corpus as a maximally-efficient one. For the same reason `generate` renders these bullets on a **presence** test rather than the truthiness test the four-field bullets use — see the render-guard divergence comment at the per-phase render in `manage-metrics.py`.
+
+#### Cache-read attribution (turn-weighted residency, exact reconciliation)
+
+The `{bucket}_result_bytes` counters say what ENTERED context. They do not say what that entry COST, because a payload is billed again as `cache_read` on every later turn it stays resident — the reason a byte read once can dominate a phase's bill. The six `cache_read_attributed_{bucket}` / `cache_read_unattributed` fields answer the cost question by splitting the phase's recorded `cache_read_input_tokens` across the byte sources that put those bytes there.
+
+**The attribution model** is turn-weighted residency. Each bucket's weight is its payload bytes multiplied by the number of the phase's billed turns those bytes remained in context; the recorded `cache_read` is then divided in proportion to the weights. A turn here is one usage-bearing transcript entry — one context read the phase was actually billed for — so a large payload arriving on a phase's last turn weighs far less than a smaller one that sat in context throughout. Payloads folded in from subagent transcripts are added to `{bucket}_result_bytes` after the parent walk and carry no residency weight of their own, so their share is disclosed in the residual rather than spread across buckets on a weight that was never observed.
+
+**Exact reconciliation is the invariant**: `cache_read_attributed_exploration + …_work + …_execute + …_orchestration + …_unclassified + cache_read_unattributed` equals that phase's `cache_read_input_tokens` EXACTLY. Named parts are floored and `cache_read_unattributed` is the remainder, so every rounding crumb lands in the residual and never inflates a named share. When a phase was billed for a context read but no payload residency was observed, the whole figure stays in the residual.
+
+`cache_read_unattributed` is the disclosure column and is emitted with the group unconditionally — a residual of `0` is the statement that the split was fully explained, and omitting it when it happens to be zero would make "fully explained" indistinguishable from "never computed". The absent-is-not-zero persistence and presence-guarded render rules stated above apply to this group verbatim.
 
 The four-field usage view (`input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`) lives only in the raw `message.usage` dicts inside the transcripts — the single-figure `<usage>` return tag carries no input/output split and no cache fields. `enrich` accumulates these four fields per phase from BOTH the parent orchestrator turns and every discovered subagent transcript, then records `billing_weighted_total` per phase. These fields exist independently of `total_tokens`, which `enrich` leaves untouched.
 
@@ -403,6 +419,7 @@ generate status in `generate_status` / `generate_message` instead of
 | JSONL session transcript (`enrich` subagent `<usage>`-tag attribution) | Any phase whose timestamp window contains Task tool calls | Per-phase (`subagent_*` fields) |
 | Raw `message.usage` dicts in the parent + subagent transcripts (`enrich` four-field walk) | Any phase whose window contains a parent turn or a spawned subagent transcript | Per-phase (`input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`, `billing_weighted_total`) |
 | `tool_use` / `tool_result` content items in the parent + subagent transcripts (`enrich` tool-call walk) | Any phase whose window contains a tool call, on a target that exposes a transcript | Per-phase (`{exploration,work,execute,orchestration,unclassified}_tool_calls` and the matching `_result_bytes`). ABSENT — never zero — on a target that declines the transcript primitive |
+| Payload residency across the phase's billed turns (`enrich` tool-call walk) | Same condition as the row above — the attribution is derived from the same payloads | Per-phase (`cache_read_attributed_{bucket}` and the `cache_read_unattributed` residual, reconciling EXACTLY to `cache_read_input_tokens`). ABSENT — never zero — on a target that declines the transcript primitive |
 
 ## Per-Phase Subagent Accumulator (`work/metrics-accumulator-{phase}.toon`)
 

@@ -1132,6 +1132,15 @@ def cmd_generate(args: argparse.Namespace) -> dict:
                 label = field.replace('_', ' ').capitalize()
                 lines.append(f'- **{label}**: {int(phase[field]):,}')
 
+        # Cache-read attribution. Same PRESENCE guard, same reason — and here the
+        # measured zero matters even more: the residual rendering as `0` is what
+        # tells a reader the split was fully explained, while an absent residual
+        # would leave that unknowable.
+        for field in _CACHE_READ_ATTRIBUTION_FIELDS:
+            if field in phase:
+                label = field.replace('_', ' ').capitalize()
+                lines.append(f'- **{label}**: {int(phase[field]):,}')
+
         lines.append('')
 
     md_content = '\n'.join(lines)
@@ -1852,6 +1861,22 @@ _EXPLORATION_COUNTER_FIELDS = tuple(
     for measure in ('tool_calls', 'result_bytes')
 )
 
+# The cache-read attribution group: one attributed field per byte source plus the
+# single residual. DERIVED over ``_EXPLORATION_BUCKETS`` for the same reason the
+# counter fields are — a bucket added there cannot leave this group behind — with
+# ``cache_read_unattributed`` appended as the one member that is not per-bucket.
+#
+# SOURCE OF TRUTH is the platform-runtime contract — ``Runtime.metrics_normalized_
+# tokens.__doc__``'s per-phase bucket declaration (mirrored in
+# ``platform-runtime/standards/contract.md``). The residual is part of the group,
+# never an optional extra: the attributed parts plus the residual reconcile
+# EXACTLY to the phase's recorded ``cache_read_input_tokens``, so dropping the
+# residual would silently turn a partial split into an apparently complete one.
+_CACHE_READ_ATTRIBUTION_FIELDS = (
+    *(f'cache_read_attributed_{bucket}' for bucket in _EXPLORATION_BUCKETS),
+    'cache_read_unattributed',
+)
+
 
 def _inline_main_context_sum(phase_row: dict) -> int:
     """Sum a phase row's inline-attributable four-field usage.
@@ -1930,6 +1955,13 @@ def cmd_enrich(args: argparse.Namespace) -> dict:
         # never taken — making "never measured" indistinguishable from "measured,
         # and it explored nothing". A MEASURED zero IS persisted, as 0.
         for field in _EXPLORATION_COUNTER_FIELDS:
+            if field in bucket:
+                phase_row[field] = bucket[field]
+
+        # Cache-read attribution, written on the SAME presence test and for the
+        # same reason: an absent attribution field means the runtime never split
+        # the figure, which is not the same claim as "the split was zero".
+        for field in _CACHE_READ_ATTRIBUTION_FIELDS:
             if field in bucket:
                 phase_row[field] = bucket[field]
 

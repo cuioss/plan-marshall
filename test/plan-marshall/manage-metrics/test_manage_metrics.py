@@ -1682,6 +1682,142 @@ class TestExplorationCountersAbsentVsMeasuredZero:
         assert '- **Execute tool calls**' not in md
 
 
+class TestCacheReadAttributionRoundTrip:
+    """The attribution group survives enrich -> metrics.toon -> generate intact.
+
+    Same absent-vs-measured-zero pair as the exploration counters, and for a
+    sharper reason: the RESIDUAL rendering as ``0`` is the statement that the split
+    was fully explained. Collapsing that into an absent field under a truthiness
+    guard would make "fully explained" unreadable from "never computed".
+    """
+
+    def test_absent_attribution_fields_are_not_persisted_as_zero_and_render_nothing(
+        self, plan_context, monkeypatch
+    ):
+        """A runtime supplying no attribution leaves the fields absent, not zeroed."""
+        plan_dir = plan_context.plan_dir_for('attr-absent')
+        manage_metrics.write_metrics('attr-absent', {'plan_id': 'attr-absent'})
+        (plan_dir / 'work' / 'metrics.toon').write_text(
+            _ENRICH_TWO_PHASE_METRICS.format(plan_id='attr-absent'), encoding='utf-8'
+        )
+        # A bucket carrying the four-field view — including a real cache_read — but
+        # NO attribution group. A defaulted 0 here would assert a split that was
+        # never computed over a figure that is demonstrably non-zero.
+        _patch_runtime_op(
+            monkeypatch,
+            status='success',
+            per_phase={
+                '5-execute': {
+                    'input_tokens': 10,
+                    'output_tokens': 2,
+                    'cache_read_input_tokens': 5000,
+                }
+            },
+            counters={'message_count': 1},
+        )
+
+        assert cmd_enrich(_ns_enrich('attr-absent', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'))[
+            'status'
+        ] == 'success'
+
+        five = manage_metrics.read_metrics_raw('attr-absent')['phases']['5-execute']
+        assert five['cache_read_input_tokens'] == 5000
+        for field in manage_metrics._CACHE_READ_ATTRIBUTION_FIELDS:
+            assert field not in five, f'absent attribution field {field} must not be persisted as 0'
+
+        cmd_generate(_ns_generate('attr-absent'))
+        md = (plan_dir / 'metrics.md').read_text()
+        assert '- **Cache read attributed exploration**' not in md
+        assert '- **Cache read unattributed**' not in md
+
+    def test_measured_zeros_persist_and_render_as_zero(self, plan_context, monkeypatch):
+        """Supplied zeros are measurements: written and rendered as 0, residual included."""
+        plan_dir = plan_context.plan_dir_for('attr-zero')
+        manage_metrics.write_metrics('attr-zero', {'plan_id': 'attr-zero'})
+        (plan_dir / 'work' / 'metrics.toon').write_text(
+            _ENRICH_TWO_PHASE_METRICS.format(plan_id='attr-zero'), encoding='utf-8'
+        )
+        # A phase that recorded no cache_read at all: every member of the group is
+        # a measured zero, residual included.
+        _patch_runtime_op(
+            monkeypatch,
+            status='success',
+            per_phase={
+                '5-execute': {
+                    'input_tokens': 10,
+                    'output_tokens': 2,
+                    'cache_read_input_tokens': 0,
+                    **dict.fromkeys(manage_metrics._CACHE_READ_ATTRIBUTION_FIELDS, 0),
+                }
+            },
+            counters={'message_count': 1},
+        )
+
+        assert cmd_enrich(_ns_enrich('attr-zero', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'))[
+            'status'
+        ] == 'success'
+
+        five = manage_metrics.read_metrics_raw('attr-zero')['phases']['5-execute']
+        for field in manage_metrics._CACHE_READ_ATTRIBUTION_FIELDS:
+            assert five[field] == 0, field
+
+        cmd_generate(_ns_generate('attr-zero'))
+        md = (plan_dir / 'metrics.md').read_text()
+        assert '- **Cache read attributed exploration**: 0' in md
+        assert '- **Cache read unattributed**: 0' in md
+
+    def test_split_round_trips_and_still_reconciles_after_persistence(
+        self, plan_context, monkeypatch
+    ):
+        """The exact-reconciliation invariant is readable off the persisted row and the report."""
+        plan_dir = plan_context.plan_dir_for('attr-split')
+        manage_metrics.write_metrics('attr-split', {'plan_id': 'attr-split'})
+        (plan_dir / 'work' / 'metrics.toon').write_text(
+            _ENRICH_TWO_PHASE_METRICS.format(plan_id='attr-split'), encoding='utf-8'
+        )
+        supplied = {
+            'cache_read_attributed_exploration': 800,
+            'cache_read_attributed_work': 150,
+            'cache_read_attributed_execute': 40,
+            'cache_read_attributed_orchestration': 0,
+            'cache_read_attributed_unclassified': 0,
+            'cache_read_unattributed': 10,
+        }
+        _patch_runtime_op(
+            monkeypatch,
+            status='success',
+            per_phase={
+                '5-execute': {
+                    'input_tokens': 10,
+                    'output_tokens': 2,
+                    'cache_read_input_tokens': 1000,
+                    **supplied,
+                }
+            },
+            counters={'message_count': 1},
+        )
+
+        assert cmd_enrich(_ns_enrich('attr-split', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'))[
+            'status'
+        ] == 'success'
+
+        five = manage_metrics.read_metrics_raw('attr-split')['phases']['5-execute']
+        # Every supplied value survives storage byte-for-byte...
+        for field, value in supplied.items():
+            assert five[field] == value, field
+        # ...so the invariant the producer guarantees is still checkable here.
+        persisted_sum = sum(
+            five[field] for field in manage_metrics._CACHE_READ_ATTRIBUTION_FIELDS
+        )
+        assert persisted_sum == five['cache_read_input_tokens']
+
+        cmd_generate(_ns_generate('attr-split'))
+        md = (plan_dir / 'metrics.md').read_text()
+        assert '- **Cache read attributed exploration**: 800' in md
+        assert '- **Cache read attributed work**: 150' in md
+        assert '- **Cache read unattributed**: 10' in md
+
+
 class TestGeneratePartialityFields:
     """generate emits a first-class partiality verdict across all three surfaces.
 
@@ -2600,3 +2736,56 @@ def test_exploration_counter_fields_match_platform_runtime_contract():
     would drop.
     """
     assert set(manage_metrics._EXPLORATION_COUNTER_FIELDS) == _contract_counter_keys()
+
+
+def _contract_attribution_keys() -> set[str]:
+    """Parse the cache-read attribution key set out of the platform-runtime contract.
+
+    Same cross-process hand-mirror problem as ``_contract_counter_keys`` above, so
+    the same remedy: the key set is DERIVED from the published contract docstring
+    rather than restated, and a key added on either side fails loudly here.
+    """
+    import re
+
+    from runtime_base import Runtime
+
+    doc = Runtime.metrics_normalized_tokens.__doc__ or ''
+    match = re.search(r'\{phase_name:\s*\{(.*?)\}\}', doc, re.DOTALL)
+    assert match is not None, 'contract docstring no longer declares a per-phase bucket shape'
+    declared = {key.strip() for key in match.group(1).split(',') if key.strip()}
+    return {
+        k for k in declared if k.startswith('cache_read_attributed_') or k == 'cache_read_unattributed'
+    }
+
+
+def test_cache_read_attribution_fields_match_platform_runtime_contract():
+    """``_CACHE_READ_ATTRIBUTION_FIELDS`` equals the contract's attribution key set exactly.
+
+    The derived product over ``_EXPLORATION_BUCKETS`` plus the residual literal must
+    reproduce the published group — no field manage-metrics would persist that the
+    producer never emits, and no field the producer emits that the report drops.
+    """
+    contract_keys = _contract_attribution_keys()
+
+    assert contract_keys, 'contract declares no cache-read attribution keys'
+    assert set(manage_metrics._CACHE_READ_ATTRIBUTION_FIELDS) == contract_keys
+    # The residual is a member of the group, not an optional extra: dropping it
+    # would turn a partial split into an apparently complete one.
+    assert 'cache_read_unattributed' in contract_keys
+
+
+def test_attribution_group_is_disjoint_from_the_exploration_counter_group():
+    """Matched control: the two derived groups partition, they do not overlap.
+
+    Without this, a suffix-matching bug on either side could let one group swallow
+    the other's keys while both set-equality assertions above still passed.
+    """
+    counter_keys = _contract_counter_keys()
+    attribution_keys = _contract_attribution_keys()
+
+    assert not (attribution_keys & counter_keys), attribution_keys & counter_keys
+    assert not (set(manage_metrics._CACHE_READ_ATTRIBUTION_FIELDS) & counter_keys)
+    # The exploration group is unchanged by the attribution group's arrival: still
+    # five buckets x two measures.
+    assert len(manage_metrics._EXPLORATION_COUNTER_FIELDS) == 10
+    assert len(counter_keys) == 10

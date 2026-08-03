@@ -1556,6 +1556,58 @@ def _count_tool_result_bytes(
     counters[f"{bucket}_result_bytes"] += len(payload_text.encode("utf-8", "replace"))
 
 
+def _fold_turn_residency(
+    phase: str,
+    per_phase_counters: dict[str, dict[str, int]],
+    per_phase_residency: dict[str, dict[str, int]],
+) -> None:
+    """Fold one turn's worth of byte residency into *phase*'s attribution weights.
+
+    Called once per usage-bearing transcript entry — i.e. once per context read
+    the phase was actually billed for — so the number of folds IS the phase's
+    turn count, and each bucket's accumulated weight ends up as ``bytes x the
+    number of turns those bytes stayed resident``. Adding the CUMULATIVE resident
+    byte total once per turn is what makes the weight turn-weighted without a
+    per-payload ledger: a payload that entered early is re-added on every
+    subsequent fold, while one that entered on the last turn is counted once.
+    """
+    resident = per_phase_counters.get(phase) or {}
+    weights = per_phase_residency.setdefault(phase, dict.fromkeys(_TOOL_BUCKET_NAMES, 0))
+    for bucket in _TOOL_BUCKET_NAMES:
+        weights[bucket] += resident.get(f"{bucket}_result_bytes", 0)
+
+
+def _attribute_cache_read(cache_read_total: int, weights: dict[str, int]) -> dict[str, int]:
+    """Split one phase's recorded ``cache_read`` across the entering byte sources.
+
+    The split is proportional to *weights* — the turn-weighted residency
+    accumulated by ``_fold_turn_residency`` — and the emitted key set is DERIVED
+    from ``_TOOL_BUCKET_NAMES``, so a bucket added to ``_TOOL_BUCKETS`` cannot
+    leave this group behind.
+
+    **Exact reconciliation.** Each named part is floored, and
+    ``cache_read_unattributed`` is computed as the REMAINDER rather than as its
+    own proportional share. The parts plus the residual therefore sum to
+    *cache_read_total* exactly, and every rounding crumb lands in the residual —
+    which is the disclosure column, never a named share. Weight the walk could
+    not tie to an observed payload (``total_weight == 0`` while the phase was
+    still billed for a context read) leaves the whole figure in the residual
+    rather than being spread across buckets it was never observed to belong to.
+
+    Emission is unconditional: a phase recording ``cache_read == 0`` gets every
+    key at a measured zero, never an absent key.
+    """
+    attributed = {f"cache_read_attributed_{bucket}": 0 for bucket in _TOOL_BUCKET_NAMES}
+    total_weight = sum(weights.get(bucket, 0) for bucket in _TOOL_BUCKET_NAMES)
+    if cache_read_total > 0 and total_weight > 0:
+        for bucket in _TOOL_BUCKET_NAMES:
+            attributed[f"cache_read_attributed_{bucket}"] = (
+                cache_read_total * weights.get(bucket, 0) // total_weight
+            )
+    attributed["cache_read_unattributed"] = cache_read_total - sum(attributed.values())
+    return attributed
+
+
 def _sum_subagent_transcript(path: Path) -> tuple[dict[str, int], str | None, dict[str, int]]:
     """Sum usage and tool-call counters across one subagent transcript JSONL.
 
@@ -1748,14 +1800,27 @@ def _compute_normalized_tokens(
     phase to a normalized bucket carrying the four ``message.usage`` fields, the
     billing-weighted total, the subagent ``<usage>`` attribution
     (``subagent_total_tokens`` / ``subagent_tool_uses`` / ``subagent_duration_ms``
-    / ``subagent_samples``), and the exploration-share counters
+    / ``subagent_samples``), the exploration-share counters
     (``{exploration,work,execute,orchestration,unclassified}_tool_calls`` and the
-    matching ``_result_bytes``). ``counters`` carries the attribution counters.
+    matching ``_result_bytes``), and the cache-read attribution group
+    (``cache_read_attributed_{bucket}`` plus the ``cache_read_unattributed``
+    residual). ``counters`` carries the attribution counters.
+
+    The attribution group splits the phase's recorded ``cache_read`` by
+    TURN-WEIGHTED RESIDENCY — each bucket's payload bytes multiplied by the number
+    of the phase's billed turns those bytes stayed in context — and reconciles
+    EXACTLY: the five named parts plus the residual sum to the recorded figure.
+    Payloads folded in from subagent transcripts land in ``_result_bytes`` after
+    the main walk and therefore carry no residency weight of their own, so their
+    share of ``cache_read`` is disclosed in the residual rather than spread across
+    buckets on a weight that was never observed.
 
     Because this walk always runs on the Claude target, every composed phase
     bucket carries the full counter key set — a phase with no tool calls reports
-    a MEASURED zero. Counters are ABSENT only where no bucket is produced at all
-    (no transcript, or a target that declines the primitive).
+    a MEASURED zero, and a phase recording no ``cache_read`` still carries every
+    attributed key and the residual at zero. Counters are ABSENT only where no
+    bucket is produced at all (no transcript, or a target that declines the
+    primitive).
 
     Returns ``None`` when no parent transcript can be located (the caller maps
     this to a ``transcript_not_found`` no-op).
@@ -1771,6 +1836,7 @@ def _compute_normalized_tokens(
     subagent_calls_attributed = 0
     per_phase_four_fields: dict[str, dict[str, int]] = {}
     per_phase_tools: dict[str, dict[str, int]] = {}
+    per_phase_residency: dict[str, dict[str, int]] = {}
     call_index: dict[str, tuple[str, str]] = {}
 
     def _four_field_bucket(phase_name: str) -> dict[str, int]:
@@ -1790,12 +1856,18 @@ def _compute_normalized_tokens(
                 msg = entry.get("message", {}) if isinstance(entry, dict) else {}
                 timestamp = entry.get("timestamp") if isinstance(entry, dict) else None
                 usage = msg.get("usage", {}) if isinstance(msg, dict) else {}
+                # The phase this entry's context read is billed to, when it is a
+                # usage-bearing entry at all. Captured here and consumed at the
+                # END of the loop body so the residency fold sees every payload
+                # this entry contributed.
+                turn_phase: str | None = None
                 if isinstance(usage, dict) and usage:
                     if usage.get("total_tokens") or usage.get("input_tokens") or usage.get("output_tokens"):
                         message_count += 1
                         if parsed_windows and isinstance(timestamp, str):
                             parent_phase = _window_for_timestamp(timestamp, parsed_windows)
                             if parent_phase is not None:
+                                turn_phase = parent_phase
                                 _add_usage_four_fields(usage, _four_field_bucket(parent_phase))
 
                 if not parsed_windows:
@@ -1830,6 +1902,11 @@ def _compute_normalized_tokens(
                             timestamp, parsed_windows, tag_match.group(1), per_phase_subagent
                         ):
                             subagent_calls_attributed += 1
+
+                # One fold per billed context read, at the END of the entry so
+                # this turn's own payloads are already resident.
+                if turn_phase is not None:
+                    _fold_turn_residency(turn_phase, per_phase_tools, per_phase_residency)
     except OSError:
         return None
 
@@ -1886,6 +1963,17 @@ def _compute_normalized_tokens(
         # key set: a phase with no tool calls reports a MEASURED zero rather than
         # an absent counter.
         phase_bucket.update(per_phase_tools.get(phase_name) or _empty_tool_counters())
+        # Cache-read attribution: split the phase's recorded cache_read across the
+        # byte sources that put those bytes into context, in proportion to how
+        # long each source's payloads stayed resident. Unconditional for the same
+        # reason as the counters above — the residual must be readable even when
+        # it is zero.
+        phase_bucket.update(
+            _attribute_cache_read(
+                four.get("cache_read_input_tokens", 0),
+                per_phase_residency.get(phase_name) or {},
+            )
+        )
         per_phase[phase_name] = phase_bucket
 
     counters = {

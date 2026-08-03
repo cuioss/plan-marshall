@@ -629,7 +629,10 @@ class Runtime(ABC):
         exploration_tool_calls, work_tool_calls, execute_tool_calls,
         orchestration_tool_calls, unclassified_tool_calls,
         exploration_result_bytes, work_result_bytes, execute_result_bytes,
-        orchestration_result_bytes, unclassified_result_bytes}}``
+        orchestration_result_bytes, unclassified_result_bytes,
+        cache_read_attributed_exploration, cache_read_attributed_work,
+        cache_read_attributed_execute, cache_read_attributed_orchestration,
+        cache_read_attributed_unclassified, cache_read_unattributed}}``
 
         The ten ``*_tool_calls`` / ``*_result_bytes`` keys are the exploration-share
         counters: each tool call observed in the transcript is classified by its
@@ -637,11 +640,34 @@ class Runtime(ABC):
         and its result payload's byte length (payload-byte share) are accumulated
         into the phase the call's timestamp attributes to.
 
+        The six ``cache_read_attributed_{bucket}`` / ``cache_read_unattributed``
+        keys are the CACHE-READ ATTRIBUTION group: they split the phase's recorded
+        ``cache_read`` across the byte sources that put those bytes into context.
+        A payload does not cost once — it costs on entry and then again on every
+        later turn it stays resident, so the split is TURN-WEIGHTED RESIDENCY: each
+        bucket's weight is its payload bytes multiplied by the number of the
+        phase's turns those bytes remained in context, and the recorded
+        ``cache_read`` is divided in proportion to those weights. Weight that
+        cannot be tied to an observed payload — context the transcript does not
+        explain, and every payload the walk saw no residency for — is NOT
+        redistributed across the named buckets; it is disclosed as
+        ``cache_read_unattributed``.
+
+        **Exact reconciliation.** The five attributed parts plus
+        ``cache_read_unattributed`` sum EXACTLY to that phase's recorded
+        ``cache_read``, so no rounding can inflate a named share or lose weight
+        into the gap. The residual is ALWAYS emitted with the group — never
+        omitted when it happens to be zero — because a consumer must be able to
+        read the residual to know how much of the split was explained.
+
         **Absent is not zero.** A target that emits a phase bucket at all MUST
-        carry the full counter key set, so a zero there is a MEASURED zero. A
-        target that declines the primitive emits no bucket, and its counters are
-        ABSENT — consumers must preserve that distinction rather than
-        substituting zeros for a target that never measured.
+        carry the full counter key set — the exploration-share counters AND the
+        cache-read attribution group alike — so a zero there is a MEASURED zero.
+        A phase whose recorded ``cache_read`` is 0 therefore still carries all
+        five attributed keys and the residual, every one of them at a measured
+        zero. A target that declines the primitive emits no bucket, and its
+        counters are ABSENT — consumers must preserve that distinction rather
+        than substituting zeros for a target that never measured.
 
         On Claude: reads ``~/.claude/projects/.../{session_id}.jsonl`` and the
         ``{session_id}/subagents/agent-*.jsonl`` transcripts, parses ``message.usage``
