@@ -51,7 +51,7 @@ These are the input-health defects that silently FLOOR every downstream check:
 
 | Flag | Fires when | Why it floors downstream checks |
 |------|------------|---------------------------------|
-| `metrics_blind` | Any data-bearing phase (`4-plan`, `5-execute`, `6-finalize`) recorded **zero** tokens **that #812's `unrecorded_phases` markers do NOT explain**. The cell lists the genuinely-blind phase names (`;`-joined). | A zero-token phase means every token-economics and token-trend number for that phase is under-counted. The **5-execute** case is load-bearing — a genuinely-blind execute escalates the plan to the `blind` data_confidence bucket. A phase listed in `unrecorded_phases` is recorded-partial by design (see the #812 note below) and is EXCLUDED from this flag. |
+| `metrics_blind` | Any data-bearing phase (`4-plan`, `5-execute`, `6-finalize`) recorded **zero** tokens **that #812's `unrecorded_phases` markers do NOT explain**. The cell lists the genuinely-blind phase names (`;`-joined). | A zero-token phase means every token-economics and token-trend number for that phase is under-counted. The **5-execute** case is load-bearing — a genuinely-blind execute escalates the plan to the `blind` data_confidence bucket. A phase listed in `unrecorded_phases` is recorded-partial by design (see the #812 note below) and is EXCLUDED from this flag. A phase that ran entirely inline is not blind either — see the inline-phase carve-out below for why that holds without a branch in this check. |
 | `incomplete_lifecycle` | The plan never recorded a `5-execute` OR a `6-finalize` section in `metrics.toon`. The cell lists the missing phase names. | The plan did not run to completion through the recorded lifecycle, so completeness-dependent checks (pr-merge-velocity, quality-chain resolution) read a truncated history. |
 | `missing_dispatch_markers` | `logs/work.log` carries no `[DISPATCH] role=phase-N` line. | The sequence-and-build-minimality phase attribution cannot bucket calls into phases — it folds everything into `1-init` (the finalize-fold conflation caveat in that check's sub-doc). |
 
@@ -70,6 +70,38 @@ The bucket precedence is `blind` > `partial` > `fully-recorded`: a genuinely-bli
 execute wins regardless of other inputs. A #812-marker-explained zero-token
 execute is `partial` (recorded-partial), NEVER `blind` and NEVER the
 false-healthy `fully-recorded`.
+
+### The inline-phase carve-out (why a zero-dispatch phase is not blind)
+
+`metrics_blind` reads `total_tokens` as the evidence that a phase recorded
+something. That field does **not** always measure the dispatched-subagent
+population: on a phase that dispatched nothing, `manage-metrics enrich` folds the
+phase window's main-context `message.usage` sum into `total_tokens`, and the row
+carries `total_tokens_population: inline` to say so (see
+`manage-metrics/standards/data-format.md` § "Inline Main-Context Attribution").
+
+That fold is what keeps this check correct, and the dependency runs one way:
+
+- An inline-only phase really did cost tokens — it ran in the orchestrator's own
+  context instead of a dispatched leaf. Its cost is a recorded measurement, not a
+  gap, so it must NOT read as blind.
+- The fold is what makes `total_tokens` non-zero for such a phase, so
+  `metrics_blind` does not fire on it. This check therefore gets the inline
+  carve-out **for free from the recorder** — it needs no inline-specific branch
+  of its own, and it deliberately has none.
+- `4-plan` and `5-execute` are dispatch-driven, so the load-bearing execute
+  blindness signal is unaffected either way. The carve-out is reachable only for
+  a `6-finalize` whose configured steps all ran inline.
+
+**Standing coupling — do not remove the fold without changing this check first.**
+If `enrich` ever stops folding the inline sum into `total_tokens` (leaving the
+figure only under `inline_main_context_tokens`), every inline-only data-bearing
+phase would start reporting zero and `metrics_blind` would fire corpus-wide on
+plans that recorded their cost correctly. The predicate would then need to read
+`total_tokens_population` and treat an `inline` row carrying a non-zero
+`inline_main_context_tokens` as recorded. Until that happens the predicate stays
+as written: this note records the dependency so the coupling is visible from the
+consumer side, where the breakage would surface.
 
 ### #812 recorded-partiality markers
 
@@ -172,6 +204,12 @@ with a cited reason (the `severity: informational` cell, or the
   recorded-partiality markers are read by `parse_metrics_partiality` (shared with
   the `metrics` check). If the recorded lifecycle or the partiality-marker schema
   changes, edit `scripts/audit.py` rather than substituting a different reading.
+- `total_tokens` is a population-discriminated field, not a dispatched-only one.
+  A consumer that needs to know which population a phase's figure measures reads
+  the row's `total_tokens_population` (`dispatched` / `inline` / `mixed`) — never
+  the field name. `parse_metrics_toon` whitelists the keys it consumes, so the
+  discriminator is currently ignored here by design (see the inline-phase
+  carve-out for why this check does not need it).
 - The cross-check obligation is NOT optional: a peer check that claims "all
   healthy" while this check reports a `blind` plan is producing a false healthy —
   the exact failure mode this check exists to block.

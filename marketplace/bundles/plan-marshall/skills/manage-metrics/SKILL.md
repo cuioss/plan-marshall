@@ -89,7 +89,7 @@ first close the two are identical.
 
 ### generate
 
-Generate or update metrics.md from collected phase data. The generated markdown contains a table with per-phase rows showing duration (formatted as `Xm Ys`), token counts, and tool uses, plus totals.
+Generate or update metrics.md from collected phase data. The generated markdown contains a table with per-phase rows showing duration (formatted as `Xm Ys`), token counts, tool uses, and the billing-weighted cost, plus totals.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics generate \
@@ -112,11 +112,19 @@ total_worked_seconds: 572.5
 total_wall_seconds: 640.0
 total_idle_seconds: 67.5
 total_tokens: 86754
+total_billing_weighted: 128900
 total_worked_formatted: 9m32s
 total_wall_formatted: 10m40s
 total_idle_formatted: 1m7s
 total_tokens_formatted: 86.8K
 ```
+
+`total_billing_weighted` is the sum of the per-phase `billing_weighted_total`
+figures — a **derived-cost** measure over the main-context window, aggregated in
+its own `Billing (cost)` column. It answers a different question from
+`total_tokens` (what the work cost to buy, versus how much dispatched work was
+done) and is never added into it. Like every other column it inherits the
+symmetric `(n=k/6)` partiality marker when some phases carry no figure.
 
 The `total_worked_formatted` / `total_wall_formatted` / `total_idle_formatted` fields are produced by `format_duration` (shared with the metrics.md Phase Breakdown table) and `total_tokens_formatted` is produced by `format_tokens_short` from `tools-file-ops` (abbreviated decimal-suffix form, e.g. `599K`, `1.2M`). The raw `total_worked_seconds` / `total_wall_seconds` / `total_idle_seconds` / `total_tokens` seconds-and-count figures are kept alongside them — consumers that want the human-readable form for an `[OK]` row should read the `_formatted` fields instead of re-formatting.
 
@@ -377,20 +385,29 @@ See `plan-retrospective` for the correlation logic.
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics record-dispatch-boundary \
   --plan-id {plan_id} --phase {phase} \
-  --termination-cause {voluntary_checkpoint|task_complete_returned_verbatim|budget_yield|harness_cancellation|error|clean_exit_queue_empty} \
+  --termination-cause {voluntary_checkpoint|task_complete_returned_verbatim|budget_yield|harness_cancellation|error|clean_exit_queue_empty|step_complete|blocked_user_review|blocked_session_restart|task_batch_complete|agent_returned} \
   [--total-tokens N] [--tool-uses N] [--duration-ms N] \
   [--input-tokens N] [--output-tokens N] [--cache-read-input-tokens N] [--cache-creation-input-tokens N]
 ```
 
 **Parameters:**
 - `--phase` — Phase whose dispatch terminated (must be a valid phase name; in practice this is `5-execute`, but the subcommand accepts any valid phase).
-- `--termination-cause` — Why the dispatch ended. Required — missing or unrecognised values are rejected as script errors (there is no implicit fallback). One of:
+- `--termination-cause` — Why the dispatch ended. Required — missing or unrecognised values are rejected as script errors (there is no implicit fallback). The accepted set is exactly the `DISPATCH_TERMINATION_CAUSES` tuple in `scripts/manage-metrics.py`, which is also the argparse `choices` list; that tuple is the single source of truth, and the enumeration below names its current members:
   - `voluntary_checkpoint` — the agent emitted a "Returning control to orchestrator" / "progress checkpoint" line and stopped with pending work in the queue.
   - `task_complete_returned_verbatim` — the agent returned `execute-task`'s bare `task_complete` payload without wrapping it.
   - `budget_yield` — the dispatch yielded because its assigned `envelope_id` group was exhausted (plan-time bin-packing) after completing ≥1 task — the wrapped terminal payload (`budget_yield: true`, `tasks_remaining > 0`) and the `budget_yield` decision-log entry distinguish it from `task_complete_returned_verbatim`.
   - `harness_cancellation` — the host platform cancelled the dispatch (timeout, context-window limit, etc.).
   - `error` — the dispatch raised a fatal error captured via the skill's Error Handling section.
   - `clean_exit_queue_empty` — canonical value for a clean exit where the loop drove to completion AND `manage-tasks loop-exit-guard` confirmed the pending queue is empty.
+  - `step_complete` — a finalize step dispatch returned with its own step complete (the per-step boundary, not a phase-queue exit).
+  - `blocked_user_review` — the dispatch stopped because it requires an operator decision the leaf cannot make.
+  - `blocked_session_restart` — the dispatch stopped because the session must restart before the work can continue.
+  - `task_batch_complete` — the dispatch completed the batch of tasks assigned to it.
+  - `agent_returned` — the agent returned without one of the more specific causes above applying.
+
+  Because this bullet list, the command block above, and the `record-dispatch-boundary` block under **Canonical invocations** all enumerate the same set, a value added to `DISPATCH_TERMINATION_CAUSES` must be added to all three in the same change; the contract test in `test/plan-marshall/manage-metrics/test_manage_metrics.py` discovers every occurrence in this document and fails until each one matches the tuple.
+
+  That test reads **this document only**, so those three sites are the whole *guarded* population — not the whole population. Any enumeration of the same set living in another file is unguarded, and this guard cannot tell you how many such files exist. Two are known and currently in sync: the `termination_cause` enum line in [standards/data-format.md](standards/data-format.md) § Per-Dispatch Context-Load Attribution, and the `record-dispatch-boundary` argparse `description=` string in `scripts/manage-metrics.py` (its `choices=` is derived from the tuple and so is not a mirror). Update those in the same change — and search for other full-set enumerations rather than assuming these are all, because nothing fails if you miss one.
 - `--total-tokens`, `--tool-uses`, `--duration-ms` — Subagent `<usage>` totals at termination (each optional, default 0).
 - `--input-tokens`, `--output-tokens`, `--cache-read-input-tokens`, `--cache-creation-input-tokens` — Per-dispatch context-load totals from the dispatched agent's four-field `message.usage` view at termination (each optional, default 0). These are the per-DISPATCH counterpart to the per-PHASE four-field view `enrich` writes; they are recorded as four columns appended at the END of each row so the legacy five columns stay positionally unchanged. See [data-format.md](standards/data-format.md) § Per-Dispatch Context-Load Attribution for the canonical column order, count, and defaults.
 
@@ -460,11 +477,17 @@ inside the transcripts; the single-figure `<usage>` return tag carries no
 input/output split and no cache fields. `enrich` accumulates these four fields
 per phase from BOTH the parent orchestrator turns AND every discovered subagent
 transcript, then records a `billing_weighted_total` per phase computed as
-`input + output + round(0.1 × cache_read) + round(1.25 × cache_creation)`. The
-weighted total is a **billing-cost figure, NOT a work-comparable measure** —
-`cache_read_input_tokens` sums context re-reads across turns, so a long agent
-that re-reads its context many times accumulates large `cache_read` that
-reflects API billing rather than independent work performed.
+`input + output + round(0.1 × cache_read) + round(1.25 × cache_creation)`.
+
+The weighted total is a **derived-cost** measure: it answers what the phase cost
+to buy over the main-context window, which is a different question from how much
+dispatched work was done. `cache_read_input_tokens` sums context re-reads across
+turns, so a long agent that re-reads its context many times accumulates large
+`cache_read` that reflects API billing rather than independent work performed.
+That is a stated property of the measure, not a reason to bury it: `generate`
+renders it as the first-class `Billing (cost)` column with its own total
+(`total_billing_weighted`), and it is never summed into the dispatched `Tokens`
+total.
 
 **Whole-transcript attribution**: Each subagent transcript is summed as a whole
 and attributed to the single phase window containing its spawn/first-message
@@ -488,8 +511,18 @@ The per-phase rows in `work/metrics.toon` gain `subagent_total_tokens`,
 `billing_weighted_total` (from the four-field walks), plus the ten
 exploration-share counters `{exploration,work,execute,orchestration,unclassified}_tool_calls`
 and `{exploration,work,execute,orchestration,unclassified}_result_bytes` (from
-the tool-call walk) — see [data-format.md](standards/data-format.md). The
-existing `total_tokens` field is left untouched. When the orchestrator called `accumulate-agent-usage` for
+the tool-call walk) — see [data-format.md](standards/data-format.md). `enrich`
+also stamps `total_tokens_population` on every row it touches, and writes
+`inline_main_context_tokens` on any row whose
+`input + output + cache_creation` sum is non-zero (`cache_read` is excluded, so
+a window carrying only `cache_read_input_tokens` receives no field).
+
+A dispatched `total_tokens` is left byte-identical (explicit-wins). The ONE case
+where `enrich` writes `total_tokens` is a phase that dispatched nothing: there it
+folds the inline main-context sum in, so the phase stays countable, and labels the
+row `total_tokens_population: inline` so no consumer reads that figure as a
+dispatched measurement. See [data-format.md](standards/data-format.md) §
+"Inline Main-Context Attribution". When the orchestrator called `accumulate-agent-usage` for
 the same agent dispatches the on-disk totals are independent of `enrich`'s
 per-phase subagent fields, so double-counting does not occur in the closed-phase
 row (`total_tokens`), which is filled from the accumulator at `end-phase` time.
@@ -529,8 +562,8 @@ its `duration_seconds` and token/tool figures are sums across every close while
 ### Generated metrics.md
 
 The `generate` command produces a markdown report with:
-- Per-phase table (duration formatted as `Xm Ys`, token counts, tool uses)
-- Totals row with aggregate values
+- Per-phase table (duration formatted as `Xm Ys`, token counts, tool uses, billing-weighted cost)
+- Totals row with aggregate values, each column aggregated independently
 
 ## Canonical invocations
 
@@ -561,6 +594,12 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics end-
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics generate \
   --plan-id PLAN_ID
 ```
+
+Returns the per-column totals — `total_worked_seconds`, `total_wall_seconds`,
+`total_idle_seconds`, `total_tokens` (dispatched work), and
+`total_billing_weighted` (derived cost, aggregated separately and never summed
+into `total_tokens`) — plus their formatted variants and the completeness
+verdict (`partial` / `unrecorded_phases`).
 
 ### print-phase-breakdown
 
@@ -597,7 +636,7 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics accu
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics record-dispatch-boundary \
   --plan-id PLAN_ID --phase PHASE \
-  --termination-cause {voluntary_checkpoint|task_complete_returned_verbatim|budget_yield|harness_cancellation|error|clean_exit_queue_empty} \
+  --termination-cause {voluntary_checkpoint|task_complete_returned_verbatim|budget_yield|harness_cancellation|error|clean_exit_queue_empty|step_complete|blocked_user_review|blocked_session_restart|task_batch_complete|agent_returned} \
   [--total-tokens N] [--tool-uses N] [--duration-ms N] \
   [--input-tokens N] [--output-tokens N] [--cache-read-input-tokens N] [--cache-creation-input-tokens N]
 ```

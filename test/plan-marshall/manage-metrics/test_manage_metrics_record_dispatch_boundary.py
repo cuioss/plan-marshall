@@ -89,6 +89,79 @@ def _data_rows(content: str) -> list[str]:
 
 
 # =============================================================================
+# Boundary-measure coverage: rows_recorded and the partiality verdict
+# =============================================================================
+#
+# The boundary sum cannot state its own coverage. A file holding three of a
+# phase's five dispatches sums to a smaller-but-honest-looking figure that is
+# indistinguishable from a complete one, so the reader returns the row count
+# alongside the sum and the reconciliation refuses a PARTIAL measure the maximum.
+
+def test_reader_returns_the_row_count_alongside_the_sum(plan_context):
+    """`_read_dispatch_boundary_totals` reports how many rows it summed."""
+    plan_dir = plan_context.plan_dir_for('disp-rows')
+    _seed_status_json(plan_dir)
+    for tokens in (1000, 2000, 3000):
+        cmd_record_dispatch_boundary(_ns('disp-rows', total_tokens=tokens))
+
+    total, rows = manage_metrics._read_dispatch_boundary_totals('disp-rows', '5-execute')
+
+    assert total == 6000
+    assert rows == 3
+
+
+def test_reader_reports_zero_rows_for_an_absent_file(plan_context):
+    """An absent boundary file is a clean no-op in both halves of the return."""
+    plan_context.plan_dir_for('disp-absent')
+
+    assert manage_metrics._read_dispatch_boundary_totals('disp-absent', '5-execute') == (0, 0)
+
+
+def test_generate_persists_the_recorded_row_count(plan_context):
+    """`generate` writes `dispatch_boundary_rows_recorded` next to the sum."""
+    plan_dir = plan_context.plan_dir_for('disp-persist')
+    _seed_status_json(plan_dir)
+    cmd_record_dispatch_boundary(_ns('disp-persist', total_tokens=1000))
+    cmd_record_dispatch_boundary(_ns('disp-persist', total_tokens=2000))
+    manage_metrics.cmd_start_phase(
+        Namespace(plan_id='disp-persist', phase='5-execute', command='start-phase')
+    )
+    manage_metrics.cmd_generate(Namespace(plan_id='disp-persist', command='generate'))
+
+    row = manage_metrics.read_metrics_raw('disp-persist')['phases']['5-execute']
+
+    assert row['dispatch_boundary_total'] == 3000
+    assert row['dispatch_boundary_rows_recorded'] == 2
+
+
+def test_fewer_rows_than_dispatches_marks_the_measure_partial():
+    """Coverage below `subagent_samples` is PARTIAL — the sum is a floor."""
+    row = {'dispatch_boundary_rows_recorded': 3, 'subagent_samples': 5}
+
+    assert manage_metrics._boundary_measure_is_partial(row) is True
+
+
+def test_full_coverage_is_not_partial():
+    """Matched control: a boundary file covering every dispatch is complete."""
+    row = {'dispatch_boundary_rows_recorded': 5, 'subagent_samples': 5}
+
+    assert manage_metrics._boundary_measure_is_partial(row) is False
+
+
+def test_missing_reference_count_is_undecidable_not_partial():
+    """An un-enriched row has no reference count, so coverage is undecidable.
+
+    Undecidable must NOT read as partial: doing so would refuse the maximum on
+    every un-enriched plan and lose the accumulator-under-count recovery the
+    reconciliation exists for.
+    """
+    assert manage_metrics._boundary_measure_is_partial(
+        {'dispatch_boundary_rows_recorded': 3}
+    ) is None
+    assert manage_metrics._boundary_measure_is_partial({'subagent_samples': 5}) is None
+
+
+# =============================================================================
 # (a) First invocation creates the artifact file with one row
 # =============================================================================
 

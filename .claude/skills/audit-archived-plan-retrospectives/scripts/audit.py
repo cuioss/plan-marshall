@@ -122,8 +122,11 @@ suite of deterministic checks:
   token-optimization roadmap. Measures whether the cost-reducing lane levers
   (recipe auto-routing, the light planning lane, the minimal execution posture,
   the #854 surgical-fix micro-lane) are engaged, and scores each plan's summed
-  `total_tokens` against its scope class's armed checkpoint target (surgical
-  ≤1.2M / single_module ≤1.5M / multi_module ≤2.5M): emits a per-plan
+  `total_tokens` — dispatched-subagent on every phase row except those marked
+  `inline`, where a main-context figure is folded in, and never including the
+  derived-cost `billing_weighted_total` — against its scope class's armed
+  checkpoint target (surgical ≤1.2M / single_module ≤1.5M / multi_module ≤2.5M,
+  re-derived against that population with a zero delta): emits a per-plan
   `within`/`over`/`unclassed`/`no_metrics` checkpoint verdict, the corpus lever-
   engagement counts, and an `estimated_avoided_tokens` scope-gated subtraction.
   `checkpoint_over` is the genuine overspend signal.
@@ -389,11 +392,24 @@ CHECK_ERA: dict[str, str] = {
     # — both surfaces this check accounts for (the `[LOCK] (merge:*)` lifecycle
     # bucketing + the widened merge-mutex admission window).
     "merge-window-accounting": "#877",
-    # lane-lever-effectiveness — #875 (this plan's boundary): the Tier-1
-    # recipe-match floor fix + the classify-before-route change this plan ships
+    # lane-lever-effectiveness — #875 (plan-13's boundary): the Tier-1
+    # recipe-match floor fix + the classify-before-route change that plan shipped
     # alter which plans engage the light planning lane and the minimal execution
     # posture, so the checkpoint measurement arm (per-scope-class token spend vs
-    # armed targets) re-arms at this plan's PR.
+    # armed targets) re-armed at that plan's PR.
+    #
+    # DELIBERATELY NOT BUMPED by the population-labelling plan. That plan re-derived
+    # this check's armed targets against the population they score and found a ZERO
+    # delta (see `THRESHOLDS["checkpoint_token_targets"]`): no target moved, no
+    # predicate changed, and `_plan_total_tokens` sums the same field over the same
+    # population as before, so EVERY archived plan's checkpoint verdict is
+    # bit-identical across that boundary. Bumping the stamp would assert that
+    # pre-boundary rows read as era-expected and post-boundary rows as regressions
+    # — a claim this check's own numbers refute, and exactly the confident-signal-
+    # over-an-unchanged-measurement defect that plan exists to remove. What the plan
+    # DID change is the check's stated semantics: the population its targets score
+    # is now declared rather than left implicit, recorded at the THRESHOLDS entry
+    # and in `checks/lane-lever-effectiveness.md`.
     "lane-lever-effectiveness": "#875",
     # exploration-share — PR-PENDING (this check's introducing plan, a placeholder
     # resolved to the real PR at finalize by project:finalize-step-era-stamp-fill
@@ -611,6 +627,33 @@ THRESHOLDS: dict[str, Any] = {
     # total_tokens is measured against the class target. Consumed by
     # lane-lever-effectiveness (the checkpoint measurement arm). A scope_estimate
     # outside this map is `unclassed` (no verdict).
+    #
+    # POPULATION SCORED — these targets score `metrics.toon` `total_tokens` under
+    # its DEFAULT-PLUS-EXCEPTION labelling, the same contract the rendered
+    # `Tokens (dispatched unless marked)` column declares: a phase row is a
+    # dispatched-subagent measurement by default; a row whose
+    # `total_tokens_population` is `inline` is a main-context-window measurement
+    # that `manage-metrics enrich` folds in because the phase dispatched nothing;
+    # and a sum containing an inline row spans populations. `_plan_total_tokens`
+    # sums that field and ONLY that field — the derived-cost
+    # `billing_weighted_total` is a different question (what the phase cost to buy)
+    # and is never folded into this sum. See
+    # `manage-metrics/standards/data-format.md` § "Default-plus-exception
+    # labelling of the `Tokens` column".
+    #
+    # RE-DERIVATION OUTCOME: ZERO DELTA — no value below moved. The targets were
+    # re-derived against that measured population and came out unchanged, because
+    # the population itself is unchanged: the plan that introduced the population
+    # labelling deliberately RETAINED the inline fold (it is what keeps a
+    # zero-dispatch phase countable, and five consumers are load-bearing on it), so
+    # only the LABELLING changed. Moving the targets down would have required
+    # inventing a reduction factor for an exclusion that never occurred. Re-open
+    # this only if the fold is ever actually removed.
+    #
+    # The token-economics check's cut-points are NOT here and need no
+    # recalibration either: every one of them is derived from the live corpus on
+    # each run (`_derive_token_economics_thresholds`), so they float with whatever
+    # population the corpus records rather than pinning a literal.
     "checkpoint_token_targets": {
         "surgical": 1_200_000,
         "single_module": 1_500_000,
@@ -2458,6 +2501,15 @@ def cross_global_log_analysis(repo_root: Path) -> dict[str, Any]:
 # `references.json` footprint (scope_estimate, affected/modified file count) and
 # `status.json::metadata` change_type, then computes per-plan token shares and
 # efficiency ratios and a corpus-relative anti-pattern flag set.
+#
+# POPULATION SCORED — every per-plan and corpus figure below is computed over
+# `metrics.toon` `total_tokens` under its default-plus-exception labelling
+# (dispatched-subagent by default; an `inline` phase row carries a folded
+# main-context-window figure, so a sum containing one spans populations). The
+# derived-cost `billing_weighted_total` is never summed in. Because every
+# cut-point is corpus-relative (below), it floats with whatever population the
+# corpus records — so the population labelling introduced upstream required NO
+# recalibration here; there is no literal to move.
 #
 # DYNAMIC THRESHOLDS — the defining property of this check. Every anti-pattern
 # threshold is derived from the LIVE corpus on each run via the `median` /
@@ -6240,7 +6292,15 @@ def emit_merge_window_accounting_block(result: dict[str, Any]) -> str:
 #
 # Deterministic inputs (all per-plan, no global logs):
 #   scope_estimate         → checkpoint class + armed target (THRESHOLDS)
-#   metrics.toon           → summed total_tokens (the measured spend)
+#   metrics.toon           → summed total_tokens (the measured spend), read under
+#                            its default-plus-exception population labelling:
+#                            dispatched-subagent on every phase row except those
+#                            whose `total_tokens_population` is `inline`, where a
+#                            main-context-window figure is folded in. A sum
+#                            containing an inline row therefore spans populations.
+#                            `billing_weighted_total` (derived-cost) is never
+#                            summed in. See the THRESHOLDS entry for the armed
+#                            targets and the zero-delta re-derivation record.
 #   recipe_key/plan_source → recipe auto-route HIT (a plan seeded from a recipe/lesson)
 #   planning_lane          → light-lane fire (lane == "light")
 #   execution_profile      → chosen posture; minimal is the cost-reducing lever
@@ -6260,7 +6320,17 @@ def emit_merge_window_accounting_block(result: dict[str, Any]) -> str:
 
 
 def _plan_total_tokens(inputs: PlanInputs) -> int:
-    """Summed `total_tokens` across a plan's recorded metrics phases (0 if none)."""
+    """Summed `total_tokens` across a plan's recorded metrics phases (0 if none).
+
+    Sums ONLY the `total_tokens` field, under the default-plus-exception
+    population labelling documented at
+    `THRESHOLDS["checkpoint_token_targets"]`: dispatched-subagent by default,
+    with an `inline` phase row carrying a folded main-context-window figure, so a
+    sum containing such a row spans populations. The derived-cost
+    `billing_weighted_total` measures a different question (what the phase cost to
+    buy) and is deliberately NOT summed in — folding it here would silently mix a
+    cost population into a work total and inflate every checkpoint verdict.
+    """
     phases = parse_metrics_toon(inputs.plan_dir / "work" / "metrics.toon")
     return sum(p.total_tokens for p in phases)
 

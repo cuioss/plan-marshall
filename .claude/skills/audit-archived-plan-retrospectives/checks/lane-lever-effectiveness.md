@@ -29,7 +29,7 @@ All inputs are per-plan (no global logs):
 | Input | Source | Used for |
 |-------|--------|----------|
 | `scope_estimate` | `references.json` | checkpoint class + armed target |
-| summed `total_tokens` | `work/metrics.toon` (sum over recorded phases) | the measured spend |
+| summed `total_tokens` | `work/metrics.toon` (sum over recorded phases) | the measured spend — see § "What population the targets score" |
 | `recipe_key` / `plan_source` | `status.json::metadata.plan_source` | recipe auto-route HIT |
 | `planning_lane` | `status.json::metadata.planning_lane` | light-lane fire (`== "light"`) |
 | `execution_profile` | `status.json::metadata.execution_profile` | chosen posture; `minimal` is the cost-reducing lever |
@@ -56,6 +56,44 @@ target (the roadmap's optimization checkpoint, sourced from the single
 
 A `scope_estimate` outside this map (e.g. `broad`) is `unclassed` — measured but
 carries no verdict.
+
+### What population the targets score
+
+The measured spend is `metrics.toon` `total_tokens`, read under its
+**default-plus-exception** population labelling — the same contract the rendered
+`Tokens (dispatched unless marked)` column declares:
+
+- **Default** — a phase row is a **dispatched-subagent** measurement.
+- **Exception** — a row whose `total_tokens_population` is `inline` is a
+  **main-context-window** measurement that `manage-metrics enrich` folds in
+  because the phase dispatched nothing. A row marked `mixed` is still the
+  dispatched figure, with its inline spend excluded.
+- **The sum** — a sum containing an `inline` row therefore **spans populations**
+  and is not a dispatched total. Read the report's `(spans populations)` marker
+  before describing a checkpoint verdict as a dispatched-work verdict.
+
+`billing_weighted_total` (the `Billing (cost)` column) is a **derived-cost**
+measure of what the phase cost to buy. It answers a different question from the
+dispatched work these targets score and is **never** summed into the measured
+spend. The full contract lives in
+`manage-metrics/standards/data-format.md` § "Default-plus-exception labelling of
+the `Tokens` column".
+
+### Re-derivation outcome: ZERO delta
+
+The armed targets above were re-derived against that measured population and **no
+value moved**. The reason is structural, not an omission: the plan that
+introduced the population labelling deliberately **retained** the inline fold (it
+is what keeps a zero-dispatch phase countable, and five consumers are load-bearing
+on it), so the population these targets score is exactly the population they
+scored before — only its labelling changed. Moving them down would have required
+inventing a reduction factor for an exclusion that never occurred.
+
+Consequently this check's `CHECK_ERA` boundary is **deliberately not bumped** for
+that plan: every archived plan's checkpoint verdict is bit-identical across it, so
+a bumped stamp would falsely claim that pre-boundary rows read as era-expected and
+post-boundary ones as regressions. Re-open the calibration only if the inline fold
+is ever actually removed.
 
 ## Computation and verdicts
 
@@ -158,4 +196,10 @@ worked").
   re-derive spend or targets in chat.
 - The `avoided_tokens` estimate is an explicit UPPER BOUND (full headroom
   credited to the engaged lever). Never report it as a precise saving.
+- The measured spend sums `total_tokens` and ONLY `total_tokens`. Never fold the
+  derived-cost `billing_weighted_total` into it — that would mix a cost
+  population into a work total and inflate every checkpoint verdict.
+- Never describe a checkpoint verdict as a *dispatched* spend verdict without
+  checking the report's population markers first: a sum containing an `inline`
+  phase row spans populations.
 - This check is read-only; it never edits `.plan/` files.
