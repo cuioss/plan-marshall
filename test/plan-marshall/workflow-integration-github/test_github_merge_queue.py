@@ -190,62 +190,6 @@ def test_cmd_pr_merge_queue_gh_error_returns_error(monkeypatch):
     assert result['operation'] == 'pr_merge_queue'
 
 
-# ---------------------------------------------------------------------------
-# Corroboration — `enqueued: true` requires a queue that actually exists
-# ---------------------------------------------------------------------------
-
-
-def test_cmd_pr_merge_queue_returns_error_when_base_has_no_configured_queue(monkeypatch):
-    """An unconfigured base branch is an error, not a green `enqueued: true`.
-
-    ``gh pr merge --auto`` exits zero either way — with a queue it enqueues,
-    without one it quietly enables PLAIN auto-merge. The exit-code-derived claim
-    therefore reported a successful enqueue for a PR that never joined a queue.
-    Probing BEFORE the call also prevents that unwanted auto-merge side effect.
-    """
-    # Arrange
-    run_gh_stub, captured = _capture_run_gh()
-    probe = _install(
-        monkeypatch,
-        run_gh_stub,
-        discriminator=github_ops.MERGE_QUEUE_ELIGIBLE_UNCONFIGURED,
-        detail='no merge_queue rule on branch',
-    )
-
-    # Act
-    result = github_ops.cmd_pr_merge_queue(_mq_ns())
-
-    # Assert — refusal names the base branch and BOTH remedies, and nothing ran.
-    assert result['status'] == 'error', result
-    assert result['operation'] == 'pr_merge_queue'
-    assert 'main' in result['error'], result
-    assert '/marshall-steward' in result['error'], result
-    assert 'use_merge_queue' in result['error'], result
-    assert captured == [], captured
-    assert probe['calls'] == 1, probe
-
-
-def test_cmd_pr_merge_queue_probe_error_fails_closed(monkeypatch):
-    """A probe failure refuses the enqueue rather than guessing it succeeded."""
-    # Arrange
-    run_gh_stub, captured = _capture_run_gh()
-    _install(
-        monkeypatch,
-        run_gh_stub,
-        discriminator=github_ops.MERGE_QUEUE_INELIGIBLE,
-        detail='branch rules endpoint unreachable',
-        probe_error='the gh token lacks the scope to read repository rulesets',
-    )
-
-    # Act
-    result = github_ops.cmd_pr_merge_queue(_mq_ns())
-
-    # Assert
-    assert result['status'] == 'error', result
-    assert 'scope' in result['error'], result
-    assert captured == [], captured
-
-
 def test_github_ops_exposes_merge_queue_handler():
     # The router key the parser produces (`pr_command == 'merge-queue'`) maps to
     # this imported handler in github_ops.main's dispatch table.

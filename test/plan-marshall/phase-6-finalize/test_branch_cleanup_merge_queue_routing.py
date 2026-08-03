@@ -207,6 +207,13 @@ _USE_MERGE_QUEUE_READ_RE = re.compile(r'read `use_merge_queue` off', re.IGNORECA
 #: The mandatory observability marker each consumption site must carry.
 _OBSERVABILITY_MARKER = '**Observability (mandatory)**'
 
+#: The heading of the section that ENCLOSES the `prune-local-and-remote-ref`
+#: dispatch. Used to anchor the prune-guard window on the real section boundary
+#: rather than on a fixed character count: a fixed window silently slides the
+#: `{merge_landed}` guard sentence out of view as the section grows, and a
+#: negative start index would slice from the END of the document.
+_PRUNE_SECTION_HEADING = '#### Release the cross-plan merge-lock (both paths)'
+
 #: One provider ``handlers: HandlerMap`` registry literal.
 _HANDLER_MAP_RE = re.compile(r'handlers:\s*HandlerMap\s*=\s*\{(.*?)\n    \}', re.DOTALL)
 
@@ -686,6 +693,50 @@ def test_every_merge_shaped_verb_reaches_its_platform_queue_guard(provider, key)
         )
 
 
+def test_ordering_arm_covers_a_published_non_empty_population():
+    """(2c) The ordering arm of (2b) is exercised by a NON-EMPTY, published subset.
+
+    The per-member ordering assertion above only runs when the success literal is
+    found (``if success_at != -1``). A handler that builds its success envelope
+    with a different spelling, through a helper, or by dict mutation therefore
+    contributes NO ordering check — and says nothing about it in the test output.
+    Were every member to take that branch, the arm would cover nothing while all
+    ``_MERGE_SHAPED_TOTAL`` parametrizations still reported green.
+
+    This is the same published-population discipline the rest of the module
+    follows: the exercising and skipping sets are derived here over the WHOLE
+    merge-shaped population, and both counts plus the skipped member names are
+    published, so an arm that has quietly shrunk is visible from the failure
+    message alone rather than having to be inferred from a green run.
+    """
+    exercising: list[str] = []
+    skipping: list[str] = []
+    for provider in sorted(_MERGE_SHAPED):
+        handler_names = _registry_handler_names(provider)
+        for key in _MERGE_SHAPED[provider]:
+            handler = handler_names[key]
+            source = _handler_source(provider, handler)
+            label = f'{provider}:{handler}'
+            if source and _code_without_prose(source).find(_SUCCESS_LITERAL) != -1:
+                exercising.append(label)
+            else:
+                skipping.append(label)
+
+    assert len(exercising) + len(skipping) == _MERGE_SHAPED_TOTAL, (
+        f'Ordering-arm population = {len(exercising) + len(skipping)}, but the derived '
+        f'merge-shaped population is {_MERGE_SHAPED_TOTAL}. The two must agree, or this '
+        'test is reporting coverage over a population it did not actually walk.'
+    )
+    assert exercising, (
+        f'The ordering arm of (2b) is exercised by 0 of {_MERGE_SHAPED_TOTAL} merge-shaped '
+        f'members — every member skipped it. Skipped: {sorted(skipping)}. The arm is guarded '
+        f'by finding {_SUCCESS_LITERAL} in the handler\'s non-prose code, so a population-wide '
+        'skip means that literal no longer matches how these handlers build their success '
+        'envelope (a different spelling, a helper, or dict mutation). The per-member '
+        'assertions would all still pass while asserting nothing about ordering.'
+    )
+
+
 #: A handler whose ONLY reference to the platform queue/train surface is prose:
 #: a docstring and a comment. It never probes. This is the negative case (2b)
 #: must reject — and the case a raw-text match accepts, which is precisely how
@@ -1013,7 +1064,19 @@ def test_queue_landing_gate_precedes_and_guards_the_branch_prune():
             'held lock blocks every other plan, and a prune destroys the queue\'s ref.'
         )
 
-    prune_guard = text[prune_at - 2000 : prune_at]
+    # Anchor the guard window on the ENCLOSING heading rather than on a fixed
+    # character count: a fixed window fails without a real regression as soon as
+    # the section grows past it, and a prune offset below the window size would
+    # make the start index negative and slice from the END of the document.
+    heading_at = text.rfind(_PRUNE_SECTION_HEADING, 0, prune_at)
+    assert heading_at != -1, (
+        f'The enclosing heading {_PRUNE_SECTION_HEADING!r} was not found anywhere before '
+        f'the `prune-local-and-remote-ref` dispatch at {prune_at}. This test anchors the '
+        'prune-guard window on that heading; if the section was renamed, re-point this '
+        'anchor at the new heading rather than widening the window back to a fixed size.'
+    )
+
+    prune_guard = text[heading_at:prune_at]
     assert '{merge_landed}' in prune_guard, (
         'The `prune-local-and-remote-ref` dispatch is not gated on `{merge_landed}`. '
         'Without the guard the prune runs whether or not the queue merge landed, which is '

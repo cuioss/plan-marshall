@@ -609,7 +609,7 @@ def test_pr_merge_rebase_accepts_ancestry_evidence(monkeypatch):
 
 
 @pytest.mark.parametrize('compare_status', ['ahead', 'diverged', 'identical'])
-def test_pr_merge_rebase_ancestry_arm_reads_compare_status(monkeypatch, compare_status):
+def test_pr_merge_ancestry_arm_reads_compare_status(monkeypatch, compare_status):
     """The ancestry arm asserts the compare STATUS value, not the response's shape.
 
     ``identical`` and ``behind`` mean the base contains the head; ``ahead`` and
@@ -669,7 +669,9 @@ def test_parse_merged_at_always_returns_aware(raw):
     assert parsed.tzinfo is not None, raw
     assert parsed.utcoffset() is not None, raw
     # Comparable against an aware instant without raising — the property that matters.
-    assert parsed <= datetime.now(UTC) or parsed > datetime.now(UTC)
+    # Every fixture above is dated in the past, so the relation is DEFINITE rather
+    # than a tautology: a parse that returned a naive or wrongly-offset value fails here.
+    assert parsed < datetime.now(UTC), raw
 
 
 @pytest.mark.parametrize('raw', ['', 'not-a-timestamp', '2026-13-45T99:99:99Z'])
@@ -1789,7 +1791,9 @@ def test_cmd_pr_merge_queue_returns_error_when_base_has_no_configured_queue(
     """
     _install_common(monkeypatch)
     monkeypatch.setattr(github_ops, 'view_pr_data', lambda head=None: _pr_view_success_payload())
-    _install_probe(monkeypatch, discriminator=discriminator, detail='no merge_queue rule on branch')
+    probe = _install_probe(
+        monkeypatch, discriminator=discriminator, detail='no merge_queue rule on branch'
+    )
     captured: list[list[str]] = []
 
     def run_gh_stub(args, capture_json=False, timeout=60):
@@ -1809,6 +1813,9 @@ def test_cmd_pr_merge_queue_returns_error_when_base_has_no_configured_queue(
     assert 'ci pr safe-merge' in result['error'], result
     # No gh call was issued — the probe precedes the enqueue.
     assert captured == [], captured
+    # The refusal is derived from exactly ONE probe, not from a retry loop that
+    # happened to settle on an error: the base-branch state is read once and acted on.
+    assert probe['calls'] == 1, probe
 
 
 def test_cmd_pr_merge_queue_probe_error_fails_closed(monkeypatch):
