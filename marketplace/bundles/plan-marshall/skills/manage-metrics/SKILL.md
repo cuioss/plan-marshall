@@ -513,7 +513,9 @@ exploration-share counters `{exploration,work,execute,orchestration,unclassified
 and `{exploration,work,execute,orchestration,unclassified}_result_bytes` (from
 the tool-call walk) — see [data-format.md](standards/data-format.md). `enrich`
 also stamps `total_tokens_population` on every row it touches, and writes
-`inline_main_context_tokens` on any row carrying four-field usage.
+`inline_main_context_tokens` on any row whose
+`input + output + cache_creation` sum is non-zero (`cache_read` is excluded, so
+a window carrying only `cache_read_input_tokens` receives no field).
 
 A dispatched `total_tokens` is left byte-identical (explicit-wins). The ONE case
 where `enrich` writes `total_tokens` is a phase that dispatched nothing: there it

@@ -2214,7 +2214,7 @@ _EXPLORATION_COUNTER_FIELDS = tuple(
 
 
 def _inline_main_context_sum(phase_row: dict) -> int:
-    """Sum a phase row's inline-attributable four-field usage.
+    """Sum a phase row's inline-attributable main-context usage.
 
     ``input_tokens + output_tokens + cache_creation_input_tokens`` —
     ``cache_read_input_tokens`` is EXCLUDED so the figure matches the
