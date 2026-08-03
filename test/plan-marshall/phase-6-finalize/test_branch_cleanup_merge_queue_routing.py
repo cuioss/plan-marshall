@@ -29,7 +29,9 @@ hypothesised:
     for ``def cmd_`` or for handlers that call the CLI. A call-site scan is a
     *sample*, and sampling is what let this population under-enumerate twice
     (GitHub ``cmd_pr_auto_merge`` missed at pass 1, GitLab ``cmd_pr_auto_merge``
-    missed at pass 2).
+    missed at pass 2). The per-member predicate is bound to each handler's
+    EXECUTABLE CODE — its identifiers — never to its raw source text; see the
+    falsifiability report below for why that distinction is the whole assertion.
 
 (3) **Enumeration completeness, population-derived.** The declared param
     population comes from the step's ``configurable:`` frontmatter; the one-stop
@@ -74,11 +76,48 @@ so is more useful than a blanket claim:
   routing line to order against the dispatch.
 * (5) — FAILS pre-fix: the queue-landing gate did not exist, so the post-merge
   tail ran unconditionally on a merely-enqueued PR.
+
+**Falsifiability of (2b), measured by mutation.** The pre-fix report above says
+(2) fails pre-fix for 5 of 8 members, which is true and yet was not enough: it
+measured the assertion against the pre-fix TREE, not against the property. Run
+against a MUTANT — each real handler with its executable guard lines deleted and
+its docstring and comments left verbatim, i.e. a handler that fully documents a
+guard it does not perform — the two predicates separate completely:
+
+===========================================  =========  =========
+predicate                                    hits/8 on  hits/8 on
+                                             live tree  mutants
+===========================================  =========  =========
+raw-text search of the handler source              8/8        7/8
+identifier-bound (:func:`_first_queue_symbol`)     8/8        0/8
+===========================================  =========  =========
+
+The raw-text predicate accepts 7 of the 8 gutted handlers, because this diff gave
+every merge-shaped handler a docstring naming the queue or the train. Both arms
+of (2b) were therefore satisfied by prose the same commit authored, and the
+ordering arm was structurally incapable of failing — a docstring necessarily
+precedes every executable literal in the body it documents. (The single mutant
+the raw-text predicate rejects, ``github:auto-merge``, is an accident of spelling:
+its prose writes "merge queue" with a space, which the word-anchored form did not
+match.) The identifier-bound predicate rejects every mutant while still finding
+all 8 live guards, so it discriminates rather than merely rejecting.
+
+Two defects the mutation run exposed in the fix itself, both now locked by
+:func:`test_queue_guard_predicate_is_falsifiable` and
+:func:`test_prose_blanking_is_offset_preserving`:
+
+* the ``\\b`` anchor that was invisible against prose matched only identifiers
+  BEGINNING with the vocabulary once the predicate read code (5 of 8 members
+  regressed);
+* docstring blanking without bracket-depth tracking erased the ``'status'`` key
+  of the success envelope itself, destroying the ordering arm's right-hand side.
 """
 
 from __future__ import annotations
 
+import io
 import re
+import tokenize
 from pathlib import Path
 
 import pytest
@@ -180,7 +219,25 @@ _DEF_RE = re.compile(r'^def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(', re.MULTILINE)
 #: A symbol that touches the platform queue / train state. Derived per provider
 #: from the module's own vocabulary rather than listed, so a guard renamed or a
 #: new probe helper added is picked up without editing this file.
-_QUEUE_VOCAB_RE = re.compile(r'(?i)\bmerge[_-]?(?:queue|train)')
+#:
+#: Matched ONLY against IDENTIFIER tokens of the handler under test (see
+#: :func:`_first_queue_symbol`), never against its raw source text. Against raw
+#: text the pattern is satisfied by the handler's own DOCSTRING — every
+#: merge-shaped handler documents the queue/train surface it guards — so the
+#: predicate would report a hit for a handler that merely talks about the queue
+#: and never probes it, and the ordering arm below could not fail at all,
+#: because a docstring necessarily precedes every executable literal. Binding
+#: the match to identifiers binds it to the artifact under test: the executable
+#: code. :func:`test_queue_guard_predicate_is_falsifiable` locks that property.
+#:
+#: Deliberately UNANCHORED — no leading ``\b``. Identifiers carry the vocabulary
+#: mid-token (``skip_merge_queue_preflight``, ``_refuse_on_required_merge_queue``,
+#: ``_probe_merge_train_state``, ``_MERGE_TRAIN_INELIGIBLE_HINT``), and ``_`` is
+#: a word character, so a word-boundary anchor matches only the identifiers that
+#: BEGIN with the vocabulary. Against prose the anchor is invisible — every prose
+#: mention has real boundaries — which is why it survives a raw-text match and
+#: silently under-matches the moment the predicate is bound to code.
+_QUEUE_VOCAB_RE = re.compile(r'(?i)merge[_-]?(?:queue|train)')
 
 #: The success-literal marker used for the "before returning success" ordering.
 _SUCCESS_LITERAL = "'status': 'success'"
@@ -444,6 +501,106 @@ def _handler_source(provider: str, symbol: str) -> str:
     return ''
 
 
+def _line_starts(source: str) -> list[int]:
+    """Absolute character offset at which each 1-based source line begins.
+
+    Lets a ``(row, col)`` token position be converted back to the absolute
+    offset the ordering assertion compares on, so every position this module
+    reports is an offset into the ORIGINAL handler text.
+    """
+    starts = [0, 0]
+    position = 0
+    for line in source.splitlines(keepends=True):
+        position += len(line)
+        starts.append(position)
+    return starts
+
+
+def _tokens(source: str) -> list[tokenize.TokenInfo]:
+    """Tokenize one handler fragment.
+
+    Deliberately un-guarded: a fragment that cannot be tokenized is a handler
+    this module cannot reason about, and a loud error is the honest outcome —
+    swallowing it would silently downgrade every derivation below to "no hits
+    found", which is indistinguishable from a passing check.
+    """
+    return list(tokenize.generate_tokens(io.StringIO(source).readline))
+
+
+def _first_queue_symbol(source: str, own_symbol: str) -> tuple[int, str] | None:
+    """First ``(offset, identifier)`` in ``source`` naming the queue/train surface.
+
+    The predicate behind assertion (2b), and it is deliberately narrow in two
+    ways — each closing a way the check could pass without the property holding:
+
+    * **Identifiers only.** Docstrings, comments and string literals are excluded
+      by construction, because only ``NAME`` tokens are considered. A handler
+      that merely *describes* the queue in prose therefore yields ``None``. This
+      is the load-bearing narrowing: matching raw text made both arms of (2b)
+      satisfiable by the handler docstrings, and made the ordering arm
+      structurally incapable of failing.
+    * **Not the handler's own name.** ``cmd_pr_merge_queue`` contains the
+      vocabulary in its own identifier, so an unfiltered scan would match the
+      ``def`` line of exactly the two verbs whose guard matters most — again at
+      an offset preceding every literal, so again unfalsifiable.
+
+    Returns ``None`` when the handler references no queue/train symbol.
+    """
+    starts = _line_starts(source)
+    for token in _tokens(source):
+        if token.type != tokenize.NAME or token.string == own_symbol:
+            continue
+        if _QUEUE_VOCAB_RE.search(token.string):
+            row, col = token.start
+            return starts[row] + col, token.string
+    return None
+
+
+def _code_without_prose(source: str) -> str:
+    """``source`` with every comment and docstring blanked to spaces.
+
+    Offset-preserving — blanked characters become spaces and newlines are kept —
+    so an index into the result is also an index into the original text and can
+    be compared against the identifier offsets above.
+
+    Used for the success-literal side of the ordering assertion, so a handler
+    that happens to quote ``'status': 'success'`` inside its own documentation
+    cannot move the boundary the guard is required to precede.
+
+    A string counts as a docstring only when it opens a statement at bracket
+    depth ZERO. The depth condition is load-bearing: a multi-line dict literal
+    emits ``NL`` between its entries, so without it every string KEY on its own
+    line — including the ``'status'`` of the success envelope itself — reads as
+    a statement-opening string and gets blanked, erasing the very literal this
+    view exists to locate.
+    """
+    starts = _line_starts(source)
+    chars = list(source)
+    statement_start = True
+    depth = 0
+    for token in _tokens(source):
+        is_docstring = token.type == tokenize.STRING and statement_start and depth == 0
+        if is_docstring or token.type == tokenize.COMMENT:
+            begin = starts[token.start[0]] + token.start[1]
+            finish = starts[token.end[0]] + token.end[1]
+            for index in range(begin, min(finish, len(chars))):
+                if chars[index] != '\n':
+                    chars[index] = ' '
+        if token.type == tokenize.OP:
+            if token.string in '([{':
+                depth += 1
+            elif token.string in ')]}':
+                depth -= 1
+        if token.type != tokenize.COMMENT:
+            statement_start = token.type in (
+                tokenize.NEWLINE,
+                tokenize.NL,
+                tokenize.INDENT,
+                tokenize.DEDENT,
+            )
+    return ''.join(chars)
+
+
 def test_registry_populations_are_published_and_plausible():
     """(2a) All three derived sizes are published, and none is vacuous.
 
@@ -480,10 +637,19 @@ def test_every_merge_shaped_verb_reaches_its_platform_queue_guard(provider, key)
 
     The guard vocabulary is DERIVED from each provider's own module text rather
     than listed, so a renamed helper or a newly added probe is covered without
-    editing this file. What is asserted is that the handler body references the
-    platform queue/train surface at all, and that it does so BEFORE it can return
-    a success envelope — a verb that probed only after asserting success would
-    report a disposition it had not yet established.
+    editing this file. What is asserted is that the handler's EXECUTABLE CODE
+    references the platform queue/train surface, and that it does so BEFORE the
+    handler can return a success envelope — a verb that probed only after
+    asserting success would report a disposition it had not yet established.
+
+    **Bound to the artifact, not to prose.** Both arms read
+    :func:`_first_queue_symbol` / :func:`_code_without_prose`, which see only
+    identifiers and only non-documentation text. Matching the raw handler source
+    instead would satisfy both arms from the handler's own docstring — every
+    merge-shaped handler documents the surface it guards — and the ordering arm
+    could then never fail, since a docstring precedes every literal in the body.
+    :func:`test_queue_guard_predicate_is_falsifiable` pins that the predicate
+    reports NO hit for a handler that only talks about the queue.
 
     The provider asymmetry is real and deliberate: GitHub's queue is
     base-branch-scoped, GitLab's train is project-scoped, and GitLab's
@@ -500,22 +666,134 @@ def test_every_merge_shaped_verb_reaches_its_platform_queue_guard(provider, key)
         'cannot be read is a member this parity check silently skips.'
     )
 
-    hit = _QUEUE_VOCAB_RE.search(source)
-    assert hit, (
-        f'{provider}:{handler} ({key[0]} {key[1]}) never references the platform '
-        'queue/train surface. Every merge-shaped verb must establish the platform state '
+    hit = _first_queue_symbol(source, handler)
+    assert hit is not None, (
+        f'{provider}:{handler} ({key[0]} {key[1]}) references no platform queue/train SYMBOL '
+        'in its executable code. Every merge-shaped verb must establish the platform state '
         'before acting: an immediate merge on a queued target closes the PR unmerged, and '
-        'an enqueue against an unconfigured target silently degrades to plain auto-merge.'
+        'an enqueue against an unconfigured target silently degrades to plain auto-merge. '
+        'A docstring naming the queue does not satisfy this — the guard must be code.'
+    )
+    guard_at, guard_symbol = hit
+
+    success_at = _code_without_prose(source).find(_SUCCESS_LITERAL)
+    if success_at != -1:
+        assert guard_at < success_at, (
+            f'{provider}:{handler} reaches the platform queue/train surface only AFTER '
+            f'its first {_SUCCESS_LITERAL} literal (guard {guard_symbol!r} at {guard_at}, '
+            f'success at {success_at}). A verb that probes after asserting success reports '
+            'a disposition it had not established when it claimed it.'
+        )
+
+
+#: A handler whose ONLY reference to the platform queue/train surface is prose:
+#: a docstring and a comment. It never probes. This is the negative case (2b)
+#: must reject — and the case a raw-text match accepts, which is precisely how
+#: that arm became unfalsifiable.
+_PROSE_ONLY_HANDLER = '''
+def cmd_pr_prose_only(args):
+    """Handle 'pr prose-only' — talks about the merge queue and the merge train.
+
+    Documents the platform merge_queue surface at length, exactly as every real
+    merge-shaped handler does, and probes none of it.
+    """
+    # A merge-train preflight belongs here and is deliberately absent.
+    return {
+        'status': 'success',
+        'operation': 'pr_prose_only',
+    }
+'''
+
+#: The positive control: the same handler with a real, executable guard whose
+#: identifier names the surface. Pins that the narrowed predicate still SEES a
+#: genuine guard — a check that rejected everything would be just as useless as
+#: one that accepted everything.
+_GUARDED_HANDLER = '''
+def cmd_pr_guarded(args):
+    """Handle 'pr guarded' — probes before it reports."""
+    refusal = _refuse_on_required_merge_queue(args, 'pr_guarded')
+    if refusal is not None:
+        return refusal
+    return {
+        'status': 'success',
+        'operation': 'pr_guarded',
+    }
+'''
+
+
+def test_queue_guard_predicate_is_falsifiable():
+    """The (2b) predicate REJECTS a handler that only talks about the queue.
+
+    Asserted against synthetic handlers rather than the live tree, because the
+    property under test is a property of the PREDICATE and must stay checkable
+    even when every real handler is correctly guarded. Three arms:
+
+    1. A raw-text match on the prose-only handler HITS — recording, executably,
+       why the predicate had to be narrowed rather than leaving that as a claim
+       in a comment.
+    2. The identifier-bound predicate returns ``None`` for that same handler, so
+       (2b) fails for it. This is the arm that makes (2b) falsifiable: without
+       it, every parametrized member could pass on its docstring alone.
+    3. The predicate still finds the guard in the positive control, and reports
+       it BEFORE the success literal, so arm 2 is a real discrimination and not
+       a predicate that rejects everything.
+    """
+    raw_hit = _QUEUE_VOCAB_RE.search(_PROSE_ONLY_HANDLER)
+    assert raw_hit is not None, (
+        'The prose-only fixture no longer mentions the queue/train vocabulary in its '
+        'documentation, so it cannot demonstrate the raw-text failure mode and arm 2 below '
+        'would prove nothing. Restore the docstring/comment mentions.'
     )
 
-    success_at = source.find(_SUCCESS_LITERAL)
-    if success_at != -1:
-        assert hit.start() < success_at, (
-            f'{provider}:{handler} references the platform queue/train surface only AFTER '
-            f'its first {_SUCCESS_LITERAL} literal (guard at {hit.start()}, success at '
-            f'{success_at}). A verb that probes after asserting success reports a '
-            'disposition it had not established when it claimed it.'
-        )
+    assert _first_queue_symbol(_PROSE_ONLY_HANDLER, 'cmd_pr_prose_only') is None, (
+        'The queue-guard predicate reported a hit for a handler that references the '
+        'platform surface ONLY in its docstring and comments. It is therefore satisfiable '
+        'by prose and assertion (2b) is vacuous — every merge-shaped handler documents the '
+        'queue it guards, so the check would pass whether or not the guard exists.'
+    )
+
+    guarded = _first_queue_symbol(_GUARDED_HANDLER, 'cmd_pr_guarded')
+    assert guarded is not None, (
+        'The queue-guard predicate missed a real, executable guard '
+        '(`_refuse_on_required_merge_queue`). A predicate that rejects everything is no '
+        'more useful than one that accepts everything.'
+    )
+    guard_at, _ = guarded
+    success_at = _code_without_prose(_GUARDED_HANDLER).find(_SUCCESS_LITERAL)
+    assert success_at != -1, 'The positive-control fixture lost its success literal.'
+    assert guard_at < success_at, (
+        f'The positive control places its guard at {guard_at} but its success literal at '
+        f'{success_at}; the ordering arm cannot be exercised against it.'
+    )
+
+
+def test_prose_blanking_is_offset_preserving():
+    """:func:`_code_without_prose` blanks documentation without shifting offsets.
+
+    The ordering assertion compares an identifier offset taken from the ORIGINAL
+    text against a success-literal offset taken from the blanked text. If
+    blanking changed the length, the two would be measured on different rulers
+    and the comparison would silently drift — a wrong verdict rather than a
+    failure.
+    """
+    blanked = _code_without_prose(_PROSE_ONLY_HANDLER)
+
+    assert len(blanked) == len(_PROSE_ONLY_HANDLER), (
+        f'Blanked length {len(blanked)} != original {len(_PROSE_ONLY_HANDLER)}. Offsets '
+        'from the two views are no longer comparable.'
+    )
+    assert 'merge-train preflight' not in blanked, (
+        'A comment survived the blanking, so comment text can still satisfy a text search '
+        'over the blanked view.'
+    )
+    assert 'merge_queue surface at length' not in blanked, (
+        'A docstring survived the blanking, so docstring text can still satisfy a text '
+        'search over the blanked view.'
+    )
+    assert _SUCCESS_LITERAL in blanked, (
+        'The success literal was blanked along with the documentation. It is executable '
+        'code and must survive, or the ordering arm loses its right-hand side.'
+    )
 
 
 # ---------------------------------------------------------------------------

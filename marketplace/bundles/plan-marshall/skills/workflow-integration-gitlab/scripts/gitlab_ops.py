@@ -1920,9 +1920,9 @@ def cmd_pr_merge(args: argparse.Namespace) -> dict:
     never touched by this handler — callers who want a local branch gone must
     invoke ``git -C {path} branch -D`` separately.
 
-    ``merged: true`` is now reported on EVERY successful merge, not only when
-    ``--delete-branch`` was requested: it previously lived inside that branch, so
-    a merge without the flag reported no merge verdict at all.
+    ``merged: true`` is reported on EVERY successful merge, independently of
+    ``--delete-branch``: the verdict belongs to the merge, not to the optional
+    branch-delete follow-up.
 
     On branch-delete failure after a corroborated merge, a compound result is
     returned with ``merged: true`` and ``branch_delete_error`` populated. The
@@ -2074,10 +2074,9 @@ def cmd_pr_auto_merge(args: argparse.Namespace) -> dict:
     with TWO dispositions, decided by the project's merge-train setting: with
     merge trains OFF it schedules a plain when-pipeline-succeeds merge, and with
     them ON GitLab routes the MR onto the train instead. The exit code is
-    identical either way, so the former ``enabled: true`` — derived from the exit
-    code alone, with no preflight of any kind — reported "auto-merge enabled" for
-    an MR that had actually been placed on a merge train. This is the identical
-    defect class its GitHub sibling carried.
+    identical either way, so a boolean derived from it alone cannot tell the two
+    apart: it reads "auto-merge enabled" for an MR the project actually placed on
+    a merge train. The GitHub sibling faces the identical ambiguity.
 
     This verb therefore probes the project's merge-train state
     (:func:`_probe_merge_train_state` — project-scoped, no branch argument, per
@@ -2094,8 +2093,8 @@ def cmd_pr_auto_merge(args: argparse.Namespace) -> dict:
     Fails closed — an unresolvable train state is an error, never a guessed
     disposition.
 
-    The bare exit-code-derived ``enabled: true`` key is REMOVED, not aliased:
-    reporting a disposition it cannot know is exactly the defect being closed.
+    The envelope carries NO ``enabled`` key and no alias for one: a bare boolean
+    would report a disposition this verb cannot know from the exit code.
     """
     is_auth, err = check_auth()
     if not is_auth:
@@ -2169,12 +2168,11 @@ def cmd_pr_safe_merge(args: argparse.Namespace) -> dict:
     is accepted for cross-provider API uniformity but has NO effect here. When
     readiness stays unready past the poll timeout, the handler returns a
     canonical error rather than force-merging — the GitHub-only Layer 2 admin
-    fallback does not exist on GitLab, and that contract is unchanged.
+    fallback does not exist on GitLab.
 
-    Unlike its GitHub sibling, this handler previously carried NO merge-train
-    preflight at all — the asymmetry is closed here: the project-scoped preflight
-    now runs before the readiness poll, so a project that requires the merge
-    train refuses instead of polling toward a merge that bypasses it.
+    The project-scoped merge-train preflight runs BEFORE the readiness poll, so a
+    project that requires the merge train refuses immediately rather than
+    spending the whole poll budget on a merge that would bypass the train.
 
     Returns canonical TOON with ``operation: pr_safe_merge``,
     ``merge_path: polled_clean``, ``polls``, and ``duration_sec``.

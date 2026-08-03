@@ -215,12 +215,12 @@ merge_corroboration: "state=MERGED, merged_at=2026-01-01T00:00:00+00:00"
 
 `merged` is the verb's success claim and is **corroborated**, per the *corroborate-not-report contract* above: it is set only from a post-merge state re-read, and only ever to `true` — a merge that cannot be corroborated returns `status: error` instead. `merge_corroboration` carries the evidence the verdict rests on, so a reader never has to re-derive it.
 
-Two properties of `merged` that callers previously could not rely on:
+Two properties of `merged` callers may rely on:
 
-- It is reported on **every** successful merge. It used to be set only inside the `--delete-branch` branch, so a merge without that flag reported no merge verdict at all.
-- It is established **before** the branch-delete follow-up runs. A non-corroborated merge therefore deletes nothing — the head branch is never taken down by a merge that did not happen.
+- It is reported on **every** successful merge, independently of `--delete-branch`.
+- It is established **before** the branch-delete follow-up runs, so a non-corroborated merge deletes nothing — the head branch is never taken down by a merge that did not happen.
 
-`--delete-branch` still adds the compound-result keys on the delete path (`branch_deleted` / `already_gone`, or `branch_delete_error` with `merged: true` retained when the delete fails after a corroborated merge). The merge is never retried on a branch-delete failure.
+`--delete-branch` adds the compound-result keys on the delete path (`branch_deleted` / `already_gone`, or `branch_delete_error` with `merged: true` retained when the delete fails after a corroborated merge). The merge is never retried on a branch-delete failure.
 
 ---
 
@@ -270,7 +270,7 @@ disposition_detail: no merge_queue rule on branch
 
 `disposition_detail` carries the probe evidence behind the value. `base_branch` is GitHub-only — the queue is a base-branch property there, whereas a GitLab merge train is project-scoped and has no per-branch value to report.
 
-The former exit-code-derived `enabled: true` key is **removed with no alias**: it reported "auto-merge enabled" for a PR that had actually joined a queue, which is precisely the claim the verb cannot make from an exit code. Callers that read `enabled` must read `disposition` and branch on the two values above — a truthiness check on `disposition` is not a migration, because both values are truthy.
+There is **no `enabled` key** on this envelope, and no alias for one. A boolean derived from the exit code cannot distinguish the two dispositions above — it reads "auto-merge enabled" for a PR the platform actually placed on a queue — which is precisely the claim the verb must not make. Callers branch on the two `disposition` values; a truthiness check is not a substitute, because both values are truthy.
 
 ---
 
@@ -298,11 +298,11 @@ Both probes map onto the shared merge-queue eligibility discriminators (see *Wor
 
 The preflight **fails closed** on both providers: an unresolvable base branch (empty `baseRefName`, or a `pr view` that does not succeed), an inability to resolve the repository owner/name or project path, or a probe failure (missing auth scope/permission, a non-404 API error, or a malformed response) all return `status: error` rather than falling back to an immediate merge.
 
-The identical preflight also guards `pr merge` (see *Workflow: Merge PR* above), which reaches the same platform state by the same route. What remains **GitHub-only** here is the `--admin-merge-on-stuck-state` fallback, not the preflight.
+The identical preflight also guards `pr merge` (see *Workflow: Merge PR* above), which reaches the same platform state by the same route. The **GitHub-only** carve-out in this section is the `--admin-merge-on-stuck-state` fallback; the preflight is not part of it.
 
 ### Post-merge corroboration guard
 
-In the `polled_clean` path, `safe-merge` asserts **positively** that the delegated merge was corroborated (`merged is True`, established by `pr merge` from a post-merge state re-read) before reporting success. The previous guard probed only for the single known-bad `state == closed`, so every *other* non-merged state — a PR left `open`, a state the provider newly introduces, an unreadable one — passed as a merge. A non-corroborated merge returns `status: error` carrying the corroboration evidence, and advises routing the PR via `ci pr merge-queue` instead of an immediate merge.
+In the `polled_clean` path, `safe-merge` asserts **positively** that the delegated merge was corroborated (`merged is True`, established by `pr merge` from a post-merge state re-read) before reporting success. The assertion must be positive rather than a probe for known-bad states: a guard that only rejects `state == closed` admits every *other* non-merged state — a PR left `open`, a state the provider newly introduces, an unreadable one — as a merge. A non-corroborated merge returns `status: error` carrying the corroboration evidence, and advises routing the PR via `ci pr merge-queue` instead of an immediate merge.
 
 On the GitHub-only `admin_fallback` path the admin merge does not go through `pr merge`, so it carries its own corroboration — identically established, and before the branch-delete follow-up can influence it.
 
@@ -346,10 +346,10 @@ On **GitHub**, the verb engages the merge queue via `gh pr merge --auto` (the PR
 
 ### The enqueue is corroborated
 
-`enqueued: true` is a **corroborated** claim, per the *corroborate-not-report contract* above. Corroboration is provider-shaped, and the GitHub path is where it had to be added:
+`enqueued: true` is a **corroborated** claim, per the *corroborate-not-report contract* above. The corroboration is provider-shaped, and so is the field that carries its evidence:
 
-- **GitHub** — `gh pr merge --auto` exits zero whether or not the base branch has a queue: with no queue it quietly enables **plain auto-merge**, which is a different disposition entirely. The verb therefore probes the PR's own base branch **before** the call and returns `enqueued: true` only when that branch actually has a configured queue. On any other eligibility value it returns `status: error` naming both remedies — run `/marshall-steward` → Configuration → Merge Queue to provision the queue, or disable the plan's `use_merge_queue` step param to merge immediately via `ci pr safe-merge`. The probe runs before the call because on an unconfigured base the call would otherwise leave the PR scheduled to merge **outside** the queue the caller asked for.
-- **GitLab** — the enqueue is a dedicated merge-train endpoint that only succeeds against a real train, and the handler reads the returned train car back as `merge_train_car_id`. That read-back is the corroboration shape the GitHub path was brought to; it is unchanged.
+- **GitHub** — `gh pr merge --auto` exits zero whether or not the base branch has a queue: with no queue it quietly enables **plain auto-merge**, which is a different disposition entirely. The verb therefore probes the PR's own base branch **before** the call and returns `enqueued: true` only when that branch actually has a configured queue. The probe verdict is published as `enqueue_corroboration`. On any other eligibility value it returns `status: error` naming both remedies — run `/marshall-steward` → Configuration → Merge Queue to provision the queue, or disable the plan's `use_merge_queue` step param to merge immediately via `ci pr safe-merge`. The probe runs before the call because on an unconfigured base the call would otherwise leave the PR scheduled to merge **outside** the queue the caller asked for.
+- **GitLab** — the enqueue targets a dedicated merge-train endpoint that only succeeds against a real train, so the endpoint itself is the corroboration and a failure surfaces as the actionable ineligible error. The created car is reported as `merge_train_car_id` (empty when the response carries no id). GitLab emits **no** `enqueue_corroboration` field, so a cross-provider caller must not branch on it.
 
 `enqueued: true` means the PR **reached the queue** — it is emphatically **not** a merge. A caller that needs the merge itself must wait for the platform to land it and confirm that separately.
 
@@ -373,9 +373,9 @@ enqueued: true
 enqueue_corroboration: merge_queue rule active on branch
 ```
 
-`enqueue_corroboration` carries the probe evidence behind the claim. `base_branch` is GitHub-only — the queue is a base-branch property there, whereas a GitLab merge train is project-scoped.
+`enqueue_corroboration` carries the probe evidence behind the claim. It and `base_branch` are both **GitHub-only** — the queue is a base-branch property there, so the verb has a branch to name and a pre-enqueue verdict to publish; a GitLab merge train is project-scoped and yields neither.
 
-On GitLab a successful enqueue returns the same `enqueued: true` envelope with `provider: gitlab` and a `merge_train_car_id` when the API surfaces the train car id. When the project/tier is not merge-train-eligible the invocation returns `status: error, operation: pr_merge_queue` with the actionable ineligible message — surfaced explicitly (never a silent immediate-merge fallback) so cross-provider callers notice the mismatch.
+On GitLab a successful enqueue returns the same `enqueued: true` envelope with `provider: gitlab` and `merge_train_car_id` — the train car id when the API surfaces one, an empty string when it does not. When the project/tier is not merge-train-eligible the invocation returns `status: error, operation: pr_merge_queue` with the actionable ineligible message — surfaced explicitly (never a silent immediate-merge fallback) so cross-provider callers notice the mismatch.
 
 ---
 

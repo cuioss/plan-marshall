@@ -117,12 +117,14 @@ glab api -X POST projects/{id}/merge_trains/merge_requests/{iid}
 - HTTP 403/404 from the merge-train endpoint → the project/tier is not
   merge-train-eligible → the handler returns the actionable ineligible error.
 
-The car read-back above is what makes `enqueued: true` a **corroborated** claim
-rather than an exit-code echo, and it is the reference shape the other
-merge-shaped verbs were brought to (see below). It is unchanged. What did change
-is that the actionable-ineligible contract is no longer GitLab's alone — the
-GitHub path now refuses the same way when its base branch has no configured
-queue.
+The dedicated train endpoint is what makes `enqueued: true` a **corroborated**
+claim rather than an exit-code echo: it succeeds only against a real train, and
+its 403/404 is the refusal. The car read-back rides on that success and is
+best-effort, so `merge_train_car_id` may be an empty string; the corroboration
+rests on the endpoint, not on the id. GitLab emits no `enqueue_corroboration`
+field — that key is GitHub's, carrying its pre-enqueue base-branch probe verdict.
+The actionable-ineligible contract itself is cross-provider: GitHub refuses the
+same way when its base branch has no configured queue.
 
 ### Merge-shaped verbs: project-scoped preflight and state corroboration
 
@@ -134,9 +136,9 @@ specific to GitLab and are NOT transliterations of the GitHub guards:
 - **The preflight is project-scoped, not base-branch-scoped.** A merge train is a
   per-project flag (`merge_trains_enabled`), so the probe takes no branch
   argument. `pr merge` and `pr safe-merge` refuse an immediate merge when it
-  returns `eligible_configured`; `pr auto-merge` reports the resulting
-  `disposition` (`enabled` for a plain when-pipeline-succeeds schedule,
-  `enqueued` when the project has trains) instead of a bare `enabled: true`.
+  returns `eligible_configured`; `pr auto-merge` never refuses and instead
+  reports the resulting `disposition` (`enabled` for a plain
+  when-pipeline-succeeds schedule, `enqueued` when the project has trains).
 - **Corroboration reads `state`, with no timestamp arm.** `view_pr_data` surfaces
   no `merged_at` on GitLab, so `merged` is established from `state == 'merged'`
   alone — there is no `mergedAt` to parse and therefore no strategy-selected

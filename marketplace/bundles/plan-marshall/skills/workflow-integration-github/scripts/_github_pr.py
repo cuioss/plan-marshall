@@ -1127,9 +1127,9 @@ def cmd_pr_merge(args: argparse.Namespace) -> dict:
     Local git state is never touched by this handler — callers who want a
     local branch gone must invoke ``git -C {path} branch -D`` separately.
 
-    ``merged: true`` is now reported on EVERY successful merge, not only when
-    ``--delete-branch`` was requested: it previously lived inside that branch, so
-    a merge without the flag reported no merge verdict at all.
+    ``merged: true`` is reported on EVERY successful merge, independently of
+    ``--delete-branch``: the verdict belongs to the merge, not to the optional
+    branch-delete follow-up.
 
     On branch-delete failure after a corroborated merge, a compound result is
     returned with ``merged: true`` and ``branch_delete_error`` populated. The
@@ -1280,9 +1280,9 @@ def cmd_pr_auto_merge(args: argparse.Namespace) -> dict:
     ``gh pr merge --auto`` is ONE command with TWO dispositions, decided entirely
     by the PR's base branch: on a base with no merge queue it enables plain
     auto-merge, and on a base with a configured queue it ENQUEUES the PR into
-    that queue instead. The exit code is identical either way, so the former
-    ``enabled: true`` — derived from the exit code alone — reported "auto-merge
-    enabled" for a PR that had actually been placed on a merge queue.
+    that queue instead. The exit code is identical either way, so a boolean
+    derived from it alone cannot tell the two apart: it reads "auto-merge
+    enabled" for a PR the platform actually placed on a merge queue.
 
     This verb therefore probes the base branch's queue state
     (:func:`_resolve_base_queue_state`) BEFORE returning and reports which
@@ -1297,8 +1297,8 @@ def cmd_pr_auto_merge(args: argparse.Namespace) -> dict:
     Fails closed — an unresolvable queue state is an error, never a guessed
     disposition.
 
-    The bare exit-code-derived ``enabled: true`` key is REMOVED, not aliased:
-    reporting a disposition it cannot know is exactly the defect being closed.
+    The envelope carries NO ``enabled`` key and no alias for one: a bare boolean
+    would report a disposition this verb cannot know from the exit code.
     """
     is_auth, err = github_ops.check_auth()
     if not is_auth:
@@ -1410,14 +1410,13 @@ def cmd_pr_safe_merge(args: argparse.Namespace) -> dict:
                 merge_result.get('error', f'Failed to merge PR {identifier}'),
                 merge_result.get('context', ''),
             )
-        # Post-merge verification, POSITIVE. The former test probed only for the
-        # single known-bad ``state == closed``, so every OTHER non-merged state —
-        # a PR left ``open``, a state the provider newly introduces, or an
-        # unreadable one — passed as a merge. The delegate now establishes the
-        # verdict from a post-merge re-read (:func:`_corroborate_merge`) and
-        # returns ``status: error`` on anything short of it, so a delegated
-        # success carries a corroborated ``merged is True``. Assert that exact
-        # value rather than its mere presence.
+        # Post-merge verification, POSITIVE. A guard that only rejects the single
+        # known-bad ``state == closed`` admits every OTHER non-merged state — a PR
+        # left ``open``, a state the provider newly introduces, or an unreadable
+        # one — as a merge. The delegate establishes the verdict from a post-merge
+        # re-read (:func:`_corroborate_merge`) and returns ``status: error`` on
+        # anything short of it, so a delegated success carries a corroborated
+        # ``merged is True``. Assert that exact value rather than its mere presence.
         if merge_result.get('merged') is not True:
             return make_error(
                 'pr_safe_merge',
@@ -1551,9 +1550,9 @@ def cmd_pr_merge_queue(args: argparse.Namespace) -> dict:
     **``enqueued: true`` is corroborated, not assumed.** ``gh pr merge --auto``
     exits zero whether or not the base branch has a queue: with no queue it
     quietly enables PLAIN auto-merge, which is a different disposition entirely.
-    The former exit-code-derived ``enqueued: true`` therefore reported a
-    successful enqueue for a PR that had never joined any queue — the caller then
-    waited for a queue merge that could not arrive. This verb probes the PR's own
+    An ``enqueued: true`` derived from that exit code would therefore claim a
+    successful enqueue for a PR that never joined any queue, leaving the caller
+    waiting for a queue merge that cannot arrive. This verb probes the PR's own
     base branch (:func:`_resolve_base_queue_state`) BEFORE the enqueue and sets
     ``enqueued: true`` only when that branch actually has a configured queue;
     otherwise it returns ``status: error`` naming BOTH remedies.
