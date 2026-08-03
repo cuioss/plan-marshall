@@ -11,7 +11,7 @@ fixture — and pins the historical defect that motivated the check:
   together with the ``_check_emitted_path_provenance`` guard it feeds, IS
   surfaced as a ``scan_derived_keys`` candidate. The same case asserts the
   complementary negative as a REAL assertion (never a docstring claim): **none**
-  of the eighteen pre-existing candidate lists surfaces it. Without that half,
+  of the nineteen sibling candidate lists surfaces it. Without that half,
   a green case (a) would not distinguish "the new check closes the gap" from
   "a sibling detector happened to flag the same hunk anyway".
 * **Case (b)** — the shipped post-fix *anchored* form surfaces NO
@@ -105,11 +105,13 @@ _ANCESTOR_PATHS = (
 #: The candidate list this plan added. Everything else predates it.
 _NEW_LIST = 'scan_derived_keys'
 
-#: The eighteen candidate lists that predate the reachability check. The
-#: complementary negative in case (a) sweeps ALL of them, so a sibling detector
-#: incidentally flagging the same hunk cannot be mistaken for the new check
-#: doing its job.
-_PRE_EXISTING_LISTS = (
+#: The nineteen candidate lists OTHER than the one under test. The complementary
+#: negative in case (a) sweeps ALL of them, so a sibling detector incidentally
+#: flagging the same hunk cannot be mistaken for the reachability check doing its
+#: job. The tuple is hand-written on purpose: deriving it from the registry would
+#: make the three-way assertion below vacuous, since the swept set would then
+#: agree with the registry by construction rather than by maintenance.
+_SIBLING_LISTS = (
     'regexes',
     'user_facing_strings',
     'markdown_sections',
@@ -128,6 +130,7 @@ _PRE_EXISTING_LISTS = (
     'touched_claims',
     'advertised_form_help_strings',
     'ordinal_references',
+    'worked_example_pairs',
 )
 
 # =============================================================================
@@ -314,7 +317,7 @@ class TestPreFixScanningFormIsSurfaced:
             'identity-consumption flag must resolve true'
         )
 
-    def test_no_pre_existing_candidate_list_surfaces_the_pre_fix_form(self, tmp_path):
+    def test_no_sibling_candidate_list_surfaces_the_pre_fix_form(self, tmp_path):
         # The complementary negative, as a REAL assertion. If a sibling detector
         # also flagged this hunk, a green case (a) would not attribute the
         # reachability to the new check.
@@ -322,19 +325,19 @@ class TestPreFixScanningFormIsSurfaced:
 
         populated = {
             key: _list_entries(data, key)
-            for key in _PRE_EXISTING_LISTS
+            for key in _SIBLING_LISTS
             if _list_entries(data, key)
         }
 
         assert not populated, (
-            f'A pre-existing candidate list surfaced the #1013 pre-fix form, so '
+            f'A sibling candidate list surfaced the #1013 pre-fix form, so '
             f'case (a) would not attribute the true positive to the new '
             f'reachability check: {populated}'
         )
 
-    def test_pre_existing_list_sweep_covers_every_key_the_surfacer_emits(self, tmp_path):
+    def test_sibling_list_sweep_covers_every_key_the_surfacer_emits(self, tmp_path):
         # Guards the sweep above against silent under-coverage: a candidate list
-        # added later but never added to _PRE_EXISTING_LISTS would slip past the
+        # added later but never added to _SIBLING_LISTS would slip past the
         # complementary negative unnoticed.
         #
         # The assertion is three-way rather than two-way: the swept set must
@@ -345,7 +348,7 @@ class TestPreFixScanningFormIsSurfaced:
         data = _surface(_fixture_repo(tmp_path, _PRE_FIX_SOURCE))
 
         emitted = set(data['counts']) - {'total'}
-        swept = set(_PRE_EXISTING_LISTS) | {_NEW_LIST}
+        swept = set(_SIBLING_LISTS) | {_NEW_LIST}
         registered = {spec.key for spec in CANDIDATE_LISTS}
 
         assert emitted == swept, (

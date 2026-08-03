@@ -1,6 +1,6 @@
 ---
 name: ext-self-review-plan-marshall
-description: Plan-marshall-domain implementor of the ext-self-review-{domain} extension point. Surfaces deterministic candidates (regexes, user-facing strings, markdown sections, symmetric-pair functions, flag-guard pairs, contract sources, schema-bearing files, keep markers, producer-consumer pairs, source-of-truth duplicates, same-document normative directives, description-vs-body frontmatter, lone-unguarded-boundary calls, stale count-prose, near-identical-hunk touched claims, advertised-form help strings, same-document ordinal references, scan-derived keys) for pre-submission structural self-review.
+description: Plan-marshall-domain implementor of the ext-self-review-{domain} extension point. Surfaces deterministic candidates (regexes, user-facing strings, markdown sections, symmetric-pair functions, flag-guard pairs, contract sources, schema-bearing files, keep markers, producer-consumer pairs, source-of-truth duplicates, same-document normative directives, description-vs-body frontmatter, lone-unguarded-boundary calls, stale count-prose, near-identical-hunk touched claims, advertised-form help strings, same-document ordinal references, scan-derived keys, worked-example clause pairs) for pre-submission structural self-review.
 user-invocable: false
 mode: script-executor
 implements: plan-marshall:extension-api/standards/ext-point-self-review-surfacing
@@ -8,7 +8,7 @@ implements: plan-marshall:extension-api/standards/ext-point-self-review-surfacin
 
 # Self-Review Candidate Surfacing — plan-marshall domain
 
-**Role**: Plan-marshall-domain implementor of the `ext-self-review-{domain}` extension point (see [`../../../plan-marshall/skills/extension-api/standards/ext-point-self-review-surfacing.md`](../../../plan-marshall/skills/extension-api/standards/ext-point-self-review-surfacing.md)). Surfaces concrete candidates from the worktree's staged diff so the LLM cognitive review pass in [`../../../plan-marshall/skills/phase-6-finalize/workflow/pre-submission-self-review.md`](../../../plan-marshall/skills/phase-6-finalize/workflow/pre-submission-self-review.md) can apply the fourteen structural-defect checks (symmetric pair, regex over-fit, wording disambiguation, duplication, contract drift, producer-without-consumer, source-of-truth drift, same-document contradiction, description-vs-body drift, unguarded boundary, stale count-prose, touched-claim re-check, ordinal-reference re-check, scan-derived-key reachability) against a bounded surface, not an unbounded read of the whole diff.
+**Role**: Plan-marshall-domain implementor of the `ext-self-review-{domain}` extension point (see [`../../../plan-marshall/skills/extension-api/standards/ext-point-self-review-surfacing.md`](../../../plan-marshall/skills/extension-api/standards/ext-point-self-review-surfacing.md)). Surfaces concrete candidates from the worktree's staged diff so the LLM cognitive review pass in [`../../../plan-marshall/skills/phase-6-finalize/workflow/pre-submission-self-review.md`](../../../plan-marshall/skills/phase-6-finalize/workflow/pre-submission-self-review.md) can apply the fifteen structural-defect checks (symmetric pair, regex over-fit, wording disambiguation, duplication, contract drift, producer-without-consumer, source-of-truth drift, same-document contradiction, description-vs-body drift, unguarded boundary, stale count-prose, touched-claim re-check, ordinal-reference re-check, scan-derived-key reachability, worked-example clause mismatch) against a bounded surface, not an unbounded read of the whole diff.
 
 ## Finding-authoring contract (cognitive review pass)
 
@@ -34,7 +34,7 @@ When the cognitive review pass files a finding for a confirmed structural defect
 
 ## When to Use
 
-Invoked exclusively by `default:pre-submission-self-review` (see `plan-marshall:phase-6-finalize/workflow/pre-submission-self-review.md` Step 1). No other caller is supported. The script is registered as `pm-plugin-development:ext-self-review-plan-marshall:self_review` and is NOT user-invocable from a slash command — `user-invocable: false` per the script-only registration convention; this skill is intentionally absent from `pm-plugin-development/.claude-plugin/plugin.json`.
+The `surface` subcommand is invoked exclusively by `default:pre-submission-self-review` (see `plan-marshall:phase-6-finalize/workflow/pre-submission-self-review.md` Step 1); no other caller of `surface` is supported. The sibling `scan-worked-examples` subcommand is the population-sweep entry point for a one-off audit of worked examples across a supplied file set, and carries no finalize-step caller. The script is registered as `pm-plugin-development:ext-self-review-plan-marshall:self_review` and is NOT user-invocable from a slash command — `user-invocable: false` per the script-only registration convention; this skill is intentionally absent from `pm-plugin-development/.claude-plugin/plugin.json`.
 
 ## Keep-Identifier Markers
 
@@ -57,7 +57,7 @@ The marker is a pure structural signal — no LLM call is added to the surface s
 
 ## Subcommand: `surface`
 
-Surfaces nineteen candidate lists from the worktree's staged diff against the base branch.
+Surfaces twenty candidate lists from the worktree's staged diff against the base branch.
 
 ### Inputs
 
@@ -97,7 +97,8 @@ counts:
   advertised_form_help_strings: N17
   ordinal_references: N18
   scan_derived_keys: N19
-  total: N1+N2+N3+N4+N5+N8+N10+N11+N12+N13+N14+N16+N18+N19
+  worked_example_pairs: N20
+  total: N1+N2+N3+N4+N5+N8+N10+N11+N12+N13+N14+N16+N18+N19+N20
 
 regexes[N1]{file,line,pattern}:
   {repo-relative-path},{line},{regex-pattern-string}
@@ -155,9 +156,12 @@ ordinal_references[N18]{file,line,text,list_line}:
 
 scan_derived_keys[N19]{file,line,name,sequence,key_consumed}:
   {repo-relative-py-path},{line},{deriving-function-name},{decomposed-sequence-name},{true|false}
+
+worked_example_pairs[N20]{file,line,clause,required_predicate,example_predicate,agrees}:
+  {repo-relative-md-path},{line},{clause-heading},{predicate-the-clause-requires},{predicate-the-GOOD-example-branches-on},false
 ```
 
-> The `total` count covers the fourteen line-level heuristics (`regexes`, `user_facing_strings`, `markdown_sections`, `symmetric_pairs`, `flag_guard_pairs`, `keep_markers`, `producer_consumer`, `source_of_truth`, `same_document_consistency`, `description_vs_body`, `unguarded_boundaries`, `touched_claims`, `ordinal_references`, `scan_derived_keys`) only. `contract_sources`, `schema_bearing_files`, `count_prose`, and `advertised_form_help_strings` are review-anchor categories with their own counts; they are not summed into `total` — `contract_sources` and `schema_bearing_files` because each modified file contributes at most one entry whose payload is references rather than candidates, `count_prose` because it anchors a sibling-SKILL.md re-check rather than flagging an added line, and `advertised_form_help_strings` because it anchors a contract-drift sub-check rather than flagging a standalone line-level defect. `ordinal_references` IS summed into `total` because it flags a specific added line (the ordinal cross-reference whose referenced list the same change touched), and `scan_derived_keys` IS summed for the same reason (it flags the scan loop's own line), like the other line-level heuristics. `protected_identifiers` is a derived index over `keep_markers` entries with `kind: keep_protected` — it does not contribute to `total` either.
+> The `total` count covers the fifteen line-level heuristics (`regexes`, `user_facing_strings`, `markdown_sections`, `symmetric_pairs`, `flag_guard_pairs`, `keep_markers`, `producer_consumer`, `source_of_truth`, `same_document_consistency`, `description_vs_body`, `unguarded_boundaries`, `touched_claims`, `ordinal_references`, `scan_derived_keys`, `worked_example_pairs`) only. `contract_sources`, `schema_bearing_files`, `count_prose`, and `advertised_form_help_strings` are review-anchor categories with their own counts; they are not summed into `total` — `contract_sources` and `schema_bearing_files` because each modified file contributes at most one entry whose payload is references rather than candidates, `count_prose` because it anchors a sibling-SKILL.md re-check rather than flagging an added line, and `advertised_form_help_strings` because it anchors a contract-drift sub-check rather than flagging a standalone line-level defect. `ordinal_references` IS summed into `total` because it flags a specific added line (the ordinal cross-reference whose referenced list the same change touched), `scan_derived_keys` IS summed for the same reason (it flags the scan loop's own line), and `worked_example_pairs` IS summed for the same reason (it flags the GOOD marker's own line), like the other line-level heuristics. `protected_identifiers` is a derived index over `keep_markers` entries with `kind: keep_protected` — it does not contribute to `total` either.
 
 ### Detection Rules
 
@@ -217,6 +221,28 @@ scan_derived_keys[N19]{file,line,name,sequence,key_consumed}:
 
 18. **Scan-derived keys** — an added-to `.py` function that derives an identity key by **scanning** an unbounded decomposition for a first pattern match instead of by **indexing** that decomposition at a position anchored on a known root. Two conjuncts fire the candidate: the function binds a sequence by decomposing a value (`Path(...).parts`, `.split(...)`), and it iterates THAT sequence in a loop whose body both applies a compiled-pattern match (`re.match`/`re.search`/`re.fullmatch`, or the same method on a module-level pattern constant) and exits on the first hit (`return` / `break`). A full traversal with no first-match exit, and a loop over a sequence that was never decomposed, are both excluded. Only functions the diff touched are considered; when the post-image is available the whole file is walked so a decomposition binding or enclosing `def` outside the diff still resolves. Each entry carries `file`, `line` (the scan loop's line), `name` (the deriving function), `sequence` (the decomposed sequence the loop iterates), and `key_consumed` — a Tier-2 flag that is `true` when some other function in the surfaced diff calls the deriving function AND consumes its result as an identity (grouping via `setdefault`, testing cardinality via `len`, or comparing with `==`/`!=`). Identity consumption is deliberately a flag and NOT a firing condition, because the consuming caller frequently lives outside the diff; `key_consumed: false` narrows what the adjudication must look for and never suppresses the candidate. The defect this anchors: a scanning derivation collapses every input carrying an out-of-domain leading match to the SAME key, so a guard fed by that key can never observe a difference and its refusal path is unreachable while its tests stay green. The cognitive review's check 14 decides whether the scanned domain genuinely admits only one match. See [`standards/unreachable-guard-detection.md`](standards/unreachable-guard-detection.md) for the gate verdict that selected this framing, the two rejected framings, the sees/misses discriminator, and the PR #1013 worked example — that rationale is NOT restated here.
 
+19. **Worked-example clause pairs** — a clause section in an added-to `.md` file whose GOOD worked example branches on a DIFFERENT predicate than the one its own clause requires. A clause states a normative rule and then demonstrates it with a BAD/GOOD contrast; the rule is only demonstrated when the GOOD half branches on the predicate the clause names. When it branches on a different field, the contrast silently demonstrates the very shape the clause forbids — one field over — while reading as a correct example, and a later reader who cites the clause's title inherits the contradiction.
+
+    The comparison is **predicate versus predicate**, never a surface-every-pair sweep:
+
+    - **Pair recognition** — within a clause section (the nearest preceding ATX heading; heading detection is suppressed inside fences so a `# GOOD` marker never opens a spurious section), a fenced block carrying BOTH a `BAD` and a `GOOD` marker comment is a pair. Recognized marker leaders are `//`, `#`, and `<!--`, with optional non-alphanumeric decoration before the UPPERCASE marker word (`// ✅ GOOD` resolves; prose "good" never does). Each `GOOD` marker opens a region running to the next marker or to the end of the block.
+    - **Required predicate** — extracted from the clause's normative prose (the lines between the heading and the block's opening fence, which is where the document's rule-then-example shape always places the rule). Two directive forms are read: the explicit `branch on X`, and a normative `Read X` / `check X` (sentence-initial or `MUST`-prefixed). The first directive whose object resolves to a non-empty token set wins. When every directive object is anaphoric (`branch on that`), the clause **heading's required half** — everything before a `, never` / `, not` / `, rather than` / `, instead of` contrast pivot — is the fallback, because the heading is the clause's own condensed statement of what it requires and the only available resolution for the anaphor. The `-ing` participle is deliberately NOT a directive form: `Branching on \`outcome.applied\` instead would reinstate the defect` names the *rejected* predicate, so admitting it would read the forbidden field as the required one.
+    - **Example predicate** — the expression the GOOD region actually tests: the brace form (`if (expr)` / `while (expr)`, extracted by a balanced-paren scan so a predicate carrying its own call parentheses is not truncated), the colon form (`if expr:`), or a parenthesized ternary condition (`(expr) ? a : b`). Line comments are stripped first, so an explanatory annotation is never read as code.
+    - **Comparison** — both phrases are tokenized (identifier runs split on camelCase, lowercased, dropped below four characters and against a function-word list). The pair AGREES when the two token sets share a term under a prefix relation (`persist` ↔ `persisted`), and DISAGREES otherwise. Only the disagreeing case is surfaced, following the `producer_consumer` precedent — so an empty list is a real "every adjudicable pair agrees" signal rather than "the class did not run", and a surfaced entry always carries `agrees: false`.
+
+    **Relational cases, each with a decided disposition** (the class's silence on a case is a decision on the record, not an accident):
+
+    | Case | Disposition |
+    |------|-------------|
+    | Clause section with no worked example | Surface nothing — there is no pair to adjudicate. |
+    | Fenced block with a GOOD marker but no BAD counterpart | Surface nothing — a lone GOOD example is not a contrast pair, and the class adjudicates pairs. |
+    | Clause carrying multiple GOOD blocks | Adjudicate each GOOD region independently; one entry per disagreeing region. |
+    | Clause naming no normative predicate (no `branch on` / `Read` / `check` directive) | Surface nothing — the required predicate is unrecoverable, so no comparison is defined. |
+    | GOOD example branching on nothing recoverable (no `if`/`while`/parenthesized-ternary predicate) | Surface nothing — the example predicate is unrecoverable, so no comparison is defined. |
+    | GOOD marker comment naming a mechanism the body does not perform | Surface nothing — this is a comment-versus-body claim, NOT a predicate-versus-predicate disagreement. Every deterministic formulation of it fired on correct sibling examples in the audited population (a clause whose GOOD comment says "the last resort" or "is reported" while the body legitimately names neither), so it is a broader net rather than a better extractor. The LLM consumer's check 15 adjudicates the surfaced pairs; a comment-mechanism mismatch is left to ordinary review. |
+
+    Each entry carries `file`, `line` (the GOOD marker's post-image line), `clause` (the enclosing heading), `required_predicate`, `example_predicate`, and `agrees` (always `false` for a surfaced entry). The cognitive review's check 15 adjudicates whether the disagreement is a real contradiction. Restricted to clause sections the diff touched; the `scan-worked-examples` subcommand runs the same adjudication over an arbitrary supplied file population.
+
 ### Errors
 
 | Condition | Output |
@@ -224,6 +250,53 @@ scan_derived_keys[N19]{file,line,name,sequence,key_consumed}:
 | Live footprint empty (no `{base}...HEAD` ∪ porcelain changes) | `status: success` with empty candidate lists (no diff scope) |
 | `git -C {project_dir}` fails | `status: error\nerror: git_unavailable\nmessage: ...` (exit 1) |
 | Base branch not found | `status: error\nerror: base_branch_not_found\nbase_branch: {base}` (exit 1) |
+| Plan not found | `status: error\nerror: plan_not_found` (exit 1) |
+
+## Subcommand: `scan-worked-examples`
+
+Runs the rule-19 adjudication over a **supplied file population** rather than over the diff, and reports the population size the verdict was drawn against. The sweep case this serves is population-derived by construction: a zero-contradiction result over a real population of N pairs is a meaningfully different finding from a zero produced by an empty or mis-scoped population, and without the published denominator the two are indistinguishable.
+
+### Inputs
+
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `--plan-id PLAN_ID` | Yes | Plan identifier (kebab-case). Used to auto-resolve the worktree path via `manage-status get-worktree-path` when `--project-dir` is omitted. |
+| `--project-dir PROJECT_DIR` | No | Absolute path to the active git worktree (escape hatch). |
+| `--paths-glob GLOB` | Yes | Relative glob selecting the population, resolved against the working tree (e.g. `marketplace/bundles/*/skills/*/standards/*.md`). Must be relative and carry no `..` segment; matches escaping the working tree are dropped. Echoed back as the boundary the counts were drawn against. |
+| `--include-unadjudicated` | No | Also emit the `unadjudicated_pairs` list. Off by default — the `population` block always reports their count. |
+
+### Output
+
+```toon
+status: success
+plan_id: {plan_id}
+project_dir: {project_dir}
+paths_glob: {paths_glob}
+boundary: {human-readable statement of the population boundary}
+population:
+  distinct_paths: {count of files matching the glob, deduplicated by resolved path}
+  unreadable_paths: {count of matched files whose read failed}
+  pair_bearing_files: {count of matched files carrying at least one GOOD/BAD pair}
+  pairs_total: {count of pairs found}
+  pairs_agreeing: {pairs whose predicates agree}
+  pairs_unadjudicated: {pairs with no recoverable required or example predicate}
+  pairs_contradicting: {pairs whose predicates disagree}
+
+worked_example_pairs[N]{file,line,clause,required_predicate,example_predicate,agrees}:
+  {repo-relative-md-path},{line},{clause-heading},{required},{example},false
+
+unadjudicated_pairs[M]{file,line,clause,required_predicate,example_predicate,agrees}:
+  {repo-relative-md-path},{line},{clause-heading},{required},{example},
+```
+
+Deduplication is on the RESOLVED path, which is what makes `distinct_paths` a count of distinct files rather than of match rows. `unreadable_paths` is reported rather than swallowed, so a read failure narrows the denominator visibly instead of silently.
+
+### Errors
+
+| Condition | Output |
+|-----------|--------|
+| `--paths-glob` absolute or carrying a `..` segment | `status: error\nerror: paths_glob_invalid\nmessage: ...` (exit 1) |
+| Resolved project dir missing or not a directory | `status: error\nerror: project_dir_invalid\nmessage: ...` (exit 1) |
 | Plan not found | `status: error\nerror: plan_not_found` (exit 1) |
 
 ## Cwd Policy
@@ -256,6 +329,7 @@ This script is a **worktree-scoped (Bucket B)** script (per `tools-script-execut
 - Advertised-form help-string detection: a multi-form `help=` string (e.g. "Issue number or URL") paired with a raw `args.<dest>` pass-through surfaces a candidate (positive); `dest=` kwarg override and dash-to-underscore dest derivation resolve correctly; single-form help, an already-normalized handler, no diff'd raw-pass site, and non-Python files each surface nothing (negative); identifier word-boundary discipline (`args.issue` does not match `args.issue_url`); and the `counts.total` review-anchor exclusion invariant holds end-to-end (the new list is excluded from `total` whether or not it fires)
 - Same-document ordinal-reference detection: an `item N` / `step N` / `(N)` reference into an ordered-list block the diff touched surfaces a candidate with correct `{file, line, text, list_line}` (positive); a reference into an untouched list, a reference to a non-existent ordinal, a non-ordinal numeric token (`version 2`, `2026`), and a non-`.md` file each surface nothing (negative); word-boundary discipline excludes `itemize`/`stepwise`/`(1.5)`; references dedupe per `(file, line, ordinal)`; and the `counts.total` inclusion invariant holds end-to-end (the new list IS summed into `total`, distinguishing it from the review-anchor lists)
 - Scan-derived-key detection: a function that decomposes a value and selects a segment by first-match of a compiled pattern with a `return`/`break` exit surfaces a candidate with correct `{file, line, name, sequence, key_consumed}` (positive); the anchored form that indexes the decomposition at a fixed position, a full traversal with no first-match exit, a loop over a sequence that was never decomposed, and a non-Python file each surface nothing (negative); the `key_consumed` flag resolves `true` when a sibling function calls the deriver and groups/counts/compares its result and `false` when no such caller is in the diff; and the `counts.total` inclusion invariant holds end-to-end (the list IS summed into `total`)
+- Worked-example clause-pair detection: the **matched control pair** on the checked-in literal clause-(d) fixtures — the class FIRES on the pre-fix text (whose GOOD example branches on `outcome.applied` while the clause requires an affirmative success signal) and is SILENT on the post-fix text now live on `main` (whose GOOD example branches on `outcome.status == "success"`). Both fixture texts are checked-in literal content, never resolved from a git object at test time: the pre-fix text lives only on a squash-merged branch commit and is a garbage-collection candidate, so a git-resolving fixture would pass today and silently stop testing anything once the object is pruned. Generality is exercised on pairs the extractor was NOT authored against — a clause whose `Read the producer's own status field first` directive agrees with a `result.status != "success"` example, and a clause whose ternary-only predicate agrees with its `Read the wrapper's reported outcome` directive. Each relational case carries its own case: no worked example, a GOOD block with no BAD counterpart, multiple GOOD blocks in one clause, a clause with no normative directive, a GOOD example with no recoverable branch predicate, and the comment-versus-body mechanism claim (all six surface nothing except the multiple-GOOD case, which adjudicates each region). The `counts.total` inclusion invariant holds end-to-end (the list IS summed into `total`), and the `scan-worked-examples` population verb reports `distinct_paths` deduplicated by resolved path, the pair-bearing subset size, and rejects an absolute or `..`-bearing `--paths-glob`
 
 `test/pm-plugin-development/ext-self-review-plan-marshall/test_self_review_reachability_regression.py` pins the PR #1013 pre-fix scanning and post-fix anchored forms end-to-end through the composed `surface` path.
 
@@ -271,6 +345,15 @@ python3 .plan/execute-script.py pm-plugin-development:ext-self-review-plan-marsh
 ```
 
 `--project-dir` is optional: when omitted, the worktree path is auto-resolved from `--plan-id`. Supplying both is allowed because `--plan-id` also drives modified-files lookup.
+
+### scan-worked-examples
+
+```bash
+python3 .plan/execute-script.py pm-plugin-development:ext-self-review-plan-marshall:self_review scan-worked-examples \
+  --plan-id PLAN_ID --paths-glob PATHS_GLOB [--project-dir PROJECT_DIR] [--include-unadjudicated]
+```
+
+`--paths-glob` is required and must be relative to the working tree — the population boundary is always stated explicitly rather than defaulted, because the reported counts are only interpretable against a named denominator.
 
 ## Related
 

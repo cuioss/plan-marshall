@@ -285,6 +285,115 @@ _IDENTITY_CONSUMPTION = re.compile(
     r'\.setdefault\s*\(|\blen\s*\(|==|!='
 )
 
+# Worked-example-vs-clause detection.
+# A clause section states a normative rule and then demonstrates it with a
+# BAD/GOOD worked-example pair. The candidate class compares the predicate the
+# clause REQUIRES against the predicate its GOOD example actually BRANCHES ON,
+# and fires only when the two disagree. See
+# ``SKILL.md`` § Detection Rules rule 19 for the firing condition and the
+# decided disposition of each relational case.
+
+# A fenced-block delimiter line. Group 1 captures the info string (language tag)
+# on an opening fence; a closing fence carries none. Fence state also suppresses
+# heading detection, so a ``# GOOD`` comment inside a shell fence is never
+# mistaken for a markdown H1.
+_FENCE_DELIMITER = re.compile(r'^\s*```(\w*)\s*$')
+
+# The GOOD / BAD marker comments labelling the two halves of a worked example.
+# The ``//`` (pseudocode / C-style), ``#`` (shell / Python), and ``<!--``
+# (markdown) comment leaders are recognized, with optional non-alphanumeric
+# decoration between the leader and the marker word so a decorated form
+# (``// ✅ GOOD``, ``# --- BAD``) still resolves. The marker word is
+# UPPERCASE-only, so ordinary prose carrying "good" never matches. Group
+# ``claim`` captures the marker comment's own claim text after the
+# em-dash / en-dash / hyphen / colon separator.
+_MARKER_LEAD = r'^\s*(?://|#|<!--)\s*[^\w\s]*\s*'
+_MARKER_TAIL = r'\b\s*[—–:-]?\s*(?P<claim>.*)$'
+_GOOD_MARKER = re.compile(_MARKER_LEAD + 'GOOD' + _MARKER_TAIL)
+_BAD_MARKER = re.compile(_MARKER_LEAD + 'BAD' + _MARKER_TAIL)
+
+# A branch keyword opening a tested expression inside a worked example. The
+# expression body is extracted by a balanced-paren scan rather than by a regex
+# over the body, because a predicate carrying its own call parentheses
+# (``if (unmapped.notEmpty())``) defeats any non-greedy paren regex.
+_BRANCH_KEYWORD = re.compile(r'(?<![A-Za-z0-9_])(?:el)?(?:if|while)(?![A-Za-z0-9_])')
+
+# A line comment inside a worked-example block, stripped before branch scanning
+# so prose in a trailing ``// ...`` annotation never reads as a branch.
+_BLOCK_LINE_COMMENT = re.compile(r'//.*$')
+
+# The two normative directive shapes a clause uses to name the predicate its
+# worked example must branch on. ``_BRANCH_ON_DIRECTIVE`` matches the explicit
+# "branch on X" form; ``_READ_CHECK_DIRECTIVE`` matches an imperative or
+# ``MUST``-prefixed "Read X" / "check X". Group ``object`` captures the
+# directive's object phrase, stopped at the first clause-ending punctuation so a
+# following independent clause never leaks into the required predicate.
+#
+# Neither pattern admits the ``-ing`` participle ("Branching on ``x`` instead
+# would reinstate the defect"): that form appears in post-hoc commentary NAMING
+# the rejected predicate, so admitting it would read the forbidden field as the
+# required one.
+_BRANCH_ON_DIRECTIVE = re.compile(r'(?i)\bbranch(?:es|ed)?\s+on\b(?P<object>[^.;:,]*)')
+_READ_CHECK_DIRECTIVE = re.compile(
+    r'(?:^|[.;]\s+|\bMUST\s+|\bmust\s+)(?:Read|read|Check|check)\b(?P<object>[^.;:,]*)',
+    re.MULTILINE,
+)
+
+# The contrast pivot inside a clause heading. Everything BEFORE it states what
+# the clause REQUIRES; everything after states what it forbids. Only the
+# required half seeds the required predicate, and only when the directive's own
+# object is anaphoric ("branch on that").
+_HEADING_CONTRAST_PIVOT = re.compile(r'(?i),\s*(?:never|not|rather than|instead of)\b')
+
+# A bare identifier run inside a predicate phrase or expression. Underscores and
+# dots are separators, so ``CLAIMABLE_STATUSES`` and ``outcome.status`` each
+# decompose into their component words.
+_IDENT_TOKEN = re.compile(r'[A-Za-z][A-Za-z0-9]*')
+
+# camelCase / PascalCase decomposition of a single identifier run, so
+# ``exitCode`` contributes ``exit`` and ``code`` independently.
+_CAMEL_SEGMENT = re.compile(r'[A-Z]+(?![a-z])|[A-Z][a-z0-9]*|[a-z0-9]+')
+
+#: Minimum length for a predicate token to participate in the comparison. Short
+#: function words carry no discriminating power and would make the prefix match
+#: below fire on almost any pair.
+_MIN_PREDICATE_TOKEN_LEN = 4
+
+#: Function words and normative auxiliaries that name no predicate. A directive
+#: object consisting ONLY of these is anaphoric ("branch on that"), which is the
+#: signal to fall back to the clause heading's required half.
+_PREDICATE_STOPWORDS: frozenset[str] = frozenset(
+    {
+        'that',
+        'this',
+        'these',
+        'those',
+        'them',
+        'they',
+        'their',
+        'from',
+        'with',
+        'into',
+        'been',
+        'were',
+        'first',
+        'then',
+        'only',
+        'must',
+        'should',
+        'shall',
+        'never',
+        'always',
+        'require',
+        'requires',
+        'required',
+        'value',
+        'values',
+        'own',
+        'itself',
+    }
+)
+
 
 # =============================================================================
 # Candidate-list registry
@@ -339,6 +448,7 @@ CANDIDATE_LISTS: tuple[CandidateList, ...] = (
     ),
     CandidateList('ordinal_references', 'same-document ordinal references', True),
     CandidateList('scan_derived_keys', 'scan-derived keys', True),
+    CandidateList('worked_example_pairs', 'worked-example clause pairs', True),
 )
 
 

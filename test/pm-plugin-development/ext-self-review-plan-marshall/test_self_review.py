@@ -34,6 +34,7 @@ from self_review import (
     _detect_touched_claims,
     _detect_unguarded_boundaries,
     _detect_user_facing_strings,
+    _detect_worked_example_pairs,
     _diff_hunks,
     _find_skill_dir,
     _iter_added_lines,
@@ -44,6 +45,7 @@ from self_review import (
     _run_git,
     _symmetric_pair_has_test,
     _truncate,
+    _worked_example_pairs,
 )
 
 
@@ -2201,6 +2203,499 @@ class TestDetectScanDerivedKeys:
 
 
 # =============================================================================
+# Test: _detect_worked_example_pairs / _worked_example_pairs
+# =============================================================================
+#
+# Fixture provenance and durability. The clause-(d) control texts below are the
+# pre- and post-fix bodies of ``## Fail-Closed Classification`` clause (d) in
+# ``ref-code-quality/standards/error-handling.md``. The PRE-fix text exists only
+# at ``de00dca9b^`` — a branch commit of a SQUASH-merged PR, so it is reachable
+# from no branch ref and is a garbage-collection candidate. It is therefore
+# checked in here as literal content: a fixture that resolved it from git at run
+# time would pass today and silently stop testing anything once the object is
+# pruned, which is precisely the vacuous-guard shape this candidate class exists
+# to prevent.
+
+#: Clause (d) as it shipped BEFORE the fix. The clause requires "an affirmative
+#: success signal"; the GOOD example branches on ``outcome.applied`` — a CHANGE
+#: flag — so the worked contrast demonstrates the shape its own clause forbids.
+_PRE_FIX_CLAUSE_D = '''### (d) Require an affirmative success signal, never absence-of-change
+
+"Nothing changed" is satisfied both by an operation that succeeded idempotently and by an operation that never ran. Absence-of-change is therefore not evidence of success; require the operation to report its own outcome and branch on that.
+
+```text
+// BAD — an empty diff is read as proof the fix landed
+applyFix(file)
+if (diff(file).isEmpty()) {
+    markResolved()   // equally true when applyFix silently did nothing
+}
+
+// GOOD — the operation reports whether it applied, and that is what is read
+outcome = applyFix(file)
+if (outcome.applied) markResolved() else markUnresolved(outcome.reason)
+```
+'''
+
+#: Clause (d) as it reads on ``main`` AFTER the fix: the GOOD example branches on
+#: ``outcome.status == "success"``, which is the affirmative success signal the
+#: clause requires. ``applied`` survives as metadata, never as the predicate.
+_POST_FIX_CLAUSE_D = '''### (d) Require an affirmative success signal, never absence-of-change
+
+"Nothing changed" is satisfied both by an operation that succeeded idempotently and by an operation that never ran. Absence-of-change is therefore not evidence of success; require the operation to report its own outcome and branch on that. Success and change are two distinct fields: the operation reports whether it succeeded independently of whether it changed anything, so `applied` / `changed` is metadata about the edit and never the success predicate.
+
+```text
+// BAD — an empty diff is read as proof the fix landed
+applyFix(file)
+if (diff(file).isEmpty()) {
+    markResolved()   // equally true when applyFix silently did nothing
+}
+
+// GOOD — the operation reports its own success, and THAT is what is branched on
+outcome = applyFix(file)   // { status: "success" | "skipped" | "error", applied: bool }
+if (outcome.status == "success") {
+    markResolved()          // ran and passed — including the idempotent no-op,
+                            // which reports success with applied == false
+} else {
+    markUnresolved(outcome.reason)   // never ran (skipped), or ran and failed
+}
+```
+'''
+
+#: Clause (f) as it shipped BEFORE the fix. Its GOOD marker comment names a
+#: "readback" mechanism the body never performs — a COMMENT-versus-body claim,
+#: not a predicate-versus-predicate disagreement. The decided disposition is
+#: silence; see the case table in the implementor SKILL.md rule 19.
+_PRE_FIX_CLAUSE_F = '''### (f) Write direction — check the persist, never refer to a store that rejected it
+
+The rules above cover the read direction. The write direction is symmetric and is the one most often missed: a producer that persists a finding MUST check the persist call's exit status, and MUST NOT emit a clean or referral signal on a failed persist.
+
+```text
+// BAD — the persist result is discarded, then the caller is referred to the store
+for (f in findings) store.add(f)         // a rejection exits 0 and is never read
+return { status: "triage_required" }     // "go read the store" — which is empty
+
+// GOOD — the persist is checked, and a short readback downgrades the referral
+persisted = []
+for (f in findings) {
+    if (store.add(f).status == "success") persisted.add(f)
+}
+if (persisted.size < findings.size) {
+    return { status: "error", error: "finding_persist_failed" }
+}
+return { status: "triage_required" }
+```
+'''
+
+#: Clause (c) verbatim from the same document — a pair the predicate extractor
+#: was NOT authored against. Its directive is a ``Read X first`` form (not the
+#: anaphoric ``branch on that`` of clause (d)), and its GOOD example agrees.
+_CLAUSE_C_AGREES = '''### (c) Branch on a dispatched producer's status before folding its payload
+
+A producer that crashed, was skipped, or refused returns an empty payload — structurally identical to a producer that ran and found nothing. Read the producer's own status field first; only then fold its payload into the aggregate.
+
+```text
+// BAD — the payload is folded without reading the producer's verdict
+result = producer.run()
+findings.addAll(result.findings)   // a crashed producer contributes zero findings
+
+// GOOD — a failed producer can never read as clean
+result = producer.run()
+if (result.status != "success") {
+    return report(status = "error", reason = producer.name + " did not complete")
+}
+findings.addAll(result.findings)
+```
+'''
+
+#: A clause whose GOOD half branches on nothing recoverable — the example is a
+#: data table, not a control-flow demonstration.
+_NO_BRANCH_PREDICATE = '''### (a) Order specific rows before a catch-all
+
+Read the table top-down; only then act.
+
+```text
+// BAD — the broad row is tested first and shadows every specific row below it
+PATTERNS = [
+    ("bundles/**",        "production"),
+    ("bundles/*/test/**", "test"),
+]
+
+// GOOD — most specific first; the catch-all is the last resort
+PATTERNS = [
+    ("bundles/*/test/**", "test"),
+    ("bundles/**",        "production"),
+]
+```
+'''
+
+#: A clause with a real BAD/GOOD pair but NO normative predicate directive — the
+#: prose states a rule without naming what to branch on, read, or check.
+_NO_DIRECTIVE = '''### Symmetric Diagnostic Fields Across Sibling Branches
+
+When one runtime condition drives two sibling branches, the fallback branch MUST record the SAME reason literal into the audit field.
+
+```text
+// BAD — the fallback branch under the SAME condition never names the reason
+if (mode == "strict" && incompatible) failLoud("env_set")
+
+// GOOD — the sibling branch mirrors the same literal into the audit field
+if (mode == "auto" && incompatible) reason = "env_set"
+```
+'''
+
+#: A lone GOOD example with no BAD counterpart. Its predicate WOULD disagree with
+#: the clause, so a green silence here is load-bearing: it proves the pair — not
+#: the GOOD half alone — is the unit of adjudication.
+_GOOD_WITHOUT_BAD = '''### (d) Require an affirmative success signal, never absence-of-change
+
+Require the operation to report its own outcome and branch on that.
+
+```text
+// GOOD — the operation reports whether it applied, and that is what is read
+if (outcome.applied) markResolved()
+```
+'''
+
+#: One clause, one fenced block, TWO GOOD regions — the first agrees with the
+#: clause, the second does not. Each region is adjudicated independently.
+_MULTIPLE_GOOD_BLOCKS = '''### (x) Branch on the reported status, never on the change flag
+
+Read the reported status field first; only then act on the outcome.
+
+```text
+// BAD — branches on the change flag
+if (outcome.applied) act()
+
+// GOOD — branches on the reported status
+if (outcome.status == "ok") act()
+
+// GOOD — still branches on the change flag
+if (outcome.applied) act()
+```
+'''
+
+#: The same disagreement as ``_PRE_FIX_CLAUSE_D`` but with ``#`` comment markers
+#: inside the fence. The ``# ...`` lines must NOT be read as markdown headings —
+#: the surfaced entry's ``clause`` proves heading detection is fence-aware.
+_HASH_MARKERS_IN_FENCE = '''### (d) Require an affirmative success signal, never absence-of-change
+
+Require the operation to report its own outcome and branch on that.
+
+```python
+# BAD — an empty diff is read as proof the fix landed
+if diff(file).is_empty():
+    mark_resolved()
+
+# GOOD — the operation reports whether it applied
+if outcome.applied:
+    mark_resolved()
+```
+'''
+
+
+def _marker_line(fixture: str, marker_text: str) -> int:
+    """Return the 1-based line of ``marker_text`` inside ``fixture``.
+
+    Resolving the expected line from the fixture itself keeps the assertion
+    pinned to the marker rather than to a hand-counted offset that a future
+    fixture edit would silently invalidate.
+    """
+    return fixture.splitlines().index(marker_text) + 1
+
+
+def _adjudicate(fixture: str, path: str = 'error-handling.md') -> list[dict]:
+    return _worked_example_pairs(path, fixture.splitlines(), None)
+
+
+class TestWorkedExamplePairsControlPair:
+    """The matched positive/negative control on the checked-in clause-(d) texts.
+
+    The pair discriminates: the SAME clause heading and the SAME prose directive
+    appear in both fixtures, and only the GOOD example's branch predicate differs
+    (``outcome.applied`` vs ``outcome.status == "success"``). A check that fired
+    on registration alone, or that fired on the whole pair-bearing shape, would
+    fail one arm or the other.
+    """
+
+    def test_pre_fix_clause_d_is_surfaced_as_contradicting(self):
+        records = _adjudicate(_PRE_FIX_CLAUSE_D)
+        contradicting = [r for r in records if r['agrees'] is False]
+
+        assert len(contradicting) == 1, (
+            f'Expected exactly one contradicting pair. Got: {records}'
+        )
+        entry = contradicting[0]
+        assert entry['file'] == 'error-handling.md'
+        assert entry['line'] == _marker_line(
+            _PRE_FIX_CLAUSE_D,
+            '// GOOD — the operation reports whether it applied, and that is what is read',
+        )
+        assert entry['clause'] == (
+            '(d) Require an affirmative success signal, never absence-of-change'
+        )
+        # The load-bearing half: the entry names BOTH predicates, so the
+        # assertion cannot be satisfied by the class merely being registered.
+        assert entry['example_predicate'] == 'outcome.applied'
+        assert 'success' in entry['required_predicate']
+
+    def test_post_fix_clause_d_is_silent(self):
+        records = _adjudicate(_POST_FIX_CLAUSE_D)
+
+        assert [r for r in records if r['agrees'] is False] == [], (
+            'The live post-fix clause (d) was surfaced as contradicting — the '
+            'class fires on the whole pair-bearing shape instead of on the '
+            'predicate disagreement'
+        )
+
+    def test_post_fix_negative_is_not_vacuously_clean(self):
+        # Silence is only meaningful if the pair was FOUND and ADJUDICATED. A
+        # negative that passed because the fixture carried no recognizable pair
+        # would prove nothing about the discriminator.
+        records = _adjudicate(_POST_FIX_CLAUSE_D)
+
+        assert len(records) == 1, f'The post-fix pair was not found: {records}'
+        assert records[0]['agrees'] is True
+        assert records[0]['example_predicate'] == 'outcome.status == "success"'
+
+    def test_the_two_fixtures_differ_only_in_the_demonstration(self):
+        # Pins the discriminator's premise: both fixtures carry the SAME clause
+        # heading, so the opposite verdicts cannot be explained by the clause.
+        assert (
+            _PRE_FIX_CLAUSE_D.splitlines()[0] == _POST_FIX_CLAUSE_D.splitlines()[0]
+        )
+        assert 'outcome.applied' in _PRE_FIX_CLAUSE_D
+        assert 'outcome.status' in _POST_FIX_CLAUSE_D
+
+
+class TestWorkedExamplePairsGenerality:
+    """The extractor is exercised on pairs it was NOT authored against."""
+
+    def test_clause_c_read_directive_agrees(self):
+        # Clause (c) uses a ``Read X first`` directive rather than clause (d)'s
+        # anaphoric ``branch on that``, so this exercises the OTHER extraction
+        # path end-to-end on real shipped text.
+        records = _adjudicate(_CLAUSE_C_AGREES)
+
+        assert len(records) == 1
+        assert records[0]['agrees'] is True
+        assert records[0]['example_predicate'] == 'result.status != "success"'
+        assert 'status' in records[0]['required_predicate']
+
+    def test_hash_comment_markers_inside_a_fence_do_not_open_a_section(self):
+        # A ``# BAD`` / ``# GOOD`` line matches the markdown-heading shape. The
+        # surfaced entry's clause must still be the real ``###`` heading, which
+        # it can only be if heading detection is suppressed inside fences.
+        records = _adjudicate(_HASH_MARKERS_IN_FENCE)
+        contradicting = [r for r in records if r['agrees'] is False]
+
+        assert len(contradicting) == 1
+        assert contradicting[0]['clause'] == (
+            '(d) Require an affirmative success signal, never absence-of-change'
+        )
+        assert contradicting[0]['example_predicate'] == 'outcome.applied'
+
+
+class TestWorkedExamplePairsRelationalCases:
+    """Every relational case carries a DECIDED disposition, each pinned here.
+
+    The class's silence on a case is a decision on the record rather than an
+    accident, so each non-surfacing case gets its own assertion.
+    """
+
+    def test_clause_with_no_worked_example_surfaces_nothing(self):
+        prose_only = (
+            '### (d) Require an affirmative success signal\n'
+            '\n'
+            'Require the operation to report its own outcome and branch on that.\n'
+        )
+        assert _adjudicate(prose_only) == []
+
+    def test_good_block_without_a_bad_counterpart_surfaces_nothing(self):
+        # The GOOD half here WOULD disagree with its clause, so the silence is
+        # attributable to the missing BAD half and not to an agreeing predicate.
+        assert _adjudicate(_GOOD_WITHOUT_BAD) == []
+
+    def test_clause_with_no_normative_directive_is_not_adjudicable(self):
+        records = _adjudicate(_NO_DIRECTIVE)
+
+        assert len(records) == 1, f'The pair itself must still be found: {records}'
+        assert records[0]['agrees'] is None
+        assert records[0]['required_predicate'] == ''
+
+    def test_good_example_with_no_branch_predicate_is_not_adjudicable(self):
+        records = _adjudicate(_NO_BRANCH_PREDICATE)
+
+        assert len(records) == 1, f'The pair itself must still be found: {records}'
+        assert records[0]['agrees'] is None
+        assert records[0]['example_predicate'] == ''
+
+    def test_multiple_good_blocks_are_adjudicated_independently(self):
+        records = _adjudicate(_MULTIPLE_GOOD_BLOCKS)
+
+        assert len(records) == 2, f'Each GOOD region is its own record: {records}'
+        assert [r['agrees'] for r in records] == [True, False]
+        assert records[0]['example_predicate'] == 'outcome.status == "ok"'
+        assert records[1]['example_predicate'] == 'outcome.applied'
+
+    def test_comment_names_a_mechanism_the_body_lacks_is_not_surfaced(self):
+        # DECIDED disposition, not an oversight: the pre-fix clause (f) defect is
+        # a COMMENT-versus-body claim ("a short readback downgrades the referral"
+        # over a body that performs no readback), which is a different shape from
+        # the predicate-versus-predicate disagreement this class adjudicates.
+        # Every deterministic formulation of the comment check fired on correct
+        # sibling examples in the audited population, so it is a broader net
+        # rather than a better extractor and is left to ordinary review.
+        records = _adjudicate(_PRE_FIX_CLAUSE_F)
+
+        assert [r for r in records if r['agrees'] is False] == []
+        # Non-vacuous: the pair WAS found and adjudicated, and its branch
+        # predicate genuinely agrees with the clause's ``check X`` directive.
+        assert len(records) == 1
+        assert records[0]['agrees'] is True
+
+
+class TestDetectWorkedExamplePairsDiffScope:
+    """The diff-driven detector is restricted to touched clause sections."""
+
+    def _write(self, tmp_path: Path, body: str) -> Path:
+        target = tmp_path / 'doc.md'
+        target.write_text(body)
+        return tmp_path
+
+    def test_touched_section_surfaces_the_contradiction(self, tmp_path):
+        project_dir = self._write(tmp_path, _PRE_FIX_CLAUSE_D)
+        touched_line = _marker_line(
+            _PRE_FIX_CLAUSE_D,
+            '// GOOD — the operation reports whether it applied, and that is what is read',
+        )
+        added = [('doc.md', touched_line, 'irrelevant content')]
+
+        out = _detect_worked_example_pairs(added, project_dir)
+
+        assert len(out) == 1
+        assert out[0]['agrees'] is False
+        assert out[0]['example_predicate'] == 'outcome.applied'
+
+    def test_untouched_section_surfaces_nothing(self, tmp_path):
+        # The same document, but the diff touches a line far past the clause's
+        # span, so the section is out of the diff's scope.
+        project_dir = self._write(tmp_path, _PRE_FIX_CLAUSE_D + '\n## Later\n\nprose\n')
+        last_line = len(
+            (_PRE_FIX_CLAUSE_D + '\n## Later\n\nprose\n').splitlines()
+        )
+        added = [('doc.md', last_line, 'prose')]
+
+        assert _detect_worked_example_pairs(added, project_dir) == []
+
+    def test_non_markdown_and_missing_project_dir_surface_nothing(self, tmp_path):
+        project_dir = self._write(tmp_path, _PRE_FIX_CLAUSE_D)
+
+        assert _detect_worked_example_pairs([('doc.py', 1, 'x = 1')], project_dir) == []
+        assert _detect_worked_example_pairs([('doc.md', 1, 'x')], None) == []
+        assert _detect_worked_example_pairs([], project_dir) == []
+
+
+class TestScanWorkedExamplesVerb:
+    """The population-scan verb reports the denominator its verdict is drawn from."""
+
+    def _scan(self, repo: Path, *extra: str):
+        from conftest import get_script_path, run_script
+
+        script = get_script_path(
+            'pm-plugin-development', 'ext-self-review-plan-marshall', 'self_review.py'
+        )
+        return run_script(
+            script,
+            'scan-worked-examples',
+            '--plan-id',
+            'population-scan-plan',
+            '--project-dir',
+            str(repo),
+            *extra,
+        )
+
+    @staticmethod
+    def _populate(repo: Path) -> None:
+        (repo / 'standards').mkdir(parents=True, exist_ok=True)
+        (repo / 'standards' / 'pre-fix.md').write_text(_PRE_FIX_CLAUSE_D)
+        (repo / 'standards' / 'post-fix.md').write_text(_POST_FIX_CLAUSE_D)
+        (repo / 'standards' / 'no-pair.md').write_text('# Title\n\nprose only\n')
+
+    def test_reports_population_and_contradicting_count(self, tmp_path):
+        repo = tmp_path / 'repo'
+        repo.mkdir()
+        self._populate(repo)
+
+        result = self._scan(repo, '--paths-glob', 'standards/*.md')
+        assert result.success, f'scan failed: stderr={result.stderr}'
+        data = result.toon()
+
+        # The denominator is published alongside the verdict: a zero from a real
+        # population is distinguishable from a zero from an empty one.
+        assert int(data['population']['distinct_paths']) == 3
+        assert int(data['population']['pair_bearing_files']) == 2
+        assert int(data['population']['pairs_total']) == 2
+        assert int(data['population']['pairs_contradicting']) == 1
+        assert int(data['population']['pairs_agreeing']) == 1
+        assert data['paths_glob'] == 'standards/*.md'
+        assert 'standards/*.md' in data['boundary']
+
+        entries = data['worked_example_pairs']
+        assert len(entries) == 1
+        assert entries[0]['file'] == 'standards/pre-fix.md'
+
+    def test_unadjudicated_list_is_opt_in(self, tmp_path):
+        repo = tmp_path / 'repo'
+        repo.mkdir()
+        (repo / 'standards').mkdir()
+        (repo / 'standards' / 'no-directive.md').write_text(_NO_DIRECTIVE)
+
+        without = self._scan(repo, '--paths-glob', 'standards/*.md')
+        assert without.success
+        data_without = without.toon()
+        assert int(data_without['population']['pairs_unadjudicated']) == 1
+        assert 'unadjudicated_pairs' not in data_without
+
+        with_flag = self._scan(
+            repo, '--paths-glob', 'standards/*.md', '--include-unadjudicated'
+        )
+        assert with_flag.success
+        assert len(with_flag.toon()['unadjudicated_pairs']) == 1
+
+    def test_absolute_paths_glob_is_rejected(self, tmp_path):
+        repo = tmp_path / 'repo'
+        repo.mkdir()
+
+        result = self._scan(repo, '--paths-glob', '/etc/*.md')
+
+        assert not result.success
+        assert result.toon()['error'] == 'paths_glob_invalid'
+
+    def test_parent_directory_paths_glob_is_rejected(self, tmp_path):
+        repo = tmp_path / 'repo'
+        repo.mkdir()
+
+        result = self._scan(repo, '--paths-glob', '../*.md')
+
+        assert not result.success
+        assert result.toon()['error'] == 'paths_glob_invalid'
+
+    def test_empty_population_is_reported_as_zero_not_as_a_clean_verdict(self, tmp_path):
+        # The vacuous case the published denominator exists to expose: no file
+        # matched, so the zero contradiction count carries a zero population.
+        repo = tmp_path / 'repo'
+        repo.mkdir()
+
+        result = self._scan(repo, '--paths-glob', 'standards/*.md')
+        assert result.success
+        data = result.toon()
+
+        assert int(data['population']['distinct_paths']) == 0
+        assert int(data['population']['pairs_total']) == 0
+        assert int(data['population']['pairs_contradicting']) == 0
+
+
+# =============================================================================
 # Test: counts.total invariant (review-anchor lists excluded from total)
 # =============================================================================
 
@@ -2372,6 +2867,57 @@ class TestCountsTotalInvariant:
         )
         assert int(counts['total']) == included_sum
         assert 'scan_derived_keys' not in self._EXCLUDED_FROM_TOTAL
+
+    def test_worked_example_pairs_included_in_total(self, tmp_path):
+        # An uncommitted .md diff carrying a clause whose GOOD example branches
+        # on a predicate its clause does not require triggers the
+        # worked_example_pairs detector, which IS summed into counts.total
+        # (unlike the review-anchor lists). This drives the REAL surface path, so
+        # it also pins that the diff-scoped detector is wired into the emitter.
+        repo = tmp_path / 'repo'
+        _init_repo(repo)
+        _commit(repo, 'base', {'base.txt': 'base\n'})
+        _git(repo, 'checkout', '-b', 'feature')
+        (repo / 'clause.md').write_text(_PRE_FIX_CLAUSE_D)
+        _git(repo, 'add', 'clause.md')
+
+        data = self._surface(repo)
+
+        assert int(data['counts']['worked_example_pairs']) >= 1
+        entries = data['worked_example_pairs']
+        assert len(entries) >= 1
+        assert entries[0]['example_predicate'] == 'outcome.applied'
+
+        counts = data['counts']
+        included_sum = sum(
+            int(v)
+            for k, v in counts.items()
+            if k != 'total' and k not in self._EXCLUDED_FROM_TOTAL
+        )
+        assert int(counts['total']) == included_sum
+        assert 'worked_example_pairs' not in self._EXCLUDED_FROM_TOTAL
+
+    def test_worked_example_pairs_invariant_holds_when_list_is_empty(self, tmp_path):
+        # The inclusion invariant must hold whether or not the list fires — and
+        # the post-fix clause text is the discriminating empty case, not merely
+        # a diff with no markdown in it.
+        repo = tmp_path / 'repo'
+        _init_repo(repo)
+        _commit(repo, 'base', {'base.txt': 'base\n'})
+        _git(repo, 'checkout', '-b', 'feature')
+        (repo / 'clause.md').write_text(_POST_FIX_CLAUSE_D)
+        _git(repo, 'add', 'clause.md')
+
+        data = self._surface(repo)
+
+        assert int(data['counts']['worked_example_pairs']) == 0
+        counts = data['counts']
+        included_sum = sum(
+            int(v)
+            for k, v in counts.items()
+            if k != 'total' and k not in self._EXCLUDED_FROM_TOTAL
+        )
+        assert int(counts['total']) == included_sum
 
     def test_scan_derived_keys_invariant_holds_when_list_is_empty(self, tmp_path):
         # The inclusion invariant must hold whether or not the list fires.
