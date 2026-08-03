@@ -1956,9 +1956,14 @@ def _detect_worked_example_pairs(
     extracted from the clause's normative directive (or, for an anaphoric
     ``branch on that``, from the heading's required half), and the example
     predicate is the expression the GOOD block actually tests. Only the
-    DISAGREEING case is surfaced, following the ``producer_consumer`` precedent —
-    so an empty list is a real "every adjudicable pair agrees" signal rather than
-    "the class did not run", and the entry's ``agrees`` field is always ``false``.
+    DISAGREEING case is surfaced, following the ``producer_consumer`` precedent,
+    so the entry's ``agrees`` field is always ``false``. No denominator
+    accompanies the list: agreeing pairs and unadjudicable pairs are both
+    dropped, and neither count is reported. An empty list therefore states only
+    that no adjudicable disagreement was surfaced in the diff scope — not that
+    every pair agrees, and not a population-level clean verdict; non-adjudication
+    is the dominant reason a pair is absent. The ``scan-worked-examples`` verb in
+    ``self_review.py`` publishes the population denominator that claim requires.
 
     Restricted to clause sections the diff touched, and to ``.md`` files whose
     post-image is readable (the full document is needed to resolve a section's

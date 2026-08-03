@@ -228,7 +228,7 @@ worked_example_pairs[N20]{file,line,clause,required_predicate,example_predicate,
     - **Pair recognition** — within a clause section (the nearest preceding ATX heading; heading detection is suppressed inside fences so a `# GOOD` marker never opens a spurious section), a fenced block carrying BOTH a `BAD` and a `GOOD` marker comment is a pair. Recognized marker leaders are `//`, `#`, and `<!--`, with optional non-alphanumeric decoration before the UPPERCASE marker word (`// ✅ GOOD` resolves; prose "good" never does). Each `GOOD` marker opens a region running to the next marker or to the end of the block.
     - **Required predicate** — extracted from the clause's normative prose (the lines between the heading and the block's opening fence, which is where the document's rule-then-example shape always places the rule). Two directive forms are read: the explicit `branch on X`, and a normative `Read X` / `check X` (sentence-initial or `MUST`-prefixed). The first directive whose object resolves to a non-empty token set wins. When every directive object is anaphoric (`branch on that`), the clause **heading's required half** — everything before a `, never` / `, not` / `, rather than` / `, instead of` contrast pivot — is the fallback, because the heading is the clause's own condensed statement of what it requires and the only available resolution for the anaphor. The `-ing` participle is deliberately NOT a directive form: `Branching on \`outcome.applied\` instead would reinstate the defect` names the *rejected* predicate, so admitting it would read the forbidden field as the required one.
     - **Example predicate** — the expression the GOOD region actually tests: the brace form (`if (expr)` / `while (expr)`, extracted by a balanced-paren scan so a predicate carrying its own call parentheses is not truncated), the colon form (`if expr:`), or a parenthesized ternary condition (`(expr) ? a : b`). Line comments are stripped first, so an explanatory annotation is never read as code.
-    - **Comparison** — both phrases are tokenized (identifier runs split on camelCase, lowercased, dropped below four characters and against a function-word list). The pair AGREES when the two token sets share a term under a prefix relation (`persist` ↔ `persisted`), and DISAGREES otherwise. Only the disagreeing case is surfaced, following the `producer_consumer` precedent — so an empty list is a real "every adjudicable pair agrees" signal rather than "the class did not run", and a surfaced entry always carries `agrees: false`.
+    - **Comparison** — both phrases are tokenized (identifier runs split on camelCase, lowercased, dropped below four characters and against a function-word list). The pair AGREES when the two token sets share a term under a prefix relation (`persist` ↔ `persisted`), and DISAGREES otherwise. Only the disagreeing case is surfaced, following the `producer_consumer` precedent, so a surfaced entry always carries `agrees: false`. The `surface` verb publishes NO denominator for this list: agreeing pairs and unadjudicable pairs are both dropped, and neither count is reported. An empty list therefore states only that **no adjudicable disagreement was surfaced among the diff-scoped candidates** — it is not a claim that every pair agrees, and not a population-level clean verdict. A zero carrying no published denominator is indistinguishable from a zero over an empty or mis-scoped population, and non-adjudication (a clause naming no normative predicate, or a GOOD example branching on nothing recoverable) is the dominant reason a pair is absent from the list. For any population-level claim use the `scan-worked-examples` subcommand documented below, which publishes `pairs_total`, `pairs_agreeing`, and `pairs_unadjudicated` alongside the contradicting set.
 
     **Relational cases, each with a decided disposition** (the class's silence on a case is a decision on the record, not an accident):
 
@@ -250,7 +250,7 @@ worked_example_pairs[N20]{file,line,clause,required_predicate,example_predicate,
 | Live footprint empty (no `{base}...HEAD` ∪ porcelain changes) | `status: success` with empty candidate lists (no diff scope) |
 | `git -C {project_dir}` fails | `status: error\nerror: git_unavailable\nmessage: ...` (exit 1) |
 | Base branch not found | `status: error\nerror: base_branch_not_found\nbase_branch: {base}` (exit 1) |
-| Plan not found | `status: error\nerror: plan_not_found` (exit 1) |
+| `--plan-id` worktree resolution fails | `status: error\nerror: worktree_resolution_failed\nmessage: ...` (exit 2) |
 
 ## Subcommand: `scan-worked-examples`
 
@@ -297,7 +297,7 @@ Deduplication is on the RESOLVED path, which is what makes `distinct_paths` a co
 |-----------|--------|
 | `--paths-glob` absolute or carrying a `..` segment | `status: error\nerror: paths_glob_invalid\nmessage: ...` (exit 1) |
 | Resolved project dir missing or not a directory | `status: error\nerror: project_dir_invalid\nmessage: ...` (exit 1) |
-| Plan not found | `status: error\nerror: plan_not_found` (exit 1) |
+| `--plan-id` worktree resolution fails | `status: error\nerror: worktree_resolution_failed\nmessage: ...` (exit 2) |
 
 ## Cwd Policy
 

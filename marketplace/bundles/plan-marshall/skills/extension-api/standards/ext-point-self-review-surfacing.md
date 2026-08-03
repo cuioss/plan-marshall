@@ -55,7 +55,7 @@ implements: plan-marshall:extension-api/standards/ext-point-self-review-surfacin
 ### Post-Conditions
 
 - TOON to stdout carrying the twenty candidate sub-lists below (some MAY be empty).
-- Non-zero exit on git-unavailable, base-branch-missing, or plan-not-found.
+- Non-zero exit on git-unavailable, base-branch-missing, or worktree-resolution failure.
 
 ### Output Schema
 
@@ -175,7 +175,7 @@ All twenty keys MUST appear in the output (possibly with empty payloads) — a c
 | `advertised_form_help_strings` | A multi-form argparse `help=` string paired with a raw `args.<dest>` pass-through that does no normalization — advertised-input-form normalization cross-check | Check 5 (contract drift) |
 | `ordinal_references` | Added same-document ordinal references (`item N` / `step N` / bare `(N)`) pointing into an ordered-list block the same diff touched, surfaced so the reviewer confirms each ordinal still resolves to its intended item after the renumber | Check 13 (same-document ordinal-reference re-check) |
 | `scan_derived_keys` | A key derived by first-match of a compiled pattern over a decomposed sequence rather than by indexing that decomposition at a position anchored on a known root — the scan-versus-anchor shape that collapses distinct inputs to one key and leaves a downstream guard unreachable | Check 14 (unreachable guard behind a scan-derived key) |
-| `worked_example_pairs` | A clause section's GOOD worked example whose branch predicate disagrees with the predicate the clause's own normative prose requires — the contrast silently demonstrates the shape its clause forbids, one field over. Only the disagreeing case is surfaced, so an empty list means every adjudicable pair agrees | Check 15 (worked-example clause mismatch) |
+| `worked_example_pairs` | A clause section's GOOD worked example whose branch predicate disagrees with the predicate the clause's own normative prose requires — the contrast silently demonstrates the shape its clause forbids, one field over. Only the disagreeing case is surfaced and no denominator is published (agreeing and unadjudicable pairs are both dropped, uncounted), so an empty list states only that no adjudicable disagreement was surfaced in the diff scope — not that every pair agrees, and not a population-level clean verdict; the implementor's `scan-worked-examples` verb publishes the denominator that claim requires | Check 15 (worked-example clause mismatch) |
 
 Each entry MUST carry `file` (repo-relative path) AND `line` (1-based line number in the post-diff file content) — these are the primary navigation fields the LLM cognitive review consumes. Two entry shapes extend or replace this pair: the `source_of_truth` entry carries `name`/`files`/`values` rather than a single `file`/`line`, and the `advertised_form_help_strings` entry carries a second navigational coordinate `raw_pass_line` (the line of the raw `args.<dest>` pass-through) alongside its `file`/`line`, which Check 5's advertised-form sub-check consumes to navigate to the unnormalized-use site. The `count_prose`, `unguarded_boundaries`, and `touched_claims` entries all carry `file`+`line`. Additional per-domain sub-lists beyond the twenty canonical keys are allowed and ignored by the fifteen canonical checks.
 
@@ -191,7 +191,7 @@ The `ext-self-review-plan-marshall` implementor's detection heuristics are docum
 | Live footprint empty (no `{base}...HEAD` ∪ porcelain changes) | `status: success` with empty candidate lists (no diff scope) |
 | Git unavailable or wrong cwd | `status: error\nerror: git_unavailable\nmessage: ...` (exit 1) |
 | Base branch not found | `status: error\nerror: base_branch_not_found\nbase_branch: {base}` (exit 1) |
-| Plan not found | `status: error\nerror: plan_not_found` (exit 1) |
+| `--plan-id` worktree resolution fails | `status: error\nerror: worktree_resolution_failed\nmessage: ...` (exit 2) |
 
 The consumer dispatcher (`phase-6-finalize/workflow/pre-submission-self-review.md` Step 1) translates non-zero exits into `outcome=failed` on the manifest step without dispatching the LLM cognitive phase.
 
