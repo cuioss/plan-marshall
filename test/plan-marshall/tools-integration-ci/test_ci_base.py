@@ -499,10 +499,10 @@ def _parser_paths(parser: argparse.ArgumentParser, prefix: tuple[str, ...] = ())
 def test_every_add_head_arg_verb_also_declares_pr_number(monkeypatch):
     """Every subparser that receives --head must also declare --pr-number.
 
-    ``add_head_arg``'s help string advertises --head as "alternative to --pr-number",
-    a claim that is only true on a parser which actually declares that flag. `pr view`
-    carried the help string without the flag, so the advertised alternative was a form
-    argparse rejected with exit 2.
+    ``add_head_arg``'s help string presents --head as usable "in place of
+    --pr-number", a claim that is only true on a parser which actually declares that
+    flag. `pr view` carried the help string without the flag, so the advertised
+    substitute was a form argparse rejected with exit 2.
 
     The population is DERIVED, not hand-listed: ``add_head_arg`` is wrapped for the
     duration of one real ``build_parser`` call, so the checked set is exactly its live
@@ -540,7 +540,7 @@ def test_every_add_head_arg_verb_also_declares_pr_number(monkeypatch):
         if '--pr-number' not in _option_strings(sub)
     )
     assert offenders == [], (
-        f'these --head verbs advertise "alternative to --pr-number" but declare no such flag: {offenders}'
+        f'these --head verbs advertise --head "in place of --pr-number" but declare no such flag: {offenders}'
     )
 
 
