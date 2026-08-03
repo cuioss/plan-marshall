@@ -157,7 +157,6 @@ def _seed_unreadable_project(tmpdir: str) -> None:
     project = Path(tmpdir)
     pkg = project / 'pkg'
     _write(pkg / 'good.py', f'{_SHARED_TOKEN} = 1\n')
-    pkg.mkdir(parents=True, exist_ok=True)
     (pkg / 'blob.bin').write_bytes(b'\xff\xfe\x00\x80' + _SHARED_TOKEN.encode('utf-8'))
 
     modules = {

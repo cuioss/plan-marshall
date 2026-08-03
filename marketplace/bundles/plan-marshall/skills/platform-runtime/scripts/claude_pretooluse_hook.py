@@ -82,12 +82,6 @@ _R1_LEADING_ASSIGNMENT_RE = re.compile(r"^\s*[A-Za-z_][A-Za-z0-9_]*=\S*\s+\S")
 #: R2 — Bash file-operation programs that have dedicated Read/Glob/Grep tools.
 _R2_FILE_OPS = ("cat", "grep", "head", "tail", "find", "ls")
 
-#: R2 — the ``git`` subcommand that is a file-op in disguise. ``git grep`` reads
-#: file bodies exactly as bare ``grep`` does, so it belongs to the SAME R2 family
-#: rather than a new one; the family count stays four.
-_R2_GIT_PROGRAM = "git"
-_R2_GIT_SUBCOMMAND = "grep"
-
 #: R2 — ``git`` global options that consume the FOLLOWING token as their value.
 #: Skipping them is what keeps the subcommand test from being a vacuous guard: a
 #: naive ``tokens[1] == "grep"`` check is walked past by ``git -C . grep x`` and
@@ -217,9 +211,10 @@ def _match_r2_file_ops(
     """R2 — Bash command whose program is a file-op with a dedicated tool.
 
     Covers both the bare file-op programs and ``git grep``, which reads file
-    bodies exactly as ``grep`` does. Non-``grep`` git subcommands are untouched:
-    ``git status``, ``git diff``, ``git log`` and friends are not file-ops and
-    must keep working.
+    bodies exactly as ``grep`` does and therefore joins the EXISTING R2 family
+    rather than opening a new one — the rule family count stays four.
+    Non-``grep`` git subcommands are untouched: ``git status``, ``git diff``,
+    ``git log`` and friends are not file-ops and must keep working.
     """
     command = _bash_command(tool_name, tool_input)
     if command is None:
@@ -227,7 +222,7 @@ def _match_r2_file_ops(
     program = _program_name(command)
     if program in _R2_FILE_OPS:
         return _R2_REASON
-    if program == _R2_GIT_PROGRAM and _git_subcommand(command) == _R2_GIT_SUBCOMMAND:
+    if program == "git" and _git_subcommand(command) == "grep":
         return _R2_REASON
     return None
 
