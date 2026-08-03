@@ -3119,6 +3119,61 @@ def test_enrich_labels_a_dispatch_only_phase_as_dispatched(plan_context, monkeyp
     assert row['total_tokens_population'] == manage_metrics.POPULATION_DISPATCHED
 
 
+def test_repeated_enrich_keeps_an_inline_only_row_labelled_inline(plan_context, monkeypatch):
+    """A second enrich run must not read its OWN fold as a dispatched total.
+
+    The inline branch writes `total_tokens`, so a branch keyed on
+    `not total_tokens` is self-defeating: run two sees run one's fold, falls
+    through to the mixed branch, and stamps `mixed` on a row where nothing was
+    ever dispatched. Re-invocation is the ordinary case — `record-metrics` runs
+    enrich on every finalize entry and a loop-back re-enters it — so a
+    single-run assertion proves nothing about the stamp a report actually reads.
+    """
+    plan_id = 'population-enrich-idempotent-inline'
+    cmd_start_phase(_ns_start_phase(plan_id, '1-init'))
+    cmd_end_phase(_ns_end_phase(plan_id, '1-init'))
+
+    assert _run_enrich_with_buckets(plan_id, monkeypatch, {'1-init': _INLINE_BUCKET})['enriched']
+    first = dict(_phase_row(plan_id, '1-init'))
+    assert first['total_tokens_population'] == manage_metrics.POPULATION_INLINE
+    assert first['total_tokens'] == _INLINE_SUM
+
+    assert _run_enrich_with_buckets(plan_id, monkeypatch, {'1-init': _INLINE_BUCKET})['enriched']
+    second = _phase_row(plan_id, '1-init')
+
+    # The discriminator survives the re-run, and the folded figure is unchanged —
+    # the second run recognised its own prior fold instead of re-classifying it.
+    assert second['total_tokens_population'] == manage_metrics.POPULATION_INLINE
+    assert second['total_tokens'] == first['total_tokens']
+    assert second['inline_main_context_tokens'] == _INLINE_SUM
+
+
+def test_repeated_enrich_keeps_a_genuinely_mixed_row_labelled_mixed(plan_context, monkeypatch):
+    """Matched control: the idempotence fix does not disable the `mixed` stamp.
+
+    Keying the inline branch off the discriminator could have been "widened" into
+    never reaching the mixed branch at all, which would pass the inline test
+    above while destroying the signature it exists to distinguish. A row carrying
+    a REAL dispatched total plus inline spend must still read `mixed` on the
+    first run and on every run after it.
+    """
+    plan_id = 'population-enrich-idempotent-mixed'
+    cmd_start_phase(_ns_start_phase(plan_id, '6-finalize'))
+    cmd_end_phase(_ns_end_phase(plan_id, '6-finalize', total_tokens=88000))
+
+    _run_enrich_with_buckets(plan_id, monkeypatch, {'6-finalize': _INLINE_BUCKET})
+    assert _phase_row(plan_id, '6-finalize')['total_tokens_population'] == (
+        manage_metrics.POPULATION_MIXED
+    )
+
+    _run_enrich_with_buckets(plan_id, monkeypatch, {'6-finalize': _INLINE_BUCKET})
+    row = _phase_row(plan_id, '6-finalize')
+
+    assert row['total_tokens_population'] == manage_metrics.POPULATION_MIXED
+    assert row['total_tokens'] == 88000, 'the dispatched total must never be overwritten'
+    assert row['inline_main_context_tokens'] == _INLINE_SUM
+
+
 @pytest.mark.parametrize(
     'raw',
     [
@@ -3302,6 +3357,55 @@ def test_total_row_is_unmarked_when_every_contributing_row_is_dispatched(plan_co
     assert '(mixed)' in report, 'fixture must actually produce a marked row'
     assert '(spans populations)' not in _total_tokens_cell(report)
     assert '(spans populations)' not in report
+
+
+def test_inline_row_carrying_a_competing_dispatched_measure_renders_both_markers(
+    plan_context, monkeypatch
+):
+    """An `inline` row that ALSO carries a dispatched measure keeps both markers.
+
+    This is the row shape the non-idempotent population stamp destroyed, so the
+    coverage gap and the defect are one surface. Re-stamped `mixed`,
+    `_eligible_dispatched_measures` stops excluding the folded main-context
+    `total_tokens` (it becomes a candidate for the dispatched maximum) and
+    `cmd_generate` stops collecting the row into `inline_population_phases`,
+    silently dropping the Total's `(spans populations)` marker. Driven through
+    the render with the stamp idempotent, three things must hold together: the
+    competing dispatched measure wins the cell, the cell still carries the row's
+    `(inline)` population marker, and the Total still declares that it spans
+    populations.
+
+    The fixture makes the folded figure the SMALLER of the two, so no assertion
+    below can pass by accidentally rendering the excluded main-context measure.
+    """
+    plan_id = 'population-inline-competing-measure'
+    cmd_start_phase(_ns_start_phase(plan_id, '1-init'))
+    cmd_end_phase(_ns_end_phase(plan_id, '1-init'))
+
+    bucket = dict(_INLINE_BUCKET, subagent_total_tokens=30000, subagent_samples=1)
+    assert 30000 > _INLINE_SUM, 'the dispatched measure must be the strict maximum'
+
+    # Two runs: the second is what the pre-fix stamp mislabelled.
+    _run_enrich_with_buckets(plan_id, monkeypatch, {'1-init': bucket})
+    _run_enrich_with_buckets(plan_id, monkeypatch, {'1-init': bucket})
+
+    row = _phase_row(plan_id, '1-init')
+    assert row['total_tokens_population'] == manage_metrics.POPULATION_INLINE
+    assert row['total_tokens'] == _INLINE_SUM
+    # The folded main-context figure stays out of the dispatched comparison; the
+    # genuinely dispatched measure is the only eligible one.
+    assert manage_metrics._reconcile_dispatched_measures(row) == ('subagent_total_tokens', 30000)
+
+    cmd_generate(_ns_generate(plan_id))
+    report = (plan_context.plan_dir_for(plan_id) / 'metrics.md').read_text(encoding='utf-8')
+
+    init_row = next(line for line in report.splitlines() if line.startswith('| 1-init '))
+    assert '30,000' in init_row, 'the winning dispatched measure must render in the cell'
+    assert f'{_INLINE_SUM:,}' not in init_row, 'the excluded inline figure must not win the cell'
+    assert '(inline)' in init_row
+
+    assert '(spans populations)' in _total_tokens_cell(report)
+    assert '`(spans populations)`' in report
 
 
 def test_four_message_usage_bullets_render_under_the_main_context_heading(

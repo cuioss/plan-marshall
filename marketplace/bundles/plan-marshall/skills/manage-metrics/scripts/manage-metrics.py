@@ -2332,8 +2332,22 @@ def cmd_enrich(args: argparse.Namespace) -> dict:
         # phase's `<usage>` / accumulator is truthy here and is NEVER
         # overwritten. The #812 `end_time`-keyed partial verdict is untouched —
         # a timestamps-only inline close stays non-`partial`.
+        # The branch key is the DISCRIMINATOR, not the folded total, because the
+        # inline-only branch below writes into the very field a truthiness test
+        # would read. Keyed on `not total_tokens` alone, a SECOND enrich run over
+        # the same metrics.toon sees the first run's own fold as a dispatched
+        # total, falls through to the mixed branch, and re-stamps an inline-only
+        # row `mixed` — a population claim no dispatch ever earned, which then
+        # readmits the folded main-context figure to the dispatched maximum
+        # (`_eligible_dispatched_measures`) and drops the Total's `(spans
+        # populations)` marker. Reading `total_tokens_population` instead makes
+        # the stamp idempotent: a re-run recognises its own prior fold. The fold
+        # itself is unchanged. Explicit-wins survives intact — a genuine
+        # dispatched total_tokens never carries POPULATION_INLINE, so it can
+        # never select this branch.
         inline_main_context = _inline_main_context_sum(phase_row)
-        if not phase_row.get('total_tokens'):
+        already_inline = phase_row.get('total_tokens_population') == POPULATION_INLINE
+        if already_inline or not phase_row.get('total_tokens'):
             # Inline-only signature: no dispatched total exists to preserve.
             if inline_main_context:
                 phase_row['total_tokens'] = inline_main_context
