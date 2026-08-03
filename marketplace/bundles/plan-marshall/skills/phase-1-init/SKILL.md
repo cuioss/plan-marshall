@@ -384,7 +384,7 @@ AskUserQuestion:
 Apply the resolution in-context:
 
 1. **Refine** — append the obsolescence report to `request.md` under a `## Pre-flight Reference Verification` heading (via the `Write`/`Edit` tool against the plan-scoped `request.md`) so downstream phases see it as part of the request scope, then continue to Step 5.
-2. **Close as resolved** — the lesson describes a problem that no longer exists; delete the lesson (`manage-lessons remove --lesson-id {lesson_id}`) and the just-created plan (`manage-status delete-plan --plan-id {plan_id}`), and abort init.
+2. **Close as resolved** — the lesson describes a problem that no longer exists; delete the lesson (`manage-lessons remove --lesson-id {lesson_id} --reason "..." --coverage-verdict obsolete`) and the just-created plan (`manage-status delete-plan --plan-id {plan_id}`), and abort init.
 3. **Residual scope** — work-log each dropped stale reference for downstream scope audit and continue to Step 5 with the reduced reference set.
 
 If ALL references verify cleanly, fire no prompt, log the success, and continue to Step 5.

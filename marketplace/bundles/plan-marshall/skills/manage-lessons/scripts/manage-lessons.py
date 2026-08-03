@@ -11,7 +11,8 @@ Usage:
     python3 manage-lesson.py get --lesson-id 2025-12-02-001
     python3 manage-lesson.py set-body --lesson-id 2025-12-02-001 --file body.md
     python3 manage-lesson.py set-title --lesson-id 2025-12-02-001 --title "New Title"
-    python3 manage-lesson.py remove --lesson-id 2025-12-02-001 --reason "duplicate"
+    python3 manage-lesson.py remove --lesson-id 2025-12-02-001 --reason "duplicate" \\
+        --coverage-verdict redundant
     python3 manage-lesson.py supersede --lesson-id 2025-12-02-001 \\
         --by 2025-12-03-001 --reason "merged into canonical"
     python3 manage-lesson.py convert-to-plan --lesson-id 2025-12-02-001 --plan-id EXAMPLE-PLAN
@@ -23,6 +24,11 @@ via the Write tool — there is no alternative API form for inline body content.
 The `remove` and `supersede` subcommands delete or redirect a lesson and write a
 tombstone JSON file at ``.plan/local/lessons-learned/.tombstones/{lesson-id}.json``
 so historical references resolve by id even after the source file is gone.
+
+`remove` is a two-key retirement: `--coverage-verdict` is always required (no
+default), and the `completely_covered` verdict additionally requires
+`--covering-clause` and `--covering-input`. All three are recorded on the
+tombstone, so the evidence for a retirement survives the lesson it deleted.
 """
 
 import argparse
@@ -50,8 +56,12 @@ from _lessons_aggregate import (
     _truncate_preview,
 )
 from _lessons_crud import (
+    COVERAGE_VERDICTS,
     DEFAULT_ARCH_CONSTRAINT_QUIET_DAYS,
+    EVIDENCE_REQUIRED_VERDICT,
+    coverage_evidence_fields,
     find_active_arch_constraint_by_rule,
+    missing_coverage_evidence_flags,
     reinforce_arch_constraint,
     retire_quiet_arch_constraints,
 )
@@ -284,12 +294,26 @@ def _allocate_and_write_scaffold(metadata_factory: Callable[[str], dict], title:
     }
 
 
-def _write_tombstone(lesson_id: str, reason: str, status: str, superseded_by: str | None = None) -> Path:
+def _write_tombstone(
+    lesson_id: str,
+    reason: str,
+    status: str,
+    superseded_by: str | None = None,
+    evidence: dict | None = None,
+) -> Path:
     """Write a tombstone JSON file recording lesson removal/supersede.
 
     Tombstones live at ``{lessons-learned}/.tombstones/{lesson-id}.json`` and
     survive deletion of the source lesson so callers can still resolve a
     removed id back to its closure context.
+
+    ``evidence`` carries the retirement-evidence fields produced by
+    :func:`_lessons_crud.coverage_evidence_fields` (``coverage_verdict`` plus,
+    for a ``completely_covered`` retirement, ``covering_clause`` and
+    ``covering_input``). Recording them here is what makes the verdict's
+    justification outlive the lesson it deleted. Callers that retire a lesson
+    on a non-verdict path (``supersede``, ``convert-to-plan``, the
+    arch-constraint retire-on-quiet sweep) pass no evidence.
     """
     tombstones_dir = get_tombstones_dir()
     tombstones_dir.mkdir(parents=True, exist_ok=True)
@@ -303,6 +327,8 @@ def _write_tombstone(lesson_id: str, reason: str, status: str, superseded_by: st
     }
     if superseded_by is not None:
         payload['superseded_by'] = superseded_by
+    if evidence:
+        payload.update(evidence)
 
     atomic_write_file(tombstone_path, json.dumps(payload, indent=2) + '\n')
     return tombstone_path
@@ -839,11 +865,50 @@ def cmd_from_error(args: argparse.Namespace) -> dict:
 def cmd_remove(args: argparse.Namespace) -> dict:
     """Remove a lesson file and write a tombstone.
 
-    Refuses without ``--reason``. Without ``--force``, prints the lesson
-    metadata + body length to stderr and reads a yes/no confirmation from
-    stdin. On confirm, writes the tombstone JSON, deletes the lesson file,
-    and emits an INFO line to script-execution.log.
+    Refuses without ``--reason`` and without ``--coverage-verdict``. A
+    ``completely_covered`` verdict additionally refuses without BOTH
+    ``--covering-clause`` and ``--covering-input`` — the retirement must name
+    the clause that codifies the rule AND the concrete input on which that
+    clause's own worked example produces the correct result. The CLI rejects an
+    incomplete verdict at parse time (exit 2); the guard below is the
+    structural backstop for direct programmatic invocation, and it runs BEFORE
+    any corpus read or unlink so a rejected removal always leaves the lesson in
+    place.
+
+    Without ``--force``, prints the lesson metadata + body length to stderr and
+    reads a yes/no confirmation from stdin. On confirm, writes the tombstone
+    JSON (carrying the verdict and its evidence), deletes the lesson file, and
+    emits an INFO line to script-execution.log.
     """
+    coverage_verdict = getattr(args, 'coverage_verdict', None)
+    covering_clause = getattr(args, 'covering_clause', None)
+    covering_input = getattr(args, 'covering_input', None)
+
+    if coverage_verdict not in COVERAGE_VERDICTS:
+        return {
+            'status': 'error',
+            'id': args.lesson_id,
+            'error': 'missing_coverage_verdict',
+            'message': (
+                f'--coverage-verdict is required and must be one of {list(COVERAGE_VERDICTS)}; '
+                f'got {coverage_verdict!r}'
+            ),
+            'valid_verdicts': list(COVERAGE_VERDICTS),
+        }
+
+    missing_flags = missing_coverage_evidence_flags(coverage_verdict, covering_clause, covering_input)
+    if missing_flags:
+        return {
+            'status': 'error',
+            'id': args.lesson_id,
+            'error': 'missing_coverage_evidence',
+            'message': (
+                f'--coverage-verdict {EVIDENCE_REQUIRED_VERDICT} requires '
+                f'{" and ".join(missing_flags)}; the lesson was NOT removed'
+            ),
+            'missing_flags': missing_flags,
+        }
+
     metadata, title, body = read_lesson(args.lesson_id)
     if not metadata:
         return {
@@ -861,6 +926,7 @@ def cmd_remove(args: argparse.Namespace) -> dict:
             f'  status:    {metadata.get("status", "active")}',
             f'  body:      {len(body)} chars',
             f'  reason:    {args.reason}',
+            f'  verdict:   {coverage_verdict}',
             sep='\n',
             file=sys.stderr,
         )
@@ -879,7 +945,8 @@ def cmd_remove(args: argparse.Namespace) -> dict:
                 'message': 'User declined removal',
             }
 
-    tombstone_path = _write_tombstone(args.lesson_id, args.reason, status='removed')
+    evidence = coverage_evidence_fields(coverage_verdict, covering_clause, covering_input)
+    tombstone_path = _write_tombstone(args.lesson_id, args.reason, status='removed', evidence=evidence)
 
     lesson_path = get_lessons_dir() / f'{args.lesson_id}.md'
     lesson_path.unlink()
@@ -888,7 +955,10 @@ def cmd_remove(args: argparse.Namespace) -> dict:
         'script',
         'global',
         'INFO',
-        f'(plan-marshall:manage-lessons) Removed lesson {args.lesson_id} — {args.reason}',
+        (
+            f'(plan-marshall:manage-lessons) Removed lesson {args.lesson_id} — {args.reason} '
+            f'— verdict={coverage_verdict}'
+        ),
     )
 
     return {
@@ -896,6 +966,7 @@ def cmd_remove(args: argparse.Namespace) -> dict:
         'id': args.lesson_id,
         'reason': args.reason,
         'tombstone': str(tombstone_path.resolve()),
+        **evidence,
     }
 
 
@@ -1287,6 +1358,31 @@ def main() -> int:
     )
     add_lesson_id_arg(remove_parser)
     remove_parser.add_argument('--reason', required=True, help='Removal reason (recorded in tombstone and audit log)')
+    remove_parser.add_argument(
+        '--coverage-verdict',
+        required=True,
+        choices=list(COVERAGE_VERDICTS),
+        help=(
+            'Why the lesson is being retired. Required, with no default — an unstated '
+            f'verdict is a rejection, never an assumption. {EVIDENCE_REQUIRED_VERDICT!r} '
+            'additionally requires --covering-clause and --covering-input.'
+        ),
+    )
+    remove_parser.add_argument(
+        '--covering-clause',
+        help=(
+            f'Required with --coverage-verdict {EVIDENCE_REQUIRED_VERDICT}: the clause that '
+            'codifies the rule the lesson taught, named precisely enough to re-read '
+            '(e.g. "manage-lessons/SKILL.md Canonical invocations -> remove").'
+        ),
+    )
+    remove_parser.add_argument(
+        '--covering-input',
+        help=(
+            f'Required with --coverage-verdict {EVIDENCE_REQUIRED_VERDICT}: the concrete input '
+            "on which the covering clause's own worked example produces the correct result."
+        ),
+    )
     remove_parser.add_argument('--force', action='store_true', help='Skip the interactive confirmation prompt')
     remove_parser.set_defaults(func=cmd_remove)
 
@@ -1400,6 +1496,21 @@ def main() -> int:
     auto_suggest_parser.set_defaults(func=cmd_auto_suggest)
 
     args = parse_args_with_toon_errors(parser)
+
+    # Cross-flag requirement argparse cannot express declaratively: the
+    # ``completely_covered`` verdict is only admissible with BOTH evidence
+    # flags. Raising it through ``remove_parser.error`` keeps the CLI rejection
+    # at the argparse boundary (usage on stderr, exit 2) instead of letting an
+    # unevidenced retirement reach the handler.
+    if args.func is cmd_remove:
+        missing_flags = missing_coverage_evidence_flags(
+            args.coverage_verdict, args.covering_clause, args.covering_input
+        )
+        if missing_flags:
+            remove_parser.error(
+                f'--coverage-verdict {EVIDENCE_REQUIRED_VERDICT} requires {" and ".join(missing_flags)}'
+            )
+
     result = args.func(args)
     output_toon(result)
     return 0

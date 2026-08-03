@@ -252,13 +252,33 @@ class TestMainLifecycleVerbs:
         path = _seed_lesson(corpus, '2025-01-01-01-050', title='Doomed')
         code, toon = _run_main(
             monkeypatch, capsys,
-            ['remove', '--lesson-id', '2025-01-01-01-050', '--reason', 'dup', '--force'],
+            ['remove', '--lesson-id', '2025-01-01-01-050', '--reason', 'dup',
+             '--coverage-verdict', 'redundant', '--force'],
         )
         assert code == 0
         assert toon['status'] == 'success'
         assert toon['reason'] == 'dup'
+        assert toon['coverage_verdict'] == 'redundant'
         assert not path.exists()
         assert (corpus / 'lessons-learned' / '.tombstones' / '2025-01-01-01-050.json').exists()
+
+    def test_main_remove_completely_covered_without_evidence_exits_two(self, corpus, monkeypatch, capsys):
+        """The cross-flag evidence gate is enforced by ``main()``, not only by the CLI wrapper.
+
+        ``main()`` is where the ``completely_covered``-requires-evidence rule is
+        raised through ``parser.error``; this pins that the in-process dispatch
+        path refuses (exit 2) and leaves the lesson on disk, so the gate cannot
+        regress to being subprocess-only.
+        """
+        path = _seed_lesson(corpus, '2025-01-01-01-051', title='Unevidenced')
+        code, _toon = _run_main(
+            monkeypatch, capsys,
+            ['remove', '--lesson-id', '2025-01-01-01-051', '--reason', 'claimed',
+             '--coverage-verdict', 'completely_covered', '--force'],
+        )
+        assert code == 2
+        assert path.exists()
+        assert not (corpus / 'lessons-learned' / '.tombstones' / '2025-01-01-01-051.json').exists()
 
     def test_main_supersede_redirects_source_to_canonical(self, corpus, monkeypatch, capsys):
         source = _seed_lesson(corpus, '2025-01-01-01-060', title='Source', body='src body.\n')

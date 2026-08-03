@@ -28,6 +28,8 @@ Perform lessons-learned housekeeping after a plan finishes. Reason from the just
 - **Trim** lessons the plan made only partly redundant, removing the now-covered portion while preserving the still-relevant guidance.
 - **Retain** everything else, biasing toward retention whenever coverage is ambiguous.
 
+Both removal dispositions run behind a **two-key retirement path**: Step 3's Evidence bar produces a verdict that names the covering clause and the concrete input its worked example resolves, and Steps 4.1 / 4b.2 turn the second key by independently re-reading that example before any `remove` call fires. A verdict that cannot be evidenced caps at *Partially covered* and is trimmed instead of deleted.
+
 Every change — removal, promotion-then-retire, adaptation, or deliberate retain — is recorded to the decision log so the housekeeping is fully auditable.
 
 ## Interface Contract
@@ -60,7 +62,7 @@ This step is granted **direct `Read`/`Edit` access to `.plan/local/lessons-learn
 
 The exception is deliberately narrow:
 
-- **Removals still route through `manage-lessons remove`** — never delete a lesson `.md` file directly. The script writes an auditable tombstone, which the direct-`Edit` path cannot. This applies equally to the promote-then-retire disposition (Step 4b): after the residue is promoted, the lesson is retired via `manage-lessons remove`, never by deleting the file.
+- **Removals still route through `manage-lessons remove`** — never delete a lesson `.md` file directly. The script writes an auditable tombstone carrying the retirement verdict and its evidence (`coverage_verdict`, `covering_clause`, `covering_input`), which the direct-`Edit` path cannot. Deleting the file directly would bypass the required `--coverage-verdict` and its evidence pair entirely — i.e. it would retire a lesson with no recorded justification, which is exactly what the two-key path exists to prevent. This applies equally to the promote-then-retire disposition (Step 4b): after the residue is promoted and the Step 4b.2 gate passes, the lesson is retired via `manage-lessons remove`, never by deleting the file. A removal the script **rejects** (a `completely_covered` verdict without both evidence flags) is likewise never to be completed by hand — see Error Handling.
 - **Only the partial-coverage *adaptation* edits touch lesson `.md` bodies directly** — trimming the now-covered portion of a lesson is a surgical body edit that no `manage-lessons` verb expresses, so it is performed with `Edit` against `.plan/local/lessons-learned/{id}.md`.
 - **Promotion edits target governing-skill docs — outside the lessons corpus.** The promote-then-retire disposition (Step 4b) uses `Edit` against the governing skill's `standards/*.md` / `references/*.md` (or `CLAUDE.md` for repo-wide rules) — a path *outside* `.plan/local/lessons-learned/**`. These are ordinary source-doc edits, not `.plan/` edits, so they fall outside the `.plan/`-scoped hard rule entirely; they are noted here only so the full set of files this step may write is documented in one place. The subsequent lesson retirement still routes through `manage-lessons remove`.
 - **Reads** of lesson bodies for classification go through `manage-lessons list --full` / `manage-lessons get` where possible; direct `Read` of a lesson `.md` is permitted only to inspect the exact body region an adaptation will trim.
@@ -135,12 +137,25 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 
 For each lesson, classify it against the plan outcome using a **conservative subsumption bar**:
 
-- **Completely covered** — requires that the lesson's guarded failure mode can no longer occur, **OR** its recommended practice is now codified/enforced by this plan. Nothing weaker qualifies. The residue is already codified elsewhere, so the lesson is removed outright (Step 4).
-- **Completely covered, residue is a reusable rule** — the lesson's guarded failure mode can no longer occur (so it qualifies as completely covered) **AND** the lesson body still carries a durable reusable rule — an operating rule, a convention, an anti-pattern, or a contract-guard — whose correct home is the governing skill's `standards/`/`references/` (or `CLAUDE.md` for repo-wide rules) rather than the lessons queue. Distinguish it from plain "Completely covered" (residue already codified elsewhere → remove outright) using the **Placement test** below. This classification routes to the promote-then-retire disposition (Step 4b).
+- **Completely covered** — requires that the lesson's guarded failure mode can no longer occur, **OR** its recommended practice is now codified/enforced by this plan. Nothing weaker qualifies, and the **Evidence bar** below must additionally be met. The residue is already codified elsewhere, so the lesson is removed outright (Step 4).
+- **Completely covered, residue is a reusable rule** — the lesson's guarded failure mode can no longer occur (so it qualifies as completely covered, **Evidence bar** included) **AND** the lesson body still carries a durable reusable rule — an operating rule, a convention, an anti-pattern, or a contract-guard — whose correct home is the governing skill's `standards/`/`references/` (or `CLAUDE.md` for repo-wide rules) rather than the lessons queue. Distinguish it from plain "Completely covered" (residue already codified elsewhere → remove outright) using the **Placement test** below. This classification routes to the promote-then-retire disposition (Step 4b).
 - **Partially covered** — the plan eliminated or codified *part* of what the lesson guards, but a residual concern remains.
 - **Ambiguous / none** — anything that does not clearly meet the bar above. **Leave untouched (bias to retain)** and log the no-action decision.
 
 When in doubt, retain. The cost of keeping a stale lesson is far lower than the cost of deleting a still-load-bearing one. Promote-then-retire fires only when the residue clearly maps to a load-bearing home; an ambiguous residue retains.
+
+### Evidence bar: a completely-covered verdict must name its clause and its input
+
+Both completely-covered classifications above carry an evidence requirement that a verdict must satisfy *before* it is allowed to become a removal. The verdict must be expressible as **one sentence** that names two things:
+
+1. **The clause** that codifies the rule the lesson taught — a specific, re-readable location (a named section of a `standards/*.md`, a `SKILL.md` heading, a `CLAUDE.md` hard rule), not "the docs" or "the new implementation".
+2. **The concrete input** on which *that clause's own worked example* produces the correct result — an actual value, invocation, or case, checked against the example the clause itself carries.
+
+The second half is the load-bearing half. A clause can codify a rule correctly and still ship a worked example that contradicts it; a verdict resting on such a clause is asserting coverage the corpus does not actually have. Naming the input forces the claim to be checked against the example rather than against the clause's title.
+
+**When that sentence cannot be written, the lesson does NOT qualify as completely covered.** It caps at **Partially covered** and routes to the Step 5 trim, not the Step 4 removal. This is a downgrade, not a failure: the covered portion is still trimmed, and the lesson survives to be re-evaluated by a later plan. Inability to name the clause, inability to name an input, or an example that does not resolve the named input are three separate ways to fall to this cap — all three cap.
+
+The sentence's two halves become the `--covering-clause` and `--covering-input` arguments that Steps 4 and 4b pass to `manage-lessons remove`, so the evidence is recorded on the tombstone and survives the deletion it justified.
 
 ### Placement test: route durable knowledge to its load-bearing home
 
@@ -159,14 +174,30 @@ When a completely-covered lesson still carries durable knowledge, decide where t
 
 ### Step 4: Remove completely-covered lessons
 
-For lessons classified **completely covered** whose residue is already codified elsewhere (no durable reusable rule to relocate):
+For lessons classified **completely covered** whose residue is already codified elsewhere (no durable reusable rule to relocate). Classifying and deleting are two separate keys: Step 3's Evidence bar produced the verdict, and the gate below is what turns that verdict into a removal.
+
+**Step 4.1 — Independent reconfirmation (gate — run this BEFORE the removal call in Step 4.2).**
+
+Re-open the clause named by the Step 3 evidence sentence and **re-read its own worked example**. Do not reuse the Step 3 reading or the recollection of it — the whole point of a second key is that it is turned independently of the first. Confirm both of the following against what the example actually says:
+
+1. The clause is where the evidence sentence says it is, and it still codifies the rule the lesson taught.
+2. Applying that clause's **own worked example** to the named `{input}` produces the correct result — the example agrees with the clause it illustrates.
+
+**The gate FAILS** when any of these holds: the clause cannot be found at the named location; the example resolves a different input than the one named; or the example produces a result that contradicts its own clause. On failure, do NOT call `remove`. Downgrade the lesson to **Partially covered**, route it to the Step 5 trim, and log the downgrade via `manage-logging decision` naming which of the three failures fired. A contradicting example is precisely the case this gate exists to catch — a lesson whose retirement rested on it must survive, not be deleted on the strength of a clause the example does not support.
+
+**Step 4.2 — Remove** (reached only when the Step 4.1 gate passed):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons remove \
-  --lesson-id {id} --force --reason "{why} (plan {plan_id})"
+  --lesson-id {id} --force --reason "{why} (plan {plan_id})" \
+  --coverage-verdict completely_covered \
+  --covering-clause "{clause}" \
+  --covering-input "{input}"
 ```
 
-This writes a tombstone — the removal stays auditable. The owning `{plan_id}` is folded into the `--reason` text (the `remove` verb has no separate plan flag) and is also captured by the Step 6 decision-log entry.
+`{clause}` and `{input}` are the two halves of the Step 3 evidence sentence, re-confirmed by Step 4.1 — pass them verbatim, never a paraphrase or a placeholder. `--coverage-verdict` is required on every `remove` and `completely_covered` is rejected at argparse without BOTH evidence flags, so an unevidenced retirement cannot reach the corpus; see `plan-marshall:manage-lessons` § Retirement evidence. A rejection is non-fatal per-lesson — see Error Handling.
+
+This writes a tombstone carrying `coverage_verdict`, `covering_clause`, and `covering_input`, so the evidence outlives the lesson it deleted and the removal stays auditable. The owning `{plan_id}` is folded into the `--reason` text (the `remove` verb has no separate plan flag) and is also captured by the Step 6 decision-log entry.
 
 ### Step 4b: Promote-then-retire residue-bearing lessons
 
@@ -180,18 +211,25 @@ For each lesson classified **completely covered, residue is a reusable rule**, p
 
    Write the rule as a durable standard in the host doc's voice (not a transcription of the lesson record).
 
-   The promoted rule MUST NOT embed a lesson identifier in its prose: the plugin-doctor `no-lesson-id-in-skill-prose` rule — build-failing under `quality-gate` — rejects exactly that citation shape in exactly the `standards/` / `references/` scope this step writes to. Provenance is already recoverable without an in-prose citation, from the Step 4b.2 tombstone's `--reason "residue promoted to {target}"` plus the Step 6 decision-log entry naming the retired lesson. A citation-bearing promotion is therefore an authoring error to be written correctly the first time, not a finding to suppress.
+   The promoted rule MUST NOT embed a lesson identifier in its prose: the plugin-doctor `no-lesson-id-in-skill-prose` rule — build-failing under `quality-gate` — rejects exactly that citation shape in exactly the `standards/` / `references/` scope this step writes to. Provenance is already recoverable without an in-prose citation, from the Step 4b.3 tombstone's `--reason "residue promoted to {target}"` plus the Step 6 decision-log entry naming the retired lesson. A citation-bearing promotion is therefore an authoring error to be written correctly the first time, not a finding to suppress.
 
-2. **Retire** the now-promoted lesson via the tombstone-writing `remove` verb — never by deleting the file:
+2. **Independent reconfirmation (gate — run this BEFORE the retirement call in Step 4b.3).** The promotion in 4b.1 is what makes the clause exist, so the gate turns its second key against the doc as just written. Re-open the promoted rule at `{target}` and **re-read the worked example it now carries**, independently of the text just authored. Confirm both: the clause codifies the rule the lesson taught, and applying that clause's own worked example to the named `{input}` produces the correct result.
+
+   **The gate FAILS** when the promoted clause carries no worked example, when its example resolves a different input than the one named, or when its example produces a result that contradicts the clause it illustrates. On failure, do NOT call `remove`: leave the promotion in place (it is a correct standalone doc improvement), retain the lesson, log the retained-not-retired decision naming which failure fired, and continue with the remaining lessons. A promotion whose example contradicts its own clause has not actually relocated the knowledge, so retiring the lesson against it would lose the rule.
+
+3. **Retire** the now-promoted lesson via the tombstone-writing `remove` verb — never by deleting the file — reached only when the Step 4b.2 gate passed:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons remove \
-     --lesson-id {id} --force --reason "residue promoted to {target} (plan {plan_id})"
+     --lesson-id {id} --force --reason "residue promoted to {target} (plan {plan_id})" \
+     --coverage-verdict completely_covered \
+     --covering-clause "{target} — {promoted rule heading}" \
+     --covering-input "{input}"
    ```
 
-   The `{target}` names the doc the rule was promoted into, so the tombstone records *where* the knowledge went.
+   The `{target}` names the doc the rule was promoted into, so the tombstone records *where* the knowledge went; `--covering-clause` pins that to the specific heading a later reader must re-open, and `--covering-input` records the case its worked example was confirmed against in Step 4b.2.
 
-Keep the bias-to-retain posture: Step 4b fires only when the residue clearly maps to a load-bearing home per the Placement test. If the residue's home is ambiguous, **retain** the lesson untouched rather than guessing. A failed promotion (Step 4b.1) leaves the lesson in place and does NOT proceed to the retirement in Step 4b.2 — see Error Handling.
+Keep the bias-to-retain posture: Step 4b fires only when the residue clearly maps to a load-bearing home per the Placement test. If the residue's home is ambiguous, **retain** the lesson untouched rather than guessing. A failed promotion (Step 4b.1) leaves the lesson in place and does NOT proceed to the Step 4b.2 gate or the Step 4b.3 retirement; a failed gate (Step 4b.2) likewise leaves the lesson in place and does NOT proceed to the retirement — see Error Handling.
 
 ### Step 5: Trim partially-covered lessons
 
@@ -237,7 +275,9 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 | Empty lessons corpus | Skip-clean exit — record `mark-step-done --outcome done --display-detail "0 lessons — nothing to reconcile" --head-at-completion {sha}` so the `phase_steps_complete` handshake counts the step as done and a later HEAD advance re-fires it |
 | Coverage ambiguous (including ambiguous residue home) | Retain the lesson untouched (bias to retain) and log the no-action decision via `manage-logging decision` |
 | `manage-lessons remove` failure on one lesson | Non-fatal — log the failure, leave that lesson in place, and continue with the remaining lessons. Housekeeping must never block finalize. |
-| Promotion `Edit` failure (Step 4b.1) on one lesson | Non-fatal — log the failure, leave the lesson in place, and **do NOT** proceed to the Step 4b.2 retirement for that lesson. A retirement without a successful promotion would lose the rule, so the two stay atomic-by-convention: no promotion, no retire. Continue with the remaining lessons. |
+| `manage-lessons remove` **evidence rejection** on one lesson (`--coverage-verdict completely_covered` without both evidence flags — argparse exit 2, or `error: missing_coverage_evidence` on the handler path) | Non-fatal per-lesson — the lesson is left in place by construction (the rejection precedes any unlink). Treat it as a **classification defect, not a call-shape defect**: the verdict claimed coverage the Step 3 Evidence bar could not evidence, so downgrade the lesson to Partially covered and route it to the Step 5 trim. Never re-issue the call with invented or placeholder evidence values to get past the rejection. Log the downgrade and continue with the remaining lessons. |
+| Independent-reconfirmation gate failure (Step 4.1 or Step 4b.2) on one lesson | Non-fatal — the named clause is missing, its worked example resolves a different input, or its example contradicts its own clause. Do NOT call `remove`. On the Step 4 path, downgrade the lesson to Partially covered and route it to the Step 5 trim; on the Step 4b path, keep the promotion and retain the lesson. Log which of the three failures fired via `manage-logging decision` and continue with the remaining lessons. |
+| Promotion `Edit` failure (Step 4b.1) on one lesson | Non-fatal — log the failure, leave the lesson in place, and **do NOT** proceed to the Step 4b.2 gate or the Step 4b.3 retirement for that lesson. A retirement without a successful promotion would lose the rule, so they stay atomic-by-convention: no promotion, no retire. Continue with the remaining lessons. |
 | Promote-then-retire disposition — commit carriage | The step issues no tree-mutating git call (its only git calls are the read-only `rev-parse HEAD` in Steps 2 and 7). Its promotion edits are committed onto the feature branch by the dispatcher's commit instrumentation (phase-6-finalize Step 3 item 5f); because the step runs in the settle band it never writes source after the push barrier, every promotion edit it makes is still ahead of that commit and is therefore carried onto the branch — no promotion can be stranded as an uncommitted edit. |
 | Adaptation `Edit` failure on one lesson | Non-fatal — log the failure, leave that lesson untouched, and continue. |
 | Missing `quality-verification-report.md` | Non-fatal — proceed using `request.md` + `modified_files` alone; log that the retrospective report was unavailable |

@@ -105,7 +105,8 @@ Delete the lesson and the just-created plan, then abort — do not proceed to ph
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons remove \
-  --lesson-id {lesson_id} --reason "Closed as resolved during phase-1-init premise check"
+  --lesson-id {lesson_id} --reason "Closed as resolved during phase-1-init premise check" \
+  --coverage-verdict obsolete
 ```
 
 ```bash
