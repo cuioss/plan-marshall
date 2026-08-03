@@ -137,6 +137,63 @@ def _seed_metrics_md(plan_id: str) -> None:
     assert result['status'] == 'success'
 
 
+class TestExtractedSectionCarriesBillingColumn:
+    """The extracted breakdown carries the first-class `Billing (cost)` column.
+
+    The breakdown section is what most consumers actually read — a cost figure
+    rendered only in the Phase Details bullets is a figure the report declines to
+    put where the comparison happens.
+    """
+
+    def test_extracted_section_carries_the_billing_column(self, plan_context):
+        _seed_metrics_md('metrics-billing-column')
+        data = manage_metrics.read_metrics_raw('metrics-billing-column')
+        data['phases']['1-init']['billing_weighted_total'] = 41003
+        data['phases']['2-refine']['billing_weighted_total'] = 78000
+        write_metrics('metrics-billing-column', data)
+        cmd_generate(_ns_generate('metrics-billing-column'))
+
+        content = (
+            plan_context.plan_dir_for('metrics-billing-column') / 'metrics.md'
+        ).read_text(encoding='utf-8')
+        section = _extract_phase_breakdown_section(content)
+
+        assert section is not None
+        assert 'Billing (cost)' in section
+        assert '41,003' in section
+        assert '78,000' in section
+        # Its own Total, aggregated independently of the Tokens column.
+        assert '119,003' in section
+
+
+class TestExtractedSectionCarriesPopulationQualifiedHeader:
+    """The extracted breakdown names the population its Tokens column measures.
+
+    The breakdown section is what the finalize summary inlines, so it is where
+    most readers meet the Tokens figure. A qualifier that survives only in the
+    full metrics.md — and is lost by the extraction the summary actually uses —
+    would leave that reader with the bare, population-silent column this plan
+    exists to remove.
+    """
+
+    def test_extracted_section_header_names_the_default_population(self, plan_context):
+        _seed_metrics_md('metrics-population-header')
+
+        content = (
+            plan_context.plan_dir_for('metrics-population-header') / 'metrics.md'
+        ).read_text(encoding='utf-8')
+        section = _extract_phase_breakdown_section(content)
+
+        assert section is not None
+        header = next(ln for ln in section.splitlines() if ln.startswith('| Phase'))
+        tokens_col = [c.strip() for c in header.strip('|').split('|')][4]
+        assert tokens_col == 'Tokens (dispatched unless marked)'
+        # Not the bare column, and not a single-population claim over a column
+        # that carries inline rows too.
+        assert tokens_col != 'Tokens'
+        assert tokens_col != 'Tokens (dispatched)'
+
+
 class TestExtractPhaseBreakdownSection:
     """Unit tests for the pure-string helper."""
 
@@ -526,11 +583,20 @@ class TestEndToEndPhaseBreakdownRendering:
         section = (get_plan_dir('metrics-e2e-01') / print_result['file']).read_text(encoding='utf-8')
 
         # The captured section begins with the heading and carries the three
-        # time columns in order, followed by Tokens and Tool Uses.
+        # time columns in order, followed by the two work measures and the
+        # derived-cost column.
         assert section.startswith('## Phase Breakdown')
         header = next(ln for ln in section.splitlines() if ln.startswith('| Phase'))
         cols = [c.strip() for c in header.strip('|').split('|')]
-        assert cols == ['Phase', 'Worked', 'Reported (wall)', 'Idle', 'Tokens', 'Tool Uses']
+        assert cols == [
+            'Phase',
+            'Worked',
+            'Reported (wall)',
+            'Idle',
+            'Tokens (dispatched unless marked)',
+            'Tool Uses',
+            'Billing (cost)',
+        ]
 
         # 5-execute worked = max(agent 200s, subagent 100s) = 200000 ms = '3m20s'.
         # The longer attribution span (agent_duration_ms) subsumes the shorter

@@ -32,7 +32,12 @@ class TestCliPlumbingRemoveSupersede:
     """Subprocess test for ``remove`` and ``supersede`` subcommand wiring."""
 
     def test_cli_remove_force(self, tmp_path):
-        """``manage-lessons remove --force`` deletes the lesson via the CLI."""
+        """``manage-lessons remove --force`` deletes the lesson via the CLI.
+
+        ``--coverage-verdict`` is a required flag with no default, so the happy
+        path must supply one; ``redundant`` matches this removal's stated reason
+        and needs no evidence pair.
+        """
         _seed_cli_lesson(tmp_path, '2025-01-01-01-001', 'Removable')
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
@@ -43,6 +48,8 @@ class TestCliPlumbingRemoveSupersede:
                 '2025-01-01-01-001',
                 '--reason',
                 'duplicate',
+                '--coverage-verdict',
+                'redundant',
                 '--force',
             )
 
@@ -52,13 +59,21 @@ class TestCliPlumbingRemoveSupersede:
         assert not (tmp_path / 'lessons-learned' / '2025-01-01-01-001.md').exists()
 
     def test_cli_remove_requires_reason(self, tmp_path):
-        """``remove`` without ``--reason`` is rejected at argparse."""
+        """``remove`` without ``--reason`` is rejected at argparse.
+
+        ``--coverage-verdict`` IS supplied so that ``--reason`` is the only
+        missing required flag: without it the rejection would be attributable to
+        either flag, and the test would keep passing even if ``--reason`` stopped
+        being required.
+        """
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
             result = run_script(
                 SCRIPT_PATH,
                 'remove',
                 '--lesson-id',
                 '2025-01-01-01-001',
+                '--coverage-verdict',
+                'redundant',
                 '--force',
             )
 

@@ -36,7 +36,7 @@ WORKTREE: {repo-relative-path}
 
 Skills the caller MUST forward in `skills[]`: `plan-marshall:manage-solution-outline`, `plan-marshall:manage-findings`, `plan-marshall:manage-plan-documents`, `plan-marshall:manage-status`, `plan-marshall:manage-architecture`, `plan-marshall:manage-logging`.
 
-**Worktree binding**: every grep, file-existence check, Read/Write/Edit, and shell command issued below MUST resolve against the `WORKTREE` value provided by the orchestrator, never the main checkout. Do NOT re-resolve via `manage-status get-worktree-path` — the orchestrator did that once before dispatch.
+**Worktree binding**: every content sweep, file-existence check, Read/Write/Edit, and shell command issued below MUST resolve against the `WORKTREE` value provided by the orchestrator, never the main checkout. Do NOT re-resolve via `manage-status get-worktree-path` — the orchestrator did that once before dispatch.
 
 ## Workflow
 
@@ -257,41 +257,45 @@ Detect downstream consumers of a skill that is being deleted but that remain har
 - `{bundle}` — the bundle segment when the path is under `marketplace/bundles/{bundle}/skills/`, otherwise empty
 - `{skill_name}` — the final path segment of `{skill_dir}`
 
-Execute the four greps below against the worktree root. Each grep must be a separate Bash call (one command per call).
+Execute the four content sweeps below against the worktree root. Each sweep is a separate Bash call (one command per call). Every sweep returns module-attributed FILE hits with a per-file `match_count` and no line bodies — read `files_scanned` alongside `count` so an empty result is a real empty population rather than an unsearched one (see [`manage-architecture/standards/client-api.md`](../../manage-architecture/standards/client-api.md) § search). Filter each result set to the paths the pattern targets, then `Read` each surviving hit to locate the exact line the finding cites.
 
-Pattern A — `importlib` / `spec_from_file_location` loads pointing inside the deleted skill directory (pytest conftest loaders):
-
-```bash
-rg -n "spec_from_file_location\\([^)]*\\b{skill_name}\\b" --type py test/
-```
-
-Pattern B — relative path references to `.claude/skills/{skill_name}/` or `marketplace/bundles/{bundle}/skills/{skill_name}/` anywhere under `test/` (excluding caches):
+Pattern A — `importlib` / `spec_from_file_location` loads pointing inside the deleted skill directory (pytest conftest loaders). Keep only hits whose `category` is `test`:
 
 ```bash
-rg -n "{skill_dir}\\b" test/ --glob '!**/__pycache__/**'
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture search --content --pattern "spec_from_file_location\\([^)]*\\b{skill_name}\\b"
 ```
 
-Pattern C — three-part script notations `{bundle}:{skill_name}:` referring to the deleted skill in `marshal.json`, plan scripts, and the executor mapping:
+Pattern B — path references to `.claude/skills/{skill_name}/` or `marketplace/bundles/{bundle}/skills/{skill_name}/` from test sources. Keep only hits whose `category` is `test`; `__pycache__` is never inventoried, so no cache-exclusion filter is needed:
 
 ```bash
-rg -n "{bundle}:\\b{skill_name}\\b:" marshal.json .plan/
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture search --content --literal --pattern "{skill_dir}"
 ```
 
-Pattern D — `Skill: {bundle}:{skill_name}` loader directives in markdown (SKILL.md, agent.md, command.md):
+Pattern C — three-part script notations `{bundle}:{skill_name}:` referring to the deleted skill:
 
 ```bash
-rg -n "^Skill:\\s*{bundle}:{skill_name}\\b" marketplace/ .claude/
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture search --content --literal --pattern "{bundle}:{skill_name}:"
 ```
 
-**Suppression rule**: For each grep match, extract `{consumer_path}` (the file containing the match). The match is resolved (no finding emitted) when `{consumer_path}` appears in EITHER:
+This reaches the marketplace-rooted portion only. `marshal.json` and `.plan/` sit OUTSIDE the crawled inventory, so the sweep does not cover them — return that residue to the orchestrator as a coverage gap rather than reporting the notation clean.
+
+Pattern D — `Skill: {bundle}:{skill_name}` loader directives in markdown (SKILL.md, agent.md, command.md). Kept as a regex, not `--literal`, so the anchor survives:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture search --content --pattern "^Skill:\\s*{bundle}:{skill_name}\\b"
+```
+
+This likewise covers only the marketplace-rooted portion; `.claude/` is a dotfile tree outside the inventory, so its residue is the same coverage-gap return.
+
+**Suppression rule**: For each hit, `{consumer_path}` is the returned `path`. The match is resolved (no finding emitted) when `{consumer_path}` appears in EITHER:
 - the same deletion deliverable's `affected_files` list (indicating the consumer is co-deleted or updated in this deliverable), OR
 - any other deliverable's `affected_files` list in the same `solution_outline.md` (indicating a sibling deliverable removes or updates the consumer)
 
 Only emit findings for unresolved matches.
 
-**Pass criteria**: Every grep returns no matches, OR every match is resolved per the suppression rule above.
+**Pass criteria**: Every sweep returns `count: 0` over **clean coverage** (per the complete-coverage rule), OR every hit is resolved per the suppression rule above. A sweep with any non-clean coverage field has not shown the deletion is contained — it has only shown that nothing turned up in the part of the inventory it managed to read — so report it as a coverage gap and re-run rather than passing the gate. See [`client-api.md`](../../manage-architecture/standards/client-api.md) § `search`.
 
-**Fail criteria**: At least one grep match references `{skill_dir}` and its `{consumer_path}` is not listed in any deliverable's `affected_files`.
+**Fail criteria**: At least one hit references `{skill_dir}` and its `{consumer_path}` is not listed in any deliverable's `affected_files`.
 
 **FLAG format** — For each unresolved match, record a blocking Q-Gate finding:
 
@@ -322,13 +326,13 @@ The trigger applies only to module-level public symbols (top-level functions, cl
 
 **Extraction**: When the trigger fires, extract the affected public symbol(s) from the deliverable text. For function-level renames like "replace `load_derived_data` with `iter_modules`", extract the old symbol (`load_derived_data`) — that is the symbol whose consumers must appear in `Affected files`.
 
-**Sweep at Q-Gate time** — Re-run the consumer-sweep grep step against the worktree to materialize the expected consumer set:
+**Sweep at Q-Gate time** — Re-run the consumer-sweep content step (`consumer-sweep.md` § 2c) against the worktree to materialize the expected consumer set:
 
 ```bash
-grep -rn "{symbol}" marketplace/bundles/
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture search --content --literal --pattern "{symbol}"
 ```
 
-Each grep is a separate Bash invocation (one command per call). Collect every `{consumer_path}` from the matches, discard `__pycache__` paths, and discard the symbol's own owning module file (which is in scope by definition).
+Each sweep is a separate Bash invocation (one command per call). Collect every `{consumer_path}` from the returned `results[].path`, and discard the symbol's own owning module file (which is in scope by definition); `__pycache__` is never inventoried, so no cache filter is needed. Read the coverage fields alongside `count` — a zero `count` is only meaningful under the complete-coverage rule (see [`client-api.md`](../../manage-architecture/standards/client-api.md) § `search`). This sweep's job is to MATERIALIZE the complete consumer set, so a partial sweep cannot do it: an unreadable file or an elided bucket is a consumer that would not appear in `results[]` and would then be scored as "already enumerated". Treat non-clean coverage as a coverage gap and re-run, never as a complete consumer set. The response carries no line bodies, so `Read` each surviving hit to locate the line the finding cites.
 
 **Failure modes**:
 
@@ -340,7 +344,7 @@ FAIL with finding:
   detail: "Deliverable {N} deletes/renames public symbol {symbol} but lists no Affected files. The consumer sweep documented in consumer-sweep.md is mandatory for delete/rename deliverables. Re-run the sweep and enumerate every consumer."
 ```
 
-**(b) Trigger language present AND every entry in `Affected files` is under the same bundle as the symbol's owning module (no cross-bundle entries) AND the worktree grep would return cross-bundle hits**:
+**(b) Trigger language present AND every entry in `Affected files` is under the same bundle as the symbol's owning module (no cross-bundle entries) AND the worktree sweep would return cross-bundle hits**:
 
 ```text
 FAIL with finding (one per unenumerated consumer):
@@ -349,12 +353,16 @@ FAIL with finding (one per unenumerated consumer):
   file_path: "{consumer_path}"
 ```
 
-The owning-bundle determination uses the `marketplace/bundles/{bundle}/` path segment of the symbol's first match. Same-bundle entries in `Affected files` are sufficient when ALL grep matches are under that same bundle — cross-bundle hits trigger the failure.
+The owning-bundle determination uses the `marketplace/bundles/{bundle}/` path segment of the symbol's **declaration site** — the deliverable's own implementation path, i.e. the file the deliverable states it deletes or renames the symbol in. It is NOT the first entry of `results[]`. `search --content` returns every file whose body contains the symbol and sorts hits by `(module, category, path)`; that ordering is alphabetical, not ownership ordering, so the first entry is just as likely to be a test, a doc, or a cross-bundle consumer as the declaring file. A regex hit also cannot tell a declaration from a mention — see [`client-api.md`](../../manage-architecture/standards/client-api.md) § `search`.
+
+**Fail closed when ownership is ambiguous.** When the deliverable does not name an implementation path for the symbol, or names paths in more than one bundle, do NOT guess an owner from the hit list. Emit a blocking finding stating that the owning bundle could not be determined, so the outline is corrected to name the declaration site explicitly.
+
+With the owner fixed that way, same-bundle entries in `Affected files` are sufficient when ALL hits are under that same bundle — cross-bundle hits trigger the failure.
 
 **Pass criteria** (silent — no finding emitted):
 - Trigger language is absent (deliverable does not delete or rename a public symbol), OR
-- Trigger language is present AND `Affected files` includes at least one cross-bundle consumer that matches the worktree grep results, OR
-- Trigger language is present AND the worktree grep returns no cross-bundle hits (the deletion is genuinely contained within the owning bundle).
+- Trigger language is present AND `Affected files` includes at least one cross-bundle consumer that matches the worktree sweep results, OR
+- Trigger language is present AND the worktree sweep returns no cross-bundle hits over a **completely searched** inventory (per the complete-coverage rule) — the deletion is genuinely contained within the owning bundle. A non-empty population is not enough: containment is a negative claim, and an unscanned file is exactly where an uncontained consumer would hide.
 
 **FLAG format** — For each unenumerated cross-bundle consumer (failure mode b), record one finding via `manage-findings qgate add`:
 
@@ -467,17 +475,17 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 
 #### 2.12 Scope-Criterion Validator
 
-Verify that every deliverable's `success_criterion` is operationalized by a structured query whose result set is consistent with `affected_files`. Catches scope drift where the criterion implies a wider set of files than `affected_files` enumerates (under-coverage) or a narrower set than `affected_files` modifies (over-coverage). Distinct from Section 2.9 (consumer-sweep): 2.9 fires only on delete/rename language; this validator fires for every deliverable and covers sibling-set, find-pattern, and textual-grep criteria.
+Verify that every deliverable's `success_criterion` is operationalized by a structured query whose result set is consistent with `affected_files`. Catches scope drift where the criterion implies a wider set of files than `affected_files` enumerates (under-coverage) or a narrower set than `affected_files` modifies (over-coverage). Distinct from Section 2.9 (consumer-sweep): 2.9 fires only on delete/rename language; this validator fires for every deliverable and covers sibling-set, path-pattern, and file-content criteria.
 
 **Activation condition**: Runs in the `3-outline` and `4-plan` phase contexts. Activates for every deliverable whose `Success Criteria` block contains at least one criterion that references a code-shape (file pattern, sibling group, symbol signature, sibling enumeration, regex, etc.) — i.e., a criterion that can be operationalized as a structured query. Pure behavioral criteria ("plugin-doctor passes", "user can log in") do NOT activate the validator.
 
 **Detection logic**:
 
-1. For each deliverable, parse the `Success Criteria` block and extract operationalizable predicates. Map each predicate to a query type: `find_pattern` (symbol signature), `sibling_group` (e.g., `change-*.md`), `marketplace_grep` (textual pattern across bundles), or `directory_enum` (every file under a path).
+1. For each deliverable, parse the `Success Criteria` block and extract operationalizable predicates. Map each predicate to a query type: `find_pattern` (symbol signature), `sibling_group` (e.g., `change-*.md`), `content_search` (textual pattern inside file bodies), or `directory_enum` (every file under a path).
 2. Run the query against the worktree:
-   - `find_pattern` → `architecture find --pattern {signature}`
+   - `find_pattern` → `architecture find --pattern {signature}` (a path glob — it never opens a file)
    - `sibling_group` → architecture or directory enumeration
-   - `marketplace_grep` → `grep -rn {pattern} marketplace/bundles/`
+   - `content_search` → `architecture search --content --pattern {pattern}` (file bodies; add `--literal` for a fixed string). Read `files_scanned` alongside `count` — a zero `count` over a zero population proves nothing.
    - `directory_enum` → `architecture files --module {module}` filtered by path prefix
 3. Compute the symmetric difference between the query result set and `affected_files`:
    - Files in query result but missing from `affected_files` → under-coverage
@@ -594,15 +602,17 @@ Verify that no skill, agent, or script in `solution_outline.md`'s `affected_file
 
 **Activation condition**: Runs in the `3-outline` and `4-plan` phase contexts. Activates whenever a deliverable's `affected_files` contains at least one path matching `marketplace/bundles/*/skills/**/*.md`, `marketplace/bundles/*/agents/*.md`, `marketplace/bundles/*/skills/**/scripts/*.py`, or `marketplace/bundles/*/skills/**/scripts/*.sh`. Skips deliverables whose only affected files are tests, fixtures, or non-skill documentation.
 
-**Detection logic**: For each in-scope `{affected_path}`, run the three pattern sweeps below as **separate Bash invocations** (one command per call). Every match becomes a candidate finding unless the suppression rule applies.
+**Detection logic**: Run the three pattern sweeps below as **separate Bash invocations** (one command per call). Each sweep covers the whole inventory once — intersect its `results[].path` set with the deliverable's in-scope `{affected_path}` set, and discard hits outside that set. The sweeps return file-level hits with a per-file `match_count` and no line bodies, so `Read` each surviving path to locate the exact line(s) before applying the suppression rule (which is per-match, not per-file) and emitting a finding. Read the coverage fields alongside `count` — a zero `count` over a zero population is not a pass, and neither is one over an incompletely searched population: require the complete-coverage rule to hold (see [`client-api.md`](../../manage-architecture/standards/client-api.md) § `search`) before recording a clean linter result, else report a coverage gap.
 
 **Pattern WL-A — Direct `cd <worktree_path>` shell compounds**:
 
 The centralized standard forbids `cd {worktree_path} && <command>` shell compounds; all worktree-rooted operations MUST use the path-flag form documented in `worktree-handling.md` (e.g., `git -C`, `mvn -f`, `pytest --rootdir`, `--project-dir` for Bucket B notations).
 
 ```bash
-rg -n "cd\s+[^\s]*worktree[^\s]*\s*&&" {affected_path}
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture search --content --pattern "cd\s+[^\s]*worktree[^\s]*\s*\x26\x26"
 ```
+
+The trailing `\x26\x26` is the regex escape for the shell-compound token, and it is load-bearing: the PreToolUse R1 rule matches its shell-construct substrings by plain substring over the whole command, so writing the token literally makes this sweep un-runnable in the plan worktree it is written for. Do not "restore" the literal form.
 
 Match also accepts the literal `cd "$WORKTREE"` / `cd ${worktree_path}` shapes. Any positive match is a violation.
 
@@ -611,7 +621,7 @@ Match also accepts the literal `cd "$WORKTREE"` / `cd ${worktree_path}` shapes. 
 The forbidden substring is named in the heading above and matched by the regex below. Worktree storage lives under `.plan/local/worktrees/`; hits in skill / agent prose, script literals, or examples are stale and MUST be rewritten.
 
 ```bash
-rg -n "\.claude/worktrees/" {affected_path}
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture search --content --pattern "\.claude/worktrees/"
 ```
 
 The centralized [`worktree-handling.md`](../../workflow-integration-git/standards/worktree-handling.md) is the only legitimate location to discuss the historical path, and only inside an explicit "Migration history" subsection. Matches outside that file are violations.
@@ -621,10 +631,12 @@ The centralized [`worktree-handling.md`](../../workflow-integration-git/standard
 Worktree-aware `manage-*` scripts auto-route to the correct worktree when `--plan-id` is supplied. Skills and agents that invoke an auto-routing script without passing `--plan-id` will silently target the main checkout — defeating worktree isolation.
 
 ```bash
-rg -n "execute-script\.py\s+plan-marshall:(manage-files|manage-tasks|manage-findings|manage-references|manage-solution-outline|manage-plan-documents|manage-logging|manage-status):[^\s]+\s+[^\s]+\s+(?!.*--plan-id)" {affected_path}
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture search --content --pattern 'execute-script\.py\s+plan-marshall:(manage-files|manage-tasks|manage-findings|manage-references|manage-solution-outline|manage-plan-documents|manage-logging|manage-status):[^\s]+\s+[^\s]+\s+(?!(?:\\\n|[^\n])*--plan-id)'
 ```
 
 The whitelist of auto-routing notations is the authoritative list at [`worktree-handling.md`](../../workflow-integration-git/standards/worktree-handling.md) "Auto-routing scripts" subsection. Matches indicate a manage-* invocation that omits `--plan-id`.
+
+The trailing lookahead is `(?:\\\n|[^\n])*`, not `.*`, and the pattern is single-quoted so the shell forwards the backslash escapes verbatim. This is load-bearing: `.` does not match a newline, so a `.*` lookahead sees only the FIRST physical line of a backslash-continued invocation. Every multi-line `manage-*` example in this repo — `… manage-findings resolve \` with `--plan-id` on the continuation line — would then be reported as missing `--plan-id`, flooding the gate with blocking findings for compliant commands. Traversing `\`+newline pairs makes the lookahead span the whole logical command, so only a genuinely `--plan-id`-less invocation matches. A physical line break WITHOUT a trailing backslash still terminates the traversal, so the lookahead can never reach into the next command and mask a real violation.
 
 **Suppression rule**: A match in `{affected_path}` is suppressed (no finding emitted) when EITHER:
 - `{affected_path}` is the centralized `marketplace/bundles/plan-marshall/skills/workflow-integration-git/standards/worktree-handling.md` itself (the standard quotes the forbidden patterns to define them), OR
@@ -655,16 +667,18 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 | WL-C | "manage-* invocation omits `--plan-id`; auto-routing scripts silently target the main checkout when `--plan-id` is missing — see worktree-handling.md 'Auto-routing scripts' subsection" |
 
 **Pass criteria** (silent — no finding emitted):
-- Every grep returns no matches across the three patterns, OR
+- Every sweep returns no in-scope hit across the three patterns over a completely searched population (per the complete-coverage rule), OR
 - Every match is suppressed per the suppression rule (centralized file or explicit anti-pattern marker).
+
+A sweep whose coverage is non-clean passes neither criterion: it has not established the absence of a stale pattern, only that none appeared in the files it read. Report the gap and re-run.
 
 **Fail criteria**: At least one unsuppressed match exists across patterns WL-A, WL-B, or WL-C — emit one finding per unsuppressed match.
 
-**Positive example (WL-A)**: Outline deliverable modifies `marketplace/bundles/plan-marshall/skills/phase-5-execute/SKILL.md` and the diff introduces `cd /Users/foo/.claude/worktrees/EXAMPLE-PLAN && git status`. WL-A grep matches; line is not under an "Anti-pattern" marker; finding emitted citing `worktree-handling.md`.
+**Positive example (WL-A)**: Outline deliverable modifies `marketplace/bundles/plan-marshall/skills/phase-5-execute/SKILL.md` and the diff introduces `cd /Users/foo/.claude/worktrees/EXAMPLE-PLAN && git status`. The WL-A sweep returns that path; the `Read` shows the line is not under an "Anti-pattern" marker; finding emitted citing `worktree-handling.md`.
 
-**Positive example (WL-B)**: Outline deliverable modifies an agent file that contains `worktree_path: /Users/oliver/git/plan-marshall/.claude/worktrees/foo`. WL-B grep matches; finding emitted citing the TASK-4 migration.
+**Positive example (WL-B)**: Outline deliverable modifies an agent file that contains `worktree_path: /Users/oliver/git/plan-marshall/.claude/worktrees/foo`. The WL-B sweep returns that path; finding emitted citing the TASK-4 migration.
 
-**Positive example (WL-C)**: Outline deliverable modifies a skill that contains `python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks read --task-number 5` (no `--plan-id`). WL-C grep matches; finding emitted citing the TASK-10 auto-routing contract.
+**Positive example (WL-C)**: Outline deliverable modifies a skill that contains `python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks read --task-number 5` (no `--plan-id`). The WL-C sweep returns that path; finding emitted citing the TASK-10 auto-routing contract.
 
 **Negative example**: The centralized `worktree-handling.md` itself contains the forbidden patterns inside an "Anti-pattern" subsection ("Do NOT use `cd $WORKTREE && git status`"). Suppression rule applies — silent pass.
 

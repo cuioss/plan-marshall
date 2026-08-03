@@ -17,7 +17,8 @@ of its own. The only logic it owns is the R1-R4 rule matchers and the
   ``&``, a newline, a ``for``/``while`` loop, ``$(...)`` command substitution, or
   a leading ``VAR=val cmd`` inline env-var assignment.
 - **R2 Bash file-ops** — a Bash command whose program is ``cat`` / ``grep`` /
-  ``head`` / ``tail`` / ``find`` / ``ls``.
+  ``head`` / ``tail`` / ``find`` / ``ls``, or ``git`` whose subcommand (after any
+  global options) is ``grep``.
 - **R3 generated-executor edit** — an Edit/Write whose path is the generated
   ``.plan/execute-script.py``.
 - **R4 hard-coded build** — a Bash command invoking ``./pw`` or a bare ``mvn`` /
@@ -44,6 +45,7 @@ from __future__ import annotations
 
 import json
 import re
+import shlex
 import sys
 from collections.abc import Callable
 from typing import Any
@@ -81,6 +83,23 @@ _R1_LEADING_ASSIGNMENT_RE = re.compile(r"^\s*[A-Za-z_][A-Za-z0-9_]*=\S*\s+\S")
 #: R2 — Bash file-operation programs that have dedicated Read/Glob/Grep tools.
 _R2_FILE_OPS = ("cat", "grep", "head", "tail", "find", "ls")
 
+#: R2 — ``git`` global options that consume a SEPARATE following token as their
+#: value. Only the detached spellings need naming: ``_git_subcommand`` skips any
+#: other option structurally (see its docstring), but a detached value option is
+#: the one shape where the token AFTER the option must also be stepped over so
+#: the value is never mistaken for the subcommand.
+_R2_GIT_VALUE_OPTIONS = (
+    "-C",
+    "-c",
+    "--git-dir",
+    "--work-tree",
+    "--namespace",
+    "--super-prefix",
+    "--config-env",
+    "--exec-path",
+    "--attr-source",
+)
+
 #: R4 — hard-coded build invocations that must be resolved via the architecture
 #: API. ``./pw`` is matched as a literal; ``mvn`` / ``npm`` / ``gradle`` as bare
 #: leading programs or path-prefixed executables (e.g. ``/usr/local/bin/mvn``).
@@ -94,7 +113,8 @@ _R1_REASON = (
 )
 _R2_REASON = (
     "plan-marshall: use the Read/Glob/Grep tools, not Bash, for file "
-    "operations (cat/grep/head/tail/find/ls)."
+    "operations (cat/grep/head/tail/find/ls, git grep). For a content sweep "
+    "run: architecture search --content --pattern P."
 )
 _R3_REASON = (
     "plan-marshall: never edit the generated .plan/execute-script.py — "
@@ -163,14 +183,75 @@ def _match_r1_shell_construct(
     return None
 
 
+def _git_subcommand(command: str) -> str:
+    """Return ``git``'s subcommand token, skipping any global options.
+
+    ``git`` accepts global options BEFORE the subcommand, so the subcommand is
+    not reliably ``tokens[1]``. Testing that position directly would be a vacuous
+    guard — ``git -C . grep x``, ``git -c k=v grep x`` and ``git --no-pager grep
+    x`` all walk straight past it.
+
+    The option walk is STRUCTURAL, not an allowlist: ANY token starting with
+    ``-`` is treated as an option and skipped. Recognising only a named set of
+    spellings is itself a vacuous guard, because every one of ``git -C. grep x``
+    (attached short value), ``git -cvar=val grep x``, ``git -p grep x`` and
+    ``git --bare grep x`` is valid ``git`` yet fails a membership test, leaving
+    the option token itself returned as the subcommand and the R2 block bypassed.
+    Only the DETACHED value-taking options (``_R2_GIT_VALUE_OPTIONS``) need
+    naming, since they alone consume a separate FOLLOWING token; attached
+    (``-C.``) and inline (``--git-dir=...``) forms are self-contained and skip as
+    a single token.
+
+    The split is SHELL-LEXICAL (``shlex``), not whitespace. A detached value
+    option can carry a quoted value containing spaces — ``git -C "repo dir"
+    grep x`` — and a naive ``str.split()`` tears that value into two tokens, so
+    the ``index += 2`` skip lands mid-value and returns ``dir"`` as the
+    subcommand, bypassing the R2 block for a real ``git grep``. Lexical
+    splitting resolves the quoting first, so the value is one token and the
+    skip arithmetic stays true. Malformed quoting (an unbalanced quote makes
+    ``shlex`` raise) falls back to the whitespace split rather than returning
+    early: the fallback preserves the pre-existing detection for every
+    unquoted shape instead of turning a lexer error into a silent bypass.
+
+    Pure token arithmetic after the split: no regex compilation, no filesystem
+    access, no subprocess — this runs on every tool call, so the hot path stays
+    cheap. Returns ``""`` when the tokens run out before a subcommand appears.
+    """
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        tokens = command.split()
+    index = 1
+    while index < len(tokens):
+        token = tokens[index]
+        if token in _R2_GIT_VALUE_OPTIONS:
+            index += 2  # the option plus the separate value token it consumes
+            continue
+        if token.startswith("-"):
+            index += 1  # any other option spelling is self-contained
+            continue
+        return token.lower()
+    return ""
+
+
 def _match_r2_file_ops(
     tool_name: str | None, tool_input: dict[str, Any]
 ) -> str | None:
-    """R2 — Bash command whose program is a file-op with a dedicated tool."""
+    """R2 — Bash command whose program is a file-op with a dedicated tool.
+
+    Covers both the bare file-op programs and ``git grep``, which reads file
+    bodies exactly as ``grep`` does and therefore joins the EXISTING R2 family
+    rather than opening a new one — the rule family count stays four.
+    Non-``grep`` git subcommands are untouched: ``git status``, ``git diff``,
+    ``git log`` and friends are not file-ops and must keep working.
+    """
     command = _bash_command(tool_name, tool_input)
     if command is None:
         return None
-    if _program_name(command) in _R2_FILE_OPS:
+    program = _program_name(command)
+    if program in _R2_FILE_OPS:
+        return _R2_REASON
+    if program == "git" and _git_subcommand(command) == "grep":
         return _R2_REASON
     return None
 

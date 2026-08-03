@@ -609,7 +609,10 @@ class TestRouteUnmappedOrchestratorVerbs:
         'python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build '
         "run --command-args 'perf-suite plan-marshall'"
     )
-    _RAW_SHELL_CMD = 'grep -r TODO src/'
+    # A raw shell command: not a ``plan-marshall:build-*`` executor invocation, so the
+    # classifier cannot parse a verb out of it. The specific program is incidental —
+    # what the fixture stands for is "unparseable verb".
+    _RAW_SHELL_CMD = 'make perf-suite'
 
     @staticmethod
     def _write_task(tasks_dir: Path, number: int, commands: list) -> Path:

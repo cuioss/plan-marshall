@@ -269,6 +269,8 @@ These rules apply to ALL development work in plan-marshall-governed repositories
 
 - **A newly-authored index/summary table must enumerate every member of the set it indexes** — When you author or extend a table, card, or list whose purpose is to *index* a set — a rules card over the document's rules, a command table over a script's subcommands, a candidate-list summary over a detector's outputs, a step-dispatch table over a workflow's steps — it MUST carry one row per member of the indexed set, with no omissions. An index that lists only a subset silently misrepresents the set as smaller than it is, and the omission is invisible at the index site (the table reads as complete). When you add a member to the indexed set, add its index row in the SAME change; when you author the index, cross-check it against the authoritative set and confirm the cardinality matches before considering it done. This is the index-completeness counterpart to the count-prose-staleness discipline: a count claim and an index table are two faces of the same "describe the set accurately" obligation.
 
+- **Never assert closure over an enumeration without re-checking it against its declaring source** — Prose of the shape *"Required — unrecognised values are rejected; one of: {list}"* does two things at once: it enumerates, and it tells the reader the enumeration is the complete legal set. When that list has drifted from the authoritative declaration (an argparse `choices=` tuple, an enum, a registry), the closure claim upgrades an ordinary staleness gap into an actively misleading contract: a reader obeying the project's "quote subcommands and flag values verbatim from the docs" rule is led to a *wrong* value rather than merely an incomplete one, reaches for the nearest documented substitute, and writes a plausible-but-wrong entry that downstream analysis consumes as well-formed. Closure language therefore raises the bar on the enumeration beneath it — before writing or preserving it, re-read the declaring source and confirm the list matches member-for-member. Where the set can grow, point the prose at the source of truth ("the accepted set is exactly the `X` tuple in `path`") instead of silently restating it, and prefer a test asserting documented-set equals declared-set over a hand-maintained copy. When the same enumeration is mirrored at several sites in one document, every site is part of the same change.
+
 ### Ad-hoc changes still get the full PR flow
 
 **Rule:** An ad-hoc (non-plan) change still gets the full `branch → commit → PR → checks → review → squash-merge → pull` flow — the same shipping discipline a plan's finalize phase applies. A direct-to-`main` commit, or a merge that skips checks or review, is never acceptable merely because the change did not originate from a plan.
@@ -297,7 +299,7 @@ Ride the pending related PR on `decision: ride`; open your own PR on `decision: 
 
 ### Structured queries first
 
-**Rule:** Before using `Glob`/`Grep` for codebase navigation (file discovery, module identification, path resolution), consult `architecture files --module X`, `architecture which-module --path P`, or `architecture find --pattern P`. `Glob`/`Grep` is the fallback for sub-module component lookup and exceptional cases, not routine discovery.
+**Rule:** Before using `Glob`/`Grep` for codebase navigation (file discovery, module identification, path resolution, content search), consult `architecture files --module X`, `architecture which-module --path P`, `architecture find --pattern P` (path glob), or `architecture search --content --pattern P` (file content). `Glob`/`Grep` is the fallback for sub-module component lookup and exceptional cases, not routine discovery.
 
 **Why this matters:**
 
@@ -307,12 +309,14 @@ The architecture inventory is the project's structured truth: it knows which mod
 
 - **Module file enumeration** — "What files belong to module X?" → `architecture files --module X`
 - **Module identification** — "Which module owns this path?" → `architecture which-module --path P`
-- **Pattern lookup across modules** — "Where does symbol/flag/string `foo` live in the project's known surface?" → `architecture find --pattern '*foo*'`
+- **Path lookup across modules** — "Which PATHS in the project's known surface match `foo`?" → `architecture find --pattern '*foo*'`. `find` matches the path only and never opens a file.
+- **Content lookup across modules** — "Which FILES contain the string `foo`?" → `architecture search --content --pattern foo` (add `--literal` for a fixed string). Hits carry `module` / `category` / `path` / `match_count`; the response carries no line bodies, and `count: 0` always rides with the coverage fields so a negative is never bare. Read the coverage fields before believing a zero: a negative is trustworthy only under the canonical complete-coverage conjunction. An unreadable file or an elided inventory bucket is a file that might hold the match and was never scanned, which is a coverage gap to report, not an absence to record. See [`manage-architecture/standards/client-api.md`](../../manage-architecture/standards/client-api.md) § search → "Complete-coverage rule" for the field list and the full contract.
 
 **When `Glob`/`Grep` remain the right fallback:**
 
 - **Sub-module component lookup** — Component-name patterns (e.g., `marketplace/bundles/**/{component_name}*`) when the architecture verb's granularity stops at module level
 - **Content search inside an already-known file** — Once you know the file, `Grep` is the right tool for "where in this file does X appear"
+- **Trees the inventory does not walk** — `.claude/**`, `.github/**`, and anything a `.gitignore` rule excludes are outside `search --content`'s scope
 - **Architecture verb returns elision** — When the inventory's compact representation hides the answer (`...`-style elision), drop to `Glob`/`Grep` for the literal scan
 - **Targets explicitly outside the inventory** — Generated artifacts, vendored copies, or files the architecture inventory deliberately excludes
 
@@ -320,11 +324,11 @@ The architecture inventory is the project's structured truth: it knows which mod
 
 > *Task: Find every script that reads `--audit-plan-id`.*
 >
-> **Architecture-first:** `architecture find --pattern '*audit-plan-id*'` returns the inventory of registered scripts that mention the flag. Scoped, deterministic, fast.
+> **Architecture-first:** the flag is a string inside file bodies, so this is a CONTENT question — `architecture search --content --literal --pattern='--audit-plan-id'` returns the module-attributed files that actually contain it, each with a `match_count`, plus the coverage fields that make a zero result trustworthy when the complete-coverage rule holds. Scoped, deterministic, fast. (Had the question been "which PATHS look like `*audit-plan-id*`", `architecture find --pattern '*audit-plan-id*'` would be the verb — `find` never opens a file.)
 >
-> **Glob-first (anti-pattern):** `Grep --pattern '\\-\\-audit-plan-id'` returns hits across all source, tests, fixtures, generated output, and historical lessons — a noisy result that requires a second filtering pass to recover the answer the architecture verb gave directly.
+> **Grep-first (anti-pattern):** `Grep --pattern '\\-\\-audit-plan-id'` returns hits across all source, tests, fixtures, generated output, and historical lessons with no module attribution — a noisy result that requires a second filtering pass to recover the answer the architecture verb gave directly.
 
-If the architecture verb truly cannot answer (e.g., target is sub-module, target is outside the inventory, target requires content-level matching inside a specific file), `Glob`/`Grep` is the documented fallback and should be qualified as such in the surrounding instruction.
+If the architecture verbs truly cannot answer (e.g., target is sub-module, target is outside the crawled inventory such as `.claude/**` or `.github/**`, or the question is "where *within* this one known file"), `Glob`/`Grep` is the documented fallback and should be qualified as such in the surrounding instruction.
 
 ### Never invent script subcommands — recurrence signatures
 

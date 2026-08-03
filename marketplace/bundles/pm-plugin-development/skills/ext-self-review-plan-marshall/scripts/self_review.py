@@ -10,12 +10,20 @@ the ``counts.total`` formula, and the ``surface`` help prose — this docstring
 deliberately does not mirror the vocabulary. The contract prose lives in
 ``plan-marshall:extension-api/standards/ext-point-self-review-surfacing.md``.
 
+The sibling ``scan-worked-examples`` verb runs the worked-example-vs-clause
+adjudication (candidate list ``worked_example_pairs``) over a SUPPLIED file
+population instead of the diff, and reports the population size the verdict was
+drawn against — so a zero-contradiction result is distinguishable from a
+zero-population one.
+
 Storage: stateless — reads the worktree diff and derives the plan footprint
 live from the worktree (``compute-footprint``: ``{base}...HEAD`` ∪ porcelain).
 Output: TOON to stdout.
 
 Usage:
     python3 self_review.py surface --plan-id EXAMPLE-PLAN --project-dir /path/to/worktree
+    python3 self_review.py scan-worked-examples --plan-id EXAMPLE-PLAN \\
+        --paths-glob 'marketplace/bundles/*/skills/*/standards/*.md'
 """
 
 import argparse
@@ -41,10 +49,12 @@ from _self_review_detectors import (
     _detect_touched_claims,
     _detect_unguarded_boundaries,
     _detect_user_facing_strings,
+    _detect_worked_example_pairs,
     _find_skill_dir,  # noqa: F401 - re-exported for stable import surface
     _load_test_tree_blob,  # noqa: F401 - re-exported for stable import surface
     _name_in_test_blob,  # noqa: F401 - re-exported for stable import surface
     _symmetric_pair_has_test,  # noqa: F401 - re-exported for stable import surface
+    _worked_example_pairs,
 )
 from _self_review_diff import (
     _diff_hunks,
@@ -198,6 +208,7 @@ def _cmd_surface(args: argparse.Namespace) -> int:
     )
     ordinal_references = _detect_ordinal_references(added, project_dir)
     scan_derived_keys = _detect_scan_derived_keys(added, project_dir)
+    worked_example_pairs = _detect_worked_example_pairs(added, project_dir)
 
     detected: dict[str, list] = {
         'regexes': regexes,
@@ -219,6 +230,7 @@ def _cmd_surface(args: argparse.Namespace) -> int:
         'advertised_form_help_strings': advertised_form_help_strings,
         'ordinal_references': ordinal_references,
         'scan_derived_keys': scan_derived_keys,
+        'worked_example_pairs': worked_example_pairs,
     }
 
     output = {
@@ -228,6 +240,120 @@ def _cmd_surface(args: argparse.Namespace) -> int:
         'base_branch': base_branch,
         **_compose_candidate_output(detected),
     }
+    output_toon(output)
+    return 0
+
+
+# =============================================================================
+# Subcommand: scan-worked-examples
+# =============================================================================
+
+
+def _resolve_scan_project_dir(plan_id: str, project_dir_arg: str | None) -> Path | None:
+    """Resolve the working tree for a population scan, or emit the error TOON.
+
+    Mirrors ``_cmd_surface``'s two-state routing: an explicit ``--project-dir``
+    is used verbatim (escape hatch), otherwise the path is auto-resolved from
+    ``--plan-id`` through the single plan-context resolver. Returns ``None`` when
+    the resolution failed and the caller must exit non-zero — the error TOON has
+    already been emitted.
+    """
+    if project_dir_arg is not None:
+        return Path(project_dir_arg).resolve()
+    try:
+        resolved = resolve_project_dir(plan_id, None, default=None)
+    except WorktreeResolutionError as exc:
+        output_toon(emit_worktree_error(plan_id, exc))
+        return None
+    return Path(resolved).resolve()
+
+
+def _collect_glob_population(project_dir: Path, paths_glob: str) -> list[Path]:
+    """Return the deduplicated, sorted file set matching ``paths_glob``.
+
+    The glob is resolved relative to ``project_dir``; every match is required to
+    stay inside it, so a pattern that escapes the working tree contributes
+    nothing. Deduplication is on the RESOLVED path, which is what makes the
+    reported denominator a count of distinct files rather than of match rows.
+    """
+    seen: set[Path] = set()
+    for match in project_dir.glob(paths_glob):
+        if not match.is_file():
+            continue
+        resolved = match.resolve()
+        try:
+            resolved.relative_to(project_dir)
+        except ValueError:
+            continue
+        seen.add(resolved)
+    return sorted(seen)
+
+
+def _cmd_scan_worked_examples(args: argparse.Namespace) -> int:
+    plan_id = require_valid_plan_id(args)
+
+    project_dir = _resolve_scan_project_dir(plan_id, args.project_dir)
+    if project_dir is None:
+        return 2
+    if not project_dir.is_dir():
+        output_toon_error(
+            'project_dir_invalid',
+            f'project-dir does not exist or is not a directory: {project_dir}',
+        )
+        return 1
+
+    paths_glob = args.paths_glob
+    if paths_glob.startswith('/') or '..' in Path(paths_glob).parts:
+        output_toon_error(
+            'paths_glob_invalid',
+            'paths-glob must be a relative pattern with no parent-directory '
+            f'segments: {paths_glob!r}',
+        )
+        return 1
+
+    population = _collect_glob_population(project_dir, paths_glob)
+
+    records: list[dict[str, Any]] = []
+    pair_bearing_files = 0
+    unreadable = 0
+    for path in population:
+        try:
+            text = path.read_text(encoding='utf-8', errors='replace')
+        except OSError:
+            unreadable += 1
+            continue
+        rel = str(path.relative_to(project_dir))
+        found = _worked_example_pairs(rel, text.splitlines(), None)
+        if found:
+            pair_bearing_files += 1
+            records.extend(found)
+
+    contradicting = [r for r in records if r['agrees'] is False]
+    agreeing = [r for r in records if r['agrees'] is True]
+    unadjudicated = [r for r in records if r['agrees'] is None]
+
+    output: dict[str, Any] = {
+        'status': 'success',
+        'plan_id': plan_id,
+        'project_dir': str(project_dir),
+        'paths_glob': paths_glob,
+        'boundary': (
+            f'files matching {paths_glob} under {project_dir}, deduplicated by '
+            'resolved path, filtered to those carrying a GOOD/BAD worked-example pair'
+        ),
+        'population': {
+            'distinct_paths': len(population),
+            'unreadable_paths': unreadable,
+            'pair_bearing_files': pair_bearing_files,
+            'pairs_total': len(records),
+            'pairs_agreeing': len(agreeing),
+            'pairs_unadjudicated': len(unadjudicated),
+            'pairs_contradicting': len(contradicting),
+        },
+        'worked_example_pairs': contradicting,
+    }
+    if args.include_unadjudicated:
+        output['unadjudicated_pairs'] = unadjudicated
     output_toon(output)
     return 0
 
@@ -298,6 +424,48 @@ def _build_parser() -> argparse.ArgumentParser:
         help='Directory levels to walk up when collecting schema-bearing markdown files (default: 3).',
     )
     p_surface.set_defaults(func=_cmd_surface)
+
+    p_scan = sub.add_parser(
+        'scan-worked-examples',
+        help=(
+            'Adjudicate every GOOD/BAD worked-example pair in a supplied file '
+            'population (not the diff) and report the contradicting ones '
+            'alongside the population size they were drawn from.'
+        ),
+        allow_abbrev=False,
+        formatter_class=_TermPreservingHelpFormatter,
+    )
+    add_plan_id_arg(p_scan)
+    p_scan.add_argument(
+        '--project-dir',
+        required=False,
+        default=None,
+        help=(
+            'Absolute path to the active git worktree (Bucket B). Optional — '
+            'when omitted, the worktree path is auto-resolved from --plan-id '
+            'via manage-status get-worktree-path.'
+        ),
+    )
+    p_scan.add_argument(
+        '--paths-glob',
+        required=True,
+        help=(
+            'Relative glob selecting the file population, resolved against the '
+            'working tree (e.g. marketplace/bundles/*/skills/*/standards/*.md). '
+            'Echoed back as the boundary the reported counts were drawn against.'
+        ),
+    )
+    p_scan.add_argument(
+        '--include-unadjudicated',
+        action='store_true',
+        help=(
+            'Also emit the unadjudicated_pairs list (pairs whose clause names no '
+            'normative predicate, or whose GOOD example branches on nothing '
+            'recoverable). Off by default: the population block always reports '
+            'their count.'
+        ),
+    )
+    p_scan.set_defaults(func=_cmd_scan_worked_examples)
     return parser
 
 

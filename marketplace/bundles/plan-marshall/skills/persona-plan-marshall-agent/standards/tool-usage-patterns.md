@@ -14,10 +14,10 @@ When an agent's frontmatter lists required tools, those tools MUST be available.
 |-----------|-----------------|---------------------|
 | Find files | `architecture files --module X` for module-scoped discovery; fall back to `Glob` for sub-module patterns or when the inventory returns elision | `find`, `ls` |
 | Identify owning module | `architecture which-module --path P` | `find`, manual path inspection |
-| Locate by name/pattern across modules | `architecture find --pattern P` first; fall back to `Glob`/`Grep` for sub-module or content-level searches | repository-wide `grep`, `rg` via Bash |
+| Locate by PATH pattern across modules | `architecture find --pattern P` first (matches the path only — it never opens a file); fall back to `Glob` for sub-module path patterns | repository-wide `find`, `ls` via Bash |
 | Check file exists | `Read` + error handling | `test -f`, `cat` |
 | Check directory exists | `Glob` | `test -d` |
-| Search content | `Grep` | `grep`, `rg` via Bash |
+| Search content across modules | `architecture search --content --pattern P` first; fall back to `Grep` for a scan inside an already-known file or a tree the inventory does not walk | `grep`, `rg`, or git's `grep` subcommand via Bash |
 | Read files | `Read` | `cat`, `head`, `tail` |
 | Count items | `Glob` + count results | `wc -l` via Bash |
 
@@ -54,6 +54,17 @@ content = Read(file_path="/path/to/file")
 ```
 
 ## Content Search
+
+**First choice — the structured content search.** A tree-wide "which files contain X?" question is answered by the architecture inventory, not by a shell sweep:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture search \
+  --content --pattern P [--category CATEGORY] [--literal]
+```
+
+Hits carry `module`, `category`, `path`, and `match_count`, and the response never carries matching line text — rank by `match_count` and spend a `Read` on the few files that matter. `count: 0` always rides with the coverage fields, so a negative is never bare — but check all of them, not just the count: a zero is trustworthy only under the canonical complete-coverage rule. Any non-clean coverage field means files that might contain the match were never scanned, so the honest outcome is a coverage gap rather than "absent". Reach for this before `Grep`, and *especially* when the runtime denies `Grep` to a dispatched leaf. Do NOT restate the response contract or the payload / inventory-scope boundaries here — see [`manage-architecture/standards/client-api.md`](../../manage-architecture/standards/client-api.md) § search, the single source of truth.
+
+**Fallback — the `Grep` tool**, for a scan inside an already-known file, or for a tree the inventory does not walk (`.claude/**`, `.github/**`, gitignored paths). Bash `grep` / `rg` / git's `grep` subcommand are never the fallback: they are hook-blocked by the [No Bash for file operations](../SKILL.md#bash-no-file-operations) rule.
 
 **Find files containing a pattern:**
 ```text

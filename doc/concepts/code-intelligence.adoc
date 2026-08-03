@@ -23,11 +23,13 @@ The substrate is built in tiers, cheapest first. Each tier is a strictly larger 
 │   which modules depend on which, with per-edge provenance     │
 ├───────────────────────────────────────────────────────────────┤
 │ Tier 0 — the crawl                        SUBPROCESS-FREE     │
-│   module set + per-module metadata; no edges at all           │
+│   module set + per-module metadata + the file inventory,      │
+│   read by the path, ownership, and content readers;           │
+│   no edges at all                                             │
 └───────────────────────────────────────────────────────────────┘
 ----
 
-*Tier 0* is the crawl. It walks the filesystem, parses each build descriptor with the standard library, and yields the module set plus per-module metadata — coordinates, paths, packages, source counts, canonical commands. It deliberately invokes no build tool, so a fifty-module reactor crawls in fifty cheap reads rather than fifty JVM startups. What Tier 0 does not produce is a single edge: knowing that `core` and `api` both exist says nothing about whether one depends on the other.
+*Tier 0* is the crawl. It walks the filesystem, parses each build descriptor with the standard library, and yields the module set plus per-module metadata — coordinates, paths, packages, source counts, canonical commands — and, per module, the categorised file inventory. It deliberately invokes no build tool, so a fifty-module reactor crawls in fifty cheap reads rather than fifty JVM startups. Several readers sit on that one product without enlarging the claim it makes: `files` enumerates it, `find` globs its paths, `which-module` attributes a path back to its owner, and `search --content` scans the bodies of the files in it. What Tier 0 does not produce is a single edge: knowing that `core` and `api` both exist says nothing about whether one depends on the other.
 
 *Tier 1* is the edge set — module-to-module dependency edges, each carrying the identity of whatever derived it. This is the tier the derivation-resolver seam ships, and it is what the `graph`, `path`, `neighbors`, and `impact` verbs traverse, plus the adjacency surfaces of `overview` and `module` / `info`.
 
@@ -116,6 +118,46 @@ The provenance residue is the same one axis over:
 
 A `module: null` carrying a collision note is a third answer again — the ownership is disputed rather than merely unclaimed.
 
+== The other Tier-0 reader: content search
+
+Path attribution asks a question *about* the inventory. Content search asks a question about what is *inside* it: which files contain a given string. `search --content` is a second reader over the same Tier 0 product — it opens the files the crawl already enumerated and applies a regex to each body. That is worth being precise about, because "search the code" sounds like the tier above.
+
+It is not. Tier 2 is symbol intelligence: knowing that this identifier is a function, that this call site invokes that definition, that this type flows into that parameter. Content search knows none of that — it knows that a sequence of characters appears in a file. A regex cannot distinguish a definition from a comment mentioning it, and does not claim to. The verb makes exactly the claim Tier 0 supports and no larger one, which is why it sits here rather than one rung up.
+
+The provenance residue takes a third form, one axis over again. There is no producer set to name, because nothing was derived — so the discriminator is the *population*:
+
+[cols="1,3"]
+|===
+| Response | Meaning
+
+| `count: 0`, `files_scanned: 0`, `unreadable: []`
+| *Nothing was searched.* The empty result is an absence of population, not a finding.
+
+| `count: 0`, `files_scanned: 0`, `unreadable` non-empty
+| *Files were attempted and none could be read.* A coverage failure — distinct from both rows around it, because a population existed and the scanner never saw it.
+
+| `count: 0`, `files_scanned: N`, coverage clean
+| *N files were opened and none matched.* The empty result is a real, positive answer.
+|===
+
+That is the same shape as `resolver_count` and `attributor_count`: two states that are indistinguishable without the count, warranting opposite reactions, where an unqualified empty list reports both as the second. The companion field is `unreadable[]` — a file skipped because it could not be decoded or could not be read is named with its reason rather than quietly dropped from the denominator, which is the no-silent-suppression half of the same discipline. An unreadable file never increments `files_scanned`, which is exactly why the middle row above is reachable: the counter measures files *scanned*, not files *attempted*.
+
+=== Location and strength, never the lines
+
+A hit reports where it is — `module`, `category`, `path` — and how strongly — `match_count`, the number of occurrences in that file. It deliberately carries no matching line text and no line numbers.
+
+The reason is a cost asymmetry rather than a limitation. Returning line bodies makes the response size a function of the corpus's *match density*; returning files makes it a function of the corpus's *file count*. Those diverge badly at exactly the moment the sweep is most useful — a broad question over a large tree — and the divergent case is the one that would flood a caller's context, which is the resource this whole substrate exists to spend carefully.
+
+`match_count` is what stands in for the lines. It is a ranking signal: it lets a caller sort the hit list and spend a `Read` on the two or three files that matter instead of on all of them. Sweep, rank, read a few.
+
+=== Inventory scope is not tree scope
+
+The honest limit here is the one a caller is most likely to over-read. The search covers the crawled inventory, which by construction excludes always-ignored directories (`.git`, `node_modules`, `target`, caches), dotfile trees outside the allowlist — `.claude/**` and `.github/**` among them — and anything a `.gitignore` rule removes, including `.plan/`.
+
+So a `count: 0` over a large `files_scanned` — *and clean coverage metadata* — is a trustworthy *"not in any inventoried file"*. It is not *"not in the tree"*, and the two are not interchangeable when the thing being looked for might live in a workflow file or a local setting. Untracked-but-not-ignored files are covered, though: the walk is gitignore-aware rather than driven by what git tracks, so the reader also works outside a git worktree.
+
+The coverage qualifier is not decoration. `files_scanned > 0` says some files were opened; it says nothing about the ones that were not. A non-empty `unreadable[]` means a file that might hold the match was never scanned, and `truncated: true` / a non-empty `elided[]` means inventory entries never reached the scanner at all. A zero result carrying any of those is a *coverage gap*, not an absence — the same distinction the table above draws, one level up. The full conjunction a caller must check before treating a zero as an answer is contracted once in link:../../marketplace/bundles/plan-marshall/skills/manage-architecture/standards/client-api.md[`client-api.md`] § `search`.
+
 == The honest limit
 
 [CAUTION]
@@ -136,6 +178,7 @@ Finally, the seam derives edges only for module sets that Tier 0 discovered. A r
 * xref:extension-architecture.adoc[Concepts › Extension Architecture] — the plumbing seam these extension points plug into, and the four-axis split they complete.
 * xref:build-management.adoc[Concepts › Build Management] — the `ext-point-build` surface whose `discover_modules()` output is Tier 0, and therefore the map every resolver reads.
 * link:../../marketplace/bundles/plan-marshall/skills/build-maven/SKILL.md[`build-maven/SKILL.md`] — the Axis-B coordinate join, re-homed from `manage-architecture` onto the seam.
-* link:../../marketplace/bundles/plan-marshall/skills/manage-architecture/standards/client-api.md[`client-api.md`] — the `graph` / `path` / `neighbors` / `impact` response contracts that carry `resolvers[]` and `resolver_count`.
+* link:../../marketplace/bundles/plan-marshall/skills/manage-architecture/standards/client-api.md[`client-api.md`] — the `graph` / `path` / `neighbors` / `impact` response contracts that carry `resolvers[]` and `resolver_count`, plus the `search` contract with its `match_count` / `files_scanned` / `unreadable[]` fields and every edge case.
+* xref:../user/code-search.adoc[User Guide › Code Search] — the operator-facing side of the content reader: `find` versus `search --content`, the invocations, and how to act on what comes back.
 * link:../../marketplace/bundles/plan-marshall/skills/manage-architecture/standards/architecture-persistence.md[`architecture-persistence.md`] — the persisted module-graph format, including the `{from, to, producers[]}` edge shape.
 * xref:../adr/009-Status_reporting_fails_closed_with_an_explicit_unknown_state.adoc[ADR-009] — the fail-closed reporting discipline the provenance contract applies to edge derivation.

@@ -8,17 +8,17 @@ This standard is the single source of truth for the deviation taxonomy, the prom
 
 A request-level hard requirement is any acceptance criterion authored in the plan's request, solution outline, or deliverable narrative that:
 
-- Names a measurable gate (e.g., "`grep -rn '--project-dir' marketplace/` returns zero hits"), OR
+- Names a measurable gate (e.g., "`architecture search --content --literal --pattern='--project-dir'` returns `count: 0` over clean coverage, per the complete-coverage rule in [`manage-architecture/standards/client-api.md`](../../manage-architecture/standards/client-api.md) § search"), OR
 - Declares a structural intent (e.g., "Breaking change. No transition window."), OR
 - Specifies a complete deletion (e.g., "Remove the flag entirely").
 
-A **softening** is any execute-time decision that would relax the requirement at runtime: deferring the gate, retaining a legacy code path, downgrading the deletion to "remove only newly-added callers", accepting a non-zero grep count, etc. Softening can be motivated by real engineering caution (cache-sync timing, in-flight task dependencies, dependency on an upstream merge), but the motivation does not bypass the escalation contract — it only affects which option the user chooses.
+A **softening** is any execute-time decision that would relax the requirement at runtime: deferring the gate, retaining a legacy code path, downgrading the deletion to "remove only newly-added callers", accepting a non-zero hit count from the gate's content sweep, etc. Softening can be motivated by real engineering caution (cache-sync timing, in-flight task dependencies, dependency on an upstream merge), but the motivation does not bypass the escalation contract — it only affects which option the user chooses.
 
 ### Concrete Examples
 
 | Original Hard Requirement | Softened Decision (would-have-been-silent) | Escalation Path |
 |---------------------------|---------------------------------------------|-----------------|
-| `grep -rn '--project-dir' marketplace/ doc/ test/` returns zero hits | "Two-state contract: `--plan-id` preferred; `--project-dir` retained as escape hatch" — and merging with 430 hits across 77 files | AskUserQuestion at the moment the gate is about to be deferred |
+| `architecture search --content --literal --pattern='--project-dir'` returns `count: 0` (over clean coverage, not merely `files_scanned > 0`) | "Two-state contract: `--plan-id` preferred; `--project-dir` retained as escape hatch" — and merging with 430 hits across 77 files | AskUserQuestion at the moment the gate is about to be deferred |
 | "Breaking change. No transition window." | "Until auto-routing has fully landed, callers may still see `--project-dir` for legacy compatibility" | AskUserQuestion before any task adds the hedge to the central narrative |
 | "Remove the `--legacy-mode` flag entirely" | "Remove the flag from the public CLI surface but keep the `_legacy_mode` private parameter" | AskUserQuestion before the deletion task is reduced in scope |
 

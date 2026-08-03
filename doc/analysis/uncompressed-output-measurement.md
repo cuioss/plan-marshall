@@ -97,9 +97,11 @@ Interpretation:
 - **`ls/grep/find` dominates (60.2% of raw, 382K tokens)** at the highest
   per-call cost (avg 474 tok/call). This is agent-initiated content search /
   file inspection run through Bash — precisely the pattern the existing
-  `CLAUDE.md` hard rule "**Never use Bash for file operations** … use Glob,
-  Read, Grep tools instead" already prohibits. The waste here is a
-  *rule-compliance* problem, not a missing-telemetry problem.
+  `CLAUDE.md` **No shell file operations** hard rule already prohibits, and for
+  which the sanctioned content answer is `architecture search --content
+  --pattern P` (module-attributed file hits plus a `match_count`, no line
+  bodies). The waste here is a *rule-compliance* problem, not a
+  missing-telemetry problem.
 - **`test-runners` is exactly 0.** Historically the single largest output
   producer, test/build output is **already fully routed** through the
   `build-pyproject`/`build-maven`/`build-npm` executor wrappers (which emit
@@ -110,6 +112,17 @@ Interpretation:
 - **`misc` (13.3%)** is long-tail (`gh pr checks --watch`, `test -f`, etc.).
 
 ### Top noisiest individual raw invocations
+
+The `command_prefix` column below is derived from **observed transcript data** —
+each entry identifies a command as it was actually issued during the measurement
+window. The entries are **summarized labels, not verbatim command text**: long
+argument lists are cut with an ellipsis (`…`) and the search target is given as a
+short description (`over a worktree .plan path`, `(multi-alternation)`) rather
+than reproduced in full, because the raw invocations are long enough to defeat
+the point of a summary table. What is *not* rewritten is the shape being
+measured: no entry is edited toward the sanctioned form, since that would
+falsify the record of what was measured. Read the column as "which command this
+was", not as a pasteable command line.
 
 ```toon
 workstream_a_top_noisiest[10]{tokens,family,command_prefix}:
@@ -125,11 +138,15 @@ workstream_a_top_noisiest[10]{tokens,family,command_prefix}:
   3115,git,"git -C …/persona-ref… status --porcelain --untracked"
 ```
 
-The noise is concentrated in a **handful of broad multi-alternation greps over
-large files** (transcripts, finding dumps, whole-tree scans). The single
-noisiest invocation is 6.7K tokens; the top ~10 together are ~50K (≈8% of all
-raw Bash). A "noisiest commands" lens would mostly re-surface invocations that
-already violate the no-Bash-for-file-ops rule.
+The noise is concentrated in a **handful of broad multi-alternation content
+sweeps over large files** (transcripts, finding dumps, whole-tree scans). The
+single noisiest invocation is 6.7K tokens; the top ~10 together are ~50K (≈8% of
+all raw Bash). A "noisiest commands" lens would mostly re-surface invocations
+that already violate the no-Bash-for-file-ops rule. Note the payload asymmetry
+that motivates the sanctioned route: these Bash invocations returned matching
+line bodies, so their size scaled with match density, whereas `architecture
+search --content` returns one row per matching file plus a `match_count`, so its
+size scales with file count.
 
 ### Share of total plan tokens
 
@@ -227,11 +244,13 @@ decision_summary[2]{workstream,threshold,measured,verdict}:
 ### Higher-leverage observation (no build proposed here)
 
 The single most effective reduction in raw-Bash context output would come from
-**enforcing the existing "no Bash for file operations" rule** (Glob/Grep/Read
-instead of `grep`/`find`/`awk` via Bash), which alone accounts for ~60% of all
-raw Bash output. That is a compliance/enforcement matter, not a new telemetry or
-compaction surface, and is explicitly out of scope for this measurement plan —
-recorded here only as the evidence-based pointer for where the real waste lives.
+**enforcing the existing "no Bash for file operations" rule** — `architecture
+find` / `architecture search --content` and the `Glob`/`Grep`/`Read` tools
+instead of a shell search program via Bash — which alone accounts for ~60% of
+all raw Bash output. That is a compliance/enforcement matter, not a new
+telemetry or compaction surface, and is explicitly out of scope for this
+measurement plan — recorded here only as the evidence-based pointer for where
+the real waste lives.
 
 ## Caveats
 

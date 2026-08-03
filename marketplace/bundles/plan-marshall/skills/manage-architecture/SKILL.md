@@ -41,7 +41,7 @@ scope: hybrid
 | `suggest-domains` | — | Suggest applicable skill domains for a module |
 | `info`, `module`, `modules`, `commands`, `resolve` | [client-api](standards/client-api.md) | Consumer queries |
 | `derive-verification` | [resolve-command](standards/resolve-command.md) | Derive the deterministic verification command set for a changed-artifact list (single build_map consumer) |
-| `files`, `which-module`, `find` | [client-api](standards/client-api.md) | Files-inventory readers (categorised paths, reverse lookup over a four-rung ladder ending in the Axis-D path-attribution seam, glob search) |
+| `files`, `which-module`, `find`, `search` | [client-api](standards/client-api.md) | Files-inventory readers (categorised paths, reverse lookup over a four-rung ladder ending in the Axis-D path-attribution seam, then the two search verbs: `find` is a **path glob** that never opens a file, `search --content` is the **file-content** reader) |
 | `graph`, `path`, `neighbors`, `impact` | [client-api](standards/client-api.md) | Dependency graph queries (full graph, shortest path, n-hop neighborhood, reverse-dep closure) |
 | `overview` | [client-api](standards/client-api.md) | Token-bounded markdown summary of the project architecture |
 | `diff-modules` | [client-api](standards/client-api.md) | Drift detection vs a pre-snapshot (added/removed/changed/unchanged buckets) |
@@ -501,7 +501,34 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture f
   --pattern PATTERN [--category CATEGORY]
 ```
 
+`--pattern` is a **path glob** (`fnmatch` syntax, case-sensitive, anchored to the full path). `find` matches the PATH only and **never opens a file**, so a token that exists solely inside a file body is invisible to it — that is the verb behaving exactly as designed, not a defect. For content questions ("which file *contains* X?") use `search --content` below.
+
 `--category` takes the same vocabulary and the same zero-result semantics as the `files` verb above: an unrecognised name returns `status: error, error: unknown_category`, while a recognised-but-unpopulated category returns `status: success` with `count: 0`.
+
+### search
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture search \
+  --content --pattern PATTERN [--category CATEGORY] [--literal]
+```
+
+Searches inventoried file **bodies** and reports the module-attributed files containing `--pattern`. This is the sanctioned content-search path for a dispatched leaf whose `Grep` / `Glob` tools are unavailable and whose Bash file-search commands are refused by the PreToolUse enforcement hook.
+
+`--content` is the **mode selector and is argparse-required** — a bare `search --pattern X` is rejected at parse time rather than defaulting to a mode, so the mode stays explicit at every call site.
+
+`--pattern` is a Python regex by default; `--literal` matches it verbatim (`re.escape`), which is what makes a pattern full of shell metacharacters safe and exact. No caller input ever reaches a shell. A pattern that fails to compile returns `status: error, error: invalid_pattern` carrying the compile message.
+
+`--category` takes the same vocabulary and the same unknown-category semantics as the `files` verb above.
+
+**Anchors are per line**: the pattern is compiled with `re.MULTILINE`, so `^` matches at the start of every LINE and `$` at the end of every line — the same semantics `grep`, `ripgrep`, and the harness `Grep` tool give them. An anchored sweep such as `--pattern '^Skill: plan-marshall:manage-files'` therefore finds a directive on any line of a file, not only one starting at byte 0, and `match_count` counts every such line. The engine is Python `re`, not POSIX: write `\s` for whitespace, never a POSIX bracket class like `[[:space:]]` — Python still compiles that (as a nested set, emitting a `FutureWarning` on stderr) and it then silently over-matches, so the failure arrives as spurious hits rather than as an error or a zero.
+
+**Payload boundary**: a hit carries exactly `module`, `category`, `path`, and `match_count` — the response **never carries matching line text**. `match_count` (the number of non-overlapping matches in that file) is the ranking signal: use it to decide which few files are worth a `Read`. Do not expect to see the matched lines.
+
+**Inventory-scope boundary**: the search covers the crawled file inventory, which by construction excludes always-ignored directories (`.git`, `node_modules`, `target`, caches), dotfile trees outside the `.gitignore` / `.editorconfig` allowlist (so `.claude/**` and `.github/**` are NOT searched), and anything a `.gitignore` rule excludes. A zero result therefore means "not in any inventoried file", which is not the same as "not in the tree".
+
+**Zero-result semantics**: `count: 0` is never confident on its own. Every response also carries `files_scanned` (so "nothing was searched" stays distinguishable from "N files searched, genuinely absent"), `unreadable[{path,reason}]` (files skipped for a decode or OS error, rather than silently dropped), and the fail-closed `truncated` / `elided` pair.
+
+See [client-api.md](standards/client-api.md) § search for the full pattern contract, the worked TOON payloads, and every edge case.
 
 ### diff-modules
 

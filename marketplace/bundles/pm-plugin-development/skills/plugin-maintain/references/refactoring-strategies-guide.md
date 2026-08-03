@@ -141,8 +141,10 @@ Only proceed after reviewing plan.
 Search for component references:
 
 ```bash
-grep -r "component-name" marketplace/bundles/
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture search --content --literal --pattern "{component-name}"
 ```
+
+Each hit reports the owning `module`, its `category`, the `path`, and a `match_count` that ranks which files carry the most references. `--literal` matches the name verbatim. See [`plan-marshall:manage-architecture/standards/client-api.md`](../../../../plan-marshall/skills/manage-architecture/standards/client-api.md) § search for the response contract and the inventory-scope boundary.
 
 ### Updating References
 

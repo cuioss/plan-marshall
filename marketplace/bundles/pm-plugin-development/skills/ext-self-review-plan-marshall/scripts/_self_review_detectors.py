@@ -21,6 +21,11 @@ from _self_review_diff import (
 from _self_review_patterns import (
     _ADD_ARGUMENT_FLAG,
     _ARGPARSE_FIELD,
+    _BAD_MARKER,
+    _BLOCK_LINE_COMMENT,
+    _BRANCH_KEYWORD,
+    _BRANCH_ON_DIRECTIVE,
+    _CAMEL_SEGMENT,
     _CHECK_TRUE_KWARG,
     _CONSTANT_ASSIGN,
     _CONSUMER_GET_READ,
@@ -31,17 +36,22 @@ from _self_review_patterns import (
     _DEF_OR_CLASS_HEADER,
     _DEST_KWARG,
     _EXECUTE_SCRIPT_NOTATION,
+    _FENCE_DELIMITER,
     _FILE_IO_BOUNDARY,
     _FIRST_MATCH_EXIT,
     _FLAG_MEMBERSHIP_GUARD,
     _FLAG_STARTSWITH_GUARD,
     _FNMATCH_CALL,
     _FRONTMATTER_DESCRIPTION,
+    _GOOD_MARKER,
+    _HEADING_CONTRAST_PIVOT,
     _HELP_FIELD,
+    _IDENT_TOKEN,
     _IDENTITY_CONSUMPTION,
     _KEEP_MARKER,
     _MD_BULLET,
     _MD_HEADING,
+    _MIN_PREDICATE_TOKEN_LEN,
     _MULTI_FORM_MARKER,
     _NORMALIZATION_TOKENS,
     _NORMATIVE_DIRECTIVE,
@@ -50,11 +60,13 @@ from _self_review_patterns import (
     _ORDINAL_PAREN_REFERENCE,
     _PAIR_TOKENS,
     _PATTERN_MATCH_TEST,
+    _PREDICATE_STOPWORDS,
     _PRINT_CALL,
     _PRODUCER_SUBSCRIPT_ASSIGN,
     _RAISE_MESSAGE,
     _RAW_REGEX_LITERAL,
     _RE_CALL,
+    _READ_CHECK_DIRECTIVE,
     _SCAN_LOOP,
     _SEQUENCE_DECOMPOSITION,
     _SUBPROCESS_BOUNDARY,
@@ -1613,4 +1625,364 @@ def _detect_scan_derived_keys(
                     ),
                 }
             )
+    return out
+
+
+# =============================================================================
+# Worked-example-vs-clause adjudication
+# =============================================================================
+
+
+def _predicate_tokens(text: str) -> set[str]:
+    """Return the discriminating word tokens of a predicate phrase or expression.
+
+    Identifier runs are split on camelCase boundaries (``exitCode`` contributes
+    ``exit`` and ``code``) and lowercased; tokens shorter than
+    ``_MIN_PREDICATE_TOKEN_LEN`` and pure function words are dropped, because
+    neither carries discriminating power. An EMPTY result for a directive object
+    is the anaphora signal ("branch on that"), not merely an unusual phrase.
+    """
+    tokens: set[str] = set()
+    for run in _IDENT_TOKEN.findall(text):
+        for segment in _CAMEL_SEGMENT.findall(run):
+            lowered = segment.lower()
+            if len(lowered) < _MIN_PREDICATE_TOKEN_LEN:
+                continue
+            if lowered in _PREDICATE_STOPWORDS:
+                continue
+            tokens.add(lowered)
+    return tokens
+
+
+def _predicate_tokens_agree(required: set[str], example: set[str]) -> bool:
+    """Return True when the two token sets share a term.
+
+    Agreement is a prefix relation rather than strict equality so a nominal and
+    its inflection count as the same term (``persist`` / ``persisted``). Both
+    sides are already filtered to ``_MIN_PREDICATE_TOKEN_LEN`` characters, so the
+    prefix test cannot be satisfied by an incidental short stem.
+    """
+    return any(
+        req == ex or req.startswith(ex) or ex.startswith(req)
+        for req in required
+        for ex in example
+    )
+
+
+def _balanced_paren_span(text: str, open_index: int) -> str | None:
+    """Return the text inside the parentheses opening at ``open_index``.
+
+    A depth counter is used rather than a regex because a predicate carrying its
+    own call parentheses (``if (unmapped.notEmpty())``) truncates under any
+    non-greedy ``\\(.+?\\)`` match. Returns ``None`` when the group never closes.
+    """
+    depth = 0
+    for idx in range(open_index, len(text)):
+        char = text[idx]
+        if char == '(':
+            depth += 1
+        elif char == ')':
+            depth -= 1
+            if depth == 0:
+                return text[open_index + 1 : idx]
+    return None
+
+
+def _ternary_conditions(line: str) -> list[str]:
+    """Return the parenthesized condition of every ternary on ``line``.
+
+    Only the parenthesized form (``(expr) ? a : b``) is recognized: it is the
+    shape whose condition boundary is unambiguous. A bare ``x.field ? a : b``
+    yields nothing, which resolves to the decided "no recoverable branch
+    predicate" disposition rather than to a guessed boundary.
+    """
+    out: list[str] = []
+    for idx, char in enumerate(line):
+        if char != '?':
+            continue
+        close = idx - 1
+        while close >= 0 and line[close].isspace():
+            close -= 1
+        if close < 0 or line[close] != ')':
+            continue
+        depth = 0
+        scan = close
+        while scan >= 0:
+            if line[scan] == ')':
+                depth += 1
+            elif line[scan] == '(':
+                depth -= 1
+                if depth == 0:
+                    break
+            scan -= 1
+        if scan >= 0 and line[scan] == '(':
+            inner = line[scan + 1 : close].strip()
+            if inner:
+                out.append(inner)
+    return out
+
+
+def _branch_predicates(block_lines: list[str]) -> list[str]:
+    """Return every tested expression a worked-example block branches on.
+
+    Recognized shapes: the brace form (``if (expr) ...`` / ``while (expr) ...``),
+    the colon form (``if expr:``), and the parenthesized ternary condition
+    (``(expr) ? a : b``). Line comments are stripped first so an explanatory
+    ``// ...`` annotation is never read as code. The returned list preserves
+    document order and is deduplicated.
+    """
+    exprs: list[str] = []
+    for raw in block_lines:
+        stripped_raw = raw.strip()
+        if not stripped_raw or stripped_raw.startswith('#'):
+            continue
+        line = _BLOCK_LINE_COMMENT.sub('', raw)
+        if not line.strip():
+            continue
+        for match in _BRANCH_KEYWORD.finditer(line):
+            tail = line[match.end() :]
+            lstripped = tail.lstrip()
+            if lstripped.startswith('('):
+                open_index = match.end() + (len(tail) - len(lstripped))
+                inner = _balanced_paren_span(line, open_index)
+                if inner is not None and inner.strip():
+                    exprs.append(inner.strip())
+                continue
+            colon_form = lstripped.rstrip()
+            if colon_form.endswith(':') and colon_form[:-1].strip():
+                exprs.append(colon_form[:-1].strip())
+        exprs.extend(_ternary_conditions(line))
+
+    deduped: list[str] = []
+    for expr in exprs:
+        if expr not in deduped:
+            deduped.append(expr)
+    return deduped
+
+
+def _clause_required_predicate(heading: str, prose: str) -> tuple[str, set[str]]:
+    """Return ``(display_phrase, tokens)`` for the predicate a clause requires.
+
+    The clause's normative prose is scanned for a predicate directive — the
+    explicit ``branch on X`` form or a normative ``Read X`` / ``check X`` — and
+    the FIRST directive whose object resolves to a non-empty token set wins. When
+    every directive object is anaphoric (``branch on that``), the clause heading's
+    required half (everything before a ``, never`` / ``, not`` contrast pivot) is
+    the fallback: the heading is the clause's own condensed statement of what it
+    requires, and it is the only resolution available for the anaphor.
+
+    A clause with NO directive at all yields an empty token set — the decided
+    "no recoverable normative predicate" disposition, which surfaces nothing.
+    """
+    directives: list[tuple[int, str]] = []
+    for match in _BRANCH_ON_DIRECTIVE.finditer(prose):
+        directives.append((match.start(), match.group('object')))
+    for match in _READ_CHECK_DIRECTIVE.finditer(prose):
+        directives.append((match.start(), match.group('object')))
+    if not directives:
+        return '', set()
+
+    directives.sort(key=lambda entry: entry[0])
+    for _start, obj in directives:
+        tokens = _predicate_tokens(obj)
+        if tokens:
+            return obj.strip(), tokens
+
+    required_half = _HEADING_CONTRAST_PIVOT.split(heading)[0].strip()
+    return required_half, _predicate_tokens(required_half)
+
+
+def _document_clause_sections(lines: list[str]) -> list[dict[str, Any]]:
+    """Split a markdown post-image into clause sections with their fenced blocks.
+
+    A section opens at each ATX heading and runs until the next heading, so a
+    fenced block is owned by the NEAREST preceding heading (the innermost clause).
+    Heading detection is suppressed inside a fence, so a ``# GOOD`` marker in a
+    shell block never opens a spurious section.
+
+    Each section carries ``heading``, ``line`` (the heading's 1-based line),
+    ``end`` (the section's last line), ``prose`` (the lines between the heading
+    and its FIRST fence — the clause's normative statement, which the document's
+    rule-then-example shape always places ahead of the demonstration), and
+    ``blocks`` (one entry per fenced block: its 1-based body start line and body
+    lines).
+    """
+    sections: list[dict[str, Any]] = []
+    current: dict[str, Any] | None = None
+    in_fence = False
+    fence_body: list[str] | None = None
+    fence_start = 0
+
+    for idx, line in enumerate(lines, start=1):
+        if _FENCE_DELIMITER.match(line) is not None:
+            if in_fence:
+                if current is not None and fence_body is not None:
+                    current['blocks'].append({'start': fence_start, 'lines': fence_body})
+                in_fence = False
+                fence_body = None
+            else:
+                in_fence = True
+                fence_body = []
+                fence_start = idx + 1
+            continue
+        if in_fence:
+            if fence_body is not None:
+                fence_body.append(line)
+            continue
+        heading = _MD_HEADING.match(line)
+        if heading is not None:
+            if current is not None:
+                current['end'] = idx - 1
+            current = {
+                'heading': heading.group(2),
+                'line': idx,
+                'end': idx,
+                'prose': [],
+                'blocks': [],
+            }
+            sections.append(current)
+            continue
+        if current is not None and not current['blocks']:
+            current['prose'].append(line)
+
+    if in_fence and current is not None and fence_body is not None:
+        current['blocks'].append({'start': fence_start, 'lines': fence_body})
+    if current is not None:
+        current['end'] = len(lines)
+    return sections
+
+
+def _good_regions(block: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return the GOOD half of every worked-example pair inside one fenced block.
+
+    A *pair* requires BOTH a ``BAD`` and a ``GOOD`` marker comment in the same
+    block — a lone GOOD example is not a contrast pair and is the decided
+    "surface nothing" disposition. A block carrying several GOOD markers yields
+    one region per GOOD marker, each running to the next marker (of either kind)
+    or to the end of the block.
+
+    Each region carries ``line`` (the GOOD marker's 1-based document line) and
+    ``body`` (the region's lines, marker line included).
+    """
+    markers: list[tuple[int, str]] = []
+    for offset, line in enumerate(block['lines']):
+        if _BAD_MARKER.match(line) is not None:
+            markers.append((offset, 'bad'))
+        elif _GOOD_MARKER.match(line) is not None:
+            markers.append((offset, 'good'))
+    kinds = {kind for _offset, kind in markers}
+    if not {'bad', 'good'} <= kinds:
+        return []
+
+    regions: list[dict[str, Any]] = []
+    for index, (offset, kind) in enumerate(markers):
+        if kind != 'good':
+            continue
+        end = markers[index + 1][0] if index + 1 < len(markers) else len(block['lines'])
+        regions.append(
+            {
+                'line': block['start'] + offset,
+                'body': block['lines'][offset:end],
+            }
+        )
+    return regions
+
+
+def _worked_example_pairs(
+    path: str, lines: list[str], touched: set[int] | None = None
+) -> list[dict[str, Any]]:
+    """Adjudicate every GOOD/BAD worked-example pair in one markdown document.
+
+    Returns one record per pair, carrying ``file``, ``line`` (the GOOD marker),
+    ``clause`` (the enclosing heading), ``required_predicate``,
+    ``example_predicate``, and ``agrees``. ``agrees`` is tri-state:
+
+    * ``True``  — the clause's required predicate and the GOOD example's branch
+      predicate share a term;
+    * ``False`` — both predicates resolved and they DISAGREE (the surfaced case);
+    * ``None``  — the pair is not adjudicable, because the clause names no
+      normative predicate or the GOOD example branches on nothing recoverable.
+      This is a decided disposition, not an accident: an unadjudicable pair
+      surfaces nothing rather than widening the net.
+
+    ``touched`` restricts the scan to clause sections the diff intersects; pass
+    ``None`` to adjudicate every section (the population-scan path).
+    """
+    out: list[dict[str, Any]] = []
+    for section in _document_clause_sections(lines):
+        if touched is not None:
+            span = set(range(section['line'], section['end'] + 1))
+            if not (span & touched):
+                continue
+        heading = section['heading']
+        prose = '\n'.join(section['prose'])
+        required_phrase, required_tokens = _clause_required_predicate(heading, prose)
+
+        for block in section['blocks']:
+            for region in _good_regions(block):
+                exprs = _branch_predicates(region['body'])
+                example_phrase = '; '.join(exprs)
+                if not required_tokens or not exprs:
+                    agrees: bool | None = None
+                else:
+                    agrees = _predicate_tokens_agree(
+                        required_tokens, _predicate_tokens(example_phrase)
+                    )
+                out.append(
+                    {
+                        'file': path,
+                        'line': region['line'],
+                        'clause': _truncate(heading, 120),
+                        'required_predicate': _truncate(required_phrase, 120),
+                        'example_predicate': _truncate(example_phrase, 120),
+                        'agrees': agrees,
+                    }
+                )
+    return out
+
+
+def _detect_worked_example_pairs(
+    added: list[tuple[str, int, str]], project_dir: Path | None = None
+) -> list[dict[str, Any]]:
+    """Detect a GOOD worked example whose branch predicate contradicts its clause.
+
+    A clause section states a normative rule and then demonstrates it with a
+    BAD/GOOD pair. The rule is only demonstrated when the GOOD example branches on
+    the predicate the clause requires; when it branches on a DIFFERENT field, the
+    worked contrast silently demonstrates the very shape its own clause forbids —
+    one field over — while reading as a correct example.
+
+    The comparison is predicate-versus-predicate: the required predicate is
+    extracted from the clause's normative directive (or, for an anaphoric
+    ``branch on that``, from the heading's required half), and the example
+    predicate is the expression the GOOD block actually tests. Only the
+    DISAGREEING case is surfaced, following the ``producer_consumer`` precedent,
+    so the entry's ``agrees`` field is always ``false``. No denominator
+    accompanies the list: agreeing pairs and unadjudicable pairs are both
+    dropped, and neither count is reported. An empty list therefore states only
+    that no adjudicable disagreement was surfaced in the diff scope — not that
+    every pair agrees, and not a population-level clean verdict; non-adjudication
+    is the dominant reason a pair is absent. The ``scan-worked-examples`` verb in
+    ``self_review.py`` publishes the population denominator that claim requires.
+
+    Restricted to clause sections the diff touched, and to ``.md`` files whose
+    post-image is readable (the full document is needed to resolve a section's
+    prose and fence structure). See ``SKILL.md`` § Detection Rules rule 19 for the
+    decided disposition of each relational case.
+    """
+    md_touched: dict[str, set[int]] = {}
+    for path, lineno, _content in added:
+        if path.endswith('.md'):
+            md_touched.setdefault(path, set()).add(lineno)
+    if not md_touched or project_dir is None:
+        return []
+
+    out: list[dict[str, Any]] = []
+    for md_path in sorted(md_touched):
+        post_image = _read_post_image(project_dir, md_path)
+        if not post_image:
+            continue
+        for record in _worked_example_pairs(md_path, post_image, md_touched[md_path]):
+            if record['agrees'] is False:
+                out.append(record)
     return out

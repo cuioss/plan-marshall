@@ -8,6 +8,18 @@ How much time and how many tokens did the plan consume relative to its scope? LL
 - `log_analysis` fragment (already computed) — entry counts, script durations.
 - `references.json` `affected_files` — scope size.
 
+### What population `totals.tokens` measures
+
+`totals.tokens` is read from `metrics.md`'s population-qualified `Tokens (dispatched unless marked)` column, and it inherits that column's **default-plus-exception** labelling verbatim — it does not re-derive a population of its own:
+
+- **Default** — a phase row is a **dispatched-subagent** measurement, and is unmarked.
+- **Exception** — a row marked `(inline)` is a **main-context-window** measurement that `manage-metrics enrich` folds into `total_tokens` because the phase dispatched nothing (the same figure is also recorded under its own name as `inline_main_context_tokens`). A row marked `(mixed)` is still the dispatched figure, with its inline spend excluded.
+- **The sum** — when an `(inline)` row fed the sum, the Total cell is marked `(spans populations)`, and `totals.tokens` is then **not** a dispatched total.
+
+So `totals.tokens` is dispatched-population on every row *except* the marked ones, and spans populations exactly when the source Total says it does. The full contract — the three `total_tokens_population` signatures, the two guards a default-plus-exception label must satisfy, and every render site that prints the discriminator — is owned by [`manage-metrics/standards/data-format.md`](../../manage-metrics/standards/data-format.md) § "Default-plus-exception labelling of the `Tokens` column". Read the marker off the report; never assume the unmarked default holds for a plan whose Total carries `(spans populations)`.
+
+`billing_weighted_total` (the `Billing (cost)` column) is a **derived-cost** measure over the main-context window, not dispatched work. It is never summed into `totals.tokens` and never scored against the Section 2 anchors.
+
 ## TOON Fragment Shape
 
 ```toon
@@ -47,22 +59,63 @@ The four computed values MUST appear under `ratios:` in the fragment alongside t
 
 ### 2. Calibration anchors table (keyed on `(scope_estimate, change_type)`)
 
-For each plan, look up the row matching the plan's `(scope_estimate, change_type)` combination. The row defines the warning and error thresholds for `total_tokens` against which Section 3 emits `[BUDGET]` findings. When the combination is NOT anchored in the table below, fall back to the four ratio thresholds in Section 1 (`tokens_per_file_modified > 50_000` warning; `seconds_per_task > 900` warning; `max_phase_token_share > 0.50` warning; `total_tokens_per_deliverable > 500_000` warning).
+For each plan, look up the row matching the plan's `(scope_estimate, change_type)` combination. Every pair in the live key space is present as a row, and each row carries a `grade`:
 
-| scope_estimate | change_type | warning at | error at | reference |
-|----------------|-------------|-----------:|---------:|-----------|
-| surgical | bug_fix | ≥500K tokens / ≥30 min | ≥800K tokens / ≥45 min | `.plan/local/archived-plans/2026-05-27-deploy-target-sentinel-writer-computes-empty-inpu/` (958K incident — the canonical over-budget reference for this row) |
-| surgical | feature | ≥600K tokens / ≥45 min | ≥1.0M tokens / ≥75 min | — |
-| surgical | refactor | ≥600K tokens / ≥45 min | ≥1.0M tokens / ≥75 min | — |
-| single_module | bug_fix | ≥800K tokens / ≥60 min | ≥1.3M tokens / ≥90 min | — |
-| single_module | feature | ≥1.0M tokens / ≥75 min | ≥1.6M tokens / ≥120 min | — |
-| single_module | refactor | ≥1.0M tokens / ≥75 min | ≥1.6M tokens / ≥120 min | — |
-| cross_cutting | bug_fix | ≥1.2M tokens / ≥90 min | ≥2.0M tokens / ≥150 min | — |
-| cross_cutting | feature | ≥1.5M tokens / ≥120 min | ≥2.5M tokens / ≥180 min | — |
-| cross_cutting | refactor | ≥1.5M tokens / ≥120 min | ≥2.5M tokens / ≥180 min | — |
-| complex | feature | ≥2.0M tokens / ≥180 min | ≥3.5M tokens / ≥240 min | — |
-| complex | bug_fix | ≥1.5M tokens / ≥120 min | ≥2.5M tokens / ≥180 min | — |
-| complex | refactor | ≥2.0M tokens / ≥180 min | ≥3.5M tokens / ≥240 min | — |
+- **`anchored`** — the row defines warning and error thresholds for `totals.tokens`, against which Section 3 emits `[BUDGET]` findings.
+- **`fallback`** — the pair is a *present, deliberately ungraded* key: no calibration observation exists for it, so scoring falls back to the four ratio thresholds in Section 1 (`tokens_per_file_modified > 50_000` warning; `seconds_per_task > 900` warning; `max_phase_token_share > 0.50` warning; `total_tokens_per_deliverable > 500_000` warning). A `fallback` row is **not** the same as a missing row: it records that the pair was considered and left unanchored on purpose, so a silently-absent pair is a defect the cross-product guard catches.
+
+**Population scored.** Every threshold below is scored against `totals.tokens` **as the Inputs section defines it** — dispatched-subagent on every row except those the report marks `(inline)`, where a main-context figure is folded in, and `(spans populations)` on the Total when that occurs. The anchors do not score `billing_weighted_total`.
+
+**Re-derivation outcome: ZERO delta.** These thresholds were re-derived against the measured population and **no value moved**. The reason is structural, not an omission: deliverable 3 of the plan that introduced the population labelling was re-scoped to **retain** the inline fold (it is what keeps a zero-dispatch phase countable, and five consumers are load-bearing on it), so the population these anchors score is exactly the population they scored before — only its *labelling* changed. Moving the anchors down would have required inventing a reduction factor for an exclusion that never occurred. The originating outline's deliverable-6 requirement to "move the anchors down" by analytic reduction of the 1-init contribution is therefore **SUPERSEDED** by that re-scope, on the same operator ruling that settled the `Tokens (dispatched unless marked)` header literal: label truthfully, keep the values. Re-open this only if the fold is ever actually removed.
+
+**Key space.** The table is the **exact cross-product** of the two live axes — 5 × 7 = 35 pairs, no more and no fewer:
+
+- `scope_estimate` (5) — `none`, `surgical`, `single_module`, `multi_module`, `broad`. Authoritative source: `SCOPE_ESTIMATE_VALUES` in `manage-solution-outline/scripts/manage-solution-outline.py`.
+- `change_type` (7) — the six canonical values `analysis`, `feature`, `enhancement`, `bug_fix`, `tech_debt`, `verification` (authoritative source: the Change-Type Definitions table in [`ref-workflow-architecture/standards/change-types.md`](../../ref-workflow-architecture/standards/change-types.md)) **UNION** `feature_breaking`.
+
+  **Source discrepancy — `feature_breaking`.** `feature_breaking` is scored as a live change_type by the planning-lane router (`_DEEP_CHANGE_TYPES` in `manage-status/scripts/_cmd_planning_lane.py`) but is **absent from the canonical Change-Type Definitions table**. It is keyed here because a plan can actually carry it; reconciling the two sources (adding it to the canonical vocabulary, or removing it from the router) is deliberately out of scope for this table and belongs to whichever surface owns the vocabulary.
+
+**Remapped calibration data.** Four of the previous table's scope keys were never members of `SCOPE_ESTIMATE_VALUES` and one change_type was never canonical, so eight of its twelve rows were dead keys. Their calibration data was preserved by remapping onto the live bands rather than discarded: `cross_cutting` → `multi_module`, `complex` → `broad`, `refactor` → `tech_debt`. No remapped value was altered in the move.
+
+| scope_estimate | change_type | grade | warning at | error at | reference |
+|----------------|-------------|-------|-----------:|---------:|-----------|
+| none | analysis | fallback | — | — | Section 1 ratios |
+| none | feature | fallback | — | — | Section 1 ratios |
+| none | enhancement | fallback | — | — | Section 1 ratios |
+| none | bug_fix | fallback | — | — | Section 1 ratios |
+| none | tech_debt | fallback | — | — | Section 1 ratios |
+| none | verification | fallback | — | — | Section 1 ratios |
+| none | feature_breaking | fallback | — | — | Section 1 ratios |
+| surgical | analysis | fallback | — | — | Section 1 ratios |
+| surgical | feature | anchored | ≥600K tokens / ≥45 min | ≥1.0M tokens / ≥75 min | — |
+| surgical | enhancement | fallback | — | — | Section 1 ratios |
+| surgical | bug_fix | anchored | ≥500K tokens / ≥30 min | ≥800K tokens / ≥45 min | `.plan/local/archived-plans/2026-05-27-deploy-target-sentinel-writer-computes-empty-inpu/` (958K incident — the canonical over-budget reference for this row) |
+| surgical | tech_debt | anchored | ≥600K tokens / ≥45 min | ≥1.0M tokens / ≥75 min | remapped from the retired `surgical + refactor` row |
+| surgical | verification | fallback | — | — | Section 1 ratios |
+| surgical | feature_breaking | fallback | — | — | Section 1 ratios |
+| single_module | analysis | fallback | — | — | Section 1 ratios |
+| single_module | feature | anchored | ≥1.0M tokens / ≥75 min | ≥1.6M tokens / ≥120 min | — |
+| single_module | enhancement | fallback | — | — | Section 1 ratios |
+| single_module | bug_fix | anchored | ≥800K tokens / ≥60 min | ≥1.3M tokens / ≥90 min | — |
+| single_module | tech_debt | anchored | ≥1.0M tokens / ≥75 min | ≥1.6M tokens / ≥120 min | remapped from the retired `single_module + refactor` row |
+| single_module | verification | fallback | — | — | Section 1 ratios |
+| single_module | feature_breaking | fallback | — | — | Section 1 ratios |
+| multi_module | analysis | fallback | — | — | Section 1 ratios |
+| multi_module | feature | anchored | ≥1.5M tokens / ≥120 min | ≥2.5M tokens / ≥180 min | remapped from the retired `cross_cutting + feature` row |
+| multi_module | enhancement | fallback | — | — | Section 1 ratios |
+| multi_module | bug_fix | anchored | ≥1.2M tokens / ≥90 min | ≥2.0M tokens / ≥150 min | remapped from the retired `cross_cutting + bug_fix` row |
+| multi_module | tech_debt | anchored | ≥1.5M tokens / ≥120 min | ≥2.5M tokens / ≥180 min | remapped from the retired `cross_cutting + refactor` row |
+| multi_module | verification | fallback | — | — | Section 1 ratios |
+| multi_module | feature_breaking | fallback | — | — | Section 1 ratios |
+| broad | analysis | fallback | — | — | Section 1 ratios |
+| broad | feature | anchored | ≥2.0M tokens / ≥180 min | ≥3.5M tokens / ≥240 min | remapped from the retired `complex + feature` row |
+| broad | enhancement | fallback | — | — | Section 1 ratios |
+| broad | bug_fix | anchored | ≥1.5M tokens / ≥120 min | ≥2.5M tokens / ≥180 min | remapped from the retired `complex + bug_fix` row |
+| broad | tech_debt | anchored | ≥2.0M tokens / ≥180 min | ≥3.5M tokens / ≥240 min | remapped from the retired `complex + refactor` row |
+| broad | verification | fallback | — | — | Section 1 ratios |
+| broad | feature_breaking | fallback | — | — | Section 1 ratios |
+
+**Maintaining this table.** The key space is guarded by `test/plan-marshall/plan-retrospective/test_plan_efficiency_anchors.py`, which re-derives both axes from their owning sources at check time and asserts **set equality** in both directions — a new enum value fails until it is anchored or fallback-graded here, and a retired value fails until its dead row is removed. Do not hand-copy either axis into the test.
 
 The 300K-token figure cited in earlier authoring as a `surgical + bug_fix` "expected ceiling" remains the design baseline — a surgical bug-fix plan that exceeds 300K but stays under 500K is "watch-list" territory and SHOULD prompt a one-line `info` finding even when neither warning nor error trips.
 
