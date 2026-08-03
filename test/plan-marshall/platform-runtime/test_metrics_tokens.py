@@ -576,6 +576,50 @@ def test_attribute_cache_read_without_observed_weight_leaves_everything_in_the_r
     assert set(named.values()) == {0}, named
 
 
+def test_attribute_cache_read_keeps_subagent_share_out_of_named_buckets():
+    """Subagent cache_read carries no residency weight, so it discloses rather than spreads.
+
+    The guarded defect is specifically the NON-zero-parent-weight case: the
+    ``total_weight == 0`` branch already banked everything in the residual, so a
+    test that only covered it would pass against the unfixed code.
+    """
+    attributed = claude_runtime._attribute_cache_read(
+        100, {"exploration": 1, "work": 1}, subagent_cache_read=40
+    )
+
+    # Only the 60 the parent walk actually observed is split, 1:1.
+    assert attributed["cache_read_attributed_exploration"] == 30
+    assert attributed["cache_read_attributed_work"] == 30
+    # The subagent's 40 reaches the residual instead of a named share.
+    assert attributed["cache_read_unattributed"] == 40
+    # Exact reconciliation still holds over the FULL recorded total.
+    assert sum(attributed.values()) == 100
+
+
+def test_attribute_cache_read_subagent_exclusion_is_load_bearing():
+    """Negative control: the same call without the subagent figure DOES spread it.
+
+    Pins that the assertion above is not vacuous — remove the exclusion and this
+    is the (wrong) split the fixed code no longer produces.
+    """
+    without = claude_runtime._attribute_cache_read(100, {"exploration": 1, "work": 1})
+
+    assert without["cache_read_attributed_exploration"] == 50
+    assert without["cache_read_attributed_work"] == 50
+    assert without["cache_read_unattributed"] == 0
+
+
+def test_attribute_cache_read_subagent_exceeding_total_empties_rather_than_inverts():
+    """A subagent figure larger than the phase total can only empty the split."""
+    attributed = claude_runtime._attribute_cache_read(
+        10, {"exploration": 3}, subagent_cache_read=999
+    )
+
+    assert attributed["cache_read_attributed_exploration"] == 0
+    assert attributed["cache_read_unattributed"] == 10
+    assert min(attributed.values()) >= 0, attributed
+
+
 def test_attribute_cache_read_zero_total_is_a_measured_zero_across_the_group():
     """Zero recorded cache_read still yields every key — a measured zero, never absent."""
     attributed = claude_runtime._attribute_cache_read(0, {"exploration": 999, "work": 1})

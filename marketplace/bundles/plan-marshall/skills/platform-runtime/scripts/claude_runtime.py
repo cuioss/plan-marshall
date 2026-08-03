@@ -1672,13 +1672,24 @@ def _fold_turn_residency(
         weights[bucket] += resident.get(f"{bucket}_result_bytes", 0)
 
 
-def _attribute_cache_read(cache_read_total: int, weights: dict[str, int]) -> dict[str, int]:
+def _attribute_cache_read(
+    cache_read_total: int, weights: dict[str, int], subagent_cache_read: int = 0
+) -> dict[str, int]:
     """Split one phase's recorded ``cache_read`` across the entering byte sources.
 
     The split is proportional to *weights* — the turn-weighted residency
     accumulated by ``_fold_turn_residency`` — and the emitted key set is DERIVED
     from ``_TOOL_BUCKET_NAMES``, so a bucket added to ``_TOOL_BUCKETS`` cannot
     leave this group behind.
+
+    **Only the parent-observed portion is split.** *cache_read_total* includes
+    ``cache_read`` folded in from subagent transcripts, but those payloads are
+    added after the parent walk and never pass through ``_fold_turn_residency``,
+    so they contribute no residency weight. Splitting the full total across
+    parent-only weights would spread the subagent share over buckets it was
+    never observed to occupy — the same defect the ``total_weight == 0`` branch
+    below avoids. *subagent_cache_read* is therefore subtracted before the split
+    and reaches the residual via the remainder.
 
     **Exact reconciliation.** Each named part is floored, and
     ``cache_read_unattributed`` is computed as the REMAINDER rather than as its
@@ -1694,10 +1705,13 @@ def _attribute_cache_read(cache_read_total: int, weights: dict[str, int]) -> dic
     """
     attributed = {f"cache_read_attributed_{bucket}": 0 for bucket in _TOOL_BUCKET_NAMES}
     total_weight = sum(weights.get(bucket, 0) for bucket in _TOOL_BUCKET_NAMES)
-    if cache_read_total > 0 and total_weight > 0:
+    # Clamped at zero so a subagent figure exceeding the phase total can only
+    # empty the split, never invert it into negative named shares.
+    attributable = max(0, cache_read_total - max(0, subagent_cache_read))
+    if attributable > 0 and total_weight > 0:
         for bucket in _TOOL_BUCKET_NAMES:
             attributed[f"cache_read_attributed_{bucket}"] = (
-                cache_read_total * weights.get(bucket, 0) // total_weight
+                attributable * weights.get(bucket, 0) // total_weight
             )
     attributed["cache_read_unattributed"] = cache_read_total - sum(attributed.values())
     return attributed
@@ -1952,6 +1966,11 @@ def _compute_normalized_tokens(
     per_phase_tools: dict[str, dict[str, int]] = {}
     per_phase_residency: dict[str, dict[str, int]] = {}
     per_phase_subsources: dict[str, dict[str, int]] = {}
+    # cache_read folded in from subagent transcripts, held separately from the
+    # four-field bucket so the attribution split can exclude it: these payloads
+    # never pass through _fold_turn_residency, so they carry no residency weight
+    # and their share must land in the residual rather than on parent weights.
+    per_phase_subagent_cache_read: dict[str, int] = {}
     call_index: dict[str, tuple[str, str, str]] = {}
 
     def _four_field_bucket(phase_name: str) -> dict[str, int]:
@@ -2041,6 +2060,9 @@ def _compute_normalized_tokens(
             bucket = _four_field_bucket(sub_phase)
             for field in _USAGE_FOUR_FIELDS:
                 bucket[field] += sub_fields.get(field, 0)
+            per_phase_subagent_cache_read[sub_phase] = per_phase_subagent_cache_read.get(
+                sub_phase, 0
+            ) + sub_fields.get("cache_read_input_tokens", 0)
             sub_counters = per_phase_tools.setdefault(sub_phase, _empty_tool_counters())
             for key, value in sub_tools.items():
                 sub_counters[key] += value
@@ -2105,6 +2127,7 @@ def _compute_normalized_tokens(
             _attribute_cache_read(
                 four.get("cache_read_input_tokens", 0),
                 per_phase_residency.get(phase_name) or {},
+                per_phase_subagent_cache_read.get(phase_name, 0),
             )
         )
         per_phase[phase_name] = phase_bucket
