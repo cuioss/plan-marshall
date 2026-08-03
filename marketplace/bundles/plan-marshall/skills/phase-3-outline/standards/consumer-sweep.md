@@ -43,16 +43,18 @@ From the deliverable's `Change per file`, `Refactoring`, or title, extract every
 
 For skill notations, extract the full three-part (`bundle:skill:script`) or two-part (`bundle:skill`) form.
 
-### 2b. Run structured discovery first
+### 2b. Run structured path discovery first — only for path-shaped symbols
 
-For every extracted symbol, run the structured architecture inventory:
+`architecture find --pattern` matches **paths, not file contents**. It is therefore the first pass ONLY when the extracted symbol is path-shaped — a script or module basename, a skill directory name, or any symbol that appears as a path component:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-  find --pattern "{symbol}" --audit-plan-id {plan_id}
+  find --pattern "*{path_shaped_symbol}*" --audit-plan-id {plan_id}
 ```
 
-The architecture verb returns module-level matches and is the canonical first pass. Record every consumer file from the `results` list.
+Record every consumer file from the `results` list.
+
+A symbol that is NOT path-shaped — a function, class, constant, or any name that can only appear inside a file body, such as `load_derived_data` — has **no** path step. Passing it to `find --pattern` returns a clean zero that proves nothing, which reads as "no consumers" and silently under-scopes the deliverable. For those symbols, skip this step entirely and go straight to the content sweep in §2c, which is the canonical symbol-discovery pass.
 
 ### 2c. Run the content sweep for sub-module references
 
@@ -80,7 +82,9 @@ This likewise covers only the marketplace-rooted portion; `.claude/` is a dotfil
 
 Each call is a separate Bash invocation (one command per call — never combined with `&&`, `;`, or pipes). Use `architecture find` first for path matches; these `search --content` calls reach the sub-module body references the path glob cannot resolve.
 
-Read the coverage fields alongside `count`, and require all of them clean — `files_scanned > 0`, `unreadable == []`, `truncated == false`, `elided == []` — before treating a sweep as complete. `files_scanned > 0` alone only proves the population was non-empty; it does not prove the sweep saw every inventoried file. That distinction is decisive here, because the whole point of this step is to ENUMERATE consumers: an unreadable file or an elided bucket is a consumer that never appears in `results[]`, and the deliverable then ships with an `Affected files` list that looks complete and is not. Treat any non-clean coverage field the same way this section already treats the out-of-inventory residue above — return it to the caller as a coverage gap, never as a clean sweep. See [`manage-architecture/standards/client-api.md`](../../manage-architecture/standards/client-api.md) § search.
+Read the coverage fields alongside `count` and require the complete-coverage conjunction to hold before treating a sweep as complete — see [`manage-architecture/standards/client-api.md`](../../manage-architecture/standards/client-api.md) § search → "Complete-coverage rule" for the field list and the canonical definition.
+
+That rule is decisive here, because the whole point of this step is to ENUMERATE consumers: an unreadable file or an elided bucket is a consumer that never appears in `results[]`, and the deliverable then ships with an `Affected files` list that looks complete and is not. Treat any non-clean coverage field the same way this section already treats the out-of-inventory residue above — return it to the caller as a coverage gap, never as a clean sweep.
 
 ### 2d. Collect every consuming file
 

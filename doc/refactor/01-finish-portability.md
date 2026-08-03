@@ -328,7 +328,7 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture s
 
 Discard hits under `/platform-runtime/` (the sanctioned home) and under `.claude-plugin` from the returned `results[]`; the remainder is the audit set. The response reports file-level hits with a per-file `match_count` and no line bodies, so `Read` a hit to see the specific lines.
 
-**Reject the audit result unless coverage is clean.** `files_scanned > 0` proves only that some files were opened — it does not prove the inventory was searched. This audit's whole value is a *negative* ("no unsanctioned Claude literals remain"), which is exactly the claim an incomplete sweep silently falsifies. Accept the result only when `files_scanned > 0` **and** `unreadable == []` **and** `truncated == false` **and** `elided == []`; if any of those is non-clean, the audit outcome is a *coverage gap* to be reported and re-run, not a pass. The conjunction is contracted once in [`client-api.md`](../../marketplace/bundles/plan-marshall/skills/manage-architecture/standards/client-api.md) § `search`.
+**Reject the audit result unless coverage is clean.** `files_scanned > 0` proves only that some files were opened — it does not prove the inventory was searched. This audit's whole value is a *negative* ("no unsanctioned Claude literals remain"), which is exactly the claim an incomplete sweep silently falsifies. Accept the result only when the complete-coverage conjunction holds; if any coverage field is non-clean, the audit outcome is a *coverage gap* to be reported and re-run, not a pass. The conjunction is contracted once in [`client-api.md`](../../marketplace/bundles/plan-marshall/skills/manage-architecture/standards/client-api.md) § `search` → "Complete-coverage rule".
 
 The remaining hits are dominated by the accepted set — the behavioural Claude-path
 hardcodes in general skill bodies, shared runtime scripts, and authoring tools have been
@@ -380,7 +380,7 @@ the tail of this workstream rather than re-opening the gap classes:
   (`architecture search --content --pattern "[\x27\x22]\.claude[\x27\x22]"`, keeping only
   `category: source` hits) to close this blind spot. The probe is a **regex over both
   quote styles**, not a literal: Python string quoting is a free choice, so
-  `Path / "\.claude" / "skills"` is exactly as valid as the single-quoted spelling, and a
+  `Path / ".claude" / "skills"` is exactly as valid as the single-quoted spelling, and a
   `--literal --pattern "'.claude'"` probe would miss every double-quoted segment while
   still reporting a clean result — a blind spot inside the probe meant to close a blind
   spot. `\x27` / `\x22` are the regex escapes for the single and double quote; spelling

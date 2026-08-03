@@ -36,7 +36,7 @@ Verify that portability gaps from [01-finish-portability.md](01-finish-portabili
 
 So for each row, the hit only nominates the file. Confirm the pass by opening the named path and verifying the executable invocation is actually present on a live code path — then record the confirming line in the validation log alongside the check id. A row whose hit resolves only to prose, comments, or a table is a **FAIL**, not a pass.
 
-Apply the coverage conjunction from [01 § Closing audit](01-finish-portability.md#closing-audit) here too: `files_scanned > 0` alone does not make a *negative* row trustworthy, so a check that fails to find its expected path must also show `unreadable == []`, `truncated == false`, and `elided == []` before it is reported as BLOCKED rather than as a coverage gap.
+Apply the canonical complete-coverage conjunction here too — see [`client-api.md`](../../marketplace/bundles/plan-marshall/skills/manage-architecture/standards/client-api.md) § search. `files_scanned > 0` alone does not make a *negative* row trustworthy, so a check that fails to find its expected path must satisfy the full conjunction before it is reported as BLOCKED rather than as a coverage gap.
 
 ### 0.2 OpenCode installed and discoverable
 

@@ -183,7 +183,7 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks \
 #   verification:
 #     commands:
 #       - python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture search --content --pattern '^\x60\x60\x60json'
-#     criteria: count is 0 with files_scanned > 0 (a real empty population, not an unsearched one)
+#     criteria: count is 0 over clean coverage (client-api.md § search, "Complete-coverage rule")
 
 # Step 3: commit
 python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks \
