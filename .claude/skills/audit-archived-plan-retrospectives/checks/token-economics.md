@@ -12,11 +12,39 @@ plan in isolation. The deterministic computation lives in `scripts/audit.py`
 (`cross_token_economics` / `emit_token_economics_block`); this sub-document is the
 interpretation guide.
 
-## Measurement caveat: `total_tokens` is an output-volume proxy, not a cost measure
+## What population every number here scores
 
-Every number this check derives comes from `metrics.toon`'s `total_tokens`, which
-`manage-metrics` records as **`input_tokens + output_tokens` only**. It **excludes
-`cache_read_input_tokens` and `cache_creation_input_tokens`**, so it measures
+Every number this check derives comes from `metrics.toon`'s `total_tokens`, read
+under its **default-plus-exception** population labelling — the same contract the
+rendered `Tokens (dispatched unless marked)` column declares:
+
+- **Default** — a phase row is a **dispatched-subagent** measurement: the
+  dispatched leaves' forwarded `<usage>` total, or the per-phase accumulator's
+  cumulative value.
+- **Exception** — a row whose `total_tokens_population` is `inline` is a
+  **main-context-window** measurement that `manage-metrics enrich` folds in
+  because the phase dispatched nothing (`input + output + cache_creation`,
+  excluding `cache_read`). A row marked `mixed` is still the dispatched figure,
+  with its inline spend excluded and recorded separately as
+  `inline_main_context_tokens`.
+- **The sum** — a per-plan `total_tokens` containing an `inline` phase row
+  therefore **spans populations** and is not a dispatched total. Every per-plan
+  ratio, every corpus aggregate, and every derived cut-point below inherits that
+  same mixed population; none of them re-derive one of their own.
+
+`billing_weighted_total` (the `Billing (cost)` column) is a **derived-cost**
+measure of what a phase cost to buy. It is a different question from the work
+this check measures and is **never** summed into `total_tokens`. The full
+contract — the three `total_tokens_population` signatures and the two guards a
+default-plus-exception label must satisfy — is owned by
+`manage-metrics/standards/data-format.md` § "Default-plus-exception labelling of
+the `Tokens` column".
+
+### Measurement caveat: `total_tokens` is an output-volume proxy, not a cost measure
+
+Neither signature includes `cache_read_input_tokens`: a dispatched row carries the
+harness's `<usage>` total and an inline row deliberately excludes `cache_read` so
+the folded figure matches that definition. So `total_tokens` measures
 **generation + fresh input**, not total token traffic.
 
 Consequences every reader of this block MUST hold:
@@ -133,6 +161,20 @@ self-describing:
 The only fixed inputs are the phase-name list and the structural
 `exec_metrics_blind` predicate (execute total == 0) — a recording fact, not a
 tunable.
+
+### Recalibration against the measured population: nothing to move
+
+Because every cut-point above is corpus-relative, it **floats with whatever
+population the corpus records** — there is no literal here to recalibrate when the
+population's labelling changes. The plan that made the population explicit
+therefore required no threshold edit in this check, and none was made.
+
+The same re-derivation over the sibling `lane-lever-effectiveness` check's fixed
+armed targets returned a **ZERO delta** for the same underlying reason: that plan
+deliberately **retained** the inline fold, so the population these numbers score
+is unchanged and only its labelling changed. See
+[`lane-lever-effectiveness.md`](lane-lever-effectiveness.md) § "Re-derivation
+outcome: ZERO delta".
 
 ## Anti-pattern flags (dynamically derived)
 
@@ -307,4 +349,11 @@ one-off" — this check IS that). Consequences for Step 4 lesson filing:
 - `exec_metrics_blind` floors are mandatory to annotate: a blind plan's
   downstream numbers are lower bounds, and `planning_gt_exec` is suppressed for
   blind plans by construction.
+- Every number here sums `total_tokens` and ONLY `total_tokens`. Never fold the
+  derived-cost `billing_weighted_total` into a total or a ratio — that would mix
+  a cost population into a work measure.
+- Never describe a per-plan total or a corpus aggregate as a *dispatched* figure
+  without checking the population markers: a plan whose `1-init` (or any other)
+  phase row is `inline` contributes a folded main-context measurement, so its
+  total spans populations.
 - This check is read-only; it never edits `.plan/` files.
