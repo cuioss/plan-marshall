@@ -137,7 +137,7 @@ Every PR subcommand returns the standard envelope: success shape (`status: succe
 | `pr prepare-body` | `--plan-id` | `--for create\|edit`, `--slot` | `path` |
 | `pr prepare-comment` | `--plan-id` | `--for reply\|thread-reply`, `--slot` | `path` |
 | `pr create` | `--title`, `--plan-id` | `--slot`, `--base` (default: repo default), `--head`, `--draft`, `--label` (repeatable) | `pr_number`, `pr_url` |
-| `pr view` | — (uses current branch) | — | `pr_number`, `pr_url`, `state`, `title`, `head_branch`, `base_branch`, `is_draft`, `mergeable`, `merge_state`, `review_decision` |
+| `pr view` | — (uses current branch) | _at most one of_ `--pr-number` _or_ `--head` | `pr_number`, `pr_url`, `state`, `title`, `head_branch`, `base_branch`, `is_draft`, `mergeable`, `merge_state`, `review_decision` |
 | `pr list` | — | `--head {branch}`, `--state open\|closed\|all` (default `open`) | `total`, `state_filter`, `head_filter`, `prs[N]{number,url,title,state,head_branch,base_branch}` |
 | `pr reply` | `--pr-number`, `--plan-id` | `--slot` | `pr_number` |
 | `pr resolve-thread` | `--thread-id` (GitLab also requires `--pr-number`) | — | `thread_id` |
@@ -440,16 +440,18 @@ assignees[1]:
 
 The following subcommands all return the standard success shape (`status: success`, `operation: {op}`, plus a key identifier such as `pr_number`, `issue_number`, or `run_id`) and the standard error shape (`status: error`, `operation: {op}`, `error: ...`, `context: {underlying-cli-exit-reason}`). They accept only the listed required arguments and the optional flags noted inline.
 
+**Merge-shaped rows are corroborated.** `pr merge`, `pr auto-merge`, `pr safe-merge`, and `pr merge-queue` never derive their success claim (`merged` / `disposition` / `enqueued`) from the CLI exit code — each establishes it from a re-read of provider state, and each fails closed. The normative statement lives once in [`pr-operations.md`](pr-operations.md) § "The corroborate-not-report contract"; the rows below record only the resulting fields.
+
 | Subcommand | Required args | Optional flags | Notes |
 |------------|---------------|----------------|-------|
-| `pr merge` | _exactly one of_ `--pr-number` _or_ `--head` | `--strategy merge\|squash\|rebase` (default `merge`), `--delete-branch` | Success adds `strategy`. |
-| `pr auto-merge` | _exactly one of_ `--pr-number` _or_ `--head` | `--strategy` | Enables auto-merge when all checks pass; success adds `enabled: true`. |
-| `pr safe-merge` | _exactly one of_ `--pr-number` _or_ `--head` | `--strategy merge\|squash\|rebase` (default `merge`), `--delete-branch`, `--admin-merge-on-stuck-state` (GitHub-only), `--poll-timeout`, `--poll-interval` | Polls readiness then merges. Success adds `strategy`, `merge_path` (`polled_clean`\|`admin_fallback`), `polls`, `duration_sec`. The `--admin` stuck-state fallback is GitHub-only, gated by `--admin-merge-on-stuck-state` + provably-met ruleset; ignored on GitLab. |
+| `pr merge` | _exactly one of_ `--pr-number` _or_ `--head` | `--strategy merge\|squash\|rebase` (default `merge`), `--delete-branch` | Success adds `strategy`, `merged: true`, `merge_corroboration`. Refuses (`status: error`) when the platform requires the queue/train. |
+| `pr auto-merge` | _exactly one of_ `--pr-number` _or_ `--head` | `--strategy` | Schedules the merge without waiting; success adds `disposition` (`enabled`\|`enqueued`) and `disposition_detail`, plus `base_branch` on GitHub. There is no `enabled` key: which of the two dispositions the platform performed is not derivable from the exit code, so the verb reports the probed disposition instead. |
+| `pr safe-merge` | _exactly one of_ `--pr-number` _or_ `--head` | `--strategy merge\|squash\|rebase` (default `merge`), `--delete-branch`, `--admin-merge-on-stuck-state` (GitHub-only), `--poll-timeout`, `--poll-interval` | Polls readiness then merges. Success adds `strategy`, `merge_path` (`polled_clean`\|`admin_fallback`), `polls`, `duration_sec`, `merged: true`, `merge_corroboration`. Refuses like `pr merge` when the platform requires the queue/train. The `--admin` stuck-state fallback is GitHub-only, gated by `--admin-merge-on-stuck-state` + provably-met ruleset; ignored on GitLab. |
 | `pr update-branch` | _exactly one of_ `--pr-number` _or_ `--head` | — | Updates PR branch with base branch (GitHub REST API). |
 | `pr close --pr-number N` | `--pr-number` | — | Closes without merging. |
 | `pr ready --pr-number N` | `--pr-number` | — | Marks a draft as ready for review. |
 | `pr edit --pr-number N` | `--pr-number`, `--plan-id` | `--title`, `--slot` | Edits title and/or body; the body comes from the `pr prepare-body --for edit` scratch file. At least one of `--title` or a prepared body must be supplied. |
-| `pr merge-queue` | _exactly one of_ `--pr-number` _or_ `--head` | — | Enqueues into the platform merge queue / merge train; success adds `enqueued: true` (GitLab may add `merge_train_car_id`). Takes no `--strategy` / `--delete-branch`. |
+| `pr merge-queue` | _exactly one of_ `--pr-number` _or_ `--head` | — | Enqueues into the platform merge queue / merge train; success adds a **corroborated** `enqueued: true`. The corroboration field is provider-scoped: GitHub adds `base_branch` and `enqueue_corroboration` (its pre-enqueue base-branch probe verdict); GitLab adds `merge_train_car_id` (the created train car, empty when the response carries no id) and **no** `enqueue_corroboration`. A target with no configured queue/train returns `status: error` on **both** providers rather than enqueuing. `enqueued: true` means the PR reached the queue — it is not a merge. Takes no `--strategy` / `--delete-branch`. |
 | `checks rerun --run-id ID` | `--run-id` | — | Re-runs a failed workflow. |
 | `checks logs --run-id ID` | `--run-id` | — | Success adds `log_lines` and `content` with the log output. |
 | `issue close --issue N` | `--issue` | — | Closes the issue. |

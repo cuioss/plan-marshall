@@ -288,7 +288,19 @@ def cmd_pr_create(args: argparse.Namespace) -> dict:
 
 
 def view_pr_data(head: str | None = None) -> dict:
-    """Fetch MR data for current branch (or for the supplied ``head`` branch).
+    """Fetch MR data for the current branch, or for the supplied selector.
+
+    Args:
+        head: The value forwarded verbatim as ``glab mr view``'s single positional
+            selector. ``glab`` accepts an **MR IID, a URL, or a branch name**
+            there, so this parameter is the selector — not a branch-only field.
+            ``None`` omits the positional, which is what makes ``glab`` fall back
+            to the MR for the current cwd HEAD.
+
+            Note the asymmetry with :func:`_resolve_mr_iid`: that helper must
+            translate a branch into an IID because the verbs it serves call
+            IID-only endpoints, whereas ``mr view`` resolves the branch itself,
+            so no lookup round trip is spent here.
 
     Returns dict with 'status' key ('success' or 'error').
     Importable by other scripts for direct data access without subprocess.
@@ -358,8 +370,26 @@ def view_pr_data(head: str | None = None) -> dict:
 
 
 def cmd_pr_view(args: argparse.Namespace) -> dict:
-    """Handle 'pr view' subcommand - get MR for current branch (or --head branch)."""
-    return view_pr_data(head=getattr(args, 'head', None))
+    """Handle 'pr view' — read MR state by IID, by branch, or for the current cwd HEAD.
+
+    ``glab mr view`` takes an IID, a URL, or a branch name in the SAME positional
+    slot, so ``--pr-number`` and ``--head`` are a selector CHOICE rather than two
+    code paths. Supplying neither is the historical default (the MR for the current
+    cwd HEAD); supplying both is a structured error, never a silent precedence rule.
+
+    ``--pr-number`` is the selector a landing poll MUST use. Under a required merge
+    train the platform deletes the source branch as the train merges, so a
+    ``--head``-keyed poll stops resolving at exactly the moment the terminal merged
+    state it waits for becomes observable. The IID is stable across that deletion.
+
+    Mirrors the GitHub provider's ``cmd_pr_view`` exactly; the two handlers are kept
+    in lock-step so the CI abstraction presents one contract per verb.
+    """
+    pr_number = getattr(args, 'pr_number', None)
+    head = getattr(args, 'head', None)
+    if pr_number and head:
+        return make_error('pr_view', 'specify exactly one of --pr-number or --head, not both')
+    return view_pr_data(head=str(pr_number) if pr_number else head)
 
 
 def cmd_pr_list(args: argparse.Namespace) -> dict:
@@ -567,6 +597,85 @@ def _probe_merge_train_state() -> tuple[str, str, str | None]:
     if data.get('merge_trains_enabled') is True:
         return MERGE_QUEUE_ELIGIBLE_CONFIGURED, 'merge_trains_enabled=true', None
     return MERGE_QUEUE_ELIGIBLE_UNCONFIGURED, 'merge_trains_enabled=false', None
+
+
+# ---------------------------------------------------------------------------
+# Merge-shaped verb guards: merge-train preflight + post-merge corroboration
+# ---------------------------------------------------------------------------
+#
+# The GitLab counterparts of the two obligations every merge-shaped verb carries.
+# Both are shaped by a real provider asymmetry with GitHub, and neither is a
+# transliteration of the GitHub guard:
+#
+# * **Scope** — a GitHub merge queue is configured per BASE BRANCH, so its
+#   preflight probes the PR's own base. A GitLab merge train is a PROJECT-level
+#   flag (``merge_trains_enabled``), so :func:`_probe_merge_train_state` takes no
+#   branch argument and the preflight below passes none. Inventing a
+#   base-branch-scoped probe here would fabricate a distinction the provider does
+#   not make.
+# * **Evidence** — GitHub corroborates a merge from ``state == MERGED`` plus a
+#   ``mergedAt`` timestamp. GitLab's ``view_pr_data`` surfaces no ``merged_at``
+#   at all, so :func:`_corroborate_merge` reads ``state == 'merged'`` and there
+#   is no timestamp to parse, hence no strategy-selected evidence ladder.
+
+
+def _refuse_on_required_merge_train(operation: str) -> dict | None:
+    """Return an error dict when an IMMEDIATE merge in this project would be unsafe.
+
+    Returns ``None`` when the merge may proceed. Fails closed: a probe error
+    (auth scope, transient API failure, malformed project response) refuses the
+    merge rather than merging blind, exactly as its GitHub sibling does.
+
+    The refusal names BOTH remedies so the caller is never left with a bare
+    error: route the MR onto the train, or reconcile the plan's
+    ``use_merge_queue`` step param.
+    """
+    discriminator, detail, scope_error = _probe_merge_train_state()
+    if scope_error is not None:
+        return make_error(operation, scope_error, detail)
+    if discriminator == MERGE_QUEUE_ELIGIBLE_CONFIGURED:
+        return make_error(
+            operation,
+            'This project has merge trains enabled, so an immediate merge bypasses the train the '
+            'project requires. Route the MR onto the train via "ci pr merge-queue", or reconcile '
+            "the plan's use_merge_queue step param via /marshall-steward.",
+            detail,
+        )
+    # MERGE_QUEUE_ELIGIBLE_UNCONFIGURED / MERGE_QUEUE_INELIGIBLE /
+    # MERGE_QUEUE_UNSUPPORTED all permit the immediate merge.
+    return None
+
+
+# The MR state that means "this MR was merged". ``view_pr_data`` passes the
+# provider's own spelling through unchanged for this value (only ``opened`` is
+# remapped, to ``open``), so the comparison is against GitLab's vocabulary.
+_MERGED_STATE = 'merged'
+
+
+def _corroborate_merge(iid: str) -> tuple[bool, str]:
+    """Return ``(merged, detail)`` established from a post-merge RE-READ of MR state.
+
+    The single seam every GitLab merge-shaped verb uses to prove its own success
+    claim. A zero exit from ``glab`` means the command was accepted, never that
+    the merge landed — the #1081 signature is exactly a verb that reported
+    ``merged: true`` (and deleted the source branch) for a merge that never
+    happened.
+
+    Asserts the MEANING of the state value (``state == 'merged'``), never the
+    mere presence of a key: a re-read that returns a record without a usable
+    state is a NON-corroboration. GitLab exposes no ``merged_at`` on this
+    surface, so unlike the GitHub sibling there is no timestamp arm and no
+    strategy-selected evidence — ``state`` is the whole verdict.
+
+    Fails closed: an unreadable MR is never a landed merge.
+    """
+    view = view_pr_data(head=iid)
+    if view.get('status') != 'success':
+        return False, f'post-merge MR re-read failed: {view.get("error", "pr_view failed")}'
+    state = str(view.get('state') or '')
+    if state == _MERGED_STATE:
+        return True, f'state={state}'
+    return False, f'state={state or "unknown"}'
 
 
 def cmd_pr_merge_queue(args: argparse.Namespace) -> dict:
@@ -1791,15 +1900,31 @@ def cmd_issue_view(args: argparse.Namespace) -> dict:
 def cmd_pr_merge(args: argparse.Namespace) -> dict:
     """Handle 'pr merge' subcommand - merge a merge request.
 
+    Refuses an unsafe project and proves its own success claim, per the two
+    obligations documented above :func:`_refuse_on_required_merge_train`:
+
+    - **Merge-train preflight** — project-scoped, because merge trains are a
+      project-level flag on GitLab. Without it this verb merges straight past a
+      train the project requires.
+    - **Post-merge corroboration** — ``merged`` is set ONLY from
+      :func:`_corroborate_merge`, a re-read of MR state, established BEFORE the
+      branch-delete follow-up is allowed to run, so a merge that did not happen
+      can never take the source branch down with it (#1081). A non-corroborated
+      merge returns ``status: error`` and deletes nothing.
+
     When ``--delete-branch`` is requested, the merge is performed WITHOUT
     passing a branch-delete flag to ``glab mr merge``; instead, after a
-    successful merge, the MR's source branch is deleted remotely via the
+    CORROBORATED merge, the MR's source branch is deleted remotely via the
     ``cmd_branch_delete`` handler (REST
     ``DELETE /projects/{id}/repository/branches/{branch}``). Local git state is
     never touched by this handler — callers who want a local branch gone must
     invoke ``git -C {path} branch -D`` separately.
 
-    On branch-delete failure after a successful merge, a compound result is
+    ``merged: true`` is reported on EVERY successful merge, independently of
+    ``--delete-branch``: the verdict belongs to the merge, not to the optional
+    branch-delete follow-up.
+
+    On branch-delete failure after a corroborated merge, a compound result is
     returned with ``merged: true`` and ``branch_delete_error`` populated. The
     merge is NOT retried.
     """
@@ -1812,6 +1937,15 @@ def cmd_pr_merge(args: argparse.Namespace) -> dict:
         return err_dict
     assert iid is not None  # noqa: S101 — narrowing after err_dict guard
 
+    # ``pr safe-merge`` runs this preflight itself before polling, then delegates
+    # here; re-running it would pay a second round trip AND risk a divergent
+    # second verdict if merge trains were enabled between the two probes. The
+    # delegate namespace sets the skip flag; no CLI surface exposes it.
+    if not getattr(args, 'skip_merge_train_preflight', False):
+        preflight_err = _refuse_on_required_merge_train('pr_merge')
+        if preflight_err is not None:
+            return preflight_err
+
     glab_args = ['mr', 'merge', iid]
     if args.strategy == 'squash':
         glab_args.append('--squash')
@@ -1820,18 +1954,32 @@ def cmd_pr_merge(args: argparse.Namespace) -> dict:
     if returncode != 0:
         return make_error('pr_merge', f'Failed to merge MR {iid}', stderr.strip())
 
+    # Establish the merge verdict from MR state BEFORE the branch-delete
+    # follow-up below can influence it. A zero exit above only means glab
+    # accepted the command.
+    merged, corroboration = _corroborate_merge(iid)
+    if not merged:
+        return make_error(
+            'pr_merge',
+            f'MR {iid} merge command succeeded but post-merge state does NOT corroborate a merge — '
+            f'refusing to report merged and skipping the branch delete (#1081). Verify the MR '
+            f'state; if this project requires the merge train, route the MR via '
+            f'"ci pr merge-queue" instead of an immediate merge.',
+            corroboration,
+        )
+
     result: dict = {
         'status': 'success',
         'operation': 'pr_merge',
         'pr_number': args.pr_number if args.pr_number else iid,
         'strategy': args.strategy,
+        'merged': True,
+        'merge_corroboration': corroboration,
     }
 
-    # Branch-delete is an optional follow-up. The merge has already succeeded;
+    # Branch-delete is an optional follow-up. The merge is already corroborated;
     # we never retry the merge on branch-delete failure.
     if args.delete_branch:
-        result['merged'] = True
-
         # Resolve the MR source branch name via existing MR metadata.
         # ``glab mr view`` accepts either an MR IID or a branch name as the
         # positional, so ``iid`` (already resolved) is passed through directly.
@@ -1920,7 +2068,34 @@ def cmd_branch_delete(args: argparse.Namespace) -> dict:
 
 
 def cmd_pr_auto_merge(args: argparse.Namespace) -> dict:
-    """Handle 'pr auto-merge' subcommand - auto-merge when pipeline succeeds."""
+    """Handle 'pr auto-merge' subcommand - schedule the MR to merge without waiting.
+
+    ``glab mr merge {iid} --when-pipeline-succeeds [--squash]`` is ONE command
+    with TWO dispositions, decided by the project's merge-train setting: with
+    merge trains OFF it schedules a plain when-pipeline-succeeds merge, and with
+    them ON GitLab routes the MR onto the train instead. The exit code is
+    identical either way, so a boolean derived from it alone cannot tell the two
+    apart: it reads "auto-merge enabled" for an MR the project actually placed on
+    a merge train. The GitHub sibling faces the identical ambiguity.
+
+    This verb therefore probes the project's merge-train state
+    (:func:`_probe_merge_train_state` — project-scoped, no branch argument, per
+    the provider asymmetry documented above :func:`_refuse_on_required_merge_train`)
+    BEFORE returning and reports which disposition actually occurred in
+    ``disposition``:
+
+    - ``enabled`` — a plain when-pipeline-succeeds merge was scheduled;
+    - ``enqueued`` — the project has merge trains, so the MR joined the train.
+
+    The probe runs before the ``glab`` call: refusing to report blind is only
+    possible if the state is known, and the probe is read-only, so establishing
+    it first costs nothing and keeps the failure path free of side effects.
+    Fails closed — an unresolvable train state is an error, never a guessed
+    disposition.
+
+    The envelope carries NO ``enabled`` key and no alias for one: a bare boolean
+    would report a disposition this verb cannot know from the exit code.
+    """
     is_auth, err = check_auth()
     if not is_auth:
         return make_error('pr_auto_merge', err)
@@ -1930,19 +2105,25 @@ def cmd_pr_auto_merge(args: argparse.Namespace) -> dict:
         return err_dict
     assert iid is not None  # noqa: S101 — narrowing after err_dict guard
 
+    discriminator, detail, scope_error = _probe_merge_train_state()
+    if scope_error is not None:
+        return make_error('pr_auto_merge', scope_error, detail)
+
     glab_args = ['mr', 'merge', iid, '--when-pipeline-succeeds']
     if args.strategy == 'squash':
         glab_args.append('--squash')
 
     returncode, stdout, stderr = run_glab(glab_args)
     if returncode != 0:
-        return make_error('pr_auto_merge', f'Failed to enable auto-merge for MR {iid}', stderr.strip())
+        return make_error('pr_auto_merge', f'Failed to schedule auto-merge for MR {iid}', stderr.strip())
 
+    disposition = 'enqueued' if discriminator == MERGE_QUEUE_ELIGIBLE_CONFIGURED else 'enabled'
     return {
         'status': 'success',
         'operation': 'pr_auto_merge',
         'pr_number': args.pr_number if args.pr_number else iid,
-        'enabled': True,
+        'disposition': disposition,
+        'disposition_detail': detail,
     }
 
 
@@ -1956,14 +2137,23 @@ def _safe_merge_delegate_ns(args: argparse.Namespace) -> argparse.Namespace:
     """Synthesize the argparse.Namespace cmd_pr_merge expects from safe-merge args.
 
     cmd_pr_merge reads ``pr_number``, ``head``, ``strategy``, and
-    ``delete_branch`` and re-resolves the MR IID itself, so only those four
-    fields are forwarded.
+    ``delete_branch`` and re-resolves the MR IID itself, so only those four are
+    forwarded from the caller's own args.
+
+    ``skip_merge_train_preflight`` is set because safe-merge has ALREADY run the
+    project merge-train preflight before polling. Re-running it inside the
+    delegate would pay a second round trip and, worse, could return a divergent
+    verdict if merge trains were enabled during the readiness poll — refusing a
+    merge that the caller's own preflight cleared. It is an internal delegation
+    flag with no CLI surface; every other caller of ``cmd_pr_merge`` leaves it
+    unset and gets the preflight.
     """
     return argparse.Namespace(
         pr_number=args.pr_number,
         head=args.head,
         strategy=args.strategy,
         delete_branch=args.delete_branch,
+        skip_merge_train_preflight=True,
     )
 
 
@@ -1980,6 +2170,10 @@ def cmd_pr_safe_merge(args: argparse.Namespace) -> dict:
     canonical error rather than force-merging — the GitHub-only Layer 2 admin
     fallback does not exist on GitLab.
 
+    The project-scoped merge-train preflight runs BEFORE the readiness poll, so a
+    project that requires the merge train refuses immediately rather than
+    spending the whole poll budget on a merge that would bypass the train.
+
     Returns canonical TOON with ``operation: pr_safe_merge``,
     ``merge_path: polled_clean``, ``polls``, and ``duration_sec``.
     """
@@ -1991,6 +2185,13 @@ def cmd_pr_safe_merge(args: argparse.Namespace) -> dict:
     if err_dict:
         return err_dict
     assert iid is not None  # noqa: S101 — narrowing after err_dict guard
+
+    # Project-scoped merge-train preflight, run BEFORE the readiness poll so an
+    # unsafe project refuses immediately rather than after the full poll budget.
+    # Shared with ``cmd_pr_merge`` — see :func:`_refuse_on_required_merge_train`.
+    preflight_err = _refuse_on_required_merge_train('pr_safe_merge')
+    if preflight_err is not None:
+        return preflight_err
 
     # Layer 1 — poll readiness via the shared poll_until helper.
     def check_fn() -> tuple[bool, dict]:
@@ -2026,6 +2227,19 @@ def cmd_pr_safe_merge(args: argparse.Namespace) -> dict:
                 'pr_safe_merge',
                 merge_result.get('error', f'Failed to merge MR {iid}'),
                 merge_result.get('context', ''),
+            )
+        # Post-merge verification, POSITIVE. The delegate establishes the verdict
+        # from a post-merge re-read (:func:`_corroborate_merge`) and returns
+        # ``status: error`` on anything short of it, so a delegated success
+        # carries a corroborated ``merged is True``. Assert that exact value
+        # rather than its mere presence.
+        if merge_result.get('merged') is not True:
+            return make_error(
+                'pr_safe_merge',
+                f'MR {iid} merge reported success but was NOT corroborated as merged. If this '
+                f'project requires the merge train, route the MR via "ci pr merge-queue" instead '
+                f'of an immediate merge.',
+                str(merge_result.get('merge_corroboration') or 'no corroboration recorded'),
             )
         merge_result['operation'] = 'pr_safe_merge'
         merge_result['merge_path'] = 'polled_clean'

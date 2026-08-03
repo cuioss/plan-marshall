@@ -18,6 +18,7 @@ through the REST leaf, never through local git.
 
 import argparse
 import json
+from datetime import UTC, datetime
 
 import github_ops  # noqa: E402
 import pytest
@@ -92,10 +93,49 @@ def _pr_view_success_payload() -> dict:
     }
 
 
+# Post-merge corroboration payloads. ``cmd_pr_merge`` establishes ``merged``
+# from a ``gh pr view --json state,mergedAt,baseRefName,headRefOid`` re-read
+# rather than the merge command's exit code, so every merge fixture must supply
+# the state that re-read observes. The values are the provider's own spelling.
+_CORROBORATION_PAYLOADS: dict[str, dict] = {
+    # Landed merge — the only shape that corroborates.
+    'merged': {
+        'state': 'MERGED',
+        'mergedAt': '2026-01-01T00:00:00Z',
+        'baseRefName': 'main',
+        'headRefOid': 'abc123',
+    },
+    # The #866 signature: the merge command reported success but GitHub closed
+    # the PR without merging it.
+    'closed': {
+        'state': 'CLOSED',
+        'mergedAt': None,
+        'baseRefName': 'main',
+        'headRefOid': 'abc123',
+    },
+    # The merge silently did nothing and the PR is still open.
+    'open': {
+        'state': 'OPEN',
+        'mergedAt': None,
+        'baseRefName': 'main',
+        'headRefOid': 'abc123',
+    },
+    # A wrongly-shaped record: the key EXISTS but carries no usable instant. A
+    # narrow presence check would pass here; the value-meaning assertion must not.
+    'merged_without_timestamp': {
+        'state': 'MERGED',
+        'mergedAt': None,
+        'baseRefName': 'main',
+        'headRefOid': 'abc123',
+    },
+}
+
+
 def _capture_run_gh(
     *,
     merge_ok: bool = True,
     delete_mode: str = 'ok',
+    corroborate: str = 'merged',
 ):
     """Build a ``run_gh`` stub + captured args list.
 
@@ -110,6 +150,10 @@ def _capture_run_gh(
           * ``'gone'``    — DELETE returns HTTP 422 (already gone).
           * ``'notfound'``— DELETE returns HTTP 404 (already gone).
           * ``'error'``   — DELETE returns a generic HTTP 500.
+    corroborate:
+        Key into :data:`_CORROBORATION_PAYLOADS` selecting what the post-merge
+        ``gh pr view --json ...`` re-read observes. ``'unreadable'`` makes that
+        re-read fail outright.
     """
     captured: list[list[str]] = []
 
@@ -120,6 +164,12 @@ def _capture_run_gh(
             if merge_ok:
                 return 0, '', ''
             return 1, '', 'merge conflict'
+
+        # Post-merge corroboration re-read.
+        if args[:2] == ['pr', 'view']:
+            if corroborate == 'unreadable':
+                return 1, '', 'HTTP 500: boom'
+            return 0, json.dumps(_CORROBORATION_PAYLOADS[corroborate]), ''
 
         # DELETE /repos/{owner}/{repo}/git/refs/heads/{branch}
         if args[:3] == ['api', '-X', 'DELETE']:
@@ -136,6 +186,21 @@ def _capture_run_gh(
         return 0, '', ''
 
     return run_gh_stub, captured
+
+
+def _install_merge_preconditions(monkeypatch, *, view_payload: dict | None = None) -> dict:
+    """Install the stubs ``cmd_pr_merge``'s own guards require.
+
+    ``cmd_pr_merge`` now runs the shared base-branch merge-queue preflight before
+    merging, so every direct ``cmd_pr_merge`` test needs BOTH the probe stub and
+    a ``view_pr_data`` that resolves a base branch — otherwise the test would be
+    exercising the preflight's fail-closed path rather than the merge wiring it
+    means to assert. Returns the probe capture dict.
+    """
+    monkeypatch.setattr(
+        github_ops, 'view_pr_data', lambda head=None: view_payload or _pr_view_success_payload()
+    )
+    return _install_probe(monkeypatch)
 
 
 def _merge_ns(*, delete_branch: bool, pr_number: int | None = 42, head: str | None = None):
@@ -162,13 +227,15 @@ def test_pr_merge_delete_branch_happy_path(monkeypatch):
     _install_common(monkeypatch)
     run_gh_stub, captured = _capture_run_gh(merge_ok=True, delete_mode='ok')
     monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
-    monkeypatch.setattr(github_ops, 'view_pr_data', lambda head=None: _pr_view_success_payload())
+    _install_merge_preconditions(monkeypatch)
 
     result = github_ops.cmd_pr_merge(_merge_ns(delete_branch=True))
 
     assert result['status'] == 'success', result
     assert result['operation'] == 'pr_merge'
     assert result['merged'] is True
+    # The claim rests on the re-read, and the evidence rides along with it.
+    assert 'MERGED' in result['merge_corroboration'], result
     assert result['branch_deleted'] == 'feature/x'
     assert result['already_gone'] is False
     assert 'branch_delete_error' not in result
@@ -196,7 +263,7 @@ def test_pr_merge_delete_branch_already_gone_422(monkeypatch):
     _install_common(monkeypatch)
     run_gh_stub, captured = _capture_run_gh(merge_ok=True, delete_mode='gone')
     monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
-    monkeypatch.setattr(github_ops, 'view_pr_data', lambda head=None: _pr_view_success_payload())
+    _install_merge_preconditions(monkeypatch)
 
     result = github_ops.cmd_pr_merge(_merge_ns(delete_branch=True))
 
@@ -213,7 +280,7 @@ def test_pr_merge_delete_branch_already_gone_404(monkeypatch):
     _install_common(monkeypatch)
     run_gh_stub, captured = _capture_run_gh(merge_ok=True, delete_mode='notfound')
     monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
-    monkeypatch.setattr(github_ops, 'view_pr_data', lambda head=None: _pr_view_success_payload())
+    _install_merge_preconditions(monkeypatch)
 
     result = github_ops.cmd_pr_merge(_merge_ns(delete_branch=True))
 
@@ -235,7 +302,7 @@ def test_pr_merge_delete_branch_api_error_produces_compound_result(monkeypatch):
     _install_common(monkeypatch)
     run_gh_stub, captured = _capture_run_gh(merge_ok=True, delete_mode='error')
     monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
-    monkeypatch.setattr(github_ops, 'view_pr_data', lambda head=None: _pr_view_success_payload())
+    _install_merge_preconditions(monkeypatch)
 
     result = github_ops.cmd_pr_merge(_merge_ns(delete_branch=True))
 
@@ -256,6 +323,7 @@ def test_pr_merge_delete_branch_api_error_produces_compound_result(monkeypatch):
 
 def test_pr_merge_merge_failure_skips_branch_delete(monkeypatch):
     _install_common(monkeypatch)
+    _install_probe(monkeypatch)
     run_gh_stub, captured = _capture_run_gh(merge_ok=False, delete_mode='ok')
     monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
 
@@ -270,10 +338,17 @@ def test_pr_merge_merge_failure_skips_branch_delete(monkeypatch):
     result = github_ops.cmd_pr_merge(_merge_ns(delete_branch=True))
 
     assert result['status'] == 'error', result
-    # Only the merge call should have been made — no REST DELETE.
+    # No REST DELETE, and no post-merge corroboration re-read either — a failed
+    # merge command short-circuits before both.
     delete_calls = [c for c in captured if c[:3] == ['api', '-X', 'DELETE']]
     assert delete_calls == [], delete_calls
-    assert pr_view_calls['count'] == 0, 'pr view must not be consulted when the merge itself fails'
+    corroboration_calls = [c for c in captured if c[:2] == ['pr', 'view']]
+    assert corroboration_calls == [], corroboration_calls
+    # Exactly ONE view_pr_data call: the base-branch preflight before the merge.
+    # The head-branch resolution for the delete is never reached.
+    assert pr_view_calls['count'] == 1, (
+        'only the merge-queue preflight may consult pr view when the merge itself fails'
+    )
 
     _assert_no_delete_branch_flag(captured)
 
@@ -284,7 +359,14 @@ def test_pr_merge_merge_failure_skips_branch_delete(monkeypatch):
 
 
 def test_pr_merge_without_delete_branch_leaves_branch_untouched(monkeypatch):
+    """A merge without --delete-branch still reports a corroborated verdict.
+
+    ``merged`` used to live INSIDE the ``--delete-branch`` branch, so this shape
+    reported no merge verdict at all. It is now reported on every successful
+    merge; only the branch-delete compound-result keys stay absent.
+    """
     _install_common(monkeypatch)
+    _install_probe(monkeypatch)
     run_gh_stub, captured = _capture_run_gh(merge_ok=True, delete_mode='ok')
     monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
 
@@ -300,15 +382,17 @@ def test_pr_merge_without_delete_branch_leaves_branch_untouched(monkeypatch):
 
     assert result['status'] == 'success', result
     assert result['operation'] == 'pr_merge'
-    # When delete_branch is not requested, the compound-result fields must be
-    # absent — the contract still returns the lean success shape.
-    for key in ('merged', 'branch_deleted', 'already_gone', 'branch_delete_error'):
+    assert result['merged'] is True, result
+    assert 'MERGED' in result['merge_corroboration'], result
+    # The branch-delete compound-result fields stay absent.
+    for key in ('branch_deleted', 'already_gone', 'branch_delete_error'):
         assert key not in result, f'{key} leaked into non-delete result: {result}'
 
-    # No REST DELETE, no pr view — this is a pure merge.
+    # No REST DELETE. The only view_pr_data call is the preflight — the
+    # head-branch resolution for the delete never runs.
     delete_calls = [c for c in captured if c[:3] == ['api', '-X', 'DELETE']]
     assert delete_calls == [], delete_calls
-    assert pr_view_calls['count'] == 0, 'pr view must not be consulted when --delete-branch is absent'
+    assert pr_view_calls['count'] == 1, pr_view_calls
 
     _assert_no_delete_branch_flag(captured)
 
@@ -336,7 +420,7 @@ def test_pr_merge_delete_branch_does_not_touch_local_git(monkeypatch):
     _install_common(monkeypatch)
     run_gh_stub, captured = _capture_run_gh(merge_ok=True, delete_mode='ok')
     monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
-    monkeypatch.setattr(github_ops, 'view_pr_data', lambda head=None: _pr_view_success_payload())
+    _install_merge_preconditions(monkeypatch)
 
     # Trip-wire: if cmd_pr_merge ever shells out to git, the regression is
     # back. We patch the two most likely entry points to raise immediately.
@@ -369,6 +453,233 @@ def test_pr_merge_delete_branch_does_not_touch_local_git(monkeypatch):
     assert result['already_gone'] is False
 
     _assert_no_delete_branch_flag(captured)
+
+
+# ---------------------------------------------------------------------------
+# cmd_pr_merge — base-branch queue refusal + post-merge corroboration
+# ---------------------------------------------------------------------------
+#
+# ``cmd_pr_merge`` previously merged blind: no preflight, and ``merged: true``
+# set from the gh exit code inside the --delete-branch branch. Both halves are
+# closed here.
+
+
+def test_pr_merge_refuses_when_base_merge_queue_required(monkeypatch):
+    """A required merge queue on the PR's base branch refuses the immediate merge.
+
+    Without the preflight this is the #866 signature: ``gh pr merge`` exits zero
+    and GitHub closes the PR unmerged.
+    """
+    _install_common(monkeypatch)
+    monkeypatch.setattr(github_ops, 'view_pr_data', lambda head=None: _pr_view_success_payload())
+    probe = _install_probe(
+        monkeypatch,
+        discriminator=github_ops.MERGE_QUEUE_ELIGIBLE_CONFIGURED,
+        detail='merge_queue rule active on branch',
+    )
+    run_gh_stub, captured = _capture_run_gh(merge_ok=True, delete_mode='ok')
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+
+    result = github_ops.cmd_pr_merge(_merge_ns(delete_branch=True))
+
+    assert result['status'] == 'error', result
+    assert result['operation'] == 'pr_merge'
+    # The message names the base branch and BOTH remedies.
+    assert 'main' in result['error'], result
+    assert 'ci pr merge-queue' in result['error'], result
+    assert 'use_merge_queue' in result['error'], result
+    assert '/marshall-steward' in result['error'], result
+    # Nothing was attempted: no merge, no branch delete.
+    assert captured == [], captured
+    assert probe['branch'] == 'main', probe
+
+
+def test_pr_merge_preflight_probe_error_fails_closed(monkeypatch):
+    """An unresolvable queue state refuses the merge rather than merging blind."""
+    _install_common(monkeypatch)
+    monkeypatch.setattr(github_ops, 'view_pr_data', lambda head=None: _pr_view_success_payload())
+    _install_probe(
+        monkeypatch,
+        discriminator=github_ops.MERGE_QUEUE_INELIGIBLE,
+        detail='branch rules endpoint unreachable',
+        error='the gh token lacks the scope to read repository rulesets',
+    )
+    run_gh_stub, captured = _capture_run_gh(merge_ok=True, delete_mode='ok')
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+
+    result = github_ops.cmd_pr_merge(_merge_ns(delete_branch=True))
+
+    assert result['status'] == 'error', result
+    assert 'scope' in result['error'], result
+    assert captured == [], captured
+
+
+@pytest.mark.parametrize(
+    'post_merge_state', ['closed', 'open', 'merged_without_timestamp', 'unreadable']
+)
+def test_pr_merge_uncorroborated_merge_refuses_and_skips_branch_delete(monkeypatch, post_merge_state):
+    """#1081 lock: an uncorroborated merge reports error and deletes NOTHING.
+
+    The verdict is established from the post-merge re-read BEFORE the
+    branch-delete REST call, so a merge that never landed can never take the head
+    branch down with it. ``merged_without_timestamp`` is the wrongly-shaped
+    record a narrow ``'mergedAt' in payload`` check would wave through;
+    ``unreadable`` is the fail-closed path.
+    """
+    _install_common(monkeypatch)
+    _install_merge_preconditions(monkeypatch)
+    run_gh_stub, captured = _capture_run_gh(
+        merge_ok=True, delete_mode='ok', corroborate=post_merge_state
+    )
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+
+    result = github_ops.cmd_pr_merge(_merge_ns(delete_branch=True))
+
+    assert result['status'] == 'error', result
+    assert result['operation'] == 'pr_merge'
+    assert 'corroborate' in result['error'].lower(), result
+    # The merge command DID run, but no REST DELETE followed it.
+    merge_calls = [c for c in captured if c[:2] == ['pr', 'merge']]
+    assert len(merge_calls) == 1, merge_calls
+    delete_calls = [c for c in captured if c[:3] == ['api', '-X', 'DELETE']]
+    assert delete_calls == [], delete_calls
+
+
+def test_pr_merge_squash_rejects_ancestry_only_evidence(monkeypatch):
+    """A squash merge is NOT corroborated by base-contains-head ancestry.
+
+    A squash rewrites the branch into a new commit, so the head SHA never becomes
+    an ancestor of the base — admitting ancestry there would corroborate a merge
+    that did not happen. The strategy therefore selects the admissible evidence.
+    """
+    _install_common(monkeypatch)
+    _install_merge_preconditions(monkeypatch)
+    captured: list[list[str]] = []
+
+    def run_gh_stub(args, capture_json=False, timeout=60):
+        captured.append(list(args))
+        if args[:2] == ['pr', 'merge']:
+            return 0, '', ''
+        if args[:2] == ['pr', 'view']:
+            return 0, json.dumps(_CORROBORATION_PAYLOADS['open']), ''
+        # An ancestry probe would hit the compare endpoint and report containment.
+        if args[:1] == ['api']:
+            return 0, json.dumps({'status': 'behind'}), ''
+        return 0, '', ''
+
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+
+    ns = _merge_ns(delete_branch=False)
+    ns.strategy = 'squash'
+    result = github_ops.cmd_pr_merge(ns)
+
+    assert result['status'] == 'error', result
+    # The compare endpoint was never consulted — ancestry is not admissible here.
+    compare_calls = [c for c in captured if c[:1] == ['api']]
+    assert compare_calls == [], compare_calls
+
+
+def test_pr_merge_rebase_accepts_ancestry_evidence(monkeypatch):
+    """A rebase merge IS corroborated by base-contains-head ancestry.
+
+    ``rebase`` and ``merge`` land the head commits on the base verbatim, so
+    ancestry is positive evidence even when the PR record has not yet flipped.
+    """
+    _install_common(monkeypatch)
+    _install_merge_preconditions(monkeypatch)
+
+    def run_gh_stub(args, capture_json=False, timeout=60):
+        if args[:2] == ['pr', 'merge']:
+            return 0, '', ''
+        if args[:2] == ['pr', 'view']:
+            return 0, json.dumps(_CORROBORATION_PAYLOADS['open']), ''
+        if args[:1] == ['api']:
+            return 0, json.dumps({'status': 'behind'}), ''
+        return 0, '', ''
+
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+
+    ns = _merge_ns(delete_branch=False)
+    ns.strategy = 'rebase'
+    result = github_ops.cmd_pr_merge(ns)
+
+    assert result['status'] == 'success', result
+    assert result['merged'] is True, result
+    assert 'contains head' in result['merge_corroboration'], result
+
+
+@pytest.mark.parametrize('compare_status', ['ahead', 'diverged', 'identical'])
+def test_pr_merge_ancestry_arm_reads_compare_status(monkeypatch, compare_status):
+    """The ancestry arm asserts the compare STATUS value, not the response's shape.
+
+    ``identical`` and ``behind`` mean the base contains the head; ``ahead`` and
+    ``diverged`` mean it does not. A presence-only check on the compare payload
+    would corroborate all four.
+    """
+    _install_common(monkeypatch)
+    _install_merge_preconditions(monkeypatch)
+
+    def run_gh_stub(args, capture_json=False, timeout=60):
+        if args[:2] == ['pr', 'merge']:
+            return 0, '', ''
+        if args[:2] == ['pr', 'view']:
+            return 0, json.dumps(_CORROBORATION_PAYLOADS['open']), ''
+        if args[:1] == ['api']:
+            return 0, json.dumps({'status': compare_status}), ''
+        return 0, '', ''
+
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+
+    ns = _merge_ns(delete_branch=False)
+    ns.strategy = 'merge'
+    result = github_ops.cmd_pr_merge(ns)
+
+    if compare_status == 'identical':
+        assert result['status'] == 'success', result
+        assert result['merged'] is True, result
+    else:
+        assert result['status'] == 'error', result
+
+
+# ---------------------------------------------------------------------------
+# _parse_merged_at — every parsed timestamp is timezone-AWARE
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    'raw',
+    [
+        '2026-01-01T00:00:00Z',          # GitHub's own Z-suffixed UTC
+        '2026-01-01T00:00:00+00:00',     # explicit UTC offset
+        '2026-01-01T02:00:00+02:00',     # non-UTC offset
+        '2026-01-01T00:00:00',           # NAIVE — must be normalized, never returned naive
+    ],
+)
+def test_parse_merged_at_always_returns_aware(raw):
+    """A naive stamp is normalized to UTC rather than returned naive.
+
+    A naive datetime raises ``TypeError`` the instant it is compared against an
+    aware one, which would turn the corroboration check into a crash.
+    """
+    import _github_pr
+
+    parsed = _github_pr._parse_merged_at(raw)
+
+    assert parsed is not None, raw
+    assert parsed.tzinfo is not None, raw
+    assert parsed.utcoffset() is not None, raw
+    # Comparable against an aware instant without raising — the property that matters.
+    # Every fixture above is dated in the past, so the relation is DEFINITE rather
+    # than a tautology: a parse that returned a naive or wrongly-offset value fails here.
+    assert parsed < datetime.now(UTC), raw
+
+
+@pytest.mark.parametrize('raw', ['', 'not-a-timestamp', '2026-13-45T99:99:99Z'])
+def test_parse_merged_at_rejects_unusable_values(raw):
+    """An empty or unparseable stamp is a NON-corroboration, never a wildcard."""
+    import _github_pr
+
+    assert _github_pr._parse_merged_at(raw) is None, raw
 
 
 # ---------------------------------------------------------------------------
@@ -929,32 +1240,29 @@ def test_safe_merge_preflight_view_failure_fails_closed(monkeypatch):
     assert merge_calls == [], merge_calls
 
 
-def test_safe_merge_polled_clean_closed_without_merge_is_error(monkeypatch):
-    """Merge reports success but the PR is closed unmerged (#866) → error."""
+@pytest.mark.parametrize('post_merge_state', ['closed', 'open', 'merged_without_timestamp'])
+def test_safe_merge_polled_clean_closed_without_merge_is_error(monkeypatch, post_merge_state):
+    """Merge reports success but the post-merge state does not corroborate → error.
+
+    The old guard probed only for the single known-bad ``state == closed``, so
+    every OTHER non-merged shape read as a merge. The positive assertion covers
+    all three: the #866 closed-unmerged signature, a PR left ``open``, and the
+    wrongly-shaped record whose ``mergedAt`` key exists but carries no instant —
+    the last of which a narrow presence check would wave through.
+    """
     _install_common(monkeypatch)
     _install_probe(monkeypatch)
-    run_gh_stub, captured = _capture_run_gh(merge_ok=True, delete_mode='ok')
+    run_gh_stub, captured = _capture_run_gh(
+        merge_ok=True, delete_mode='ok', corroborate=post_merge_state
+    )
     monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
-
-    calls = {'i': 0}
-
-    def view_stub(head=None):
-        calls['i'] += 1
-        # Preflight (1) + readiness poll (2) see a clean, mergeable PR.
-        if calls['i'] <= 2:
-            return _pr_view_payload('clean')
-        # Post-merge re-fetch (3): the merge reported success but GitHub closed
-        # the PR unmerged — the merge-queue-required base-branch signature.
-        return _pr_view_payload('clean', state='closed')
-
-    monkeypatch.setattr(github_ops, 'view_pr_data', view_stub)
+    monkeypatch.setattr(github_ops, 'view_pr_data', lambda head=None: _pr_view_payload('clean'))
 
     result = github_ops.cmd_pr_safe_merge(_safe_merge_ns())
 
     assert result['status'] == 'error', result
     assert result['operation'] == 'pr_safe_merge'
-    assert 'closed' in result['error'].lower(), result
-    assert '#866' in result['error'], result
+    assert 'corroborate' in result['error'].lower(), result
     # A merge WAS attempted (the false success), but the result is converted.
     merge_calls = [c for c in captured if c[:2] == ['pr', 'merge']]
     assert len(merge_calls) == 1, merge_calls
@@ -986,8 +1294,9 @@ def test_safe_merge_polled_clean_merged_refetch_succeeds(monkeypatch):
 
 
 def test_pr_merge_unaffected_no_admin_or_safe_merge_fields(monkeypatch):
-    """cmd_pr_merge still returns the lean shape with no safe-merge fields."""
+    """cmd_pr_merge carries no safe-merge-only fields and never uses --admin."""
     _install_common(monkeypatch)
+    _install_merge_preconditions(monkeypatch)
     run_gh_stub, captured = _capture_run_gh(merge_ok=True, delete_mode='ok')
     monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
 
@@ -1001,9 +1310,24 @@ def test_pr_merge_unaffected_no_admin_or_safe_merge_fields(monkeypatch):
     assert '--admin' not in merge_call, merge_call
 
 
-def test_pr_auto_merge_unaffected(monkeypatch):
-    """cmd_pr_auto_merge still enables auto-merge without safe-merge wiring."""
+# ---------------------------------------------------------------------------
+# cmd_pr_auto_merge — disposition reporting, not an exit-code-derived boolean
+# ---------------------------------------------------------------------------
+#
+# ``gh pr merge --auto`` has TWO dispositions decided by the base branch: with no
+# queue it enables plain auto-merge, with a configured queue it ENQUEUES the PR.
+# The exit code is identical, so the removed ``enabled: true`` reported the wrong
+# disposition on a queue-configured base.
+
+
+def _auto_merge_ns(*, pr_number: int | None = 42, head: str | None = None, strategy: str = 'squash'):
+    return argparse.Namespace(pr_number=pr_number, head=head, strategy=strategy)
+
+
+def test_pr_auto_merge_reports_enabled_disposition_when_base_unconfigured(monkeypatch):
+    """No queue on the base branch → plain auto-merge → ``disposition: enabled``."""
     _install_common(monkeypatch)
+    _install_merge_preconditions(monkeypatch)
     captured: list[list[str]] = []
 
     def run_gh_stub(args, capture_json=False, timeout=60):
@@ -1012,16 +1336,76 @@ def test_pr_auto_merge_unaffected(monkeypatch):
 
     monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
 
-    result = github_ops.cmd_pr_auto_merge(
-        argparse.Namespace(pr_number=42, head=None, strategy='squash')
-    )
+    result = github_ops.cmd_pr_auto_merge(_auto_merge_ns())
 
     assert result['status'] == 'success', result
     assert result['operation'] == 'pr_auto_merge'
-    assert result['enabled'] is True
+    assert result['disposition'] == 'enabled', result
+    assert result['base_branch'] == 'main', result
+    # The exit-code-derived key is REMOVED with no alias.
+    assert 'enabled' not in result, result
     merge_call = next(c for c in captured if c[:2] == ['pr', 'merge'])
     assert '--auto' in merge_call, merge_call
     assert '--admin' not in merge_call, merge_call
+
+
+def test_pr_auto_merge_reports_queue_disposition_when_base_configured(monkeypatch):
+    """A configured queue on the base branch → the PR is ENQUEUED, not merely enabled.
+
+    This is the regression the removed ``enabled: true`` could never express: the
+    gh call succeeds identically in both cases, so only the base-branch probe can
+    tell the two dispositions apart.
+    """
+    _install_common(monkeypatch)
+    monkeypatch.setattr(github_ops, 'view_pr_data', lambda head=None: _pr_view_success_payload())
+    probe = _install_probe(
+        monkeypatch,
+        discriminator=github_ops.MERGE_QUEUE_ELIGIBLE_CONFIGURED,
+        detail='merge_queue rule active on branch',
+    )
+    captured: list[list[str]] = []
+
+    def run_gh_stub(args, capture_json=False, timeout=60):
+        captured.append(list(args))
+        return 0, '', ''
+
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+
+    result = github_ops.cmd_pr_auto_merge(_auto_merge_ns())
+
+    assert result['status'] == 'success', result
+    assert result['disposition'] == 'enqueued', result
+    assert result['disposition_detail'] == 'merge_queue rule active on branch', result
+    assert 'enabled' not in result, result
+    # The probe ran against the PR's OWN base branch, before the gh call.
+    assert probe['branch'] == 'main', probe
+    assert probe['calls'] == 1, probe
+
+
+def test_pr_auto_merge_probe_error_fails_closed(monkeypatch):
+    """An unresolvable queue state is an error, never a guessed disposition."""
+    _install_common(monkeypatch)
+    monkeypatch.setattr(github_ops, 'view_pr_data', lambda head=None: _pr_view_success_payload())
+    _install_probe(
+        monkeypatch,
+        discriminator=github_ops.MERGE_QUEUE_INELIGIBLE,
+        detail='branch rules endpoint unreachable',
+        error='the gh token lacks the scope to read repository rulesets',
+    )
+    captured: list[list[str]] = []
+
+    def run_gh_stub(args, capture_json=False, timeout=60):
+        captured.append(list(args))
+        return 0, '', ''
+
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+
+    result = github_ops.cmd_pr_auto_merge(_auto_merge_ns())
+
+    assert result['status'] == 'error', result
+    assert 'scope' in result['error'], result
+    # The probe precedes the call, so no auto-merge was scheduled as a side effect.
+    assert captured == [], captured
 
 
 # ---------------------------------------------------------------------------
@@ -1279,6 +1663,21 @@ def _merge_queue_ns(*, pr_number: int | None = 42, head: str | None = None):
     return argparse.Namespace(pr_number=pr_number, head=head)
 
 
+def _install_configured_queue(monkeypatch) -> dict:
+    """Stub the base-branch probe as CONFIGURED so the enqueue may proceed.
+
+    ``cmd_pr_merge_queue`` now corroborates ``enqueued`` against the PR's own
+    base branch before calling gh, so every enqueue fixture must declare that a
+    queue actually exists to be enqueued onto.
+    """
+    monkeypatch.setattr(github_ops, 'view_pr_data', lambda head=None: _pr_view_success_payload())
+    return _install_probe(
+        monkeypatch,
+        discriminator=github_ops.MERGE_QUEUE_ELIGIBLE_CONFIGURED,
+        detail='merge_queue rule active on branch',
+    )
+
+
 def test_pr_merge_queue_enqueues_auto_only(monkeypatch):
     """The enqueue command is exactly ``['pr', 'merge', <id>, '--auto']``.
 
@@ -1286,6 +1685,7 @@ def test_pr_merge_queue_enqueues_auto_only(monkeypatch):
     envelope omits the removed ``strategy`` / ``delete_branch`` keys.
     """
     _install_common(monkeypatch)
+    _install_configured_queue(monkeypatch)
     captured: list[list[str]] = []
 
     def run_gh_stub(args, capture_json=False, timeout=60):
@@ -1299,6 +1699,8 @@ def test_pr_merge_queue_enqueues_auto_only(monkeypatch):
     assert result['status'] == 'success', result
     assert result['operation'] == 'pr_merge_queue'
     assert result['enqueued'] is True
+    assert result['base_branch'] == 'main', result
+    assert result['enqueue_corroboration'] == 'merge_queue rule active on branch', result
     assert result['pr_number'] == 42
     # The removed keys must NOT reappear in the envelope.
     assert 'strategy' not in result, result
@@ -1321,6 +1723,7 @@ def test_pr_merge_queue_never_sends_flag_gh_would_reject(monkeypatch):
     enabled". The handler never sends the flag, so the enqueue succeeds.
     """
     _install_common(monkeypatch)
+    _install_configured_queue(monkeypatch)
     captured: list[list[str]] = []
 
     def run_gh_stub(args, capture_json=False, timeout=60):
@@ -1348,6 +1751,7 @@ def test_pr_merge_queue_never_sends_flag_gh_would_reject(monkeypatch):
 def test_pr_merge_queue_head_identifier(monkeypatch):
     """A ``--head`` identifier still enqueues via ``pr merge <branch> --auto``."""
     _install_common(monkeypatch)
+    _install_configured_queue(monkeypatch)
     captured: list[list[str]] = []
 
     def run_gh_stub(args, capture_json=False, timeout=60):
@@ -1364,3 +1768,76 @@ def test_pr_merge_queue_head_identifier(monkeypatch):
     assert merge_call == ['pr', 'merge', 'feature/x', '--auto'], merge_call
     assert '--delete-branch' not in merge_call, merge_call
     assert '--strategy' not in merge_call, merge_call
+
+
+@pytest.mark.parametrize(
+    'discriminator',
+    [
+        github_ops.MERGE_QUEUE_ELIGIBLE_UNCONFIGURED,
+        github_ops.MERGE_QUEUE_INELIGIBLE,
+        github_ops.MERGE_QUEUE_UNSUPPORTED,
+    ],
+)
+def test_cmd_pr_merge_queue_returns_error_when_base_has_no_configured_queue(
+    monkeypatch, discriminator
+):
+    """No configured queue on the base branch → error, and NO gh call at all.
+
+    This is the defect the corroboration closes: ``gh pr merge --auto`` exits
+    zero on an unconfigured base having quietly enabled PLAIN auto-merge, so the
+    old exit-code-derived ``enqueued: true`` reported a successful enqueue for a
+    PR that never joined any queue. The probe runs BEFORE the call so that
+    side effect never happens either.
+    """
+    _install_common(monkeypatch)
+    monkeypatch.setattr(github_ops, 'view_pr_data', lambda head=None: _pr_view_success_payload())
+    probe = _install_probe(
+        monkeypatch, discriminator=discriminator, detail='no merge_queue rule on branch'
+    )
+    captured: list[list[str]] = []
+
+    def run_gh_stub(args, capture_json=False, timeout=60):
+        captured.append(list(args))
+        return 0, '', ''
+
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+
+    result = github_ops.cmd_pr_merge_queue(_merge_queue_ns(pr_number=42))
+
+    assert result['status'] == 'error', result
+    assert result['operation'] == 'pr_merge_queue'
+    # The message names the base branch and BOTH remedies.
+    assert 'main' in result['error'], result
+    assert '/marshall-steward' in result['error'], result
+    assert 'use_merge_queue' in result['error'], result
+    assert 'ci pr safe-merge' in result['error'], result
+    # No gh call was issued — the probe precedes the enqueue.
+    assert captured == [], captured
+    # The refusal is derived from exactly ONE probe, not from a retry loop that
+    # happened to settle on an error: the base-branch state is read once and acted on.
+    assert probe['calls'] == 1, probe
+
+
+def test_cmd_pr_merge_queue_probe_error_fails_closed(monkeypatch):
+    """An unresolvable queue state refuses the enqueue rather than guessing."""
+    _install_common(monkeypatch)
+    monkeypatch.setattr(github_ops, 'view_pr_data', lambda head=None: _pr_view_success_payload())
+    _install_probe(
+        monkeypatch,
+        discriminator=github_ops.MERGE_QUEUE_INELIGIBLE,
+        detail='branch rules endpoint unreachable',
+        error='the gh token lacks the scope to read repository rulesets',
+    )
+    captured: list[list[str]] = []
+
+    def run_gh_stub(args, capture_json=False, timeout=60):
+        captured.append(list(args))
+        return 0, '', ''
+
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+
+    result = github_ops.cmd_pr_merge_queue(_merge_queue_ns(pr_number=42))
+
+    assert result['status'] == 'error', result
+    assert 'scope' in result['error'], result
+    assert captured == [], captured

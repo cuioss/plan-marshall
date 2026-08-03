@@ -452,6 +452,98 @@ def test_build_parser_pr_view_accepts_head_flag():
     assert args.head == 'feature/x'
 
 
+def test_build_parser_pr_view_accepts_pr_number_flag():
+    """`pr view` must declare --pr-number — the only selector a landing poll can use.
+
+    A required platform merge queue auto-deletes the head branch as it merges, so a
+    --head-keyed poll stops resolving at exactly the moment `state: merged` becomes
+    observable. While this flag was undeclared, the documented queue-landing poll
+    (`ci pr view --pr-number {n}`) exited 2 on every iteration, so the gate could
+    never corroborate the landing it exists to gate on.
+    """
+    parser, _, _, _, _ = build_parser('test')
+    args = parser.parse_args(['pr', 'view', '--pr-number', '42'])
+    assert args.pr_number == 42
+    assert args.head is None
+
+
+def test_build_parser_pr_view_accepts_neither_selector():
+    """Unlike the merge-shaped verbs, `pr view` parses with NEITHER selector.
+
+    Both flags are optional here; omitting both is the historical current-cwd-HEAD
+    lookup, and adding --pr-number must not have silently made a selector mandatory.
+    """
+    parser, _, _, _, _ = build_parser('test')
+    args = parser.parse_args(['pr', 'view'])
+    assert args.pr_number is None
+    assert args.head is None
+
+
+def _option_strings(parser: argparse.ArgumentParser) -> set[str]:
+    """Return every option string declared directly on *parser*."""
+    return {opt for action in parser._actions for opt in action.option_strings}
+
+
+def _parser_paths(parser: argparse.ArgumentParser, prefix: tuple[str, ...] = ()) -> dict[int, str]:
+    """Map ``id(sub_parser)`` -> its space-joined command path, for every node under *parser*."""
+    paths: dict[int, str] = {}
+    for action in parser._actions:
+        if isinstance(action, argparse._SubParsersAction):
+            for name, sub in action.choices.items():
+                path = (*prefix, name)
+                paths[id(sub)] = ' '.join(path)
+                paths.update(_parser_paths(sub, path))
+    return paths
+
+
+def test_every_add_head_arg_verb_also_declares_pr_number(monkeypatch):
+    """Every subparser that receives --head must also declare --pr-number.
+
+    ``add_head_arg``'s help string presents --head as usable "in place of
+    --pr-number", a claim that is only true on a parser which actually declares that
+    flag. `pr view` carried the help string without the flag, so the advertised
+    substitute was a form argparse rejected with exit 2.
+
+    The population is DERIVED, not hand-listed: ``add_head_arg`` is wrapped for the
+    duration of one real ``build_parser`` call, so the checked set is exactly its live
+    call sites. The population itself is asserted first, so a probe that observed
+    nothing (a refactor that stops routing through the helper) fails loudly instead of
+    passing vacuously on an empty offender list. `pr create` / `pr list` declare their
+    own branch-filter --head without this helper and are correctly outside the set —
+    neither has a PR to number.
+    """
+    registered: list[argparse.ArgumentParser] = []
+    real_add_head_arg = ci_base.add_head_arg
+
+    def recording_add_head_arg(subparser: argparse.ArgumentParser) -> None:
+        registered.append(subparser)
+        real_add_head_arg(subparser)
+
+    monkeypatch.setattr(ci_base, 'add_head_arg', recording_add_head_arg)
+    parser, _, _, _, _ = ci_base.build_parser('test')
+
+    paths = _parser_paths(parser)
+    population = sorted(paths.get(id(sub), '<unreachable-from-parser-tree>') for sub in registered)
+    assert population == [
+        'checks status',
+        'pr auto-merge',
+        'pr merge',
+        'pr merge-queue',
+        'pr safe-merge',
+        'pr update-branch',
+        'pr view',
+    ], population
+
+    offenders = sorted(
+        paths.get(id(sub), '<unreachable-from-parser-tree>')
+        for sub in registered
+        if '--pr-number' not in _option_strings(sub)
+    )
+    assert offenders == [], (
+        f'these --head verbs advertise --head "in place of --pr-number" but declare no such flag: {offenders}'
+    )
+
+
 def test_build_parser_pr_merge_pr_number_optional():
     """pr merge should accept --head as alternative to --pr-number (both optional)."""
     parser, _, _, _, _ = build_parser('test')

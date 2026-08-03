@@ -29,7 +29,7 @@ Source: [pr-operations.md](pr-operations.md)
 
 | Subcommand | Required Flags | Optional Flags | Purpose |
 |------------|----------------|----------------|---------|
-| `pr view` | _(none — uses current cwd HEAD)_ | `--head {branch}` | Get PR/MR details for current branch (or `--head` branch) |
+| `pr view` | _(none — uses current cwd HEAD)_ | _at most one of_ `--pr-number` _or_ `--head {branch}` | Get PR/MR details by number, by branch, or for the current branch. A landing poll MUST use `--pr-number` — the merge queue deletes the head branch as it merges |
 | `pr list` | _(none)_ | `--head {branch}`, `--state {open\|closed\|all}` | List PRs with optional branch and state filters |
 | `pr prepare-body` | `--plan-id` | `--for {create\|edit}`, `--slot {name}` | Allocate a script-owned scratch path for a PR description (path-allocate pattern). |
 | `pr prepare-comment` | `--plan-id` | `--for {reply\|thread-reply}`, `--slot {name}` | Allocate a script-owned scratch path for a PR comment consumed by `pr reply` / `pr thread-reply`. |
@@ -44,10 +44,13 @@ Source: [pr-operations.md](pr-operations.md)
 | `pr edit` | `--pr-number`, `--plan-id` | `--title`, `--slot {name}` | Edit PR title and/or body. Body (if updated) is consumed from the scratch file allocated by `pr prepare-body --for edit`. |
 
 **Worktree-isolated plans**: When invoking from the main checkout against a plan running
-in `.plan/local/worktrees/{plan_id}`, pass `--head {plan_branch}` on every branch-aware
-operation (`pr create`, `pr view`, `pr merge`, `pr auto-merge`, `pr safe-merge`, `checks status`). The
-underlying gh/glab CLIs derive the source branch from cwd HEAD, which would otherwise
-resolve to `main`. Examples:
+in `.plan/local/worktrees/{plan_id}`, never rely on cwd derivation on a branch-aware
+operation — the underlying gh/glab CLIs derive the source branch from cwd HEAD, which would
+otherwise resolve to `main`. Identify the PR explicitly instead: `--pr-number {number}` whenever
+a number is at hand (always, for a landing poll), `--head {plan_branch}` otherwise. Which
+operations are branch-aware and which selectors each one accepts is governed by
+[pr-operations.md](pr-operations.md) § "Branch-Aware Operations: `--head BRANCH`", the single
+authority on that set. The commands below are illustrations, not that set:
 
 ```bash
 # Create PR from worktree branch while running from main checkout.
@@ -96,7 +99,7 @@ Source: [ci-operations.md](ci-operations.md)
 
 | Subcommand | Required Flags | Optional Flags | Purpose |
 |------------|----------------|----------------|---------|
-| `checks status` | _exactly one of_ `--pr-number` _or_ `--head` | `--error-style {maven\|gradle\|npm\|generic}` | Check CI status for a PR. Use `--head {branch}` from the main checkout against a worktree branch |
+| `checks status` | _exactly one of_ `--pr-number` _or_ `--head` | `--error-style {maven\|gradle\|npm\|generic}` | Check CI status for a PR |
 | `checks wait` | `--pr-number` | `--error-style {maven\|gradle\|npm\|generic}` | Poll CI until completion. Use Bash timeout ≥ 1800000 ms (30 min safety net) |
 | `checks wait-for-status-flip` | `--pr-number` | `--expected {success\|failure\|any}`, `--timeout {seconds}`, `--interval {seconds}` | Block until the CI status flips off `pending` (default: any non-pending flip) |
 | `checks rerun` | `--run-id` | — | Rerun a failed CI workflow run |

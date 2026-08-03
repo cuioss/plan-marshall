@@ -49,12 +49,54 @@ def _mq_ns(*, pr_number=42, head=None):
     return argparse.Namespace(pr_number=pr_number, head=head)
 
 
-def _install(monkeypatch, run_gh_stub):
+def _base_view_payload(base_branch: str = 'main') -> dict:
+    """Minimal ``view_pr_data`` success payload carrying a base branch."""
+    return {
+        'status': 'success',
+        'operation': 'pr_view',
+        'pr_number': 42,
+        'state': 'open',
+        'head_branch': 'feature/x',
+        'base_branch': base_branch,
+    }
+
+
+def _install(
+    monkeypatch,
+    run_gh_stub,
+    *,
+    discriminator: str | None = None,
+    detail: str = 'merge_queue rule active on branch',
+    probe_error: str | None = None,
+) -> dict:
+    """Install the stubs ``cmd_pr_merge_queue`` needs, plus the base-branch probe.
+
+    The enqueue is now CORROBORATED: the handler probes the PR's own base branch
+    for a configured merge queue before calling gh, because ``gh pr merge --auto``
+    exits zero on an unconfigured base having quietly enabled plain auto-merge.
+    The default discriminator is ``eligible_configured`` so the pre-existing
+    behavioural tests keep exercising the enqueue path they were written for.
+    Returns the probe capture dict.
+    """
+    if discriminator is None:
+        discriminator = github_ops.MERGE_QUEUE_ELIGIBLE_CONFIGURED
     monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
     monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
     monkeypatch.setattr(
         github_ops, '_resolve_pr_identifier', lambda args, op: ('42', None)
     )
+    monkeypatch.setattr(github_ops, 'view_pr_data', lambda head=None: _base_view_payload())
+    monkeypatch.setattr(github_ops, 'get_repo_info', lambda: ('octo', 'repo'))
+
+    captured: dict = {'branch': None, 'calls': 0}
+
+    def probe_stub(owner, repo, branch):
+        captured['branch'] = branch
+        captured['calls'] += 1
+        return discriminator, detail, probe_error, None
+
+    monkeypatch.setattr(github_ops, '_probe_merge_queue_state', probe_stub)
+    return captured
 
 
 # ---------------------------------------------------------------------------
@@ -83,7 +125,7 @@ def test_ci_base_parser_accepts_pr_merge_queue():
 def test_cmd_pr_merge_queue_enqueues_via_gh_auto(monkeypatch):
     # Arrange
     run_gh_stub, captured = _capture_run_gh()
-    _install(monkeypatch, run_gh_stub)
+    probe = _install(monkeypatch, run_gh_stub)
 
     # Act — the merge queue's own config dictates the method, so the enqueue is
     # exactly ``gh pr merge --auto`` with no strategy / delete-branch flags.
@@ -94,6 +136,10 @@ def test_cmd_pr_merge_queue_enqueues_via_gh_auto(monkeypatch):
     assert result['operation'] == 'pr_merge_queue'
     assert result['enqueued'] is True
     assert result['pr_number'] == 42
+    # The claim is corroborated against the PR's OWN base branch, not assumed.
+    assert result['base_branch'] == 'main'
+    assert result['enqueue_corroboration'] == 'merge_queue rule active on branch'
+    assert probe['branch'] == 'main', probe
     merge_call = next(c for c in captured if c[:2] == ['pr', 'merge'])
     assert merge_call == ['pr', 'merge', '42', '--auto']
 

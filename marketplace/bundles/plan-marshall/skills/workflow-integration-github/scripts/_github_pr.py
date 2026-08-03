@@ -446,8 +446,25 @@ def cmd_pr_create(args: argparse.Namespace) -> dict:
 
 
 def cmd_pr_view(args: argparse.Namespace) -> dict:
-    """Handle 'pr view' subcommand - get PR for current branch (or --head branch)."""
-    return github_ops.view_pr_data(head=getattr(args, 'head', None))
+    """Handle 'pr view' — read PR state by number, by branch, or for the current cwd HEAD.
+
+    ``gh pr view`` takes a number, a URL, or a branch name in the SAME positional
+    slot, so ``--pr-number`` and ``--head`` are a selector CHOICE rather than two
+    code paths: whichever is supplied becomes that one positional. Supplying
+    neither is the historical default (the PR for the current cwd HEAD); supplying
+    both is a structured error, never a silent precedence rule.
+
+    ``--pr-number`` is the selector a landing poll MUST use. Under a required
+    platform merge queue the platform auto-deletes the head branch as the queue
+    merges, so a ``--head``-keyed poll stops resolving at exactly the moment the
+    terminal ``state: merged`` it waits for becomes observable. The PR number is
+    stable across that deletion.
+    """
+    pr_number = getattr(args, 'pr_number', None)
+    head = getattr(args, 'head', None)
+    if pr_number and head:
+        return make_error('pr_view', 'specify exactly one of --pr-number or --head, not both')
+    return github_ops.view_pr_data(head=str(pr_number) if pr_number else head)
 
 
 def cmd_pr_list(args: argparse.Namespace) -> dict:
@@ -849,17 +866,272 @@ def cmd_pr_wait_for_comments(args: argparse.Namespace) -> dict:
     }
 
 
+# ---------------------------------------------------------------------------
+# Merge-shaped verb guards: base-branch queue preflight + post-merge corroboration
+# ---------------------------------------------------------------------------
+#
+# Every merge-shaped verb in this module (``pr merge``, ``pr auto-merge``,
+# ``pr safe-merge``, ``pr merge-queue``) carries two obligations, and neither is
+# satisfiable from the ``gh`` exit code alone:
+#
+# 1. **Refuse an unsafe base.** On a base branch with a REQUIRED platform merge
+#    queue, an immediate merge closes the PR unmerged instead of merging it (the
+#    #866 signature); conversely ``gh pr merge --auto`` silently degrades from
+#    "enqueue into the queue" to "enable plain auto-merge" when the base has NO
+#    queue configured. Both dispositions are properties of the PR's OWN base
+#    branch, so every such verb probes that branch first and fails closed on any
+#    resolution failure.
+# 2. **Prove its own success claim.** A zero exit from ``gh`` means the command
+#    was accepted, never that the merge landed. The #1081 signature is exactly a
+#    verb that reported ``merged: true`` — and deleted the head branch — for a
+#    merge that never happened. The claim is therefore established from a
+#    post-merge RE-READ of provider state, BEFORE any follow-up call (notably
+#    the branch-delete) can influence it.
+#
+# Both guards assert the MEANING of a value, never the mere presence of a key: a
+# narrow ``'mergedAt' in payload`` style check passes on a wrongly-shaped record
+# and reintroduces the defect it was meant to close.
+
+
+def _resolve_base_queue_state(identifier: str, operation: str) -> tuple[str, str, str, dict | None]:
+    """Resolve the PR's own base branch and probe that branch's merge-queue state.
+
+    Returns ``(base_branch, discriminator, detail, None)`` on success, where
+    ``discriminator`` is one of the ``MERGE_QUEUE_*`` constants, or
+    ``('', '', '', error_dict)`` when the state could not be established.
+
+    Probing the PR's OWN base branch — not the repository default branch — is
+    load-bearing: a PR may target a non-default base whose merge-queue
+    configuration differs, and every merge-shaped decision below is a property of
+    the branch the PR will actually land on.
+
+    Fails closed on every resolution failure (PR-view failure, empty base branch,
+    unresolvable repo, auth-scope failure, malformed rules response): an unknown
+    queue state is never silently read as "no queue".
+    """
+    preflight_view = github_ops.view_pr_data(head=identifier)
+    if preflight_view.get('status') != 'success':
+        return (
+            '',
+            '',
+            '',
+            make_error(
+                operation,
+                f'Could not resolve base branch for the merge-queue preflight of PR {identifier}',
+                preflight_view.get('error', 'pr_view failed'),
+            ),
+        )
+
+    base_branch = preflight_view.get('base_branch') or ''
+    if not base_branch:
+        return (
+            '',
+            '',
+            '',
+            make_error(
+                operation,
+                f'PR {identifier} view returned an empty base branch; refusing the merge-queue preflight',
+            ),
+        )
+
+    owner, repo = github_ops.get_repo_info()
+    if not owner or not repo:
+        return (
+            '',
+            '',
+            '',
+            make_error(operation, 'Could not determine repository owner/name for the merge-queue preflight'),
+        )
+
+    discriminator, detail, mq_error, _merge_method = github_ops._probe_merge_queue_state(owner, repo, base_branch)
+    if mq_error is not None:
+        # Auth-scope failure, non-404 gh api error, or malformed rules response.
+        return '', '', '', make_error(operation, mq_error, detail)
+    return base_branch, discriminator, detail, None
+
+
+def _refuse_on_required_merge_queue(identifier: str, operation: str) -> dict | None:
+    """Return an error dict when an IMMEDIATE merge of ``identifier`` would be unsafe.
+
+    Returns ``None`` when the merge may proceed. The refusal names BOTH remedies
+    so the caller is never left with a bare error: route the PR through the queue,
+    or reconcile the plan's ``use_merge_queue`` step param.
+    """
+    base_branch, discriminator, detail, err_dict = _resolve_base_queue_state(identifier, operation)
+    if err_dict is not None:
+        return err_dict
+    if discriminator == MERGE_QUEUE_ELIGIBLE_CONFIGURED:
+        return make_error(
+            operation,
+            f'PR {identifier} targets base branch {base_branch!r}, which has a required platform '
+            f'merge queue — an immediate merge would close the PR unmerged (#866). Route the PR '
+            f'through the merge queue via "ci pr merge-queue", or reconcile the plan\'s '
+            f'use_merge_queue step param via /marshall-steward.',
+            detail,
+        )
+    # MERGE_QUEUE_ELIGIBLE_UNCONFIGURED / MERGE_QUEUE_INELIGIBLE /
+    # MERGE_QUEUE_UNSUPPORTED all permit the immediate merge.
+    return None
+
+
+# The PR state that means "this PR was merged". Compared case-insensitively
+# against the provider's own spelling rather than probed for presence.
+_MERGED_STATE = 'MERGED'
+
+# Merge strategies that replay the PR's head commits onto the base verbatim, so
+# base-branch ancestry of the head SHA is a valid POSITIVE proof the merge
+# landed. A SQUASH merge rewrites the branch into one new commit, so the head
+# SHA never becomes an ancestor of the base — ancestry proves nothing there and
+# is deliberately not consulted, which is why the strategy selects the evidence.
+_ANCESTRY_CORROBORABLE_STRATEGIES = frozenset({'merge', 'rebase'})
+
+# ``GET /compare/{base}...{head}`` statuses that mean the BASE already contains
+# the head commit: ``identical`` (same commit) and ``behind`` (head is behind
+# base, i.e. fully contained). ``ahead`` / ``diverged`` mean it does not.
+_BASE_CONTAINS_HEAD_COMPARE_STATES = frozenset({'identical', 'behind'})
+
+
+def _parse_merged_at(raw: str) -> datetime | None:
+    """Parse a provider ``mergedAt`` stamp into a TIMEZONE-AWARE datetime.
+
+    Returns ``None`` when ``raw`` is empty or unparseable — an absent or
+    malformed timestamp is a NON-corroboration, never a wildcard that satisfies
+    the check.
+
+    The result is always aware: GitHub stamps are ``Z``-suffixed UTC, and a
+    timezone-naive value (a provider or fixture that omits the offset) is
+    normalized to UTC rather than returned naive. A naive datetime would raise
+    ``TypeError`` the moment any caller compared it against an aware ``now()``,
+    turning a corroboration check into a crash.
+    """
+    if not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw.replace('Z', '+00:00'))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
+
+
+def _head_is_ancestor_of_base(head_sha: str, base_branch: str) -> tuple[bool, str]:
+    """Return ``(base_contains_head, detail)`` from the REST compare endpoint.
+
+    The secondary corroboration arm for the non-squash strategies: after a
+    ``merge`` or ``rebase``, the PR's head commit is reachable from the base
+    branch, so ``GET /compare/{base}...{head_sha}`` reporting ``identical`` or
+    ``behind`` is positive evidence the commits landed.
+
+    Fails closed — every failure (missing inputs, unresolvable repo, non-zero
+    exit, unparseable payload, unexpected shape) returns ``False`` with a detail
+    naming the failure, never a permissive default.
+    """
+    if not head_sha or not base_branch:
+        return False, 'ancestry check unavailable: PR re-read returned no head SHA or no base branch'
+
+    owner, repo = github_ops.get_repo_info()
+    if not owner or not repo:
+        return False, 'ancestry check unavailable: could not resolve repository owner/name'
+
+    endpoint = f'repos/{owner}/{repo}/compare/{quote(base_branch, safe="")}...{quote(head_sha, safe="")}'
+    returncode, stdout, stderr = github_ops.run_gh(['api', endpoint])
+    if returncode != 0:
+        return False, f'ancestry check failed: {stderr.strip()}'
+    try:
+        payload = json.loads(stdout)
+    except json.JSONDecodeError:
+        return False, f'ancestry check returned unparseable JSON: {stdout[:100]}'
+    if not isinstance(payload, dict):
+        return False, 'ancestry check returned a non-dictionary compare payload'
+
+    compare_status = str(payload.get('status') or '').lower()
+    if compare_status in _BASE_CONTAINS_HEAD_COMPARE_STATES:
+        return True, f'base {base_branch} contains head {head_sha} (compare status={compare_status})'
+    return False, (
+        f'base {base_branch} does not contain head {head_sha} '
+        f'(compare status={compare_status or "unknown"})'
+    )
+
+
+def _corroborate_merge(identifier: str, strategy: str) -> tuple[bool, str]:
+    """Return ``(merged, detail)`` established from a post-merge RE-READ of PR state.
+
+    This is the single seam every merge-shaped verb uses to prove its own success
+    claim, and it is deliberately NOT a presence check: it asserts that ``state``
+    equals :data:`_MERGED_STATE` and that ``mergedAt`` parses to a real
+    timezone-aware instant. A record carrying a ``mergedAt`` key whose value is
+    ``null``, an empty string, or an unparseable stamp is a NON-corroboration.
+
+    The evidence admitted is selected by ``strategy``:
+
+    - every strategy is corroborated by ``state == MERGED`` AND a parseable
+      ``mergedAt``;
+    - ``merge`` / ``rebase`` (:data:`_ANCESTRY_CORROBORABLE_STRATEGIES`)
+      ADDITIONALLY admit the ancestry arm (:func:`_head_is_ancestor_of_base`),
+      because those strategies land the head commits on the base verbatim;
+    - ``squash`` does NOT, because the squashed commit is a new object and the
+      head SHA never becomes an ancestor of the base.
+
+    Fails closed on every read/parse failure: an unobservable state is never a
+    landed merge.
+    """
+    returncode, stdout, stderr = github_ops.run_gh(
+        ['pr', 'view', identifier, '--json', 'state,mergedAt,baseRefName,headRefOid']
+    )
+    if returncode != 0:
+        return False, f'post-merge PR re-read failed: {stderr.strip()}'
+    try:
+        data = json.loads(stdout)
+    except json.JSONDecodeError:
+        return False, f'post-merge PR re-read returned unparseable JSON: {stdout[:100]}'
+    if not isinstance(data, dict):
+        return False, 'post-merge PR re-read returned a non-dictionary payload'
+
+    state = str(data.get('state') or '').upper()
+    raw_merged_at = str(data.get('mergedAt') or '')
+    merged_at = _parse_merged_at(raw_merged_at)
+    if state == _MERGED_STATE and merged_at is not None:
+        return True, f'state={state}, merged_at={merged_at.isoformat()}'
+
+    primary_detail = f'state={state or "unknown"}, merged_at={raw_merged_at or "null"}'
+    if strategy not in _ANCESTRY_CORROBORABLE_STRATEGIES:
+        return False, primary_detail
+
+    contained, ancestry_detail = _head_is_ancestor_of_base(
+        str(data.get('headRefOid') or ''),
+        str(data.get('baseRefName') or ''),
+    )
+    return contained, f'{primary_detail}, {ancestry_detail}'
+
+
 def cmd_pr_merge(args: argparse.Namespace) -> dict:
     """Handle 'pr merge' subcommand - merge a pull request.
 
+    Refuses an unsafe base and proves its own success claim, per the two
+    obligations documented above :func:`_resolve_base_queue_state`:
+
+    - **Base-branch merge-queue preflight** — the same guard ``pr safe-merge``
+      carries, via the shared :func:`_refuse_on_required_merge_queue`. Without it
+      this verb merges straight into the #866 signature: on a base branch with a
+      required queue, ``gh pr merge`` closes the PR unmerged.
+    - **Post-merge corroboration** — ``merged`` is set ONLY from
+      :func:`_corroborate_merge`, a re-read of provider state whose admitted
+      evidence is selected by ``--strategy``. It is established BEFORE the
+      branch-delete follow-up is allowed to run, so a merge that did not happen
+      can never take the head branch down with it (#1081). A non-corroborated
+      merge returns ``status: error`` and deletes nothing.
+
     When ``--delete-branch`` is requested, the merge is performed WITHOUT the
     ``--delete-branch`` pass-through to ``gh pr merge``; instead, after a
-    successful merge, the PR's head branch is deleted remotely via the
+    CORROBORATED merge, the PR's head branch is deleted remotely via the
     ``cmd_branch_delete`` handler (REST ``DELETE /git/refs/heads/{branch}``).
     Local git state is never touched by this handler — callers who want a
     local branch gone must invoke ``git -C {path} branch -D`` separately.
 
-    On branch-delete failure after a successful merge, a compound result is
+    ``merged: true`` is reported on EVERY successful merge, independently of
+    ``--delete-branch``: the verdict belongs to the merge, not to the optional
+    branch-delete follow-up.
+
+    On branch-delete failure after a corroborated merge, a compound result is
     returned with ``merged: true`` and ``branch_delete_error`` populated. The
     merge is NOT retried.
     """
@@ -872,24 +1144,47 @@ def cmd_pr_merge(args: argparse.Namespace) -> dict:
         return err_dict
     assert identifier is not None  # noqa: S101 — narrowing after err_dict guard
 
+    # ``pr safe-merge`` runs this preflight itself before polling, then delegates
+    # here; re-running it would pay a second round trip AND risk a divergent
+    # second verdict if the queue is configured between the two probes. The
+    # delegate namespace sets the skip flag; no CLI surface exposes it.
+    if not getattr(args, 'skip_merge_queue_preflight', False):
+        preflight_err = _refuse_on_required_merge_queue(identifier, 'pr_merge')
+        if preflight_err is not None:
+            return preflight_err
+
     gh_args = ['pr', 'merge', identifier, f'--{args.strategy}']
 
     returncode, stdout, stderr = github_ops.run_gh(gh_args)
     if returncode != 0:
         return make_error('pr_merge', f'Failed to merge PR {identifier}', stderr.strip())
 
+    # Establish the merge verdict from provider state BEFORE the branch-delete
+    # follow-up below can influence it. A zero exit above only means gh accepted
+    # the command.
+    merged, corroboration = _corroborate_merge(identifier, args.strategy)
+    if not merged:
+        return make_error(
+            'pr_merge',
+            f'PR {identifier} merge command succeeded but post-merge state does NOT corroborate a '
+            f'merge — refusing to report merged and skipping the branch delete (#1081). Verify the '
+            f'PR state; if its base branch requires the platform merge queue, route the PR via '
+            f'"ci pr merge-queue" instead of an immediate merge.',
+            corroboration,
+        )
+
     result: dict = {
         'status': 'success',
         'operation': 'pr_merge',
         'pr_number': args.pr_number if args.pr_number else identifier,
         'strategy': args.strategy,
+        'merged': True,
+        'merge_corroboration': corroboration,
     }
 
-    # Branch-delete is an optional follow-up. The merge has already succeeded;
+    # Branch-delete is an optional follow-up. The merge is already corroborated;
     # we never retry the merge on branch-delete failure.
     if args.delete_branch:
-        result['merged'] = True
-
         # Resolve the PR head branch name via existing PR metadata.
         # ``gh pr view`` accepts either a PR number or a branch name as the
         # positional, so ``identifier`` (already resolved) is passed through
@@ -980,7 +1275,31 @@ def cmd_branch_delete(args: argparse.Namespace) -> dict:
 
 
 def cmd_pr_auto_merge(args: argparse.Namespace) -> dict:
-    """Handle 'pr auto-merge' subcommand - enable auto-merge on a pull request."""
+    """Handle 'pr auto-merge' subcommand - schedule the PR to merge without waiting.
+
+    ``gh pr merge --auto`` is ONE command with TWO dispositions, decided entirely
+    by the PR's base branch: on a base with no merge queue it enables plain
+    auto-merge, and on a base with a configured queue it ENQUEUES the PR into
+    that queue instead. The exit code is identical either way, so a boolean
+    derived from it alone cannot tell the two apart: it reads "auto-merge
+    enabled" for a PR the platform actually placed on a merge queue.
+
+    This verb therefore probes the base branch's queue state
+    (:func:`_resolve_base_queue_state`) BEFORE returning and reports which
+    disposition actually occurred in ``disposition``:
+
+    - ``enabled`` — plain auto-merge was scheduled (no queue on the base);
+    - ``enqueued`` — the base has a configured queue, so the PR joined it.
+
+    The probe runs before the ``gh`` call: refusing to report blind is only
+    possible if the state is known, and the probe is read-only, so establishing
+    it first costs nothing and keeps the failure path free of side effects.
+    Fails closed — an unresolvable queue state is an error, never a guessed
+    disposition.
+
+    The envelope carries NO ``enabled`` key and no alias for one: a bare boolean
+    would report a disposition this verb cannot know from the exit code.
+    """
     is_auth, err = github_ops.check_auth()
     if not is_auth:
         return make_error('pr_auto_merge', err)
@@ -990,17 +1309,24 @@ def cmd_pr_auto_merge(args: argparse.Namespace) -> dict:
         return err_dict
     assert identifier is not None  # noqa: S101 — narrowing after err_dict guard
 
+    base_branch, discriminator, detail, probe_err = _resolve_base_queue_state(identifier, 'pr_auto_merge')
+    if probe_err is not None:
+        return probe_err
+
     gh_args = ['pr', 'merge', identifier, '--auto', f'--{args.strategy}']
 
     returncode, stdout, stderr = github_ops.run_gh(gh_args)
     if returncode != 0:
-        return make_error('pr_auto_merge', f'Failed to enable auto-merge for PR {identifier}', stderr.strip())
+        return make_error('pr_auto_merge', f'Failed to schedule auto-merge for PR {identifier}', stderr.strip())
 
+    disposition = 'enqueued' if discriminator == MERGE_QUEUE_ELIGIBLE_CONFIGURED else 'enabled'
     return {
         'status': 'success',
         'operation': 'pr_auto_merge',
         'pr_number': args.pr_number if args.pr_number else identifier,
-        'enabled': True,
+        'base_branch': base_branch,
+        'disposition': disposition,
+        'disposition_detail': detail,
     }
 
 
@@ -1040,50 +1366,12 @@ def cmd_pr_safe_merge(args: argparse.Namespace) -> dict:
 
     # Base-branch-scoped merge-queue preflight (guards the #866 signature: an
     # immediate merge on a branch with a REQUIRED platform merge queue closes
-    # the PR unmerged instead of merging it). Probe the PR's OWN base branch —
-    # not the repository default branch — because a PR may target a non-default
-    # base whose merge-queue configuration differs. Fail closed: any resolution
-    # failure refuses the merge rather than polling or merging blind.
-    preflight_view = github_ops.view_pr_data(head=identifier)
-    if preflight_view.get('status') != 'success':
-        return make_error(
-            'pr_safe_merge',
-            f'Could not resolve base branch for merge-queue preflight of PR {identifier}',
-            preflight_view.get('error', 'pr_view failed'),
-        )
-    base_branch = preflight_view.get('base_branch') or ''
-    if not base_branch:
-        return make_error(
-            'pr_safe_merge',
-            f'PR {identifier} view returned an empty base branch; refusing the merge-queue preflight',
-        )
-
-    owner, repo = github_ops.get_repo_info()
-    if not owner or not repo:
-        return make_error(
-            'pr_safe_merge',
-            'Could not determine repository owner/name for the merge-queue preflight',
-        )
-
-    mq_discriminator, mq_detail, mq_error, _mq_method = github_ops._probe_merge_queue_state(
-        owner, repo, base_branch
-    )
-    if mq_error is not None:
-        # Auth-scope failure, non-404 gh api error, or malformed rules response.
-        return make_error('pr_safe_merge', mq_error, mq_detail)
-    if mq_discriminator == MERGE_QUEUE_ELIGIBLE_CONFIGURED:
-        # A merge queue is required on the PR's base branch — an immediate merge
-        # would close the PR unmerged (#866). Refuse and name BOTH remedies.
-        return make_error(
-            'pr_safe_merge',
-            f'PR {identifier} targets base branch {base_branch!r}, which has a required platform '
-            f'merge queue — an immediate merge would close the PR unmerged (#866). Route the PR '
-            f'through the merge queue via "ci pr merge-queue", or reconcile the plan\'s '
-            f'use_merge_queue step param via /marshall-steward.',
-            mq_detail,
-        )
-    # MERGE_QUEUE_ELIGIBLE_UNCONFIGURED / MERGE_QUEUE_INELIGIBLE /
-    # MERGE_QUEUE_UNSUPPORTED all fall through to the existing behaviour.
+    # the PR unmerged instead of merging it). Shared with ``cmd_pr_merge`` — see
+    # :func:`_refuse_on_required_merge_queue`, which probes the PR's OWN base
+    # branch and fails closed on any resolution failure.
+    preflight_err = _refuse_on_required_merge_queue(identifier, 'pr_safe_merge')
+    if preflight_err is not None:
+        return preflight_err
 
     # Layer 1 — poll readiness via the shared poll_until helper.
     def check_fn() -> tuple[bool, dict]:
@@ -1122,18 +1410,20 @@ def cmd_pr_safe_merge(args: argparse.Namespace) -> dict:
                 merge_result.get('error', f'Failed to merge PR {identifier}'),
                 merge_result.get('context', ''),
             )
-        # Post-merge verification: the merge CLI reported success, but on a
-        # merge-queue-required base branch GitHub closes the PR unmerged rather
-        # than merging it (the #866 signature). Re-fetch and require the PR to
-        # be actually merged before trusting the reported success.
-        post_merge_view = github_ops.view_pr_data(head=identifier)
-        if post_merge_view.get('status') == 'success' and post_merge_view.get('state') == 'closed':
+        # Post-merge verification, POSITIVE. A guard that only rejects the single
+        # known-bad ``state == closed`` admits every OTHER non-merged state — a PR
+        # left ``open``, a state the provider newly introduces, or an unreadable
+        # one — as a merge. The delegate establishes the verdict from a post-merge
+        # re-read (:func:`_corroborate_merge`) and returns ``status: error`` on
+        # anything short of it, so a delegated success carries a corroborated
+        # ``merged is True``. Assert that exact value rather than its mere presence.
+        if merge_result.get('merged') is not True:
             return make_error(
                 'pr_safe_merge',
-                f'PR {identifier} was closed WITHOUT merging — the merge reported success but the '
-                f'PR state is closed-unmerged (#866). This base branch likely requires the platform '
-                f'merge queue; route the PR via "ci pr merge-queue" instead of an immediate merge.',
-                'post_merge_state=closed',
+                f'PR {identifier} merge reported success but was NOT corroborated as merged. This '
+                f'base branch likely requires the platform merge queue; route the PR via '
+                f'"ci pr merge-queue" instead of an immediate merge.',
+                str(merge_result.get('merge_corroboration') or 'no corroboration recorded'),
             )
         merge_result['operation'] = 'pr_safe_merge'
         merge_result['merge_path'] = 'polled_clean'
@@ -1173,6 +1463,19 @@ def cmd_pr_safe_merge(args: argparse.Namespace) -> dict:
     if returncode != 0:
         return make_error('pr_safe_merge', f'Admin merge failed for PR {identifier}', stderr.strip())
 
+    # The admin fallback does NOT go through cmd_pr_merge, so it carries its own
+    # corroboration — identically established, and BEFORE the branch-delete
+    # follow-up below can influence it. An admin merge that did not land must
+    # never take the head branch down with it (#1081).
+    merged, corroboration = _corroborate_merge(identifier, args.strategy)
+    if not merged:
+        return make_error(
+            'pr_safe_merge',
+            f'Admin merge of PR {identifier} succeeded but post-merge state does NOT corroborate a '
+            f'merge — refusing to report merged and skipping the branch delete (#1081).',
+            corroboration,
+        )
+
     result: dict = {
         'status': 'success',
         'operation': 'pr_safe_merge',
@@ -1181,11 +1484,12 @@ def cmd_pr_safe_merge(args: argparse.Namespace) -> dict:
         'merge_path': 'admin_fallback',
         'polls': polls,
         'duration_sec': duration_sec,
+        'merged': True,
+        'merge_corroboration': corroboration,
     }
 
     # Reuse the same REST-delete follow-up as the normal merge path.
     if args.delete_branch:
-        result['merged'] = True
         pr_view = github_ops.view_pr_data(head=identifier)
         if pr_view.get('status') != 'success':
             result['branch_delete_error'] = (
@@ -1212,13 +1516,22 @@ def _safe_merge_delegate_ns(args: argparse.Namespace) -> argparse.Namespace:
 
     cmd_pr_merge reads ``pr_number``, ``head``, ``strategy``, and
     ``delete_branch`` and re-resolves the PR identifier itself, so only those
-    four fields are forwarded.
+    four are forwarded from the caller's own args.
+
+    ``skip_merge_queue_preflight`` is set because safe-merge has ALREADY run the
+    base-branch queue preflight before polling. Re-running it inside the delegate
+    would pay a second round trip and, worse, could return a divergent verdict if
+    the queue were configured during the readiness poll — refusing a merge that
+    the caller's own preflight cleared. It is an internal delegation flag with no
+    CLI surface; every other caller of ``cmd_pr_merge`` leaves it unset and gets
+    the preflight.
     """
     return argparse.Namespace(
         pr_number=args.pr_number,
         head=args.head,
         strategy=args.strategy,
         delete_branch=args.delete_branch,
+        skip_merge_queue_preflight=True,
     )
 
 
@@ -1234,7 +1547,21 @@ def cmd_pr_merge_queue(args: argparse.Namespace) -> dict:
     the widened mutex: the mutex guards the pre-enqueue rebase/force-push window;
     the merge queue serializes the merge itself at the platform.
 
-    Returns canonical TOON with ``operation: pr_merge_queue`` and
+    **``enqueued: true`` is corroborated, not assumed.** ``gh pr merge --auto``
+    exits zero whether or not the base branch has a queue: with no queue it
+    quietly enables PLAIN auto-merge, which is a different disposition entirely.
+    An ``enqueued: true`` derived from that exit code would therefore claim a
+    successful enqueue for a PR that never joined any queue, leaving the caller
+    waiting for a queue merge that cannot arrive. This verb probes the PR's own
+    base branch (:func:`_resolve_base_queue_state`) BEFORE the enqueue and sets
+    ``enqueued: true`` only when that branch actually has a configured queue;
+    otherwise it returns ``status: error`` naming BOTH remedies.
+
+    The probe runs before the ``gh`` call rather than after: on an unconfigured
+    base the call would have enabled plain auto-merge as a side effect, leaving
+    the PR scheduled to merge outside the queue the caller asked for.
+
+    Returns canonical TOON with ``operation: pr_merge_queue`` and a corroborated
     ``enqueued: true`` on success.
     """
     is_auth, err = github_ops.check_auth()
@@ -1245,6 +1572,20 @@ def cmd_pr_merge_queue(args: argparse.Namespace) -> dict:
     if err_dict:
         return err_dict
     assert identifier is not None  # noqa: S101 — narrowing after err_dict guard
+
+    base_branch, discriminator, detail, probe_err = _resolve_base_queue_state(identifier, 'pr_merge_queue')
+    if probe_err is not None:
+        return probe_err
+    if discriminator != MERGE_QUEUE_ELIGIBLE_CONFIGURED:
+        return make_error(
+            'pr_merge_queue',
+            f'PR {identifier} targets base branch {base_branch!r}, which has NO platform merge queue '
+            f'configured — enqueuing would silently enable plain auto-merge instead. Remedies: '
+            f'(a) run "/marshall-steward -> Configuration -> Merge Queue" to provision the merge '
+            f'queue on that branch, or (b) disable the plan\'s use_merge_queue step param to merge '
+            f'immediately via "ci pr safe-merge".',
+            detail,
+        )
 
     # The enqueue command is exactly ``gh pr merge --auto``. Neither --strategy
     # nor --delete-branch is forwarded: the merge queue's own branch-protection
@@ -1265,7 +1606,9 @@ def cmd_pr_merge_queue(args: argparse.Namespace) -> dict:
         'status': 'success',
         'operation': 'pr_merge_queue',
         'pr_number': args.pr_number if args.pr_number else identifier,
+        'base_branch': base_branch,
         'enqueued': True,
+        'enqueue_corroboration': detail,
     }
 
 

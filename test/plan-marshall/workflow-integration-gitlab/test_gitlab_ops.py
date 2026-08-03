@@ -40,6 +40,42 @@ def _capture_run_glab(*, mr_list_iid: int = 7):
     return run_glab_stub, captured
 
 
+def _install_merge_shaped_stubs(monkeypatch):
+    """Install the merge-train preflight + corroboration prerequisites.
+
+    ``cmd_pr_merge`` and ``cmd_pr_auto_merge`` now probe the PROJECT's merge-train
+    state before acting (merge trains are a per-project flag on GitLab, so the
+    probe takes no branch argument), and ``cmd_pr_merge`` corroborates ``merged``
+    from a post-merge ``state == 'merged'`` re-read. Without these stubs the
+    argv-routing tests below would stop testing ``--head`` resolution and start
+    testing the preflight's fail-closed path instead.
+
+    ``eligible_unconfigured`` is the permissive verdict, so routing proceeds
+    unchanged.
+    """
+    monkeypatch.setattr(
+        gitlab_ops,
+        '_probe_merge_train_state',
+        lambda: (
+            gitlab_ops.MERGE_QUEUE_ELIGIBLE_UNCONFIGURED,
+            'merge_trains_enabled=false',
+            None,
+        ),
+    )
+    monkeypatch.setattr(
+        gitlab_ops,
+        'view_pr_data',
+        lambda head=None: {
+            'status': 'success',
+            'operation': 'pr_view',
+            'pr_number': 7,
+            'state': 'merged',
+            'head_branch': 'feature/x',
+            'base_branch': 'main',
+        },
+    )
+
+
 # =============================================================================
 # pr_create --head -> --source-branch
 # =============================================================================
@@ -86,7 +122,12 @@ def test_pr_create_omits_source_branch_when_head_unset(monkeypatch, tmp_path):
 
 
 # =============================================================================
-# pr_view --head
+# pr_view --pr-number / --head
+#
+# ``glab mr view`` accepts an IID, a URL, or a branch name in the SAME positional
+# slot, so the two flags are a selector CHOICE, not two code paths — and unlike the
+# merge-shaped verbs, no ``mr list --source-branch`` IID lookup is spent, because
+# ``mr view`` resolves the branch itself. Each case asserts the CONSTRUCTED ARGV.
 # =============================================================================
 
 
@@ -100,7 +141,59 @@ def test_pr_view_forwards_head(monkeypatch):
 
     assert result['status'] == 'success', result
     view_call = next(c for c in captured if c[:2] == ['mr', 'view'])
-    assert 'feature/x' in view_call
+    assert view_call[2] == 'feature/x', view_call
+    assert not any(c[:3] == ['mr', 'list', '--source-branch'] for c in captured), captured
+
+
+def test_pr_view_forwards_pr_number_as_positional(monkeypatch):
+    """--pr-number lands in glab's positional selector slot, stringified.
+
+    This is the landing-poll selector: a required merge train deletes the source
+    branch as it merges, so a --head-keyed poll stops resolving at exactly the moment
+    the merged state becomes observable. The IID survives the branch deletion.
+    """
+    run_glab_stub, captured = _capture_run_glab()
+    monkeypatch.setattr(gitlab_ops, 'check_auth', _ok_auth)
+    monkeypatch.setattr(gitlab_ops, 'run_glab', run_glab_stub)
+
+    ns = argparse.Namespace(pr_number=1152, head=None)
+    result = gitlab_ops.cmd_pr_view(ns)
+
+    assert result['status'] == 'success', result
+    view_call = next(c for c in captured if c[:2] == ['mr', 'view'])
+    assert view_call[2] == '1152', view_call
+
+
+def test_pr_view_dual_flag_rejected(monkeypatch):
+    """Both selectors together is a structured error, not a silent precedence rule."""
+    run_glab_stub, captured = _capture_run_glab()
+    monkeypatch.setattr(gitlab_ops, 'check_auth', _ok_auth)
+    monkeypatch.setattr(gitlab_ops, 'run_glab', run_glab_stub)
+
+    ns = argparse.Namespace(pr_number=42, head='feature/x')
+    result = gitlab_ops.cmd_pr_view(ns)
+
+    assert result['status'] == 'error', result
+    assert 'not both' in result['error'], result
+    assert captured == [], 'Should not invoke glab when validation fails'
+
+
+def test_pr_view_omits_positional_when_no_selector(monkeypatch):
+    """Neither selector keeps the historical current-cwd-HEAD lookup.
+
+    Adding --pr-number must not have made a selector mandatory: with both omitted the
+    positional slot stays empty, so --output is the token immediately after `mr view`.
+    """
+    run_glab_stub, captured = _capture_run_glab()
+    monkeypatch.setattr(gitlab_ops, 'check_auth', _ok_auth)
+    monkeypatch.setattr(gitlab_ops, 'run_glab', run_glab_stub)
+
+    ns = argparse.Namespace(pr_number=None, head=None)
+    result = gitlab_ops.cmd_pr_view(ns)
+
+    assert result['status'] == 'success', result
+    view_call = next(c for c in captured if c[:2] == ['mr', 'view'])
+    assert view_call[2] == '--output', view_call
 
 
 # =============================================================================
@@ -112,6 +205,7 @@ def test_pr_merge_with_head_resolves_iid(monkeypatch):
     run_glab_stub, captured = _capture_run_glab(mr_list_iid=7)
     monkeypatch.setattr(gitlab_ops, 'check_auth', _ok_auth)
     monkeypatch.setattr(gitlab_ops, 'run_glab', run_glab_stub)
+    _install_merge_shaped_stubs(monkeypatch)
 
     ns = argparse.Namespace(pr_number=None, head='feature/x', strategy='merge', delete_branch=False)
     result = gitlab_ops.cmd_pr_merge(ns)
@@ -127,6 +221,7 @@ def test_pr_merge_with_pr_number_skips_lookup(monkeypatch):
     run_glab_stub, captured = _capture_run_glab()
     monkeypatch.setattr(gitlab_ops, 'check_auth', _ok_auth)
     monkeypatch.setattr(gitlab_ops, 'run_glab', run_glab_stub)
+    _install_merge_shaped_stubs(monkeypatch)
 
     ns = argparse.Namespace(pr_number=42, head=None, strategy='merge', delete_branch=False)
     result = gitlab_ops.cmd_pr_merge(ns)
@@ -171,6 +266,7 @@ def test_pr_auto_merge_with_head_resolves_iid(monkeypatch):
     run_glab_stub, captured = _capture_run_glab(mr_list_iid=7)
     monkeypatch.setattr(gitlab_ops, 'check_auth', _ok_auth)
     monkeypatch.setattr(gitlab_ops, 'run_glab', run_glab_stub)
+    _install_merge_shaped_stubs(monkeypatch)
 
     ns = argparse.Namespace(pr_number=None, head='feature/x', strategy='merge')
     result = gitlab_ops.cmd_pr_auto_merge(ns)

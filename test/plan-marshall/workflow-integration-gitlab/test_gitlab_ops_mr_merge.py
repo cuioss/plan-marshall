@@ -23,6 +23,7 @@ purely through the REST leaf, never through local git.
 import argparse
 
 import gitlab_ops
+import pytest
 from _ci_wait_contract import _ok_auth
 
 # ---------------------------------------------------------------------------
@@ -42,16 +43,30 @@ def _install_common(monkeypatch):
         'get_project_path',
         lambda: 'octo/repo',
     )
+    # Every merge-shaped verb now runs the project merge-train preflight. Without
+    # it these tests would exercise the preflight's fail-closed path instead of
+    # the merge/delete wiring they assert.
+    _install_merge_train_probe(monkeypatch)
 
 
-def _mr_view_success_payload() -> dict:
-    """Minimal ``view_pr_data`` success payload with a source branch."""
+def _mr_view_success_payload(state: str = 'merged') -> dict:
+    """Minimal ``view_pr_data`` success payload with a source branch.
+
+    ``state`` defaults to ``'merged'`` because this same stub feeds the POST-merge
+    corroboration re-read: ``cmd_pr_merge`` establishes ``merged`` from
+    ``state == 'merged'`` rather than the glab exit code (GitLab exposes no
+    ``merged_at`` on this surface, so state is the whole verdict). Scenarios that
+    need the NON-corroborating shape pass ``state`` explicitly.
+
+    The readiness poll keys on ``merge_state``, not ``state``, so the default
+    does not perturb the safe-merge polling scenarios.
+    """
     return {
         'status': 'success',
         'operation': 'pr_view',
         'pr_number': 42,
         'pr_url': 'https://gitlab.com/octo/repo/-/merge_requests/42',
-        'state': 'open',
+        'state': state,
         'title': 'T',
         'head_branch': 'feature/x',
         'base_branch': 'main',
@@ -60,6 +75,36 @@ def _mr_view_success_payload() -> dict:
         'merge_state': 'can_be_merged',
         'review_decision': 'approved',
     }
+
+
+def _install_merge_train_probe(
+    monkeypatch,
+    *,
+    discriminator: str | None = None,
+    detail: str = 'merge_trains_enabled=false',
+    error: str | None = None,
+) -> dict:
+    """Stub ``gitlab_ops._probe_merge_train_state`` for the merge-shaped preflight.
+
+    The GitLab probe is PROJECT-scoped and takes NO branch argument — merge
+    trains are a per-project flag, unlike a GitHub merge queue which is
+    base-branch-scoped. The stub mirrors that signature exactly so a fixture can
+    never drift into asserting a per-branch shape GitLab does not have.
+
+    Defaults to ``eligible_unconfigured`` (no train) so the pre-existing merge
+    scenarios keep exercising the immediate-merge path they were written for.
+    Returns a capture dict recording the call count.
+    """
+    if discriminator is None:
+        discriminator = gitlab_ops.MERGE_QUEUE_ELIGIBLE_UNCONFIGURED
+    captured: dict = {'calls': 0}
+
+    def probe_stub():
+        captured['calls'] += 1
+        return discriminator, detail, error
+
+    monkeypatch.setattr(gitlab_ops, '_probe_merge_train_state', probe_stub)
+    return captured
 
 
 def _capture_run_glab(
@@ -245,6 +290,9 @@ def test_mr_merge_merge_failure_skips_branch_delete(monkeypatch):
     # Only the merge call should have been made — no REST DELETE.
     delete_calls = [c for c in captured if c[:3] == ['api', '-X', 'DELETE']]
     assert delete_calls == [], delete_calls
+    # The merge-train preflight is PROJECT-scoped and consults no MR view, so a
+    # failed merge still reaches neither the corroboration re-read nor the
+    # source-branch resolution.
     assert pr_view_calls['count'] == 0, 'mr view must not be consulted when the merge itself fails'
 
     _assert_no_remove_source_branch_flag(captured)
@@ -256,6 +304,12 @@ def test_mr_merge_merge_failure_skips_branch_delete(monkeypatch):
 
 
 def test_mr_merge_without_delete_branch_leaves_branch_untouched(monkeypatch):
+    """A merge without --delete-branch still reports a corroborated verdict.
+
+    ``merged`` used to live INSIDE the ``--delete-branch`` branch, so this shape
+    reported no merge verdict at all. It is now reported on every successful
+    merge; only the branch-delete compound-result keys stay absent.
+    """
     _install_common(monkeypatch)
     run_glab_stub, captured = _capture_run_glab(merge_ok=True, delete_mode='ok')
     monkeypatch.setattr(gitlab_ops, 'run_glab', run_glab_stub)
@@ -272,15 +326,17 @@ def test_mr_merge_without_delete_branch_leaves_branch_untouched(monkeypatch):
 
     assert result['status'] == 'success', result
     assert result['operation'] == 'pr_merge'
-    # When delete_branch is not requested, the compound-result fields must be
-    # absent — the contract still returns the lean success shape.
-    for key in ('merged', 'branch_deleted', 'already_gone', 'branch_delete_error'):
+    assert result['merged'] is True, result
+    assert result['merge_corroboration'] == 'state=merged', result
+    # The branch-delete compound-result fields stay absent.
+    for key in ('branch_deleted', 'already_gone', 'branch_delete_error'):
         assert key not in result, f'{key} leaked into non-delete result: {result}'
 
-    # No REST DELETE, no mr view — this is a pure merge.
+    # No REST DELETE. The only MR view is the post-merge corroboration re-read —
+    # the source-branch resolution for the delete never runs.
     delete_calls = [c for c in captured if c[:3] == ['api', '-X', 'DELETE']]
     assert delete_calls == [], delete_calls
-    assert pr_view_calls['count'] == 0, 'mr view must not be consulted when --delete-branch is absent'
+    assert pr_view_calls['count'] == 1, pr_view_calls
 
     _assert_no_remove_source_branch_flag(captured)
 
@@ -549,3 +605,215 @@ def test_pr_merge_unaffected_no_safe_merge_fields(monkeypatch):
     assert result['operation'] == 'pr_merge'
     for key in ('merge_path', 'polls', 'duration_sec'):
         assert key not in result, (key, result)
+
+
+# ---------------------------------------------------------------------------
+# Merge-train preflight + post-merge corroboration (GitLab parity)
+# ---------------------------------------------------------------------------
+#
+# Both guards were absent on GitLab: cmd_pr_merge and cmd_pr_safe_merge carried
+# NO merge-train preflight at all (cmd_pr_safe_merge unlike its GitHub sibling),
+# and ``merged`` was set from the glab exit code inside the --delete-branch
+# branch. The probe is PROJECT-scoped here, not base-branch-scoped.
+
+
+def test_mr_merge_refuses_when_base_merge_queue_required(monkeypatch):
+    """Merge trains enabled on the project refuse the immediate merge."""
+    _install_common(monkeypatch)
+    probe = _install_merge_train_probe(
+        monkeypatch,
+        discriminator=gitlab_ops.MERGE_QUEUE_ELIGIBLE_CONFIGURED,
+        detail='merge_trains_enabled=true',
+    )
+    run_glab_stub, captured = _capture_run_glab(merge_ok=True, delete_mode='ok')
+    monkeypatch.setattr(gitlab_ops, 'run_glab', run_glab_stub)
+    monkeypatch.setattr(gitlab_ops, 'view_pr_data', lambda head=None: _mr_view_success_payload())
+
+    result = gitlab_ops.cmd_pr_merge(_merge_ns(delete_branch=True))
+
+    assert result['status'] == 'error', result
+    assert result['operation'] == 'pr_merge'
+    # The message names BOTH remedies.
+    assert 'ci pr merge-queue' in result['error'], result
+    assert 'use_merge_queue' in result['error'], result
+    assert '/marshall-steward' in result['error'], result
+    # Nothing ran: no merge, no branch delete.
+    assert captured == [], captured
+    assert probe['calls'] == 1, probe
+
+
+def test_mr_merge_preflight_probe_error_fails_closed(monkeypatch):
+    """An unresolvable merge-train state refuses the merge rather than merging blind."""
+    _install_common(monkeypatch)
+    _install_merge_train_probe(
+        monkeypatch,
+        discriminator=gitlab_ops.MERGE_QUEUE_UNSUPPORTED,
+        detail='project merge-train probe failed',
+        error='project merge-train probe failed',
+    )
+    run_glab_stub, captured = _capture_run_glab(merge_ok=True, delete_mode='ok')
+    monkeypatch.setattr(gitlab_ops, 'run_glab', run_glab_stub)
+    monkeypatch.setattr(gitlab_ops, 'view_pr_data', lambda head=None: _mr_view_success_payload())
+
+    result = gitlab_ops.cmd_pr_merge(_merge_ns(delete_branch=True))
+
+    assert result['status'] == 'error', result
+    assert 'probe failed' in result['error'], result
+    assert captured == [], captured
+
+
+@pytest.mark.parametrize('post_merge_state', ['open', 'closed', 'unknown'])
+def test_mr_merge_uncorroborated_merge_refuses_and_skips_branch_delete(monkeypatch, post_merge_state):
+    """#1081 lock: an uncorroborated merge reports error and deletes NOTHING.
+
+    GitLab corroborates from ``state == 'merged'`` — ``view_pr_data`` surfaces no
+    ``merged_at`` here, so state is the whole verdict. The verdict is established
+    BEFORE the branch-delete REST call, so a merge that never landed can never
+    take the source branch down with it.
+    """
+    _install_common(monkeypatch)
+    run_glab_stub, captured = _capture_run_glab(merge_ok=True, delete_mode='ok')
+    monkeypatch.setattr(gitlab_ops, 'run_glab', run_glab_stub)
+    monkeypatch.setattr(
+        gitlab_ops, 'view_pr_data', lambda head=None: _mr_view_success_payload(state=post_merge_state)
+    )
+
+    result = gitlab_ops.cmd_pr_merge(_merge_ns(delete_branch=True))
+
+    assert result['status'] == 'error', result
+    assert result['operation'] == 'pr_merge'
+    assert 'corroborate' in result['error'].lower(), result
+    # The merge command DID run, but no REST DELETE followed it.
+    merge_calls = [c for c in captured if c[:2] == ['mr', 'merge']]
+    assert len(merge_calls) == 1, merge_calls
+    delete_calls = [c for c in captured if c[:3] == ['api', '-X', 'DELETE']]
+    assert delete_calls == [], delete_calls
+
+
+def test_mr_merge_uncorroborated_when_view_fails(monkeypatch):
+    """An unreadable post-merge MR state is a refusal, never a landed merge."""
+    _install_common(monkeypatch)
+    run_glab_stub, captured = _capture_run_glab(merge_ok=True, delete_mode='ok')
+    monkeypatch.setattr(gitlab_ops, 'run_glab', run_glab_stub)
+    monkeypatch.setattr(
+        gitlab_ops,
+        'view_pr_data',
+        lambda head=None: {'status': 'error', 'operation': 'pr_view', 'error': 'No MR found'},
+    )
+
+    result = gitlab_ops.cmd_pr_merge(_merge_ns(delete_branch=True))
+
+    assert result['status'] == 'error', result
+    delete_calls = [c for c in captured if c[:3] == ['api', '-X', 'DELETE']]
+    assert delete_calls == [], delete_calls
+
+
+def test_safe_merge_refuses_when_base_merge_queue_required(monkeypatch):
+    """safe-merge gains the merge-train preflight it previously lacked entirely.
+
+    Its GitHub sibling has carried a queue preflight; the GitLab handler had NONE
+    — the asymmetry this test locks closed. The refusal fires BEFORE the
+    readiness poll, so no poll budget is spent on a merge that must not happen.
+    """
+    _install_common(monkeypatch)
+    _install_merge_train_probe(
+        monkeypatch,
+        discriminator=gitlab_ops.MERGE_QUEUE_ELIGIBLE_CONFIGURED,
+        detail='merge_trains_enabled=true',
+    )
+    run_glab_stub, captured = _capture_run_glab(merge_ok=True, delete_mode='ok')
+    monkeypatch.setattr(gitlab_ops, 'run_glab', run_glab_stub)
+    view_calls = {'i': 0}
+
+    def counting_view(head=None):
+        view_calls['i'] += 1
+        return _safe_merge_view_payload('can_be_merged')
+
+    monkeypatch.setattr(gitlab_ops, 'view_pr_data', counting_view)
+
+    result = gitlab_ops.cmd_pr_safe_merge(_safe_merge_ns())
+
+    assert result['status'] == 'error', result
+    assert result['operation'] == 'pr_safe_merge'
+    assert 'ci pr merge-queue' in result['error'], result
+    assert 'use_merge_queue' in result['error'], result
+    # Neither the readiness poll nor any merge ran.
+    assert view_calls['i'] == 0, view_calls
+    assert captured == [], captured
+
+
+# ---------------------------------------------------------------------------
+# cmd_pr_auto_merge — disposition reporting, not an exit-code-derived boolean
+# ---------------------------------------------------------------------------
+#
+# ``glab mr merge {iid} --when-pipeline-succeeds [--squash]`` has TWO
+# dispositions decided by the project's merge-train setting, and the exit code is
+# identical either way — the same defect class its GitHub sibling carried.
+
+
+def _auto_merge_ns(*, pr_number: int | None = 42, head: str | None = None, strategy: str = 'squash'):
+    return argparse.Namespace(pr_number=pr_number, head=head, strategy=strategy)
+
+
+def test_mr_auto_merge_reports_enabled_disposition_when_unconfigured(monkeypatch):
+    """No merge train → a plain when-pipeline-succeeds schedule → ``enabled``."""
+    _install_common(monkeypatch)
+    run_glab_stub, captured = _capture_run_glab(merge_ok=True, delete_mode='ok')
+    monkeypatch.setattr(gitlab_ops, 'run_glab', run_glab_stub)
+
+    result = gitlab_ops.cmd_pr_auto_merge(_auto_merge_ns())
+
+    assert result['status'] == 'success', result
+    assert result['operation'] == 'pr_auto_merge'
+    assert result['disposition'] == 'enabled', result
+    # The exit-code-derived key is REMOVED with no alias.
+    assert 'enabled' not in result, result
+    merge_call = next(c for c in captured if c[:2] == ['mr', 'merge'])
+    assert '--when-pipeline-succeeds' in merge_call, merge_call
+
+
+def test_mr_auto_merge_reports_train_disposition_when_configured(monkeypatch):
+    """Merge trains enabled → the MR joins the TRAIN, not a plain schedule.
+
+    The GitLab-side mirror of the GitHub auto-merge disposition test: the glab
+    call succeeds identically in both cases, so only the project probe can tell
+    the two dispositions apart.
+    """
+    _install_common(monkeypatch)
+    probe = _install_merge_train_probe(
+        monkeypatch,
+        discriminator=gitlab_ops.MERGE_QUEUE_ELIGIBLE_CONFIGURED,
+        detail='merge_trains_enabled=true',
+    )
+    run_glab_stub, _captured = _capture_run_glab(merge_ok=True, delete_mode='ok')
+    monkeypatch.setattr(gitlab_ops, 'run_glab', run_glab_stub)
+
+    result = gitlab_ops.cmd_pr_auto_merge(_auto_merge_ns())
+
+    assert result['status'] == 'success', result
+    assert result['disposition'] == 'enqueued', result
+    assert result['disposition_detail'] == 'merge_trains_enabled=true', result
+    assert 'enabled' not in result, result
+    # ``_install_common`` installs its own probe, so this scenario's probe is the
+    # second registration; only its own call is counted here.
+    assert probe['calls'] == 1, probe
+
+
+def test_mr_auto_merge_probe_error_fails_closed(monkeypatch):
+    """An unresolvable train state is an error, never a guessed disposition."""
+    _install_common(monkeypatch)
+    _install_merge_train_probe(
+        monkeypatch,
+        discriminator=gitlab_ops.MERGE_QUEUE_UNSUPPORTED,
+        detail='project merge-train probe failed',
+        error='project merge-train probe failed',
+    )
+    run_glab_stub, captured = _capture_run_glab(merge_ok=True, delete_mode='ok')
+    monkeypatch.setattr(gitlab_ops, 'run_glab', run_glab_stub)
+
+    result = gitlab_ops.cmd_pr_auto_merge(_auto_merge_ns())
+
+    assert result['status'] == 'error', result
+    assert 'probe failed' in result['error'], result
+    # The probe precedes the call, so no auto-merge was scheduled as a side effect.
+    assert captured == [], captured

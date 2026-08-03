@@ -216,7 +216,17 @@ def _resolve_pr_identifier(args: argparse.Namespace, operation: str) -> tuple[st
 
 
 def view_pr_data(head: str | None = None) -> dict:
-    """Fetch PR data for current branch (or the supplied ``head`` branch).
+    """Fetch PR data for the current branch, or for the supplied selector.
+
+    Args:
+        head: The value forwarded verbatim as ``gh pr view``'s single positional
+            selector. ``gh`` accepts a **PR number, a URL, or a branch name**
+            there, so this parameter is the selector — not a branch-only field —
+            and several callers already pass a PR number through it
+            (``_resolve_pr_identifier`` resolves either flag to one identifier,
+            and the merge-shaped verbs hand that identifier straight here).
+            ``None`` omits the positional, which is what makes ``gh`` fall back
+            to the PR for the current cwd HEAD.
 
     Returns dict with 'status' key ('success' or 'error').
     Importable by other scripts for direct data access without subprocess.
