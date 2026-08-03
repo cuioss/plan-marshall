@@ -322,7 +322,7 @@ The architecture inventory is the project's structured truth: it knows which mod
 
 > *Task: Find every script that reads `--audit-plan-id`.*
 >
-> **Architecture-first:** the flag is a string inside file bodies, so this is a CONTENT question — `architecture search --content --literal --pattern '--audit-plan-id'` returns the module-attributed files that actually contain it, each with a `match_count`, plus a `files_scanned` count that makes a zero result trustworthy. Scoped, deterministic, fast. (Had the question been "which PATHS look like `*audit-plan-id*`", `architecture find --pattern '*audit-plan-id*'` would be the verb — `find` never opens a file.)
+> **Architecture-first:** the flag is a string inside file bodies, so this is a CONTENT question — `architecture search --content --literal --pattern='--audit-plan-id'` returns the module-attributed files that actually contain it, each with a `match_count`, plus a `files_scanned` count that makes a zero result trustworthy. Scoped, deterministic, fast. (Had the question been "which PATHS look like `*audit-plan-id*`", `architecture find --pattern '*audit-plan-id*'` would be the verb — `find` never opens a file.)
 >
 > **Grep-first (anti-pattern):** `Grep --pattern '\\-\\-audit-plan-id'` returns hits across all source, tests, fixtures, generated output, and historical lessons with no module attribution — a noisy result that requires a second filtering pass to recover the answer the architecture verb gave directly.
 

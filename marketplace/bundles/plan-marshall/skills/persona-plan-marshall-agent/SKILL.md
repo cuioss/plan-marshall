@@ -31,7 +31,7 @@ Covers Boy Scout Rule, decision tree for when to ask users, research patterns, t
 Read: standards/tool-usage-patterns.md
 ```
 
-Covers tool selection guide, file operations (discovery, existence checks, validation), content search patterns (Grep modes, filtering), Bash safety rules (one command per call, no shell constructs, no heredocs), and build command resolution via architecture API.
+Covers tool selection guide, file operations (discovery, existence checks, validation), content search patterns (`architecture search --content` first, `Grep` as the qualified fallback), Bash safety rules (one command per call, no shell constructs, no heredocs), and build command resolution via architecture API.
 
 ### Step 3: Load Script Argument Naming Conventions (As Needed)
 
