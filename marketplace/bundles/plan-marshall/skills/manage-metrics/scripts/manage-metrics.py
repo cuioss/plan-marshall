@@ -166,11 +166,21 @@ _POPULATION_BULLET_NOTE = {
 def _token_population(phase_row: dict) -> str:
     """Return the population this phase row's ``total_tokens`` figure measures.
 
-    An un-enriched row carries no discriminator, and without ``enrich`` the only
-    source ``total_tokens`` can have had is dispatched ``<usage>`` / the
-    accumulator — so an ABSENT value reads as ``dispatched``. An unrecognised
-    value reads the same way rather than rendering a marker no reader can
-    interpret.
+    An ABSENT value reads as ``dispatched``. That is the best available default,
+    NOT a guarantee the row is dispatched-only: the absent set is wider than the
+    never-enriched set. Two distinct rows reach it —
+
+    * a row ``enrich`` never touched, whose ``total_tokens`` can only have come
+      from dispatched ``<usage>`` / the accumulator (the default is exact here);
+    * a row enriched by a PRE-labelling ``enrich``, which already received the
+      inline fold but carries no discriminator (the default under-reports here —
+      such a row renders unmarked and its Total takes no ``spans populations``
+      marker).
+
+    The second case is unrecoverable without re-enriching a transcript that is
+    usually gone, so it is accepted rather than guessed at. Go-forward rows are
+    always stamped. An unrecognised value reads as ``dispatched`` too, rather
+    than rendering a marker no reader can interpret.
     """
     value = phase_row.get('total_tokens_population')
     return value if value in TOKEN_POPULATIONS else POPULATION_DISPATCHED
