@@ -18,9 +18,9 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci checks sta
     [--error-style maven|gradle|npm|generic]
 ```
 
-Supply exactly one of `--pr-number` or `--head`. The `--head` form is required when invoking
-from the main checkout against a worktree-isolated plan branch — see
-[pr-operations.md § Worktree-Isolated Plans](pr-operations.md#worktree-isolated-plans).
+Supply exactly one of `--pr-number` or `--head`. Which selector to reach for is governed by
+[pr-operations.md § Branch-Aware Operations: `--head BRANCH`](pr-operations.md#branch-aware-operations---head-branch),
+the single authority on that question.
 
 `--error-style` (default `generic`) selects how an auto-downloaded failure log is filtered
 when one or more checks fail — see Step 3 below.

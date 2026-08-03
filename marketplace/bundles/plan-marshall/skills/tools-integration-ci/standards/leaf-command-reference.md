@@ -45,11 +45,12 @@ Source: [pr-operations.md](pr-operations.md)
 
 **Worktree-isolated plans**: When invoking from the main checkout against a plan running
 in `.plan/local/worktrees/{plan_id}`, never rely on cwd derivation on a branch-aware
-operation (`pr create`, `pr view`, `pr merge`, `pr auto-merge`, `pr safe-merge`, `checks status`) —
-the underlying gh/glab CLIs derive the source branch from cwd HEAD, which would otherwise
-resolve to `main`. Pass `--head {plan_branch}`, except that on every one of those operations
-but `pr create` (which has no PR yet) `--pr-number {number}` is the equally valid selector and
-the *required* one for a landing poll. Examples:
+operation — the underlying gh/glab CLIs derive the source branch from cwd HEAD, which would
+otherwise resolve to `main`. Identify the PR explicitly instead: `--pr-number {number}` whenever
+a number is at hand (always, for a landing poll), `--head {plan_branch}` otherwise. Which
+operations are branch-aware and which selectors each one accepts is governed by
+[pr-operations.md](pr-operations.md) § "Branch-Aware Operations: `--head BRANCH`", the single
+authority on that set. The commands below are illustrations, not that set:
 
 ```bash
 # Create PR from worktree branch while running from main checkout.
@@ -98,7 +99,7 @@ Source: [ci-operations.md](ci-operations.md)
 
 | Subcommand | Required Flags | Optional Flags | Purpose |
 |------------|----------------|----------------|---------|
-| `checks status` | _exactly one of_ `--pr-number` _or_ `--head` | `--error-style {maven\|gradle\|npm\|generic}` | Check CI status for a PR. Use `--head {branch}` from the main checkout against a worktree branch |
+| `checks status` | _exactly one of_ `--pr-number` _or_ `--head` | `--error-style {maven\|gradle\|npm\|generic}` | Check CI status for a PR |
 | `checks wait` | `--pr-number` | `--error-style {maven\|gradle\|npm\|generic}` | Poll CI until completion. Use Bash timeout ≥ 1800000 ms (30 min safety net) |
 | `checks wait-for-status-flip` | `--pr-number` | `--expected {success\|failure\|any}`, `--timeout {seconds}`, `--interval {seconds}` | Block until the CI status flips off `pending` (default: any non-pending flip) |
 | `checks rerun` | `--run-id` | — | Rerun a failed CI workflow run |

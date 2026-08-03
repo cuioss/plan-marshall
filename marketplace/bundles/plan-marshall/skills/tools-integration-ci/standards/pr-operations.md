@@ -19,7 +19,7 @@ To handle this, branch-aware operations accept an explicit `--head BRANCH` argum
 | `pr update-branch` | Same as `pr merge` |
 | `checks status` | Same as `pr merge` |
 
-Every operation in that table also declares `--pr-number`, and the two flags divide into **two** validation contracts:
+Where an operation also declares `--pr-number`, the two flags divide into **two** validation contracts. The rows below are the authority on which operations that is and what each one requires:
 
 | Contract | Operations | Behaviour |
 |----------|------------|-----------|
@@ -32,7 +32,7 @@ Every operation in that table also declares `--pr-number`, and the two flags div
 
 A poll that waits for a PR to reach a terminal state MUST key on `--pr-number`, never on `--head`. Under a required platform merge queue (GitHub) or merge train (GitLab), the platform **auto-deletes the head branch as it merges**. A `--head`-keyed lookup therefore stops resolving at exactly the moment the terminal state the poll exists to observe becomes observable, so the poll can never see `state: merged` — it can only time out or read an error. The PR number is stable across the branch deletion; the branch name is not.
 
-Callers whose cwd HEAD does not match the operation target branch MUST identify the PR explicitly rather than relying on cwd derivation — with `--pr-number {number}` whenever a PR number is at hand (always, for a landing poll), and with `--head {branch}` otherwise. `--head` is never *required* in its own right on the operations above: every one of them also declares `--pr-number`. See `workflow-integration-git/standards/worktree-handling.md` for the worktree-specific application of this rule (worktree-isolated plans run from the main checkout against a feature branch and MUST always pass `--head {plan_branch}`).
+Callers whose cwd HEAD does not match the operation target branch MUST identify the PR explicitly rather than relying on cwd derivation — with `--pr-number {number}` whenever a PR number is at hand (always, for a landing poll), and with `--head {branch}` otherwise. This is the case a worktree-isolated plan hits whenever it invokes from the main checkout against its feature branch. Whether either selector is *required* on a given operation is settled by the validation-contract table above and nowhere else.
 
 ---
 
@@ -165,7 +165,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create 
 ```
 
 The subcommand reads the body from the prepared scratch file, creates the PR,
-and deletes the scratch on success. See *Branch-Aware Operations: `--head BRANCH`* above for when `--head` is required.
+and deletes the scratch on success. See *Branch-Aware Operations: `--head BRANCH`* above for the `--head` contract.
 
 ### Step 4: Process Result
 
@@ -200,7 +200,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr merge \
     (--pr-number 123 | --head feature/x) [--strategy merge|squash|rebase] [--delete-branch]
 ```
 
-Supply exactly one of `--pr-number` or `--head`. See *Branch-Aware Operations: `--head BRANCH`* above for when `--head` is required.
+Supply exactly one of `--pr-number` or `--head`.
 
 ### Step 2: Process Result
 
