@@ -1116,7 +1116,7 @@ def cmd_generate(args: argparse.Namespace) -> dict:
                 'cache_read sums context re-reads across turns)'
             )
 
-        # Exploration-share counters. RENDER-GUARD DIVERGENCE, deliberate: these
+        # Transcript-supplied counters. RENDER-GUARD DIVERGENCE, deliberate: these
         # are guarded on PRESENCE (`field in phase`), not on the truthiness test
         # the four-field bullets above use. A stored 0 is a MEASURED zero here and
         # must render as `0`, while an absent counter (a runtime that declined the
@@ -1126,25 +1126,12 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         # `exploration-share` corpus-exclusion rule are all built on. Do NOT
         # "harmonize" this back to the neighbouring truthiness form. The four-field
         # bullets keep theirs because for those fields zero and absent carry no
-        # meaningful difference.
-        for field in _EXPLORATION_COUNTER_FIELDS:
-            if field in phase:
-                label = field.replace('_', ' ').capitalize()
-                lines.append(f'- **{label}**: {int(phase[field]):,}')
-
-        # Exploration sub-sources. Same PRESENCE guard, same reason — and these
-        # three sum to the exploration_result_bytes bullet above, so rendering
-        # them on a truthiness test would make the partition unreadable.
-        for field in _EXPLORATION_SUBSOURCE_FIELDS:
-            if field in phase:
-                label = field.replace('_', ' ').capitalize()
-                lines.append(f'- **{label}**: {int(phase[field]):,}')
-
-        # Cache-read attribution. Same PRESENCE guard, same reason — and here the
-        # measured zero matters even more: the residual rendering as `0` is what
-        # tells a reader the split was fully explained, while an absent residual
-        # would leave that unknowable.
-        for field in _CACHE_READ_ATTRIBUTION_FIELDS:
+        # meaningful difference. The rule binds every group in
+        # `_PRESENCE_PERSISTED_FIELDS` and for the two derived groups it binds
+        # harder still: the sub-sources partition the exploration_result_bytes
+        # bullet, and the cache-read residual rendering as `0` is what tells a
+        # reader the split was fully explained.
+        for field in _PRESENCE_PERSISTED_FIELDS:
             if field in phase:
                 label = field.replace('_', ' ').capitalize()
                 lines.append(f'- **{label}**: {int(phase[field]):,}')
@@ -1905,6 +1892,18 @@ _EXPLORATION_SUBSOURCE_FIELDS = tuple(
     f'exploration_{sub}_bytes' for sub in _EXPLORATION_SUBSOURCES
 )
 
+# Every transcript-supplied per-phase field that is persisted and rendered on a
+# PRESENCE test rather than a truthiness test, in report order. The three groups
+# stay separately named above (each has its own contract-drift test and its own
+# key-set contract); this is the single iteration order both the persist site
+# (``cmd_enrich``) and the render site (``cmd_generate``) walk, so the presence
+# rule cannot be applied to one group and forgotten on another.
+_PRESENCE_PERSISTED_FIELDS = (
+    *_EXPLORATION_COUNTER_FIELDS,
+    *_EXPLORATION_SUBSOURCE_FIELDS,
+    *_CACHE_READ_ATTRIBUTION_FIELDS,
+)
+
 
 def _inline_main_context_sum(phase_row: dict) -> int:
     """Sum a phase row's inline-attributable four-field usage.
@@ -1977,26 +1976,14 @@ def cmd_enrich(args: argparse.Namespace) -> dict:
             phase_row['subagent_duration_ms'] = bucket.get('subagent_duration_ms', 0)
             phase_row['subagent_samples'] = bucket.get('subagent_samples', 0)
 
-        # Exploration-share counters, written on a PRESENCE test. A runtime that
+        # Transcript-supplied counters, written on a PRESENCE test. A runtime that
         # declines the transcript primitive supplies no counter at all, and
         # defaulting an absent counter to 0 would assert a measurement that was
         # never taken — making "never measured" indistinguishable from "measured,
-        # and it explored nothing". A MEASURED zero IS persisted, as 0.
-        for field in _EXPLORATION_COUNTER_FIELDS:
-            if field in bucket:
-                phase_row[field] = bucket[field]
-
-        # Exploration sub-sources, written on the SAME presence test as their
-        # parent bucket: absent means the runtime never sub-classified, which is
-        # not the claim that nothing was index-answerable.
-        for field in _EXPLORATION_SUBSOURCE_FIELDS:
-            if field in bucket:
-                phase_row[field] = bucket[field]
-
-        # Cache-read attribution, written on the SAME presence test and for the
-        # same reason: an absent attribution field means the runtime never split
-        # the figure, which is not the same claim as "the split was zero".
-        for field in _CACHE_READ_ATTRIBUTION_FIELDS:
+        # and it explored nothing" (or, for the two derived groups, from "nothing
+        # was index-answerable" and "the split was zero"). A MEASURED zero IS
+        # persisted, as 0.
+        for field in _PRESENCE_PERSISTED_FIELDS:
             if field in bucket:
                 phase_row[field] = bucket[field]
 

@@ -694,9 +694,10 @@ class Runtime(ABC):
         a zero there is a MEASURED zero. A phase whose recorded ``cache_read`` is
         0 therefore still carries all five attributed keys and the residual, and
         a phase that ran no exploration call still carries all three sub-source
-        keys, every one of them at a measured zero. A target that declines the primitive emits no bucket, and its
-        counters are ABSENT — consumers must preserve that distinction rather
-        than substituting zeros for a target that never measured.
+        keys, every one of them at a measured zero. A target that declines the
+        primitive emits no bucket, and its counters are ABSENT — consumers must
+        preserve that distinction rather than substituting zeros for a target
+        that never measured.
 
         On Claude: reads ``~/.claude/projects/.../{session_id}.jsonl`` and the
         ``{session_id}/subagents/agent-*.jsonl`` transcripts, parses ``message.usage``
