@@ -1132,6 +1132,14 @@ def cmd_generate(args: argparse.Namespace) -> dict:
                 label = field.replace('_', ' ').capitalize()
                 lines.append(f'- **{label}**: {int(phase[field]):,}')
 
+        # Exploration sub-sources. Same PRESENCE guard, same reason — and these
+        # three sum to the exploration_result_bytes bullet above, so rendering
+        # them on a truthiness test would make the partition unreadable.
+        for field in _EXPLORATION_SUBSOURCE_FIELDS:
+            if field in phase:
+                label = field.replace('_', ' ').capitalize()
+                lines.append(f'- **{label}**: {int(phase[field]):,}')
+
         # Cache-read attribution. Same PRESENCE guard, same reason — and here the
         # measured zero matters even more: the residual rendering as `0` is what
         # tells a reader the split was fully explained, while an absent residual
@@ -1877,6 +1885,26 @@ _CACHE_READ_ATTRIBUTION_FIELDS = (
     'cache_read_unattributed',
 )
 
+# Exploration sub-sources, in report order. They re-cut the ``exploration``
+# bucket's payload bytes by what each call TARGETED — code an index could answer
+# vs a workflow/standard document that must stay resident — and ``unattributed``
+# is the fail-open member for a call with no recoverable target path.
+#
+# SOURCE OF TRUTH is the platform-runtime contract — ``Runtime.metrics_normalized_
+# tokens.__doc__``'s per-phase bucket declaration (mirrored in
+# ``platform-runtime/standards/contract.md``). Held honest by the contract-drift
+# test ``test_exploration_subsource_fields_match_platform_runtime_contract``.
+_EXPLORATION_SUBSOURCES = ('index_answerable', 'doc_residency', 'unattributed')
+
+# Deliberately SEPARATE from ``_EXPLORATION_COUNTER_FIELDS``, which stays a
+# ten-member ``{bucket}_{measure}`` product. The sub-sources carry the ``_bytes``
+# suffix rather than ``_result_bytes`` precisely so that family's derivation
+# cannot pick them up: they partition ONE bucket's bytes, they are not a sixth
+# bucket, and there is no ``_tool_calls`` counterpart.
+_EXPLORATION_SUBSOURCE_FIELDS = tuple(
+    f'exploration_{sub}_bytes' for sub in _EXPLORATION_SUBSOURCES
+)
+
 
 def _inline_main_context_sum(phase_row: dict) -> int:
     """Sum a phase row's inline-attributable four-field usage.
@@ -1955,6 +1983,13 @@ def cmd_enrich(args: argparse.Namespace) -> dict:
         # never taken — making "never measured" indistinguishable from "measured,
         # and it explored nothing". A MEASURED zero IS persisted, as 0.
         for field in _EXPLORATION_COUNTER_FIELDS:
+            if field in bucket:
+                phase_row[field] = bucket[field]
+
+        # Exploration sub-sources, written on the SAME presence test as their
+        # parent bucket: absent means the runtime never sub-classified, which is
+        # not the claim that nothing was index-answerable.
+        for field in _EXPLORATION_SUBSOURCE_FIELDS:
             if field in bucket:
                 phase_row[field] = bucket[field]
 

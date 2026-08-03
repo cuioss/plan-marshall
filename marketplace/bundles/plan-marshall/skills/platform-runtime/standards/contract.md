@@ -835,7 +835,7 @@ alternative: pass --total-tokens manually
 
 ### `metrics normalized-tokens`
 
-Resolve normalized transcript token totals for the active target. Walks the session transcript, writes the per-phase `{input, output, cache_read, cache_creation, total, billing_weighted_total, subagent_*}` view plus the exploration-share counters and the cache-read attribution group to `--output-file` as JSON, and returns the attribution counters. `total` is the canonical four-field sum (`input + output + cache_read + cache_creation`); `billing_weighted_total` is reported separately.
+Resolve normalized transcript token totals for the active target. Walks the session transcript, writes the per-phase `{input, output, cache_read, cache_creation, total, billing_weighted_total, subagent_*}` view plus the exploration-share counters, the cache-read attribution group, and the exploration sub-source split to `--output-file` as JSON, and returns the attribution counters. `total` is the canonical four-field sum (`input + output + cache_read + cache_creation`); `billing_weighted_total` is reported separately.
 
 **Arguments**: `--session-id <id>` (required), `--window <phase> <start> <end>` (repeatable), `--output-file <path>` (required)
 
@@ -849,6 +849,7 @@ Resolve normalized transcript token totals for the active target. Walks the sess
 | Exploration-share turn counts | `exploration_tool_calls`, `work_tool_calls`, `execute_tool_calls`, `orchestration_tool_calls`, `unclassified_tool_calls` |
 | Exploration-share payload bytes | `exploration_result_bytes`, `work_result_bytes`, `execute_result_bytes`, `orchestration_result_bytes`, `unclassified_result_bytes` |
 | Cache-read attribution | `cache_read_attributed_exploration`, `cache_read_attributed_work`, `cache_read_attributed_execute`, `cache_read_attributed_orchestration`, `cache_read_attributed_unclassified`, `cache_read_unattributed` |
+| Exploration sub-sources | `exploration_index_answerable_bytes`, `exploration_doc_residency_bytes`, `exploration_unattributed_bytes` |
 
 Each observed tool call is classified by its tool name into one of five buckets; the call is counted into `{bucket}_tool_calls` and its result payload's UTF-8 byte length into `{bucket}_result_bytes`, both attributed to the phase window containing the call's timestamp. `exploration + work + execute` is the exploration-share denominator; `orchestration` (control-plane calls, which scale with the workflow rather than the change) and `unclassified` are emitted but excluded from the ratio, so the five buckets partition the observed population and the exclusion stays auditable.
 
@@ -856,7 +857,19 @@ Each observed tool call is classified by its tool name into one of five buckets;
 
 **Exact reconciliation.** `cache_read_attributed_exploration + …_work + …_execute + …_orchestration + …_unclassified + cache_read_unattributed` equals that phase's recorded `cache_read` EXACTLY. Named parts are floored and the residual is the remainder, so every rounding crumb lands in the residual and never in a named share. `cache_read_unattributed` is the disclosure column — it carries the weight the walk could not tie to an observed payload, including the whole figure when a phase was billed for a context read but no payload residency was observed. The residual is ALWAYS emitted with the group, never omitted when it is zero: a consumer cannot judge how much of a split was explained without reading what was left over.
 
-**Absent is not zero.** A target that emits a per-phase bucket at all MUST populate the full counter key set — exploration-share counters and cache-read attribution alike — so a `0` there is a *measured* zero. A phase recording no `cache_read` still carries all five attributed keys and the residual at a measured zero. A target that declines the primitive — OpenCode, which exposes no transcript — emits no bucket, and its counters are *absent*. Consumers MUST preserve the distinction and MUST NOT substitute `0` for a target that never measured; a zero-initialized bucket on a declining target would make "did not explore" indistinguishable from "was never measured". This is the declinable-primitive posture of ADR-011 and the explicit-unknown rule of ADR-009.
+**Exploration sub-sources — index-answerable vs doc-residency.** Exploration is not one activity. Reading a source or test file is a lookup an INDEX could answer; reading a workflow or standard document is context that has to be RESIDENT to be useful. The three sub-source fields separate them by the call's TARGET PATH, recovered from the `tool_use` item's `input`:
+
+| Sub-source | Target |
+|------------|--------|
+| `exploration_index_answerable_bytes` | Source or test code |
+| `exploration_doc_residency_bytes` | A workflow / standard document — skill and standard markdown bodies, `doc/**`, `*.adoc`, `CLAUDE.md` |
+| `exploration_unattributed_bytes` | No recoverable path: the call carried no path input, or it is not path-addressed at all (`WebFetch` / `WebSearch`) |
+
+`exploration_unattributed_bytes` **fails open** exactly as `unclassified` does for tool names: an unrecognised shape is COUNTED and surfaced here, never dropped and never guessed into a named sub-source. Widening the recognised path populations therefore costs visibility only — it can never turn a wrong named attribution into a right one, because there was none.
+
+**Partition invariant.** The three sub-sources sum EXACTLY to `exploration_result_bytes`. They re-cut bytes already counted there and add none. They carry the `_bytes` suffix rather than `_result_bytes` deliberately: they are a byte-only sub-split of ONE bucket and are **not** members of the `{bucket}_{measure}` exploration-counter family, so a consumer deriving that family's key set must not pick them up. There is no matching `_tool_calls` sub-split.
+
+**Absent is not zero.** A target that emits a per-phase bucket at all MUST populate the full counter key set — exploration-share counters, cache-read attribution, and exploration sub-sources alike — so a `0` there is a *measured* zero. A phase recording no `cache_read` still carries all five attributed keys and the residual at a measured zero, and a phase that ran no exploration call still carries all three sub-source keys at a measured zero. A target that declines the primitive — OpenCode, which exposes no transcript — emits no bucket, and its counters are *absent*. Consumers MUST preserve the distinction and MUST NOT substitute `0` for a target that never measured; a zero-initialized bucket on a declining target would make "did not explore" indistinguishable from "was never measured". This is the declinable-primitive posture of ADR-011 and the explicit-unknown rule of ADR-009.
 
 **Success**:
 ```toon

@@ -74,6 +74,9 @@ session_message_count: 127
 | `execute_result_bytes` | int | `enrich` tool-call walk — same measure for *execute* calls |
 | `orchestration_result_bytes` | int | `enrich` tool-call walk — same measure for *orchestration* calls. Excluded from the denominator |
 | `unclassified_result_bytes` | int | `enrich` tool-call walk — same measure for *unclassified* calls. Excluded from the denominator |
+| `exploration_index_answerable_bytes` | int | `enrich` tool-call walk — the part of `exploration_result_bytes` whose call targeted source or test code (a lookup an index could answer) |
+| `exploration_doc_residency_bytes` | int | `enrich` tool-call walk — the part whose call targeted a workflow/standard document: skill and standard markdown bodies, `doc/**`, `*.adoc`, `CLAUDE.md` |
+| `exploration_unattributed_bytes` | int | `enrich` tool-call walk — the part whose call exposes no recoverable target path (no path input, or a non-path-addressed tool such as `WebFetch`/`WebSearch`). Fails OPEN: an unrecognised shape is counted here, never guessed into a named sub-source |
 | `cache_read_attributed_exploration` | int | `enrich` tool-call walk — the part of this phase's `cache_read_input_tokens` attributed to *exploration* payloads by turn-weighted residency |
 | `cache_read_attributed_work` | int | `enrich` tool-call walk — same attribution for *work* payloads |
 | `cache_read_attributed_execute` | int | `enrich` tool-call walk — same attribution for *execute* payloads |
@@ -86,6 +89,16 @@ session_message_count: 127
 The ten `*_tool_calls` / `*_result_bytes` counters above are the inputs to the `exploration-share` audit check. Each observed tool call is classified by its tool name into one of five buckets, and both the call itself (turn share) and its result payload's byte length (payload-byte share) are accumulated into the phase window containing the call's timestamp. `exploration + work + execute` is the share denominator; `orchestration` and `unclassified` are emitted so the five buckets partition the observed population and the exclusion from the ratio stays auditable.
 
 **A counter is written only when the runtime supplied it.** An absent counter is NEVER persisted as `0`, and a *measured* zero IS persisted as `0`. The two are different facts: absent means the target declined the transcript primitive and measured nothing (OpenCode exposes no transcript, so it emits no bucket at all); zero means the walk ran and found no calls in that bucket. Collapsing them would let an unmeasured plan enter the `exploration-share` corpus as a maximally-efficient one. For the same reason `generate` renders these bullets on a **presence** test rather than the truthiness test the four-field bullets use — see the render-guard divergence comment at the per-phase render in `manage-metrics.py`.
+
+#### Exploration sub-sources (index-answerable vs doc-residency)
+
+`exploration_result_bytes` is one number over two different activities. Reading a source or test file is a lookup an INDEX could answer — the bytes need not have entered context at all. Reading a workflow or standard document is context that has to be RESIDENT to be useful. Collapsing them hides the only part of exploration a lookup substrate could remove, so the three sub-source fields separate them by the call's target path, recovered from the `tool_use` item's `input`.
+
+`exploration_unattributed_bytes` **fails open**, exactly as the `unclassified` tool bucket does: a call with no recoverable path — and a path shape outside the recognised populations — is COUNTED here and surfaced, never dropped and never guessed into a named sub-source. Widening the recognised populations therefore buys visibility; it can never correct a wrong named attribution, because none was made.
+
+**Partition invariant**: `exploration_index_answerable_bytes + exploration_doc_residency_bytes + exploration_unattributed_bytes` equals `exploration_result_bytes` EXACTLY. The sub-sources re-cut bytes already counted in that field and add none, so they must never be summed alongside it.
+
+They carry the `_bytes` suffix rather than `_result_bytes` deliberately: they are a byte-only sub-split of ONE bucket, **not** members of the `{bucket}_{measure}` exploration-counter family — `_EXPLORATION_COUNTER_FIELDS` stays a ten-member product over the five buckets, and a consumer deriving that family's key set must not pick these up. There is no matching `_tool_calls` sub-split. The same absent-is-not-zero persistence and presence-guarded render rules stated above apply.
 
 #### Cache-read attribution (turn-weighted residency, exact reconciliation)
 
@@ -420,6 +433,7 @@ generate status in `generate_status` / `generate_message` instead of
 | Raw `message.usage` dicts in the parent + subagent transcripts (`enrich` four-field walk) | Any phase whose window contains a parent turn or a spawned subagent transcript | Per-phase (`input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`, `billing_weighted_total`) |
 | `tool_use` / `tool_result` content items in the parent + subagent transcripts (`enrich` tool-call walk) | Any phase whose window contains a tool call, on a target that exposes a transcript | Per-phase (`{exploration,work,execute,orchestration,unclassified}_tool_calls` and the matching `_result_bytes`). ABSENT — never zero — on a target that declines the transcript primitive |
 | Payload residency across the phase's billed turns (`enrich` tool-call walk) | Same condition as the row above — the attribution is derived from the same payloads | Per-phase (`cache_read_attributed_{bucket}` and the `cache_read_unattributed` residual, reconciling EXACTLY to `cache_read_input_tokens`). ABSENT — never zero — on a target that declines the transcript primitive |
+| Target path on each exploration `tool_use` item's `input` (`enrich` tool-call walk) | Same condition as the two rows above — the sub-split re-cuts the same payloads | Per-phase (`exploration_{index_answerable,doc_residency,unattributed}_bytes`, partitioning `exploration_result_bytes` EXACTLY). ABSENT — never zero — on a target that declines the transcript primitive |
 
 ## Per-Phase Subagent Accumulator (`work/metrics-accumulator-{phase}.toon`)
 

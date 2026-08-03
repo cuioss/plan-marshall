@@ -1682,6 +1682,136 @@ class TestExplorationCountersAbsentVsMeasuredZero:
         assert '- **Execute tool calls**' not in md
 
 
+class TestExplorationSubsourceRoundTrip:
+    """The three sub-sources survive enrich -> metrics.toon -> generate intact.
+
+    Mirrors the D2 field tests: the same absent-vs-measured-zero pair, and the
+    same presence guard — an absent sub-source means the runtime never
+    sub-classified, which is not the claim that nothing was index-answerable.
+    """
+
+    def test_absent_subsource_fields_are_not_persisted_as_zero_and_render_nothing(
+        self, plan_context, monkeypatch
+    ):
+        """A runtime supplying no sub-split leaves the fields absent, not zeroed."""
+        plan_dir = plan_context.plan_dir_for('sub-absent')
+        manage_metrics.write_metrics('sub-absent', {'plan_id': 'sub-absent'})
+        (plan_dir / 'work' / 'metrics.toon').write_text(
+            _ENRICH_TWO_PHASE_METRICS.format(plan_id='sub-absent'), encoding='utf-8'
+        )
+        # A bucket carrying a real parent exploration figure but NO sub-split.
+        # Defaulting to 0 would claim a partition over a demonstrably non-zero
+        # parent — the sharpest form of the absent-as-zero error.
+        _patch_runtime_op(
+            monkeypatch,
+            status='success',
+            per_phase={
+                '5-execute': {
+                    'input_tokens': 10,
+                    'output_tokens': 2,
+                    'exploration_result_bytes': 4096,
+                }
+            },
+            counters={'message_count': 1},
+        )
+
+        assert cmd_enrich(_ns_enrich('sub-absent', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'))[
+            'status'
+        ] == 'success'
+
+        five = manage_metrics.read_metrics_raw('sub-absent')['phases']['5-execute']
+        assert five['exploration_result_bytes'] == 4096
+        for field in manage_metrics._EXPLORATION_SUBSOURCE_FIELDS:
+            assert field not in five, f'absent sub-source {field} must not be persisted as 0'
+
+        cmd_generate(_ns_generate('sub-absent'))
+        md = (plan_dir / 'metrics.md').read_text()
+        assert '- **Exploration index answerable bytes**' not in md
+        assert '- **Exploration doc residency bytes**' not in md
+        assert '- **Exploration unattributed bytes**' not in md
+
+    def test_measured_zeros_persist_and_render_as_zero(self, plan_context, monkeypatch):
+        """Supplied zeros are measurements: a phase that explored nothing says so."""
+        plan_dir = plan_context.plan_dir_for('sub-zero')
+        manage_metrics.write_metrics('sub-zero', {'plan_id': 'sub-zero'})
+        (plan_dir / 'work' / 'metrics.toon').write_text(
+            _ENRICH_TWO_PHASE_METRICS.format(plan_id='sub-zero'), encoding='utf-8'
+        )
+        _patch_runtime_op(
+            monkeypatch,
+            status='success',
+            per_phase={
+                '5-execute': {
+                    'input_tokens': 10,
+                    'output_tokens': 2,
+                    'exploration_result_bytes': 0,
+                    **dict.fromkeys(manage_metrics._EXPLORATION_SUBSOURCE_FIELDS, 0),
+                }
+            },
+            counters={'message_count': 1},
+        )
+
+        assert cmd_enrich(_ns_enrich('sub-zero', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'))[
+            'status'
+        ] == 'success'
+
+        five = manage_metrics.read_metrics_raw('sub-zero')['phases']['5-execute']
+        for field in manage_metrics._EXPLORATION_SUBSOURCE_FIELDS:
+            assert five[field] == 0, field
+
+        cmd_generate(_ns_generate('sub-zero'))
+        md = (plan_dir / 'metrics.md').read_text()
+        assert '- **Exploration index answerable bytes**: 0' in md
+        assert '- **Exploration doc residency bytes**: 0' in md
+        assert '- **Exploration unattributed bytes**: 0' in md
+
+    def test_split_round_trips_and_still_partitions_after_persistence(
+        self, plan_context, monkeypatch
+    ):
+        """The partition invariant is readable off the persisted row and the report."""
+        plan_dir = plan_context.plan_dir_for('sub-split')
+        manage_metrics.write_metrics('sub-split', {'plan_id': 'sub-split'})
+        (plan_dir / 'work' / 'metrics.toon').write_text(
+            _ENRICH_TWO_PHASE_METRICS.format(plan_id='sub-split'), encoding='utf-8'
+        )
+        supplied = {
+            'exploration_index_answerable_bytes': 700,
+            'exploration_doc_residency_bytes': 250,
+            'exploration_unattributed_bytes': 50,
+        }
+        _patch_runtime_op(
+            monkeypatch,
+            status='success',
+            per_phase={
+                '5-execute': {
+                    'input_tokens': 10,
+                    'output_tokens': 2,
+                    'exploration_result_bytes': 1000,
+                    **supplied,
+                }
+            },
+            counters={'message_count': 1},
+        )
+
+        assert cmd_enrich(_ns_enrich('sub-split', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'))[
+            'status'
+        ] == 'success'
+
+        five = manage_metrics.read_metrics_raw('sub-split')['phases']['5-execute']
+        for field, value in supplied.items():
+            assert five[field] == value, field
+        persisted_sum = sum(
+            five[field] for field in manage_metrics._EXPLORATION_SUBSOURCE_FIELDS
+        )
+        assert persisted_sum == five['exploration_result_bytes']
+
+        cmd_generate(_ns_generate('sub-split'))
+        md = (plan_dir / 'metrics.md').read_text()
+        assert '- **Exploration index answerable bytes**: 700' in md
+        assert '- **Exploration doc residency bytes**: 250' in md
+        assert '- **Exploration unattributed bytes**: 50' in md
+
+
 class TestCacheReadAttributionRoundTrip:
     """The attribution group survives enrich -> metrics.toon -> generate intact.
 
@@ -2772,6 +2902,65 @@ def test_cache_read_attribution_fields_match_platform_runtime_contract():
     # The residual is a member of the group, not an optional extra: dropping it
     # would turn a partial split into an apparently complete one.
     assert 'cache_read_unattributed' in contract_keys
+
+
+def _contract_subsource_keys() -> set[str]:
+    """Parse the exploration sub-source key set out of the platform-runtime contract.
+
+    The sub-sources carry the ``_bytes`` suffix but deliberately NOT
+    ``_result_bytes``, precisely so the counter family's suffix derivation cannot
+    pick them up — so this parse selects on exactly that discriminator.
+    """
+    import re
+
+    from runtime_base import Runtime
+
+    doc = Runtime.metrics_normalized_tokens.__doc__ or ''
+    match = re.search(r'\{phase_name:\s*\{(.*?)\}\}', doc, re.DOTALL)
+    assert match is not None, 'contract docstring no longer declares a per-phase bucket shape'
+    declared = {key.strip() for key in match.group(1).split(',') if key.strip()}
+    return {
+        k
+        for k in declared
+        if k.startswith('exploration_')
+        and k.endswith('_bytes')
+        and not k.endswith('_result_bytes')
+    }
+
+
+def test_exploration_subsource_fields_match_platform_runtime_contract():
+    """``_EXPLORATION_SUBSOURCE_FIELDS`` equals the contract's sub-source key set exactly.
+
+    Same cross-process hand-mirror guard as the two drift tests above: a
+    sub-source added on the producer side without extending the mirror would
+    silently under-persist and under-render, and fails loudly here instead.
+    """
+    contract_keys = _contract_subsource_keys()
+
+    assert contract_keys, 'contract declares no exploration sub-source keys'
+    assert set(manage_metrics._EXPLORATION_SUBSOURCE_FIELDS) == contract_keys
+    # The mirror stays duplicate-free — a repeated name would double a field.
+    assert len(manage_metrics._EXPLORATION_SUBSOURCE_FIELDS) == len(contract_keys)
+
+
+def test_subsource_group_is_disjoint_from_the_exploration_counter_group():
+    """Matched control: the sub-sources are not a sixth bucket in the counter family.
+
+    This is the assertion the ``_bytes``-not-``_result_bytes`` suffix choice
+    exists to make possible — without it, a suffix-derivation bug could let
+    ``_EXPLORATION_COUNTER_FIELDS`` swallow the sub-sources while its own
+    set-equality test still passed against an equally-drifted contract.
+    """
+    counter_keys = _contract_counter_keys()
+    subsource_keys = _contract_subsource_keys()
+
+    assert not (subsource_keys & counter_keys), subsource_keys & counter_keys
+    assert not (set(manage_metrics._EXPLORATION_SUBSOURCE_FIELDS) & counter_keys)
+    # The exploration counter family is unchanged by the sub-sources' arrival:
+    # still exactly ten fields over the same five buckets.
+    assert len(manage_metrics._EXPLORATION_COUNTER_FIELDS) == 10
+    assert len(counter_keys) == 10
+    assert len(manage_metrics._EXPLORATION_BUCKETS) == 5
 
 
 def test_attribution_group_is_disjoint_from_the_exploration_counter_group():
