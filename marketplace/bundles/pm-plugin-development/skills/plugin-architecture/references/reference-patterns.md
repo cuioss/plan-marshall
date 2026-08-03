@@ -300,24 +300,26 @@ cp -r my-skill .claude/skills/
 Each prohibited pattern is a separate content sweep (one command per call):
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture search --content --literal --pattern "Read: .."
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture search --content --pattern "Read:?[ \t]+\.\."
 ```
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture search --content --literal --pattern "bash .."
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture search --content --pattern "bash[ \t]+\.\."
 ```
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture search --content --literal --pattern "Read: ~"
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture search --content --pattern "Read:?[ \t]+~"
 ```
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture search --content --pattern "Read: /(?!/)"
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture search --content --pattern "Read:?[ \t]+/(?!/)"
 ```
 
-The first three are escape-sequence and absolute-path probes; the fourth uses a regex (no `--literal`) so a `Read: //`-style URL prefix does not register as an absolute path.
+The first three are escape-sequence and absolute-path probes; the fourth's `(?!/)` keeps a `Read //`-style URL prefix from registering as an absolute path.
 
-These sweeps are **project-wide** — `search --content` has no path scoping — so they also match every document that *quotes* a prohibited pattern in order to prohibit it, this file included. `count: 0` is therefore not the pass criterion and is not reachable in this repo. A clean result is **no hit outside that documented-example set**: confirm `files_scanned > 0` (the scanned count is what distinguishes a real population from a sweep that searched nothing), then intersect the returned `results[].path` set with the directory of the skill under validation and inspect each surviving hit. A hit is a violation only when the skill *uses* the pattern; a doc quoting it is a known residual.
+**Every probe is a regex over BOTH spellings of the directive, and that is load-bearing.** The documented valid form is `Read references/file.md` — no colon (Pattern 1 below) — while skill bodies in the wild also use the `Read: references/file.md` spelling. A `--literal --pattern "Read: .."` probe matches only the colon form, so `Read ../other-skill/file.md`, `Read ~/file.md`, and `Read /tmp/file.md` all slip past while the sweep still reports a clean result: a validation step that certifies compliance it never tested. `Read:?` makes the colon optional and `[ \t]+` requires the separator, so both spellings are covered and a bare word starting with `Read` is not. These are regexes, so `--literal` is deliberately absent and the metacharacters (`\.\.`, `:?`, `(?!/)`) stay active.
+
+These sweeps are **project-wide** — `search --content` has no path scoping — so they also match every document that *quotes* a prohibited pattern in order to prohibit it, this file included. `count: 0` is therefore not the pass criterion and is not reachable in this repo. A clean result is **no hit outside that documented-example set**: first confirm the sweep's coverage is complete — `files_scanned > 0` **and** `unreadable == []` **and** `truncated == false` **and** `elided == []` (a scanned count alone distinguishes a real population from a sweep that searched nothing, but it does not show that the inventory was fully searched; see [`client-api.md`](../../../../plan-marshall/skills/manage-architecture/standards/client-api.md) § `search`) — then intersect the returned `results[].path` set with the directory of the skill under validation and inspect each surviving hit. A sweep with non-clean coverage is a coverage gap to re-run, not a validation pass. A hit is a violation only when the skill *uses* the pattern; a doc quoting it is a known residual.
 
 ## Reference Summary
 

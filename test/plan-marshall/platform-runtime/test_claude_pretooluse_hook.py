@@ -310,6 +310,46 @@ def test_r2_detached_value_option_does_not_mistake_its_value_for_grep() -> None:
     assert hook.evaluate(_signal2_payload("Bash", _bash("git -C grep status"))) is None
 
 
+def test_r2_denies_git_grep_behind_a_quoted_detached_value() -> None:
+    """A quoted value containing a space must not tear the skip arithmetic.
+
+    ``git -C "repo dir" grep x`` is a real ``git grep`` file-op. Under a
+    whitespace split the quoted value becomes two tokens, so the ``-C`` skip
+    lands mid-value and the subcommand resolves to ``dir"`` — R2 misses the
+    file-op entirely. Shell-lexical splitting keeps the value one token. Both
+    quote styles are covered because either spelling is valid shell.
+    """
+    for command in (
+        'git -C "repo dir" grep needle',
+        "git -C 'repo dir' grep needle",
+    ):
+        assert hook._git_subcommand(command) == "grep", command
+        payload = _signal2_payload("Bash", _bash(command))
+        assert hook.evaluate(payload) == hook._R2_REASON, command
+
+
+def test_r2_quoted_detached_value_still_allows_non_grep_subcommand() -> None:
+    """The negative control for the quoted-value fix — matched pair.
+
+    The same quoted-path shape with a benign subcommand must stay allowed, so
+    the fix is proven to resolve the subcommand rather than to blanket-deny any
+    command carrying a quoted token.
+    """
+    command = 'git -C "repo dir" status'
+    assert hook._git_subcommand(command) == "status"
+    assert hook.evaluate(_signal2_payload("Bash", _bash(command))) is None
+
+
+def test_git_subcommand_falls_back_to_whitespace_split_on_bad_quoting() -> None:
+    """Malformed quoting degrades to the whitespace split, never to a bypass.
+
+    An unbalanced quote makes ``shlex`` raise. Returning ``""`` there would turn
+    a lexer error into a silent R2 bypass, so the fallback preserves the
+    pre-existing whitespace-split detection instead.
+    """
+    assert hook._git_subcommand('git -C "unbalanced grep needle') == "grep"
+
+
 def test_r2_not_fired_on_non_grep_git_subcommands() -> None:
     """Ordinary git usage must keep working — these are not file-ops."""
     for command in (

@@ -8,7 +8,7 @@ This standard is the single source of truth for the deviation taxonomy, the prom
 
 A request-level hard requirement is any acceptance criterion authored in the plan's request, solution outline, or deliverable narrative that:
 
-- Names a measurable gate (e.g., "`architecture search --content --literal --pattern='--project-dir'` returns `count: 0` with `files_scanned > 0`"), OR
+- Names a measurable gate (e.g., "`architecture search --content --literal --pattern='--project-dir'` returns `count: 0` over clean coverage — `files_scanned > 0`, `unreadable == []`, `truncated == false`, `elided == []`"), OR
 - Declares a structural intent (e.g., "Breaking change. No transition window."), OR
 - Specifies a complete deletion (e.g., "Remove the flag entirely").
 
@@ -18,7 +18,7 @@ A **softening** is any execute-time decision that would relax the requirement at
 
 | Original Hard Requirement | Softened Decision (would-have-been-silent) | Escalation Path |
 |---------------------------|---------------------------------------------|-----------------|
-| `architecture search --content --literal --pattern='--project-dir'` returns `count: 0` (with `files_scanned > 0`) | "Two-state contract: `--plan-id` preferred; `--project-dir` retained as escape hatch" — and merging with 430 hits across 77 files | AskUserQuestion at the moment the gate is about to be deferred |
+| `architecture search --content --literal --pattern='--project-dir'` returns `count: 0` (over clean coverage, not merely `files_scanned > 0`) | "Two-state contract: `--plan-id` preferred; `--project-dir` retained as escape hatch" — and merging with 430 hits across 77 files | AskUserQuestion at the moment the gate is about to be deferred |
 | "Breaking change. No transition window." | "Until auto-routing has fully landed, callers may still see `--project-dir` for legacy compatibility" | AskUserQuestion before any task adds the hedge to the central narrative |
 | "Remove the `--legacy-mode` flag entirely" | "Remove the flag from the public CLI surface but keep the `_legacy_mode` private parameter" | AskUserQuestion before the deletion task is reduced in scope |
 

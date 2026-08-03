@@ -45,6 +45,7 @@ from __future__ import annotations
 
 import json
 import re
+import shlex
 import sys
 from collections.abc import Callable
 from typing import Any
@@ -201,11 +202,25 @@ def _git_subcommand(command: str) -> str:
     (``-C.``) and inline (``--git-dir=...``) forms are self-contained and skip as
     a single token.
 
-    Pure token arithmetic: no regex compilation, no filesystem access, no
-    subprocess — this runs on every tool call, so the hot path stays cheap.
-    Returns ``""`` when the tokens run out before a subcommand appears.
+    The split is SHELL-LEXICAL (``shlex``), not whitespace. A detached value
+    option can carry a quoted value containing spaces — ``git -C "repo dir"
+    grep x`` — and a naive ``str.split()`` tears that value into two tokens, so
+    the ``index += 2`` skip lands mid-value and returns ``dir"`` as the
+    subcommand, bypassing the R2 block for a real ``git grep``. Lexical
+    splitting resolves the quoting first, so the value is one token and the
+    skip arithmetic stays true. Malformed quoting (an unbalanced quote makes
+    ``shlex`` raise) falls back to the whitespace split rather than returning
+    early: the fallback preserves the pre-existing detection for every
+    unquoted shape instead of turning a lexer error into a silent bypass.
+
+    Pure token arithmetic after the split: no regex compilation, no filesystem
+    access, no subprocess — this runs on every tool call, so the hot path stays
+    cheap. Returns ``""`` when the tokens run out before a subcommand appears.
     """
-    tokens = command.split()
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        tokens = command.split()
     index = 1
     while index < len(tokens):
         token = tokens[index]

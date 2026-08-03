@@ -68,6 +68,28 @@ _WORKTREE_HANDLING_PATH = (
 
 _PATTERN_LETTERS = ('WL-A', 'WL-B', 'WL-C')
 
+#: The sanctioned content-search target a sweep-invocation line must name to
+#: earn the self-violation carve-out, alongside ``--pattern``.
+_SANCTIONED_SWEEP_TARGET = 'architecture search --content'
+
+
+def _is_sanctioned_sweep_invocation(line: str) -> bool:
+    """Return True when ``line`` is a real architecture-search sweep command.
+
+    The carve-out exists so the linter's OWN detector lines — which must quote
+    the forbidden literal in order to search for it — do not register as
+    violations of the rule they implement.
+
+    The discriminator is deliberately the CONJUNCTION of the sanctioned search
+    target and the ``--pattern`` flag. Keying on ``--pattern`` alone would be a
+    vacuous guard: the flag is a common token, so any unmarked prose or example
+    that merely mentioned it next to a forbidden literal would silently inherit
+    the exemption and bypass the linter. Requiring the invocation target keeps
+    the carve-out attached to actual sweep commands while still following the
+    invocation rather than a particular search program's name.
+    """
+    return _SANCTIONED_SWEEP_TARGET in line and '--pattern' in line
+
 
 @pytest.fixture(scope='module')
 def agent_text() -> str:
@@ -369,10 +391,15 @@ def test_section_2_15_has_no_unmarked_claude_worktrees_literals(section_2_15_tex
             continue
         # A sweep-invocation line quoting the regex literal is sanctioned; the
         # detector must name the forbidden literal in order to search for it.
-        # Keyed on the pattern flag the sweep carries, so the carve-out follows
-        # the invocation rather than a particular search program's name.
+        # Keyed on the SANCTIONED INVOCATION, not on `--pattern` alone: the bare
+        # flag is not a discriminator, since any prose line that happens to
+        # mention `--pattern` alongside the forbidden literal would inherit the
+        # exemption and bypass this linter entirely. Requiring the architecture
+        # search target as well keeps the carve-out on actual sweep commands
+        # while still following the invocation rather than a search program's
+        # name.
         stripped = line.lstrip()
-        if '--pattern' in stripped:
+        if _is_sanctioned_sweep_invocation(stripped):
             continue
         # Migration history references inside the explanation table also
         # carry an explicit "(TASK-4 migrated worktree storage to" marker;
@@ -411,9 +438,11 @@ def test_section_2_15_has_no_unmarked_cd_worktree_compounds(section_2_15_text: s
         prev_line = lines[idx - 1] if idx > 0 else ''
         if _line_is_anti_pattern_marked(line, prev_line):
             continue
-        # Sweep-invocation lines that quote the regex literal are sanctioned.
+        # Sweep-invocation lines that quote the regex literal are sanctioned —
+        # keyed on the sanctioned invocation, not on `--pattern` alone (see the
+        # rationale on the sibling literal check above).
         stripped = line.lstrip()
-        if '--pattern' in stripped:
+        if _is_sanctioned_sweep_invocation(stripped):
             continue
         violations.append((idx, line))
 

@@ -293,7 +293,7 @@ This likewise covers only the marketplace-rooted portion; `.claude/` is a dotfil
 
 Only emit findings for unresolved matches.
 
-**Pass criteria**: Every sweep returns `count: 0` with `files_scanned > 0`, OR every hit is resolved per the suppression rule above.
+**Pass criteria**: Every sweep returns `count: 0` over **clean coverage** (`files_scanned > 0`, `unreadable == []`, `truncated == false`, `elided == []`), OR every hit is resolved per the suppression rule above. A sweep with any non-clean coverage field has not shown the deletion is contained — it has only shown that nothing turned up in the part of the inventory it managed to read — so report it as a coverage gap and re-run rather than passing the gate. See [`client-api.md`](../../manage-architecture/standards/client-api.md) § `search`.
 
 **Fail criteria**: At least one hit references `{skill_dir}` and its `{consumer_path}` is not listed in any deliverable's `affected_files`.
 
@@ -332,7 +332,7 @@ The trigger applies only to module-level public symbols (top-level functions, cl
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture search --content --literal --pattern "{symbol}"
 ```
 
-Each sweep is a separate Bash invocation (one command per call). Collect every `{consumer_path}` from the returned `results[].path`, and discard the symbol's own owning module file (which is in scope by definition); `__pycache__` is never inventoried, so no cache filter is needed. Read `files_scanned` alongside `count` — a zero `count` is only meaningful when `files_scanned > 0`. The response carries no line bodies, so `Read` each surviving hit to locate the line the finding cites.
+Each sweep is a separate Bash invocation (one command per call). Collect every `{consumer_path}` from the returned `results[].path`, and discard the symbol's own owning module file (which is in scope by definition); `__pycache__` is never inventoried, so no cache filter is needed. Read the coverage fields alongside `count` — a zero `count` is only meaningful when `files_scanned > 0`, `unreadable == []`, `truncated == false`, and `elided == []`. This sweep's job is to MATERIALIZE the complete consumer set, so a partial sweep cannot do it: an unreadable file or an elided bucket is a consumer that would not appear in `results[]` and would then be scored as "already enumerated". Treat non-clean coverage as a coverage gap and re-run, never as a complete consumer set. The response carries no line bodies, so `Read` each surviving hit to locate the line the finding cites.
 
 **Failure modes**:
 
@@ -353,12 +353,16 @@ FAIL with finding (one per unenumerated consumer):
   file_path: "{consumer_path}"
 ```
 
-The owning-bundle determination uses the `marketplace/bundles/{bundle}/` path segment of the symbol's first match. Same-bundle entries in `Affected files` are sufficient when ALL hits are under that same bundle — cross-bundle hits trigger the failure.
+The owning-bundle determination uses the `marketplace/bundles/{bundle}/` path segment of the symbol's **declaration site** — the deliverable's own implementation path, i.e. the file the deliverable states it deletes or renames the symbol in. It is NOT the first entry of `results[]`. `search --content` returns every file whose body contains the symbol and sorts hits by `(module, category, path)`; that ordering is alphabetical, not ownership ordering, so the first entry is just as likely to be a test, a doc, or a cross-bundle consumer as the declaring file. A regex hit also cannot tell a declaration from a mention — see [`client-api.md`](../../manage-architecture/standards/client-api.md) § `search`.
+
+**Fail closed when ownership is ambiguous.** When the deliverable does not name an implementation path for the symbol, or names paths in more than one bundle, do NOT guess an owner from the hit list. Emit a blocking finding stating that the owning bundle could not be determined, so the outline is corrected to name the declaration site explicitly.
+
+With the owner fixed that way, same-bundle entries in `Affected files` are sufficient when ALL hits are under that same bundle — cross-bundle hits trigger the failure.
 
 **Pass criteria** (silent — no finding emitted):
 - Trigger language is absent (deliverable does not delete or rename a public symbol), OR
 - Trigger language is present AND `Affected files` includes at least one cross-bundle consumer that matches the worktree sweep results, OR
-- Trigger language is present AND the worktree sweep returns no cross-bundle hits over a non-empty population (`files_scanned > 0`) — the deletion is genuinely contained within the owning bundle.
+- Trigger language is present AND the worktree sweep returns no cross-bundle hits over a **completely searched** inventory (`files_scanned > 0`, `unreadable == []`, `truncated == false`, `elided == []`) — the deletion is genuinely contained within the owning bundle. A non-empty population is not enough: containment is a negative claim, and an unscanned file is exactly where an uncontained consumer would hide.
 
 **FLAG format** — For each unenumerated cross-bundle consumer (failure mode b), record one finding via `manage-findings qgate add`:
 
@@ -598,7 +602,7 @@ Verify that no skill, agent, or script in `solution_outline.md`'s `affected_file
 
 **Activation condition**: Runs in the `3-outline` and `4-plan` phase contexts. Activates whenever a deliverable's `affected_files` contains at least one path matching `marketplace/bundles/*/skills/**/*.md`, `marketplace/bundles/*/agents/*.md`, `marketplace/bundles/*/skills/**/scripts/*.py`, or `marketplace/bundles/*/skills/**/scripts/*.sh`. Skips deliverables whose only affected files are tests, fixtures, or non-skill documentation.
 
-**Detection logic**: Run the three pattern sweeps below as **separate Bash invocations** (one command per call). Each sweep covers the whole inventory once — intersect its `results[].path` set with the deliverable's in-scope `{affected_path}` set, and discard hits outside that set. The sweeps return file-level hits with a per-file `match_count` and no line bodies, so `Read` each surviving path to locate the exact line(s) before applying the suppression rule (which is per-match, not per-file) and emitting a finding. Read `files_scanned` alongside `count` — a zero `count` over a zero population is not a pass.
+**Detection logic**: Run the three pattern sweeps below as **separate Bash invocations** (one command per call). Each sweep covers the whole inventory once — intersect its `results[].path` set with the deliverable's in-scope `{affected_path}` set, and discard hits outside that set. The sweeps return file-level hits with a per-file `match_count` and no line bodies, so `Read` each surviving path to locate the exact line(s) before applying the suppression rule (which is per-match, not per-file) and emitting a finding. Read the coverage fields alongside `count` — a zero `count` over a zero population is not a pass, and neither is one over an incompletely searched population: require `files_scanned > 0`, `unreadable == []`, `truncated == false`, and `elided == []` before recording a clean linter result, else report a coverage gap.
 
 **Pattern WL-A — Direct `cd <worktree_path>` shell compounds**:
 
@@ -627,10 +631,12 @@ The centralized [`worktree-handling.md`](../../workflow-integration-git/standard
 Worktree-aware `manage-*` scripts auto-route to the correct worktree when `--plan-id` is supplied. Skills and agents that invoke an auto-routing script without passing `--plan-id` will silently target the main checkout — defeating worktree isolation.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture search --content --pattern "execute-script\.py\s+plan-marshall:(manage-files|manage-tasks|manage-findings|manage-references|manage-solution-outline|manage-plan-documents|manage-logging|manage-status):[^\s]+\s+[^\s]+\s+(?!.*--plan-id)"
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture search --content --pattern 'execute-script\.py\s+plan-marshall:(manage-files|manage-tasks|manage-findings|manage-references|manage-solution-outline|manage-plan-documents|manage-logging|manage-status):[^\s]+\s+[^\s]+\s+(?!(?:\\\n|[^\n])*--plan-id)'
 ```
 
 The whitelist of auto-routing notations is the authoritative list at [`worktree-handling.md`](../../workflow-integration-git/standards/worktree-handling.md) "Auto-routing scripts" subsection. Matches indicate a manage-* invocation that omits `--plan-id`.
+
+The trailing lookahead is `(?:\\\n|[^\n])*`, not `.*`, and the pattern is single-quoted so the shell forwards the backslash escapes verbatim. This is load-bearing: `.` does not match a newline, so a `.*` lookahead sees only the FIRST physical line of a backslash-continued invocation. Every multi-line `manage-*` example in this repo — `… manage-findings resolve \` with `--plan-id` on the continuation line — would then be reported as missing `--plan-id`, flooding the gate with blocking findings for compliant commands. Traversing `\`+newline pairs makes the lookahead span the whole logical command, so only a genuinely `--plan-id`-less invocation matches. A physical line break WITHOUT a trailing backslash still terminates the traversal, so the lookahead can never reach into the next command and mask a real violation.
 
 **Suppression rule**: A match in `{affected_path}` is suppressed (no finding emitted) when EITHER:
 - `{affected_path}` is the centralized `marketplace/bundles/plan-marshall/skills/workflow-integration-git/standards/worktree-handling.md` itself (the standard quotes the forbidden patterns to define them), OR
@@ -661,8 +667,10 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 | WL-C | "manage-* invocation omits `--plan-id`; auto-routing scripts silently target the main checkout when `--plan-id` is missing — see worktree-handling.md 'Auto-routing scripts' subsection" |
 
 **Pass criteria** (silent — no finding emitted):
-- Every sweep returns no in-scope hit across the three patterns over a non-empty population (`files_scanned > 0`), OR
+- Every sweep returns no in-scope hit across the three patterns over a completely searched population (`files_scanned > 0`, `unreadable == []`, `truncated == false`, `elided == []`), OR
 - Every match is suppressed per the suppression rule (centralized file or explicit anti-pattern marker).
+
+A sweep whose coverage is non-clean passes neither criterion: it has not established the absence of a stale pattern, only that none appeared in the files it read. Report the gap and re-run.
 
 **Fail criteria**: At least one unsuppressed match exists across patterns WL-A, WL-B, or WL-C — emit one finding per unsuppressed match.
 

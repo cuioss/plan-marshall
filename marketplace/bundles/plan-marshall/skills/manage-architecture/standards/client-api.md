@@ -941,9 +941,32 @@ successful response also carries:
 
 | Field | Why it is required |
 |-------|--------------------|
-| `files_scanned` (int) | `count: 0` with `files_scanned: 0` means *nothing was searched*; `count: 0` with `files_scanned: N` means *N files were searched and the pattern is genuinely absent*. The two are never the same observable condition. |
-| `unreadable` (list of `{path, reason}`, empty when clean) | A file skipped for a decode error (`reason: decode_error`, e.g. a binary file) or an OS error (`reason: os_error`, e.g. an inventoried path no longer on disk) is REPORTED, never silently dropped. |
-| `truncated` / `elided` | The same fail-closed pair `find` and `which-module` carry (ADR-009). |
+| `files_scanned` (int) | Counts the files actually OPENED AND SCANNED. A file that could not be read is recorded in `unreadable` and does NOT increment this counter, so `files_scanned: 0` alongside a non-empty `unreadable` means *files were attempted and none could be read* — a coverage failure, not an empty population. Only `files_scanned: 0` with `unreadable: []` means *nothing was searched*. |
+| `unreadable` (list of `{path, reason}`, empty when clean) | A file skipped for a decode error (`reason: decode_error`, e.g. a binary file) or an OS error (`reason: os_error`, e.g. an inventoried path no longer on disk) is REPORTED, never silently dropped. Each entry is a file that MIGHT contain a match nobody saw. |
+| `truncated` / `elided` | The same fail-closed pair `find` and `which-module` carry (ADR-009). Non-clean means inventory entries were never handed to the scanner at all. |
+
+**Complete-coverage rule — what makes a negative trustworthy.** `files_scanned
+> 0` proves that *some* files were opened. It does NOT prove the inventory was
+searched. A `count: 0` is a trustworthy negative only when all four coverage
+conditions hold together:
+
+```text
+count: 0  AND  files_scanned > 0  AND  unreadable == []  AND  truncated == false  AND  elided == []
+```
+
+When any coverage field is non-clean, the correct disposition is **coverage
+gap**, not "absent". Report the gap — naming the unreadable paths and the
+elided categories — rather than recording the sweep as a clean negative. A
+caller that gates a decision on a zero result (an audit that must find no
+residue, a deletion that must be contained, a consumer sweep that must be
+exhaustive) MUST apply the full conjunction; checking `files_scanned` alone
+converts an incomplete search into a confident all-clear. This rule is the
+single source of truth — consumers cross-reference it rather than restating the
+field list.
+
+Note that even a fully clean sweep is bounded by the **inventory-scope
+boundary** above: the trustworthy claim is *"not in any inventoried file"*,
+never *"not in the tree"*.
 
 **Output** (TOON, clean):
 

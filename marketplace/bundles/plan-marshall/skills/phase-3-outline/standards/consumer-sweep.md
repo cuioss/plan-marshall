@@ -78,7 +78,9 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture s
 
 This likewise covers only the marketplace-rooted portion; `.claude/` is a dotfile tree outside the inventory, so its residue is the same coverage-gap return.
 
-Each call is a separate Bash invocation (one command per call — never combined with `&&`, `;`, or pipes). Use `architecture find` first for path matches; these `search --content` calls reach the sub-module body references the path glob cannot resolve. Read `files_scanned` alongside `count` so an empty result is a real empty population rather than an unsearched one — see [`manage-architecture/standards/client-api.md`](../../manage-architecture/standards/client-api.md) § search.
+Each call is a separate Bash invocation (one command per call — never combined with `&&`, `;`, or pipes). Use `architecture find` first for path matches; these `search --content` calls reach the sub-module body references the path glob cannot resolve.
+
+Read the coverage fields alongside `count`, and require all of them clean — `files_scanned > 0`, `unreadable == []`, `truncated == false`, `elided == []` — before treating a sweep as complete. `files_scanned > 0` alone only proves the population was non-empty; it does not prove the sweep saw every inventoried file. That distinction is decisive here, because the whole point of this step is to ENUMERATE consumers: an unreadable file or an elided bucket is a consumer that never appears in `results[]`, and the deliverable then ships with an `Affected files` list that looks complete and is not. Treat any non-clean coverage field the same way this section already treats the out-of-inventory residue above — return it to the caller as a coverage gap, never as a clean sweep. See [`manage-architecture/standards/client-api.md`](../../manage-architecture/standards/client-api.md) § search.
 
 ### 2d. Collect every consuming file
 

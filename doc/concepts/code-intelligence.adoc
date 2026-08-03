@@ -130,14 +130,17 @@ The provenance residue takes a third form, one axis over again. There is no prod
 |===
 | Response | Meaning
 
-| `count: 0`, `files_scanned: 0`
+| `count: 0`, `files_scanned: 0`, `unreadable: []`
 | *Nothing was searched.* The empty result is an absence of population, not a finding.
 
-| `count: 0`, `files_scanned: N`
+| `count: 0`, `files_scanned: 0`, `unreadable` non-empty
+| *Files were attempted and none could be read.* A coverage failure — distinct from both rows around it, because a population existed and the scanner never saw it.
+
+| `count: 0`, `files_scanned: N`, coverage clean
 | *N files were opened and none matched.* The empty result is a real, positive answer.
 |===
 
-That is the same shape as `resolver_count` and `attributor_count`: two states that are indistinguishable without the count, warranting opposite reactions, where an unqualified empty list reports both as the second. The companion field is `unreadable[]` — a file skipped because it could not be decoded or could not be read is named with its reason rather than quietly dropped from the denominator, which is the no-silent-suppression half of the same discipline.
+That is the same shape as `resolver_count` and `attributor_count`: two states that are indistinguishable without the count, warranting opposite reactions, where an unqualified empty list reports both as the second. The companion field is `unreadable[]` — a file skipped because it could not be decoded or could not be read is named with its reason rather than quietly dropped from the denominator, which is the no-silent-suppression half of the same discipline. An unreadable file never increments `files_scanned`, which is exactly why the middle row above is reachable: the counter measures files *scanned*, not files *attempted*.
 
 === Location and strength, never the lines
 
@@ -151,7 +154,9 @@ The reason is a cost asymmetry rather than a limitation. Returning line bodies m
 
 The honest limit here is the one a caller is most likely to over-read. The search covers the crawled inventory, which by construction excludes always-ignored directories (`.git`, `node_modules`, `target`, caches), dotfile trees outside the allowlist — `.claude/**` and `.github/**` among them — and anything a `.gitignore` rule removes, including `.plan/`.
 
-So a `count: 0` over a large `files_scanned` is a trustworthy *"not in any inventoried file"*. It is not *"not in the tree"*, and the two are not interchangeable when the thing being looked for might live in a workflow file or a local setting. Untracked-but-not-ignored files are covered, though: the walk is gitignore-aware rather than driven by what git tracks, so the reader also works outside a git worktree.
+So a `count: 0` over a large `files_scanned` — *and clean coverage metadata* — is a trustworthy *"not in any inventoried file"*. It is not *"not in the tree"*, and the two are not interchangeable when the thing being looked for might live in a workflow file or a local setting. Untracked-but-not-ignored files are covered, though: the walk is gitignore-aware rather than driven by what git tracks, so the reader also works outside a git worktree.
+
+The coverage qualifier is not decoration. `files_scanned > 0` says some files were opened; it says nothing about the ones that were not. A non-empty `unreadable[]` means a file that might hold the match was never scanned, and `truncated: true` / a non-empty `elided[]` means inventory entries never reached the scanner at all. A zero result carrying any of those is a *coverage gap*, not an absence — the same distinction the table above draws, one level up. The full conjunction a caller must check before treating a zero as an answer is contracted once in link:../../marketplace/bundles/plan-marshall/skills/manage-architecture/standards/client-api.md[`client-api.md`] § `search`.
 
 == The honest limit
 

@@ -113,10 +113,16 @@ Interpretation:
 
 ### Top noisiest individual raw invocations
 
-The `command_prefix` column below is **observed transcript data** — each entry is
-the command text as it was actually issued during the measurement window. The
-prefixes are reproduced verbatim and are deliberately NOT rewritten to the
-sanctioned form; editing them would falsify the record of what was measured.
+The `command_prefix` column below is derived from **observed transcript data** —
+each entry identifies a command as it was actually issued during the measurement
+window. The entries are **summarized labels, not verbatim command text**: long
+argument lists are cut with an ellipsis (`…`) and the search target is given as a
+short description (`over a worktree .plan path`, `(multi-alternation)`) rather
+than reproduced in full, because the raw invocations are long enough to defeat
+the point of a summary table. What is *not* rewritten is the shape being
+measured: no entry is edited toward the sanctioned form, since that would
+falsify the record of what was measured. Read the column as "which command this
+was", not as a pasteable command line.
 
 ```toon
 workstream_a_top_noisiest[10]{tokens,family,command_prefix}:
