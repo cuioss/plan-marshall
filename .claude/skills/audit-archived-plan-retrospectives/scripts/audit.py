@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Audit archived plans across twenty-three retrospective checks.
+"""Audit archived plans across twenty-four retrospective checks.
 
 Walks `.plan/local/archived-plans/{plan_id}/` directories and, per plan, runs a
 suite of deterministic checks:
@@ -90,6 +90,17 @@ suite of deterministic checks:
   task count exceeds the per-run corpus outlier threshold `max(3, median*2)`,
   recomputed fresh from the loaded corpus each run). A per-plan row carries
   `severity: genuine` whenever any of the five signals is populated.
+- `architecture-lookup-ratio` (cross-plan) — per-plan ratio of INFORMATION
+  lookup (architecture orientation/navigation: `find` / `which-module` / `files`
+  / `module` / `info` / `overview`) to BUILD lookup (`resolve` /
+  `derive-verification`), both counted from `logs/script-execution.log`.
+  Discovery verbs (`discover` / `enrich` / `crawl-*`) are counted separately and
+  excluded from the ratio. The corpus-derived `build_dominated_lookup` flag
+  (build lookups at/above the corpus median AND an info/build ratio at/below the
+  corpus p25, behind a degenerate-corpus spread guard) surfaces plans whose
+  architecture use is build-resolution-heavy with little navigation — a PROMPT to
+  check whether navigation bypassed the structured-query lever, never a verdict:
+  a low ratio may simply mean no navigation was needed.
 - `preference-pattern-detector` (cross-plan) — aggregates recurring user
   gate-dispositions across the corpus. Walks each plan's
   `artifacts/findings/*.jsonl`, derives a `(module, finding-class, disposition)`
@@ -139,6 +150,20 @@ suite of deterministic checks:
   `architecture-lookup-ratio` cannot see), and `unclassified_tools`. A plan whose
   counters are ABSENT is EXCLUDED from the corpus and named, never counted as
   zero exploration.
+- `billing-composition` (cross-plan) — re-derives, as a first-party
+  deterministic figure, the corpus BILLING COMPOSITION and the payload-byte
+  composition over `work/metrics.toon`: the billing-formula reconstruction
+  `input + output + round(0.1 x cache_read) + round(1.25 x cache_creation)` with
+  its `cache_read` / `cache_creation` / `output` shares, and the `exploration` /
+  `work` / `execute` / `orchestration` payload-byte shares. Each phase is
+  RECONCILED against the plan's `work/metrics-dispatch-boundaries-{phase}.toon`
+  ledger under the same same-population `max(row, boundary)` rule `cmd_generate`
+  applies, and the two named under-counts are reported SEPARATELY —
+  `unabsorbed_loop_back` (a `close_count > 1` row whose figures are sums across
+  closes) and `omitted_row` (a canonical phase absent from `metrics.toon`, i.e. a
+  member of the persisted `unrecorded_phases`). Every emitted figure carries its
+  own `population` (and `floor_population`), and a figure any `metrics_blind` or
+  `partial` plan contributed to is labelled `floor` rather than truth.
 - `cross-check-synthesis` (cross-plan, runs LAST) — the facet-completeness
   critic. It consumes the OTHER checks' retained structured results (not their
   emitted strings) and reports the cross-check couplings that single-check rows
@@ -219,6 +244,7 @@ CHECK_NAMES = [
     "merge-window-accounting",
     "lane-lever-effectiveness",
     "exploration-share",
+    "billing-composition",
     # cross-check-synthesis is the facet-completeness critic; it consumes the
     # other checks' computed results, so it MUST be last in this list (run_checks
     # dispatches in CHECK_NAMES order and synthesis reads the retained results).
@@ -247,6 +273,9 @@ DELIVERY_COST_CHECKS: frozenset[str] = frozenset(
         "token-efficiency-trend",
         "lane-lever-effectiveness",
         "exploration-share",
+        # billing-composition's figures are cost-composition ratios, so a plan
+        # that consumed budget and delivered nothing must not dilute them.
+        "billing-composition",
         "sequence-and-build-minimality",
         "scope-estimate-accuracy",
         "task-count-efficiency",
@@ -279,6 +308,10 @@ CROSS_PLAN_CHECKS = {
     # exploration-share aggregates the corpus into per-plan exploration shares plus
     # corpus-wide share aggregates and corpus-derived cut-points, so it is cross-plan.
     "exploration-share",
+    # billing-composition aggregates the corpus into per-figure composition shares
+    # (each over its own population) plus the per-plan audit rows, so it is
+    # cross-plan.
+    "billing-composition",
     # cross-check-synthesis is cross-plan: it joins the other checks' corpus-level
     # results into coupling verdicts rather than emitting one row per plan.
     "cross-check-synthesis",
@@ -402,6 +435,14 @@ CHECK_ERA: dict[str, str] = {
     # boundary carry no counters at all and are excluded from the corpus rather
     # than read as zero-exploration.
     "exploration-share": "#1043",
+    # billing-composition — PR-PENDING (this check's introducing plan, a
+    # placeholder resolved to the real PR at finalize by
+    # project:finalize-step-era-stamp-fill AFTER create-pr): the check is
+    # introduced by that plan, and the same plan widens the per-phase key set the
+    # check's byte-composition figures read, so plans archived before its boundary
+    # carry a narrower input surface and their rows are read against the pre-
+    # boundary era rather than as regressions.
+    "billing-composition": "PR-PENDING",
     "cross-check-synthesis": "plan-10",
 }
 
@@ -5824,6 +5865,559 @@ def emit_exploration_share_block(result: dict[str, Any]) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Cross-plan: billing-composition
+# ---------------------------------------------------------------------------
+#
+# Re-derives, as a first-party deterministic check, the corpus figures a one-off
+# analysis previously reported by hand: (a) the BILLING-FORMULA reconstruction
+# `input + output + round(0.1 x cache_read) + round(1.25 x cache_creation)` with
+# the resulting cache_read / cache_creation / output composition shares, and
+# (b) the exploration / work / execute / orchestration PAYLOAD-BYTE shares.
+#
+# THE CHECK DOES NOT MERELY RE-READ THE PHASE ROWS. Each phase is RECONCILED
+# against the plan's `work/metrics-dispatch-boundaries-{phase}.toon` ledger under
+# the same same-population rule `cmd_generate` applies (see
+# `manage-metrics/standards/data-format.md` § Dispatch-Boundary Reconciliation):
+#
+#     reported = max(row_value, dispatch_boundary_total)      # NOT a sum
+#
+# The per-phase accumulator and the boundary ledger record the SAME leaves, so
+# summing would double-count every one of them while `max()` recovers a missed
+# accumulator fold. The ledger's four context-load columns (6-9) carry the same
+# four-field view the phase row does, so the identical rule extends to every field
+# the billing formula consumes — which is what makes the reconciliation
+# load-bearing here rather than decorative. In the healthy case the phase row is
+# already the larger value (the `enrich` four-field walk covers the parent turns
+# too, which the ledger rows do not), so `max()` is a no-op and fires only on the
+# under-count it exists to recover.
+#
+# TWO NAMED UNDER-COUNTS, REPORTED SEPARATELY (never merged into one "incomplete"
+# cell) because they are different facts with different readings:
+#
+#   unabsorbed_loop_back — a phase row whose `close_count > 1`. `close_count` is
+#                          the authoritative, inference-free re-entry marker, and
+#                          such a row's figures are SUMS ACROSS CLOSES: the
+#                          composition shares stay meaningful, but the absolute
+#                          reconstruction covers more than one entry, so a
+#                          per-close reading of that row is wrong.
+#   omitted_row          — a canonical phase absent from `metrics.toon` (a member
+#                          of the persisted `unrecorded_phases`). Its billing
+#                          weight and its bytes are missing outright, so every
+#                          figure the plan contributes to is a FLOOR.
+#
+# ABSENT IS NOT ZERO. A plan carrying neither the billing four-field view nor any
+# payload-byte counter measured nothing and is EXCLUDED from the corpus, named in
+# `excluded_plan_ids` — never admitted at a zero share, which would invent a
+# maximally-favourable composition out of the absence of a measurement. A plan
+# carrying ONE family but not the other contributes only to the family it
+# measured, which is exactly why EVERY emitted figure carries its OWN `population`
+# (and `floor_population`) rather than a single block-level corpus size.
+
+# The four-field usage view the billing formula consumes, mapped to the billing
+# weights `manage-metrics` applies (`data-format.md` § Billing weights, mirroring
+# `claude_runtime._billing_weighted_total`). Stated once here and consumed by the
+# reconstruction below — no weight is re-declared at a call site, and the same
+# `round()` the producer uses is applied so the re-derivation matches it exactly.
+_BC_BILLING_WEIGHTS: dict[str, float] = {
+    "input_tokens": 1.0,
+    "output_tokens": 1.0,
+    "cache_read_input_tokens": 0.1,
+    "cache_creation_input_tokens": 1.25,
+}
+
+# The payload-byte sources a share is reported for, DERIVED from `_ES_BUCKETS` by
+# excluding the fail-open `unclassified` bucket rather than re-listing four names.
+# `unclassified` is deliberately NOT a named share: it is the explicit residual,
+# emitted as a raw byte count alongside the shared denominator so no observed byte
+# is silently dropped from a composition it is not named in.
+_BC_RESIDUAL_BUCKET = "unclassified"
+_BC_BYTE_SOURCES: tuple[str, ...] = tuple(
+    bucket for bucket in _ES_BUCKETS if bucket != _BC_RESIDUAL_BUCKET
+)
+
+# Every payload-byte field the check reads — all five buckets, because the four
+# named shares are taken over the WHOLE observed payload population (the residual
+# included), not over a subset that would inflate them.
+_BC_BYTE_FIELDS: tuple[str, ...] = tuple(f"{bucket}_result_bytes" for bucket in _ES_BUCKETS)
+
+# The per-phase `metrics.toon` fields the check reads, presence-sensitively:
+# the four-field usage view, the dispatched total the ledger reconciles against,
+# the authoritative re-entry marker, and the five payload-byte counters. Derived
+# from the weight table and the bucket tuple rather than re-listed, so a change on
+# either side cannot leave a half-updated literal here.
+_BC_PHASE_FIELDS: frozenset[str] = frozenset(
+    {*_BC_BILLING_WEIGHTS, "total_tokens", "close_count", *_BC_BYTE_FIELDS}
+)
+
+# The dispatch-boundary ledger columns the reconciliation sums.
+_BC_LEDGER_FIELDS: tuple[str, ...] = ("total_tokens", *_BC_BILLING_WEIGHTS)
+
+# The canonical nine-column ledger row order (`data-format.md` § Per-Dispatch
+# Context-Load Attribution is the single source of truth). Used only as the
+# positional fallback when a ledger's `rows[]{...}:` header declares no columns.
+_BC_LEDGER_COLUMNS: tuple[str, ...] = (
+    "timestamp",
+    "termination_cause",
+    "total_tokens",
+    "tool_uses",
+    "duration_ms",
+    "input_tokens",
+    "output_tokens",
+    "cache_read_input_tokens",
+    "cache_creation_input_tokens",
+)
+
+# The legacy five-column floor: a row carrying fewer fields than this is malformed
+# and skipped; a row carrying only the legacy five keeps its columns 1-5 readable
+# and defaults the four appended context-load columns to 0 (the same floor the
+# `plan-retrospective` reader applies).
+_BC_LEDGER_MIN_COLUMNS = 5
+
+_BC_LEDGER_HEADER_RE = re.compile(r"^rows\[\d*\]\{(?P<columns>[^}]*)\}:")
+
+
+def _parse_billing_phase_fields(path: Path) -> dict[str, dict[str, int]]:
+    """Read the per-phase billing/byte fields from `metrics.toon`, presence-only.
+
+    Returns `{phase_name: {field: value}}` carrying ONLY the `_BC_PHASE_FIELDS`
+    keys actually present in the file. An absent field is omitted rather than
+    defaulted to 0, so the caller can distinguish "measured nothing" from "never
+    measured" (the absent-is-not-zero rule). A phase SECTION that carries none of
+    the fields still yields an empty dict, so the caller can tell a recorded phase
+    from an omitted one.
+
+    Reads the same `[phase]`-sectioned shape `parse_metrics_toon` reads; kept
+    separate because that parser captures a fixed field set on a dataclass and
+    these fields are presence-sensitive.
+    """
+    if not path.is_file():
+        return {}
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return {}
+    phases: dict[str, dict[str, int]] = {}
+    current: dict[str, int] | None = None
+    for raw in text.splitlines():
+        stripped = raw.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("[") and stripped.endswith("]"):
+            current = phases.setdefault(stripped[1:-1], {})
+            continue
+        if current is None or ":" not in stripped:
+            continue
+        key, _, value = stripped.partition(":")
+        key = key.strip()
+        if key in _BC_PHASE_FIELDS:
+            current[key] = _to_int(value.strip())
+    return phases
+
+
+def _parse_dispatch_boundary_totals(path: Path) -> dict[str, int]:
+    """Sum one phase's dispatch-boundary ledger into its reconcilable columns.
+
+    Returns `{field: summed_value}` over `_BC_LEDGER_FIELDS` for every data row in
+    `work/metrics-dispatch-boundaries-{phase}.toon`, or `{}` when the file is
+    absent — the clean no-op the reconciliation degrades to (`max(row, 0) == row`).
+
+    Column indices come from the `rows[...]{...}:` header when it declares them and
+    from the canonical `_BC_LEDGER_COLUMNS` order otherwise. A row carrying fewer
+    than the legacy five columns is skipped and a malformed cell degrades to 0
+    rather than dropping the whole row — the same floor the `plan-retrospective`
+    reader applies (`data-format.md` § Per-Dispatch Context-Load Attribution).
+    """
+    if not path.is_file():
+        return {}
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return {}
+    columns: tuple[str, ...] = _BC_LEDGER_COLUMNS
+    totals: dict[str, int] = dict.fromkeys(_BC_LEDGER_FIELDS, 0)
+    in_rows = False
+    for raw in text.splitlines():
+        stripped = raw.strip()
+        if not stripped:
+            continue
+        header = _BC_LEDGER_HEADER_RE.match(stripped)
+        if header is not None:
+            declared = tuple(
+                name.strip() for name in header.group("columns").split(",") if name.strip()
+            )
+            if declared:
+                columns = declared
+            in_rows = True
+            continue
+        if not in_rows:
+            continue
+        parts = [cell.strip() for cell in stripped.split(",")]
+        if len(parts) < _BC_LEDGER_MIN_COLUMNS:
+            continue
+        for ledger_field in _BC_LEDGER_FIELDS:
+            if ledger_field not in columns:
+                continue
+            index = columns.index(ledger_field)
+            if index < len(parts):
+                totals[ledger_field] += _to_int(parts[index])
+    return totals
+
+
+@dataclass
+class _BillingCompositionRow:
+    """One plan's reconciled billing + payload-byte contribution to the corpus."""
+
+    plan_id: str
+    # Reconciled four-field usage view, summed across the plan's phases.
+    billing: dict[str, int]
+    # Per-bucket payload bytes, summed across the plan's phases.
+    byte_totals: dict[str, int]
+    # Family-admission flags: a plan may measure one family and not the other, so
+    # each figure's population is computed from these rather than from a single
+    # corpus size.
+    has_billing: bool
+    has_bytes: bool
+    # The two named under-counts, plus the phases the ledger reconciliation
+    # actually corrected.
+    reconciled_phases: list[str]
+    unabsorbed_loop_back: list[str]
+    omitted_row: list[str]
+    floor: bool
+
+    @property
+    def weighted(self) -> dict[str, int]:
+        """Per-field BILLING WEIGHT contribution, rounded as the producer rounds."""
+        return {
+            usage_field: round(weight * self.billing.get(usage_field, 0))
+            for usage_field, weight in _BC_BILLING_WEIGHTS.items()
+        }
+
+    @property
+    def billing_total(self) -> int:
+        """The billing-formula reconstruction — the sum of the weighted parts."""
+        return sum(self.weighted.values())
+
+    @property
+    def denom_bytes(self) -> int:
+        """All five buckets — the payload-byte composition denominator."""
+        return sum(self.byte_totals.get(byte_field, 0) for byte_field in _BC_BYTE_FIELDS)
+
+    @property
+    def residual_bytes(self) -> int:
+        """The explicit `unclassified` residual, never folded into a named share."""
+        return self.byte_totals.get(f"{_BC_RESIDUAL_BUCKET}_result_bytes", 0)
+
+    def billing_share(self, usage_field: str) -> float | None:
+        """One field's share of the reconstruction, or None when it is 0."""
+        total = self.billing_total
+        if total <= 0:
+            return None
+        return self.weighted.get(usage_field, 0) / total
+
+    def byte_share(self, source: str) -> float | None:
+        """One bucket's share of the observed payload bytes, or None when 0."""
+        denom = self.denom_bytes
+        if denom <= 0:
+            return None
+        return self.byte_totals.get(f"{source}_result_bytes", 0) / denom
+
+
+def _collect_billing_composition_rows(
+    all_inputs: list[PlanInputs],
+) -> tuple[list[_BillingCompositionRow], list[str]]:
+    """Build the reconciled per-plan row for every plan that measured something.
+
+    Returns `(rows, excluded_plan_ids)`. A plan carrying neither family is
+    EXCLUDED and named in the second element — never admitted at a zero share (see
+    the absent-is-not-zero rule above).
+    """
+    rows: list[_BillingCompositionRow] = []
+    excluded: list[str] = []
+    for inputs in all_inputs:
+        metrics_path = inputs.plan_dir / "work" / "metrics.toon"
+        phase_fields = _parse_billing_phase_fields(metrics_path)
+        partial, unrecorded_phases = parse_metrics_partiality(metrics_path)
+
+        billing: dict[str, int] = dict.fromkeys(_BC_BILLING_WEIGHTS, 0)
+        byte_totals: dict[str, int] = {}
+        reconciled: list[str] = []
+        loop_back: list[str] = []
+        has_billing = False
+        has_bytes = False
+
+        for phase_name, fields in phase_fields.items():
+            ledger = _parse_dispatch_boundary_totals(
+                inputs.plan_dir / "work" / f"metrics-dispatch-boundaries-{phase_name}.toon"
+            )
+            phase_reconciled = ledger.get("total_tokens", 0) > fields.get("total_tokens", 0)
+            for usage_field in _BC_BILLING_WEIGHTS:
+                row_value = fields.get(usage_field, 0)
+                ledger_value = ledger.get(usage_field, 0)
+                if usage_field in fields or ledger_value > 0:
+                    has_billing = True
+                if ledger_value > row_value:
+                    phase_reconciled = True
+                billing[usage_field] += max(row_value, ledger_value)
+            if phase_reconciled:
+                reconciled.append(phase_name)
+            # `close_count > 1` is the authoritative re-entry marker: this row's
+            # figures are sums across closes, so the plan's absolute reconstruction
+            # covers more than one entry.
+            if fields.get("close_count", 0) > 1:
+                loop_back.append(phase_name)
+            for byte_field in _BC_BYTE_FIELDS:
+                if byte_field not in fields:
+                    continue
+                has_bytes = True
+                byte_totals[byte_field] = byte_totals.get(byte_field, 0) + fields[byte_field]
+
+        if not (has_billing or has_bytes):
+            excluded.append(inputs.plan_id)
+            continue
+
+        # A canonical phase the recorder itself marked unrecorded, or one with no
+        # section at all, is an omitted row: its weight and bytes are missing
+        # outright. Both sources are consulted so a plan predating the #812
+        # partiality markers is still caught structurally.
+        recorded_phases = set(phase_fields)
+        omitted = [
+            phase
+            for phase in _TE_PHASES
+            if phase in unrecorded_phases or phase not in recorded_phases
+        ]
+
+        # Floor label: the input-integrity verdict is the no-false-healthy floor
+        # this engine already computes, so it is CONSUMED here rather than
+        # re-derived. A `metrics_blind` plan, a recorded-partial plan, and a plan
+        # missing a canonical row all contribute under-counted figures.
+        integrity = check_input_integrity(inputs)
+        floor = bool(integrity["metrics_blind"]) or partial or bool(omitted)
+
+        rows.append(
+            _BillingCompositionRow(
+                plan_id=inputs.plan_id,
+                billing=billing,
+                byte_totals=byte_totals,
+                has_billing=has_billing,
+                has_bytes=has_bytes,
+                reconciled_phases=reconciled,
+                unabsorbed_loop_back=loop_back,
+                omitted_row=omitted,
+                floor=floor,
+            )
+        )
+    return rows, excluded
+
+
+def _bc_figure(
+    figure: str,
+    unit: str,
+    value: Any,
+    contributors: list[_BillingCompositionRow],
+) -> dict[str, Any]:
+    """Build one emitted figure carrying its OWN population and floor label.
+
+    `population` is the number of plans that contributed to THIS figure (not the
+    block's corpus size), and `floor_population` how many of them are floored. A
+    figure any floored plan contributed to is itself labelled `floor` — a lower
+    bound, not a truth — per the input-integrity cross-check obligation.
+    """
+    floor_population = sum(1 for row in contributors if row.floor)
+    return {
+        "figure": figure,
+        "unit": unit,
+        "value": value,
+        "population": len(contributors),
+        "floor_population": floor_population,
+        "label": "floor" if floor_population else "measured",
+    }
+
+
+def cross_billing_composition(all_inputs: list[PlanInputs]) -> dict[str, Any]:
+    """Compute the corpus billing + payload-byte composition figures.
+
+    Returns a result dict consumed by `emit_billing_composition_block`.
+    Best-effort: a corpus where every plan measured nothing yields no rows, no
+    figures with a population, and the full excluded-plan list rather than raising.
+    """
+    rows, excluded = _collect_billing_composition_rows(all_inputs)
+    billing_rows = [row for row in rows if row.has_billing]
+    byte_rows = [row for row in rows if row.has_bytes]
+
+    corpus_billing_total = sum(row.billing_total for row in billing_rows)
+    corpus_denom_bytes = sum(row.denom_bytes for row in byte_rows)
+
+    figures: list[dict[str, Any]] = [
+        _bc_figure(
+            "billing_weighted_total_reconstructed",
+            "weighted_tokens",
+            corpus_billing_total,
+            billing_rows,
+        )
+    ]
+    # (a) Billing composition — the share each weighted part holds of the
+    # reconstruction. `input_tokens` carries no share of its own: it is the
+    # complement of the three named parts, so naming it would restate a derivable
+    # number rather than add one.
+    for usage_field in ("cache_read_input_tokens", "cache_creation_input_tokens", "output_tokens"):
+        weighted = sum(row.weighted.get(usage_field, 0) for row in billing_rows)
+        figures.append(
+            _bc_figure(
+                f"billing_share_{usage_field}",
+                "share",
+                _es_share_cell(
+                    weighted / corpus_billing_total if corpus_billing_total > 0 else None
+                ),
+                billing_rows,
+            )
+        )
+    # (b) Payload-byte composition — each named bucket's share of the WHOLE
+    # observed payload population (the `unclassified` residual included in the
+    # denominator, so a share is never inflated by hiding it).
+    for source in _BC_BYTE_SOURCES:
+        source_bytes = sum(row.byte_totals.get(f"{source}_result_bytes", 0) for row in byte_rows)
+        figures.append(
+            _bc_figure(
+                f"byte_share_{source}",
+                "share",
+                _es_share_cell(
+                    source_bytes / corpus_denom_bytes if corpus_denom_bytes > 0 else None
+                ),
+                byte_rows,
+            )
+        )
+
+    plan_rows: list[dict[str, Any]] = []
+    for row in sorted(rows, key=lambda r: -r.billing_total):
+        plan_rows.append(
+            {
+                "plan_id": row.plan_id,
+                "billing_total": row.billing_total,
+                "cache_read_share": _es_share_cell(
+                    row.billing_share("cache_read_input_tokens")
+                ),
+                "cache_creation_share": _es_share_cell(
+                    row.billing_share("cache_creation_input_tokens")
+                ),
+                "output_share": _es_share_cell(row.billing_share("output_tokens")),
+                **{
+                    f"{source}_byte_share": _es_share_cell(row.byte_share(source))
+                    for source in _BC_BYTE_SOURCES
+                },
+                "residual_bytes": row.residual_bytes,
+                "denom_bytes": row.denom_bytes,
+                "reconciled_phases": ";".join(row.reconciled_phases),
+                "unabsorbed_loop_back": ";".join(row.unabsorbed_loop_back),
+                "omitted_row": ";".join(row.omitted_row),
+                "label": "floor" if row.floor else "measured",
+            }
+        )
+
+    return {
+        "plans_in_corpus": len(rows),
+        "plans_excluded_no_counters": len(excluded),
+        "excluded_plan_ids": excluded,
+        "unabsorbed_loop_back_plans": sum(1 for r in rows if r.unabsorbed_loop_back),
+        "omitted_row_plans": sum(1 for r in rows if r.omitted_row),
+        "reconciled_plans": sum(1 for r in rows if r.reconciled_phases),
+        "figures": figures,
+        "rows": plan_rows,
+    }
+
+
+def _billing_composition_genuine(row: dict[str, Any]) -> bool:
+    """Genuine-signal predicate for one billing-composition plan row.
+
+    Genuine (actionable): the plan's contribution to the corpus figures is
+    UNDER-COUNTED or floored — a `close_count > 1` row summed across closes, a
+    canonical row omitted outright, a phase the dispatch-boundary reconciliation
+    had to correct, or a `floor` label from the input-integrity verdict. Each
+    demands an adjudication before the figures it feeds are read as truth.
+    Informational: a fully-recorded plan whose row needed no correction.
+    """
+    return bool(
+        row["unabsorbed_loop_back"]
+        or row["omitted_row"]
+        or row["reconciled_phases"]
+        or row["label"] == "floor"
+    )
+
+
+def emit_billing_composition_block(result: dict[str, Any]) -> str:
+    """Emit the cross-plan billing-composition block with the severity column.
+
+    Two tables in one block. The `figures` table is the check's product — one row
+    per emitted figure, each carrying its OWN `population` / `floor_population` /
+    `label`, so no figure can be read without the population it was computed over.
+    The `rows` table is the per-plan audit trail behind those figures, carrying the
+    two named under-counts in SEPARATE columns and the uniform D1 `severity`.
+    """
+    plan_rows = result["rows"]
+    plan_rows, genuine_signal_count = _severity_summary(
+        plan_rows, _billing_composition_genuine
+    )
+    figures = result["figures"]
+
+    byte_share_columns = [f"{source}_byte_share" for source in _BC_BYTE_SOURCES]
+    row_columns = [
+        "plan_id",
+        "billing_total",
+        "cache_read_share",
+        "cache_creation_share",
+        "output_share",
+        *byte_share_columns,
+        "residual_bytes",
+        "denom_bytes",
+        "reconciled_phases",
+        "unabsorbed_loop_back",
+        "omitted_row",
+        "label",
+        "severity",
+    ]
+
+    out = [
+        "check: billing-composition",
+        "status: success",
+        # ABSENT IS NOT ZERO: a plan measuring neither family is EXCLUDED from the
+        # corpus, never admitted at a zero share. A measured zero stays in.
+        "exclusion_rule: a plan measuring neither the billing four-field view nor any payload byte is excluded from the corpus (never counted as a zero share); a measured zero stays in",
+        # The reconciliation rule, echoed so a reader never mistakes it for a sum.
+        "reconciliation_rule: per phase, reported = max(row_value, dispatch_boundary_total) — NOT a sum (the accumulator and the ledger record the same leaves)",
+        # The residual is named, so the four byte shares are provably over the
+        # whole observed payload population rather than a flattering subset.
+        f"byte_denominator: all {len(_ES_BUCKETS)} buckets; the {_BC_RESIDUAL_BUCKET} residual is emitted as residual_bytes rather than as a named share",
+        f"plans_in_corpus: {result['plans_in_corpus']}",
+        f"plans_excluded_no_counters: {result['plans_excluded_no_counters']}",
+        f"excluded_plan_ids: {_cell(';'.join(result['excluded_plan_ids']))}",
+        # The two named under-counts, counted separately — never merged.
+        f"unabsorbed_loop_back_plans: {result['unabsorbed_loop_back_plans']}",
+        f"omitted_row_plans: {result['omitted_row_plans']}",
+        f"reconciled_plans: {result['reconciled_plans']}",
+        f"genuine_signal_count: {genuine_signal_count}",
+        f"figures[{len(figures)}]{{figure,unit,value,population,floor_population,label}}:",
+    ]
+    for figure in figures:
+        out.append(
+            "  "
+            + ",".join(
+                _cell(c)
+                for c in [
+                    figure["figure"],
+                    figure["unit"],
+                    figure["value"],
+                    figure["population"],
+                    figure["floor_population"],
+                    figure["label"],
+                ]
+            )
+        )
+    out.append(f"rows[{len(plan_rows)}]{{{','.join(row_columns)}}}:")
+    for r in plan_rows:
+        out.append("  " + ",".join(_cell(r.get(col, "")) for col in row_columns))
+    return "\n".join(out) + "\n"
+
+
+# ---------------------------------------------------------------------------
 # Cross-plan: cross-check-synthesis (facet-completeness critic, runs LAST)
 # ---------------------------------------------------------------------------
 #
@@ -7180,6 +7774,21 @@ def run_checks(all_inputs: list[PlanInputs], selected: list[str], repo_root: Pat
             "plans_excluded_no_counters"
         ]
 
+    # billing-composition is a standalone cross-plan check (not consumed by
+    # synthesis), so it is gated only on explicit selection.
+    if "billing-composition" in selected:
+        bc_result = cross_billing_composition(
+            _check_corpus("billing-composition", all_inputs, shipping)
+        )
+        all_results["billing-composition"] = bc_result
+        blocks.append(emit_billing_composition_block(bc_result))
+        summary_metrics["billing-composition_excluded"] = bc_result[
+            "plans_excluded_no_counters"
+        ]
+        summary_metrics["billing-composition_undercounted"] = (
+            bc_result["unabsorbed_loop_back_plans"] + bc_result["omitted_row_plans"]
+        )
+
     # cross-check-synthesis MUST run LAST — it reads every upstream result the
     # blocks above retained into `all_results`.
     if synth_needed:
@@ -7212,7 +7821,7 @@ def run_checks(all_inputs: list[PlanInputs], selected: list[str], repo_root: Pat
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
-        description="Audit archived plans across twenty-three retrospective checks."
+        description="Audit archived plans across twenty-four retrospective checks."
     )
     parser.add_argument(
         "--plan-dir",
