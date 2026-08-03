@@ -29,6 +29,10 @@ than merely present:
   not with match density), pinned as a test rather than left to review.
 * **``match_count`` is a real count** — a file matched three times reports 3,
   not a truthy hit flag.
+* **Anchors are per line** — ``^`` and ``$`` mean line-start / line-end (the
+  semantics grep, ripgrep and the harness ``Grep`` tool give them), not
+  file-start / file-end. A token on the SECOND line of a fixture is reachable by
+  ``^token``; the mid-line control proves the anchor still binds.
 """
 
 import sys
@@ -71,6 +75,13 @@ _UNTRACKED_TOKEN = 'UNTRACKED_TOKEN'
 _METACHAR_PATTERN = '$(id); rm -rf'
 # Never written into any fixture file.
 _ABSENT_TOKEN = 'NO_SUCH_TOKEN_ANYWHERE'
+# Starts lines 2 and 3 of ``pkg/anchored.py`` — never line 1, so a ``^``-anchored
+# search reaches it only if the anchor is per LINE. Also appears mid-line in
+# ``pkg/midline.py``, which is the negative half of the anchor assertion.
+_ANCHOR_TOKEN = 'ANCHORED_TOKEN'
+# Ends line 1 of ``pkg/dollar.py`` — never the last line, so a ``$``-anchored
+# search reaches it only if the anchor is per LINE.
+_ENDLINE_TOKEN = 'ENDLINE_TOKEN'
 # In two different categories, so ``--category`` narrowing is observable.
 _SHARED_TOKEN = 'SHARED_TOKEN'
 
@@ -101,6 +112,11 @@ def _seed_crawled_project(tmpdir: str) -> None:
     _write(pkg / 'triple.py', f'{_TRIPLE_TOKEN}\n{_TRIPLE_TOKEN}\n{_TRIPLE_TOKEN}\n')
     _write(pkg / 'meta.py', f'value = "{_METACHAR_PATTERN}"\n')
     _write(pkg / 'untracked_only.py', f'{_UNTRACKED_TOKEN} = True\n')
+    # Anchor fixtures. The token deliberately never starts line 1 / never ends
+    # the last line, so a whole-body compile (no re.MULTILINE) cannot reach it.
+    _write(pkg / 'anchored.py', f'import os\n{_ANCHOR_TOKEN} = 1\n{_ANCHOR_TOKEN} = 2\n')
+    _write(pkg / 'midline.py', f'value = {_ANCHOR_TOKEN}\n')
+    _write(pkg / 'dollar.py', f'a = {_ENDLINE_TOKEN}\nb = 2\n')
 
     modules = {'pkg': {'name': 'pkg', 'paths': {'module': 'pkg'}}}
     _post_process_files(modules, str(project))
@@ -220,6 +236,69 @@ def test_match_count_is_a_real_count_not_a_hit_flag():
         assert result['results'][0]['path'] == 'pkg/triple.py'
         # The discriminating assertion: 3, never 1 (a truthy "it matched" flag).
         assert result['results'][0]['match_count'] == 3
+
+
+def test_caret_anchors_to_line_start_not_file_start():
+    """``^`` means line-start, the semantics grep/ripgrep/Grep already give it.
+
+    The fixture is built so the pre-``re.MULTILINE`` implementation cannot pass:
+    ``_ANCHOR_TOKEN`` starts lines 2 and 3 of ``pkg/anchored.py`` and never line
+    1, so a whole-body compile anchors ``^`` at byte 0 and answers ``count: 0``
+    over a fully-scanned corpus — the confident negative this pins against.
+
+    Two controls keep a green result honest. The unanchored arm proves the token
+    population is non-empty and strictly LARGER than the anchored subset, so the
+    anchored count cannot be explained by the token simply being everywhere. The
+    ``pkg/midline.py`` exclusion proves the anchor still BINDS — had the fix
+    dropped anchoring altogether, that file would appear and this test would
+    fail for the right reason.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_crawled_project(tmpdir)
+
+        anchored = _search(tmpdir, f'^{_ANCHOR_TOKEN}')
+
+        assert anchored['status'] == 'success'
+        assert anchored['count'] == 1
+        assert anchored['results'][0]['path'] == 'pkg/anchored.py'
+        # match_count stays a real count under re.MULTILINE: two line-start
+        # occurrences report 2, never a first-hit short-circuit to 1.
+        assert anchored['results'][0]['match_count'] == 2
+        assert anchored['files_scanned'] > 0
+
+        # Control: unanchored, the same token also lives mid-line in a second
+        # file — so the anchored arm above really did narrow the result.
+        unanchored = _search(tmpdir, _ANCHOR_TOKEN)
+        assert unanchored['count'] == 2
+        assert {entry['path'] for entry in unanchored['results']} == {
+            'pkg/anchored.py',
+            'pkg/midline.py',
+        }
+
+
+def test_dollar_anchors_to_line_end_not_file_end():
+    """``$`` means line-end — the ``^`` assertion's sibling half.
+
+    ``_ENDLINE_TOKEN`` ends line 1 of a two-line file, so a whole-body compile
+    (where ``$`` means end-of-file) matches nothing. The unanchored control
+    confirms the token is present at all, so a green anchored arm is a real
+    line-end match rather than an empty population.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_crawled_project(tmpdir)
+
+        anchored = _search(tmpdir, f'{_ENDLINE_TOKEN}$')
+
+        assert anchored['status'] == 'success'
+        assert anchored['count'] == 1
+        assert anchored['results'][0]['path'] == 'pkg/dollar.py'
+        assert anchored['results'][0]['match_count'] == 1
+
+        # Control: the token is genuinely in the corpus, so the anchored hit is
+        # not an accident of an otherwise-empty search.
+        unanchored = _search(tmpdir, _ENDLINE_TOKEN)
+        assert unanchored['count'] == 1
+        assert unanchored['results'][0]['path'] == 'pkg/dollar.py'
 
 
 def test_results_carry_no_line_bodies_or_line_numbers():

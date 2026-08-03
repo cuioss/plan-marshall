@@ -70,10 +70,10 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture s
 
 This covers the marketplace-rooted portion. `marshal.json` and `.plan/` are OUTSIDE the crawled inventory, so the sweep does not reach them — return that residue to the caller as a coverage gap rather than reporting the notation clean.
 
-For `Skill:` loader directives in markdown, use the anchored regex form (no `--literal`, since the anchor is the point):
+For `Skill:` loader directives in markdown, use the anchored regex form (no `--literal`, since the anchor is the point). `^` anchors to line-start, and the engine is Python `re` — so write `\s`, never a POSIX class like `[[:space:]]`, which Python parses as a nested set and which would return a confident zero:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture search --content --pattern "^Skill:[[:space:]]*{bundle}:{skill}"
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture search --content --pattern "^Skill:\s*{bundle}:{skill}"
 ```
 
 This likewise covers only the marketplace-rooted portion; `.claude/` is a dotfile tree outside the inventory, so its residue is the same coverage-gap return.

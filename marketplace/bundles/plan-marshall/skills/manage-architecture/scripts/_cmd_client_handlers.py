@@ -949,6 +949,17 @@ def cmd_search(args: argparse.Namespace) -> dict[str, Any]:
     to compile returns ``status: error, error: invalid_pattern`` carrying the
     compile message — required boundary handling on untrusted caller input.
 
+    The compile carries ``re.MULTILINE``, so ``^`` and ``$`` anchor to
+    line-start / line-end — the semantics ``grep``, ``ripgrep`` and the harness
+    ``Grep`` tool all give them, and therefore the semantics a caller writing
+    ``^Skill:`` already expects. Without the flag the body is one string and the
+    anchors would mean file-start / file-end, turning an ordinary anchored
+    pattern into a silent ``count: 0`` over a fully-scanned corpus — a confident
+    negative, which is precisely what ``files_scanned`` exists to prevent.
+    ``match_count`` stays a real count under the flag: ``finditer`` still walks
+    every non-overlapping match in the file, so an anchored pattern hitting three
+    separate lines reports 3, never a first-hit short-circuit.
+
     **The response carries NO matching line bodies — a settled decision, not an
     omission.** A hit reports only *where* it is (``module``, ``category``,
     ``path``) and *how strongly* (``match_count``, the number of non-overlapping
@@ -986,7 +997,7 @@ def cmd_search(args: argparse.Namespace) -> dict[str, Any]:
         return _unknown_category_result(category_filter)
 
     try:
-        compiled = re.compile(re.escape(pattern) if literal else pattern)
+        compiled = re.compile(re.escape(pattern) if literal else pattern, re.MULTILINE)
     except re.error as e:
         return {
             'status': 'error',

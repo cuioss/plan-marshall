@@ -8,7 +8,7 @@ This standard is the single source of truth for the deviation taxonomy, the prom
 
 A request-level hard requirement is any acceptance criterion authored in the plan's request, solution outline, or deliverable narrative that:
 
-- Names a measurable gate (e.g., "`architecture search --content --literal --pattern '--project-dir'` returns `count: 0`"), OR
+- Names a measurable gate (e.g., "`architecture search --content --literal --pattern '--project-dir'` returns `count: 0` with `files_scanned > 0`"), OR
 - Declares a structural intent (e.g., "Breaking change. No transition window."), OR
 - Specifies a complete deletion (e.g., "Remove the flag entirely").
 

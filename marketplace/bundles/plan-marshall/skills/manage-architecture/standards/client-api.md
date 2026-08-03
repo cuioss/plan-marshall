@@ -908,6 +908,15 @@ which is what makes a string full of shell metacharacters (`$(…)`, `;`, backti
 match exactly and safely. No caller input ever reaches a shell — the search is a
 Python-side walk over the inventory, never a subprocess.
 
+**Anchors are per line.** The compile carries `re.MULTILINE`, so `^` matches at
+the start of every line and `$` at the end of every line — the same semantics
+`grep`, `ripgrep` and the harness `Grep` tool give them. An anchored sweep such
+as `--pattern '^Skill: plan-marshall:manage-files'` therefore finds a directive
+on any line of a file, not only one starting at byte 0. The engine is Python
+`re`, not POSIX: write `\s` for whitespace, never a POSIX bracket class like
+`[[:space:]]` — Python parses that as a nested set (emitting a `FutureWarning`)
+and it will not mean what it looks like it means.
+
 **Payload boundary — no line bodies.** A hit reports only *where* it is
 (`module`, `category`, `path`) and *how strongly* (`match_count`, the number of
 non-overlapping matches in that file). The response deliberately carries **no
@@ -1017,6 +1026,19 @@ message: "unterminated character set at position 0"
   counted in `files_scanned`.
 - No `mode` field is echoed in the response: `--content` is the only mode today,
   so a `mode: content` key would be constant-valued and therefore vacuous.
+- Anchored pattern (`^` / `$`): matches per LINE, not per file — the compile
+  carries `re.MULTILINE`. A pattern anchored with `^` finds hits on any line, and
+  `match_count` counts every such line rather than stopping at the first.
+- POSIX bracket class (`[[:space:]]`, `[[:alpha:]]`, …): NOT supported — the
+  engine is Python `re`. Such a pattern compiles to a nested set and silently
+  matches something else, yielding a confident `count: 0` over a fully-scanned
+  corpus. Use the Python escapes (`\s`, `\w`, `\d`) instead.
+- Backtick in the pattern: write it as the regex escape `\x60` (regex mode, NOT
+  `--literal`, which would escape the backslash). A literal backtick anywhere in
+  the command string is denied by the project's PreToolUse enforcement hook — it
+  matches its R1 shell-construct rule by plain substring, so quoting does not
+  help — which would otherwise make a fenced-code-block sweep
+  (`^\x60\x60\x60json`) unrunnable from inside a plan worktree.
 
 ---
 
