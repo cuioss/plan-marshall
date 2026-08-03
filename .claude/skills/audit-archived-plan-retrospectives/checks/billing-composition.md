@@ -167,7 +167,7 @@ the reported one and the gap is unquantified. Read it as "at least X", never as
 
 ## Emitted columns
 
-```
+```text
 exclusion_rule: …
 reconciliation_rule: per phase, reported = max(row_value, dispatch_boundary_total) — NOT a sum …
 byte_denominator: all 5 buckets; the unclassified residual is emitted as residual_bytes rather than as a named share

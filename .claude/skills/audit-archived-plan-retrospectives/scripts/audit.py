@@ -435,13 +435,14 @@ CHECK_ERA: dict[str, str] = {
     # boundary carry no counters at all and are excluded from the corpus rather
     # than read as zero-exploration.
     "exploration-share": "#1043",
-    # billing-composition — PR-PENDING (this check's introducing plan, a
-    # placeholder resolved to the real PR at finalize by
-    # project:finalize-step-era-stamp-fill AFTER create-pr): the check is
-    # introduced by that plan, and the same plan widens the per-phase key set the
-    # check's byte-composition figures read, so plans archived before its boundary
-    # carry a narrower input surface and their rows are read against the pre-
-    # boundary era rather than as regressions.
+    # billing-composition — #1086, this check's introducing plan (the boundary is
+    # RESOLVED, not a placeholder; it was seeded as the PR-PENDING sentinel and
+    # filled in lock-step with the test mirror by
+    # project:finalize-step-era-stamp-fill once create-pr allocated the number).
+    # The check is introduced by that plan, and the same plan widens the per-phase
+    # key set the check's byte-composition figures read, so plans archived before
+    # its boundary carry a narrower input surface and their rows are read against
+    # the pre-boundary era rather than as regressions.
     "billing-composition": "#1086",
     "cross-check-synthesis": "plan-10",
 }
@@ -6138,6 +6139,17 @@ def _collect_billing_composition_rows(
         phase_fields = _parse_billing_phase_fields(metrics_path)
         partial, unrecorded_phases = parse_metrics_partiality(metrics_path)
 
+        # Accumulate over CANONICAL phases only. The parser admits every
+        # `[...]` section, so a non-phase section carrying the same billing or
+        # byte keys (a `[totals]` roll-up, say) would be summed into
+        # `billing` and `denom_bytes` as though it were another phase —
+        # double-counting the corpus figures. The omitted-row check below
+        # already reasons over `_TE_PHASES` alone, so restricting here is what
+        # keeps the two halves reading the same phase set.
+        phase_fields = {
+            phase: fields for phase, fields in phase_fields.items() if phase in _TE_PHASES
+        }
+
         billing: dict[str, int] = dict.fromkeys(_BC_BILLING_WEIGHTS, 0)
         byte_totals: dict[str, int] = {}
         reconciled: list[str] = []
@@ -6319,6 +6331,13 @@ def cross_billing_composition(all_inputs: list[PlanInputs]) -> dict[str, Any]:
         "excluded_plan_ids": excluded,
         "unabsorbed_loop_back_plans": sum(1 for r in rows if r.unabsorbed_loop_back),
         "omitted_row_plans": sum(1 for r in rows if r.omitted_row),
+        # DISTINCT under-counted plans. The two counts above are independent
+        # per-plan tallies, so a plan carrying BOTH an unabsorbed loop-back and
+        # an omitted canonical row appears in each — summing them can exceed
+        # `plans_in_corpus` and report a movement no plan produced.
+        "undercounted_plans": sum(
+            1 for r in rows if r.unabsorbed_loop_back or r.omitted_row
+        ),
         "reconciled_plans": sum(1 for r in rows if r.reconciled_phases),
         "figures": figures,
         "rows": plan_rows,
@@ -7785,9 +7804,7 @@ def run_checks(all_inputs: list[PlanInputs], selected: list[str], repo_root: Pat
         summary_metrics["billing-composition_excluded"] = bc_result[
             "plans_excluded_no_counters"
         ]
-        summary_metrics["billing-composition_undercounted"] = (
-            bc_result["unabsorbed_loop_back_plans"] + bc_result["omitted_row_plans"]
-        )
+        summary_metrics["billing-composition_undercounted"] = bc_result["undercounted_plans"]
 
     # cross-check-synthesis MUST run LAST — it reads every upstream result the
     # blocks above retained into `all_results`.

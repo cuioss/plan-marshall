@@ -1261,11 +1261,11 @@ def test_billing_composition_registered_and_ordered_before_synthesis():
 def test_billing_composition_carries_this_plan_pr_boundary():
     # The check is introduced by this plan, and the same plan widens the per-phase
     # key set its byte-composition figures read, so its era boundary is this plan's
-    # own PR — carried as the PR-PENDING placeholder until
-    # project:finalize-step-era-stamp-fill resolves it to the real PR at finalize.
-    # This is the co-changing mirror of the audit.py CHECK_ERA constant; the pair is
-    # rewritten in lock-step by that step, so this assertion is the designated
-    # acceptance for era-fill firing from a composed manifest.
+    # own PR — RESOLVED to #1086. It was seeded as the PR-PENDING sentinel and
+    # filled by project:finalize-step-era-stamp-fill once create-pr allocated the
+    # number. This is the co-changing mirror of the audit.py CHECK_ERA constant;
+    # the pair is rewritten in lock-step by that step, so this assertion is the
+    # designated acceptance for era-fill firing from a composed manifest.
     assert audit.CHECK_ERA["billing-composition"] == "#1086"
 
 

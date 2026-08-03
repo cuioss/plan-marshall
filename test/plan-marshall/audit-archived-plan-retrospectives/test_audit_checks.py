@@ -7158,6 +7158,143 @@ class TestBillingCompositionUnderCounts:
         assert '6-finalize' in row['omitted_row']
         assert row['label'] == 'floor'
 
+    def test_undercounted_plans_counts_a_both_ways_plan_once(self, tmp_path: Path):
+        """A plan carrying BOTH under-counts is ONE under-counted plan, not two.
+
+        `unabsorbed_loop_back_plans` and `omitted_row_plans` are independent
+        per-plan tallies, so summing them double-counts this plan and can
+        exceed `plans_in_corpus` — a movement no plan produced.
+        """
+        # `close_count: 2` on 5-execute (loop-back) AND no 6-finalize section
+        # (omitted row) — the same plan trips both under-counts.
+        body = ''.join(
+            _phase_block(
+                phase,
+                total_tokens=100,
+                **(
+                    {
+                        'input_tokens': 1000,
+                        'output_tokens': 500,
+                        'cache_read_input_tokens': 200_000,
+                        'cache_creation_input_tokens': 8_000,
+                        'close_count': 2,
+                    }
+                    if phase == _EXECUTE_PHASE
+                    else {}
+                ),
+            )
+            for phase in audit._TE_PHASES
+            if phase != '6-finalize'
+        )
+        inputs = _write_billing_plan(tmp_path, 'both-ways', body)
+
+        result = audit.cross_billing_composition([inputs])
+        row = _billing_row(result, 'both-ways')
+
+        # Both under-counts fired on this ONE plan.
+        assert row['unabsorbed_loop_back'] == _EXECUTE_PHASE
+        assert row['omitted_row'] == '6-finalize'
+        assert result['unabsorbed_loop_back_plans'] == 1
+        assert result['omitted_row_plans'] == 1
+
+        # The distinct count is 1, and it never exceeds the corpus size.
+        assert result['undercounted_plans'] == 1
+        assert result['undercounted_plans'] <= result['plans_in_corpus']
+        # Negative control on the superseded formula: naively summing the two
+        # tallies would have reported 2 for a single plan.
+        assert (
+            result['unabsorbed_loop_back_plans'] + result['omitted_row_plans']
+        ) == 2
+
+    def test_undercounted_plans_is_load_bearing_for_disjoint_plans(
+        self, tmp_path: Path
+    ):
+        """Matched control: two DIFFERENT plans each tripping one under-count sum to 2."""
+        loopback_body = _clean_metrics_body(
+            input_tokens=1000,
+            output_tokens=500,
+            cache_read_input_tokens=200_000,
+            cache_creation_input_tokens=8_000,
+            close_count=2,
+        )
+        omitted_body = ''.join(
+            _phase_block(
+                phase,
+                total_tokens=100,
+                **(
+                    {
+                        'input_tokens': 1000,
+                        'output_tokens': 500,
+                        'cache_read_input_tokens': 200_000,
+                        'cache_creation_input_tokens': 8_000,
+                    }
+                    if phase == _EXECUTE_PHASE
+                    else {}
+                ),
+            )
+            for phase in audit._TE_PHASES
+            if phase != '6-finalize'
+        )
+        a = _write_billing_plan(tmp_path, 'only-loopback', loopback_body)
+        b = _write_billing_plan(tmp_path, 'only-omitted', omitted_body)
+
+        result = audit.cross_billing_composition([a, b])
+
+        # Disjoint plans — the distinct count equals the naive sum here, which
+        # is what makes the both-ways case above a real discriminator.
+        assert result['undercounted_plans'] == 2
+        assert result['plans_in_corpus'] == 2
+
+
+class TestBillingCompositionCanonicalPhaseScoping:
+    """Only canonical `_TE_PHASES` sections feed the corpus figures."""
+
+    def test_non_phase_section_is_not_accumulated(self, tmp_path: Path):
+        """A `[totals]` roll-up carrying the same keys must not be summed as a phase.
+
+        The parser admits every `[...]` section, so without canonical-phase
+        scoping a roll-up section would be added into `billing` and
+        `denom_bytes` on top of the phases it already summarises — inflating
+        every share's denominator against a phase set the omitted-row check
+        never reasons over.
+        """
+        byte_field = audit._BC_BYTE_FIELDS[0]
+        clean = _clean_metrics_body(
+            input_tokens=1000,
+            output_tokens=500,
+            cache_read_input_tokens=200_000,
+            cache_creation_input_tokens=8_000,
+            **{byte_field: 50_000},
+        )
+        baseline_inputs = _write_billing_plan(tmp_path, 'no-rollup', clean)
+        baseline = audit.cross_billing_composition([baseline_inputs])
+        baseline_row = _billing_row(baseline, 'no-rollup')
+        # Guard the guard: a zero denominator would make the equality below
+        # trivially true whether or not the roll-up was excluded.
+        assert baseline_row['billing_total'] > 0
+        assert baseline_row['denom_bytes'] > 0
+
+        # The SAME body plus a non-canonical roll-up section repeating the figures.
+        with_rollup = clean + _phase_block(
+            'totals',
+            total_tokens=100,
+            input_tokens=1000,
+            output_tokens=500,
+            cache_read_input_tokens=200_000,
+            cache_creation_input_tokens=8_000,
+            **{byte_field: 50_000},
+        )
+        rollup_inputs = _write_billing_plan(tmp_path, 'with-rollup', with_rollup)
+        rollup = audit.cross_billing_composition([rollup_inputs])
+        rollup_row = _billing_row(rollup, 'with-rollup')
+
+        # The roll-up changed nothing: the figures are identical to the baseline.
+        assert rollup_row['billing_total'] == baseline_row['billing_total']
+        assert rollup_row['denom_bytes'] == baseline_row['denom_bytes']
+        # And it is not reported as an extra recorded phase.
+        assert 'totals' not in rollup_row['unabsorbed_loop_back']
+        assert 'totals' not in rollup_row['omitted_row']
+
 
 class TestBillingCompositionFloorAndPopulation:
     """Every figure carries its own population, and a floored figure says so."""
