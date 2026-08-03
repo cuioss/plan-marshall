@@ -268,16 +268,19 @@ dispatched-`<usage>` total definition (which is fed via `end-phase --total-token
 and excludes cache reads); including it would over-count the inline contribution
 by ~100× versus comparable dispatched rows.
 
-#### Two signatures, one derivation, always labelled
+#### Three signatures, one derivation, always labelled
 
-The derivation is the same on both signatures; what differs is whether the sum is
-ALSO folded into `total_tokens`, and the row records which case applied:
+The derivation is the same wherever it applies; what differs is whether the sum is
+ALSO folded into `total_tokens`, and the row records which case applied. "Non-zero
+inline sum" below means the `input + output + cache_creation` derivation above, NOT
+the full four-field `message.usage` view — a window carrying only
+`cache_read_input_tokens` takes the `dispatched` row:
 
 | Signature | Condition | `total_tokens` | `inline_main_context_tokens` | `total_tokens_population` |
 |-----------|-----------|----------------|------------------------------|---------------------------|
-| **inline-only** | non-zero four-field usage, **no** dispatched `total_tokens` (`1-init`, recipe-inline refine/outline) | the inline sum is folded in | the same sum, under its own name | `inline` |
-| **mixed** | non-zero four-field usage **and** a dispatched `total_tokens` (the `6-finalize` shape — dispatched steps and inline finalize steps both ran) | left byte-identical (explicit-wins) | the inline sum | `mixed` |
-| **dispatched** | no inline attribution | left byte-identical | not written | `dispatched` |
+| **inline-only** | non-zero inline sum, **no** dispatched `total_tokens` (`1-init`, recipe-inline refine/outline) | the inline sum is folded in | the same sum, under its own name | `inline` |
+| **mixed** | non-zero inline sum **and** a dispatched `total_tokens` (the `6-finalize` shape — dispatched steps and inline finalize steps both ran) | left byte-identical (explicit-wins) | the inline sum | `mixed` |
+| **dispatched** | zero inline sum (no inline attribution) | left byte-identical | not written | `dispatched` |
 
 **The inline-only fold is deliberate, not a silent substitution.** Folding the
 inline sum into `total_tokens` is what keeps a zero-dispatch phase countable in
