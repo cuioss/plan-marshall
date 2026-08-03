@@ -23,7 +23,7 @@ Where an operation also declares `--pr-number`, the two flags divide into **two*
 
 | Contract | Operations | Behaviour |
 |----------|------------|-----------|
-| **Exactly one** required | `pr merge`, `pr auto-merge`, `pr safe-merge`, `pr merge-queue`, `pr update-branch`, `checks status` | Both → `status: error`, `specify exactly one of --pr-number or --head`. Neither → `status: error`, `specify either --pr-number or --head`. |
+| **Exactly one** required | `pr merge`, `pr auto-merge`, `pr safe-merge`, `pr merge-queue`, `pr update-branch`, `checks status` | Both → `status: error`, `specify exactly one of --pr-number or --head, not both`. Neither → `status: error`, `specify either --pr-number or --head`. |
 | **At most one** | `pr view` | Both → `status: error`, `specify exactly one of --pr-number or --head, not both`. Neither → the PR for the current cwd HEAD (the historical default). |
 
 `pr create` is not in either row: its `--head` names the source branch of a PR that does not exist yet, so there is no `--pr-number` to choose between.
