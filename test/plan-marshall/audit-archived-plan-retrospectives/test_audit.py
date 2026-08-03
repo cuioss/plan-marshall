@@ -1266,7 +1266,7 @@ def test_billing_composition_carries_this_plan_pr_boundary():
     # This is the co-changing mirror of the audit.py CHECK_ERA constant; the pair is
     # rewritten in lock-step by that step, so this assertion is the designated
     # acceptance for era-fill firing from a composed manifest.
-    assert audit.CHECK_ERA["billing-composition"] == "PR-PENDING"
+    assert audit.CHECK_ERA["billing-composition"] == "#1086"
 
 
 def test_full_sweep_emits_billing_composition_block(tmp_path):

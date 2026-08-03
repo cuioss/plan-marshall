@@ -442,7 +442,7 @@ CHECK_ERA: dict[str, str] = {
     # check's byte-composition figures read, so plans archived before its boundary
     # carry a narrower input surface and their rows are read against the pre-
     # boundary era rather than as regressions.
-    "billing-composition": "PR-PENDING",
+    "billing-composition": "#1086",
     "cross-check-synthesis": "plan-10",
 }
 
