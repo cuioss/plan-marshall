@@ -249,8 +249,14 @@ per verb below.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops pr view \
-  [--head BRANCH]
+  [--pr-number N] [--head BRANCH]
 ```
+
+At most one of `--pr-number` / `--head`; supplying both is a structured error and
+supplying neither views the PR for the current cwd HEAD. A landing poll MUST use
+`--pr-number` — the platform auto-deletes the head branch as the merge queue
+merges, so a `--head`-keyed lookup stops resolving exactly when the terminal
+`state: merged` becomes observable.
 
 ### github_ops pr list
 

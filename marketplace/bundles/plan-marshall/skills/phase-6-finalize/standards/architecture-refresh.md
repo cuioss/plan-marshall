@@ -278,11 +278,11 @@ The user has chosen to never re-enrich automatically. Record a note in the PR bo
 
 `{pr_number}` is the PR number resolved earlier in finalize by the `create-pr` step's outcome record.
 
-First read the current PR body so the note is appended rather than overwriting it (`pr view` is branch-identified — pass `--head {worktree_branch}`):
+First read the current PR body so the note is appended rather than overwriting it. `pr view` accepts **at most one** of `--pr-number` / `--head`; `{pr_number}` is already resolved above, so key on it (the branch name is not needed, and would stop resolving if the platform had deleted the head branch):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci \
-  pr view --head {worktree_branch}
+  pr view --pr-number {pr_number}
 ```
 
 Allocate the scratch body path (the call returns the `body_path` to write into):

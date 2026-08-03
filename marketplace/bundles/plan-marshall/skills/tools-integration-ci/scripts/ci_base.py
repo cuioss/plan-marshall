@@ -1346,9 +1346,13 @@ def add_head_arg(subparser: argparse.ArgumentParser) -> None:
     """Register an optional ``--head BRANCH`` argument on a PR/CI subparser.
 
     Registered on exactly seven subparsers, and **every one of them also declares
-    ``--pr-number``** — which is what makes this flag's own help text ("alternative
-    to --pr-number") true wherever argparse renders it. The seven split into two
-    validation contracts, both enforced by the provider handler, not by argparse:
+    ``--pr-number``** — which is what makes this flag's own help text ("in place of
+    --pr-number") true wherever argparse renders it. The seven split into two
+    validation contracts, both enforced by the provider handler, not by argparse.
+    The help text states both contracts and states that NEITHER selector is
+    required on ``pr view``; it must never claim ``--head`` is "required" in some
+    situation, because a caller in any situation may supply ``--pr-number``
+    instead:
 
     - ``pr view`` — both selectors optional; supplying neither views the PR for the
       current cwd HEAD, and supplying both is a structured error.
@@ -1369,8 +1373,12 @@ def add_head_arg(subparser: argparse.ArgumentParser) -> None:
     """
     subparser.add_argument(
         '--head',
-        help='Source branch — alternative to --pr-number for branch-identified lookups. '
-        'Required when invoking from a different checkout than the worktree containing the branch.',
+        help='Source branch, used as the PR identifier in place of --pr-number. Neither selector is '
+        'required on `pr view` (supplying neither reads the PR for the current cwd HEAD); on the six '
+        'merge/update/checks subcommands exactly one of the two is required. Reach for --head only '
+        'when the cwd HEAD is not the target branch AND no PR number is at hand — prefer --pr-number '
+        'whenever one is, and use it always for a landing poll, because a platform merge queue '
+        'deletes the head branch as it merges.',
     )
 
 

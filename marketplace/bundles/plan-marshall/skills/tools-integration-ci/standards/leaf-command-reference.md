@@ -44,10 +44,12 @@ Source: [pr-operations.md](pr-operations.md)
 | `pr edit` | `--pr-number`, `--plan-id` | `--title`, `--slot {name}` | Edit PR title and/or body. Body (if updated) is consumed from the scratch file allocated by `pr prepare-body --for edit`. |
 
 **Worktree-isolated plans**: When invoking from the main checkout against a plan running
-in `.plan/local/worktrees/{plan_id}`, pass `--head {plan_branch}` on every branch-aware
-operation (`pr create`, `pr view`, `pr merge`, `pr auto-merge`, `pr safe-merge`, `checks status`). The
-underlying gh/glab CLIs derive the source branch from cwd HEAD, which would otherwise
-resolve to `main`. Examples:
+in `.plan/local/worktrees/{plan_id}`, never rely on cwd derivation on a branch-aware
+operation (`pr create`, `pr view`, `pr merge`, `pr auto-merge`, `pr safe-merge`, `checks status`) —
+the underlying gh/glab CLIs derive the source branch from cwd HEAD, which would otherwise
+resolve to `main`. Pass `--head {plan_branch}`, except that on every one of those operations
+but `pr create` (which has no PR yet) `--pr-number {number}` is the equally valid selector and
+the *required* one for a landing poll. Examples:
 
 ```bash
 # Create PR from worktree branch while running from main checkout.

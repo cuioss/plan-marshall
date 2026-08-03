@@ -32,7 +32,7 @@ Every operation in that table also declares `--pr-number`, and the two flags div
 
 A poll that waits for a PR to reach a terminal state MUST key on `--pr-number`, never on `--head`. Under a required platform merge queue (GitHub) or merge train (GitLab), the platform **auto-deletes the head branch as it merges**. A `--head`-keyed lookup therefore stops resolving at exactly the moment the terminal state the poll exists to observe becomes observable, so the poll can never see `state: merged` — it can only time out or read an error. The PR number is stable across the branch deletion; the branch name is not.
 
-Callers whose cwd HEAD does not match the operation target branch MUST pass `--head {branch}`. See `workflow-integration-git/standards/worktree-handling.md` for the worktree-specific application of this rule (worktree-isolated plans run from the main checkout against a feature branch and MUST always pass `--head {plan_branch}`).
+Callers whose cwd HEAD does not match the operation target branch MUST identify the PR explicitly rather than relying on cwd derivation — with `--pr-number {number}` whenever a PR number is at hand (always, for a landing poll), and with `--head {branch}` otherwise. `--head` is never *required* in its own right on the operations above: every one of them also declares `--pr-number`. See `workflow-integration-git/standards/worktree-handling.md` for the worktree-specific application of this rule (worktree-isolated plans run from the main checkout against a feature branch and MUST always pass `--head {plan_branch}`).
 
 ---
 
@@ -52,8 +52,8 @@ Each verb therefore establishes its own claim from a **re-read of provider state
 |------|-------|------------------|
 | `pr merge` | `merged` | Post-merge PR/MR state re-read. GitHub: `state == MERGED` plus a parseable `mergedAt` (strategy `merge` / `rebase` additionally admit base-contains-head ancestry; `squash` does not, because a squashed commit is a new object). GitLab: `state == 'merged'` — `view_pr_data` exposes no `merged_at`, so state is the whole verdict. |
 | `pr safe-merge` | `merged` | The delegated `pr merge` corroboration, asserted positively (`merged is True`), plus its own corroboration on the GitHub admin-fallback path. |
-| `pr merge-queue` | `enqueued` | A pre-enqueue probe of the base branch's (GitHub) / project's (GitLab) queue configuration. |
-| `pr auto-merge` | `disposition` | The same pre-call queue/train probe, reporting which of the two dispositions occurred. |
+| `pr merge-queue` | `enqueued` | Provider-shaped. **GitHub**: a pre-enqueue probe of the PR's own base-branch queue configuration, run *before* the `gh` call, so an ineligible target incurs no side effect. **GitLab**: **no probe** — the POST to the dedicated merge-train endpoint is itself the corroboration (it succeeds only against a real train), and its HTTP 403/404 is the refusal. See *Merge-Queue PR* → *The enqueue is corroborated* below. |
+| `pr auto-merge` | `disposition` | A pre-call probe on **both** providers — GitHub reads the PR's own base-branch queue configuration, GitLab the project's `merge_trains_enabled` flag — reporting which of the two dispositions occurred. |
 
 Two shape rules bind every corroboration above:
 
