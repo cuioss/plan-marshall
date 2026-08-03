@@ -131,7 +131,7 @@ session_message_count: 127
 | `idle_duration_ms` | int | Derived by `generate` — the per-phase idle residual `max(0, wall_clock_ms - worked_ms)` |
 | `dispatch_boundary_total` | int | Derived by `generate` — the sum of the `total_tokens` column across the phase's `work/metrics-dispatch-boundaries-{phase}.toon` rows. Persisted as a DISTINCT field (it never overwrites `total_tokens`); present only when the boundary file exists and sums to a truthy value. See Dispatch-Boundary Reconciliation below |
 | `dispatch_boundary_rows_recorded` | int | Derived by `generate` — the number of data rows summed into `dispatch_boundary_total`. Persisted whenever the boundary file held at least one parseable row, INCLUDING when those rows sum to zero. This is the boundary measure's **coverage**: compared against `subagent_samples` it decides whether the measure is partial and therefore ineligible for the reconciliation maximum |
-| `inline_main_context_tokens` | int | Derived by `enrich` — `input_tokens + output_tokens + cache_creation_input_tokens` (EXCLUDING `cache_read_input_tokens`) surfaced on ANY phase whose window carries non-zero four-field usage, whether or not a dispatched `total_tokens` also exists. It is the inline measurement's own population-honest name, so the figure is never readable only through the dispatched-population `total_tokens` field. See Inline Main-Context Attribution below |
+| `inline_main_context_tokens` | int | Derived by `enrich` — `input_tokens + output_tokens + cache_creation_input_tokens` (EXCLUDING `cache_read_input_tokens`) surfaced on ANY phase whose window carries a non-zero `input_tokens + output_tokens + cache_creation_input_tokens` sum — a phase carrying only `cache_read_input_tokens` therefore receives no field — whether or not a dispatched `total_tokens` also exists. It is the inline measurement's own population-honest name, so the figure is never readable only through the dispatched-population `total_tokens` field. See Inline Main-Context Attribution below |
 | `boundary_non_monotonic` | `true` token | Derived by `generate` — set on a phase whose `start_time` precedes the maximum `end_time` of earlier phases in canonical order (a finalize loop-back re-entry). Read-only annotation; the recorded `start_time` / `end_time` are never rewritten. See Boundary Monotonicity below |
 | `exploration_tool_calls` | int | `enrich` tool-call walk — count of tool calls in this phase's window classified as *exploration* (locate or inspect existing state) |
 | `work_tool_calls` | int | `enrich` tool-call walk — count classified as *work* (produce or mutate state) |
@@ -255,8 +255,9 @@ instead captured by `enrich`'s phase-window attribution, which sums the
 parent-window `message.usage` four-field view into the phase row.
 
 `enrich` writes that inline contribution to the `inline_main_context_tokens`
-field on **every** phase whose window carries non-zero four-field
-`message.usage`, using one derivation:
+field on **every** phase whose window carries a non-zero
+`input_tokens + output_tokens + cache_creation_input_tokens` sum — the
+derivation below, not the full four-field `message.usage` view, is the trigger:
 
 ```text
 inline_main_context_tokens = input_tokens + output_tokens + cache_creation_input_tokens
@@ -433,7 +434,7 @@ The `generate` command produces a markdown report with per-phase rows:
 | 1-init | 2m 30s | 3m 0s | 30s | 25,514 (inline) | 12 | 41,003 |
 | 2-refine | 4m 0s | 5m 30s | 1m 30s | 42,000 | 8 | 78,000 |
 | 3-outline | 7m 0s | 8m 15s | 1m 15s | 68,000 | 25 | 96,400 |
-| **Total** | **13m 30s** | **16m 45s** | **3m 15s** | **135,514 (spans populations)** | **45** | **215,403** |
+| **Total** | **13m 30s (n=3/6)** | **16m 45s (n=3/6)** | **3m 15s (n=3/6)** | **135,514 (n=3/6) (spans populations)** | **45 (n=3/6)** | **215,403 (n=3/6)** |
 
 > Tokens population: an unmarked cell is a dispatched-subagent measurement — the default this column header declares. Marked `(inline)` — the phase dispatched nothing, so the cell is the main-context-window measurement enrich folded into total_tokens (also recorded under its own name as inline_main_context_tokens): 1-init. The **Total** therefore sums more than one population and is not a dispatched total; its cell is marked `(spans populations)`.
 

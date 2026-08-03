@@ -9,7 +9,7 @@ files entirely, and both axes drift independently of the document. Before this
 guard existed the table had rotted in BOTH directions at once — 8 of its 12 rows
 were dead keys (``cross_cutting`` / ``complex`` were never members of
 ``SCOPE_ESTIMATE_VALUES``; ``refactor`` was never a canonical change_type) while
-27 live pairs had no row at all. Neither direction was visible at the table,
+31 live pairs had no row at all. Neither direction was visible at the table,
 because a lookup table looks complete no matter how few rows it has.
 
 The guards here are therefore deliberately two-directional and deliberately
