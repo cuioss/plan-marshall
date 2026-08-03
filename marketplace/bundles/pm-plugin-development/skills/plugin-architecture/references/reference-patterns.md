@@ -49,14 +49,17 @@ FAIL Read: ~/git/plan-marshall/standards/file.md # Absolute path
 
 **Validation**:
 ```bash
-# Extract all Read: statements
-grep "Read references/" skill/SKILL.md
-
-# Verify each file exists
-for file in $(extracted_paths); do
-  test -f "skill/${file}" || echo "MISSING: $file"
-done
+# Find every skill that carries a Read: statement into references/
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture search --content --literal --pattern "Read references/"
 ```
+
+Then `Read` each reported `path` to extract its reference targets, and confirm each target is present in the owning skill's inventory:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture files --module {module} --category skill_doc
+```
+
+A referenced file absent from that inventory is the `MISSING` case.
 
 ## Pattern 2: Script Execution (via execute-script.py)
 
@@ -294,13 +297,29 @@ cp -r my-skill .claude/skills/
 
 ### Automated Validation
 
+Each prohibited pattern is a separate content sweep (one command per call):
+
 ```bash
-# Check for prohibited patterns
-grep -r "Read: \.\." skill/              # Escape sequences
-grep -r "bash \.\." skill/               # Escape sequences
-grep -r "Read: ~" skill/                 # Absolute paths
-grep -r "Read: /" skill/ | grep -v http # Absolute paths (exclude URLs)
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture search --content --pattern "Read:?[ \t]+\S*\.\./"
 ```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture search --content --pattern "bash[ \t]+\S*\.\./"
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture search --content --pattern "Read:?[ \t]+~"
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture search --content --pattern "Read:?[ \t]+/(?!/)"
+```
+
+The first three are escape-sequence and absolute-path probes; the fourth's `(?!/)` keeps a `Read //`-style URL prefix from registering as an absolute path.
+
+**Every probe is a regex over BOTH spellings of the directive, and that is load-bearing.** The documented valid form is `Read references/file.md` — no colon (Pattern 1 below) — while skill bodies in the wild also use the `Read: references/file.md` spelling. A `--literal --pattern "Read: .."` probe matches only the colon form, so `Read ../other-skill/file.md`, `Read ~/file.md`, and `Read /tmp/file.md` all slip past while the sweep still reports a clean result: a validation step that certifies compliance it never tested. `Read:?` makes the colon optional and `[ \t]+` requires the separator, so both spellings are covered and a bare word starting with `Read` is not. The `\S*` before `\.\./` is load-bearing for the same reason: a traversal does not have to sit at the front of the path. `Read references/../other-skill/file.md` and `bash scripts/../script.sh` are both prohibited, and a probe anchored directly on `\.\.` after the separator matches neither — it would certify those two files clean while the violation sits in plain sight. `\S*` lets the traversal appear at any segment of the referenced path, and the trailing `/` keeps an ordinary filename containing two dots from registering as one. These are regexes, so `--literal` is deliberately absent and the metacharacters (`\S*`, `\.\.`, `:?`, `(?!/)`) stay active.
+
+These sweeps are **project-wide** — `search --content` has no path scoping — so they also match every document that *quotes* a prohibited pattern in order to prohibit it, this file included. `count: 0` is therefore not the pass criterion and is not reachable in this repo. A clean result is **no hit outside that documented-example set**: first confirm the sweep's coverage is complete per the canonical complete-coverage rule (see [`client-api.md`](../../../../plan-marshall/skills/manage-architecture/standards/client-api.md) § `search` → "Complete-coverage rule" for the field list) — then intersect the returned `results[].path` set with the directory of the skill under validation and inspect each surviving hit. A sweep with non-clean coverage is a coverage gap to re-run, not a validation pass. A hit is a violation only when the skill *uses* the pattern; a doc quoting it is a known residual.
 
 ## Reference Summary
 

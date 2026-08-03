@@ -3,7 +3,7 @@
 """Client command handlers for architecture script (facade).
 
 Handles: info, modules, graph, path, neighbors, impact, module, overview,
-commands, resolve, profiles, siblings, files, which-module, find,
+commands, resolve, profiles, siblings, files, which-module, find, search,
 diff-modules, descriptor-regression-check.
 
 Persistence model: ``_project.json`` and per-module ``enriched.json`` live on
@@ -97,6 +97,7 @@ from _cmd_client_handlers import (  # noqa: E402, F401
     cmd_path,
     cmd_profiles,
     cmd_resolve,
+    cmd_search,
     cmd_siblings,
     cmd_which_module,
 )

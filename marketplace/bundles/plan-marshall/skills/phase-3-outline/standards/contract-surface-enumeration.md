@@ -58,33 +58,35 @@ Each enumerated surface becomes a flat bullet under `**Affected files:**`, follo
 
 ---
 
-## 3. Grep-Old-Keys Discipline
+## 3. Old-Keys Sweep Discipline
 
-Structured enumeration (§2) covers the surfaces you can name from the change description. The grep-old-keys discipline catches the surfaces you cannot name in advance — the cross-referencing doc three bundles away, the help string you forgot, the test fixture that hard-codes the old key. Before finalizing `affected_files`, grep the codebase for the old contract's fingerprints and treat every hit outside the changed code as a doc-surface obligation.
+Structured enumeration (§2) covers the surfaces you can name from the change description. The old-keys sweep catches the surfaces you cannot name in advance — the cross-referencing doc three bundles away, the help string you forgot, the test fixture that hard-codes the old key. Before finalizing `affected_files`, sweep the codebase for the old contract's fingerprints and treat every hit outside the changed code as a doc-surface obligation.
 
-For each changed contract element, derive its fingerprints and grep for them:
+For each changed contract element, derive its fingerprints and sweep for them:
 
 - **Old payload key** — the literal key string being renamed/removed:
 
   ```bash
-  grep -rn "{old_payload_key}" marketplace/bundles/
+  python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture search --content --literal --pattern "{old_payload_key}"
   ```
 
 - **Old behavior phrase** — the prose phrase that paraphrases the old behavior (e.g., `"monolithic derived-data"`, `"flat payload"`, `"defaults to off"`):
 
   ```bash
-  grep -rn "{old_behavior_phrase}" marketplace/bundles/
+  python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture search --content --literal --pattern "{old_behavior_phrase}"
   ```
 
 - **Removed element** — the removed default value, enum member, or schema field name:
 
   ```bash
-  grep -rn "{removed_element}" marketplace/bundles/
+  python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture search --content --literal --pattern "{removed_element}"
   ```
 
-Each grep is a separate Bash invocation (one command per call — never combined with `&&`, `;`, or pipes). Run `architecture find --pattern "{symbol}"` first for module-level matches; the grep calls exist to reach sub-module describe surfaces (help strings inside script files, prose inside `standards/*.md`, Output examples inside SKILL.md) that the structured query elides.
+Each sweep is a separate Bash invocation (one command per call — never combined with `&&`, `;`, or pipes). These `search --content` calls ARE the canonical pass for the fingerprints above: a payload key, a behavior phrase, and a removed enum member all live inside file bodies, so `architecture find --pattern` — which matches **paths, not contents** — cannot see any of them and would return a clean zero that proves nothing. Reach for `find` only for the separate case of a path-shaped symbol (a script or module basename that appears as a path component). `--literal` is what makes a fingerprint containing regex metacharacters match verbatim.
 
-**Disposition rule**: For every grep hit:
+**A sweep counts as complete only over clean coverage.** Read the coverage fields, not just the count, and require the complete-coverage conjunction to hold. `unreadable[]` names files the sweep could not open and `truncated` / `elided[]` name inventory entries it never received — each one a possible old-key fingerprint that will not appear in `results[]`. Since this sweep exists precisely to catch the surfaces you could not name in advance, a non-clean field is a **failing** disposition: record the coverage gap and re-run, and do not finalize `affected_files` off a partial sweep. See [`manage-architecture/standards/client-api.md`](../../manage-architecture/standards/client-api.md) § search for the response contract, the canonical complete-coverage rule and its field list, and the inventory-scope boundary (`.claude/**`, `.github/**` and gitignored paths are outside it).
+
+**Disposition rule**: For every hit:
 
 - A hit **inside the changed code** is already in scope by definition — discard it.
 - A hit **outside the changed code** that describes or asserts the old contract is a doc-surface obligation — add the containing file to `affected_files` with explicit `Change per file` text describing the correction.
@@ -101,13 +103,13 @@ When the contract change **removes or renames a symbol** (not merely changes its
 - **Every importer/caller** of the removed/renamed symbol — the consume-side sites that would fail to import or resolve. This obligation is the same one `consumer-sweep.md` owns; this section names it here so that a contract change that *also* removes a symbol does not let the consume-side sweep fall through a gap when the deliverable was filed primarily as a contract change. Run the `consumer-sweep.md` Sweep Procedure (§2 there) to discover these sites.
 - **The test file of every enumerated importer/caller** — the unit/integration test that imports the symbol, asserts against its old return, or constructs a fixture using the old contract. A symbol removal that updates production callers but leaves a test importing the removed name produces a collection-time `ImportError` that the production sweep alone does not surface. Every consumer file added under this obligation pulls its corresponding `test/.../test_*.py` file into `affected_files` alongside it.
 
-The boundary with `consumer-sweep.md`: that standard owns the *discovery procedure* for structural removals/renames (the architecture-find + grep sweep, the cross-bundle/same-bundle distinction, the worked `load_derived_data` example). This section's obligation is to make sure that a deliverable filed as a *contract change* still runs that procedure and pulls the matching **test files** into scope — test files being the surface most often dropped when the deliverable's mental model is "I changed a contract" rather than "I removed a symbol".
+The boundary with `consumer-sweep.md`: that standard owns the *discovery procedure* for structural removals/renames (the `architecture find` + `architecture search --content` sweep, the cross-bundle/same-bundle distinction, the worked `load_derived_data` example). This section's obligation is to make sure that a deliverable filed as a *contract change* still runs that procedure and pulls the matching **test files** into scope — test files being the surface most often dropped when the deliverable's mental model is "I changed a contract" rather than "I removed a symbol".
 
 ---
 
 ## 5. Cross-References
 
-- [`consumer-sweep.md`](consumer-sweep.md) — The consume-side sibling. Owns the discovery procedure for structural symbol removals/renames (every importer/caller of a deleted/renamed public symbol). Run alongside this standard when a contract change also removes or renames a symbol (§4).
+- [`consumer-sweep.md`](consumer-sweep.md) — The consume-side sibling. Owns the discovery procedure for structural symbol removals/renames (every importer/caller of a deleted/renamed public symbol) via the `architecture find` + `architecture search --content` sweep. Run alongside this standard when a contract change also removes or renames a symbol (§4).
 - [`outline-workflow-detail.md`](outline-workflow-detail.md) — Step 7 (Simple Track) and Step 10 (Complex Track) apply this standard before deliverable finalization when the trigger heuristic (§1) fires.
 - [`change-feature.md`](change-feature.md) and [`change-tech_debt.md`](change-tech_debt.md) — discovery sub-sections cross-reference this standard for contract/semantic changes.
 - `plan-marshall:phase-3-outline/SKILL.md` — `## Related` section carries a one-line cross-reference pointing here, parallel to the `consumer-sweep.md` entry.

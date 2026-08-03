@@ -43,38 +43,48 @@ From the deliverable's `Change per file`, `Refactoring`, or title, extract every
 
 For skill notations, extract the full three-part (`bundle:skill:script`) or two-part (`bundle:skill`) form.
 
-### 2b. Run structured discovery first
+### 2b. Run structured path discovery first — only for path-shaped symbols
 
-For every extracted symbol, run the structured architecture inventory:
+`architecture find --pattern` matches **paths, not file contents**. It is therefore the first pass ONLY when the extracted symbol is path-shaped — a script or module basename, a skill directory name, or any symbol that appears as a path component:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-  find --pattern "{symbol}" --audit-plan-id {plan_id}
+  find --pattern "*{path_shaped_symbol}*" --audit-plan-id {plan_id}
 ```
 
-The architecture verb returns module-level matches and is the canonical first pass. Record every consumer file from the `results` list.
+Record every consumer file from the `results` list.
 
-### 2c. Run grep fallback for sub-module references
+A symbol that is NOT path-shaped — a function, class, constant, or any name that can only appear inside a file body, such as `load_derived_data` — has **no** path step. Passing it to `find --pattern` returns a clean zero that proves nothing, which reads as "no consumers" and silently under-scopes the deliverable. For those symbols, skip this step entirely and go straight to the content sweep in §2c, which is the canonical symbol-discovery pass.
 
-The architecture inventory deliberately elides sub-module path components (e.g., script files inside `skills/{name}/scripts/`, agent loader directives inside skill markdown). To catch references the structured query misses, run a grep fallback against the worktree root:
+### 2c. Run the content sweep for sub-module references
+
+`architecture find` matches PATHS only, so it cannot see a reference that lives inside a file body — a symbol used in a script under `skills/{name}/scripts/`, or an agent loader directive inside skill markdown. `architecture search --content` closes exactly that gap over the same module-attributed inventory:
 
 ```bash
-grep -rn "{symbol}" marketplace/bundles/
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture search --content --literal --pattern "{symbol}"
 ```
 
-For skill notations specifically, also sweep `marshal.json` and `.plan/`:
+For skill notations specifically, sweep the notation prefix:
 
 ```bash
-grep -rn "{bundle}:{skill}:" marshal.json .plan/
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture search --content --literal --pattern "{bundle}:{skill}:"
 ```
 
-For `Skill:` loader directives in markdown:
+This covers the marketplace-rooted portion. `marshal.json` and `.plan/` are OUTSIDE the crawled inventory, so the sweep does not reach them — return that residue to the caller as a coverage gap rather than reporting the notation clean.
+
+For `Skill:` loader directives in markdown, use the anchored regex form (no `--literal`, since the anchor is the point). `^` anchors to line-start, and the engine is Python `re` — so write `\s`, never a POSIX class like `[[:space:]]`. Python does not reject a POSIX class: it compiles it as a nested set (emitting a `FutureWarning` on stderr) and then silently over-matches, so the sweep comes back with spurious hits that look like a working pattern rather than with an error or a zero:
 
 ```bash
-grep -rn "^Skill:[[:space:]]*{bundle}:{skill}" marketplace/ .claude/
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture search --content --pattern "^Skill:\s*{bundle}:{skill}"
 ```
 
-Each grep call is a separate Bash invocation (one command per call — never combined with `&&`, `;`, or pipes). Use `architecture find` first; the grep calls exist to narrow into sub-module components and content searches the architecture verb cannot resolve.
+This likewise covers only the marketplace-rooted portion; `.claude/` is a dotfile tree outside the inventory, so its residue is the same coverage-gap return.
+
+Each call is a separate Bash invocation (one command per call — never combined with `&&`, `;`, or pipes). Use `architecture find` first for path matches; these `search --content` calls reach the sub-module body references the path glob cannot resolve.
+
+Read the coverage fields alongside `count` and require the complete-coverage conjunction to hold before treating a sweep as complete — see [`manage-architecture/standards/client-api.md`](../../manage-architecture/standards/client-api.md) § search → "Complete-coverage rule" for the field list and the canonical definition.
+
+That rule is decisive here, because the whole point of this step is to ENUMERATE consumers: an unreadable file or an elided bucket is a consumer that never appears in `results[]`, and the deliverable then ships with an `Affected files` list that looks complete and is not. Treat any non-clean coverage field the same way this section already treats the out-of-inventory residue above — return it to the caller as a coverage gap, never as a clean sweep.
 
 ### 2d. Collect every consuming file
 
@@ -117,12 +127,15 @@ The deliverable's `Change per file` contained "remove `load_derived_data`" and "
 
 ### Sweep procedure
 
-`architecture find --pattern "load_derived_data"` would have returned the manage-architecture core file (already in scope) and elided the pm-dev-java sub-module reference. The grep fallback `grep -rn "load_derived_data" marketplace/bundles/` would have surfaced:
+`architecture find --pattern "load_derived_data"` would have returned the manage-architecture core file (already in scope) and missed the pm-dev-java reference, which lives in a file BODY rather than a path. The content sweep `architecture search --content --literal --pattern "load_derived_data"` would have surfaced the two consuming files — location and hit strength, never the matching lines:
 
-```text
-marketplace/bundles/pm-dev-java/skills/manage-maven-profiles/scripts/profiles.py:14:from _architecture_core import load_derived_data
-test/pm-dev-java/manage-maven-profiles/test_profiles.py:8:from _architecture_core import load_derived_data, save_derived_data
+```toon
+results[2]{module,category,path,match_count}:
+  pm-dev-java,source,marketplace/bundles/pm-dev-java/skills/manage-maven-profiles/scripts/profiles.py,1
+  pm-dev-java,test,test/pm-dev-java/manage-maven-profiles/test_profiles.py,2
 ```
+
+`match_count` is the ranking signal: `Read` the files worth opening rather than expecting the sweep to hand back the import lines.
 
 ### Output
 
@@ -144,7 +157,7 @@ And the `Change per file` would gain explicit migration text for the cross-bundl
 - `test_profiles.py`: rewrite `create_test_derived_data` to seed via `save_project_meta` + `save_module_derived`; remove `save_derived_data` import; update module docstring to reference per-module layout.
 ```
 
-With the consumer sweep applied at outline time, TASK-9 would never have hit the `ImportError`, and scope would have stayed pinned to the deliverable's stated text. The consumer-sweep step would add roughly two seconds of outline-time grep work and save a fix-loop iteration during execute.
+With the consumer sweep applied at outline time, TASK-9 would never have hit the `ImportError`, and scope would have stayed pinned to the deliverable's stated text. The consumer-sweep step trades a few extra outline-time queries for a fix-loop iteration avoided during execute.
 
 ---
 

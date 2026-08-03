@@ -54,9 +54,54 @@ rule the leaf emits a `permissionDecision: deny` envelope carrying a one-line
 | Rule | Fires on | Redirect reason (substance) |
 |------|----------|-----------------------------|
 | **R1 shell-construct compound** | A Bash command containing `&&`, `;`, `&`, a newline, a `for`/`while` loop, `$(...)` command substitution, or a leading `VAR=val cmd` inline env-var assignment | One command per Bash call — use separate Bash calls or dedicated tools |
-| **R2 Bash file-ops** | A Bash command whose program is `cat` / `grep` / `head` / `tail` / `find` / `ls` | Use the Read/Glob/Grep tools, not Bash, for file operations |
+| **R2 Bash file-ops** | A Bash command whose program is `cat` / `grep` / `head` / `tail` / `find` / `ls`, **or** `git` whose subcommand (after any global options) is `grep` | Use the Read/Glob/Grep tools, not Bash, for file operations; for a content sweep run `architecture search --content --pattern P` |
 | **R3 generated-executor edit** | An Edit/Write whose path is the generated `.plan/execute-script.py` | Regenerate the executor via `/sync-plugin-cache` + `/marshall-steward`; never edit it |
 | **R4 hard-coded build** | A Bash command invoking `./pw` or a bare `mvn` / `npm` / `gradle` | Resolve build commands via `plan-marshall:manage-architecture:architecture resolve` |
+
+### R2 — the `git grep` arm
+
+`git grep` reads file bodies exactly as bare `grep` does, so it belongs to the
+**existing** R2 family rather than a new one — the family count stays four.
+
+**Predicate**: the command's program is `git` (path prefixes stripped, so
+`/usr/bin/git` counts) **and** its subcommand token is `grep`. The subcommand is
+resolved by walking past `git`'s global options, because it is not reliably
+`tokens[1]`:
+
+The walk is **structural, not an allowlist**: any token starting with `-` is an
+option and is skipped. Only the detached value-taking options are named, because
+they alone consume a separate following token.
+
+| Global option form | Handling |
+|--------------------|----------|
+| `-C <path>`, `-c <k=v>`, `--git-dir <path>`, `--work-tree <path>`, `--namespace`, `--super-prefix`, `--config-env`, `--exec-path`, `--attr-source` | Skipped together with the separate value token that follows |
+| Any other token starting with `-` — standalone flags (`--no-pager`, `-p`, `--bare`), attached short values (`-C.`, `-cvar=val`), and inline `--option=value` forms | Skipped as one self-contained token |
+
+Testing `tokens[1] == "grep"` directly would be a **vacuous guard**: `git -C . grep x`,
+`git -c k=v grep x` and `git --no-pager grep x` all walk straight past it while
+performing exactly the content search the rule exists to redirect.
+
+Recognising only a *named set* of option spellings is equally vacuous, and for
+the same reason: `git -C. grep x`, `git -cvar=val grep x`, `git -p grep x` and
+`git --bare grep x` are all valid `git`, none matches a membership test, and each
+would otherwise return its own option token as the subcommand — missing the
+`grep` comparison and letting the content search through. The structural
+dash-skip is what closes that class, so the option tuple carries no enforcement
+weight beyond the detached-value case.
+
+**Explicit non-triggers** — these are not file-ops and must keep working:
+
+- Every non-`grep` git subcommand: `git status`, `git diff`, `git log`,
+  `git add`, `git commit`, `git rev-parse`, `git show`, …
+- A command whose program merely *contains* `git` (e.g. `gitk`), since the
+  program name is compared for equality, not as a substring.
+- A `git` invocation whose option walk runs out of tokens before a subcommand
+  appears (e.g. a bare `git`) — the walker returns `""`, which never equals
+  `grep`, so the call passes through.
+
+**Hot-path cost**: the walk is pure token arithmetic on the already-split command
+— no regex compilation at match time, no filesystem access, no subprocess. This
+matters because the hook runs on **every** tool call.
 
 ## Fail-open / best-effort-no-raise contract
 

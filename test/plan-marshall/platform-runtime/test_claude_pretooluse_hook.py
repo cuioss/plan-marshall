@@ -210,6 +210,184 @@ def test_r2_not_fired_on_substring_program() -> None:
     assert hook.evaluate(_signal2_payload("Bash", _bash("category --help"))) is None
 
 
+# -----------------------------------------------------------------------------
+# R2 — the `git grep` arm
+#
+# `git grep` reads file bodies exactly as bare `grep` does, so it joins the
+# EXISTING R2 family. The positive controls below all place the subcommand
+# somewhere other than tokens[1], which is precisely what a naive
+# `tokens[1] == "grep"` check walks past — testing only `git grep foo` would pass
+# against that vacuous guard. The negative controls are what make the boundary
+# real: a suite carrying only positives would equally pass against an
+# implementation that blocks every `git` invocation.
+# -----------------------------------------------------------------------------
+
+
+def test_r2_denies_git_grep_forms() -> None:
+    """Every global-option shape still resolves the subcommand to `grep`."""
+    for command in (
+        "git grep foo",
+        "git -C . grep foo",
+        "git --no-pager grep foo",
+        "/usr/bin/git grep foo",
+    ):
+        payload = _signal2_payload("Bash", _bash(command))
+        assert hook.evaluate(payload) == hook._R2_REASON, command
+
+
+def test_r2_denies_git_grep_past_value_taking_options() -> None:
+    """A value-taking global option consumes its value, not the subcommand slot."""
+    for command in (
+        "git -c core.pager=cat grep foo",
+        "git --git-dir=/repo/.git grep foo",
+        "git --work-tree /repo grep foo",
+        "git --literal-pathspecs grep foo",
+    ):
+        payload = _signal2_payload("Bash", _bash(command))
+        assert hook.evaluate(payload) == hook._R2_REASON, command
+
+
+def test_r2_denies_git_grep_past_attached_and_unlisted_options() -> None:
+    """Option SHAPES the walker never names must not become the subcommand.
+
+    The regression these pin: when the walk recognised only a named allowlist of
+    option spellings, each command below returned its own option token as the
+    subcommand (``"-c."``, ``"-p"``, ``"--bare"``), so the ``== "grep"`` test
+    missed and ``git grep`` was let through. Every form here is valid ``git``,
+    and none of them appears in ``_R2_GIT_VALUE_OPTIONS`` — which is exactly why
+    a suite drawn only from that tuple could not detect the gap.
+    """
+    for command in (
+        "git -C. grep foo",  # attached short value
+        "git -cvar=val grep foo",  # attached short value, inline config pair
+        "git -p grep foo",  # unlisted short flag (--paginate)
+        "git --bare grep foo",  # unlisted long flag
+        "git --no-optional-locks grep foo",  # unlisted long flag
+        "git -C. -p --bare grep foo",  # several stacked together
+    ):
+        payload = _signal2_payload("Bash", _bash(command))
+        assert hook.evaluate(payload) == hook._R2_REASON, command
+
+
+def test_r2_git_option_skip_is_structural_not_an_allowlist() -> None:
+    """No named-option tuple may be the sole thing standing between git and grep.
+
+    Guards the property directly rather than sampling spellings: an option shape
+    invented here (one that cannot be in any allowlist) must still resolve to the
+    real subcommand. A future edit that narrows the walk back to a membership
+    test fails this even if it re-adds every spelling the suite above names.
+    """
+    assert hook._git_subcommand("git --a-flag-nobody-listed grep foo") == "grep"
+    assert hook._git_subcommand("git -Zqx grep foo") == "grep"
+
+
+def test_r2_not_fired_on_non_grep_git_subcommands_behind_the_same_options() -> None:
+    """The matched negative control for the attached/unlisted positives above.
+
+    Skipping every dash-token structurally must not swallow the subcommand slot:
+    the SAME option shapes in front of a non-grep subcommand still resolve to
+    that subcommand and stay allowed. Without this, an implementation that simply
+    blocked every ``git`` call would satisfy the positive controls.
+    """
+    for command in (
+        "git -C. status",
+        "git -p log --oneline",
+        "git --bare rev-parse HEAD",
+        "git -cvar=val diff --name-only",
+    ):
+        payload = _signal2_payload("Bash", _bash(command))
+        assert hook.evaluate(payload) is None, command
+
+
+def test_r2_detached_value_option_does_not_mistake_its_value_for_grep() -> None:
+    """A detached value token is consumed, never read as the subcommand.
+
+    ``-C grep`` names a DIRECTORY called ``grep``; the subcommand is ``status``.
+    This is the trap the structural dash-skip alone would not catch, and it is
+    why the detached value options still need naming.
+    """
+    assert hook._git_subcommand("git -C grep status") == "status"
+    assert hook.evaluate(_signal2_payload("Bash", _bash("git -C grep status"))) is None
+
+
+def test_r2_denies_git_grep_behind_a_quoted_detached_value() -> None:
+    """A quoted value containing a space must not tear the skip arithmetic.
+
+    ``git -C "repo dir" grep x`` is a real ``git grep`` file-op. Under a
+    whitespace split the quoted value becomes two tokens, so the ``-C`` skip
+    lands mid-value and the subcommand resolves to ``dir"`` — R2 misses the
+    file-op entirely. Shell-lexical splitting keeps the value one token. Both
+    quote styles are covered because either spelling is valid shell.
+    """
+    for command in (
+        'git -C "repo dir" grep needle',
+        "git -C 'repo dir' grep needle",
+    ):
+        assert hook._git_subcommand(command) == "grep", command
+        payload = _signal2_payload("Bash", _bash(command))
+        assert hook.evaluate(payload) == hook._R2_REASON, command
+
+
+def test_r2_quoted_detached_value_still_allows_non_grep_subcommand() -> None:
+    """The negative control for the quoted-value fix — matched pair.
+
+    The same quoted-path shape with a benign subcommand must stay allowed, so
+    the fix is proven to resolve the subcommand rather than to blanket-deny any
+    command carrying a quoted token.
+    """
+    command = 'git -C "repo dir" status'
+    assert hook._git_subcommand(command) == "status"
+    assert hook.evaluate(_signal2_payload("Bash", _bash(command))) is None
+
+
+def test_git_subcommand_falls_back_to_whitespace_split_on_bad_quoting() -> None:
+    """Malformed quoting degrades to the whitespace split, never to a bypass.
+
+    An unbalanced quote makes ``shlex`` raise. Returning ``""`` there would turn
+    a lexer error into a silent R2 bypass, so the fallback preserves the
+    pre-existing whitespace-split detection instead.
+    """
+    assert hook._git_subcommand('git -C "unbalanced grep needle') == "grep"
+
+
+def test_r2_not_fired_on_non_grep_git_subcommands() -> None:
+    """Ordinary git usage must keep working — these are not file-ops."""
+    for command in (
+        "git status",
+        "git log --oneline -5",
+        "git diff --name-only HEAD",
+        "git rev-parse HEAD",
+    ):
+        payload = _signal2_payload("Bash", _bash(command))
+        assert hook.evaluate(payload) is None, command
+
+
+def test_r2_not_fired_on_git_log_grep_option() -> None:
+    """`git log --grep=fix` is a COMMIT-MESSAGE search, and stays allowed.
+
+    The trap a sloppy substring check breaks: the string ``grep`` appears in the
+    command, but it is an option to ``log``, not the subcommand, and searching
+    commit messages is not a file-content operation. This is the single most
+    discriminating negative control in the arm.
+    """
+    payload = _signal2_payload("Bash", _bash("git log --grep=fix"))
+    assert hook.evaluate(payload) is None
+
+
+def test_r2_not_fired_on_bare_git() -> None:
+    """A `git` call with no subcommand resolves to no subcommand, so it passes."""
+    assert hook.evaluate(_signal2_payload("Bash", _bash("git"))) is None
+
+
+def test_r2_reason_names_the_sanctioned_content_search_replacement() -> None:
+    """The redirect must name the replacement, not just refuse the call.
+
+    Blocking `git grep` is only legitimate because a sanctioned content-search
+    path exists; the reason string is where the caller learns it.
+    """
+    assert "architecture search --content" in hook._R2_REASON
+
+
 # =============================================================================
 # R3 — generated-executor edit
 # =============================================================================
