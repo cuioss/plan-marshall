@@ -247,6 +247,69 @@ def test_r2_denies_git_grep_past_value_taking_options() -> None:
         assert hook.evaluate(payload) == hook._R2_REASON, command
 
 
+def test_r2_denies_git_grep_past_attached_and_unlisted_options() -> None:
+    """Option SHAPES the walker never names must not become the subcommand.
+
+    The regression these pin: when the walk recognised only a named allowlist of
+    option spellings, each command below returned its own option token as the
+    subcommand (``"-c."``, ``"-p"``, ``"--bare"``), so the ``== "grep"`` test
+    missed and ``git grep`` was let through. Every form here is valid ``git``,
+    and none of them appears in ``_R2_GIT_VALUE_OPTIONS`` — which is exactly why
+    a suite drawn only from that tuple could not detect the gap.
+    """
+    for command in (
+        "git -C. grep foo",  # attached short value
+        "git -cvar=val grep foo",  # attached short value, inline config pair
+        "git -p grep foo",  # unlisted short flag (--paginate)
+        "git --bare grep foo",  # unlisted long flag
+        "git --no-optional-locks grep foo",  # unlisted long flag
+        "git -C. -p --bare grep foo",  # several stacked together
+    ):
+        payload = _signal2_payload("Bash", _bash(command))
+        assert hook.evaluate(payload) == hook._R2_REASON, command
+
+
+def test_r2_git_option_skip_is_structural_not_an_allowlist() -> None:
+    """No named-option tuple may be the sole thing standing between git and grep.
+
+    Guards the property directly rather than sampling spellings: an option shape
+    invented here (one that cannot be in any allowlist) must still resolve to the
+    real subcommand. A future edit that narrows the walk back to a membership
+    test fails this even if it re-adds every spelling the suite above names.
+    """
+    assert hook._git_subcommand("git --a-flag-nobody-listed grep foo") == "grep"
+    assert hook._git_subcommand("git -Zqx grep foo") == "grep"
+
+
+def test_r2_not_fired_on_non_grep_git_subcommands_behind_the_same_options() -> None:
+    """The matched negative control for the attached/unlisted positives above.
+
+    Skipping every dash-token structurally must not swallow the subcommand slot:
+    the SAME option shapes in front of a non-grep subcommand still resolve to
+    that subcommand and stay allowed. Without this, an implementation that simply
+    blocked every ``git`` call would satisfy the positive controls.
+    """
+    for command in (
+        "git -C. status",
+        "git -p log --oneline",
+        "git --bare rev-parse HEAD",
+        "git -cvar=val diff --name-only",
+    ):
+        payload = _signal2_payload("Bash", _bash(command))
+        assert hook.evaluate(payload) is None, command
+
+
+def test_r2_detached_value_option_does_not_mistake_its_value_for_grep() -> None:
+    """A detached value token is consumed, never read as the subcommand.
+
+    ``-C grep`` names a DIRECTORY called ``grep``; the subcommand is ``status``.
+    This is the trap the structural dash-skip alone would not catch, and it is
+    why the detached value options still need naming.
+    """
+    assert hook._git_subcommand("git -C grep status") == "status"
+    assert hook.evaluate(_signal2_payload("Bash", _bash("git -C grep status"))) is None
+
+
 def test_r2_not_fired_on_non_grep_git_subcommands() -> None:
     """Ordinary git usage must keep working — these are not file-ops."""
     for command in (

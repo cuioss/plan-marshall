@@ -82,14 +82,22 @@ _R1_LEADING_ASSIGNMENT_RE = re.compile(r"^\s*[A-Za-z_][A-Za-z0-9_]*=\S*\s+\S")
 #: R2 — Bash file-operation programs that have dedicated Read/Glob/Grep tools.
 _R2_FILE_OPS = ("cat", "grep", "head", "tail", "find", "ls")
 
-#: R2 — ``git`` global options that consume the FOLLOWING token as their value.
-#: Skipping them is what keeps the subcommand test from being a vacuous guard: a
-#: naive ``tokens[1] == "grep"`` check is walked past by ``git -C . grep x`` and
-#: ``git -c k=v grep x``.
-_R2_GIT_VALUE_OPTIONS = ("-C", "-c", "--git-dir", "--work-tree")
-
-#: R2 — ``git`` global options that stand alone (no value token follows).
-_R2_GIT_FLAG_OPTIONS = ("--no-pager", "--paginate", "--literal-pathspecs")
+#: R2 — ``git`` global options that consume a SEPARATE following token as their
+#: value. Only the detached spellings need naming: ``_git_subcommand`` skips any
+#: other option structurally (see its docstring), but a detached value option is
+#: the one shape where the token AFTER the option must also be stepped over so
+#: the value is never mistaken for the subcommand.
+_R2_GIT_VALUE_OPTIONS = (
+    "-C",
+    "-c",
+    "--git-dir",
+    "--work-tree",
+    "--namespace",
+    "--super-prefix",
+    "--config-env",
+    "--exec-path",
+    "--attr-source",
+)
 
 #: R4 — hard-coded build invocations that must be resolved via the architecture
 #: API. ``./pw`` is matched as a literal; ``mvn`` / ``npm`` / ``gradle`` as bare
@@ -180,9 +188,18 @@ def _git_subcommand(command: str) -> str:
     ``git`` accepts global options BEFORE the subcommand, so the subcommand is
     not reliably ``tokens[1]``. Testing that position directly would be a vacuous
     guard — ``git -C . grep x``, ``git -c k=v grep x`` and ``git --no-pager grep
-    x`` all walk straight past it. This walker consumes each recognised global
-    option (value-taking options swallow their following token) and returns the
-    first token that is not one, lowercased.
+    x`` all walk straight past it.
+
+    The option walk is STRUCTURAL, not an allowlist: ANY token starting with
+    ``-`` is treated as an option and skipped. Recognising only a named set of
+    spellings is itself a vacuous guard, because every one of ``git -C. grep x``
+    (attached short value), ``git -cvar=val grep x``, ``git -p grep x`` and
+    ``git --bare grep x`` is valid ``git`` yet fails a membership test, leaving
+    the option token itself returned as the subcommand and the R2 block bypassed.
+    Only the DETACHED value-taking options (``_R2_GIT_VALUE_OPTIONS``) need
+    naming, since they alone consume a separate FOLLOWING token; attached
+    (``-C.``) and inline (``--git-dir=...``) forms are self-contained and skip as
+    a single token.
 
     Pure token arithmetic: no regex compilation, no filesystem access, no
     subprocess — this runs on every tool call, so the hot path stays cheap.
@@ -193,13 +210,10 @@ def _git_subcommand(command: str) -> str:
     while index < len(tokens):
         token = tokens[index]
         if token in _R2_GIT_VALUE_OPTIONS:
-            index += 2  # the option plus the value token it consumes
+            index += 2  # the option plus the separate value token it consumes
             continue
-        if token in _R2_GIT_FLAG_OPTIONS:
-            index += 1
-            continue
-        if token.startswith("--") and "=" in token:
-            index += 1  # inline-value form, e.g. --git-dir=... / --work-tree=...
+        if token.startswith("-"):
+            index += 1  # any other option spelling is self-contained
             continue
         return token.lower()
     return ""
