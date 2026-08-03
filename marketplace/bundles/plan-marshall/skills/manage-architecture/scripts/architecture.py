@@ -253,7 +253,7 @@ def main() -> int:
     # search - Cross-module content search across the files inventory
     search_parser = subparsers.add_parser(
         'search',
-        help='Search the files inventory across all modules for a pattern (requires a mode flag)',
+        help='Search inventoried file BODIES across all modules for a pattern (content mode, requires --content)',
         allow_abbrev=False,
     )
     search_parser.add_argument(

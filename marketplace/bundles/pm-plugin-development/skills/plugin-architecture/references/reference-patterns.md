@@ -315,7 +315,9 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture s
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture search --content --pattern "Read: /(?!/)"
 ```
 
-The first three are escape-sequence and absolute-path probes; the fourth uses a regex (no `--literal`) so a `Read: //`-style URL prefix does not register as an absolute path. A clean result is `count: 0` **with `files_scanned > 0`** — the scanned count is what distinguishes a real empty population from a sweep that searched nothing.
+The first three are escape-sequence and absolute-path probes; the fourth uses a regex (no `--literal`) so a `Read: //`-style URL prefix does not register as an absolute path.
+
+These sweeps are **project-wide** — `search --content` has no path scoping — so they also match every document that *quotes* a prohibited pattern in order to prohibit it, this file included. `count: 0` is therefore not the pass criterion and is not reachable in this repo. A clean result is **no hit outside that documented-example set**: confirm `files_scanned > 0` (the scanned count is what distinguishes a real population from a sweep that searched nothing), then intersect the returned `results[].path` set with the directory of the skill under validation and inspect each surviving hit. A hit is a violation only when the skill *uses* the pattern; a doc quoting it is a known residual.
 
 ## Reference Summary
 
