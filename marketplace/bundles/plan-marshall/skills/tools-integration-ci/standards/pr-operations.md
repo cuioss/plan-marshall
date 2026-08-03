@@ -16,11 +16,21 @@ To handle this, branch-aware operations accept an explicit `--head BRANCH` argum
 | `pr auto-merge` | Same as `pr merge` |
 | `pr safe-merge` | Same as `pr merge` |
 | `pr merge-queue` | Same as `pr merge` |
+| `pr update-branch` | Same as `pr merge` |
 | `checks status` | Same as `pr merge` |
 
-For `pr merge`, `pr auto-merge`, `pr safe-merge`, `pr merge-queue`, and `checks status`, supply **exactly one** of `--pr-number`
-or `--head`. Supplying both returns `status: error` with message `specify exactly one of --pr-number or --head`.
-Supplying neither returns `status: error` with message `specify either --pr-number or --head`.
+Every operation in that table also declares `--pr-number`, and the two flags divide into **two** validation contracts:
+
+| Contract | Operations | Behaviour |
+|----------|------------|-----------|
+| **Exactly one** required | `pr merge`, `pr auto-merge`, `pr safe-merge`, `pr merge-queue`, `pr update-branch`, `checks status` | Both → `status: error`, `specify exactly one of --pr-number or --head`. Neither → `status: error`, `specify either --pr-number or --head`. |
+| **At most one** | `pr view` | Both → `status: error`, `specify exactly one of --pr-number or --head, not both`. Neither → the PR for the current cwd HEAD (the historical default). |
+
+`pr create` is not in either row: its `--head` names the source branch of a PR that does not exist yet, so there is no `--pr-number` to choose between.
+
+### `--head` is not a landing-poll selector
+
+A poll that waits for a PR to reach a terminal state MUST key on `--pr-number`, never on `--head`. Under a required platform merge queue (GitHub) or merge train (GitLab), the platform **auto-deletes the head branch as it merges**. A `--head`-keyed lookup therefore stops resolving at exactly the moment the terminal state the poll exists to observe becomes observable, so the poll can never see `state: merged` — it can only time out or read an error. The PR number is stable across the branch deletion; the branch name is not.
 
 Callers whose cwd HEAD does not match the operation target branch MUST pass `--head {branch}`. See `workflow-integration-git/standards/worktree-handling.md` for the worktree-specific application of this rule (worktree-isolated plans run from the main checkout against a feature branch and MUST always pass `--head {plan_branch}`).
 
@@ -54,16 +64,18 @@ Every corroboration **fails closed**: an unreadable state, a failed probe, or a 
 
 ---
 
-## Workflow: View PR (Current Branch or --head)
+## Workflow: View PR (Current Branch, `--pr-number`, or `--head`)
 
 **Pattern**: Provider-Agnostic Router
 
-Get PR/MR details for the current branch (or a specific branch via `--head`).
+Get PR/MR details for the current branch, for an explicit PR number, or for a specific branch.
+
+`gh pr view` / `glab mr view` take a number, a URL, or a branch name in the **same positional slot**, so `--pr-number` and `--head` are a selector choice rather than two code paths. Supply **at most one**; supplying neither views the PR for the current cwd HEAD. Poll on `--pr-number` — see *`--head` is not a landing-poll selector* above.
 
 ### Step 1: Resolve and Execute
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr view [--head {branch}]
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr view [--pr-number {number} | --head {branch}]
 ```
 
 ### Step 2: Process Result

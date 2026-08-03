@@ -825,8 +825,26 @@ def build_parser(
     pr_parser = subparsers.add_parser('pr', help='Pull request operations', allow_abbrev=False)
     pr_sub = pr_parser.add_subparsers(dest='pr_command', required=True)
 
-    # pr view — implicit current cwd HEAD by default; --head selects a different branch
-    pr_view = pr_sub.add_parser('view', help='View PR for current branch', allow_abbrev=False)
+    # pr view — implicit current cwd HEAD by default; --pr-number or --head names an
+    # explicit PR. Unlike the merge-shaped verbs, BOTH selectors are optional here:
+    # supplying neither keeps the historical current-cwd-HEAD lookup.
+    #
+    # --pr-number is the selector a LANDING POLL must key on. Under a required
+    # platform merge queue the platform auto-deletes the head branch as the queue
+    # merges, so a --head-keyed poll stops resolving at exactly the moment the
+    # terminal state it exists to observe becomes observable. The PR number is
+    # stable across that branch deletion.
+    pr_view = pr_sub.add_parser(
+        'view',
+        help='View a PR by number, by branch, or for the current branch',
+        allow_abbrev=False,
+    )
+    pr_view.add_argument(
+        '--pr-number',
+        type=int,
+        help='PR number — the selector that survives head-branch deletion, so a landing poll '
+        'against a merge-queued PR MUST use this rather than --head',
+    )
     add_head_arg(pr_view)
 
     # pr list
@@ -1327,10 +1345,23 @@ def add_pr_create_args(
 def add_head_arg(subparser: argparse.ArgumentParser) -> None:
     """Register an optional ``--head BRANCH`` argument on a PR/CI subparser.
 
-    Used by provider scripts on operations that identify a PR by branch when no
-    explicit ``--pr-number`` is supplied: ``pr view``, ``pr merge``, ``pr auto-merge``,
-    and ``checks status``. Provider handlers MUST treat ``--head`` as a branch-as-identifier
-    substitute and validate that exactly one of ``--pr-number`` / ``--head`` is supplied.
+    Registered on exactly seven subparsers, and **every one of them also declares
+    ``--pr-number``** — which is what makes this flag's own help text ("alternative
+    to --pr-number") true wherever argparse renders it. The seven split into two
+    validation contracts, both enforced by the provider handler, not by argparse:
+
+    - ``pr view`` — both selectors optional; supplying neither views the PR for the
+      current cwd HEAD, and supplying both is a structured error.
+    - ``pr merge``, ``pr auto-merge``, ``pr safe-merge``, ``pr merge-queue``,
+      ``pr update-branch``, ``checks status`` — **exactly one** is required.
+
+    Provider handlers MUST treat ``--head`` as a branch-as-identifier substitute
+    (``gh`` / ``glab`` accept a number or a branch in the same positional slot) and
+    validate whichever of the two contracts above their verb declares.
+
+    ``--head`` is NOT a substitute for ``--pr-number`` in a landing poll: a platform
+    merge queue auto-deletes the head branch when it merges, so a ``--head``-keyed
+    lookup stops resolving precisely when the merge lands. Poll on ``--pr-number``.
 
     The flag is purely additive — operations behave as before when ``--head`` is omitted.
     Its purpose is to make branch-aware operations usable from a cwd whose HEAD is not

@@ -125,7 +125,13 @@ def test_pr_create_omits_head_when_unset(monkeypatch, tmp_path):
 
 
 # =============================================================================
-# pr_view --head
+# pr_view --pr-number / --head
+#
+# ``gh pr view`` accepts a number, a URL, or a branch name in the SAME positional
+# slot, so the two flags are a selector CHOICE, not two code paths. Each case below
+# asserts the CONSTRUCTED ARGV — the lowest subprocess primitive — rather than the
+# returned envelope, so "the selector reached gh in the right slot" is what is
+# proven, not merely "the call returned success".
 # =============================================================================
 
 
@@ -139,7 +145,58 @@ def test_pr_view_forwards_head_as_positional(monkeypatch):
 
     assert result['status'] == 'success', result
     pr_view_call = next(c for c in captured if c[:2] == ['pr', 'view'])
-    assert 'feature/x' in pr_view_call, pr_view_call
+    assert pr_view_call[2] == 'feature/x', pr_view_call
+
+
+def test_pr_view_forwards_pr_number_as_positional(monkeypatch):
+    """--pr-number lands in gh's positional selector slot, stringified.
+
+    This is the landing-poll selector: a required merge queue auto-deletes the head
+    branch as it merges, so a --head-keyed poll stops resolving at exactly the moment
+    `state: merged` becomes observable. The number survives the branch deletion.
+    """
+    run_gh_stub, captured = _capture_run_gh()
+    monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+
+    ns = argparse.Namespace(pr_number=1152, head=None)
+    result = github_ops.cmd_pr_view(ns)
+
+    assert result['status'] == 'success', result
+    pr_view_call = next(c for c in captured if c[:2] == ['pr', 'view'])
+    assert pr_view_call[2] == '1152', pr_view_call
+
+
+def test_pr_view_dual_flag_rejected(monkeypatch):
+    """Both selectors together is a structured error, not a silent precedence rule."""
+    run_gh_stub, captured = _capture_run_gh()
+    monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+
+    ns = argparse.Namespace(pr_number=42, head='feature/x')
+    result = github_ops.cmd_pr_view(ns)
+
+    assert result['status'] == 'error', result
+    assert 'not both' in result['error'], result
+    assert captured == [], 'Should not invoke gh when validation fails'
+
+
+def test_pr_view_omits_positional_when_no_selector(monkeypatch):
+    """Neither selector keeps the historical current-cwd-HEAD lookup.
+
+    Adding --pr-number must not have made a selector mandatory: with both omitted the
+    positional slot stays empty, so --json is the token immediately after `pr view`.
+    """
+    run_gh_stub, captured = _capture_run_gh()
+    monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+
+    ns = argparse.Namespace(pr_number=None, head=None)
+    result = github_ops.cmd_pr_view(ns)
+
+    assert result['status'] == 'success', result
+    pr_view_call = next(c for c in captured if c[:2] == ['pr', 'view'])
+    assert pr_view_call[2] == '--json', pr_view_call
 
 
 # =============================================================================

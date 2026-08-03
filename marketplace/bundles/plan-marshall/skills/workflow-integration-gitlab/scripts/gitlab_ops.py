@@ -288,7 +288,19 @@ def cmd_pr_create(args: argparse.Namespace) -> dict:
 
 
 def view_pr_data(head: str | None = None) -> dict:
-    """Fetch MR data for current branch (or for the supplied ``head`` branch).
+    """Fetch MR data for the current branch, or for the supplied selector.
+
+    Args:
+        head: The value forwarded verbatim as ``glab mr view``'s single positional
+            selector. ``glab`` accepts an **MR IID, a URL, or a branch name**
+            there, so this parameter is the selector — not a branch-only field.
+            ``None`` omits the positional, which is what makes ``glab`` fall back
+            to the MR for the current cwd HEAD.
+
+            Note the asymmetry with :func:`_resolve_mr_iid`: that helper must
+            translate a branch into an IID because the verbs it serves call
+            IID-only endpoints, whereas ``mr view`` resolves the branch itself,
+            so no lookup round trip is spent here.
 
     Returns dict with 'status' key ('success' or 'error').
     Importable by other scripts for direct data access without subprocess.
@@ -358,8 +370,26 @@ def view_pr_data(head: str | None = None) -> dict:
 
 
 def cmd_pr_view(args: argparse.Namespace) -> dict:
-    """Handle 'pr view' subcommand - get MR for current branch (or --head branch)."""
-    return view_pr_data(head=getattr(args, 'head', None))
+    """Handle 'pr view' — read MR state by IID, by branch, or for the current cwd HEAD.
+
+    ``glab mr view`` takes an IID, a URL, or a branch name in the SAME positional
+    slot, so ``--pr-number`` and ``--head`` are a selector CHOICE rather than two
+    code paths. Supplying neither is the historical default (the MR for the current
+    cwd HEAD); supplying both is a structured error, never a silent precedence rule.
+
+    ``--pr-number`` is the selector a landing poll MUST use. Under a required merge
+    train the platform deletes the source branch as the train merges, so a
+    ``--head``-keyed poll stops resolving at exactly the moment the terminal merged
+    state it waits for becomes observable. The IID is stable across that deletion.
+
+    Mirrors the GitHub provider's ``cmd_pr_view`` exactly; the two handlers are kept
+    in lock-step so the CI abstraction presents one contract per verb.
+    """
+    pr_number = getattr(args, 'pr_number', None)
+    head = getattr(args, 'head', None)
+    if pr_number and head:
+        return make_error('pr_view', 'specify exactly one of --pr-number or --head, not both')
+    return view_pr_data(head=str(pr_number) if pr_number else head)
 
 
 def cmd_pr_list(args: argparse.Namespace) -> dict:

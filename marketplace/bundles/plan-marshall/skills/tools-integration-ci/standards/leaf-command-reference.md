@@ -29,7 +29,7 @@ Source: [pr-operations.md](pr-operations.md)
 
 | Subcommand | Required Flags | Optional Flags | Purpose |
 |------------|----------------|----------------|---------|
-| `pr view` | _(none — uses current cwd HEAD)_ | `--head {branch}` | Get PR/MR details for current branch (or `--head` branch) |
+| `pr view` | _(none — uses current cwd HEAD)_ | _at most one of_ `--pr-number` _or_ `--head {branch}` | Get PR/MR details by number, by branch, or for the current branch. A landing poll MUST use `--pr-number` — the merge queue deletes the head branch as it merges |
 | `pr list` | _(none)_ | `--head {branch}`, `--state {open\|closed\|all}` | List PRs with optional branch and state filters |
 | `pr prepare-body` | `--plan-id` | `--for {create\|edit}`, `--slot {name}` | Allocate a script-owned scratch path for a PR description (path-allocate pattern). |
 | `pr prepare-comment` | `--plan-id` | `--for {reply\|thread-reply}`, `--slot {name}` | Allocate a script-owned scratch path for a PR comment consumed by `pr reply` / `pr thread-reply`. |

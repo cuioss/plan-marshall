@@ -1153,6 +1153,8 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-
     --pr-number {pr_number}
 ```
 
+The poll keys on `--pr-number`, **never** on `--head`, and that is load-bearing rather than stylistic: the platform auto-deletes the head branch as the queue merges (which is why the enqueue above needs no `--delete-branch`). A `--head`-keyed poll would therefore stop resolving at exactly the moment `state == merged` became observable — the gate could only ever time out or read an error, never see the landing it exists to confirm. The PR number survives the branch deletion. See [`../../tools-integration-ci/standards/pr-operations.md`](../../tools-integration-ci/standards/pr-operations.md) § "`--head` is not a landing-poll selector".
+
 Parse `state` from the returned TOON and branch:
 
 - **`state == merged`** → the platform merged the queued PR. Set `{merge_landed} = true`, exit the poll loop, and proceed to **Wait for Merge CI**. Log the landing:

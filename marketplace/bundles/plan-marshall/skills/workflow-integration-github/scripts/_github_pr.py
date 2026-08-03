@@ -446,8 +446,25 @@ def cmd_pr_create(args: argparse.Namespace) -> dict:
 
 
 def cmd_pr_view(args: argparse.Namespace) -> dict:
-    """Handle 'pr view' subcommand - get PR for current branch (or --head branch)."""
-    return github_ops.view_pr_data(head=getattr(args, 'head', None))
+    """Handle 'pr view' — read PR state by number, by branch, or for the current cwd HEAD.
+
+    ``gh pr view`` takes a number, a URL, or a branch name in the SAME positional
+    slot, so ``--pr-number`` and ``--head`` are a selector CHOICE rather than two
+    code paths: whichever is supplied becomes that one positional. Supplying
+    neither is the historical default (the PR for the current cwd HEAD); supplying
+    both is a structured error, never a silent precedence rule.
+
+    ``--pr-number`` is the selector a landing poll MUST use. Under a required
+    platform merge queue the platform auto-deletes the head branch as the queue
+    merges, so a ``--head``-keyed poll stops resolving at exactly the moment the
+    terminal ``state: merged`` it waits for becomes observable. The PR number is
+    stable across that deletion.
+    """
+    pr_number = getattr(args, 'pr_number', None)
+    head = getattr(args, 'head', None)
+    if pr_number and head:
+        return make_error('pr_view', 'specify exactly one of --pr-number or --head, not both')
+    return github_ops.view_pr_data(head=str(pr_number) if pr_number else head)
 
 
 def cmd_pr_list(args: argparse.Namespace) -> dict:
