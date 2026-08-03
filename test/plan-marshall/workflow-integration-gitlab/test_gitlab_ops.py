@@ -40,6 +40,42 @@ def _capture_run_glab(*, mr_list_iid: int = 7):
     return run_glab_stub, captured
 
 
+def _install_merge_shaped_stubs(monkeypatch):
+    """Install the merge-train preflight + corroboration prerequisites.
+
+    ``cmd_pr_merge`` and ``cmd_pr_auto_merge`` now probe the PROJECT's merge-train
+    state before acting (merge trains are a per-project flag on GitLab, so the
+    probe takes no branch argument), and ``cmd_pr_merge`` corroborates ``merged``
+    from a post-merge ``state == 'merged'`` re-read. Without these stubs the
+    argv-routing tests below would stop testing ``--head`` resolution and start
+    testing the preflight's fail-closed path instead.
+
+    ``eligible_unconfigured`` is the permissive verdict, so routing proceeds
+    unchanged.
+    """
+    monkeypatch.setattr(
+        gitlab_ops,
+        '_probe_merge_train_state',
+        lambda: (
+            gitlab_ops.MERGE_QUEUE_ELIGIBLE_UNCONFIGURED,
+            'merge_trains_enabled=false',
+            None,
+        ),
+    )
+    monkeypatch.setattr(
+        gitlab_ops,
+        'view_pr_data',
+        lambda head=None: {
+            'status': 'success',
+            'operation': 'pr_view',
+            'pr_number': 7,
+            'state': 'merged',
+            'head_branch': 'feature/x',
+            'base_branch': 'main',
+        },
+    )
+
+
 # =============================================================================
 # pr_create --head -> --source-branch
 # =============================================================================
@@ -112,6 +148,7 @@ def test_pr_merge_with_head_resolves_iid(monkeypatch):
     run_glab_stub, captured = _capture_run_glab(mr_list_iid=7)
     monkeypatch.setattr(gitlab_ops, 'check_auth', _ok_auth)
     monkeypatch.setattr(gitlab_ops, 'run_glab', run_glab_stub)
+    _install_merge_shaped_stubs(monkeypatch)
 
     ns = argparse.Namespace(pr_number=None, head='feature/x', strategy='merge', delete_branch=False)
     result = gitlab_ops.cmd_pr_merge(ns)
@@ -127,6 +164,7 @@ def test_pr_merge_with_pr_number_skips_lookup(monkeypatch):
     run_glab_stub, captured = _capture_run_glab()
     monkeypatch.setattr(gitlab_ops, 'check_auth', _ok_auth)
     monkeypatch.setattr(gitlab_ops, 'run_glab', run_glab_stub)
+    _install_merge_shaped_stubs(monkeypatch)
 
     ns = argparse.Namespace(pr_number=42, head=None, strategy='merge', delete_branch=False)
     result = gitlab_ops.cmd_pr_merge(ns)
@@ -171,6 +209,7 @@ def test_pr_auto_merge_with_head_resolves_iid(monkeypatch):
     run_glab_stub, captured = _capture_run_glab(mr_list_iid=7)
     monkeypatch.setattr(gitlab_ops, 'check_auth', _ok_auth)
     monkeypatch.setattr(gitlab_ops, 'run_glab', run_glab_stub)
+    _install_merge_shaped_stubs(monkeypatch)
 
     ns = argparse.Namespace(pr_number=None, head='feature/x', strategy='merge')
     result = gitlab_ops.cmd_pr_auto_merge(ns)

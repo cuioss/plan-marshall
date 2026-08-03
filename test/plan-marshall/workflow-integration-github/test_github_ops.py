@@ -11,6 +11,17 @@ import argparse
 import github_ops
 from _ci_wait_contract import _ok_auth
 
+# The post-merge corroboration re-read ``cmd_pr_merge`` issues. It is
+# distinguished from an ordinary ``pr view`` by its ``--json`` field list, so
+# the two shapes stay separable in the stub below without perturbing the
+# ``cmd_pr_view`` routing test that shares this fixture.
+_CORROBORATION_JSON_MARKER = 'mergedAt'
+
+_CORROBORATED_MERGE_PAYLOAD = (
+    '{"state": "MERGED", "mergedAt": "2026-01-01T00:00:00Z", '
+    '"baseRefName": "main", "headRefOid": "abc123"}'
+)
+
 
 def _capture_run_gh():
     """Return a (run_gh_stub, captured_args_list) pair."""
@@ -22,6 +33,8 @@ def _capture_run_gh():
         if args[:2] == ['pr', 'create']:
             return 0, 'https://github.com/octo/repo/pull/42', ''
         if args[:2] == ['pr', 'view']:
+            if any(_CORROBORATION_JSON_MARKER in str(a) for a in args):
+                return 0, _CORROBORATED_MERGE_PAYLOAD, ''
             return 0, '{"number": 42, "url": "https://github.com/octo/repo/pull/42", "state": "OPEN"}', ''
         if args[:2] == ['pr', 'merge']:
             return 0, '', ''
@@ -32,6 +45,41 @@ def _capture_run_gh():
         return 0, '', ''
 
     return run_gh_stub, captured
+
+
+def _install_merge_shaped_stubs(monkeypatch):
+    """Install the platform-queue preflight prerequisites for merge-shaped verbs.
+
+    ``cmd_pr_merge`` and ``cmd_pr_auto_merge`` both probe the PR's own base
+    branch before acting. Without these stubs the argv-routing tests below would
+    stop testing ``--head`` routing and start testing the preflight's
+    fail-closed path — the assertions would still be about argv, but the code
+    path reaching them would be the wrong one. ``eligible_unconfigured`` is the
+    permissive verdict, so routing proceeds unchanged.
+    """
+    monkeypatch.setattr(github_ops, 'get_repo_info', lambda: ('octo', 'repo'))
+    monkeypatch.setattr(
+        github_ops,
+        'view_pr_data',
+        lambda head=None: {
+            'status': 'success',
+            'operation': 'pr_view',
+            'pr_number': 42,
+            'state': 'open',
+            'head_branch': 'feature/x',
+            'base_branch': 'main',
+        },
+    )
+    monkeypatch.setattr(
+        github_ops,
+        '_probe_merge_queue_state',
+        lambda owner, repo, branch: (
+            github_ops.MERGE_QUEUE_ELIGIBLE_UNCONFIGURED,
+            'no merge_queue rule on branch',
+            None,
+            None,
+        ),
+    )
 
 
 # =============================================================================
@@ -103,6 +151,7 @@ def test_pr_merge_with_head(monkeypatch):
     run_gh_stub, captured = _capture_run_gh()
     monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
     monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+    _install_merge_shaped_stubs(monkeypatch)
 
     ns = argparse.Namespace(pr_number=None, head='feature/x', strategy='merge', delete_branch=False)
     result = github_ops.cmd_pr_merge(ns)
@@ -116,6 +165,7 @@ def test_pr_merge_with_pr_number(monkeypatch):
     run_gh_stub, captured = _capture_run_gh()
     monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
     monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+    _install_merge_shaped_stubs(monkeypatch)
 
     ns = argparse.Namespace(pr_number=42, head=None, strategy='merge', delete_branch=False)
     result = github_ops.cmd_pr_merge(ns)
@@ -159,6 +209,7 @@ def test_pr_auto_merge_with_head(monkeypatch):
     run_gh_stub, captured = _capture_run_gh()
     monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
     monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+    _install_merge_shaped_stubs(monkeypatch)
 
     ns = argparse.Namespace(pr_number=None, head='feature/x', strategy='merge')
     result = github_ops.cmd_pr_auto_merge(ns)

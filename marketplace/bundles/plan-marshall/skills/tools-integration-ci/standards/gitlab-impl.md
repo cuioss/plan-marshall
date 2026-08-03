@@ -117,6 +117,37 @@ glab api -X POST projects/{id}/merge_trains/merge_requests/{iid}
 - HTTP 403/404 from the merge-train endpoint → the project/tier is not
   merge-train-eligible → the handler returns the actionable ineligible error.
 
+The car read-back above is what makes `enqueued: true` a **corroborated** claim
+rather than an exit-code echo, and it is the reference shape the other
+merge-shaped verbs were brought to (see below). It is unchanged. What did change
+is that the actionable-ineligible contract is no longer GitLab's alone — the
+GitHub path now refuses the same way when its base branch has no configured
+queue.
+
+### Merge-shaped verbs: project-scoped preflight and state corroboration
+
+`pr merge`, `pr safe-merge`, and `pr auto-merge` each consult the project's
+merge-train state before acting, and each establishes its own success claim from
+a re-read rather than the `glab` exit code. Two provider-shaped details are
+specific to GitLab and are NOT transliterations of the GitHub guards:
+
+- **The preflight is project-scoped, not base-branch-scoped.** A merge train is a
+  per-project flag (`merge_trains_enabled`), so the probe takes no branch
+  argument. `pr merge` and `pr safe-merge` refuse an immediate merge when it
+  returns `eligible_configured`; `pr auto-merge` reports the resulting
+  `disposition` (`enabled` for a plain when-pipeline-succeeds schedule,
+  `enqueued` when the project has trains) instead of a bare `enabled: true`.
+- **Corroboration reads `state`, with no timestamp arm.** `view_pr_data` surfaces
+  no `merged_at` on GitLab, so `merged` is established from `state == 'merged'`
+  alone — there is no `mergedAt` to parse and therefore no strategy-selected
+  evidence ladder as on GitHub. The verdict is established BEFORE the
+  branch-delete REST call so a merge that did not land never deletes the source
+  branch.
+
+Both fail closed: an unreadable project or MR state is a refusal, never a
+permissive default. See [`pr-operations.md`](pr-operations.md) § "The
+corroborate-not-report contract" for the cross-provider statement.
+
 ---
 
 ## Repo Merge-Queue Operations

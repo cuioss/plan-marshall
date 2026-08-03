@@ -1,6 +1,6 @@
 # Branch Cleanup — Re-review the Rebased HEAD (trigger A)
 
-Edge-case walkthrough relocated from `branch-cleanup.md` for progressive disclosure. The `branch-cleanup.md` PR-mode flow points here between **Rebase Branch onto Base** and **Pre-Merge Confirmation Gate**; when `state == open` (a rebase + force-push happened), load and execute this section in place, then continue to the Pre-Merge Confirmation Gate. All `{placeholder}` tokens and the `{merge_consent}` / `{hold_start}` state carry over from the calling `branch-cleanup.md` context.
+Edge-case walkthrough relocated from `branch-cleanup.md` for progressive disclosure. The `branch-cleanup.md` PR-mode flow points here between **Rebase Branch onto Base** and **Pre-Merge Confirmation Gate**; when `state == open` (a rebase + force-push happened), load and execute this section in place, then continue to the Pre-Merge Confirmation Gate. All `{placeholder}` tokens and the `{merge_consent}` / `{hold_start}` state carry over from the calling `branch-cleanup.md` context — and so does the closed merge-dispatch set defined in [`branch-cleanup.md`](branch-cleanup.md) § "Merge routing (`use_merge_queue`)" → "The dispatch set is CLOSED", which owns it: **no merge-shaped `ci pr` dispatch may be issued from this document at all.** This walkthrough runs before the merge routing and only ever advances, defers, or re-awaits; every merge-shaped dispatch belongs to the owning section, so consult it there rather than reading any branch here as a licence to merge.
 
 ## Re-review the rebased HEAD (trigger A)
 
