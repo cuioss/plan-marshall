@@ -53,7 +53,7 @@ Omitting `--content` is rejected before anything runs, rather than quietly defau
 | Required mode selector — searches file bodies.
 
 | `--pattern P`
-| The pattern. A Python regular expression by default.
+| The pattern. A Python regular expression by default — Python's flavour, not POSIX, and its anchors match per line. See <<anchors>>.
 
 | `--literal`
 | Treat `--pattern` as a fixed string instead of a regex. Use this whenever the text you are looking for contains regex or shell metacharacters.
@@ -69,6 +69,28 @@ Omitting `--content` is rejected before anything runs, rather than quietly defau
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
   search --content --literal --pattern "load_derived_data" --category source
 ----
+
+[#anchors]
+=== Anchors match lines, and the flavour is Python
+
+`^` and `$` anchor to the start and end of each *line*, not of the whole file. That is the behaviour you already expect from `grep` and `ripgrep`, and it is what makes an anchored sweep useful:
+
+[source,bash]
+----
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
+  search --content --pattern "^Skill: plan-marshall:manage-files"
+----
+
+That call finds the directive wherever it sits in a file, not only in files that happen to open with it, and `match_count` counts every matching line rather than stopping at the first.
+
+The regex flavour is Python's, not POSIX. Write `\s`, `\w`, and `\d`; never a POSIX bracket class such as `[[:space:]]`.
+
+[WARNING]
+====
+A POSIX bracket class does not come back as an error, and it does not come back empty. Python reads `[[:space:]]` as an ordinary character class containing `[`, `:`, `s`, `p`, `a`, `c`, and `e`, followed by a literal `]` — so the pattern compiles and then *over-matches*.
+
+What you get back is a healthy-looking `count` and an inflated `match_count` over files that have nothing to do with whitespace. The only signal is a `FutureWarning: Possible nested set` printed on stderr, which is easy to scroll past. A non-zero count is never evidence that a POSIX class was understood.
+====
 
 == Reading the response
 

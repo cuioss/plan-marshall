@@ -520,11 +520,15 @@ Searches inventoried file **bodies** and reports the module-attributed files con
 
 `--category` takes the same vocabulary and the same unknown-category semantics as the `files` verb above.
 
+**Anchors are per line**: the pattern is compiled with `re.MULTILINE`, so `^` matches at the start of every LINE and `$` at the end of every line — the same semantics `grep`, `ripgrep`, and the harness `Grep` tool give them. An anchored sweep such as `--pattern '^Skill: plan-marshall:manage-files'` therefore finds a directive on any line of a file, not only one starting at byte 0, and `match_count` counts every such line. The engine is Python `re`, not POSIX: write `\s` for whitespace, never a POSIX bracket class like `[[:space:]]` — Python still compiles that (as a nested set, emitting a `FutureWarning` on stderr) and it then silently over-matches, so the failure arrives as spurious hits rather than as an error or a zero.
+
 **Payload boundary**: a hit carries exactly `module`, `category`, `path`, and `match_count` — the response **never carries matching line text**. `match_count` (the number of non-overlapping matches in that file) is the ranking signal: use it to decide which few files are worth a `Read`. Do not expect to see the matched lines.
 
 **Inventory-scope boundary**: the search covers the crawled file inventory, which by construction excludes always-ignored directories (`.git`, `node_modules`, `target`, caches), dotfile trees outside the `.gitignore` / `.editorconfig` allowlist (so `.claude/**` and `.github/**` are NOT searched), and anything a `.gitignore` rule excludes. A zero result therefore means "not in any inventoried file", which is not the same as "not in the tree".
 
 **Zero-result semantics**: `count: 0` is never confident on its own. Every response also carries `files_scanned` (so "nothing was searched" stays distinguishable from "N files searched, genuinely absent"), `unreadable[{path,reason}]` (files skipped for a decode or OS error, rather than silently dropped), and the fail-closed `truncated` / `elided` pair.
+
+See [client-api.md](standards/client-api.md) § search for the full pattern contract, the worked TOON payloads, and every edge case.
 
 ### diff-modules
 

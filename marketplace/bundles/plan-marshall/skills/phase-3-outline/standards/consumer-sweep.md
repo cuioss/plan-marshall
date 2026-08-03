@@ -70,7 +70,7 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture s
 
 This covers the marketplace-rooted portion. `marshal.json` and `.plan/` are OUTSIDE the crawled inventory, so the sweep does not reach them — return that residue to the caller as a coverage gap rather than reporting the notation clean.
 
-For `Skill:` loader directives in markdown, use the anchored regex form (no `--literal`, since the anchor is the point). `^` anchors to line-start, and the engine is Python `re` — so write `\s`, never a POSIX class like `[[:space:]]`, which Python parses as a nested set and which would return a confident zero:
+For `Skill:` loader directives in markdown, use the anchored regex form (no `--literal`, since the anchor is the point). `^` anchors to line-start, and the engine is Python `re` — so write `\s`, never a POSIX class like `[[:space:]]`. Python does not reject a POSIX class: it compiles it as a nested set (emitting a `FutureWarning` on stderr) and then silently over-matches, so the sweep comes back with spurious hits that look like a working pattern rather than with an error or a zero:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture search --content --pattern "^Skill:\s*{bundle}:{skill}"
@@ -151,7 +151,7 @@ And the `Change per file` would gain explicit migration text for the cross-bundl
 - `test_profiles.py`: rewrite `create_test_derived_data` to seed via `save_project_meta` + `save_module_derived`; remove `save_derived_data` import; update module docstring to reference per-module layout.
 ```
 
-With the consumer sweep applied at outline time, TASK-9 would never have hit the `ImportError`, and scope would have stayed pinned to the deliverable's stated text. The consumer-sweep step would add roughly two seconds of outline-time sweep work and save a fix-loop iteration during execute.
+With the consumer sweep applied at outline time, TASK-9 would never have hit the `ImportError`, and scope would have stayed pinned to the deliverable's stated text. The consumer-sweep step trades a few extra outline-time queries for a fix-loop iteration avoided during execute.
 
 ---
 

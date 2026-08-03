@@ -1030,9 +1030,15 @@ message: "unterminated character set at position 0"
   carries `re.MULTILINE`. A pattern anchored with `^` finds hits on any line, and
   `match_count` counts every such line rather than stopping at the first.
 - POSIX bracket class (`[[:space:]]`, `[[:alpha:]]`, …): NOT supported — the
-  engine is Python `re`. Such a pattern compiles to a nested set and silently
-  matches something else, yielding a confident `count: 0` over a fully-scanned
-  corpus. Use the Python escapes (`\s`, `\w`, `\d`) instead.
+  engine is Python `re`. Such a pattern still **compiles**, so there is no
+  `invalid_pattern` error to catch it: Python reads `[[:space:]]` as the
+  character class `{[ : s p a c e}` followed by a literal `]`, which
+  **over-matches** rather than matching whitespace. The failure signature is
+  therefore spurious HITS over a fully-scanned corpus — a non-zero `count` and
+  an inflated `match_count` that look exactly like a working pattern — plus a
+  `FutureWarning: Possible nested set` on stderr, which is the only in-band
+  signal. Never read a non-zero count as evidence the class was understood. Use
+  the Python escapes (`\s`, `\w`, `\d`) instead.
 - Backtick in the pattern: write it as the regex escape `\x60` (regex mode, NOT
   `--literal`, which would escape the backslash). A literal backtick anywhere in
   the command string is denied by the project's PreToolUse enforcement hook — it
