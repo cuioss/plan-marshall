@@ -345,6 +345,62 @@ source: .plan/local/lessons-learned/2025-12-02-001.md
 destination: .plan/local/plans/EXAMPLE-PLAN/lesson-2025-12-02-001.md
 ```
 
+### remove
+
+Delete a lesson file and write a tombstone. Interactive confirm by default; `--force` skips the prompt.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons remove \
+  --lesson-id 2025-12-02-001 \
+  --reason "guarded failure mode can no longer occur (plan EXAMPLE-PLAN)" \
+  --coverage-verdict completely_covered \
+  --covering-clause "manage-lessons/SKILL.md Canonical invocations -> remove" \
+  --covering-input "remove --coverage-verdict completely_covered with no --covering-clause" \
+  --force
+```
+
+**Parameters**:
+
+- `--lesson-id` (required): Lesson ID to remove
+- `--reason` (required): Free-text removal reason, recorded in the tombstone and the audit log
+- `--coverage-verdict` (required, no default): one of `completely_covered`, `redundant`, `superseded`, `obsolete`
+- `--covering-clause` (required when the verdict is `completely_covered`): the clause that codifies the rule the lesson taught, named precisely enough to re-read
+- `--covering-input` (required when the verdict is `completely_covered`): the concrete input on which that clause's own worked example produces the correct result
+- `--force`: Skip the interactive confirmation prompt
+
+#### Retirement evidence: the two-key remove path
+
+Classifying a lesson as retired and deleting it are two separate keys, and the strongest verdict must carry its own evidence:
+
+- **Key 1 — the verdict.** `--coverage-verdict` is required and has no default, so a retirement always states *why*. An omitted verdict is an argparse-level rejection, never a silent default.
+- **Key 2 — the evidence pair.** `completely_covered` is the only verdict that asserts the lesson's rule now lives somewhere else, so it alone must name that somewhere: `--covering-clause` (the clause that codifies the rule) and `--covering-input` (the concrete input on which that clause's *own worked example* produces the correct result). Supplying `completely_covered` without BOTH is an argparse-level rejection — exit 2, usage on stderr, and the lesson is left untouched on disk. A whitespace-only value counts as missing.
+
+The evidence is not merely validated, it is **recorded**: the tombstone at `.tombstones/{id}.json` carries `coverage_verdict` always, plus `covering_clause` and `covering_input` when supplied. That is what makes the justification for a deletion outlive the lesson it deleted — the tombstone, not the vanished lesson, is where a later reader checks whether the retirement verdict was sound.
+
+**Tombstone fields written by `remove`**:
+
+| Field | When present | Meaning |
+|-------|--------------|---------|
+| `lesson_id` | always | The retired lesson's id |
+| `removed_at` | always | UTC ISO-8601 instant of the removal |
+| `reason` | always | The `--reason` text |
+| `status` | always | `removed` |
+| `coverage_verdict` | always | The `--coverage-verdict` value |
+| `covering_clause` | `completely_covered` | The clause claimed to codify the lesson's rule |
+| `covering_input` | `completely_covered` | The input the clause's worked example resolves |
+
+**Output** (TOON):
+
+```toon
+status: success
+id: 2025-12-02-001
+reason: "guarded failure mode can no longer occur (plan EXAMPLE-PLAN)"
+tombstone: /abs/path/to/.plan/local/lessons-learned/.tombstones/2025-12-02-001.json
+coverage_verdict: completely_covered
+covering_clause: "manage-lessons/SKILL.md Canonical invocations -> remove"
+covering_input: "remove --coverage-verdict completely_covered with no --covering-clause"
+```
+
 ### cleanup-superseded
 
 Prune the markdown stubs of superseded lessons. Tombstones at
@@ -559,6 +615,8 @@ The classification logic for the read-side corpus operations lives under `refere
 | `aggregate` | `[--top-n N]` | Read-only classifier: group active lessons that would land in one plan. Returns groups + headline commands. See [`references/aggregate-analysis.md`](references/aggregate-analysis.md). |
 | `from-error` | `--context` | Create from JSON error context (programmatic; body synthesized from context) |
 | `convert-to-plan` | `--lesson-id --plan-id` | Move lesson into a plan directory as `lesson-{id}.md`. This is the move-semantics replacement for marking a lesson "applied". |
+| `remove` | `--lesson-id --reason --coverage-verdict [--covering-clause] [--covering-input] [--force]` | Delete a lesson and write a tombstone. `--coverage-verdict` is required with no default; `completely_covered` additionally requires both evidence flags, and all supplied values are recorded on the tombstone. See [Retirement evidence](#retirement-evidence-the-two-key-remove-path). |
+| `supersede` | `--lesson-id --by --reason` | Mark a lesson superseded by a canonical lesson: merge the source body into the canonical, write a tombstone carrying `superseded_by`, and replace the source body with a `[SUPERSEDED]` redirect stub. |
 | `restore-from-plan` | `--plan-id` | Inverse of `convert-to-plan`: move the relocated `lesson-*.md` back from a plan directory to the active corpus (`.plan/local/lessons-learned/`). Run on stall/abandon so a stranded lesson resurfaces. |
 | `cleanup-superseded` | `[--lesson-id ID ...] \| [--retention-days N] [--dry-run]` | Prune superseded `.md` stubs while preserving tombstones. Age-filtered when `--retention-days` (falls back to `system.retention.lessons_superseded_days`, hard fallback 7); explicit when `--lesson-id` is repeated. |
 | `retire-quiet` | `[--quiet-days N] [--dry-run]` | Retire-on-quiet for `arch-constraint` lessons: tombstone + unlink every active arch-constraint lesson whose `last_seen` is at least the quiet window old. Window falls back to `system.retention.arch_constraint_quiet_days`, then a hard fallback. |
@@ -594,6 +652,8 @@ The classification logic for the read-side corpus operations lives under `refere
 | `file_read_error` | `set-body --file PATH` failed with an `OSError` while reading (permission denied, I/O error, etc.) |
 | `malformed_lesson` | `set-body` target lesson file is missing its metadata header / title structure |
 | `missing_required` | Required parameter missing |
+| `missing_coverage_verdict` | `remove` invoked without a valid `--coverage-verdict`. Unreachable from the CLI (argparse rejects an omitted or out-of-vocabulary verdict at parse time); this is the structural backstop for direct programmatic invocation of `cmd_remove`. The lesson is left in place |
+| `missing_coverage_evidence` | `remove --coverage-verdict completely_covered` invoked without `--covering-clause` and/or `--covering-input` (a whitespace-only value counts as missing). The CLI rejects this at argparse (exit 2); this code is the handler-side backstop. `missing_flags[]` names the absent flags, and the lesson is left in place |
 | `wrong_store` | `add` / `from-error` refused: the component **carries a bundle prefix** and the resolved main-anchored lessons store repo does not own that bundle (the prefix segment of `--component`/context `component` has no `marketplace/bundles/{bundle}` directory in that repo). A prefix-less project-local component names no bundle and never reaches this refusal. Bypass with `--allow-foreign-store`. Skipped under test overrides (`PLAN_BASE_DIR`) |
 | `invalid_component` | `add` / `from-error` refused: the component does not match the canonical component shape (`^[a-z0-9-]+(:[a-z0-9-]+)*$`). Distinct from `wrong_store` — the value is not a well-formed component at all, so no ownership claim is made about it. Primarily reachable via `from-error`, whose context `component` comes from untrusted JSON and bypasses the argparse validator. The shape check precedes `--allow-foreign-store`, so the override cannot bypass it |
 
@@ -692,8 +752,11 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons from
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons remove \
   --lesson-id LESSON_ID --reason TEXT \
-  [--force]
+  --coverage-verdict {completely_covered|redundant|superseded|obsolete} \
+  [--covering-clause TEXT] [--covering-input TEXT] [--force]
 ```
+
+`--coverage-verdict` is **required and has no default** — an unstated verdict is a rejection, never an assumption. `--covering-clause` and `--covering-input` are **required whenever the verdict is `completely_covered`**; supplying that verdict without BOTH is an argparse-level rejection (usage on stderr, exit 2) and the lesson is left in place. The three weaker verdicts (`redundant`, `superseded`, `obsolete`) need no evidence pair. See [Retirement evidence](#retirement-evidence-the-two-key-remove-path) for the contract and [Error Responses](#error-responses) → `missing_coverage_verdict` / `missing_coverage_evidence`.
 
 ### supersede
 

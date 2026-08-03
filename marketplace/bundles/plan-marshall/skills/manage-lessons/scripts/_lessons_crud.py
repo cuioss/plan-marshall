@@ -3,7 +3,10 @@
 """
 CRUD command handlers for manage-lessons.py.
 
-Currently contains: ``set_body`` (path-allocate body-write flow).
+Currently contains: ``set_body`` (path-allocate body-write flow) and the
+retirement-evidence contract shared by the ``remove`` argparse surface and its
+handler (``COVERAGE_VERDICTS``, ``missing_coverage_evidence_flags``,
+``coverage_evidence_fields``).
 
 Path-allocate flow (canonical):
     1. ``manage-lessons add ...`` → script returns the absolute path of a fresh
@@ -35,6 +38,85 @@ RECURRENCE_SECTION_MARKER = '## Recurrence —'
 # nor ``system.retention.arch_constraint_quiet_days`` in marshal.json yields an
 # integer. 90 days mirrors a "one quarter quiet ⇒ retire" default.
 DEFAULT_ARCH_CONSTRAINT_QUIET_DAYS = 90
+
+
+# =============================================================================
+# Retirement-evidence contract for ``remove``
+# =============================================================================
+#
+# A retirement verdict must NAME its coverage claim, and the strongest verdict
+# must additionally cite the clause that codifies the rule plus the concrete
+# input on which that clause's own worked example produces the correct result.
+# The vocabulary and the "is the evidence pair complete?" predicate live HERE,
+# in one place, so the argparse surface (key 1: the CLI rejects an incomplete
+# verdict at parse time) and the ``cmd_remove`` handler (key 2: the structural
+# backstop for direct programmatic invocation) enforce the SAME rule rather
+# than two drifting copies of it.
+
+# The verdict vocabulary. ``remove`` requires exactly one of these values and
+# has no default — an unstated verdict is a rejection, never an assumption.
+COVERAGE_VERDICTS = (
+    'completely_covered',
+    'redundant',
+    'superseded',
+    'obsolete',
+)
+
+# The one verdict that additionally requires the evidence pair. The other three
+# assert a weaker claim (the lesson duplicates another record, was absorbed by a
+# canonical, or no longer matches the tree) that names no covering clause.
+EVIDENCE_REQUIRED_VERDICT = 'completely_covered'
+
+
+def missing_coverage_evidence_flags(
+    coverage_verdict: str | None,
+    covering_clause: str | None,
+    covering_input: str | None,
+) -> list[str]:
+    """Return the evidence flags a ``completely_covered`` retirement is missing.
+
+    An empty list means the evidence requirement is satisfied — either because
+    the verdict is not ``completely_covered`` (the weaker verdicts require no
+    evidence pair) or because both flags carry a non-blank value. A whitespace-
+    only value counts as missing: an evidence field that says nothing is the
+    vacuous guard this contract exists to close.
+
+    Args:
+        coverage_verdict: The verdict supplied on the retirement.
+        covering_clause: The clause claimed to codify the lesson's rule.
+        covering_input: The concrete input the clause's worked example resolves.
+
+    Returns:
+        The missing flag names in canonical CLI spelling (``--covering-clause``,
+        ``--covering-input``), in declaration order.
+    """
+    if coverage_verdict != EVIDENCE_REQUIRED_VERDICT:
+        return []
+    missing: list[str] = []
+    if not (covering_clause or '').strip():
+        missing.append('--covering-clause')
+    if not (covering_input or '').strip():
+        missing.append('--covering-input')
+    return missing
+
+
+def coverage_evidence_fields(
+    coverage_verdict: str,
+    covering_clause: str | None,
+    covering_input: str | None,
+) -> dict:
+    """Return the retirement-evidence fields to record on the tombstone.
+
+    The verdict is always recorded; the clause and input are recorded when
+    supplied. Recording them on the tombstone is what makes the evidence
+    survive the deletion of the lesson it justified.
+    """
+    fields: dict = {'coverage_verdict': coverage_verdict}
+    if covering_clause:
+        fields['covering_clause'] = covering_clause
+    if covering_input:
+        fields['covering_input'] = covering_input
+    return fields
 
 
 def _split_lesson(content: str) -> tuple[str, str, str]:
