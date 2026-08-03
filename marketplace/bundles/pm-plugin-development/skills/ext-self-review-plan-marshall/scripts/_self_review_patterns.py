@@ -293,24 +293,25 @@ _IDENTITY_CONSUMPTION = re.compile(
 # ``SKILL.md`` § Detection Rules rule 19 for the firing condition and the
 # decided disposition of each relational case.
 
-# A fenced-block delimiter line. Group 1 captures the info string (language tag)
-# on an opening fence; a closing fence carries none. Fence state also suppresses
-# heading detection, so a ``# GOOD`` comment inside a shell fence is never
-# mistaken for a markdown H1.
-_FENCE_DELIMITER = re.compile(r'^\s*```(\w*)\s*$')
+# A fenced-block delimiter line — an opening fence carrying an optional info
+# string (language tag), or a bare closing fence. Matched as a pure boolean:
+# only the delimiter's presence matters, so the info string is admitted but not
+# captured. Fence state also suppresses heading detection, so a ``# GOOD``
+# comment inside a shell fence is never mistaken for a markdown H1.
+_FENCE_DELIMITER = re.compile(r'^\s*```\w*\s*$')
 
 # The GOOD / BAD marker comments labelling the two halves of a worked example.
 # The ``//`` (pseudocode / C-style), ``#`` (shell / Python), and ``<!--``
 # (markdown) comment leaders are recognized, with optional non-alphanumeric
 # decoration between the leader and the marker word so a decorated form
 # (``// ✅ GOOD``, ``# --- BAD``) still resolves. The marker word is
-# UPPERCASE-only, so ordinary prose carrying "good" never matches. Group
-# ``claim`` captures the marker comment's own claim text after the
-# em-dash / en-dash / hyphen / colon separator.
+# UPPERCASE-only and closed by a word boundary, so neither ordinary prose
+# carrying "good" nor a longer word opening with the marker (``GOODNESS``)
+# matches. Both patterns are consumed as pure booleans, so nothing past the
+# marker word is matched or captured.
 _MARKER_LEAD = r'^\s*(?://|#|<!--)\s*[^\w\s]*\s*'
-_MARKER_TAIL = r'\b\s*[—–:-]?\s*(?P<claim>.*)$'
-_GOOD_MARKER = re.compile(_MARKER_LEAD + 'GOOD' + _MARKER_TAIL)
-_BAD_MARKER = re.compile(_MARKER_LEAD + 'BAD' + _MARKER_TAIL)
+_GOOD_MARKER = re.compile(_MARKER_LEAD + r'GOOD\b')
+_BAD_MARKER = re.compile(_MARKER_LEAD + r'BAD\b')
 
 # A branch keyword opening a tested expression inside a worked example. The
 # expression body is extracted by a balanced-paren scan rather than by a regex
