@@ -6901,3 +6901,846 @@ class TestDeliveryCostPartitionContract:
         assert _skill_md_shipping_annotated_checks() == set(
             audit.DELIVERY_COST_CHECKS
         )
+
+
+# =============================================================================
+# billing-composition — the re-derived billing + payload-byte composition
+# =============================================================================
+
+_EXECUTE_PHASE = '5-execute'
+
+# The canonical nine-column dispatch-boundary ledger header
+# (`data-format.md` § Per-Dispatch Context-Load Attribution).
+_LEDGER_HEADER = (
+    'rows[]{timestamp,termination_cause,total_tokens,tool_uses,duration_ms,'
+    'input_tokens,output_tokens,cache_read_input_tokens,'
+    'cache_creation_input_tokens}:'
+)
+
+
+def _phase_block(phase: str, **fields: int) -> str:
+    """Render one `[phase]` section of a `metrics.toon`."""
+    body = ''.join(f'  {key}: {value}\n' for key, value in fields.items())
+    return f'[{phase}]\n{body}'
+
+
+def _clean_metrics_body(**execute_fields: int) -> str:
+    """A fully-recorded six-phase `metrics.toon` carrying *execute_fields*.
+
+    Every canonical phase carries a non-zero ``total_tokens`` so
+    ``check_input_integrity`` reports no ``metrics_blind`` phase and every
+    canonical row is present. The fixture is deliberately NOT floored and NOT
+    omitting a row, so when a test asserts `label == 'measured'` that is a real
+    verdict rather than fixture noise — and the floor/omitted tests below each
+    introduce exactly one defect against this clean baseline.
+    """
+    blocks = []
+    for phase in audit._TE_PHASES:
+        fields: dict[str, int] = {'total_tokens': 100}
+        if phase == _EXECUTE_PHASE:
+            fields.update(execute_fields)
+        blocks.append(_phase_block(phase, **fields))
+    return ''.join(blocks)
+
+
+def _ledger_body(phase: str, rows: list[tuple[int, ...]]) -> str:
+    """Render a dispatch-boundary ledger carrying *rows* in canonical column order."""
+    lines = ['plan_id: ledger-plan', f'phase: {phase}', _LEDGER_HEADER]
+    for row in rows:
+        cells = ','.join(str(cell) for cell in row)
+        lines.append(f'2026-05-08T14:23:11Z,clean_exit_queue_empty,{cells}')
+    return '\n'.join(lines) + '\n'
+
+
+def _write_billing_plan(
+    repo_root: Path,
+    plan_id: str,
+    metrics_body: str,
+    *,
+    ledgers: dict[str, str] | None = None,
+) -> Any:
+    """Materialise a SHIPPING plan carrying a metrics.toon and optional ledgers.
+
+    ``references.json::modified_files`` is seeded non-empty so the plan clears the
+    shipping predicate — ``billing-composition`` is a delivery-cost check, so a
+    fixture without delivery evidence would be partitioned out before the check
+    saw it. Parsed through the real ``collect_inputs`` so the field wiring is
+    exercised end-to-end.
+    """
+    import json as _json
+
+    plan_dir = repo_root / '.plan' / 'temp' / 'billing-corpus' / plan_id
+    (plan_dir / 'work').mkdir(parents=True, exist_ok=True)
+    (plan_dir / 'references.json').write_text(
+        _json.dumps({'scope_estimate': 'surgical', 'modified_files': ['src/a.py']}),
+        encoding='utf-8',
+    )
+    (plan_dir / 'status.json').write_text(
+        _json.dumps({'metadata': {'change_type': 'bug_fix'}}), encoding='utf-8'
+    )
+    (plan_dir / 'work' / 'metrics.toon').write_text(metrics_body, encoding='utf-8')
+    for phase, body in (ledgers or {}).items():
+        (plan_dir / 'work' / f'metrics-dispatch-boundaries-{phase}.toon').write_text(
+            body, encoding='utf-8'
+        )
+    return audit.collect_inputs(plan_dir)
+
+
+def _billing_row(result: dict[str, Any], plan_id: str) -> dict[str, Any]:
+    return next(r for r in result['rows'] if r['plan_id'] == plan_id)
+
+
+class TestBillingCompositionReconstruction:
+    """The billing-formula reconstruction and its composition shares."""
+
+    def test_reconstruction_applies_the_documented_weights(self, tmp_path: Path):
+        # input + output + round(0.1 * cache_read) + round(1.25 * cache_creation)
+        #   = 1000 + 500 + 20000 + 10000 = 31500.
+        inputs = _write_billing_plan(
+            tmp_path,
+            'weights',
+            _clean_metrics_body(
+                input_tokens=1000,
+                output_tokens=500,
+                cache_read_input_tokens=200_000,
+                cache_creation_input_tokens=8_000,
+            ),
+        )
+
+        result = audit.cross_billing_composition([inputs])
+        row = _billing_row(result, 'weights')
+
+        assert row['billing_total'] == 31_500
+        # An unweighted sum would be 209_500 — the assertion distinguishes the
+        # weighted reconstruction from a raw four-field total.
+        assert row['billing_total'] != 209_500
+
+    def test_composition_shares_are_taken_over_the_reconstruction(self, tmp_path: Path):
+        inputs = _write_billing_plan(
+            tmp_path,
+            'shares',
+            _clean_metrics_body(
+                input_tokens=1000,
+                output_tokens=500,
+                cache_read_input_tokens=200_000,
+                cache_creation_input_tokens=8_000,
+            ),
+        )
+
+        result = audit.cross_billing_composition([inputs])
+        row = _billing_row(result, 'shares')
+
+        # 20000/31500, 10000/31500, 500/31500.
+        assert row['cache_read_share'] == '63.5%'
+        assert row['cache_creation_share'] == '31.7%'
+        assert row['output_share'] == '1.6%'
+
+    def test_zero_reconstruction_reports_na_rather_than_a_fabricated_share(
+        self, tmp_path: Path
+    ):
+        # A plan whose four-field view is present but all-zero has no denominator;
+        # the share is `n/a`, never a 0% that would read as a measured composition.
+        inputs = _write_billing_plan(
+            tmp_path,
+            'zero',
+            _clean_metrics_body(
+                input_tokens=0,
+                output_tokens=0,
+                cache_read_input_tokens=0,
+                cache_creation_input_tokens=0,
+            ),
+        )
+
+        result = audit.cross_billing_composition([inputs])
+        row = _billing_row(result, 'zero')
+
+        assert row['billing_total'] == 0
+        assert row['cache_read_share'] == 'n/a'
+
+
+class TestBillingCompositionReconciliation:
+    """The same-population `max(row, ledger)` dispatch-boundary reconciliation."""
+
+    def test_ledger_recovers_an_under_counted_row_without_summing(
+        self, tmp_path: Path
+    ):
+        # The ledger's two dispatch rows SUM per column (4000/1000/300000/12000)
+        # and the phase row is lower on every field, so the reconciled value is the
+        # ledger's — recovered, not added.
+        ledger = _ledger_body(
+            _EXECUTE_PHASE,
+            [
+                (40_000, 20, 100, 2_000, 500, 150_000, 6_000),
+                (44_211, 18, 312_290, 2_000, 500, 150_000, 6_000),
+            ],
+        )
+        inputs = _write_billing_plan(
+            tmp_path,
+            'reconciled',
+            _clean_metrics_body(
+                input_tokens=1000,
+                output_tokens=500,
+                cache_read_input_tokens=200_000,
+                cache_creation_input_tokens=8_000,
+            ),
+            ledgers={_EXECUTE_PHASE: ledger},
+        )
+
+        result = audit.cross_billing_composition([inputs])
+        row = _billing_row(result, 'reconciled')
+
+        # max(): 4000 + 1000 + round(0.1*300000) + round(1.25*12000)
+        #      = 4000 + 1000 + 30000 + 15000 = 50000.
+        assert row['billing_total'] == 50_000
+        # A SUM of row + ledger would be 81500 — the number this rule exists to
+        # avoid, because it double-counts every leaf recorded in both places.
+        assert row['billing_total'] != 81_500
+        assert row['reconciled_phases'] == _EXECUTE_PHASE
+        assert result['reconciled_plans'] == 1
+
+    def test_row_larger_than_ledger_is_left_untouched(self, tmp_path: Path):
+        # The healthy case: the enrich four-field walk also covers the parent
+        # turns, so the row is already the larger value and max() is a no-op —
+        # `reconciled_phases` stays empty rather than naming every phase.
+        ledger = _ledger_body(_EXECUTE_PHASE, [(10, 1, 1, 1, 1, 1, 1)])
+        inputs = _write_billing_plan(
+            tmp_path,
+            'healthy',
+            _clean_metrics_body(
+                input_tokens=1000,
+                output_tokens=500,
+                cache_read_input_tokens=200_000,
+                cache_creation_input_tokens=8_000,
+            ),
+            ledgers={_EXECUTE_PHASE: ledger},
+        )
+
+        result = audit.cross_billing_composition([inputs])
+        row = _billing_row(result, 'healthy')
+
+        assert row['billing_total'] == 31_500
+        assert row['reconciled_phases'] == ''
+
+    def test_absent_ledger_is_a_clean_no_op(self, tmp_path: Path):
+        inputs = _write_billing_plan(
+            tmp_path,
+            'no-ledger',
+            _clean_metrics_body(
+                input_tokens=1000,
+                output_tokens=500,
+                cache_read_input_tokens=200_000,
+                cache_creation_input_tokens=8_000,
+            ),
+        )
+
+        result = audit.cross_billing_composition([inputs])
+        row = _billing_row(result, 'no-ledger')
+
+        assert row['billing_total'] == 31_500
+        assert row['reconciled_phases'] == ''
+
+    def test_legacy_five_column_row_parses_with_context_columns_defaulted(
+        self, tmp_path: Path
+    ):
+        # A ledger written before the four context-load columns existed keeps its
+        # columns 1-5 readable; the appended columns default to 0 rather than the
+        # whole row being dropped.
+        legacy = (
+            'plan_id: legacy\n'
+            f'phase: {_EXECUTE_PHASE}\n'
+            'rows[]{timestamp,termination_cause,total_tokens,tool_uses,duration_ms}:\n'
+            '2026-05-08T14:23:11Z,clean_exit_queue_empty,999,3,10\n'
+        )
+        path = tmp_path / 'legacy.toon'
+        path.write_text(legacy, encoding='utf-8')
+
+        totals = audit._parse_dispatch_boundary_totals(path)
+
+        assert totals['total_tokens'] == 999
+        assert totals['input_tokens'] == 0
+        assert totals['cache_read_input_tokens'] == 0
+
+    def test_row_below_the_legacy_column_floor_is_skipped(self, tmp_path: Path):
+        malformed = (
+            'plan_id: broken\n'
+            f'phase: {_EXECUTE_PHASE}\n'
+            f'{_LEDGER_HEADER}\n'
+            '2026-05-08T14:23:11Z,clean_exit_queue_empty,5\n'
+            '2026-05-08T14:24:11Z,clean_exit_queue_empty,7,1,2,3,4,5,6\n'
+        )
+        path = tmp_path / 'broken.toon'
+        path.write_text(malformed, encoding='utf-8')
+
+        totals = audit._parse_dispatch_boundary_totals(path)
+
+        # Only the well-formed row contributes; the truncated one is skipped.
+        assert totals['total_tokens'] == 7
+
+    def test_absent_ledger_file_yields_no_totals(self, tmp_path: Path):
+        assert audit._parse_dispatch_boundary_totals(tmp_path / 'nope.toon') == {}
+
+
+class TestBillingCompositionUnderCounts:
+    """The two named under-counts are detected and reported SEPARATELY."""
+
+    def test_close_count_above_one_is_unabsorbed_loop_back(self, tmp_path: Path):
+        body = _clean_metrics_body(
+            input_tokens=1000,
+            output_tokens=500,
+            cache_read_input_tokens=200_000,
+            cache_creation_input_tokens=8_000,
+            close_count=2,
+        )
+        inputs = _write_billing_plan(tmp_path, 'loopback', body)
+
+        result = audit.cross_billing_composition([inputs])
+        row = _billing_row(result, 'loopback')
+
+        assert row['unabsorbed_loop_back'] == _EXECUTE_PHASE
+        # Reported SEPARATELY — the other under-count did not fire.
+        assert row['omitted_row'] == ''
+        assert result['unabsorbed_loop_back_plans'] == 1
+        assert result['omitted_row_plans'] == 0
+        assert audit._billing_composition_genuine(row) is True
+
+    def test_single_close_is_not_a_loop_back(self, tmp_path: Path):
+        body = _clean_metrics_body(
+            input_tokens=1000,
+            output_tokens=500,
+            cache_read_input_tokens=200_000,
+            cache_creation_input_tokens=8_000,
+            close_count=1,
+        )
+        inputs = _write_billing_plan(tmp_path, 'single-close', body)
+
+        result = audit.cross_billing_composition([inputs])
+
+        assert _billing_row(result, 'single-close')['unabsorbed_loop_back'] == ''
+
+    def test_missing_canonical_phase_is_an_omitted_row(self, tmp_path: Path):
+        # Drop `6-finalize` from an otherwise fully-recorded body.
+        body = ''.join(
+            _phase_block(
+                phase,
+                total_tokens=100,
+                **(
+                    {
+                        'input_tokens': 1000,
+                        'output_tokens': 500,
+                        'cache_read_input_tokens': 200_000,
+                        'cache_creation_input_tokens': 8_000,
+                    }
+                    if phase == _EXECUTE_PHASE
+                    else {}
+                ),
+            )
+            for phase in audit._TE_PHASES
+            if phase != '6-finalize'
+        )
+        inputs = _write_billing_plan(tmp_path, 'omitted', body)
+
+        result = audit.cross_billing_composition([inputs])
+        row = _billing_row(result, 'omitted')
+
+        assert row['omitted_row'] == '6-finalize'
+        assert row['unabsorbed_loop_back'] == ''
+        assert result['omitted_row_plans'] == 1
+        # An omitted canonical row means the plan's figures are missing weight
+        # outright, so the plan is floored.
+        assert row['label'] == 'floor'
+
+    def test_persisted_unrecorded_phases_marker_is_an_omitted_row(
+        self, tmp_path: Path
+    ):
+        # A phase that HAS a section but which the recorder itself marked
+        # unrecorded is an omitted row too — the marker is consulted, not just
+        # structural absence.
+        body = (
+            'partial: true\n'
+            'unrecorded_phases: 6-finalize\n'
+            + _clean_metrics_body(
+                input_tokens=1000,
+                output_tokens=500,
+                cache_read_input_tokens=200_000,
+                cache_creation_input_tokens=8_000,
+            )
+        )
+        inputs = _write_billing_plan(tmp_path, 'marked', body)
+
+        result = audit.cross_billing_composition([inputs])
+        row = _billing_row(result, 'marked')
+
+        assert '6-finalize' in row['omitted_row']
+        assert row['label'] == 'floor'
+
+    def test_undercounted_plans_counts_a_both_ways_plan_once(self, tmp_path: Path):
+        """A plan carrying BOTH under-counts is ONE under-counted plan, not two.
+
+        `unabsorbed_loop_back_plans` and `omitted_row_plans` are independent
+        per-plan tallies, so summing them double-counts this plan and can
+        exceed `plans_in_corpus` — a movement no plan produced.
+        """
+        # `close_count: 2` on 5-execute (loop-back) AND no 6-finalize section
+        # (omitted row) — the same plan trips both under-counts.
+        body = ''.join(
+            _phase_block(
+                phase,
+                total_tokens=100,
+                **(
+                    {
+                        'input_tokens': 1000,
+                        'output_tokens': 500,
+                        'cache_read_input_tokens': 200_000,
+                        'cache_creation_input_tokens': 8_000,
+                        'close_count': 2,
+                    }
+                    if phase == _EXECUTE_PHASE
+                    else {}
+                ),
+            )
+            for phase in audit._TE_PHASES
+            if phase != '6-finalize'
+        )
+        inputs = _write_billing_plan(tmp_path, 'both-ways', body)
+
+        result = audit.cross_billing_composition([inputs])
+        row = _billing_row(result, 'both-ways')
+
+        # Both under-counts fired on this ONE plan.
+        assert row['unabsorbed_loop_back'] == _EXECUTE_PHASE
+        assert row['omitted_row'] == '6-finalize'
+        assert result['unabsorbed_loop_back_plans'] == 1
+        assert result['omitted_row_plans'] == 1
+
+        # The distinct count is 1, and it never exceeds the corpus size.
+        assert result['undercounted_plans'] == 1
+        assert result['undercounted_plans'] <= result['plans_in_corpus']
+        # Negative control on the superseded formula: naively summing the two
+        # tallies would have reported 2 for a single plan.
+        assert (
+            result['unabsorbed_loop_back_plans'] + result['omitted_row_plans']
+        ) == 2
+
+    def test_undercounted_plans_is_load_bearing_for_disjoint_plans(
+        self, tmp_path: Path
+    ):
+        """Matched control: two DIFFERENT plans each tripping one under-count sum to 2."""
+        loopback_body = _clean_metrics_body(
+            input_tokens=1000,
+            output_tokens=500,
+            cache_read_input_tokens=200_000,
+            cache_creation_input_tokens=8_000,
+            close_count=2,
+        )
+        omitted_body = ''.join(
+            _phase_block(
+                phase,
+                total_tokens=100,
+                **(
+                    {
+                        'input_tokens': 1000,
+                        'output_tokens': 500,
+                        'cache_read_input_tokens': 200_000,
+                        'cache_creation_input_tokens': 8_000,
+                    }
+                    if phase == _EXECUTE_PHASE
+                    else {}
+                ),
+            )
+            for phase in audit._TE_PHASES
+            if phase != '6-finalize'
+        )
+        a = _write_billing_plan(tmp_path, 'only-loopback', loopback_body)
+        b = _write_billing_plan(tmp_path, 'only-omitted', omitted_body)
+
+        result = audit.cross_billing_composition([a, b])
+
+        # Disjoint plans — the distinct count equals the naive sum here, which
+        # is what makes the both-ways case above a real discriminator.
+        assert result['undercounted_plans'] == 2
+        assert result['plans_in_corpus'] == 2
+
+
+class TestBillingCompositionCanonicalPhaseScoping:
+    """Only canonical `_TE_PHASES` sections feed the corpus figures."""
+
+    def test_non_phase_section_is_not_accumulated(self, tmp_path: Path):
+        """A `[totals]` roll-up carrying the same keys must not be summed as a phase.
+
+        The parser admits every `[...]` section, so without canonical-phase
+        scoping a roll-up section would be added into `billing` and
+        `denom_bytes` on top of the phases it already summarises — inflating
+        every share's denominator against a phase set the omitted-row check
+        never reasons over.
+        """
+        byte_field = audit._BC_BYTE_FIELDS[0]
+        clean = _clean_metrics_body(
+            input_tokens=1000,
+            output_tokens=500,
+            cache_read_input_tokens=200_000,
+            cache_creation_input_tokens=8_000,
+            **{byte_field: 50_000},
+        )
+        baseline_inputs = _write_billing_plan(tmp_path, 'no-rollup', clean)
+        baseline = audit.cross_billing_composition([baseline_inputs])
+        baseline_row = _billing_row(baseline, 'no-rollup')
+        # Guard the guard: a zero denominator would make the equality below
+        # trivially true whether or not the roll-up was excluded.
+        assert baseline_row['billing_total'] > 0
+        assert baseline_row['denom_bytes'] > 0
+
+        # The SAME body plus a non-canonical roll-up section repeating the figures.
+        with_rollup = clean + _phase_block(
+            'totals',
+            total_tokens=100,
+            input_tokens=1000,
+            output_tokens=500,
+            cache_read_input_tokens=200_000,
+            cache_creation_input_tokens=8_000,
+            **{byte_field: 50_000},
+        )
+        rollup_inputs = _write_billing_plan(tmp_path, 'with-rollup', with_rollup)
+        rollup = audit.cross_billing_composition([rollup_inputs])
+        rollup_row = _billing_row(rollup, 'with-rollup')
+
+        # The roll-up changed nothing: the figures are identical to the baseline.
+        assert rollup_row['billing_total'] == baseline_row['billing_total']
+        assert rollup_row['denom_bytes'] == baseline_row['denom_bytes']
+        # And it is not reported as an extra recorded phase.
+        assert 'totals' not in rollup_row['unabsorbed_loop_back']
+        assert 'totals' not in rollup_row['omitted_row']
+
+
+class TestBillingCompositionFloorAndPopulation:
+    """Every figure carries its own population, and a floored figure says so."""
+
+    def test_every_emitted_figure_carries_a_population_and_a_label(
+        self, tmp_path: Path
+    ):
+        inputs = _write_billing_plan(
+            tmp_path,
+            'pop',
+            _clean_metrics_body(
+                input_tokens=1000,
+                output_tokens=500,
+                cache_read_input_tokens=200_000,
+                cache_creation_input_tokens=8_000,
+                exploration_result_bytes=400,
+                work_result_bytes=300,
+                execute_result_bytes=200,
+                orchestration_result_bytes=50,
+                unclassified_result_bytes=50,
+            ),
+        )
+
+        result = audit.cross_billing_composition([inputs])
+
+        assert result['figures'], 'no figures emitted'
+        for figure in result['figures']:
+            assert figure['population'] == 1, figure
+            assert figure['label'] in {'measured', 'floor'}, figure
+            assert 'floor_population' in figure, figure
+            assert figure['unit'] in {'share', 'weighted_tokens'}, figure
+
+    def test_populations_are_per_figure_not_per_block(self, tmp_path: Path):
+        # The two families are independent: a plan carrying the billing view but
+        # NO payload-byte counters contributes to the billing figures only. A
+        # single block-level corpus size would overstate the byte figures.
+        billing_only = _write_billing_plan(
+            tmp_path,
+            'billing-only',
+            _clean_metrics_body(
+                input_tokens=1000,
+                output_tokens=500,
+                cache_read_input_tokens=200_000,
+                cache_creation_input_tokens=8_000,
+            ),
+        )
+        both = _write_billing_plan(
+            tmp_path,
+            'both',
+            _clean_metrics_body(
+                input_tokens=1000,
+                output_tokens=500,
+                cache_read_input_tokens=200_000,
+                cache_creation_input_tokens=8_000,
+                exploration_result_bytes=400,
+                work_result_bytes=600,
+            ),
+        )
+
+        result = audit.cross_billing_composition([billing_only, both])
+        by_figure = {f['figure']: f for f in result['figures']}
+
+        assert result['plans_in_corpus'] == 2
+        assert by_figure['billing_share_output_tokens']['population'] == 2
+        assert by_figure['byte_share_exploration']['population'] == 1
+
+    def test_metrics_blind_plan_floors_the_figures_it_contributed_to(
+        self, tmp_path: Path
+    ):
+        # A zero-token 5-execute with NO partiality marker is `metrics_blind` —
+        # the input-integrity verdict this check consumes rather than re-derives.
+        body = ''.join(
+            _phase_block(
+                phase,
+                total_tokens=0 if phase == _EXECUTE_PHASE else 100,
+                **(
+                    {
+                        'input_tokens': 1000,
+                        'output_tokens': 500,
+                        'cache_read_input_tokens': 200_000,
+                        'cache_creation_input_tokens': 8_000,
+                    }
+                    if phase == _EXECUTE_PHASE
+                    else {}
+                ),
+            )
+            for phase in audit._TE_PHASES
+        )
+        inputs = _write_billing_plan(tmp_path, 'blind', body)
+
+        # Matched control: input-integrity really does call this plan blind, so
+        # the floor label below is traceable to that verdict.
+        assert _EXECUTE_PHASE in audit.check_input_integrity(inputs)['metrics_blind']
+
+        result = audit.cross_billing_composition([inputs])
+        row = _billing_row(result, 'blind')
+
+        assert row['label'] == 'floor'
+        assert audit._billing_composition_genuine(row) is True
+
+        # The floor label is per-FIGURE, keyed on contribution — not per-block.
+        # This plan carries the billing view but no payload-byte counters, so it
+        # contributed to the billing figures only; scoping the loop by
+        # `population` is what makes the assertion say what its name says.
+        contributed = [f for f in result['figures'] if f['population']]
+        assert contributed, 'no figure recorded a contribution'
+        for figure in contributed:
+            assert figure['label'] == 'floor', figure
+            assert figure['floor_population'] == 1, figure
+
+        # Matched complement: the byte figures nobody contributed to stay at a
+        # zero population and are NOT floored by association. Without this half
+        # the loop above would still pass if `label` were floored block-wide.
+        uncontributed = [f for f in result['figures'] if not f['population']]
+        assert uncontributed, 'no uncontributed figure — complement is vacuous'
+        for figure in uncontributed:
+            assert figure['floor_population'] == 0, figure
+            assert figure['value'] == 'n/a', figure
+
+    def test_fully_recorded_plan_is_measured_not_floored(self, tmp_path: Path):
+        # The matched NEGATIVE control for the floor label: the same shape without
+        # the blind phase must come out `measured`, otherwise the label would be
+        # unconditional and carry no information.
+        inputs = _write_billing_plan(
+            tmp_path,
+            'measured',
+            _clean_metrics_body(
+                input_tokens=1000,
+                output_tokens=500,
+                cache_read_input_tokens=200_000,
+                cache_creation_input_tokens=8_000,
+            ),
+        )
+
+        result = audit.cross_billing_composition([inputs])
+        row = _billing_row(result, 'measured')
+
+        assert row['label'] == 'measured'
+        assert audit._billing_composition_genuine(row) is False
+        for figure in result['figures']:
+            assert figure['label'] == 'measured', figure
+            assert figure['floor_population'] == 0, figure
+
+
+class TestBillingCompositionByteShares:
+    """The four byte shares are taken over ALL buckets, residual included."""
+
+    def test_byte_shares_use_the_whole_observed_payload_population(
+        self, tmp_path: Path
+    ):
+        inputs = _write_billing_plan(
+            tmp_path,
+            'bytes',
+            _clean_metrics_body(
+                input_tokens=1000,
+                output_tokens=500,
+                cache_read_input_tokens=200_000,
+                cache_creation_input_tokens=8_000,
+                exploration_result_bytes=400,
+                work_result_bytes=300,
+                execute_result_bytes=200,
+                orchestration_result_bytes=50,
+                unclassified_result_bytes=50,
+            ),
+        )
+
+        result = audit.cross_billing_composition([inputs])
+        row = _billing_row(result, 'bytes')
+
+        # Denominator is 1000 (all five buckets), NOT 950 (the four named ones).
+        assert row['denom_bytes'] == 1000
+        assert row['residual_bytes'] == 50
+        assert row['exploration_byte_share'] == '40.0%'
+        assert row['work_byte_share'] == '30.0%'
+        assert row['execute_byte_share'] == '20.0%'
+        assert row['orchestration_byte_share'] == '5.0%'
+        # Re-normalising over the four named sources would give 42.1% — the
+        # inflation this denominator choice exists to prevent.
+        assert row['exploration_byte_share'] != '42.1%'
+
+    def test_residual_is_never_folded_into_a_named_share(self, tmp_path: Path):
+        # `unclassified` is emitted as a raw byte count, never as a fifth share,
+        # so the four named shares plus the residual account for the whole.
+        inputs = _write_billing_plan(
+            tmp_path,
+            'residual',
+            _clean_metrics_body(
+                input_tokens=1000,
+                exploration_result_bytes=500,
+                unclassified_result_bytes=500,
+            ),
+        )
+
+        result = audit.cross_billing_composition([inputs])
+        row = _billing_row(result, 'residual')
+
+        assert row['exploration_byte_share'] == '50.0%'
+        assert row['residual_bytes'] == 500
+        assert 'unclassified_byte_share' not in row
+        figure_names = {f['figure'] for f in result['figures']}
+        assert 'byte_share_unclassified' not in figure_names
+
+
+class TestBillingCompositionAbsentIsNotZero:
+    """A plan that measured neither family is excluded, never admitted at zero."""
+
+    def test_plan_measuring_neither_family_is_excluded_and_named(
+        self, tmp_path: Path
+    ):
+        # A metrics.toon carrying only durations — no four-field view, no byte
+        # counters — measured nothing this check can read.
+        body = ''.join(
+            _phase_block(phase, total_tokens=100, duration_seconds=5)
+            for phase in audit._TE_PHASES
+        )
+        inputs = _write_billing_plan(tmp_path, 'unmeasured', body)
+
+        result = audit.cross_billing_composition([inputs])
+
+        assert result['plans_in_corpus'] == 0
+        assert result['rows'] == []
+        assert result['plans_excluded_no_counters'] == 1
+        assert result['excluded_plan_ids'] == ['unmeasured']
+
+    def test_measured_zero_stays_in_the_corpus(self, tmp_path: Path):
+        # The matched control for the exclusion: a PRESENT four-field view whose
+        # values are zero is a real observation and is NOT excluded.
+        inputs = _write_billing_plan(
+            tmp_path,
+            'measured-zero',
+            _clean_metrics_body(
+                input_tokens=0,
+                output_tokens=0,
+                cache_read_input_tokens=0,
+                cache_creation_input_tokens=0,
+            ),
+        )
+
+        result = audit.cross_billing_composition([inputs])
+
+        assert result['plans_in_corpus'] == 1
+        assert result['excluded_plan_ids'] == []
+
+    def test_empty_corpus_degrades_without_raising(self):
+        result = audit.cross_billing_composition([])
+
+        assert result['plans_in_corpus'] == 0
+        assert result['rows'] == []
+        # Every figure is still emitted, each honestly reporting a zero population.
+        assert result['figures']
+        for figure in result['figures']:
+            assert figure['population'] == 0, figure
+
+
+class TestBillingCompositionEmit:
+    """The emitted block shape: a figures table plus the per-plan audit rows."""
+
+    def test_block_carries_both_tables_and_the_severity_column(self, tmp_path: Path):
+        inputs = _write_billing_plan(
+            tmp_path,
+            'emit',
+            _clean_metrics_body(
+                input_tokens=1000,
+                output_tokens=500,
+                cache_read_input_tokens=200_000,
+                cache_creation_input_tokens=8_000,
+                close_count=2,
+            ),
+        )
+        result = audit.cross_billing_composition([inputs])
+
+        block = audit.emit_billing_composition_block(result)
+
+        assert 'check: billing-composition' in block
+        assert 'status: success' in block
+        assert 'plans_in_corpus: 1' in block
+        assert 'unabsorbed_loop_back_plans: 1' in block
+        assert 'omitted_row_plans: 0' in block
+        assert 'genuine_signal_count: 1' in block
+        assert (
+            'figures[8]{figure,unit,value,population,floor_population,label}:'
+            in block
+        )
+        assert (
+            'rows[1]{plan_id,billing_total,cache_read_share,cache_creation_share,'
+            'output_share,exploration_byte_share,work_byte_share,'
+            'execute_byte_share,orchestration_byte_share,residual_bytes,'
+            'denom_bytes,reconciled_phases,unabsorbed_loop_back,omitted_row,'
+            'label,severity}:' in block
+        )
+        genuine_row = next(
+            ln.strip() for ln in block.splitlines() if ln.strip().startswith('emit,')
+        )
+        assert genuine_row.endswith(',genuine')
+
+    def test_block_states_the_reconciliation_and_exclusion_rules(
+        self, tmp_path: Path
+    ):
+        # The rules ride the block so a reader can never mistake the
+        # reconciliation for a sum, or an excluded plan for a zero share.
+        result = audit.cross_billing_composition([])
+
+        block = audit.emit_billing_composition_block(result)
+
+        assert 'reconciliation_rule:' in block
+        assert 'NOT a sum' in block
+        assert 'exclusion_rule:' in block
+        assert 'byte_denominator:' in block
+
+    def test_full_run_annotates_the_non_shipping_exclusion(self, tmp_path: Path):
+        # billing-composition is a delivery-cost check, so a plan with no delivery
+        # evidence is partitioned out and NAMED — a number distinct from
+        # `plans_excluded_no_counters`.
+        shipping = _write_billing_plan(
+            tmp_path,
+            'ships',
+            _clean_metrics_body(
+                input_tokens=1000,
+                output_tokens=500,
+                cache_read_input_tokens=200_000,
+                cache_creation_input_tokens=8_000,
+            ),
+        )
+        no_ship = _write_shipping_plan(
+            tmp_path, 'no-ship', archived_reason='closed_superseded'
+        )
+
+        output = audit.run_checks(
+            [shipping, no_ship], ['billing-composition'], tmp_path
+        )
+
+        assert 'plans_excluded_non_shipping: 1' in output
+        assert 'excluded_non_shipping_plan_ids: no-ship:closed_superseded' in output
+        assert 'ships' in output

@@ -191,6 +191,89 @@ _TOOL_BUCKETS: dict[str, str] = {
 _TOOL_BUCKET_NAMES = tuple(dict.fromkeys([*_TOOL_BUCKETS.values(), "unclassified"]))
 
 
+# Exploration sub-sources, in report order. Exploration is not one activity: a
+# read of source or test code is a lookup an INDEX could answer, while a read of a
+# workflow or standard document is context that has to be RESIDENT to be useful.
+# ``unattributed`` is the fail-open member, mirroring ``unclassified`` in the tool
+# -name classifier — an unrecognised shape is counted and surfaced, never guessed.
+_EXPLORATION_SUBSOURCES = ("index_answerable", "doc_residency", "unattributed")
+
+# ``tool_use.input`` keys that carry a filesystem target, in preference order.
+# POPULATION-DERIVED, like ``_TOOL_BUCKETS`` above: a census of 1999 live
+# ``tool_use`` items found exactly two path-bearing key spellings — ``file_path``
+# (Read / Write / Edit) and ``path`` (Grep / Glob) — so no third spelling is
+# listed on speculation. The same census found the non-path-addressed tools
+# carrying ``url`` (WebFetch) and ``query`` (WebSearch), which match nothing here
+# and fall open into ``unattributed`` — the live shape that exercises that branch.
+# It also found ZERO items lacking ``input`` altogether, so the missing-input arm
+# of ``_extract_target_path`` is a defensive guard against a shape not currently
+# observed, not a routine path.
+_TARGET_PATH_KEYS = ("file_path", "path")
+
+# Source/test-code suffixes read as index-answerable. Population-derived from the
+# language domains this marketplace actually ships bundles for (pm-dev-python,
+# pm-dev-java, pm-dev-frontend) rather than guessed wide: an unlisted suffix fails
+# OPEN into ``unattributed``, where it stays disclosed and countable, so
+# under-listing costs visibility — never a wrong named attribution.
+_CODE_SUFFIXES = (".py", ".java", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".kt")
+
+# Path segments whose markdown bodies are workflow/standard documents rather than
+# code: a skill body (``skills/**/SKILL.md``) and a standard (``standards/*.md``).
+_DOC_MARKDOWN_SEGMENTS = frozenset({"skills", "standards"})
+
+
+def _empty_exploration_subsources() -> dict[str, int]:
+    """Return a zeroed exploration sub-source split.
+
+    Deliberately SEPARATE from ``_empty_tool_counters``: these are a byte-only
+    sub-split of one bucket under the ``exploration_{sub}_bytes`` key shape, not
+    members of the ``{bucket}_{measure}`` counter family, and folding them into
+    that dict would break the family's published key-set contract.
+    """
+    return {f"exploration_{sub}_bytes": 0 for sub in _EXPLORATION_SUBSOURCES}
+
+
+def _extract_target_path(tool_input: object) -> str | None:
+    """Return the filesystem target a ``tool_use`` item addresses, or None.
+
+    None is the honest answer for a call that carries no ``input`` at all and for
+    one whose input addresses something other than a path; the caller turns both
+    into the fail-open ``unattributed`` sub-source rather than a guess.
+    """
+    if not isinstance(tool_input, dict):
+        return None
+    for key in _TARGET_PATH_KEYS:
+        value = tool_input.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def _classify_exploration_target(target_path: str | None) -> str:
+    """Return the exploration sub-source for a call's target path.
+
+    Fails OPEN into ``"unattributed"`` — exactly as ``_classify_tool_name`` fails
+    open into ``"unclassified"``. Both "no recoverable path" and "a path shape
+    outside the recognised populations" are COUNTED here and surfaced, never
+    dropped and never attributed to a named sub-source on a guess.
+    """
+    if not target_path:
+        return "unattributed"
+    normalized = target_path.replace("\\", "/").casefold()
+    segments = normalized.split("/")
+    basename = segments[-1]
+    parents = set(segments[:-1])
+    if basename == "claude.md" or basename.endswith(".adoc"):
+        return "doc_residency"
+    if "doc" in parents:
+        return "doc_residency"
+    if basename.endswith(".md") and (_DOC_MARKDOWN_SEGMENTS & parents):
+        return "doc_residency"
+    if basename.endswith(_CODE_SUFFIXES):
+        return "index_answerable"
+    return "unattributed"
+
+
 def _classify_tool_name(name: object) -> str:
     """Return the exploration-share bucket for a ``tool_use`` item's ``name``.
 
@@ -1518,30 +1601,38 @@ def _count_tool_use(
     item: dict[str, Any],
     phase: str,
     per_phase_counters: dict[str, dict[str, int]],
-    call_index: dict[str, tuple[str, str]],
+    call_index: dict[str, tuple[str, str, str]],
 ) -> None:
     """Count one ``tool_use`` item into *phase*'s bucket and index it by ``id``.
 
     The matching ``tool_result`` arrives in a LATER transcript entry, so the
-    call's ``id`` -> ``(phase, bucket)`` association is recorded in *call_index*
-    to keep a result payload attributed to the same phase and bucket as the call
-    that produced it.
+    call's ``id`` -> ``(phase, bucket, exploration_subsource)`` association is
+    recorded in *call_index* to keep a result payload attributed to the same
+    phase, bucket, and sub-source as the call that produced it. The sub-source is
+    resolved HERE because the target path lives on the call's ``input`` — the
+    result item carries no path of its own.
     """
     bucket = _classify_tool_name(item.get("name"))
     counters = per_phase_counters.setdefault(phase, _empty_tool_counters())
     counters[f"{bucket}_tool_calls"] += 1
     tool_id = item.get("id")
     if isinstance(tool_id, str) and tool_id:
-        call_index[tool_id] = (phase, bucket)
+        subsource = _classify_exploration_target(_extract_target_path(item.get("input")))
+        call_index[tool_id] = (phase, bucket, subsource)
 
 
 def _count_tool_result_bytes(
     tool_use_id: object,
     payload_text: str,
     per_phase_counters: dict[str, dict[str, int]],
-    call_index: dict[str, tuple[str, str]],
+    call_index: dict[str, tuple[str, str, str]],
+    per_phase_subsources: dict[str, dict[str, int]],
 ) -> None:
     """Add a ``tool_result`` payload's UTF-8 byte length to its call's bucket.
+
+    An exploration payload is ALSO added to its sub-source, so the three
+    ``exploration_{sub}_bytes`` figures partition ``exploration_result_bytes``
+    exactly — the same bytes re-cut, never additional ones.
 
     A result whose originating call was never seen (a truncated or partial
     transcript) is skipped rather than guessed at.
@@ -1551,12 +1642,84 @@ def _count_tool_result_bytes(
     located = call_index.get(tool_use_id)
     if located is None:
         return
-    phase, bucket = located
+    phase, bucket, subsource = located
+    payload_bytes = len(payload_text.encode("utf-8", "replace"))
     counters = per_phase_counters.setdefault(phase, _empty_tool_counters())
-    counters[f"{bucket}_result_bytes"] += len(payload_text.encode("utf-8", "replace"))
+    counters[f"{bucket}_result_bytes"] += payload_bytes
+    if bucket == "exploration":
+        subsources = per_phase_subsources.setdefault(phase, _empty_exploration_subsources())
+        subsources[f"exploration_{subsource}_bytes"] += payload_bytes
 
 
-def _sum_subagent_transcript(path: Path) -> tuple[dict[str, int], str | None, dict[str, int]]:
+def _fold_turn_residency(
+    phase: str,
+    per_phase_counters: dict[str, dict[str, int]],
+    per_phase_residency: dict[str, dict[str, int]],
+) -> None:
+    """Fold one turn's worth of byte residency into *phase*'s attribution weights.
+
+    Called once per usage-bearing transcript entry — i.e. once per context read
+    the phase was actually billed for — so the number of folds IS the phase's
+    turn count, and each bucket's accumulated weight ends up as ``bytes x the
+    number of turns those bytes stayed resident``. Adding the CUMULATIVE resident
+    byte total once per turn is what makes the weight turn-weighted without a
+    per-payload ledger: a payload that entered early is re-added on every
+    subsequent fold, while one that entered on the last turn is counted once.
+    """
+    resident = per_phase_counters.get(phase) or {}
+    weights = per_phase_residency.setdefault(phase, dict.fromkeys(_TOOL_BUCKET_NAMES, 0))
+    for bucket in _TOOL_BUCKET_NAMES:
+        weights[bucket] += resident.get(f"{bucket}_result_bytes", 0)
+
+
+def _attribute_cache_read(
+    cache_read_total: int, weights: dict[str, int], subagent_cache_read: int = 0
+) -> dict[str, int]:
+    """Split one phase's recorded ``cache_read`` across the entering byte sources.
+
+    The split is proportional to *weights* — the turn-weighted residency
+    accumulated by ``_fold_turn_residency`` — and the emitted key set is DERIVED
+    from ``_TOOL_BUCKET_NAMES``, so a bucket added to ``_TOOL_BUCKETS`` cannot
+    leave this group behind.
+
+    **Only the parent-observed portion is split.** *cache_read_total* includes
+    ``cache_read`` folded in from subagent transcripts, but those payloads are
+    added after the parent walk and never pass through ``_fold_turn_residency``,
+    so they contribute no residency weight. Splitting the full total across
+    parent-only weights would spread the subagent share over buckets it was
+    never observed to occupy — the same defect the ``total_weight == 0`` branch
+    below avoids. *subagent_cache_read* is therefore subtracted before the split
+    and reaches the residual via the remainder.
+
+    **Exact reconciliation.** Each named part is floored, and
+    ``cache_read_unattributed`` is computed as the REMAINDER rather than as its
+    own proportional share. The parts plus the residual therefore sum to
+    *cache_read_total* exactly, and every rounding crumb lands in the residual —
+    which is the disclosure column, never a named share. Weight the walk could
+    not tie to an observed payload (``total_weight == 0`` while the phase was
+    still billed for a context read) leaves the whole figure in the residual
+    rather than being spread across buckets it was never observed to belong to.
+
+    Emission is unconditional: a phase recording ``cache_read == 0`` gets every
+    key at a measured zero, never an absent key.
+    """
+    attributed = {f"cache_read_attributed_{bucket}": 0 for bucket in _TOOL_BUCKET_NAMES}
+    total_weight = sum(weights.get(bucket, 0) for bucket in _TOOL_BUCKET_NAMES)
+    # Clamped at zero so a subagent figure exceeding the phase total can only
+    # empty the split, never invert it into negative named shares.
+    attributable = max(0, cache_read_total - max(0, subagent_cache_read))
+    if attributable > 0 and total_weight > 0:
+        for bucket in _TOOL_BUCKET_NAMES:
+            attributed[f"cache_read_attributed_{bucket}"] = (
+                attributable * weights.get(bucket, 0) // total_weight
+            )
+    attributed["cache_read_unattributed"] = cache_read_total - sum(attributed.values())
+    return attributed
+
+
+def _sum_subagent_transcript(
+    path: Path, subsource_bytes: dict[str, int] | None = None
+) -> tuple[dict[str, int], str | None, dict[str, int]]:
     """Sum usage and tool-call counters across one subagent transcript JSONL.
 
     Returns ``(four_field_bucket, first_timestamp_iso, tool_counters)``.
@@ -1565,10 +1728,20 @@ def _sum_subagent_transcript(path: Path) -> tuple[dict[str, int], str | None, di
     timestamp resolves to — the dispatched envelope's exploration belongs to the
     phase that spawned it, and reusing the existing first-timestamp attribution
     keeps one attribution path rather than introducing a second.
+
+    *subsource_bytes*, when supplied, ACCUMULATES this transcript's exploration
+    sub-source split into the caller's dict. It is an out-parameter rather than a
+    fourth return element because the sub-sources are a byte-only sub-split of one
+    bucket, NOT members of the ``{bucket}_{measure}`` counter family the third
+    return value realises — folding them in there would break that family's
+    published key-set contract. Supplying it is what keeps the partition invariant
+    (sub-sources sum to ``exploration_result_bytes``) true for phases whose bytes
+    came from a dispatched envelope rather than the parent turn.
     """
     bucket: dict[str, int] = dict.fromkeys(_USAGE_FOUR_FIELDS, 0)
     per_phase_tools: dict[str, dict[str, int]] = {}
-    call_index: dict[str, tuple[str, str]] = {}
+    per_phase_subsources: dict[str, dict[str, int]] = {}
+    call_index: dict[str, tuple[str, str, str]] = {}
     first_timestamp: str | None = None
     try:
         with open(path, encoding="utf-8", errors="replace") as f:
@@ -1604,9 +1777,13 @@ def _sum_subagent_transcript(path: Path) -> tuple[dict[str, int], str | None, di
                             _extract_text_payload(item.get("content")),
                             per_phase_tools,
                             call_index,
+                            per_phase_subsources,
                         )
     except OSError:
         return dict.fromkeys(_USAGE_FOUR_FIELDS, 0), None, _empty_tool_counters()
+    if subsource_bytes is not None:
+        for key, value in per_phase_subsources.get(_PENDING_PHASE, {}).items():
+            subsource_bytes[key] = subsource_bytes.get(key, 0) + value
     return bucket, first_timestamp, per_phase_tools.get(_PENDING_PHASE, _empty_tool_counters())
 
 
@@ -1748,14 +1925,30 @@ def _compute_normalized_tokens(
     phase to a normalized bucket carrying the four ``message.usage`` fields, the
     billing-weighted total, the subagent ``<usage>`` attribution
     (``subagent_total_tokens`` / ``subagent_tool_uses`` / ``subagent_duration_ms``
-    / ``subagent_samples``), and the exploration-share counters
+    / ``subagent_samples``), the exploration-share counters
     (``{exploration,work,execute,orchestration,unclassified}_tool_calls`` and the
-    matching ``_result_bytes``). ``counters`` carries the attribution counters.
+    matching ``_result_bytes``), the cache-read attribution group
+    (``cache_read_attributed_{bucket}`` plus the ``cache_read_unattributed``
+    residual), and the exploration sub-source split
+    (``exploration_{index_answerable,doc_residency,unattributed}_bytes``, which
+    partitions ``exploration_result_bytes`` by what each call TARGETED).
+    ``counters`` carries the attribution counters.
+
+    The attribution group splits the phase's recorded ``cache_read`` by
+    TURN-WEIGHTED RESIDENCY — each bucket's payload bytes multiplied by the number
+    of the phase's billed turns those bytes stayed in context — and reconciles
+    EXACTLY: the five named parts plus the residual sum to the recorded figure.
+    Payloads folded in from subagent transcripts land in ``_result_bytes`` after
+    the main walk and therefore carry no residency weight of their own, so their
+    share of ``cache_read`` is disclosed in the residual rather than spread across
+    buckets on a weight that was never observed.
 
     Because this walk always runs on the Claude target, every composed phase
     bucket carries the full counter key set — a phase with no tool calls reports
-    a MEASURED zero. Counters are ABSENT only where no bucket is produced at all
-    (no transcript, or a target that declines the primitive).
+    a MEASURED zero, and a phase recording no ``cache_read`` still carries every
+    attributed key and the residual at zero. Counters are ABSENT only where no
+    bucket is produced at all (no transcript, or a target that declines the
+    primitive).
 
     Returns ``None`` when no parent transcript can be located (the caller maps
     this to a ``transcript_not_found`` no-op).
@@ -1771,7 +1964,14 @@ def _compute_normalized_tokens(
     subagent_calls_attributed = 0
     per_phase_four_fields: dict[str, dict[str, int]] = {}
     per_phase_tools: dict[str, dict[str, int]] = {}
-    call_index: dict[str, tuple[str, str]] = {}
+    per_phase_residency: dict[str, dict[str, int]] = {}
+    per_phase_subsources: dict[str, dict[str, int]] = {}
+    # cache_read folded in from subagent transcripts, held separately from the
+    # four-field bucket so the attribution split can exclude it: these payloads
+    # never pass through _fold_turn_residency, so they carry no residency weight
+    # and their share must land in the residual rather than on parent weights.
+    per_phase_subagent_cache_read: dict[str, int] = {}
+    call_index: dict[str, tuple[str, str, str]] = {}
 
     def _four_field_bucket(phase_name: str) -> dict[str, int]:
         return per_phase_four_fields.setdefault(phase_name, dict.fromkeys(_USAGE_FOUR_FIELDS, 0))
@@ -1790,12 +1990,18 @@ def _compute_normalized_tokens(
                 msg = entry.get("message", {}) if isinstance(entry, dict) else {}
                 timestamp = entry.get("timestamp") if isinstance(entry, dict) else None
                 usage = msg.get("usage", {}) if isinstance(msg, dict) else {}
+                # The phase this entry's context read is billed to, when it is a
+                # usage-bearing entry at all. Captured here and consumed at the
+                # END of the loop body so the residency fold sees every payload
+                # this entry contributed.
+                turn_phase: str | None = None
                 if isinstance(usage, dict) and usage:
                     if usage.get("total_tokens") or usage.get("input_tokens") or usage.get("output_tokens"):
                         message_count += 1
                         if parsed_windows and isinstance(timestamp, str):
                             parent_phase = _window_for_timestamp(timestamp, parsed_windows)
                             if parent_phase is not None:
+                                turn_phase = parent_phase
                                 _add_usage_four_fields(usage, _four_field_bucket(parent_phase))
 
                 if not parsed_windows:
@@ -1811,7 +2017,11 @@ def _compute_normalized_tokens(
                             payload_text = _extract_text_payload(item.get("content"))
                             payloads.append(payload_text)
                             _count_tool_result_bytes(
-                                item.get("tool_use_id"), payload_text, per_phase_tools, call_index
+                                item.get("tool_use_id"),
+                                payload_text,
+                                per_phase_tools,
+                                call_index,
+                                per_phase_subsources,
                             )
                         elif item.get("type") == "text":
                             text = item.get("text")
@@ -1830,6 +2040,11 @@ def _compute_normalized_tokens(
                             timestamp, parsed_windows, tag_match.group(1), per_phase_subagent
                         ):
                             subagent_calls_attributed += 1
+
+                # One fold per billed context read, at the END of the entry so
+                # this turn's own payloads are already resident.
+                if turn_phase is not None:
+                    _fold_turn_residency(turn_phase, per_phase_tools, per_phase_residency)
     except OSError:
         return None
 
@@ -1837,16 +2052,27 @@ def _compute_normalized_tokens(
     if parsed_windows:
         for sub_path in _resolve_subagent_transcripts(session_id, transcript_path):
             subagent_transcripts_walked += 1
-            sub_fields, sub_ts, sub_tools = _sum_subagent_transcript(sub_path)
+            sub_subsources = _empty_exploration_subsources()
+            sub_fields, sub_ts, sub_tools = _sum_subagent_transcript(sub_path, sub_subsources)
             sub_phase = _window_for_timestamp(sub_ts, parsed_windows)
             if sub_phase is None:
                 continue
             bucket = _four_field_bucket(sub_phase)
             for field in _USAGE_FOUR_FIELDS:
                 bucket[field] += sub_fields.get(field, 0)
+            per_phase_subagent_cache_read[sub_phase] = per_phase_subagent_cache_read.get(
+                sub_phase, 0
+            ) + sub_fields.get("cache_read_input_tokens", 0)
             sub_counters = per_phase_tools.setdefault(sub_phase, _empty_tool_counters())
             for key, value in sub_tools.items():
                 sub_counters[key] += value
+            # Folded in lock-step with the parent counters above so the
+            # sub-sources keep partitioning ``exploration_result_bytes`` exactly.
+            phase_subsources = per_phase_subsources.setdefault(
+                sub_phase, _empty_exploration_subsources()
+            )
+            for key, value in sub_subsources.items():
+                phase_subsources[key] += value
 
     # Compose the per-phase normalized result. Each phase carries the four-field
     # view, the billing-weighted total, the subagent <usage> attribution, and the
@@ -1886,6 +2112,24 @@ def _compute_normalized_tokens(
         # key set: a phase with no tool calls reports a MEASURED zero rather than
         # an absent counter.
         phase_bucket.update(per_phase_tools.get(phase_name) or _empty_tool_counters())
+        # Exploration sub-sources: the same exploration bytes re-cut by what the
+        # call targeted. Unconditional for the same absent-is-not-zero reason —
+        # a phase that ran no exploration call reports three measured zeros.
+        phase_bucket.update(
+            per_phase_subsources.get(phase_name) or _empty_exploration_subsources()
+        )
+        # Cache-read attribution: split the phase's recorded cache_read across the
+        # byte sources that put those bytes into context, in proportion to how
+        # long each source's payloads stayed resident. Unconditional for the same
+        # reason as the counters above — the residual must be readable even when
+        # it is zero.
+        phase_bucket.update(
+            _attribute_cache_read(
+                four.get("cache_read_input_tokens", 0),
+                per_phase_residency.get(phase_name) or {},
+                per_phase_subagent_cache_read.get(phase_name, 0),
+            )
+        )
         per_phase[phase_name] = phase_bucket
 
     counters = {

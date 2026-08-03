@@ -629,7 +629,12 @@ class Runtime(ABC):
         exploration_tool_calls, work_tool_calls, execute_tool_calls,
         orchestration_tool_calls, unclassified_tool_calls,
         exploration_result_bytes, work_result_bytes, execute_result_bytes,
-        orchestration_result_bytes, unclassified_result_bytes}}``
+        orchestration_result_bytes, unclassified_result_bytes,
+        cache_read_attributed_exploration, cache_read_attributed_work,
+        cache_read_attributed_execute, cache_read_attributed_orchestration,
+        cache_read_attributed_unclassified, cache_read_unattributed,
+        exploration_index_answerable_bytes, exploration_doc_residency_bytes,
+        exploration_unattributed_bytes}}``
 
         The ten ``*_tool_calls`` / ``*_result_bytes`` keys are the exploration-share
         counters: each tool call observed in the transcript is classified by its
@@ -637,11 +642,62 @@ class Runtime(ABC):
         and its result payload's byte length (payload-byte share) are accumulated
         into the phase the call's timestamp attributes to.
 
+        The six ``cache_read_attributed_{bucket}`` / ``cache_read_unattributed``
+        keys are the CACHE-READ ATTRIBUTION group: they split the phase's recorded
+        ``cache_read`` across the byte sources that put those bytes into context.
+        A payload does not cost once — it costs on entry and then again on every
+        later turn it stays resident, so the split is TURN-WEIGHTED RESIDENCY: each
+        bucket's weight is its payload bytes multiplied by the number of the
+        phase's turns those bytes remained in context, and the recorded
+        ``cache_read`` is divided in proportion to those weights. Weight that
+        cannot be tied to an observed payload — context the transcript does not
+        explain, and every payload the walk saw no residency for — is NOT
+        redistributed across the named buckets; it is disclosed as
+        ``cache_read_unattributed``.
+
+        **Exact reconciliation.** The five attributed parts plus
+        ``cache_read_unattributed`` sum EXACTLY to that phase's recorded
+        ``cache_read``, so no rounding can inflate a named share or lose weight
+        into the gap. The residual is ALWAYS emitted with the group — never
+        omitted when it happens to be zero — because a consumer must be able to
+        read the residual to know how much of the split was explained.
+
+        The three ``exploration_{sub}_bytes`` keys are the EXPLORATION SUB-SOURCE
+        split. Exploration is not one activity: reading a source or test file is
+        a lookup an index could answer, while reading a workflow or standard
+        document is context that has to be resident to be useful. The split
+        separates them by the call's TARGET PATH:
+
+        - ``exploration_index_answerable_bytes`` — the call targeted source or
+          test code.
+        - ``exploration_doc_residency_bytes`` — the call targeted a workflow or
+          standard document (skill and standard markdown bodies, ``doc/**``,
+          ``*.adoc``, ``CLAUDE.md``).
+        - ``exploration_unattributed_bytes`` — no target path is recoverable: the
+          call carried no path input, or it is not path-addressed at all
+          (``WebFetch`` / ``WebSearch``). This bucket FAILS OPEN exactly as
+          ``unclassified`` does for tool names — an unrecognised shape is COUNTED
+          and surfaced here, never dropped and never guessed into a named
+          sub-source.
+
+        **Partition invariant.** The three sub-sources sum EXACTLY to
+        ``exploration_result_bytes``; they re-cut bytes already counted there and
+        add none. They carry the ``_bytes`` suffix rather than ``_result_bytes``
+        deliberately: they are a BYTE-ONLY sub-split of one bucket and are NOT
+        members of the ``{bucket}_{measure}`` exploration-counter family, so a
+        consumer deriving that family's key set must not pick them up. There is
+        no matching ``_tool_calls`` sub-split.
+
         **Absent is not zero.** A target that emits a phase bucket at all MUST
-        carry the full counter key set, so a zero there is a MEASURED zero. A
-        target that declines the primitive emits no bucket, and its counters are
-        ABSENT — consumers must preserve that distinction rather than
-        substituting zeros for a target that never measured.
+        carry the full counter key set — the exploration-share counters, the
+        cache-read attribution group, AND the exploration sub-sources alike — so
+        a zero there is a MEASURED zero. A phase whose recorded ``cache_read`` is
+        0 therefore still carries all five attributed keys and the residual, and
+        a phase that ran no exploration call still carries all three sub-source
+        keys, every one of them at a measured zero. A target that declines the
+        primitive emits no bucket, and its counters are ABSENT — consumers must
+        preserve that distinction rather than substituting zeros for a target
+        that never measured.
 
         On Claude: reads ``~/.claude/projects/.../{session_id}.jsonl`` and the
         ``{session_id}/subagents/agent-*.jsonl`` transcripts, parses ``message.usage``

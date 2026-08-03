@@ -149,6 +149,48 @@ _EXPECTED_COUNTER_KEYS = {
 }
 
 
+def _expected_attribution_keys() -> set[str]:
+    """The cache-read attribution key set, DERIVED from the producer's bucket names.
+
+    Derived rather than restated so a bucket added to ``_TOOL_BUCKETS`` cannot
+    leave the attribution group behind without a test failing.
+    """
+    return {
+        f"cache_read_attributed_{bucket}" for bucket in claude_runtime._TOOL_BUCKET_NAMES
+    } | {"cache_read_unattributed"}
+
+
+def _attribution_group(phase_bucket: dict) -> dict[str, int]:
+    """Extract just the cache-read attribution group from an emitted phase bucket."""
+    return {key: phase_bucket[key] for key in _expected_attribution_keys() if key in phase_bucket}
+
+
+def _expected_subsource_keys() -> set[str]:
+    """The exploration sub-source key set, DERIVED from the producer's sub-source names."""
+    return {
+        f"exploration_{sub}_bytes" for sub in claude_runtime._EXPLORATION_SUBSOURCES
+    }
+
+
+def _tool_use_entry_with_input(timestamp: str, calls: list[tuple[str, str, dict]]) -> dict:
+    """Build an assistant entry whose ``tool_use`` items carry an ``input`` payload.
+
+    The sub-source split is resolved from the CALL's ``input``, not from the
+    result, so the sub-source tests need this richer shape than
+    ``_tool_use_entry``'s inputless one.
+    """
+    return {
+        "timestamp": timestamp,
+        "message": {
+            "role": "assistant",
+            "content": [
+                {"type": "tool_use", "id": tool_id, "name": name, "input": tool_input}
+                for tool_id, name, tool_input in calls
+            ],
+        },
+    }
+
+
 def _write_jsonl(path: Path, entries: list[dict]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as f:
@@ -475,6 +517,539 @@ def test_sum_subagent_transcript_counts_tool_calls_and_result_bytes(tmp_path):
     assert tool_counters["work_tool_calls"] == 1
     assert tool_counters["exploration_result_bytes"] == 40
     assert tool_counters["work_result_bytes"] == 9
+
+
+# =============================================================================
+# 3b. Cache-read attribution — turn-weighted residency, exact reconciliation
+# =============================================================================
+
+
+def test_attribute_cache_read_emits_the_full_key_set_derived_from_bucket_names():
+    """The emitted group is one key per bucket plus the residual, derived not restated."""
+    attributed = claude_runtime._attribute_cache_read(500, {"exploration": 10})
+
+    assert set(attributed) == _expected_attribution_keys()
+    # The derivation is not vacuous: the producer really does declare more than
+    # one bucket, so a group that collapsed to just the residual would fail.
+    assert len(claude_runtime._TOOL_BUCKET_NAMES) > 1
+
+
+def test_attribute_cache_read_reconciles_exactly_to_the_recorded_total():
+    """Named parts plus residual equal the recorded cache_read, for every weight shape."""
+    cases = [
+        (0, {}),
+        (0, {"exploration": 7}),
+        (1000, {}),
+        (1000, {"exploration": 3}),
+        (1000, {"exploration": 1, "work": 2}),
+        (997, {"exploration": 13, "work": 7, "execute": 11, "orchestration": 3}),
+        (1, {"exploration": 1, "work": 1, "execute": 1}),
+    ]
+    for total, weights in cases:
+        attributed = claude_runtime._attribute_cache_read(total, weights)
+        assert sum(attributed.values()) == total, (total, weights, attributed)
+        # A named part is never negative and never exceeds the whole.
+        for key, value in attributed.items():
+            assert 0 <= value <= total, (key, value, total, weights)
+
+
+def test_attribute_cache_read_floors_named_parts_and_banks_the_remainder_in_the_residual():
+    """Rounding crumbs land in the residual — never inflating a named share."""
+    # weights 1:2 over a total of 10 → 10*1//3 = 3 and 10*2//3 = 6, remainder 1.
+    attributed = claude_runtime._attribute_cache_read(10, {"exploration": 1, "work": 2})
+
+    assert attributed["cache_read_attributed_exploration"] == 3
+    assert attributed["cache_read_attributed_work"] == 6
+    assert attributed["cache_read_unattributed"] == 1
+    # Matched control on the direction of the rounding: the naive proportional
+    # split would have handed exploration 3.33 and work 6.67, so a rounded-up
+    # named share is what this assertion rules out.
+    assert attributed["cache_read_attributed_exploration"] < 10 * 1 / 3
+
+
+def test_attribute_cache_read_without_observed_weight_leaves_everything_in_the_residual():
+    """A phase billed for a context read the walk cannot explain discloses it, not spreads it."""
+    attributed = claude_runtime._attribute_cache_read(4321, {})
+
+    assert attributed["cache_read_unattributed"] == 4321
+    named = {k: v for k, v in attributed.items() if k != "cache_read_unattributed"}
+    assert set(named.values()) == {0}, named
+
+
+def test_attribute_cache_read_keeps_subagent_share_out_of_named_buckets():
+    """Subagent cache_read carries no residency weight, so it discloses rather than spreads.
+
+    The guarded defect is specifically the NON-zero-parent-weight case: the
+    ``total_weight == 0`` branch already banked everything in the residual, so a
+    test that only covered it would pass against the unfixed code.
+    """
+    attributed = claude_runtime._attribute_cache_read(
+        100, {"exploration": 1, "work": 1}, subagent_cache_read=40
+    )
+
+    # Only the 60 the parent walk actually observed is split, 1:1.
+    assert attributed["cache_read_attributed_exploration"] == 30
+    assert attributed["cache_read_attributed_work"] == 30
+    # The subagent's 40 reaches the residual instead of a named share.
+    assert attributed["cache_read_unattributed"] == 40
+    # Exact reconciliation still holds over the FULL recorded total.
+    assert sum(attributed.values()) == 100
+
+
+def test_attribute_cache_read_subagent_exclusion_is_load_bearing():
+    """Negative control: the same call without the subagent figure DOES spread it.
+
+    Pins that the assertion above is not vacuous — remove the exclusion and this
+    is the (wrong) split the fixed code no longer produces.
+    """
+    without = claude_runtime._attribute_cache_read(100, {"exploration": 1, "work": 1})
+
+    assert without["cache_read_attributed_exploration"] == 50
+    assert without["cache_read_attributed_work"] == 50
+    assert without["cache_read_unattributed"] == 0
+
+
+def test_attribute_cache_read_subagent_exceeding_total_empties_rather_than_inverts():
+    """A subagent figure larger than the phase total can only empty the split."""
+    attributed = claude_runtime._attribute_cache_read(
+        10, {"exploration": 3}, subagent_cache_read=999
+    )
+
+    assert attributed["cache_read_attributed_exploration"] == 0
+    assert attributed["cache_read_unattributed"] == 10
+    assert min(attributed.values()) >= 0, attributed
+
+
+def test_attribute_cache_read_zero_total_is_a_measured_zero_across_the_group():
+    """Zero recorded cache_read still yields every key — a measured zero, never absent."""
+    attributed = claude_runtime._attribute_cache_read(0, {"exploration": 999, "work": 1})
+
+    assert set(attributed) == _expected_attribution_keys()
+    assert set(attributed.values()) == {0}
+
+
+def test_claude_normalized_tokens_attributes_cache_read_by_turn_weighted_residency(
+    tmp_path, monkeypatch
+):
+    """cache_read splits by how long each source's bytes stayed resident, not by byte share.
+
+    The two payloads are the SAME size, so a split that merely restated
+    ``{bucket}_result_bytes`` would come out 1:1. The exploration payload enters a
+    turn earlier and is therefore re-read once more, so the honest split is 2:1 —
+    which is what separates an attribution from a byte-share rename.
+    """
+    session_id = "22222222-2222-2222-2222-222222222210"
+    projects_root = tmp_path / "home" / ".claude" / "projects" / "plan"
+    _write_jsonl(
+        projects_root / f"{session_id}.jsonl",
+        [
+            # Turn 1 — the whole phase's cache_read is billed here; nothing is
+            # resident yet, so this turn contributes no weight to any bucket.
+            _main_context_entry(
+                "2026-03-27T10:01:00+00:00",
+                input_tokens=1,
+                output_tokens=1,
+                cache_read_input_tokens=1200,
+            ),
+            _tool_use_entry("2026-03-27T10:02:00+00:00", [("toolu_r", "Read")]),
+            _tool_result_entry("2026-03-27T10:03:00+00:00", "toolu_r", "r" * 400),
+            # Turn 2 — the Read payload is resident.
+            _main_context_entry("2026-03-27T10:04:00+00:00", input_tokens=1, output_tokens=1),
+            _tool_use_entry("2026-03-27T10:05:00+00:00", [("toolu_w", "Write")]),
+            _tool_result_entry("2026-03-27T10:06:00+00:00", "toolu_w", "w" * 400),
+            # Turn 3 — both payloads are resident.
+            _main_context_entry("2026-03-27T10:07:00+00:00", input_tokens=1, output_tokens=1),
+        ],
+    )
+
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path / "home"))
+
+    output_file = tmp_path / "normalized.json"
+    result = _parse(
+        ClaudeRuntime().metrics_normalized_tokens(session_id, _WINDOWS, str(output_file))
+    )
+    assert result["status"] == "success"
+
+    five = json.loads(output_file.read_text(encoding="utf-8"))["5-execute"]
+
+    # The byte shares really are equal — this is the control that makes the
+    # unequal attribution below meaningful rather than incidental.
+    assert five["exploration_result_bytes"] == five["work_result_bytes"] == 400
+
+    # Residency weights are 400x2 vs 400x1, so 1200 splits 800 / 400.
+    assert five["cache_read"] == 1200
+    assert five["cache_read_attributed_exploration"] == 800
+    assert five["cache_read_attributed_work"] == 400
+    assert five["cache_read_attributed_execute"] == 0
+    assert five["cache_read_attributed_orchestration"] == 0
+    assert five["cache_read_attributed_unclassified"] == 0
+    # Every unit of the recorded figure is accounted for, so the residual is a
+    # measured zero — and it is still EMITTED, which is what lets a reader tell
+    # "fully explained" apart from "never computed".
+    assert five["cache_read_unattributed"] == 0
+    assert "cache_read_unattributed" in five
+    assert sum(_attribution_group(five).values()) == five["cache_read"]
+
+
+def test_claude_normalized_tokens_zero_cache_read_phase_carries_the_full_attribution_group(
+    tmp_path, monkeypatch
+):
+    """Matched negative control for the full-key-set rule: no cache_read, keys still present."""
+    session_id = "22222222-2222-2222-2222-222222222211"
+    projects_root = tmp_path / "home" / ".claude" / "projects" / "plan"
+    _write_jsonl(
+        projects_root / f"{session_id}.jsonl",
+        [
+            # No cache_read on the usage record at all, yet real payload traffic —
+            # so the group cannot be emitted merely because weight exists.
+            _main_context_entry("2026-03-27T10:01:00+00:00", input_tokens=5, output_tokens=2),
+            _tool_use_entry("2026-03-27T10:02:00+00:00", [("toolu_r", "Read")]),
+            _tool_result_entry("2026-03-27T10:03:00+00:00", "toolu_r", "r" * 250),
+            _main_context_entry("2026-03-27T10:04:00+00:00", input_tokens=5, output_tokens=2),
+        ],
+    )
+
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path / "home"))
+
+    output_file = tmp_path / "normalized.json"
+    result = _parse(
+        ClaudeRuntime().metrics_normalized_tokens(session_id, _WINDOWS, str(output_file))
+    )
+    assert result["status"] == "success"
+
+    five = json.loads(output_file.read_text(encoding="utf-8"))["5-execute"]
+    assert five["cache_read"] == 0
+    # Bytes were observed, so the zero below is about the RECORDED figure being
+    # zero — not about there being nothing to attribute.
+    assert five["exploration_result_bytes"] == 250
+    assert _expected_attribution_keys() <= set(five)
+    assert set(_attribution_group(five).values()) == {0}
+
+
+def test_claude_normalized_tokens_unexplained_cache_read_lands_in_the_residual(
+    tmp_path, monkeypatch
+):
+    """A phase billed for context it never sourced from a payload discloses the whole figure."""
+    session_id = "22222222-2222-2222-2222-222222222212"
+    projects_root = tmp_path / "home" / ".claude" / "projects" / "plan"
+    _write_jsonl(
+        projects_root / f"{session_id}.jsonl",
+        [
+            _main_context_entry(
+                "2026-03-27T10:01:00+00:00",
+                input_tokens=3,
+                output_tokens=1,
+                cache_read_input_tokens=7777,
+            ),
+        ],
+    )
+
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path / "home"))
+
+    output_file = tmp_path / "normalized.json"
+    result = _parse(
+        ClaudeRuntime().metrics_normalized_tokens(session_id, _WINDOWS, str(output_file))
+    )
+    assert result["status"] == "success"
+
+    five = json.loads(output_file.read_text(encoding="utf-8"))["5-execute"]
+    assert five["cache_read_unattributed"] == 7777
+    named = {
+        key: value
+        for key, value in _attribution_group(five).items()
+        if key != "cache_read_unattributed"
+    }
+    assert set(named.values()) == {0}, named
+    assert sum(_attribution_group(five).values()) == five["cache_read"]
+
+
+# =============================================================================
+# 3c. Exploration sub-sources — index-answerable vs doc-residency
+# =============================================================================
+
+
+def test_exploration_subsources_partition_the_parent_bucket_exactly(tmp_path, monkeypatch):
+    """The three sub-sources sum to exploration_result_bytes — a re-cut, not an addition."""
+    session_id = "22222222-2222-2222-2222-222222222220"
+    projects_root = tmp_path / "home" / ".claude" / "projects" / "plan"
+    _write_jsonl(
+        projects_root / f"{session_id}.jsonl",
+        [
+            _main_context_entry("2026-03-27T10:01:00+00:00", input_tokens=1, output_tokens=1),
+            _tool_use_entry_with_input(
+                "2026-03-27T10:02:00+00:00",
+                [
+                    ("toolu_code", "Read", {"file_path": "marketplace/x/scripts/thing.py"}),
+                    ("toolu_doc", "Read", {"file_path": "doc/developer/build.adoc"}),
+                    ("toolu_web", "WebFetch", {"url": "https://example.invalid/page"}),
+                ],
+            ),
+            _tool_result_entry("2026-03-27T10:03:00+00:00", "toolu_code", "c" * 500),
+            _tool_result_entry("2026-03-27T10:03:10+00:00", "toolu_doc", "d" * 300),
+            _tool_result_entry("2026-03-27T10:03:20+00:00", "toolu_web", "w" * 200),
+        ],
+    )
+
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path / "home"))
+
+    output_file = tmp_path / "normalized.json"
+    result = _parse(
+        ClaudeRuntime().metrics_normalized_tokens(session_id, _WINDOWS, str(output_file))
+    )
+    assert result["status"] == "success"
+
+    five = json.loads(output_file.read_text(encoding="utf-8"))["5-execute"]
+
+    assert five["exploration_result_bytes"] == 1000
+    subsources = {key: five[key] for key in _expected_subsource_keys()}
+    assert sum(subsources.values()) == five["exploration_result_bytes"], subsources
+    # ...and the split is not degenerate: all three members carry weight, so a
+    # partition that dumped everything into one member would fail here too.
+    assert set(subsources.values()) != {0}
+    assert min(subsources.values()) > 0, subsources
+
+
+def test_code_target_routes_to_index_answerable(tmp_path, monkeypatch):
+    """A source-code target is a lookup an index could answer."""
+    session_id = "22222222-2222-2222-2222-222222222221"
+    projects_root = tmp_path / "home" / ".claude" / "projects" / "plan"
+    _write_jsonl(
+        projects_root / f"{session_id}.jsonl",
+        [
+            _main_context_entry("2026-03-27T10:01:00+00:00", input_tokens=1, output_tokens=1),
+            _tool_use_entry_with_input(
+                "2026-03-27T10:02:00+00:00",
+                [
+                    ("toolu_src", "Read", {"file_path": "marketplace/x/scripts/thing.py"}),
+                    ("toolu_test", "Read", {"file_path": "test/plan-marshall/x/test_thing.py"}),
+                ],
+            ),
+            _tool_result_entry("2026-03-27T10:03:00+00:00", "toolu_src", "s" * 70),
+            _tool_result_entry("2026-03-27T10:03:10+00:00", "toolu_test", "t" * 30),
+        ],
+    )
+
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path / "home"))
+
+    output_file = tmp_path / "normalized.json"
+    assert (
+        _parse(ClaudeRuntime().metrics_normalized_tokens(session_id, _WINDOWS, str(output_file)))[
+            "status"
+        ]
+        == "success"
+    )
+
+    five = json.loads(output_file.read_text(encoding="utf-8"))["5-execute"]
+    # Both source AND test code count as index-answerable.
+    assert five["exploration_index_answerable_bytes"] == 100
+    assert five["exploration_doc_residency_bytes"] == 0
+    assert five["exploration_unattributed_bytes"] == 0
+
+
+def test_document_targets_route_to_doc_residency(tmp_path, monkeypatch):
+    """Skill/standard markdown, doc/**, *.adoc and CLAUDE.md are all residency, not lookup."""
+    session_id = "22222222-2222-2222-2222-222222222222"
+    projects_root = tmp_path / "home" / ".claude" / "projects" / "plan"
+    _write_jsonl(
+        projects_root / f"{session_id}.jsonl",
+        [
+            _main_context_entry("2026-03-27T10:01:00+00:00", input_tokens=1, output_tokens=1),
+            _tool_use_entry_with_input(
+                "2026-03-27T10:02:00+00:00",
+                [
+                    ("toolu_skill", "Read", {"file_path": "bundles/b/skills/s/SKILL.md"}),
+                    ("toolu_std", "Read", {"file_path": "bundles/b/skills/s/standards/x.md"}),
+                    ("toolu_doc", "Read", {"file_path": "doc/concepts/overview.md"}),
+                    ("toolu_adoc", "Read", {"file_path": "anywhere/notes.adoc"}),
+                    ("toolu_claude", "Read", {"file_path": "CLAUDE.md"}),
+                ],
+            ),
+            _tool_result_entry("2026-03-27T10:03:00+00:00", "toolu_skill", "a" * 10),
+            _tool_result_entry("2026-03-27T10:03:01+00:00", "toolu_std", "b" * 20),
+            _tool_result_entry("2026-03-27T10:03:02+00:00", "toolu_doc", "c" * 30),
+            _tool_result_entry("2026-03-27T10:03:03+00:00", "toolu_adoc", "d" * 40),
+            _tool_result_entry("2026-03-27T10:03:04+00:00", "toolu_claude", "e" * 50),
+        ],
+    )
+
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path / "home"))
+
+    output_file = tmp_path / "normalized.json"
+    assert (
+        _parse(ClaudeRuntime().metrics_normalized_tokens(session_id, _WINDOWS, str(output_file)))[
+            "status"
+        ]
+        == "success"
+    )
+
+    five = json.loads(output_file.read_text(encoding="utf-8"))["5-execute"]
+    # All five document shapes land together — 10+20+30+40+50.
+    assert five["exploration_doc_residency_bytes"] == 150
+    assert five["exploration_index_answerable_bytes"] == 0
+    assert five["exploration_unattributed_bytes"] == 0
+
+
+def test_live_tool_use_items_carry_input_so_the_fail_open_arm_is_the_control():
+    """Census-anchored: the classifier's two fail-open arms, one live and one defensive.
+
+    A census of the live transcript corpus (1999 ``tool_use`` items) found ZERO
+    items lacking ``input`` — so "no input at all" is a defensive guard, not a
+    routine path, and the arm that actually fires in production is the
+    NON-PATH-ADDRESSED tool. Both are asserted here so neither can rot: the live
+    arm is the positive case and the defensive arm is its matched control.
+    """
+    # Live arm: WebFetch/WebSearch carry input, but no path-bearing key.
+    assert claude_runtime._extract_target_path({"url": "https://example.invalid"}) is None
+    assert claude_runtime._extract_target_path({"query": "how to"}) is None
+    # Defensive arm: an item with no input dict at all.
+    assert claude_runtime._extract_target_path(None) is None
+    assert claude_runtime._extract_target_path({}) is None
+    # Both resolve to the same fail-open sub-source rather than a named one.
+    assert claude_runtime._classify_exploration_target(None) == "unattributed"
+    # Matched positive control — the path-bearing keys the census DID find must
+    # still be recovered, otherwise the four assertions above would pass on a
+    # helper that always returned None.
+    assert (
+        claude_runtime._extract_target_path({"file_path": "a/b.py"}) == "a/b.py"
+    )
+    assert claude_runtime._extract_target_path({"path": "a/b"}) == "a/b"
+
+
+def test_unrecognised_and_pathless_calls_land_in_exploration_unattributed(tmp_path, monkeypatch):
+    """A non-path-addressed tool and an inputless call both fail open, never guessed."""
+    session_id = "22222222-2222-2222-2222-222222222223"
+    projects_root = tmp_path / "home" / ".claude" / "projects" / "plan"
+    _write_jsonl(
+        projects_root / f"{session_id}.jsonl",
+        [
+            _main_context_entry("2026-03-27T10:01:00+00:00", input_tokens=1, output_tokens=1),
+            _tool_use_entry_with_input(
+                "2026-03-27T10:02:00+00:00",
+                [("toolu_web", "WebSearch", {"query": "anything"})],
+            ),
+            # ``_tool_use_entry`` emits items with NO ``input`` key — the shape the
+            # census never observed live, kept as the defensive control.
+            _tool_use_entry("2026-03-27T10:02:30+00:00", [("toolu_bare", "Read")]),
+            _tool_result_entry("2026-03-27T10:03:00+00:00", "toolu_web", "w" * 60),
+            _tool_result_entry("2026-03-27T10:03:10+00:00", "toolu_bare", "b" * 40),
+        ],
+    )
+
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path / "home"))
+
+    output_file = tmp_path / "normalized.json"
+    assert (
+        _parse(ClaudeRuntime().metrics_normalized_tokens(session_id, _WINDOWS, str(output_file)))[
+            "status"
+        ]
+        == "success"
+    )
+
+    five = json.loads(output_file.read_text(encoding="utf-8"))["5-execute"]
+    assert five["exploration_unattributed_bytes"] == 100
+    assert five["exploration_index_answerable_bytes"] == 0
+    assert five["exploration_doc_residency_bytes"] == 0
+    # The bytes were NOT dropped — the parent bucket still carries them, which is
+    # what "fails open" means as distinct from "ignored".
+    assert five["exploration_result_bytes"] == 100
+
+
+def test_phase_without_exploration_still_carries_the_subsource_keys(tmp_path, monkeypatch):
+    """Matched negative control for the full-key-set rule on the sub-source group."""
+    session_id = "22222222-2222-2222-2222-222222222224"
+    projects_root = tmp_path / "home" / ".claude" / "projects" / "plan"
+    _write_jsonl(
+        projects_root / f"{session_id}.jsonl",
+        [
+            _main_context_entry("2026-03-27T10:01:00+00:00", input_tokens=1, output_tokens=1),
+            # Work, not exploration — the sub-split has nothing to cut.
+            _tool_use_entry_with_input(
+                "2026-03-27T10:02:00+00:00",
+                [("toolu_w", "Write", {"file_path": "a/b.py", "content": "x"})],
+            ),
+            _tool_result_entry("2026-03-27T10:03:00+00:00", "toolu_w", "ok"),
+        ],
+    )
+
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path / "home"))
+
+    output_file = tmp_path / "normalized.json"
+    assert (
+        _parse(ClaudeRuntime().metrics_normalized_tokens(session_id, _WINDOWS, str(output_file)))[
+            "status"
+        ]
+        == "success"
+    )
+
+    five = json.loads(output_file.read_text(encoding="utf-8"))["5-execute"]
+    assert five["work_result_bytes"] == 2
+    assert five["exploration_result_bytes"] == 0
+    assert _expected_subsource_keys() <= set(five)
+    assert {five[key] for key in _expected_subsource_keys()} == {0}
+
+
+def test_subsource_keys_are_not_members_of_the_exploration_counter_family():
+    """The ``_bytes`` suffix keeps the sub-sources out of the ten-key counter family.
+
+    Guards the exact confusion the suffix choice exists to prevent: a consumer
+    deriving the ``{bucket}_{measure}`` family by suffix must not pick these up.
+    """
+    subsource_keys = _expected_subsource_keys()
+
+    assert not (subsource_keys & _EXPECTED_COUNTER_KEYS), subsource_keys & _EXPECTED_COUNTER_KEYS
+    assert len(_EXPECTED_COUNTER_KEYS) == 10
+    for key in subsource_keys:
+        assert key.endswith("_bytes")
+        assert not key.endswith("_result_bytes"), key
+    # The contract really does publish all three, so this is not vacuous.
+    assert subsource_keys <= _contract_bucket_keys()
+
+
+def test_subagent_transcript_subsources_fold_into_the_parent_phase(tmp_path, monkeypatch):
+    """A dispatched envelope's exploration keeps the partition invariant true.
+
+    Without the sub-source fold on the subagent path, the parent's
+    ``exploration_result_bytes`` would grow while the three sub-sources did not —
+    silently breaking the invariant exactly where most exploration happens.
+    """
+    session_id = "22222222-2222-2222-2222-222222222225"
+    projects_root = tmp_path / "home" / ".claude" / "projects" / "plan"
+    _write_jsonl(
+        projects_root / f"{session_id}.jsonl",
+        [_main_context_entry("2026-03-27T10:10:00+00:00", input_tokens=10, output_tokens=2)],
+    )
+    sub_dir = projects_root / session_id / "subagents"
+    sub_dir.mkdir(parents=True, exist_ok=True)
+    _write_jsonl(
+        sub_dir / "agent-001.jsonl",
+        [
+            _tool_use_entry_with_input(
+                "2026-03-27T10:12:00+00:00",
+                [
+                    ("toolu_s", "Read", {"file_path": "src/mod.py"}),
+                    ("toolu_d", "Read", {"file_path": "doc/guide.adoc"}),
+                ],
+            ),
+            _tool_result_entry("2026-03-27T10:12:30+00:00", "toolu_s", "s" * 80),
+            _tool_result_entry("2026-03-27T10:12:40+00:00", "toolu_d", "d" * 20),
+        ],
+    )
+
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path / "home"))
+
+    output_file = tmp_path / "normalized.json"
+    result = _parse(
+        ClaudeRuntime().metrics_normalized_tokens(session_id, _WINDOWS, str(output_file))
+    )
+    assert result["status"] == "success"
+    assert int(result["subagent_transcripts_walked"]) == 1
+
+    five = json.loads(output_file.read_text(encoding="utf-8"))["5-execute"]
+    assert five["exploration_result_bytes"] == 100
+    assert five["exploration_index_answerable_bytes"] == 80
+    assert five["exploration_doc_residency_bytes"] == 20
+    subsources = {key: five[key] for key in _expected_subsource_keys()}
+    assert sum(subsources.values()) == five["exploration_result_bytes"]
 
 
 # =============================================================================

@@ -1472,7 +1472,7 @@ def cmd_generate(args: argparse.Namespace) -> dict:
                 'work the Tokens column measures, so the two are never summed)'
             )
 
-        # Exploration-share counters. RENDER-GUARD DIVERGENCE, deliberate: these
+        # Transcript-supplied counters. RENDER-GUARD DIVERGENCE, deliberate: these
         # are guarded on PRESENCE (`field in phase`), not on the truthiness test
         # the four-field bullets above use. A stored 0 is a MEASURED zero here and
         # must render as `0`, while an absent counter (a runtime that declined the
@@ -1482,8 +1482,12 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         # `exploration-share` corpus-exclusion rule are all built on. Do NOT
         # "harmonize" this back to the neighbouring truthiness form. The four-field
         # bullets keep theirs because for those fields zero and absent carry no
-        # meaningful difference.
-        for field in _EXPLORATION_COUNTER_FIELDS:
+        # meaningful difference. The rule binds every group in
+        # `_PRESENCE_PERSISTED_FIELDS` and for the two derived groups it binds
+        # harder still: the sub-sources partition the exploration_result_bytes
+        # bullet, and the cache-read residual rendering as `0` is what tells a
+        # reader the split was fully explained.
+        for field in _PRESENCE_PERSISTED_FIELDS:
             if field in phase:
                 label = field.replace('_', ' ').capitalize()
                 lines.append(f'- **{label}**: {int(phase[field]):,}')
@@ -2212,6 +2216,54 @@ _EXPLORATION_COUNTER_FIELDS = tuple(
     for measure in ('tool_calls', 'result_bytes')
 )
 
+# The cache-read attribution group: one attributed field per byte source plus the
+# single residual. DERIVED over ``_EXPLORATION_BUCKETS`` for the same reason the
+# counter fields are — a bucket added there cannot leave this group behind — with
+# ``cache_read_unattributed`` appended as the one member that is not per-bucket.
+#
+# SOURCE OF TRUTH is the platform-runtime contract — ``Runtime.metrics_normalized_
+# tokens.__doc__``'s per-phase bucket declaration (mirrored in
+# ``platform-runtime/standards/contract.md``). The residual is part of the group,
+# never an optional extra: the attributed parts plus the residual reconcile
+# EXACTLY to the phase's recorded ``cache_read_input_tokens``, so dropping the
+# residual would silently turn a partial split into an apparently complete one.
+_CACHE_READ_ATTRIBUTION_FIELDS = (
+    *(f'cache_read_attributed_{bucket}' for bucket in _EXPLORATION_BUCKETS),
+    'cache_read_unattributed',
+)
+
+# Exploration sub-sources, in report order. They re-cut the ``exploration``
+# bucket's payload bytes by what each call TARGETED — code an index could answer
+# vs a workflow/standard document that must stay resident — and ``unattributed``
+# is the fail-open member for a call with no recoverable target path.
+#
+# SOURCE OF TRUTH is the platform-runtime contract — ``Runtime.metrics_normalized_
+# tokens.__doc__``'s per-phase bucket declaration (mirrored in
+# ``platform-runtime/standards/contract.md``). Held honest by the contract-drift
+# test ``test_exploration_subsource_fields_match_platform_runtime_contract``.
+_EXPLORATION_SUBSOURCES = ('index_answerable', 'doc_residency', 'unattributed')
+
+# Deliberately SEPARATE from ``_EXPLORATION_COUNTER_FIELDS``, which stays a
+# ten-member ``{bucket}_{measure}`` product. The sub-sources carry the ``_bytes``
+# suffix rather than ``_result_bytes`` precisely so that family's derivation
+# cannot pick them up: they partition ONE bucket's bytes, they are not a sixth
+# bucket, and there is no ``_tool_calls`` counterpart.
+_EXPLORATION_SUBSOURCE_FIELDS = tuple(
+    f'exploration_{sub}_bytes' for sub in _EXPLORATION_SUBSOURCES
+)
+
+# Every transcript-supplied per-phase field that is persisted and rendered on a
+# PRESENCE test rather than a truthiness test, in report order. The three groups
+# stay separately named above (each has its own contract-drift test and its own
+# key-set contract); this is the single iteration order both the persist site
+# (``cmd_enrich``) and the render site (``cmd_generate``) walk, so the presence
+# rule cannot be applied to one group and forgotten on another.
+_PRESENCE_PERSISTED_FIELDS = (
+    *_EXPLORATION_COUNTER_FIELDS,
+    *_EXPLORATION_SUBSOURCE_FIELDS,
+    *_CACHE_READ_ATTRIBUTION_FIELDS,
+)
+
 
 def _inline_main_context_sum(phase_row: dict) -> int:
     """Sum a phase row's inline-attributable main-context usage.
@@ -2285,12 +2337,14 @@ def cmd_enrich(args: argparse.Namespace) -> dict:
             phase_row['subagent_duration_ms'] = bucket.get('subagent_duration_ms', 0)
             phase_row['subagent_samples'] = bucket.get('subagent_samples', 0)
 
-        # Exploration-share counters, written on a PRESENCE test. A runtime that
+        # Transcript-supplied counters, written on a PRESENCE test. A runtime that
         # declines the transcript primitive supplies no counter at all, and
         # defaulting an absent counter to 0 would assert a measurement that was
         # never taken — making "never measured" indistinguishable from "measured,
-        # and it explored nothing". A MEASURED zero IS persisted, as 0.
-        for field in _EXPLORATION_COUNTER_FIELDS:
+        # and it explored nothing" (or, for the two derived groups, from "nothing
+        # was index-answerable" and "the split was zero"). A MEASURED zero IS
+        # persisted, as 0.
+        for field in _PRESENCE_PERSISTED_FIELDS:
             if field in bucket:
                 phase_row[field] = bucket[field]
 
