@@ -977,6 +977,154 @@ def _neutralize_daemon_routing(request, monkeypatch):
     yield
 
 
+# =============================================================================
+# Root-writable filesystem-root pollution neutralization
+# =============================================================================
+
+#: The conventional "this path does not exist" sentinel that dozens of tests
+#: hand to path-validation code as a hardcoded absolute path
+#: (``analyze_jsdoc('/nonexistent/path', is_directory=True)``,
+#: ``cmd_detect_artifacts(root='/nonexistent/path')``,
+#: ``cmd_stats(directory='/nonexistent/path')``, and ~30 more). Each such test
+#: passes it expecting the code under test to report an "absent path" — an
+#: assumption that holds only while the process cannot create it.
+#:
+#: WHY A GUARD IS NEEDED. On a developer machine and on the GitHub Actions
+#: runners the suite runs UNPRIVILEGED, so the filesystem root ``/`` is not
+#: writable and ``/nonexistent`` can never be created — the sentinel is reliably
+#: absent, and every probe of it correctly answers "absent". In a Claude Code
+#: cloud sandbox the suite runs as ROOT (uid 0): the OS bypasses the DAC
+#: permission check and ``/`` becomes writable. A test that hands a
+#: ``/nonexistent/...`` path to a *creating* operation (e.g.
+#: ``project_initial_setup`` doing ``Path(project_dir, '.plan').mkdir(
+#: parents=True)``) then MATERIALIZES the sentinel under ``/``, and every other
+#: test that probes ``/nonexistent/path`` for absence starts seeing it PRESENT.
+#: That is a cross-test pollution that exists only on a root host — the exact
+#: shape that is green in CI and red only in the sandbox.
+_ROOT_FS_SENTINEL = Path('/nonexistent')
+
+
+def _root_fs_sentinel_present() -> bool:
+    """Whether the ``/nonexistent`` filesystem-root sentinel currently exists.
+
+    Wrapped as a named seam so the matched-pair control can reason about the
+    guard's decision without depending on the host being root — an unprivileged
+    host can never create the sentinel to simulate a leak.
+    """
+    return _ROOT_FS_SENTINEL.exists()
+
+
+def _clear_root_fs_sentinel() -> None:
+    """Best-effort removal of a leaked ``/nonexistent`` sentinel tree.
+
+    A no-op on the overwhelmingly common path where it does not exist. On an
+    unprivileged host there is nothing to remove (and the ``rmtree`` could not
+    succeed anyway); on a root host this un-poisons the shared root for the
+    tests that run after a leak.
+    """
+    if _ROOT_FS_SENTINEL.exists():
+        shutil.rmtree(_ROOT_FS_SENTINEL, ignore_errors=True)
+
+
+def _root_fs_leak_allowed(node) -> bool:
+    """True when *node* opts out of the root-fs pollution guard via marker."""
+    return node.get_closest_marker('allow_root_filesystem_pollution') is not None
+
+
+def _root_fs_leak_violation(node, before: bool, after: bool) -> str | None:
+    """Return a failure message if *node* leaked the sentinel, else ``None``.
+
+    This is the guard's decision core, factored out so the matched pair in
+    ``test/plan-marshall/script-shared/test_root_fs_pollution_neutralization.py``
+    can drive it with a simulated ``(before, after)`` — engaged, and (via the
+    marker) disengaged — without needing to be root to create the sentinel for
+    real.
+
+    A leak is ``after and not before``: the sentinel was absent when the test
+    started and present when it finished. A node carrying
+    ``allow_root_filesystem_pollution`` is exempt (returns ``None``).
+    """
+    if _root_fs_leak_allowed(node):
+        return None
+    if after and not before:
+        return (
+            f'Root-fs pollution guard: test {node.nodeid} materialized the '
+            f'filesystem-root sentinel {_ROOT_FS_SENTINEL} under "/". This is '
+            'only possible as root (uid 0), where the OS bypasses the DAC '
+            'permission check that keeps "/" unwritable on a developer machine '
+            'and on CI. Every test that probes that sentinel for ABSENCE then '
+            'sees it PRESENT, so the leak surfaces as unrelated failures '
+            'elsewhere.\n\nHand the creating operation a path that cannot be '
+            'created by any uid (request the ``unwritable_dir`` fixture, which '
+            'yields a path under /dev/null), or mark this test with '
+            '@pytest.mark.allow_root_filesystem_pollution if the real-root '
+            'write is genuinely its subject.'
+        )
+    return None
+
+
+@pytest.fixture(autouse=True)
+def _root_fs_pollution_guard(request):
+    """Neutralize root's writability of the ``/nonexistent`` filesystem-root
+    sentinel, and fail loudly on any test that materializes it.
+
+    Companion to ``_pollution_guard`` (which watches the real credentials dir
+    and the tracked ``.plan/local/`` tree): this one watches the ``/nonexistent``
+    sentinel that dozens of tests hand to path-validation code expecting an
+    "absent path" answer. See :data:`_ROOT_FS_SENTINEL` for the full mechanism
+    and why it fails only in a root sandbox.
+
+    Two arms:
+
+    * **Neutralize** — the sentinel is cleared BEFORE the test body runs, so a
+      test probing ``/nonexistent/...`` for absence sees it absent regardless of
+      what a prior test (running as root) may have leaked. This is what makes
+      the existence-probe tests deterministic on a root host.
+    * **Self-check** — a before/after snapshot flags any test that leaks the
+      sentinel, attributing the failure to the offender's nodeid instead of to
+      the distant victim it would otherwise poison.
+
+    Opt out with ``@pytest.mark.allow_root_filesystem_pollution`` for a test that
+    genuinely owns a real-root write under ``/`` as its subject (none does today;
+    the marker exists so the guard has a documented escape hatch, exactly as
+    ``allow_pollution`` does for ``_pollution_guard``).
+    """
+    node = request.node
+    if _root_fs_leak_allowed(node):
+        yield
+        return
+
+    _clear_root_fs_sentinel()
+    before = _root_fs_sentinel_present()
+    yield
+    after = _root_fs_sentinel_present()
+    violation = _root_fs_leak_violation(node, before, after)
+    if violation:
+        _clear_root_fs_sentinel()
+        pytest.fail(violation)
+
+
+@pytest.fixture
+def unwritable_dir() -> str:
+    """Yield a directory path whose creation FAILS for every uid, root included.
+
+    A test that asserts "a bad target directory yields an io_error" needs an
+    input whose ``mkdir`` genuinely raises regardless of privilege. A path under
+    the filesystem root that is merely assumed absent (``/nonexistent/...``) is
+    NOT such an input: as root the OS bypasses the DAC permission check, so the
+    ``mkdir`` SUCCEEDS, the error branch is never taken, and the sentinel is
+    leaked under ``/`` (see :data:`_ROOT_FS_SENTINEL`).
+
+    A path *under* ``/dev/null`` is un-creatable for every uid because
+    ``/dev/null`` is a character device, not a directory: resolving any child of
+    it raises ``ENOTDIR`` (``NotADirectoryError``, an ``OSError``) on ``mkdir``
+    and reports ``False`` from ``.exists()``. The error branch is therefore
+    exercised identically on an unprivileged host and on a root host, and
+    nothing is ever written, so there is no cross-test pollution.
+    """
+    return '/dev/null/pm-unwritable/project-dir'
+
+
 @pytest.fixture
 def plan_context(tmp_path, monkeypatch):
     """

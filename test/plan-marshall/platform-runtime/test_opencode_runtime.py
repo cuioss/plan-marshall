@@ -114,9 +114,23 @@ def test_project_initial_setup_hook_skip_reason_present(
     assert "OpenCode" in result["hook_skip_reason"]
 
 
-def test_project_initial_setup_invalid_dir_returns_error(runtime: OpenCodeRuntime) -> None:
-    """project_initial_setup returns error when project_dir is not writable."""
-    result = _parse(runtime.project_initial_setup("/nonexistent/path/that/cannot/be/created", "opencode"))
+def test_project_initial_setup_invalid_dir_returns_error(
+    runtime: OpenCodeRuntime, unwritable_dir: str
+) -> None:
+    """project_initial_setup returns io_error when ``.plan`` cannot be created.
+
+    ``unwritable_dir`` is a path under ``/dev/null`` — a character device, so
+    creating any child of it raises ``ENOTDIR`` (an ``OSError``) for EVERY uid.
+    A path merely assumed absent under ``/`` (``/nonexistent/...``) would NOT
+    exercise this branch as root: the OS bypasses the DAC permission check, so
+    the ``mkdir`` would SUCCEED (returning ``success``, not ``io_error``) and
+    additionally leak the sentinel under ``/``, poisoning every sibling test
+    that probes it for absence. See the ``unwritable_dir`` /
+    ``_root_fs_pollution_guard`` fixtures in ``test/conftest.py``. The
+    ``/dev/null`` path exercises the ``io_error`` branch identically on an
+    unprivileged host and on a root sandbox.
+    """
+    result = _parse(runtime.project_initial_setup(unwritable_dir, "opencode"))
     assert result["status"] == "error"
     assert result["error"] == "io_error"
 
