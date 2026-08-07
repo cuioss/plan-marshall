@@ -2292,6 +2292,56 @@ class TestDetectDuplicateClaimableKeys:
         ]
         assert _detect_duplicate_claimable_keys(added) == []
 
+    def test_loop_variable_identity_is_not_suppressed_by_the_for_header(self):
+        # A ``for KEY in items`` header contains ``KEY in`` but is the iteration,
+        # NOT a duplicate-key disposition. When the claimed identity IS the loop
+        # variable, the header must not read as a membership guard.
+        added = [
+            ('f.py', 1, 'def build(items):'),
+            ('f.py', 2, '    reg = {}'),
+            ('f.py', 3, '    for key in items:'),
+            ('f.py', 4, '        if not key:'),
+            ('f.py', 5, '            continue'),
+            ('f.py', 6, '        reg[key] = compute(key)'),
+        ]
+        out = _detect_duplicate_claimable_keys(added)
+        assert len(out) == 1
+        assert out[0]['key'] == 'key'
+        assert out[0]['form'] == 'subscript'
+
+    def test_unrelated_input_subscript_read_does_not_suppress(self):
+        # ``data[k]`` reads an INPUT mapping — it is not evidence that the OUTPUT
+        # collection deduplicates ``k``, so it must not be read as a guard.
+        added = [
+            ('f.py', 1, 'def build(items, data):'),
+            ('f.py', 2, '    out = []'),
+            ('f.py', 3, '    for it in items:'),
+            ('f.py', 4, '        k = it.key()'),
+            ('f.py', 5, '        if not k:'),
+            ('f.py', 6, '            continue'),
+            ('f.py', 7, '        v = data[k]'),
+            ('f.py', 8, "        out.append({'id': k, 'value': v})"),
+        ]
+        out = _detect_duplicate_claimable_keys(added)
+        assert len(out) == 1
+        assert out[0]['key'] == 'k'
+
+    def test_conditional_membership_on_loop_variable_still_suppresses(self):
+        # The complement of the two positives above: a GENUINE ``if KEY in reg``
+        # dedup guard on the loop-variable identity must still suppress, so the
+        # for-header fix did not disable real membership detection.
+        added = [
+            ('f.py', 1, 'def build(items):'),
+            ('f.py', 2, '    reg = {}'),
+            ('f.py', 3, '    for key in items:'),
+            ('f.py', 4, '        if not key:'),
+            ('f.py', 5, '            continue'),
+            ('f.py', 6, '        if key in reg:'),
+            ('f.py', 7, '            continue'),
+            ('f.py', 8, '        reg[key] = compute(key)'),
+        ]
+        assert _detect_duplicate_claimable_keys(added) == []
+
     def test_collection_not_freshly_initialized_surfaces_nothing(self):
         # Appending onto a passed-in collection (not a registry the function
         # builds) is out of scope — a duplicate there is far likelier intended.

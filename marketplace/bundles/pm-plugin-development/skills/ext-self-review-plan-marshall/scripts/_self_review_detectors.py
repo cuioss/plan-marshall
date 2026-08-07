@@ -2086,19 +2086,30 @@ def _identity_validated(identity: str, blob: str) -> bool:
 def _identity_deduped(identity: str, blob: str) -> bool:
     """Return True when ``blob`` guards ``identity`` with a uniqueness/membership test.
 
-    A membership test (``X in`` / ``X not in``), a keyed lookup
-    (``.get(X)`` / ``.setdefault(X)`` / ``coll[X]``), or an equality comparison
-    (``X ==`` / ``== X``) is the explicit duplicate-key disposition the class
-    requires. Its PRESENCE suppresses the candidate — the insertion is guarded.
-    The insertion line itself is excluded from ``blob`` by the caller, so a
-    subscript claim's own ``coll[X] =`` never self-satisfies this test.
+    A membership test (``X not in`` / a conditional ``X in``), a keyed lookup
+    (``.get(X)`` / ``.setdefault(X)``), or an equality comparison (``X ==`` /
+    ``== X``) is the explicit duplicate-key disposition the class requires. Its
+    PRESENCE suppresses the candidate — the insertion is guarded.
+
+    Two membership shapes are deliberately NOT treated as guards, because both
+    fire on ordinary code and would silently suppress a real defect:
+
+    * a ``for X in ...`` loop header — that is the iteration itself, not a
+      duplicate-key disposition, so the plain ``X in`` guard is scoped to a
+      conditional (``if`` / ``elif`` / ``while``, which also catches a
+      comprehension's ``if`` clause) and the unconditional ``X not in`` form;
+    * a bare subscript ``coll[X]`` — an ``X``-keyed read of ANY mapping
+      (typically an input lookup like ``data[X]``) is not evidence that the
+      OUTPUT collection deduplicates ``X``, so it is not a guard. A genuine
+      subscript-form dedup uses ``X not in coll`` / ``.get(X)`` / ``.setdefault(X)``,
+      which the patterns above still catch.
     """
     esc = re.escape(identity)
     for pat in (
-        rf'\b{esc}\s+(?:not\s+)?in\b',
+        rf'\b{esc}\s+not\s+in\b',
+        rf'(?:if|elif|while)\b[^\n]*\b{esc}\s+in\b',
         rf'\.get\s*\(\s*{esc}\b',
         rf'\.setdefault\s*\(\s*{esc}\b',
-        rf'\[\s*{esc}\s*\]',
         rf'\b{esc}\s*(?:==|!=)',
         rf'(?:==|!=)\s*{esc}\b',
     ):
