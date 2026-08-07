@@ -127,16 +127,6 @@
           "ce_wait_timeout_seconds": 600,
           "lane": "full"
         },
-        "project:finalize-step-review-retrospective": {
-          "lane": "standard"
-        },
-        "default:lessons-capture": {
-          "lane": "off"
-        },
-        "default:finalize-step-preference-emitter": {
-          "preference_min_recurrence": 2,
-          "lane": "minimal"
-        },
         "default:adr-propose": {
           "lane": "off"
         },
@@ -152,13 +142,23 @@
           "pre_merge_comment_barrier": "fail_into_loopback",
           "lane": "minimal"
         },
-        "plan-marshall:plan-retrospective": {
-          "lane": "minimal"
-        },
         "project:finalize-step-deploy-target": {
           "lane": "minimal"
         },
         "project:finalize-step-sync-plugin-cache": {
+          "lane": "minimal"
+        },
+        "project:finalize-step-review-retrospective": {
+          "lane": "standard"
+        },
+        "plan-marshall:plan-retrospective": {
+          "lane": "minimal"
+        },
+        "default:lessons-capture": {
+          "lane": "off"
+        },
+        "default:finalize-step-preference-emitter": {
+          "preference_min_recurrence": 2,
           "lane": "minimal"
         },
         "default:record-metrics": {
@@ -191,6 +191,11 @@
     "map": {
       "python": [
         {
+          "glob": "*.py.template",
+          "role": "production",
+          "build_class": "compile"
+        },
+        {
           "glob": ".claude/skills/*.py",
           "role": "production",
           "build_class": "compile"
@@ -216,7 +221,42 @@
           "build_class": "verify"
         },
         {
+          "glob": "test/*.info",
+          "role": "test",
+          "build_class": "module-tests"
+        },
+        {
+          "glob": "test/*.java",
+          "role": "test",
+          "build_class": "module-tests"
+        },
+        {
+          "glob": "test/*.json",
+          "role": "test",
+          "build_class": "module-tests"
+        },
+        {
+          "glob": "test/*.lcov",
+          "role": "test",
+          "build_class": "module-tests"
+        },
+        {
+          "glob": "test/*.log",
+          "role": "test",
+          "build_class": "module-tests"
+        },
+        {
           "glob": "test/*.py",
+          "role": "test",
+          "build_class": "module-tests"
+        },
+        {
+          "glob": "test/*.toon",
+          "role": "test",
+          "build_class": "module-tests"
+        },
+        {
+          "glob": "test/*.xml",
           "role": "test",
           "build_class": "module-tests"
         }
@@ -305,9 +345,10 @@
       "temp_on_maintenance": true,
       "plugin_cache_keep_versions": 5,
       "plugin_cache_keep_days": 3,
-      "no_plan_body_days": 7
+      "no_plan_body_days": 7,
+      "build_results_days": 5
     },
-    "provisioned_version": "0.1.1275",
-    "config_seed_fingerprint": "59c217c3"
+    "provisioned_version": "0.1.1304",
+    "config_seed_fingerprint": "714f8058"
   }
 }
