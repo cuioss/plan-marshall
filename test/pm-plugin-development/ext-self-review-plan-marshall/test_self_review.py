@@ -21,6 +21,8 @@ from self_review import (
     _detect_contract_sources,
     _detect_count_prose,
     _detect_description_vs_body,
+    _detect_discard_without_report,
+    _detect_duplicate_claimable_keys,
     _detect_flag_guard_pairs,
     _detect_keep_markers,
     _detect_markdown_sections,
@@ -2200,6 +2202,266 @@ class TestDetectScanDerivedKeys:
 
     def test_empty_added_surfaces_nothing(self):
         assert _detect_scan_derived_keys([]) == []
+
+
+# =============================================================================
+# Test: _detect_duplicate_claimable_keys (D1)
+# =============================================================================
+
+
+class TestDetectDuplicateClaimableKeys:
+    """A caller-supplied identity claimed into a NEW keyed collection inside a
+    loop that VALIDATES the identity but omits its duplicate-key disposition.
+
+    The narrowing is the validation-guard + no-dedup conjunction: an ordinary
+    identity accumulator that never checks the id is not the shape.
+    """
+
+    def test_append_form_fires_when_validated_but_not_deduped(self):
+        added = [
+            ('f.py', 1, 'def collect(items):'),
+            ('f.py', 2, '    out = []'),
+            ('f.py', 3, '    for it in items:'),
+            ('f.py', 4, '        key = it.identity()'),
+            ('f.py', 5, '        if not key:'),
+            ('f.py', 6, '            continue'),
+            ('f.py', 7, "        out.append({'id': key, 'value': it})"),
+        ]
+        out = _detect_duplicate_claimable_keys(added)
+        assert len(out) == 1
+        assert out[0]['line'] == 7
+        assert out[0]['collection'] == 'out'
+        assert out[0]['key'] == 'key'
+        assert out[0]['form'] == 'append'
+
+    def test_subscript_form_fires_when_validated_but_not_deduped(self):
+        added = [
+            ('f.py', 1, 'def build(items):'),
+            ('f.py', 2, '    reg = {}'),
+            ('f.py', 3, '    for it in items:'),
+            ('f.py', 4, '        k = it.key()'),
+            ('f.py', 5, '        if k is None:'),
+            ('f.py', 6, '            continue'),
+            ('f.py', 7, '        reg[k] = it'),
+        ]
+        out = _detect_duplicate_claimable_keys(added)
+        assert len(out) == 1
+        assert out[0]['form'] == 'subscript'
+        assert out[0]['collection'] == 'reg'
+        assert out[0]['key'] == 'k'
+
+    def test_unvalidated_identity_accumulator_surfaces_nothing(self):
+        # The reports.append shape: an id carried into a new list with NO
+        # validation guard is an ordinary accumulator, not the defect.
+        added = [
+            ('f.py', 1, 'def report(items):'),
+            ('f.py', 2, '    out = []'),
+            ('f.py', 3, '    for it in items:'),
+            ('f.py', 4, '        rid = it.ident'),
+            ('f.py', 5, "        out.append({'id': rid, 'n': 1})"),
+        ]
+        assert _detect_duplicate_claimable_keys(added) == []
+
+    def test_membership_get_guard_suppresses(self):
+        added = [
+            ('f.py', 1, 'def build(items):'),
+            ('f.py', 2, '    reg = {}'),
+            ('f.py', 3, '    for it in items:'),
+            ('f.py', 4, '        k = it.key()'),
+            ('f.py', 5, '        if not k:'),
+            ('f.py', 6, '            continue'),
+            ('f.py', 7, '        if reg.get(k) is not None:'),
+            ('f.py', 8, '            continue'),
+            ('f.py', 9, '        reg[k] = it'),
+        ]
+        assert _detect_duplicate_claimable_keys(added) == []
+
+    def test_membership_in_guard_suppresses(self):
+        added = [
+            ('f.py', 1, 'def build(items):'),
+            ('f.py', 2, '    seen = set()'),
+            ('f.py', 3, '    out = []'),
+            ('f.py', 4, '    for it in items:'),
+            ('f.py', 5, '        k = it.key()'),
+            ('f.py', 6, '        if not k:'),
+            ('f.py', 7, '            continue'),
+            ('f.py', 8, '        if k in seen:'),
+            ('f.py', 9, '            continue'),
+            ('f.py', 10, '        seen.add(k)'),
+            ('f.py', 11, "        out.append({'id': k})"),
+        ]
+        assert _detect_duplicate_claimable_keys(added) == []
+
+    def test_collection_not_freshly_initialized_surfaces_nothing(self):
+        # Appending onto a passed-in collection (not a registry the function
+        # builds) is out of scope — a duplicate there is far likelier intended.
+        added = [
+            ('f.py', 1, 'def add(items, acc):'),
+            ('f.py', 2, '    for it in items:'),
+            ('f.py', 3, '        k = it.key()'),
+            ('f.py', 4, '        if not k:'),
+            ('f.py', 5, '            continue'),
+            ('f.py', 6, "        acc.append({'id': k})"),
+        ]
+        assert _detect_duplicate_claimable_keys(added) == []
+
+    def test_insertion_outside_loop_surfaces_nothing(self):
+        added = [
+            ('f.py', 1, 'def once(x):'),
+            ('f.py', 2, '    out = []'),
+            ('f.py', 3, '    k = x.key()'),
+            ('f.py', 4, '    if not k:'),
+            ('f.py', 5, '        return None'),
+            ('f.py', 6, "    out.append({'id': k})"),
+        ]
+        assert _detect_duplicate_claimable_keys(added) == []
+
+    def test_non_identity_key_surfaces_nothing(self):
+        added = [
+            ('f.py', 1, 'def collect(items):'),
+            ('f.py', 2, '    out = []'),
+            ('f.py', 3, '    for it in items:'),
+            ('f.py', 4, '        v = it.value()'),
+            ('f.py', 5, '        if not v:'),
+            ('f.py', 6, '            continue'),
+            ('f.py', 7, "        out.append({'value': v, 'count': 1})"),
+        ]
+        assert _detect_duplicate_claimable_keys(added) == []
+
+    def test_non_python_file_surfaces_nothing(self):
+        added = [
+            ('guide.md', 1, 'def collect(items):'),
+            ('guide.md', 2, '    out = []'),
+            ('guide.md', 3, '    for it in items:'),
+            ('guide.md', 4, '        k = it.key()'),
+            ('guide.md', 5, '        if not k:'),
+            ('guide.md', 6, '            continue'),
+            ('guide.md', 7, "        out.append({'id': k})"),
+        ]
+        assert _detect_duplicate_claimable_keys(added) == []
+
+    def test_empty_added_surfaces_nothing(self):
+        assert _detect_duplicate_claimable_keys([]) == []
+
+
+# =============================================================================
+# Test: _detect_discard_without_report (D2)
+# =============================================================================
+
+
+class TestDetectDiscardWithoutReport:
+    """A BARE ``if``-guarded ``continue``/``break`` inside a function that owns a
+    report channel — a silent drop with no report path.
+    """
+
+    def test_bare_continue_fires(self):
+        added = [
+            ('f.py', 1, 'def filt(items):'),
+            ('f.py', 2, '    notes = []'),
+            ('f.py', 3, '    kept = []'),
+            ('f.py', 4, '    for it in items:'),
+            ('f.py', 5, '        if it is None:'),
+            ('f.py', 6, '            continue'),
+            ('f.py', 7, '        kept.append(it)'),
+            ('f.py', 8, "    return {'kept': kept, 'notes': notes}"),
+        ]
+        out = _detect_discard_without_report(added)
+        assert len(out) == 1
+        assert out[0]['line'] == 5
+        assert out[0]['channel'] == 'notes'
+        assert out[0]['discard'] == 'continue'
+
+    def test_bare_break_fires(self):
+        added = [
+            ('f.py', 1, 'def scan(items):'),
+            ('f.py', 2, '    reasons = []'),
+            ('f.py', 3, '    for it in items:'),
+            ('f.py', 4, '        if it.bad:'),
+            ('f.py', 5, '            break'),
+            ('f.py', 6, "    return {'reasons': reasons}"),
+        ]
+        out = _detect_discard_without_report(added)
+        assert len(out) == 1
+        assert out[0]['discard'] == 'break'
+
+    def test_inline_discard_fires(self):
+        added = [
+            ('f.py', 1, 'def filt(items):'),
+            ('f.py', 2, '    notes = []'),
+            ('f.py', 3, '    for it in items:'),
+            ('f.py', 4, '        if it is None: continue'),
+            ('f.py', 5, "    return {'notes': notes}"),
+        ]
+        out = _detect_discard_without_report(added)
+        assert len(out) == 1
+        assert out[0]['line'] == 4
+
+    def test_branch_that_records_before_discarding_is_silent(self):
+        added = [
+            ('f.py', 1, 'def filt(items):'),
+            ('f.py', 2, '    notes = []'),
+            ('f.py', 3, '    for it in items:'),
+            ('f.py', 4, '        if it is None:'),
+            ('f.py', 5, "            notes.append('null item')"),
+            ('f.py', 6, '            continue'),
+            ('f.py', 7, "    return {'notes': notes}"),
+        ]
+        assert _detect_discard_without_report(added) == []
+
+    def test_branch_routing_to_sibling_disposition_is_silent(self):
+        # A multi-disposition dispatch loop records the drop somewhere (here a
+        # sibling list), so its non-bare branch is not a silent drop.
+        added = [
+            ('f.py', 1, 'def route(items):'),
+            ('f.py', 2, '    notes = []'),
+            ('f.py', 3, '    other = []'),
+            ('f.py', 4, '    for it in items:'),
+            ('f.py', 5, '        if it.kind == "x":'),
+            ('f.py', 6, '            other.append(it)'),
+            ('f.py', 7, '            continue'),
+            ('f.py', 8, "    return {'notes': notes}"),
+        ]
+        assert _detect_discard_without_report(added) == []
+
+    def test_function_without_report_channel_is_silent(self):
+        added = [
+            ('f.py', 1, 'def filt(items):'),
+            ('f.py', 2, '    kept = []'),
+            ('f.py', 3, '    for it in items:'),
+            ('f.py', 4, '        if it is None:'),
+            ('f.py', 5, '            continue'),
+            ('f.py', 6, '        kept.append(it)'),
+            ('f.py', 7, '    return kept'),
+        ]
+        assert _detect_discard_without_report(added) == []
+
+    def test_channel_named_only_in_prose_is_silent(self):
+        # The self-hit mode D3 surfaced: a comment/docstring that merely SHOWS
+        # ``'notes': notes`` satisfies the emission signal but has no assigned
+        # ``notes`` variable, so it registers no channel.
+        added = [
+            ('f.py', 1, 'def helper(items):'),
+            ('f.py', 2, "    # example emission shape: {'notes': notes}"),
+            ('f.py', 3, '    for it in items:'),
+            ('f.py', 4, '        if it is None:'),
+            ('f.py', 5, '            continue'),
+            ('f.py', 6, '        do(it)'),
+        ]
+        assert _detect_discard_without_report(added) == []
+
+    def test_non_python_file_surfaces_nothing(self):
+        added = [
+            ('guide.md', 1, 'def filt(items):'),
+            ('guide.md', 2, '    notes = []'),
+            ('guide.md', 3, '    for it in items:'),
+            ('guide.md', 4, '        if it is None:'),
+            ('guide.md', 5, '            continue'),
+            ('guide.md', 6, "    return {'notes': notes}"),
+        ]
+        assert _detect_discard_without_report(added) == []
+
+    def test_empty_added_surfaces_nothing(self):
+        assert _detect_discard_without_report([]) == []
 
 
 # =============================================================================

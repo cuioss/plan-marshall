@@ -105,7 +105,7 @@ _ANCESTOR_PATHS = (
 #: The candidate list this plan added. Everything else predates it.
 _NEW_LIST = 'scan_derived_keys'
 
-#: The nineteen candidate lists OTHER than the one under test. The complementary
+#: The twenty-one candidate lists OTHER than the one under test. The complementary
 #: negative in case (a) sweeps ALL of them, so a sibling detector incidentally
 #: flagging the same hunk cannot be mistaken for the reachability check doing its
 #: job. The tuple is hand-written on purpose: deriving it from the registry would
@@ -131,6 +131,8 @@ _SIBLING_LISTS = (
     'advertised_form_help_strings',
     'ordinal_references',
     'worked_example_pairs',
+    'duplicate_claimable_keys',
+    'discard_without_report',
 )
 
 # =============================================================================

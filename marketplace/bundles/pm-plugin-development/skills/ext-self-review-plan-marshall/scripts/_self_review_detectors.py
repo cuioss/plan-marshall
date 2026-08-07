@@ -35,6 +35,8 @@ from _self_review_patterns import (
     _DEF_OR_CLASS,
     _DEF_OR_CLASS_HEADER,
     _DEST_KWARG,
+    _DISCARD_STATEMENT,
+    _EMPTY_COLLECTION_BINDING,
     _EXECUTE_SCRIPT_NOTATION,
     _FENCE_DELIMITER,
     _FILE_IO_BOUNDARY,
@@ -47,8 +49,13 @@ from _self_review_patterns import (
     _HEADING_CONTRAST_PIVOT,
     _HELP_FIELD,
     _IDENT_TOKEN,
+    _IDENTITY_APPEND,
     _IDENTITY_CONSUMPTION,
+    _IDENTITY_KEY_VALUE,
+    _IF_BLOCK_OPENER,
+    _IF_INLINE_DISCARD,
     _KEEP_MARKER,
+    _LOOP_HEADER,
     _MD_BULLET,
     _MD_HEADING,
     _MIN_PREDICATE_TOKEN_LEN,
@@ -67,9 +74,11 @@ from _self_review_patterns import (
     _RAW_REGEX_LITERAL,
     _RE_CALL,
     _READ_CHECK_DIRECTIVE,
+    _REPORT_CHANNEL_EMISSION,
     _SCAN_LOOP,
     _SEQUENCE_DECOMPOSITION,
     _SUBPROCESS_BOUNDARY,
+    _SUBSCRIPT_CLAIM,
     _TOKENIZE,
     _TOON_FIELD_TOKEN,
     _TRIPLE_QUOTE,
@@ -1985,4 +1994,358 @@ def _detect_worked_example_pairs(
         for record in _worked_example_pairs(md_path, post_image, md_touched[md_path]):
             if record['agrees'] is False:
                 out.append(record)
+    return out
+
+
+# =============================================================================
+# Duplicate-claimable-key detection (D1) and discard-without-report detection (D2)
+# =============================================================================
+#
+# Both walk ``.py`` function blocks over the post-image (or the diff's added lines
+# when no ``project_dir`` is available), reusing ``_function_blocks`` /
+# ``_block_is_diff_touched`` — the same infrastructure ``_detect_scan_derived_keys``
+# uses. Both were pinned against the real pre-#1067 defects (findings 8da924 /
+# 3e04a8), whose pre-fix revisions are checked in as literal fixtures under
+# ``test/pm-plugin-development/ext-self-review-plan-marshall/``.
+
+
+def _lines_inside_loop(block_lines: list[tuple[int, str]]) -> set[int]:
+    """Return the line numbers within ``block_lines`` that sit inside a loop.
+
+    A line is inside a loop when a ``for``/``while`` header at a SHALLOWER
+    indentation still encloses it — tracked with an indent stack of open loop
+    headers, popping each header once we dedent to or below its indentation. Blank
+    and comment lines never open or close a loop. The header line itself is
+    attributed to its OUTER loops only (it is recorded before its own indent is
+    pushed), which is correct: a duplicate-key insertion lives in the loop BODY.
+    """
+    inside: set[int] = set()
+    loop_indents: list[int] = []
+    for lineno, content in block_lines:
+        stripped = content.strip()
+        if not stripped or stripped.startswith('#'):
+            continue
+        indent = len(content) - len(content.lstrip())
+        while loop_indents and indent <= loop_indents[-1]:
+            loop_indents.pop()
+        if loop_indents:
+            inside.add(lineno)
+        if _LOOP_HEADER.match(content):
+            loop_indents.append(indent)
+    return inside
+
+
+def _identity_insertion(
+    content: str, new_collections: set[str]
+) -> tuple[str, str, str] | None:
+    """Return ``(collection, identity, form)`` when ``content`` claims an identity.
+
+    Two forms, each onto a NEW (empty-initialized) collection:
+
+    * ``append`` — ``COLL.append({... 'id': VALUE ...})`` / ``COLL.add({...})`` with
+      a single-line dict literal carrying an identity-key → bare-identifier
+      mapping; ``VALUE`` is the identity.
+    * ``subscript`` — ``COLL[KEY] = ...`` with ``KEY`` a bare identifier; ``KEY`` is
+      the identity.
+
+    ``None`` when neither form applies or the collection is not one the function
+    freshly initialized.
+    """
+    m = _IDENTITY_APPEND.match(content)
+    if m is not None and m.group('coll') in new_collections:
+        mv = _IDENTITY_KEY_VALUE.search(content)
+        if mv is not None:
+            return m.group('coll'), mv.group('value'), 'append'
+    m = _SUBSCRIPT_CLAIM.match(content)
+    if m is not None and m.group('coll') in new_collections:
+        return m.group('coll'), m.group('key'), 'subscript'
+    return None
+
+
+def _identity_validated(identity: str, blob: str) -> bool:
+    """Return True when ``blob`` guards ``identity`` with a presence/type check.
+
+    The insertion loop demonstrably TREATS the value as an identity it validates —
+    a falsiness check (``if not X``), a ``None`` check, or an ``isinstance`` guard.
+    This is half of the pre-#1067 defect signature; the other half is the ABSENCE
+    of a uniqueness guard (see :func:`_identity_deduped`). Requiring the validation
+    guard is the narrowing that keeps the class off ordinary identity accumulators
+    (``reports.append({'id': x})``) that never check the id at all.
+    """
+    esc = re.escape(identity)
+    for pat in (
+        rf'\bif\s+not\s+{esc}\b',
+        rf'\b{esc}\s+is\s+(?:not\s+)?None\b',
+        rf'\bisinstance\s*\(\s*{esc}\b',
+    ):
+        if re.search(pat, blob):
+            return True
+    return False
+
+
+def _identity_deduped(identity: str, blob: str) -> bool:
+    """Return True when ``blob`` guards ``identity`` with a uniqueness/membership test.
+
+    A membership test (``X in`` / ``X not in``), a keyed lookup
+    (``.get(X)`` / ``.setdefault(X)`` / ``coll[X]``), or an equality comparison
+    (``X ==`` / ``== X``) is the explicit duplicate-key disposition the class
+    requires. Its PRESENCE suppresses the candidate — the insertion is guarded.
+    The insertion line itself is excluded from ``blob`` by the caller, so a
+    subscript claim's own ``coll[X] =`` never self-satisfies this test.
+    """
+    esc = re.escape(identity)
+    for pat in (
+        rf'\b{esc}\s+(?:not\s+)?in\b',
+        rf'\.get\s*\(\s*{esc}\b',
+        rf'\.setdefault\s*\(\s*{esc}\b',
+        rf'\[\s*{esc}\s*\]',
+        rf'\b{esc}\s*(?:==|!=)',
+        rf'(?:==|!=)\s*{esc}\b',
+    ):
+        if re.search(pat, blob):
+            return True
+    return False
+
+
+def _claimable_key_hits_in_block(block: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return every duplicate-claimable-key insertion in one function block.
+
+    Fires on an identity insertion (see :func:`_identity_insertion`) inside a loop,
+    onto a collection the function freshly initialized, where the identity is
+    VALIDATED but NOT deduplicated in the same function. The guard blob is the
+    block minus the insertion line, so a subscript claim's own key subscript is not
+    read as its own membership guard.
+    """
+    body = block['lines']
+    new_collections: set[str] = set()
+    for _lineno, content in body:
+        m = _EMPTY_COLLECTION_BINDING.match(content)
+        if m is not None:
+            new_collections.add(m.group('name'))
+    if not new_collections:
+        return []
+
+    inside_loop = _lines_inside_loop(body)
+    hits: list[dict[str, Any]] = []
+    for lineno, content in body:
+        if lineno not in inside_loop:
+            continue
+        insertion = _identity_insertion(content, new_collections)
+        if insertion is None:
+            continue
+        collection, identity, form = insertion
+        blob = '\n'.join(c for ln, c in body if ln != lineno)
+        if not _identity_validated(identity, blob):
+            continue
+        if _identity_deduped(identity, blob):
+            continue
+        hits.append(
+            {'line': lineno, 'collection': collection, 'key': identity, 'form': form}
+        )
+    return hits
+
+
+def _scan_py_function_blocks(
+    added: list[tuple[str, int, str]], project_dir: Path | None
+) -> dict[str, tuple[dict[int, str], list[dict[str, Any]]]]:
+    """Split each touched ``.py`` file into function blocks over its post-image.
+
+    Returns ``{path: (touched_line_map, blocks)}``. When ``project_dir`` resolves
+    the file, the FULL post-image is walked so a block whose header or report
+    channel sits outside the diff still resolves; otherwise the diff's added lines
+    alone are walked (the unit-test path). Files with no touched ``.py`` lines are
+    absent. Shared by the D1 and D2 detectors, whose only difference is the
+    per-block predicate.
+    """
+    added_by_file: dict[str, dict[int, str]] = {}
+    for path, lineno, content in added:
+        if path.endswith('.py'):
+            added_by_file.setdefault(path, {})[lineno] = content
+
+    result: dict[str, tuple[dict[int, str], list[dict[str, Any]]]] = {}
+    for path in sorted(added_by_file):
+        post_image = _read_post_image(project_dir, path) if project_dir is not None else []
+        if post_image:
+            scan_lines = list(enumerate(post_image, start=1))
+        else:
+            scan_lines = sorted(added_by_file[path].items())
+        result[path] = (added_by_file[path], _function_blocks(scan_lines))
+    return result
+
+
+def _detect_duplicate_claimable_keys(
+    added: list[tuple[str, int, str]], project_dir: Path | None = None
+) -> list[dict[str, Any]]:
+    """Detect a caller-supplied identity claimed into a NEW keyed collection inside
+    a loop that validates the identity but omits its duplicate-key disposition.
+
+    The pre-#1067 defect (finding 8da924): ``discover_derivation_resolvers``
+    appended each resolver's id behind a bare ``if not resolver_id`` falsiness
+    check with NO membership test, so two resolvers answering the same id both
+    survived and collapsed into one producer identity — the provenance contract's
+    own archetype, one layer up.
+
+    The class fires on the conjunction of three signals, all in one function:
+
+    1. an identity insertion inside a loop — ``COLL.append({... 'id': VALUE ...})``
+       or ``COLL[KEY] = ...`` — onto a collection the function freshly initialized
+       (``COLL = []`` / ``{}`` / ``set()``);
+    2. the identity is VALIDATED (``if not X`` / ``X is None`` / ``isinstance(X)``);
+    3. the identity is NOT deduplicated (no ``X in`` / ``.get(X)`` /
+       ``.setdefault(X)`` / ``coll[X]`` / ``X ==``).
+
+    Signals 2+3 are the narrowing that keeps the class off ordinary identity
+    accumulators: ``reports.append({'id': x})`` where ``x`` is never validated is
+    not the shape and never surfaces. Only functions the diff touched are
+    considered; the post-image is walked when ``project_dir`` resolves it.
+
+    Each entry carries ``file``, ``line`` (the insertion), ``collection``, ``key``
+    (the identity token), and ``form`` (``append`` / ``subscript``). The list is
+    surfacing-only.
+    """
+    out: list[dict[str, Any]] = []
+    seen: set[tuple[str, int]] = set()
+    for path, (touched, blocks) in _scan_py_function_blocks(added, project_dir).items():
+        for block in blocks:
+            if not _block_is_diff_touched(block, touched):
+                continue
+            for hit in _claimable_key_hits_in_block(block):
+                key = (path, hit['line'])
+                if key in seen:
+                    continue
+                seen.add(key)
+                out.append({'file': path, **hit})
+    return out
+
+
+def _report_channel_name(block: dict[str, Any]) -> str | None:
+    """Return the report-channel variable name a function block owns, or ``None``.
+
+    Two signals must BOTH hold for a name to qualify:
+
+    1. a dict-literal emission ``'notes': notes`` whose key string and value
+       identifier are the SAME report noun — the function reports the channel
+       variable under its own name;
+    2. that same name is an assigned LOCAL variable in the block (``notes = ...`` /
+       ``notes: list = ...``).
+
+    The assignment requirement is the narrowing that keeps the class off prose: a
+    docstring or comment that merely SHOWS ``'notes': notes`` as an example (this
+    detector's own docstring does) satisfies (1) but not (2), so it never
+    registers a phantom channel. The first emitted name that also has an
+    assignment wins.
+    """
+    emitted: list[str] = []
+    for _lineno, content in block['lines']:
+        m = _REPORT_CHANNEL_EMISSION.search(content)
+        if m is not None and m.group('ch') not in emitted:
+            emitted.append(m.group('ch'))
+    for ch in emitted:
+        assign_re = re.compile(r'^[ \t]*' + re.escape(ch) + r'[ \t]*(?::[^=]+)?=(?!=)')
+        if any(assign_re.match(content) for _lineno, content in block['lines']):
+            return ch
+    return None
+
+
+def _discard_branch_body(
+    body: list[tuple[int, str]], opener_index: int, if_indent: int
+) -> list[str]:
+    """Return the deeper-indented body lines of the ``if`` opener at ``opener_index``.
+
+    The branch body is every subsequent line indented strictly deeper than
+    ``if_indent``, up to the first line that dedents to or below it. Blank and
+    comment lines are skipped (they neither belong to nor close the body).
+    """
+    body_lines: list[str] = []
+    for _lineno, content in body[opener_index + 1:]:
+        if not content.strip() or content.lstrip().startswith('#'):
+            continue
+        indent = len(content) - len(content.lstrip())
+        if indent <= if_indent:
+            break
+        body_lines.append(content)
+    return body_lines
+
+
+def _unreported_discards_in_block(
+    block: dict[str, Any], channel: str
+) -> list[dict[str, Any]]:
+    """Return every BARE ``if``-guarded discard branch in a channel-owning block.
+
+    A bare discard is an ``if``/``elif`` whose entire body is a single
+    ``continue``/``break`` — the inline ``if cond: continue`` form, or a block form
+    whose only non-blank, non-comment body line is the discard. Such a branch drops
+    the item and records nothing, so in a function that owns a report channel it is
+    the silent-suppression defect.
+
+    A branch that does ANY other work before discarding — appends to the channel,
+    routes the item to a sibling disposition list, logs it — is NOT bare and is
+    left alone. That is the narrowing D3 forced: a multi-disposition dispatch loop
+    (``github_pr``'s respond loop routes to ``batch`` / ``untransmitted`` /
+    ``skipped``) records every drop somewhere, and only its genuinely bare
+    pre-filter ``continue`` — if any — is a candidate. The shipped #1067 fix
+    suppresses the class exactly this way: it made each bare ``continue`` non-bare
+    by appending to ``notes`` first.
+    """
+    body = block['lines']
+    hits: list[dict[str, Any]] = []
+    for idx, (lineno, content) in enumerate(body):
+        if _IF_INLINE_DISCARD.match(content) is not None:
+            kw = 'break' if content.rstrip().endswith('break') else 'continue'
+            hits.append({'line': lineno, 'channel': channel, 'discard': kw})
+            continue
+        opener = _IF_BLOCK_OPENER.match(content)
+        if opener is None:
+            continue
+        branch = _discard_branch_body(body, idx, len(opener.group('indent')))
+        if len(branch) != 1 or _DISCARD_STATEMENT.match(branch[0]) is None:
+            continue
+        kw = 'break' if branch[0].strip().startswith('break') else 'continue'
+        hits.append({'line': lineno, 'channel': channel, 'discard': kw})
+    return hits
+
+
+def _detect_discard_without_report(
+    added: list[tuple[str, int, str]], project_dir: Path | None = None
+) -> list[dict[str, Any]]:
+    """Detect a guarded discard branch inside a function that owns a report channel
+    but does not write to it — a suppression with no report path.
+
+    The pre-#1067 defect (finding 3e04a8): ``merge_resolver_edges`` dropped
+    malformed candidates, self-edges, and unknown endpoints on bare ``continue``
+    branches WITHOUT appending to its ``notes`` channel, so a resolver whose every
+    candidate the merge discarded reported ``status: ok``, zero edges, and an empty
+    ``notes`` — a vacuous confident zero, inside the plan whose stated purpose is
+    anti-vacuity. This is the mechanical form of an anti-vacuity rule the project
+    already states in prose (the contract's § "Suppression must be reported, never
+    silent").
+
+    The class fires when a function BOTH owns a report channel (a ``'notes': notes``
+    self-named emission, for one of the suppression-report nouns) AND contains an
+    ``if``-guarded ``continue``/``break`` whose branch never writes to that channel.
+    A branch that appends to the channel before discarding is the reported case and
+    surfaces nothing — which is exactly how the shipped fix suppresses it. Only
+    functions the diff touched are considered; the post-image is walked when
+    ``project_dir`` resolves it.
+
+    Each entry carries ``file``, ``line`` (the branch opener), ``channel`` (the
+    report-channel name), and ``discard`` (``continue`` / ``break``). One entry per
+    unreported branch — a per-instance count, so three silent drops in one function
+    are three entries. The list is surfacing-only.
+    """
+    out: list[dict[str, Any]] = []
+    seen: set[tuple[str, int]] = set()
+    for path, (touched, blocks) in _scan_py_function_blocks(added, project_dir).items():
+        for block in blocks:
+            if not _block_is_diff_touched(block, touched):
+                continue
+            channel = _report_channel_name(block)
+            if channel is None:
+                continue
+            for hit in _unreported_discards_in_block(block, channel):
+                key = (path, hit['line'])
+                if key in seen:
+                    continue
+                seen.add(key)
+                out.append({'file': path, **hit})
     return out

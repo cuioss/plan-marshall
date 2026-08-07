@@ -396,6 +396,80 @@ _PREDICATE_STOPWORDS: frozenset[str] = frozenset(
 )
 
 
+# Duplicate-claimable-key detection (D1).
+# A NEW keyed collection whose key is a caller-supplied identity requires an
+# explicit duplicate-key disposition at the insertion site. The pre-#1067 defect:
+# a resolver id appended behind a bare falsiness check, so two resolvers answering
+# the same id collapse into one producer identity. See SKILL.md § Detection Rules
+# rule 20.
+
+# A ``for``/``while`` loop header (any indentation). Group ``indent`` is the
+# header's leading whitespace, used to delimit the loop body by indentation.
+_LOOP_HEADER = re.compile(r'^(?P<indent>[ \t]*)(?:for|while)\b')
+
+# A newly-initialized empty collection binding: ``NAME = []`` / ``NAME = {}`` /
+# ``NAME = set()`` / ``NAME = dict()``, with an optional type annotation
+# (``NAME: list[...] = []``). Group ``name`` is the collection variable. The
+# "new" constraint narrows the class to registries the function itself builds,
+# excluding an ``.append`` onto a passed-in or attribute collection where a
+# duplicate is far more likely to be intended.
+_EMPTY_COLLECTION_BINDING = re.compile(
+    r'^[ \t]*(?P<name>[A-Za-z_][A-Za-z0-9_]*)[ \t]*(?::[^=]+)?=[ \t]*'
+    r'(?:\[\]|\{\}|set\(\)|dict\(\))[ \t]*$'
+)
+
+# An identity-bearing append: ``COLL.append({...})`` / ``COLL.add({...})`` whose
+# dict literal opens on the same line. Group ``coll`` is the collection; the
+# identity key→value mapping is extracted by ``_IDENTITY_KEY_VALUE`` over the same
+# line (single-line dict literal only — a deliberate narrowing).
+_IDENTITY_APPEND = re.compile(
+    r'^[ \t]*(?P<coll>[A-Za-z_][A-Za-z0-9_]*)\.(?:append|add)[ \t]*\([ \t]*\{'
+)
+# The identity-key → bare-identifier mapping inside a dict literal. The key is one
+# of the identity nouns (``id`` / ``key`` / ``name`` / ``uid`` / ``slug`` /
+# ``*_id``); the value is a bare identifier (a caller-derived identity), NOT a
+# literal. Group ``value`` is the identity token whose duplicate disposition the
+# insertion omits.
+_IDENTITY_KEY_VALUE = re.compile(
+    r'''['"](?:id|key|name|uid|slug|[a-z][a-z0-9_]*_id)['"][ \t]*:[ \t]*'''
+    r'(?P<value>[A-Za-z_][A-Za-z0-9_]*)\b'
+)
+# A subscript claim: ``COLL[KEY] = ...`` where KEY is a bare identifier (a
+# caller-derived key), not a literal, and the ``=`` is an assignment (not ``==``).
+# Group ``coll`` / ``key``.
+_SUBSCRIPT_CLAIM = re.compile(
+    r'^[ \t]*(?P<coll>[A-Za-z_][A-Za-z0-9_]*)\[[ \t]*(?P<key>[A-Za-z_][A-Za-z0-9_]*)[ \t]*\][ \t]*=(?!=)'
+)
+
+# Discard-path-without-report detection (D2).
+# A function that owns a suppression report channel and then drops an item on a
+# guarded ``continue``/``break`` WITHOUT recording why. The pre-#1067 defect:
+# ``merge_resolver_edges`` dropped self-edges and unknown endpoints without
+# appending to ``notes``, reporting ``status: ok`` and an empty ``notes`` — a
+# vacuous confident zero. See SKILL.md § Detection Rules rule 21.
+
+# The report channel: a dict-literal entry ``'notes': notes`` whose key string and
+# value identifier are the SAME report noun — the function reports the channel
+# variable under its own name. Group ``ch`` is the channel/variable name. Keeping
+# key and value identical is the narrowing signal: it fires on a genuine
+# report-channel emission, not on any variable that happens to be a report noun.
+_REPORT_CHANNEL_EMISSION = re.compile(
+    r'''['"](?P<ch>notes|reasons|warnings|skipped|dropped|suppressed|diagnostics)['"]'''
+    r'[ \t]*:[ \t]*(?P=ch)\b'
+)
+# An ``if``/``elif`` block opener whose branch body follows on deeper-indented
+# lines: the condition ends in a colon with nothing but optional comment after.
+# Group ``indent`` delimits the branch body by indentation.
+_IF_BLOCK_OPENER = re.compile(r'^(?P<indent>[ \t]*)(?:el)?if\b.*:[ \t]*(?:#.*)?$')
+# An inline ``if``/``elif`` whose statement IS the discard — ``if cond: continue``
+# / ``if cond: break``. The branch has no separate body; the discard is on the
+# opener line, so no report write is possible.
+_IF_INLINE_DISCARD = re.compile(r'^(?P<indent>[ \t]*)(?:el)?if\b.*:[ \t]*(?:continue|break)\b')
+# A bare loop-discard statement — ``continue`` or ``break`` as the whole
+# statement, the "discard" a block branch performs.
+_DISCARD_STATEMENT = re.compile(r'^[ \t]*(?:continue|break)\b')
+
+
 # =============================================================================
 # Candidate-list registry
 # =============================================================================
@@ -450,6 +524,8 @@ CANDIDATE_LISTS: tuple[CandidateList, ...] = (
     CandidateList('ordinal_references', 'same-document ordinal references', True),
     CandidateList('scan_derived_keys', 'scan-derived keys', True),
     CandidateList('worked_example_pairs', 'worked-example clause pairs', True),
+    CandidateList('duplicate_claimable_keys', 'duplicate-claimable keys', True),
+    CandidateList('discard_without_report', 'discard paths without a report path', True),
 )
 
 
