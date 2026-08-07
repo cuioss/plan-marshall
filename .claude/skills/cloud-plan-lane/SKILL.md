@@ -38,22 +38,39 @@ records the carve-out. Specifically, within this lane:
 | Plugin Cache Sync after editing `marketplace/bundles/` | **Not applicable** — `/sync-plugin-cache` reads the git-ignored `target/` and writes `~/.claude/`, neither of which this lane has or may touch. Record in the report that the plan's bundle edits are unsynced, so whoever picks the work up locally knows a sync is owed |
 | No shell file operations | **Binds, with one clarification** — `git mv` and `mkdir -p` are permitted for Step 2's directory work; the rule's target is reading and searching file content, which still goes through Read/Glob/Grep |
 
-Every other rule in `CLAUDE.md` still binds — in particular the closed branch-prefix set, the
-documentation standards, and the one-command-per-Bash-call discipline.
+Every other rule in `CLAUDE.md` still binds — in particular the documentation standards and the
+one-command-per-Bash-call discipline. The closed branch-prefix set binds for branches this run
+creates; a cloud session's pre-assigned `claude/*` branch is kept as-is (§ Step 2).
 
 ## Step 1 — Load the core skills
 
 Load the work identity, then only the domain skills the plan's surface actually needs. Loading
 skills you will not use is pure context cost.
 
-**Always:**
+**Read the bundle source by path.** This repository *is* the marketplace, so every skill named below
+is a file in the tree — that route works in any session, including a fresh cloud clone. The plugin
+notation is an optimization on top of it, not the primary route:
 
 ```text
-Skill: plan-marshall:ref-code-quality
-Skill: pm-plugin-development:plugin-script-architecture
+Read: marketplace/bundles/{bundle}/skills/{skill}/SKILL.md
 ```
 
-**Conditionally, by what the plan touches:**
+The `plan-marshall` plugin is frequently **not** installed in a Claude Code cloud session — this has
+been observed, with the plugin cache verified absent — and every `Skill: {notation}` load then fails
+with "Unknown skill". So:
+
+1. Optionally try `Skill: {bundle}:{skill}` first; it is cheaper when the plugin happens to be present.
+2. On failure — or without trying — `Read` the bundle path. That is the route that always works here.
+
+**Always:**
+
+| Skill | Path |
+|---|---|
+| `plan-marshall:ref-code-quality` | `marketplace/bundles/plan-marshall/skills/ref-code-quality/SKILL.md` |
+| `pm-plugin-development:plugin-script-architecture` | `marketplace/bundles/pm-plugin-development/skills/plugin-script-architecture/SKILL.md` |
+
+**Conditionally, by what the plan touches** — each lives at
+`marketplace/bundles/{bundle}/skills/{skill}/SKILL.md`:
 
 | Surface | Load |
 |---|---|
@@ -65,9 +82,8 @@ Skill: pm-plugin-development:plugin-script-architecture
 | `.adoc` documentation | `pm-documents:ref-asciidoc` |
 | Security-relevant change | `plan-marshall:persona-security-expert` |
 
-These are plugin skills. They resolve only when the `plan-marshall` plugin is installed — which the
-repository's `.claude/settings.json` declares, so a cloud session installs it at session start. If a
-skill fails to resolve, say so in the report rather than proceeding as if it had loaded.
+A skill that can be obtained by **neither** route — no plugin, and no file at the bundle path — is
+reported in the run report, never silently skipped.
 
 ## Step 2 — Resolve and check out the branch
 
@@ -86,10 +102,26 @@ Non-empty output means stop and report the run **blocked**, naming the dirty pat
 do not commit unrelated changes.
 
 Then resolve **one** branch name and reuse it for the rest of the run — creation, pushes, and PR
-alike. Choose the prefix from what the plan actually does; the set is closed (`feature/` for a new
-capability, `fix/` for a bug fix, `chore/` for maintenance, refactoring, or documentation), because
-any other prefix gets no CI run and can therefore never produce the required `verify / conclusion`
-check. Do not default to `feature/`.
+alike.
+
+**A cloud session keeps its harness-assigned branch.** Claude Code cloud sessions pre-assign a branch
+named `claude/{slug}-{hash}` and refuse to push to a different one without explicit operator
+permission — so renaming it fires an operator prompt on every run and defeats unattended operation.
+When the session arrives on such a branch, **use it as-is**; do not create a prefixed branch and do
+not ask.
+
+This is safe because the closed prefix set does not govern whether the PR is verified.
+`.github/workflows/python-verify.yml` applies its branch filter to the `push:` trigger only; the
+`pull_request:` trigger filters on the **base** branch (`main`), so a PR from any head branch runs
+verify and produces the required `verify / conclusion` check. A non-prefixed branch loses its
+push-triggered build, nothing more. See `CLAUDE.md` § "Branch Naming".
+
+The closed prefix set applies to branches **the run itself creates** — every local run, and a cloud
+run where no branch was pre-assigned. There, choose the prefix from what the plan actually does
+(`feature/` for a new capability, `fix/` for a bug fix, `chore/` for maintenance, refactoring, or
+documentation). Do not default to `feature/`.
+
+Record in the run report which branch form was used — harness-assigned or run-created.
 
 ```bash
 git fetch origin main
@@ -345,7 +377,7 @@ happened, confirming both that the step was performed and that its artifact exis
 | Step | Artifact that proves it |
 |---|---|
 | 1 Skills loaded | Named in the report |
-| 2 Branch | Branch exists with a prefix from the closed set, cut from `origin/main` |
+| 2 Branch | Branch exists — the harness-assigned `claude/*` branch, or one this run cut from `origin/main` with a prefix from the closed set; the report names which |
 | 3 Plan directory | `doc/plans/{epic}/{plan-name}/plan.md` exists, and opens with the first-instruction block |
 | 4 Implement | Commits carry the trailer; deliverables addressed |
 | 5 Build gate | Report states the git-derived Python-change verdict and the build outcome |
@@ -429,7 +461,8 @@ description, and disposition (fixed / rejected-with-reason / deferred). An empty
 what was checked to reach it.
 
 ## Contract check (Step 9)
-Per-step verdict, and any step reported as not done. Which GitHub access path was used.
+Per-step verdict, and any step reported as not done. Which GitHub access path was used, and which
+branch form was used (harness-assigned or run-created).
 Whether the plan edited `marketplace/bundles/` and therefore owes a local `/sync-plugin-cache`.
 
 ## What have we learned (Step 9)
