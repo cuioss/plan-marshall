@@ -25,18 +25,24 @@ the whole point of this bridge is that such a claim is checkable.
 
 ## Status vocabulary
 
-Four states, in order. Each has a derivation that does not depend on the row's own prose:
+**Only two states are ever stored**, because only two can be written by a party at a moment when
+writing is appropriate:
 
 | Status | Meaning | Derivable from |
 |---|---|---|
 | `open` | Staged in the orchestrator; no cloud plan authored | No `doc/plans/{epic}/{cloud-plan}/` directory |
-| `authored` | A plan exists in the cloud tree, not yet landed | The directory exists with `plan.md` |
-| `implemented` | Its PR is merged | PR `state: MERGED` with a real `mergedAt` |
-| `ingested` | The orchestrator has reconciled it back into `status.json` | The orchestrator plan row is `shipped` |
+| `authored` | A plan exists in the cloud tree, not yet collected | The directory exists with `plan.md` |
 
-`open` and `implemented` are the two that matter operationally — the first says *available to pick
-up*, the second says *ready to collect*. The middle and final states exist so a plan in flight and a
-plan already absorbed are not both reported as one of those two.
+**A collected plan has no row at all** — its row is removed, and its directory with it (§ Path 3).
+The ledger is a queue of *open work*, not an archive: the durable record of a landed plan is its PR,
+its merge commit, and the orchestrator's landing record.
+
+`implemented` and `ingested` were formerly stored and are now **derived observations only**, made by
+the orchestrator at collect time. They were retired as stored values because *nothing could write
+them honestly*: this file is git-tracked, so every stamp is a commit and a PR, and the moment a run
+could assert `implemented` — after its merge read-back — its branch is already merged and deleted.
+The stamp then required a **second PR for a one-word change**, which is how one such PR consumed
+scarce bot-review budget on a pure bookkeeping diff. Removing the state removed the PR.
 
 ## Path 1 — Create
 
@@ -66,41 +72,57 @@ Executing the plan in a cloud session, and recording the outcome where the orche
 The run itself is governed entirely by the `cloud-plan-lane` skill; this section covers only the
 bridge obligations layered on top:
 
-1. **Stamp the row at the start** — status stays `authored`; nothing to change.
-2. **On merge, set the row to `implemented`** and fill the `PR` and `Report` columns. Edit **only
-   this plan's own row**. The ledger is shared across an epic's plans, so a whole-table rewrite
-   turns every concurrent run into a merge conflict; a single-row edit does not.
-3. **The stamp is a claim, not the outcome.** It is written after the merge is confirmed by reading
-   PR state back (`state: MERGED` with a real `mergedAt`), never after a merge command reports
-   success. This repository has seen a merge call report success, delete the branch, and not merge.
-4. **A row is never set to `ingested` by a cloud run.** That transition belongs to the orchestrator
-   alone, and a run that sets it is asserting something it cannot observe.
+**A run never writes to `LEDGER.md` at all.** Its outcome goes in its run report, and the
+orchestrator reads the report at collect. This is deliberate:
 
-If the run ends blocked or partial, leave the row at `authored` and say why in the run report. A row
-that overstates progress is worse than one that understates it: the first is collected as done, the
-second is picked up again.
+1. **The stamp was unperformable where it was specified.** A run can only assert `implemented` after
+   its merge read-back — and by then its branch is merged and deleted, so the write needs a *second
+   PR for a one-word change*. One such PR spent scarce bot-review budget on a pure bookkeeping diff.
+2. **It removes the only shared file two concurrent runs both wrote.** With no run touching the
+   ledger, an epic's runs cannot collide there at all — better than the single-row-edit discipline it
+   replaces, which merely made collisions rarer.
+3. **It puts the write where the corroboration is.** The orchestrator is the party that verifies the
+   merge, so it is the party that should record it — the same principle the rest of this document
+   applies to every other transition.
+
+What a run owes instead: the report states the PR, the merge commit, and the outcome per deliverable,
+including a run that ended **blocked or partial** and why. An overstated outcome is worse than an
+understated one — the first is collected as done, the second is picked up again.
 
 ## Path 3 — Collect
 
 Reconciling landed cloud plans back into the orchestrator. Done locally, per epic, via that epic's
 orchestrator.
 
-1. **Read the ledger** and take every row marked `implemented`.
-2. **Corroborate each one before recording it.** For each row: confirm the PR is merged, confirm the
-   merge commit is an ancestor of `origin/main`, and read the run report at
-   `doc/plans/{epic}/{cloud-plan}/report-NN.md`. A row is a lead until all three agree. A landing
-   claim — including a PR number — has been wrong here before.
+1. **Find the landed plans.** Every `authored` row whose PR has merged is ready to collect; the run
+   report names the PR. There is no `implemented` marker to read — see § Status vocabulary.
+2. **Corroborate each one before recording it.** For each: confirm the PR is merged (`state: MERGED`
+   with a real `mergedAt`), confirm the merge commit is an **ancestor of `origin/main`**, and read
+   the run report at `doc/plans/{epic}/{cloud-plan}/report-NN.md`. It is a lead until all three
+   agree. A landing claim — including a PR number — has been wrong here before.
 3. **Read the report's findings section**, not only its outcome line. A run that landed can still
-   have surfaced defects, rejected findings with reasons, or contract residue, and those are the
-   part the orchestrator would otherwise lose. Route anything not belonging to this epic through the
-   normal cross-epic path; do not fold it silently.
-4. **Transition the orchestrator plan** to `shipped` and stamp its PR, through the orchestrator's own
+   have surfaced defects, rejected findings with reasons, refuted a deliverable, grown beyond its
+   stated scope, or left contract residue — that is the part the orchestrator would otherwise lose.
+   Route anything not belonging to this epic through the normal cross-epic path; do not fold it
+   silently, and record a routing recommendation as a recommendation until the edit exists.
+4. **Transition the orchestrator plan** to `shipped` and stamp its PR through the orchestrator's own
    queue verb — never by hand-editing `status.json`.
-5. **Set the ledger row to `ingested`.**
-6. **Regenerate the epic's START-HERE block** and update `resume_anchor`.
+5. **Write the landing record** at `landings/{ORCH-PLAN-ID}.md` in the epic tree. Once step 6 removes
+   the cloud plan and its report, this record plus the PR is the durable account — so it carries the
+   outcome per deliverable, any refuted premise, the findings routed out, and any contract gap the
+   run exposed.
+6. **Remove the cloud plan from the doc path** — delete `doc/plans/{epic}/{cloud-plan}/` entirely,
+   plan and reports together, and regenerate the ledger so the row drops out (§ Regenerating a
+   ledger). `doc/plans/` is a queue of open work, not an archive; the removed content stays in git
+   history, and step 5 holds what a reader actually needs.
+7. **Regenerate the epic's START-HERE block** and update `resume_anchor`.
 
-Steps 4–6 are one unit. A row marked `ingested` whose orchestrator plan is still `staged` is exactly
-the drift this bridge is meant to make impossible, so if the transition fails, the row does not move.
+Steps 4–7 are one unit: if the transition fails, nothing is removed. The removal in step 6 and the
+ledger regeneration are one commit, so the tree never shows a plan with no row or a row with no plan.
+
+**That commit is documentation-only, so it carries `--label skip-bot-review` at creation.** Bot review
+capacity is contended across this repository, and a bookkeeping diff has nothing to offer a reviewer.
+The general rule: **a PR that changes no source gets no bot review.**
 
 ## Regenerating a ledger
 
