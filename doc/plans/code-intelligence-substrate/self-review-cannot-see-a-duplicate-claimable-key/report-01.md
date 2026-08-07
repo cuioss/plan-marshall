@@ -1,6 +1,6 @@
 # Run report — self-review-cannot-see-a-duplicate-claimable-key (run 01)
 
-**Date (UTC):** 2026-08-07    **Branch:** claude/self-review-duplicate-key-fv7it7    **PR:** _pending (Step 7)_    **Outcome:** completed
+**Date (UTC):** 2026-08-07    **Branch:** claude/self-review-duplicate-key-fv7it7    **PR:** [#1107](https://github.com/cuioss/plan-marshall/pull/1107) _(review + merge gate in progress)_    **Outcome:** completed
 
 ## Skills loaded
 
