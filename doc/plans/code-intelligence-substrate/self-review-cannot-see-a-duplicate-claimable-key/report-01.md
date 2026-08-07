@@ -1,6 +1,6 @@
 # Run report — self-review-cannot-see-a-duplicate-claimable-key (run 01)
 
-**Date (UTC):** 2026-08-07    **Branch:** claude/self-review-duplicate-key-fv7it7    **PR:** [#1107](https://github.com/cuioss/plan-marshall/pull/1107) _(review + merge gate in progress)_    **Outcome:** completed
+**Date (UTC):** 2026-08-07    **Branch:** claude/self-review-duplicate-key-fv7it7    **PR:** [#1107](https://github.com/cuioss/plan-marshall/pull/1107) _(merged)_    **Merge commit:** `f070d74`    **Outcome:** completed
 
 ## Skills loaded
 
@@ -89,10 +89,39 @@ The plan's main risk — "a detector that fires everywhere is worse than no dete
 - **CodeRabbit — review failed / rate-limited.** Its review aborted because the head commit changed mid-review (same rapid-push cause), then it hit its OSS review rate limit (~55 min). Not a required check and not actionable now; the substantive review coverage came from `cuioss-review-bot` and the independent pre-PR sub-agent.
 
 ## Contract check (Step 9)
-_Pending — completed as the last action of the run._
+
+Re-read the `cloud-plan-lane` contract and checked each step against what actually happened.
+
+| Step | Verdict | Artifact / evidence |
+|---|---|---|
+| 1 Skills loaded | DONE | § Skills loaded. Plugin not installed in this cloud session, so skills were read by bundle path — the always-works route the contract names. |
+| 2 Branch | DONE | Harness-assigned `claude/self-review-duplicate-key-fv7it7` **kept as-is** (branch form: harness-assigned). Exists on `origin`; pushed on creation and after every commit. |
+| 3 Plan directory | DONE | `doc/plans/code-intelligence-substrate/self-review-cannot-see-a-duplicate-claimable-key/plan.md` exists; first-instruction block present (re-verified). |
+| 4 Implement + per-commit gate + pushed | DONE | Commits carry the `Co-Authored-By: Claude` trailer; each source-touching commit was preceded by a `total_issues: 0` `quality-gate` log; no unpushed commit remained. |
+| 5 Build gate | DONE | `git diff --name-only origin/main...HEAD` included `*.py` → full `./pw verify` ran: 17767 passed / 0 failed, `total_issues: 0`. |
+| 6 Verification sub-agent | DONE | Independent `general-purpose` agent; four findings, all dispositioned (§ Findings → Verification sub-agent). |
+| 7 PR cycle | DONE | PR #1107. **Both** comment surfaces read (conversation + inline review threads). Dispositions: `cuioss-review-bot` "False Negative Bug" → fixed in `a3bcd60` + replied; CodeRabbit → rate-limited, non-required; `cla-assistant` → stale badge, non-required; inline threads → none. |
+| 8 Merge gate | DONE | All required checks green on `a3bcd60` (`verify / conclusion` ✅); every comment handled. Squash-merged as **`f070d74`** (`state: MERGED`). |
+| 8 Bridge | DONE | Nothing under `doc/plans/` outside this plan's own directory was written. |
+| 9 This check | DONE | This section. |
+
+- **GitHub access path used:** GitHub MCP server (the cloud path).
+- **Branch form used:** harness-assigned (`claude/*`), kept unchanged per the contract.
+- **`marketplace/bundles/` edited → a local `/sync-plugin-cache` is owed** (also in § Residue). The cloud lane cannot run it.
+
+### A finalization note
+
+These two Step 9 sections did not reach PR #1107 itself: auto-merge was armed before they were written, the branch entered the merge queue, and a protected-branch hook then rejected the finalizing push. They land instead through a small follow-up PR that restarts this branch from the merged `main` — the exact failure the contract amendment below is designed to prevent.
 
 ## What have we learned (Step 9)
-_Pending._
+
+This run produced direct evidence of a Step 8 ↔ Step 9 ordering gap in the contract, presented to and approved by the operator, and **shipped as PR #1108** (`chore(cloud-plan-lane): finalize report before arming auto-merge`):
+
+- **Evidence.** The report carries the Step 9 contract-check and lessons and "lands with the PR", yet Step 8 arms auto-merge *before* Step 9 runs. Here auto-merge was armed while these two sections were still `_Pending_`; the PR entered the merge queue, disabling auto-merge did **not** dequeue it, and the protected-branch hook then rejected the finalizing push — so the finalized report could not reach PR #1107. Compounding it, Step 8's "record the merge commit in the report" is unsatisfiable in-PR: the squash SHA (`f070d74`) did not exist until after the merge.
+- **Amendment (PR #1108).** (a) Step 8 gains a third merge-gate condition — finalize and push the report (Step 9's artifacts) as the last pre-merge commit, before arming auto-merge; (b) the merge commit is read from the PR merge event and reported to the operator, not embedded in the in-PR report, fixed in all three places that instruction appeared.
+- **Status:** presented to the operator this session, approved, shipped as PR #1108 (separate `chore/` branch, `skip-bot-review`).
+
+A second, execution-level lesson (already in § Findings → CI): rapid successive doc/report commits supersede the in-flight `verify` run via GitHub Actions concurrency, emitting spurious "verify cancelled" CI-failure events. Batch doc pushes to avoid the noise.
 
 ## Residue
 
