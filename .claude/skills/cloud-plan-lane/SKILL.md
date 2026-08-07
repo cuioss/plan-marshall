@@ -422,14 +422,9 @@ gh pr view {N} --json state,mergedAt,mergeCommit
 
 Only `state: MERGED` with a real `mergedAt` is a landing. Record the merge commit in the report.
 
-**Do NOT touch `doc/plans/{epic}/LEDGER.md`.** A run never writes to the ledger — not its own row,
-not any row. The orchestrator records the landing at collect, reading this run's report.
-
-That is a deliberate reversal of an earlier rule that told the run to stamp its row `implemented`
-after the merge. It was unperformable: by the time the merge read-back confirms, the branch is merged
-and deleted, so the write needed **a second PR for a one-word change** — and one such PR spent scarce
-bot-review budget on a bookkeeping diff. Not writing the ledger also removes the only shared file two
-concurrent runs both touched.
+**Record nothing outside your own plan directory.** There is no status file, no ledger, no shared
+table — the tree itself is the state, and the orchestrator records the landing at collect by reading
+your report. Write to `doc/plans/{epic}/{plan-name}/` and nowhere else under `doc/plans/`.
 
 **Your report is the channel back.** It must state the PR number, the merge commit, and the outcome
 per deliverable — including a run that ended **blocked or partial**, and why. An overstated outcome
@@ -455,7 +450,7 @@ happened, confirming both that the step was performed and that its artifact exis
 | 6 Verification sub-agent | Findings and dispositions in the report |
 | 7 PR cycle | PR exists; every comment dispositioned in the report |
 | 8 Merge gate | `state: MERGED` confirmed and recorded |
-| 8 Bridge ledger | `doc/plans/{epic}/LEDGER.md` is **unchanged** by this run, and the report carries the PR and merge commit the orchestrator will collect from |
+| 8 Bridge | Nothing under `doc/plans/` outside this plan's own directory was changed, and the report carries the PR and merge commit the orchestrator will collect from |
 | 9 This check | Its result appended to the report |
 | 9 What have we learned | A contract-change proposal presented to the operator, or a recorded "none, because …" |
 

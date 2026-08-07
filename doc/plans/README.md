@@ -36,8 +36,8 @@ doc/plans/
 ├── _template/
 │   └── plan.md                      # authoring template for a new plan
 ├── truthful-signals/
-│   ├── LEDGER.md                    # orchestrator plan <-> cloud plan <-> status
-│   └── {plan-name}/
+│   ├── {plan-name}.md               # authored, not yet run
+│   └── {plan-name}/                 # a run has started on it
 │       ├── plan.md                  # the plan
 │       └── report-NN.md             # one run report per run
 ├── review-apparatus/
@@ -66,8 +66,11 @@ The three epic directories mirror the orchestrator epics whose ledgers live unde
 tree carries only the plans handed off for standalone execution, plus their reports.
 
 The two halves cannot see each other — the orchestrator tree is git-ignored, and a cloud session's
-working state dies with its VM — so **git is the only shared medium**. Each epic keeps a
-`LEDGER.md` mapping its orchestrator plan specs to cloud plans and their status, and
-[`cloud-bridge.md`](cloud-bridge.md) is the rule for creating a row, syncing it from a run, and
-collecting it back into the orchestrator. Read that before authoring a plan here or before ingesting
-a landed one.
+working state dies with its VM — so **git is the only shared medium**.
+[`cloud-bridge.md`](cloud-bridge.md) is the rule for authoring a plan here, running it, and
+collecting it back into the orchestrator. Read it before doing any of the three.
+
+**There is no status file.** The tree itself is the state: a flat `{plan-name}.md` is authored and
+waiting, a `{plan-name}/` directory means a run has started, a `report-NN.md` inside it names the
+PR, and a plan that has been collected is simply gone. Nothing has to be kept in sync, because
+nothing is stored twice.
