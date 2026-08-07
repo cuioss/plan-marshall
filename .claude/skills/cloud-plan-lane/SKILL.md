@@ -163,7 +163,7 @@ opens the PR on an already-published branch; it is not the first push.
 
 ## Step 3 — Establish the plan directory
 
-A plan arrives as a single file, e.g. `doc/plans/truthful-signals/my-plan.md`, authored from the
+A plan arrives as a single file, e.g. `doc/plans/truthful-signals/010-my-plan.md`, authored from the
 template at [`doc/plans/_template/plan.md`](../../../doc/plans/_template/plan.md). If the plan you
 were handed is not in that shape, do not silently proceed on a thinner brief — say so in the report,
 and flag any missing section that changes what you would build (deliverables, out-of-scope,
@@ -185,10 +185,17 @@ On the branch from Step 2:
 1. Create the plan directory: `doc/plans/{epic}/{plan-name}/`
 2. Move the plan into it as `plan.md` (`git mv`, so history follows).
 
+**The plan file's numeric priority prefix is preserved by the move.** Cloud plans are named
+`{NNN}-{slug}.md`, where `{NNN}` orders the epic's queue for hand-over; the directory takes the whole
+name, so `{NNN}-{slug}.md` becomes `{NNN}-{slug}/plan.md`. Do not strip the prefix, and do not
+renumber — a plan handed to a session is bound to its path, and both this run and the orchestrator's
+collect step address it by that name. A plan authored before the scheme has no prefix; move it under
+the name it has.
+
 The resulting layout is the plan's whole workspace:
 
 ```text
-doc/plans/{epic}/{plan-name}/
+doc/plans/{epic}/{NNN}-{plan-name}/
 ├── plan.md          # the plan, moved here in this step
 └── report-NN.md     # one per run (§ Report)
 ```

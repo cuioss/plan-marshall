@@ -36,8 +36,8 @@ doc/plans/
 ├── _template/
 │   └── plan.md                      # authoring template for a new plan
 ├── truthful-signals/
-│   ├── {plan-name}.md               # authored, not yet run
-│   └── {plan-name}/                 # a run has started on it
+│   ├── 010-{plan-name}.md           # authored, not yet run
+│   └── 020-{plan-name}/             # a run has started on it
 │       ├── plan.md                  # the plan
 │       └── report-NN.md             # one run report per run
 ├── review-apparatus/
@@ -45,8 +45,15 @@ doc/plans/
 ```
 
 A new plan starts as a copy of [`_template/plan.md`](_template/plan.md) at
-`doc/plans/{epic}/{plan-name}.md`. Step 3 of the contract moves it into its own directory as
-`plan.md`. `_template/` is not an epic — the underscore marks it as tooling.
+`doc/plans/{epic}/{NNN}-{plan-name}.md`. Step 3 of the contract moves it into its own directory as
+`plan.md`, keeping the prefix on the directory. `_template/` is not an epic — the underscore marks it
+as tooling.
+
+The `{NNN}-` prefix is a **priority order**, so a listing of an epic directory is also the order the
+operator hands plans over. It is numbered per epic starting at `010` and assigned sparsely in tens,
+and it is fixed once a plan is handed to a cloud session. Strip the prefix to recover the
+orchestrator plan's slug. [`cloud-bridge.md`](cloud-bridge.md) § "Path 1 — Create" holds the full
+rule, including why plans authored before the scheme keep no prefix.
 
 **Every plan opens with a mandatory first-instruction block** that loads the `cloud-plan-lane` skill
 before anything else is read. It is part of the plan, not part of the template, and it survives into
@@ -70,7 +77,7 @@ working state dies with its VM — so **git is the only shared medium**.
 [`cloud-bridge.md`](cloud-bridge.md) is the rule for authoring a plan here, running it, and
 collecting it back into the orchestrator. Read it before doing any of the three.
 
-**There is no status file.** The tree itself is the state: a flat `{plan-name}.md` is authored and
-waiting, a `{plan-name}/` directory means a run has started, a `report-NN.md` inside it names the
-PR, and a plan that has been collected is simply gone. Nothing has to be kept in sync, because
-nothing is stored twice.
+**There is no status file.** The tree itself is the state: a flat `{NNN}-{plan-name}.md` is authored
+and waiting, a `{NNN}-{plan-name}/` directory means a run has started, a `report-NN.md` inside it
+names the PR, and a plan that has been collected is simply gone. Nothing has to be kept in sync,
+because nothing is stored twice.
