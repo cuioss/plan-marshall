@@ -457,6 +457,15 @@ pull-request review-comment call for the second surface — not only the convers
 
 2. **Every PR comment is handled** — fixed or answered on the thread. No open, unaddressed comment.
 
+3. **The report is finalized and pushed** — run Step 9 now and commit its report artifacts (the
+   contract-check table and the "what have we learned" section) as the **last pre-merge commit**,
+   *before* you arm auto-merge. This ordering is load-bearing, not cosmetic: the report lands *in
+   this PR*, and the instant the branch enters the merge queue a protected-branch hook rejects every
+   further push to it ("Branches that are queued for merging cannot be updated" — observed). A report
+   finalized after arming can never reach this PR, forcing a second follow-up PR just to complete the
+   record. So Step 9's report sections are written here; only the post-merge landing confirmation
+   (below) happens after.
+
 Then merge (the repository uses a merge queue, so enable auto-merge and let the queue land it):
 
 ```bash
@@ -470,23 +479,33 @@ outcome — this repository has seen a merge call report success, delete the bra
 gh pr view {N} --json state,mergedAt,mergeCommit
 ```
 
-Only `state: MERGED` with a real `mergedAt` is a landing. Record the merge commit in the report.
+Only `state: MERGED` with a real `mergedAt` is a landing.
+
+**Record the merge commit outside the in-PR report.** The squash merge SHA does not exist until the
+merge completes, so it cannot appear in a report that was committed before the merge (condition 3
+above). Read it from the PR merge event (`state,mergedAt,mergeCommit`) and report it to the operator;
+the orchestrator collects the landing from the PR itself, not from a SHA embedded in the report body.
 
 **Record nothing outside your own plan directory.** There is no status file, no ledger, no shared
 table — the tree itself is the state, and the orchestrator records the landing at collect by reading
 your report. Write to `doc/plans/{epic}/{plan-name}/` and nowhere else under `doc/plans/`.
 
-**Your report is the channel back.** It must state the PR number, the merge commit, and the outcome
-per deliverable — including a run that ended **blocked or partial**, and why. An overstated outcome
-gets collected as done; an understated one gets picked up again.
+**Your report is the channel back.** It must state the PR number and the outcome per deliverable —
+including a run that ended **blocked or partial**, and why. (The merge commit is read from the PR
+merge event and reported to the operator, not embedded here — see the merge-commit note above.) An
+overstated outcome gets collected as done; an understated one gets picked up again.
 
 The full rule, including how a row is created and later collected, is
 [`doc/plans/cloud-bridge.md`](../../../doc/plans/cloud-bridge.md).
 
 ## Step 9 — Final step: verify this contract was followed
 
-**The last action of every run.** Re-read this skill and check each step against what actually
-happened, confirming both that the step was performed and that its artifact exists on disk:
+**The last committed action of every run.** Its report sections (this contract-check and the "what
+have we learned" below) are written and pushed at Step 8 condition 3, as the final pre-merge commit,
+because they must land in the PR — a queued branch can no longer be pushed to. Only the merge-landing
+confirmation happens after, recorded to the operator rather than into the report. Re-read this skill
+and check each step against what actually happened, confirming both that the step was performed and
+that its artifact exists on disk:
 
 | Step | Artifact that proves it |
 |---|---|
@@ -499,8 +518,8 @@ happened, confirming both that the step was performed and that its artifact exis
 | 5 Build gate | Report states the git-derived Python-change verdict and the build outcome |
 | 6 Verification sub-agent | Findings and dispositions in the report |
 | 7 PR cycle | PR exists; every comment dispositioned in the report |
-| 8 Merge gate | `state: MERGED` confirmed and recorded |
-| 8 Bridge | Nothing under `doc/plans/` outside this plan's own directory was changed, and the report carries the PR and merge commit the orchestrator will collect from |
+| 8 Merge gate | `state: MERGED` confirmed after arming; the merge commit recorded to the operator, not in the pre-merge report (§ Step 8) |
+| 8 Bridge | Nothing under `doc/plans/` outside this plan's own directory was changed, and the report carries the PR number and per-deliverable outcome the orchestrator will collect from |
 | 9 This check | Its result appended to the report |
 | 9 What have we learned | A contract-change proposal presented to the operator, or a recorded "none, because …" |
 
