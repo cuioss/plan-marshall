@@ -1,6 +1,6 @@
 # Run report — documented-enum-diverges-from-argparse-choices (run 01)
 
-**Date (UTC):** 2026-08-07    **Branch:** `fix/documented-enum-diverges-from-argparse-choices`    **PR:** _pending_    **Outcome:** partial (in progress)
+**Date (UTC):** 2026-08-07    **Branch:** `fix/documented-enum-diverges-from-argparse-choices`    **PR:** [#1100](https://github.com/cuioss/plan-marshall/pull/1100)    **Outcome:** partial (in progress)
 
 ## Skills loaded
 
@@ -237,11 +237,52 @@ equality). **No other `termination_cause` enumeration** exists beyond the three 
 
 ## Contract check (Step 9)
 
-_Pending — completed as the final action._
+| Step | Verdict | Evidence |
+|---|---|---|
+| 1 Skills loaded | partial | Only `cloud-plan-lane` loaded; the plugin skills did not resolve (cache absent) — recorded in § Skills loaded, not papered over. |
+| 2 Branch | done | `fix/documented-enum-diverges-from-argparse-choices`, prefix from the closed set, cut from freshly-fetched `origin/main`. Prefix conflict with the harness-assigned `claude/` branch resolved by operator permission. |
+| 3 Plan directory | done | `doc/plans/code-intelligence-substrate/documented-enum-diverges-from-argparse-choices/plan.md` exists (git mv, history preserved) and opens with the first-instruction block (verified present, no repair needed). |
+| 4 Implement | done | Commits carry the `Co-Authored-By: Claude` trailer and no "Generated with Claude Code" footer; deliverables addressed (D1 verified no-op, D2/D3 implemented, D4 recorded). |
+| 5 Build gate | done | Python changed → full `./pw verify plan-marshall`; quality-gate clean, 15005 tests pass incl. 4 new guards; 3 environment-dependent failures proven pre-existing on `origin/main` in-VM (control run). |
+| 6 Verification sub-agent | done | Independent read-only agent; clean verdict, no findings; both its caveats closed by this run. Recorded in § Findings. |
+| 7 PR cycle | in progress | PR [#1100](https://github.com/cuioss/plan-marshall/pull/1100) open; subscribed to activity. Both comment surfaces read; bot findings dispositioned as they arrive. |
+| 8 Merge gate | pending | Auto-merge (squash) to be enabled only once CI is green **and** every comment is handled; `state: MERGED` confirmed by read-back before the ledger stamp. |
+| 8 Bridge ledger | pending | `doc/plans/code-intelligence-substrate/LEDGER.md` this plan's row stamped `implemented` (this row only) **after** the merge read-back; left `authored` if the run ends before merge. |
+| 9 This check | done | This table. |
+
+GitHub access path used: the **GitHub MCP server** (cloud path), as the contract expects for a
+cloud run. Plugin-cache/`marketplace/bundles/**` edit: **yes** (`logging-gap-analysis.md`) — a
+local `/sync-plugin-cache` is owed (recorded in § Residue).
 
 ## What have we learned (Step 9)
 
-_Pending — completed as the final action._
+This run exercised the contract end to end and surfaced **three run-produced findings**. Per the
+contract these are *presented to the operator* for a decision; none is self-approved, and any
+accepted change ships as a **separate `chore/` PR**, not folded into this plan's PR.
+
+1. **A cloud in-VM `module-tests` run can never be clean (lane-structural).** Three tests fail
+   environmentally on the *unmodified* `origin/main` in this sandbox (root-execution
+   path-validation; control run above). Step 5 tells the executor to "fix and re-run until it is
+   genuinely clean" and Step 8 requires "all checks green", but neither acknowledges that the
+   in-VM build for this lane structurally cannot go green, so the clean signal must come from CI
+   (non-root GitHub Actions). **Proposed edit:** Step 5 should distinguish the in-VM build from
+   the authoritative CI signal, and give a rule for known environment-dependent failures (prove
+   pre-existing on `origin/main` in-VM → record and defer to CI, rather than block the PR).
+2. **The lane depends on plugin skills that may be absent at session start.** Step 1's skills did
+   not resolve because `~/.claude/plugins/cache/plan-marshall/` was absent even though
+   `.claude/settings.json` declares the plugin. The contract already says to record the failure
+   (which was done), but does not say how to proceed when the *work-identity* skills are the ones
+   missing. **Proposed edit:** Step 1 should name this failure mode explicitly and state the
+   fallback (source standards from the files, as this run did) so it is a sanctioned path, not an
+   improvisation.
+3. **Step 2 has no rule for a harness-assigned branch that violates the closed prefix set.** The
+   session harness assigned `claude/…` and forbade switching without explicit permission, which
+   directly conflicts with the closed-set requirement; a `claude/` branch gets no push-triggered
+   CI. Resolved here via `AskUserQuestion`. **Proposed edit:** Step 2 should name this conflict and
+   prescribe the resolution (obtain explicit operator permission, then use a closed-set prefix).
+
+_Operator decision on these three proposals: **pending** — presented in the session, not yet
+accepted; no `chore/` PR opened._
 
 ## Residue
 
