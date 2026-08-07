@@ -26,13 +26,24 @@ All five landed in commit `35ecf3f` (`feat(ext-self-review): add duplicate-claim
 - **Verification:** fires on the D4(b) fixture (`merge_resolver_edges()` pre-fix, all three unreported drops); silent on post-fix and on `discover_derivation_resolvers` (no report channel). Unit coverage in `test_self_review.py::TestDetectDiscardWithoutReport` (bare/inline positives + five negative controls).
 
 ### D3 — GATE: population both classes fire on, hits reported SEPARATELY from files examined — DONE
-Derived by running each detector, in post-image mode, over every `.py` file in the tree (pruning `.git`/`node_modules`/`target`/`.plan`/`__pycache__`/`.venv`/`.pytest_cache`):
+Derived by running each detector in post-image mode over the project's `.py` files. The two numbers are reported **separately**, as the plan requires:
 
-- **Files examined: 1154**
-- **D1 `duplicate_claimable_keys` hits: 13** — each a validated-but-not-deduped insertion (e.g. `manage-locks/scripts/merge_lock.py:375` builds a `waiting` FIFO that could hold a duplicate `plan_id`; `manage-findings/scripts/manage-findings.py:106` last-write-wins on a repeated `FIELD=`). None an un-validated accumulator.
+- **Files examined: 1154** — the project tree. The sweep prunes `.git`/`node_modules`/`target`/`.plan`/`__pycache__`/`.venv`/`.pytest_cache`, and this snapshot was taken **before** the pyprojectx-managed `.pyprojectx/` virtualenv was populated (the first `./pw` run populates it) and **before** D4's fixture file existed. To reproduce 13/3 today a re-sweep must additionally scope out `.pyprojectx/**/site-packages` (six vendored third-party D1 hits) and `test_self_review_defect_regression.py` (three D2 hits — the detector correctly firing on the checked-in pre-fix defect literal). An independent re-sweep confirmed exactly that decomposition (1972 files / 19 D1 / 6 D2 raw → 13/3 after excluding vendored + the fixture).
+- **D1 `duplicate_claimable_keys` hits: 13** — each a *validated-but-not-deduped* insertion the reviewer glances at. **Not all 13 are defects**, and that is expected: like all twenty sibling lists, D1 is a *surfacing* detector feeding the cognitive-review pass, not a verdict. `manage-findings.py:106` (`result[field] = value`, a benign last-write-wins `FIELD=VALUE` parser) and `merge_lock.py:375` (a FIFO rebuild) both pass the validation narrowing yet are legitimate; the value of the surface is that a reader adjudicates 13 readable candidates rather than a firehose.
 - **D2 `discard_without_report` hits: 3** — `workflow-integration-github/scripts/github_pr.py:1329`, `workflow-integration-gitlab/scripts/gitlab_pr.py:382`, `workflow-integration-sonar/scripts/sonar.py:742` — each a bare pre-filter `continue` in a `post_responses`-style loop that owns a `skipped` channel and records its other skips.
 
-Command that produced the numbers: a stdlib post-image sweep calling `_detect_duplicate_claimable_keys` / `_detect_discard_without_report` over the pruned `.py` set (run twice — once before and once after the D3-driven narrowings below). The two numbers are the plan's required separation of hit count from files examined; 13 and 3 over 1154 is narrow, not the "hundreds of sites" the plan flags as mis-specification.
+The command that produced the numbers (stdlib only, no third-party deps):
+
+```python
+# From the repo root. os.walk with the prune set below; for each .py file:
+#   added = [(rel, i, line) for i, line in enumerate(text.splitlines(), start=1)]
+#   d1 += _detect_duplicate_claimable_keys(added)   # post-image mode: added IS the scan surface
+#   d2 += _detect_discard_without_report(added)
+# prune = {.git, node_modules, target, .plan, __pycache__, .venv, .pytest_cache, .pyprojectx}
+# then scope out test_self_review_defect_regression.py (its literal carries the pre-fix defect on purpose)
+```
+
+13 and 3 over 1154 is narrow — not the "hundreds of sites" the plan flags as mis-specification, and the narrowness was reproduced by an independent re-sweep.
 
 ### D4 — tests, each verified to FAIL pre-fix — DONE
 - Reached the real pre-fix revisions via `git fetch origin refs/pull/1067/head`. The #1067 branch introduced both functions in `2896e18`, fixed them in `c4ff227`; `14d4e3d` (= `c4ff227^`) is the last commit carrying the defect; the merge `c6b501e` already contains the fix (the findings were fixed *within* the PR before the squash merge).
@@ -53,7 +64,18 @@ Command that produced the numbers: a stdlib post-image sweep calling `_detect_du
 ## Findings
 
 ### Verification sub-agent (Step 6)
-_Pending — an independent `general-purpose` sub-agent was dispatched to verify the diff against the plan's D1–D5. Its findings and dispositions will be recorded here._
+An independent `general-purpose` sub-agent verified the pushed diff against the plan. **Verdict: all five deliverables landed and are correct; D4 independently proven against real git history (it re-extracted `14d4e3d`/`c6b501e` and diffed them against the fixtures — verbatim); no undeclared collateral in the deliverable commit `35ecf3f`.** It ran both detectors against the fixtures itself and reproduced D1=1/D2=3 on the pre-fix forms and silence on post-fix. Its findings were nuances, not deliverable failures:
+
+1. **D1 is narrower than a literal reading of the plan** (it adds a *validated* conjunct on top of "no membership test"). Disposition: **accepted, by design** — this is the D3-forced narrowing the plan's main-risk clause explicitly authorizes, disclosed in the SKILL.md false-positive posture. Recorded consequence: un-validated duplicate-claimable insertions are out of scope (recall traded for a low-noise surface).
+2. **D3 prune-set / reproducibility accuracy** — the report's prune list omitted `.pyprojectx` and the fixture file, so a naïve re-derivation gets 1972/19/6. Disposition: **fixed** — the D3 section now states the vendored + fixture exclusion and carries the reproducible command.
+3. **"None an un-validated accumulator" oversells narrowness** — some of the 13 D1 hits are benign. Disposition: **fixed** — the D3 section now says so explicitly and frames D1 as a surfacing detector, not a verdict.
+4. **Registry hypothesis not explicitly recorded as refuted.** Disposition: **fixed** — recorded below.
+
+No code changed as a result of this pass (the verification found no code defect), so no re-dispatch was warranted; the fixes are report-accuracy improvements.
+
+### Claim-label settlement (the plan's two HYPOTHESES)
+- **"The candidate classes live in one registry a new class can be added to WITHOUT touching the dispatch path" — REFUTED against the implementing source.** `CANDIDATE_LISTS` (`_self_review_patterns.py`) is the single source of truth for the emitted *vocabulary*, the `counts.total` formula, and the help prose — and the `_compose_candidate_output` guard enforces that the emitted key set matches the registry. But each detector is still **hand-wired into the dispatch**: adding a class required editing `self_review.py::_cmd_surface` (2 imports + 2 detector calls + 2 `detected`-dict entries), plus a `_detect_*` function and its regexes. The cost was modest and did not change scoping materially — but the hypothesis as stated ("without touching the dispatch path") is false, and D1/D2 were scoped and built on that corrected understanding.
+- **"D1's shape is narrow enough not to fire on ordinary accumulator code" — settled by D3 as CONFIRMED-with-nuance.** The validation-guard narrowing keeps D1 off un-validated accumulators (the noisiest class), holding the tree-wide population to 13; a minority of those 13 are benign validated maps, which is acceptable for a surfacing detector.
 
 ### D3-driven self-review findings (design corrections before shipping)
 The plan's main risk — "a detector that fires everywhere is worse than no detector" — was met by running D3 first and narrowing:
