@@ -1,6 +1,9 @@
 ---
 name: cloud-plan-lane
 description: The complete working contract for a plan under doc/plans/ — the standalone lane that runs OUTSIDE the plan-marshall command lifecycle. Load this first, before any other action, when executing a plan from doc/plans/{epic}/. Covers skill loading, the plan directory lifecycle, the conditional build gate, the pre-PR verification sub-agent, the branch/PR/review-comment cycle, the merge gate, and the persisted run report.
+user-invocable: true
+mode: workflow
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Task, Skill, AskUserQuestion
 ---
 
 # Cloud Plan Lane
@@ -26,12 +29,16 @@ records the carve-out. Specifically, within this lane:
 | `CLAUDE.md` hard rule | Status in this lane |
 |---|---|
 | Build commands resolved via `architecture resolve` | **Superseded** — call `./pw` directly (§ Build gate) |
-| CI operations via `tools-integration-ci:ci` | **Superseded** — use `gh` directly (§ Branch, PR, review cycle) |
+| CI operations via `tools-integration-ci:ci` | **Superseded** — see § GitHub access |
+| GitHub access via `gh`, not MCP | **Superseded** — the GitHub MCP server is the cloud path (§ GitHub access) |
 | `.plan/` access through `execute-script.py` | **Not applicable** — this lane never touches `.plan/` |
-| Structured queries before Glob/Grep | **Not applicable** — `architecture` needs the executor |
+| Temp files under `.plan/temp/` | **Superseded** — scratch goes in the system temp dir (`$TMPDIR`), never in the repository and never in `.plan/` |
+| Structured queries before Glob/Grep | **Not applicable** — `architecture` needs the executor; use Glob/Grep/Read |
 | Findings via `manage-findings` + `ext-triage-*` | **Superseded** — findings go in the run report (§ Report) |
+| Plugin Cache Sync after editing `marketplace/bundles/` | **Not applicable** — `/sync-plugin-cache` reads the git-ignored `target/` and writes `~/.claude/`, neither of which this lane has or may touch. Record in the report that the plan's bundle edits are unsynced, so whoever picks the work up locally knows a sync is owed |
+| No shell file operations | **Binds, with one clarification** — `git mv` and `mkdir -p` are permitted for Step 2's directory work; the rule's target is reading and searching file content, which still goes through Read/Glob/Grep |
 
-Every other rule in `CLAUDE.md` still binds — in particular the branch-prefix table, the
+Every other rule in `CLAUDE.md` still binds — in particular the closed branch-prefix set, the
 documentation standards, and the one-command-per-Bash-call discipline.
 
 ## Step 1 — Load the core skills
@@ -42,17 +49,18 @@ skills you will not use is pure context cost.
 **Always:**
 
 ```text
-Skill: plan-marshall:persona-implementer
 Skill: plan-marshall:ref-code-quality
+Skill: pm-plugin-development:plugin-script-architecture
 ```
 
 **Conditionally, by what the plan touches:**
 
 | Surface | Load |
 |---|---|
+| Workflow docs, dispatch topology, skill composition | `plan-marshall:ref-workflow-architecture` |
+| Production code (work identity) | `plan-marshall:persona-implementer` |
 | Python production code | `pm-dev-python:python-core` |
 | Python tests | `pm-dev-python:pytest-testing` |
-| Scripts under `marketplace/bundles/*/skills/*/scripts/` | `pm-plugin-development:plugin-script-architecture` |
 | `SKILL.md` / bundle structure | `pm-plugin-development:plugin-architecture` |
 | `.adoc` documentation | `pm-documents:ref-asciidoc` |
 | Security-relevant change | `plan-marshall:persona-security-expert` |
@@ -61,9 +69,57 @@ These are plugin skills. They resolve only when the `plan-marshall` plugin is in
 repository's `.claude/settings.json` declares, so a cloud session installs it at session start. If a
 skill fails to resolve, say so in the report rather than proceeding as if it had loaded.
 
-## Step 2 — Establish the plan directory
+## Step 2 — Resolve and check out the branch
 
-A plan arrives as a single file, e.g. `doc/plans/truthful-signals/my-plan.md`. Before any other work:
+**The branch comes before any change to the plan tree.** Step 3 moves files with `git mv`; done on
+whatever the session happens to have checked out, that move lands on the wrong branch and can drag
+unrelated working-tree state into the plan's history.
+
+First, refuse to start on a dirty tree — this precondition also underwrites the Step 5 and Step 6
+diffs, both of which see only committed work:
+
+```bash
+git status --porcelain
+```
+
+Non-empty output means stop and report the run **blocked**, naming the dirty paths. Do not stash,
+do not commit unrelated changes.
+
+Then resolve **one** branch name and reuse it for the rest of the run — creation, pushes, and PR
+alike. Choose the prefix from what the plan actually does; the set is closed (`feature/` for a new
+capability, `fix/` for a bug fix, `chore/` for maintenance, refactoring, or documentation), because
+any other prefix gets no CI run and can therefore never produce the required `verify / conclusion`
+check. Do not default to `feature/`.
+
+```bash
+git fetch origin main
+```
+
+A first run creates the branch from freshly-fetched `origin/main`:
+
+```bash
+git checkout -b {prefix}/{plan-name} origin/main
+```
+
+A **resumed** run checks the existing branch out instead — `checkout -b` fails when the branch
+already exists, so branching unconditionally breaks every resume:
+
+```bash
+git checkout {prefix}/{plan-name}
+```
+
+Determine which case you are in before acting (`git rev-parse --verify --quiet {prefix}/{plan-name}`
+succeeds when the branch exists).
+
+## Step 3 — Establish the plan directory
+
+A plan arrives as a single file, e.g. `doc/plans/truthful-signals/my-plan.md`, authored from the
+template at [`doc/plans/_template/plan.md`](../../../doc/plans/_template/plan.md). If the plan you
+were handed is not in that shape, do not silently proceed on a thinner brief — say so in the report,
+and flag any missing section that changes what you would build (deliverables, out-of-scope,
+claim labels).
+
+On the branch from Step 2:
 
 1. Create the plan directory: `doc/plans/{epic}/{plan-name}/`
 2. Move the plan into it as `plan.md` (`git mv`, so history follows).
@@ -76,17 +132,7 @@ doc/plans/{epic}/{plan-name}/
 └── report-NN.md     # one per run (§ Report)
 ```
 
-A plan already in this shape is resumed, not re-established — skip to Step 3.
-
-## Step 3 — Create the branch
-
-Branch from up-to-date `main`, using one of the three canonical prefixes from `CLAUDE.md`
-(`feature/`, `fix/`, `chore/` — the set is closed; any other prefix gets no CI run and can never
-produce the required `verify / conclusion` check):
-
-```bash
-git checkout -b feature/{plan-name}
-```
+A plan already in this shape is resumed, not re-established — skip to Step 4.
 
 ## Step 4 — Implement
 
@@ -100,29 +146,55 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 
 ## Step 5 — Build gate (conditional)
 
-**Build only when the branch changes Python.** Determine this from git, never from recollection:
+Determine what changed from git, never from recollection:
 
 ```bash
-git diff --name-only origin/main...HEAD -- '*.py'
+git diff --name-only origin/main...HEAD
 ```
 
-- **Empty output** → no Python changed. Skip the build entirely and record "no Python changes, build
-  skipped" in the report. A documentation-only change legitimately skips CI's heavy build too, so
-  this matches what the pipeline does.
-- **Non-empty** → run the full verification, from the repository root:
+**This diff sees committed work only** — staged, unstaged, and untracked files are invisible to it.
+An uncommitted new `.py` file would therefore skip the build *and* be invisible to the Step 6
+sub-agent, which reads the same range. So re-assert the clean tree Step 2 required, and treat a
+dirty result as a defect in the run rather than working around it:
 
-  ```bash
-  ./pw verify
-  ```
+```bash
+git status --porcelain
+```
 
-  Narrower calls when you need them: `./pw quality-gate` (lint + types), `./pw module-tests` (tests),
-  `./pw compile`. Append a bundle name to scope to one module, e.g. `./pw verify plan-marshall`.
+Two gates, because the quality gate and the test suite have **different** trigger surfaces:
 
-  Give every `./pw` call a Bash timeout of at least **600000 ms (10 minutes)**.
+| Changed | Run |
+|---|---|
+| Any `*.py` | `./pw verify` (quality gate **and** tests) |
+| No `*.py`, but any `.claude/skills/**` or `marketplace/bundles/**` | `./pw quality-gate` |
+| Neither | Nothing — record "no buildable footprint, build skipped" |
 
-  **Read the output, not the exit code.** The build wrapper can exit 0 on failure. Confirm the
-  reported `status` and an empty `errors[]` before calling the build green. Fix and re-run until it
-  is genuinely clean; a build that is not clean blocks the PR.
+> **Why the second row exists.** `quality-gate` runs plugin-doctor across the whole tree, and
+> plugin-doctor lints **markdown** — `SKILL.md` frontmatter, workflow docs, relative links — under
+> both `marketplace/bundles/*/skills/` and `.claude/skills/`. A markdown-only change therefore can
+> and does fail the build. A gate keyed on `*.py` alone would skip the build and open a red PR. This
+> is not hypothetical: it is how this contract's own first PR went red, on a missing `mode:` field
+> in this very file.
+
+Both commands run from the repository root:
+
+```bash
+./pw verify
+```
+
+```bash
+./pw quality-gate
+```
+
+Narrower calls when you need them: `./pw module-tests` (tests only), `./pw compile`. Append a bundle
+name to scope to one module, e.g. `./pw verify plan-marshall`.
+
+Give every `./pw` call a Bash timeout of at least **600000 ms (10 minutes)**.
+
+**Read the output, not the exit code.** The build wrapper can exit 0 on failure. Confirm the reported
+`status`, and open the `log_file` it names to confirm `total_issues: 0` — a green summary line is not
+the same as a clean log. Fix and re-run until it is genuinely clean; a build that is not clean blocks
+the PR.
 
 ## Step 6 — Pre-PR verification sub-agent
 
@@ -153,12 +225,31 @@ Then:
   dismissed finding is still evidence.
 - Every finding, accepted or rejected, goes in the run report (§ Report).
 
+## GitHub access
+
+Use whichever of these two paths is actually available in the running session, and say in the report
+which one was used:
+
+- **GitHub MCP server** — available in Claude web / cloud sessions. Its traffic routes through
+  Anthropic's servers rather than the session's network, so it needs no domain allowlisting and no
+  package install. This is the expected path for a cloud run.
+- **`gh` CLI** — the expected path locally.
+
+`CLAUDE.md`'s "GitHub access — use `gh`, not MCP" rule is superseded **inside this lane only**, for
+this reason: the lane's whole purpose is to run in an environment where the plan-marshall CI
+abstraction that rule protects does not exist. Everywhere else in the repository the rule stands.
+
+Commands below are written in `gh` form because it is the precise, quotable spelling; when running
+on MCP, use the equivalent call. Never assume a tool is present — check, and if neither path is
+available, stop at Step 7 and report the run **blocked**. Do not attempt to install tooling into the
+session, and do not treat an unreachable review surface as an empty one.
+
 ## Step 7 — Branch, PR, review-comment cycle
 
 Push and open the PR:
 
 ```bash
-git push -u origin feature/{plan-name}
+git push -u origin {prefix}/{plan-name}
 ```
 
 ```bash
@@ -168,17 +259,26 @@ gh pr create --fill
 Then work the review cycle until it is genuinely finished:
 
 1. Wait for the automated reviewers and CI to report.
-2. Read the actual comment bodies — `gh pr view {N} --comments`. A summary of a review is not the
-   review, and a green check is not evidence that a reviewer participated.
+2. Read the actual comment bodies, from **both** surfaces (see § GitHub access). A summary of a
+   review is not the review, and a green check is not evidence that a reviewer participated.
 3. Handle **every** comment: fix it, or reply on the thread explaining why it is not actionable.
    Push fixes as further commits.
 4. Re-check after each push — new comments arrive on new commits.
 
 Record in the report which reviewers commented and how each comment was dispositioned.
 
-> `gh` may not be pre-installed in a cloud environment. If it is missing, add
-> `apt update && apt install -y gh` to the cloud environment's setup script; GitHub authentication
-> is handled by the session's proxy, so no token configuration is needed.
+**PR comments live on two surfaces, and one of them is the one that matters here.** The repository's
+principal automated reviewers file their findings as *inline review-thread* comments, which the
+conversation view does not contain. Reading only the conversation view and then asserting "all
+comments handled" is a false clean signal — the exact failure this lane is built to avoid.
+
+| Surface | Holds | `gh` |
+|---|---|---|
+| Conversation | Issue comments, review summary bodies | `gh pr view {N} --comments` |
+| Inline review threads | Per-file findings from the review bots | `gh api repos/{owner}/{repo}/pulls/{N}/comments --paginate` |
+
+Both surfaces MUST be read before the merge gate. With the GitHub MCP server, use its equivalent
+pull-request review-comment call for the second surface — not only the conversation listing.
 
 ## Step 8 — Merge gate
 
@@ -216,17 +316,49 @@ happened, confirming both that the step was performed and that its artifact exis
 | Step | Artifact that proves it |
 |---|---|
 | 1 Skills loaded | Named in the report |
-| 2 Plan directory | `doc/plans/{epic}/{plan-name}/plan.md` exists |
-| 3 Branch | Branch exists with the correct prefix |
+| 2 Branch | Branch exists with a prefix from the closed set, cut from `origin/main` |
+| 3 Plan directory | `doc/plans/{epic}/{plan-name}/plan.md` exists |
 | 4 Implement | Commits carry the trailer; deliverables addressed |
 | 5 Build gate | Report states the git-derived Python-change verdict and the build outcome |
 | 6 Verification sub-agent | Findings and dispositions in the report |
 | 7 PR cycle | PR exists; every comment dispositioned in the report |
 | 8 Merge gate | `state: MERGED` confirmed and recorded |
 | 9 This check | Its result appended to the report |
+| 9 What have we learned | A contract-change proposal presented to the operator, or a recorded "none, because …" |
 
 Any step that was skipped, or whose artifact is missing, is reported as **not done** — do not
 retroactively narrate it as complete. If a step can still be completed, complete it and re-check.
+
+### What have we learned
+
+Then ask the second question: **should this contract itself change?** The run just exercised it end
+to end, which is the only moment its gaps are visible.
+
+Propose a change only where **this run produced the evidence** — a step that was ambiguous in
+practice, a step whose artifact could not be produced as written, a command that did not work in the
+actual environment, a failure mode the contract does not catch, or a step that turned out to be
+unnecessary. Speculative improvements are not proposals; a proposal names what happened.
+
+If there is something worth changing:
+
+1. **Present it to the operator** with the evidence from this run and the concrete proposed edit.
+   Never self-approve a change to the contract that governs you.
+2. On approval, ship it as a **separate PR** — its own `chore/` branch, touching only the skill (and
+   `CLAUDE.md` or `doc/plans/README.md` if the change reaches them):
+
+   ```bash
+   gh pr create --label skip-bot-review --title "chore(cloud-plan-lane): {what changed}" --body-file {file}
+   ```
+
+   The `skip-bot-review` label suppresses the automated bot review, which has nothing useful to say
+   about a prose contract.
+
+Keep it out of the plan's own PR. Two changes with different review audiences in one diff means
+neither gets read properly, and it couples a contract amendment to whether the plan lands.
+
+Record the outcome in the report either way — including "no contract change proposed", with the
+reason. A run that examined the contract and found nothing is a different fact from a run that never
+looked.
 
 ## Report
 
@@ -236,7 +368,10 @@ retroactively narrate it as complete. If a step can still be completed, complete
 doc/plans/{epic}/{plan-name}/report-NN.md
 ```
 
-`NN` is the next free two-digit ordinal in that directory (`report-01.md`, `report-02.md`, …). A
+`NN` is the next free two-digit ordinal in that directory (`report-01.md`, `report-02.md`, …).
+Selecting "next free" and then writing is not atomic — two concurrent runs can pick the same ordinal
+and one silently overwrites the other's findings. **Create the file exclusively** (fail if it
+exists, then retry the next ordinal) rather than checking-then-writing. A
 resumed or re-entered run gets its **own** report; never overwrite an earlier one.
 
 The report is committed on the plan's branch, so it lands with the PR.
@@ -264,7 +399,12 @@ description, and disposition (fixed / rejected-with-reason / deferred). An empty
 what was checked to reach it.
 
 ## Contract check (Step 9)
-Per-step verdict, and any step reported as not done.
+Per-step verdict, and any step reported as not done. Which GitHub access path was used.
+Whether the plan edited `marketplace/bundles/` and therefore owes a local `/sync-plugin-cache`.
+
+## What have we learned (Step 9)
+The proposed contract change and its evidence from this run, and whether the operator accepted it —
+or "none proposed", with the reason.
 
 ## Residue
 Anything left open, and where it should go next.

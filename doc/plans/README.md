@@ -32,6 +32,8 @@ One directory per orchestrator epic; one directory per plan inside it.
 ```text
 doc/plans/
 ├── README.md                        # this file
+├── _template/
+│   └── plan.md                      # authoring template for a new plan
 ├── truthful-signals/
 │   └── {plan-name}/
 │       ├── plan.md                  # the plan
@@ -40,8 +42,14 @@ doc/plans/
 └── code-intelligence-substrate/
 ```
 
-A new plan starts as a single file — `doc/plans/{epic}/{plan-name}.md`. Step 2 of the contract moves
-it into its own directory as `plan.md`.
+A new plan starts as a copy of [`_template/plan.md`](_template/plan.md) at
+`doc/plans/{epic}/{plan-name}.md`. Step 3 of the contract moves it into its own directory as
+`plan.md`. `_template/` is not an epic — the underscore marks it as tooling.
+
+The template carries the sections the lane's verification depends on: deliverables with an explicit
+*done when* condition, an out-of-scope boundary, the expected surface, and OBSERVED/HYPOTHESIS claim
+labels with a named confirm-refute artifact for every hypothesis. A plan handed over without them
+gets built against a thinner brief than its author imagined.
 
 ## Relationship to the orchestrator epics
 

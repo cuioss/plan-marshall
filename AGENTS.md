@@ -36,6 +36,8 @@ Examples:
 
 ## Hard Rules
 
+**One bounded exception:** a plan executed from `doc/plans/` runs in the standalone plan lane, which supersedes several of these rules because the machinery they name does not exist in a fresh clone. The lane's contract is `.claude/skills/cloud-plan-lane/SKILL.md`; the exact carve-out is recorded in `CLAUDE.md` § "Standalone Plan Lane". Outside `doc/plans/` execution, every rule below binds without exception.
+
 - **`.plan/` access via scripts only** — Never Read/Write/Edit `.plan/` files directly. Use `python3 .plan/execute-script.py` with manage-* scripts.
 - **Bash: one command per call** — No `&&`, `;`, `|`, loops, `$()`, subshells. Use dedicated tools or multiple Bash calls.
 - **No shell file operations** — Use Glob/Grep/Read/Edit tools, not `ls`, `find`, `cat`, `grep`, or git's `grep` subcommand. For a content question ("which file contains X?"), use `architecture search --content --pattern P` — see `marketplace/bundles/plan-marshall/skills/manage-architecture/standards/client-api.md` § search.

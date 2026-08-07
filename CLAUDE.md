@@ -80,12 +80,18 @@ Within this lane only, these hard rules are superseded — the tooling they mand
 | Hard rule | Replaced by |
 |-----------|-------------|
 | Build commands: resolve via architecture | `./pw verify` called directly, gated on a git-derived Python-change check |
-| CI operations: use abstraction layer | `gh` directly |
+| CI operations: use abstraction layer | The GitHub MCP server (the cloud path) or `gh` directly |
+| GitHub access: `gh`, not MCP | The GitHub MCP server is the expected path in a cloud session |
 | `.plan/` access: scripts only | Not applicable — the lane never touches `.plan/` |
-| Structured queries first | Not applicable — `architecture` requires the executor |
+| Temp files under `.plan/temp/` | The system temp dir (`$TMPDIR`) — never the repository, never `.plan/` |
+| Structured queries first | Not applicable — `architecture` requires the executor; Glob/Grep/Read are used instead |
 | Triage findings via manage-findings + ext-triage | Findings recorded per instance in the run report |
 
-Every other rule — the branch-prefix table, the documentation standards, the one-command-per-Bash-call discipline — binds in this lane exactly as elsewhere. This carve-out is scoped to `doc/plans/` execution and to nothing else; ordinary work in this repository, including work done in a cloud session that is not executing a `doc/plans/` plan, follows the hard rules unchanged.
+Two further obligations stated elsewhere in this document do not apply in the lane. **Plugin Cache Sync** is inert there: `/sync-plugin-cache` reads the git-ignored `target/` tree and writes `~/.claude/`, neither of which a fresh clone has or the lane may touch — a lane plan that edits `marketplace/bundles/` records in its run report that a local sync is owed. And **No shell file operations** binds with one clarification: `git mv` and `mkdir -p` are permitted for the plan-directory step, since that rule's target is reading and searching file content, which still goes through Read/Glob/Grep.
+
+One narrow documentation-standards exemption applies: a lane **run report** (`doc/plans/{epic}/{plan-name}/report-NN.md`) carries a date and an ordinal, because it is a dated record of one execution rather than documentation of the current state. The "No timestamps" and "Current state only" standards govern documentation; they do not govern records. No other file in `doc/plans/` takes this exemption — the plan itself and every README follow the standards unchanged.
+
+Every other rule — the closed branch-prefix set, the rest of the documentation standards, the one-command-per-Bash-call discipline — binds in this lane exactly as elsewhere. This carve-out is scoped to `doc/plans/` execution and to nothing else; ordinary work in this repository, including work done in a cloud session that is not executing a `doc/plans/` plan, follows the hard rules unchanged.
 
 ## Documentation Standards
 

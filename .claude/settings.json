@@ -17,11 +17,7 @@
   "permissions": {
     "allow": [
       "Bash(python3 .plan/execute-script.py *)",
-      "Bash(rm -rf .plan/*)",
-      "Bash(rm -rf .plan/logs/*)",
-      "Bash(rm -rf .plan/plans/*)",
       "Edit(.plan/**)",
-      "Read(//Users/oliver/.claude/plans/**)",
       "Read(~/.claude/plugins/cache/**)",
       "Skill(finalize-step-plugin-doctor)",
       "Skill(finalize-step-sync-plugin-cache)",
