@@ -32,7 +32,6 @@ reconciled it back into `status.json`).
 | PLAN-CIS-006 | `validate-precision` | open | — | — |
 | PLAN-CIS-007 | `skill-lsp-server` | open | — | — |
 | PLAN-CIS-008 | `scope-estimate-vocabulary-closure` | open | — | — |
-| PLAN-CIS-009 | `documented-enum-diverges-from-argparse-choices` | implemented | [#1100](https://github.com/cuioss/plan-marshall/pull/1100) | [report-01.md](documented-enum-diverges-from-argparse-choices/report-01.md) |
 | PLAN-CIS-012 | `footprint-read-outside-its-window` | open | — | — |
 | PLAN-CIS-013 | `chat-signal-provenance-filter-under-inclusive` | open | — | — |
 | PLAN-CIS-014 | `aggregate-cost-invisible-to-per-call-ceiling` | open | — | — |
@@ -45,4 +44,4 @@ reconciled it back into `status.json`).
 | PLAN-CIS-021 | `self-review-cannot-see-a-duplicate-claimable-key` | open | — | — |
 | PLAN-CIS-022 | `token-ledgers-disagree-and-the-smallest-is-named-actual` | open | — | — |
 
-**30 open plans.** A plan absent from this table is either already shipped, transferred, or superseded in the orchestrator — check `status.json`, not this file.
+**29 open plans.** A plan absent from this table is either already shipped, transferred, or superseded in the orchestrator — check `status.json`, not this file.

@@ -357,6 +357,19 @@ git push
 gh pr create --fill
 ```
 
+**Suppress bot review when the PR changes no source.** Bot-review capacity is contended across this
+repository and is regularly exhausted; a diff that touches only documentation, reports, or ledger
+bookkeeping has nothing to offer a reviewer and spends budget another PR needs. Determine it from the
+same git evidence Step 5 uses, and apply the label **at creation** — applying it afterwards is too
+late, because the bots are triggered by the PR opening:
+
+```bash
+gh pr create --label skip-bot-review --fill
+```
+
+The rule in one line: **a PR that changes no source gets no bot review.** A PR that does change
+source keeps its review — this suppresses waste, never scrutiny.
+
 Then work the review cycle until it is genuinely finished:
 
 1. Wait for the automated reviewers and CI to report.
@@ -409,20 +422,18 @@ gh pr view {N} --json state,mergedAt,mergeCommit
 
 Only `state: MERGED` with a real `mergedAt` is a landing. Record the merge commit in the report.
 
-**Then stamp the bridge ledger.** `doc/plans/{epic}/LEDGER.md` is how the orchestrator finds this
-plan again — it is the only channel back, since a cloud session cannot write to the orchestrator's
-git-ignored tree. Set **this plan's own row** to `implemented` and fill its `PR` and `Report`
-columns:
+**Do NOT touch `doc/plans/{epic}/LEDGER.md`.** A run never writes to the ledger — not its own row,
+not any row. The orchestrator records the landing at collect, reading this run's report.
 
-- **Only that row.** The ledger is shared by every plan in the epic, so a whole-table rewrite makes
-  each concurrent run a merge conflict; a single-row edit does not.
-- **Only after the read-back above confirms the merge.** The stamp records an observed landing, never
-  an issued merge command.
-- **Never set `ingested`** — that transition is the orchestrator's, and a run that writes it is
-  asserting something it cannot see.
+That is a deliberate reversal of an earlier rule that told the run to stamp its row `implemented`
+after the merge. It was unperformable: by the time the merge read-back confirms, the branch is merged
+and deleted, so the write needed **a second PR for a one-word change** — and one such PR spent scarce
+bot-review budget on a bookkeeping diff. Not writing the ledger also removes the only shared file two
+concurrent runs both touched.
 
-If the run ends blocked or partial, leave the row at `authored` and say why in the report. An
-overstated row gets collected as done; an understated one gets picked up again.
+**Your report is the channel back.** It must state the PR number, the merge commit, and the outcome
+per deliverable — including a run that ended **blocked or partial**, and why. An overstated outcome
+gets collected as done; an understated one gets picked up again.
 
 The full rule, including how a row is created and later collected, is
 [`doc/plans/cloud-bridge.md`](../../../doc/plans/cloud-bridge.md).
@@ -444,7 +455,7 @@ happened, confirming both that the step was performed and that its artifact exis
 | 6 Verification sub-agent | Findings and dispositions in the report |
 | 7 PR cycle | PR exists; every comment dispositioned in the report |
 | 8 Merge gate | `state: MERGED` confirmed and recorded |
-| 8 Bridge ledger | This plan's row in `doc/plans/{epic}/LEDGER.md` reads `implemented` with its PR and report, or is justified as still `authored` |
+| 8 Bridge ledger | `doc/plans/{epic}/LEDGER.md` is **unchanged** by this run, and the report carries the PR and merge commit the orchestrator will collect from |
 | 9 This check | Its result appended to the report |
 | 9 What have we learned | A contract-change proposal presented to the operator, or a recorded "none, because …" |
 
