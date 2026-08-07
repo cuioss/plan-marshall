@@ -119,6 +119,17 @@ were handed is not in that shape, do not silently proceed on a thinner brief —
 and flag any missing section that changes what you would build (deliverables, out-of-scope,
 claim labels).
 
+**Enforce the first-instruction block.** Every plan opens with the blockquote that loads this skill.
+Check that the plan you were handed carries it, before moving the file:
+
+- **Present** — nothing to do.
+- **Absent** — restore it from the template verbatim as part of this step, and record the repair in
+  the report. A plan without it is one careless hand-off away from being executed by a session that
+  never loads this contract, which is the single failure that silently disables every gate below.
+
+The block is load-bearing rather than decorative, so it is checked, not assumed — and the same check
+is repeated at Step 9 against the moved file.
+
 On the branch from Step 2:
 
 1. Create the plan directory: `doc/plans/{epic}/{plan-name}/`
@@ -317,7 +328,7 @@ happened, confirming both that the step was performed and that its artifact exis
 |---|---|
 | 1 Skills loaded | Named in the report |
 | 2 Branch | Branch exists with a prefix from the closed set, cut from `origin/main` |
-| 3 Plan directory | `doc/plans/{epic}/{plan-name}/plan.md` exists |
+| 3 Plan directory | `doc/plans/{epic}/{plan-name}/plan.md` exists, and opens with the first-instruction block |
 | 4 Implement | Commits carry the trailer; deliverables addressed |
 | 5 Build gate | Report states the git-derived Python-change verdict and the build outcome |
 | 6 Verification sub-agent | Findings and dispositions in the report |

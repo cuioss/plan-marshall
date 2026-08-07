@@ -46,10 +46,16 @@ A new plan starts as a copy of [`_template/plan.md`](_template/plan.md) at
 `doc/plans/{epic}/{plan-name}.md`. Step 3 of the contract moves it into its own directory as
 `plan.md`. `_template/` is not an epic — the underscore marks it as tooling.
 
-The template carries the sections the lane's verification depends on: deliverables with an explicit
-*done when* condition, an out-of-scope boundary, the expected surface, and OBSERVED/HYPOTHESIS claim
-labels with a named confirm-refute artifact for every hypothesis. A plan handed over without them
-gets built against a thinner brief than its author imagined.
+**Every plan opens with a mandatory first-instruction block** that loads the `cloud-plan-lane` skill
+before anything else is read. It is part of the plan, not part of the template, and it survives into
+every copy — a plan without it can be picked up by a session that never loads the contract, which
+disables every gate the contract defines. The skill checks for the block at Step 3 and restores it
+if missing, and checks again at Step 9.
+
+Beyond that, the template carries the sections the lane's verification depends on: deliverables with
+an explicit *done when* condition, an out-of-scope boundary, the expected surface, and
+OBSERVED/HYPOTHESIS claim labels with a named confirm-refute artifact for every hypothesis. A plan
+handed over without them gets built against a thinner brief than its author imagined.
 
 ## Relationship to the orchestrator epics
 

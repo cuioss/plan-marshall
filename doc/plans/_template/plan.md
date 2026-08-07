@@ -1,10 +1,28 @@
-# {Plan title — what changes, stated as an outcome}
-
-> **Template.** Copy this file to `doc/plans/{epic}/{plan-name}.md`, fill it in, delete this
-> blockquote and every `{…}` placeholder. The `cloud-plan-lane` skill moves it into
-> `doc/plans/{epic}/{plan-name}/plan.md` at Step 3 of the run.
+> ⛔ **FIRST INSTRUCTION — do not skip, do not delete, do not move below the title.**
 >
-> `{plan-name}` is a short kebab-case slug — it becomes the directory name and the branch name.
+> Before reading the rest of this plan and before any other action, load the working contract that
+> governs this run:
+>
+> ```text
+> Skill: cloud-plan-lane
+> ```
+>
+> It owns the branch/PR/review-comment cycle, the build gate, the pre-PR verification sub-agent, the
+> run report, and the closing self-check. **Nothing in this plan overrides it** — where this plan and
+> the contract disagree, the contract wins, and the disagreement is reported.
+>
+> If the skill cannot be loaded, **stop and report the run blocked**. Do not reconstruct the workflow
+> from this file: the parts that matter most — the merge gate, the verification dispatch, the report
+> — are not in here.
+>
+> This block is part of the plan, not part of the template. It survives into every copy.
+
+<!-- TEMPLATE NOTE — delete this comment and every {…} placeholder when authoring a real plan.
+     Copy this file to doc/plans/{epic}/{plan-name}.md and fill it in. The cloud-plan-lane skill
+     moves it to doc/plans/{epic}/{plan-name}/plan.md at Step 3 of the run.
+     {plan-name} is a short kebab-case slug — it becomes the directory name and the branch name. -->
+
+# {Plan title — what changes, stated as an outcome}
 
 **Epic:** {truthful-signals | review-apparatus | code-intelligence-substrate}
 **Branch prefix:** {feature | fix | chore} — new capability / bug fix / maintenance-refactor-docs
