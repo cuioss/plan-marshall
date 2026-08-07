@@ -16,7 +16,7 @@ Working branches MUST use one of exactly three canonical prefixes (the set is cl
 | `fix/` | Bug fixes. |
 | `chore/` | Maintenance, refactoring, and documentation-only changes. |
 
-The set is closed because `.github/workflows/python-verify.yml` triggers CI only for `main`, `feature/*`, `fix/*`, `chore/*`, and `dependabot/**`; a branch with any other prefix receives no CI run, so its PR can never produce the required `verify / conclusion` check. The `docs/` prefix is retired — use `chore/` for documentation-only changes.
+The set is the convention because `.github/workflows/python-verify.yml` restricts its **push-triggered** runs to `main`, `feature/*`, `fix/*`, `chore/*`, and `dependabot/**`; a branch with any other prefix gets no push build. That branch filter governs the `push:` trigger only — the `pull_request:` trigger filters on the **base** branch (`main`), so a PR from any head branch is still verified and still produces the required `verify / conclusion` check. The `docs/` prefix is retired — use `chore/` for documentation-only changes.
 
 `python-verify.yml` opts in to a footprint gate (`skip-on-docs-only: true`): a docs-only change (no buildable source) skips the heavy pyprojectx build while the required `verify / conclusion` check still reports green, so the merge queue admits it without stalling. See `.github/workflows/python-verify.yml` for the non-building path set and the exact skip mechanics.
 
@@ -91,7 +91,11 @@ Two further obligations stated elsewhere in this document do not apply in the la
 
 One narrow documentation-standards exemption applies: a lane **run report** (`doc/plans/{epic}/{plan-name}/report-NN.md`) carries a date and an ordinal, because it is a dated record of one execution rather than documentation of the current state. The "No timestamps" and "Current state only" standards govern documentation; they do not govern records. No other file in `doc/plans/` takes this exemption — the plan itself and every README follow the standards unchanged.
 
-Every other rule — the closed branch-prefix set, the rest of the documentation standards, the one-command-per-Bash-call discipline — binds in this lane exactly as elsewhere. This carve-out is scoped to `doc/plans/` execution and to nothing else; ordinary work in this repository, including work done in a cloud session that is not executing a `doc/plans/` plan, follows the hard rules unchanged.
+**Branch naming in a cloud session.** A Claude Code cloud session pre-assigns a branch named `claude/{slug}-{hash}` and binds the session to it. A cloud session therefore MUST keep that branch. The reason is resumability, not convenience: a cloud VM is reclaimed on inactivity and its replacement re-clones from the remote, so a renamed branch is one the harness can no longer find — an observed run lost its work exactly this way, with the branch present on no remote. The closed prefix set governs branches the run itself creates — every local run, and a cloud run where no branch was pre-assigned. Keeping the assigned name costs nothing, because CI verifies the PR regardless of head-branch name: the branch filter in `python-verify.yml` governs push-triggered runs only, while `pull_request:` matches on the base branch (see [Branch Naming](#branch-naming)). The run records in its report which branch form it used.
+
+Because the VM's filesystem does not survive a reclaim, the git remote is the lane's only durable storage: the branch is pushed on creation and after every commit, not once at PR time.
+
+Every other rule — the rest of the documentation standards, the one-command-per-Bash-call discipline — binds in this lane exactly as elsewhere. This carve-out is scoped to `doc/plans/` execution and to nothing else; ordinary work in this repository, including work done in a cloud session that is not executing a `doc/plans/` plan, follows the hard rules unchanged.
 
 ## Documentation Standards
 
