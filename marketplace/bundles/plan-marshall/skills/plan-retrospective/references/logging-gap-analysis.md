@@ -109,9 +109,19 @@ deliverable. When the precondition is absent, the rule emits no finding.
   `termination_cause`. Emit findings:
 
   - One `info`-severity finding with the per-cause distribution over the
-    canonical value set (e.g. `"4 voluntary_checkpoint,
-    1 task_complete_returned_verbatim, 2 budget_yield,
-    0 harness_cancellation, 0 error, 1 clean_exit_queue_empty"`).
+    canonical `termination_cause` value set. That set is exactly the
+    `record-dispatch-boundary` `--termination-cause` `choices` (the
+    `DISPATCH_TERMINATION_CAUSES` tuple in `manage-metrics.py`) — the accepted
+    causes:
+    `voluntary_checkpoint`, `task_complete_returned_verbatim`, `budget_yield`,
+    `harness_cancellation`, `error`, `clean_exit_queue_empty`, `step_complete`,
+    `blocked_user_review`, `blocked_session_restart`, `task_batch_complete`,
+    `agent_returned`.
+    Report the count for every value in that set — including the causes that did
+    not occur, as an explicit zero — e.g. `"4 voluntary_checkpoint,
+    1 task_complete_returned_verbatim, 2 budget_yield, 0 harness_cancellation,
+    0 error, 1 clean_exit_queue_empty, 0 step_complete, 0 blocked_user_review,
+    0 blocked_session_restart, 0 task_batch_complete, 0 agent_returned"`.
   - A `warning`-severity finding when `unknown_count > 0` — any row
     carrying the literal `unknown` termination cause is legacy data from
     before the `clean_exit_queue_empty` migration (the recorder no longer
