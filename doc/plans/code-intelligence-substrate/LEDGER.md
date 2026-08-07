@@ -32,7 +32,7 @@ reconciled it back into `status.json`).
 | PLAN-CIS-006 | `validate-precision` | open | — | — |
 | PLAN-CIS-007 | `skill-lsp-server` | open | — | — |
 | PLAN-CIS-008 | `scope-estimate-vocabulary-closure` | open | — | — |
-| PLAN-CIS-009 | `documented-enum-diverges-from-argparse-choices` | open | — | — |
+| PLAN-CIS-009 | `documented-enum-diverges-from-argparse-choices` | authored | — | — |
 | PLAN-CIS-012 | `footprint-read-outside-its-window` | open | — | — |
 | PLAN-CIS-013 | `chat-signal-provenance-filter-under-inclusive` | open | — | — |
 | PLAN-CIS-014 | `aggregate-cost-invisible-to-per-call-ceiling` | open | — | — |
