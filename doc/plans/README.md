@@ -32,9 +32,11 @@ One directory per orchestrator epic; one directory per plan inside it.
 ```text
 doc/plans/
 ├── README.md                        # this file
+├── cloud-bridge.md                  # create / sync / collect rule (all three epics)
 ├── _template/
 │   └── plan.md                      # authoring template for a new plan
 ├── truthful-signals/
+│   ├── LEDGER.md                    # orchestrator plan <-> cloud plan <-> status
 │   └── {plan-name}/
 │       ├── plan.md                  # the plan
 │       └── report-NN.md             # one run report per run
@@ -61,5 +63,11 @@ handed over without them gets built against a thinner brief than its author imag
 
 The three epic directories mirror the orchestrator epics whose ledgers live under
 `.plan/local/orchestrator/`. Those ledgers stay machine-local and authoritative for queue state; this
-tree carries only the plans handed off for standalone execution, plus their reports. A plan executed
-here reports back through its PR, exactly as a plan-marshall plan does.
+tree carries only the plans handed off for standalone execution, plus their reports.
+
+The two halves cannot see each other — the orchestrator tree is git-ignored, and a cloud session's
+working state dies with its VM — so **git is the only shared medium**. Each epic keeps a
+`LEDGER.md` mapping its orchestrator plan specs to cloud plans and their status, and
+[`cloud-bridge.md`](cloud-bridge.md) is the rule for creating a row, syncing it from a run, and
+collecting it back into the orchestrator. Read that before authoring a plan here or before ingesting
+a landed one.
