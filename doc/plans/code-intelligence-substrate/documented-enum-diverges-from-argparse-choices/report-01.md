@@ -78,10 +78,14 @@ expected set is read from `DISPATCH_TERMINATION_CAUSES`:
   `test_data_format_termination_cause_guard_detects_a_dropped_value` (negative control).
 
 The `data-format.md` enum line was already in sync but previously unguarded; it is now pinned
-too. The SKILL.md side keeps its pre-existing guard. Each negative control drops one value and
-proves the guard fails (verified: the mutated set loses `agent_returned` and diverges). All
-8 termination-cause tests pass; both positive parses equal the 11-value set; both negative
-controls fail in the correct direction.
+too. The SKILL.md side keeps its pre-existing guard. The positive tests and the negative controls
+run the **same** guard assertion (`_assert_documented_set_matches_enum`); each negative control
+drops one value and requires that assertion to **raise** under `pytest.raises(AssertionError,
+match=…)`, so the guard's executable failure path is proven, not merely asserted. The parser also
+requires its anchor to occur exactly once and rejects a duplicated value, so a second documentation
+site or a repeated token cannot let a non-mirror pass. All 8 termination-cause tests pass. (These
+two hardenings — executable failure path and ambiguous-parse rejection — were added in response to
+PR review; see § Findings → PR review.)
 
 ### Deliverable 4 — Sweep for siblings
 
@@ -96,6 +100,12 @@ follow-up plans, not fixed here.
 `git diff --name-only origin/main...HEAD` = `plan.md`, `logging-gap-analysis.md`,
 `test_manage_metrics.py`. A `*.py` file changed → the gate is the full `./pw verify plan-marshall`
 (quality-gate **and** tests), matching the plan's "both build-gate surfaces apply".
+
+> This inventory is the snapshot **at the build-gate step**, before the `report-NN.md` commits
+> existed. The later report commits are docs-only (`doc/plans/**`) and change the build footprint
+> not at all — the buildable surface (`*.py`, `marketplace/bundles/**`) is unchanged by them, so
+> the gate verdict above still holds. Re-running the command at the tip additionally lists
+> `report-01.md`.
 
 - **Quality-gate**: clean after one fix. First run failed on a single ruff `W605`
   (escaped-backtick `\`` in a new docstring); reworded the docstring and folded the fix into
@@ -152,6 +162,24 @@ Two caveats it raised, both now closed by this run:
 
 No finding was rejected — there were none. Nothing was deferred.
 
+### PR review (CodeRabbit) — dispositions
+
+CodeRabbit (`coderabbitai[bot]`, CHILL profile) posted **6 actionable inline review comments**;
+`cuioss-review-bot` (pr-agent) reported no security or major issues; Sourcery was skipped. Both
+comment surfaces (conversation and inline review threads) were read. Per-comment disposition:
+
+| # | Site | Severity | Disposition |
+|---|---|---|---|
+| 1 | `report-01.md` changed-file inventory | Minor | **Fixed** — noted the inventory is the build-gate snapshot, taken before the docs-only report commits (which do not change the build footprint). |
+| 2 | `report-01.md` census appendix hardcodes `ROOT` | Major | **Fixed** — the appendix `count_choices.py` now resolves the root from an argument/cwd and fails closed (aborts on an empty root or file population). |
+| 3 | test negative controls don't execute the guard | Major | **Fixed** — the positive `==` assertion is extracted to `_assert_documented_set_matches_enum`; each negative control now runs THAT assertion under `pytest.raises(AssertionError, match=…)`, proving an executable failure path. |
+| 4 | generate the analyst list from the tuple at build time | Major | **Rejected, with reason** (replied on thread) — out of scope: this plan deliberately follows the repo's established *pin-with-a-test* pattern (modeled on the dispatch-roster closure test and the existing SKILL.md guard), not build-time doc generation. Generating prose from constants is an epic-level decision applying to all ~50 named-constant mirrors, recorded as systemic residue. |
+| 5 | parser accepts ambiguous parses (multi-anchor / duplicate) | Minor | **Fixed** — the parser now requires the anchor to occur exactly once and rejects a duplicated value before dedup. |
+| 6 | Step 9 placeholders still pending | Major | **Already fixed** in commit `d598a09` (before the comment posted); CodeRabbit auto-marked it "Addressed". |
+
+Fixes 1–3 and 5 land in the review-fix commit; comment 4 is answered on its thread. The `ast-grep`
+"XPath injection" sub-note on `str.find` is a false positive (no XPath involved) — no action.
+
 ### Cross-plan finding (operator-provided, recorded as residue — no action taken)
 
 The operator independently verified, on `main`, that **PLAN-TRUTH-012** (epic
@@ -180,9 +208,9 @@ population was re-counted deterministically with an **AST walk** (which sees onl
 `choices=` keyword arguments in `ast.Call` nodes — comments, docstrings, and string literals
 containing the text `choices=` are never counted, and a function-definition default such as
 `def add_phase_arg(..., choices=None)` is excluded because it is a parameter default, not a
-call keyword). The census script is `count_choices.py` (reproduced verbatim at the end of this
-report); run as `python3 count_choices.py` over `marketplace/bundles/**/scripts/**/*.py` it
-emits:
+call keyword). The census script is `count_choices.py` (reproduced in its portable, fail-closed
+form at the end of this report); run from the repository root as `python3 count_choices.py` over
+`marketplace/bundles/**/scripts/**/*.py` it emits:
 
 ```text
 files scanned            : 380
@@ -256,33 +284,31 @@ local `/sync-plugin-cache` is owed (recorded in § Residue).
 
 ## What have we learned (Step 9)
 
-This run exercised the contract end to end and surfaced **three run-produced findings**. Per the
-contract these are *presented to the operator* for a decision; none is self-approved, and any
-accepted change ships as a **separate `chore/` PR**, not folded into this plan's PR.
+This run exercised the contract end to end and surfaced **three run-produced findings**. All three
+were presented to the operator and **dispositioned in-session**; per the operator's direction **no
+contract PR is opened** from this run. Recorded here as raised-and-dispositioned:
 
-1. **A cloud in-VM `module-tests` run can never be clean (lane-structural).** Three tests fail
-   environmentally on the *unmodified* `origin/main` in this sandbox (root-execution
-   path-validation; control run above). Step 5 tells the executor to "fix and re-run until it is
-   genuinely clean" and Step 8 requires "all checks green", but neither acknowledges that the
-   in-VM build for this lane structurally cannot go green, so the clean signal must come from CI
-   (non-root GitHub Actions). **Proposed edit:** Step 5 should distinguish the in-VM build from
-   the authoritative CI signal, and give a rule for known environment-dependent failures (prove
-   pre-existing on `origin/main` in-VM → record and defer to CI, rather than block the PR).
-2. **The lane depends on plugin skills that may be absent at session start.** Step 1's skills did
-   not resolve because `~/.claude/plugins/cache/plan-marshall/` was absent even though
-   `.claude/settings.json` declares the plugin. The contract already says to record the failure
-   (which was done), but does not say how to proceed when the *work-identity* skills are the ones
-   missing. **Proposed edit:** Step 1 should name this failure mode explicitly and state the
-   fallback (source standards from the files, as this run did) so it is a sanctioned path, not an
-   improvisation.
-3. **Step 2 has no rule for a harness-assigned branch that violates the closed prefix set.** The
-   session harness assigned `claude/…` and forbade switching without explicit permission, which
-   directly conflicts with the closed-set requirement; a `claude/` branch gets no push-triggered
-   CI. Resolved here via `AskUserQuestion`. **Proposed edit:** Step 2 should name this conflict and
-   prescribe the resolution (obtain explicit operator permission, then use a closed-set prefix).
-
-_Operator decision on these three proposals: **pending** — presented in the session, not yet
-accepted; no `chore/` PR opened._
+1. **A cloud in-VM `module-tests` run can never be clean (lane-structural) — HELD.** Three tests
+   fail environmentally on the *unmodified* `origin/main` in this sandbox (root-execution
+   path-validation; control run above). The root cause is confirmed: the sandbox runs as `root`
+   while CI runners are non-root, which is why CI is green. A **parallel cloud session is fixing
+   these 3 tests at the fixture level**; if that lands, the in-VM suite becomes clean and this
+   proposal is unnecessary. **Held pending that fix.** If it turns out the tests cannot be fixed,
+   the contract edit is needed but must be written as a **SUBSET rule** — the branch's in-VM
+   failing set must be a *subset* of the in-VM `origin/main` baseline, so any **new** failure still
+   blocks the PR — **not** a blanket "defer to CI", which would turn the pre-PR gate advisory and
+   it would stop being read.
+2. **Plugin-skill fallback — DROPPED (already authored).** The observation (Step 1's work-identity
+   skills did not resolve because the plugin cache was absent) stands, but the contract fix — read
+   skills from bundle source by path — is **already authored in PR #1099** (open, not yet merged).
+   This run could not see it: the VM cloned `main` at `47ace158`, before #1099 existed. Shipping
+   the same edit again would collide with #1099 on the same file. **No proposal filed.**
+3. **Harness-assigned branch vs. closed prefix set — DROPPED (already authored).** The observation
+   (the harness assigned `claude/…` and forbade switching without permission, conflicting with the
+   closed-set requirement; resolved here via operator permission to use `fix/`) stands, but the
+   contract fix is **already authored in PR #1099** — which resolves it in the other direction (a
+   cloud session keeps its harness-assigned branch). Same invisibility (cloned before #1099) and
+   same same-file collision risk. **No proposal filed.**
 
 ## Residue
 
@@ -304,17 +330,25 @@ accepted; no `chore/` PR opened._
   local `/sync-plugin-cache` is owed by whoever picks this up on a developer machine — the
   cloud lane cannot write `~/.claude/`.
 
-## Appendix — `count_choices.py` (deliverable-4 census, verbatim)
+## Appendix — `count_choices.py` (deliverable-4 census, portable form)
 
-Run as `python3 count_choices.py`; it walks `marketplace/bundles/**/scripts/**/*.py` via AST
-and prints the exact `choices=` census reproduced in the Findings section above.
+Run from the repository root as `python3 count_choices.py` (or pass a repo root explicitly:
+`python3 count_choices.py /path/to/repo`); it walks `marketplace/bundles/**/scripts/**/*.py` via
+AST and prints the exact `choices=` census reproduced in the Findings section above. The root is
+resolved relative to the argument (or the cwd), and the script **fails closed** — it aborts rather
+than printing a vacuous zero census when the root or file population is empty. (The original in-VM
+run used an absolute root and produced the figures above; this portable, fail-closed form yields
+the identical counts against the same tree.)
 
 ```python
 import ast
+import sys
 from pathlib import Path
 
-ROOT = Path('/home/user/plan-marshall/marketplace/bundles')
+ROOT = Path(sys.argv[1] if len(sys.argv) > 1 else '.').resolve() / 'marketplace' / 'bundles'
 files = sorted(ROOT.glob('**/scripts/**/*.py'))
+if not ROOT.is_dir() or not files:
+    raise SystemExit(f'census root or file population is empty: {ROOT}')
 named, inline, other, parse_errors = [], [], [], []
 WRAPPERS = {'list', 'tuple', 'sorted', 'frozenset', 'set'}
 

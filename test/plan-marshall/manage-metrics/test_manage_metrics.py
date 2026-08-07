@@ -3421,25 +3421,52 @@ _LOGGING_GAP_ANALYSIS_MD = (
 )
 
 
-def _parse_backticked_value_set(content: str, anchor: str) -> set[str]:
-    """Parse the backticked value enumeration that immediately follows ``anchor``.
+def _parse_backticked_value_list(content: str, anchor: str) -> list[str]:
+    """Parse the backticked value enumeration following ``anchor``, in order.
 
-    Whitespace is collapsed first so the parse is insensitive to how the prose
-    wraps. From the end of ``anchor`` the maximal run of comma-separated
-    backtick-quoted value tokens is consumed and returned as a set — the run
-    stops at the first character that is neither a backticked token nor a
-    separator (the terminating period), so trailing prose and any backticked
-    identifiers outside the enumeration are never captured.
+    Returned as a LIST (document order, not deduplicated) so a caller can reject
+    a duplicated value — a set would silently collapse duplicates and let a
+    document that lists the same value twice mirror the tuple by accident. The
+    anchor must occur EXACTLY once: a second occurrence (e.g. a second
+    documentation site the single-anchor read would ignore) is a parse ambiguity
+    and fails here rather than passing over a shrunken read. Whitespace is
+    collapsed first so the parse is insensitive to how the prose wraps; from the
+    end of the anchor the maximal run of comma-separated backtick-quoted value
+    tokens is consumed, stopping at the first character that is neither a
+    backticked token nor a separator (the terminating period).
     """
     import re
 
     normalized = re.sub(r'\s+', ' ', content)
-    idx = normalized.find(anchor)
-    assert idx != -1, f'anchor not found in document: {anchor!r}'
-    tail = normalized[idx + len(anchor):]
+    occurrences = normalized.count(anchor)
+    assert occurrences == 1, f'anchor must occur exactly once, found {occurrences}: {anchor!r}'
+    tail = normalized[normalized.find(anchor) + len(anchor):]
     run = re.match(r'\s*((?:`[a-z_]+`\s*,?\s*)+)', tail)
     assert run is not None, f'no backticked value enumeration follows anchor: {anchor!r}'
-    return set(re.findall(r'`([a-z_]+)`', run.group(1)))
+    return re.findall(r'`([a-z_]+)`', run.group(1))
+
+
+def _parse_backticked_value_set(content: str, anchor: str) -> set[str]:
+    """The enumeration as a set, rejecting a duplicated value before dedup."""
+    values = _parse_backticked_value_list(content, anchor)
+    duplicates = sorted({v for v in values if values.count(v) > 1})
+    assert not duplicates, f'enumeration lists duplicate value(s): {duplicates}'
+    return set(values)
+
+
+def _assert_documented_set_matches_enum(content: str, anchor: str) -> None:
+    """The guard proper: the documented enumeration equals the parser's tuple.
+
+    Extracted so the negative controls below can execute THIS assertion under
+    ``pytest.raises`` — proving the guard's own failure path runs on a mutated
+    document, not merely that the underlying parsed sets differ.
+    """
+    expected = set(manage_metrics.DISPATCH_TERMINATION_CAUSES)
+    documented = _parse_backticked_value_set(content, anchor)
+    assert documented == expected, (
+        'documented termination_cause set disagrees with DISPATCH_TERMINATION_CAUSES '
+        f'(missing, unexpected): {sorted(expected - documented)}, {sorted(documented - expected)}'
+    )
 
 
 def test_logging_gap_analysis_termination_cause_set_matches_the_enum():
@@ -3450,60 +3477,48 @@ def test_logging_gap_analysis_termination_cause_set_matches_the_enum():
     causes. Both sides are derived — the documented set from the markdown, the
     expected set from DISPATCH_TERMINATION_CAUSES.
     """
-    expected = set(manage_metrics.DISPATCH_TERMINATION_CAUSES)
-    documented = _parse_backticked_value_set(
-        _LOGGING_GAP_ANALYSIS_MD.read_text(encoding='utf-8'),
-        'the accepted causes:',
-    )
-    assert documented == expected, (
-        'logging-gap-analysis.md DISPATCH_TERMINATION_CAUSE value set disagrees with '
-        'DISPATCH_TERMINATION_CAUSES (missing, unexpected): '
-        f'{sorted(expected - documented)}, {sorted(documented - expected)}'
+    _assert_documented_set_matches_enum(
+        _LOGGING_GAP_ANALYSIS_MD.read_text(encoding='utf-8'), 'the accepted causes:'
     )
 
 
 def test_logging_gap_analysis_guard_detects_a_dropped_value():
-    """Negative control: dropping one value from the reference is caught."""
+    """Negative control: the guard's own ``==`` assertion FAILS on a dropped value.
+
+    Executes ``_assert_documented_set_matches_enum`` (the SAME assertion the
+    positive test runs) against a mutated document and requires it to raise —
+    proving the guard has a real, executable failure path, not merely that the
+    parsed sets differ.
+    """
     content = _LOGGING_GAP_ANALYSIS_MD.read_text(encoding='utf-8')
-    expected = set(manage_metrics.DISPATCH_TERMINATION_CAUSES)
     victim = 'agent_returned'
-    assert victim in expected
+    assert victim in set(manage_metrics.DISPATCH_TERMINATION_CAUSES)
 
     mutated = content.replace(f'`{victim}`', '', 1)
     assert mutated != content, 'the victim value was not present to drop'
 
-    documented = _parse_backticked_value_set(mutated, 'the accepted causes:')
-    assert victim not in documented
-    assert documented != expected
+    with pytest.raises(AssertionError, match='disagrees with DISPATCH_TERMINATION_CAUSES'):
+        _assert_documented_set_matches_enum(mutated, 'the accepted causes:')
 
 
 def test_data_format_termination_cause_enum_matches_the_enum():
     """The data-format.md dispatch-boundary termination_cause enum equals the tuple."""
-    expected = set(manage_metrics.DISPATCH_TERMINATION_CAUSES)
-    documented = _parse_backticked_value_set(
-        _DATA_FORMAT_MD.read_text(encoding='utf-8'),
-        '`termination_cause` enum**:',
-    )
-    assert documented == expected, (
-        'data-format.md termination_cause enum disagrees with '
-        'DISPATCH_TERMINATION_CAUSES (missing, unexpected): '
-        f'{sorted(expected - documented)}, {sorted(documented - expected)}'
+    _assert_documented_set_matches_enum(
+        _DATA_FORMAT_MD.read_text(encoding='utf-8'), '`termination_cause` enum**:'
     )
 
 
 def test_data_format_termination_cause_guard_detects_a_dropped_value():
-    """Negative control: dropping one value from the data-format enum is caught."""
+    """Negative control: the guard's own ``==`` assertion FAILS on a dropped value."""
     content = _DATA_FORMAT_MD.read_text(encoding='utf-8')
-    expected = set(manage_metrics.DISPATCH_TERMINATION_CAUSES)
     victim = 'agent_returned'
-    assert victim in expected
+    assert victim in set(manage_metrics.DISPATCH_TERMINATION_CAUSES)
 
     mutated = content.replace(f'`{victim}`', '', 1)
     assert mutated != content, 'the victim value was not present to drop'
 
-    documented = _parse_backticked_value_set(mutated, '`termination_cause` enum**:')
-    assert victim not in documented
-    assert documented != expected
+    with pytest.raises(AssertionError, match='disagrees with DISPATCH_TERMINATION_CAUSES'):
+        _assert_documented_set_matches_enum(mutated, '`termination_cause` enum**:')
 
 
 # =============================================================================
