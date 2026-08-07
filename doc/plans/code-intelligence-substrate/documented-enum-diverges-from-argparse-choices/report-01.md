@@ -1,6 +1,6 @@
 # Run report — documented-enum-diverges-from-argparse-choices (run 01)
 
-**Date (UTC):** 2026-08-07    **Branch:** `fix/documented-enum-diverges-from-argparse-choices`    **PR:** [#1100](https://github.com/cuioss/plan-marshall/pull/1100)    **Outcome:** partial (in progress)
+**Date (UTC):** 2026-08-07    **Branch:** `fix/documented-enum-diverges-from-argparse-choices`    **PR:** [#1100](https://github.com/cuioss/plan-marshall/pull/1100)    **Outcome:** merged (squash to `main`, 2026-08-07T17:20:28Z)
 
 ## Skills loaded
 
@@ -164,11 +164,15 @@ change's Python passes in a non-root environment is:
   pre-PR, push-triggered runs executed the **full `verify`** (no open PR yet to skip them) and
   reported success. The non-root CI runner passes the 3 tests that fail as `root` in-VM. (No
   `verify` *failure* event was received for either SHA during this run; the only
-  `verify / conclusion` failures observed were **cancellations** on `dbd7cc4` and `d598a09`,
-  caused by a superseding push, never a test failure. Operator-confirmed.)
-- **The merge_group run at merge** is the authoritative gate: per `python-verify.yml`'s own
+  `verify / conclusion` failures observed were **cancellations** on `dbd7cc4`, `d598a09`, and
+  `06da4a8` — the last first-party confirmed (workflow run 31200272984 conclusion `cancelled`) —
+  each caused by a superseding push, never a test failure. Operator-confirmed.)
+- **The merge_group run at merge** was the authoritative gate: per `python-verify.yml`'s own
   comment, a `merge_group` run verifies the merged result with buildable source, on a non-root
-  runner — so the `06da4a8` hardening is verified there against the merged tree before it lands.
+  runner — so the `06da4a8` hardening was verified against the merged tree, and the PR **landed
+  green through the merge queue**. Independently, the tip `13d692c`'s PR-triggered `verify / verify`
+  executed the full suite non-root and reported success (run 31200830182), confirming the hardened
+  Python green in CI first-party — not only via the merge_group gate.
 
 ## Findings
 
@@ -307,9 +311,9 @@ equality). **No other `termination_cause` enumeration** exists beyond the three 
 | 4 Implement | done | Commits carry the `Co-Authored-By: Claude` trailer and no "Generated with Claude Code" footer; deliverables addressed (D1 verified no-op, D2/D3 implemented, D4 recorded). |
 | 5 Build gate | done | Python changed → full `./pw verify plan-marshall`: **15005 passed / 1 skipped / 3 failed**; the 3 are environment-dependent (pre-existing on `origin/main` in-VM, control-confirmed), outside this change's surface — the full in-VM suite cannot be clean here. Scoped guard run `-k "termination_cause or logging_gap or data_format"` = 8/8 green; ruff clean. Python verified in CI on `09f4acd`/`ecfdfe6` and, authoritatively, by the merge_group run at merge. |
 | 6 Verification sub-agent | done | Independent read-only agent; clean verdict, no findings; both its caveats closed by this run. Recorded in § Findings. |
-| 7 PR cycle | in progress | PR [#1100](https://github.com/cuioss/plan-marshall/pull/1100) open; subscribed to activity. Both comment surfaces read; bot findings dispositioned as they arrive. |
-| 8 Merge gate | pending | Auto-merge (squash) to be enabled only once CI is green **and** every comment is handled; `state: MERGED` confirmed by read-back before the ledger stamp. |
-| 8 Bridge ledger | pending | `doc/plans/code-intelligence-substrate/LEDGER.md` this plan's row stamped `implemented` (this row only) **after** the merge read-back; left `authored` if the run ends before merge. |
+| 7 PR cycle | done | PR [#1100](https://github.com/cuioss/plan-marshall/pull/1100) **merged**. All 6 CodeRabbit inline comments handled (5 fixed, comment 4 rejected-with-reason on its thread); pr-agent clean; Sourcery skipped. Both comment surfaces read; every finding dispositioned in § Findings → PR review. |
+| 8 Merge gate | done | Required checks green (`verify / conclusion`, `verify / gate`, `dependency-review` all success; the PR-triggered `verify / verify` ran the full suite non-root on the tip and passed) and every comment handled → auto-merge (squash) enabled; landed via the merge queue. `merged: true` / `state: closed` with real `merged_at` confirmed by read-back. |
+| 8 Bridge ledger | done | `doc/plans/code-intelligence-substrate/LEDGER.md` PLAN-CIS-009 row stamped `implemented` with PR/Report columns filled (this row only), **after** the merge read-back, in the docs-only follow-up branch `chore/stamp-ledger-cis-009` (the squash deleted the PR branch, so the post-merge stamp is a separate commit per the bridge's "written after the merge is confirmed" rule). |
 | 9 This check | done | This table. |
 
 GitHub access path used: the **GitHub MCP server** (cloud path), as the contract expects for a
