@@ -32,10 +32,13 @@ onto the other.
 | What you see under `doc/plans/{epic}/` | State |
 |---|---|
 | No file for the plan | Not handed to the cloud lane — it is open in the orchestrator only |
-| `{cloud-plan}.md`, a flat file | **Authored**, awaiting a run |
-| `{cloud-plan}/plan.md` | **A run has started** — Step 3 of the contract moved it into its directory |
-| `{cloud-plan}/report-NN.md` alongside it | That run produced a report; the report names its PR |
+| `{NNN}-{cloud-plan}.md`, a flat file | **Authored**, awaiting a run |
+| `{NNN}-{cloud-plan}/plan.md` | **A run has started** — Step 3 of the contract moved it into its directory, prefix and all |
+| `{NNN}-{cloud-plan}/report-NN.md` alongside it | That run produced a report; the report names its PR |
 | Nothing — the directory is gone | **Collected.** The orchestrator has ingested it (§ Path 3) |
+
+The `{NNN}-` prefix is the priority order defined in § Path 1 — Create. It is part of the name at
+every stage, so a directory listing of an epic is also its hand-over order.
 
 This replaced a per-epic `LEDGER.md` that stored the same states as rows. That file was **retired**,
 and the reason generalises: **every column it carried was derivable, so it was a cache** — and a
@@ -55,10 +58,31 @@ plan on the machine where `status.json` already is.
 Turning an orchestrator plan spec into a cloud plan. Done locally, where both trees are visible.
 
 1. **Pick a staged plan** from the epic's own queue (`orchestrator queue --slug {epic}`), and name the
-   cloud plan after **the orchestrator plan's own slug**. Reusing that slug is what keeps the mapping
-   stable in both directions without anyone inventing a second name or recording one anywhere.
+   cloud plan `{NNN}-{orchestrator-slug}.md` — a numeric priority prefix followed by **the
+   orchestrator plan's own slug**. Reusing that slug is what keeps the mapping stable in both
+   directions without anyone inventing a second name or recording one anywhere: strip the prefix and
+   you have the orchestrator plan's slug back. Nothing records that mapping anywhere, deliberately.
+
+   The prefix exists so a plain directory listing of `doc/plans/{epic}/` sorts into the order the
+   operator hands plans over. Four rules govern it:
+
+   - **Numbered per epic.** Each epic directory restarts at `010`; numbers are not unique across
+     epics and are never compared across them.
+   - **Sparse, in tens** — `010`, `020`, `030`, … — so inserting a higher-priority plan between two
+     existing ones never renumbers a neighbour. Dense numbering guarantees churn on the first
+     re-prioritisation.
+   - **Fixed once handed to a cloud session.** That session is bound to its file path, so a rename
+     mid-run breaks it. Re-prioritise by choosing what to hand over next, never by renaming what is
+     already out.
+   - **The prefix stays through the whole lifecycle.** Step 3 of the lane contract moves
+     `{NNN}-{slug}.md` to `{NNN}-{slug}/plan.md`, keeping the prefix on the directory.
+
+   **Plans authored before this scheme carry no prefix, and are left that way.** An unprefixed plan
+   that is already out with a cloud session must not be renamed — see the fixed-once-handed-over rule
+   above — and every cloud plan is deleted at ingest (§ Path 3), so the inconsistency clears itself as
+   the queue drains. Numbering applies to plans authored from here on; do not "fix" an existing one.
 2. **Read the orchestrator spec** at `.plan/local/orchestrator/{epic}/plans/{ORCH-PLAN-ID}-*.md`.
-3. **Author the cloud plan** at `doc/plans/{epic}/{cloud-plan}.md` from
+3. **Author the cloud plan** at `doc/plans/{epic}/{NNN}-{cloud-plan}.md` from
    [`_template/plan.md`](_template/plan.md), carrying across: the problem and its mechanism, the
    deliverables, the out-of-scope boundary, the expected surface, and **every claim label**. A
    `HYPOTHESIS` in the orchestrator spec stays a `HYPOTHESIS` in the cloud plan, with its
@@ -104,7 +128,7 @@ orchestrator.
    collect. There is no status marker to read anywhere; see § Status vocabulary.
 2. **Corroborate each one before recording it.** For each: confirm the PR is merged (`state: MERGED`
    with a real `mergedAt`), confirm the merge commit is an **ancestor of `origin/main`**, and read
-   the run report at `doc/plans/{epic}/{cloud-plan}/report-NN.md`. It is a lead until all three
+   the run report at `doc/plans/{epic}/{NNN}-{cloud-plan}/report-NN.md`. It is a lead until all three
    agree. A landing claim — including a PR number — has been wrong here before.
 3. **Read the report's findings section**, not only its outcome line. A run that landed can still
    have surfaced defects, rejected findings with reasons, refuted a deliverable, grown beyond its
@@ -117,7 +141,7 @@ orchestrator.
    the cloud plan and its report, this record plus the PR is the durable account — so it carries the
    outcome per deliverable, any refuted premise, the findings routed out, and any contract gap the
    run exposed.
-6. **Remove the cloud plan from the doc path** — delete `doc/plans/{epic}/{cloud-plan}/` entirely,
+6. **Remove the cloud plan from the doc path** — delete `doc/plans/{epic}/{NNN}-{cloud-plan}/` entirely,
    plan and reports together. That removal *is* the state change; nothing else records it.
    `doc/plans/` is a queue of open work, not an archive: the content stays in git history, and step 5
    holds what a reader actually needs.

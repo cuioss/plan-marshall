@@ -145,11 +145,40 @@ git checkout {prefix}/{plan-name}
 Determine which case you are in before acting (`git rev-parse --verify --quiet {prefix}/{plan-name}`
 succeeds when the branch exists).
 
-**Push the branch immediately on creation, before any edit:**
+### Get the branch onto the remote before any work
 
-```bash
-git push -u origin {branch}
-```
+**The invariant, independent of how the branch came to be: no work proceeds until the branch exists
+on `origin`.** Not one edit, not one commit.
+
+State it that way because the older wording — "push the branch immediately *on creation*" — keyed the
+obligation on the run **creating** a branch, and a cloud run never creates one: the paragraphs above
+tell it to keep its harness-assigned branch as-is. The instruction then read as inapplicable, and an
+observed run made three commits with nothing on the remote at all. A branch you were handed is no
+more published than one you cut.
+
+So decide which arrival you are in, and act:
+
+- **You created the branch** (`git checkout -b …` above) — push it immediately, before any edit:
+
+  ```bash
+  git push -u origin {branch}
+  ```
+
+- **You arrived on a harness-assigned branch** — it exists *locally*; that says nothing about the
+  remote. Check, and treat pushing it as your **first action** if it is absent:
+
+  ```bash
+  git ls-remote --heads origin {branch}
+  ```
+
+  Empty output means the branch is not on the remote. Push it before anything else:
+
+  ```bash
+  git push -u origin {branch}
+  ```
+
+  Non-empty output means it is already published; carry on, and Step 4's per-commit push keeps it
+  current.
 
 ### The remote is the only durable storage
 
@@ -158,12 +187,26 @@ persist across that boundary. Anything that exists only in the working tree, or 
 commit, is gone. The run report is itself committed on the branch, so it is lost along with the work
 it describes, leaving no record that the run happened at all.
 
-So the branch is pushed the moment it exists, and pushed again after every commit (§ Step 4). Step 7
-opens the PR on an already-published branch; it is not the first push.
+So the branch is pushed the moment it exists — see the invariant above — and pushed again after every
+commit (§ Step 4). Step 7 opens the PR on an already-published branch; it is not the first push.
+
+**A path outside the git working tree is not storage.** The scratchpad directory, `$TMPDIR`, `/tmp`,
+the home directory: every one of them is on the same reclaimed filesystem as the working tree, and
+none of them is any more durable than an uncommitted file. Writing something aside preserves nothing.
+An observed run captured expensive test fixtures into a scratchpad directory and described them as
+persisted "durably" — they were one reclaim from gone.
+
+The consequence is sharper than it looks: content that never enters the working tree is **invisible
+to "commit and push"**. No amount of pushing saves it, because there is nothing to push. So an
+artifact worth keeping is written **into the repository**, committed, and pushed — and if it is not
+worth committing, it is not worth treating as kept. That is not a licence to commit scratch: the
+`CLAUDE.md` rule keeping temp files out of the repository still binds, and the choice a run faces is
+between committing an artifact deliberately and accepting that it is disposable. What it may not do
+is call a scratch path durable.
 
 ## Step 3 — Establish the plan directory
 
-A plan arrives as a single file, e.g. `doc/plans/truthful-signals/my-plan.md`, authored from the
+A plan arrives as a single file, e.g. `doc/plans/truthful-signals/010-my-plan.md`, authored from the
 template at [`doc/plans/_template/plan.md`](../../../doc/plans/_template/plan.md). If the plan you
 were handed is not in that shape, do not silently proceed on a thinner brief — say so in the report,
 and flag any missing section that changes what you would build (deliverables, out-of-scope,
@@ -185,10 +228,17 @@ On the branch from Step 2:
 1. Create the plan directory: `doc/plans/{epic}/{plan-name}/`
 2. Move the plan into it as `plan.md` (`git mv`, so history follows).
 
+**The plan file's numeric priority prefix is preserved by the move.** Cloud plans are named
+`{NNN}-{slug}.md`, where `{NNN}` orders the epic's queue for hand-over; the directory takes the whole
+name, so `{NNN}-{slug}.md` becomes `{NNN}-{slug}/plan.md`. Do not strip the prefix, and do not
+renumber — a plan handed to a session is bound to its path, and both this run and the orchestrator's
+collect step address it by that name. A plan authored before the scheme has no prefix; move it under
+the name it has.
+
 The resulting layout is the plan's whole workspace:
 
 ```text
-doc/plans/{epic}/{plan-name}/
+doc/plans/{epic}/{NNN}-{plan-name}/
 ├── plan.md          # the plan, moved here in this step
 └── report-NN.md     # one per run (§ Report)
 ```
