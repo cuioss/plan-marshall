@@ -28,6 +28,11 @@ target/
 !.claude/commands/
 !.claude/run-configuration.json
 
+# Project settings are shared: cloud sessions install the plan-marshall plugin from the
+# enabledPlugins / extraKnownMarketplaces declaration in this file. Machine-specific settings
+# belong in .claude/settings.local.json, which stays ignored below.
+!.claude/settings.json
+
 # Ignore user-specific settings
 .claude/settings.local.json
 

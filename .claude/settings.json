@@ -1,0 +1,35 @@
+{
+  "extraKnownMarketplaces": {
+    "plan-marshall": {
+      "source": {
+        "source": "github",
+        "repo": "cuioss/plan-marshall",
+        "ref": "dist-claude"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "plan-marshall@plan-marshall": true,
+    "pm-dev-python@plan-marshall": true,
+    "pm-plugin-development@plan-marshall": true,
+    "pm-documents@plan-marshall": true
+  },
+  "permissions": {
+    "allow": [
+      "Bash(python3 .plan/execute-script.py *)",
+      "Bash(rm -rf .plan/*)",
+      "Bash(rm -rf .plan/logs/*)",
+      "Bash(rm -rf .plan/plans/*)",
+      "Edit(.plan/**)",
+      "Read(//Users/oliver/.claude/plans/**)",
+      "Read(~/.claude/plugins/cache/**)",
+      "Skill(finalize-step-plugin-doctor)",
+      "Skill(finalize-step-sync-plugin-cache)",
+      "Skill(sync-plugin-cache)",
+      "Skill(sync-plugin-cache:*)",
+      "Write(.plan/**)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
