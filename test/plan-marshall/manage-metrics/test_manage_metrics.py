@@ -3393,6 +3393,120 @@ def test_termination_cause_check_detects_a_single_stale_site():
 
 
 # =============================================================================
+# --termination-cause value-set mirrors in sibling documents
+# =============================================================================
+#
+# SKILL.md is not the only document that enumerates the DISPATCH_TERMINATION_CAUSES
+# value set in prose. Two siblings hand-copy the same set and can therefore drift
+# from the parser's ``choices`` exactly as SKILL.md could:
+#
+#   * plan-retrospective/references/logging-gap-analysis.md — the analyst-facing
+#     DISPATCH_TERMINATION_CAUSE rule's canonical value set. This one HAD drifted
+#     to a six-value subset (the defect these guards close): an analyst following
+#     the reference literally would emit a per-cause distribution that omits every
+#     cause past the sixth.
+#   * standards/data-format.md — the dispatch-boundary ``termination_cause`` enum
+#     line under Per-Dispatch Context-Load Attribution.
+#
+# Both are pinned to the live tuple here, deriving BOTH sides: the documented set
+# is parsed out of the markdown and the expected set is read from
+# DISPATCH_TERMINATION_CAUSES. A hand-copied expected list in the test would
+# reproduce the very defect the guard exists to catch, so neither side is
+# hand-listed. Each positive assertion is paired with a negative control that
+# drops one value and proves the guard fails — a guard that cannot fail is not a
+# guard.
+
+_LOGGING_GAP_ANALYSIS_MD = (
+    _SKILL_DIR.parent / 'plan-retrospective' / 'references' / 'logging-gap-analysis.md'
+)
+
+
+def _parse_backticked_value_set(content: str, anchor: str) -> set[str]:
+    """Parse the backticked value enumeration that immediately follows ``anchor``.
+
+    Whitespace is collapsed first so the parse is insensitive to how the prose
+    wraps. From the end of ``anchor`` the maximal run of comma-separated
+    backtick-quoted value tokens is consumed and returned as a set — the run
+    stops at the first character that is neither a backticked token nor a
+    separator (the terminating period), so trailing prose and any backticked
+    identifiers outside the enumeration are never captured.
+    """
+    import re
+
+    normalized = re.sub(r'\s+', ' ', content)
+    idx = normalized.find(anchor)
+    assert idx != -1, f'anchor not found in document: {anchor!r}'
+    tail = normalized[idx + len(anchor):]
+    run = re.match(r'\s*((?:`[a-z_]+`\s*,?\s*)+)', tail)
+    assert run is not None, f'no backticked value enumeration follows anchor: {anchor!r}'
+    return set(re.findall(r'`([a-z_]+)`', run.group(1)))
+
+
+def test_logging_gap_analysis_termination_cause_set_matches_the_enum():
+    """The DISPATCH_TERMINATION_CAUSE rule's canonical value set equals the tuple.
+
+    The reference tells the analyst which value set to distribute dispatch rows
+    over; a subset there produces a distribution that silently omits the omitted
+    causes. Both sides are derived — the documented set from the markdown, the
+    expected set from DISPATCH_TERMINATION_CAUSES.
+    """
+    expected = set(manage_metrics.DISPATCH_TERMINATION_CAUSES)
+    documented = _parse_backticked_value_set(
+        _LOGGING_GAP_ANALYSIS_MD.read_text(encoding='utf-8'),
+        'the accepted causes:',
+    )
+    assert documented == expected, (
+        'logging-gap-analysis.md DISPATCH_TERMINATION_CAUSE value set disagrees with '
+        'DISPATCH_TERMINATION_CAUSES (missing, unexpected): '
+        f'{sorted(expected - documented)}, {sorted(documented - expected)}'
+    )
+
+
+def test_logging_gap_analysis_guard_detects_a_dropped_value():
+    """Negative control: dropping one value from the reference is caught."""
+    content = _LOGGING_GAP_ANALYSIS_MD.read_text(encoding='utf-8')
+    expected = set(manage_metrics.DISPATCH_TERMINATION_CAUSES)
+    victim = 'agent_returned'
+    assert victim in expected
+
+    mutated = content.replace(f'`{victim}`', '', 1)
+    assert mutated != content, 'the victim value was not present to drop'
+
+    documented = _parse_backticked_value_set(mutated, 'the accepted causes:')
+    assert victim not in documented
+    assert documented != expected
+
+
+def test_data_format_termination_cause_enum_matches_the_enum():
+    """The data-format.md dispatch-boundary termination_cause enum equals the tuple."""
+    expected = set(manage_metrics.DISPATCH_TERMINATION_CAUSES)
+    documented = _parse_backticked_value_set(
+        _DATA_FORMAT_MD.read_text(encoding='utf-8'),
+        '`termination_cause` enum**:',
+    )
+    assert documented == expected, (
+        'data-format.md termination_cause enum disagrees with '
+        'DISPATCH_TERMINATION_CAUSES (missing, unexpected): '
+        f'{sorted(expected - documented)}, {sorted(documented - expected)}'
+    )
+
+
+def test_data_format_termination_cause_guard_detects_a_dropped_value():
+    """Negative control: dropping one value from the data-format enum is caught."""
+    content = _DATA_FORMAT_MD.read_text(encoding='utf-8')
+    expected = set(manage_metrics.DISPATCH_TERMINATION_CAUSES)
+    victim = 'agent_returned'
+    assert victim in expected
+
+    mutated = content.replace(f'`{victim}`', '', 1)
+    assert mutated != content, 'the victim value was not present to drop'
+
+    documented = _parse_backticked_value_set(mutated, '`termination_cause` enum**:')
+    assert victim not in documented
+    assert documented != expected
+
+
+# =============================================================================
 # total_tokens population labelling
 # =============================================================================
 #
