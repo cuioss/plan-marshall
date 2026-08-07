@@ -104,13 +104,15 @@ do not commit unrelated changes.
 Then resolve **one** branch name and reuse it for the rest of the run — creation, pushes, and PR
 alike.
 
-**A cloud session keeps its harness-assigned branch.** Claude Code cloud sessions pre-assign a branch
-named `claude/{slug}-{hash}` and refuse to push to a different one without explicit operator
-permission — so renaming it fires an operator prompt on every run and defeats unattended operation.
-When the session arrives on such a branch, **use it as-is**; do not create a prefixed branch and do
-not ask.
+**A cloud session MUST keep its harness-assigned branch.** Claude Code cloud sessions pre-assign a
+branch named `claude/{slug}-{hash}` and **bind the session to it**. Renaming it breaks session
+resume: a cloud VM is reclaimed on inactivity, its replacement re-clones from the remote, and the
+harness then cannot find the renamed branch. That is not hypothetical — it is how one observed run
+lost its work entirely, with the branch present on no remote. When the session arrives on such a
+branch, **use it as-is**; do not create a prefixed branch, do not rename, and do not ask.
 
-This is safe because the closed prefix set does not govern whether the PR is verified.
+Keeping the assigned name costs nothing, because the closed prefix set does not govern whether the
+PR is verified.
 `.github/workflows/python-verify.yml` applies its branch filter to the `push:` trigger only; the
 `pull_request:` trigger filters on the **base** branch (`main`), so a PR from any head branch runs
 verify and produces the required `verify / conclusion` check. A non-prefixed branch loses its
@@ -142,6 +144,22 @@ git checkout {prefix}/{plan-name}
 
 Determine which case you are in before acting (`git rev-parse --verify --quiet {prefix}/{plan-name}`
 succeeds when the branch exists).
+
+**Push the branch immediately on creation, before any edit:**
+
+```bash
+git push -u origin {branch}
+```
+
+### The remote is the only durable storage
+
+A cloud VM is reclaimed on inactivity, and its replacement **re-clones** — the filesystem does not
+persist across that boundary. Anything that exists only in the working tree, or only in a local
+commit, is gone. The run report is itself committed on the branch, so it is lost along with the work
+it describes, leaving no record that the run happened at all.
+
+So the branch is pushed the moment it exists, and pushed again after every commit (§ Step 4). Step 7
+opens the PR on an already-published branch; it is not the first push.
 
 ## Step 3 — Establish the plan directory
 
@@ -186,6 +204,15 @@ Every commit message ends with exactly this trailer, and **no** "Generated with 
 ```text
 Co-Authored-By: Claude <noreply@anthropic.com>
 ```
+
+**Push after every commit** — not once at Step 7:
+
+```bash
+git push
+```
+
+An unpushed commit is lost work the moment the VM is reclaimed (§ Step 2, "The remote is the only
+durable storage").
 
 ## Step 5 — Build gate (conditional)
 
@@ -289,10 +316,11 @@ session, and do not treat an unreachable review surface as an empty one.
 
 ## Step 7 — Branch, PR, review-comment cycle
 
-Push and open the PR:
+The branch was published at Step 2 and kept current by Step 4's per-commit pushes, so this step
+opens the PR on an already-pushed branch. Flush anything still unpushed first, then create it:
 
 ```bash
-git push -u origin {prefix}/{plan-name}
+git push
 ```
 
 ```bash
@@ -377,9 +405,10 @@ happened, confirming both that the step was performed and that its artifact exis
 | Step | Artifact that proves it |
 |---|---|
 | 1 Skills loaded | Named in the report |
-| 2 Branch | Branch exists — the harness-assigned `claude/*` branch, or one this run cut from `origin/main` with a prefix from the closed set; the report names which |
+| 2 Branch | Branch exists **on `origin`** — the harness-assigned `claude/*` branch, or one this run cut from `origin/main` with a prefix from the closed set; the report names which |
 | 3 Plan directory | `doc/plans/{epic}/{plan-name}/plan.md` exists, and opens with the first-instruction block |
 | 4 Implement | Commits carry the trailer; deliverables addressed |
+| 4 Pushed | No unpushed commit remains (`git status -sb` reports no `ahead`) |
 | 5 Build gate | Report states the git-derived Python-change verdict and the build outcome |
 | 6 Verification sub-agent | Findings and dispositions in the report |
 | 7 PR cycle | PR exists; every comment dispositioned in the report |
