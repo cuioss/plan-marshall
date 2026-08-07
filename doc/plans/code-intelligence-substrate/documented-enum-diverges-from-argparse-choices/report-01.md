@@ -111,11 +111,20 @@ follow-up plans, not fixed here.
   (escaped-backtick `\`` in a new docstring); reworded the docstring and folded the fix into
   the commit via `--amend` (unpushed at the time). Re-run: mypy "no issues found in 269 source
   files", ruff clean.
-- **Tests**: 15005 passed, 1 skipped, **3 failed**. The 3 failures are in files this change
-  does not touch:
+Every pass/fail claim below names the exact command and scope it came from — an unscoped
+"tests pass" would contradict this report's own control finding that the full in-VM suite
+cannot be clean here.
+
+- **Full in-VM run — command `./pw verify plan-marshall` (quality-gate + the whole module test
+  suite). NOT clean, by construction, and not claimed to be:** **15005 passed, 1 skipped,
+  3 failed.** The 3 failures are the environment-dependent ones the control below pins, in files
+  this change does not touch:
   - `test/plan-marshall/platform-runtime/test_opencode_runtime.py::test_project_initial_setup_invalid_dir_returns_error`
   - `test/plan-marshall/workflow-integration-git/test_git_workflow.py::TestAnalyzeDiff::test_analyze_file_not_found`
   - `test/plan-marshall/workflow-integration-git/test_git_workflow.py::TestDetectArtifacts::test_nonexistent_root_fails`
+
+  Within that same run, **every `test/plan-marshall/manage-metrics/**` test passed** — the 3
+  failures are all outside this change's surface.
 
   **Control run (unmodified tree, this VM).** "CI was green on main" was not accepted as
   settling it — CI is GitHub Actions, a different environment from this cloud sandbox. The same
@@ -126,15 +135,40 @@ follow-up plans, not fixed here.
   **environment-dependent in the cloud sandbox, not caused by this change** — each expects an
   `error` status for a nonexistent/invalid path but gets `success` (a root-execution /
   path-validation artifact: the suite runs as `root`, so existence/permission-denial checks do
-  not trip). The change's own surface is clean: all manage-metrics tests, including the 4 new
-  guards, pass in both the branch run and in isolation.
+  not trip).
+
+- **Scoped clean runs — the commands behind every "pass" claim for this change's own surface:**
+  - `.venv/bin/python -m pytest test/plan-marshall/manage-metrics/test_manage_metrics.py -k "termination_cause or logging_gap or data_format" -p no:xdist` → **8 passed** (the 4 pre-existing SKILL.md / invalid-cause guards + the 4 new mirror guards). Run twice — before *and* after the review-hardening commit `06da4a8`.
+  - `.venv/bin/ruff check test/plan-marshall/manage-metrics/test_manage_metrics.py` → **clean**.
+
+  Quality-gate (mypy + ruff) is separately clean across the module (see above). No pass claim in
+  this report refers to a clean *full* in-VM suite — that run is the 3-failure one above.
 
   **Lane-structural finding.** Because these 3 tests fail environmentally in the cloud sandbox
-  on the *unmodified* tree, a `module-tests` run in this lane can **never** produce a clean
-  result here, yet the merge gate (Step 8) requires "all checks green". The clean signal for
-  this lane therefore has to come from CI (GitHub Actions, non-root), not from the in-VM build.
-  This is a structural gap in the lane, recorded as a contract-learning candidate (Step 9,
-  "What have we learned").
+  on the *unmodified* tree, a `./pw verify` / `module-tests` run in this lane can **never**
+  produce a clean result here, yet the merge gate (Step 8) requires "all checks green". The
+  clean signal for this lane therefore has to come from CI (GitHub Actions, non-root), not from
+  the in-VM build. This is a structural gap in the lane, recorded as a contract-learning
+  candidate (Step 9, "What have we learned").
+
+### CI verification — which runs actually verified the Python
+
+The Python change (the new guards, and their `06da4a8` hardening) is **not** verified by the tip
+commit's `verify / conclusion` success. `python-verify.yml` opts into a footprint gate and the
+push-triggered run is additionally skipped when an open PR already covers the commit, so on the
+report-only pushes `verify / verify` did not execute the tests while `verify / conclusion` still
+reported green **by design** — that green verifies nothing about the Python. The evidence that the
+change's Python passes in a non-root environment is:
+
+- **Commits `09f4acd` (introduced the consumer fix + the 4 guards) and `ecfdfe6`** — their
+  pre-PR, push-triggered runs executed the **full `verify`** (no open PR yet to skip them) and
+  reported success. The non-root CI runner passes the 3 tests that fail as `root` in-VM. (No
+  `verify` *failure* event was received for either SHA during this run; the only
+  `verify / conclusion` failures observed were **cancellations** on `dbd7cc4` and `d598a09`,
+  caused by a superseding push, never a test failure. Operator-confirmed.)
+- **The merge_group run at merge** is the authoritative gate: per `python-verify.yml`'s own
+  comment, a `merge_group` run verifies the merged result with buildable source, on a non-root
+  runner — so the `06da4a8` hardening is verified there against the merged tree before it lands.
 
 ## Findings
 
@@ -271,7 +305,7 @@ equality). **No other `termination_cause` enumeration** exists beyond the three 
 | 2 Branch | done | `fix/documented-enum-diverges-from-argparse-choices`, prefix from the closed set, cut from freshly-fetched `origin/main`. Prefix conflict with the harness-assigned `claude/` branch resolved by operator permission. |
 | 3 Plan directory | done | `doc/plans/code-intelligence-substrate/documented-enum-diverges-from-argparse-choices/plan.md` exists (git mv, history preserved) and opens with the first-instruction block (verified present, no repair needed). |
 | 4 Implement | done | Commits carry the `Co-Authored-By: Claude` trailer and no "Generated with Claude Code" footer; deliverables addressed (D1 verified no-op, D2/D3 implemented, D4 recorded). |
-| 5 Build gate | done | Python changed → full `./pw verify plan-marshall`; quality-gate clean, 15005 tests pass incl. 4 new guards; 3 environment-dependent failures proven pre-existing on `origin/main` in-VM (control run). |
+| 5 Build gate | done | Python changed → full `./pw verify plan-marshall`: **15005 passed / 1 skipped / 3 failed**; the 3 are environment-dependent (pre-existing on `origin/main` in-VM, control-confirmed), outside this change's surface — the full in-VM suite cannot be clean here. Scoped guard run `-k "termination_cause or logging_gap or data_format"` = 8/8 green; ruff clean. Python verified in CI on `09f4acd`/`ecfdfe6` and, authoritatively, by the merge_group run at merge. |
 | 6 Verification sub-agent | done | Independent read-only agent; clean verdict, no findings; both its caveats closed by this run. Recorded in § Findings. |
 | 7 PR cycle | in progress | PR [#1100](https://github.com/cuioss/plan-marshall/pull/1100) open; subscribed to activity. Both comment surfaces read; bot findings dispositioned as they arrive. |
 | 8 Merge gate | pending | Auto-merge (squash) to be enabled only once CI is green **and** every comment is handled; `state: MERGED` confirmed by read-back before the ledger stamp. |
