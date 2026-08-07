@@ -199,6 +199,36 @@ A plan already in this shape is resumed, not re-established — skip to Step 4.
 
 Work the plan's deliverables in order. Commit in coherent units with conventional-commit subjects.
 
+**The rule for every commit: gate, then commit, then push.** Eager pushing must never carry
+unverified work to the remote.
+
+### Gate before committing
+
+When a commit touches any `*.py`, `.claude/skills/**`, or `marketplace/bundles/**` — the **same**
+predicate Step 5 uses to decide whether to build — run the quality gate first:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "quality-gate"
+```
+
+A lane run without the generated executor — the ordinary cloud case, since `.plan/` is git-ignored —
+runs the same gate directly:
+
+```bash
+./pw quality-gate
+```
+
+**Open the `log_file` it names and confirm `total_issues: 0`.** The wrapper exits 0 on failure, so
+the exit code proves nothing; only the log does. Commit when the log is clean, then push.
+
+Two points in the run need **no** gate, because neither changes source: Step 2's initial push of an
+empty branch, and Step 3's plan-directory move (a `git mv`, no content change).
+
+This is the cheap per-commit gate. It does not replace Step 5's `./pw verify` over the whole branch
+diff before the PR — that one stays.
+
+### Commit and push
+
 Every commit message ends with exactly this trailer, and **no** "Generated with Claude Code" footer:
 
 ```text
@@ -408,6 +438,7 @@ happened, confirming both that the step was performed and that its artifact exis
 | 2 Branch | Branch exists **on `origin`** — the harness-assigned `claude/*` branch, or one this run cut from `origin/main` with a prefix from the closed set; the report names which |
 | 3 Plan directory | `doc/plans/{epic}/{plan-name}/plan.md` exists, and opens with the first-instruction block |
 | 4 Implement | Commits carry the trailer; deliverables addressed |
+| 4 Per-commit gate | Every commit touching `*.py`, `.claude/skills/**`, or `marketplace/bundles/**` was preceded by a `total_issues: 0` quality-gate log |
 | 4 Pushed | No unpushed commit remains (`git status -sb` reports no `ahead`) |
 | 5 Build gate | Report states the git-derived Python-change verdict and the build outcome |
 | 6 Verification sub-agent | Findings and dispositions in the report |
