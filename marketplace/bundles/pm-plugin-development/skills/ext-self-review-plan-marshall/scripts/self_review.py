@@ -36,6 +36,8 @@ from _self_review_detectors import (
     _detect_contract_sources,
     _detect_count_prose,
     _detect_description_vs_body,
+    _detect_discard_without_report,
+    _detect_duplicate_claimable_keys,
     _detect_flag_guard_pairs,
     _detect_keep_markers,
     _detect_markdown_sections,
@@ -209,6 +211,8 @@ def _cmd_surface(args: argparse.Namespace) -> int:
     ordinal_references = _detect_ordinal_references(added, project_dir)
     scan_derived_keys = _detect_scan_derived_keys(added, project_dir)
     worked_example_pairs = _detect_worked_example_pairs(added, project_dir)
+    duplicate_claimable_keys = _detect_duplicate_claimable_keys(added, project_dir)
+    discard_without_report = _detect_discard_without_report(added, project_dir)
 
     detected: dict[str, list] = {
         'regexes': regexes,
@@ -231,6 +235,8 @@ def _cmd_surface(args: argparse.Namespace) -> int:
         'ordinal_references': ordinal_references,
         'scan_derived_keys': scan_derived_keys,
         'worked_example_pairs': worked_example_pairs,
+        'duplicate_claimable_keys': duplicate_claimable_keys,
+        'discard_without_report': discard_without_report,
     }
 
     output = {
