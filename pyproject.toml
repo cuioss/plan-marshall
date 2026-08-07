@@ -139,7 +139,7 @@ timeout = 300
 # ``config.addinivalue_line`` in ``test/conftest.py::pytest_configure`` so the
 # registry is data, not code, and so enabling ``--strict-markers`` later needs
 # no relocation. A whole-tree sweep of ``@pytest.mark.<name>`` confirms these
-# three are the complete set of custom markers in use.
+# four are the complete set of custom markers in use.
 markers = [
     # ``allow_pollution`` is a DELIBERATE ESCAPE HATCH, retained by design: it
     # is the single opt-out a test uses when it must exercise the real
@@ -161,6 +161,16 @@ markers = [
     # that lives OUTSIDE that directory and must therefore re-arm the real seam
     # explicitly.
     "allow_daemon_routing: test owns the marshalld build-routing seam as its subject and must run against the real _route_to_daemon (opts out of the autouse _neutralize_daemon_routing fixture; unnecessary under test/plan-marshall/build-server/, which is carved out by location).",
+    # ``allow_root_filesystem_pollution`` is the third escape hatch and the
+    # sibling of ``allow_pollution`` for the filesystem ROOT. The autouse
+    # ``_root_fs_pollution_guard`` fixture in ``test/conftest.py`` clears the
+    # ``/nonexistent`` absence-sentinel before every test and fails any test
+    # that materializes it — a leak only a ROOT (uid 0) host can produce, where
+    # the OS bypasses the DAC permission check that keeps ``/`` unwritable on a
+    # developer machine and on CI. This marker opts a test out for the case
+    # where a real-root write under ``/`` is genuinely its subject. No test
+    # needs it today; it exists so the guard has a documented escape hatch.
+    "allow_root_filesystem_pollution: test may legitimately materialize a path under the filesystem root (opts out of the autouse _root_fs_pollution_guard). Only meaningful on a root host.",
 ]
 
 [tool.coverage.run]
