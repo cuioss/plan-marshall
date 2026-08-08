@@ -80,12 +80,16 @@ Five of the seven members are mutually independent observations. The remaining t
   than an observation set keyed by bot. Its remedy is also the opposite of `absent`'s: no reviewer
   was asked, so escalating one names the wrong failure.
 
-Both refinements are strictly narrowing. `not_triggered` is evaluated as the **last** branch before
-the `absent` fall-through, and `participated_stale` only after the refusal branches, so neither can
+The two refinements narrow differently, and only one of them is strictly `absent`-narrowing.
+`not_triggered` is evaluated as the **last** branch before the `absent` fall-through, so it can never
 override a positive observation about a specific bot — only what would otherwise have been `absent`
-is refined. A **refusal outranks a stale publish**: a bot with both is classified refused, because
-the refusal is the newer and more actionable signal (it names a reason the bot will not review now,
-whereas a stale publish only says the last review predates this HEAD).
+is refined. `participated_stale` is narrower in origin but not in effect: it is evaluated after the
+refusal branches but **before** `in_progress`, so a bot observed in both sets is classified
+`participated_stale` rather than `in_progress`. That precedence is deliberate — a review that exists
+but predates this HEAD is a more actionable signal than an in-flight run of unknown outcome, and it
+carries the cheaper remedy (re-trigger rather than wait). A **refusal outranks a stale publish**: a
+bot with both is classified refused, because the refusal is newer still (it names a reason the bot
+will not review now, whereas a stale publish only says the last review predates this HEAD).
 
 ### Severity by classification
 
