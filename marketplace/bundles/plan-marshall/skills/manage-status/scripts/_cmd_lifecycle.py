@@ -651,13 +651,25 @@ def _restore_lesson_from_plan_dir(plan_id: str, plan_dir: Path) -> LessonCarryBa
         except FileExistsError:
             skipped.append({'lesson_id': lesson_id, 'reason': 'destination_exists'})
             continue
-        os.close(claim_fd)
 
+        # Write THROUGH the claim fd. Closing it and handing the PATH back to a
+        # copy helper would discard the guarantee the claim just bought: the
+        # reopen is a SECOND name lookup, and between the close and it a
+        # concurrent process can unlink the claimed entry and leave a symlink
+        # under that name — which a ``'wb'`` reopen follows, truncating whatever
+        # it points at. The claim would then protect only the collision test and
+        # never the write it exists to make safe. A descriptor names the claimed
+        # inode itself, so nothing swapped in under the name afterwards can be
+        # written to. ``os.fdopen`` takes ownership of the fd, and entering it
+        # FIRST means the ``with`` closes it exactly once even when opening the
+        # source raises.
+        #
         # Copy-then-unlink rather than move: the source stays in place until the
         # claim is filled, so no failure between the claim and the copy can
         # leave the lesson existing nowhere.
         try:
-            shutil.copyfile(match, destination)
+            with os.fdopen(claim_fd, 'wb') as claimed, match.open('rb') as carried:
+                shutil.copyfileobj(carried, claimed)
         except OSError:
             # The empty claim must not outlive a failed copy — left behind, it
             # turns every later carry-back of this id into a

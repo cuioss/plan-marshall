@@ -408,8 +408,12 @@ def cmd_restore_from_plan(args: argparse.Namespace) -> dict:
 
     Refuses to clobber a pre-existing destination file (fail-fast on the first
     collision; any lessons restored before the collision remain in
-    ``lessons-learned/`` and are reported in ``restored_lessons``). An aborted
-    move is the fourth outcome, ``action: restore_incomplete`` — NOT
+    ``lessons-learned/`` and are reported in ``restored_lessons``). It equally
+    refuses to move a carried entry that is not a regular file — a symlink or a
+    directory named ``lesson-*.md`` — as ``error: unsafe_source``, because the
+    move would otherwise relocate the link's target out of its own location, or
+    plant a directory where every later reader expects a markdown file. An
+    aborted move is the fourth outcome, ``action: restore_incomplete`` — NOT
     ``restored``: on a collision with the very first match nothing has landed,
     and reporting that as ``restored`` claims the one thing the value promises.
     ``restored`` is therefore reachable only from the final return, where every
@@ -495,13 +499,14 @@ def cmd_restore_from_plan(args: argparse.Namespace) -> dict:
     restored_lessons: list[dict] = []
 
     for match in matches:
-        source = match.resolve()
-        # Derive lesson id by stripping the ``lesson-`` prefix and ``.md`` suffix.
-        lesson_id = source.stem[len('lesson-'):]
+        # The id comes from the MATCHED name, never from a resolved one. A
+        # symlinked ``lesson-*.md`` resolves OUT of the plan directory, so an id
+        # read off the resolved path names the link's TARGET rather than the file
+        # the plan actually carries — and every guard below would then be
+        # inspecting the wrong name entirely.
+        lesson_id = match.stem[len('lesson-'):]
 
-        # Defensive: ensure the derived id has no traversal sequences and resolves
-        # back inside the plan dir.
-        if any(sep in lesson_id for sep in ('/', '\\', '..')) or source.parent != plan_dir:
+        if any(sep in lesson_id for sep in ('/', '\\', '..')):
             return _restore_payload(
                 args.plan_id,
                 'restore_incomplete',
@@ -509,6 +514,31 @@ def cmd_restore_from_plan(args: argparse.Namespace) -> dict:
                 restored=restored_lessons,
                 error='path_traversal',
                 message='Resolved path escapes intended parent directory',
+                lesson_id=lesson_id,
+            )
+
+        # Only a regular, non-symlinked file may be restored. A symlink would
+        # relocate whatever it points AT — an arbitrary file outside the plan
+        # directory, removed from its own location — and a DIRECTORY named
+        # ``lesson-*.md`` would be moved wholesale into the corpus, leaving a
+        # directory where a markdown file is expected so that every later
+        # ``read_text()`` of that id raises ``IsADirectoryError``. Testing the
+        # RESOLVED parent catches only the escape-OUT case: a link or directory
+        # whose resolved parent is still the plan directory passes it untouched,
+        # which is why the entry TYPE is what is tested here. Reporting the
+        # rejection is what keeps it from being dropped silently.
+        if match.is_symlink() or not match.is_file():
+            return _restore_payload(
+                args.plan_id,
+                'restore_incomplete',
+                plans_store,
+                restored=restored_lessons,
+                error='unsafe_source',
+                message=(
+                    f'Carried entry {match} is a symlink or not a regular file; '
+                    f'refusing to move it into the lessons corpus'
+                ),
+                lesson_id=lesson_id,
             )
 
         destination = (lessons_dir / f'{lesson_id}.md').resolve()
@@ -534,10 +564,10 @@ def cmd_restore_from_plan(args: argparse.Namespace) -> dict:
                 lesson_id=lesson_id,
             )
 
-        shutil.move(source, destination)
+        shutil.move(match, destination)
         restored_lessons.append({
             'lesson_id': lesson_id,
-            'source': str(source),
+            'source': str(match),
             'destination': str(destination),
         })
 

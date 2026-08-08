@@ -27,7 +27,9 @@ report the resolution of the store that actually failed, never the sibling that
 happened to resolve, because the documented consumer branches on that one
 field.
 
-Tests also cover the destination-exists guard that refuses to clobber, and
+Tests also cover the destination-exists guard that refuses to clobber, the
+``unsafe_source`` guard that refuses to move a carried entry which is not a
+regular file (and the matched-name id derivation that guard depends on), and
 path-traversal rejection on ``plan_id``.
 """
 
@@ -349,6 +351,108 @@ Body content here.
         assert result['action'] == 'restored'
         assert result['restored_count'] == 2
         assert 'error' not in result
+
+    def test_symlinked_entry_is_rejected_and_the_id_comes_from_the_matched_name(
+        self, tmp_path
+    ):
+        """A symlinked ``lesson-*.md`` is ``unsafe_source``, rejected before any move.
+
+        Deriving the id from a RESOLVED path reads it off the link's TARGET
+        rather than off the file the plan carries, and testing the resolved
+        PARENT rejects only an entry that escapes OUT of the plan directory — a
+        link resolving back inside it passes untouched. Together those let a
+        link relocate an unrelated plan-local file into the corpus under a name
+        derived from that file, while the id the plan actually carries never
+        appears anywhere. The entry's TYPE is what closes both halves.
+        """
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        plan_dir = tmp_path / 'plans' / 'symlink-plan'
+        plan_dir.mkdir(parents=True)
+
+        # Not itself glob-matched: it is reachable only THROUGH the link.
+        decoy = plan_dir / 'decoy-lesson-payload.md'
+        decoy.write_text('# Decoy\n\nA plan-local file the restore has no claim on.\n')
+        (plan_dir / 'lesson-2025-06-06-006.md').symlink_to(decoy)
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_restore_from_plan(Namespace(plan_id='symlink-plan'))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'unsafe_source'
+        assert result['action'] == 'restore_incomplete'
+        assert result['restored_count'] == 0
+        assert result['restored_lessons'] == []
+        # The id names the file the plan CARRIES, not the link's target.
+        assert result['lesson_id'] == '2025-06-06-006'
+
+        # Nothing moved: the decoy is still plan-local, and the corpus gained no
+        # entry under either the carried id or a target-derived one.
+        assert decoy.exists(), (
+            'The restore followed the link and moved an unrelated plan-local '
+            'file into the corpus — the entry type must be rejected first.'
+        )
+        assert '# Decoy' in decoy.read_text()
+        assert not (lessons_dir / 'lesson-payload.md').exists()
+        assert not (lessons_dir / '2025-06-06-006.md').exists()
+
+    def test_directory_named_like_a_lesson_is_rejected_before_the_move(self, tmp_path):
+        """A DIRECTORY named ``lesson-*.md`` is ``unsafe_source``, never a move.
+
+        The glob matches by NAME, so a directory reaches the move loop exactly
+        as a file does and ``shutil.move`` relocates it wholesale — leaving a
+        directory in the corpus where a markdown file is expected, so every
+        later ``read_text()`` of that id raises ``IsADirectoryError``. Pins the
+        non-regular branch of the guard, not just the symlink one.
+        """
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        plan_dir = tmp_path / 'plans' / 'dir-entry-plan'
+        plan_dir.mkdir(parents=True)
+        carried = plan_dir / 'lesson-2025-07-07-007.md'
+        carried.mkdir()
+        (carried / 'inner.txt').write_text('not a lesson')
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_restore_from_plan(Namespace(plan_id='dir-entry-plan'))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'unsafe_source'
+        assert result['action'] == 'restore_incomplete'
+        assert result['restored_count'] == 0
+        assert result['lesson_id'] == '2025-07-07-007'
+
+        # The corpus gained no entry under that id — least of all a directory.
+        assert not (lessons_dir / '2025-07-07-007.md').exists()
+        assert carried.is_dir()
+
+    def test_symlink_out_of_the_plan_dir_leaves_its_target_where_it_is(self, tmp_path):
+        """An escaping link is rejected on its TYPE, and its target is untouched.
+
+        ``shutil.move`` applied to a link's resolved path REMOVES the external
+        file from its own location. Rejecting the entry type makes that
+        unreachable, and the verdict is ``unsafe_source`` rather than a traversal
+        one because the entry never had to escape in order to be unsafe.
+        """
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        outside = tmp_path / 'outside-the-plan.md'
+        outside.write_text('# External\n\nNot the plan to move.\n')
+
+        plan_dir = tmp_path / 'plans' / 'escaping-link-plan'
+        plan_dir.mkdir(parents=True)
+        (plan_dir / 'lesson-2025-08-08-008.md').symlink_to(outside)
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_restore_from_plan(Namespace(plan_id='escaping-link-plan'))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'unsafe_source'
+        assert result['action'] == 'restore_incomplete'
+        assert result['restored_count'] == 0
+        assert outside.exists()
+        assert '# External' in outside.read_text()
+        assert not (lessons_dir / '2025-08-08-008.md').exists()
 
     @pytest.mark.parametrize('bad_plan', ('../escape', 'sub/dir', 'back\\slash'))
     def test_restore_from_plan_rejects_path_traversal(self, tmp_path, bad_plan):
