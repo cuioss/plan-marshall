@@ -154,7 +154,7 @@ A job moves through the journal's status field. `queued` and `running` are non-t
 
 The verifier is the daemon's trust boundary and the reason a submit can be accepted from an untrusted session without the daemon resolving anything on its behalf.
 
-* **S1 — positional argv-template check.** The command is non-empty; `command[0]` (the interpreter) matches the registered baseline by basename; `command[1]` is exactly `{exec_path}/.plan/execute-script.py` inside the submitted tree; `command[2]` (the executor notation) is on the project's allowlist; the remaining args are plain, NUL-free strings.
+* **S1 — positional argv-template check.** The command is non-empty; `command[0]` (the interpreter) is accepted — against an explicit interpreter pin when the caller supplies one, and otherwise against the canonical `python3` / `python` basenames, since no registration field carries an interpreter and the check is therefore daemon-wide argv shape rather than per-project registered state; `command[1]` is exactly `{exec_path}/.plan/execute-script.py` inside the submitted tree; `command[2]` (the executor notation) is on the project's allowlist; the remaining args are plain, NUL-free strings.
 * **S2 — exec-path canonicalisation.** The exec path canonicalises (symlinks resolved) to the registered canonical root, OR to a live linked worktree whose `git-common-dir` resolves to that root and which sits under a registered container. Anything escaping the registered tree (`..` traversal, a symlink out, an unregistered worktree) is refused.
 
 Any single deviation returns `refused(reason=…)` and is logged; the daemon never resolves a path, a notation, or a wrapper for the client.

@@ -11,9 +11,14 @@ daemon logs it.
 **S1 — positional argv-template check**
 
 1. The command is non-empty.
-2. ``command[0]`` (the interpreter) matches the daemon's registered baseline
-   interpreter (by basename — ``python3`` / ``python`` / the exact baseline
-   path), never an arbitrary client-supplied binary.
+2. ``command[0]`` (the interpreter) is an accepted Python interpreter, never an
+   arbitrary client-supplied binary. There is NO registered baseline: a project
+   registration carries no interpreter field. When a caller supplies an explicit
+   ``baseline_interpreter`` pin, ``command[0]`` must match it (exact path or
+   basename); when no pin is supplied — what the shipped daemon does —
+   ``command[0]`` must carry one of the canonical ``python3`` / ``python``
+   basenames. Either way this is a daemon-wide argv-shape check, never
+   per-project state.
 3. ``command[1]`` is exactly ``{exec_path}/.plan/execute-script.py`` — the
    executor inside the submitted tree, not an arbitrary script.
 4. ``command[2]`` (the executor notation) is in the project's
@@ -47,7 +52,8 @@ production. This module is stdlib-only and has no LLM in the loop.
 Usage:
     from _marshalld_verifier import verify_submit, REFUSE_NOT_REGISTERED
 
-    outcome = verify_submit(job_spec, registry, baseline_interpreter='python3')
+    # No interpreter pin — the canonical python3 / python basenames apply.
+    outcome = verify_submit(job_spec, registry)
     if not outcome.accepted:
         respond_refused(outcome.reason)
 """
@@ -108,7 +114,13 @@ class VerifyOutcome:
 
 
 def _interpreter_ok(interpreter: str, baseline_interpreter: str | None) -> bool:
-    """Return whether ``interpreter`` matches the registered baseline."""
+    """Return whether ``interpreter`` is an accepted Python interpreter.
+
+    There is no registered baseline to match against. With an explicit
+    ``baseline_interpreter`` pin, ``interpreter`` must equal it outright or share
+    its basename. With no pin — what the shipped daemon passes — the canonical
+    ``python3`` / ``python`` basenames are accepted.
+    """
     name = Path(interpreter).name
     if baseline_interpreter:
         return interpreter == baseline_interpreter or name == Path(baseline_interpreter).name
@@ -217,8 +229,10 @@ def verify_submit(
             ``command`` / ``exec_path`` / ``project_path`` attributes).
         registry: The registry structure from
             :func:`_build_server_registry.read_registry`.
-        baseline_interpreter: The daemon's registered baseline interpreter; when
-            ``None`` the default ``python3`` / ``python`` basenames are accepted.
+        baseline_interpreter: An optional explicit interpreter pin supplied by
+            the caller — NOT registered state, since no registration field holds
+            one. When ``None``, which is what the shipped daemon passes, the
+            canonical ``python3`` / ``python`` basenames are accepted.
         common_dir_resolver: Callable resolving a worktree path to its
             git-common-dir main-checkout root (or ``None``); required to accept a
             submit from a linked worktree.
@@ -240,7 +254,8 @@ def verify_submit(
     if len(command) < 3:
         return VerifyOutcome.refuse(REFUSE_EMPTY_COMMAND)
 
-    # S1.2 — interpreter matches the registered baseline.
+    # S1.2 — interpreter is accepted: the caller's explicit pin when one was
+    # supplied, else the canonical python3 / python basenames.
     if not _interpreter_ok(command[0], baseline_interpreter):
         return VerifyOutcome.refuse(REFUSE_WRONG_INTERPRETER)
 

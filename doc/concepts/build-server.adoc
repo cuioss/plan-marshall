@@ -55,7 +55,7 @@ The one machine-global `build-queue.json` is the single slot substrate on *every
 
 == Verify, never resolve
 
-The daemon is a trust boundary. It VERIFIES every submit positionally against the submitting project's registration — the interpreter matches the registered baseline, the executor path is `{tree}/.plan/execute-script.py` inside the verified tree, the notation is on the project's allowlist, the exec path canonicalises into the registered root or a live linked worktree — and never resolves anything on the client's behalf. The build child runs with a clean server-side baseline environment (no client env, no provider secrets), and the state directory and socket are owner-only. The security shape is summarised in xref:security.adoc[Security] and specified in the control-skill contract.
+The daemon is a trust boundary. It VERIFIES every submit positionally against the submitting project's registration — the executor path is `{tree}/.plan/execute-script.py` inside the verified tree, the notation is on the project's allowlist, the exec path canonicalises into the registered root or a live linked worktree — and never resolves anything on the client's behalf. `command[0]` is verified too, but it is not registration-derived: no registration field carries an interpreter, so the check is daemon-wide argv shape — `command[0]` must match an explicit interpreter pin when the caller supplies one, and otherwise must carry one of the canonical `python3` / `python` basenames. The build child runs with a clean server-side baseline environment (no client env, no provider secrets), and the state directory and socket are owner-only. The security shape is summarised in xref:security.adoc[Security] and specified in the control-skill contract.
 
 == Platform
 

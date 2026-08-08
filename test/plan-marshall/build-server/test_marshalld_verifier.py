@@ -24,6 +24,19 @@ if str(SCRIPTS_DIR) not in sys.path:
 
 import _build_server_protocol as proto  # noqa: E402
 import _marshalld_verifier as verifier  # noqa: E402
+import marshalld  # noqa: E402
+from _marshalld_audit import InteractionAudit  # noqa: E402
+from _marshalld_journal import Journal  # noqa: E402
+from _marshalld_scheduler import Scheduler  # noqa: E402
+
+# A Homebrew/framework-shaped interpreter path — deliberately NOT basenamed
+# `python3`/`python`. It is what a regression to `baseline_interpreter or
+# sys.executable` would silently pin the verifier to, so monkeypatching
+# marshalld.sys.executable to it is what makes the construction-level assertion
+# below non-vacuous.
+_FRAMEWORK_INTERPRETER = (
+    '/Library/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python'
+)
 
 
 def _registry(root: str, *, containers: list[str] | None = None, allowlist: list[str] | None = None) -> dict:
@@ -222,3 +235,32 @@ def test_default_interpreter_names_accepted(tmp_path):
     outcome = verifier.verify_submit(_spec(root), registry)
 
     assert outcome.accepted
+
+
+def test_daemon_construction_leaves_baseline_interpreter_unset(tmp_path, monkeypatch):
+    """A Daemon built the way build_daemon() builds it carries NO baseline pin.
+
+    ``build_daemon()`` constructs ``Daemon(scheduler=…, journal=…,
+    interaction_audit=…)`` and passes NO ``baseline_interpreter``. This pins that
+    the absent argument survives construction as ``None`` — the signal the
+    verifier reads to apply its canonical ``python3`` / ``python`` basename set —
+    instead of being substituted with whichever interpreter happened to launch
+    the daemon.
+
+    Non-vacuity: ``marshalld.sys.executable`` is monkeypatched to a
+    framework-shaped path first, so a regression to ``baseline_interpreter or
+    sys.executable`` would leave that path here rather than ``None`` and fail
+    this assertion. The verifier-level companion — that an unset baseline
+    accepts the canonical basenames — is
+    :func:`test_default_interpreter_names_accepted` above.
+    """
+    monkeypatch.setenv('PLAN_MARSHALL_HOME', str(tmp_path))
+    monkeypatch.setattr(marshalld.sys, 'executable', _FRAMEWORK_INTERPRETER)
+
+    daemon = marshalld.Daemon(
+        scheduler=Scheduler(max_slots=1),
+        journal=Journal(),
+        interaction_audit=InteractionAudit(),
+    )
+
+    assert daemon._baseline_interpreter is None
