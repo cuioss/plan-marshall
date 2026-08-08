@@ -21,12 +21,12 @@ requires-python = ">=3.12"
 # "Which Interpreter Runs the Build".
 [dependency-groups]
 dev = [
-    "pytest>=9.0",
-    "pytest-cov>=4.0",
+    "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
     "pytest-xdist>=3.8",
-    "pytest-timeout>=2.3",
-    "ruff>=0.4",
-    "mypy>=1.10",
+    "pytest-timeout>=2.4.0",
+    "ruff>=0.16.1",
+    "mypy>=2.3.0",
 ]
 
 [tool.uv]

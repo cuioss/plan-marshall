@@ -190,6 +190,13 @@ it describes, leaving no record that the run happened at all.
 So the branch is pushed the moment it exists — see the invariant above — and pushed again after every
 commit (§ Step 4). Step 7 opens the PR on an already-published branch; it is not the first push.
 
+This per-commit push cadence is in direct tension with review integrity: each push to an open PR can
+supersede the in-flight `verify` run and change the head mid-review, aborting a bot's in-progress
+review and consuming its rate window. The tension is **resolved without weakening durability** — the
+reconciling rule is stated at § Step 4 ("Commit and push") and its review-side handling at § Step 7.
+Read neither as licence to leave a finished commit unpushed: durability is absolute, and the
+resolution lives entirely on the commit side.
+
 **A path outside the git working tree is not storage.** The scratchpad directory, `$TMPDIR`, `/tmp`,
 the home directory: every one of them is on the same reclaimed filesystem as the working tree, and
 none of them is any more durable than an uncommitted file. Writing something aside preserves nothing.
@@ -293,6 +300,31 @@ git push
 
 An unpushed commit is lost work the moment the VM is reclaimed (§ Step 2, "The remote is the only
 durable storage").
+
+### The push cadence versus review integrity — resolved on the commit side
+
+The per-commit push above collides with a second rule the run also owes: **do not needlessly
+supersede an in-flight review or CI run.** Each push to an open PR (a) supersedes the running `verify`
+via GitHub Actions concurrency, emitting a spurious `verify / conclusion` cancellation, and (b)
+changes the head mid-review, which aborts a bot's in-progress review *and consumes its rate window*.
+Both are real costs — but they are the **lesser** cost. A reclaimed VM loses unpushed work
+irrecoverably; an aborted review is re-triggerable. **Durability therefore outranks review
+cleanliness, and no finished commit is ever held back to spare a reviewer or a running check.**
+
+Because durability MUST NOT be weakened, the conflict is resolved entirely by *how you commit*, never
+by delaying a push:
+
+- **Batch at the commit boundary, not the push boundary.** Commit in coherent units (above), not in a
+  flurry of tiny commits. Ten trivial commits mean ten pushes and ten chances to abort a review; the
+  same work in one coherent commit means one push — at **zero** durability cost, because nothing is
+  left uncommitted. Fewer commits ⇒ fewer pushes ⇒ fewer disruptions. This is the only lever, and it
+  never trades work-loss risk for review cleanliness.
+- **The one forbidden move:** leaving a *completed* unit uncommitted-and-unpushed to protect a review.
+  That re-introduces the exact work-loss failure durability exists to prevent, and this rule does not
+  permit it. "Batch the commits" is not "delay the push."
+
+The review-side half of this rule — how to read a superseded CI run, and what to do about a review a
+push already aborted — lives at § Step 7, so the run meets it while working the review cycle.
 
 ## Step 5 — Build gate (conditional)
 
@@ -444,9 +476,63 @@ comments handled" is a false clean signal — the exact failure this lane is bui
 Both surfaces MUST be read before the merge gate. With the GitHub MCP server, use its equivalent
 pull-request review-comment call for the second surface — not only the conversation listing.
 
+### Record per-reviewer participation, from the bodies
+
+Reading the comments answers whether each comment was *handled*. It does not answer whether each
+expected reviewer *participated* — and those are different questions. A PR that received no review at
+all trivially satisfies "every comment handled" against an empty comment set, so the merge gate can
+read green on a diff no reviewer looked at. Closing that gap starts here: **establish the expected
+reviewer population, then record a verdict per reviewer, from the bodies.**
+
+**The population is derived from configuration, never hand-maintained here.** This repository registers
+its automated reviewers in a machine-readable registry — one data block per reviewer at
+`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md`, each declaring an
+`author_login` (parsed generically by that skill's `scripts/bot_registry.py`; the same set is named in
+prose by `.github/workflows/pr-agent.yml`). Read the `author_login` of every such registry doc — that
+set **is** the expected reviewer population for this PR. Do **not** transcribe a reviewer list into
+this contract or into the report: a hand-maintained list is the defect this step exists to prevent,
+and it goes stale the instant a reviewer is added to or removed from the registry.
+
+**Record a verdict per reviewer, derived from the stored comment bodies** — never from a check state,
+a review summary, an absence of complaint, or this contract's prose. For each `author_login` in the
+population, read that author's actual comment/review bodies on the PR (both surfaces above) and assign
+exactly one verdict:
+
+| Verdict | Body evidence |
+|---|---|
+| `reviewed` | The author published a review artifact **against the diff** — an inline thread comment, or a review/issue-comment body carrying findings (or an explicit "nothing to report" over the diff). |
+| `rate-limited` | The author published **only a refusal/quota notice** in place of a review (e.g. "Review limit reached", "reached your weekly rate limit of … diff characters"). It engaged but did not review this diff. |
+| `silent` | The author published **nothing at all** — no review, no notice. State the reason when one is known (a mid-review push aborted it; the PR carries `skip-bot-review`; the reviewer is disabled); an unexplained silence is recorded as such. |
+
+A check-run state is never a verdict: a green check can conclude having published nothing, and a
+reviewer that posts no check at all would read as absent on every run. The verdict comes from the
+bodies or it is not evidence.
+
+Record the population, each reviewer's verdict, and the body evidence for it in the report's
+**Reviewer participation** table (§ Report), and state the coverage as N-of-M. A reviewer that never
+spoke is then *visibly* `silent` in the record, not merely unmentioned.
+
+### A push during the review cycle: superseded runs and aborted reviews
+
+Pushing fixes as further commits (above) is mandatory — durability outranks review cleanliness, and
+the push-cadence rule at § Step 4 forbids holding a finished commit back. But a mid-cycle push has two
+review-side effects, and each has a defined handling so neither is misread:
+
+- **A superseded CI run is not a failure.** A push that lands while `verify` is running cancels the
+  in-flight run via Actions concurrency, surfacing a `verify / conclusion` *cancellation*. That is a
+  superseded run, not a real failure — do not treat it as a red gate. Step 8 reads the *actual* check
+  state of the latest run; wait for the re-triggered run to conclude and judge that one.
+- **A push that aborted a review consumed that reviewer's window — re-trigger it, never bank the
+  abort.** If a push changed the head while a bot was mid-review, that bot did **not** review the new
+  head, and its rate window may now be spent. Record its verdict as `rate-limited` or `silent` per the
+  bodies (above), disclose the shortfall (§ Step 8), and — when its window permits — re-request its
+  review rather than reading the aborted attempt as coverage. An aborted review is never counted as
+  `reviewed`.
+
 ## Step 8 — Merge gate
 
-**Merge only when both conditions hold:**
+**The merge is gated on conditions 1–3 below. Condition 4 is a disclosure the run performs before
+arming auto-merge — it is not a gate on the merge. Merge only when conditions 1–3 hold:**
 
 1. **All checks are green** — verify against actual check state, not against an assumption that time
    has passed:
@@ -465,6 +551,24 @@ pull-request review-comment call for the second surface — not only the convers
    finalized after arming can never reach this PR, forcing a second follow-up PR just to complete the
    record. So Step 9's report sections are written here; only the post-merge landing confirmation
    (below) happens after.
+
+4. **A review-coverage shortfall is disclosed to the operator — this is a disclosure step, not a
+   merge condition.** From the per-reviewer participation record (§ Step 7), read the verdict of every
+   expected reviewer. When **any** expected reviewer's verdict is not `reviewed`, state the shortfall
+   and its reason to the operator, explicitly and in words, *before* arming auto-merge — for example:
+   "Review coverage: 1 of 3 — `cuioss-review-bot` reviewed; `coderabbitai` rate-limited (window
+   reopens); `sourcery-ai` rate-limited (weekly quota)." **A run that merges on 1-of-3 must _say_
+   1-of-3.**
+
+   ⛔ **This is a disclosure requirement, and it is NOT a block — the two must never be collapsed.**
+   The gate does **not** hold the merge open, does **not** wait for the shortfall to clear, and does
+   **not** fail because a reviewer was rate-limited or silent. Rate limits and quotas are routine,
+   outside our control, and blocking on them would strand every landing behind a bot's quota — which
+   is explicitly the wrong direction. **The defect this closes is the _silence_, not the shortfall:** a
+   run that proceeds on partial coverage is fine; a run that proceeds on partial coverage *without
+   saying so* is the failure. The shortfall therefore changes only what the run **says**, never
+   whether it **merges**. Once the shortfall is stated, arm auto-merge exactly as full coverage would
+   — conditions 1–3 are the only gates on the merge itself.
 
 Then merge (the repository uses a merge queue, so enable auto-merge and let the queue land it):
 
@@ -594,6 +698,31 @@ The `git diff --name-only origin/main...HEAD -- '*.py'` verdict, and the build r
 Every finding from the verification sub-agent, from CI, and from PR review — each with source,
 description, and disposition (fixed / rejected-with-reason / deferred). An empty section states
 what was checked to reach it.
+
+## Reviewer participation
+The expected reviewer population **derived from configuration** — the `author_login` of each
+`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` registry doc,
+cross-named by `.github/workflows/pr-agent.yml` — never a list transcribed here. One row per
+reviewer, each verdict derived from the stored comment bodies (§ Step 7), never from a check state or
+a summary:
+
+| Reviewer (`author_login`) | Verdict (`reviewed` / `rate-limited` / `silent`) | Body evidence / reason |
+|---|---|---|
+| … | … | … |
+
+State the coverage as N-of-M, and whether the § Step 8 shortfall disclosure fired and what it said.
+
+## Cost
+What the run cost, each figure carrying its **population** — a bare number that merely looks
+comparable is worse than none:
+
+- **Tokens:** … (source named) — or "not available to the agent in this session", stated plainly.
+- **Wall-clock:** … (source named — e.g. run start/end timestamps).
+- **Population:** what these figures count (e.g. "this single Claude Code cloud session's usage as the
+  harness counts it"). ⛔ This is **NOT comparable** to a plan-marshall `metrics.toon` total: a
+  `metrics.toon` total counts the orchestrator-plus-agent dispatch tree under plan-marshall's own
+  per-task billing boundary, which a single interactive cloud session does not share. If the figures
+  cannot be made comparable, **say so here** rather than presenting a number that implies parity.
 
 ## Contract check (Step 9)
 Per-step verdict, and any step reported as not done. Which GitHub access path was used, and which
