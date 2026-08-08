@@ -1,0 +1,529 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
+"""Constants and file-operation helpers for the execution manifest.
+
+Extracted verbatim from ``manage-execution-manifest.py``: the manifest
+constants (change-type / scope / track / record vocabularies, default candidate
+step sets, canonical-verify role table) and the TOON read/write boundary
+(:func:`read_manifest` / :func:`write_manifest` plus their step-params
+normalization). Pure, log-free, and patched by no test; the hyphenated entry
+re-exports every name it and the test suite reference.
+
+This module also owns the three **owner-less recognition** rules the six-bucket
+classifier applies to content no ``BuildExtensionBase`` claims: documentation by
+suffix (:data:`_DOC_SUFFIXES` / :func:`_is_documentation_path`),
+infrastructure config by family (:data:`_INFRA_CONFIG_BASENAME_GLOBS` /
+:data:`_INFRA_CONFIG_DIR_TREES` / :data:`_INFRA_CONFIG_PARENT_DIRS` /
+:func:`_is_infrastructure_config_path`), and templates by suffix
+(:data:`_TEMPLATE_SUFFIX` / :func:`_is_template_path` /
+:func:`_strip_template_suffix`).
+
+The infrastructure-config table names an owner-less **family**, not a suffix.
+Membership is deliberately NOT "any ``.yml``": it is anchored either on a
+location (a CI/automation definition tree, a container service-config tree) or
+on a basename (a container-orchestration or container lint/scan descriptor), so
+an arbitrary YAML file elsewhere in a tree is not swept in. The predicate is
+consumed **only as a fallback over the paths no build extension claimed** — it
+never runs ahead of the build extensions, so it can never take a path a build
+system legitimately owns (``src/main/resources/application.yml`` stays
+``build-maven``'s production claim). See ADR-004 § "Amendment: absence from
+Axis-B does not imply absence from file-role classification" and
+``standards/decision-rules.md`` § "Owner-less recognition (no build owner)".
+"""
+
+from fnmatch import fnmatch
+from pathlib import Path, PurePosixPath
+from typing import Any
+
+from _step_key_canonical import (
+    PROMOTED_BUILTIN_STEP_IDS,  # noqa: F401  — re-exported for existing `from _manifest_core import PROMOTED_BUILTIN_STEP_IDS` consumers
+    canonicalize_step_key,
+)
+from file_ops import atomic_write_file, get_plan_dir
+from toon_parser import parse_toon, serialize_toon
+
+# =============================================================================
+# Constants
+# =============================================================================
+
+MANIFEST_FILENAME = 'execution.toon'
+MANIFEST_VERSION = 1
+
+# Default number of phase-5 execution envelopes the orchestrator dispatches when
+# the composer is not given an explicit ``--envelope-count``. ``1`` reproduces
+# the pre-existing single-envelope behaviour: one budget-bounded
+# ``execution-context`` envelope greedily drives the task loop until the queue
+# is empty or a TASK-boundary re-dispatch point fires (token-budget sentinel,
+# ``triage_required``, or ``baseline_drift``). The field is the orchestrator's
+# read-side signal for how many envelopes to plan for; a manifest composed
+# before this field existed simply has no ``phase_5.envelope_count`` key, and
+# every reader treats an absent value as this same default.
+DEFAULT_ENVELOPE_COUNT = 1
+
+VALID_CHANGE_TYPES = (
+    'analysis',
+    'feature',
+    'enhancement',
+    'bug_fix',
+    'tech_debt',
+    'verification',
+)
+
+VALID_SCOPE_ESTIMATES = (
+    'none',
+    'surgical',
+    'single_module',
+    'multi_module',
+    'broad',
+)
+
+VALID_TRACKS = ('simple', 'complex')
+
+# Documentation file suffixes recognized generically by the change-footprint
+# classifier. Documentation has NO build-system owner — it is not a buildable
+# unit and not a build_map route role — so doc recognition is an
+# extension-agnostic file-suffix fact rather than a build-extension classify
+# claim. Any changed path ending in one of these suffixes is tagged with the
+# ``documentation`` footprint role independently of (and BEFORE) the
+# build-extension classify_paths() iteration. The build extensions still supply
+# production / test / config recognition; this generic rule is the sole source of
+# documentation recognition. The vocabulary mirrors the suffixes the retired
+# pm-documents Axis-B classifier used (``.md`` / ``.adoc`` / ``.asciidoc``).
+_DOC_SUFFIXES: tuple[str, ...] = ('.md', '.adoc', '.asciidoc')
+
+
+def _is_documentation_path(path: str) -> bool:
+    """Return True when ``path`` is a documentation file by suffix.
+
+    The generic, extension-agnostic documentation predicate consumed by
+    :func:`_classify_paths_via_extensions`. Documentation has no build-system
+    owner, so doc recognition is a pure file-suffix fact — a path is
+    documentation iff it ends in one of :data:`_DOC_SUFFIXES`.
+    """
+    return path.endswith(_DOC_SUFFIXES)
+
+
+# Infrastructure-config family recognized generically by the change-footprint
+# classifier. Like documentation, infrastructure config has NO build-system owner
+# — no ``BuildExtensionBase`` declares a route for it, and none is invented (see
+# ADR-004 § "Amendment: absence from Axis-B does not imply absence from file-role
+# classification"). Unlike documentation, membership is NOT a suffix fact: a bare
+# ``*.yml`` rule would sweep in build-owned resources, so the family is anchored
+# on location or on basename.
+#
+# Directory trees whose contents are CI/automation definitions or container
+# service config. Matched as a consecutive run of path segments anywhere in the
+# path's directory part, so both a repo-root ``docker/`` tree and a nested
+# ``src/main/docker/`` tree are members.
+_INFRA_CONFIG_DIR_TREES: tuple[tuple[str, ...], ...] = (
+    ('.github', 'workflows'),
+    ('.circleci',),
+    ('docker',),
+)
+
+# Directory trees that hold automation descriptors alongside non-infra content:
+# only a YAML file whose IMMEDIATE parent is one of these trees is a member
+# (``.github/dependabot.yml`` is infra config; ``.github/ISSUE_TEMPLATE/bug.md``
+# is documentation and never reaches this predicate).
+_INFRA_CONFIG_PARENT_DIRS: tuple[tuple[str, ...], ...] = (('.github',),)
+
+# The YAML suffixes qualifying a file under an :data:`_INFRA_CONFIG_PARENT_DIRS`
+# tree. Deliberately narrow — this pair is the only place a suffix participates.
+_INFRA_CONFIG_PARENT_DIR_SUFFIXES: tuple[str, ...] = ('.yml', '.yaml')
+
+# Container-orchestration manifests and container lint/scan descriptors,
+# recognized by basename regardless of where in the tree they sit.
+_INFRA_CONFIG_BASENAME_GLOBS: tuple[str, ...] = (
+    'docker-compose*.yml',
+    'docker-compose*.yaml',
+    'compose*.yml',
+    'compose*.yaml',
+    '.gitlab-ci.yml',
+    '.gitlab-ci.yaml',
+    '.hadolint.yml',
+    '.hadolint.yaml',
+    '.trivyignore',
+    '.dockerignore',
+)
+
+
+def _has_segment_run(segments: tuple[str, ...], run: tuple[str, ...]) -> bool:
+    """Return True when ``run`` appears as a consecutive sub-sequence of ``segments``."""
+    if not run or len(run) > len(segments):
+        return False
+    return any(
+        segments[index : index + len(run)] == run for index in range(len(segments) - len(run) + 1)
+    )
+
+
+def _is_infrastructure_config_path(path: str) -> bool:
+    """Return True when ``path`` belongs to the owner-less infrastructure-config family.
+
+    The generic, extension-agnostic infrastructure-config predicate consumed by
+    :func:`_classify_paths_via_extensions` as a **fallback over the paths no
+    build extension claimed**. Membership is location-anchored
+    (:data:`_INFRA_CONFIG_DIR_TREES`, :data:`_INFRA_CONFIG_PARENT_DIRS`) or
+    basename-anchored (:data:`_INFRA_CONFIG_BASENAME_GLOBS`) — never a bare
+    suffix rule, so a YAML file a build system owns is not a member.
+
+    Because the predicate runs only over the residual unclaimed set, it cannot
+    take a path a build extension claimed even when the path would match here.
+    """
+    segments = PurePosixPath(path).parts
+    if not segments:
+        return False
+    basename = segments[-1]
+    directories = segments[:-1]
+
+    if any(fnmatch(basename, glob) for glob in _INFRA_CONFIG_BASENAME_GLOBS):
+        return True
+    if any(_has_segment_run(directories, tree) for tree in _INFRA_CONFIG_DIR_TREES):
+        return True
+    if basename.endswith(_INFRA_CONFIG_PARENT_DIR_SUFFIXES):
+        return any(
+            directories[-len(parent) :] == parent
+            for parent in _INFRA_CONFIG_PARENT_DIRS
+            if len(directories) >= len(parent)
+        )
+    return False
+
+
+# Template recognition — the third owner-less rule. A ``.template`` file is a
+# RENDER SOURCE: it has no build-system owner of its own (no BuildExtensionBase
+# declares a route for it, and none is invented), and its role follows from what
+# it renders INTO rather than from where it sits. The suffix is the whole
+# membership test — unlike the infrastructure-config family there is no location
+# or basename anchoring to do, because the suffix is already an unambiguous
+# marker of render-source intent in any tree.
+_TEMPLATE_SUFFIX = '.template'
+
+
+def _is_template_path(path: str) -> bool:
+    """Return True when ``path``'s basename ends in :data:`_TEMPLATE_SUFFIX`.
+
+    The generic, extension-agnostic template predicate consumed by
+    :func:`_classify_paths_via_extensions` as a fallback over the paths no build
+    extension claimed and neither earlier owner-less rule recognized. The test is
+    on the BASENAME, so a directory component that happens to end in the suffix
+    never makes its contents templates.
+    """
+    return PurePosixPath(path).name.endswith(_TEMPLATE_SUFFIX)
+
+
+def _strip_template_suffix(path: str) -> str:
+    """Return the render-target path for a template path.
+
+    Removes the trailing :data:`_TEMPLATE_SUFFIX` EXACTLY ONCE — a
+    ``foo.template.template`` source renders to ``foo.template``, which is itself
+    still a template, and collapsing both suffixes in one pass would classify it
+    against the wrong target. A path without the suffix is returned unchanged.
+
+    The result is a CLASSIFICATION KEY only. It is never reported as an
+    unclaimed path and never enters the change footprint; the original template
+    path is what carries the resolved role.
+    """
+    if path.endswith(_TEMPLATE_SUFFIX):
+        return path[: -len(_TEMPLATE_SUFFIX)]
+    return path
+
+
+# record-step contract. The execution log records per-step execution outcome
+# plus token attribution into a new ``execution_log[]`` section of the
+# manifest, written by the ``record-step`` subcommand. Phases are the bare
+# phase keys the orchestrator emits at step-dispatch time; outcomes name
+# whether the step ran, was skipped, or errored.
+VALID_RECORD_PHASES = ('5-execute', '6-finalize')
+VALID_RECORD_OUTCOMES = ('executed', 'skipped', 'error')
+EXECUTION_LOG_KEY = 'execution_log'
+
+# Default candidate step sets when callers don't pass --phase-5-steps / --phase-6-steps.
+# These are bare step IDs (post boundary-normalization shape). The phase-5
+# defaults are parameterized canonical-verify IDs in their bare
+# ``verify:{canonical}`` form (the ``default:`` prefix is stripped at the compose
+# boundary); their matrix ``role:`` is resolved purely in-code by ``_role_of``
+# below (via the ``_CANONICAL_TO_ROLE`` table, keyed on the trailing canonical
+# segment) for structural role-based intersection in the 7-row decision matrix.
+# There are no longer any legacy fixed-name IDs and no per-step
+# ``standards/{name}.md`` role-files to read.
+#
+# The phase-6 tuple is written in ASCENDING ``order`` sequence, mirroring each
+# step doc's frontmatter ``order`` fact — the authoritative source the composer
+# and the finalize dispatcher both read. This tuple is only a candidate SET, but
+# a sequence that disagrees with the frontmatter reads as a second, competing
+# statement of the pipeline order, so it is kept in lock-step: when a step's
+# ``order`` moves, this sequence moves with it. Resolve the live values with
+# ``manage-config list-finalize-steps`` rather than sorting from memory.
+# That lock-step claim is PINNED, not merely asserted in prose:
+# ``test/plan-marshall/phase-6-finalize/test_finalize_orchestration_routing.py``
+# § ``TestDefaultPhase6StepsMatchesDiscovery`` checks every entry against the
+# discovered step docs and fails when this sequence stops ascending by their
+# frontmatter ``order``. Its sibling class pins the other restatement of the same
+# source, the phase-6-finalize SKILL.md "Built-in Step Dispatch Table".
+# ``lessons-capture`` (991) and ``record-metrics`` (998) sit after the merge gate
+# ``branch-cleanup`` (70) because they declare ``post_run_review: true``: they
+# report on the finished run and read evidence only the gate produces.
+# ``archive-plan`` (1000) is ordered last for an unrelated reason and declares no
+# ``post_run_review`` fact — an archival move explicitly fails the P1
+# backward-looking-output predicate. It runs last because it moves the plan
+# directory out from under every later reader.
+DEFAULT_PHASE_5_STEPS = ('verify:quality-gate', 'verify:module-tests')
+DEFAULT_PHASE_6_STEPS = (
+    'finalize-step-simplify',
+    'finalize-step-security-audit',
+    'push',
+    'create-pr',
+    'ci-verify',
+    'automatic-review',
+    'sonar-roundtrip',
+    'adr-propose',
+    'branch-cleanup',
+    'lessons-capture',
+    'record-metrics',
+    'archive-plan',
+)
+
+
+# The ``PROMOTED_BUILTIN_STEP_IDS`` alias map and the step-key canonicalizer now
+# live in the shared ``_step_key_canonical`` module (their single home) and are
+# imported + re-exported above. ``canonicalize_step_key`` subsumes the former
+# local ``_strip_default_prefix`` semantics (promoted-alias map + ``default:``
+# strip), so every internal call site routes through it.
+
+
+# Canonical-verify step prefix. A step ID of the shape
+# ``default:verify:{canonical}`` (or its bare ``verify:{canonical}`` form) is
+# the single parameterized canonical-verify step — the matrix role is derived
+# from the trailing ``{canonical}`` segment rather than from a per-canonical
+# role-file. See ``phase-5-execute/standards/canonical_verify.md``.
+_CANONICAL_VERIFY_PREFIX = 'verify:'
+
+# Canonical command segment → matrix ``role:`` value. This is the composer's
+# copy of the canonical→role table documented in
+# ``phase-5-execute/standards/canonical_verify.md`` § "derived role". Both
+# ``verify`` and ``module-tests`` map to the ``module-tests`` role (running the
+# full module-test suite); ``quality-gate`` maps to ``quality-gate``;
+# ``coverage`` maps to ``coverage``; whole-tree gates map to their own roles.
+_CANONICAL_TO_ROLE: dict[str, str] = {
+    'quality-gate': 'quality-gate',
+    'verify': 'module-tests',
+    'module-tests': 'module-tests',
+    'coverage': 'coverage',
+    'integration-tests': 'integration',
+    'e2e': 'e2e',
+}
+
+
+def _role_of(step_id: str, cache: dict[str, str | None]) -> str | None:
+    """Resolve a phase-5 candidate step ID to its matrix ``role:`` value.
+
+    The composer intersects phase-5 candidates by role rather than by literal
+    step ID. Resolution is purely in-code via the ``_CANONICAL_TO_ROLE`` table —
+    no role-file is ever read (the ``phase-5-execute/standards/{name}.md``
+    role-files were deleted). Every built-in verify step is a parameterized
+    canonical-verify step (``default:verify:{canonical}`` or the bare
+    ``verify:{canonical}`` form); the role is derived from the trailing
+    ``{canonical}`` segment via the ``_CANONICAL_TO_ROLE`` table. A single
+    parameterized step backs every canonical, and the canonical is the parameter
+    that selects the role.
+
+    Returns ``None`` for:
+
+    - External steps (``project:`` or ``bundle:skill``) — no role concept.
+    - Canonical-verify steps whose ``{canonical}`` segment is unrecognized.
+    - Any other bare name that is not a ``verify:{canonical}`` form (preserving
+      the "missing data → step is never role-selected" convention).
+
+    Results are cached per compose call to avoid re-resolving the same step
+    when a candidate appears in multiple intersection sites.
+    """
+    if step_id in cache:
+        return cache[step_id]
+
+    bare = canonicalize_step_key(step_id)
+
+    # Canonical-verify steps: ``default:verify:{canonical}`` (bare:
+    # ``verify:{canonical}``). The role is derived from the trailing canonical
+    # segment by table lookup.
+    if bare.startswith(_CANONICAL_VERIFY_PREFIX):
+        canonical = bare[len(_CANONICAL_VERIFY_PREFIX) :]
+        derived_role = _CANONICAL_TO_ROLE.get(canonical)
+        cache[step_id] = derived_role
+        return derived_role
+
+    # External steps (project:foo or bundle:skill) have no role — they are
+    # dispatched as PROJECT/SKILL steps, not built-in default steps. Any other
+    # bare name (no longer any legacy fixed-name ID) is never role-selected.
+    cache[step_id] = None
+    return None
+
+
+# =============================================================================
+# Step ownership (orchestrator-owned vs leaf-dispatchable routing)
+# =============================================================================
+
+# The two declared step-owner values. ``orchestrator-owned`` steps sub-dispatch
+# (they issue their own ``Task:`` dispatches — e.g. an LLM cognitive-review pass
+# or a simplify sweep) and therefore CANNOT run inside a dispatched leaf, which
+# has no Task tool; the main-context orchestrator MUST own them. Every other step
+# is ``leaf-dispatchable`` — a self-contained script or inline workflow the
+# orchestrator may hand to a dispatched ``execution-context`` leaf. Declaring the
+# owner makes finalize-step routing deterministic instead of discovered-by-
+# failure, and lets the ``mark-step-done`` obligation travel to the ACTUAL owner
+# (the recurring omitted-bookkeeping wart when the wrong context owned the step).
+VALID_STEP_OWNERS: tuple[str, ...] = ('orchestrator-owned', 'leaf-dispatchable')
+
+# The safe default for an unclassified step. ``leaf-dispatchable`` matches the
+# de-facto pre-declaration behaviour (the orchestrator handed every step to a
+# leaf and only the sub-dispatching ones failed); the registry below names the
+# exceptions that MUST stay in the main context.
+DEFAULT_STEP_OWNER = 'leaf-dispatchable'
+
+# Registry of orchestrator-owned finalize steps — the sub-dispatching steps a
+# dispatched leaf can never run. Keyed by the bare-most step name (both the
+# leading ``default:`` prefix and, for project-local steps, the ``project:``
+# prefix are stripped before the membership test, so ``project:finalize-step-
+# plugin-doctor`` and a bare ``finalize-step-plugin-doctor`` classify
+# identically). Extend this set when a new sub-dispatching finalize step is
+# added — an omission mis-routes the step to a leaf and reproduces the
+# discovered-by-failure wart this declaration exists to eliminate.
+ORCHESTRATOR_OWNED_STEPS: frozenset[str] = frozenset(
+    {
+        'finalize-step-plugin-doctor',
+        'pre-submission-self-review',
+        'automatic-review',
+        'finalize-step-simplify',
+    }
+)
+
+
+def _owner_classification_key(step_id: str) -> str:
+    """Return the bare-most name used to classify a step's owner.
+
+    Strips a leading ``default:`` prefix (via :func:`canonicalize_step_key`) and
+    then a leading ``project:`` prefix, so a built-in ``default:``-prefixed step
+    and its bare form — and a ``project:``-prefixed project-local step and its
+    bare form — all reduce to the same key for the ownership membership test.
+    """
+    bare = canonicalize_step_key(step_id)
+    if bare.startswith('project:'):
+        bare = bare[len('project:') :]
+    return bare
+
+
+def owner_of(step_id: str) -> str:
+    """Return the declared owner of ``step_id`` (``orchestrator-owned`` | ``leaf-dispatchable``).
+
+    Deterministic routing predicate: a step whose bare-most name is in
+    :data:`ORCHESTRATOR_OWNED_STEPS` is ``orchestrator-owned`` (must run in the
+    main context); every other step is :data:`DEFAULT_STEP_OWNER`
+    (``leaf-dispatchable``). The dispatcher consults this to guarantee a leaf is
+    never handed a step it cannot run.
+    """
+    if _owner_classification_key(step_id) in ORCHESTRATOR_OWNED_STEPS:
+        return 'orchestrator-owned'
+    return DEFAULT_STEP_OWNER
+
+
+def is_leaf_dispatchable(step_id: str) -> bool:
+    """Return True when ``step_id`` may be dispatched to an ``execution-context`` leaf."""
+    return owner_of(step_id) == 'leaf-dispatchable'
+
+
+def validate_step_owner(owner: str) -> bool:
+    """Return True when ``owner`` is one of the declared :data:`VALID_STEP_OWNERS`."""
+    return owner in VALID_STEP_OWNERS
+
+
+# =============================================================================
+# File Operations
+# =============================================================================
+
+
+def get_manifest_path(plan_id: str) -> Path:
+    """Return the absolute path to the execution manifest for ``plan_id``."""
+    return get_plan_dir(plan_id) / MANIFEST_FILENAME
+
+
+def _denormalize_step_params_for_write(manifest: dict[str, Any]) -> dict[str, Any]:
+    """Return a copy of ``manifest`` with ownerless ``step_params`` collapsed to ``null``.
+
+    The write-side mirror of :func:`_normalize_step_params_block`: an ownerless
+    step (its param value is an empty dict ``{}`` or ``None``) is written as
+    ``None`` (serialized as ``null``) so the manifest TOON never carries a noisy
+    empty ``{}`` block — regardless of which write path produced the in-memory
+    manifest (compose snapshot, or a ``step-params set`` round-trip that read the
+    normalized ``{}`` back). A param-owning step keeps its nested object. The
+    input ``manifest`` is never mutated; only the ``phase_5`` / ``phase_6``
+    sections that actually carry a ``step_params`` block are shallow-copied.
+    """
+    out = dict(manifest)
+    for section_key in ('phase_5', 'phase_6'):
+        section = out.get(section_key)
+        if not isinstance(section, dict):
+            continue
+        step_params = section.get('step_params')
+        if not isinstance(step_params, dict):
+            continue
+        collapsed = {
+            step_id: (params if isinstance(params, dict) and params else None)
+            for step_id, params in step_params.items()
+        }
+        section_copy = dict(section)
+        section_copy['step_params'] = collapsed
+        out[section_key] = section_copy
+    return out
+
+
+def write_manifest(plan_id: str, manifest: dict[str, Any]) -> None:
+    """Atomically write the manifest as TOON to its plan path.
+
+    Ownerless ``step_params`` entries are collapsed to ``null`` at the write
+    boundary (:func:`_denormalize_step_params_for_write`) so no empty ``{}``
+    block is ever serialized, keeping every manifest-write path (compose +
+    ``step-params set``) consistent with the no-empty-``{}`` contract.
+    """
+    path = get_manifest_path(plan_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_file(path, serialize_toon(_denormalize_step_params_for_write(manifest)))
+
+
+def _normalize_step_params_block(manifest: dict[str, Any]) -> None:
+    """Coerce each ``step_params`` per-step value to ``{}`` when not a non-empty dict.
+
+    The manifest persists as TOON, and an empty param object (``{}``) round-trips
+    back from TOON as the empty string ``''`` on read. The step-params contract
+    requires an ownerless step to read back as ``{}`` (an empty param object), not
+    ``''``. This normalizes the read-side exposure for both phase sections in
+    place: any per-step value that is not a dict (notably the ``''`` produced by
+    the empty-dict TOON round-trip) becomes ``{}``. A step id MISSING from the
+    snapshot is left absent — only present-but-empty values normalize.
+    """
+    for section_key in ('phase_5', 'phase_6'):
+        section = manifest.get(section_key)
+        if not isinstance(section, dict):
+            continue
+        step_params = section.get('step_params')
+        if not isinstance(step_params, dict):
+            section['step_params'] = {}
+            continue
+        section['step_params'] = {
+            step_id: (params if isinstance(params, dict) else {})
+            for step_id, params in step_params.items()
+        }
+
+
+def read_manifest(plan_id: str) -> dict[str, Any] | None:
+    """Read and parse the manifest, returning ``None`` if missing.
+
+    The parsed manifest is normalized at this read boundary so each
+    ``step_params`` per-step value is a dict (``{}`` for ownerless steps),
+    repairing the empty-dict→``''`` TOON round-trip. See
+    :func:`_normalize_step_params_block`.
+    """
+    path = get_manifest_path(plan_id)
+    if not path.exists():
+        return None
+    manifest = parse_toon(path.read_text(encoding='utf-8'))
+    if isinstance(manifest, dict):
+        _normalize_step_params_block(manifest)
+    return manifest

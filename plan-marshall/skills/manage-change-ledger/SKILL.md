@@ -1,0 +1,284 @@
+---
+name: manage-change-ledger
+description: The single append-only change-ledger — one worktree_sha-stamped substrate for kind=build, kind=change, and kind=job entries — plus the first-class worktree-sha freshness API
+user-invocable: false
+mode: script-executor
+scope: global
+---
+
+# Manage Change-Ledger Skill
+
+The single home for the unified, append-only **change-ledger** in plan-marshall
+and the **first-class `worktree_sha` freshness API** over it. The skill is
+`script-deterministic` — pure record-keeping and a git-native currency hash, no
+LLM judgement. It is modeled on `manage-locks`: a tracked-config-dir primitive
+that is NOT plan-scoped, so it serves plan-less orchestrator builds as well as
+plan-scoped task builds.
+
+There is exactly ONE ledger file, ONE `worktree_sha` primitive (a single shared
+implementation), and ONE append verb. Entries are **pure-append** — no
+find-and-update, no in-place mutation. There is no separate registry file anywhere.
+
+## The `worktree_sha` primitive — working-tree currency, not HEAD currency
+
+`compute_worktree_sha(worktree_root)` lives ONCE in
+`script-shared/scripts/worktree_sha.py` and is the **sole** implementation
+imported by the `worktree-sha` verb, the executor `kind=build` writer, and the
+`pre-commit-verify-freshness` gate. The writer/gate symmetry is
+correctness-critical — a divergent hash silently breaks every freshness match —
+so the helper is imported, never re-implemented.
+
+The primitive is the **working-tree** currency hash: the committed base
+(`git rev-parse HEAD`) + the full tracked diff against it (`git diff HEAD`,
+staged AND unstaged) + the sorted content of untracked-not-ignored files
+(`git ls-files --others --exclude-standard`), hashed with `sha256`. It captures
+the **uncommitted** plan edits, NOT the committed HEAD sha. This is mandatory
+because the freshness gate is a *pre-commit* gate: a `git rev-parse HEAD`
+primitive would match trivially (the pre-plan commit sha is the same at build
+time and at gate time regardless of working-tree changes), producing a
+false-positive `fresh`. On a clean tree the digest reduces to a stable function
+of HEAD alone (the clean-tree HEAD-tree fallback). The helper NEVER mutates the
+working tree, index, or refs (no `git stash`, no `git write-tree`, no `git add`).
+
+## Enforcement
+
+> **Base contract**: See [manage-contract.md](../ref-workflow-architecture/standards/manage-contract.md) for shared enforcement rules, TOON output format, and error-response patterns.
+
+**Execution mode**: Run scripts via the executor; parse TOON output for `status` and route accordingly.
+
+**Prohibited actions:**
+- Do not read, write, or mutate the ledger file (`change-ledger.jsonl`) directly — every write goes through the `append` verb / the `append_entry` core so the pure-append, one-line-per-record invariant holds.
+- Do not invent script arguments not listed in the **Canonical invocations** section below.
+- Do not re-implement the `worktree_sha` hash or the JSONL read in a consumer — import `compute_worktree_sha` from `worktree_sha` and `read_entries`/`resolve_ledger_path` from `_ledger_core`, so there is one byte-identical implementation, not parallel copies.
+- Do not self-compute or snapshot a `kind=change` entry's `changed_paths` from a deliverable's declared `affected_files` — the paths MUST be git-sourced by the caller (`git diff-tree --no-commit-id --name-only -r {commit_sha}`); the verb stores the supplied list verbatim.
+
+**Constraints:**
+- Strictly comply with all rules from persona-plan-marshall-agent, especially tool usage and workflow step discipline.
+- All script output uses TOON format (see `plan-marshall:ref-toon-format` for the full specification).
+- The entry-point script (`manage-change-ledger.py`) is invoked only through `python3 .plan/execute-script.py` with the 3-part notation; `_ledger_core.py` is an importable module (underscore-prefixed), consumed via PYTHONPATH, never invoked directly. `compute_worktree_sha` lives in `script-shared` and is imported, not duplicated.
+
+## Storage Location
+
+One ledger file, resolved via `get_tracked_config_dir()` (NOT plan-scoped), so
+every writer (including a plan-less orchestrator build) appends to the same file:
+
+```text
+<tracked-config-dir>/work/change-ledger.jsonl
+```
+
+## Entry Shapes
+
+Every entry carries a `kind` discriminator, a `worktree_sha`, and a
+`timestamp_iso` (UTC ISO-8601). Three kinds:
+
+- **`kind=build`** — written by the executor dispatch boundary after every
+  build-**executing** invocation that runs to completion. Build-class-ness is a
+  **conjunction**: the notation must sit under a `build-*` skill AND the
+  dispatched subcommand must be the build-executing verb (`run`). A query
+  subcommand under a `build-*` skill — `parse`, `discover`, `coverage-report`,
+  `check-warnings`, `run-config-key`, `rewrite-log`, `find-project`,
+  `resolve-test-scope`, `analyze` — writes **no row**, and neither does a bare
+  `--help` dispatch that carries no subcommand at all. This is load-bearing for
+  the freshness gate below: a query exits 0 without building anything, so a row
+  stamped for it would read as proof that the current working tree was built.
+  Fields: `kind: "build"`,
+  `notation`, `plan_id` (str, **never null** — a build dispatched outside any
+  plan, including an orchestrator global-tier build, is recorded under the
+  `NO_PLAN` sentinel, so every build is attributable to the plan that caused it
+  or explicitly to none), `args`, `command`, `duration_seconds`, `outcome`
+  (the three wrapper-reported fields — see **`args` vs `command`** below),
+  `exit_code` (int, recorded even when non-zero — orthogonal
+  diagnostic detail), `status` (the truthful build outcome of record —
+  `success` | `error` | `timeout` | `killed` | `unknown` — derived at the
+  boundary from the returncode and the wrapper's stdout TOON; a timed-out build
+  stamps `status: timeout` despite its exit code 0, a child killed by a POSIX
+  signal stamps `status: killed`, and an exit-0 dispatch whose payload carries
+  no wrapper-claimable status stamps `status: unknown` rather than a `success`
+  nothing substantiates. `killed` and `unknown` are **derived-only**: the
+  dispatch boundary produces them, and a wrapper that prints either in its own
+  stdout TOON is not believed — the boundary reads a payload claim against the
+  narrower wrapper vocabulary (`success` | `error` | `timeout`) alone. Every
+  member other than `success` fails the freshness gate closed), `worktree_sha`, `log_file`,
+  `timestamp_iso`. A build is NOT a commit, so a `kind=build` entry does NOT
+  carry `commit_sha` or `changed_paths`. The stamp is **tier-agnostic** —
+  written at the executor dispatch boundary, it fires identically for an
+  inline `per_task` build and for an `orchestrator`-tier build detached via
+  the `await-long-running` seam — but ONLY for jobs whose executor process
+  survives to the boundary. A job whose whole process tree is killed dies
+  BEFORE the boundary runs and stamps nothing at all: **a missing row is
+  itself a signal** (no row + zero output bytes is the whole-tree-kill
+  signature). The freshness gate matches on `worktree_sha` + `status ==
+  success` alone and never inspects the tier, the background flag, or the
+  exit code.
+- **`kind=change`** — written by the phase-5 execute loop after each deliverable
+  completes-and-commits. Fields: `kind: "change"`, `deliverable_id` (or
+  `task_id`), `commit_sha`, `changed_paths` (the **git-sourced** list, stored
+  verbatim), `worktree_sha` (post-commit), `timestamp_iso`.
+- **`kind=job`** — written by the `build-server-client` skill's `submit` verb at
+  submit time. Fields: `kind: "job"`, `job_id` (the daemon-assigned id),
+  `plan_id` (str, **never null** — on the same contract as `kind=build`: a
+  plan-less submission carries the `NO_PLAN` sentinel, and the re-attach lookup
+  matches on that same value), `fingerprint` (the idempotent-submit digest the daemon
+  scheduler keys on), `notation` (the executor notation dispatched),
+  `worktree_sha`, `timestamp_iso`. Unlike `kind=build` (a completed build
+  outcome) this is a **submission** record — the job may still be running — so it
+  carries no `exit_code` or `status`. Its purpose is **re-attach**: a rebuilt or
+  harness-reaped session reads the most recent `kind=job` row for its plan and
+  re-issues `wait` against the recorded `job_id`, recovering the in-flight build
+  from plan state alone rather than losing it.
+
+The freshness gate consumes only `kind=build` entries; `kind=change` and
+`kind=job` entries make the ledger a complete, reusable record of working-tree
+transitions and in-flight build submissions.
+
+### `args` vs `command` — two layers, not one
+
+A `kind=build` row records the invocation at **two distinct layers**, and
+neither substitutes for the other:
+
+| Field | Layer | Example |
+|-------|-------|---------|
+| `args` | The **executor argv** — what the caller handed to `.plan/execute-script.py`. | `run --command-args "verify plan-marshall"` |
+| `command` | The **wrapper-resolved command** — what the build wrapper turned that argv into and actually ran. | `./pw verify plan-marshall` |
+
+The mapping between them belongs to the wrapper: a build-tool switch or a
+routing decision changes `command` while `args` stays byte-identical. A reader
+asking *"what did the caller request?"* reads `args`; one asking *"what actually
+ran?"* reads `command`. Recording only one of the two makes the other
+unrecoverable.
+
+`command`, `duration_seconds` (the wrapper's measured build duration) and
+`outcome` (the wrapper's whole stdout TOON, retained verbatim as a dict, so a
+reader gets the log path and per-error rows without re-opening the build log)
+are all sourced from that **single stdout parse** at the dispatch boundary.
+All three are therefore **optional** and are `null` when the payload was absent
+or unparseable — a killed or crashed build still writes its row, with the
+exit-code-derived `status` and these three absent. A row appended manually
+through the `append` verb likewise carries none of the three: the CLI is the
+second writer and has no wrapper payload to report.
+
+## Canonical invocations
+
+The canonical argparse surface for the entry-point script this skill registers:
+`manage-change-ledger.py`. The plugin-doctor analyzer
+(`_analyze_manage_invocation.py`) reads this section as source-of-truth for the
+`manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs
+xref this section by name instead of restating the command inline. See
+[`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
+
+### manage-change-ledger — worktree-sha
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-change-ledger:manage-change-ledger worktree-sha \
+  [--worktree-root WORKTREE_ROOT]
+```
+
+### manage-change-ledger — append (kind=build)
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-change-ledger:manage-change-ledger append \
+  --kind build --notation NOTATION --exit-code EXIT_CODE --status {error|killed|success|timeout|unknown} \
+  [--plan-id PLAN_ID] [--args ARGS] [--log-file LOG_FILE] \
+  [--worktree-root WORKTREE_ROOT] [--worktree-sha WORKTREE_SHA]
+```
+
+### manage-change-ledger — append (kind=change)
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-change-ledger:manage-change-ledger append \
+  --kind change --deliverable-id DELIVERABLE_ID --commit-sha COMMIT_SHA --changed-paths CHANGED_PATHS \
+  [--task-id TASK_ID] [--worktree-root WORKTREE_ROOT] [--worktree-sha WORKTREE_SHA]
+```
+
+### manage-change-ledger — append (kind=job)
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-change-ledger:manage-change-ledger append \
+  --kind job --job-id JOB_ID \
+  [--plan-id PLAN_ID] [--fingerprint FINGERPRINT] [--notation NOTATION] \
+  [--worktree-root WORKTREE_ROOT] [--worktree-sha WORKTREE_SHA]
+```
+
+Persists a daemon-assigned `job_id` at submit time so a rebuilt session can
+re-attach to the in-flight build. Written by the `build-server-client` skill's
+`submit` verb (which imports `job_record` + `append_entry` from `_ledger_core`
+directly); this verb is the equivalent executor surface for tests and manual use.
+
+### manage-change-ledger — query
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-change-ledger:manage-change-ledger query \
+  [--kind build|change|job] [--exit-code EXIT_CODE]
+```
+
+### manage-change-ledger — classify-outcome
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-change-ledger:manage-change-ledger classify-outcome \
+  --job-status {completed|killed} --output-bytes OUTPUT_BYTES \
+  --worktree-sha WORKTREE_SHA
+```
+
+The deterministic killed-job classifier — a pure function of three observable
+inputs (the harness-reported job status, the byte count of the job's captured
+output, and the presence of a matching `kind=build` ledger row, most-recent
+first and scoped to the required `--worktree-sha`) returning a fixed
+`verdict`. `--worktree-sha` is required: an unscoped cross-check can match a
+stale row stamped against a different worktree state and misclassify a killed
+job as `success`. Every call site already holds the sha at call time (the
+`await-long-running` seam computes it before dispatch).
+
+- `externally_killed` — the job reported `killed`, OR no matching ledger row
+  exists AND `--output-bytes 0`, OR the matching row itself carries
+  `status: killed`. The no-row case is the **whole-tree-kill signature**:
+  the executor died before the dispatch boundary could stamp a row, so the
+  missing row plus the 0-byte output IS the kill evidence. The killed-row
+  case is the **child-kill signature**: the executor survived to the
+  boundary and stamped the `killed` outcome it observed. The returned TOON's
+  `display_detail`/`message` render "externally killed — not flaky, do not
+  blind-retry" — the call site MUST NOT re-dispatch the identical command as
+  a retry.
+- `timeout` — a matching row carries `status: timeout` (a clean timeout is
+  never classified as a kill).
+- `success` — a matching row carries `status: success`.
+- `undecidable` — anything else, which includes a matching row carrying
+  `status: unknown`. That row records an outcome the dispatch boundary could
+  not determine, so it supports no verdict of its own and must not be read as
+  either a kill or a success.
+
+The classifier reads the ledger through `_ledger_core.read_entries` — never a
+re-implemented JSONL read.
+
+## Shared Core (`scripts/_ledger_core.py`)
+
+The deterministic core exposes the single read/write/construct surface every
+consumer imports via PYTHONPATH:
+
+```python
+from _ledger_core import (
+    resolve_ledger_path, append_entry, read_entries,
+    build_record, change_record, job_record,
+)
+```
+
+- `resolve_ledger_path()` — `get_tracked_config_dir() / 'work' / 'change-ledger.jsonl'` (NOT plan-scoped).
+- `append_entry(record)` — append exactly one `json.dumps(record) + '\n'` line. Pure-append; no read-modify-write.
+- `read_entries()` — parse the JSONL line-by-line, skip malformed lines, return `[]` when absent. The library reader the gate imports directly.
+- `build_record(...)` / `change_record(...)` / `job_record(...)` — constructors that stamp `kind`, `worktree_sha`, `timestamp_iso` and the kind-specific fields, so every writer and the CLI produce identically-shaped entries. `build_record` keeps the two invocation layers apart (`args` = executor argv, `command` = wrapper-resolved command) and carries the wrapper-reported `duration_seconds` / `outcome`; those three are keyword-only with a `None` default, so the payload-less CLI writer needs no change. `change_record` stores the caller-supplied `changed_paths` verbatim — it does NOT compute changed paths. `job_record` persists a submit-time `job_id` (+ `fingerprint` / `notation`) for build re-attach.
+
+## Integration
+
+| Producer / Consumer | Direction | Notation |
+|---------------------|-----------|----------|
+| `tools-script-executor` dispatch boundary | produces | `append --kind build` (executor template `kind=build` writer) |
+| `phase-5-execute` Step 10a chain-tail | produces | `append --kind change` after each per-deliverable commit |
+| `build-server-client` `submit` verb | produces | imports `job_record` + `append_entry`; writes `kind=job` at submit time for re-attach |
+| `build-server-client` `wait` re-attach | consumes | imports `read_entries`; reads the latest `kind=job` for the plan to recover `job_id` |
+| `manage-tasks:pre-commit-verify-freshness` gate | consumes | imports `read_entries` + `compute_worktree_sha`; scans `kind=build` by `status == success` + `worktree_sha` |
+
+## Related
+
+- `plan-marshall:script-shared` — home of `worktree_sha.compute_worktree_sha` (the single shared freshness primitive) and `triage_helpers` (CLI/error helpers).
+- `plan-marshall:manage-locks` — the sibling tracked-config-dir coordination primitive this skill's shape is modeled on.
+- `plan-marshall:manage-tasks` — owner of the `pre-commit-verify-freshness` gate that consumes the ledger.
+- `plan-marshall:ref-code-quality` — the TOCTOU / check-then-act mitigation menu the pure-append shape deliberately avoids.

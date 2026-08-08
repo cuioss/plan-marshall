@@ -1,0 +1,50 @@
+---
+name: cui-javascript-project
+description: JavaScript project structure, package.json configuration, dependency management, and Maven integration standards for consistent project setup and builds
+user-invocable: false
+mode: knowledge
+---
+
+# JavaScript Project Structure and Build Standards
+
+## Enforcement
+
+**Build output parsing**: Use `plan-marshall:build-npm` for npm/npx output analysis — this skill does not provide its own parser.
+
+Standards for JavaScript project setup, structure, dependencies, and Maven integration in CUI projects.
+
+## Prerequisites
+
+- npm package management
+- Maven build lifecycle
+- Node.js development
+
+## Standards
+
+| Standard | Purpose |
+|----------|---------|
+| `standards/project-structure.md` | Directory layouts, file naming, package.json, .gitignore |
+| `standards/dependency-management.md` | Semantic versioning, security, ES module config |
+| `standards/maven-integration.md` | frontend-maven-plugin, Maven phases, SonarQube |
+
+## Project Types
+
+| Type | Source Directory |
+|------|----------------|
+| Standard Maven | `src/main/resources/static/js/` |
+| Quarkus DevUI | `src/main/resources/dev-ui/` |
+| NiFi Extension | `src/main/webapp/js/` |
+| Standalone | `src/main/js/` |
+
+## Key Requirements
+
+- `"type": "module"` in package.json for ES module support
+- Required npm scripts: `lint`, `format`, `test`, `test:ci-strict`, `quality`
+- Always commit `package-lock.json`, never commit `node_modules/`
+- Node.js LTS version managed by frontend-maven-plugin
+
+## Related Skills
+
+- `pm-dev-frontend:javascript` — JavaScript standards including JSDoc
+- `pm-dev-frontend:lint-config` — ESLint, Prettier, Stylelint configuration
+- `plan-marshall:build-npm` — npm/npx build execution with multi-parser output analysis

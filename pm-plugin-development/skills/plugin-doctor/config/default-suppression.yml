@@ -1,0 +1,33 @@
+# Shipped default suppression config (Granularity-1, lowest precedence).
+#
+# Read by `_analyze_shared.load_default_suppression_config()`. Each top-level
+# key is a plugin-doctor rule-id; its value is the list of path prefixes (each
+# relative to `marketplace/bundles/`) for which the rule is exempt. A finding
+# is suppressed when the file's bundles-relative path starts with any listed
+# prefix. Exact-file exemptions are expressed as the full file path — a path is
+# a prefix of itself, so `startswith` matches it exactly.
+#
+# Format is the constrained, stdlib-parseable flat-YAML subset documented in
+# `_analyze_shared.parse_flat_yaml_config` — NO PyYAML dependency. Inline-list
+# (`key: [a, b]`) and block-list (`key:` then `  - a`) forms are both accepted.
+#
+# This config absorbs the path-prefix exemption tables formerly hardcoded in
+# each analyzer's `_is_allowlisted()` predicate.
+
+no-historical-prose-in-skills:
+  - plan-marshall/skills/manage-lessons/
+  - plan-marshall/skills/phase-6-finalize/workflow/lessons-
+  - plan-marshall/skills/phase-6-finalize/standards/lessons-
+  - plan-marshall/skills/plan-retrospective/
+  - plan-marshall/skills/plan-doctor/standards/
+  - pm-plugin-development/skills/plugin-doctor/references/rule-provenance.md
+  - pm-plugin-development/skills/plugin-doctor/references/rule-catalog.md
+
+no-lesson-id-in-skill-prose:
+  - plan-marshall/skills/manage-lessons/
+  - plan-marshall/skills/phase-6-finalize/workflow/lessons-
+  - plan-marshall/skills/phase-6-finalize/standards/lessons-
+  - plan-marshall/skills/plan-retrospective/
+  - plan-marshall/skills/plan-doctor/
+  - pm-plugin-development/skills/plugin-doctor/references/rule-provenance.md
+  - pm-plugin-development/skills/plugin-doctor/standards/doctor-test-conventions.md

@@ -1,0 +1,488 @@
+---
+name: manage-files
+description: Generic file I/O operations for plan directories
+user-invocable: false
+mode: script-executor
+scope: plan
+---
+
+# Manage Files Skill
+
+Generic file operations for plan directories. Provides basic CRUD operations for any file within a plan directory.
+
+## Enforcement
+
+> **Base contract**: See [manage-contract.md](../ref-workflow-architecture/standards/manage-contract.md) for shared enforcement rules, TOON output format, and error response patterns.
+
+**Skill-specific constraints:**
+- Do not pass absolute paths or `..` traversals in `--file` arguments
+- File paths are always relative to the plan directory
+- plan_id must be kebab-case format
+- Multi-line content and any payload whose first line begins with `#` MUST be passed via `--content-file` or `--stdin`, never via inline `--content`. The Bash permission heuristic ("Newline followed by `#` inside a quoted argument can hide arguments from path validation") fires before `manage-files.py` runs, so a script-level rejector cannot prevent the originating prompt — caller compliance is the only enforcement surface. Canonical pattern: stage the payload via the `Write` tool to `.plan/temp/{name}.{ext}` first, then invoke `manage-files write --plan-id {plan_id} --file work/{name}.{ext} --content-file .plan/temp/{name}.{ext}`.
+
+## Storage Location
+
+Files are stored in plan directories:
+
+```text
+.plan/plans/{plan_id}/
+```
+
+For domain-specific files within the plan directory, use the dedicated manage-* skills (see Relationship to Domain Skills below).
+
+---
+
+## Operations
+
+Script: `plan-marshall:manage-files:manage-files`
+
+### read
+
+Read file content from a plan directory.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files read \
+  --plan-id {plan_id} \
+  --file notes.md
+```
+
+**Output**: Raw file content (no wrapping)
+
+### write
+
+Write content to a file in a plan directory.
+
+Use only for single-line scalar values.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files write \
+  --plan-id {plan_id} \
+  --file notes.txt \
+  --content "single line value with no newlines and no leading hash"
+```
+
+Use for any multi-line content (markdown, TOON, JSON) OR any payload whose first line begins with `#`.
+
+```bash
+# Stage payload via the Write tool to .plan/temp/payload.md
+# Write(.plan/temp/payload.md) with the multi-line content
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files write \
+  --plan-id {plan_id} \
+  --file request.md \
+  --content-file .plan/temp/payload.md
+```
+
+**Parameters**:
+- `--plan-id` (required): Plan identifier
+- `--file` (required): Relative file path within plan directory
+- `--content`: Content to write (mutually exclusive with `--content-file`)
+- `--content-file PATH`: Path to a UTF-8 file whose contents fill the write payload. Mutually exclusive with `--content`. Resolution order when multiple inputs are provided: `--content-file` wins over `--content`, which wins over `--stdin`. Combining `--content` and `--content-file` returns `mutually_exclusive`. A missing or non-regular path returns `content_file_not_found`.
+- `--stdin`: Read content from stdin instead of `--content`
+
+**Note**: For any multi-line content (markdown, TOON, JSON) OR any payload whose first line begins with `#`, the inline `--content` form is FORBIDDEN by the `## Enforcement` clause above — use `--content-file` (stage via `Write` to `.plan/temp/payload.{ext}` first, then pass `--content-file .plan/temp/payload.{ext}`) or `--stdin` for piped input from another script. Do NOT use `--stdin` with shell heredocs or cat commands — the executor handles content passing; stdin is only for piped input from other scripts.
+
+**Content requirement**: Content must be non-empty. Empty content produces an error (`missing_content`).
+
+**Output**: TOON with `status: success`, `action: created`/`updated`. Exit code 0 on success, 1 on error.
+
+**Side effect**: Successful writes are logged via `log_entry()` to the plan's work log.
+
+### remove
+
+Remove a file from a plan directory.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files remove \
+  --plan-id {plan_id} \
+  --file old-file.md
+```
+
+**Output**: Confirmation message to stderr, exit code 0 on success
+
+### list
+
+List files in a plan directory.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files list \
+  --plan-id {plan_id} \
+  [--dir subdir]
+```
+
+**Output** (TOON format): File listing with `status: success` and `files` array
+
+### exists
+
+Check if a file exists. Returns TOON output with `exists: true/false`.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files exists \
+  --plan-id {plan_id} \
+  --file references.json
+```
+
+**Output** (TOON format):
+
+When file exists:
+```toon
+status: success
+plan_id: my-feature
+file: references.json
+exists: true
+path: .plan/plans/my-feature/references.json
+```
+
+When file does not exist:
+```toon
+status: success
+plan_id: my-feature
+file: missing.md
+exists: false
+path: .plan/plans/my-feature/missing.md
+```
+
+On validation error (invalid plan_id or path):
+```toon
+status: error
+plan_id: Invalid_Plan
+error: invalid_plan_id
+message: Invalid plan_id format: Invalid_Plan
+```
+
+**Note**: Always exits 0 for both exists=true and exists=false (both are valid query results). Only exits 1 for actual errors (invalid plan_id, invalid path). Check `status` and `exists` fields to determine result.
+
+### mkdir
+
+Create a subdirectory in a plan directory.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files mkdir \
+  --plan-id {plan_id} \
+  --dir requirements
+```
+
+**Output** (TOON format):
+
+```toon
+status: success
+plan_id: my-feature
+action: created
+dir: requirements
+path: /path/to/.plan/plans/my-feature/requirements
+```
+
+The `action` field is `created` if the directory was newly created, or `exists` if it already existed.
+
+### discover
+
+Discover filesystem paths matching one or more glob patterns under an absolute root directory. Pure `pathlib` implementation — never spawns a subprocess and never invokes the shell.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files discover \
+  --root /abs/path/to/search \
+  --glob "**/*.py" \
+  --glob "**/*.md" \
+  --include-files
+```
+
+**Parameters**:
+- `--root` (required): Absolute root directory to search under. Must exist.
+- `--glob` (required, repeatable): Glob pattern relative to the root. Pass `--glob` multiple times to combine patterns; results are deduplicated and sorted.
+- `--include-files`: Include files in results. Default behaviour when neither `--include-files` nor `--include-dirs` is given is files-only.
+- `--include-dirs`: Include directories in results. Combine with `--include-files` to include both.
+
+**Output** (TOON format):
+
+```toon
+status: success
+root: /abs/path/to/search
+paths[N]:
+  - /abs/path/to/search/foo.py
+  - /abs/path/to/search/bar/baz.py
+```
+
+**Error responses**:
+
+```toon
+status: error
+error: invalid_root
+message: Root does not exist or is not a directory: {root}
+```
+
+```toon
+status: error
+error: no_patterns
+message: At least one --glob pattern is required
+```
+
+#### Resolver Pattern
+
+Consumer skills should call `manage-files discover` rather than instructing the LLM to use the `Glob` tool. Routing discovery through this subcommand makes path resolution **deterministic** (the script always returns the same set for a given root + patterns), **auditable** (the call is logged via the executor), and **decoupled** from a particular harness's tool surface. The `Glob` tool is appropriate for ad-hoc exploration during a conversation; `discover` is appropriate for skill workflows that depend on a stable, reproducible set of paths.
+
+### open-in-ide
+
+Open a file in the active IDE. Detection is environment-based — `__CFBundleIdentifier` and `TERM_PROGRAM` on macOS, `TERM_PROGRAM` plus PATH probing on Linux — and the launcher is selected from a named per-platform table. On unknown IDE the verb refuses to fall through to `open <path>` / `xdg-open <path>` and exits non-zero with `reason: ide_not_detected`.
+
+Two input modes:
+
+- **Mode A** — direct path:
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-files:manage-files open-in-ide \
+    --path /abs/path/to/file.md
+  ```
+
+- **Mode B** — plan-resolved document:
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-files:manage-files open-in-ide \
+    --plan-id {plan_id} --document {request|solution_outline}
+  ```
+
+`--path` and `--plan-id` are mutually exclusive (argparse enforces). `--document` is required only in Mode B and is constrained by `choices=(request, solution_outline)`.
+
+**Supported IDE matrix:**
+
+| Platform | Signal | Launcher |
+|----------|--------|----------|
+| macOS | `__CFBundleIdentifier=com.jetbrains.intellij[.ce|-EAP]` | `open -a "IntelliJ IDEA"` |
+| macOS | `__CFBundleIdentifier=com.jetbrains.pycharm` | `open -a "PyCharm"` |
+| macOS | `__CFBundleIdentifier=com.jetbrains.WebStorm` | `open -a "WebStorm"` |
+| macOS | `__CFBundleIdentifier=com.jetbrains.goland` | `open -a "GoLand"` |
+| macOS | `__CFBundleIdentifier=com.jetbrains.rider` | `open -a "Rider"` |
+| macOS | `__CFBundleIdentifier=com.google.android.studio` | `open -a "Android Studio"` |
+| macOS | `TERM_PROGRAM=vscode` | `open -a "Visual Studio Code"` |
+| macOS | `TERM_PROGRAM=cursor` | `open -a "Cursor"` |
+| Linux | `TERM_PROGRAM=vscode` AND `code` on PATH | `code` |
+| Linux | `TERM_PROGRAM=cursor` AND `cursor` on PATH | `cursor` |
+| Linux | PATH probe: `idea` → `pycharm` → `webstorm` → `goland` → `rider` → `studio` | first match wins |
+
+**TOON return shapes:**
+
+Success (launch fired):
+```toon
+status: success
+ide: "IntelliJ IDEA"
+command: "open -a IntelliJ IDEA /abs/path"
+path: /abs/path
+```
+
+Success but disabled by config (no detection, no launcher invocation):
+```toon
+status: success
+action: skipped
+reason: disabled_by_config
+```
+
+Error:
+```toon
+status: error
+reason: ide_not_detected | launcher_missing | document_resolution_failed | invalid_arguments
+detail: "<short context>"
+```
+
+**No-tempfile invariant:** The script call graph imports neither `tempfile` nor `mkstemp` / `NamedTemporaryFile` / `mkdtemp`. Absolute paths are passed verbatim to the launcher. A static AST guard in `test_manage_files_open_in_ide.py` enforces this.
+
+#### Configuration
+
+The verb is gated by the boolean config key `plan.open_in_ide` in `.plan/marshal.json` (a flat boolean under the existing `plan` namespace). Resolution rules:
+
+- Key present and truthy → proceed with detection (current always-attempt-to-open behaviour).
+- Key present and falsy → short-circuit with `status: success, action: skipped, reason: disabled_by_config`. Detection and launcher invocation are NEVER triggered.
+- Key absent, `plan` namespace absent, or marshal.json file absent → treated as `true` (the documented default).
+- A malformed `marshal.json` raises (consistent with the rest of the config surface).
+
+`manage-config init` seeds fresh marshal.json files with `plan.open_in_ide: true` (marshall-steward seed contract).
+
+### create-or-reference
+
+Create a plan directory if it doesn't exist, or reference an existing one. This is an atomic operation that replaces the two-step pattern of listing plans and checking for conflicts.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files create-or-reference \
+  --plan-id {plan_id}
+```
+
+**Output** (TOON format):
+
+When plan is newly created:
+```toon
+status: success
+plan_id: my-feature
+action: created
+path: /path/to/.plan/plans/my-feature
+```
+
+When plan already exists:
+```toon
+status: success
+plan_id: my-feature
+action: exists
+path: /path/to/.plan/plans/my-feature
+current_phase: refine
+domain: java
+```
+
+**Use case**: Called by plan-init to atomically check/create plan directories.
+
+---
+
+## Key Design Principles
+
+1. **plan_id only** - Never pass full paths, script resolves base via `base_path()`
+2. **Relative file paths** - `--file` accepts relative paths within plan dir (e.g., `requirements/REQ-001.toon`)
+3. **Generic file operations** - Not domain-specific (no parse-plan, write-config)
+4. **Plain output** - `read` returns raw content; mutations return minimal status
+5. **Minimal validation** - Rejects empty content on write; no structural validation of content
+
+---
+
+## Validation Rules
+
+| Check | Validation |
+|-------|------------|
+| plan_id format | kebab-case, no special chars |
+| file path | No `..`, no absolute paths, no leading `/` |
+| directory | Must exist (unless mkdir) |
+| content | Non-empty for write |
+
+---
+
+## Error Responses
+
+> See [manage-contract.md](../ref-workflow-architecture/standards/manage-contract.md) for the standard error response format.
+
+| Error Code | Cause |
+|------------|-------|
+| `invalid_plan_id` | plan_id contains invalid characters (must be kebab-case) |
+| `file_not_found` | File does not exist (read, remove) |
+| `missing_content` | Write called with empty or missing content |
+| `mutually_exclusive` | Write called with both `--content` and `--content-file` |
+| `content_file_not_found` | `--content-file` path is missing or not a regular file |
+| `invalid_path` | Path contains `..` or absolute path components |
+| `permission_error` | File system permission denied |
+| `ide_not_detected` | open-in-ide: no supported IDE matched env + platform |
+| `launcher_missing` | open-in-ide: launcher binary missing or returned non-zero |
+| `document_resolution_failed` | open-in-ide: Mode B resolver returned error |
+| `invalid_arguments` | open-in-ide: Mode B invoked without --document |
+
+---
+
+## Canonical invocations
+
+The canonical argparse surface for `manage-files.py`. The D4 plugin-doctor analyzer
+(`_analyze_manage_invocation.py`) reads this section as source-of-truth for markdown
+notation occurrences across the marketplace. Consuming skills xref this section by
+name (e.g., "see `manage-files` Canonical invocations → `write`") instead of
+restating the command inline.
+
+### read
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files read \
+  --plan-id PLAN_ID --file REL_PATH
+```
+
+### write
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files write \
+  --plan-id PLAN_ID --file REL_PATH \
+  (--content TEXT | --content-file PATH | --stdin)
+```
+
+`--content`, `--content-file`, and `--stdin` are mutually exclusive; exactly one
+must be supplied.
+
+### remove
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files remove \
+  --plan-id PLAN_ID --file REL_PATH
+```
+
+### list
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files list \
+  --plan-id PLAN_ID [--dir SUBDIR]
+```
+
+### exists
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files exists \
+  --plan-id PLAN_ID --file REL_PATH
+```
+
+### mkdir
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files mkdir \
+  --plan-id PLAN_ID --dir REL_PATH
+```
+
+### create-or-reference
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files create-or-reference \
+  --plan-id PLAN_ID
+```
+
+### discover
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files discover \
+  --root ABS_ROOT --glob PATTERN [--glob PATTERN ...] \
+  [--include-files] [--include-dirs]
+```
+
+`--glob` is repeatable. Defaults to files-only when neither `--include-files`
+nor `--include-dirs` is supplied.
+
+### open-in-ide
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files open-in-ide \
+  (--path ABS_PATH | --plan-id PLAN_ID --document {request|solution_outline})
+```
+
+`--path` and `--plan-id` are mutually exclusive (Mode A vs Mode B). `--document` is required in Mode B and constrained to the enum above.
+
+---
+
+## Integration
+
+### Consumers
+
+| Client | Operation | Purpose |
+|--------|-----------|---------|
+| `phase-1-init` | create-or-reference, write | Create plan directory and initial files |
+| `phase-3-outline` | write, read | Generic file I/O for plan artifacts |
+| `phase-5-execute` | read, write, list | File operations during task execution |
+
+### Relationship to Domain Skills
+
+| Skill | Manages | Use manage-files for |
+|-------|---------|---------------------|
+| manage-references | references.json | N/A (use manage-references) |
+| manage-status | status.json | N/A (use manage-status) |
+| manage-plan-documents | request.md | N/A (use manage-plan-documents) |
+| manage-solution-outline | solution_outline.md | N/A (use manage-solution-outline) |
+| manage-tasks | tasks/*.toon | N/A (use manage-tasks) |
+| manage-files | any other file | Generic read/write/list |
+
+### No path-resolution verb
+
+`manage-files` has **no `resolve-path` verb** of its own — it exposes only the generic file operations listed under **Operations** above. Callers needing a *resolved absolute path* to a plan document MUST use the owning typed skill, not `manage-files`:
+
+- **Solution-outline path** → `plan-marshall:manage-solution-outline:manage-solution-outline resolve-path`
+- **Request-document path** → `plan-marshall:manage-plan-documents:manage-plan-documents request path`
+
+A `manage-files resolve-path` call does not exist in the argparse surface and will be rejected with `exit_code: 2` (`argparse_rejection`). Route path resolution through the owning script above.
+
+The broader class of caller-drift `argparse_rejection` failures (invented or paraphrased `manage-*` subcommands and flags) is remediated by the [`pm-plugin-development:recipe-fix-argparse-rejection`](../../../pm-plugin-development/skills/recipe-fix-argparse-rejection/SKILL.md) corpus — no bespoke per-call guard is added here.
+
+## Related
+
+- `manage-plan-documents` — Typed plan document operations (request.md)
+- `manage-references` — Reference tracking for plans (references.json)
+- `manage-logging` — Logging operations that complement file I/O

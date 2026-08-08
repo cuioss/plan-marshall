@@ -1,0 +1,2606 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
+"""
+ClaudeRuntime — Claude Code implementation of all 24 platform-runtime operations.
+
+Implements every abstract method from Runtime (runtime_base.py) for the Claude Code
+target.  All responses are serialized TOON strings built via the toon_success,
+toon_error, and toon_noop helpers from runtime_base.
+
+TOON output is consumed by manage-* skills and by platform_runtime.py (the router).
+Follows the tools-script-executor / ref-toon-format compliance contract documented
+in SKILL.md.
+"""
+from __future__ import annotations
+
+import json
+import os
+import re
+import shlex
+import subprocess
+import sys
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+
+# Bootstrap sys.path so sibling skill libraries resolve without the executor.
+# Walk up from this script to the skills/ root, then append each library dir.
+for _ancestor in Path(__file__).resolve().parents:
+    if _ancestor.name == "skills" and (_ancestor.parent / ".claude-plugin" / "plugin.json").is_file():
+        for _lib in (
+            "ref-toon-format",
+            "manage-terminal-title",
+            "tools-file-ops",
+            "script-shared",
+        ):
+            _lib_path = str(_ancestor / _lib / "scripts")
+            if _lib_path not in sys.path:
+                sys.path.append(_lib_path)
+        # script-shared organises its modules into subdirectories; the
+        # build-server wire protocol the ``wait for`` observable is inspected
+        # through lives one level down.
+        _build_lib_path = str(_ancestor / "script-shared" / "scripts" / "build")
+        if _build_lib_path not in sys.path:
+            sys.path.append(_build_lib_path)
+        break
+
+import session_binding  # noqa: E402
+from manage_terminal_title import _compose_body, compose, title_token_state  # noqa: E402,F401
+from runtime_base import Runtime, toon_error, toon_noop, toon_success  # noqa: E402,F401
+from toon_parser import parse_toon  # noqa: E402
+
+# ---------------------------------------------------------------------------
+# Session cache helpers — shared constants
+#
+# The per-session ``active-plan`` read/write/scan policy lives in the pure
+# ``session_binding`` module; ``_read_active_plan`` below delegates the read to
+# it (single home). This module keeps only the transcript-engine roots.
+# ---------------------------------------------------------------------------
+
+_PLAN_DIR_NAME = os.environ.get("PLAN_DIR_NAME", ".plan")
+_CLAUDE_PROJECTS_DIR = Path.home() / ".claude" / "projects"
+
+# Pattern: assistant messages in JSONL with usage data
+_USAGE_FIELD_RE = re.compile(
+    r"^\s*(total_tokens|input_tokens|output_tokens)\s*:\s*(\d+)",
+    re.MULTILINE,
+)
+
+# Pattern: canonical UUID format for session identifiers. The session_id
+# originates from an external hook payload and is interpolated into file
+# paths and glob patterns, so it MUST be validated against this strict
+# format before any filesystem use to prevent path traversal and glob
+# injection.
+_SESSION_ID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+)
+
+# ---------------------------------------------------------------------------
+# Transcript engine — Claude-shaped normalized-token computation.
+#
+# This block is the home of the Claude session-transcript engine, relocated
+# from manage-metrics: the ``~/.claude/projects/.../{session_id}.jsonl`` layout,
+# the ``{session_id}/subagents/agent-*.jsonl`` discovery, the ``<usage>`` return
+# tag, the ``message.usage`` four-field parse, and the Anthropic cache-pricing
+# weights. ``manage-metrics`` consumes the normalized numbers this engine emits
+# and never parses a transcript itself.
+# ---------------------------------------------------------------------------
+
+# Matches an embedded ``<usage>...</usage>`` block in subagent tool-result text.
+_USAGE_TAG_RE = re.compile(r"<usage>([\s\S]*?)</usage>", re.MULTILINE)
+
+# Matches the single-figure fields inside a ``<usage>`` tag body. The subagent
+# return tag carries a single token figure with no input/output split and no
+# cache fields, so these are the only keys it ever contains.
+_USAGE_TAG_FIELD_RE = re.compile(
+    r"^\s*(total_tokens|subagent_tokens|tool_uses|duration_ms)\s*:\s*(\d+)",
+    re.MULTILINE,
+)
+
+# Session-id match used by the subagent-transcript discovery (unanchored, to
+# match the legacy manage-metrics ``re.fullmatch`` semantics over the same
+# canonical UUID shape).
+_TRANSCRIPT_SESSION_ID_RE = re.compile(
+    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+)
+
+# The four distinct Claude API usage fields. These live only in the raw
+# subagent-transcript ``message.usage`` dicts — the subagent ``<usage>`` return
+# tag carries a single token figure with no input/output split and no cache
+# fields.
+_USAGE_FOUR_FIELDS = (
+    "input_tokens",
+    "output_tokens",
+    "cache_read_input_tokens",
+    "cache_creation_input_tokens",
+)
+
+# Billing weights (request-stated approximations): a cached read is ~0.1x the
+# cost of an input token, and a cache creation write is ~1.25x. The weighted
+# total is a billing-cost figure, NOT a work-comparable measure — cache_read
+# sums context re-reads across turns.
+_BILLING_WEIGHT_CACHE_READ = 0.1
+_BILLING_WEIGHT_CACHE_CREATION = 1.25
+
+# Exploration-share buckets. The DOMAIN of this map is population-derived: it was
+# read out of the live transcript corpus rather than recalled from memory, which
+# is what surfaced the three shapes an invented list gets wrong — a lowercase
+# ``bash`` alongside ``Bash``, the retired ``Task`` spelling coexisting with its
+# ``Agent`` rename, and a non-tool ``result`` name. Names are matched casefolded
+# so a casing variant cannot open a second bucket. ``_classify_tool_name`` fails
+# open into ``unclassified``, so a name outside this domain is COUNTED and
+# surfaced, never silently dropped; extend the map only after a name has actually
+# been observed in a transcript.
+_TOOL_BUCKETS: dict[str, str] = {
+    # exploration — locate or inspect existing state, no repo mutation
+    "read": "exploration",
+    "grep": "exploration",
+    "glob": "exploration",
+    "webfetch": "exploration",
+    "websearch": "exploration",
+    "toolsearch": "exploration",
+    "explore": "exploration",
+    "mcp__sonarqube__search_sonar_issues_in_projects": "exploration",
+    "mcp__sonarqube__get_project_quality_gate_status": "exploration",
+    "mcp__sonarqube__get_component_measures": "exploration",
+    "mcp__sonarqube__show_rule": "exploration",
+    "mcp__sonarqube__search_my_sonarqube_projects": "exploration",
+    "mcp__claude-in-chrome__read_page": "exploration",
+    "mcp__claude-in-chrome__find": "exploration",
+    "mcp__claude-in-chrome__tabs_context_mcp": "exploration",
+    "mcp__claude-in-chrome__navigate": "exploration",
+    "mcp__jetbrains__open_file_in_editor": "exploration",
+    # work — produce or mutate state
+    "write": "work",
+    "edit": "work",
+    "mcp__claude-in-chrome__form_input": "work",
+    "mcp__claude-in-chrome__computer": "work",
+    # execute — shell invocation; the intent is not recoverable from the name
+    # alone (``git status`` explores, ``pytest`` works), so it stays its own
+    # bucket rather than inflating either side of the ratio.
+    "bash": "execute",
+    # orchestration — control plane, scales with the workflow not the change
+    "skill": "orchestration",
+    "agent": "orchestration",
+    "task": "orchestration",
+    "taskcreate": "orchestration",
+    "taskupdate": "orchestration",
+    "tasklist": "orchestration",
+    "taskget": "orchestration",
+    "taskstop": "orchestration",
+    "taskoutput": "orchestration",
+    "askuserquestion": "orchestration",
+    "sendmessage": "orchestration",
+    "pushnotification": "orchestration",
+    "schedulewakeup": "orchestration",
+    "monitor": "orchestration",
+    "exitplanmode": "orchestration",
+    "workflow": "orchestration",
+    "reportfindings": "orchestration",
+}
+
+# Every bucket the per-phase counters carry. ``exploration`` / ``work`` /
+# ``execute`` form the exploration-share denominator; ``orchestration`` and
+# ``unclassified`` are emitted but excluded from the ratio, so the five buckets
+# partition the observed tool-call population and the exclusion stays auditable.
+# DERIVED, never hand-mirrored: the names come out of ``_TOOL_BUCKETS``' own value
+# population (``dict.fromkeys`` dedupes while preserving first-occurrence order)
+# plus the fail-open ``unclassified`` bucket ``_classify_tool_name`` returns for a
+# name outside that domain — so adding a bucket to the map cannot leave this
+# tuple behind.
+_TOOL_BUCKET_NAMES = tuple(dict.fromkeys([*_TOOL_BUCKETS.values(), "unclassified"]))
+
+
+# Exploration sub-sources, in report order. Exploration is not one activity: a
+# read of source or test code is a lookup an INDEX could answer, while a read of a
+# workflow or standard document is context that has to be RESIDENT to be useful.
+# ``unattributed`` is the fail-open member, mirroring ``unclassified`` in the tool
+# -name classifier — an unrecognised shape is counted and surfaced, never guessed.
+_EXPLORATION_SUBSOURCES = ("index_answerable", "doc_residency", "unattributed")
+
+# ``tool_use.input`` keys that carry a filesystem target, in preference order.
+# POPULATION-DERIVED, like ``_TOOL_BUCKETS`` above: a census of 1999 live
+# ``tool_use`` items found exactly two path-bearing key spellings — ``file_path``
+# (Read / Write / Edit) and ``path`` (Grep / Glob) — so no third spelling is
+# listed on speculation. The same census found the non-path-addressed tools
+# carrying ``url`` (WebFetch) and ``query`` (WebSearch), which match nothing here
+# and fall open into ``unattributed`` — the live shape that exercises that branch.
+# It also found ZERO items lacking ``input`` altogether, so the missing-input arm
+# of ``_extract_target_path`` is a defensive guard against a shape not currently
+# observed, not a routine path.
+_TARGET_PATH_KEYS = ("file_path", "path")
+
+# Source/test-code suffixes read as index-answerable. Population-derived from the
+# language domains this marketplace actually ships bundles for (pm-dev-python,
+# pm-dev-java, pm-dev-frontend) rather than guessed wide: an unlisted suffix fails
+# OPEN into ``unattributed``, where it stays disclosed and countable, so
+# under-listing costs visibility — never a wrong named attribution.
+_CODE_SUFFIXES = (".py", ".java", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".kt")
+
+# Path segments whose markdown bodies are workflow/standard documents rather than
+# code: a skill body (``skills/**/SKILL.md``) and a standard (``standards/*.md``).
+_DOC_MARKDOWN_SEGMENTS = frozenset({"skills", "standards"})
+
+
+def _empty_exploration_subsources() -> dict[str, int]:
+    """Return a zeroed exploration sub-source split.
+
+    Deliberately SEPARATE from ``_empty_tool_counters``: these are a byte-only
+    sub-split of one bucket under the ``exploration_{sub}_bytes`` key shape, not
+    members of the ``{bucket}_{measure}`` counter family, and folding them into
+    that dict would break the family's published key-set contract.
+    """
+    return {f"exploration_{sub}_bytes": 0 for sub in _EXPLORATION_SUBSOURCES}
+
+
+def _extract_target_path(tool_input: object) -> str | None:
+    """Return the filesystem target a ``tool_use`` item addresses, or None.
+
+    None is the honest answer for a call that carries no ``input`` at all and for
+    one whose input addresses something other than a path; the caller turns both
+    into the fail-open ``unattributed`` sub-source rather than a guess.
+    """
+    if not isinstance(tool_input, dict):
+        return None
+    for key in _TARGET_PATH_KEYS:
+        value = tool_input.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def _classify_exploration_target(target_path: str | None) -> str:
+    """Return the exploration sub-source for a call's target path.
+
+    Fails OPEN into ``"unattributed"`` — exactly as ``_classify_tool_name`` fails
+    open into ``"unclassified"``. Both "no recoverable path" and "a path shape
+    outside the recognised populations" are COUNTED here and surfaced, never
+    dropped and never attributed to a named sub-source on a guess.
+    """
+    if not target_path:
+        return "unattributed"
+    normalized = target_path.replace("\\", "/").casefold()
+    segments = normalized.split("/")
+    basename = segments[-1]
+    parents = set(segments[:-1])
+    if basename == "claude.md" or basename.endswith(".adoc"):
+        return "doc_residency"
+    if "doc" in parents:
+        return "doc_residency"
+    if basename.endswith(".md") and (_DOC_MARKDOWN_SEGMENTS & parents):
+        return "doc_residency"
+    if basename.endswith(_CODE_SUFFIXES):
+        return "index_answerable"
+    return "unattributed"
+
+
+def _classify_tool_name(name: object) -> str:
+    """Return the exploration-share bucket for a ``tool_use`` item's ``name``.
+
+    Fails open: a name outside the population-derived ``_TOOL_BUCKETS`` domain
+    returns ``"unclassified"`` so a newly-introduced tool surfaces as a non-zero
+    counter instead of vanishing from the totals.
+    """
+    if not isinstance(name, str):
+        return "unclassified"
+    return _TOOL_BUCKETS.get(name.strip().casefold(), "unclassified")
+
+
+def _empty_tool_counters() -> dict[str, int]:
+    """Return a zeroed per-phase tool-counter bucket (two measures per bucket).
+
+    ``{bucket}_tool_calls`` supports the turn-share denominator and
+    ``{bucket}_result_bytes`` the payload-byte share. Both are emitted for every
+    bucket because neither denominator alone separates "many cheap probes" from
+    "a few very large reads".
+    """
+    counters: dict[str, int] = {}
+    for bucket in _TOOL_BUCKET_NAMES:
+        counters[f"{bucket}_tool_calls"] = 0
+        counters[f"{bucket}_result_bytes"] = 0
+    return counters
+
+# Missing-executor guard. While a worktree-backed plan sits mid-phase-5 the
+# executor can be absent from the main checkout's cwd. Each executor-invoking
+# hook command is wrapped so an absent ``.plan/execute-script.py`` is a silent
+# no-op: ``[ -f ... ]`` is false, so the ``python3`` invocation never runs and no
+# ``[Errno 2] No such file or directory`` is surfaced as a "hook blocked" error.
+# A present executor runs the command normally. The trailing ``|| true`` keeps
+# the cosmetic terminal-title hook fail-soft on ANY command error — a
+# title-render failure must never block the user's prompt. These wrap the command
+# constants at their single source, so every install site inherits the guard.
+_EXECUTOR_GUARD_PREFIX = "[ -f .plan/execute-script.py ] && "
+_EXECUTOR_GUARD_SUFFIX = " || true"
+
+# Hook command installed by project initial-setup. Captures $CLAUDE_CODE_SESSION_ID
+# and stores it via manage-status; the renderer reads this cache to resolve the
+# active plan for the current session.
+_HOOK_COMMAND = (
+    f"{_EXECUTOR_GUARD_PREFIX}"
+    "python3 .plan/execute-script.py plan-marshall:platform-runtime:claude_hook"
+    f"{_EXECUTOR_GUARD_SUFFIX}"
+)
+
+# Render-title hook command installed across all seven render-trigger events
+# plus statusLine. Invoked by Claude Code on SessionStart (ONE matcher-less
+# entry, which already fires for every source including "clear"; the renderer
+# branches on ``source == "clear"`` and performs a session TEARDOWN instead of a
+# render, so a second ``matcher: "clear"`` entry would be redundant),
+# UserPromptSubmit, Notification, Stop, PreToolUse:AskUserQuestion,
+# PreToolUse:Bash, and PostToolUse (matcher-less — every tool call); the
+# statusLine variant appends ``--statusline`` for plain-text emission. The
+# PreToolUse:Bash entry surfaces the ⚙ busy icon BEFORE a long-running shell
+# command runs, so the title no longer shows the misleading ➤ active arrow
+# while the command is in flight. The matcher-less PostToolUse entry refreshes
+# the title after EVERY tool call, so the tab title tracks phase progress at the
+# same cadence as the statusLine footer instead of only after Bash /
+# AskUserQuestion calls. The statusLine variant is
+# built explicitly (not by appending to the guarded render command) so
+# ``--statusline`` lands on the python3 invocation, not after ``|| true``.
+_RENDER_HOOK_COMMAND = (
+    f"{_EXECUTOR_GUARD_PREFIX}"
+    "python3 .plan/execute-script.py "
+    "plan-marshall:platform-runtime:platform_runtime session render-title"
+    f"{_EXECUTOR_GUARD_SUFFIX}"
+)
+_STATUSLINE_COMMAND = (
+    f"{_EXECUTOR_GUARD_PREFIX}"
+    "python3 .plan/execute-script.py "
+    "plan-marshall:platform-runtime:platform_runtime session render-title --statusline"
+    f"{_EXECUTOR_GUARD_SUFFIX}"
+)
+
+# Conditional PreToolUse enforcement hook command. Installed (opt-in) as a
+# matcher-less ``hooks.PreToolUse`` entry, ORTHOGONAL to the terminal-title
+# render wiring: it invokes the enforcement leaf that blocks the four hard-rule
+# violation families inside a plan-marshall plan context (fail-open everywhere
+# else). Keyed on its own command string so its present/MISSING detection is
+# independent of the render-entry detection.
+_ENFORCEMENT_HOOK_COMMAND = (
+    f"{_EXECUTOR_GUARD_PREFIX}"
+    "python3 .plan/execute-script.py "
+    "plan-marshall:platform-runtime:claude_pretooluse_hook"
+    f"{_EXECUTOR_GUARD_SUFFIX}"
+)
+
+# Render-trigger hook events that each receive a single matcher-less entry
+# invoking the renderer. SessionStart also receives a single matcher-less entry
+# but must coexist with the session-capture entry, so it is handled separately
+# below.
+_RENDER_TRIGGER_EVENTS: tuple[str, ...] = (
+    "UserPromptSubmit",
+    "Notification",
+    "Stop",
+)
+
+# The terminal-title icon palette and body-format logic now live in the
+# ``manage-terminal-title`` library skill (consumed via ``compose`` above). This
+# module is the resolve+read+emit layer only: it reads ``status.json`` and emits
+# the OSC/statusLine bytes the composer returns.
+#
+# The composer is target-neutral — it knows nothing about Claude hook events. The
+# Claude-specific event → neutral-process-state mapping lives HERE (the Claude
+# runtime), and the resolved neutral state is what gets passed to ``compose``.
+
+
+def _claude_event_to_process_state(
+    hook_event_name: str | None, tool_name: str | None
+) -> str | None:
+    """Map a Claude hook event (+ optional tool name) to a neutral process state.
+
+    Returns one of the ``manage_terminal_title.PROCESS_STATES`` values, or
+    ``None`` when no event was supplied (the composer then applies its active
+    default). This is the Claude-target-specific half of the old ``resolve_icon``
+    logic, relocated out of the pure composer:
+
+    - ``Stop`` → ``"done"``
+    - ``Notification`` → ``"waiting"``
+    - ``PreToolUse`` + ``tool_name == "AskUserQuestion"`` → ``"waiting"``
+    - ``PreToolUse`` + ``tool_name == "Bash"`` → ``"busy"``
+    - ``UserPromptSubmit`` / ``SessionStart`` / ``PostToolUse`` (any tool) and
+      any other event → ``"active"``
+    - missing event → ``None`` (composer applies the active default)
+    """
+    if hook_event_name is None:
+        return None
+    if hook_event_name == "Stop":
+        return "done"
+    if hook_event_name == "Notification":
+        return "waiting"
+    if hook_event_name == "PreToolUse" and tool_name == "AskUserQuestion":
+        return "waiting"
+    if hook_event_name == "PreToolUse" and tool_name == "Bash":
+        return "busy"
+    return "active"
+
+
+# Owner recorded on every title-token the render-hook build bracket writes. Must
+# stay in the ``TITLE_TOKEN_OWNERS`` vocabulary owned by
+# ``manage-status/scripts/_status_core.py``.
+_TITLE_TOKEN_OWNER_BUILD_HOOK = "build-hook"
+
+# The four build-wrapper skills whose scripts route a long-running
+# build/orchestration command through the executor, as ``{bundle}:{skill}``
+# pairs. An executor notation is three-part (``{bundle}:{skill}:{script}``), so
+# the predicate below compares the first two segments of the notation
+# POSITIONAL against this set — the same bundle:skill oracle the generated
+# executor itself uses to classify a build-class invocation. The canonical
+# ``verify`` / ``coverage`` / ``quality-gate`` / ``module-tests`` verbs are
+# passed AS ``--command-args`` to these same wrappers, so a wrapper match
+# already covers them without matching a bare verb word.
+_BUILD_WRAPPER_NOTATIONS: frozenset[str] = frozenset(
+    {
+        "plan-marshall:build-pyproject",
+        "plan-marshall:build-maven",
+        "plan-marshall:build-gradle",
+        "plan-marshall:build-npm",
+    }
+)
+
+# The executor entry point. A build invocation names its wrapper notation in the
+# argument position immediately following it.
+_EXECUTOR_SCRIPT_PATH = ".plan/execute-script.py"
+
+
+def _command_is_build(command: str | None) -> bool:
+    """Return True when *command* INVOKES a build wrapper through the executor.
+
+    The match is STRUCTURAL, not textual. The command is parsed into argv with
+    :func:`shlex.split`, the executor entry point is located, and the token in
+    the notation position immediately after it is split on ``:``; its
+    ``{bundle}:{skill}`` prefix must be EQUAL to a member of
+    :data:`_BUILD_WRAPPER_NOTATIONS`. Equality on that one parsed positional —
+    never containment anywhere on the line — is what separates an invocation
+    from a mention.
+
+    The mention case is the thing this predicate excludes, and it is not
+    hypothetical: a command that merely NAMES a wrapper notation — as a quoted
+    argument to some other command, as part of a file path, or as content of a
+    file the command reads or writes (a solution outline containing the literal
+    string ``plan-marshall:build-pyproject`` is the shape actually observed in
+    the field) — is not a build and must not paint 🔨 for the duration of an
+    unrelated call. A substring test cannot tell those apart, so it is not used.
+
+    An empty / ``None`` command, a command shlex cannot parse (unbalanced
+    quotes), a command with no executor entry point, and a command whose
+    notation positional is absent or names a non-build skill all return False —
+    the existing ``PreToolUse:Bash`` → ⚙ busy mapping remains the fallback.
+    """
+    if not command:
+        return False
+    try:
+        argv = shlex.split(command)
+    except ValueError:
+        # Unbalanced quotes — not parseable as a command line, so not
+        # demonstrably a build invocation.
+        return False
+    for index, token in enumerate(argv):
+        if token != _EXECUTOR_SCRIPT_PATH and not token.endswith(f"/{_EXECUTOR_SCRIPT_PATH}"):
+            continue
+        if index + 1 >= len(argv):
+            return False
+        segments = argv[index + 1].split(":")
+        if len(segments) < 2:
+            return False
+        return f"{segments[0]}:{segments[1]}" in _BUILD_WRAPPER_NOTATIONS
+    return False
+
+
+# Required render-trigger entries inspected by the ``display`` health check, in
+# report order. Each tuple is (label, hooks_block_key, matcher). The label is the
+# token the menu doc tells the user to read; it matches the ``installed_events``
+# naming from ``_install_terminal_title_hooks`` exactly, except SessionStart
+# carries qualifiers naming which of its two variants each row checks.
+#
+# This tuple is the EXPECTED set and must agree with the INSTALLED set. Two
+# rows were previously divergent, and a divergence here is not cosmetic — the
+# check reports against this tuple, so a wrong expectation makes the health
+# verdict wrong in one direction or the other:
+#
+#   * ``PostToolUse`` was expected matcher-less while the installed shape is
+#     matcher-SCOPED (AskUserQuestion + Bash). The expectation is corrected to
+#     the two scoped rows rather than the installed shape being widened —
+#     PostToolUse:Bash is precisely the entry the machine-owned build-busy
+#     clear rides, and the render cadence is among the largest recurring script
+#     costs in this project, so both considerations point at keeping it narrow.
+#   * ``SessionStart:clear`` is installed (it is what routes the session
+#     teardown) but was absent from the expected set, so its removal would have
+#     gone unreported.
+_DISPLAY_RENDER_ENTRIES: tuple[tuple[str, str, str], ...] = (
+    ("SessionStart:matcher-less", "SessionStart", ""),
+    ("SessionStart:clear", "SessionStart", "clear"),
+    ("UserPromptSubmit", "UserPromptSubmit", ""),
+    ("Notification", "Notification", ""),
+    ("Stop", "Stop", ""),
+    ("PreToolUse:AskUserQuestion", "PreToolUse", "AskUserQuestion"),
+    ("PreToolUse:Bash", "PreToolUse", "Bash"),
+    ("PostToolUse:AskUserQuestion", "PostToolUse", "AskUserQuestion"),
+    ("PostToolUse:Bash", "PostToolUse", "Bash"),
+)
+
+
+def _diagnose_display_entries(settings_data: dict[str, Any]) -> tuple[list[str], bool]:
+    """Build the per-entry ``display`` diagnostic lines for *settings_data*.
+
+    Inspects every render-trigger entry in ``_DISPLAY_RENDER_ENTRIES`` plus the
+    ``statusLine`` command and ``env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE``. For
+    each, appends a line of the form ``"<label>: present"`` or
+    ``"<label>: MISSING"`` (the literal token ``MISSING`` is load-bearing — the
+    menu doc tells the user to grep for it).
+
+    Returns ``(lines, healthy)`` where ``healthy`` is True iff every required
+    entry is present.
+    """
+    hooks_block = settings_data.get("hooks", {})
+    if not isinstance(hooks_block, dict):
+        hooks_block = {}
+
+    lines: list[str] = []
+    healthy = True
+
+    for label, block_key, matcher in _DISPLAY_RENDER_ENTRIES:
+        entries = hooks_block.get(block_key, [])
+        present = isinstance(entries, list) and _has_render_entry(entries, matcher=matcher)
+        lines.append(f"{label}: {'present' if present else 'MISSING'}")
+        if not present:
+            healthy = False
+
+    # Enforcement-hook entry — keyed on _ENFORCEMENT_HOOK_COMMAND, NOT the render
+    # command, so it has its own present/MISSING label. The opt-in enforcement
+    # install is orthogonal to the terminal-title bundle: its absence does NOT
+    # mark the display unhealthy (a user may enable terminal-title without it).
+    pre_tool_use = hooks_block.get("PreToolUse", [])
+    enforcement_present = isinstance(pre_tool_use, list) and _has_enforcement_entry(
+        pre_tool_use
+    )
+    lines.append(
+        f"PreToolUse:enforcement: {'present' if enforcement_present else 'MISSING'}"
+    )
+
+    statusline = settings_data.get("statusLine")
+    statusline_present = isinstance(statusline, dict) and bool(statusline.get("command"))
+    lines.append(f"statusLine: {'present' if statusline_present else 'MISSING'}")
+    if not statusline_present:
+        healthy = False
+
+    env_block = settings_data.get("env", {})
+    env_present = (
+        isinstance(env_block, dict)
+        and env_block.get("CLAUDE_CODE_DISABLE_TERMINAL_TITLE") is not None
+    )
+    lines.append(
+        f"env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE: {'present' if env_present else 'MISSING'}"
+    )
+    if not env_present:
+        healthy = False
+
+    return lines, healthy
+
+
+def _terminal_title_active() -> bool:
+    """Return True when the terminal-title feature is wired up for this project.
+
+    The activation signal read by ``session teardown`` BEFORE it touches
+    anything: a project that never opted into terminal titles must not have its
+    tab title reset or its session binding dropped by the teardown.
+
+    Reads the same two settings files the ``display`` health check merges
+    (``.claude/settings.json`` and ``.claude/settings.local.json``, via
+    :func:`_merge_display_settings`) and reports active iff EITHER a render-hook
+    entry is installed on any render-trigger event (:data:`_DISPLAY_RENDER_ENTRIES`,
+    detected with :func:`_has_render_entry`) OR a ``statusLine`` command is
+    configured. Either channel alone means the feature is live.
+
+    Best-effort: any read/parse failure yields False (inactive), so an
+    unreadable settings file makes the teardown a no-op rather than a guess.
+    """
+    project_dir = Path(".")
+    shared = _read_json(project_dir / ".claude" / "settings.json") or {}
+    local = _read_json(project_dir / ".claude" / "settings.local.json") or {}
+    merged = _merge_display_settings(shared, local)
+
+    hooks_block = merged.get("hooks", {})
+    if isinstance(hooks_block, dict):
+        for _label, block_key, matcher in _DISPLAY_RENDER_ENTRIES:
+            entries = hooks_block.get(block_key, [])
+            if isinstance(entries, list) and _has_render_entry(entries, matcher=matcher):
+                return True
+
+    statusline = merged.get("statusLine")
+    return isinstance(statusline, dict) and bool(statusline.get("command"))
+
+
+def _merge_display_settings(*sources: dict[str, Any]) -> dict[str, Any]:
+    """Merge the display-relevant slices of several Claude settings dicts.
+
+    The ``display`` health-check must reflect entries wherever they legitimately
+    live — ``.claude/settings.json`` OR ``.claude/settings.local.json``. The
+    install resolver prefers a pre-existing shared ``settings.json``, while the
+    enforcement install pins ``settings.local.json``, so a hook entry can sit in
+    either file. This mirrors the ``hook`` check, which already treats either
+    file as authoritative. Per-event ``hooks`` entry lists are concatenated; the
+    first present ``statusLine`` and each first-seen ``env`` key win.
+    """
+    merged_hooks: dict[str, list[Any]] = {}
+    merged_env: dict[str, Any] = {}
+    merged_statusline: dict[str, Any] | None = None
+    for source in sources:
+        if not isinstance(source, dict):
+            continue
+        hooks = source.get("hooks", {})
+        if isinstance(hooks, dict):
+            for event, entries in hooks.items():
+                if isinstance(entries, list):
+                    merged_hooks.setdefault(event, []).extend(entries)
+        statusline = source.get("statusLine")
+        if (
+            merged_statusline is None
+            and isinstance(statusline, dict)
+            and statusline.get("command")
+        ):
+            merged_statusline = statusline
+        env_block = source.get("env", {})
+        if isinstance(env_block, dict):
+            for key, value in env_block.items():
+                merged_env.setdefault(key, value)
+    merged: dict[str, Any] = {"hooks": merged_hooks, "env": merged_env}
+    if merged_statusline is not None:
+        merged["statusLine"] = merged_statusline
+    return merged
+
+
+def _has_render_entry(entries: list[Any], matcher: str | None = None) -> bool:
+    """Return True when *entries* already contains a render-hook entry.
+
+    When *matcher* is None, any entry whose ``hooks[].command`` matches the
+    renderer command counts. When *matcher* is a string, the entry's
+    ``matcher`` field must equal it as well (used to disambiguate the
+    matcher-less and matcher:"clear" SessionStart variants).
+    """
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        if matcher is not None and entry.get("matcher", "") != matcher:
+            continue
+        hooks = entry.get("hooks", [])
+        if not isinstance(hooks, list):
+            continue
+        for h in hooks:
+            if isinstance(h, dict) and h.get("command") == _RENDER_HOOK_COMMAND:
+                return True
+    return False
+
+
+def _has_capture_entry(entries: list[Any]) -> bool:
+    """Return True when *entries* already contains the session-capture hook."""
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        hooks = entry.get("hooks", [])
+        if not isinstance(hooks, list):
+            continue
+        for h in hooks:
+            if isinstance(h, dict) and h.get("command") == _HOOK_COMMAND:
+                return True
+    return False
+
+
+def _has_enforcement_entry(entries: list[Any]) -> bool:
+    """Return True when *entries* already contains the PreToolUse enforcement hook.
+
+    Keyed on ``_ENFORCEMENT_HOOK_COMMAND`` (not the render command), so the
+    enforcement entry's presence is detected independently of the terminal-title
+    render entries that may also live in ``hooks.PreToolUse``.
+    """
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        hooks = entry.get("hooks", [])
+        if not isinstance(hooks, list):
+            continue
+        for h in hooks:
+            if isinstance(h, dict) and h.get("command") == _ENFORCEMENT_HOOK_COMMAND:
+                return True
+    return False
+
+
+def _render_entry(matcher: str = "") -> dict[str, Any]:
+    """Build a render-hook entry with the given matcher."""
+    return {
+        "matcher": matcher,
+        "hooks": [
+            {
+                "type": "command",
+                "command": _RENDER_HOOK_COMMAND,
+                "timeout": 5000,
+            }
+        ],
+    }
+
+
+def _capture_entry() -> dict[str, Any]:
+    """Build the session-id-capture SessionStart entry."""
+    return {
+        "matcher": "",
+        "hooks": [
+            {
+                "type": "command",
+                "command": _HOOK_COMMAND,
+                "timeout": 5000,
+            }
+        ],
+    }
+
+
+def _enforcement_entry() -> dict[str, Any]:
+    """Build the matcher-less PreToolUse enforcement entry."""
+    return {
+        "matcher": "",
+        "hooks": [
+            {
+                "type": "command",
+                "command": _ENFORCEMENT_HOOK_COMMAND,
+                "timeout": 5000,
+            }
+        ],
+    }
+
+
+def _install_enforcement_hook(settings_path: Path) -> dict[str, Any]:
+    """Idempotently install ONLY the PreToolUse enforcement entry into *settings_path*.
+
+    Adds the matcher-less enforcement entry to ``hooks.PreToolUse`` without
+    touching any existing entry — the terminal-title render matchers
+    (``AskUserQuestion`` / ``Bash``) in the same block, and every SessionStart
+    capture/render entry, are preserved verbatim. The install is orthogonal to
+    the terminal-title bundle: it never installs render wiring.
+
+    Args:
+        settings_path: Path to the JSON settings file. Created (with parent
+            dirs) when absent.
+
+    Returns:
+        Dict with keys:
+
+        - ``io_ok`` (bool): True iff the file was read AND written successfully.
+        - ``enforcement_status`` (str): ``installed`` when freshly added,
+          ``already_present`` when the entry was already there (no write).
+
+        Returns ``io_ok: False`` with ``enforcement_status: error`` on any I/O
+        failure.
+    """
+    failure: dict[str, Any] = {"io_ok": False, "enforcement_status": "error"}
+
+    try:
+        settings_path.parent.mkdir(parents=True, exist_ok=True)
+        settings_data = _read_json(settings_path) or {}
+
+        hooks_block = settings_data.setdefault("hooks", {})
+        if not isinstance(hooks_block, dict):
+            hooks_block = {}
+            settings_data["hooks"] = hooks_block
+
+        pre_tool_use = hooks_block.setdefault("PreToolUse", [])
+        if not isinstance(pre_tool_use, list):
+            pre_tool_use = []
+            hooks_block["PreToolUse"] = pre_tool_use
+
+        if _has_enforcement_entry(pre_tool_use):
+            return {"io_ok": True, "enforcement_status": "already_present"}
+
+        pre_tool_use.append(_enforcement_entry())
+        if not _write_json(settings_path, settings_data):
+            return failure
+
+        return {"io_ok": True, "enforcement_status": "installed"}
+    except (OSError, ValueError):
+        return failure
+
+
+def _install_terminal_title_hooks(
+    settings_path: Path,
+    overwrite_statusline: bool = False,
+    overwrite_env_disable: bool = False,
+) -> dict[str, Any]:
+    """Install the full terminal-title hook wiring into *settings_path*.
+
+    Installs (each block dedup-idempotent on the canonical command string):
+
+    - ``hooks.SessionStart`` — the existing ``claude_hook`` session-capture
+      entry (preserved when present, inserted when absent) **and** ONE
+      matcher-less render entry. The matcher-less entry already fires for every
+      source, and the renderer performs a session teardown when
+      ``source == "clear"``, so no separate ``matcher: "clear"`` entry is wired.
+    - ``hooks.UserPromptSubmit``, ``hooks.Notification``, ``hooks.Stop`` —
+      single matcher-less render entries each.
+    - ``hooks.PreToolUse`` — two render entries: one with
+      ``matcher: "AskUserQuestion"`` so the ``?`` icon flips BEFORE the prompt is
+      answered, and one with ``matcher: "Bash"`` so the ⚙ busy icon flips BEFORE
+      a long-running shell command runs.
+    - ``hooks.PostToolUse`` — TWO matcher-scoped render entries
+      (``matcher: "AskUserQuestion"`` and ``matcher: "Bash"``), deliberately
+      NOT widened to a matcher-less entry. The narrow shape is a standing
+      position: the render cadence is among the largest recurring script costs
+      in this project, and ``PostToolUse:Bash`` is the entry the machine-owned
+      ``build-busy`` clear rides, so a widen-and-prune pass would remove the
+      very entry that clear depends on.
+    - ``statusLine`` — ``{"type": "command", "command": _STATUSLINE_COMMAND}``.
+      Preserves a foreign existing value unless ``overwrite_statusline`` is True.
+    - ``env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE`` — set to ``"1"``. Preserves a
+      foreign existing value unless ``overwrite_env_disable`` is True.
+
+    Args:
+        settings_path: Path to the JSON settings file to install into. Created
+            (with parent dirs) when absent.
+        overwrite_statusline: When True, overwrite an existing ``statusLine``
+            whose command differs from ours. When False, the foreign value is
+            preserved and reported via ``statusLine_status: already_present_other``.
+        overwrite_env_disable: Same semantics for
+            ``env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE``.
+
+    Returns:
+        Dict with keys:
+
+        - ``io_ok`` (bool): True iff the file was read AND written successfully.
+        - ``installed_events`` (list[str]): event labels whose render entry was
+          freshly added on this call. The tool-scoped PreToolUse entries
+          use matcher-qualified labels (``PreToolUse:AskUserQuestion``,
+          ``PreToolUse:Bash``) so each can be reported individually; the
+          matcher-less PostToolUse entry is reported under the single label
+          ``PostToolUse``.
+        - ``already_present_events`` (list[str]): event labels where our render
+          entry was already present (no write).
+        - ``statusLine_status`` (str): one of ``installed``, ``already_present``,
+          ``already_present_other``, ``overwritten``.
+        - ``env_status`` (str): same enum for the env entry.
+
+        Returns ``io_ok: False`` (with the per-event lists empty and the
+        statuses set to ``error``) on any I/O failure.
+    """
+    failure: dict[str, Any] = {
+        "io_ok": False,
+        "installed_events": [],
+        "already_present_events": [],
+        "statusLine_status": "error",
+        "env_status": "error",
+    }
+
+    try:
+        settings_path.parent.mkdir(parents=True, exist_ok=True)
+        settings_data = _read_json(settings_path) or {}
+
+        hooks_block = settings_data.setdefault("hooks", {})
+        if not isinstance(hooks_block, dict):
+            hooks_block = {}
+            settings_data["hooks"] = hooks_block
+
+        installed_events: list[str] = []
+        already_present_events: list[str] = []
+
+        # --- SessionStart: capture entry + ONE matcher-less render entry. ---
+        session_start = hooks_block.setdefault("SessionStart", [])
+        if not isinstance(session_start, list):
+            session_start = []
+            hooks_block["SessionStart"] = session_start
+
+        # Capture entry: preserve when already present, insert when absent.
+        # This is the existing claude_hook session-id-capture entry; it must
+        # coexist with the new render entries.
+        if not _has_capture_entry(session_start):
+            session_start.append(_capture_entry())
+
+        if not _has_render_entry(session_start, matcher=""):
+            session_start.append(_render_entry(matcher=""))
+            installed_events.append("SessionStart:matcher-less")
+        else:
+            already_present_events.append("SessionStart:matcher-less")
+
+        # The matcher:"clear" variant is installed as its OWN entry: it is the
+        # trigger that routes a cleared session into the teardown, and the
+        # display health check expects it by label. Installing it here is what
+        # keeps the expected and installed sets in agreement — an expectation
+        # the installer never satisfies would make every fresh install report
+        # unhealthy.
+        if not _has_render_entry(session_start, matcher="clear"):
+            session_start.append(_render_entry(matcher="clear"))
+            installed_events.append("SessionStart:clear")
+        else:
+            already_present_events.append("SessionStart:clear")
+
+        # --- Single matcher-less render-trigger events. ---
+        for event_name in _RENDER_TRIGGER_EVENTS:
+            event_entries = hooks_block.setdefault(event_name, [])
+            if not isinstance(event_entries, list):
+                event_entries = []
+                hooks_block[event_name] = event_entries
+            if not _has_render_entry(event_entries, matcher=""):
+                event_entries.append(_render_entry(matcher=""))
+                installed_events.append(event_name)
+            else:
+                already_present_events.append(event_name)
+
+        # --- PreToolUse with matcher:"AskUserQuestion" and matcher:"Bash". ---
+        # AskUserQuestion flips the "?" icon before the prompt is answered; Bash
+        # flips the ⚙ busy icon before a long-running shell command runs.
+        pre_tool_use = hooks_block.setdefault("PreToolUse", [])
+        if not isinstance(pre_tool_use, list):
+            pre_tool_use = []
+            hooks_block["PreToolUse"] = pre_tool_use
+        if not _has_render_entry(pre_tool_use, matcher="AskUserQuestion"):
+            pre_tool_use.append(_render_entry(matcher="AskUserQuestion"))
+            installed_events.append("PreToolUse:AskUserQuestion")
+        else:
+            already_present_events.append("PreToolUse:AskUserQuestion")
+        if not _has_render_entry(pre_tool_use, matcher="Bash"):
+            pre_tool_use.append(_render_entry(matcher="Bash"))
+            installed_events.append("PreToolUse:Bash")
+        else:
+            already_present_events.append("PreToolUse:Bash")
+
+        # --- PostToolUse: TWO matcher-scoped render entries. ---
+        # Deliberately NOT widened to a matcher-less entry, and nothing is
+        # pruned: PostToolUse:Bash is the entry the machine-owned build-busy
+        # clear rides, so a widen-and-prune pass would remove the entry that
+        # clear depends on. Keeping the cadence narrow is also the cheaper
+        # shape — the render command is among the largest recurring script
+        # costs in this project.
+        post_tool_use = hooks_block.setdefault("PostToolUse", [])
+        if not isinstance(post_tool_use, list):
+            post_tool_use = []
+            hooks_block["PostToolUse"] = post_tool_use
+        for matcher in ("AskUserQuestion", "Bash"):
+            if not _has_render_entry(post_tool_use, matcher=matcher):
+                post_tool_use.append(_render_entry(matcher=matcher))
+                installed_events.append(f"PostToolUse:{matcher}")
+            else:
+                already_present_events.append(f"PostToolUse:{matcher}")
+
+        # --- statusLine: command entry with overwrite-on-request semantics. ---
+        statusline_block: dict[str, Any] = {
+            "type": "command",
+            "command": _STATUSLINE_COMMAND,
+        }
+        existing_statusline = settings_data.get("statusLine")
+        if existing_statusline is None:
+            settings_data["statusLine"] = statusline_block
+            statusline_status = "installed"
+        elif (
+            isinstance(existing_statusline, dict)
+            and existing_statusline.get("command") == _STATUSLINE_COMMAND
+        ):
+            statusline_status = "already_present"
+        elif overwrite_statusline:
+            settings_data["statusLine"] = statusline_block
+            statusline_status = "overwritten"
+        else:
+            statusline_status = "already_present_other"
+
+        # --- env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE: "1" with overwrite-on-request. ---
+        env_block = settings_data.setdefault("env", {})
+        if not isinstance(env_block, dict):
+            env_block = {}
+            settings_data["env"] = env_block
+        existing_env = env_block.get("CLAUDE_CODE_DISABLE_TERMINAL_TITLE")
+        if existing_env is None:
+            env_block["CLAUDE_CODE_DISABLE_TERMINAL_TITLE"] = "1"
+            env_status = "installed"
+        elif existing_env == "1":
+            env_status = "already_present"
+        elif overwrite_env_disable:
+            env_block["CLAUDE_CODE_DISABLE_TERMINAL_TITLE"] = "1"
+            env_status = "overwritten"
+        else:
+            env_status = "already_present_other"
+
+        write_ok = _write_json(settings_path, settings_data)
+        if not write_ok:
+            return failure
+
+        return {
+            "io_ok": True,
+            "installed_events": installed_events,
+            "already_present_events": already_present_events,
+            "statusLine_status": statusline_status,
+            "env_status": env_status,
+        }
+    except (OSError, ValueError):
+        return failure
+
+
+def _project_dir_path(project_dir: str) -> Path:
+    return Path(project_dir).resolve()
+
+
+def _marshal_json_path(project_dir: str) -> Path:
+    return _project_dir_path(project_dir) / _PLAN_DIR_NAME / "marshal.json"
+
+
+def _claude_settings_path(project_dir: str) -> Path:
+    return _project_dir_path(project_dir) / ".claude" / "settings.json"
+
+
+def _plan_dir(project_dir: str) -> Path:
+    return _project_dir_path(project_dir) / _PLAN_DIR_NAME
+
+
+def _local_plans_dir(project_dir: str) -> Path:
+    return _plan_dir(project_dir) / "local" / "plans"
+
+
+def _read_json(path: Path) -> dict[str, Any] | None:
+    """Read a JSON file, returning None on failure."""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            return None
+        return data
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _write_json(path: Path, data: dict[str, Any]) -> bool:
+    """Write a JSON file atomically via a temp file, returning True on success."""
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        tmp.replace(path)
+        return True
+    except OSError:
+        return False
+
+
+def _cwd_to_slug(cwd: str) -> str:
+    """Convert an absolute cwd path to a Claude-style project slug (slashes → dashes)."""
+    return cwd.replace("/", "-")
+
+
+def _find_transcript(session_id: str) -> Path | None:
+    """Locate the JSONL transcript for a Claude Code session.
+
+    ``session_id`` originates from an external hook payload and is
+    interpolated into filesystem paths and glob patterns below.  It is
+    validated against the canonical UUID format first; any value that does
+    not match is rejected to prevent path traversal and glob injection.
+    """
+    if not _SESSION_ID_RE.match(session_id):
+        return None
+    if not _CLAUDE_PROJECTS_DIR.is_dir():
+        return None
+    # Try the canonical cwd-slug path first.
+    cwd = _resolve_cwd()
+    slug = _cwd_to_slug(cwd)
+    direct = _CLAUDE_PROJECTS_DIR / slug / f"{session_id}.jsonl"
+    if direct.is_file():
+        return direct
+    # Fall back: scan all project dirs.
+    for candidate in _CLAUDE_PROJECTS_DIR.glob(f"*/{session_id}.jsonl"):
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _resolve_cwd() -> str:
+    """Return the git repository root, falling back to os.getcwd()."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+            check=False,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return os.getcwd()
+
+
+def _read_active_plan(session_id: str) -> str | None:
+    """Read the active plan_id for *session_id* from the per-session cache.
+
+    Thin delegation to the pure :func:`session_binding.resolve_plan` policy — the
+    single home of the session->plan read side. ``session render-title`` resolves
+    its session->plan binding through this function, and ``session resolve-plan``
+    reuses it, so both share the one read path. ``session_id`` originates from an
+    external hook payload (``$CLAUDE_CODE_SESSION_ID``); ``resolve_plan`` validates
+    its shape before any filesystem use and never raises.
+    """
+    return session_binding.resolve_plan(session_id)
+
+
+def _read_active_orchestrator(session_id: str) -> str | None:
+    """Read the active epic slug for *session_id* from the per-session cache.
+
+    The orchestrator-slot counterpart of :func:`_read_active_plan`: a thin
+    delegation to the pure :func:`session_binding.resolve_orchestrator` policy.
+    ``session render-title`` resolves a session->epic binding through this
+    function when no plan binding is present, so an orchestrator epic reaches the
+    PRIMARY hook channel. ``session_id`` originates from an external hook payload;
+    ``resolve_orchestrator`` validates its shape before any filesystem use and
+    never raises.
+    """
+    return session_binding.resolve_orchestrator(session_id)
+
+
+def _resolve_archived_status_json(plan_id: str) -> Path | None:
+    """Resolve the archived ``status.json`` for a plan, or ``None``.
+
+    Once a plan is archived, the live ``.plan/local/plans/{plan_id}/`` directory
+    is gone — ``cmd_archive`` moved it to
+    ``.plan/local/archived-plans/{YYYY-MM-DD}-{plan_id}/``. ``status.json`` is the
+    SINGLE source of persisted title state, so the archived state lives at
+    ``archived-plans/{YYYY-MM-DD}-{plan_id}/status.json``.
+
+    Globs ``archived-plans/*-{plan_id}/status.json`` (the ``*`` matches the
+    ``YYYY-MM-DD`` date prefix) and returns the first regular file found, or
+    ``None`` when no archived state exists. The returned path's parent name must
+    end with the exact ``-{plan_id}`` suffix to avoid a prefix collision between
+    similarly named plans.
+    """
+    archived_base = Path(_PLAN_DIR_NAME) / "local" / "archived-plans"
+    if not archived_base.is_dir():
+        return None
+    suffix = f"-{plan_id}"
+    try:
+        for candidate in sorted(archived_base.glob(f"*-{plan_id}/status.json"), reverse=True):
+            if candidate.is_file() and candidate.parent.name.endswith(suffix):
+                return candidate
+    except OSError:
+        return None
+    return None
+
+
+def _resolve_worktree_status_json(plan_id: str) -> Path | None:
+    """Resolve the phase-5+ worktree ``status.json`` for a plan, or ``None``.
+
+    Once a plan enters phase 5, its plan directory is MOVED into an isolated
+    worktree (ADR-002), so the main-live path
+    ``<_PLAN_DIR_NAME>/local/plans/{plan_id}/status.json`` no longer resolves.
+    The worktree-resident copy lives at
+    ``<_PLAN_DIR_NAME>/local/worktrees/{plan_id}/<_PLAN_DIR_NAME>/local/plans/{plan_id}/status.json``
+    (the outer ``<_PLAN_DIR_NAME>`` is the main checkout's tracked dir; the inner
+    one is the worktree's own).
+
+    Returns that path when it is a regular file, else ``None`` (best-effort, no
+    raise — mirroring :func:`_resolve_archived_status_json`'s guard style).
+    """
+    worktree_path = (
+        Path(_PLAN_DIR_NAME)
+        / "local"
+        / "worktrees"
+        / plan_id
+        / _PLAN_DIR_NAME
+        / "local"
+        / "plans"
+        / plan_id
+        / "status.json"
+    )
+    try:
+        if worktree_path.is_file():
+            return worktree_path
+    except OSError:
+        return None
+    return None
+
+
+def _live_title_token(status_data: dict[str, Any]) -> dict[str, Any] | None:
+    """Return *status_data*'s ``title_token`` record when live, else ``None``.
+
+    The aged-token predicate is applied HERE, on every read of ``status.json``:
+    this is the layer that touches the outside world, so it is the layer that
+    reads the clock and hands it to the composer's pure
+    :func:`manage_terminal_title.title_token_state` predicate. A stale record is
+    dropped from the state the reader returns, so every downstream consumer sees
+    it as absent and a stranded token self-heals without any writer sweeping for
+    it.
+    """
+    record = status_data.get("title_token")
+    if not isinstance(record, dict):
+        return None
+    if title_token_state({"title_token": record}, now=datetime.now(UTC)) is None:
+        return None
+    return record
+
+
+def _read_title_state(plan_id: str) -> dict[str, Any] | None:
+    """Read the title state for *plan_id* from ``status.json``, or ``None``.
+
+    Resolves ``status.json`` in three locations, in order: the main-live plan
+    dir (``<_PLAN_DIR_NAME>/local/plans/{plan_id}/status.json``); on absence, the
+    phase-5+ worktree copy resolved via :func:`_resolve_worktree_status_json`
+    (once the plan dir is moved into its worktree under ADR-002 the main-live
+    path misses); and finally the archived ``status.json`` resolved via
+    :func:`_resolve_archived_status_json`.
+
+    Returns a ``{current_phase, short_description, title_token}`` state dict (the
+    inputs :func:`manage_terminal_title.compose` consumes), reading
+    ``current_phase`` from the top-level field and ``short_description`` /
+    ``title_token`` from wherever they live in the status structure. Returns
+    ``None`` when none of the live, worktree, or archived files is present or
+    readable.
+
+    ``current_phase`` is sourced from the status ``current_phase`` field;
+    ``short_description`` and ``title_token`` are best-effort (a status.json
+    lacking them yields a state dict with those keys absent, which the composer
+    handles).
+    """
+    live_path = Path(_PLAN_DIR_NAME) / "local" / "plans" / plan_id / "status.json"
+    if live_path.is_file():
+        status_path: Path | None = live_path
+    else:
+        status_path = _resolve_worktree_status_json(plan_id)
+        if status_path is None:
+            status_path = _resolve_archived_status_json(plan_id)
+    if status_path is None:
+        return None
+
+    status_data = _read_json(status_path)
+    if status_data is None:
+        return None
+
+    state: dict[str, Any] = {}
+    current_phase = status_data.get("current_phase")
+    if isinstance(current_phase, str):
+        state["current_phase"] = current_phase
+    short_description = status_data.get("short_description")
+    if isinstance(short_description, str):
+        state["short_description"] = short_description
+    title_token = _live_title_token(status_data)
+    if title_token is not None:
+        state["title_token"] = title_token
+    return state
+
+
+def _mark_terminal_delivered(plan_id: str) -> bool:
+    """Record that *plan_id*'s archived terminal title has now been delivered.
+
+    The delivery obligation an archived plan carries is discharged the moment a
+    render event actually emits its terminal title. This writes the
+    :data:`session_binding._DELIVERED_MARKER` flag into the archived
+    ``status.json``, which is what flips
+    :func:`session_binding._terminal_delivery_pending` to False and releases the
+    plan's session slot to the next ``session doctor --fix`` sweep.
+
+    A plan with no archived ``status.json`` (a live or worktree-resident plan)
+    owes no archived delivery, so this is a no-op for it. Best-effort: returns
+    False on any resolution, read, or write failure and never raises — a missed
+    marker costs one extra GC cycle, never a lost title.
+    """
+    status_path = _resolve_archived_status_json(plan_id)
+    if status_path is None:
+        return False
+    status_data = _read_json(status_path)
+    if status_data is None:
+        return False
+    if status_data.get(session_binding._DELIVERED_MARKER) is True:
+        return True
+    status_data[session_binding._DELIVERED_MARKER] = True
+    try:
+        status_path.write_text(json.dumps(status_data, indent=2), encoding="utf-8")
+    except OSError:
+        return False
+    return True
+
+
+def _read_orchestrator_title_state(slug: str) -> dict[str, Any] | None:
+    """Read the orchestrator title state for *slug*, or ``None``.
+
+    Resolves the epic's ``status.json`` via
+    ``file_ops.get_store_dir('orchestrator', slug)`` — the main-anchored
+    orchestrator store (deliverable D0) — and returns the state dict the
+    :func:`manage_terminal_title.compose` orchestrator branch consumes:
+    ``kind: orchestrator`` plus the ``slug``, with ``title_token`` carried
+    through best-effort when persisted. Returns ``None`` when the slug is
+    empty, the store cannot be resolved, or the file is absent/unreadable —
+    the caller then reports the existing ``no_title_state`` no-op, so the
+    inherited terminal-title gating stays intact (no new config knob).
+    """
+    if not slug:
+        return None
+    try:
+        from file_ops import get_store_dir
+
+        status_path = get_store_dir("orchestrator", slug) / "status.json"
+    except (ImportError, RuntimeError, ValueError):
+        return None
+    try:
+        if not status_path.is_file():
+            return None
+    except OSError:
+        return None
+    status_data = _read_json(status_path)
+    if status_data is None:
+        return None
+    state: dict[str, Any] = {"kind": "orchestrator", "slug": slug}
+    title_token = _live_title_token(status_data)
+    if title_token is not None:
+        state["title_token"] = title_token
+    return state
+
+
+def _manage_status_store_session(plan_id: str, session_id: str) -> bool:
+    """Store session_id in plan status.json via manage-status metadata --set.
+
+    Returns True when the subprocess exits 0.
+    """
+    try:
+        result = subprocess.run(
+            [
+                sys.executable,
+                ".plan/execute-script.py",
+                "plan-marshall:manage-status:manage-status",
+                "metadata",
+                "--plan-id",
+                plan_id,
+                "--set",
+                "--field",
+                "session_id",
+                "--value",
+                session_id,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        return result.returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def _manage_status_read_session(plan_id: str) -> str | None:
+    """Read session_id from plan status.json via manage-status metadata --get."""
+    try:
+        result = subprocess.run(
+            [
+                sys.executable,
+                ".plan/execute-script.py",
+                "plan-marshall:manage-status:manage-status",
+                "metadata",
+                "--plan-id",
+                plan_id,
+                "--get",
+                "--field",
+                "session_id",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode != 0:
+            return None
+        parsed = parse_toon(result.stdout)
+        value = parsed.get("value")
+        return str(value) if value else None
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+def _manage_status_set_title_token(plan_id: str, state: str) -> bool:
+    """Best-effort ``manage-status title-token set --state {state} --owner build-hook``.
+
+    Persists *state* into the plan's ``status.json`` so the ``build-busy``
+    title-token set by the ``PreToolUse:Bash`` render hook survives to subsequent
+    renders and is clearable by the paired ``PostToolUse:Bash`` half. The token is
+    written under the ``build-hook`` owner, so only that same hook (or the
+    aged-token staleness rule) can clear it — an unrelated writer cannot clobber a
+    live build bracket. Best-effort: returns False on any failure and never raises
+    — a persist failure must never break the render hook. The bare STATE NAME is
+    passed; the render path never hard-codes a glyph. The timeout stays inside the
+    render hook's own budget.
+    """
+    return _manage_status_title_token(plan_id, "set", "--state", state)
+
+
+def _manage_status_clear_title_token(plan_id: str) -> bool:
+    """Best-effort ``manage-status title-token clear --owner build-hook``.
+
+    The machine-owned other half of the build bracket, fired from the
+    ``PostToolUse:Bash`` render event. The clear is owner-scoped to
+    ``build-hook``, so it removes only a token this hook set and leaves a live
+    ``merge-lock`` glyph intact. Best-effort: returns False on any failure and
+    never raises.
+    """
+    return _manage_status_title_token(plan_id, "clear")
+
+
+def _manage_status_title_token(plan_id: str, verb: str, *extra: str) -> bool:
+    """Shared best-effort driver for the ``build-hook``-owned title-token verbs."""
+    try:
+        result = subprocess.run(
+            [
+                sys.executable,
+                ".plan/execute-script.py",
+                "plan-marshall:manage-status:manage-status",
+                "title-token",
+                verb,
+                "--plan-id",
+                plan_id,
+                "--owner",
+                _TITLE_TOKEN_OWNER_BUILD_HOOK,
+                *extra,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        return result.returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def _manage_metrics_end_phase(plan_id: str, phase: str, total_tokens: int) -> bool:
+    """Store total_tokens via manage-metrics end-phase."""
+    try:
+        result = subprocess.run(
+            [
+                sys.executable,
+                ".plan/execute-script.py",
+                "plan-marshall:manage-metrics:manage-metrics",
+                "end-phase",
+                "--plan-id",
+                plan_id,
+                "--phase",
+                phase,
+                "--total-tokens",
+                str(total_tokens),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        return result.returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+# ---------------------------------------------------------------------------
+# Token capture helpers
+# ---------------------------------------------------------------------------
+
+
+def _read_token_cursor(plan_id: str, phase: str) -> int:
+    """Read the previously-recorded token count for a plan+phase.
+
+    Returns 0 when no prior capture exists.  Cursor is stored at
+    ``.plan/local/plans/{plan_id}/work/metrics-cursor-{phase}.toon``.
+    """
+    cursor_file = (
+        Path(_PLAN_DIR_NAME)
+        / "local"
+        / "plans"
+        / plan_id
+        / "work"
+        / f"metrics-cursor-{phase}.toon"
+    )
+    try:
+        for line in cursor_file.read_text(encoding="utf-8").splitlines():
+            stripped = line.strip()
+            if stripped.startswith("total_tokens:"):
+                _, _, raw = stripped.partition(":")
+                return int(raw.strip())
+    except (OSError, ValueError):
+        pass
+    return 0
+
+
+def _write_token_cursor(plan_id: str, phase: str, total: int) -> None:
+    """Persist the running token total for a plan+phase cursor."""
+    cursor_file = (
+        Path(_PLAN_DIR_NAME)
+        / "local"
+        / "plans"
+        / plan_id
+        / "work"
+        / f"metrics-cursor-{phase}.toon"
+    )
+    try:
+        cursor_file.parent.mkdir(parents=True, exist_ok=True)
+        cursor_file.write_text(f"plan_id: {plan_id}\nphase: {phase}\ntotal_tokens: {total}\n", encoding="utf-8")
+    except OSError:
+        pass
+
+
+def _sum_tokens_from_jsonl(transcript_path: Path) -> int:
+    """Sum input_tokens + output_tokens from all assistant messages in a JSONL transcript."""
+    total = 0
+    try:
+        with open(transcript_path, encoding="utf-8") as fh:
+            for raw_line in fh:
+                raw_line = raw_line.strip()
+                if not raw_line:
+                    continue
+                try:
+                    entry = json.loads(raw_line)
+                except (json.JSONDecodeError, ValueError):
+                    continue
+                if not isinstance(entry, dict):
+                    continue
+                msg = entry.get("message", {})
+                if not isinstance(msg, dict):
+                    continue
+                usage = msg.get("usage", {})
+                if not isinstance(usage, dict):
+                    continue
+                # Sum whichever fields are present.
+                input_tok = usage.get("input_tokens", 0) or 0
+                output_tok = usage.get("output_tokens", 0) or 0
+                total_tok = usage.get("total_tokens", 0) or 0
+                if total_tok:
+                    total += total_tok
+                elif input_tok or output_tok:
+                    total += input_tok + output_tok
+    except OSError:
+        pass
+    return total
+
+
+# ---------------------------------------------------------------------------
+# Transcript engine — per-phase normalized-token computation helpers.
+# ---------------------------------------------------------------------------
+
+
+def _resolve_subagent_transcripts(
+    session_id: str,
+    parent_transcript_path: Path | None = None,
+) -> list[Path]:
+    """Return absolute paths of subagent transcript JSONLs for the parent session.
+
+    Subagent transcripts live under
+    ``{project_dir}/{parent_session_id}/subagents/agent-*.jsonl``.
+
+    Discovery is anchored to the resolved parent transcript location when
+    ``parent_transcript_path`` is supplied: the subagents directory is derived as
+    ``parent_transcript_path.parent / session_id / 'subagents'``. This pins
+    discovery to the actual project-dir the parent transcript was found under, so
+    the worktree-vs-main-checkout cwd no longer changes the answer. When
+    ``parent_transcript_path`` is ``None`` the legacy ``_resolve_cwd()``-slug path
+    is used as a fallback. Returns ``[]`` when the directory is absent or empty.
+
+    The session-id UUID format guard is preserved on both paths.
+    """
+    if not re.fullmatch(_TRANSCRIPT_SESSION_ID_RE, session_id):
+        return []
+
+    if parent_transcript_path is not None:
+        subagents_dir = parent_transcript_path.parent / session_id / "subagents"
+    else:
+        try:
+            home = Path.home()
+        except (OSError, RuntimeError):
+            return []
+        projects = home / ".claude" / "projects"
+        cwd_slug = _resolve_cwd().replace("/", "-")
+        subagents_dir = projects / cwd_slug / session_id / "subagents"
+
+    try:
+        if not subagents_dir.is_dir():
+            return []
+        return sorted(p for p in subagents_dir.glob("agent-*.jsonl") if p.is_file())
+    except OSError:
+        return []
+
+
+def _add_usage_four_fields(usage: dict[str, Any], bucket: dict[str, int]) -> None:
+    """Accumulate the four ``message.usage`` fields from *usage* into *bucket*."""
+    for field in _USAGE_FOUR_FIELDS:
+        raw = usage.get(field)
+        if isinstance(raw, bool):
+            continue
+        if isinstance(raw, int):
+            bucket[field] = bucket.get(field, 0) + raw
+
+
+# Phase key used while walking a subagent transcript, whose entries all attribute
+# to the single phase the caller resolves from the transcript's first timestamp.
+_PENDING_PHASE = ""
+
+
+def _count_tool_use(
+    item: dict[str, Any],
+    phase: str,
+    per_phase_counters: dict[str, dict[str, int]],
+    call_index: dict[str, tuple[str, str, str]],
+) -> None:
+    """Count one ``tool_use`` item into *phase*'s bucket and index it by ``id``.
+
+    The matching ``tool_result`` arrives in a LATER transcript entry, so the
+    call's ``id`` -> ``(phase, bucket, exploration_subsource)`` association is
+    recorded in *call_index* to keep a result payload attributed to the same
+    phase, bucket, and sub-source as the call that produced it. The sub-source is
+    resolved HERE because the target path lives on the call's ``input`` — the
+    result item carries no path of its own.
+    """
+    bucket = _classify_tool_name(item.get("name"))
+    counters = per_phase_counters.setdefault(phase, _empty_tool_counters())
+    counters[f"{bucket}_tool_calls"] += 1
+    tool_id = item.get("id")
+    if isinstance(tool_id, str) and tool_id:
+        subsource = _classify_exploration_target(_extract_target_path(item.get("input")))
+        call_index[tool_id] = (phase, bucket, subsource)
+
+
+def _count_tool_result_bytes(
+    tool_use_id: object,
+    payload_text: str,
+    per_phase_counters: dict[str, dict[str, int]],
+    call_index: dict[str, tuple[str, str, str]],
+    per_phase_subsources: dict[str, dict[str, int]],
+) -> None:
+    """Add a ``tool_result`` payload's UTF-8 byte length to its call's bucket.
+
+    An exploration payload is ALSO added to its sub-source, so the three
+    ``exploration_{sub}_bytes`` figures partition ``exploration_result_bytes``
+    exactly — the same bytes re-cut, never additional ones.
+
+    A result whose originating call was never seen (a truncated or partial
+    transcript) is skipped rather than guessed at.
+    """
+    if not isinstance(tool_use_id, str):
+        return
+    located = call_index.get(tool_use_id)
+    if located is None:
+        return
+    phase, bucket, subsource = located
+    payload_bytes = len(payload_text.encode("utf-8", "replace"))
+    counters = per_phase_counters.setdefault(phase, _empty_tool_counters())
+    counters[f"{bucket}_result_bytes"] += payload_bytes
+    if bucket == "exploration":
+        subsources = per_phase_subsources.setdefault(phase, _empty_exploration_subsources())
+        subsources[f"exploration_{subsource}_bytes"] += payload_bytes
+
+
+def _fold_turn_residency(
+    phase: str,
+    per_phase_counters: dict[str, dict[str, int]],
+    per_phase_residency: dict[str, dict[str, int]],
+) -> None:
+    """Fold one turn's worth of byte residency into *phase*'s attribution weights.
+
+    Called once per usage-bearing transcript entry — i.e. once per context read
+    the phase was actually billed for — so the number of folds IS the phase's
+    turn count, and each bucket's accumulated weight ends up as ``bytes x the
+    number of turns those bytes stayed resident``. Adding the CUMULATIVE resident
+    byte total once per turn is what makes the weight turn-weighted without a
+    per-payload ledger: a payload that entered early is re-added on every
+    subsequent fold, while one that entered on the last turn is counted once.
+    """
+    resident = per_phase_counters.get(phase) or {}
+    weights = per_phase_residency.setdefault(phase, dict.fromkeys(_TOOL_BUCKET_NAMES, 0))
+    for bucket in _TOOL_BUCKET_NAMES:
+        weights[bucket] += resident.get(f"{bucket}_result_bytes", 0)
+
+
+def _attribute_cache_read(
+    cache_read_total: int, weights: dict[str, int], subagent_cache_read: int = 0
+) -> dict[str, int]:
+    """Split one phase's recorded ``cache_read`` across the entering byte sources.
+
+    The split is proportional to *weights* — the turn-weighted residency
+    accumulated by ``_fold_turn_residency`` — and the emitted key set is DERIVED
+    from ``_TOOL_BUCKET_NAMES``, so a bucket added to ``_TOOL_BUCKETS`` cannot
+    leave this group behind.
+
+    **Only the parent-observed portion is split.** *cache_read_total* includes
+    ``cache_read`` folded in from subagent transcripts, but those payloads are
+    added after the parent walk and never pass through ``_fold_turn_residency``,
+    so they contribute no residency weight. Splitting the full total across
+    parent-only weights would spread the subagent share over buckets it was
+    never observed to occupy — the same defect the ``total_weight == 0`` branch
+    below avoids. *subagent_cache_read* is therefore subtracted before the split
+    and reaches the residual via the remainder.
+
+    **Exact reconciliation.** Each named part is floored, and
+    ``cache_read_unattributed`` is computed as the REMAINDER rather than as its
+    own proportional share. The parts plus the residual therefore sum to
+    *cache_read_total* exactly, and every rounding crumb lands in the residual —
+    which is the disclosure column, never a named share. Weight the walk could
+    not tie to an observed payload (``total_weight == 0`` while the phase was
+    still billed for a context read) leaves the whole figure in the residual
+    rather than being spread across buckets it was never observed to belong to.
+
+    Emission is unconditional: a phase recording ``cache_read == 0`` gets every
+    key at a measured zero, never an absent key.
+    """
+    attributed = {f"cache_read_attributed_{bucket}": 0 for bucket in _TOOL_BUCKET_NAMES}
+    total_weight = sum(weights.get(bucket, 0) for bucket in _TOOL_BUCKET_NAMES)
+    # Clamped at zero so a subagent figure exceeding the phase total can only
+    # empty the split, never invert it into negative named shares.
+    attributable = max(0, cache_read_total - max(0, subagent_cache_read))
+    if attributable > 0 and total_weight > 0:
+        for bucket in _TOOL_BUCKET_NAMES:
+            attributed[f"cache_read_attributed_{bucket}"] = (
+                attributable * weights.get(bucket, 0) // total_weight
+            )
+    attributed["cache_read_unattributed"] = cache_read_total - sum(attributed.values())
+    return attributed
+
+
+def _sum_subagent_transcript(
+    path: Path, subsource_bytes: dict[str, int] | None = None
+) -> tuple[dict[str, int], str | None, dict[str, int]]:
+    """Sum usage and tool-call counters across one subagent transcript JSONL.
+
+    Returns ``(four_field_bucket, first_timestamp_iso, tool_counters)``.
+    ``first_timestamp_iso`` is ``None`` when no line carried a timestamp. The
+    whole transcript's ``tool_counters`` attribute to the single phase that
+    timestamp resolves to — the dispatched envelope's exploration belongs to the
+    phase that spawned it, and reusing the existing first-timestamp attribution
+    keeps one attribution path rather than introducing a second.
+
+    *subsource_bytes*, when supplied, ACCUMULATES this transcript's exploration
+    sub-source split into the caller's dict. It is an out-parameter rather than a
+    fourth return element because the sub-sources are a byte-only sub-split of one
+    bucket, NOT members of the ``{bucket}_{measure}`` counter family the third
+    return value realises — folding them in there would break that family's
+    published key-set contract. Supplying it is what keeps the partition invariant
+    (sub-sources sum to ``exploration_result_bytes``) true for phases whose bytes
+    came from a dispatched envelope rather than the parent turn.
+    """
+    bucket: dict[str, int] = dict.fromkeys(_USAGE_FOUR_FIELDS, 0)
+    per_phase_tools: dict[str, dict[str, int]] = {}
+    per_phase_subsources: dict[str, dict[str, int]] = {}
+    call_index: dict[str, tuple[str, str, str]] = {}
+    first_timestamp: str | None = None
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                except (json.JSONDecodeError, AttributeError):
+                    continue
+                if not isinstance(entry, dict):
+                    continue
+                if first_timestamp is None:
+                    ts = entry.get("timestamp")
+                    if isinstance(ts, str) and ts:
+                        first_timestamp = ts
+                msg = entry.get("message", {})
+                usage = msg.get("usage", {}) if isinstance(msg, dict) else {}
+                if isinstance(usage, dict) and usage:
+                    _add_usage_four_fields(usage, bucket)
+                content = msg.get("content") if isinstance(msg, dict) else None
+                if not isinstance(content, list):
+                    continue
+                for item in content:
+                    if not isinstance(item, dict):
+                        continue
+                    if item.get("type") == "tool_use":
+                        _count_tool_use(item, _PENDING_PHASE, per_phase_tools, call_index)
+                    elif item.get("type") == "tool_result":
+                        _count_tool_result_bytes(
+                            item.get("tool_use_id"),
+                            _extract_text_payload(item.get("content")),
+                            per_phase_tools,
+                            call_index,
+                            per_phase_subsources,
+                        )
+    except OSError:
+        return dict.fromkeys(_USAGE_FOUR_FIELDS, 0), None, _empty_tool_counters()
+    if subsource_bytes is not None:
+        for key, value in per_phase_subsources.get(_PENDING_PHASE, {}).items():
+            subsource_bytes[key] = subsource_bytes.get(key, 0) + value
+    return bucket, first_timestamp, per_phase_tools.get(_PENDING_PHASE, _empty_tool_counters())
+
+
+def _window_for_timestamp(
+    timestamp_iso: str | None,
+    windows: list[tuple[str, datetime, datetime]],
+) -> str | None:
+    """Return the phase name whose window contains *timestamp_iso*, else None.
+
+    Boundary ties resolve to the newer phase via latest-window-wins (reversed
+    iteration).
+    """
+    if not timestamp_iso:
+        return None
+    try:
+        ts = datetime.fromisoformat(timestamp_iso.replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
+    for phase_name, start_dt, end_dt in reversed(windows):
+        if start_dt <= ts <= end_dt:
+            return phase_name
+    return None
+
+
+def _attribute_subagent_usage(
+    timestamp_iso: str | None,
+    windows: list[tuple[str, datetime, datetime]],
+    body: str,
+    per_phase: dict[str, dict[str, int]],
+) -> bool:
+    """Parse a ``<usage>`` body and add its totals to the matching phase row.
+
+    Returns True when the totals were attributed, False when no phase window
+    contained the timestamp.
+    """
+    matching_phase = _window_for_timestamp(timestamp_iso, windows)
+    if matching_phase is None:
+        return False
+
+    fields = {m.group(1): int(m.group(2)) for m in _USAGE_TAG_FIELD_RE.finditer(body)}
+    bucket = per_phase.setdefault(
+        matching_phase,
+        {"total_tokens": 0, "tool_uses": 0, "duration_ms": 0, "samples": 0},
+    )
+    # The harness sometimes emits the sub-agent token figure under the
+    # ``subagent_tokens`` key instead of the canonical ``total_tokens``; accept
+    # either so the token bucket is never silently dropped to zero.
+    bucket["total_tokens"] += fields.get("total_tokens", fields.get("subagent_tokens", 0))
+    bucket["tool_uses"] += fields.get("tool_uses", 0)
+    bucket["duration_ms"] += fields.get("duration_ms", 0)
+    bucket["samples"] += 1
+    return True
+
+
+def _billing_weighted_total(four_fields: dict[str, int]) -> int:
+    """Compute the billing-weighted token total from the four-field usage view.
+
+    ``input + output + round(0.1 * cache_read) + round(1.25 * cache_creation)``.
+    A billing-cost figure, NOT a work-comparable measure.
+    """
+    return (
+        four_fields.get("input_tokens", 0)
+        + four_fields.get("output_tokens", 0)
+        + round(four_fields.get("cache_read_input_tokens", 0) * _BILLING_WEIGHT_CACHE_READ)
+        + round(four_fields.get("cache_creation_input_tokens", 0) * _BILLING_WEIGHT_CACHE_CREATION)
+    )
+
+
+def _extract_text_payload(content: object) -> str:
+    """Best-effort flattening of a tool_result content payload to a single string."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        chunks: list[str] = []
+        for item in content:
+            if isinstance(item, dict):
+                text = item.get("text") or item.get("content")
+                if isinstance(text, str):
+                    chunks.append(text)
+        return "\n".join(chunks)
+    return ""
+
+
+def _find_enrich_transcript(session_id: str) -> Path | None:
+    """Locate the parent JSONL transcript for *session_id* under ~/.claude/projects.
+
+    Mirrors the legacy manage-metrics ``cmd_enrich`` discovery: scan project-dir
+    subtrees whose name contains the session id, then fall back to the direct
+    ``{session_id}.jsonl`` file pattern. Returns ``None`` when no transcript is
+    found.
+    """
+    projects_dir = Path.home() / ".claude" / "projects"
+    if not projects_dir.exists():
+        return None
+
+    try:
+        for session_dir in projects_dir.rglob("*"):
+            if session_dir.is_dir() and session_id in session_dir.name:
+                for jsonl_file in session_dir.glob("*.jsonl"):
+                    return jsonl_file
+
+        for project_dir in projects_dir.iterdir():
+            if project_dir.is_dir():
+                candidate = project_dir / f"{session_id}.jsonl"
+                if candidate.exists():
+                    return candidate
+    except OSError:
+        return None
+    return None
+
+
+def _parse_windows(windows: list[tuple[str, str, str]]) -> list[tuple[str, datetime, datetime]]:
+    """Parse ``(phase, start_iso, end_iso)`` tuples into datetime windows.
+
+    Entries whose start/end are unparseable are dropped (mirroring the legacy
+    ``_phase_window_lookup`` filter).
+    """
+    parsed: list[tuple[str, datetime, datetime]] = []
+    for entry in windows:
+        if len(entry) != 3:
+            continue
+        phase_name, start_str, end_str = entry
+        try:
+            start_dt = datetime.fromisoformat(str(start_str))
+            end_dt = datetime.fromisoformat(str(end_str))
+        except (ValueError, TypeError):
+            continue
+        parsed.append((phase_name, start_dt, end_dt))
+    return parsed
+
+
+def _compute_normalized_tokens(
+    session_id: str,
+    windows: list[tuple[str, str, str]],
+) -> tuple[dict[str, dict[str, int]], dict[str, int]] | None:
+    """Walk the Claude session transcript and compute per-phase normalized tokens.
+
+    Returns ``(per_phase, counters)`` where ``per_phase`` maps each attributed
+    phase to a normalized bucket carrying the four ``message.usage`` fields, the
+    billing-weighted total, the subagent ``<usage>`` attribution
+    (``subagent_total_tokens`` / ``subagent_tool_uses`` / ``subagent_duration_ms``
+    / ``subagent_samples``), the exploration-share counters
+    (``{exploration,work,execute,orchestration,unclassified}_tool_calls`` and the
+    matching ``_result_bytes``), the cache-read attribution group
+    (``cache_read_attributed_{bucket}`` plus the ``cache_read_unattributed``
+    residual), and the exploration sub-source split
+    (``exploration_{index_answerable,doc_residency,unattributed}_bytes``, which
+    partitions ``exploration_result_bytes`` by what each call TARGETED).
+    ``counters`` carries the attribution counters.
+
+    The attribution group splits the phase's recorded ``cache_read`` by
+    TURN-WEIGHTED RESIDENCY — each bucket's payload bytes multiplied by the number
+    of the phase's billed turns those bytes stayed in context — and reconciles
+    EXACTLY: the five named parts plus the residual sum to the recorded figure.
+    Payloads folded in from subagent transcripts land in ``_result_bytes`` after
+    the main walk and therefore carry no residency weight of their own, so their
+    share of ``cache_read`` is disclosed in the residual rather than spread across
+    buckets on a weight that was never observed.
+
+    Because this walk always runs on the Claude target, every composed phase
+    bucket carries the full counter key set — a phase with no tool calls reports
+    a MEASURED zero, and a phase recording no ``cache_read`` still carries every
+    attributed key and the residual at zero. Counters are ABSENT only where no
+    bucket is produced at all (no transcript, or a target that declines the
+    primitive).
+
+    Returns ``None`` when no parent transcript can be located (the caller maps
+    this to a ``transcript_not_found`` no-op).
+    """
+    transcript_path = _find_enrich_transcript(session_id)
+    if transcript_path is None:
+        return None
+
+    parsed_windows = _parse_windows(windows)
+
+    message_count = 0
+    per_phase_subagent: dict[str, dict[str, int]] = {}
+    subagent_calls_attributed = 0
+    per_phase_four_fields: dict[str, dict[str, int]] = {}
+    per_phase_tools: dict[str, dict[str, int]] = {}
+    per_phase_residency: dict[str, dict[str, int]] = {}
+    per_phase_subsources: dict[str, dict[str, int]] = {}
+    # cache_read folded in from subagent transcripts, held separately from the
+    # four-field bucket so the attribution split can exclude it: these payloads
+    # never pass through _fold_turn_residency, so they carry no residency weight
+    # and their share must land in the residual rather than on parent weights.
+    per_phase_subagent_cache_read: dict[str, int] = {}
+    call_index: dict[str, tuple[str, str, str]] = {}
+
+    def _four_field_bucket(phase_name: str) -> dict[str, int]:
+        return per_phase_four_fields.setdefault(phase_name, dict.fromkeys(_USAGE_FOUR_FIELDS, 0))
+
+    try:
+        with open(transcript_path, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                except (json.JSONDecodeError, AttributeError):
+                    continue
+
+                msg = entry.get("message", {}) if isinstance(entry, dict) else {}
+                timestamp = entry.get("timestamp") if isinstance(entry, dict) else None
+                usage = msg.get("usage", {}) if isinstance(msg, dict) else {}
+                # The phase this entry's context read is billed to, when it is a
+                # usage-bearing entry at all. Captured here and consumed at the
+                # END of the loop body so the residency fold sees every payload
+                # this entry contributed.
+                turn_phase: str | None = None
+                if isinstance(usage, dict) and usage:
+                    if usage.get("total_tokens") or usage.get("input_tokens") or usage.get("output_tokens"):
+                        message_count += 1
+                        if parsed_windows and isinstance(timestamp, str):
+                            parent_phase = _window_for_timestamp(timestamp, parsed_windows)
+                            if parent_phase is not None:
+                                turn_phase = parent_phase
+                                _add_usage_four_fields(usage, _four_field_bucket(parent_phase))
+
+                if not parsed_windows:
+                    continue
+                content = msg.get("content") if isinstance(msg, dict) else None
+                payloads: list[str] = []
+                if isinstance(content, list):
+                    entry_phase = _window_for_timestamp(timestamp, parsed_windows)
+                    for item in content:
+                        if not isinstance(item, dict):
+                            continue
+                        if item.get("type") == "tool_result":
+                            payload_text = _extract_text_payload(item.get("content"))
+                            payloads.append(payload_text)
+                            _count_tool_result_bytes(
+                                item.get("tool_use_id"),
+                                payload_text,
+                                per_phase_tools,
+                                call_index,
+                                per_phase_subsources,
+                            )
+                        elif item.get("type") == "text":
+                            text = item.get("text")
+                            if isinstance(text, str):
+                                payloads.append(text)
+                        elif item.get("type") == "tool_use" and entry_phase is not None:
+                            _count_tool_use(item, entry_phase, per_phase_tools, call_index)
+                elif isinstance(content, str):
+                    payloads.append(content)
+
+                for payload in payloads:
+                    if not payload or "<usage>" not in payload:
+                        continue
+                    for tag_match in _USAGE_TAG_RE.finditer(payload):
+                        if _attribute_subagent_usage(
+                            timestamp, parsed_windows, tag_match.group(1), per_phase_subagent
+                        ):
+                            subagent_calls_attributed += 1
+
+                # One fold per billed context read, at the END of the entry so
+                # this turn's own payloads are already resident.
+                if turn_phase is not None:
+                    _fold_turn_residency(turn_phase, per_phase_tools, per_phase_residency)
+    except OSError:
+        return None
+
+    subagent_transcripts_walked = 0
+    if parsed_windows:
+        for sub_path in _resolve_subagent_transcripts(session_id, transcript_path):
+            subagent_transcripts_walked += 1
+            sub_subsources = _empty_exploration_subsources()
+            sub_fields, sub_ts, sub_tools = _sum_subagent_transcript(sub_path, sub_subsources)
+            sub_phase = _window_for_timestamp(sub_ts, parsed_windows)
+            if sub_phase is None:
+                continue
+            bucket = _four_field_bucket(sub_phase)
+            for field in _USAGE_FOUR_FIELDS:
+                bucket[field] += sub_fields.get(field, 0)
+            per_phase_subagent_cache_read[sub_phase] = per_phase_subagent_cache_read.get(
+                sub_phase, 0
+            ) + sub_fields.get("cache_read_input_tokens", 0)
+            sub_counters = per_phase_tools.setdefault(sub_phase, _empty_tool_counters())
+            for key, value in sub_tools.items():
+                sub_counters[key] += value
+            # Folded in lock-step with the parent counters above so the
+            # sub-sources keep partitioning ``exploration_result_bytes`` exactly.
+            phase_subsources = per_phase_subsources.setdefault(
+                sub_phase, _empty_exploration_subsources()
+            )
+            for key, value in sub_subsources.items():
+                phase_subsources[key] += value
+
+    # Compose the per-phase normalized result. Each phase carries the four-field
+    # view, the billing-weighted total, the subagent <usage> attribution, and the
+    # exploration-share counters.
+    per_phase: dict[str, dict[str, int]] = {}
+    phase_names = set(per_phase_four_fields) | set(per_phase_subagent) | set(per_phase_tools)
+    for phase_name in phase_names:
+        four = per_phase_four_fields.get(phase_name, dict.fromkeys(_USAGE_FOUR_FIELDS, 0))
+        sub = per_phase_subagent.get(phase_name)
+        phase_bucket: dict[str, int] = {
+            "input": four.get("input_tokens", 0),
+            "output": four.get("output_tokens", 0),
+            "cache_read": four.get("cache_read_input_tokens", 0),
+            "cache_creation": four.get("cache_creation_input_tokens", 0),
+            "input_tokens": four.get("input_tokens", 0),
+            "output_tokens": four.get("output_tokens", 0),
+            "cache_read_input_tokens": four.get("cache_read_input_tokens", 0),
+            "cache_creation_input_tokens": four.get("cache_creation_input_tokens", 0),
+            "billing_weighted_total": _billing_weighted_total(four),
+            "subagent_total_tokens": 0,
+            "subagent_tool_uses": 0,
+            "subagent_duration_ms": 0,
+            "subagent_samples": 0,
+        }
+        phase_bucket["total"] = (
+            four.get("input_tokens", 0)
+            + four.get("output_tokens", 0)
+            + four.get("cache_read_input_tokens", 0)
+            + four.get("cache_creation_input_tokens", 0)
+        )
+        if sub is not None:
+            phase_bucket["subagent_total_tokens"] = sub["total_tokens"]
+            phase_bucket["subagent_tool_uses"] = sub["tool_uses"]
+            phase_bucket["subagent_duration_ms"] = sub["duration_ms"]
+            phase_bucket["subagent_samples"] = sub["samples"]
+        # The walk always ran, so every composed phase carries the full counter
+        # key set: a phase with no tool calls reports a MEASURED zero rather than
+        # an absent counter.
+        phase_bucket.update(per_phase_tools.get(phase_name) or _empty_tool_counters())
+        # Exploration sub-sources: the same exploration bytes re-cut by what the
+        # call targeted. Unconditional for the same absent-is-not-zero reason —
+        # a phase that ran no exploration call reports three measured zeros.
+        phase_bucket.update(
+            per_phase_subsources.get(phase_name) or _empty_exploration_subsources()
+        )
+        # Cache-read attribution: split the phase's recorded cache_read across the
+        # byte sources that put those bytes into context, in proportion to how
+        # long each source's payloads stayed resident. Unconditional for the same
+        # reason as the counters above — the residual must be readable even when
+        # it is zero.
+        phase_bucket.update(
+            _attribute_cache_read(
+                four.get("cache_read_input_tokens", 0),
+                per_phase_residency.get(phase_name) or {},
+                per_phase_subagent_cache_read.get(phase_name, 0),
+            )
+        )
+        per_phase[phase_name] = phase_bucket
+
+    counters = {
+        "message_count": message_count,
+        "subagent_phases_attributed": len(per_phase_subagent),
+        "subagent_calls_attributed": subagent_calls_attributed,
+        "subagent_transcripts_walked": subagent_transcripts_walked,
+        "four_field_phases_attributed": len(per_phase_four_fields),
+        # Run-level surfacing of tool names outside the population-derived
+        # domain. A non-zero value means the classifier met a name it has never
+        # seen — the signal that _TOOL_BUCKETS needs extending.
+        "unclassified_tool_calls": sum(
+            phase.get("unclassified_tool_calls", 0) for phase in per_phase_tools.values()
+        ),
+    }
+    return per_phase, counters
+
+
+# ---------------------------------------------------------------------------
+# Permission helpers (thin wrappers over existing scripts)
+# ---------------------------------------------------------------------------
+
+
+def _claude_project_settings_path(project_dir: str | None = None) -> Path:
+    """Return the Claude project settings file path to write to.
+
+    Prefers ``.claude/settings.json`` when it already exists; otherwise targets
+    ``.claude/settings.local.json``. This is the single home for Claude project
+    settings-path resolution — the ``tools-permission-*`` scripts delegate here
+    rather than owning the path-resolution logic themselves.
+    """
+    base = Path(project_dir) if project_dir else Path.cwd()
+    settings_json = base / ".claude" / "settings.json"
+    if settings_json.exists():
+        return settings_json
+    return base / ".claude" / "settings.local.json"
+
+
+def _claude_local_settings_path(project_dir: str | None = None) -> Path:
+    """Return the operator-local Claude settings file path (always settings.local.json).
+
+    The PreToolUse enforcement hook is an operator-local opt-in, so its
+    registration pins here rather than delegating to
+    ``_claude_project_settings_path()`` — which prefers a pre-existing shared
+    ``settings.json`` and would therefore scatter the enforcement entry into the
+    shared file. Pinning keeps the enforcement entry in the single file the
+    documented install contract (``pretooluse-enforcement.md``) names, regardless
+    of whether a shared ``settings.json`` already exists.
+    """
+    base = Path(project_dir) if project_dir else Path.cwd()
+    return base / ".claude" / "settings.local.json"
+
+
+def _claude_global_settings_path() -> Path:
+    return Path.home() / ".claude" / "settings.json"
+
+
+def _settings_path_for_scope(scope: str) -> Path:
+    if scope == "global":
+        return _claude_global_settings_path()
+    return _claude_project_settings_path()
+
+
+def _load_settings(path: Path) -> dict[str, Any]:
+    """Load Claude settings JSON, returning a defaulted skeleton when absent.
+
+    This is the single home for Claude settings load logic; the
+    ``tools-permission-*`` scripts delegate here. A missing file yields the
+    empty-permissions skeleton; malformed JSON yields the same skeleton with an
+    ``error`` key so callers can surface the parse failure.
+    """
+    if not path.exists():
+        return {"permissions": {"allow": [], "deny": [], "ask": []}}
+    try:
+        data: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
+        if "permissions" not in data:
+            data["permissions"] = {}
+        for key in ("allow", "deny", "ask"):
+            if key not in data["permissions"]:
+                data["permissions"][key] = []
+        return data
+    except json.JSONDecodeError as exc:
+        return {"error": f"Invalid JSON: {exc}", "permissions": {"allow": [], "deny": [], "ask": []}}
+    except OSError:
+        return {"permissions": {"allow": [], "deny": [], "ask": []}}
+
+
+def _save_settings(path: Path, settings: dict[str, Any]) -> bool:
+    """Write Claude settings JSON. Single home for the save logic."""
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(settings, indent=2), encoding="utf-8")
+        return True
+    except OSError:
+        return False
+
+
+def _skill_permission_covered(skill: str, allow_list: list[str]) -> str | None:
+    """Return the allow-rule covering *skill*, or ``None``.
+
+    Matches an exact ``Skill({skill})`` rule or a covering ``Skill({skill}:*)``
+    wildcard. This is the single home for the skill-coverage check — relocated
+    from ``permission_doctor`` so the runtime owns it with no back-import.
+    """
+    exact = f"Skill({skill})"
+    wildcard = f"Skill({skill}:*)"
+    for rule in allow_list:
+        if rule == exact or rule == wildcard:
+            return rule
+    return None
+
+
+# Phases in marshal.json that may carry ``project:{skill}`` step references.
+_PROJECT_STEP_PHASES = ("phase-5-execute", "phase-6-finalize")
+
+
+def _load_marshal_config(path: str) -> tuple[dict[str, Any], str | None]:
+    """Load marshal.json, returning ``(config, error)``.
+
+    Relocated from ``permission_doctor`` so the runtime owns marshal parsing for
+    the missing-steps / ensure-steps permission ops without a back-import.
+    """
+    marshal_path = Path(path)
+    if not marshal_path.exists():
+        return {}, f"marshal.json not found: {path}"
+    try:
+        data = json.loads(marshal_path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            return {}, f"Invalid marshal.json (expected object) in {path}"
+        return data, None
+    except json.JSONDecodeError as exc:
+        return {}, f"Invalid JSON in {path}: {exc}"
+    except OSError as exc:
+        return {}, f"Could not read {path}: {exc}"
+
+
+def _extract_project_steps(marshal_config: dict[str, Any]) -> list[dict[str, str]]:
+    """Enumerate ``project:{skill}`` step references from marshal.json.
+
+    Scans the phases in ``_PROJECT_STEP_PHASES`` under ``plan.{phase}.steps`` and
+    returns one ``{skill, step, phase}`` dict per ``project:``-prefixed entry.
+    Relocated from ``permission_doctor`` (single home in the runtime).
+    """
+    plan = marshal_config.get("plan", {})
+    if not isinstance(plan, dict):
+        return []
+    project_steps: list[dict[str, str]] = []
+    for phase in _PROJECT_STEP_PHASES:
+        phase_config = plan.get(phase, {})
+        if not isinstance(phase_config, dict):
+            continue
+        steps = phase_config.get("steps", [])
+        if not isinstance(steps, list):
+            continue
+        for step in steps:
+            if isinstance(step, str) and step.startswith("project:"):
+                skill = step[len("project:") :]
+                project_steps.append({"skill": skill, "step": step, "phase": phase})
+    return project_steps
+
+
+# ---------------------------------------------------------------------------
+# Subagent dispatch helper
+# ---------------------------------------------------------------------------
+
+
+def _find_agent_file(agent_name: str) -> Path | None:
+    """Locate an agent markdown under the marketplace tree."""
+    # Look under the plugin cache and source tree in sequence.
+    search_roots: list[Path] = []
+    cache_base = Path.home() / ".claude" / "plugins" / "cache" / "plan-marshall"
+    if cache_base.exists():
+        search_roots.append(cache_base)
+    # Script-relative walk to find marketplace.
+    for ancestor in Path(__file__).resolve().parents:
+        candidate = ancestor / "marketplace" / "bundles"
+        if candidate.is_dir():
+            search_roots.append(candidate)
+            break
+        candidate2 = ancestor / "bundles"
+        if candidate2.is_dir():
+            search_roots.append(candidate2)
+            break
+
+    for root in search_roots:
+        for match in root.glob(f"*/agents/{agent_name}.md"):
+            if match.is_file():
+                return match
+    return None
+
+
+def _parse_agent_frontmatter(agent_path: Path) -> dict[str, Any]:
+    """Extract YAML-like frontmatter from an agent markdown file.
+
+    Returns a dict with at minimum 'name', 'description', and 'tools' keys.
+    Tools are returned as a list of strings.
+    """
+    result: dict[str, Any] = {"name": "", "description": "", "tools": []}
+    try:
+        content = agent_path.read_text(encoding="utf-8")
+    except OSError:
+        return result
+
+    if not content.startswith("---"):
+        return result
+
+    end = content.find("---", 3)
+    if end == -1:
+        return result
+
+    frontmatter = content[3:end].strip()
+    for line in frontmatter.splitlines():
+        stripped = line.strip()
+        if not stripped or ":" not in stripped:
+            continue
+        key, _, value = stripped.partition(":")
+        key = key.strip()
+        value = value.strip()
+        if key == "tools":
+            # May be inline: tools: [Read, Write] or listed below as - items.
+            if value.startswith("["):
+                try:
+                    parsed = json.loads(value)
+                    result["tools"] = [str(t) for t in parsed]
+                except (json.JSONDecodeError, ValueError):
+                    # Try stripping brackets and splitting by comma.
+                    inner = value.strip("[]")
+                    result["tools"] = [t.strip().strip('"\'') for t in inner.split(",") if t.strip()]
+            elif value:
+                result["tools"] = [value]
+        elif key in ("name", "description"):
+            result[key] = value
+
+    # Handle tools as a YAML list (- item per line) if not yet found inline.
+    if not result["tools"]:
+        in_tools = False
+        for line in frontmatter.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("tools:"):
+                in_tools = True
+                inline = stripped[6:].strip()
+                if inline:
+                    in_tools = False
+            elif in_tools:
+                if stripped.startswith("- "):
+                    result["tools"].append(stripped[2:].strip())
+                else:
+                    in_tools = False
+
+    return result
+
+
+def _short_description_from_agent(description: str) -> str:
+    """Derive a ≤5-word Task description from an agent description string."""
+    words = description.strip().split()
+    if len(words) <= 5:
+        return description.strip()
+    return " ".join(words[:5])
+
+
+# TOOLS that are mapped on both Claude and OpenCode (not unmapped).
+_MAPPED_TOOLS: frozenset[str] = frozenset(
+    {
+        "Read",
+        "Write",
+        "Edit",
+        "Bash",
+        "Glob",
+        "Grep",
+        "Task",
+        "Skill",
+        "WebFetch",
+        "WebSearch",
+        "TodoRead",
+        "TodoWrite",
+        "NotebookRead",
+        "NotebookEdit",
+        "AskUserQuestion",
+    }
+)
+
+# Tools that have no platform equivalent — cause no-op for subagent dispatch.
+_UNMAPPED_TOOLS: frozenset[str] = frozenset({"SendMessage", "TaskCreate"})
+
+
+# ---------------------------------------------------------------------------
+# Waiting — concrete-observable inspection
+#
+# ``wait for`` holds a bounded wait over a CONCRETE, pollable observable rather
+# than an opaque caller-supplied condition. Claude Code exposes no Python API a
+# runtime subprocess can register a background watch against — the harness's
+# background-watch and completion-notification affordances are agent-level — so
+# the wait is realised as a bounded, re-issuable poll of the observable's own
+# status surface, normalised into the observable-independent outcome vocabulary
+# below.
+#
+# Exactly ONE observable kind is implemented: the marshalld build-server job.
+# Its status surface is the only one reachable from a subprocess that already
+# carries an explicit terminal-FAILURE vocabulary, which is what the
+# silence-is-not-success coverage rule needs. Adding a second kind is additive.
+# ---------------------------------------------------------------------------
+
+OBSERVABLE_BUILD_JOB = "build-job"
+"""Observable kind: a marshalld build-server job, referenced by its ``job_id``."""
+
+WAIT_OBSERVABLES: tuple[str, ...] = (OBSERVABLE_BUILD_JOB,)
+"""The closed set of observable kinds ``wait for`` accepts."""
+
+OUTCOME_SUCCEEDED = "succeeded"
+OUTCOME_FAILED = "failed"
+OUTCOME_TIMED_OUT = "timed_out"
+OUTCOME_KILLED = "killed"
+OUTCOME_PENDING = "pending"
+
+TERMINAL_OUTCOMES: frozenset[str] = frozenset(
+    {OUTCOME_SUCCEEDED, OUTCOME_FAILED, OUTCOME_TIMED_OUT, OUTCOME_KILLED}
+)
+"""The terminal outcomes. ``OUTCOME_PENDING`` is deliberately absent — bound
+exhaustion is an explicit unknown, never a terminal verdict."""
+
+_BUILD_JOB_STATUS_TO_OUTCOME: dict[str, str] = {
+    "success": OUTCOME_SUCCEEDED,
+    "failure": OUTCOME_FAILED,
+    "timeout": OUTCOME_TIMED_OUT,
+    "killed": OUTCOME_KILLED,
+}
+"""Daemon wire status -> normalised outcome. ``killed`` keeps its own outcome
+rather than folding into ``failed``: an externally reaped job is not a flaky
+build and must not be blind-retried."""
+
+_BUILD_JOB_NON_TERMINAL_STATUSES: frozenset[str] = frozenset({"queued", "running"})
+"""Wire statuses that mean "keep waiting" — never a verdict either way."""
+
+_BUILD_JOB_NOT_FOUND_STATUS = "not_found"
+
+_BUILD_JOB_UNREACHABLE_STATUS = "unreachable"
+"""Synthetic status :func:`build_job_poll` returns when the channel is down."""
+
+_BUILD_JOB_POLL_BOUND_SECONDS = 300
+"""Per-poll long-poll ceiling (matches the daemon's own default wait bound)."""
+
+_BUILD_JOB_CONNECT_TIMEOUT_SECONDS = 5.0
+_BUILD_JOB_READ_MARGIN_SECONDS = 30
+
+
+def _build_job_modules() -> tuple[Any, Any] | None:
+    """Import the shared build-server wire protocol and registry modules.
+
+    Returns:
+        The ``(protocol, registry)`` module pair, or ``None`` when the shared
+        build layer is not importable in this process.
+    """
+    try:
+        import _build_server_protocol
+        import _build_server_registry
+    except ImportError:
+        return None
+    return (_build_server_protocol, _build_server_registry)
+
+
+def _build_job_socket_path() -> Any | None:
+    """Resolve the machine-global marshalld socket path, or ``None``."""
+    modules = _build_job_modules()
+    if modules is None:
+        return None
+    _protocol, registry = modules
+    return registry.registry_dir() / "socket"
+
+
+def _build_job_call(request: dict[str, Any], timeout: float) -> dict[str, Any] | None:
+    """Send one framed request to the marshalld socket and return the response.
+
+    The daemon answers exactly one op per connection, so every call opens and
+    closes its own socket.
+
+    Args:
+        request: The request payload carrying the ``op`` discriminator.
+        timeout: Socket connect / I/O timeout in seconds.
+
+    Returns:
+        The decoded response payload, or ``None`` on any connect, I/O, or
+        framing failure.
+    """
+    import socket as _socket
+
+    modules = _build_job_modules()
+    sock_path = _build_job_socket_path()
+    if modules is None or sock_path is None:
+        return None
+    protocol, _registry = modules
+
+    sock = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
+    sock.settimeout(timeout)
+    try:
+        sock.connect(str(sock_path))
+        protocol.send_frame(sock, request)
+        response = protocol.recv_frame(sock)
+    except (OSError, protocol.FrameError):
+        return None
+    finally:
+        sock.close()
+    return response if isinstance(response, dict) else None
+
+
+def build_job_verify_channel() -> str | None:
+    """Verify the build-job inspection channel is reachable and speaks our wire.
+
+    Fail-closed: an unverifiable channel is reported so the caller raises an
+    explicit error rather than treating an unreachable observable as pending
+    (let alone as a pass).
+
+    Returns:
+        ``None`` when the channel is verified, otherwise a named reason string.
+    """
+    modules = _build_job_modules()
+    if modules is None:
+        return "shared_build_layer_unavailable"
+    protocol, _registry = modules
+
+    sock_path = _build_job_socket_path()
+    if sock_path is None or not sock_path.exists():
+        return "socket_absent"
+
+    response = _build_job_call({"op": "ping"}, _BUILD_JOB_CONNECT_TIMEOUT_SECONDS)
+    if response is None:
+        return "unreachable"
+    if response.get("status") != "ok":
+        return "handshake_failed"
+    if str(response.get("version", "")) != protocol.PROTOCOL_VERSION:
+        return "version_mismatch"
+    return None
+
+
+def build_job_poll(reference: str, bound_seconds: int) -> dict[str, Any]:
+    """Issue ONE bounded long-poll for a build job's status.
+
+    The daemon holds the poll server-side for up to *bound_seconds* and answers
+    with a terminal status, or with a live non-terminal status on bound expiry.
+
+    Args:
+        reference: The daemon-assigned ``job_id``.
+        bound_seconds: Long-poll bound handed to the daemon.
+
+    Returns:
+        The decoded daemon status payload, or a synthetic
+        ``{"status": "unreachable", "reason": ...}`` payload when the channel
+        could not be reached. Never raises.
+    """
+    response = _build_job_call(
+        {"op": "wait", "job_id": reference, "bound": int(bound_seconds)},
+        float(bound_seconds) + _BUILD_JOB_READ_MARGIN_SECONDS,
+    )
+    if response is None:
+        return {"status": _BUILD_JOB_UNREACHABLE_STATUS, "reason": "unreachable"}
+    return response
+
+
+
+# ---------------------------------------------------------------------------
+# ClaudeRuntime — the operation implementations live in the co-located
+# _claude_runtime_impl submodule. This bottom re-export runs after every
+# module-level helper, constant, and monkeypatchable name above is defined, so
+# the submodule's ``import claude_runtime`` returns this fully-populated module
+# rather than triggering a circular re-load. The submodule only ACCESSES entry
+# names at call time (``claude_runtime.<name>``), so importing it here — while
+# this module is partially initialized but with all helpers present — is
+# load-order safe. When this file is executed directly (loaded as ``__main__``)
+# the setdefault aliases the live module under its real name first, so the
+# submodule's ``import claude_runtime`` resolves to it instead of re-loading.
+# ---------------------------------------------------------------------------
+
+sys.modules.setdefault("claude_runtime", sys.modules[__name__])
+
+from _claude_runtime_impl import ClaudeRuntime  # noqa: E402,F401

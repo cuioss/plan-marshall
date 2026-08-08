@@ -1,0 +1,370 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
+"""Pure, platform-agnostic terminal-title composition.
+
+This module owns the title-composition contract shared across the plan-marshall
+terminal-title machinery. It is a **leaf library**: it imports neither
+``manage-status`` nor ``platform-runtime``. ``platform-runtime`` imports it
+one-directionally (via PYTHONPATH, the same way ``script-shared`` modules are
+consumed) to resolve the composed title string after it has read ``status.json``.
+
+The single public entry point is :func:`compose`, a pure function of
+``(state_dict, event)`` that returns the ``'{icon} {glyph} {body}'`` string (or
+``None`` for a true no-op). It performs NO filesystem or network I/O — the
+caller passes the already-read plan state.
+
+Composition has three independent inputs:
+
+* **Body** — ``pm:{phase}[:{short}]`` for active phases, the Completed body
+  for terminal phases (``complete`` / ``archived``), and
+  ``Orchestrator-{SlugName}`` when the passed state dict carries
+  ``kind: orchestrator`` (the slug comes from the state's ``slug`` field).
+  See :func:`_compose_body`.
+* **Glyph** — the lock-state glyph (⏳/🔒) read from the structured
+  ``{owner, state, set_at}`` ``title_token`` record via
+  :func:`title_token_state`, prepended when set for an active phase. Suppressed
+  for terminal phases regardless of the persisted token state — a finished plan
+  holds no live lock state. See :data:`TITLE_TOKEN_GLYPHS`.
+* **Icon** — the process icon resolved from a target-neutral process state (➤
+  active / ? waiting / ⚙ busy / ✓ done), with two token/phase-keyed overrides
+  layered on top by :func:`compose`: a terminal-state override to ✅
+  (:data:`_ICON_TERMINAL`) for a finished plan, and a ``build-busy``
+  orchestration override to 🔨 (:data:`_ICON_BUILD`) for an active phase. The
+  full icon precedence is ``terminal ✅ > build-busy 🔨 > icon_override > process
+  icon``. See :func:`resolve_icon` and :func:`compose`.
+
+The composer is target-neutral by construction: it knows nothing about Claude
+hook events. The caller (e.g. ``platform-runtime``'s ``claude_runtime``) maps its
+target-specific event vocabulary to one of the :data:`PROCESS_STATES` values and
+passes that neutral state in.
+"""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime
+
+# --- Process-state enum (target-neutral) ------------------------------------
+#
+# The composer resolves the process icon from a target-neutral process state,
+# NOT from any target's event vocabulary. A target runtime maps its own events
+# (Claude's SessionStart/UserPromptSubmit/Notification/Stop/PreToolUse/...) to one
+# of these values before calling :func:`compose` / :func:`resolve_icon`.
+PROCESS_STATE_ACTIVE = "active"
+PROCESS_STATE_WAITING = "waiting"
+PROCESS_STATE_BUSY = "busy"
+PROCESS_STATE_DONE = "done"
+
+PROCESS_STATES: frozenset[str] = frozenset(
+    {PROCESS_STATE_ACTIVE, PROCESS_STATE_WAITING, PROCESS_STATE_BUSY, PROCESS_STATE_DONE}
+)
+
+# --- Icon palette (process state → process icon) ----------------------------
+#
+#   ➤  active / in-progress
+#   ?  waiting on user input ("needs attention")
+#   ✓  done (per-turn done state)
+#   ✅  terminal (whole plan complete / archived) — the thick U+2705 check-mark,
+#       deliberately distinct from the thin ✓ ``_ICON_DONE`` used per turn.
+#   ⚙  busy / executing a long-running tool, deliberately distinct from ➤
+#       ``_ICON_ACTIVE`` and the ? ``_ICON_WAITING`` icon.
+#   🔨  orchestration-busy build symbol, forced into the icon slot for the
+#       ``build-busy`` title-token on an active phase. Deliberately distinct from
+#       the ⚙ ``_ICON_BUSY`` momentary-busy icon — ``build-busy`` is a persistent,
+#       token-keyed icon override (see :func:`compose`), not the per-tool ⚙ state.
+_ICON_ACTIVE = "➤"  # ➤
+_ICON_WAITING = "?"
+_ICON_DONE = "✓"  # ✓
+_ICON_TERMINAL = "✅"  # ✅
+_ICON_BUSY = "⚙"  # ⚙
+_ICON_BUILD = "\U0001f528"  # 🔨
+
+# Process-state → icon map. The terminal-phase ✅ override is applied by
+# :func:`compose`, NOT here.
+_PROCESS_STATE_ICONS: dict[str, str] = {
+    PROCESS_STATE_ACTIVE: _ICON_ACTIVE,
+    PROCESS_STATE_WAITING: _ICON_WAITING,
+    PROCESS_STATE_BUSY: _ICON_BUSY,
+    PROCESS_STATE_DONE: _ICON_DONE,
+}
+
+
+# --- Title-token glyph vocabulary (lock state → glyph) ----------------------
+#
+# The two lock-coordination states surfaced inline in the terminal title.
+# ``manage-status`` persists a ``{owner, state, set_at}`` record in the
+# ``title_token`` field; this map is the single owner of the state → glyph
+# rendering and is keyed on the record's ``state``.
+TITLE_TOKEN_GLYPHS: dict[str, str] = {
+    "lock-waiting": "⏳",  # ⏳
+    "lock-owned": "\U0001f512",  # 🔒
+}
+
+# Aged-token staleness threshold in seconds — mirrors
+# ``manage-status/scripts/_status_core.TITLE_TOKEN_STALE_AFTER_SECONDS``. The
+# two constants are duplicated across a deliberate module boundary: this
+# composer is a pure leaf library that imports neither manage-status nor
+# platform-runtime, and importing one to share a scalar would break that.
+TITLE_TOKEN_STALE_AFTER_SECONDS = 3600
+
+
+def title_token_state(
+    state_dict: dict[str, object], *, now: datetime | None = None
+) -> str | None:
+    """Extract the live ``title_token`` state marker from *state_dict*.
+
+    Reads the structured ``{owner, state, set_at}`` record and returns its
+    ``state`` marker, or ``None`` when no usable token is present. A record that
+    is not a mapping, or that carries no string ``state``, reads as absent.
+
+    Staleness is OPT-IN via *now*: when an instant is supplied, a record whose
+    ``set_at`` is older than :data:`TITLE_TOKEN_STALE_AFTER_SECONDS` also reads
+    as absent. This keeps the function pure — the clock is an argument, never a
+    read — so :func:`compose` can call it with ``now=None`` and stay free of any
+    clock read. The reader that loaded ``status.json`` is the layer that already
+    touches the outside world, so it is the layer that supplies ``now``.
+    """
+    record = state_dict.get("title_token")
+    if not isinstance(record, dict):
+        return None
+    marker = record.get("state")
+    if not isinstance(marker, str) or not marker:
+        return None
+    if now is None:
+        return marker
+    raw_set_at = record.get("set_at")
+    if not isinstance(raw_set_at, str) or not raw_set_at:
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw_set_at.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    if (now - parsed).total_seconds() > TITLE_TOKEN_STALE_AFTER_SECONDS:
+        return None
+    return marker
+
+# The orchestration-busy title-token. Deliberately ABSENT from
+# ``TITLE_TOKEN_GLYPHS``: ``build-busy`` is rendered as a token-keyed **icon-slot
+# override** (🔨 forced into the icon slot by :func:`compose`), NOT as a prepended
+# glyph. Its absence from the glyph map makes glyph suppression for ``build-busy``
+# automatic — ``TITLE_TOKEN_GLYPHS.get("build-busy")`` is ``None``, so the
+# glyph-prepend block emits no glyph segment for it.
+_TITLE_TOKEN_BUILD_BUSY = "build-busy"
+
+
+# --- Terminal phases --------------------------------------------------------
+#
+# Phases for which the plan is finished: the icon is forced to ✅, the body is
+# the Completed body (never ``None``), and the title_token glyph is suppressed,
+# so a finished plan always renders with the terminal icon, never the ➤/?
+# process icons, and never a lock glyph.
+_TERMINAL_PHASES: frozenset[str] = frozenset({"complete", "archived"})
+
+# Body prefix for an active phase and the Completed terminal body, respectively.
+_BODY_PREFIX = "pm"
+_COMPLETED_PHASE_LABEL = "Completed"
+
+# --- Orchestrator body (kind == orchestrator) --------------------------------
+#
+# When the passed state dict carries ``kind: orchestrator`` the body is
+# ``Orchestrator-{SlugName}`` (slug from the state's ``slug`` field) instead of
+# the plan-scoped ``pm:{phase}[:{short}]`` form. Icon and glyph slots keep
+# their existing semantics (process icon, ``build-busy`` 🔨 override) — only
+# the body composition branches on the kind. The composer stays a pure leaf
+# function of the passed state.
+_KIND_ORCHESTRATOR = "orchestrator"
+_ORCHESTRATOR_BODY_PREFIX = "Orchestrator"
+
+
+def resolve_icon(process_state: str | None) -> str:
+    """Map a target-neutral process state to the canonical process icon.
+
+    Palette (one of the :data:`PROCESS_STATES` values):
+
+    - ``"active"`` → ``➤``
+    - ``"waiting"`` → ``?`` (canonical "needs attention")
+    - ``"busy"`` → ``⚙`` (busy / long-running tool)
+    - ``"done"`` → ``✓``
+    - Unknown / missing state → ``➤`` (defensive default)
+
+    The function never raises; callers pass best-effort values and rely on the
+    defensive default for any unmapped or missing input. The composer is
+    target-neutral — the Claude hook-event → process-state mapping lives in the
+    caller (``platform-runtime``'s ``claude_runtime``), NOT here. The
+    terminal-phase ✅ override is applied by :func:`compose`, NOT here — this
+    function resolves the process icon only.
+    """
+    return _PROCESS_STATE_ICONS.get(process_state, _ICON_ACTIVE)  # type: ignore[arg-type]
+
+
+_CONTROL_CHAR_MAP = dict.fromkeys(range(0x20)) | {0x7F: None}
+"""``str.translate`` deletion map for the ASCII C0 control range (0x00-0x1F)
+plus DEL (0x7F). Applied to every externally-derived text segment
+:func:`_compose_body` interpolates into the title body — see
+:func:`_strip_control_chars`."""
+
+
+def _strip_control_chars(text: str) -> str:
+    """Strip ASCII control characters (C0 range + DEL) from *text*.
+
+    ``_compose_body`` is the single point where plan-derived free text
+    (``short_description``, the orchestrator ``slug``) enters the title body
+    that :func:`compose` returns. Both the Claude runtime's OSC-0 terminal
+    title-set escape (``ESC ]0;{body} BEL``) and the ``hookSpecificOutput``
+    ``sessionTitle`` / ``statusLine`` channels embed that body verbatim, so an
+    unstripped ESC (0x1B) or BEL (0x07) byte in the source text would let the
+    body terminate the escape sequence early and splice in attacker-controlled
+    follow-on terminal escapes (OSC/terminal-escape injection). Stripping the
+    full C0 control range (not just ESC/BEL) here — at composition, the single
+    shared point every render/push channel consumes — closes the sink without
+    each channel having to duplicate the guard. Whitespace-collapsing upstream
+    (``derive_short_description``) does not cover this: its ``\\s+`` regex
+    does not match ESC/BEL.
+    """
+    return text.translate(_CONTROL_CHAR_MAP)
+
+
+def _compose_body(state_dict: dict[str, object]) -> str | None:
+    """Render the title body from the passed state dict.
+
+    Every externally-derived text segment (``short_description``, the
+    orchestrator ``slug``) is passed through :func:`_strip_control_chars`
+    before interpolation, so the returned body can never smuggle a raw ESC/BEL
+    byte into a consumer that embeds it in a terminal escape sequence.
+
+    Returns:
+
+    - ``Orchestrator-{SlugName}`` when the state carries ``kind: orchestrator``
+      — the orchestrator body, composed from the state's ``slug`` field. The
+      plan-scoped phase fields are never consulted on this branch.
+    - ``pm:{phase}:{short}`` when ``current_phase`` is an active (non-terminal)
+      phase and ``short_description`` is present.
+    - ``pm:{phase}`` when active and no ``short_description``.
+    - ``pm:Completed:{short}`` / ``pm:Completed`` when ``current_phase`` is a
+      terminal phase (``complete`` / ``archived``) — the Completed body, NOT
+      ``None``, so a finished plan still renders (with the ✅ override applied by
+      :func:`compose`).
+    - ``None`` when ``current_phase`` is empty/missing (true no-op), or when
+      ``kind: orchestrator`` carries an empty/missing ``slug``.
+
+    Pure — operates solely on the passed ``state_dict``.
+    """
+    if state_dict.get("kind") == _KIND_ORCHESTRATOR:
+        slug = state_dict.get("slug")
+        slug_str = _strip_control_chars(slug.strip()) if isinstance(slug, str) else ""
+        if not slug_str:
+            return None
+        return f"{_ORCHESTRATOR_BODY_PREFIX}-{slug_str}"
+
+    phase = state_dict.get("current_phase")
+    if not phase or not isinstance(phase, str):
+        return None
+
+    short = state_dict.get("short_description")
+    short_str = _strip_control_chars(short.strip()) if isinstance(short, str) else ""
+
+    if phase in _TERMINAL_PHASES:
+        label = _COMPLETED_PHASE_LABEL
+    else:
+        label = phase
+
+    if short_str:
+        return f"{_BODY_PREFIX}:{label}:{short_str}"
+    return f"{_BODY_PREFIX}:{label}"
+
+
+def compose(
+    state_dict: dict[str, object],
+    process_state: str | None,
+    icon_override: str | None = None,
+) -> str | None:
+    """Compose the full ``'{icon} {glyph} {body}'`` terminal-title string.
+
+    Pure function of the passed plan state and a target-neutral process state.
+    Performs NO filesystem or network I/O.
+
+    Args:
+        state_dict: The plan state — ``current_phase`` (str), optional
+            ``short_description`` (str), and optional ``title_token`` (the
+            ``{owner, state, set_at}`` record, whose ``state`` is one of the
+            :data:`TITLE_TOKEN_GLYPHS` keys for a glyph state, or
+            :data:`_TITLE_TOKEN_BUILD_BUSY` for the 🔨 icon-slot override). The
+            record is read through :func:`title_token_state`; staleness is
+            resolved by the reader that loaded the state, so ``compose``
+            performs no clock read and stays pure.
+            Alternatively an orchestrator state — ``kind: orchestrator`` plus
+            ``slug`` (str) — which composes the ``Orchestrator-{SlugName}``
+            body; icon and glyph slots keep their existing semantics.
+        process_state: The target-neutral process state driving the process icon
+            — one of the :data:`PROCESS_STATES` values (``"active"``,
+            ``"waiting"``, ``"busy"``, ``"done"``). ``None`` for push-mode /
+            statusLine, where ``icon_override`` supplies the icon instead. The
+            caller maps its own target-specific events to this neutral state.
+        icon_override: Push-mode icon. When provided it supersedes the
+            state-resolved icon for non-terminal phases. Both the terminal-phase
+            ✅ override and the active-phase ``build-busy`` 🔨 override still win
+            over ``icon_override`` (precedence ``terminal ✅ > build-busy 🔨 >
+            icon_override > process icon``).
+
+    Returns:
+        The composed ``'{icon} {glyph} {body}'`` string (glyph omitted when no
+        ``title_token`` is set, and always omitted for terminal phases), or
+        ``None`` when the body is ``None`` (true no-op — empty/missing
+        ``current_phase``).
+
+    Icon selection (precedence ``terminal ✅ > build-busy 🔨 > icon_override >
+    process icon``):
+
+    - When ``current_phase`` is terminal (``complete`` / ``archived``), the icon
+      is forced to ✅ (:data:`_ICON_TERMINAL`) regardless of ``title_token`` /
+      ``process_state`` / ``icon_override`` — the process icons ➤ (active) and ?
+      (waiting), and the 🔨 build override, MUST NOT appear for a finished plan.
+    - Otherwise, when ``title_token`` is ``build-busy``
+      (:data:`_TITLE_TOKEN_BUILD_BUSY`) on an active phase, the icon is forced to
+      🔨 (:data:`_ICON_BUILD`) — a token-keyed **icon-slot override** (NOT a
+      glyph) that supersedes both ``icon_override`` and the process-state icon for
+      the duration of the orchestration call, rendering ``🔨 pm:{phase}``.
+    - Otherwise the icon is ``icon_override`` when given, else
+      :func:`resolve_icon`\\(``process_state``).
+
+    Glyph selection:
+
+    - When ``current_phase`` is terminal (``complete`` / ``archived``), the
+      ``title_token`` glyph is suppressed regardless of the persisted token
+      state — a finished plan holds no live lock state, so it renders NO
+      glyph for either of the two :data:`TITLE_TOKEN_GLYPHS` states (⏳/🔒).
+      The suppression is token-agnostic by construction.
+    - Otherwise (active phase) the glyph for the persisted ``title_token`` is
+      prepended when set. ``build-busy`` carries NO glyph (it is absent from
+      :data:`TITLE_TOKEN_GLYPHS` by design — it is an icon-slot override), so it
+      adds no glyph segment: an active ``build-busy`` plan renders ``🔨 pm:{phase}``
+      with the icon-slot override and no prepended glyph.
+    """
+    body = _compose_body(state_dict)
+    if body is None:
+        return None
+
+    phase = state_dict.get("current_phase")
+    is_terminal = isinstance(phase, str) and phase in _TERMINAL_PHASES
+    token = title_token_state(state_dict)
+    is_build_busy = token == _TITLE_TOKEN_BUILD_BUSY
+    if is_terminal:
+        icon = _ICON_TERMINAL
+    elif is_build_busy:
+        icon = _ICON_BUILD
+    elif icon_override is not None:
+        icon = icon_override
+    else:
+        icon = resolve_icon(process_state)
+
+    # A finished plan holds no live lock state, so the title_token glyph is
+    # suppressed for terminal phases. The suppression is at the glyph-prepend,
+    # making it token-agnostic: both TITLE_TOKEN_GLYPHS states (⏳/🔒) are
+    # uniformly suppressed for a terminal plan. The glyph only renders for
+    # active phases.
+    if not is_terminal:
+        glyph = TITLE_TOKEN_GLYPHS.get(token) if token is not None else None
+        if glyph:
+            return f"{icon} {glyph} {body}"
+
+    return f"{icon} {body}"

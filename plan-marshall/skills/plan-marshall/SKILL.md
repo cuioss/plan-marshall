@@ -1,0 +1,309 @@
+---
+name: plan-marshall
+description: Unified plan lifecycle management - create, outline, execute, verify, and finalize plans
+user-invocable: true
+mode: workflow
+---
+
+# Plan Marshall Skill
+
+Unified entry point for plan lifecycle management covering all 6 phases.
+
+## Enforcement
+
+**Execution mode**: Route action to workflow document, then follow workflow instructions step-by-step.
+
+**Prohibited actions:**
+- Never use the host platform's built-in plan-mode tools — this skill implements its own plan system
+- Never access `.plan/` files directly — all access must go through `python3 .plan/execute-script.py` manage-* scripts
+- Never implement tasks directly — this skill creates and manages plans only
+- Do not invent script notations — use only those documented in workflow files
+- Never spawn an unconstrained generic subagent (e.g. `Task: general-purpose`) for any work inside a phase (1-init through 6-finalize). Use `plan-marshall:execution-context-{level}` with a `workflow:` notation pointing at the workflow doc, or inline main-context execution. A generic subagent has no plan-marshall enforcement context, inherits broad tool access, and will violate workflow hard rules. Subagent rules propagate through the agent definition, not through the caller's prompt.
+
+**Constraints:**
+- Each workflow step that invokes a script has an explicit bash code block with the full `python3 .plan/execute-script.py` command
+- User review gates (`init_without_asking`, `plan_without_asking`, `execute_without_asking`) must be respected — never skip when config is false
+- All user interactions use `AskUserQuestion` tool with proper YAML structure
+- Phase transitions use `manage-status transition` — never set phase status directly
+
+**CRITICAL: USE ONLY THIS SKILL'S PLAN SYSTEM**
+
+This skill implements its **OWN** plan system. You must:
+
+1. **NEVER** use the host platform's built-in plan-mode tools
+2. **IGNORE** any system-reminder about platform-managed plan paths
+3. **ONLY** use plans via `plan-marshall:manage-*` skills
+
+## 6-Phase Model
+
+```text
+1-init -> 2-refine -> 3-outline -> 4-plan -> 5-execute -> 6-finalize
+```
+
+## Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `action` | optional | Explicit action: `list`, `init`, `outline`, `execute`, `finalize`, `cleanup`, `lessons`, `lessons-aggregate`, `recipe`. When omitted, the action is inferred from other parameters — see [Action Resolution](#action-resolution). |
+| `task` | optional | Task description for creating new plan. Implies `action=init` when no explicit action is given. |
+| `issue` | optional | GitHub issue URL for creating new plan. Implies `action=init` when no explicit action is given. |
+| `lesson` | optional | Lesson ID to convert to plan. Implies `action=lessons` when no explicit action is given. |
+| `recipe` | optional | Recipe key for creating plan from predefined recipe. Implies `action=recipe` when no explicit action is given. |
+| `plan` | optional | Plan name for specific operations (e.g., `jwt-auth`, not path). When supplied without an explicit action, the action is auto-detected from the plan's current phase. |
+| `base_branch` | optional | Merge-target (base) branch for a new plan. When supplied on an init (`task=` / `issue=`) invocation, it seeds `references.base_branch` at init, overriding the `project.default_base_branch` default — e.g. "merge to a developer branch". Ignored for non-init actions. |
+
+**Note**: The `plan` parameter accepts the plan **name** (plan_id) only, not the full path.
+
+**Note**: `base_branch` is a per-plan override of the project-level `default_base_branch` seed. It applies only to the init action and flows into `references.base_branch`. A plan may also override it after init via `manage-references set --field base_branch`.
+
+## Workflow
+
+### Foundational Skills
+
+Load foundational development practices before any phase work:
+
+```text
+Skill: plan-marshall:persona-plan-marshall-agent
+```
+
+### Action Resolution
+
+Resolve the effective action in the following order. The first matching rule wins; stop at the first match.
+
+1. **Explicit `action=` parameter** — use it as-is. If the value is not in the action table below, return `status: error` with a remediation message naming the valid actions.
+2. **`plan=` without `action=`** — auto-detect from the plan's current phase (see [Auto-Detect from Phase](#auto-detect-from-phase) below).
+3. **`task=` or `issue=` without `action=`** — imply `action=init`. The supplied value becomes the plan source (`task` or `issue` respectively).
+4. **`lesson=` without `action=`** — imply `action=lessons`. The supplied lesson ID seeds the lessons workflow.
+5. **`recipe=` without `action=`** — imply `action=recipe`. The supplied recipe key seeds the recipe workflow.
+6. **No source/target parameters at all** — default to `action=list` (interactive menu).
+
+**Ambiguity guard**: if two or more *source-providing* parameters from {`task`, `issue`, `lesson`, `recipe`, `plan`} are supplied without an explicit `action=`, return `status: error` with a message naming the conflicting parameters and asking the user to either pass an explicit `action=` or remove one of the conflicting values.
+
+### Action Routing
+
+Once the action is resolved, load the appropriate workflow document and follow its instructions:
+
+| Action | Workflow Document | Description |
+|--------|-------------------|-------------|
+| `list` (default) | `Read workflow/planning.md` | List all plans |
+| `init` | `Read workflow/planning.md` | Create new plan, auto-continue to refine |
+| `outline` | `Read workflow/planning-outline.md` | Run outline and plan phases |
+| `cleanup` | `Read workflow/planning.md` | Remove completed plans |
+| `lessons` | `Read workflow/planning.md` | List and convert lessons |
+| `lessons-aggregate` | `Read workflow/planning-lessons-aggregate.md` | Aggressive cross-lesson aggregation + superseded-stub prune in a single command |
+| `execute` | `Read workflow/execution.md` | Execute implementation tasks + verification |
+| `finalize` | `Read workflow/execution.md` | Commit, push, PR |
+| `recipe` | `Read workflow/recipe.md` | Create plan from predefined recipe |
+
+### Auto-Detect from Phase
+
+When `plan` is specified but no `action`, auto-detect from plan phase.
+
+**Step 0 — executor / config staleness preflight (deterministic, runs first).** Before the worktree re-anchor and routing calls below, run the deterministic `generate_executor preflight` verb once. It compares the executor's embedded `MARSHALL_VERSION` and `marshal.json`'s `system.provisioned_version` against the installed `dist-manifest.json`, applying the asymmetric-ownership rules documented canonically in [`marshall-steward` SKILL.md § "Executor & Config Staleness Signaling"](../marshall-steward/SKILL.md#executor--config-staleness-signaling) (executor = safe derived state, ADR-002, regenerated in place when stale; `marshal.json` = user decisions, never auto-mutated). The verb runs from the main checkout using main's present executor (which stays present throughout phase-5+), so it precedes the worktree re-anchor:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate_executor preflight
+```
+
+(See [`tools-script-executor` SKILL.md](../tools-script-executor/SKILL.md) Canonical invocations → `generate_executor — preflight` for the verb's argparse surface and its six-field TOON contract.) This Auto-Detect Step 0 is the **single documented home for the preflight branch contract**; the `task=` / `issue=` init entry runs the exact same preflight and defers here for the branch handling — see [`workflow/planning.md` § Action: init → Step 0](workflow/planning.md). Branch on the returned fields:
+
+- **`executor_action == regenerated`** — the executor was regenerated inline (safe derived state, ADR-002), either because its embedded version was older than the manifest's `executor_changed_at_version` OR because more than one version dir per bundle was discoverable in the plugin-cache context (multi-version PYTHONPATH pollution, whose regenerated executor re-embeds only the newest version's paths and clears the shadowing risk). Log a `[STATUS]` decision; because a regenerated executor may emit a changed agent set and Claude Code's agent registry is session-pinned at startup, surface the session-restart guardrail (see [`marshall-steward` SKILL.md](../marshall-steward/SKILL.md) § "Session Restart Required After Executor / Agent Changes").
+- **`executor_action == fresh`** — the executor is current (no version staleness and no multi-version pollution); proceed.
+- **`marshal_status == stale`** — `system.provisioned_version` is older than the manifest's `config_changed_at_version`. This is **advisory-only and non-blocking**: NEVER auto-mutate `marshal.json` (it holds user decisions). Instruct the user to run `/marshall-steward`, whose menu-mode config reconcile refreshes the provisioning stamps. Continue routing regardless.
+- **`marshal_status == fresh`** — the config seed is current; proceed.
+
+A fresh install with no manifest resolves both `changed_at` values to the empty sentinel, so nothing is stale and the verb is a no-op reporting `fresh`.
+
+**Cross-session re-entry preflight (re-anchor to worktree).** A fresh session that enters with `plan={plan_id}` from the main checkout may be targeting a phase-5+ plan whose directory was MOVED into its worktree at phase-5 move-in (ADR-002 move-based model). In that state the plan dir is no longer on main, so a `get-routing-context --plan-id {plan_id}` run from main resolves nothing and fails with `plan_not_found`. Before the routing call, resolve where the plan dir currently lives and re-anchor cwd into the worktree when needed:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow locate-plan-checkout \
+  --plan-id {plan_id}
+```
+
+(See [`workflow-integration-git` SKILL.md](../workflow-integration-git/SKILL.md) Canonical invocations → `locate-plan-checkout` for the verb's argparse surface and the three-state output contract.) Branch on the returned `location`:
+
+- **`location == worktree`** — the plan dir was moved into the worktree carried in `worktree_path`. Log a `[STATUS]` re-anchor decision, then issue a STANDALONE `cd {worktree_path}` Bash call (exactly one command — no `&&`, no chaining), and re-run `get-routing-context` from inside the worktree. After the `cd`, cwd is pinned to the worktree and the single uniform cwd-relative rule resolves every subsequent `.plan/` lookup to the worktree-resident copy.
+- **`location == current`** — the plan dir is on the current checkout (a main-checkout plan, or an already-cwd-pinned worktree). Proceed unchanged to the routing call below; do NOT `cd`.
+- **`location == not_found`** — neither the current checkout nor any registered worktree holds the plan dir. Emit the existing `plan_not_found` error.
+
+The preflight is **idempotent**: a session already cwd-pinned inside the worktree resolves `current` (the verb's on-disk probe finds the plan dir on the current checkout), so there is no double-`cd`. It runs from the main checkout using main's present executor — main's `.plan/execute-script.py` stays present and untouched throughout phase-5+ (per PR-558, the executor is per-tree derived state generated into the worktree at move-in, never removed from main).
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status get-routing-context \
+  --plan-id {plan_id}
+```
+
+**Resume-time metrics boundary reconciliation (stamp a half-stamped boundary).** After the cwd re-anchor preflight and `get-routing-context`, BEFORE reading the workflow doc and dispatching the resolved action, reconcile the metrics phase boundary into the current phase. `manage-status transition` and `manage-metrics phase-boundary` are two independent operations that must both fire at a phase boundary; if the prior session's phase skill self-transitioned the status, the resuming orchestrator's transition is a no-op and the paired `phase-boundary` call is skipped along with it, silently dropping a whole phase's token/duration attribution. Run the deterministic detector first — derive `{prev_phase}` as the phase immediately preceding `current_phase` in canonical order (`1-init → 2-refine → 3-outline → 4-plan → 5-execute → 6-finalize`); for `1-init` there is no prev, so omit `--prev-phase`:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics boundary-status \
+  --plan-id {plan_id} --next-phase {current_phase} [--prev-phase {prev_phase}]
+```
+
+(See `manage-metrics` Canonical invocations → `boundary-status`.) Branch on `classification`:
+
+- **`missing`** — the boundary is half-stamped. Stamp it explicitly even though the status transition already happened, then log a `[STATUS]` reconciliation decision:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics phase-boundary \
+    --plan-id {plan_id} --prev-phase {prev_phase} --next-phase {current_phase}
+  ```
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    work --plan-id {plan_id} --level INFO \
+    --message "[STATUS] (plan-marshall:plan-marshall) Resume reconciliation: stamped missing metrics boundary {prev_phase} -> {current_phase}"
+  ```
+
+- **`stamped` or `not_applicable`** — proceed unchanged to the routing table below; no stamp needed.
+
+| Current Phase | Workflow Document | Action |
+|---------------|-------------------|--------|
+| 1-init | `Read workflow/planning.md` | `init` |
+| 2-refine | `Read workflow/planning.md` | `init` (continues refine) |
+| 3-outline | `Read workflow/planning-outline.md` | `outline` |
+| 4-plan | `Read workflow/planning-outline.md` | `outline` (continues plan) |
+| 5-execute | `Read workflow/execution.md` | `execute` |
+| 6-finalize | `Read workflow/execution.md` | `finalize` |
+
+### Execution
+
+After determining the action and workflow document:
+
+1. **Read** the workflow document (`workflow/planning.md` or `workflow/execution.md`)
+2. **Navigate** to the section for the resolved action
+3. **Follow** the workflow instructions in that section
+
+## Usage Examples
+
+```bash
+# List all plans (interactive selection)
+/plan-marshall
+
+# Create new plan from task description (action=init implied by task=)
+/plan-marshall task="Add user authentication"
+
+# Create new plan from GitHub issue (action=init implied by issue=)
+/plan-marshall issue="https://github.com/org/repo/issues/42"
+
+# Create new plan targeting a non-default merge base (seeds references.base_branch)
+/plan-marshall task="Add feature X" base_branch="develop"
+
+# Outline specific plan
+/plan-marshall action=outline plan="user-auth"
+
+# Execute specific plan
+/plan-marshall action=execute plan="jwt-auth"
+
+# Finalize (commit, PR)
+/plan-marshall action=finalize plan="jwt-auth"
+
+# Auto-detect: continues from current phase
+/plan-marshall plan="jwt-auth"
+
+# Cleanup completed plans
+/plan-marshall action=cleanup
+
+# List lessons and convert to plan
+/plan-marshall action=lessons
+
+# Convert specific lesson to plan (action=lessons implied by lesson=)
+/plan-marshall lesson="2026-05-18-11-001"
+
+# Aggressive cross-lesson aggregation + superseded-stub prune in one batch
+/plan-marshall action=lessons-aggregate
+
+# Create plan from predefined recipe — lists available recipes for selection
+/plan-marshall action=recipe
+
+# Create plan from specific recipe (action=recipe implied by recipe=)
+/plan-marshall recipe="refactor-to-standards"
+
+# Explicit action= always wins over implicit inference
+/plan-marshall action=init task="Add user authentication"
+```
+
+## Continuous Improvement
+
+If you discover issues or improvements during execution, record them:
+
+1. **Activate skill**: `Skill: plan-marshall:manage-lessons`
+2. **Record lesson** with category `bug`, `improvement`, or `anti-pattern` and component in `{bundle}:{skill}` notation (e.g., `plan-marshall:manage-tasks`)
+
+## Terminal Title Integration
+
+The plan-marshall hooks can drive a live session-tab title (plan + phase + lock/build glyph + status icon) — no user configuration is required. The title is a three-way split: `manage-status` persists `current_phase`, `short_description`, and `title_token` into `status.json` (the single source of persisted title state); the pure `manage-terminal-title` composer renders the `{icon} {glyph} {body}` string; and the platform runtime reads `status.json` and emits per target (`session render-title` operation). See `manage-terminal-title/standards/terminal-title-architecture.md` for the end-to-end architecture and `plan-marshall:platform-runtime` for the emit contract.
+
+## Session ID Resolver
+
+Main-context skill calls that need the current session ID (e.g., `phase-6-finalize` forwarding it to `manage-metrics enrich`) capture it via the platform-runtime `session capture` operation, which stores it in `status.json` at plan-init time. Retrieval: `manage-status metadata --get --field session_id`.
+
+## Phase Handshake & Blocking-Finding Invariant
+
+Phase transitions are guarded by a registry of **invariants** captured at every phase boundary; see [`references/phase-handshake.md`](references/phase-handshake.md) for the full narrative, the registry table, and the resolution rules. Two registry rows drive the blocking-finding gate:
+
+| Row | Behavior at every boundary | Behavior at guarded boundaries |
+|-----|----------------------------|--------------------------------|
+| `pending_findings_by_type` | per-type breakdown of pending findings (passive — never raises) | identical (passive) |
+| `pending_findings_blocking_count` | sum of pending counts across the hardcoded ACTIONABLE finding-type set | raises `BlockingFindingsPresent` when the count is non-zero — capture refuses to persist a row, gating the boundary |
+
+The actionable-vs-knowledge classification is a **fixed, hardcoded** rule in `plan-marshall/scripts/_invariants.py` — not per-phase configuration, no `marshal.json` key, no wizard seed. ACTIONABLE types (`build-error`, `test-failure`, `lint-issue`, `sonar-issue`, `qgate`, `pr-comment`) block when pending at a guarded boundary; KNOWLEDGE types (`insight`, `tip`, `best-practice`, `improvement`) never block. See [`references/phase-handshake.md`](references/phase-handshake.md) § `pending_findings_blocking_count` resolution for the full rule.
+
+**Guarded boundaries** (the only points where the strict-verify check refuses to advance):
+
+- `5-execute → 6-finalize` (covers the phase-level transition)
+- `automated-review → branch-cleanup` (intra-finalize)
+- `sonar-roundtrip → next` (intra-finalize)
+
+Every other capture point — phases `1-init` through `5-execute` and any other finalize sub-step — captures the rows passively for retrospective analysis without blocking the transition.
+
+The resolutions counted as **resolved** (and therefore non-blocking) are: `fixed`, `suppressed`, `accepted`, `taken_into_account`. Only `pending` contributes to the count.
+
+## Canonical invocations
+
+The canonical argparse surface for `phase_handshake.py` (the skill's CLI entry-point; `effort_presets.py` is an imported library, not an executor-callable CLI). The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
+
+### capture
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake capture \
+  --plan-id PLAN_ID --phase {1-init,2-refine,3-outline,4-plan,5-execute,6-finalize} \
+  [--override] [--reason REASON]
+```
+
+`--reason` is required when `--override` is set.
+
+### verify
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake verify \
+  --plan-id PLAN_ID --phase {1-init,2-refine,3-outline,4-plan,5-execute,6-finalize} [--strict]
+```
+
+### list
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake list --plan-id PLAN_ID
+```
+
+### clear
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake clear \
+  --plan-id PLAN_ID --phase {1-init,2-refine,3-outline,4-plan,5-execute,6-finalize}
+```
+
+## Related
+
+| Skill | Purpose |
+|-------|---------|
+| `plan-marshall:manage-status` | Status storage (phases, metadata) |
+| `plan-marshall:phase-1-init` | Init phase implementation |
+| `plan-marshall:phase-3-outline` | Outline phase implementation |
+| `plan-marshall:phase-6-finalize` | Finalize phase implementation |
+| `plan-marshall:extension-api` | Extension API and extension points for domain customization |
+
+| Agent | Purpose |
+|-------|---------|
+| `plan-marshall:execution-context` | Generic dispatcher: loads caller-specified skills + workflow doc and follows it |

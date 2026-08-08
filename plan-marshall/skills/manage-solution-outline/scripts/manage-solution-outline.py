@@ -1,0 +1,914 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
+"""
+Manage solution outline documents.
+
+Solution outlines support ASCII diagrams with box-drawing characters.
+Content is written externally via Write tool, then validated by this script.
+
+Usage:
+    # Get target path for direct file write
+    python3 manage-solution-outline.py resolve-path --plan-id EXAMPLE-PLAN
+
+    # Validate existing file on disk
+    python3 manage-solution-outline.py write --plan-id EXAMPLE-PLAN [--force]
+    python3 manage-solution-outline.py update --plan-id EXAMPLE-PLAN
+
+    python3 manage-solution-outline.py validate --plan-id EXAMPLE-PLAN
+    python3 manage-solution-outline.py list-deliverables --plan-id EXAMPLE-PLAN
+    python3 manage-solution-outline.py read --plan-id EXAMPLE-PLAN [--raw | --section summary | --deliverable-number N]
+    python3 manage-solution-outline.py get-deliverable --plan-id EXAMPLE-PLAN --deliverable-number N
+    python3 manage-solution-outline.py exists --plan-id EXAMPLE-PLAN
+    python3 manage-solution-outline.py get-module-context
+"""
+
+import argparse
+from pathlib import Path
+from typing import Any, cast
+
+import resolve_project_dir as _routing
+from _architecture_core import (
+    DataNotFoundError,
+    get_project_meta_path,
+    iter_modules,
+    load_module_derived,
+    load_module_enriched_or_empty,
+    load_project_meta,
+)
+from _plan_parsing import (
+    _slugify_section_name,
+    extract_deliverables,
+    parse_document_sections,
+)
+from constants import VALID_STEP_INTENTS
+from file_ops import base_path, output_toon, safe_main
+from input_validation import (
+    add_plan_id_arg,
+    parse_args_with_toon_errors,
+    require_valid_plan_id,
+)
+
+SOLUTION_FILE = 'solution_outline.md'
+
+# Solution-level metadata: scope_estimate enum (see standards/solution-outline-standard.md)
+SCOPE_ESTIMATE_VALUES = ('none', 'surgical', 'single_module', 'multi_module', 'broad')
+
+# Allowlist of solution-level fields readable via `get-field`.
+SUPPORTED_FIELDS = ('scope_estimate',)
+
+
+def extract_scope_estimate(solution_metadata: str) -> str | None:
+    """Extract scope_estimate value from the Solution Metadata section body.
+
+    Looks for a line matching ``- scope_estimate: VALUE`` (with optional leading
+    whitespace and tolerant of `*` bullets). Returns the trimmed value, or
+    ``None`` when the field is absent.
+    """
+    if not solution_metadata:
+        return None
+    for raw_line in solution_metadata.split('\n'):
+        line = raw_line.strip()
+        # Accept "- scope_estimate: X", "* scope_estimate: X", or "scope_estimate: X"
+        if line.startswith('- '):
+            line = line[2:].strip()
+        elif line.startswith('* '):
+            line = line[2:].strip()
+        if line.startswith('scope_estimate:'):
+            return line.split(':', 1)[1].strip()
+    return None
+
+
+def get_solution_path(plan_id: str) -> Path:
+    """Get the solution outline file path."""
+    return cast(Path, base_path('plans', plan_id, SOLUTION_FILE))
+
+
+def _read_solution_or_not_found(plan_id: str) -> tuple[dict[str, Any] | None, str | None]:
+    """Resolve the solution outline path, guarding the ``document_not_found`` case.
+
+    Shared by ``cmd_read`` and ``cmd_get_deliverable``, which both perform the
+    identical guard: resolve the path, return the ``document_not_found`` error
+    dict (with the standard ``suggestions``) when the file is absent, otherwise
+    read and return the file content.
+
+    Returns ``(error_dict, None)`` when the file does not exist, or
+    ``(None, content)`` when it does. Exactly one element is non-``None``.
+    """
+    file_path = get_solution_path(plan_id)
+    if not file_path.exists():
+        return {
+            'status': 'error',
+            'error': 'document_not_found',
+            'plan_id': plan_id,
+            'file': SOLUTION_FILE,
+            'suggestions': [
+                'Use resolve-path to get the target path, then Write tool to create the file',
+                'Check plan_id spelling',
+            ],
+        }, None
+    return None, file_path.read_text(encoding='utf-8')
+
+
+def validate_solution_structure(content: str) -> tuple[list[str], list[str], dict[str, Any]]:
+    """Validate solution outline document structure against deliverable contract.
+
+    Returns (errors, warnings, info) where:
+    - errors: Contract violations that must be fixed
+    - warnings: Issues that should be addressed but don't block
+    - info: Validation metadata
+    """
+    errors: list[str] = []
+    warnings: list[str] = []
+    info: dict[str, Any] = {'sections_found': [], 'deliverable_count': 0, 'deliverables': []}
+
+    sections = parse_document_sections(content)
+
+    # Required sections (Solution Metadata first to keep ordering stable)
+    required_sections = ['solution_metadata', 'summary', 'overview', 'deliverables']
+    for section in required_sections:
+        if section in sections:
+            info['sections_found'].append(section)
+        else:
+            errors.append(f'Missing required section: {section.replace("_", " ").title()}')
+
+    # Optional sections
+    optional_sections = ['approach', 'dependencies', 'risks_and_mitigations', 'risks']
+    for section in optional_sections:
+        if section in sections:
+            info['sections_found'].append(section)
+
+    # Extract compatibility from header metadata
+    header = sections.get('_header', '')
+    for line in header.split('\n'):
+        if line.startswith('compatibility:'):
+            info['compatibility'] = line.split(':', 1)[1].strip()
+            break
+
+    # Validate Solution Metadata block: scope_estimate is required and must be in enum.
+    solution_metadata_body = sections.get('solution_metadata', '')
+    if 'solution_metadata' in sections:
+        scope_value = extract_scope_estimate(solution_metadata_body)
+        if scope_value is None:
+            errors.append('Missing scope_estimate in Solution Metadata')
+        elif scope_value not in SCOPE_ESTIMATE_VALUES:
+            errors.append(
+                f"Invalid scope_estimate '{scope_value}' (must be one of: {', '.join(SCOPE_ESTIMATE_VALUES)})"
+            )
+        else:
+            info['scope_estimate'] = scope_value
+
+    # Validate deliverables section
+    if 'deliverables' in sections:
+        deliverables = extract_deliverables(sections['deliverables'])
+        info['deliverable_count'] = len(deliverables)
+        info['deliverables'] = [d['reference'] for d in deliverables]
+
+        if not deliverables:
+            errors.append('No numbered deliverables found (expected ### N. Title)')
+        else:
+            # Validate each deliverable against contract
+            for d in deliverables:
+                d_errors, d_warnings = validate_deliverable_contract(d)
+                errors.extend(d_errors)
+                warnings.extend(d_warnings)
+
+    return errors, warnings, info
+
+
+def validate_deliverable_contract(deliverable: dict[str, Any]) -> tuple[list[str], list[str]]:
+    """Validate a single deliverable against the deliverable contract.
+
+    Contract requires:
+    - Metadata block with required fields
+    - Profiles block with valid profiles
+    - Affected files with explicit paths
+    - Verification section
+    - Success criteria
+    """
+    errors: list[str] = []
+    warnings: list[str] = []
+    num = deliverable['number']
+
+    # Check 1: Metadata block exists
+    metadata = deliverable.get('metadata', {})
+    if not metadata:
+        errors.append(f'D{num}: Missing **Metadata:** block')
+    else:
+        # Check 1a: All required metadata fields
+        # module is required for skill resolution from architecture
+        # Note: profile is now in separate **Profiles:** block, not in metadata
+        required_fields = ['change_type', 'execution_mode', 'domain', 'module', 'depends']
+        for field in required_fields:
+            if field not in metadata:
+                errors.append(f'D{num}: Missing metadata field: {field}')
+
+        # Check 1b: Valid change_type (canonical vocabulary from change-types.md)
+        valid_change_types = [
+            'analysis',
+            'feature',
+            'enhancement',
+            'bug_fix',
+            'tech_debt',
+            'verification',
+        ]
+        if metadata.get('change_type') and metadata['change_type'] not in valid_change_types:
+            errors.append(
+                f"D{num}: Invalid change_type '{metadata['change_type']}' (must be one of: {', '.join(valid_change_types)})"
+            )
+
+        # Check 1c: Valid execution_mode
+        valid_modes = ['automated', 'manual', 'mixed']
+        if metadata.get('execution_mode') and metadata['execution_mode'] not in valid_modes:
+            errors.append(
+                f"D{num}: Invalid execution_mode '{metadata['execution_mode']}' (must be one of: {', '.join(valid_modes)})"
+            )
+
+    # Check 2: Profiles block (separate from metadata)
+    profiles = deliverable.get('profiles', [])
+    valid_profiles = ['implementation', 'module_testing', 'integration_testing', 'verification']
+    if not profiles:
+        errors.append(f'D{num}: Missing **Profiles:** block')
+    else:
+        for profile in profiles:
+            if profile not in valid_profiles:
+                errors.append(f"D{num}: Invalid profile '{profile}' (must be one of: {', '.join(valid_profiles)})")
+
+    # Check 2b: Warn when module_testing profile but no test files in affected files.
+    # Each affected-file entry is a {path, intent} object.
+    affected_files = deliverable.get('affected_files', [])
+    if 'module_testing' in profiles and affected_files:
+        test_indicators = ('test/', 'Test.', '_test.', 'test_', '.test.', 'spec/', '/tests/')
+        has_test_files = any(
+            any(indicator in entry.get('path', '') for indicator in test_indicators) for entry in affected_files
+        )
+        if not has_test_files:
+            warnings.append(
+                f'D{num}: module_testing profile but no test files detected in affected files '
+                f'(expected paths containing: test/, Test., _test., test_, .test., spec/)'
+            )
+
+    # Check 3: Affected files section
+    affected_files = deliverable.get('affected_files', [])
+    is_verification_only = 'verification' in profiles
+    if not affected_files and not is_verification_only:
+        errors.append(f'D{num}: Missing **Affected files:** section')
+    else:
+        # Check 3a: No wildcards or vague references; Check 3b: required intent marker.
+        for entry in affected_files:
+            path = entry.get('path', '')
+            intent = entry.get('intent')
+            if '*' in path:
+                errors.append(f'D{num}: Wildcard in affected files: {path}')
+            if '...' in path:
+                errors.append(f'D{num}: Ellipsis in affected files: {path}')
+            if 'all ' in path.lower():
+                errors.append(f'D{num}: Vague reference in affected files: {path}')
+            # Check for reasonable path structure
+            if not ('/' in path or path.endswith('.md') or path.endswith('.py')):
+                warnings.append(f'D{num}: Unusual file path format: {path}')
+            # Check 3b: every entry MUST carry a valid intent marker.
+            if intent is None:
+                errors.append(
+                    f"D{num}: Affected file '{path}' missing intent marker "
+                    f'(read|write-new|write-replace|delete)'
+                )
+            elif intent not in VALID_STEP_INTENTS:
+                errors.append(
+                    f"D{num}: Affected file '{path}' has invalid intent marker '{intent}' "
+                    f'(must be one of: {", ".join(VALID_STEP_INTENTS)})'
+                )
+
+    # Check 4: Verification section
+    verification = deliverable.get('verification', {})
+    if not verification:
+        errors.append(f'D{num}: Missing **Verification:** section')
+    else:
+        if 'command' not in verification:
+            warnings.append(f'D{num}: Verification missing Command')
+        if 'criteria' not in verification:
+            warnings.append(f'D{num}: Verification missing Criteria')
+
+    # Check 5: Success criteria
+    if not deliverable.get('has_success_criteria'):
+        warnings.append(f'D{num}: Missing **Success Criteria:** section')
+
+    return errors, warnings
+
+
+# =============================================================================
+# Commands
+# =============================================================================
+
+
+def cmd_validate(args: argparse.Namespace) -> dict[str, Any]:
+    """Validate solution outline structure against deliverable contract."""
+    require_valid_plan_id(args)
+
+    file_path = get_solution_path(args.plan_id)
+
+    if not file_path.exists():
+        return {
+            'status': 'error',
+            'error': 'document_not_found',
+            'plan_id': args.plan_id,
+            'file': SOLUTION_FILE,
+            'suggestions': [
+                'Use resolve-path to get the target path, then Write tool to create the file',
+                'Check plan_id spelling',
+            ],
+        }
+
+    content = file_path.read_text(encoding='utf-8')
+    errors, warnings, info = validate_solution_structure(content)
+
+    if errors:
+        return {
+            'status': 'error',
+            'error': 'validation_failed',
+            'plan_id': args.plan_id,
+            'issues': errors,
+            'warnings': warnings,
+            'deliverable_count': info['deliverable_count'],
+        }
+
+    validation = {
+        'sections_found': ','.join(info['sections_found']),
+        'deliverable_count': info['deliverable_count'],
+        'deliverables': info['deliverables'],
+    }
+
+    if 'compatibility' in info:
+        validation['compatibility'] = info['compatibility']
+    if 'scope_estimate' in info:
+        validation['scope_estimate'] = info['scope_estimate']
+
+    result: dict[str, Any] = {
+        'status': 'success',
+        'plan_id': args.plan_id,
+        'file': SOLUTION_FILE,
+        'validation': validation,
+    }
+
+    if warnings:
+        result['warnings'] = warnings
+
+    return result
+
+
+def cmd_list_deliverables(args: argparse.Namespace) -> dict[str, Any]:
+    """List deliverables from solution outline."""
+    require_valid_plan_id(args)
+
+    file_path = get_solution_path(args.plan_id)
+
+    if not file_path.exists():
+        return {'status': 'error', 'error': 'document_not_found', 'plan_id': args.plan_id, 'file': SOLUTION_FILE}
+
+    content = file_path.read_text(encoding='utf-8')
+    sections = parse_document_sections(content)
+
+    if 'deliverables' not in sections:
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'section_not_found',
+            'message': 'Deliverables section not found',
+        }
+
+    deliverables = extract_deliverables(sections['deliverables'])
+
+    return {
+        'status': 'success',
+        'plan_id': args.plan_id,
+        'deliverable_count': len(deliverables),
+        'deliverables': deliverables,
+    }
+
+
+def _lookup_deliverable(plan_id: str, content: str, deliverable_number: int) -> dict[str, Any]:
+    """Look up a single deliverable by number within solution outline content.
+
+    Shared by ``cmd_read`` (``--deliverable-number`` branch) and
+    ``cmd_get_deliverable``. Parses the document sections, guards the missing
+    Deliverables section, iterates the extracted deliverables, and returns the
+    matched deliverable dict on success. The error and success shapes mirror the
+    ``read --deliverable-number`` contract exactly:
+
+    - ``section_not_found`` when the Deliverables section is absent
+    - ``deliverable_not_found`` (with ``available`` numbers) when no deliverable
+      matches ``deliverable_number``
+    - ``success`` (with the ``deliverable`` payload) on match
+    """
+    sections = parse_document_sections(content)
+    if 'deliverables' not in sections:
+        return {
+            'status': 'error',
+            'error': 'section_not_found',
+            'plan_id': plan_id,
+            'message': 'Deliverables section not found',
+        }
+
+    deliverables = extract_deliverables(sections['deliverables'])
+
+    for d in deliverables:
+        if d['number'] == deliverable_number:
+            return {
+                'status': 'success',
+                'plan_id': plan_id,
+                'deliverable': d,
+            }
+
+    return {
+        'status': 'error',
+        'error': 'deliverable_not_found',
+        'plan_id': plan_id,
+        'number': deliverable_number,
+        'available': [d['number'] for d in deliverables],
+    }
+
+
+def cmd_read(args: argparse.Namespace) -> dict[str, Any]:
+    """Read solution outline."""
+    require_valid_plan_id(args)
+
+    error, content = _read_solution_or_not_found(args.plan_id)
+    if error is not None:
+        return error
+    content = cast(str, content)
+
+    # Handle --deliverable-number: read specific deliverable
+    deliverable_number = getattr(args, 'deliverable_number', None)
+    if deliverable_number is not None:
+        return _lookup_deliverable(args.plan_id, content, deliverable_number)
+
+    # Handle --section: read specific top-level ## section
+    requested_section = getattr(args, 'section', None)
+    if requested_section is not None:
+        normalized = _slugify_section_name(requested_section)
+        sections = parse_document_sections(content)
+        if normalized not in sections:
+            return {
+                'status': 'error',
+                'error': 'section_not_found',
+                'plan_id': args.plan_id,
+                'requested_section': requested_section,
+                'message': f"Section '{requested_section}' not found in {SOLUTION_FILE}",
+            }
+        body = sections[normalized]
+        if getattr(args, 'raw', False):
+            print(body)
+            return {
+                'status': 'success',
+                'plan_id': args.plan_id,
+                'file': SOLUTION_FILE,
+                'section': normalized,
+                'requested_section': requested_section,
+                'raw': True,
+            }
+        return {
+            'status': 'success',
+            'plan_id': args.plan_id,
+            'file': SOLUTION_FILE,
+            'section': normalized,
+            'requested_section': requested_section,
+            'content': body,
+        }
+
+    if getattr(args, 'raw', False):
+        print(content)
+        return {'status': 'success', 'plan_id': args.plan_id, 'file': SOLUTION_FILE, 'raw': True}
+    else:
+        sections = parse_document_sections(content)
+        result: dict[str, Any] = {
+            'status': 'success',
+            'plan_id': args.plan_id,
+            'file': SOLUTION_FILE,
+            'content': sections,
+        }
+        scope_value = extract_scope_estimate(sections.get('solution_metadata', ''))
+        if scope_value is not None:
+            result['scope_estimate'] = scope_value
+        return result
+
+
+def cmd_get_deliverable(args: argparse.Namespace) -> dict[str, Any]:
+    """Read a single deliverable by number from the solution outline.
+
+    Mirrors ``read --deliverable-number`` exactly: performs the same
+    ``document_not_found`` guard ``cmd_read`` uses (via the shared
+    ``_read_solution_or_not_found`` helper — identical error dict and
+    suggestions), reads the content, then funnels through the shared
+    ``_lookup_deliverable`` helper for the ``section_not_found`` /
+    ``deliverable_not_found`` / success shapes.
+    """
+    require_valid_plan_id(args)
+
+    error, content = _read_solution_or_not_found(args.plan_id)
+    if error is not None:
+        return error
+
+    return _lookup_deliverable(args.plan_id, cast(str, content), args.deliverable_number)
+
+
+def cmd_get_field(args: argparse.Namespace) -> dict[str, Any]:
+    """Read a single solution-level metadata field.
+
+    Currently supports: scope_estimate. Returns ``unknown_field`` for unsupported
+    field names; ``field_not_found`` when the persisted document does not carry
+    the requested field; ``document_not_found`` when the file is absent.
+    """
+    require_valid_plan_id(args)
+
+    field_name = getattr(args, 'field', None)
+    if field_name not in SUPPORTED_FIELDS:
+        return {
+            'status': 'error',
+            'error': 'unknown_field',
+            'plan_id': args.plan_id,
+            'field': field_name,
+            'supported': list(SUPPORTED_FIELDS),
+        }
+
+    file_path = get_solution_path(args.plan_id)
+    if not file_path.exists():
+        return {
+            'status': 'error',
+            'error': 'document_not_found',
+            'plan_id': args.plan_id,
+            'file': SOLUTION_FILE,
+            'field': field_name,
+        }
+
+    content = file_path.read_text(encoding='utf-8')
+    sections = parse_document_sections(content)
+
+    # Currently only scope_estimate is supported (lives in Solution Metadata).
+    if field_name == 'scope_estimate':
+        value = extract_scope_estimate(sections.get('solution_metadata', ''))
+        if value is None:
+            return {
+                'status': 'error',
+                'error': 'field_not_found',
+                'plan_id': args.plan_id,
+                'file': SOLUTION_FILE,
+                'field': field_name,
+            }
+        return {
+            'status': 'success',
+            'plan_id': args.plan_id,
+            'file': SOLUTION_FILE,
+            'field': field_name,
+            'value': value,
+        }
+
+    # Unreachable: SUPPORTED_FIELDS gates the field name above.
+    return {
+        'status': 'error',
+        'error': 'unknown_field',
+        'plan_id': args.plan_id,
+        'field': field_name,
+    }
+
+
+def cmd_exists(args: argparse.Namespace) -> dict[str, Any]:
+    """Check if solution outline exists."""
+    require_valid_plan_id(args)
+
+    file_path = get_solution_path(args.plan_id)
+    exists = file_path.exists()
+
+    return {'status': 'success', 'plan_id': args.plan_id, 'file': SOLUTION_FILE, 'exists': exists}
+
+
+def _validate_file_on_disk(plan_id: str, file_path: Path) -> tuple[int, dict[str, Any]]:
+    """Validate solution outline file already on disk.
+
+    Returns (exit_code, result_dict). exit_code 0 means success.
+    Does NOT print - caller is responsible for output.
+    """
+    if not file_path.exists():
+        return 1, {
+            'status': 'error',
+            'error': 'document_not_found',
+            'plan_id': plan_id,
+            'file': SOLUTION_FILE,
+            'suggestions': [
+                'Use resolve-path to get the target path, then Write tool to create the file',
+                'Check plan_id spelling',
+            ],
+        }
+
+    content = file_path.read_text(encoding='utf-8')
+
+    if not content.strip():
+        return 1, {
+            'status': 'error',
+            'error': 'empty_content',
+            'plan_id': plan_id,
+            'message': 'Content cannot be empty',
+        }
+
+    errors, warnings, info = validate_solution_structure(content)
+
+    if errors:
+        return 1, {
+            'status': 'error',
+            'error': 'validation_failed',
+            'plan_id': plan_id,
+            'issues': errors,
+            'warnings': warnings,
+            'deliverable_count': info['deliverable_count'],
+        }
+
+    validation = {
+        'deliverable_count': info['deliverable_count'],
+        'sections_found': ','.join(info['sections_found']),
+    }
+
+    if 'compatibility' in info:
+        validation['compatibility'] = info['compatibility']
+    if 'scope_estimate' in info:
+        validation['scope_estimate'] = info['scope_estimate']
+
+    result: dict[str, Any] = {
+        'status': 'success',
+        'plan_id': plan_id,
+        'file': SOLUTION_FILE,
+        'validation': validation,
+    }
+
+    if warnings:
+        result['warnings'] = warnings
+
+    return 0, result
+
+
+def cmd_resolve_path(args: argparse.Namespace) -> dict[str, Any]:
+    """Return the target file path for the solution outline.
+
+    Used by LLM to get the path for direct file write via Write tool.
+    """
+    require_valid_plan_id(args)
+
+    file_path = get_solution_path(args.plan_id)
+
+    return {
+        'status': 'success',
+        'plan_id': args.plan_id,
+        'path': str(file_path),
+        'exists': file_path.exists(),
+    }
+
+
+def cmd_write(args: argparse.Namespace) -> dict[str, Any]:
+    """Validate solution outline already written to disk.
+
+    File must be written externally (via Write tool) before calling this command.
+    Validates against the deliverable contract. Use --force to allow overwriting
+    an existing file (checked before external write via resolve-path exists field).
+    """
+    require_valid_plan_id(args)
+
+    file_path = get_solution_path(args.plan_id)
+
+    _exit_code, result = _validate_file_on_disk(args.plan_id, file_path)
+    if result.get('status') == 'success':
+        result['action'] = 'created'
+    return result
+
+
+def cmd_update(args: argparse.Namespace) -> dict[str, Any]:
+    """Validate an updated solution outline already written to disk.
+
+    File must already exist and be updated externally (via Write tool).
+    Validates against the deliverable contract.
+    """
+    require_valid_plan_id(args)
+
+    file_path = get_solution_path(args.plan_id)
+
+    if not file_path.exists():
+        return {
+            'status': 'error',
+            'error': 'document_not_found',
+            'plan_id': args.plan_id,
+            'file': SOLUTION_FILE,
+            'message': 'Cannot update: solution outline does not exist. Use write to create it.',
+        }
+
+    _exit_code, result = _validate_file_on_disk(args.plan_id, file_path)
+    if result.get('status') == 'success':
+        result['action'] = 'updated'
+    return result
+
+
+def cmd_get_module_context(args: argparse.Namespace) -> dict[str, Any]:
+    """Get project architecture context for placement decisions.
+
+    Reads the per-module project-architecture layout (top-level
+    ``_project.json`` plus per-module ``{derived,enriched}.json`` files) and
+    returns module information to help with file placement decisions during
+    solution outline creation.
+
+    The ``not_found`` status keys off ``_project.json`` existence — that file
+    is the single source of truth for "which modules exist", matching the
+    contract codified in ``_architecture_core``.
+    """
+    project_dir = getattr(args, 'project_dir', '.')
+    meta_path = get_project_meta_path(project_dir)
+
+    if not meta_path.exists():
+        return {
+            'status': 'not_found',
+            'file': str(meta_path.parent),
+            'message': 'Project architecture not discovered. Run architecture discovery first.',
+            'suggestion': 'Run: python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture discover',
+        }
+
+    try:
+        load_project_meta(project_dir)
+        module_names = iter_modules(project_dir)
+    except DataNotFoundError as e:
+        # Should not happen given the existence check above, but the helper
+        # raises this exception type; surface it as the not_found branch.
+        return {
+            'status': 'not_found',
+            'file': str(meta_path.parent),
+            'message': str(e),
+            'suggestion': 'Run: python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture discover',
+        }
+    except Exception as e:
+        return {'status': 'error', 'error': 'parse_error', 'file': str(meta_path.parent), 'message': str(e)}
+
+    modules_list: list[dict[str, Any]] = []
+    context: dict[str, Any] = {'status': 'success', 'module_count': len(module_names), 'modules': modules_list}
+
+    for name in module_names:
+        try:
+            derived = load_module_derived(name, project_dir)
+        except DataNotFoundError:
+            # ``_project.json`` lists the module but its ``derived.json`` is
+            # missing — treat as an empty derived shape so callers still see
+            # a stable per-module entry.
+            derived = {}
+        except Exception as e:
+            return {'status': 'error', 'error': 'parse_error', 'file': str(meta_path.parent), 'message': str(e)}
+
+        try:
+            enriched = load_module_enriched_or_empty(name, project_dir)
+        except Exception as e:
+            return {'status': 'error', 'error': 'parse_error', 'file': str(meta_path.parent), 'message': str(e)}
+
+        paths = derived.get('paths', {})
+        module_info = {
+            'name': name,
+            'path': paths.get('module', '.'),
+            'purpose': enriched.get('purpose', 'unknown'),
+            'responsibility': enriched.get('responsibility', ''),
+        }
+        if enriched.get('key_packages'):
+            module_info['key_packages'] = list(enriched['key_packages'].keys())
+        if enriched.get('tips'):
+            module_info['tips'] = enriched['tips']
+        if enriched.get('insights'):
+            module_info['insights'] = enriched['insights']
+        if enriched.get('best_practices'):
+            module_info['best_practices'] = enriched['best_practices']
+        if enriched.get('skills_by_profile'):
+            module_info['skills_by_profile'] = enriched['skills_by_profile']
+        modules_list.append(module_info)
+
+    return context
+
+
+# =============================================================================
+# Main
+# =============================================================================
+
+
+@safe_main
+def main() -> int:
+    parser = argparse.ArgumentParser(description='Manage solution outline documents', allow_abbrev=False)
+    subparsers = parser.add_subparsers(dest='command', required=True, help='Command')
+
+    # validate
+    validate_parser = subparsers.add_parser('validate', help='Validate solution structure', allow_abbrev=False)
+    add_plan_id_arg(validate_parser)
+    validate_parser.set_defaults(func=cmd_validate)
+
+    # list-deliverables
+    list_parser = subparsers.add_parser('list-deliverables', help='Extract deliverables', allow_abbrev=False)
+    add_plan_id_arg(list_parser)
+    list_parser.set_defaults(func=cmd_list_deliverables)
+
+    # read
+    read_parser = subparsers.add_parser('read', help='Read solution outline', allow_abbrev=False)
+    add_plan_id_arg(read_parser)
+    read_parser.add_argument('--raw', action='store_true', help='Output raw content')
+    read_selector_group = read_parser.add_mutually_exclusive_group()
+    read_selector_group.add_argument('--deliverable-number', type=int, help='Read specific deliverable by number')
+    read_selector_group.add_argument(
+        '--section',
+        type=str,
+        help='Read a specific top-level ## section by name (case-insensitive, e.g. summary, overview)',
+    )
+    read_parser.set_defaults(func=cmd_read)
+
+    # get-deliverable
+    get_deliverable_parser = subparsers.add_parser(
+        'get-deliverable', help='Read a single deliverable by number', allow_abbrev=False
+    )
+    add_plan_id_arg(get_deliverable_parser)
+    get_deliverable_parser.add_argument(
+        '--deliverable-number',
+        type=int,
+        required=True,
+        help='Deliverable number to read',
+    )
+    get_deliverable_parser.set_defaults(func=cmd_get_deliverable)
+
+    # exists
+    exists_parser = subparsers.add_parser('exists', help='Check if solution exists', allow_abbrev=False)
+    add_plan_id_arg(exists_parser)
+    exists_parser.set_defaults(func=cmd_exists)
+
+    # get-field
+    get_field_parser = subparsers.add_parser(
+        'get-field',
+        help='Read a single solution-level metadata field (e.g., scope_estimate)',
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(get_field_parser)
+    get_field_parser.add_argument(
+        '--field',
+        type=str,
+        required=True,
+        help=f'Field name (supported: {", ".join(SUPPORTED_FIELDS)})',
+    )
+    get_field_parser.set_defaults(func=cmd_get_field)
+
+    # resolve-path
+    resolve_parser = subparsers.add_parser(
+        'resolve-path', help='Get target file path for direct Write', allow_abbrev=False
+    )
+    add_plan_id_arg(resolve_parser)
+    resolve_parser.set_defaults(func=cmd_resolve_path)
+
+    # write
+    write_parser = subparsers.add_parser(
+        'write', help='Validate solution outline on disk (written via Write tool)', allow_abbrev=False
+    )
+    add_plan_id_arg(write_parser)
+    write_parser.add_argument('--force', action='store_true', help='(legacy, ignored)')
+    write_parser.set_defaults(func=cmd_write)
+
+    # update
+    update_parser = subparsers.add_parser(
+        'update',
+        help='Validate updated solution outline on disk (written via Write tool)',
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(update_parser)
+    update_parser.set_defaults(func=cmd_update)
+
+    # get-module-context
+    context_parser = subparsers.add_parser(
+        'get-module-context', help='Get project structure context for placement', allow_abbrev=False
+    )
+    context_parser.add_argument(
+        '--project-dir',
+        default='.',
+        help=(
+            'Project directory containing .plan/project-architecture/ '
+            '(default: current directory). Mutually exclusive with --plan-id.'
+        ),
+    )
+    _routing.add_plan_id_arg(context_parser)
+    context_parser.set_defaults(func=cmd_get_module_context)
+
+    args = parse_args_with_toon_errors(parser)
+
+    if not args.command:
+        parser.print_help()
+        return 1
+
+    # Apply two-state routing only when the active subcommand declares
+    # --project-dir (i.e., get-module-context). Other subcommands keep
+    # their original argument shape unchanged.
+    if hasattr(args, 'project_dir'):
+        try:
+            args.project_dir = _routing.resolve_project_dir(getattr(args, 'plan_id', None), args.project_dir, default='.')
+        except _routing.MutuallyExclusiveArgsError:
+            output_toon(_routing.emit_mutually_exclusive_error(getattr(args, 'plan_id', None), args.project_dir))
+            return 2
+        except _routing.WorktreeResolutionError as exc:
+            output_toon(_routing.emit_worktree_error(args.plan_id, exc))
+            return 2
+
+    result = args.func(args)
+    output_toon(result)
+    return 0
+
+
+if __name__ == '__main__':
+    main()
