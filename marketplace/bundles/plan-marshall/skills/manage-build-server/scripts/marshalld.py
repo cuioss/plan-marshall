@@ -253,8 +253,13 @@ class Daemon:
             interaction_audit: The central interaction-audit log (injectable for
                 tests, like ``journal``); defaults to a fresh
                 :class:`InteractionAudit` resolving the machine-global home.
-            baseline_interpreter: The registered baseline interpreter for the
-                verifier (defaults to this daemon's own ``sys.executable``).
+            baseline_interpreter: Optional explicit interpreter pin for the
+                verifier. There is no registered baseline: when it is left
+                unset (``None`` — what :func:`build_daemon` passes), the
+                verifier applies its canonical ``python3`` / ``python``
+                basename set instead. It is NEVER defaulted to this daemon's
+                own ``sys.executable``, which would silently pin the check to
+                whichever interpreter happened to launch the daemon.
             common_dir_resolver: Worktree-liveness resolver for the verifier
                 (defaults to the git-backed resolver).
             job_timeout: Per-job wall-clock timeout in seconds.
@@ -264,7 +269,7 @@ class Daemon:
         self._scheduler = scheduler
         self._journal = journal
         self._interaction_audit = interaction_audit or InteractionAudit()
-        self._baseline_interpreter = baseline_interpreter or sys.executable
+        self._baseline_interpreter = baseline_interpreter
         self._common_dir_resolver = common_dir_resolver or git_common_dir_resolver
         self._job_timeout = job_timeout
         self._log_dir = log_dir or job_log_dir()

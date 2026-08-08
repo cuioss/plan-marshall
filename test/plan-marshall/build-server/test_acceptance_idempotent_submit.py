@@ -56,8 +56,12 @@ def test_daemon_submit_attaches_identical_concurrent_submits(home, tmp_path):
     canonical = canonicalize_root(root)
     register_project(canonical, notation_allowlist=[_NOTATION])
 
+    # A BARE `python3`, matching what the routing seam actually submits. With no
+    # baseline pin the verifier's S1.2 check requires a bare canonical name, so an
+    # absolute `sys.executable` would be refused before the scheduler ever sees the
+    # submit — and this test is about idempotent ATTACHMENT, not interpreter shape.
     spec = make_job_spec(
-        command=[sys.executable, str(root / '.plan' / 'execute-script.py'), _NOTATION, 'run'],
+        command=['python3', str(root / '.plan' / 'execute-script.py'), _NOTATION, 'run'],
         exec_path=canonical, project_path=canonical, plan_id='p',
     )
 
