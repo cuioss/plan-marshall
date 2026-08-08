@@ -83,6 +83,34 @@ specific check as ignorable.
    *Done when:* the proposal is recorded. ⛔ **Do not change commit authorship in this run** — it is a
    decision with no operator present to make it, and the lane forbids self-approving that class of
    change.
+4. **D3 — The documented merge command is wrong for this repository.** § Step 8 documents
+   `gh pr merge {N} --squash --auto`. On a merge-queue repository the queue owns the merge strategy, so
+   passing `--squash` is **rejected** — the command errors with *"The merge strategy for main is set by
+   the merge queue"* and auto-merge is **not armed** (`autoMergeRequest` stays `null`). The working
+   form is `gh pr merge {N} --auto`. Correct the documented command and state why the strategy flag is
+   omitted.
+   *Done when:* the command in § Step 8 is the one that works, with a one-line reason. ⛔ **Re-derive
+   the failure before editing** — run the documented form against this run's own PR and record what it
+   returns; if it succeeds here, this deliverable is refuted and drops rather than shipping on a
+   restated claim.
+5. **D4 — Warn that the build gate can leave lockfile churn, and stage explicitly.** A `./pw` run under
+   a session interpreter older than the project floor rewrites `uv.lock`; `git add -A` then ships it
+   into a deliverable commit. Observed in **two consecutive runs**, both of which caught it only
+   because they looked. Add the hazard to § Step 4/5 and state the rule: **stage the deliverable paths
+   explicitly, never `git add -A`**, and check for stray lockfile churn before committing.
+   *Done when:* the hazard and the staging rule are stated where a run commits.
+6. **D5 — The Step-9 Bridge row forbids a change a deliverable can legitimately require.** Its wording
+   ("Nothing under `doc/plans/` outside this plan's own directory was changed") collides with a plan
+   whose declared surface includes a shared lane doc. Reword it to prohibit **status/bookkeeping**
+   writes outside the plan directory, explicitly permitting declared-deliverable edits to shared lane
+   docs.
+   *Done when:* the row's wording matches its intent and no longer contradicts a legitimate deliverable.
+
+⭐ **Split-guard verdict, recorded before hand-over:** six deliverables, at the split presumption. **No
+split** — D0/D1 are the substance and D2–D5 are single-paragraph corrections to the *same file, mostly
+the same section*, each carrying its own evidence. Splitting would produce a second plan that edits the
+same skill for one paragraph, which is worse: two PRs racing one file. If D0 halts, D3–D5 still stand
+on their own evidence and the run says so rather than abandoning them.
 
 ## Out of scope
 
@@ -91,10 +119,14 @@ specific check as ignorable.
   moment the ruleset changes.
 - **Changing commit authorship or signing a CLA** — that is D2's recorded decision, and a run with no
   operator must not make it.
-- **`010`'s three open contract proposals** (the `skip-bot-review` draft-open race, the `uv.lock`
-  bootstrap churn, the Step-9 Bridge-row wording). They are operator-pending and touch Steps 7/8/9;
-  this plan touches Step 8 condition 1 only. Silently resolving one while adjacent to it would take a
-  decision the operator has not yet made.
+- **The `skip-bot-review` draft-open race** — `010`'s first proposal, and the one of its three that is
+  **deliberately still excluded**. It needs a design decision (document the race as expected, versus
+  restructure PR creation so the label exists before the `opened` event fires), and evidence now shows
+  the race is **non-deterministic**: on #1112 the label suppressed two of three bots, on #1117 only
+  one. A run with no operator must not pick between those options — per the no-operator rule, it would
+  be authoring a decision it cannot make. `010`'s proposal stands; this plan does not touch it.
+  *(`010`'s other two proposals — lockfile churn and the Bridge row — are D4 and D5 above: both are
+  wording corrections with no decision in them, and the operator has approved folding them in.)*
 - **`doc/plans/cloud-bridge.md`** — the merge gate is execution, not bridge lifecycle. Editing it here
   would blur a boundary two plans have just spent effort drawing.
 
@@ -113,6 +145,10 @@ specific check as ignorable.
 | The required-context set is readable from the ruleset / branch-protection API by this run | HYPOTHESIS | D0 itself, which **HALTS** if it is not |
 | `license/cla` is not in the required set | HYPOTHESIS | D0's derived list — ⛔ this is the plan's central premise and it is **not** assumed; if D0 finds the CLA *is* required, the observed landings need re-explaining and the plan re-scopes rather than proceeding |
 | No other non-required check has stalled a run so far | HYPOTHESIS | re-read both runs' full check sets; a second instance strengthens D1's wording rather than changing it |
+| § Step 8 documents `gh pr merge {N} --squash --auto` | OBSERVED | that file § Step 8 — re-read it |
+| `--squash` is rejected on this queue-gated repo and leaves auto-merge unarmed | OBSERVED | observed on PR #1111: *"The merge strategy for main is set by the merge queue"*, `autoMergeRequest: null` afterwards, and `--auto` alone then reported "already queued". ⛔ **D3 re-derives this against its own PR before editing** |
+| `./pw` rewrites `uv.lock` under a session interpreter below the project floor, and `git add -A` ships it | OBSERVED | both prior cloud runs' reports; reproducible by checking `git status` after the build gate |
+| The Step-9 Bridge row's wording forbids a declared-deliverable edit to a shared lane doc | OBSERVED | that file § Step 9 contract-check table, Bridge row |
 
 An asserted **absence** is verified exactly as an asserted presence, and is the higher-risk half.
 Every count above is a **lead** — re-derive it at the moment of the claim.
