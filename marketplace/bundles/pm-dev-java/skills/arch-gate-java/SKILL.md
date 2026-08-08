@@ -34,8 +34,19 @@ The single authoritative model for `arch-gate` lives in [`arch-gate-fitness-func
 | Extension descriptor | `provides_arch_gate()` returns `{'tool': 'archunit'}` |
 | Verify-step | `default:verify:arch-gate`, appended to `phase-5-execute.verification_steps` by `skill-domains configure` when the java domain is configured |
 | Finding type | `arch-constraint` (one finding per structural-boundary violation, carrying the violated rule's identity) |
+| Negative control | Binds to the `@ArchTest` rule surface above: every rule ships one, per [`arch-gate-fitness-functions.md` § Every rule ships a negative control](../../../plan-marshall/skills/manage-architecture/standards/arch-gate-fitness-functions.md#every-rule-ships-a-negative-control) |
 
 Running the `@ArchTest` rules as their own dedicated ArchUnit invocation — rather than masking violations inside the test suite — is what lets a structural-boundary violation surface as an `arch-constraint` finding instead of a failed test. ArchUnit violations route to [`pm-dev-java:ext-triage-java`](../ext-triage-java/SKILL.md) for the per-finding disposition (FIX / SUPPRESS / ACCEPT); a violation that recurs across runs feeds the `arch-constraint` lesson type (rule-identity dedup, retire-on-quiet / reinforce-on-recurrence).
+
+## Polarity trap in a hand-written `ArchCondition`
+
+This is the concrete ArchUnit instance of the negative-control obligation the Java binding table above points at — **secondary to that obligation, never a substitute for it**. The obligation governs every rule; this note covers one ArchUnit-specific way a Java rule goes vacuous.
+
+A hand-written `ArchCondition` reports its finding by adding a `violated(...)` event, so the implementation has already expressed the constraint negatively — *this item is bad*. Composing that condition under ArchUnit's `no…` rule form (`noClasses().should(condition)`) negates it a second time, because the enclosing form inverts the events the condition produced. The offending item's `violated(...)` event is flipped to a satisfied one, the compliant items produced no events to flip, and the rule finishes with no violations at all: **it passes on exactly the tree it was written to reject**. Nothing in the run distinguishes that pass from a genuine one.
+
+Both halves are individually correct, which is why the composition survives review: `violated(...)` is the documented way for a condition to report a finding, and the `no…` form is the documented way to express a prohibition. Only their combination is wrong, and at the call site `noClasses().should(...)` reads as the intent it silently inverts.
+
+**Pairing requirement.** A hand-written condition MUST also be exercised in the positive rule form — `classes().should(condition)` — against the same deliberately non-compliant fixture, and not merely reviewed by eye. In the positive form the condition's polarity is the one its implementation expressed, so it rejects that fixture; an inverted `no…` composition accepts it. Exercising both forms is what turns the inversion into an observable disagreement at authoring time instead of a green rule that enforces nothing.
 
 ## Related
 
