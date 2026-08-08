@@ -32,6 +32,7 @@ from __future__ import annotations
 import re
 
 from _dispatch_roster import section_lines
+
 from conftest import MARKETPLACE_ROOT
 
 #: The audit standard whose disposition table the derived population is checked against.

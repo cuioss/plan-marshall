@@ -27,6 +27,7 @@ from argparse import Namespace
 from unittest.mock import patch
 
 from _lessons_helpers import cmd_list_stalled, cmd_restore_from_plan
+
 from conftest import load_script_module
 
 _lifecycle = load_script_module(
