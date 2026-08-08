@@ -37,6 +37,13 @@ Beside the findings contract sits one auxiliary provider read:
   (``{status, in_progress, completed}``) for the PR HEAD, so the
   ``automatic-review`` wait step can await a slow bot's IN_PROGRESS check to
   completion instead of racing a fixed buffer. Pure read — files no finding.
+- ``pull_request_runs`` reports whether ANY ``pull_request``-event workflow run
+  exists for the PR's head branch — the PR-WIDE observable behind the
+  ``not_triggered`` participation state, where nothing ever ran on account of the
+  PR so no bot could have published. An existing run that concluded ``skipped``
+  keeps ``not_triggered`` false (the workflow WAS triggered); only the absence of
+  any such run makes it true. Pure read — files no finding, and never reads
+  ``mergeable_state``.
 
 All verbs FAIL LOUD when GitHub is not configured: a typed ``unconfigured``
 status, never a silent ``done`` no-op. LLM consumers query the ledger via
@@ -47,6 +54,7 @@ Usage:
     github_pr.py fetch_findings --pr-number <N> --plan-id <P> [--required-bots [<csv>]] [--optional-bots [<csv>]]
     github_pr.py post_responses --pr-number <N> --plan-id <P>
     github_pr.py bot_completion --pr-number <N> --bot-kind <kind>
+    github_pr.py pull_request_runs --pr-number <N>
     github_pr.py --help
 
 ``fetch_findings``'s two classification list flags take an OPTIONAL value: each
@@ -61,6 +69,7 @@ Subcommands:
     fetch_findings    Producer-side: fetch + pre-filter + file one pr-comment finding per surviving comment
     post_responses    Apply triaged dispositions (thread-reply + resolve-thread) back to the PR, keyed by hash_id
     bot_completion    Read a named bot's check-run completion state ({status, in_progress, completed}) for the PR HEAD
+    pull_request_runs Read whether any pull_request-event workflow run exists for the PR (the not_triggered observable)
 
 Examples:
     # Fetch raw comments
@@ -96,7 +105,9 @@ from triage_helpers import (
 # Register this script's top-level subcommand tokens so that extract_routing_args
 # correctly identifies the subcommand boundary when github_pr.py is the entry
 # point (i.e., does not consume a subcommand-level --plan-id as a router flag).
-register_subcommands({'fetch-comments', 'fetch_findings', 'post_responses', 'bot_completion'})
+register_subcommands(
+    {'fetch-comments', 'fetch_findings', 'post_responses', 'bot_completion', 'pull_request_runs'}
+)
 
 # Resolutions that are terminal triage dispositions — a pr-comment finding in one
 # of these states has been decided by the triage pass and is eligible for a
@@ -738,6 +749,17 @@ def cmd_fetch_findings(args):
     pre-filter drops files no finding, and against the stored keys alone it would
     read as newly-observed on every fetch forever.
 
+    ``stale_participation_bots``: where that currency-test failure now GOES, instead
+    of being discarded. Same ``{bot_kind, evidence_kind}`` record shape as
+    ``participated_bots``, carrying one entry per bot whose observed comment kind
+    ALREADY matched a declared publish shape but which failed the
+    ``participation_requires_update`` currency test. The proven set is subtracted
+    before emitting, so a bot with one stale and one fresh comment appears only in
+    ``participated_bots``. The completeness layer consumes it as
+    ``--stale-participation-bots`` and classifies the bot ``participated_stale``
+    rather than ``absent`` — two states whose remedies are opposite, since a stale
+    publish is re-triggered while a true absence is escalated.
+
     A bot declaring no evidence shape resolves FAIL-CLOSED — it can never be proven
     a participant. This proves PARTICIPATION only, never review QUALITY: the
     consumer must not read a satisfied participation set as a reviewed diff.
@@ -838,6 +860,7 @@ def cmd_fetch_findings(args):
     # proven a participant. There is no bot-name literal here — the evidence
     # shapes and the update requirement are registry data.
     participated: dict[str, str] = {}
+    stale_participation: dict[str, str] = {}
     for _comment in raw_comments:
         _bot_kind = bot_kind_for_author(_comment.get('author') or 'unknown')
         if not _bot_kind or _bot_kind in participated:
@@ -855,6 +878,14 @@ def cmd_fetch_findings(args):
         if bot_registry.participation_requires_update(_bot_kind) and not _has_update_movement(
             _comment, observed_comment_keys, _bot_kind
         ):
+            # The comment's kind ALREADY matched a declared publish shape — only the
+            # currency test failed. Discarding it here is what collapsed a stale
+            # review into ``absent``, and the two have OPPOSITE remedies: ``absent``
+            # means the bot never engaged (escalate the non-participation), while a
+            # stale publish means it engaged against an EARLIER HEAD (re-trigger a
+            # re-review). Record the observation so the classifier can tell them
+            # apart instead of inferring absence from a failed currency test.
+            stale_participation[_bot_kind] = _kind
             continue
         participated[_bot_kind] = _kind
 
@@ -1102,6 +1133,15 @@ def cmd_fetch_findings(args):
         'participated_bots': [
             {'bot_kind': bot, 'evidence_kind': participated[bot]} for bot in sorted(participated)
         ],
+        # The proven set is SUBTRACTED before emitting: a bot with one stale comment
+        # and one fresh one is a participant, not a stale publisher. Without the
+        # subtraction the same bot would appear in both sets and the classifier's
+        # branch order would be doing work the producer should have settled.
+        'stale_participation_bots': [
+            {'bot_kind': bot, 'evidence_kind': stale_participation[bot]}
+            for bot in sorted(stale_participation)
+            if bot not in participated
+        ],
         'refused_bots': sorted(refused_set),
         'unclassified_bots': sorted(unclassified_set),
         'stored_hash_ids': stored_hashes,
@@ -1221,6 +1261,43 @@ def cmd_bot_completion(args):
         'in_progress': in_progress,
         'completed': completed,
     }
+
+
+# ============================================================================
+# PULL_REQUEST_RUNS SUBCOMMAND (the PR-wide not_triggered observable)
+# ============================================================================
+
+
+def cmd_pull_request_runs(args):
+    """Report whether any ``pull_request``-event workflow run exists for the PR.
+
+    Pure provider read — files no finding, triages nothing. The PR-WIDE observable
+    behind the ``not_triggered`` participation state: when no ``pull_request`` run
+    exists, nothing ever ran on account of this PR, so no bot could have published
+    and a required bot's silence says nothing about that bot. The remedy is to
+    trigger the review, which is the opposite of the remedy for ``absent`` (a bot
+    that was asked and did not answer).
+
+    Two states that MUST NOT be collapsed:
+
+    - A ``pull_request`` run that EXISTS and concluded ``skipped`` — the workflow
+      was triggered and declined to do work. The bot WAS asked, so this is
+      ``not_triggered: false``.
+    - NO ``pull_request`` run at all — nothing was ever triggered. This is the
+      only ``not_triggered: true`` case.
+
+    ``mergeable_state`` is never read, returned, or branched on: it is an
+    asynchronously-computed mergeability signal, and a participation state keyed on
+    it would depend on when the question happened to be asked.
+
+    The body is the shared ``github_ops.pull_request_runs_result`` — the same one
+    the ``ci checks pull-request-runs`` abstraction verb calls — so the two entry
+    points cannot drift into different answers. It is reached by attribute access
+    at call time (``_github.<name>``) rather than defined here and imported back,
+    which would close an import cycle since this module imports ``github_ops``.
+    Its typed ``unconfigured`` fail-loud guard is inherited unchanged.
+    """
+    return _github.pull_request_runs_result(args.pr_number)
 
 
 # ============================================================================
@@ -1518,6 +1595,17 @@ Examples:
                 'args': [
                     {'flags': ['--pr-number'], 'dest': 'pr_number', 'type': int, 'required': True, 'help': 'PR number'},
                     {'flags': ['--plan-id'], 'dest': 'plan_id', 'required': True, 'help': 'Plan ID for finding store'},
+                ],
+            },
+            {
+                'name': 'pull_request_runs',
+                'help': (
+                    'READ: report whether any pull_request-event workflow run exists for the PR '
+                    '(the PR-wide not_triggered observable)'
+                ),
+                'handler': cmd_pull_request_runs,
+                'args': [
+                    {'flags': ['--pr-number'], 'dest': 'pr_number', 'type': int, 'required': True, 'help': 'PR number'},
                 ],
             },
             {

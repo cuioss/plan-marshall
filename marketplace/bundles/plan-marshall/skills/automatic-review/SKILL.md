@@ -828,12 +828,14 @@ The canonical argparse surface for the invocable script this skill registers: `r
 python3 .plan/execute-script.py plan-marshall:automatic-review:review_completeness check \
   --plan-id PLAN_ID [--required-bots [REQUIRED_BOTS]] [--optional-bots [OPTIONAL_BOTS]] \
   [--participated-bots [PARTICIPATED_BOTS]] [--in-progress-bots [IN_PROGRESS_BOTS]] \
-  [--refused-bots [REFUSED_BOTS]] [--triage-ran]
+  [--refused-bots [REFUSED_BOTS]] [--stale-participation-bots [STALE_PARTICIPATION_BOTS]] \
+  [--triage-ran]
 ```
 
-All five list flags take an OPTIONAL value: each may be supplied bare (the flag with no value at
+All six list flags take an OPTIONAL value: each may be supplied bare (the flag with no value at
 all), which reads as the empty list — identical to omitting it. Callers interpolating a possibly-empty
 variable MUST still double-quote the placeholder; the bare form is the parser-side backstop, not a
 licence to leave the interpolation unquoted. An empty `--required-bots` is the vacuously-satisfied
 quorum; an empty `--participated-bots` is zero proven participants and can never produce a pass for a
-non-empty required set.
+non-empty required set. An empty `--stale-participation-bots` means no bot's publish failed the
+currency test, so nothing resolves to `participated_stale`.

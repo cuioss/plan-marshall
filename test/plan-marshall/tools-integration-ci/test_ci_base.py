@@ -1123,6 +1123,62 @@ def test_ci_wait_for_status_flip_rejects_invalid_expected_value():
 
 
 # =============================================================================
+# checks pull-request-runs argparse tests
+# =============================================================================
+#
+# Registered alongside its ``checks`` siblings and named in kebab-case to match
+# them. The verb carries the PR-wide ``not_triggered`` observable — whether any
+# pull_request-event workflow run exists for the PR at all.
+
+
+def test_ci_pull_request_runs_registered():
+    """`checks pull-request-runs` must be registered under the checks subparser."""
+    parser, _, _, _, _ = build_parser('test')
+    args = parser.parse_args(['checks', 'pull-request-runs', '--pr-number', '42'])
+    assert args.command == 'checks'
+    assert args.checks_command == 'pull-request-runs'
+    assert args.pr_number == 42
+
+
+def test_ci_pull_request_runs_requires_pr_number():
+    """`checks pull-request-runs` must exit when --pr-number is omitted.
+
+    A defaulted PR selector would let the verb answer about a different PR — or
+    none — while still reporting a confident observable.
+    """
+    parser, _, _, _, _ = build_parser('test')
+    with pytest.raises(SystemExit):
+        parser.parse_args(['checks', 'pull-request-runs'])
+
+
+def test_ci_pull_request_runs_takes_no_wait_arguments():
+    """The verb is a point-in-time READ, so it declares no --timeout / --interval.
+
+    Its siblings that poll declare both. Asserting their absence pins that this
+    verb is not a wait: an existence question about the past needs no budget, and a
+    timeout on it would imply the answer could change while being asked.
+    """
+    parser, _, _, _, _ = build_parser('test')
+    args = parser.parse_args(['checks', 'pull-request-runs', '--pr-number', '42'])
+    assert not hasattr(args, 'timeout')
+    assert not hasattr(args, 'interval')
+
+
+def test_ci_pull_request_runs_is_a_sibling_of_the_other_checks_verbs():
+    """The verb set under ``checks`` is read off the LIVE parser, not a literal.
+
+    Derived membership rather than an incremented count: a verb added to the
+    ``checks`` noun later is covered by this shape without an edit here, and a verb
+    removed shows up as a failure at its own name rather than as an off-by-one on a
+    total nobody re-checked.
+    """
+    _parser, _pr_sub, checks_sub, _issue_sub, _branch_sub = build_parser('test')
+
+    registered = set(checks_sub.choices)
+    assert {'status', 'wait', 'wait-for-status-flip', 'pull-request-runs'} <= registered
+
+
+# =============================================================================
 # issue wait-for-close argparse tests
 # =============================================================================
 
@@ -1503,13 +1559,23 @@ def test_extract_routing_args_fetch_comments_plan_id_passes_through(_reset_subco
 
 
 def test_get_known_subcommands_bootstraps_from_build_parser(_reset_subcommand_cache):
-    """get_known_subcommands() must include every top-level key from build_parser()."""
-    tokens = get_known_subcommands()
-    # build_parser() registers four top-level subcommands.
-    assert 'pr' in tokens
-    assert 'checks' in tokens
-    assert 'issue' in tokens
-    assert 'branch' in tokens
+    """get_known_subcommands() must include EVERY top-level key from build_parser().
+
+    The expected set is re-derived from the live parser rather than restated as a
+    literal list with a hand-maintained count. A noun added to ``build_parser``
+    then inherits this assertion automatically, where a literal (and its "registers
+    four top-level subcommands" comment) would silently go one member short — the
+    bootstrap could stop exposing a noun while every named assertion still passed.
+    """
+    parser, _pr_sub, _checks_sub, _issue_sub, _branch_sub = build_parser('test')
+    declared: set[str] = set()
+    for action in parser._actions:
+        if isinstance(action, argparse._SubParsersAction):
+            declared = set(action.choices)
+            break
+
+    assert declared, 'build_parser declared no top-level subcommands — the derivation is vacuous'
+    assert declared <= get_known_subcommands()
 
 
 def test_get_known_subcommands_returns_frozenset(_reset_subcommand_cache):

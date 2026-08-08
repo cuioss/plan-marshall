@@ -2475,6 +2475,37 @@ def cmd_issue_wait_for_label(args: argparse.Namespace) -> dict:
     }
 
 
+def cmd_checks_pull_request_runs(args: argparse.Namespace) -> dict:
+    """Refuse ``checks pull-request-runs`` explicitly — the GitLab arm is unimplemented.
+
+    The verb's parser is registered in the SHARED ``ci_base.build_parser``, so
+    adding it for GitHub exposes the token on GitLab too. Registering a handler
+    that names the gap is therefore load-bearing rather than defensive: with no
+    entry in the handlers map, ``dispatch`` would report an unrecognised
+    subcommand, which misattributes a provider-coverage gap as a PARSER defect and
+    sends a reader looking for the bug in the wrong module.
+
+    The gap is genuine. The GitHub observable is "does any workflow run whose
+    ``event`` is ``pull_request`` exist for the head branch", and GitLab's pipeline
+    model has no field with that meaning: a merge-request pipeline is distinguished
+    by its ``source`` (``merge_request_event``) on a different endpoint, and the
+    detached-vs-branch pipeline distinction does not map one-to-one. Guessing an
+    equivalent would produce a ``not_triggered`` verdict from a signal that does not
+    mean what the caller thinks it means — the fail-closed refusal is correct until
+    the mapping is deliberately designed.
+    """
+    return make_error(
+        'pull_request_runs',
+        'unsupported on GitLab: the pull_request-event run observable is '
+        'GitHub-specific and has no designed GitLab equivalent yet. GitLab '
+        'distinguishes a merge-request pipeline by its source '
+        '(merge_request_event) on a different endpoint, so the mapping must be '
+        'designed rather than inferred. The not_triggered participation state is '
+        'currently derivable on GitHub only.',
+        f'pr_number={getattr(args, "pr_number", "")}',
+    )
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -2535,6 +2566,9 @@ def main() -> int:
         ('checks', 'status'): cmd_ci_status,
         ('checks', 'wait'): cmd_ci_wait,
         ('checks', 'wait-for-status-flip'): cmd_ci_wait_for_status_flip,
+        # Registered so the shared-parser token resolves to an explicit provider
+        # refusal rather than an "unrecognised subcommand" parser error.
+        ('checks', 'pull-request-runs'): cmd_checks_pull_request_runs,
         ('checks', 'rerun'): cmd_ci_rerun,
         ('checks', 'logs'): cmd_ci_logs,
         ('issue', 'create'): cmd_issue_create,
