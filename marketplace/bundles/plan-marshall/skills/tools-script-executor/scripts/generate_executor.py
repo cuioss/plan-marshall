@@ -1806,6 +1806,20 @@ def _mark_superseded_version_dirs(base_path: Path | None, polluted_bundles: list
     by construction — an already-marked dir is not live (the shared liveness view
     excludes marked dirs) unless it is pinned, and a pinned dir is never marked,
     so the clock is never reset on a dir that was already marked.
+
+    **``.orphaned_at`` has a second, foreign producer — this repository does not
+    own the field exclusively.** Claude Code's own plugin GC writes the same
+    filename into the same version dirs with a raw epoch-ms payload, so TWO
+    producers write ONE field in TWO encodings and either encoding may be found on
+    any dir. Three consequences follow, and this writer changes none of them:
+
+    1. Our encoding stays ISO-8601 UTC. It is deliberately not converted to
+       epoch-ms to match the co-producer.
+    2. No file under ``~/.claude/plugins/cache/`` is normalised or rewritten by us.
+       A foreign-written epoch-ms marker is left exactly as found.
+    3. The split is inert because the sole reader consults the marker's EXISTENCE
+       only, never its content. That invariant is stated at the read site — see
+       ``marketplace_bundles._partition_version_dirs`` — and is not restated here.
     """
     if base_path is None:
         return
