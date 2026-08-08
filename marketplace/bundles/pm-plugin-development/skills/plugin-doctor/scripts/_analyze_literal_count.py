@@ -4,12 +4,20 @@
 
 This module detects drift between a manually-maintained numeric-literal count
 token in plugin-doctor-governed skill text and the machine-derivable count of
-the items that token describes. The initial (and currently only) governed
-surface is the ``extension-api`` ``SKILL.md`` "Extension Points" table, whose
-"Implementations" column states, per extension point, how many concrete
-implementations exist. That count is a hand-maintained mirror of the on-disk
-implementer set: when a bundle adds or drops an extension-point implementation
-without editing the table, the count silently rots.
+the items that token describes. Two surfaces are governed:
+
+1. The ``extension-api`` ``SKILL.md`` "Extension Points" table, whose
+   "Implementations" column states, per extension point, how many concrete
+   implementations exist. That count is a hand-maintained mirror of the on-disk
+   implementer set: when a bundle adds or drops an extension-point
+   implementation without editing the table, the count silently rots.
+2. The ``persona-security-expert`` ``SKILL.md`` standards index, which restates
+   the same set THREE times — a prose count in the REFERENCE MODE paragraph,
+   the "Available Standards" table, and the "Standards Reference" table — while
+   the set itself lives on disk under that skill's ``standards/`` directory.
+   Adding or removing a standards document requires three hand edits and
+   nothing fails when one is missed. See "Persona-security-expert standards
+   index" below.
 
 Source of truth
 ---------------
@@ -74,6 +82,26 @@ Findings have the shape::
         },
     }
 
+Persona-security-expert standards index
+---------------------------------------
+The population is DERIVED, never restated: it is the ``*.md`` listing of
+``plan-marshall/skills/persona-security-expert/standards/``. Every finding this
+surface emits publishes that derived population size in its ``details``, so a
+clean result can never be read as a pass over an unread population. Three
+claims are checked against it:
+
+- the anchored prose counts in the skill body (``N `standards/` sub-documents``
+  and ``load all N at once``), compared against the population size rendered as
+  both a digit and an English number word;
+- the "Available Standards" table's ``standards/<name>.md`` link set;
+- the "Standards Reference" table's ``<name>.md`` first-column set.
+
+The surface fails CLOSED on every way the check could go vacuous: an empty or
+unreadable ``standards/`` directory, a missing index section, and a body that
+carries no anchored prose count at all each emit a finding rather than passing
+silently. Only the governed ``SKILL.md`` being absent short-circuits to "out of
+scope", exactly as the Extension Points surface does.
+
 Pattern alignment
 -----------------
 The analyzer mirrors ``_analyze_provides_method_table.py``:
@@ -137,6 +165,69 @@ _PROVIDER_TOKEN_RE = re.compile(r'\*_provider\.py')
 # A bare integer (the only form the Implementations cell may carry to be
 # checkable). Surrounding whitespace / backticks / emphasis are stripped first.
 _BARE_INT_RE = re.compile(r'^\d+$')
+
+# --- Second governed surface: the persona-security-expert standards index. ---
+
+# The governed skill, relative to the marketplace bundles root. Its
+# ``standards/`` directory listing IS the population every claim is checked
+# against; nothing about the set is restated here.
+_PSE_SKILL_PARTS = ('plan-marshall', 'skills', 'persona-security-expert')
+
+# English number words, so a prose count spelled as a word ("the ten
+# `standards/` sub-documents") is comparable against the derived population
+# size. Covers 0-20; a larger population compares against the digit form only.
+_NUMBER_WORDS: dict[int, str] = {
+    0: 'zero',
+    1: 'one',
+    2: 'two',
+    3: 'three',
+    4: 'four',
+    5: 'five',
+    6: 'six',
+    7: 'seven',
+    8: 'eight',
+    9: 'nine',
+    10: 'ten',
+    11: 'eleven',
+    12: 'twelve',
+    13: 'thirteen',
+    14: 'fourteen',
+    15: 'fifteen',
+    16: 'sixteen',
+    17: 'seventeen',
+    18: 'eighteen',
+    19: 'nineteen',
+    20: 'twenty',
+}
+
+# The count token a prose claim may carry: a digit run, or one of the number
+# words above. Longest-first so ``sixteen`` cannot be consumed as ``six``. A
+# token that is neither — an ordinary word such as "The" or "centralized" that
+# happens to precede the anchor phrase — is NOT a count claim, so the anchor
+# does not match it at all.
+_PSE_COUNT_TOKEN = '|'.join(
+    [r'\d+', *sorted(_NUMBER_WORDS.values(), key=len, reverse=True)],
+)
+
+# The anchored prose claims about the standards population. Anchoring on BOTH
+# the surrounding phrase and the count-token shape is the same structural
+# discriminator the Extension Points surface applies: an incidental number
+# elsewhere in the file, and ordinary prose that merely mentions the
+# ``standards/`` directory, are never checked.
+_PSE_PROSE_ANCHOR_RES = (
+    re.compile(rf'\b(?P<count>{_PSE_COUNT_TOKEN})\s+`standards/`\s+sub-documents'),
+    re.compile(rf'\bload all\s+(?P<count>{_PSE_COUNT_TOKEN})\s+at once'),
+)
+
+# The two index tables, keyed by the heading text that opens their section.
+_PSE_LOAD_TABLE_HEADING = 'Available Standards'
+_PSE_REFERENCE_TABLE_HEADING = 'Standards Reference'
+
+# A ``standards/<name>.md`` link inside an "Available Standards" row.
+_PSE_TABLE_LINK_RE = re.compile(r'standards/([\w.-]+\.md)')
+
+# A bare ``<name>.md`` first-column cell in a "Standards Reference" row.
+_PSE_TABLE_NAME_RE = re.compile(r'^[\w.-]+\.md$')
 
 
 def _is_default_return(node: ast.FunctionDef, default: object) -> bool:
@@ -331,25 +422,281 @@ def _scan_extension_points_table(
     return [f.to_dict() for f in findings]
 
 
+def _standards_population(standards_dir: Path) -> list[str]:
+    """Return the sorted ``*.md`` filenames under ``standards_dir``.
+
+    This listing is the population every persona-security-expert index claim is
+    checked against. An unreadable directory yields the empty list, which the
+    caller treats as a finding (fail-closed) rather than as a silent pass.
+    """
+    try:
+        return sorted(p.name for p in standards_dir.glob('*.md') if p.is_file())
+    except OSError:
+        return []
+
+
+def _section_body(lines: list[str], heading_text: str) -> list[tuple[int, str]] | None:
+    """Return the ``(index, line)`` pairs of the section opened by ``heading_text``.
+
+    The section runs from the first heading whose text starts with
+    ``heading_text`` up to (but excluding) the next heading of any level.
+    Returns ``None`` when no such heading exists, which the caller treats as a
+    finding — a missing index section is drift, not an exemption.
+    """
+    start: int | None = None
+    for idx, line in enumerate(lines):
+        if _HEADING_RE.match(line) and line.lstrip('#').strip().startswith(heading_text):
+            start = idx + 1
+            break
+    if start is None:
+        return None
+    body: list[tuple[int, str]] = []
+    for idx in range(start, len(lines)):
+        if _HEADING_RE.match(lines[idx]):
+            break
+        body.append((idx, lines[idx]))
+    return body
+
+
+def _table_link_set(body: list[tuple[int, str]]) -> set[str]:
+    """Collect the ``standards/<name>.md`` link targets in an index-table body."""
+    return {name for _, line in body for name in _PSE_TABLE_LINK_RE.findall(line)}
+
+
+def _table_first_cell_set(body: list[tuple[int, str]]) -> set[str]:
+    """Collect the bare ``<name>.md`` first-column cells in an index-table body."""
+    names: set[str] = set()
+    for _, line in body:
+        if not line.lstrip().startswith('|'):
+            continue
+        cells = _cells(line)
+        if not cells:
+            continue
+        candidate = _strip_cell(cells[0])
+        if _PSE_TABLE_NAME_RE.match(candidate):
+            names.add(candidate)
+    return names
+
+
+def _index_table_findings(
+    skill_md: Path,
+    lines: list[str],
+    heading_text: str,
+    listed: set[str] | None,
+    population: list[str],
+) -> list[Finding]:
+    """Compare one index table's file set against the derived population.
+
+    ``listed`` is ``None`` when the section itself is absent — reported as its
+    own finding so a deleted index section cannot masquerade as agreement.
+    """
+    size = len(population)
+    if listed is None:
+        return [
+            Finding(
+                type=RULE_ID,
+                file=str(skill_md),
+                line=1,
+                severity='warning',
+                fixable=False,
+                rule_id=RULE_ID,
+                description=(
+                    f'the persona-security-expert SKILL.md has no "{heading_text}" section, so the '
+                    f'{size} document(s) enumerated on disk under standards/ are indexed nowhere '
+                    f'checkable (literal-count-drift)'
+                ),
+                details={
+                    'surface': heading_text,
+                    'population_size': size,
+                    'missing': population,
+                    'unknown': [],
+                },
+                extra={'rule': RULE_NAME},
+            )
+        ]
+    expected = set(population)
+    missing = sorted(expected - listed)
+    unknown = sorted(listed - expected)
+    if not missing and not unknown:
+        return []
+    heading_line = next(
+        (
+            idx + 1
+            for idx, line in enumerate(lines)
+            if _HEADING_RE.match(line) and line.lstrip('#').strip().startswith(heading_text)
+        ),
+        1,
+    )
+    return [
+        Finding(
+            type=RULE_ID,
+            file=str(skill_md),
+            line=heading_line,
+            severity='warning',
+            fixable=False,
+            rule_id=RULE_ID,
+            description=(
+                f'the persona-security-expert "{heading_text}" table indexes {len(listed)} '
+                f'document(s) but standards/ enumerates {size} — missing from the table: '
+                f'{missing}; indexed but absent from standards/: {unknown} (literal-count-drift)'
+            ),
+            details={
+                'surface': heading_text,
+                'population_size': size,
+                'missing': missing,
+                'unknown': unknown,
+            },
+            extra={'rule': RULE_NAME},
+        )
+    ]
+
+
+def _prose_count_findings(skill_md: Path, lines: list[str], population: list[str]) -> list[Finding]:
+    """Check every anchored prose count against the derived population size.
+
+    Fails closed when NO anchored count is found: a body that states the count
+    in an unrecognised phrasing is unverified, not verified-clean.
+    """
+    size = len(population)
+    accepted = {str(size), _NUMBER_WORDS.get(size, str(size))}
+    findings: list[Finding] = []
+    matched = 0
+    for idx, line in enumerate(lines):
+        for anchor in _PSE_PROSE_ANCHOR_RES:
+            for match in anchor.finditer(line):
+                matched += 1
+                stated = match.group('count')
+                if stated.lower() in accepted:
+                    continue
+                findings.append(
+                    Finding(
+                        type=RULE_ID,
+                        file=str(skill_md),
+                        line=idx + 1,
+                        severity='warning',
+                        fixable=False,
+                        rule_id=RULE_ID,
+                        description=(
+                            f'the persona-security-expert prose states {stated!r} standards '
+                            f'sub-document(s) but standards/ enumerates {size} '
+                            f'(literal-count-drift)'
+                        ),
+                        details={
+                            'surface': 'prose',
+                            'population_size': size,
+                            'stated': stated,
+                            'actual': size,
+                        },
+                        extra={'rule': RULE_NAME},
+                    )
+                )
+    if matched == 0:
+        findings.append(
+            Finding(
+                type=RULE_ID,
+                file=str(skill_md),
+                line=1,
+                severity='warning',
+                fixable=False,
+                rule_id=RULE_ID,
+                description=(
+                    f'the persona-security-expert SKILL.md carries no anchored prose count for its '
+                    f'{size} standards sub-document(s), so the prose claim is unverifiable — state '
+                    f'it as "N `standards/` sub-documents" (literal-count-drift)'
+                ),
+                details={
+                    'surface': 'prose',
+                    'population_size': size,
+                    'stated': None,
+                    'actual': size,
+                },
+                extra={'rule': RULE_NAME},
+            )
+        )
+    return findings
+
+
+def _scan_persona_security_expert_index(skill_md: Path, standards_dir: Path) -> list[dict]:
+    """Check the persona-security-expert standards index against its derived population."""
+    try:
+        text = skill_md.read_text(encoding='utf-8')
+    except (OSError, UnicodeDecodeError):
+        return []
+    lines = text.splitlines()
+    population = _standards_population(standards_dir)
+    if not population:
+        return [
+            Finding(
+                type=RULE_ID,
+                file=str(skill_md),
+                line=1,
+                severity='warning',
+                fixable=False,
+                rule_id=RULE_ID,
+                description=(
+                    f'the persona-security-expert standards index is checked against '
+                    f'{standards_dir}, which enumerates 0 document(s) — the derived population is '
+                    f'empty, so no index claim is verifiable (literal-count-drift)'
+                ),
+                details={'surface': 'population', 'population_size': 0},
+                extra={'rule': RULE_NAME},
+            ).to_dict()
+        ]
+
+    load_body = _section_body(lines, _PSE_LOAD_TABLE_HEADING)
+    reference_body = _section_body(lines, _PSE_REFERENCE_TABLE_HEADING)
+    findings: list[Finding] = []
+    findings.extend(_prose_count_findings(skill_md, lines, population))
+    findings.extend(
+        _index_table_findings(
+            skill_md,
+            lines,
+            _PSE_LOAD_TABLE_HEADING,
+            None if load_body is None else _table_link_set(load_body),
+            population,
+        )
+    )
+    findings.extend(
+        _index_table_findings(
+            skill_md,
+            lines,
+            _PSE_REFERENCE_TABLE_HEADING,
+            None if reference_body is None else _table_first_cell_set(reference_body),
+            population,
+        )
+    )
+    return [f.to_dict() for f in findings]
+
+
 def analyze_literal_count(marketplace_root: Path, cache: AstCache | None = None) -> list[dict]:
-    """Scan the extension-api Extension Points table for stale Implementations counts.
+    """Scan both governed count surfaces for drift against their derived populations.
 
     Parameters
     ----------
     marketplace_root:
         The bundles root (the directory that contains ``plan-marshall``,
-        ``pm-plugin-development``, etc.). The governed surface is
-        ``plan-marshall/skills/extension-api/SKILL.md``.
+        ``pm-plugin-development``, etc.). The governed surfaces are
+        ``plan-marshall/skills/extension-api/SKILL.md`` (the Extension Points
+        table) and ``plan-marshall/skills/persona-security-expert/SKILL.md``
+        (the standards index, checked against that skill's ``standards/``
+        directory listing).
 
     Returns
     -------
     list[dict]
-        A list of finding dicts (see module docstring for the shape). Returns an
-        empty list when the governed file is absent.
+        A list of finding dicts (see module docstring for the shape). A governed
+        file that is absent contributes no findings; every other failure mode on
+        the standards-index surface — empty population, missing index section,
+        unanchored prose count — emits a finding rather than passing silently.
     """
-    skill_md = marketplace_root / 'plan-marshall' / 'skills' / 'extension-api' / 'SKILL.md'
-    if not skill_md.is_file():
-        return []
-    ast_counts = _ast_hook_counts(marketplace_root, cache)
-    provider_count = _provider_count(marketplace_root)
-    return _scan_extension_points_table(skill_md, ast_counts, provider_count)
+    findings: list[dict] = []
+    extension_api_md = marketplace_root / 'plan-marshall' / 'skills' / 'extension-api' / 'SKILL.md'
+    if extension_api_md.is_file():
+        ast_counts = _ast_hook_counts(marketplace_root, cache)
+        provider_count = _provider_count(marketplace_root)
+        findings.extend(_scan_extension_points_table(extension_api_md, ast_counts, provider_count))
+    persona_dir = marketplace_root.joinpath(*_PSE_SKILL_PARTS)
+    persona_md = persona_dir / 'SKILL.md'
+    if persona_md.is_file():
+        findings.extend(_scan_persona_security_expert_index(persona_md, persona_dir / 'standards'))
+    return findings
