@@ -1,6 +1,6 @@
 ---
 name: arch-gate-java
-description: "Use when authoring, running, or interpreting the Java arch-gate — the ArchUnit-based architectural-fitness-function check that runs as a per-deliverable read-only structural-boundary gate and emits arch-constraint findings. Also use when writing an ArchUnit rule or a hand-written ArchCondition, which carry a negative-control and positive-form pairing obligation. A thin pointer to the central arch-gate model in plan-marshall:manage-architecture; carries only the Java/ArchUnit binding."
+description: "Use when authoring, running, or interpreting the Java arch-gate — the ArchUnit-based architectural-fitness-function check that runs as a per-deliverable read-only structural-boundary gate and emits arch-constraint findings. Also use when writing an ArchUnit rule, which ships a negative control, or a hand-written ArchCondition, which additionally pairs both rule forms against that control. A thin pointer to the central arch-gate model in plan-marshall:manage-architecture; carries only the Java/ArchUnit binding."
 user-invocable: false
 mode: knowledge
 ---
