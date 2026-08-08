@@ -11,21 +11,23 @@ daemon logs it.
 **S1 — positional argv-template check**
 
 1. The command is non-empty.
-2. ``command[0]`` carries an accepted Python interpreter NAME. There is NO
-   registered baseline: a project registration carries no interpreter field.
-   When a caller supplies an explicit ``baseline_interpreter`` pin,
-   ``command[0]`` must match it (exact path or basename); when no pin is
-   supplied — what the shipped daemon does — ``command[0]`` must carry one of
-   the canonical ``python3`` / ``python`` basenames. Either way this is a
-   daemon-wide argv-shape check, never per-project state.
+2. ``command[0]`` is an accepted Python interpreter. There is NO registered
+   baseline: a project registration carries no interpreter field. When a caller
+   supplies an explicit ``baseline_interpreter`` pin, ``command[0]`` must match
+   it (exact path or basename); when no pin is supplied — what the shipped
+   daemon does — ``command[0]`` must be a BARE canonical ``python3`` /
+   ``python`` name carrying no path separator, so the daemon resolves the
+   binary from its own server-side ``PATH`` rather than following a
+   client-supplied location. Either way this is a daemon-wide argv-shape check,
+   never per-project state.
 
-   Being basename-only, it constrains the interpreter's NAME and not its
-   LOCATION: a path such as ``/tmp/x/python3`` satisfies it. It is therefore
-   NOT a containment control against a submitter naming an arbitrary binary —
-   what contains that is the owner-only socket (``0600`` inside a ``0700``
-   directory), which admits only the daemon-owning user, who can already
-   execute anything directly. Do not rely on this check as a trust boundary,
-   and re-derive that reasoning before widening the socket's reachability.
+   The no-pin branch therefore constrains LOCATION as well as name: a path such
+   as ``/tmp/x/python3`` is refused. The pinned branch still accepts a basename
+   match, because a caller that supplied the pin has already named the
+   interpreter it means. Neither branch is the system's containment boundary —
+   that is the owner-only socket (``0600`` inside a ``0700`` directory), which
+   admits only the daemon-owning user, who can already execute anything
+   directly. Re-derive that reasoning before widening the socket's reachability.
 3. ``command[1]`` is exactly ``{exec_path}/.plan/execute-script.py`` — the
    executor inside the submitted tree, not an arbitrary script.
 4. ``command[2]`` (the executor notation) is in the project's
@@ -125,13 +127,21 @@ def _interpreter_ok(interpreter: str, baseline_interpreter: str | None) -> bool:
 
     There is no registered baseline to match against. With an explicit
     ``baseline_interpreter`` pin, ``interpreter`` must equal it outright or share
-    its basename. With no pin — what the shipped daemon passes — the canonical
-    ``python3`` / ``python`` basenames are accepted.
+    its basename. With no pin — what the shipped daemon passes — ``interpreter``
+    must be a BARE canonical ``python3`` / ``python`` name carrying no path
+    separator, so the daemon resolves it from its own server-side ``PATH``
+    rather than following a client-supplied location.
+
+    The no-pin branch's bare-name requirement is what keeps the check from
+    accepting ``/tmp/x/python3``: a basename-only test would constrain the
+    interpreter's name while leaving its location entirely client-chosen. The
+    pinned branch keeps its basename fallback deliberately — a caller that
+    supplied the pin has already named the interpreter it means.
     """
     name = Path(interpreter).name
     if baseline_interpreter:
         return interpreter == baseline_interpreter or name == Path(baseline_interpreter).name
-    return name in _DEFAULT_INTERPRETER_NAMES
+    return interpreter in _DEFAULT_INTERPRETER_NAMES
 
 
 def _args_schema_valid(args: list[str]) -> bool:

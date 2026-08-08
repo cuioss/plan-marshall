@@ -46,8 +46,12 @@ project's existing registration (executor path inside the verified tree, notatio
 allowlist, argument schema) and refuses anything off-template. The interpreter is
 NOT part of that registration — no registration field holds one. `command[0]` is
 checked daemon-wide as an argv shape: against an explicit interpreter pin when the
-caller supplies one, and otherwise against the canonical `python3` / `python`
-basenames. The
+caller supplies one (exact path or basename), and with no pin — what the shipped
+daemon runs — only as a bare canonical `python3` / `python` name carrying no path
+separator, so the daemon resolves the binary from its own server-side `PATH`
+rather than following a client-supplied location such as `/tmp/x/python3`. That
+is defence-in-depth on argv shape; the containment boundary remains the owner-only
+socket (`0600` inside a `0700` state dir). The
 control surface (enrolment) and the consumption surface (`build-server-client`
 submit/wait) are deliberately split across two skills so enrolment can never be
 laundered through a build dispatch.

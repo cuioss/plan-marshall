@@ -313,6 +313,44 @@ def test_unset_baseline_still_refuses_a_non_python_interpreter(tmp_path, monkeyp
     assert response['reason'] == REFUSE_WRONG_INTERPRETER
 
 
+@pytest.mark.parametrize('located_interpreter', ['/tmp/x/python3', './python3', 'bin/python'])
+def test_unset_baseline_refuses_a_path_qualified_python_name(tmp_path, monkeypatch, located_interpreter):
+    """NEGATIVE controls for the LOCATION half of the no-pin check.
+
+    Twins of the positive control above: each carries a canonical Python
+    BASENAME but a client-supplied LOCATION. A basename-only check would accept
+    every one of them, so these are what distinguish "constrains the name" from
+    "constrains name and location". The no-pin branch requires a bare name so
+    the daemon resolves the binary from its own server-side ``PATH``.
+    """
+    root = canonicalize_root(tmp_path / 'proj')
+    daemon = _daemon_built_the_production_way(tmp_path, monkeypatch, _registry(root))
+    spec = _spec(root)
+    spec.command = [located_interpreter, *spec.command[1:]]
+
+    response = _submit_through_daemon(daemon, spec)
+
+    assert response['status'] == STATUS_REFUSED
+    assert response['reason'] == REFUSE_WRONG_INTERPRETER
+
+
+def test_pinned_baseline_still_accepts_a_path_qualified_basename_match(tmp_path):
+    """The pinned branch deliberately KEEPS its basename fallback.
+
+    The narrowing above applies only to the no-pin branch. A caller that
+    supplied the pin has already named the interpreter it means, so an absolute
+    path sharing the pin's basename still matches. Without this control the
+    narrowing could silently spread to the pinned branch unnoticed.
+    """
+    root = canonicalize_root(tmp_path / 'proj')
+    spec = _spec(root)
+    spec.command = ['/opt/venv/bin/python3', *spec.command[1:]]
+
+    outcome = verify_submit(spec, _registry(root), baseline_interpreter='python3')
+
+    assert outcome.accepted
+
+
 def test_explicit_pinned_baseline_still_refuses_a_mismatching_argv(tmp_path):
     """Pinned-baseline control, retained.
 
