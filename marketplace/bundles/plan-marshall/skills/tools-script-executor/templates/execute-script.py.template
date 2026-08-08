@@ -1041,17 +1041,22 @@ def main():
     # NO_PLAN-scoped one. The writer is fire-and-forget — see
     # _append_build_ledger_record.
     if _is_build_class_notation(notation, subcommand):
-        # get_log_path rejects a malformed plan_id with ValueError. This
+        # get_log_path raises from two sources: it rejects a malformed plan_id
+        # with ValueError, and its global-fallback branch (the one a plan-less
+        # build reaches, because `_active_plan_id` stays None there) mkdirs the
+        # global log directory, which raises OSError when PLAN_BASE_DIR is not
+        # writable (PermissionError, read-only filesystem, ENOSPC). This
         # resolution sits in an ARGUMENT position, outside
         # _append_build_ledger_record's fire-and-forget handler, and
         # `_active_plan_id` is unvalidated argv — so an unguarded call would
         # crash the executor AFTER the build ran, replacing the build's real
         # exit code with 1 and dropping the ledger row entirely. Ledger
         # bookkeeping is best-effort and must never mask a build result, so
-        # resolve defensively and fall back to an empty log path.
+        # resolve defensively against BOTH raise sources and fall back to an
+        # empty log path.
         try:
             _ledger_log_file = str(get_log_path(_active_plan_id, 'script'))
-        except ValueError:
+        except (ValueError, OSError):
             _ledger_log_file = ''
         _append_build_ledger_record(
             notation=notation,
