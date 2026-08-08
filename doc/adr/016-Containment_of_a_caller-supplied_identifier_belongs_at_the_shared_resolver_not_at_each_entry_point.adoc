@@ -88,9 +88,12 @@ The mechanisms that realise it:
   rejection is contained by the best-effort handlers and is, by design, quiet.
 * **Rejection fails closed.** On a best-effort entry point, a rejected
   identifier degrades to "this entry was dropped". Losing one audit line is
-  strictly preferable to resolving a path from an unvalidated value, and the
-  invocation that supplied the malformed value still fails loudly at its own
-  command-line boundary, so the malformed call is not silent overall.
+  strictly preferable to resolving a path from an unvalidated value. For a
+  caller arriving through the command line, the malformed call additionally
+  fails loudly at that boundary, so it is not silent overall. That second
+  guarantee is scoped to command-line callers and does NOT extend to library
+  callers, which reach the module directly: for them the drop is the only
+  signal, which is precisely why the retained entry-point checks matter.
 
 == Consequences
 

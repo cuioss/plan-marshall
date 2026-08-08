@@ -72,14 +72,24 @@ The mechanisms that realise it:
   declaration is unreachable, the validator falls back to the target's
   canonical documented interface block and applies the identical rule to it.
   The fallback is a second *source*, never a second *contract*.
++
+The fallback is a transcription of the live declaration, so it can drift from
+it — and a drifted fallback is exactly the restated contract this decision
+rejects, re-entered as documentation. The fallback therefore carries its own
+obligation: the documented block is held to parity with the live declaration by
+a check that reads both, and a fallback that cannot be shown to match the
+parser it transcribes is treated as unresolvable rather than authoritative.
 * **Unresolvable is not permission.** When neither source resolves, the
   validator emits the finding. A narrowing that treated an unresolvable case as
   compliant would convert every resolution failure into a silent pass, which is
   the one direction a validator must never fail in.
-* **The narrowing is one-directional.** The resolution step can only turn an
-  emitted finding into a suppressed one; it can never create a finding that the
-  sweep did not already produce. This bounds the change to the false-positive
-  class and leaves the rule's true-positive arm untouched.
+* **The narrowing is one-directional.** A sweep hit is a *candidate*, not yet a
+  finding: resolution runs between the sweep and any emission, and decides
+  whether the candidate becomes a finding or is dropped silently. Nothing is
+  emitted and then withdrawn. The narrowing can only remove candidates the
+  sweep already produced — it can never manufacture one — so it bounds the
+  change to the false-positive class and leaves the true-positive arm
+  untouched.
 * **No annotation on the target.** No suppression marker, no per-file
   exemption, no hardcoded list of exempt tools or verbs. Any of those would
   reintroduce the second copy of the contract in a new shape.
