@@ -114,17 +114,19 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons list
 
 Read `store_resolution` (`main_anchored` / `override` / `unresolved`) and `plans_root` from the payload. `list-stalled` is used here purely as the substrate probe — it resolves the same main-anchored store `list` reads and is the only verb that REPORTS the resolution. Retain both values as `{store_resolution}` and `{corpus_path}` (the lessons-learned sibling of the reported `plans_root`); every outcome line below names them.
 
-The verb resolves two stores — the plans root and the lessons corpus — and reports the resolution of whichever one **failed**, so `store_resolution: unresolved` here means the corpus this step reconciles against was not reached, whether or not the plans root was. `unresolved_store` (`plans` | `lessons`) names which one, and `plans_root` is empty on that branch; both are for the log line, not for the branch. Branch on `store_resolution` alone.
+The verb resolves two stores — the plans root and the lessons corpus — and **both are required**, so `store_resolution: unresolved` here means *a required store* was not reached. It does **not** say which: the verb reports the first failing store, preferring `plans`, so `unresolved_store: plans` is silent about whether the lessons corpus resolved. Read `unresolved_store` (`plans` | `lessons`) as the name of the store that actually failed and carry it into every outcome line below, so this step names the store it observed failing instead of asserting a state it never observed. `plans_root` is empty on that branch.
 
-**Unresolvable-store exit (`store_resolution: unresolved`)**: the corpus was never reached, so this step has classified nothing. It MUST NOT report a clean reconciliation. Record the step `done` (housekeeping is non-fatal and must never block finalize) with a `display_detail` that names the failure to look:
+Branch on `store_resolution` alone. Either store failing leaves this step with no scanned corpus, so `unresolved_store` selects the wording, never the branch.
+
+**Unresolvable-store exit (`store_resolution: unresolved`)**: a required store was never reached, so this step scanned no corpus and classified nothing. It MUST NOT report a clean reconciliation. Record the step `done` (housekeeping is non-fatal and must never block finalize) with a `display_detail` that names the failure to look:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level WARNING \
-  --message "[STATUS] (project:finalize-step-lessons-housekeeping) Lessons corpus UNRESOLVED (unresolved_store={unresolved_store}) — nothing was read or reconciled, this is NOT a clean-corpus result"
+  --message "[STATUS] (project:finalize-step-lessons-housekeeping) Required store UNRESOLVED: {unresolved_store} — nothing was read or reconciled, this is NOT a clean-corpus result"
 ```
 
-Then mark done with `--display-detail "corpus unresolved — nothing read"` following the HEAD-capture sequence below.
+Then mark done with `--display-detail "{unresolved_store} store unresolved — nothing read"` following the HEAD-capture sequence below.
 
 **Enumerate** (only when the store resolved):
 
@@ -304,7 +306,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 
 | Scenario | Action |
 |----------|--------|
-| Unresolvable lessons corpus (`store_resolution: unresolved` from the Step 2 substrate probe) | Non-fatal, but **never reported as clean** — the corpus was never read, so nothing was classified. Record `mark-step-done --outcome done --display-detail "corpus unresolved — nothing read" --head-at-completion {sha}` and emit the WARNING work-log line naming the failure to look. Distinguishing this from an empty corpus is the whole point: the two produce identical counts and demand opposite responses. |
+| Unresolvable required store (`store_resolution: unresolved` from the Step 2 substrate probe; `unresolved_store` names whether the `plans` root or the `lessons` corpus failed) | Non-fatal, but **never reported as clean** — no corpus was scanned, so nothing was classified. Record `mark-step-done --outcome done --display-detail "{unresolved_store} store unresolved — nothing read" --head-at-completion {sha}` and emit the WARNING work-log line naming the store that failed. Distinguishing this from an empty corpus is the whole point: the two produce identical counts and demand opposite responses. |
 | Empty lessons corpus (store resolved, zero lessons in it) | Skip-clean exit — record `mark-step-done --outcome done --display-detail "0 lessons in {store_resolution} corpus — nothing to reconcile" --head-at-completion {sha}` so the `phase_steps_complete` handshake counts the step as done and a later HEAD advance re-fires it. The `display_detail` names the substrate so the zero is not substrate-blind. |
 | Coverage ambiguous (including ambiguous residue home) | Retain the lesson untouched (bias to retain) and log the no-action decision via `manage-logging decision` |
 | `manage-lessons remove` failure on one lesson | Non-fatal — log the failure, leave that lesson in place, and continue with the remaining lessons. Housekeeping must never block finalize. |

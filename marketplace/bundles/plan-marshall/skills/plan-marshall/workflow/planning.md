@@ -694,7 +694,7 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons rest
     --message "(plan-marshall:plan-marshall:cleanup) Restored stalled lesson(s) {lesson_ids} from plan {plan_id} to the active corpus"
   ```
 
-- **`action: restore_incomplete`** (`status: error`) — the plan directory WAS scanned and carried lesson files, but the move aborted on a collision or a traversal guard. `restored_count` says how many landed before the abort and is legitimately `0`. This is NOT a completed restore: the plan MUST stay on the stranded list for the un-landed lessons, and the collision (typically `destination_exists`, which `list-stalled` had already flagged as a `duplicate_lessons[]` row) needs manual reconciliation:
+- **`action: restore_incomplete`** (`status: error`) — the plan directory WAS scanned and carried lesson files, but the move aborted on a collision or a traversal guard. `restored_count` says how many landed before the abort and is legitimately `0`; the ones that did land before it are named in `restored_lessons`, and the rest remain in the plan directory. This is NOT a completed restore: the plan MUST stay on the stranded list for the un-landed lessons, and the collision (typically `destination_exists`, the duplication case (iii) already flagged as a `duplicate_lessons[]` row) needs manual reconciliation:
 
   ```bash
   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -716,14 +716,6 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons rest
   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
     decision --plan-id global --level INFO \
     --message "(plan-marshall:plan-marshall:cleanup) Plan {plan_id} scanned and held no lesson file — nothing to restore"
-  ```
-
-- **`error: destination_exists`** — the collision surfaced in (iii). Any lessons moved before the collision are listed in `restored_lessons`; the rest remain in the plan directory:
-
-  ```bash
-  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-    decision --plan-id global --level WARNING \
-    --message "(plan-marshall:plan-marshall:cleanup) Restore of {plan_id} collided on lesson {lesson_id} — {restored_count} restored before the collision, remainder still trapped"
   ```
 
 For each stalled plan the user declines, log the decline:

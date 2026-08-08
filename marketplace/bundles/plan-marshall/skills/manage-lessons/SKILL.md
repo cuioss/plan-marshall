@@ -1,6 +1,6 @@
 ---
 name: manage-lessons
-description: Manage lessons learned with global scope, including the main-anchored store handle and the fail-closed retirement surface — restore-from-plan's three-state outcome, list-stalled's file-presence-derived population plus its duplication direction, and the store-resolution discriminator that makes every zero state whether the store was actually resolved and scanned
+description: Manage lessons learned with global scope, including the main-anchored store handle and the fail-closed retirement surface — restore-from-plan's four-state outcome, list-stalled's file-presence-derived population plus its duplication direction, and the store-resolution discriminator that makes every zero state whether the store was actually resolved and scanned
 user-invocable: false
 mode: script-executor
 scope: global
