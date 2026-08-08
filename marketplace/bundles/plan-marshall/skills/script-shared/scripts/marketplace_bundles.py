@@ -19,10 +19,10 @@ def _partition_version_dirs(
 ) -> tuple[list[Path], list[Path]]:
     """Partition ``bundle_dir``'s version dirs into (eligible, live).
 
-    The ONE place the ``.orphaned_at`` marker is read and the ONE place the
-    retention pin is computed. :func:`select_live_version_dir` (which dir wins)
-    and :func:`live_version_dirs` (which dirs are live) are both thin views over
-    this partition, so the two can never disagree.
+    The ONE place in this module where the ``.orphaned_at`` marker is read and
+    the ONE place the retention pin is computed. :func:`select_live_version_dir`
+    (which dir wins) and :func:`live_version_dirs` (which dirs are live) are both
+    thin views over this partition, so the two can never disagree.
 
     ``live`` is the subset of ``eligible`` whose marker does not disqualify it: an
     unmarked dir, or the bundle's newest-on-disk (retention-pinned) dir whose mark
@@ -38,6 +38,16 @@ def _partition_version_dirs(
     not own and cannot version. The marker is therefore a pure boolean flag whose
     payload is deliberately opaque, and the encoding split is inert precisely
     because nothing downstream looks inside it.
+
+    **This is not the repository's only sanctioned existence-read site — there are
+    TWO.** The second is the ``.orphaned_at`` predicate inside
+    ``generate_executor._CLAUDE_RESOLVER_TEMPLATE``, which is substituted verbatim
+    into the generated ``.plan/execute-script.py``: that executor must resolve
+    notations before any marketplace module is importable, so it cannot import this
+    function and carries a deliberate policy duplicate instead. Both sites read
+    existence only, and the template's own docstring mandates that any change to
+    this selector's policy be mirrored there — so a policy change has to be carried
+    to the mirror, never assumed to follow from this site alone.
     """
     try:
         version_dirs = [d for d in bundle_dir.iterdir() if d.is_dir() and not d.name.startswith('.')]
@@ -90,8 +100,13 @@ def select_live_version_dir(bundle_dir: Path, is_candidate: Callable[[Path], boo
       co-producer (Claude Code's plugin GC writes it as raw epoch-ms, our writer
       writes ISO-8601 UTC), so a content-dependent rule would bind the selector to
       a format this repository does not own. Treat the marker as a boolean flag
-      with a deliberately opaque payload. See
-      :func:`_partition_version_dirs`, the single read site.
+      with a deliberately opaque payload. Two sanctioned existence-read sites
+      implement this: :func:`_partition_version_dirs` (this module's, which every
+      rule below funnels through) and the mirrored predicate in
+      ``generate_executor._CLAUDE_RESOLVER_TEMPLATE`` that is emitted into the
+      generated executor. Both read existence only; the template is a deliberate
+      policy duplicate its own docstring mandates keeping in step with this
+      selector.
     - The bundle's **newest-on-disk** version dir is retention-pinned: it is what
       the highest-version-wins resolver — and the ``marshall-steward``
       ``cache_retention sweep`` keep-union — actually selects, so a ``.orphaned_at``

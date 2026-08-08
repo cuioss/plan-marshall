@@ -491,6 +491,18 @@ def _resolve_notation_by_target(notation: str) -> str | None:
     MUST be mirrored here, and a test pins the two to the same verdict in every
     marker state.
 
+    EXISTENCE-ONLY MARKER INVARIANT — binding at this site, not merely inherited.
+    The ``.orphaned_at`` predicate below consults only whether the marker is
+    PRESENT; its content is never read, parsed, or compared here.  The field has a
+    foreign co-producer — Claude Code's own plugin GC writes the same filename with
+    a raw epoch-ms payload, while ``_mark_superseded_version_dirs`` writes ISO-8601
+    UTC — so a content-dependent rule would bind the resolver to a format this
+    repository does not own and cannot version.  This site declares the invariant
+    itself rather than pointing at the selector, because this is the location the
+    mirroring mandate above makes a policy change land on: a mirrored change that
+    arrived without the invariant restated here would have nothing local to check
+    it against.
+
     Args:
         notation: Three-part notation ``{bundle}:{skill}:{script}``.
 
@@ -1817,9 +1829,15 @@ def _mark_superseded_version_dirs(base_path: Path | None, polluted_bundles: list
        epoch-ms to match the co-producer.
     2. No file under ``~/.claude/plugins/cache/`` is normalised or rewritten by us.
        A foreign-written epoch-ms marker is left exactly as found.
-    3. The split is inert because the sole reader consults the marker's EXISTENCE
-       only, never its content. That invariant is stated at the read site — see
-       ``marketplace_bundles._partition_version_dirs`` — and is not restated here.
+    3. The split is inert because BOTH sanctioned readers consult the marker's
+       EXISTENCE only, never its content. There are two, and each states the
+       invariant at its own site rather than deferring to the other:
+       ``marketplace_bundles._partition_version_dirs`` (the selector) and the
+       ``.orphaned_at`` predicate inside :data:`_CLAUDE_RESOLVER_TEMPLATE`, which is
+       substituted verbatim into the generated ``.plan/execute-script.py``. The
+       template is a deliberate policy duplicate of the selector — its docstring
+       mandates mirroring — so the invariant has to hold at both, and a change to
+       either must be carried to the other by hand.
     """
     if base_path is None:
         return

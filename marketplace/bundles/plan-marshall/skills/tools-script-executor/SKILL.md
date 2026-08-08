@@ -316,8 +316,17 @@ writer (`generate_executor._mark_superseded_version_dirs`) writes ISO-8601 UTC. 
 producers write one field in two encodings, so a content-dependent rule would bind
 the selector to a format this repository does not own and cannot version. The marker
 is a boolean flag whose payload is deliberately opaque, and the encoding split is
-inert precisely because of that. `_partition_version_dirs` is the single read site
-and states the same invariant in code, so the two cannot drift apart.
+inert precisely because of that.
+
+**Two sanctioned existence-read sites implement the invariant, not one.**
+`marketplace_bundles._partition_version_dirs` is the selector's read site, and the
+`.orphaned_at` predicate inside `generate_executor._CLAUDE_RESOLVER_TEMPLATE` is the
+mirrored read site substituted verbatim into the generated `.plan/execute-script.py`
+(the runtime resolver described further down this section). Both read existence only,
+and both state the invariant in their own docstring. They are not a self-synchronising
+pair: the template is a deliberate policy duplicate whose docstring requires that any
+change to the selector's policy be mirrored into it, so this prose, the selector, and
+the template are three parties a policy change has to be carried to explicitly.
 
 Selecting the live newest — rather than the lexically-first `iterdir` result — is
 load-bearing: a stale older version dir (e.g. `1.0.0` alongside `1.0.10`) would

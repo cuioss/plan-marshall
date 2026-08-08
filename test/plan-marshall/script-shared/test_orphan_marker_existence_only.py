@@ -5,9 +5,12 @@
 TWO encodings: ours (ISO-8601 UTC, written by
 ``generate_executor._mark_superseded_version_dirs``) and Claude Code's own plugin
 GC (raw epoch-ms). The encoding split is inert only because every consumer in this
-repository reads the marker's EXISTENCE and never its content — the invariant
-declared at the single read site, ``marketplace_bundles._partition_version_dirs``.
-This module pins that invariant, so a future content-dependent read fails the build
+repository reads the marker's EXISTENCE and never its content. That invariant is
+declared at each of the TWO sanctioned existence-read sites —
+``marketplace_bundles._partition_version_dirs`` (the selector) and the mirrored
+predicate inside ``generate_executor._CLAUDE_RESOLVER_TEMPLATE``, which is
+substituted verbatim into the generated ``.plan/execute-script.py``. This module
+pins the invariant at both, so a future content-dependent read fails the build
 instead of silently coupling this repository to a format it does not own.
 
 The detector is POPULATION-DERIVED: it enumerates the production sources that
@@ -15,9 +18,24 @@ mention the marker and publishes the discovered population size in every asserti
 message, so it can never pass vacuously from an empty scan. Files whose only
 mentions are inside a docstring or comment are classified as NON-consumers but are
 still COUNTED in the published population, so a silent shrink of the population is
-itself a failure rather than a quiet pass. Matched controls run in both directions:
-a source that parses the marker's content MUST be detected, and an existence-only
-source MUST NOT be.
+itself a failure rather than a quiet pass.
+
+**Emitted code is scanned too.** A read site can be embedded in a string constant
+that is substituted into generated code rather than executed in place — which is
+exactly the shape of the mandated mirror in ``_CLAUDE_RESOLVER_TEMPLATE``. A plain
+AST walk never sees the marker there, because the template is one large string
+constant and no ``ast.Constant`` equals the marker name. The detector therefore
+re-parses every non-docstring string constant that carries the marker and, when it
+is valid Python holding a marker constant, runs the same classification over it.
+Coverage of the shipped template is asserted by name, so the mandated-mirror site
+cannot silently drop out of scope. The published population is unchanged by this —
+the template lives inside a file the population already contains — but the covered
+read-site set is not, so ``_population_summary`` names every template it descended
+into alongside the file count.
+
+Matched controls run in both directions at BOTH shapes: a source that parses the
+marker's content MUST be detected and an existence-only source MUST NOT be, in
+plain module code and again inside a template-shaped string constant.
 """
 
 from __future__ import annotations
@@ -62,6 +80,13 @@ _CONTENT_PARSE_CALLS = frozenset(
 #: function is still a violation.
 _SANCTIONED_WRITE_FUNCTION = '_mark_superseded_version_dirs'
 
+#: The second sanctioned existence-read site: the policy mirror the selector's
+#: docstring mandates keeping in step. It lives inside an emitted-code template
+#: constant, so it is reachable only through the template descent above — which is
+#: precisely why its coverage is asserted by name rather than assumed.
+_MIRROR_SOURCE = 'marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/generate_executor.py'
+_MIRROR_TEMPLATE = '_CLAUDE_RESOLVER_TEMPLATE'
+
 
 @dataclass
 class MarkerReport:
@@ -72,6 +97,7 @@ class MarkerReport:
     code_occurrences: int = 0
     violations: list[str] = field(default_factory=list)
     sanctioned_writes: list[str] = field(default_factory=list)
+    templates_analysed: list[str] = field(default_factory=list)
 
     @property
     def is_consumer(self) -> bool:
@@ -221,6 +247,64 @@ def _check_alias_uses(scope: ast.AST, alias: str, label: str, scope_name: str, r
                     )
 
 
+def _embedded_code_tree(text: str) -> ast.AST | None:
+    """Parse ``text`` as emitted Python carrying the marker, else ``None``.
+
+    A read site can be embedded in a string constant that is substituted into
+    generated code — ``generate_executor._CLAUDE_RESOLVER_TEMPLATE`` is exactly
+    that shape. Such a constant is accepted only when it is valid Python AND holds
+    a constant equal to the marker name, so ordinary prose (which does not parse)
+    and unrelated code templates are both left alone.
+    """
+    if _MARKER_NAME not in text:
+        return None
+    try:
+        tree = ast.parse(text)
+    except (SyntaxError, ValueError):
+        return None
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Constant) and node.value == _MARKER_NAME:
+            return tree
+    return None
+
+
+def _template_label(node: ast.AST, parents: dict[ast.AST, ast.AST], label: str) -> str:
+    """Name an embedded-code constant by the variable it is bound to."""
+    parent = parents.get(node)
+    if isinstance(parent, ast.Assign) and len(parent.targets) == 1 and isinstance(parent.targets[0], ast.Name):
+        return f'{label}[{parent.targets[0].id}]'
+    if isinstance(parent, ast.AnnAssign) and isinstance(parent.target, ast.Name):
+        return f'{label}[{parent.target.id}]'
+    return f'{label}[<template@{getattr(node, "lineno", 0)}>]'
+
+
+def _analyse_tree(tree: ast.AST, label: str, report: MarkerReport) -> None:
+    """Classify every marker use in ``tree``, descending into emitted-code constants.
+
+    Recursion terminates without a depth guard: an embedded constant is strictly
+    shorter than the source it was parsed out of. Line numbers reported from inside
+    a template are relative to the template text, and the label names the template.
+    """
+    parents = _parent_map(tree)
+    docstring_ids = _docstring_constant_ids(tree)
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Constant) or not isinstance(node.value, str):
+            continue
+        if id(node) in docstring_ids:
+            continue
+        if node.value == _MARKER_NAME:
+            report.code_occurrences += 1
+            _classify_use(_marker_path_node(node, parents), parents, tree, label, report)
+            continue
+        embedded = _embedded_code_tree(node.value)
+        if embedded is None:
+            continue
+        nested_label = _template_label(node, parents, label)
+        report.templates_analysed.append(nested_label)
+        _analyse_tree(embedded, nested_label, report)
+
+
 def analyse_source(source: str, label: str) -> MarkerReport:
     """Run the existence-only detector over one Python source text."""
     report = MarkerReport(label=label)
@@ -228,18 +312,7 @@ def analyse_source(source: str, label: str) -> MarkerReport:
     if not report.mentions_marker:
         return report
 
-    tree = ast.parse(source)
-    parents = _parent_map(tree)
-    docstring_ids = _docstring_constant_ids(tree)
-
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Constant) or node.value != _MARKER_NAME:
-            continue
-        if id(node) in docstring_ids:
-            continue
-        report.code_occurrences += 1
-        _classify_use(_marker_path_node(node, parents), parents, tree, label, report)
-
+    _analyse_tree(ast.parse(source), label, report)
     return report
 
 
@@ -262,14 +335,16 @@ def _reports() -> list[MarkerReport]:
 
 
 def _population_summary(reports: list[MarkerReport]) -> str:
-    """Render the published population size and its consumer split."""
+    """Render the published population size, its consumer split, and template coverage."""
     consumers = [r.label for r in reports if r.is_consumer]
     non_consumers = [r.label for r in reports if not r.is_consumer]
+    templates = [name for r in reports for name in r.templates_analysed]
     return (
         f'scanned population = {len(reports)} production source(s) matching '
         f'{_SOURCE_GLOB!r} under marketplace/bundles that mention {_MARKER_NAME!r} '
         f'({len(consumers)} consumer(s): {consumers}; '
-        f'{len(non_consumers)} docstring-only non-consumer(s): {non_consumers})'
+        f'{len(non_consumers)} docstring-only non-consumer(s): {non_consumers}); '
+        f'{len(templates)} emitted-code template(s) descended into: {templates}'
     )
 
 
@@ -329,6 +404,25 @@ class TestNoConsumerParsesMarkerContent:
         )
 
 
+class TestMandatedMirrorSiteIsCovered:
+    """The read site the mirroring mandate lands on must be inside the scan."""
+
+    def test_claude_resolver_template_is_descended_into(self):
+        reports = _reports()
+
+        analysed = [name for report in reports for name in report.templates_analysed]
+        expected = f'{_MIRROR_SOURCE}[{_MIRROR_TEMPLATE}]'
+
+        assert expected in analysed, (
+            f'The detector did not descend into {expected}. That template carries the '
+            'mirrored .orphaned_at predicate substituted verbatim into the generated '
+            'executor, and its own docstring makes it the site any selector-policy '
+            'change MUST be applied to — so a scan that cannot see inside it leaves the '
+            'one mandated-mirror location unguarded while still reporting green. '
+            f'{_population_summary(reports)}'
+        )
+
+
 _NEGATIVE_CONTROL = '''
 """A source that parses the marker's content — the detector MUST catch this."""
 
@@ -361,6 +455,33 @@ def is_orphaned(version_dir: Path) -> bool:
     return (version_dir / '.orphaned_at').exists()
 '''
 
+# The template-shaped half of the matched pair. Both members carry the marker read
+# inside a string constant that is substituted into emitted code — the shape of
+# _CLAUDE_RESOLVER_TEMPLATE — so together they prove the template descent both fires
+# on a content-dependent read and stays silent on an existence-only one. The pair is
+# what makes the descent evidence of compliance rather than an unobserved guard.
+_TEMPLATE_CONTROL_CONTENT_PARSE = '''
+_EMITTED_RESOLVER_TEMPLATE = """
+def pick_live_dir(version_dir):
+    marker = version_dir / '.orphaned_at'
+    return float(marker.read_text(encoding='utf-8'))
+"""
+'''
+
+_TEMPLATE_CONTROL_EXISTENCE_ONLY = '''
+_EMITTED_RESOLVER_TEMPLATE = """
+def pick_live_dir(version_dir):
+    return (version_dir / '.orphaned_at').exists()
+"""
+'''
+
+_TEMPLATE_CONTROL_INERT_PROSE = '''
+_ADVICE = """
+The .orphaned_at marker is advisory and is never consulted as a keep-or-delete
+oracle, so this prose must not be mistaken for emitted code.
+"""
+'''
+
 
 class TestDetectorControls:
     """Matched controls prove the detector can both fire and stay silent."""
@@ -390,3 +511,47 @@ class TestDetectorControls:
             f'The detector flagged an existence-only source: {report.violations}. '
             'A false positive here would make the invariant unenforceable.'
         )
+
+
+class TestTemplateDescentControls:
+    """The matched pair proving the template descent fires — and only when it should."""
+
+    def test_template_embedded_content_parse_is_detected(self):
+        report = analyse_source(_TEMPLATE_CONTROL_CONTENT_PARSE, 'template_control_parse.py')
+
+        assert report.templates_analysed, (
+            'The detector did not recognise the template constant as emitted code, so '
+            'the read inside it was never classified at all.'
+        )
+        assert report.violations, (
+            'The detector failed to flag a content-dependent marker read embedded in an '
+            'emitted-code template. This is the exact shape of the mandated mirror in '
+            f'{_MIRROR_TEMPLATE}, so a descent that cannot fire here is an unobserved '
+            'guard, not enforcement.'
+        )
+
+    def test_template_embedded_existence_only_is_not_detected(self):
+        report = analyse_source(_TEMPLATE_CONTROL_EXISTENCE_ONLY, 'template_control_existence.py')
+
+        assert report.templates_analysed, (
+            'The detector did not recognise the template constant as emitted code, so '
+            'the silent verdict below would be silence from not looking.'
+        )
+        assert report.is_consumer, (
+            'An existence-only read inside a template must still register as a code-level '
+            'consumer — otherwise the descent found nothing and proves nothing.'
+        )
+        assert not report.violations, (
+            f'The detector flagged an existence-only read inside a template: {report.violations}. '
+            'A false positive here would make every emitted-code template unshippable.'
+        )
+
+    def test_prose_string_constant_is_not_treated_as_emitted_code(self):
+        report = analyse_source(_TEMPLATE_CONTROL_INERT_PROSE, 'template_control_prose.py')
+
+        assert not report.templates_analysed, (
+            'A prose string constant that merely names the marker was parsed as emitted '
+            f'code: {report.templates_analysed}. The descent must key on "valid Python '
+            'holding a marker constant", not on the marker name appearing in text.'
+        )
+        assert not report.violations
