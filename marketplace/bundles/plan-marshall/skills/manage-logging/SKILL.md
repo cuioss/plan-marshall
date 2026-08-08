@@ -386,7 +386,7 @@ A malformed `plan_id` handed to the Python API is rejected at `get_log_path`, th
 
 **Note**: Write operations are fire-and-forget — the Python `log_entry()` function silently swallows errors to avoid disrupting callers. The CLI script (`manage-logging`) returns exit code 1 on validation errors but silently succeeds on I/O failures.
 
-**Note**: `invalid_plan_id` is also enforced below the CLI boundary. A malformed `plan_id` handed to the Python API is rejected at `get_log_path` — the shared path resolver — so the entry is **dropped** instead of falling back to the global log; an absent (`None`) `plan_id` remains the first-class global path. The read verbs surface this as the `invalid_plan_id` TOON error, while the fire-and-forget write verbs swallow it per the note above.
+**Note**: `invalid_plan_id` is also enforced below the CLI boundary. A malformed `plan_id` handed to the Python API is rejected at `get_log_path` — the shared path resolver — so the entry is **dropped** instead of falling back to the global log; an absent (`None`) `plan_id` remains the first-class global path. The read verbs never reach that resolver with a malformed identifier: their own `is_valid_plan_id` pre-check surfaces it as the `invalid_plan_id` TOON error first. The fire-and-forget write verbs swallow it per the note above.
 
 ---
 

@@ -88,8 +88,6 @@ Containment at a boundary is not satisfied by guarding the *obvious* input. It h
 
 These four are **one rule seen from four angles**: containment fails wherever the boundary trusts something it never verified — a sibling field, a key's spelling, an unguarded side effect, or the ambient environment.
 
-Provenance: promoted from the landed lessons `2026-07-18-17-001`, `2026-06-30-16-001`, `2026-07-17-21-001`, and `2026-07-17-21-002`.
-
 ---
 
 ## Practical Reinforcements
