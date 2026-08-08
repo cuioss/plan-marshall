@@ -22,6 +22,25 @@ An architectural fitness function is an executable, objective check that a struc
 - It **never mutates source** — it does not rewrite imports, move files, or apply fixes. Remediation is a downstream triage decision, never an arch-gate side effect.
 - It **never mutates lessons** — the arch-gate run does not create, reinforce, or retire lessons. The lesson lifecycle (below) is driven by the existing lessons-housekeeping machinery from the findings the gate emitted, not by the gate itself.
 
+## Every rule ships a negative control
+
+Every architectural fitness function MUST ship a **negative control**: a deliberately non-compliant fixture the rule is required to reject. The negative control belongs to the rule's own definition — a rule that ships without one is incomplete, in the same way a rule with no assertion is incomplete. It is not an optional companion check, and it is not satisfied by the rule having happened to fail once in the past.
+
+The obligation is a property of the rule, not of the tool that runs it. **A rule that has never been observed to reject anything is not evidence that the constraint holds.** A rule that examines nothing is green for exactly the same reason a rule that examines a compliant tree is green: both report success, and the report by itself does not distinguish them. A green run therefore carries a claim the rule cannot substantiate on its own — it means "this structural property holds" only for a rule that has also been observed to reject something it is supposed to reject.
+
+The negative control is what makes those two states distinguishable, and it is the whole of what a green run is worth:
+
+- **The rule rejects the non-compliant fixture** — it examines a real population and discriminates within it. Its green run against the actual tree now means the property holds.
+- **The rule accepts the non-compliant fixture, or is never run against one** — the rule is vacuous. Its green run against the actual tree carries no information about the codebase at all, and that is a defect in the rule, not a clean bill of health for the source.
+
+Because vacuity is stated here as a property of the rule rather than of any mechanism that produced it, the obligation closes the whole class rather than an enumeration of its observed members. An empty match set, a selector scoped to a package that no longer exists, a condition composed so that it asserts the opposite of its intent, a filter that silently excluded every candidate — and every mechanism not yet observed — all yield the same green report, and the same negative control separates every one of them from a rule that genuinely holds. A rule is consequently never accepted on the strength of the mechanism it avoids; it is accepted on the strength of the rejection it demonstrates.
+
+This is the single-rule form of the anti-vacuity principle already recorded in this repository:
+
+* **ADR-014** — an aggregation carries producer identity and no producer suppresses an element silently, so a working-but-empty result stays distinguishable from an inert one. A negative control does for one rule what producer identity does for an aggregation: it makes "examined and found nothing" distinguishable from "examined nothing".
+
+The obligation itself stays here and is never restated by a per-domain arch-gate skill. What a per-domain skill adds is the binding to its native tool's rule form and to the tool-specific ways a rule can go vacuous under that tool. `pm-dev-java:arch-gate-java` carries the ArchUnit binding.
+
 ## Single per-deliverable read-only execution model
 
 There is exactly ONE arch-gate execution model: a per-deliverable read-only verify-step. arch-gate is always run as a dedicated structural-boundary check at the per-deliverable verification point — it is NEVER piggybacked onto `module-tests` and has NO execution-mode variants. A domain declares arch-gate availability by overriding the optional `provides_arch_gate()` hook to return a single-field descriptor `{'tool': <name>}` (no `execution_mode` key); see [`../../extension-api/standards/extension-contract.md`](../../extension-api/standards/extension-contract.md) § provides_arch_gate.
