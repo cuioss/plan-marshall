@@ -25,6 +25,13 @@ The skill lives at `.claude/skills/cloud-plan-lane/SKILL.md`. It is a project sk
 the clone and loads in cloud sessions without any further configuration. `CLAUDE.md` § "Standalone
 Plan Lane" records which of its hard rules the lane supersedes.
 
+**Authoring a new plan has its own skill.** `cloud-plan-lane` governs *running* a plan; an
+orchestrator *authoring* one loads
+[`author-cloud-plan`](../../.claude/skills/author-cloud-plan/SKILL.md) instead — the authoring
+judgement for a plan that must survive a runtime with no operator and no view of `.plan/`. It is
+loaded locally at authoring time, not by the run; [`cloud-bridge.md`](cloud-bridge.md) § Path 1 is
+where an author picks it up.
+
 ## Layout
 
 One directory per orchestrator epic; one directory per plan inside it.
