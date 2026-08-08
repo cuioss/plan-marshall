@@ -69,6 +69,99 @@ def _write_plan_status(plan_dir, current_phase: str, phase_status: str, plan_sou
     )
 
 
+class TestOverridePredicateMirroring:
+    """The override predicate is MIRRORED across its sites, not shared.
+
+    ``_lessons_io.resolve_lesson_store`` decides ``override`` vs
+    ``main_anchored`` by re-evaluating the condition
+    ``marketplace_paths.resolve_main_anchored_path`` branches on
+    (``PLAN_BASE_DIR`` set, or a ``file_ops.set_base_dir()`` override
+    installed). The two are textually identical COPIES, not one shared
+    predicate, so nothing structural stops them drifting apart — and the drift
+    is silent in the worst way: the handle would report a provenance the
+    returned path does not have, which is the resolved-value-for-a-substrate-we-
+    did-not-reach failure the whole ``STORE_RESOLUTIONS`` contract exists to
+    make impossible.
+
+    These cases are the guard that keeps the copies honest — one per disjunct
+    of the condition, plus the negative arm. Each asserts the two sites agree
+    by comparing the handle's reported path against the resolver's own return,
+    so a divergence in either copy fails here rather than surfacing as a
+    mislabelled store much later.
+    """
+
+    def test_env_override_makes_both_sites_take_the_override_branch(
+        self, tmp_path, monkeypatch
+    ):
+        """The ``PLAN_BASE_DIR`` disjunct: both sites read it, and agree."""
+        import _lessons_io
+        import file_ops
+        from marketplace_paths import resolve_main_anchored_path
+
+        monkeypatch.setattr(file_ops, '_BASE_DIR_OVERRIDE', None, raising=False)
+        monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+
+        store = _lessons_io.resolve_lesson_store()
+        resolved = resolve_main_anchored_path(_lessons_io.DIR_LESSONS)
+
+        assert store.resolution == 'override'
+        assert resolved == tmp_path / _lessons_io.DIR_LESSONS
+        assert store.path == resolved, (
+            'The handle reported a different path than the resolver returned — '
+            'the two copies of the override condition have drifted.'
+        )
+
+    def test_set_base_dir_override_makes_both_sites_take_the_override_branch(
+        self, tmp_path, monkeypatch
+    ):
+        """The ``set_base_dir()`` disjunct, with ``PLAN_BASE_DIR`` unset.
+
+        Covered separately because the condition is a two-term disjunction: a
+        copy that dropped one term would still pass the env-var case above.
+        """
+        import _lessons_io
+        import file_ops
+        from marketplace_paths import resolve_main_anchored_path
+
+        monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
+        monkeypatch.setattr(file_ops, '_BASE_DIR_OVERRIDE', tmp_path, raising=False)
+
+        store = _lessons_io.resolve_lesson_store()
+        resolved = resolve_main_anchored_path(_lessons_io.DIR_LESSONS)
+
+        assert store.resolution == 'override'
+        assert store.path == resolved
+
+    def test_no_override_makes_both_sites_take_the_main_anchored_branch(
+        self, monkeypatch
+    ):
+        """The negative arm: neither term set, so both sites go to git.
+
+        Without this the pair could agree only because both always report
+        ``override`` — the arms must disagree with each other, or the mirroring
+        assertion carries no information.
+        """
+        import _lessons_io
+        import file_ops
+        from marketplace_paths import (
+            PLAN_DIR_NAME,
+            main_checkout_root,
+            resolve_main_anchored_path,
+        )
+
+        monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
+        monkeypatch.setattr(file_ops, '_BASE_DIR_OVERRIDE', None, raising=False)
+
+        store = _lessons_io.resolve_lesson_store()
+        resolved = resolve_main_anchored_path(_lessons_io.DIR_LESSONS)
+
+        assert store.resolution == 'main_anchored'
+        assert resolved == (
+            main_checkout_root() / PLAN_DIR_NAME / 'local' / _lessons_io.DIR_LESSONS
+        )
+        assert store.path == resolved
+
+
 class TestRestoreFromPlanWrongStoreArm:
     """(a) The wrong-store arm of ``restore-from-plan``."""
 

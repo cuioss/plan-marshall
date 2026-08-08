@@ -13,6 +13,7 @@ from typing import Any, NamedTuple
 
 from _handshake_commands import cmd_capture, cmd_verify
 from _invariants import _BLOCKING_BOUNDARIES
+from _lessons_query import RESTORE_ACTIONS
 from _short_description import derive_short_description
 from _status_core import (
     _surface_drive,
@@ -487,27 +488,30 @@ def cmd_archive(args: argparse.Namespace) -> dict[str, Any] | None:
 #: - ``no_lesson_file`` — the plan directory was scanned and carried none. The
 #:   benign zero.
 #: - ``plan_dir_unresolved`` — the carry-back could not look: the plan directory
-#:   is gone, or the main-anchored lessons store could not be resolved.
+#:   is gone, or the main-anchored lessons store could not be resolved AND the
+#:   directory carried lesson files that consequently could not land. A
+#:   store-unresolved scan over a directory carrying NO lesson file is
+#:   ``no_lesson_file``, not this value: that directory WAS scanned and holds
+#:   nothing to restore, so the benign zero is the honest action and
+#:   ``store_resolution: unresolved`` is what records that the corpus was never
+#:   reached. Consumers therefore read BOTH fields — ``action`` says what the
+#:   scan found, ``store_resolution`` says whether the corpus was reachable —
+#:   and neither alone answers both questions.
 #: - ``not_attempted`` — the carry-back was opted out of via
 #:   ``--no-restore-lessons``, so nothing was scanned and no store was
 #:   resolved. Any lesson the directory carries is discarded with it.
 #:
 #: The four values this set SHARES with ``_lessons_query.RESTORE_ACTIONS``
 #: carry identical meanings there, so the two lesson-restore surfaces answer
-#: the "which kind of zero is this?" question the same way. The sets are NOT
-#: equal, and deliberately so: ``not_attempted`` is producible only here,
-#: because only ``delete-plan`` has an opt-out flag. Claiming equality while
-#: the two disagreed on what ``restored`` means was itself a contract drift —
-#: a consumer trusting the claim would carry the wrong meaning across surfaces.
-CARRY_BACK_ACTIONS = frozenset(
-    {
-        'restored',
-        'restore_incomplete',
-        'no_lesson_file',
-        'plan_dir_unresolved',
-        'not_attempted',
-    }
-)
+#: the "which kind of zero is this?" question the same way. That relationship
+#: is ENCODED as a union rather than restated as literals, so the shared four
+#: cannot drift apart silently. The sets are NOT equal, and deliberately so:
+#: ``not_attempted`` is producible only here, because only ``delete-plan`` has
+#: an opt-out flag. A superset derivation is precisely not the equality claim
+#: this docstring once made — claiming equality while the two disagreed on what
+#: ``restored`` means was itself a contract drift, and a consumer trusting the
+#: claim would carry the wrong meaning across surfaces.
+CARRY_BACK_ACTIONS = RESTORE_ACTIONS | frozenset({'not_attempted'})
 
 
 class LessonCarryBack(NamedTuple):

@@ -188,26 +188,78 @@ def test_delete_plan_no_restore_lessons_does_not_claim_the_benign_zero(plan_cont
 
 
 def test_carry_back_vocabulary_agrees_with_restore_from_plan(plan_context):
-    """The two lesson-restore vocabularies must not claim a false identity.
+    """The relationship is a STRICT superset by exactly one value.
 
-    ``CARRY_BACK_ACTIONS`` documents its relationship to
-    ``_lessons_query.RESTORE_ACTIONS``; a stated relationship that the sets do
-    not satisfy is a contract a consumer can be misled by when it carries a
-    meaning across the two surfaces. The relationship is a strict superset by
-    exactly one value — ``not_attempted``, producible only here because only
-    ``delete-plan`` has an opt-out flag.
+    ``CARRY_BACK_ACTIONS`` is now DERIVED as
+    ``RESTORE_ACTIONS | {'not_attempted'}``, so "the shared four agree" holds by
+    construction and asserting it here would be vacuous. What the construction
+    does NOT guarantee is that the union is strict: were ``not_attempted`` ever
+    added upstream to ``RESTORE_ACTIONS``, the union would silently become a
+    no-op and the two surfaces would claim the false identity the docstring
+    explicitly warns against. The strictness and the exact-by-one cardinality
+    are what this test pins — they also catch a regression to re-listed
+    literals that drop or gain a member.
     """
     lessons_query = load_script_module(
         'plan-marshall', 'manage-lessons', '_lessons_query.py', '_transition_lessons_query'
     )
 
-    assert _lifecycle.CARRY_BACK_ACTIONS - {'not_attempted'} == (
-        lessons_query.RESTORE_ACTIONS
+    # The one thing the union cannot enforce about itself: that it adds a value.
+    assert 'not_attempted' not in lessons_query.RESTORE_ACTIONS, (
+        'not_attempted leaked into RESTORE_ACTIONS, collapsing the union into a '
+        'no-op and making the two vocabularies equal — the identity claim the '
+        'CARRY_BACK_ACTIONS docstring exists to deny.'
     )
-    assert 'not_attempted' not in lessons_query.RESTORE_ACTIONS
+    assert len(_lifecycle.CARRY_BACK_ACTIONS) == len(lessons_query.RESTORE_ACTIONS) + 1
+    assert _lifecycle.CARRY_BACK_ACTIONS > lessons_query.RESTORE_ACTIONS
+
     # ``restored`` is the value the two used to define incompatibly.
     assert 'restored' in _lifecycle.CARRY_BACK_ACTIONS
     assert 'restore_incomplete' in _lifecycle.CARRY_BACK_ACTIONS
+
+
+def test_unresolvable_store_over_an_empty_plan_dir_is_still_the_benign_zero(
+    plan_context, monkeypatch
+):
+    """Store-unresolved does NOT force ``plan_dir_unresolved`` unconditionally.
+
+    The mirror of the carried-lesson case above. The directory WAS scanned and
+    held no ``lesson-*.md``, so nothing needed to land and ``no_lesson_file`` is
+    the honest action even though the corpus was never reached. The
+    could-not-look half is carried by ``lesson_store_resolution: unresolved``.
+
+    Pins the precedence the ``CARRY_BACK_ACTIONS`` docstring states: the two
+    fields answer different questions — ``action`` says what the scan found,
+    ``store_resolution`` says whether the corpus was reachable — and a consumer
+    reading either alone gets a wrong answer on this branch.
+    """
+    import _lessons_io
+
+    monkeypatch.setattr(
+        _lessons_io,
+        'resolve_lesson_store',
+        lambda subpath=_lessons_io.DIR_LESSONS: _lessons_io.LessonStore(
+            None, 'unresolved', 'cannot resolve the main-anchored store (test stub)'
+        ),
+    )
+
+    plan_dir = plan_context.plan_dir_for('unresolved-store-empty-plan')
+    (plan_dir / 'request.md').write_text('# Request')
+
+    result = cmd_delete_plan(
+        Namespace(plan_id='unresolved-store-empty-plan', no_restore_lessons=False)
+    )
+
+    # No lesson was at risk, so the veto does not fire and the delete proceeds.
+    assert result['status'] == 'success'
+    assert result['action'] == 'deleted'
+    assert result['lesson_carry_back_action'] == 'no_lesson_file'
+    assert result['lesson_carry_back_action'] != 'plan_dir_unresolved'
+    # The could-not-look fact still rides the payload on the other field.
+    assert result['lesson_store_resolution'] == 'unresolved'
+    assert result['lessons_dir'] == ''
+    assert result['skipped_lessons'] == []
+    assert not plan_dir.exists()
 
 
 def test_delete_plan_restores_all_lesson_files(plan_context):
