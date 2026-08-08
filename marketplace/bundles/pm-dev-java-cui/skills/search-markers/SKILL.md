@@ -47,7 +47,7 @@ Each detected marker is categorized by the recipe name parsed from its message:
 
 | Category | Meaning |
 |----------|---------|
-| `auto_suppress` | The recipe has a known mechanical suppression. The marker carries a `suppression_comment` (`// cui-rewrite:disable <Recipe>`) and is counted in `auto_suppress_count` / `by_category.auto_suppress`. |
+| `auto_suppress` | The recipe has a known mechanical suppression. The marker carries a `suppression_comment` (`// cui-rewrite:disable <Recipe>`) and is counted in `auto_suppress_count` / `by_category.auto_suppress`. What that comment does and does not reach is bounded in [`standards/marker-detection.md` § Suppression-marker scope](standards/marker-detection.md#suppression-marker-scope). |
 | `ask_user` | The recipe is not in the auto-suppressible table, so the marker needs a human decision. Counted in `ask_user_count` / `by_category.ask_user`. |
 
 Categorization describes **how a marker can be silenced**, not whether it is

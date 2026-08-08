@@ -60,6 +60,49 @@ findings the other uniquely covers. They are therefore two independent signals,
 each owned in `pm-dev-java-cui`, that a consumer reads **together** for full
 coverage.
 
+## Suppression-marker scope
+
+The `// cui-rewrite:disable <Recipe>` marker named in the Categorization table of
+[`../SKILL.md`](../SKILL.md) is **scoped to the CUI recipes this bundle defines**.
+It silences the named CUI recipe and nothing else. In particular it does **not**
+stop `AutoFormat`, the upstream formatting recipe that runs outside this bundle's
+recipe set and is not addressable by any local marker.
+
+The consequence is a coverage boundary, not a configuration detail: a formatting
+conflict originating in `AutoFormat` — an indentation this pipeline applies and
+`AutoFormat` rewrites back — **survives every local marker**, because no local
+marker reaches the recipe producing it. Adding another marker, or widening an
+existing one, changes nothing about it.
+
+**No local remedy for that conflict exists.** The only lever that acts on it is
+the upstream `AutoFormat` recipe itself — its own configuration, or its removal
+from the recipe list that runs. The honest statement about the local surface is
+that it has none, so a reader looking for a local workaround should stop looking
+rather than keep widening a marker that cannot reach the cause.
+
+## No fixed point to report
+
+A rewrite pipeline whose own output is an input to its next run has **no fixed
+point to report**. "Formatted" is a statement about the pass that just ran: it
+says that pass finished and applied what it had to apply. It says nothing about
+whether a further pass over the same tree would apply anything more. Convergence
+— a pass that changes nothing — is a different property, and no single pass can
+observe it.
+
+This is a property of the pipeline itself, and it holds regardless of which
+recipes are configured or how cleanly any one of them reports. Two consequences
+follow for anything that consumes a rewrite report:
+
+- A clean report is **one pass's** verdict. It is not evidence that the tree has
+  stopped changing, and it must not be read as one.
+- Convergence is established only by observation across passes — a pass whose
+  output equals its input. Nothing inside a single run's report substitutes for
+  that observation.
+
+This bounds a different thing from the two signals' coverage boundaries above:
+those bound what each signal *sees* within one run, while this bounds what any
+single run's clean report can *mean*.
+
 ## Related
 
 - `../SKILL.md` — Signal A, the tree-scan marker detector this standard documents alongside.
