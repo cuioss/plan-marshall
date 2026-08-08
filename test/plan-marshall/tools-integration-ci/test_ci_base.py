@@ -11,6 +11,7 @@ Tests functions:
 """
 
 import argparse
+import re
 from datetime import UTC, datetime, timedelta
 
 import ci_base
@@ -45,6 +46,8 @@ from ci_base import (
     set_default_cwd,
     truncate_log_content,
 )
+
+from conftest import PROJECT_ROOT
 
 # =============================================================================
 # Shared constants tests
@@ -1130,6 +1133,46 @@ def test_ci_wait_for_status_flip_rejects_invalid_expected_value():
 # them. The verb carries the PR-wide ``not_triggered`` observable — whether any
 # pull_request-event workflow run exists for the PR at all.
 
+#: The independent authority the registered ``checks`` verb set is pinned against.
+#: Its own preamble declares each group table a COMPLETE index of that group's
+#: registered sub-verbs, which is what makes an equality comparison against it
+#: meaningful rather than merely conventional.
+_LEAF_COMMAND_REFERENCE = (
+    PROJECT_ROOT
+    / 'marketplace'
+    / 'bundles'
+    / 'plan-marshall'
+    / 'skills'
+    / 'tools-integration-ci'
+    / 'standards'
+    / 'leaf-command-reference.md'
+)
+
+#: A ``checks {verb}`` row of that reference's group table: the backticked command
+#: opening a table row's leading cell. Anchored at the line start and requiring the
+#: leading pipe, so a ``ci checks status`` shown inside a fenced example is prose
+#: and never joins the documented population.
+_CHECKS_ROW = re.compile(r'^\|\s*`checks (?P<verb>[a-z][a-z0-9-]*)`\s*\|', re.MULTILINE)
+
+
+def _documented_checks_verbs() -> set[str]:
+    """Return the ``checks`` sub-verbs the leaf-command reference documents.
+
+    Raises:
+        AssertionError: if the reference yielded no row at all. An empty derivation
+            is the vacuity this guard exists to catch — the equality assertion that
+            consumes it would otherwise compare the live parser against an empty
+            set and fail for the wrong reason, or (had it been a subset check) pass
+            over nothing.
+    """
+    text = _LEAF_COMMAND_REFERENCE.read_text(encoding='utf-8')
+    verbs = {match.group('verb') for match in _CHECKS_ROW.finditer(text)}
+    assert verbs, (
+        f'no `checks {{verb}}` table row was derived from {_LEAF_COMMAND_REFERENCE} — '
+        f'the documented population is vacuous, so it cannot pin the live parser'
+    )
+    return verbs
+
 
 def test_ci_pull_request_runs_registered():
     """`checks pull-request-runs` must be registered under the checks subparser."""
@@ -1164,18 +1207,37 @@ def test_ci_pull_request_runs_takes_no_wait_arguments():
     assert not hasattr(args, 'interval')
 
 
-def test_ci_pull_request_runs_is_a_sibling_of_the_other_checks_verbs():
-    """The verb set under ``checks`` is read off the LIVE parser, not a literal.
+def test_the_checks_verb_set_agrees_with_the_documented_contract():
+    """The LIVE ``checks`` verb set equals the one the leaf-command reference documents.
 
-    Derived membership rather than an incremented count: a verb added to the
-    ``checks`` noun later is covered by this shape without an edit here, and a verb
-    removed shows up as a failure at its own name rather than as an off-by-one on a
-    total nobody re-checked.
+    Both sides are DERIVED, and from INDEPENDENT sources: the registered set off
+    the live argparse subparser, the documented set off the reference table's rows.
+    Neither is a literal restated in this file, so a partial mirror cannot form
+    here — a mirror is exactly what makes a "sibling" assertion drift, since it
+    goes stale silently while the assertion keeps passing.
+
+    The comparison is EQUALITY, not a subset relation. A subset assertion covers a
+    newly added verb by ignoring it: the verb is simply invisible to the check, so
+    the test neither enumerates the siblings nor detects a new one. Equality means a
+    verb added to the parser fails here until its reference row exists, and a row
+    added without a parser registration fails the other way — parser and contract
+    are pinned to each other in both directions.
+
+    The reference table is a legitimate authority for this because it declares
+    itself one: "Every group table below carries one row per registered sub-verb of
+    that group — the tables are the complete index, not a selection."
     """
     _parser, _pr_sub, checks_sub, _issue_sub, _branch_sub = build_parser('test')
 
     registered = set(checks_sub.choices)
-    assert {'status', 'wait', 'wait-for-status-flip', 'pull-request-runs'} <= registered
+    documented = _documented_checks_verbs()
+
+    assert registered, 'the checks subparser registered no verb at all'
+    assert registered == documented, (
+        f'the checks parser and the leaf-command reference disagree — '
+        f'registered but undocumented={sorted(registered - documented)}, '
+        f'documented but unregistered={sorted(documented - registered)}'
+    )
 
 
 # =============================================================================

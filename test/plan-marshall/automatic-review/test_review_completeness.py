@@ -53,6 +53,26 @@ if str(SCRIPTS_DIR) not in sys.path:
 import review_completeness as rc  # noqa: E402
 import _findings_core as fc  # noqa: E402
 
+# The registered bot population, hoisted to module scope so every sweep over it —
+# the collection-time parametrize below and the in-test PR-wide sweep — reads ONE
+# guarded derivation rather than re-deriving it unguarded at each site.
+#
+# The assertion is load-bearing at COLLECTION time, not merely tidy: pytest
+# generates zero cases from an empty parametrize argument and reports the test as
+# SKIPPED, not failed. An empty registry would therefore silently retire every
+# property swept over this population while the suite still read green. A check
+# that can return zero from an empty population must assert that population's size.
+#
+# ``derive_bot_flags`` guards its own derivation internally (see
+# ``_bot_flag_derivation``), so ``_LIST_FLAGS`` below needs no second guard here;
+# this population has no such internal guard and so takes one at the use site.
+_REGISTERED_BOTS = rc.bot_registry.bot_kinds()
+assert _REGISTERED_BOTS, (
+    'the bot registry declared no bot — every sweep over this population would '
+    'generate zero parametrized cases, which pytest reports as SKIPPED rather '
+    'than failed, so the swept properties would be covered by nothing'
+)
+
 # Evidence pairs that match each bot's DECLARED participation_evidence. Derived by
 # name from the registry docs rather than invented, so a registry change that
 # retires a publish shape breaks these tests loudly instead of silently.
@@ -496,7 +516,7 @@ class TestStateTaxonomy:
 
         assert _state_of(result, 'coderabbit') == rc.STATE_PARTICIPATED
 
-    @pytest.mark.parametrize('bot_kind', rc.bot_registry.bot_kinds())
+    @pytest.mark.parametrize('bot_kind', _REGISTERED_BOTS)
     def test_a_refusal_outranks_stale_participation(self, bot_kind, plan_context):
         """Precedence edge (b): a newer refusal outranks a stale publish.
 
@@ -597,8 +617,8 @@ class TestStateTaxonomy:
         """
         plan_id = 'rc-state-not-triggered-pr-wide'
         plan_context.plan_dir_for(plan_id)
-        bots = rc.bot_registry.bot_kinds()
-        assert bots, 'registry must declare at least one bot for this sweep to mean anything'
+        # The module-scope population, already guarded non-empty at import.
+        bots = _REGISTERED_BOTS
 
         result = rc.check_completeness(plan_id, bots, not_triggered=True)
 

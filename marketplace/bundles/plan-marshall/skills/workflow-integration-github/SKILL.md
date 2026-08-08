@@ -667,8 +667,9 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github
 ```
 
 Pure provider read — files no finding and triages nothing. It answers the PR-WIDE question behind the
-`not_triggered` participation state: does ANY `pull_request`-event workflow run exist for this PR's
-head branch? Return contract:
+`not_triggered` participation state: does any `pull_request`-event workflow run exist **for this PR**?
+The head branch is how the runs are FETCHED, not what the answer is scoped to — see the PR-boundary
+contract point below. Return contract:
 
 ```toon
 status: success
@@ -677,7 +678,7 @@ provider: github
 pr_number: {N}
 head_branch: "{the PR's head branch}"
 run_count: {every workflow run recorded for the branch}
-pull_request_run_count: {the subset triggered by the pull_request event}
+pull_request_run_count: {the subset triggered by the pull_request event AND not excluded as another PR's}
 has_pull_request_run: true | false
 not_triggered: true | false
 ```
@@ -686,12 +687,26 @@ not_triggered: true | false
 read the question in both polarities, and the predicate's own name is worth stating positively. The
 predicate is **existence only**: no timestamp comparison, and no `conclusion` check.
 
-Three contract points a caller MUST honour:
+Four contract points a caller MUST honour:
 
+- **The observable is bounded to the REQUESTED PR, not to its head branch.** A branch is not a PR
+  boundary: a branch a closed PR already used, and two open PRs sharing one head branch against
+  different bases, both carry `pull_request` runs that belong to another PR. Counting those would
+  suppress `not_triggered` for a PR that genuinely never triggered anything — and suppressing it
+  removes the "trigger the review" remedy this observable exists to enable. A run is therefore excluded
+  when its `pull_requests` association **reliably names a different PR**.
+
+  The exclusion **fails safe, and that asymmetry is required**: GitHub's `pull_requests` array is
+  unreliable — routinely empty for fork-originated runs and not guaranteed for same-repo runs — so an
+  absent, non-list, empty, or number-less array KEEPS the run and the branch-scoped answer stands. Only
+  a populated, usable association that omits the requested PR excludes. An unreliable association
+  signal must never by itself produce `not_triggered: true`: that would manufacture spurious "the
+  reviewers were never asked" verdicts and block merges, a false positive in a more damaging direction
+  than the narrower false negative it would fix.
 - **A `skipped` run still counts as triggered.** A `pull_request` run that exists and concluded
   `skipped` yields `not_triggered: false` — the workflow *was* triggered and declined to do work,
   which is a different fact from nothing having run at all. Only the absence of any `pull_request`-event
-  run yields `not_triggered: true`.
+  run for this PR yields `not_triggered: true`.
 - **`mergeable_state` is never read, returned, or branched on.** GitHub computes mergeability
   asynchronously and reports `UNKNOWN` while it is still computing, so a participation state keyed on
   it would depend on *when* the question happened to be asked rather than on what happened.

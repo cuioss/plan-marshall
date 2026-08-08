@@ -37,10 +37,14 @@ CONTRACT the components jointly implement:
   is the specific error guarded.
 
 Every set-guarding assertion derives its population from the registry (for bots),
-from a repository scan (for call sites), or from the live argparse surface (for
-flags) rather than a hard-coded literal list, so a bot added or retired in a
-standards doc, a fifth call site added in a future doc, or a further flag added to
-the parser is covered here automatically instead of silently escaping the sweep.
+from a repository scan (for call sites), from the live argparse surface (for
+flags), or from ``review_completeness``'s own ``STATE_`` constants (for taxonomy
+members) rather than a hard-coded literal list, so a bot added or retired in a
+standards doc, a fifth call site added in a future doc, a further flag added to the
+parser, or a new classifier state is covered here automatically instead of silently
+escaping the sweep. The taxonomy tuple keeps its explicit spelling — its order and
+its ``len`` are load-bearing — but is asserted equal to the derived set at import,
+which is the same guarantee by a different route.
 Each sub-population is additionally guarded against vacuity: a derivation that
 matched nothing FAILS rather than reporting a healthy aggregate over an empty set.
 """
@@ -108,6 +112,47 @@ _NON_PARTICIPATION_MEMBERS = (
     rc.STATE_PARTICIPATED_BUT_EMPTY,
     rc.STATE_PARTICIPATED_STALE,
     rc.STATE_NOT_TRIGGERED,
+)
+
+# ...and the DERIVED population it must equal. The tuple above is retained for its
+# order and its ``len``, both of which are load-bearing (see the comment above), so
+# the derivation is asserted against it rather than replacing it.
+#
+# Without this equality the tuple is a hand-maintained mirror and the file breaks
+# the derived-population rule its own docstring declares. Worse, the tuple is the
+# SHARED PIVOT of two checks — the documented-set comparison and the closure-count
+# comparison both read it — so a member that reached only the classifier would move
+# both sides of the count together and every check would stay green over a set that
+# is missing it. Asserting here makes that member fail at IMPORT, once, loudly.
+#
+# ``STATE_PARTICIPATED`` is the sole intended exclusion: it is the taxonomy's
+# COMPLEMENT (the bot delivered a usable review), not an eighth member — see the
+# module comment at ``review_completeness.py`` above ``STATE_ABSENT``. The
+# ``vars(rc)`` sweep cannot pick up a ``STATE_``-prefixed name imported from
+# elsewhere: ``rc`` imports only ``argparse``, ``sys``, ``bot_registry``, and
+# ``query_findings``, none of which is ``STATE_``-prefixed, and the ``str`` filter
+# below additionally excludes any non-constant binding a future import might add.
+_DERIVED_NON_PARTICIPATION = frozenset(
+    value
+    for name, value in vars(rc).items()
+    if name.startswith('STATE_') and name != 'STATE_PARTICIPATED' and isinstance(value, str)
+)
+
+assert _DERIVED_NON_PARTICIPATION, (
+    'no STATE_ constant was derived from review_completeness — the taxonomy '
+    'population is vacuous and every sweep over it would pass over an empty set'
+)
+
+assert frozenset(_NON_PARTICIPATION_MEMBERS) == _DERIVED_NON_PARTICIPATION, (
+    'the _NON_PARTICIPATION_MEMBERS tuple has drifted from review_completeness: '
+    f'only in the tuple={sorted(frozenset(_NON_PARTICIPATION_MEMBERS) - _DERIVED_NON_PARTICIPATION)}, '
+    f'only in the module={sorted(_DERIVED_NON_PARTICIPATION - frozenset(_NON_PARTICIPATION_MEMBERS))}'
+)
+
+assert len(_NON_PARTICIPATION_MEMBERS) == len(_DERIVED_NON_PARTICIPATION), (
+    'the _NON_PARTICIPATION_MEMBERS tuple carries a duplicate — its len is '
+    'load-bearing for the closure-count check, so a repeated member would '
+    'overstate the taxonomy while the set equality above still held'
 )
 
 #: A member row of the failure-taxonomy table: the backticked identifier that opens

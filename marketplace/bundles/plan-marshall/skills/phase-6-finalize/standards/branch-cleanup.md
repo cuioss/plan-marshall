@@ -712,26 +712,27 @@ not a richer call. The two flags belong at § "Predicate 2" below, which is the 
 
 ##### UNKNOWN — the re-fetch itself failed
 
-When this `fetch_findings` call exits **non-zero**, OR its return carries **no `participated_bots`
-field at all**, the barrier's participation inputs (`participated_bots`, `stale_participation_bots`,
-`refused_bots`) were never produced. A zero exit is NOT sufficient on its own: a truncated or malformed
-return that omits the participation fields leaves exactly the same absent inputs as a crash, so this
-trigger is symmetric with its sibling branch below rather than exit-code-only. The barrier **MUST NOT
-proceed to Predicate 2** with absent participation inputs: feeding an empty `--participated-bots` to a
+**The rule is a POSITIVE validation of the required shape, not an enumeration of known-bad shapes.**
+The barrier proceeds to Predicate 2 when, and only when, this `fetch_findings` call exited **zero** AND
+its return carries **ALL THREE** participation inputs — `participated_bots`, `stale_participation_bots`,
+and `refused_bots`. **Every other shape is an UNKNOWN**, including a zero exit whose return omits any
+one of the three. Keying the trigger on a single sentinel field would not do: a truncated or malformed
+return that keeps `participated_bots` while dropping `refused_bots` satisfies a single-field test and
+proceeds, yet it leaves exactly the same absent input as a crash. Stating the requirement positively is
+what makes the trigger cover the shapes nobody enumerated. The barrier **MUST NOT proceed to
+Predicate 2** with any participation input absent: feeding an empty `--participated-bots` to a
 predicate that fails closed would render every required bot `absent`, and feeding nothing at all would
 make the verdict a fiction either way. An absent input is an UNKNOWN verdict, never a `false` the
 operator can act on and never a `true`.
 
-**The same rule covers each of the new inputs, in its own way.** An absent `stale_participation_bots`
-is an UNKNOWN on exactly the terms above — the field is produced by this same call, so its absence is
-the same absence. The PR-wide `not_triggered` read (`ci checks pull-request-runs`, § "Predicate 2") is
-a separate call and fails separately: when IT returns `status: unconfigured` or `status: error` the
-observable was never read, and neither polarity may be assumed — omitting the flag would silently
-assert *"a run exists"*, and passing it would silently assert *"none does"*. Both are fictions, so an
-unreadable observable routes here too. The **one** case that is NOT an UNKNOWN is GitLab's structured
-unsupported refusal: that is a KNOWN provider-capability gap rather than a failed read, so the barrier
-omits the flag, records the gap, and proceeds — `not_triggered` is simply unavailable on that provider
-and `absent` remains the correct classification there.
+**A second call fails separately.** The PR-wide `not_triggered` read (`ci checks pull-request-runs`,
+§ "Predicate 2") is a separate call with its own positive shape requirement — `status: success` AND a
+**boolean** `has_pull_request_run` — and every other shape routes here. When the observable was never
+read, neither polarity may be assumed: omitting the flag would silently assert *"a run exists"*, and
+passing it would silently assert *"none does"*. Both are fictions. The **one** case that is NOT an
+UNKNOWN is GitLab's structured unsupported refusal: that is a KNOWN provider-capability gap rather than
+a failed read, so the barrier omits the flag, records the gap, and proceeds — `not_triggered` is simply
+unavailable on that provider and `absent` remains the correct classification there.
 
 Log at ERROR naming which call failed, its exit code, and its stderr verbatim, under the configured
 `{barrier_mode}`:
@@ -766,7 +767,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-
     --pr-number {pr_number}
 ```
 
-Read `has_pull_request_run` from the returned TOON. When it is `false`, pass the bare `--not-triggered` flag on the predicate call below; omit the flag otherwise, INCLUDING for a `pull_request` run that concluded `skipped` — a skipped run was still triggered. A `status: unconfigured` or `status: error` return is an UNKNOWN input, NOT a licence to assume either polarity: take § "UNKNOWN — the re-fetch itself failed" below, which names this read among the calls that route there. On GitLab the verb returns a structured unsupported error, so the `not_triggered` refinement is unavailable there and the barrier omits the flag — a bot that published nothing resolves to `absent` as before.
+**Validate the returned shape positively before deciding the flag.** The read is usable when, and only when, the return carries `status: success` AND a `has_pull_request_run` field whose value is a **boolean**. Only on that shape does the flag decision happen at all: pass the bare `--not-triggered` flag on the predicate call below when `has_pull_request_run` is `false`, and omit it when it is `true` — omit it for a `pull_request` run that concluded `skipped` too, since a skipped run was still triggered. **Every other shape is an UNKNOWN input**, NOT a licence to assume either polarity — a non-zero exit, a `status: unconfigured` or `status: error` return, a `status: success` return that omits `has_pull_request_run`, and a `has_pull_request_run` carrying a non-boolean all route to § "UNKNOWN — the re-fetch itself failed" above, which names this read among the calls that route there. Enumerating only `unconfigured` and `error` would let a `status: success` return that never carried the field fall through to "omit the flag otherwise", silently asserting *"a run exists"*; the positive form closes that. On GitLab the verb returns a structured unsupported error, so the `not_triggered` refinement is unavailable there and the barrier omits the flag — that structured refusal is the one documented non-UNKNOWN carve-out, a KNOWN provider-capability gap rather than a failed read, and a bot that published nothing resolves to `absent` as before.
 
 Feed the retained sets to the same predicate the FIND step uses:
 

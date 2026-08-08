@@ -119,11 +119,11 @@ Skill: plan-marshall:persona-plan-marshall-agent
 The bots this step drives are classified by the `required_bots` and `optional_bots` config knobs. A
 required bot's silence is a failure; an optional bot's silence is not; a bot in NEITHER list is
 warned about but STILL ingested. The required-vs-optional semantics, the ask posture (`never_asked`
-is a distinct recorded state, never collapsed into answered-none), and the seven-member failure
-taxonomy (`absent`, `not_triggered`, `in_progress`, `refused_awaitable`, `refused_hard`,
-`participated_but_empty`, `participated_stale`) are owned by
+is a distinct recorded state, never collapsed into answered-none), and the closed non-participation
+failure taxonomy — its members and their number both — are owned by
 [`standards/bot-participation-contract.md`](standards/bot-participation-contract.md) — this document
-consumes that contract rather than restating it.
+consumes that contract rather than restating it, so read the member set there rather than from a
+copy here that a future taxonomy change would leave stale.
 
 Each entry in either list maps one-to-one to a machine-readable registry doc at
 `standards/{bot_kind}.md` under this skill's `standards/` directory — there is no hard-coded bot
@@ -629,7 +629,9 @@ Then thread the four bot-keyed observation sets the predicate classifies from, p
      --pr-number {pr_number}
    ```
 
-   Read `has_pull_request_run` from the returned TOON. Pass the bare `--not-triggered` flag on the predicate call below **only when `has_pull_request_run` is `false`**; omit it otherwise. Omit it for a run that concluded `skipped` too — a skipped run was still triggered. When the flag is passed, every required bot that would have been `absent` resolves to `not_triggered` instead: still blocking, but naming "the reviewers were never asked" rather than "a reviewer stayed silent", so the remedy is to trigger the review. Unlike the four sets above this is a bool, not a list, because the condition holds for every bot at once.
+   Read `has_pull_request_run` from the returned TOON. Pass the bare `--not-triggered` flag on the predicate call below **only when `has_pull_request_run` is `false`**; omit it when it read `true`. Omit it for a run that concluded `skipped` too — a skipped run was still triggered. When the flag is passed, every required bot that would have been `absent` resolves to `not_triggered` instead: still blocking, but naming "the reviewers were never asked" rather than "a reviewer stayed silent", so the remedy is to trigger the review. Unlike the four sets above this is a bool, not a list, because the condition holds for every bot at once.
+
+   **Third branch — the read itself was unreadable.** A `status: error` return, a `status: unconfigured` return, or a return that carries no boolean `has_pull_request_run` field is an UNKNOWN **input**, NOT a licence to assume either polarity. Do NOT pass the flag, and do NOT omit it as though `true` had been read — omission is itself an assertion that a `pull_request` run exists, and it would silently resolve a required absent bot to `absent` (a reviewer stayed silent) instead of holding it open, which is the exact polarity coercion the typed `unconfigured` status exists to prevent. Take the **UNKNOWN verdict** handling below instead: the predicate is not invoked at all on this pass. The sibling call site routes the same read the same way — see [`../phase-6-finalize/standards/branch-cleanup.md`](../phase-6-finalize/standards/branch-cleanup.md) § "Predicate 2 — required-bot participation against this HEAD", which likewise names an `unconfigured` / `error` return an UNKNOWN input rather than either polarity.
 
 Invoke WITHOUT `--triage-ran` — triage has not run at this FIND step, so only an unproven bot gates the verdict:
 
@@ -640,7 +642,7 @@ python3 .plan/execute-script.py plan-marshall:automatic-review:review_completene
   --refused-bots "{refused_bots}" --stale-participation-bots "{stale_participation_bots}"
 ```
 
-Append the bare `--not-triggered` flag to that call when and only when the item-5 read reported `has_pull_request_run: false`. It is a `store_true` bool with no value of its own, so it is never interpolated and never quoted — the quoting discipline below governs the six list flags only.
+Append the bare `--not-triggered` flag to that call when and only when the item-5 read reported `has_pull_request_run: false`. It is a `store_true` bool with no value of its own, so it is never interpolated and never quoted — the quoting discipline below governs the six list flags only. An item-5 read that was unreadable never reaches this call at all — it routes to the UNKNOWN verdict below before the predicate is invoked, so there is no third polarity to encode on the flag.
 
 All six list sets are legitimately empty in normal operation — a plan with no optional bots, no in-progress
 bots, no refusals, and no stale publishes is the common case. **The load-bearing defence is the parser, not the quoting.**
@@ -663,6 +665,39 @@ Read `participation_complete`, `pending_bots`, `unproven_bots`, and `bot_states`
   1. **Loop back into FIND** (default): treat the unproven participation as an un-surfaced review — re-enter the FIND pipeline (await the bot) and record Branch C (`--outcome loop_back --loop-back-target 6-finalize`) for this iteration instead of Branch A. The terminal Branch A mark waits for a later pass that returns `participation_complete: true`. (This is a FIND-participation loop-back — awaiting an unproven bot review — NOT a triage loop-back; triage loop-back, including any real still-pending incompleteness after triage runs, is owned by the unified triage.)
 
      Read `bot_states` before re-entering, because two of the blocking members enumerated above name a **different** remedy than awaiting: a required bot on `participated_stale` has a review that only predates this HEAD, so the productive action is the re-review trigger (the `re_review_on_loopback` path above) rather than a longer wait for a bot that already published; and a PR-wide `not_triggered` means no reviewer was ever asked, so the productive action is to generate the trigger event at all. Awaiting either one is waiting for something that will not arrive on its own.
+
+     **Generating the trigger for `not_triggered`.** Naming two states with opposite remedies is only useful if BOTH remedies are reachable, so the `not_triggered` arm carries the same concrete mechanism the `participated_stale` arm does — the D2 re-review registry. `not_triggered` is a **PR-WIDE** observable (no `pull_request`-event run exists for this PR at all, item 5 above), so there is no per-bot evidence to condition on and every participating bot is equally un-asked: fire the trigger **once per bot in `required_bots ∪ optional_bots`**, never per-bot on a per-bot observation. Resolve the HEAD SHA and its commit time once, then invoke the registry per bot:
+
+     ```bash
+     git -C {worktree_path} rev-parse HEAD
+     ```
+
+     Capture stdout as `{head_sha}`.
+
+     ```bash
+     git -C {worktree_path} show -s --format=%cI HEAD
+     ```
+
+     Capture stdout as `{push_time}`. Read `re_review_await_timeout_seconds` off the same `plan-marshall:automatic-review` `params` object already fetched above (default: 600). Then, for each participating `{bot_kind}` (see [`../workflow-integration-github/SKILL.md`](../workflow-integration-github/SKILL.md#github_re_review-re-review) § Canonical invocations → `github_re_review re-review`):
+
+     ```bash
+     python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_re_review re-review \
+       --pr-number {pr_number} --bot-kind {bot_kind} --head-sha {head_sha} --push-time {push_time} --timeout {re_review_await_timeout_seconds} --plan-id {plan_id}
+     ```
+
+     Read both `matched` AND `timed_out` from each returned TOON, and record BOTH outcomes explicitly:
+
+     - **`matched: true`** — that bot published a fresh review for this HEAD. Re-enter FIND, so the fresh review is surfaced through the existing "Producer: FIND — file PR comments to the ledger" call (which re-stamps every finding's `reviewed_commit_sha` to this HEAD), and re-evaluate the participation predicate on that pass. Log the outcome:
+
+       ```bash
+       python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+         work --plan-id {plan_id} --level INFO \
+         --message "[STATUS] (plan-marshall:automatic-review) not_triggered remediation: re-review matched for bot_kind={bot_kind} at head_sha={head_sha} — re-entering FIND"
+       ```
+
+     - **`timed_out: true` (and `matched: false`)** — the await budget expired with no fresh review for this HEAD. Apply the **existing** `re_review_on_timeout` policy verbatim — take § "On re-review timeout (trigger B)" above (`proceed` / `defer` / `ask`), which is the same operator-configured policy branch-cleanup's trigger A applies at its own gate (see [`../phase-6-finalize/standards/branch-cleanup-rereview.md`](../phase-6-finalize/standards/branch-cleanup-rereview.md) § "On re-review timeout (trigger A)"). Do NOT define a new disposition for this arm.
+
+     Generating the trigger does not itself satisfy the quorum: the step remains NOT markable done on this pass under either outcome, and the terminal Branch A mark still waits for a later pass that returns `participation_complete: true`.
   2. **Force-done with an explicit recorded reason** (escape hatch): mark the step `done` ONLY after writing a `decision`-log entry at WARNING naming the blocking bot(s), their states, and the reason. There is no silent force-done — the WARNING decision-log entry is mandatory and must precede the Branch A `mark-step-done`:
 
   ```bash
@@ -672,18 +707,22 @@ Read `participation_complete`, `pending_bots`, `unproven_bots`, and `bot_states`
   ```
 
 - **UNKNOWN verdict** — the `review_completeness check` call exited **non-zero**, OR its return carries
-  **no `participation_complete` field at all**. This is an UNKNOWN verdict, explicitly **NOT `false`**
+  **no `participation_complete` field at all**, OR the item-5 `checks pull-request-runs` read was itself
+  unreadable (`status: error`, `status: unconfigured`, or no boolean `has_pull_request_run` field) so the
+  predicate was never invoked on this pass. This is an UNKNOWN verdict, explicitly **NOT `false`**
   and emphatically not `true`: the predicate never ran to a verdict, so nothing was proven and nothing
   was disproven. A crashed gate that is read as a pass is the failure this row exists to make
-  structurally impossible — an argparse rejection (exit 2), an unhandled exception, or a truncated
-  return must never be collapsed into "no blocking bot found". On UNKNOWN the step MUST:
+  structurally impossible — an argparse rejection (exit 2), an unhandled exception, a truncated
+  return, or an unreadable input read must never be collapsed into "no blocking bot found". On UNKNOWN
+  the step MUST:
 
-  1. **Log at ERROR**, naming the observed exit code and the captured stderr verbatim:
+  1. **Log at ERROR**, naming which call failed (`{failing_call}` — `review_completeness check` or the
+     item-5 `checks pull-request-runs` read), the observed exit code, and the captured stderr verbatim:
 
      ```bash
      python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
        work --plan-id {plan_id} --level ERROR \
-       --message "[ERROR] (plan-marshall:automatic-review) review_completeness check returned an UNKNOWN verdict: exit_code={exit_code}, stderr={stderr} — participation is neither proven nor disproven; recording loop_back"
+       --message "[ERROR] (plan-marshall:automatic-review) {failing_call} returned an UNKNOWN verdict: exit_code={exit_code}, stderr={stderr} — participation is neither proven nor disproven; recording loop_back"
      ```
 
   2. **Record Branch C** (`--outcome loop_back --loop-back-target 6-finalize`) for this pass, so the

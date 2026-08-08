@@ -3,10 +3,11 @@
 """Tests for the PR-wide ``not_triggered`` observable (github_ops pull-request-runs).
 
 The observable answers one question: does ANY workflow run triggered by the
-``pull_request`` event exist for this PR's head branch? A negative means nothing
-ever ran on account of the PR, so no review bot could have published — a different
-condition from a bot that was asked and stayed silent, and one whose remedy is the
-opposite (trigger the review vs escalate a non-participating reviewer).
+``pull_request`` event exist FOR THIS PR? A negative means nothing ever ran on
+account of the PR, so no review bot could have published — a different condition
+from a bot that was asked and stayed silent, and one whose remedy is the opposite
+(trigger the review vs escalate a non-participating reviewer). The head branch is
+how the runs are fetched, not what the answer is scoped to.
 
 Four run-list fixtures carry the core matrix, and each is a distinct *reason* the
 answer could come out wrong rather than four samples of one shape:
@@ -26,8 +27,11 @@ answer could come out wrong rather than four samples of one shape:
 Alongside the matrix: the constructed-argv assertion that the pagination flags are
 actually passed (the mechanism, not just the outcome), the ``mergeable_state``
 prohibition asserted at BOTH the source and behaviour level, the unconfigured
-fail-loud path, and the malformed-response guard that must not manufacture a
-confident answer.
+fail-loud path, the malformed-response guard that must not manufacture a confident
+answer, the ENVELOPE-shape validation (every invalid page envelope resolves to the
+``None`` discriminator rather than to an empty run list), and the PR-BOUNDARY
+filter — asserted in both directions, since a filter that only ever excludes is as
+wrong as one that never does.
 
 Only the provider surface is monkeypatched (``check_auth``, ``view_pr_data``,
 ``get_repo_info``, ``run_gh``); the handler, the pagination assembly, and the pure
@@ -359,6 +363,302 @@ def test_malformed_elements_alone_do_not_fabricate_a_pull_request_run(monkeypatc
     assert result['status'] == 'success'
     assert result['not_triggered'] is True
     assert result['pull_request_run_count'] == 0
+
+
+# ---------------------------------------------------------------------------
+# Envelope-shape validation — a malformed envelope is None, never an empty list
+# ---------------------------------------------------------------------------
+#
+# The two guards above validate the ELEMENTS inside a well-formed page. These
+# validate the ENVELOPE that carries them, which is a different failure: a page
+# whose ``workflow_runs`` is absent or non-list yields no runs at all, and
+# skipping it would report ``not_triggered: true`` — "no review was ever
+# triggered" — on a run collection that was never validly read. That is the
+# collapse ``fetch_branch_workflow_runs``'s ``None`` discriminator exists to
+# prevent, so every malformed envelope must reach the caller through it.
+
+
+def _patch_envelope(monkeypatch, raw_stdout):
+    """Patch the provider beneath ``fetch_branch_workflow_runs`` with raw stdout.
+
+    Narrower than ``_patch_provider``: the envelope cases drive the fetch
+    primitive directly, so no PR lookup is involved and the payload is supplied
+    already serialized (some shapes are not expressible as a page list).
+    """
+    monkeypatch.setattr(github_ops, 'get_repo_info', lambda: ('cuioss', 'plan-marshall'))
+    monkeypatch.setattr(
+        github_ops, 'run_gh', lambda args, capture_json=False, timeout=60: (0, raw_stdout, '')
+    )
+
+
+@pytest.mark.parametrize(
+    ('label', 'payload'),
+    [
+        ('bare-object', {}),
+        ('unslurped-single-page', {'total_count': 0, 'workflow_runs': []}),
+        ('top-level-string', 'nope'),
+        ('top-level-null', None),
+        ('page-not-a-dict', ['not-a-dict']),
+        ('page-is-a-list', [[]]),
+        ('workflow-runs-absent', [{'total_count': 0}]),
+        ('workflow-runs-is-a-dict', [{'workflow_runs': {}}]),
+        ('workflow-runs-is-null', [{'workflow_runs': None}]),
+        ('second-page-malformed', [{'workflow_runs': []}, {'workflow_runs': 'x'}]),
+    ],
+    ids=[
+        'bare-object',
+        'unslurped-single-page',
+        'top-level-string',
+        'top-level-null',
+        'page-not-a-dict',
+        'page-is-a-list',
+        'workflow-runs-absent',
+        'workflow-runs-is-a-dict',
+        'workflow-runs-is-null',
+        'second-page-malformed',
+    ],
+)
+def test_a_malformed_envelope_returns_none_not_an_empty_run_list(label, payload, monkeypatch):
+    """Every invalid envelope shape resolves to the ``None`` discriminator.
+
+    ``unslurped-single-page`` is deliberately in this set rather than tolerated:
+    the sole call site always passes ``--slurp``, so an unwrapped page can only
+    mean the flag was dropped — a pagination regression this guard surfaces
+    instead of masking. ``second-page-malformed`` is the one that a per-page
+    skip would pass: page one is valid, so a validator keyed on the first page
+    alone would return that page's runs and call the read complete.
+    """
+    _patch_envelope(monkeypatch, json.dumps(payload))
+
+    runs, error = github_ops.fetch_branch_workflow_runs(_HEAD_BRANCH)
+
+    assert runs is None, f'{label} was accepted as a readable run set'
+    assert error, f'{label} returned no error message alongside the None'
+
+
+def test_a_well_formed_slurped_envelope_still_reads_every_page(monkeypatch):
+    """The positive control: valid shapes are not caught by the validation above.
+
+    Without this, the parametrized rejections would be equally satisfied by a
+    function that returned ``None`` unconditionally.
+    """
+    _patch_envelope(monkeypatch, json.dumps([_page([_run('push')]), _page([_run('pull_request')])]))
+
+    runs, error = github_ops.fetch_branch_workflow_runs(_HEAD_BRANCH)
+
+    assert error == ''
+    assert runs is not None
+    assert len(runs) == 2
+
+
+def test_a_well_formed_empty_envelope_is_a_real_empty_read(monkeypatch):
+    """An empty ``workflow_runs`` on a valid page is data, not a malformed shape.
+
+    The two are the states this whole file separates: "read, and empty" is the
+    only legitimate ``not_triggered: true``, while "never validly read" is the
+    ``None`` above. A validator that rejected both would break the observable.
+    """
+    _patch_envelope(monkeypatch, json.dumps([_page([])]))
+
+    runs, error = github_ops.fetch_branch_workflow_runs(_HEAD_BRANCH)
+
+    assert error == ''
+    assert runs == []
+
+
+def test_a_malformed_envelope_reaches_the_handler_as_an_error(monkeypatch):
+    """End-to-end: the handler reports ``error``, never a confident ``not_triggered``.
+
+    The unit assertions above pin the discriminator at the primitive; this pins
+    that the caller honours it, which is where the false ``not_triggered: true``
+    would actually have surfaced.
+    """
+    _patch_provider(monkeypatch, [{'total_count': 0, 'workflow_runs': {}}])
+
+    result = github_ops.pull_request_runs_result(42)
+
+    assert result['status'] == 'error'
+    assert 'not_triggered' not in result
+    assert 'has_pull_request_run' not in result
+
+
+# ---------------------------------------------------------------------------
+# The PR boundary — the branch is how runs are FETCHED, not what they answer for
+# ---------------------------------------------------------------------------
+#
+# The run list is fetched branch-scoped, but a branch is not a PR boundary: a
+# branch a closed PR already used, or two open PRs sharing one head branch, carry
+# ``pull_request`` runs belonging to another PR that would otherwise suppress
+# ``not_triggered`` for a PR that never triggered anything. The exclusion is ASYMMETRIC —
+# GitHub's ``pull_requests`` array is unreliable (routinely empty on fork runs),
+# so it may only ever remove a false negative and must never manufacture a
+# ``not_triggered: true``. Both directions are pinned below, because a filter
+# tested in one direction only is the exact shape that would pass while being
+# unsafe.
+
+
+def _run_for_pr(event, pr_numbers, conclusion='success'):
+    """A workflow run carrying an explicit ``pull_requests`` association."""
+    run = _run(event, conclusion=conclusion)
+    run['pull_requests'] = [{'number': number} for number in pr_numbers]
+    return run
+
+
+def test_another_prs_run_on_the_same_branch_does_not_suppress_not_triggered(monkeypatch):
+    """Two PRs, one branch: PR 42 never triggered, so the remedy must stay reachable.
+
+    The only ``pull_request`` run on the branch belongs to PR 99. Answering from
+    the branch alone would report ``not_triggered: false`` for PR 42 and silently
+    withdraw the "trigger the review" remedy from a PR that was never asked.
+    """
+    _patch_provider(monkeypatch, [_page([_run_for_pr('pull_request', [99])])])
+
+    result = github_ops.pull_request_runs_result(42)
+
+    assert result['status'] == 'success'
+    assert result['not_triggered'] is True
+    assert result['has_pull_request_run'] is False
+    assert result['pull_request_run_count'] == 0
+    # The run was still READ — only its attribution excluded it.
+    assert result['run_count'] == 1
+
+
+def test_this_prs_own_run_is_kept_when_the_branch_also_carries_another_prs(monkeypatch):
+    """The complement: the exclusion removes only the foreign run, not every run.
+
+    Without this, the case above would be equally satisfied by a filter that
+    discarded every associated run.
+    """
+    pages = [
+        _page(
+            [
+                _run_for_pr('pull_request', [99]),
+                _run_for_pr('pull_request', [42]),
+            ]
+        )
+    ]
+    _patch_provider(monkeypatch, pages)
+
+    result = github_ops.pull_request_runs_result(42)
+
+    assert result['not_triggered'] is False
+    assert result['has_pull_request_run'] is True
+    assert result['pull_request_run_count'] == 1
+
+
+def test_a_run_listing_several_prs_including_this_one_is_kept(monkeypatch):
+    """A run may be associated with more than one PR — membership, not equality."""
+    _patch_provider(monkeypatch, [_page([_run_for_pr('pull_request', [99, 42])])])
+
+    result = github_ops.pull_request_runs_result(42)
+
+    assert result['not_triggered'] is False
+    assert result['pull_request_run_count'] == 1
+
+
+@pytest.mark.parametrize(
+    ('label', 'association'),
+    [
+        ('absent', None),
+        ('empty-list', []),
+        ('not-a-list', {'number': 99}),
+        ('elements-not-dicts', ['99']),
+        ('number-missing', [{'id': 7}]),
+        ('number-not-an-int', [{'number': '99'}]),
+    ],
+    ids=[
+        'absent',
+        'empty-list',
+        'not-a-list',
+        'elements-not-dicts',
+        'number-missing',
+        'number-not-an-int',
+    ],
+)
+def test_an_unreliable_association_never_fabricates_not_triggered(
+    label, association, monkeypatch
+):
+    """The safety direction: no usable association means KEEP the run.
+
+    Each shape is one way GitHub's ``pull_requests`` array actually arrives
+    unusable — most importantly ``empty-list``, which is routine for
+    fork-originated runs. A strict filter would resolve every one of these to
+    ``not_triggered: true``, asserting "the reviewers were never asked" on a PR
+    that plainly triggered a run, and blocking its merge on that fiction. Keeping
+    the run means the exclusion can only ever remove a false negative.
+    """
+    run = _run('pull_request')
+    if association is not None:
+        run['pull_requests'] = association
+    _patch_provider(monkeypatch, [_page([run])])
+
+    result = github_ops.pull_request_runs_result(42)
+
+    assert result['status'] == 'success'
+    assert result['not_triggered'] is False, f'{label} fabricated a not_triggered verdict'
+    assert result['has_pull_request_run'] is True
+
+
+def test_a_skipped_run_for_this_pr_still_counts_as_triggered(monkeypatch):
+    """The `skipped` carve-out survives the PR-boundary filter.
+
+    The exclusion is about ATTRIBUTION, not about outcome, so composing it with
+    the event predicate must not quietly reintroduce a ``conclusion`` check.
+    """
+    _patch_provider(
+        monkeypatch, [_page([_run_for_pr('pull_request', [42], conclusion='skipped')])]
+    )
+
+    result = github_ops.pull_request_runs_result(42)
+
+    assert result['not_triggered'] is False
+    assert result['pull_request_run_count'] == 1
+
+
+def test_a_push_run_attributed_to_this_pr_is_still_not_a_pull_request_run(monkeypatch):
+    """The event predicate is not weakened by the boundary filter.
+
+    An association naming this PR does not make a ``push`` run evidence the PR
+    triggered a review — the two conditions are conjoined, not alternative.
+    """
+    _patch_provider(monkeypatch, [_page([_run_for_pr('push', [42])])])
+
+    result = github_ops.pull_request_runs_result(42)
+
+    assert result['not_triggered'] is True
+    assert result['pull_request_run_count'] == 0
+
+
+@pytest.mark.parametrize(
+    ('label', 'pr_number'),
+    [('int', 42), ('numeric-string', '42')],
+    ids=['int', 'numeric-string'],
+)
+def test_the_requested_pr_is_matched_across_its_argument_spellings(
+    label, pr_number, monkeypatch
+):
+    """The verb accepts ``int | str``, so the comparison must not be identity-typed.
+
+    A string-vs-int mismatch would silently exclude the PR's OWN run and report
+    ``not_triggered: true`` — the damaging polarity — on every string-spelled call.
+    """
+    _patch_provider(monkeypatch, [_page([_run_for_pr('pull_request', [42])])])
+
+    result = github_ops.pull_request_runs_result(pr_number)
+
+    assert result['not_triggered'] is False, f'{label} spelling excluded the PR own run'
+
+
+def test_an_unusable_requested_pr_number_does_not_exclude_anything():
+    """A non-numeric PR identifier fails safe at the predicate itself.
+
+    Driven directly because the handler resolves the identifier upstream; the
+    predicate must still be total, and total in the keep direction.
+    """
+    run = _run_for_pr('pull_request', [99])
+
+    assert _github_checks._run_names_a_different_pr(run, 'not-a-number') is False
+    assert _github_checks._run_names_a_different_pr(run, None) is False
 
 
 # ---------------------------------------------------------------------------

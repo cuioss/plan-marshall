@@ -102,6 +102,8 @@ from _github_checks import (  # noqa: F401 — re-exported for callers and tests
     _has_pull_request_event_run,
     _is_pull_request_event_run,
     _normalize_conclusion,
+    _pull_request_event_runs_for_pr,
+    _run_names_a_different_pr,
 )
 from ci_base import (
     MAX_ELAPSED_SECONDS,
@@ -1595,6 +1597,14 @@ def fetch_branch_workflow_runs(branch: str) -> tuple[list | None, str]:
     ``not_triggered`` precisely on the busy PRs where a review matters most.
     ``--slurp`` wraps the pages in one array, and each element is a page object
     carrying its own ``workflow_runs`` list, so the pages are concatenated here.
+
+    The envelope shape is validated POSITIVELY: the top level must be the slurped
+    list, and every page must be a dict carrying a list-valued ``workflow_runs``.
+    Any other shape returns ``(None, error)`` — the same discriminator a failed
+    ``gh`` call uses — rather than being skipped into an empty run list. Skipping
+    a malformed page would report "no ``pull_request`` run exists" on evidence
+    nobody gathered, which is exactly the collapse the ``None`` discriminator
+    above exists to prevent.
     """
     owner, repo = get_repo_info()
     if not owner or not repo:
@@ -1611,15 +1621,20 @@ def fetch_branch_workflow_runs(branch: str) -> tuple[list | None, str]:
         return None, f'Failed to parse actions/runs response: {stdout[:100]}'
 
     # ``--slurp`` yields a list of page objects. A single un-slurped object is
-    # still accepted so the primitive does not depend on that flag's presence.
-    pages = payload if isinstance(payload, list) else [payload]
+    # NOT accepted: the only call site above always passes ``--slurp``, so
+    # tolerating an unwrapped page would mask a dropped flag — a pagination
+    # regression — instead of surfacing it.
+    if not isinstance(payload, list):
+        return None, f'Malformed actions/runs envelope: expected a slurped list of pages, got {type(payload).__name__}'
+
     runs: list = []
-    for page in pages:
+    for index, page in enumerate(payload):
         if not isinstance(page, dict):
-            continue
+            return None, f'Malformed actions/runs envelope: page {index} is {type(page).__name__}, expected an object'
         page_runs = page.get('workflow_runs')
-        if isinstance(page_runs, list):
-            runs.extend(page_runs)
+        if not isinstance(page_runs, list):
+            return None, f'Malformed actions/runs envelope: page {index} has no list-valued workflow_runs (got {type(page_runs).__name__})'
+        runs.extend(page_runs)
     return runs, ''
 
 
@@ -1634,6 +1649,13 @@ def pull_request_runs_result(pr_number: int | str) -> dict:
     status, never a silent ``not_triggered: true``. That distinction is the whole
     point: an unauthenticated gh would otherwise report every PR as never having
     triggered a review.
+
+    The run list is fetched branch-scoped, but the observable is reported for the
+    REQUESTED PR: runs whose ``pull_requests`` association reliably names a
+    different PR are excluded, so a reused branch's historical runs cannot
+    suppress ``not_triggered`` for a PR that never triggered anything. The
+    exclusion fails SAFE — an absent or unusable association keeps the run — see
+    ``_run_names_a_different_pr``.
     """
     is_auth, auth_err = check_auth()
     if not is_auth:
@@ -1659,7 +1681,11 @@ def pull_request_runs_result(pr_number: int | str) -> dict:
     if runs is None:
         return make_error('pull_request_runs', 'Failed to fetch workflow runs', error)
 
-    pull_request_runs = [run for run in runs if _is_pull_request_event_run(run)]
+    # Bounded to the REQUESTED PR, not merely to its head branch: a run whose
+    # association reliably names another PR is excluded, while a run carrying no
+    # usable association is kept (the fail-safe direction).
+    pull_request_runs = _pull_request_event_runs_for_pr(runs, pr_number)
+    has_pull_request_run = bool(pull_request_runs)
     return {
         'status': 'success',
         'operation': 'pull_request_runs',
@@ -1669,10 +1695,11 @@ def pull_request_runs_result(pr_number: int | str) -> dict:
         'run_count': len(runs),
         'pull_request_run_count': len(pull_request_runs),
         # The observable itself. ``not_triggered`` is true only when NO
-        # pull_request-event run exists — a run that exists and concluded
-        # ``skipped`` keeps this false, because the workflow was triggered.
-        'has_pull_request_run': _has_pull_request_event_run(runs),
-        'not_triggered': not _has_pull_request_event_run(runs),
+        # pull_request-event run for THIS PR exists — a run that exists and
+        # concluded ``skipped`` keeps this false, because the workflow was
+        # triggered.
+        'has_pull_request_run': has_pull_request_run,
+        'not_triggered': not has_pull_request_run,
     }
 
 

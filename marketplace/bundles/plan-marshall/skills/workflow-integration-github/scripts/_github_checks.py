@@ -197,6 +197,73 @@ def _has_pull_request_event_run(runs: Any) -> bool:
     return any(_is_pull_request_event_run(run) for run in runs)
 
 
+def _run_names_a_different_pr(run: Any, pr_number: Any) -> bool:
+    """True ONLY when ``run`` carries a reliable association naming a different PR.
+
+    The run list is fetched branch-scoped (``actions/runs?branch=``), but a branch
+    is not a PR boundary: a branch a closed PR already used, or two open PRs sharing
+    one head branch against different bases, both carry ``pull_request`` runs
+    belonging to another PR that would otherwise suppress ``not_triggered`` for a PR
+    that genuinely never triggered anything.
+
+    The association signal is a run's ``pull_requests`` array — and it is
+    UNRELIABLE: GitHub routinely leaves it empty for fork-originated runs and does
+    not guarantee it for same-repo runs. So this predicate is deliberately
+    asymmetric and can only ever EXCLUDE, never admit: an absent array, a non-list
+    array, an empty array, or an array carrying no usable ``number`` all resolve
+    ``False`` — the run is kept and the branch-scoped answer stands. Only a
+    populated, usable array that does NOT contain the requested PR excludes the
+    run.
+
+    That asymmetry is the whole safety argument. A strict filter would flip the
+    observable to ``not_triggered: true`` whenever the array happened to be empty,
+    manufacturing spurious "the reviewers were never asked" verdicts that block
+    merges — a false positive in the more damaging direction than the narrower
+    false negative being fixed. An unreliable association signal must never by
+    itself produce ``not_triggered: true``.
+    """
+    if not isinstance(run, dict):
+        return False
+    associations = run.get('pull_requests')
+    if not isinstance(associations, list):
+        return False
+    numbers = {
+        assoc.get('number')
+        for assoc in associations
+        if isinstance(assoc, dict) and isinstance(assoc.get('number'), int)
+    }
+    if not numbers:
+        return False
+    try:
+        requested = int(pr_number)
+    except (TypeError, ValueError):
+        return False
+    return requested not in numbers
+
+
+def _pull_request_event_runs_for_pr(runs: Any, pr_number: Any) -> list:
+    """The ``pull_request``-event runs on this branch that are not another PR's.
+
+    Composes the event-existence predicate with the fail-safe PR-boundary
+    exclusion above, so the observable is bounded to the REQUESTED PR rather than
+    to whatever else has ever used its head branch. Same shape tolerance as
+    ``_has_pull_request_event_run``: a non-list input yields the empty list, and
+    the caller is responsible for reporting a failed fetch as an error rather than
+    passing an unread list in.
+
+    The deliberate exclusions are unchanged and still apply: no ``mergeable_state``
+    is read, no timestamp is compared, and a ``pull_request`` run that concluded
+    ``skipped`` still counts as triggered.
+    """
+    if not isinstance(runs, list):
+        return []
+    return [
+        run
+        for run in runs
+        if _is_pull_request_event_run(run) and not _run_names_a_different_pr(run, pr_number)
+    ]
+
+
 def _derive_overall_status(checks: list[dict]) -> tuple[str, list[dict], list[dict]]:
     """Derive ``overall | final_status`` plus failing-checks transport.
 
