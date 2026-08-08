@@ -30,6 +30,7 @@ Unified CI provider abstraction using **static routing** - one script per provid
 - PR operations (create, view, merge, auto-merge, safe-merge, merge-queue, close, ready, edit)
 - PR review operations (comments, wait-for-comments, reply, resolve-thread, thread-reply, reviews)
 - CI status, wait, rerun, and logs (with automatic failure-log download + error-extraction filtering)
+- The PR-wide `pull_request`-run observable (`checks pull-request-runs`) behind the `not_triggered` review-participation state — GitHub only; the GitLab arm refuses explicitly
 - Issue operations (create, comment, prepare-body, prepare-comment, view, close, wait-for-close, wait-for-label)
 - Repo operations (merge-queue probe/enable — platform merge queue / merge train; label ensure — idempotent create-if-missing)
 - Unified TOON output format across providers
@@ -336,7 +337,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr merge-q
 
 ### checks
 
-Sub-verbs: `status`, `wait`, `rerun`, `logs`, `wait-for-status-flip`.
+Sub-verbs: `status`, `wait`, `rerun`, `logs`, `wait-for-status-flip`, `pull-request-runs`.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci checks status \
@@ -346,6 +347,35 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci checks sta
 `status` and `wait` accept `--error-style` (default `generic`) to select how the
 auto-downloaded failure log is filtered when any check fails. See § "Automatic
 Failure-Log Download on `checks wait` / `checks status`" above.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci checks pull-request-runs \
+  --pr-number PR_NUMBER
+```
+
+`checks pull-request-runs` is a pure read answering one PR-wide question: does ANY
+`pull_request`-event workflow run exist for the requested PR? The head branch is how the runs are
+fetched, not what the answer is scoped to — a run is excluded only when its `pull_requests`
+association reliably names a different PR. It is the observable behind the
+`not_triggered` review-participation state — when no such run exists, nothing ever ran on account of
+the PR, so no review bot could have published and a required bot's silence says nothing about that
+bot. It returns `has_pull_request_run` and its exact complement `not_triggered`, alongside
+`head_branch`, `run_count`, and `pull_request_run_count`. The predicate is **existence only**: a run
+that exists and concluded `skipped` keeps `not_triggered` false, because the workflow *was*
+triggered; no `conclusion` and no timestamp is consulted; and `mergeable_state` is never read.
+
+**GitHub only — the GitLab arm refuses explicitly.** The verb's parser lives in the shared
+`ci_base.build_parser`, so the token resolves on both providers; GitLab registers a handler that
+returns a structured `status: error` naming the gap rather than leaving the token to surface as an
+unrecognised subcommand (which would misattribute a provider-coverage gap as a parser defect). The gap
+is genuine and deliberately not guessed at: GitLab distinguishes a merge-request pipeline by its
+`source` (`merge_request_event`) on a different endpoint, and that does not map one-to-one onto
+"a `pull_request`-event run exists", so inferring an equivalent would yield a `not_triggered` verdict
+from a signal that does not mean what the caller thinks. `not_triggered` is therefore derivable on
+GitHub only until the mapping is designed. See
+[`workflow-integration-github/SKILL.md`](../workflow-integration-github/SKILL.md) § Canonical
+invocations → `github_pr pull_request_runs` for the full return contract and the fail-loud
+obligations, which are not restated here.
 
 ### issue
 

@@ -1,25 +1,26 @@
 ---
 name: workflow-integration-github
-description: GitHub provider for PR review workflows — three pure verbs (fetch_findings files comments to the ledger, post_responses transmits triaged dispositions, bot_completion reports a review bot's completion state) via gh CLI
+description: GitHub provider for PR review workflows — four pure verbs (fetch_findings files comments to the ledger, post_responses transmits triaged dispositions, bot_completion reports a review bot's completion state, pull_request_runs reports the PR-wide not_triggered observable) via gh CLI
 user-invocable: false
 mode: workflow
 ---
 
 # GitHub CI Integration Workflow Skill
 
-GitHub provider for the findings-pipeline `pr-comment` producer. The provider surface is exactly THREE pure, zero-LLM verbs — no triage judgment lives here:
+GitHub provider for the findings-pipeline `pr-comment` producer. The provider surface is exactly FOUR pure, zero-LLM verbs — no triage judgment lives here:
 
 - **`fetch_findings`** — fetch PR review comments, apply the pre-filter (`comment-patterns.json`), exclude the batched response body `post_responses` itself posted, and file one `pr-comment` finding per surviving comment via `manage-findings add`. The untrusted comment body is quarantined under `raw_input.{body}` (never embedded raw in the top-level `detail`); the batched `manage-findings ingest` pass promotes it to top-level only after `validate_struct`. A bounded guard reports a non-converging respond → re-fetch cycle as a `(self-response-loop)` Q-Gate finding.
 - **`post_responses`** — apply already-decided triage dispositions back to the PR, keyed by each finding's own `hash_id`, via a three-way transmit keyed on the finding's `kind`: thread-reply-then-resolve for a thread-bearing finding (untransmitted, never batched, when its thread is missing), ONE batched PR-level comment for the genuinely threadless kinds, and `skipped` only when there is genuinely nothing to say.
 - **`bot_completion`** — report a review bot's registry `completion_check_name` check-run state (`{status, in_progress, completed}`) for the PR HEAD, so the `automatic-review` completion-aware poll can wait for a slow bot to finish before fetching; a bot with no completion check-run reports `no_check_name` and the caller falls back to the `review_bot_buffer_seconds` wait.
+- **`pull_request_runs`** — report whether ANY `pull_request`-event workflow run exists for the requested PR. The head branch is how the runs are FETCHED, not what the answer is scoped to: a run is excluded only when its `pull_requests` association reliably names a DIFFERENT PR. This is the PR-WIDE observable behind the `not_triggered` participation state: when no such run exists, nothing ever ran on account of the PR, so no bot could have published and a required bot's silence says nothing about that bot. A run that EXISTS and concluded `skipped` keeps the observable false — the workflow *was* triggered. Never reads `mergeable_state`.
 
-All three verbs FAIL LOUD when GitHub is not configured (a typed `unconfigured` status, never a silent no-op). Uses the `gh` CLI for all GitHub operations.
+All four verbs FAIL LOUD when GitHub is not configured (a typed `unconfigured` status, never a silent no-op). Uses the `gh` CLI for all GitHub operations.
 
 > **Architectural context**: This SKILL.md owns the producer-side CLI surface. For the producer→store→consumer→gate flow that connects this producer to the unified store, the per-domain `ext-triage` consumer dispatch, and the invariant gate, see [`ref-workflow-architecture/standards/findings-pipeline.md`](../ref-workflow-architecture/standards/findings-pipeline.md).
 
 ## Enforcement
 
-**Execution mode**: Three pure provider verbs — `fetch_findings` files PR review comments to the ledger (untrusted body quarantined under `raw_input`); `post_responses` transmits already-decided triage dispositions back to the PR; `bot_completion` reports a review bot's completion-check state for the completion-aware poll. Triage judgment lives in the consolidated triage pass, NOT in this provider.
+**Execution mode**: Four pure provider verbs — `fetch_findings` files PR review comments to the ledger (untrusted body quarantined under `raw_input`); `post_responses` transmits already-decided triage dispositions back to the PR; `bot_completion` reports a review bot's completion-check state for the completion-aware poll; `pull_request_runs` reports the PR-wide `pull_request`-run observable behind `not_triggered`. Triage judgment lives in the consolidated triage pass, NOT in this provider.
 
 **Prohibited actions:**
 - Never call `gh` directly from LLM context; all operations go through script API
@@ -123,7 +124,15 @@ Both operations take the same `PRRT_` thread ID — pass the comment's `thread_i
    ```bash
    python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr fetch_findings --pr-number {pr} --plan-id {plan_id}
    ```
-   Output reports `count_fetched`, `count_skipped_noise`, `count_skipped_duplicate`, `count_skipped_refusal`, `count_skipped_self_response`, `count_self_response_current_cycle`, `self_response_loop_detected`, `self_response_loop_hash_id`, `count_stored`, `participated_bots[]`, `refused_bots[]`, `unclassified_bots[]`, and `producer_mismatch_hash_id` (set when count_stored ≠ count_fetched − count_skipped_noise − count_skipped_duplicate − count_skipped_refusal − count_skipped_self_response; the mismatch is also persisted as a Q-Gate finding under phase `5-execute` with title prefix `(producer-mismatch)`). An unclassified bot's comments are stored like any other, so they are NOT subtracted from the expected count. When that mismatch finding's own persist is REJECTED, `producer_mismatch_hash_id` stays `null` and the output carries `qgate_persist_failed: true` plus `qgate_persist_failure{title, detail, message}` — the mismatch content that never reached the store, with the primitive's rejection message. Both fields are absent when the mismatch finding landed (or when there was no mismatch). Read `qgate_persist_failed`, not a `null` hash id, to tell a lost mismatch finding from no mismatch at all; `status` stays `success` because the fetch itself succeeded. A `status: unconfigured` return means GitHub is not authenticated — never a silent zero-findings success.
+   Output reports `count_fetched`, `count_skipped_noise`, `count_skipped_duplicate`, `count_skipped_refusal`, `count_skipped_self_response`, `count_self_response_current_cycle`, `self_response_loop_detected`, `self_response_loop_hash_id`, `count_stored`, `participated_bots[]`, `stale_participation_bots[]`, `refused_bots[]`, `unclassified_bots[]`, and `producer_mismatch_hash_id` (set when count_stored ≠ count_fetched − count_skipped_noise − count_skipped_duplicate − count_skipped_refusal − count_skipped_self_response; the mismatch is also persisted as a Q-Gate finding under phase `5-execute` with title prefix `(producer-mismatch)`). An unclassified bot's comments are stored like any other, so they are NOT subtracted from the expected count. When that mismatch finding's own persist is REJECTED, `producer_mismatch_hash_id` stays `null` and the output carries `qgate_persist_failed: true` plus `qgate_persist_failure{title, detail, message}` — the mismatch content that never reached the store, with the primitive's rejection message. Both fields are absent when the mismatch finding landed (or when there was no mismatch). Read `qgate_persist_failed`, not a `null` hash id, to tell a lost mismatch finding from no mismatch at all; `status` stays `success` because the fetch itself succeeded. A `status: unconfigured` return means GitHub is not authenticated — never a silent zero-findings success.
+
+   **A failed currency test is a branch, never a discard.** `participated_bots[]` credits a bot only when an observed comment's `kind` matches a declared `participation_evidence` publish shape AND — for a bot declaring `participation_requires_update` — the comment is first-present or its `updated_at` has moved. When the *kind* matched but the *currency test* failed, the bot is named in **`stale_participation_bots[]`** rather than dropped:
+
+   ```toon
+   stale_participation_bots[N]{bot_kind,evidence_kind}:
+   ```
+
+   Same record shape as `participated_bots[]`, and the proven set is **subtracted before emitting** — a bot with one stale comment and one fresh one appears only in `participated_bots[]`, never in both. Forward the list to `review_completeness check --stale-participation-bots` so the quorum layer classifies the bot `participated_stale` instead of `absent`. The two are not interchangeable and their remedies are opposite: a stale publish is **re-triggered** (the review exists, it merely predates this HEAD), while a true absence is **escalated** (there is no review to refresh). Discarding the failed currency test is what collapsed the two.
 
    **A refusal is a branch, never a noise drop.** A comment recognized as a bot DECLINING to review (its registry `refusal_patterns`, or the structural `_is_rate_limit_notice` recognizer for an unregistered bot) files no `pr-comment` finding — it is a signal *about* the review, not feedback about the code, so the operator is never asked to triage it — but it is counted in `count_skipped_refusal` and its bot is named in `refused_bots[]`, and it is excluded from `participated_bots[]`. Forward `refused_bots[]` to `review_completeness check --refused-bots` so the quorum layer classifies the bot as `refused_awaitable` / `refused_hard`. Folding a refusal into `count_skipped_noise` instead is what let a PR whose every required reviewer refused report a clean, complete review; `count_skipped_noise` and `count_skipped_refusal` are deliberately separate counters for that reason.
 
@@ -490,6 +499,17 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github
   [--expected {success|failure|any}]
 ```
 
+### github_ops checks pull-request-runs
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops checks pull-request-runs \
+  --pr-number N
+```
+
+The provider-level entry point for the PR-wide `pull_request`-run observable behind `not_triggered`.
+Its body is shared verbatim with `github_pr pull_request_runs` — see that block below for the return
+contract and the caller obligations, which are not restated here.
+
 ### github_ops checks rerun
 
 ```bash
@@ -638,6 +658,69 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github
 ```
 
 Pure provider read — reports the bot's registry `completion_check_name` check-run state as `{status, in_progress, completed}` for the PR HEAD. A bot with an empty `completion_check_name` reports status `no_check_name` (the caller falls back to the `review_bot_buffer_seconds` wait); the `automatic-review` completion-aware poll consumes this verb.
+
+### github_pr pull_request_runs
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr pull_request_runs \
+  --pr-number N
+```
+
+Pure provider read — files no finding and triages nothing. It answers the PR-WIDE question behind the
+`not_triggered` participation state: does any `pull_request`-event workflow run exist **for this PR**?
+The head branch is how the runs are FETCHED, not what the answer is scoped to — see the PR-boundary
+contract point below. Return contract:
+
+```toon
+status: success
+operation: pull_request_runs
+provider: github
+pr_number: {N}
+head_branch: "{the PR's head branch}"
+run_count: {every workflow run recorded for the branch}
+pull_request_run_count: {the subset triggered by the pull_request event AND not excluded as another PR's}
+has_pull_request_run: true | false
+not_triggered: true | false
+```
+
+`has_pull_request_run` and `not_triggered` are exact complements — the pair is carried because callers
+read the question in both polarities, and the predicate's own name is worth stating positively. The
+predicate is **existence only**: no timestamp comparison, and no `conclusion` check.
+
+Four contract points a caller MUST honour:
+
+- **The observable is bounded to the REQUESTED PR, not to its head branch.** A branch is not a PR
+  boundary: a branch a closed PR already used, and two open PRs sharing one head branch against
+  different bases, both carry `pull_request` runs that belong to another PR. Counting those would
+  suppress `not_triggered` for a PR that genuinely never triggered anything — and suppressing it
+  removes the "trigger the review" remedy this observable exists to enable. A run is therefore excluded
+  when its `pull_requests` association **reliably names a different PR**.
+
+  The exclusion **fails safe, and that asymmetry is required**: GitHub's `pull_requests` array is
+  unreliable — routinely empty for fork-originated runs and not guaranteed for same-repo runs — so an
+  absent, non-list, empty, or number-less array KEEPS the run and the branch-scoped answer stands. Only
+  a populated, usable association that omits the requested PR excludes. An unreliable association
+  signal must never by itself produce `not_triggered: true`: that would manufacture spurious "the
+  reviewers were never asked" verdicts and block merges, a false positive in a more damaging direction
+  than the narrower false negative it would fix.
+- **A `skipped` run still counts as triggered.** A `pull_request` run that exists and concluded
+  `skipped` yields `not_triggered: false` — the workflow *was* triggered and declined to do work,
+  which is a different fact from nothing having run at all. Only the absence of any `pull_request`-event
+  run for this PR yields `not_triggered: true`.
+- **`mergeable_state` is never read, returned, or branched on.** GitHub computes mergeability
+  asynchronously and reports `UNKNOWN` while it is still computing, so a participation state keyed on
+  it would depend on *when* the question happened to be asked rather than on what happened.
+- **An unconfigured provider fails loud.** A `status: unconfigured` return is never collapsed into
+  `not_triggered: true` — an unauthenticated `gh` would otherwise report every PR as never having
+  triggered a review. A failed run-list fetch is likewise a structured error, not an empty list: "the
+  list was never read" and "the list is empty" are distinct, and conflating them would claim the
+  review bots were never triggered on evidence nobody gathered.
+
+The verb shares ONE body with the `ci checks pull-request-runs` abstraction verb
+(`github_ops.pull_request_runs_result`), so the two entry points cannot drift into different answers to
+the same question. See [`tools-integration-ci/SKILL.md`](../tools-integration-ci/SKILL.md) § Canonical
+invocations → `ci checks pull-request-runs` for the abstraction-layer entry point, which is the one
+`automatic-review` and the pre-merge barrier call.
 
 ### github_re_review re-review
 

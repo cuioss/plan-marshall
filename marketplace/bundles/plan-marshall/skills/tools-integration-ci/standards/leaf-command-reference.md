@@ -93,7 +93,7 @@ Source: [pr-review-operations.md](pr-review-operations.md)
 
 ---
 
-## checks — CI Status & Logs
+## checks — CI Status, Logs & Run Existence
 
 Source: [ci-operations.md](ci-operations.md)
 
@@ -104,6 +104,7 @@ Source: [ci-operations.md](ci-operations.md)
 | `checks wait-for-status-flip` | `--pr-number` | `--expected {success\|failure\|any}`, `--timeout {seconds}`, `--interval {seconds}` | Block until the CI status flips off `pending` (default: any non-pending flip) |
 | `checks rerun` | `--run-id` | — | Rerun a failed CI workflow run |
 | `checks logs` | `--run-id` | — | Get logs from a CI workflow run |
+| `checks pull-request-runs` | `--pr-number` | — | **GitHub only.** Report whether ANY `pull_request`-event run exists for the PR (`has_pull_request_run` / `not_triggered`) — the observable behind the `not_triggered` review-participation state. A run that concluded `skipped` still counts as triggered. GitLab returns an explicit unsupported error |
 
 ---
 

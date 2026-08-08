@@ -323,7 +323,7 @@ materialize-then-sort sequencing.
 The `plan-marshall:automatic-review` step classifies review bots into two lists —
 `required_bots` (silence is a failure; gates the completeness quorum) and
 `optional_bots` (silence is tolerable; never gates). A bot in NEITHER list is warned about but
-still ingested. The semantics, the ask posture, and the five-member failure taxonomy are owned by
+still ingested. The semantics, the ask posture, and the failure taxonomy are owned by
 [`../automatic-review/standards/bot-participation-contract.md`](../automatic-review/standards/bot-participation-contract.md);
 the knob storage shape and the three-valued provenance are documented in
 [`../manage-config/standards/data-model.md`](../manage-config/standards/data-model.md).

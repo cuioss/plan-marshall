@@ -1,6 +1,7 @@
 # CI Operations
 
-CI status checking, waiting, rerunning, and log retrieval.
+CI status checking, waiting, rerunning, log retrieval, and the PR-wide
+`pull_request`-run existence read.
 
 ---
 
@@ -222,3 +223,57 @@ N head lines: the raw `--log-failed` output is filtered to the lines matching
 `ERROR`/`FAIL`/`Exception`/`Traceback` plus surrounding context, with non-adjacent windows
 joined by an elision marker. This guarantees the failure tail is surfaced even when runner-setup
 lines fill the head of the log. `log_lines` reports the filtered line count.
+
+---
+
+## Workflow: Was Anything Ever Triggered? (`checks pull-request-runs`)
+
+**Pattern**: Provider-Agnostic Router (GitHub-only capability)
+
+This read answers a question the other CI verbs cannot: not *how did the checks go*, but *did anything
+run on account of this PR at all*. It is the observable behind the `not_triggered` review-participation
+state — when no `pull_request`-event workflow run exists, no review bot could have published, so a
+required bot's silence says nothing about that bot.
+
+### Step 1: Execute
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci checks pull-request-runs \
+    --pr-number 123
+```
+
+### Step 2: Process Result
+
+```toon
+status: success
+operation: pull_request_runs
+provider: github
+pr_number: 123
+head_branch: feature/example
+run_count: 14
+pull_request_run_count: 6
+has_pull_request_run: true
+not_triggered: false
+```
+
+`has_pull_request_run` and `not_triggered` are exact complements — read whichever polarity the calling
+site states.
+
+### Step 3: Branch on the verdict
+
+| Verdict | What it means | What to do |
+|---------|---------------|------------|
+| `not_triggered: false` | A `pull_request` run exists — the reviewers WERE asked. | Classify each bot from its own observations (`participated`, `in_progress`, a refusal, `participated_stale`, or `absent`). |
+| `not_triggered: true` | No `pull_request` run exists — nothing ever ran on account of this PR. | Pass the bare `--not-triggered` flag to `review_completeness check`, so every otherwise-`absent` required bot resolves `not_triggered`. The remedy is to **trigger the review**, not to escalate a silent reviewer. |
+| `status: unconfigured` | `gh` is not authenticated. | Fail loud. Never read this as `not_triggered: true` — an unauthenticated provider would otherwise report every PR as never having triggered a review. |
+| `status: error` | The PR read or the runs fetch failed. | Fail loud. "The run list was never read" is not "the run list is empty". |
+
+**A `skipped` run still counts as triggered.** The predicate is existence only — no `conclusion` and no
+timestamp is consulted — so a `pull_request` run that ran and concluded `skipped` yields
+`not_triggered: false`. That is deliberate: the workflow *was* triggered and declined to do work, which
+is a different fact from nothing having run.
+
+**GitLab returns an explicit refusal.** The verb's token resolves on both providers because its parser
+is shared, but the observable is GitHub-specific and GitLab's handler says so rather than guessing an
+equivalent. The normative return contract, the `--paginate --slurp` requirement, and the full refusal
+rationale live in [api-contract.md § `checks pull-request-runs`](api-contract.md#checks-pull-request-runs).

@@ -22,6 +22,8 @@ Subcommands:
     ci wait         Wait for CI to complete
     ci rerun        Rerun a workflow run
     ci logs         Get failed run logs
+    checks pull-request-runs  Report whether any pull_request-event workflow run
+                    exists for the requested PR (the not_triggered observable)
     issue create    Create an issue
     issue comment   Post a comment on an existing issue
     issue view      View issue details
@@ -97,7 +99,11 @@ from _github_checks import (  # noqa: F401 — re-exported for callers and tests
     _extract_job_id_from_link,
     _extract_run_id_from_link,
     _extract_segment_from_link,
+    _has_pull_request_event_run,
+    _is_pull_request_event_run,
     _normalize_conclusion,
+    _pull_request_event_runs_for_pr,
+    _run_names_a_different_pr,
 )
 from ci_base import (
     MAX_ELAPSED_SECONDS,
@@ -1552,6 +1558,159 @@ def cmd_repo_merge_queue_enable(args: argparse.Namespace) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# pull-request-runs — the PR-wide "was anything ever triggered?" observable
+# ---------------------------------------------------------------------------
+#
+# The observable behind the ``not_triggered`` participation state. It answers one
+# question: does ANY workflow run triggered by the pull_request event exist for
+# this PR? The head branch is how the runs are FETCHED, not what the answer is
+# scoped to — a run is excluded only when its ``pull_requests`` association
+# reliably names a different PR. A negative means nothing ever ran on account of the PR
+# — the review bots were never asked — which is a different condition from a bot
+# that was asked and stayed silent, and it carries the opposite remedy (trigger
+# the review vs escalate a non-participating bot).
+#
+# Deliberately NOT part of this observable:
+#
+# * ``mergeable_state`` — never read, returned, or branched on. It is a
+#   mergeability signal that GitHub computes asynchronously and reports as
+#   ``UNKNOWN`` while it is still computing, so keying a participation state on it
+#   would make the verdict depend on when the question was asked.
+# * any timestamp comparison — the predicate is existence only (see
+#   ``_pull_request_event_runs_for_pr``).
+# * a run's ``conclusion`` — a ``pull_request`` run that concluded ``skipped``
+#   still proves the PR triggered a workflow, so it is NOT ``not_triggered``.
+
+
+def fetch_branch_workflow_runs(branch: str) -> tuple[list | None, str]:
+    """Fetch every workflow run recorded for ``branch``, across all workflows.
+
+    Returns ``(runs, '')`` on success or ``(None, error)`` on failure. ``None`` is
+    the discriminator a caller MUST honour: it means the run list was never read,
+    which is not the same as reading an empty list. Collapsing the two would let a
+    failed fetch report "no pull_request run exists" and so claim the review bots
+    were never triggered on evidence nobody gathered.
+
+    The response is SLURPED (``--paginate --slurp``). Without ``--slurp``,
+    ``gh api --paginate`` emits one JSON document PER PAGE concatenated into a
+    single stream, which is not valid JSON as a whole: ``json.loads`` either
+    raises or — worse — silently decodes only the first document. A PR whose runs
+    spilled onto page two would then read as zero runs and be misreported as
+    ``not_triggered`` precisely on the busy PRs where a review matters most.
+    ``--slurp`` wraps the pages in one array, and each element is a page object
+    carrying its own ``workflow_runs`` list, so the pages are concatenated here.
+
+    The envelope shape is validated POSITIVELY: the top level must be the slurped
+    list, and every page must be a dict carrying a list-valued ``workflow_runs``.
+    Any other shape returns ``(None, error)`` — the same discriminator a failed
+    ``gh`` call uses — rather than being skipped into an empty run list. Skipping
+    a malformed page would report "no ``pull_request`` run exists" on evidence
+    nobody gathered, which is exactly the collapse the ``None`` discriminator
+    above exists to prevent.
+    """
+    owner, repo = get_repo_info()
+    if not owner or not repo:
+        return None, 'Could not resolve repository owner/name from the git remote'
+
+    endpoint = f'repos/{owner}/{repo}/actions/runs?branch={quote(branch, safe="")}&per_page=100'
+    returncode, stdout, stderr = run_gh(['api', '--paginate', '--slurp', endpoint])
+    if returncode != 0:
+        return None, stderr.strip() or 'gh api actions/runs failed'
+
+    try:
+        payload = json.loads(stdout)
+    except json.JSONDecodeError:
+        return None, f'Failed to parse actions/runs response: {stdout[:100]}'
+
+    # ``--slurp`` yields a list of page objects. A single un-slurped object is
+    # NOT accepted: the only call site above always passes ``--slurp``, so
+    # tolerating an unwrapped page would mask a dropped flag — a pagination
+    # regression — instead of surfacing it.
+    if not isinstance(payload, list):
+        return None, f'Malformed actions/runs envelope: expected a slurped list of pages, got {type(payload).__name__}'
+
+    runs: list = []
+    for index, page in enumerate(payload):
+        if not isinstance(page, dict):
+            return None, f'Malformed actions/runs envelope: page {index} is {type(page).__name__}, expected an object'
+        page_runs = page.get('workflow_runs')
+        if not isinstance(page_runs, list):
+            return None, f'Malformed actions/runs envelope: page {index} has no list-valued workflow_runs (got {type(page_runs).__name__})'
+        runs.extend(page_runs)
+    return runs, ''
+
+
+def pull_request_runs_result(pr_number: int | str) -> dict:
+    """Shared handler for the ``pull-request-runs`` observable, used by BOTH entry points.
+
+    One body serves the ``ci checks pull-request-runs`` abstraction verb and the
+    ``github_pr pull_request_runs`` verb, so the two can never drift into
+    reporting different answers to the same question.
+
+    Fails loud when the provider is unconfigured — a typed ``unconfigured``
+    status, never a silent ``not_triggered: true``. That distinction is the whole
+    point: an unauthenticated gh would otherwise report every PR as never having
+    triggered a review.
+
+    The run list is fetched branch-scoped, but the observable is reported for the
+    REQUESTED PR: runs whose ``pull_requests`` association reliably names a
+    different PR are excluded, so a reused branch's historical runs cannot
+    suppress ``not_triggered`` for a PR that never triggered anything. The
+    exclusion fails SAFE — an absent or unusable association keeps the run — see
+    ``_run_names_a_different_pr``.
+    """
+    is_auth, auth_err = check_auth()
+    if not is_auth:
+        return {
+            'status': 'unconfigured',
+            'operation': 'pull_request_runs',
+            'provider': 'github',
+            'detail': auth_err,
+        }
+
+    pr_data = view_pr_data(str(pr_number))
+    if pr_data.get('status') != 'success':
+        return make_error(
+            'pull_request_runs',
+            'Could not resolve the PR head branch',
+            str(pr_data.get('error', '')),
+        )
+    branch = pr_data.get('head_branch') or ''
+    if not branch:
+        return make_error('pull_request_runs', 'PR carries no head branch')
+
+    runs, error = fetch_branch_workflow_runs(branch)
+    if runs is None:
+        return make_error('pull_request_runs', 'Failed to fetch workflow runs', error)
+
+    # Bounded to the REQUESTED PR, not merely to its head branch: a run whose
+    # association reliably names another PR is excluded, while a run carrying no
+    # usable association is kept (the fail-safe direction).
+    pull_request_runs = _pull_request_event_runs_for_pr(runs, pr_number)
+    has_pull_request_run = bool(pull_request_runs)
+    return {
+        'status': 'success',
+        'operation': 'pull_request_runs',
+        'provider': 'github',
+        'pr_number': pr_number,
+        'head_branch': branch,
+        'run_count': len(runs),
+        'pull_request_run_count': len(pull_request_runs),
+        # The observable itself. ``not_triggered`` is true only when NO
+        # pull_request-event run for THIS PR exists — a run that exists and
+        # concluded ``skipped`` keeps this false, because the workflow was
+        # triggered.
+        'has_pull_request_run': has_pull_request_run,
+        'not_triggered': not has_pull_request_run,
+    }
+
+
+def cmd_checks_pull_request_runs(args: argparse.Namespace) -> dict:
+    """``checks pull-request-runs`` — report the PR-wide pull_request-run observable."""
+    return pull_request_runs_result(args.pr_number)
+
+
+# ---------------------------------------------------------------------------
 # Command handlers (bodies live in the co-located domain submodules)
 #
 # These imports sit at the bottom of the file, after every primitive above is
@@ -1686,6 +1845,7 @@ def main() -> int:
         ('checks', 'status'): cmd_ci_status,
         ('checks', 'wait'): cmd_ci_wait,
         ('checks', 'wait-for-status-flip'): cmd_ci_wait_for_status_flip,
+        ('checks', 'pull-request-runs'): cmd_checks_pull_request_runs,
         ('checks', 'rerun'): cmd_ci_rerun,
         ('checks', 'logs'): cmd_ci_logs,
         ('issue', 'create'): cmd_issue_create,

@@ -261,6 +261,108 @@ lint	completed	success	30	https://github.com/org/repo/actions/runs/113	Lint
 
 ---
 
+### checks pull-request-runs
+
+Report whether ANY `pull_request`-event workflow run exists for the PR's head branch — the PR-wide
+observable behind the `not_triggered` review-participation state. Pure read: it files nothing, waits
+for nothing, and mutates nothing.
+
+**Command**:
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci checks pull-request-runs \
+    --pr-number 123
+```
+
+**Arguments**:
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `--pr-number` | Yes | PR number |
+
+**Provider API shape** — backed by the Actions **runs** collection, not by the checks/statuses surface
+the sibling `checks status` / `checks wait` verbs read:
+
+| Aspect | GitHub | GitLab |
+|--------|--------|--------|
+| PR read | `pr view` (to resolve the head branch) | — |
+| Runs read | `gh api --paginate --slurp repos/{owner}/{repo}/actions/runs?branch={head_branch}&per_page=100` | — |
+| Predicate | a run whose `event` is `pull_request` exists in the collection | — |
+| Availability | supported | **unsupported — explicit refusal** |
+
+`--paginate --slurp` is load-bearing rather than incidental. Without `--slurp`, `gh api --paginate`
+emits one JSON document **per page** concatenated into a single stream, which is not valid JSON as a
+whole: a parse either raises or — worse — silently decodes only the first document. A PR whose runs
+spilled onto page two would then read as zero runs and be misreported as `not_triggered` precisely on
+the busy PRs where a review matters most. `--slurp` wraps the pages into one array whose elements each
+carry their own `workflow_runs` list, and the handler concatenates them.
+
+**Success Output**:
+```toon
+status: success
+operation: pull_request_runs
+provider: github
+pr_number: 123
+head_branch: feature/example
+run_count: 14
+pull_request_run_count: 6
+has_pull_request_run: true
+not_triggered: false
+```
+
+| Field | Meaning |
+|-------|---------|
+| `head_branch` | The PR's head branch, resolved from the PR read; the branch the runs collection is keyed on. |
+| `run_count` | Every workflow run recorded for that branch, whatever triggered it. |
+| `pull_request_run_count` | The subset whose `event` is `pull_request`. |
+| `has_pull_request_run` | The predicate: at least one `pull_request`-event run exists. |
+| `not_triggered` | The exact complement of `has_pull_request_run`. Both are carried because callers read the question in both polarities and the participation state's own name is worth stating positively. |
+
+**The predicate is existence only.** No `conclusion` is consulted, so a `pull_request` run that exists
+and concluded `skipped` yields `not_triggered: false` — the workflow *was* triggered and declined to do
+work, which is a different fact from nothing having run at all. No timestamp is consulted either.
+And `mergeable_state` is never read, returned, or branched on: GitHub computes mergeability
+asynchronously and reports `UNKNOWN` while it is still computing, so a participation state keyed on it
+would depend on *when* the question happened to be asked rather than on what happened.
+
+**Two failure modes fail loud, never into `not_triggered: true`:**
+
+```toon
+status: unconfigured
+operation: pull_request_runs
+provider: github
+detail: <gh auth failure reason>
+```
+
+An unauthenticated `gh` returns the typed `unconfigured` status — collapsing it into
+`not_triggered: true` would report every PR as never having triggered a review. A failed runs fetch
+likewise returns the standard error envelope (`operation: pull_request_runs`): "the run list was never
+read" and "the run list is empty" are distinct facts, and conflating them would claim the review bots
+were never triggered on evidence nobody gathered.
+
+**GitLab returns an explicit refusal**, not silence and not a guessed equivalent:
+
+```toon
+status: error
+operation: pull_request_runs
+error: "unsupported on GitLab: the pull_request-event run observable is GitHub-specific ..."
+context: pr_number=123
+```
+
+The verb's parser lives in the shared `ci_base.build_parser`, so the token resolves on both providers;
+GitLab registers a handler that names the provider-capability gap rather than letting the token surface
+as an unrecognised subcommand, which would misattribute the gap as a parser defect. The gap is genuine:
+GitLab distinguishes a merge-request pipeline by its `source` (`merge_request_event`) on a different
+endpoint, and the detached-vs-branch pipeline distinction does not map one-to-one onto "a
+`pull_request`-event run exists". Inferring an equivalent would yield a `not_triggered` verdict from a
+signal that does not mean what the caller thinks it means, so `not_triggered` is derivable on GitHub
+only until the mapping is deliberately designed.
+
+Both entry points — this abstraction verb and `github_pr pull_request_runs` — call ONE shared handler
+(`github_ops.pull_request_runs_result`), so they cannot drift into different answers to the same
+question. The consumer-side use is documented in
+[`pr-review-operations.md`](pr-review-operations.md) § "The widened participation taxonomy".
+
+---
+
 ## CI Failure Log Download & Filtering
 
 When one or more CI checks complete with `result: failure`, the `checks status` and `checks wait` operations augment each failing entry with the on-disk paths of its downloaded raw log and its filtered error-extraction variant. The raw download and the parse/filter pass are two distinct provider operations; both persist under the plan-scoped artifact tree so retrospectives and triage can read the logs offline.

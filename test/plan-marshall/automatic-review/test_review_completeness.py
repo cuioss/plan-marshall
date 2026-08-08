@@ -10,6 +10,9 @@ reports whether every REQUIRED bot's participation is proven:
     participated_but_empty  — proven participant that filed none (accounted-for)
     refused_awaitable       — published a refusal whose window reopens on its own
     refused_hard            — published a refusal that does not usefully reopen
+    participated_stale      — published in a declared shape, but the currency test
+                              failed, so the review predates this HEAD (blocking,
+                              yet remedied by a re-trigger rather than by awaiting)
     in_progress             — review still running at the poll bound
     absent                  — no evidence of any kind (the fail-closed default)
 
@@ -49,6 +52,26 @@ if str(SCRIPTS_DIR) not in sys.path:
 
 import review_completeness as rc  # noqa: E402
 import _findings_core as fc  # noqa: E402
+
+# The registered bot population, hoisted to module scope so every sweep over it —
+# the collection-time parametrize below and the in-test PR-wide sweep — reads ONE
+# guarded derivation rather than re-deriving it unguarded at each site.
+#
+# The assertion is load-bearing at COLLECTION time, not merely tidy: pytest
+# generates zero cases from an empty parametrize argument and reports the test as
+# SKIPPED, not failed. An empty registry would therefore silently retire every
+# property swept over this population while the suite still read green. A check
+# that can return zero from an empty population must assert that population's size.
+#
+# ``derive_bot_flags`` guards its own derivation internally (see
+# ``_bot_flag_derivation``), so ``_LIST_FLAGS`` below needs no second guard here;
+# this population has no such internal guard and so takes one at the use site.
+_REGISTERED_BOTS = rc.bot_registry.bot_kinds()
+assert _REGISTERED_BOTS, (
+    'the bot registry declared no bot — every sweep over this population would '
+    'generate zero parametrized cases, which pytest reports as SKIPPED rather '
+    'than failed, so the swept properties would be covered by nothing'
+)
 
 # Evidence pairs that match each bot's DECLARED participation_evidence. Derived by
 # name from the registry docs rather than invented, so a registry change that
@@ -408,6 +431,265 @@ class TestStateTaxonomy:
 
         assert _state_of(result, 'coderabbit') == rc.STATE_PARTICIPATED
 
+    def test_stale_participation_is_participated_stale_and_blocks_like_absent(self, plan_context):
+        """A required bot whose publish failed the currency test blocks exactly as ``absent``.
+
+        The state is a RENAME of what was already reported, not a softening: the
+        gate outcome is asserted to be identical to the ``absent`` control below,
+        so nothing about this member can be read as relaxing the quorum. What
+        changes is that the operator now learns the remedy is a re-review trigger
+        rather than an escalation for a bot that never engaged.
+        """
+        plan_id = 'rc-state-stale'
+        plan_context.plan_dir_for(plan_id)
+
+        result = rc.check_completeness(
+            plan_id, ['coderabbit'], stale_participation_bots=['coderabbit']
+        )
+
+        assert _state_of(result, 'coderabbit') == rc.STATE_PARTICIPATED_STALE
+        assert result['unproven_bots'] == ['coderabbit']
+        assert result['participation_complete'] is False
+
+        # The absent control, over an otherwise identical store: same verdict, same
+        # unproven set. Only the reported state differs.
+        control_id = 'rc-state-stale-absent-control'
+        plan_context.plan_dir_for(control_id)
+        control = rc.check_completeness(control_id, ['coderabbit'])
+
+        assert control['participation_complete'] == result['participation_complete']
+        assert control['unproven_bots'] == result['unproven_bots']
+        assert _state_of(control, 'coderabbit') == rc.STATE_ABSENT
+
+    def test_stale_participation_blocks_in_both_triage_modes(self, plan_context):
+        """Stale participation is a participation gap, independent of triage state.
+
+        Pairs with the pending-finding cases: a pending finding's contribution
+        depends on ``triage_ran``, an unproven state's never does.
+        """
+        for triage_ran in (False, True):
+            plan_id = f'rc-state-stale-triage-{str(triage_ran).lower()}'
+            plan_context.plan_dir_for(plan_id)
+
+            result = rc.check_completeness(
+                plan_id,
+                ['coderabbit'],
+                triage_ran=triage_ran,
+                stale_participation_bots=['coderabbit'],
+            )
+
+            assert result['participation_complete'] is False
+            assert _state_of(result, 'coderabbit') == rc.STATE_PARTICIPATED_STALE
+
+    def test_stale_optional_bot_is_reported_but_does_not_block(self, plan_context):
+        """The required/optional dial governs the new member exactly as the others."""
+        plan_id = 'rc-state-stale-optional'
+        plan_context.plan_dir_for(plan_id)
+
+        result = rc.check_completeness(
+            plan_id, [], optional_bots=['coderabbit'], stale_participation_bots=['coderabbit']
+        )
+
+        assert _state_of(result, 'coderabbit') == rc.STATE_PARTICIPATED_STALE
+        assert result['unproven_bots'] == ['coderabbit']
+        assert result['participation_complete'] is True
+
+    def test_proven_participation_outranks_stale_participation(self, plan_context):
+        """Precedence edge (a): proven evidence beats a stale observation.
+
+        A bot with one fresh qualifying comment and one stale one is a participant.
+        The producer already subtracts the proven set, so this arrival shape should
+        not occur — the branch order is asserted anyway, because a classifier that
+        depended on its caller having filtered correctly would be one refactor away
+        from crediting nothing.
+        """
+        plan_id = 'rc-state-stale-vs-proven'
+        plan_context.plan_dir_for(plan_id)
+        _seed(plan_id, 'coderabbit', resolution='fixed')
+
+        result = rc.check_completeness(
+            plan_id,
+            ['coderabbit'],
+            participated_bots=CODERABBIT_EVIDENCE,
+            stale_participation_bots=['coderabbit'],
+        )
+
+        assert _state_of(result, 'coderabbit') == rc.STATE_PARTICIPATED
+
+    @pytest.mark.parametrize('bot_kind', _REGISTERED_BOTS)
+    def test_a_refusal_outranks_stale_participation(self, bot_kind, plan_context):
+        """Precedence edge (b): a newer refusal outranks a stale publish.
+
+        A refusal names a reason the bot will not review NOW, whereas a stale
+        publish only says its last review predates this HEAD — and the two call for
+        different remedies (wait out or accept the refusal vs re-trigger), so the
+        newer and more actionable signal wins.
+
+        Swept over the WHOLE registered population, and the expected member is
+        derived from each bot's own ``rate_limit_class`` rather than written as a
+        literal, so no bot name is pinned here and a bot whose class changes is
+        still asserted correctly.
+        """
+        plan_id = f'rc-stale-vs-refusal-{bot_kind}'
+        plan_context.plan_dir_for(plan_id)
+
+        result = rc.check_completeness(
+            plan_id,
+            [bot_kind],
+            refused_bots=[bot_kind],
+            stale_participation_bots=[bot_kind],
+        )
+
+        awaitable = rc.bot_registry.rate_limit_class(bot_kind) == 'awaitable_window'
+        expected = rc.STATE_REFUSED_AWAITABLE if awaitable else rc.STATE_REFUSED_HARD
+
+        assert _state_of(result, bot_kind) == expected
+        assert _state_of(result, bot_kind) != rc.STATE_PARTICIPATED_STALE
+
+    def test_stale_participation_outranks_in_progress(self, plan_context):
+        """A stale publish is stronger evidence than a still-running review.
+
+        The branch sits ABOVE ``in_progress``: an observed publish — even a stale
+        one — says more about what the bot did than an unfinished check-run does.
+        """
+        plan_id = 'rc-state-stale-vs-in-progress'
+        plan_context.plan_dir_for(plan_id)
+
+        result = rc.check_completeness(
+            plan_id,
+            ['coderabbit'],
+            in_progress_bots=['coderabbit'],
+            stale_participation_bots=['coderabbit'],
+        )
+
+        assert _state_of(result, 'coderabbit') == rc.STATE_PARTICIPATED_STALE
+
+    def test_stale_participation_is_an_unproven_state(self, plan_context):
+        """The membership is asserted on the constant set, not only on a verdict.
+
+        ``_UNPROVEN_STATES`` is what makes the member block; asserting the set
+        directly stops a future edit from removing the member while every
+        verdict-level test still passes for an unrelated reason.
+        """
+        assert rc.STATE_PARTICIPATED_STALE in rc._UNPROVEN_STATES
+        # And it is never confused with either accounted-for outcome.
+        assert rc.STATE_PARTICIPATED not in rc._UNPROVEN_STATES
+        assert rc.STATE_PARTICIPATED_BUT_EMPTY not in rc._UNPROVEN_STATES
+
+    def test_not_triggered_refines_absent_and_blocks(self, plan_context):
+        """With the PR-wide flag set, an otherwise-absent required bot is not_triggered.
+
+        The refinement, and the whole point of the member: ``absent`` means the bot
+        was asked and did not answer, so its remedy is to escalate a
+        non-participating reviewer. ``not_triggered`` means nothing ever asked it, so
+        its remedy is to trigger the review. Both block; the operator is pointed at
+        opposite actions.
+        """
+        plan_id = 'rc-state-not-triggered'
+        plan_context.plan_dir_for(plan_id)
+
+        result = rc.check_completeness(plan_id, ['coderabbit'], not_triggered=True)
+
+        assert _state_of(result, 'coderabbit') == rc.STATE_NOT_TRIGGERED
+        assert result['unproven_bots'] == ['coderabbit']
+        assert result['participation_complete'] is False
+
+    def test_not_triggered_false_leaves_the_absent_verdict_untouched(self, plan_context):
+        """The paired control: without the flag the same store still reports absent.
+
+        Isolates the PR-wide flag as the only difference, so the new member cannot
+        be credited with a verdict change it did not cause.
+        """
+        plan_id = 'rc-state-not-triggered-control'
+        plan_context.plan_dir_for(plan_id)
+
+        result = rc.check_completeness(plan_id, ['coderabbit'], not_triggered=False)
+
+        assert _state_of(result, 'coderabbit') == rc.STATE_ABSENT
+        assert result['participation_complete'] is False
+
+    def test_not_triggered_applies_pr_wide_to_every_classified_bot(self, plan_context):
+        """One PR-wide condition resolves EVERY otherwise-absent bot, not just the first.
+
+        The flag is a single bool precisely because the condition holds for the whole
+        PR. Sweeping the registered population pins that the branch is inside the
+        per-bot loop rather than applied once.
+        """
+        plan_id = 'rc-state-not-triggered-pr-wide'
+        plan_context.plan_dir_for(plan_id)
+        # The module-scope population, already guarded non-empty at import.
+        bots = _REGISTERED_BOTS
+
+        result = rc.check_completeness(plan_id, bots, not_triggered=True)
+
+        assert {r['state'] for r in result['bot_states']} == {rc.STATE_NOT_TRIGGERED}
+        assert sorted(result['unproven_bots']) == sorted(bots)
+
+    @pytest.mark.parametrize(
+        'observation',
+        ['participated_with_findings', 'participated_empty', 'refused', 'in_progress', 'stale'],
+    )
+    def test_not_triggered_never_overrides_a_per_bot_observation(self, observation, plan_context):
+        """Precedence: a PR-wide "nothing ran" must not overwrite evidence that it did.
+
+        The flag is the LAST branch before the fallthrough, so every state carrying
+        positive evidence about a specific bot outranks it. Swept across all five
+        earlier states rather than spot-checked on one, because a misplaced branch
+        would capture whichever states sit below it — a single-state check would pass
+        while the branch sat one line too high.
+        """
+        plan_id = f'rc-not-triggered-precedence-{observation.replace("_", "-")}'
+        plan_context.plan_dir_for(plan_id)
+
+        kwargs: dict = {}
+        expected: str
+        if observation == 'participated_with_findings':
+            _seed(plan_id, 'coderabbit', resolution='fixed')
+            kwargs['participated_bots'] = CODERABBIT_EVIDENCE
+            expected = rc.STATE_PARTICIPATED
+        elif observation == 'participated_empty':
+            kwargs['participated_bots'] = CODERABBIT_EVIDENCE
+            expected = rc.STATE_PARTICIPATED_BUT_EMPTY
+        elif observation == 'refused':
+            kwargs['refused_bots'] = ['coderabbit']
+            expected = rc.STATE_REFUSED_AWAITABLE
+        elif observation == 'in_progress':
+            kwargs['in_progress_bots'] = ['coderabbit']
+            expected = rc.STATE_IN_PROGRESS
+        else:
+            kwargs['stale_participation_bots'] = ['coderabbit']
+            expected = rc.STATE_PARTICIPATED_STALE
+
+        result = rc.check_completeness(plan_id, ['coderabbit'], not_triggered=True, **kwargs)
+
+        assert _state_of(result, 'coderabbit') == expected
+        assert _state_of(result, 'coderabbit') != rc.STATE_NOT_TRIGGERED
+
+    def test_not_triggered_is_an_unproven_state(self, plan_context):
+        """Membership asserted on the constant set, not only via a verdict."""
+        assert rc.STATE_NOT_TRIGGERED in rc._UNPROVEN_STATES
+
+    def test_not_triggered_default_is_false(self, plan_context):
+        """The parameter defaults FALSE, so no existing caller's verdict moves.
+
+        The flag is opt-in: an existing caller that does not pass it keeps the
+        ``absent`` verdict it had before the member existed.
+        """
+        plan_id = 'rc-state-not-triggered-default'
+        plan_context.plan_dir_for(plan_id)
+
+        result = rc.check_completeness(plan_id, ['coderabbit'])
+
+        assert _state_of(result, 'coderabbit') == rc.STATE_ABSENT
+
+    def test_stale_state_value_is_never_the_bare_word(self, plan_context):
+        """The state value is ``participated_stale``, never a bare ``stale``.
+
+        The short name would lose the very distinction the member exists to carry:
+        that the bot DID publish, unlike a bot that never engaged.
+        """
+        assert rc.STATE_PARTICIPATED_STALE == 'participated_stale'
+
     def test_every_classified_bot_gets_exactly_one_state(self, plan_context):
         """The classification is total and mutually exclusive over required ∪ optional."""
         plan_id = 'rc-state-total'
@@ -431,6 +713,7 @@ class TestStateTaxonomy:
             rc.STATE_REFUSED_AWAITABLE,
             rc.STATE_REFUSED_HARD,
             rc.STATE_PARTICIPATED_BUT_EMPTY,
+            rc.STATE_PARTICIPATED_STALE,
             rc.STATE_PARTICIPATED,
         }
         assert {r['state'] for r in result['bot_states']} <= known_states
@@ -743,6 +1026,105 @@ class TestCLI:
         assert with_evidence.success, with_evidence.stderr
         assert 'participation_complete: true' in with_evidence.stdout
         assert 'unproven_bots' not in with_evidence.stdout
+
+    # -----------------------------------------------------------------------
+    # --not-triggered: a BOOLEAN flag, hand-covered by necessity
+    # -----------------------------------------------------------------------
+    #
+    # These four cases are written out rather than swept, and that is the point.
+    # ``_bot_flag_derivation.derive_bot_flags`` builds its population from the live
+    # parser with the regex ``--[a-z][a-z-]*-bots``, so every flag in the
+    # ``--*-bots`` FAMILY inherits the bare-form / advertised-form sweeps
+    # automatically — ``--stale-participation-bots`` did, gaining its coverage with
+    # no edit to any suite. ``--not-triggered`` is a ``store_true`` bool and matches
+    # that regex nowhere, so it inherits NOTHING and would ship entirely untested
+    # while every derived sweep still reported clean. The flag is a bool because the
+    # observable is PR-wide, so this gap is structural rather than incidental: any
+    # future PR-wide boolean needs its own hand-written cases too.
+
+    def test_not_triggered_flag_is_accepted_and_drives_the_verdict(self, plan_context):
+        """The flag parses through the REAL CLI and changes the reported state.
+
+        Driven through the constructed-argv subprocess runner rather than an
+        in-process call, because the parser is the part no derived sweep covers for
+        this flag: an in-process ``check_completeness`` call would pass even if the
+        argparse declaration were missing entirely.
+        """
+        plan_id = 'rc-cli-not-triggered'
+        plan_context.plan_dir_for(plan_id)
+
+        result = run_script(
+            SCRIPT_PATH,
+            'check',
+            '--plan-id',
+            plan_id,
+            '--required-bots',
+            'coderabbit',
+            '--not-triggered',
+        )
+
+        assert result.success, result.stderr
+        assert result.returncode != 2, result.stderr
+        assert 'participation_complete: false' in result.stdout
+        assert 'coderabbit,not_triggered' in result.stdout
+
+    def test_omitting_not_triggered_reports_absent_instead(self, plan_context):
+        """The paired control through the same CLI: omitted flag keeps ``absent``.
+
+        Isolates the flag as the only difference between the two invocations, so the
+        state change cannot be attributed to anything else in the command line.
+        """
+        plan_id = 'rc-cli-not-triggered-omitted'
+        plan_context.plan_dir_for(plan_id)
+
+        result = run_script(
+            SCRIPT_PATH, 'check', '--plan-id', plan_id, '--required-bots', 'coderabbit'
+        )
+
+        assert result.success, result.stderr
+        assert 'coderabbit,absent' in result.stdout
+        assert 'not_triggered' not in result.stdout
+
+    def test_not_triggered_takes_no_value(self, plan_context):
+        """It is ``store_true``: a value after it is not consumed as its own.
+
+        Pins the shape deliberately. Its list-flag siblings all declare
+        ``nargs='?'``, so a reader (or a caller copying a sibling's call shape) could
+        reasonably expect a value here; asserting the bool shape stops a value from
+        being silently swallowed.
+        """
+        plan_id = 'rc-cli-not-triggered-novalue'
+        plan_context.plan_dir_for(plan_id)
+
+        result = run_script(
+            SCRIPT_PATH,
+            'check',
+            '--plan-id',
+            plan_id,
+            '--required-bots',
+            'coderabbit',
+            '--not-triggered',
+            '--optional-bots',
+            'sourcery',
+        )
+
+        assert result.success, result.stderr
+        # The sibling flag after it parsed its own value normally.
+        assert 'coderabbit,not_triggered' in result.stdout
+        assert 'sourcery,not_triggered' in result.stdout
+
+    def test_not_triggered_is_advertised_on_the_usage_line(self):
+        """The bool is advertised in the module docstring's ``Usage:`` line.
+
+        The advertised-form agreement tests in
+        ``test_bot_participation_contract.py`` are parametrized over the derived
+        ``--*-bots`` family and therefore never see this flag. Without this case the
+        docs could omit it indefinitely while every derived advertised-form
+        assertion stayed green.
+        """
+        docstring = rc.__doc__ or ''
+
+        assert '--not-triggered' in docstring
 
     def test_unqualified_participated_bot_is_rejected_via_cli(self, plan_context):
         """A bare bot_kind on the CLI does not prove participation either."""
