@@ -186,13 +186,17 @@ def get_log_path(plan_id: str | None, log_type: str = 'script', store: str = 'pl
             ``'orchestrator'`` slipped past to the plans/global branch — or when
             ``plan_id`` is a non-None value that fails :func:`is_valid_plan_id`.
 
-            The plan_id guard is the SHARED containment point for every entry
-            point that turns a client-supplied identifier into a log file path:
+            The plan_id guard is the SHARED containment point for the entry
+            points in this module that turn a client-supplied identifier into a
+            log file path:
             ``log_entry``, ``log_script_execution``, ``log_separator``,
             ``log_work``, ``log_decision``, ``read_work_log`` and
             ``read_decision_log`` all resolve through here, so no caller can
             reach path resolution with an unvalidated identifier even if it
-            performs no check of its own.
+            performs no check of its own. An out-of-module caller resolving a
+            log path directly — the generated executor's build-ledger record is
+            the one such site — is contained by the same raise, and MUST treat
+            it as a possible outcome rather than letting it escape.
 
             This resolver is the BACKSTOP, not the only check. The four
             result-dict entry points — ``log_work``, ``log_decision``,
