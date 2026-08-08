@@ -314,7 +314,7 @@ from plan_logging import log_entry
 log_entry('script', None, 'INFO', '[MY-COMPONENT] Processing started')
 
 # Log to plan-specific log
-log_entry('work', 'EXAMPLE-PLAN', 'INFO', '[ARTIFACT] Created deliverable')
+log_entry('work', 'example-plan', 'INFO', '[ARTIFACT] Created deliverable')
 ```
 
 **Note**: IDE warnings about unresolved imports are expected - PYTHONPATH is set at runtime by the executor.
