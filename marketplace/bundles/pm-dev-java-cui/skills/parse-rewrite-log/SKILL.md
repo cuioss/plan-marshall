@@ -15,7 +15,10 @@ log-parse sibling of `pm-dev-java-cui:search-markers` (Signal A, tree-scan). The
 two-signal model, each signal's coverage boundary, and their complementary
 (never-replacing) relationship are documented in
 [`../search-markers/standards/marker-detection.md`](../search-markers/standards/marker-detection.md).
-This parser complements, never replaces, the tree-scan detector.
+This parser complements, never replaces, the tree-scan detector. How far the
+local `cui-rewrite:disable` marker reaches — and what no local marker reaches,
+whichever signal surfaced it — is stated once in
+[`../search-markers/standards/marker-detection.md` § Suppression-marker scope](../search-markers/standards/marker-detection.md#suppression-marker-scope).
 
 The #118 WARN-line format describes log lines emitted by recipes this bundle's
 domain governs, so the parser is owned here rather than by the core build layer.
