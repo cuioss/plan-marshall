@@ -68,6 +68,15 @@ import review_completeness as rc  # noqa: E402
 
 _CONTRACT_DOC = _AR_SCRIPTS.parent / 'standards' / 'bot-participation-contract.md'
 _AR_SKILL = _AR_SCRIPTS.parent / 'SKILL.md'
+
+#: The docs that CONSUME the taxonomy and act on a block. The closure-count check
+#: below reads the contract doc alone, so a wrong count restated on a consumer
+#: surface was historically unreachable by this suite — which is how the same
+#: defect class survived two review rounds at two different consumer sites.
+_CONSUMER_DOCS = (
+    _AR_SKILL,
+    _AR_SCRIPTS.parent.parent / 'phase-6-finalize' / 'standards' / 'branch-cleanup.md',
+)
 _RC_SCRIPT = get_script_path('plan-marshall', 'automatic-review', 'review_completeness.py')
 
 # THIS repository's tracked config, resolved through conftest's project anchor so
@@ -114,6 +123,12 @@ _MEMBER_ROW = re.compile(r'^\|\s*`(?P<member>[a-z_]+)`\s*\|', re.MULTILINE)
 #: matching, because the sentence wraps across a line break in the source.
 _CLOSURE_COUNT = re.compile(r'classified into exactly one of (?P<count>\w+) members')
 
+#: A consumer-side claim about how many taxonomy members BLOCK. The blocking
+#: subset is ``_UNPROVEN_STATES``, which is strictly smaller than the taxonomy —
+#: ``participated_but_empty`` is a member that never blocks — so a consumer doc
+#: that reaches for the taxonomy's size here overstates the set it is describing.
+_BLOCKING_COUNT = re.compile(r'(?P<count>\w+) blocking members')
+
 #: Cardinal number words indexed by the value they name. The contract states its
 #: closure count in PROSE, so reading it back has to cross the word/integer
 #: boundary rather than grep for a digit that is not there.
@@ -159,6 +174,24 @@ def _documented_members() -> tuple[str, ...]:
         'the doc-to-code direction would pass over an empty set'
     )
     return members
+
+
+def _stated_blocking_counts(text: str) -> tuple[int, ...]:
+    """Every blocking-member COUNT ``text`` states, as integers.
+
+    A ``N blocking members`` phrase whose ``N`` is a qualifier rather than a
+    number ("the", "these") states no count and is skipped — writing no number
+    is the preferred shape, so it is not a claim this check constrains. Both
+    spellings of a real count are read: the cardinal word and the digit.
+    """
+    counts: list[int] = []
+    for match in _BLOCKING_COUNT.finditer(' '.join(text.split())):
+        word = match.group('count')
+        if word in _NUMBER_WORDS:
+            counts.append(_NUMBER_WORDS.index(word))
+        elif word.isdigit():
+            counts.append(int(word))
+    return tuple(counts)
 
 
 def _registered_bots() -> list[str]:
@@ -421,6 +454,74 @@ class TestFailureTaxonomyIsExhaustive:
             f'{len(_NON_PARTICIPATION_MEMBERS)} are derived: '
             f'{sorted(_NON_PARTICIPATION_MEMBERS)}'
         )
+
+    def test_consumer_blocking_counts_agree_with_the_derived_blocking_subset(self):
+        """Consumer-side ``N blocking members`` prose is checked against the code.
+
+        The closure-count check above reads the CONTRACT doc only, so a count
+        restated on a consumer surface is outside its reach. That gap is not
+        hypothetical: the same wrong count appeared at two consumer sites, and
+        one of them contradicted its own enumeration three lines above, with
+        nothing in this suite able to see either.
+
+        The blocking subset is ``_UNPROVEN_STATES``, which is strictly smaller
+        than the taxonomy — ``participated_but_empty`` is a member that never
+        blocks — so reaching for the taxonomy's size here is the specific error
+        this guards. Prefer no count at all in consumer prose; this check only
+        constrains a count that IS stated.
+        """
+        blocking = len(rc._UNPROVEN_STATES)
+        assert 0 < blocking < len(_NON_PARTICIPATION_MEMBERS), (
+            f'the blocking subset ({blocking}) must be a non-empty PROPER subset of '
+            f'the taxonomy ({len(_NON_PARTICIPATION_MEMBERS)}) — otherwise this check '
+            f'cannot distinguish the two counts it exists to keep apart'
+        )
+
+        # Population is the DOC SET, not the match set: with no count stated
+        # anywhere (the preferred shape) there are zero matches, and a zero-match
+        # pass is only honest if the docs were actually read.
+        scanned = 0
+        for doc in _CONSUMER_DOCS:
+            assert doc.is_file(), f'consumer doc {doc} is missing — the scan would be vacuous'
+            scanned += 1
+            for stated in _stated_blocking_counts(doc.read_text(encoding='utf-8')):
+                assert stated == blocking, (
+                    f'{doc.name} claims {stated} blocking members but {blocking} are derived '
+                    f'from _UNPROVEN_STATES: {sorted(rc._UNPROVEN_STATES)}. Note the '
+                    f'taxonomy has {len(_NON_PARTICIPATION_MEMBERS)} members — the '
+                    f'blocking subset excludes the never-blocking ones'
+                )
+
+        assert scanned == len(_CONSUMER_DOCS), 'every consumer doc must be scanned'
+
+    def test_the_blocking_count_extractor_reads_real_counts_and_skips_qualifiers(self):
+        """Positive and negative controls for the extractor the scan above uses.
+
+        The scan passes over a doc set that currently states no count, so on its
+        own it cannot show it would catch anything. These controls pin the
+        discriminator directly: the exact wording of the two defects that
+        reached review is read back as a count, the corrected wording is not,
+        and the digit spelling is covered too.
+        """
+        taxonomy_size = len(_NON_PARTICIPATION_MEMBERS)
+
+        # Positive: the two shipped defects, verbatim. Both stated the TAXONOMY
+        # size where the BLOCKING subset was meant, which is the error itself.
+        assert _stated_blocking_counts(
+            'because two of the seven blocking members name a different remedy'
+        ) == (taxonomy_size,)
+        assert _stated_blocking_counts('7 blocking members') == (taxonomy_size,)
+
+        # Negative: the corrected wording states no count and must not be read
+        # as one — otherwise the fix would itself trip the guard.
+        assert _stated_blocking_counts(
+            'because two of the blocking members name a different remedy'
+        ) == ()
+        assert _stated_blocking_counts('the blocking members enumerated above') == ()
+
+        # And the defect the controls describe is genuinely a defect: the
+        # taxonomy size is NOT the blocking count.
+        assert taxonomy_size != len(rc._UNPROVEN_STATES)
 
     @pytest.mark.parametrize(
         'observation',
