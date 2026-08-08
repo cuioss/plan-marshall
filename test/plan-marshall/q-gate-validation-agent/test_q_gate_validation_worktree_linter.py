@@ -711,6 +711,28 @@ def test_wl_c_names_both_optionality_sources(section_2_15_text: str) -> None:
     )
 
 
+def test_wl_c_constrains_verb_chain_tokens_before_interpolation(wl_c_block_text: str) -> None:
+    """The verb chain reaches an executed probe command, so it must be allow-listed first.
+
+    Step 1 derives the chain from unconstrained non-whitespace runs captured out of
+    an arbitrary scanned file, and step 2 interpolates that chain into a command the
+    linter runs. Markdown arriving through a pull request is untrusted content, so
+    the shape constraint is the containment boundary. Both halves are pinned: the
+    canonical kebab-case token shape, and the UNRESOLVABLE classification that routes
+    a failing token into the existing fail-closed rule instead of into the probe.
+    """
+    assert '^[a-z0-9]+(?:-[a-z0-9]+)*$' in wl_c_block_text, (
+        'The WL-C optionality-resolution step must name the canonical kebab-case token '
+        'shape every extracted verb-chain token is checked against before it is '
+        'interpolated into the probe command.'
+    )
+    assert 'UNRESOLVABLE' in wl_c_block_text, (
+        'A verb-chain token that fails the shape check must be classified UNRESOLVABLE '
+        'so the existing fail-closed rule emits the finding, rather than the malformed '
+        'token being interpolated into an executed command.'
+    )
+
+
 def test_wl_c_states_the_fail_closed_rule(section_2_15_text: str) -> None:
     """An unresolvable verb must emit the finding — unresolvable is not optional."""
     assert 'Fail closed' in section_2_15_text, (
