@@ -57,6 +57,13 @@ plan on the machine where `status.json` already is.
 
 Turning an orchestrator plan spec into a cloud plan. Done locally, where both trees are visible.
 
+**Load the [`author-cloud-plan`](../../.claude/skills/author-cloud-plan/SKILL.md) skill before
+authoring.** This section owns the *mechanics* — naming, the prefix rules, the derive-from-spec order,
+the carry-across set. That skill owns the *judgement* a cloud plan needs to survive a runtime with no
+operator and no view of `.plan/`: self-sufficiency, no-operator deliverables, stop-condition
+derivations, and cold-read verification. The two do not overlap — the skill points back here for every
+mechanic and never restates one.
+
 1. **Pick a staged plan** from the epic's own queue (`orchestrator queue --slug {epic}`), and name the
    cloud plan `{NNN}-{orchestrator-slug}.md` — a numeric priority prefix followed by **the
    orchestrator plan's own slug**. Reusing that slug is what keeps the mapping stable in both
