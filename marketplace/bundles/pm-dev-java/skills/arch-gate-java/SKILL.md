@@ -1,6 +1,6 @@
 ---
 name: arch-gate-java
-description: "Use when running or interpreting the Java arch-gate — the ArchUnit-based architectural-fitness-function check that runs as a per-deliverable read-only structural-boundary gate and emits arch-constraint findings. A thin pointer to the central arch-gate model in plan-marshall:manage-architecture; carries only the Java/ArchUnit binding."
+description: "Use when authoring, running, or interpreting the Java arch-gate — the ArchUnit-based architectural-fitness-function check that runs as a per-deliverable read-only structural-boundary gate and emits arch-constraint findings. Also use when writing an ArchUnit rule or a hand-written ArchCondition, which carry a negative-control and positive-form pairing obligation. A thin pointer to the central arch-gate model in plan-marshall:manage-architecture; carries only the Java/ArchUnit binding."
 user-invocable: false
 mode: knowledge
 ---
@@ -13,7 +13,7 @@ The single authoritative model for `arch-gate` lives in [`arch-gate-fitness-func
 
 ## Enforcement
 
-**Execution mode**: Reference library; load for context when running or interpreting the Java arch-gate. Never execute this document's content as a workflow.
+**Execution mode**: Reference library; load for context when authoring, running, or interpreting the Java arch-gate. Never execute this document's content as a workflow.
 
 **Prohibited actions:**
 - Do not duplicate the central `arch-gate-fitness-functions.md` model here — this skill is a thin pointer
@@ -47,6 +47,8 @@ A hand-written `ArchCondition` reports its finding by adding a `violated(...)` e
 Both halves are individually correct, which is why the composition survives review: `violated(...)` is the documented way for a condition to report a finding, and the `no…` form is the documented way to express a prohibition. Only their combination is wrong, and at the call site `noClasses().should(...)` reads as the intent it silently inverts.
 
 **Pairing requirement.** A hand-written condition MUST also be exercised in the positive rule form — `classes().should(condition)` — against the same deliberately non-compliant fixture, and not merely reviewed by eye. In the positive form the condition's polarity is the one its implementation expressed, so it rejects that fixture; an inverted `no…` composition accepts it. Exercising both forms is what turns the inversion into an observable disagreement at authoring time instead of a green rule that enforces nothing.
+
+The fixture and both rule forms live in a plain unit test of the condition, never as an `@ArchTest` rule over the production tree. A deliberately non-compliant fixture inside the scanned tree would hold the arch-gate permanently red, and the pairing is a check on the condition's polarity rather than a structural claim about the codebase.
 
 ## Related
 
