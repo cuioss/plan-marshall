@@ -173,7 +173,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   --message "(plan-marshall:phase-6-finalize:pre-submission-self-review) Candidate-count gate DISPATCH — total_candidates={N} (>{gate} threshold, cov_scope={cov_scope})"
 ```
 
-**Return-TOON shape invariant**: BOTH branches MUST produce the IDENTICAL return-TOON shape documented in `## Dispatched-envelope output` below (`status`, `display_detail`, `findings[N]{file,line,defect_class,rationale}`). The inline branch produces the same TOON-shaped result in dispatcher context — `display_detail` follows the same three-verdict rule bit-for-bit (`"self-review: nothing to check - no candidates surfaced"` / `"self-review clean: {N} candidates examined, no check matched"` / `"self-review found {K} issues"`), and `findings[]` carries the same entry shape. In particular the inline branch MUST pick between the two clean verdicts on the same `total_candidates == 0` predicate the dispatch branch uses; a branch that collapses them back to one undifferentiated clean string violates this invariant. Downstream consumers (Step 4 bookkeeping, output-template rendering) MUST NOT need to differentiate which branch produced the result. The gate is a pure dispatch-cost optimization — semantics are preserved bit-for-bit.
+**Return-TOON shape invariant**: BOTH branches MUST produce the IDENTICAL return-TOON shape documented in `## Dispatched-envelope output` below (`status`, `display_detail`, `findings[N]{file,line,defect_class,rationale,cohort_size}`). The inline branch produces the same TOON-shaped result in dispatcher context — `display_detail` follows the same three-verdict rule bit-for-bit (`"self-review: nothing to check - no candidates surfaced"` / `"self-review clean: {N} candidates examined, no check matched"` / `"self-review found {K} issues in {C} classes"`), and `findings[]` carries the same entry shape, `cohort_size` included. In particular the inline branch MUST pick between the two clean verdicts on the same `total_candidates == 0` predicate the dispatch branch uses; a branch that collapses them back to one undifferentiated clean string violates this invariant. Downstream consumers (Step 4 bookkeeping, output-template rendering) MUST NOT need to differentiate which branch produced the result. The gate is a pure dispatch-cost optimization — semantics are preserved bit-for-bit.
 
 ### Step 2: LLM cognitive phase (dispatch)
 
@@ -223,6 +223,20 @@ Before scanning the line-level candidate lists, load the contract sources surfac
 ### Step 3: Apply fifteen checks (in-context)
 
 For each non-empty candidate list, apply the corresponding cognitive check to the surfaced items only — never expand the review to candidates the helper did not surface.
+
+#### Class-closure obligation (fix the class, not the instance)
+
+A defect that appears once in a change almost never appears only once: the same misreading applied to one site was usually applied to its siblings in the same edit. Filing one member per round makes the step loop back once per member, and each loop-back round pays a full step dispatch to find the next instance of a defect already understood.
+
+**The obligation**: when a check fires on a surfaced candidate and you record a finding whose `defect_class` is D, you MUST — before composing the findings list — re-scan every OTHER surfaced candidate **of the same candidate list** for D, and file every member you find in the SAME round.
+
+`defect_class` is the machine-readable discriminator this sweep groups on. It is the same token Step 4 Branch B files as the finding `--title`, so no new taxonomy is introduced.
+
+**The bound**: the sweep is bounded by the surface-only rule stated immediately above — it re-examines candidates the surfacer already surfaced and NEVER widens past them. It is a re-scan of the existing candidate set for one more discriminator, not a licence to read files the surfacer did not surface.
+
+**Consequence of the bound, stated so it cannot be misread as a coverage claim**: because the surfaced set is round-dependent (a delta round surfaces only the files changed since the previous round — see Step 1), a delta round's class sweep reaches only the delta surface. A member of class D sitting in a file unchanged since the previous round is NOT swept during a delta round. The class is still closed as a class, because the closing **full-surface confirmation pass** (Step 1, Step 4 Branch A) runs this same sweep over the whole plan diff before the step may record `done`. That confirmation pass — not any intermediate round, and not round 1 — is what closes the class. Round 1's clean result is deliberately not treated as standing evidence for a class first discovered in a later round: the discriminator was never applied to round 1's surface.
+
+**Every finding carries its cohort size.** Each entry in the returned `findings[]` gains a `cohort_size` field: the number of findings sharing that entry's `defect_class` in this round. A cohort of one is then distinguishable from a cohort whose remaining members were never looked for — without the field, both render as a single finding and the difference is invisible.
 
 > **Coverage contract**: the per-candidate lens depth is governed by the coverage instruction resolved in Step 0 (`{cov_instruction}`). The surface-only rule above caps the scope to what the surfacer surfaced at every rung — never widen the candidate set past it. The thoroughness rung sets the depth: `inherit`/`T1`/`T2` → run the fifteen checks below as today (face-value per candidate); `T3`+ → additionally trace each surfaced candidate's siblings and cross-references before adjudicating it (the contract cross-references in Step 2a already supply the anchors). `inherit/inherit` reproduces today's behavior bit-for-bit. See the two-dial scope × thoroughness contract in [`../../persona-plan-marshall-agent/standards/thoroughness.md`](../../persona-plan-marshall-agent/standards/thoroughness.md) and the gather/expand/consume obligation in [`../../persona-plan-marshall-agent/standards/coverage-gathering-contract.md`](../../persona-plan-marshall-agent/standards/coverage-gathering-contract.md).
 
@@ -285,9 +299,11 @@ The "absence-class" checks — contract drift (check 5) and its variant labels n
 ```toon
 status: success | error
 display_detail: "<≤80 char ASCII summary>"
-findings[N]{file,line,defect_class,rationale}:
+findings[N]{file,line,defect_class,rationale,cohort_size}:
   - ...
 ```
+
+`cohort_size` is the number of findings in this round sharing that entry's `defect_class` (see § Class-closure obligation). Every entry carries it, including a genuine cohort of one — an omitted field would be indistinguishable from a cohort whose other members were never looked for.
 
 `status: success` regardless of findings count — the workflow itself succeeds at producing the structural-review verdict; the caller's manifest-step orchestration translates a non-empty `findings` list into the manifest step's `--outcome failed` per the gating-step convention. Empty `findings` → caller marks `--outcome done`.
 
@@ -295,7 +311,7 @@ findings[N]{file,line,defect_class,rationale}:
 
 - Empty `findings` AND `{N} == 0` (**nothing-to-check** verdict) → `"self-review: nothing to check - no candidates surfaced"`. No candidate was surfaced at all, so no check ever ran. The zero-generator fallback path (Step 1) reports this verdict.
 - Empty `findings` AND `{N} > 0` (**no-check-matched** verdict) → `"self-review clean: {N} candidates examined, no check matched"`. Candidates were surfaced and every check was applied to them without firing.
-- Non-empty `findings` → `"self-review found {K} issues"`.
+- Non-empty `findings` → `"self-review found {K} issues in {C} classes"`, where `{C}` is the number of DISTINCT `defect_class` values across those `{K}` findings. The class count rides this verdict rather than a clean one because it is the widest of the three: it renders to 45 characters at `{K}={C}=9999`, leaving 35 characters of headroom against the 80-character budget, whereas the no-check-matched verdict already spends 61 of its 80. Reporting both figures is what makes a round of nine findings in one class legible as one swept cohort rather than as nine unrelated defects.
 
 All three are ≤80-char ASCII with no trailing period, and no verdict is a prefix of another — so a consumer matching a whole verdict string can never mistake one verdict for another, and the two clean verdicts in particular diverge at their second word (`nothing` vs `clean`).
 
@@ -324,12 +340,13 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 
 **Branch B — findings list is non-empty**: first persist every finding to the plan's `qgate-6-finalize.jsonl` finding store, then surface the findings in the finalize TOON output (consumed by `output-template.md`) so the operator sees `file:line` and `defect_class` per finding.
 
-For every entry in the returned `findings[N]{file,line,defect_class,rationale}` list, emit one `manage-findings qgate add` call. This loop runs in the inline dispatcher context (the same context as the `mark-step-done` call below). `--phase 6-finalize` and `--source qgate` are mandatory; `--type bug` is the canonical finding type for a structural self-review defect:
+For every entry in the returned `findings[N]{file,line,defect_class,rationale,cohort_size}` list, emit one `manage-findings qgate add` call. This loop runs in the inline dispatcher context (the same context as the `mark-step-done` call below). `--phase 6-finalize` and `--source qgate` are mandatory; `--type bug` is the canonical finding type for a structural self-review defect. The `--detail` body carries the entry's `cohort_size` so the loop-back fix task addresses the CLASS rather than the instance — a fix task that reads "1 of 4 in this class" is told, at the point of work, that three siblings are waiting:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate add \
   --plan-id {plan_id} --phase 6-finalize --source qgate --type bug \
-  --title "{defect_class}" --detail "{rationale}" --file-path "{file}" \
+  --title "{defect_class}" --detail "{rationale} [defect_class {defect_class}: {cohort_size} finding(s) in this class this round]" \
+  --file-path "{file}" \
   --component pm-plugin-development:ext-self-review-plan-marshall --severity warning
 ```
 
