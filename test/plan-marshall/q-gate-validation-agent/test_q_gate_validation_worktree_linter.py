@@ -40,7 +40,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import MARKETPLACE_ROOT
+from conftest import MARKETPLACE_ROOT, PLAN_DIR_NAME, PROJECT_ROOT, run_script
 
 
 # -----------------------------------------------------------------------------
@@ -450,6 +450,333 @@ def test_section_2_15_has_no_unmarked_cd_worktree_compounds(section_2_15_text: s
         'Section 2.15 contains unmarked "cd <worktree> &&" compounds that '
         'demonstrate the WL-A pattern without an anti-pattern marker: '
         + '; '.join(f'line {idx}: {line.strip()!r}' for idx, line in violations)
+    )
+
+
+# -----------------------------------------------------------------------------
+# WL-C optionality resolution — the narrowing that stops WL-C flagging a
+# missing ``--plan-id`` on a verb whose own argparse declares it optional.
+#
+# The controls below spawn real ``--help`` subprocesses through the live
+# executor (``conftest`` bootstraps ``.plan/execute-script.py`` at session
+# start, so this path is available in a fresh checkout too). They MUST fail
+# loudly rather than skip when the parser is unreachable: a skipped control
+# proves nothing, and the whole point of the narrowing is that it was verified
+# against the real argparse surface rather than against prose.
+# -----------------------------------------------------------------------------
+
+
+_EXECUTOR_PATH = PROJECT_ROOT / PLAN_DIR_NAME / 'execute-script.py'
+
+_MANAGE_LOGGING_NOTATION = 'plan-marshall:manage-logging:manage-logging'
+
+#: The Q-Gate finding this narrowing exists to resolve as fixed (not
+#: suppressed, not tolerated): a WL-C hit on the plan-id-less STEWARD example
+#: in ``manage-logging/SKILL.md``.
+_RESOLVED_FINDING_ID = 'cb10f4'
+
+#: Verbs whose own argparse declares ``--plan-id`` optional — the write verbs
+#: whose plan-less form is the documented global/no-plan logging path.
+_OPTIONAL_PLAN_ID_VERBS = ('decision', 'work', 'script')
+
+#: Verbs whose own argparse declares ``--plan-id`` required.
+_REQUIRED_PLAN_ID_VERBS = ('separator', 'read')
+
+#: The eight auto-routing notations WL-C sweeps for. The sweep regex's
+#: alternation group IS the whitelist, so this set is pinned against the regex
+#: itself rather than against any prose list.
+_EXPECTED_WL_C_NOTATIONS = frozenset(
+    {
+        'manage-files',
+        'manage-tasks',
+        'manage-findings',
+        'manage-references',
+        'manage-solution-outline',
+        'manage-plan-documents',
+        'manage-logging',
+        'manage-status',
+    }
+)
+
+
+def strip_optional_groups(usage: str) -> str:
+    """Remove balanced ``[...]`` and ``(...)`` groups from an argparse usage string.
+
+    This is the documented WL-C discriminator: argparse renders an optional
+    argument inside square brackets and a required one bare, so what survives
+    the strip is exactly the required surface.
+    """
+    kept: list[str] = []
+    depth = 0
+    for char in usage:
+        if char in '[(':
+            depth += 1
+            continue
+        if char in '])':
+            depth = max(depth - 1, 0)
+            continue
+        if depth == 0:
+            kept.append(char)
+    return ''.join(kept)
+
+
+def classify_plan_id(usage: str) -> str:
+    """Classify ``--plan-id`` on a verb as REQUIRED, OPTIONAL, or UNRESOLVABLE.
+
+    ``UNRESOLVABLE`` is the fail-closed outcome: no usage line, or a usage line
+    that never mentions the flag at all. WL-C emits the finding unchanged for an
+    unresolvable verb — unresolvable is NOT optional.
+    """
+    if not usage or not usage.startswith('usage:') or '--plan-id' not in usage:
+        return 'UNRESOLVABLE'
+    return 'REQUIRED' if '--plan-id' in strip_optional_groups(usage) else 'OPTIONAL'
+
+
+def _join_usage_block(help_text: str) -> str:
+    """Collapse argparse's wrapped ``usage:`` block into one logical line."""
+    lines = help_text.split('\n')
+    collected: list[str] = []
+    for line in lines:
+        if not collected:
+            if line.startswith('usage:'):
+                collected.append(line.strip())
+            continue
+        if not line.strip():
+            break
+        collected.append(line.strip())
+    return ' '.join(collected)
+
+
+def _probe_usage_line(*verb_chain: str) -> str:
+    """Spawn ``--help`` for ``verb_chain`` through the live executor.
+
+    Fails loudly — never skips — when the executor is absent or the probe does
+    not exit cleanly. A control that silently skips would let the narrowing ship
+    unverified against the real parser.
+    """
+    assert _EXECUTOR_PATH.is_file(), (
+        f'The WL-C optionality controls probe the live parser through the executor at '
+        f'{_EXECUTOR_PATH}, which is missing. conftest bootstraps it at session start; '
+        f'a missing executor means the probe cannot run — fail loudly rather than skip.'
+    )
+    result = run_script(
+        _EXECUTOR_PATH,
+        _MANAGE_LOGGING_NOTATION,
+        *verb_chain,
+        '--help',
+        cwd=PROJECT_ROOT,
+    )
+    assert result.success, (
+        f'Probing "{_MANAGE_LOGGING_NOTATION} {" ".join(verb_chain)} --help" through the '
+        f'executor exited {result.returncode}. stderr: {result.stderr!r}'
+    )
+    usage = _join_usage_block(result.stdout)
+    assert usage, (
+        f'No "usage:" block in the --help output for verb chain '
+        f'{" ".join(verb_chain) or "<top-level>"}. stdout: {result.stdout!r}'
+    )
+    return usage
+
+
+# The choices set rendered in an argparse usage line, e.g. ``{work,decision}``.
+# Deliberately the same pattern as plugin-doctor's canonical ``_CHOICES_RE``
+# (``_analyze_manage_invocation.py``) rather than a second, quietly diverging
+# mirror of a parse this repository already owns: ``[^{}]+`` cannot match
+# across a nested brace by construction, and it admits a verb name carrying a
+# digit or underscore (``read-v2`` / ``read_all``), which a ``[a-z,\-]`` class
+# would fail to match at all.
+_CHOICES_RE = re.compile(r'\{([^{}]+)\}')
+
+
+def _derive_manage_logging_verb_population() -> tuple[str, ...]:
+    """Derive the complete manage-logging verb set from the script's own parser.
+
+    Population-derived, not hand-listed: the totality control below would be
+    vacuous if it iterated a tuple a future verb addition never updated.
+    """
+    usage = _probe_usage_line()
+    # The subparser choices group is the one immediately followed by ``...``,
+    # the same disambiguation the canonical ``_parse_subcommand_choices``
+    # applies. Taking the first braced group instead happens to be correct for
+    # manage-logging today, but not for the reason the canonical parse is
+    # correct — so mirror the reason, not just the result.
+    verbs: tuple[str, ...] = ()
+    for match in _CHOICES_RE.finditer(usage):
+        if usage[match.end() :].lstrip().startswith('...'):
+            verbs = tuple(name.strip() for name in match.group(1).split(',') if name.strip())
+            break
+    # Fail LOUD when the population cannot be derived: an empty verb set would
+    # make every control that iterates it silently vacuous.
+    assert verbs, (
+        f'Could not derive the manage-logging subcommand choices from its top-level '
+        f'usage line: {usage!r}'
+    )
+    return verbs
+
+
+@pytest.fixture(scope='module')
+def wl_c_block_text(section_2_15_text: str) -> str:
+    """Return the WL-C portion of Section 2.15 (WL-C heading → Suppression rule)."""
+    start = section_2_15_text.find('**Pattern WL-C')
+    assert start != -1, 'Section 2.15 no longer contains a "**Pattern WL-C" subsection.'
+    end = section_2_15_text.find('**Suppression rule**', start)
+    assert end != -1, (
+        'Section 2.15 no longer contains a "**Suppression rule**" block after WL-C; '
+        'the WL-C block boundary cannot be resolved.'
+    )
+    return section_2_15_text[start:end]
+
+
+@pytest.mark.parametrize('verb', _OPTIONAL_PLAN_ID_VERBS)
+def test_wl_c_positive_control_write_verbs_declare_plan_id_optional(verb: str) -> None:
+    """The manage-logging write verbs declare ``--plan-id`` OPTIONAL.
+
+    This is the positive control for the narrowing: because these verbs declare
+    the flag optional, the plan-id-less STEWARD example in
+    ``manage-logging/SKILL.md`` is suppressed under the new rule, which is how
+    Q-Gate finding cb10f4 is resolved as FIXED rather than tolerated.
+    """
+    usage = _probe_usage_line(verb)
+    assert classify_plan_id(usage) == 'OPTIONAL', (
+        f'manage-logging {verb} must classify --plan-id as OPTIONAL so WL-C suppresses '
+        f'the plan-id-less candidate that produced Q-Gate finding {_RESOLVED_FINDING_ID}. '
+        f'Live usage line: {usage!r}'
+    )
+
+
+@pytest.mark.parametrize('verb', _REQUIRED_PLAN_ID_VERBS)
+def test_wl_c_negative_control_other_verbs_declare_plan_id_required(verb: str) -> None:
+    """``separator`` and ``read`` declare ``--plan-id`` REQUIRED.
+
+    This is the guard against the narrowing degenerating into a blanket
+    exemption for the whole notation: within one script, some verbs stay
+    required, and WL-C must keep emitting for those.
+    """
+    usage = _probe_usage_line(verb)
+    assert classify_plan_id(usage) == 'REQUIRED', (
+        f'manage-logging {verb} must classify --plan-id as REQUIRED — the narrowing is '
+        f'per-verb, not per-notation, and a blanket exemption would silently disable '
+        f'WL-C for this script. Live usage line: {usage!r}'
+    )
+
+
+def test_wl_c_optionality_resolves_for_every_manage_logging_verb() -> None:
+    """Every verb in the derived manage-logging population resolves to exactly one class.
+
+    Totality control: the population is derived from the script's own subcommand
+    choices, and the derived size is published in the assertion so a shrunken
+    population cannot masquerade as a clean pass.
+    """
+    population = _derive_manage_logging_verb_population()
+    assert len(population) == 5, (
+        f'manage-logging publishes {len(population)} verbs {population!r}; the WL-C '
+        f'totality control was written against a population of 5. Re-derive the '
+        f'expected classes before widening this number.'
+    )
+    assert set(population) == set(_OPTIONAL_PLAN_ID_VERBS) | set(_REQUIRED_PLAN_ID_VERBS), (
+        f'The derived manage-logging verb population {population!r} no longer matches the '
+        f'verbs the positive and negative controls cover.'
+    )
+
+    classifications = {verb: classify_plan_id(_probe_usage_line(verb)) for verb in population}
+    unresolvable = sorted(verb for verb, cls in classifications.items() if cls == 'UNRESOLVABLE')
+    assert not unresolvable, (
+        f'{len(unresolvable)} of {len(population)} manage-logging verbs did not resolve to '
+        f'REQUIRED or OPTIONAL: {unresolvable}. WL-C fails closed on an unresolvable verb, '
+        f'so an unresolvable result here means the discriminator itself is broken.'
+    )
+
+
+def test_wl_c_sweep_regex_alternation_pins_the_eight_auto_routing_notations(
+    wl_c_block_text: str,
+) -> None:
+    """The WL-C sweep regex's alternation group IS the auto-routing whitelist.
+
+    Pinning the set here is what makes the "there is no separate list" claim
+    checkable: dropping a notation from the alternation silently stops sweeping
+    that script, with no other file to disagree with.
+    """
+    alternation_match = re.search(r'plan-marshall:\(([a-z|\-]+)\)', wl_c_block_text)
+    assert alternation_match is not None, (
+        'Could not find the WL-C sweep regex alternation group '
+        '"plan-marshall:(...)" in the WL-C block.'
+    )
+    notations = frozenset(alternation_match.group(1).split('|'))
+    assert notations == _EXPECTED_WL_C_NOTATIONS, (
+        f'The WL-C auto-routing whitelist drifted. In the regex but not expected: '
+        f'{sorted(notations - _EXPECTED_WL_C_NOTATIONS)}; expected but not in the regex: '
+        f'{sorted(_EXPECTED_WL_C_NOTATIONS - notations)}.'
+    )
+
+
+def test_wl_c_documents_the_optionality_resolution_step(section_2_15_text: str) -> None:
+    """Section 2.15 must document the per-candidate optionality-resolution step."""
+    assert 'WL-C optionality resolution' in section_2_15_text, (
+        'Section 2.15 must document a "WL-C optionality resolution" step between the '
+        'sweep and the finding, or WL-C reverts to flagging every plan-id-less '
+        'invocation regardless of the verb\'s declared optionality.'
+    )
+
+
+def test_wl_c_names_both_optionality_sources(section_2_15_text: str) -> None:
+    """The resolution step must name its primary (live --help) and fallback sources."""
+    assert 'Primary source' in section_2_15_text and '`--help`' in section_2_15_text, (
+        'The WL-C optionality-resolution step must name the primary source: probing '
+        'the live parser with --help and reading its usage: line.'
+    )
+    assert (
+        'Fallback source' in section_2_15_text and '## Canonical invocations' in section_2_15_text
+    ), (
+        'The WL-C optionality-resolution step must name the fallback source: the owning '
+        "SKILL.md's ## Canonical invocations entry for the verb."
+    )
+
+
+def test_wl_c_constrains_verb_chain_tokens_before_interpolation(wl_c_block_text: str) -> None:
+    """The verb chain reaches an executed probe command, so it must be allow-listed first.
+
+    Step 1 derives the chain from unconstrained non-whitespace runs captured out of
+    an arbitrary scanned file, and step 2 interpolates that chain into a command the
+    linter runs. Markdown arriving through a pull request is untrusted content, so
+    the shape constraint is the containment boundary. Both halves are pinned: the
+    canonical kebab-case token shape, and the UNRESOLVABLE classification that routes
+    a failing token into the existing fail-closed rule instead of into the probe.
+    """
+    assert '^[a-z0-9]+(?:-[a-z0-9]+)*$' in wl_c_block_text, (
+        'The WL-C optionality-resolution step must name the canonical kebab-case token '
+        'shape every extracted verb-chain token is checked against before it is '
+        'interpolated into the probe command.'
+    )
+    assert 'UNRESOLVABLE' in wl_c_block_text, (
+        'A verb-chain token that fails the shape check must be classified UNRESOLVABLE '
+        'so the existing fail-closed rule emits the finding, rather than the malformed '
+        'token being interpolated into an executed command.'
+    )
+
+
+def test_wl_c_states_the_fail_closed_rule(section_2_15_text: str) -> None:
+    """An unresolvable verb must emit the finding — unresolvable is not optional."""
+    assert 'Fail closed' in section_2_15_text, (
+        'The WL-C optionality-resolution step must state a fail-closed rule so an '
+        'unresolvable verb emits the finding rather than being silently exempted.'
+    )
+    assert 'Unresolvable is NOT optional' in section_2_15_text, (
+        'The WL-C fail-closed rule must state explicitly that unresolvable is NOT '
+        'optional — the narrowing must never widen into a default exemption.'
+    )
+
+
+def test_stale_auto_routing_scripts_cross_reference_is_gone(agent_text: str) -> None:
+    """The dangling "Auto-routing scripts" subsection reference must not return.
+
+    ``worktree-handling.md`` has no such subsection, so the old WL-C prose and
+    its finding detail both pointed readers at a section that does not exist.
+    """
+    assert 'Auto-routing scripts' not in agent_text, (
+        'q-gate-validation.md still cites a worktree-handling.md "Auto-routing scripts" '
+        'subsection, which does not exist. The whitelist is the sweep regex\'s own '
+        'alternation group, and the contract lives in the "--plan-id Four-State '
+        'Contract" section.'
     )
 
 

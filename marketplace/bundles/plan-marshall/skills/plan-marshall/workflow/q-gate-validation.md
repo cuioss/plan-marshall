@@ -628,15 +628,25 @@ The centralized [`worktree-handling.md`](../../workflow-integration-git/standard
 
 **Pattern WL-C — Missing `--plan-id` on auto-routing scripts**:
 
-Worktree-aware `manage-*` scripts auto-route to the correct worktree when `--plan-id` is supplied. Skills and agents that invoke an auto-routing script without passing `--plan-id` will silently target the main checkout — defeating worktree isolation.
+Worktree-aware `manage-*` scripts auto-route to the correct worktree when `--plan-id` is supplied. A skill or agent that invokes an auto-routing script without passing `--plan-id` silently targets the main checkout — defeating worktree isolation — **when the invoked verb declares `--plan-id` required**. Several auto-routing verbs declare it OPTIONAL, and for those the omission is a documented call shape rather than a defect, so a sweep hit is a candidate that the optionality-resolution step below must resolve before any finding is emitted.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture search --content --pattern 'execute-script\.py\s+plan-marshall:(manage-files|manage-tasks|manage-findings|manage-references|manage-solution-outline|manage-plan-documents|manage-logging|manage-status):[^\s]+\s+[^\s]+\s+(?!(?:\\\n|[^\n])*--plan-id)'
 ```
 
-The whitelist of auto-routing notations is the authoritative list at [`worktree-handling.md`](../../workflow-integration-git/standards/worktree-handling.md) "Auto-routing scripts" subsection. Matches indicate a manage-* invocation that omits `--plan-id`.
+The alternation group inside the sweep regex IS the whitelist of auto-routing notations — there is no separate list to consult. The `--plan-id` contract those notations implement is documented at [`worktree-handling.md`](../../workflow-integration-git/standards/worktree-handling.md) § "The `--plan-id` Four-State Contract". A match is a **candidate**, not yet a finding: it marks a `manage-*` invocation whose logical command carries no `--plan-id`, which is a violation only when the invoked verb declares `--plan-id` required — resolve it with the optionality step below.
 
 The trailing lookahead is `(?:\\\n|[^\n])*`, not `.*`, and the pattern is single-quoted so the shell forwards the backslash escapes verbatim. This is load-bearing: `.` does not match a newline, so a `.*` lookahead sees only the FIRST physical line of a backslash-continued invocation. Every multi-line `manage-*` example in this repo — `… manage-findings resolve \` with `--plan-id` on the continuation line — would then be reported as missing `--plan-id`, flooding the gate with blocking findings for compliant commands. Traversing `\`+newline pairs makes the lookahead span the whole logical command, so only a genuinely `--plan-id`-less invocation matches. A physical line break WITHOUT a trailing backslash still terminates the traversal, so the lookahead can never reach into the next command and mask a real violation.
+
+**WL-C optionality resolution (per candidate, between the sweep and the finding)**: several auto-routing verbs declare `--plan-id` OPTIONAL in their own argparse, and for those an omitted `--plan-id` is a documented call shape rather than a worktree-isolation defect. Resolve every candidate before emitting:
+
+1. **Resolve the full verb chain, and constrain every token before use** — the bare positional tokens between the script name and the first flag token. A `manage-logging` write call yields the chain `decision`; a `manage-findings` Q-Gate call yields `qgate add`. Take **every** leading positional, not just the first: truncating to one token mis-resolves nested notations. Those positionals are captured by the sweep regex above as unconstrained non-whitespace runs out of an arbitrary scanned file, and markdown contributed through a pull request is an untrusted markdown trust surface (see [`pm-plugin-development:plugin-security`](../../../../pm-plugin-development/skills/plugin-security/SKILL.md)) — so the chain is untrusted content that step 2 would interpolate into a command this linter then executes. Allow-list before use: every extracted token MUST match the canonical kebab-case verb shape `^[a-z0-9]+(?:-[a-z0-9]+)*$`. A candidate carrying **any** token that fails the shape check is classified **UNRESOLVABLE** — do not assemble the probe command for it and do not run it; route it directly to step 5, whose fail-closed rule emits the finding unchanged. Only a chain whose every token passed the shape check reaches step 2.
+2. **Primary source — probe the live parser.** Run the executor with the resolved chain and `--help`, then read the `usage:` line and strip balanced `[...]` and `(...)` groups from it. If `--plan-id` survives the strip it is **REQUIRED**; if it appears only inside a stripped group it is **OPTIONAL**. The live `--help` probe and its ancestor-chain walk are the ones § 2.10 already uses — see § 2.10 for that walk rather than repeating it here. The bracket discriminator itself is not a § 2.10 rule: it is the one plugin-doctor's `_parse_required_flags` implements, stripping balanced `[...]` and `(...)` groups from the `usage:` line.
+3. **Fallback source — the owning skill's canonical invocations.** When the probe is unavailable, read the owning `SKILL.md`'s `## Canonical invocations` entry for that verb and apply the same bracket rule to the documented form.
+4. **Decision** — **suppress** the candidate (emit NO finding) when the verb declares `--plan-id` OPTIONAL; **emit** the finding unchanged when the verb declares it REQUIRED.
+5. **Fail closed** — when neither source resolves the verb (the probe is unreachable AND no `## Canonical invocations` entry exists, or a templated placeholder stands where the verb chain should be), emit the finding exactly as before. Unresolvable is NOT optional.
+
+This step is a **narrowing only**: it can turn an emitted finding into a suppressed one, never the reverse, and it changes nothing about WL-A or WL-B.
 
 **Suppression rule**: A match in `{affected_path}` is suppressed (no finding emitted) when EITHER:
 - `{affected_path}` is the centralized `marketplace/bundles/plan-marshall/skills/workflow-integration-git/standards/worktree-handling.md` itself (the standard quotes the forbidden patterns to define them), OR
@@ -664,7 +674,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 |---------|-------------------------|
 | WL-A | "Direct `cd <worktree_path>` shell compounds are forbidden — use `git -C`, `mvn -f`, `pytest --rootdir`, or the appropriate path-flag form documented in worktree-handling.md" |
 | WL-B | "Hard-coded `.claude/worktrees/` references are stale — worktree storage lives under `.plan/local/worktrees/`; update the reference per worktree-handling.md" |
-| WL-C | "manage-* invocation omits `--plan-id`; auto-routing scripts silently target the main checkout when `--plan-id` is missing — see worktree-handling.md 'Auto-routing scripts' subsection" |
+| WL-C | "manage-* invocation omits `--plan-id`, and the invoked verb was checked and declares `--plan-id` required; auto-routing scripts silently target the main checkout when a required `--plan-id` is missing — see worktree-handling.md § 'The `--plan-id` Four-State Contract'" |
 
 **Pass criteria** (silent — no finding emitted):
 - Every sweep returns no in-scope hit across the three patterns over a completely searched population (per the complete-coverage rule), OR
@@ -678,7 +688,9 @@ A sweep whose coverage is non-clean passes neither criterion: it has not establi
 
 **Positive example (WL-B)**: Outline deliverable modifies an agent file that contains `worktree_path: /Users/oliver/git/plan-marshall/.claude/worktrees/foo`. The WL-B sweep returns that path; finding emitted citing the TASK-4 migration.
 
-**Positive example (WL-C)**: Outline deliverable modifies a skill that contains `python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks read --task-number 5` (no `--plan-id`). The WL-C sweep returns that path; finding emitted citing the TASK-10 auto-routing contract.
+**Positive example (WL-C)**: Outline deliverable modifies a skill that contains `python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks read --task-number 5` (no `--plan-id`). The WL-C sweep returns that path as a **candidate**; the optionality-resolution step probes that verb's own help output and finds `--plan-id` surviving the bracket strip (REQUIRED), so the candidate becomes a finding citing the TASK-10 auto-routing contract.
+
+**Negative example (WL-C — optional verb)**: A skill contains an auto-routing invocation whose verb declares `--plan-id` inside a `[...]` group in its `usage:` line (OPTIONAL). The WL-C sweep returns that path as a candidate; the optionality-resolution step suppresses it at step 4 and emits **no** finding — the omission is the verb's documented call shape, not a worktree-isolation defect.
 
 **Negative example**: The centralized `worktree-handling.md` itself contains the forbidden patterns inside an "Anti-pattern" subsection ("Do NOT use `cd $WORKTREE && git status`"). Suppression rule applies — silent pass.
 

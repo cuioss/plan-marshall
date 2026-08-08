@@ -983,20 +983,24 @@ Four rules that make a hand-maintained documentation mirror of a machine-derivab
 
 **Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_literal_count.py`
 
-**Scope**: the `extension-api` `SKILL.md` "Extension Points" table (`marketplace/bundles/plan-marshall/skills/extension-api/SKILL.md`).
+**Scope**: two governed surfaces — the `extension-api` `SKILL.md` "Extension Points" table (`marketplace/bundles/plan-marshall/skills/extension-api/SKILL.md`) and the `persona-security-expert` `SKILL.md` standards index (`marketplace/bundles/plan-marshall/skills/persona-security-expert/SKILL.md`, checked against that skill's `standards/` directory listing).
 
-**Intent**: The "Extension Points" table's "Implementations" column states, per extension point, a numeric-literal count that is a hand-maintained mirror of the on-disk implementer set. When a bundle adds or drops an extension-point implementation without editing the table, the count silently rots — a reader sees a stale implementer tally. This rule makes the count machine-checkable.
+**Intent**: A count token restated by hand alongside the set it describes rots the moment the set changes and the token does not. The "Extension Points" table's "Implementations" column states, per extension point, a numeric-literal count mirroring the on-disk implementer set. The persona-security-expert standards index restates the SAME set three times — a prose count in the REFERENCE MODE paragraph, the "Available Standards" load-on-demand table, and the "Standards Reference" table — so adding or removing a `standards/` document requires three hand edits and nothing fails when one is missed. This rule makes both mirrors machine-checkable against a derived population.
 
-**Detection**: Pure static analysis — locate the "Extension Points" section table, and for each data row read the "Hook Method" cell (the structural discriminator) and the bare-integer "Implementations" cell. Compute the actual implementer count from the bundle tree and flag any mismatch:
+**Detection (Extension Points table)**: Pure static analysis — locate the "Extension Points" section table, and for each data row read the "Hook Method" cell (the structural discriminator) and the bare-integer "Implementations" cell. Compute the actual implementer count from the bundle tree and flag any mismatch:
 
 - For the four AST hooks (`discover_modules()` / `provides_triage()` / `provides_outline_skill()` / `provides_recipes()`), the count is the number of bundles whose `plan-marshall-plugin` `extension.py` carries a *real override* — the same `_is_default_return` classification `provides-method-table-drift` uses, so the two mirrors of the same overrides agree on what an override is.
 - For the `*_provider.py` provider hook, the count is the number of `*_provider.py` files under any bundle's `skills/*/scripts/` tree.
 
 A mismatch emits a warning-severity finding at the offending row's line.
 
-**Structural discriminator**: a row is checkable ONLY when its "Hook Method" cell carries a recognised hook token AND its "Implementations" cell is a bare integer. A row with an unrecognised hook token, and any count number appearing in prose or bullet lists elsewhere in the tree, is out of scope and never flagged — this is what keeps the rule free of false positives on incidental numbers.
+**Detection (persona-security-expert standards index)**: The population is DERIVED from the `standards/*.md` directory listing — never restated in the analyzer, in this catalog, or anywhere else. Three claims are compared against it: the anchored prose counts (``N `standards/` sub-documents`` and `load all N at once`, compared against the population size rendered both as a digit and as an English number word), the "Available Standards" table's `standards/<name>.md` link set, and the "Standards Reference" table's `<name>.md` first-column set. Every finding publishes the derived `population_size` in its `details`, so a clean result cannot be read as a pass over an unread population.
 
-**Recommended fix**: Correct the stale "Implementations" count to the enumerated implementer count (or add/remove the implementation the count was meant to mirror).
+**Fail-closed conditions**: on the standards-index surface, an empty or unreadable `standards/` directory, a missing index section, and a body carrying no anchored prose count each emit a finding rather than passing silently. Only the governed `SKILL.md` being absent short-circuits to "out of scope", exactly as the Extension Points surface does.
+
+**Structural discriminator**: on the Extension Points surface a row is checkable ONLY when its "Hook Method" cell carries a recognised hook token AND its "Implementations" cell is a bare integer. On the standards-index surface a prose token is checkable ONLY when it sits inside one of the two anchored phrasings AND is itself a digit run or an English number word — an ordinary word that happens to precede the anchor phrase is not a count claim and does not match. A row with an unrecognised hook token, and any count number appearing in unanchored prose or bullet lists elsewhere in the tree, is out of scope and never flagged — this is what keeps the rule free of false positives on incidental numbers.
+
+**Recommended fix**: Correct the stale "Implementations" count to the enumerated implementer count (or add/remove the implementation the count was meant to mirror). On the standards-index surface, bring the prose count and both index tables into line with the `standards/` directory contents — never by hand-maintaining a second copy of the file list.
 
 **Suppression mechanism**: None — a stale count is a real drift.
 

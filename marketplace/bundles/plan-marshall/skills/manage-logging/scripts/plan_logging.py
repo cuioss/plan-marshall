@@ -39,7 +39,7 @@ from constants import (
     VALID_WORK_CATEGORIES,
 )
 from file_ops import get_base_dir, get_store_dir, now_utc_iso
-from input_validation import is_valid_plan_id
+from input_validation import NO_PLAN_SENTINEL, is_valid_plan_id
 
 # =============================================================================
 # CONFIGURATION
@@ -181,13 +181,46 @@ def get_log_path(plan_id: str | None, log_type: str = 'script', store: str = 'pl
         Path to log file in logs/ subdirectory
 
     Raises:
-        ValueError: when ``store`` is not one of :data:`VALID_STORES`. The guard
-            closes the silent fall-through where any string other than
-            ``'orchestrator'`` slipped past to the plans/global branch.
+        ValueError: when ``store`` is not one of :data:`VALID_STORES` — closing
+            the silent fall-through where any string other than
+            ``'orchestrator'`` slipped past to the plans/global branch — or when
+            ``plan_id`` is a non-None value that fails :func:`is_valid_plan_id`.
+
+            The plan_id guard is the SHARED containment point for the entry
+            points in this module that turn a client-supplied identifier into a
+            log file path:
+            ``log_entry``, ``log_script_execution``, ``log_separator``,
+            ``log_work``, ``log_decision``, ``read_work_log`` and
+            ``read_decision_log`` all resolve through here, so no caller can
+            reach path resolution with an unvalidated identifier even if it
+            performs no check of its own. An out-of-module caller resolving a
+            log path directly — the generated executor's build-ledger record is
+            the one such site — is contained by the same raise, and MUST treat
+            it as a possible outcome rather than letting it escape.
+
+            This resolver is the BACKSTOP, not the only check. The four
+            result-dict entry points — ``log_work``, ``log_decision``,
+            ``read_work_log`` and ``read_decision_log`` — deliberately keep
+            their own ``is_valid_plan_id`` pre-check, because each returns a
+            structured ``invalid_plan_id`` result dict that is part of its
+            public contract; their handlers catch ``OSError``, not the
+            ``ValueError`` raised here, so those guards MUST NOT be removed on
+            the strength of this containment point.
+            ``plan_id is None`` remains the first-class global-fallback path and
+            is never rejected, and the ``NO_PLAN`` sentinel keeps resolving
+            because :func:`validate_plan_id` carves it out ahead of the
+            kebab-case test.
     """
     if store not in VALID_STORES:
         raise ValueError(
             f'unknown store {store!r}: expected one of {list(VALID_STORES)}'
+        )
+
+    if plan_id is not None and not is_valid_plan_id(plan_id):
+        raise ValueError(
+            f'invalid plan_id {plan_id!r}: a log path resolves only for a well-formed '
+            f'plan identifier, the {NO_PLAN_SENTINEL} sentinel, or None for the '
+            f'global fallback'
         )
 
     log_type = log_type.lower()

@@ -22,12 +22,28 @@ carries a recognised hook token AND whose "Implementations" cell is a bare
 integer is checkable. Unrecognised hook tokens and incidental numbers elsewhere
 are out of scope.
 
+The analyzer's second governed surface is the ``persona-security-expert``
+``SKILL.md`` standards index, which restates the same set three times — a prose
+count, the "Available Standards" table, and the "Standards Reference" table —
+while the set itself lives on disk under that skill's ``standards/`` directory.
+Every claim is compared against the DERIVED directory listing, and every finding
+publishes the derived ``population_size`` so a clean result cannot be read as a
+pass over an unread population.
+
 Test layers:
   * Clean fixture: every count matches the enumerated implementer set → no findings.
   * Negative: an AST-hook count is stale → one finding.
   * Negative: the provider count is stale → one finding.
   * Boundary: unrecognised hook token, non-table form, missing file, multiple
     stale rows, empty root.
+  * Standards index: agreeing index is clean; stale prose count, a table missing
+    a document, and a table listing an absent document are each flagged. Every
+    fixture carries a decoy sentence whose anchor phrase is preceded by an
+    ordinary word, guarding the count-token discriminator in every case.
+  * Standards index fail-closed: empty population, missing index section, an
+    unanchored prose count, a prose link sitting outside the table, and a
+    governed file that exists but cannot be read each emit a finding rather
+    than passing silently.
 """
 
 from pathlib import Path
@@ -117,6 +133,82 @@ def _write_provider(root: Path, bundle: str, skill: str, name: str) -> Path:
     provider = scripts_dir / f'{name}_provider.py'
     provider.write_text('# provider stub\n', encoding='utf-8')
     return provider
+
+
+# ---------------------------------------------------------------------------
+# Helpers — the second governed surface: the persona-security-expert standards
+# index, whose population is the skill's own ``standards/`` directory listing.
+# ---------------------------------------------------------------------------
+
+_PSE_PARTS = ('plan-marshall', 'skills', 'persona-security-expert')
+
+
+def _write_persona_security_expert(
+    root: Path,
+    standards: list[str],
+    *,
+    prose: str | None = 'three',
+    load_listed: list[str] | None = None,
+    reference_listed: list[str] | None = None,
+    include_load_section: bool = True,
+    include_reference_section: bool = True,
+    load_section_prose: str | None = None,
+) -> Path:
+    """Write a persona-security-expert skill whose index may agree or disagree with ``standards``.
+
+    ``standards`` is the on-disk population (the source of truth). ``prose`` /
+    ``load_listed`` / ``reference_listed`` are the three hand-maintained mirrors;
+    each defaults to agreeing with the population so a test states only the
+    mirror it is drifting.
+
+    ``load_section_prose``, when given, is appended INSIDE the "Available
+    Standards" section but AFTER the table — ordinary prose that is part of the
+    section body yet is not a table row.
+    """
+    skill_dir = root.joinpath(*_PSE_PARTS)
+    standards_dir = skill_dir / 'standards'
+    standards_dir.mkdir(parents=True, exist_ok=True)
+    for name in standards:
+        (standards_dir / name).write_text('# standard\n', encoding='utf-8')
+    load_rows = standards if load_listed is None else load_listed
+    reference_rows = standards if reference_listed is None else reference_listed
+
+    out = ['# Persona: Security Expert', '']
+    if prose is None:
+        out += ['**REFERENCE MODE**: the sub-documents hold the content.', '']
+    else:
+        out += [
+            f'**REFERENCE MODE**: it indexes the {prose} `standards/` sub-documents that hold the '
+            f'content. Load one on-demand; do not load all {prose} at once.',
+            '',
+        ]
+    # Decoy carried by EVERY fixture: ordinary prose whose anchor phrase is
+    # preceded by an ordinary word rather than a count token. It must never be
+    # read as a count claim, so it doubles as a regression guard on the
+    # count-token discriminator in every test below.
+    out += [
+        'The `standards/` sub-documents follow two conventions that future authors MUST preserve.',
+        '',
+    ]
+    if include_load_section:
+        out += [
+            '## Available Standards (load on-demand)',
+            '',
+            '| Standard | Load when |',
+            '|----------|-----------|',
+        ]
+        out += [f'| [`standards/{n}`](standards/{n}) | when relevant |' for n in load_rows]
+        out += ['']
+        if load_section_prose is not None:
+            out += [load_section_prose, '']
+    if include_reference_section:
+        out += ['## Standards Reference', '', '| Standard | Purpose |', '|----------|---------|']
+        out += [f'| {n} | purpose |' for n in reference_rows]
+        out += ['']
+
+    skill_md = skill_dir / 'SKILL.md'
+    skill_md.write_text('\n'.join(out), encoding='utf-8')
+    return skill_md
 
 
 # ===========================================================================
@@ -258,6 +350,16 @@ class TestBoundaryConditions:
 
         assert findings == []
 
+    def test_persona_security_expert_absent_contributes_nothing(self, tmp_path: Path) -> None:
+        # Only the extension-api surface exists; the standards-index surface is
+        # out of scope when its governed SKILL.md is absent.
+        _write_bundle_extension(tmp_path, 'bundle-a', {'provides_triage': '"t"'})
+        _write_extension_api_table(tmp_path, [('`provides_triage()`', '1')])
+
+        findings = analyze_literal_count(tmp_path)
+
+        assert findings == []
+
     def test_multiple_stale_rows_co_occur(self, tmp_path: Path) -> None:
         # provides_triage: actual 1, stated 3 (stale). *_provider.py: actual 1,
         # stated 2 (stale). provides_outline_skill: actual 0, stated 0 (clean).
@@ -281,3 +383,190 @@ class TestBoundaryConditions:
         assert by_hook['provides_triage']['actual'] == 1
         assert by_hook['*_provider.py']['stated'] == 2
         assert by_hook['*_provider.py']['actual'] == 1
+
+
+# ===========================================================================
+# Second surface — the persona-security-expert standards index, checked
+# against the population derived from that skill's standards/ directory.
+# ===========================================================================
+
+
+class TestPersonaSecurityExpertIndex:
+    """The prose count and both index tables are verified against standards/ on disk."""
+
+    _POPULATION = ['alpha.md', 'beta.md', 'gamma.md']
+
+    def test_index_agreeing_with_the_directory_is_clean(self, tmp_path: Path) -> None:
+        _write_persona_security_expert(tmp_path, self._POPULATION)
+
+        assert analyze_literal_count(tmp_path) == []
+
+    def test_ordinary_prose_naming_the_standards_dir_is_not_a_count_claim(
+        self, tmp_path: Path
+    ) -> None:
+        # The anchor phrase alone is not the discriminator: the token in front of
+        # it must be a digit or a number word. Ordinary prose that merely names
+        # the standards/ directory would otherwise be read as a count claim whose
+        # "stated count" is an English word, flagging a correct document.
+        skill_md = _write_persona_security_expert(tmp_path, self._POPULATION)
+        body = skill_md.read_text(encoding='utf-8')
+
+        assert '`standards/` sub-documents follow two conventions' in body, (
+            'the decoy sentence must be present, or this test asserts nothing'
+        )
+        assert analyze_literal_count(tmp_path) == []
+
+    def test_digit_form_of_the_prose_count_is_accepted(self, tmp_path: Path) -> None:
+        # The count may be spelled as a word or as a digit; both compare against
+        # the same derived population size.
+        _write_persona_security_expert(tmp_path, self._POPULATION, prose='3')
+
+        assert analyze_literal_count(tmp_path) == []
+
+    def test_stale_prose_count_is_flagged_with_the_derived_population(self, tmp_path: Path) -> None:
+        skill_md = _write_persona_security_expert(tmp_path, self._POPULATION, prose='four')
+
+        findings = analyze_literal_count(tmp_path)
+
+        assert len(findings) == 2, f'both anchored prose claims must be flagged, got {findings}'
+        for finding in findings:
+            assert finding['rule_id'] == RULE_ID
+            assert finding['file'] == str(skill_md)
+            assert finding['severity'] == 'warning'
+            assert finding['fixable'] is False
+            assert finding['details']['surface'] == 'prose'
+            assert finding['details']['stated'] == 'four'
+            assert finding['details']['actual'] == 3
+            # The derived population size travels on every finding, so a reader
+            # can never mistake the check for one run against an unread set.
+            assert finding['details']['population_size'] == 3
+
+    def test_load_table_missing_a_document_is_flagged(self, tmp_path: Path) -> None:
+        _write_persona_security_expert(
+            tmp_path, self._POPULATION, load_listed=['alpha.md', 'beta.md']
+        )
+
+        findings = analyze_literal_count(tmp_path)
+
+        assert len(findings) == 1
+        details = findings[0]['details']
+        assert details['surface'] == 'Available Standards'
+        assert details['missing'] == ['gamma.md']
+        assert details['unknown'] == []
+        assert details['population_size'] == 3
+
+    def test_reference_table_listing_an_absent_document_is_flagged(self, tmp_path: Path) -> None:
+        _write_persona_security_expert(
+            tmp_path, self._POPULATION, reference_listed=[*self._POPULATION, 'ghost.md']
+        )
+
+        findings = analyze_literal_count(tmp_path)
+
+        assert len(findings) == 1
+        details = findings[0]['details']
+        assert details['surface'] == 'Standards Reference'
+        assert details['missing'] == []
+        assert details['unknown'] == ['ghost.md']
+        assert details['population_size'] == 3
+
+    def test_both_tables_drift_independently(self, tmp_path: Path) -> None:
+        _write_persona_security_expert(
+            tmp_path,
+            self._POPULATION,
+            load_listed=['alpha.md'],
+            reference_listed=['alpha.md', 'beta.md'],
+        )
+
+        findings = analyze_literal_count(tmp_path)
+
+        by_surface = {f['details']['surface']: f['details'] for f in findings}
+        assert set(by_surface) == {'Available Standards', 'Standards Reference'}
+        assert by_surface['Available Standards']['missing'] == ['beta.md', 'gamma.md']
+        assert by_surface['Standards Reference']['missing'] == ['gamma.md']
+
+
+class TestPersonaSecurityExpertFailsClosed:
+    """Every way the standards-index check could go vacuous emits a finding instead."""
+
+    def test_empty_standards_directory_is_flagged(self, tmp_path: Path) -> None:
+        # An empty population is the vacuous-guard condition: nothing to compare
+        # against, so the check must NOT report agreement.
+        _write_persona_security_expert(tmp_path, [], prose='zero')
+
+        findings = analyze_literal_count(tmp_path)
+
+        assert len(findings) == 1
+        assert findings[0]['details'] == {'surface': 'population', 'population_size': 0}
+
+    def test_missing_index_section_is_flagged(self, tmp_path: Path) -> None:
+        _write_persona_security_expert(
+            tmp_path, ['alpha.md', 'beta.md'], prose='two', include_reference_section=False
+        )
+
+        findings = analyze_literal_count(tmp_path)
+
+        assert len(findings) == 1
+        details = findings[0]['details']
+        assert details['surface'] == 'Standards Reference'
+        assert details['missing'] == ['alpha.md', 'beta.md']
+        assert details['population_size'] == 2
+
+    def test_prose_link_outside_the_table_does_not_mask_a_missing_row(
+        self, tmp_path: Path
+    ) -> None:
+        # The "Available Standards" set is collected from TABLE ROWS only. A
+        # prose link to standards/gamma.md that sits in the section but outside
+        # the table is not an index entry: counting it would complete the set
+        # and let a genuinely missing row report clean (fail-open).
+        _write_persona_security_expert(
+            tmp_path,
+            ['alpha.md', 'beta.md', 'gamma.md'],
+            prose='three',
+            load_listed=['alpha.md', 'beta.md'],
+            load_section_prose=(
+                'See also [`standards/gamma.md`](standards/gamma.md) for the deep dive.'
+            ),
+        )
+
+        findings = analyze_literal_count(tmp_path)
+
+        assert len(findings) == 1, f'the missing gamma.md row must still be flagged, got {findings}'
+        details = findings[0]['details']
+        assert details['surface'] == 'Available Standards'
+        assert details['missing'] == ['gamma.md']
+        assert details['unknown'] == []
+        assert details['population_size'] == 3
+
+    def test_unreadable_governed_file_is_flagged(self, tmp_path: Path) -> None:
+        # analyze_literal_count gates on is_file(), so this path is reached only
+        # for a file that EXISTS but cannot be decoded. Only an ABSENT governed
+        # file is out of scope (see test_persona_security_expert_absent_...);
+        # returning no findings here would make a broken index indistinguishable
+        # from a clean one.
+        skill_md = _write_persona_security_expert(tmp_path, ['alpha.md', 'beta.md'], prose='two')
+        skill_md.write_bytes(b'# Persona: Security Expert\n\xff\xfe not valid utf-8\n')
+
+        findings = analyze_literal_count(tmp_path)
+
+        assert len(findings) == 1
+        finding = findings[0]
+        assert finding['rule_id'] == RULE_ID
+        assert finding['type'] == RULE_ID
+        assert finding['file'] == str(skill_md)
+        assert finding['severity'] == 'warning'
+        assert finding['fixable'] is False
+        assert finding['details']['surface'] == 'unreadable'
+        assert finding['details']['error'] == 'UnicodeDecodeError'
+
+    def test_unanchored_prose_count_is_flagged(self, tmp_path: Path) -> None:
+        # A body that states the count in an unrecognised phrasing is UNVERIFIED,
+        # not verified-clean.
+        _write_persona_security_expert(tmp_path, ['alpha.md', 'beta.md'], prose=None)
+
+        findings = analyze_literal_count(tmp_path)
+
+        assert len(findings) == 1
+        details = findings[0]['details']
+        assert details['surface'] == 'prose'
+        assert details['stated'] is None
+        assert details['population_size'] == 2
