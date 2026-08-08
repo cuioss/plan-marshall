@@ -13,10 +13,24 @@ Two log sinks are scanned and merged:
    whose ``exit_code:`` field is non-zero.
 2. ``logs/work.log`` — the work log into which the executor mirrors a single
    ``[ERROR] (...:execute-script:N) script_failure notation=... exit_code=N
-   failure_kind=... stderr=...`` line for every non-zero-exit call. This sink
+   failure_kind=... detail=...`` line for every non-zero-exit call. This sink
    catches argparse rejections (exit 2) that an agent emitted directly to the
    work log when the ``script-execution.log`` entry was never written (the
    originating-context recurrence gap).
+
+   The trailing ``detail=`` field carries whatever reason the dispatched script
+   itself reported — the executor derives it with stdout-preferred precedence
+   (a ``status: error`` TOON ``message``, else raw stdout, else stderr), so for
+   an argparse rejection it holds the usage text the argparse signatures below
+   are matched against.
+
+Recognition is reported separately from failure count. A ``work.log`` line
+carrying the ``script_failure`` marker that this parser cannot decompose into a
+record is counted in ``work_log_unrecognized_lines``, so "scanned and found no
+failures" (marker absent, count zero) stays distinguishable from "scanned and
+recognised no line shape I know" (marker present, count non-zero). Without that
+split a producer-side field rename reads as a clean zero — which is exactly how
+the ``stderr=`` → ``detail=`` rename survived undetected in this sink.
 
 Because every executor failure is mirrored to BOTH sinks, the same physical
 event appears once in each list sharing the same ``(notation, timestamp)``.
@@ -70,7 +84,7 @@ import argparse
 import re
 from collections import OrderedDict
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 from file_ops import base_path, output_toon, safe_main
 from input_validation import (
@@ -118,20 +132,31 @@ _ARGPARSE_SIGNATURES: tuple[tuple[str, str], ...] = (
 # call into the work log as a single physical line of the shape:
 #
 #   [ts] [LEVEL] [hash] [ERROR] (plan-marshall:execute-script:N) script_failure \
-#       notation=<notation> exit_code=<N> failure_kind=<kind> stderr=<...>
+#       notation=<notation> exit_code=<N> failure_kind=<kind> detail=<...>
 #
 # The leading manage-logging header ([ts] [LEVEL] [hash]) is tolerated by
 # anchoring the match on the ``(...:execute-script:N) script_failure`` marker
 # rather than the start of the line. ``notation`` and ``exit_code`` are
-# captured as named groups; everything after ``stderr=`` (to end-of-line) is
-# the embedded stderr signature used by the shared argparse classifier.
+# captured as named groups; everything after ``detail=`` (to end-of-line) is
+# the embedded diagnostic text used by the shared argparse classifier. The
+# ``detail=`` tail is OPTIONAL so a line the executor emitted with an empty
+# detail (both stdout and stderr empty) still yields a record rather than
+# vanishing from the sink.
 _WORK_LOG_FAILURE_RE = re.compile(
     r'\(\S*?execute-script:\d+\)\s+script_failure\s+'
     r'notation=(?P<notation>[a-z][\w-]*:[\w-]+:[\w-]+)\s+'
     r'exit_code=(?P<exit_code>\d+)\s+'
     r'failure_kind=(?P<failure_kind>\S+)'
-    r'(?:\s+stderr=(?P<stderr>.*))?$',
+    r'(?:\s+detail=(?P<detail>.*))?$',
 )
+
+# Structural marker for an executor dispatch-failure line, independent of which
+# trailing fields follow it. A line that carries this marker but does NOT
+# satisfy _WORK_LOG_FAILURE_RE is a RECOGNITION failure — the producer's field
+# shape drifted away from what the parser knows — and is counted separately so
+# the sink can report "I recognised no line shape" distinctly from "there were
+# no failures". Both states previously returned zero and were indistinguishable.
+_WORK_LOG_FAILURE_MARKER_RE = re.compile(r'\(\S*?execute-script:\d+\)\s+script_failure\b')
 
 # Leading manage-logging header for a work.log line: ``[ts] [LEVEL] [hash] ``.
 # Used only to recover the timestamp for the failure record's representative
@@ -252,12 +277,27 @@ def parse_failures(lines: list[str]) -> list[dict[str, Any]]:
     return failures
 
 
-def parse_work_log_failures(lines: list[str]) -> list[dict[str, Any]]:
+class WorkLogScan(NamedTuple):
+    """Outcome of scanning ``work.log`` for executor dispatch-failure lines.
+
+    Carries the two facts a bare ``list`` conflates. ``failures`` is the parsed
+    population; ``unrecognized_lines`` counts lines that carry the executor's
+    ``script_failure`` marker but that :data:`_WORK_LOG_FAILURE_RE` could not
+    decompose. A non-zero ``unrecognized_lines`` with an empty ``failures`` list
+    means the producer's line shape drifted — a signal that is invisible when
+    the scan reports only a count of zero.
+    """
+
+    failures: list[dict[str, Any]]
+    unrecognized_lines: int
+
+
+def parse_work_log_failures(lines: list[str]) -> WorkLogScan:
     """Walk ``work.log`` ``lines`` and emit one dict per executor failure line.
 
     The executor mirrors every non-zero-exit call into the work log as a single
     physical line carrying ``script_failure notation=... exit_code=...
-    failure_kind=... stderr=...``. Each matching line yields one failure record
+    failure_kind=... detail=...``. Each matching line yields one failure record
     in the SAME shape as :func:`parse_failures` so both sinks feed the shared
     :func:`classify_failure` / :func:`dedupe_findings` pipeline unchanged:
 
@@ -266,37 +306,52 @@ def parse_work_log_failures(lines: list[str]) -> list[dict[str, Any]]:
             'notation': str,
             'subcommand': None,   # the work.log line does not carry a subcommand
             'exit_code': int,
-            'stderr': str,        # the embedded stderr signature (may be empty)
+            'stderr': str,        # diagnostic text from the line's ``detail=``
+                                  # field (may be empty)
         }
 
+    The record's ``stderr`` key is the pipeline's shared diagnostic-text slot,
+    populated here from the line's ``detail=`` field — the executor derives that
+    field with stdout-preferred precedence, so for an argparse rejection it
+    carries the usage text :func:`classify_failure` matches its signatures
+    against.
+
     A line whose ``exit_code`` is ``0`` is dropped (operation failures exit 0
-    and are caller-handled outcomes, never script failures). Lines that do not
-    match the executor failure marker are ignored.
+    and are caller-handled outcomes, never script failures).
+
+    Returns a :class:`WorkLogScan`. Lines carrying the ``script_failure`` marker
+    that the full pattern could not decompose are counted in
+    ``unrecognized_lines`` rather than silently skipped, so a producer-side
+    field rename surfaces as an unmatched-guard signal instead of as a clean
+    zero. Lines with no marker at all are ordinary work-log traffic and are
+    ignored without counting.
     """
     failures: list[dict[str, Any]] = []
+    unrecognized = 0
     for line in lines:
         match = _WORK_LOG_FAILURE_RE.search(line)
         if match is None:
+            if _WORK_LOG_FAILURE_MARKER_RE.search(line):
+                unrecognized += 1
             continue
-        try:
-            exit_code = int(match.group('exit_code'))
-        except ValueError:
-            continue
+        # No guard needed: the pattern captures ``exit_code`` as ``\d+``, so
+        # int() is total over every string that reached this point.
+        exit_code = int(match.group('exit_code'))
         if exit_code == 0:
             continue
         ts_match = _WORK_LOG_TS_RE.match(line)
         timestamp = ts_match.group('ts') if ts_match else ''
-        stderr = (match.group('stderr') or '').strip()
+        detail = (match.group('detail') or '').strip()
         failures.append(
             {
                 'timestamp': timestamp,
                 'notation': match.group('notation'),
                 'subcommand': None,
                 'exit_code': exit_code,
-                'stderr': stderr,
+                'stderr': detail,
             }
         )
-    return failures
+    return WorkLogScan(failures=failures, unrecognized_lines=unrecognized)
 
 
 def classify_failure(failure: dict[str, Any]) -> tuple[str, str]:
@@ -414,7 +469,8 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     work_log_path = plan_dir / 'logs' / 'work.log'
 
     exec_failures = parse_failures(read_log(exec_log_path))
-    work_failures = parse_work_log_failures(read_log(work_log_path))
+    work_scan = parse_work_log_failures(read_log(work_log_path))
+    work_failures = work_scan.failures
 
     # Drop work.log entries that mirror a script-execution.log entry on
     # (notation, timestamp) so a single physical failure mirrored to both sinks
@@ -436,6 +492,11 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
         'plan_id': plan_id,
         'log_path': str(exec_log_path),
         'work_log_path': str(work_log_path),
+        # Lines that carried the executor's script_failure marker but that the
+        # work.log parser could not decompose. Non-zero here with
+        # total_failures == 0 means the producer's line shape drifted — a
+        # distinct state from "the log held no failures".
+        'work_log_unrecognized_lines': work_scan.unrecognized_lines,
         'total_failures': len(raw_failures),
         'unique_failures': len(findings),
         'findings': findings,

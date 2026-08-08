@@ -10,6 +10,7 @@ deduped TOON fragment for the retrospective compile-report consumer.
 from __future__ import annotations
 
 import importlib.util
+import re
 import sys
 from pathlib import Path
 
@@ -30,6 +31,18 @@ SCRIPT_PATH = (
     / 'plan-retrospective'
     / 'scripts'
     / 'script-failure-analysis.py'
+)
+
+# The PRODUCER of every work.log dispatch-failure line this module's parser
+# consumes. The executor is generated from this template, so the template is the
+# authoritative source of the emitted line shape.
+EXECUTOR_TEMPLATE_PATH = (
+    MARKETPLACE_ROOT
+    / 'plan-marshall'
+    / 'skills'
+    / 'tools-script-executor'
+    / 'templates'
+    / 'execute-script.py.template'
 )
 
 # Direct module load so unit tests can poke the pure helpers.
@@ -78,18 +91,82 @@ def _write_log(plan_dir: Path, content: str) -> None:
     (logs_dir / 'script-execution.log').write_text(content, encoding='utf-8')
 
 
-def _work_failure(ts_suffix: str, notation: str, exit_code: int, failure_kind: str, stderr: str) -> str:
-    """Produce a work.log executor-failure line matching production shape.
+def _extract_emitted_message_format() -> str:
+    """Recover the executor's dispatch-failure message format from its template.
 
-    The executor mirrors every non-zero-exit call into the work log as a single
-    physical line: ``[ts] [LEVEL] [hash] [ERROR] (...:execute-script:N)
-    script_failure notation=... exit_code=N failure_kind=... stderr=...``.
+    The executor builds the work.log failure line as an implicitly-concatenated
+    f-string assigned to ``message`` inside ``emit_dispatch_failure_work_log``.
+    Because every placeholder in it is a bare ``{name}``, concatenating the
+    literal parts yields a ``str.format``-compatible template — so the test
+    fixture can render a line the PRODUCER defines instead of re-typing one.
+
+    This is the coupling the deliverable asks for: rename a field on the
+    producer side and every fixture line built here changes with it, so the
+    parser's tests fail rather than silently continuing to assert a shape the
+    executor no longer writes. Rename the *variable* behind a placeholder and
+    the ``str.format`` call raises ``KeyError`` — also a failure, never a
+    silent pass.
+
+    Fails loudly (``AssertionError``) when the template's shape can no longer
+    be recovered. A fixture that fell back to a hard-coded literal here would
+    reintroduce exactly the drift this extraction exists to prevent.
+    """
+    lines = EXECUTOR_TEMPLATE_PATH.read_text(encoding='utf-8').splitlines()
+    starts = [i for i, line in enumerate(lines) if line.strip() == 'message = (']
+    assert len(starts) == 1, (
+        f'expected exactly one "message = (" assignment in '
+        f'{EXECUTOR_TEMPLATE_PATH.name}, found {len(starts)} — the '
+        f'dispatch-failure emitter moved and this extraction needs updating'
+    )
+    parts: list[str] = []
+    for line in lines[starts[0] + 1:]:
+        stripped = line.strip()
+        if stripped == ')':
+            break
+        match = re.fullmatch(r"f'(.*)'", stripped)
+        assert match is not None, (
+            f'unexpected line inside the executor dispatch-failure message '
+            f'literal: {stripped!r}'
+        )
+        parts.append(match.group(1))
+    assert parts, 'executor dispatch-failure message literal is empty'
+    return ''.join(parts)
+
+
+# The emitted line shape, derived from the producer at import time. Placeholders
+# are whatever the executor names them — this module never re-types them.
+EMITTED_MESSAGE_FORMAT = _extract_emitted_message_format()
+
+
+def _work_failure(ts_suffix: str, notation: str, exit_code: int, failure_kind: str, detail: str) -> str:
+    """Produce a work.log executor-failure line rendered from the PRODUCER's own format.
+
+    The manage-logging header (``[ts] [LEVEL] [hash] ``) is prepended here
+    because ``log_entry`` — not the emitter — writes it; everything after it is
+    rendered from :data:`EMITTED_MESSAGE_FORMAT`, extracted from the executor
+    template. No part of the failure line is re-typed in this file.
+    """
+    message = EMITTED_MESSAGE_FORMAT.format(
+        notation=notation,
+        exit_code=exit_code,
+        failure_kind=failure_kind,
+        detail=detail,
+    )
+    return f'[2026-05-26T11:00:{ts_suffix}Z] [ERROR] [wlog{ts_suffix}] {message}'
+
+
+def _legacy_work_failure(ts_suffix: str, notation: str, exit_code: int, failure_kind: str) -> str:
+    """A work.log failure line in the RETIRED ``stderr=`` tail shape.
+
+    Deliberately hand-written: it pins a shape the producer no longer emits, so
+    it is the one place a literal is correct. Used only to assert the parser
+    reports an unrecognised line shape rather than a clean zero.
     """
     return (
         f'[2026-05-26T11:00:{ts_suffix}Z] [ERROR] [wlog{ts_suffix}] '
         f'[ERROR] (plan-marshall:execute-script:{exit_code}) script_failure '
         f'notation={notation} exit_code={exit_code} failure_kind={failure_kind} '
-        f'stderr={stderr}'
+        f'stderr=some retired tail'
     )
 
 
@@ -196,31 +273,37 @@ class TestParseWorkLogFailures:
                 "manage-status.py: error: unrecognized arguments: --field metadata",
             ),
         ]
-        failures = _mod.parse_work_log_failures(lines)
-        assert len(failures) == 1
-        f = failures[0]
+        scan = _mod.parse_work_log_failures(lines)
+        assert len(scan.failures) == 1
+        assert scan.unrecognized_lines == 0
+        f = scan.failures[0]
         assert f['notation'] == 'plan-marshall:manage-status:manage-status'
         assert f['exit_code'] == 2
         assert f['subcommand'] is None
         assert 'unrecognized arguments' in f['stderr']
 
     def test_classifies_via_shared_signatures(self):
-        # The work.log-sourced stderr flows through the SAME classifier.
+        # The work.log-sourced diagnostic text flows through the SAME classifier.
         lines = [
             _work_failure(
                 '01', 'plan-marshall:manage-findings:manage-findings', 2, 'argparse_rejection',
                 "manage-findings: error: invalid choice: 'query' (choose from 'add', 'list')",
             ),
         ]
-        failures = _mod.parse_work_log_failures(lines)
-        assert _mod.classify_failure(failures[0]) == ('anti-pattern', 'invented_subcommand')
+        scan = _mod.parse_work_log_failures(lines)
+        assert _mod.classify_failure(scan.failures[0]) == ('anti-pattern', 'invented_subcommand')
 
     def test_ignores_non_failure_lines(self):
         lines = [
             _work_status('01', 'Starting execute phase'),
             _work_status('02', 'Active worktree set'),
         ]
-        assert _mod.parse_work_log_failures(lines) == []
+        scan = _mod.parse_work_log_failures(lines)
+        assert scan.failures == []
+        # No script_failure marker anywhere → nothing to recognise, so the
+        # unmatched guard must stay silent. This is the "scanned a clean log"
+        # state, distinct from "recognised no line shape".
+        assert scan.unrecognized_lines == 0
 
     def test_drops_exit_zero_lines(self):
         # An exit_code=0 executor line is an operation failure, never a script
@@ -231,19 +314,67 @@ class TestParseWorkLogFailures:
                 'field_not_found',
             ),
         ]
-        assert _mod.parse_work_log_failures(lines) == []
+        scan = _mod.parse_work_log_failures(lines)
+        assert scan.failures == []
+        # The line WAS recognised — it was dropped on the exit-code rule, not
+        # because its shape was unknown.
+        assert scan.unrecognized_lines == 0
 
-    def test_handles_script_internal_failure_empty_stderr(self):
+    def test_handles_script_internal_failure_empty_detail(self):
         lines = [
             _work_failure(
                 '01', 'plan-marshall:manage-references:manage-references', 1,
                 'script_internal_failure', '',
             ),
         ]
-        failures = _mod.parse_work_log_failures(lines)
-        assert len(failures) == 1
-        assert failures[0]['exit_code'] == 1
-        assert _mod.classify_failure(failures[0]) == ('bug', 'script_internal_error')
+        scan = _mod.parse_work_log_failures(lines)
+        assert len(scan.failures) == 1
+        assert scan.unrecognized_lines == 0
+        assert scan.failures[0]['exit_code'] == 1
+        assert _mod.classify_failure(scan.failures[0]) == ('bug', 'script_internal_error')
+
+
+class TestProducerDerivedLineShape:
+    """The fixture builder is bound to the executor template, not to a literal.
+
+    These tests are the guard the deliverable asks for: they fail when the
+    executor renames the trailing field of its dispatch-failure line, because
+    the fixture renders that line from the producer's own format string.
+    """
+
+    def test_producer_emitted_line_parses_into_one_record(self):
+        """A line rendered from the PRODUCER's format parses into exactly one record."""
+        lines = [
+            _work_failure(
+                '01', 'plan-marshall:manage-tasks:manage-tasks', 2, 'argparse_rejection',
+                "manage-tasks: error: invalid choice: 'start' (choose from 'add', 'read')",
+            ),
+        ]
+        scan = _mod.parse_work_log_failures(lines)
+        assert len(scan.failures) == 1, (
+            'the parser no longer recognises the shape the executor emits — '
+            f'derived format: {EMITTED_MESSAGE_FORMAT!r}'
+        )
+        assert scan.unrecognized_lines == 0
+        record = scan.failures[0]
+        assert record['notation'] == 'plan-marshall:manage-tasks:manage-tasks'
+        assert record['exit_code'] == 2
+        assert 'invalid choice' in record['stderr']
+
+    def test_retired_tail_shape_reports_unrecognized_not_clean_zero(self):
+        """The retired ``stderr=`` tail yields zero failures AND a non-zero unmatched count.
+
+        This is the distinguishability the sink previously lacked: before the
+        fix, a producer rename looked identical to a log with no failures.
+        """
+        lines = [
+            _legacy_work_failure(
+                '01', 'plan-marshall:manage-status:manage-status', 2, 'argparse_rejection',
+            ),
+        ]
+        scan = _mod.parse_work_log_failures(lines)
+        assert scan.failures == []
+        assert scan.unrecognized_lines == 1
 
 
 class TestDedupeFindings:
@@ -621,6 +752,46 @@ class TestWorkLogSinkIntegration:
         assert int(data['total_failures']) == 1
         assert int(data['unique_failures']) == 1
         assert data['findings'][0]['subtype'] == 'invented_subcommand'
+
+
+class TestUnrecognizedWorkLogLineSignal:
+    """``cmd_run`` surfaces "recognised no line shape" distinctly from "no failures".
+
+    Both states used to report ``total_failures: 0`` and were indistinguishable
+    at the output boundary — which is how the ``stderr=`` → ``detail=`` producer
+    rename survived undetected in this sink.
+    """
+
+    def test_clean_work_log_reports_zero_unrecognized(self, tmp_path, monkeypatch):
+        """A work.log with no failure markers is a clean zero on BOTH counters."""
+        plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch, plan_id='retro-clean-worklog')
+        _write_log(plan_dir, _success('01', 'plan-marshall:manage-files:manage-files', 'read') + '\n')
+        _write_work_log(
+            plan_dir,
+            _work_status('01', 'Starting execute phase') + '\n'
+            + _work_status('02', 'Active worktree set') + '\n',
+        )
+        result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
+        assert result.success, result.stderr
+        data = result.toon()
+        assert int(data['total_failures']) == 0
+        assert int(data['work_log_unrecognized_lines']) == 0
+
+    def test_retired_shape_reports_unrecognized_alongside_zero_failures(self, tmp_path, monkeypatch):
+        """A retired-shape failure line reports zero failures AND a non-zero unmatched count."""
+        plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch, plan_id='retro-drifted-worklog')
+        _write_log(plan_dir, _success('01', 'plan-marshall:manage-files:manage-files', 'read') + '\n')
+        _write_work_log(
+            plan_dir,
+            _legacy_work_failure(
+                '30', 'plan-marshall:manage-status:manage-status', 2, 'argparse_rejection',
+            ) + '\n',
+        )
+        result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
+        assert result.success, result.stderr
+        data = result.toon()
+        assert int(data['total_failures']) == 0
+        assert int(data['work_log_unrecognized_lines']) == 1
 
 
 class TestExitOneTwoOnlyCriterion:
