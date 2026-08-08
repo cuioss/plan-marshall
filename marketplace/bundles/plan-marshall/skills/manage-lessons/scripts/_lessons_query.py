@@ -23,7 +23,12 @@ import shutil
 from pathlib import Path
 
 from _lessons_crud import set_body
-from _lessons_io import get_lessons_dir, read_lesson
+from _lessons_io import (
+    LessonStore,
+    get_lessons_dir,
+    read_lesson,
+    resolve_lesson_store,
+)
 from _plan_parsing import extract_deliverables, parse_document_sections
 from file_ops import (
     atomic_write_file,
@@ -284,6 +289,61 @@ def cmd_consult(args: argparse.Namespace) -> dict:
     return result
 
 
+#: The closed vocabulary :func:`cmd_restore_from_plan` reports as ``action``.
+#:
+#: - ``restored`` — the plan directory resolved, was scanned, and at least one
+#:   ``lesson-*.md`` was moved back into the corpus.
+#: - ``no_lesson_file`` — the plan directory GENUINELY resolved, WAS scanned,
+#:   and held no ``lesson-*.md``. This is the benign zero.
+#: - ``plan_dir_unresolved`` — the plan directory could not be resolved to the
+#:   main-anchored store, so the verb never looked. This is the NON-benign zero.
+#:
+#: Splitting the last value out of ``no_lesson_file`` is the whole point of the
+#: contract: the two were previously the same answer, so a plan directory
+#: reached through the wrong store — or not reached at all — reported as a plan
+#: that verifiably carried no lesson. Consumers assert against this set rather
+#: than re-listing the literals.
+RESTORE_ACTIONS = frozenset({'restored', 'no_lesson_file', 'plan_dir_unresolved'})
+
+
+def _restore_payload(
+    plan_id: str,
+    action: str,
+    store: LessonStore,
+    *,
+    restored: list[dict] | None = None,
+    error: str = '',
+    message: str = '',
+    **extra: object,
+) -> dict:
+    """Build a ``restore-from-plan`` payload carrying the FULL documented field set.
+
+    Every return of :func:`cmd_restore_from_plan` — success and error alike —
+    routes through here, so no early-return branch can omit a field the verb's
+    documented Output contract promises unconditionally. A caller parsing
+    ``store_resolution`` or ``restored_count`` gets them on the could-not-look
+    path exactly as on the restored path.
+
+    ``status`` is derived from ``error`` rather than passed separately, so a
+    payload can never claim success while naming an error code.
+    """
+    restored_lessons = restored if restored is not None else []
+    payload: dict = {
+        'status': 'error' if error else 'success',
+        'plan_id': plan_id,
+        'action': action,
+        'store_resolution': store.resolution,
+        'plans_root': '' if store.path is None else str(store.path),
+        'restored_count': len(restored_lessons),
+        'restored_lessons': restored_lessons,
+    }
+    if error:
+        payload['error'] = error
+        payload['message'] = message
+    payload.update(extra)
+    return payload
+
+
 def cmd_restore_from_plan(args: argparse.Namespace) -> dict:
     """Move all lesson files from a plan directory back to the global lessons directory.
 
@@ -293,44 +353,94 @@ def cmd_restore_from_plan(args: argparse.Namespace) -> dict:
     Plans that consolidate several lessons may carry more than one
     ``lesson-*.md`` file at the plan-dir root; every match is restored.
 
-    Idempotent on missing lesson file — returns ``status: success`` with
-    ``action: no_lesson_file`` when nothing to restore so callers don't need to
-    pre-check. Refuses to clobber a pre-existing destination file (fail-fast on
-    the first collision; any lessons restored before the collision remain in
-    ``lessons-learned/``).
-    """
-    if any(sep in args.plan_id for sep in ('/', '\\', '..')):
-        return {
-            'status': 'error',
-            'error': 'invalid_id',
-            'message': 'Identifiers must not contain path separators or traversal sequences',
-        }
+    The verb reports THREE distinguishable outcomes over the closed
+    :data:`RESTORE_ACTIONS` vocabulary, modelled on
+    ``_orchestrator_inbox.cmd_inbox_list``'s ``epic_not_found`` /
+    ``inbox_state: missing`` / ``present with count: 0`` triple: the
+    discriminator rides the PAYLOAD, and the verb stays non-faulting for the
+    benign zero. ``action: no_lesson_file`` now means what it says — the plan
+    directory resolved, was scanned, and held nothing — while a plan directory
+    that could not be resolved under the main-anchored plans root is the
+    distinct, NON-benign ``action: plan_dir_unresolved``, returned as a
+    structured ``status: error`` with that error code. ``store_resolution``
+    sub-discriminates the two ways that can happen: ``unresolved`` (the store
+    itself was unreachable) versus a resolved store that simply does not hold
+    the named plan directory.
 
-    plan_parent = resolve_main_anchored_path('plans').resolve()
+    An absent plan directory is deliberately the non-benign outcome, not the
+    benign one: "the plan never existed" and "I looked in the wrong store" are
+    indistinguishable from here, and reporting either as a verified-empty plan
+    is exactly the fail-open this contract closes.
+
+    Refuses to clobber a pre-existing destination file (fail-fast on the first
+    collision; any lessons restored before the collision remain in
+    ``lessons-learned/`` and are reported in ``restored_lessons``).
+    """
+    plans_store = resolve_lesson_store('plans')
+
+    if any(sep in args.plan_id for sep in ('/', '\\', '..')):
+        return _restore_payload(
+            args.plan_id,
+            'plan_dir_unresolved',
+            plans_store,
+            error='invalid_id',
+            message='Identifiers must not contain path separators or traversal sequences',
+        )
+
+    if plans_store.path is None:
+        return _restore_payload(
+            args.plan_id,
+            'plan_dir_unresolved',
+            plans_store,
+            error='plan_dir_unresolved',
+            message=(
+                f'Cannot resolve the main-anchored plans root, so the plan directory '
+                f'was never scanned: {plans_store.detail}'
+            ),
+        )
+
+    lessons_store = resolve_lesson_store()
+    if lessons_store.path is None:
+        return _restore_payload(
+            args.plan_id,
+            'plan_dir_unresolved',
+            plans_store,
+            error='plan_dir_unresolved',
+            message=(
+                f'Cannot resolve the main-anchored lessons corpus, so no lesson could '
+                f'be restored: {lessons_store.detail}'
+            ),
+        )
+
+    plan_parent = plans_store.path.resolve()
     plan_dir = (plan_parent / args.plan_id).resolve()
-    lessons_dir = get_lessons_dir().resolve()
+    lessons_dir = lessons_store.path.resolve()
 
     if plan_dir.parent != plan_parent:
-        return {
-            'status': 'error',
-            'error': 'path_traversal',
-            'message': 'Resolved path escapes intended parent directory',
-        }
+        return _restore_payload(
+            args.plan_id,
+            'plan_dir_unresolved',
+            plans_store,
+            error='path_traversal',
+            message='Resolved path escapes intended parent directory',
+        )
 
     if not plan_dir.exists():
-        return {
-            'status': 'success',
-            'plan_id': args.plan_id,
-            'action': 'no_lesson_file',
-        }
+        return _restore_payload(
+            args.plan_id,
+            'plan_dir_unresolved',
+            plans_store,
+            error='plan_dir_unresolved',
+            message=(
+                f'Plan directory {plan_dir} does not exist under the main-anchored '
+                f'plans root, so it was never scanned for lesson files; this is NOT '
+                f'evidence that the plan carries no lesson.'
+            ),
+        )
 
     matches = sorted(plan_dir.glob('lesson-*.md'))
     if not matches:
-        return {
-            'status': 'success',
-            'plan_id': args.plan_id,
-            'action': 'no_lesson_file',
-        }
+        return _restore_payload(args.plan_id, 'no_lesson_file', plans_store)
 
     lessons_dir.mkdir(parents=True, exist_ok=True)
     restored_lessons: list[dict] = []
@@ -343,29 +453,37 @@ def cmd_restore_from_plan(args: argparse.Namespace) -> dict:
         # Defensive: ensure the derived id has no traversal sequences and resolves
         # back inside the plan dir.
         if any(sep in lesson_id for sep in ('/', '\\', '..')) or source.parent != plan_dir:
-            return {
-                'status': 'error',
-                'error': 'path_traversal',
-                'message': 'Resolved path escapes intended parent directory',
-            }
+            return _restore_payload(
+                args.plan_id,
+                'restored',
+                plans_store,
+                restored=restored_lessons,
+                error='path_traversal',
+                message='Resolved path escapes intended parent directory',
+            )
 
         destination = (lessons_dir / f'{lesson_id}.md').resolve()
 
         if destination.parent != lessons_dir:
-            return {
-                'status': 'error',
-                'error': 'path_traversal',
-                'message': 'Resolved path escapes intended parent directory',
-            }
+            return _restore_payload(
+                args.plan_id,
+                'restored',
+                plans_store,
+                restored=restored_lessons,
+                error='path_traversal',
+                message='Resolved path escapes intended parent directory',
+            )
 
         if destination.exists():
-            return {
-                'status': 'error',
-                'plan_id': args.plan_id,
-                'lesson_id': lesson_id,
-                'error': 'destination_exists',
-                'message': f'Destination {destination} already exists; refusing to clobber',
-            }
+            return _restore_payload(
+                args.plan_id,
+                'restored',
+                plans_store,
+                restored=restored_lessons,
+                error='destination_exists',
+                message=f'Destination {destination} already exists; refusing to clobber',
+                lesson_id=lesson_id,
+            )
 
         shutil.move(source, destination)
         restored_lessons.append({
@@ -374,37 +492,144 @@ def cmd_restore_from_plan(args: argparse.Namespace) -> dict:
             'destination': str(destination),
         })
 
-    return {
-        'status': 'success',
-        'plan_id': args.plan_id,
-        'restored_count': len(restored_lessons),
-        'restored_lessons': restored_lessons,
+    return _restore_payload(
+        args.plan_id, 'restored', plans_store, restored=restored_lessons
+    )
+
+
+#: The closed vocabulary :func:`cmd_list_stalled` reports as ``plans_root_state``.
+#: ``present`` means the enumeration looked at a real plans directory;
+#: ``missing`` means it COULD NOT look because the main-anchored plans root does
+#: not exist. As in ``_orchestrator_inbox.cmd_inbox_list``, an absent root is
+#: NOT a fault — the verb still returns ``status: success`` so a sweep is never
+#: aborted by it, and the two zeros are told apart by the PAYLOAD rather than by
+#: the status. Consumers assert against this set rather than re-listing the
+#: literals.
+PLANS_ROOT_STATES = frozenset({'present', 'missing'})
+
+
+def _stalled_payload(
+    store: LessonStore,
+    plans_root_state: str,
+    *,
+    scanned_plan_count: int = 0,
+    stalled: list[dict] | None = None,
+    duplicates: list[dict] | None = None,
+    unclassifiable: list[dict] | None = None,
+    error: str = '',
+    message: str = '',
+) -> dict:
+    """Build a ``list-stalled`` payload carrying the FULL documented field set.
+
+    Every return of :func:`cmd_list_stalled` routes through here, so a
+    could-not-look return states every count the documented Output contract
+    promises unconditionally instead of emitting a bare ``stalled_count: 0``.
+    """
+    stalled_plans = stalled if stalled is not None else []
+    duplicate_lessons = duplicates if duplicates is not None else []
+    unclassifiable_plans = unclassifiable if unclassifiable is not None else []
+    payload: dict = {
+        'status': 'error' if error else 'success',
+        'store_resolution': store.resolution,
+        'plans_root': '' if store.path is None else str(store.path),
+        'plans_root_state': plans_root_state,
+        'scanned_plan_count': scanned_plan_count,
+        'stalled_count': len(stalled_plans),
+        'stalled_plans': stalled_plans,
+        'duplicate_count': len(duplicate_lessons),
+        'duplicate_lessons': duplicate_lessons,
+        'unclassifiable_count': len(unclassifiable_plans),
+        'unclassifiable_plans': unclassifiable_plans,
     }
+    if error:
+        payload['error'] = error
+        payload['message'] = message
+    return payload
 
 
-# Lesson ids embedded in a plan's ``metadata.plan_source`` must match the
-# canonical ``YYYY-MM-DD-HH-NNN`` shape exactly (anchored full-match) to mark
-# the plan as lesson-sourced. The unanchored ``LESSON_ID_REGEX`` (in
-# ``_lessons_aggregate``) is used for free-text scanning; this one is the strict
-# classifier gate.
-LESSON_SOURCE_ID_REGEX = re.compile(r'^\d{4}-\d{2}-\d{2}-\d{2}-\d{3}$')
+def _read_plan_status(status_path: Path) -> tuple[dict | None, str]:
+    """Read and parse a plan's ``status.json``, reporting WHY a read failed.
+
+    Returns ``(status, reason)`` where exactly one side is meaningful: a parsed
+    mapping with an empty reason, or ``None`` with a reason token naming why the
+    plan could not be classified. The reason is what keeps an unclassifiable
+    plan visible in the payload instead of being silently skipped out of the
+    population — a silent skip is the same could-not-look-reports-benign
+    collapse at row granularity.
+    """
+    if not status_path.exists():
+        return None, 'status_json_missing'
+    try:
+        status = json.loads(status_path.read_text(encoding='utf-8'))
+    except (json.JSONDecodeError, OSError):
+        return None, 'status_json_unreadable'
+    if not isinstance(status, dict):
+        # Valid JSON but not an object (e.g. a list or string) — calling
+        # status.get() would raise AttributeError.
+        return None, 'status_json_not_an_object'
+    return status, ''
 
 
 def cmd_list_stalled(args: argparse.Namespace) -> dict:  # noqa: ARG001
-    """List lesson-sourced plans whose relocated lesson is stranded (stalled).
+    """List plans whose relocated lesson file is stranded (stalled).
 
-    A lesson-sourced plan relocates its lesson into the plan directory via
-    ``convert-to-plan`` (``plans/{plan_id}/lesson-{id}.md``). If such a plan
-    stalls or is abandoned in ``5-execute``/``6-finalize`` without running
-    ``restore-from-plan``, the lesson is trapped out of the active corpus and
-    silently lost. This read-only scanner surfaces every such plan so callers
-    can decide whether to restore or discard.
+    A plan relocates a lesson into its plan directory via ``convert-to-plan``
+    (``plans/{plan_id}/lesson-{id}.md``). If such a plan stalls or is abandoned
+    in ``5-execute``/``6-finalize`` without running ``restore-from-plan``, the
+    lesson is trapped out of the active corpus and silently lost. This read-only
+    scanner surfaces every such plan so callers can decide whether to restore or
+    discard.
+
+    **Population.** The candidate population is derived from the OBSERVABLE —
+    the presence of a ``lesson-*.md`` file in a plan directory — and nothing
+    else. It is deliberately NOT filtered by ``status.metadata.plan_source``:
+    that gate excluded every ``convert-to-plan``-carried plan, whose
+    ``plan_source`` is unset, so the verb reported a clean zero over a
+    population that had already discarded the very plans it exists to find. A
+    file on disk cannot be argued with; a metadata field that was never written
+    can. ``plan_source`` is still REPORTED on each row as context, but it
+    classifies nothing.
+
+    **Both directions are reported.** Absence is only half the failure. A
+    carried ``lesson-*.md`` whose id ALREADY exists in the active corpus is the
+    inverse direction — restoring it would collide — and is reported as its own
+    separately-counted ``duplicate_lessons`` outcome rather than folded into
+    the stalled count. The two lists are independent views over the same scan,
+    correlated by ``plan_id``: a plan may legitimately appear in both, and a
+    consumer that intends to call ``restore-from-plan`` on a stalled plan must
+    check the duplicate list first or the restore will fail on the collision.
+
+    **Every zero states which kind of zero it is.** An unresolvable store is a
+    structured ``status: error`` (``store_unresolved``); an absent plans root is
+    the non-faulting ``plans_root_state: missing``; and a plan whose
+    ``status.json`` cannot be read is surfaced in ``unclassifiable_plans``
+    instead of being silently dropped from the population. ``stalled_count: 0``
+    is therefore never bare — it always rides with the discriminators that say
+    whether the store was actually resolved and scanned.
     """
-    plans_root = resolve_main_anchored_path('plans')
-    if not plans_root.exists():
-        return {'status': 'success', 'stalled_count': 0, 'stalled_plans': []}
+    plans_store = resolve_lesson_store('plans')
+    lessons_store = resolve_lesson_store()
 
-    # Group relocated lesson files by their owning plan directory.
+    if plans_store.path is None or lessons_store.path is None:
+        unresolved = plans_store if plans_store.path is None else lessons_store
+        return _stalled_payload(
+            plans_store,
+            'missing',
+            error='store_unresolved',
+            message=(
+                f'Cannot resolve the main-anchored store, so no plan directory was '
+                f'ever scanned: {unresolved.detail}'
+            ),
+        )
+
+    plans_root = plans_store.path
+    if not plans_root.exists():
+        return _stalled_payload(plans_store, 'missing')
+
+    lessons_dir = lessons_store.path
+
+    # Group relocated lesson files by their owning plan directory. Presence of
+    # the file IS the population predicate.
     by_plan: dict[Path, list[str]] = {}
     for lesson_file in sorted(plans_root.glob('*/lesson-*.md')):
         if not lesson_file.is_file():
@@ -414,31 +639,42 @@ def cmd_list_stalled(args: argparse.Namespace) -> dict:  # noqa: ARG001
         by_plan.setdefault(plan_dir, []).append(lesson_id)
 
     stalled_plans: list[dict] = []
+    duplicate_lessons: list[dict] = []
+    unclassifiable_plans: list[dict] = []
 
     for plan_dir in sorted(by_plan, key=lambda p: p.name):
+        plan_id = plan_dir.name
         lesson_ids = sorted(by_plan[plan_dir])
-        status_path = plan_dir / 'status.json'
-        if not status_path.exists():
-            # No status.json — cannot classify; skip rather than crash.
-            continue
 
-        try:
-            status = json.loads(status_path.read_text(encoding='utf-8'))
-        except (json.JSONDecodeError, OSError):
-            # Corrupt/unreadable status.json — skip rather than crash.
-            continue
+        # Inverse direction: a carried lesson id that already exists in the
+        # active corpus. Reported for every scanned plan regardless of its
+        # stalled classification — the collision is a fact about the corpus,
+        # not about the plan's phase.
+        for lesson_id in lesson_ids:
+            corpus_path = lessons_dir / f'{lesson_id}.md'
+            if corpus_path.exists():
+                duplicate_lessons.append({
+                    'plan_id': plan_id,
+                    'lesson_id': lesson_id,
+                    'corpus_path': str(corpus_path),
+                })
 
-        if not isinstance(status, dict):
-            # Valid JSON but not an object (e.g. a list or string) — calling
-            # status.get() would raise AttributeError; skip rather than crash.
+        status, unreadable_reason = _read_plan_status(plan_dir / 'status.json')
+        if status is None:
+            # Cannot classify this plan. Surface it rather than dropping it —
+            # a silently-skipped row is a stalled plan the caller never hears
+            # about, which is the same fail-open at row granularity.
+            unclassifiable_plans.append({
+                'plan_id': plan_id,
+                'lesson_ids': lesson_ids,
+                'reason': unreadable_reason,
+            })
             continue
 
         metadata = status.get('metadata', {})
         plan_source = metadata.get('plan_source', '') if isinstance(metadata, dict) else ''
-        if not isinstance(plan_source, str) or not LESSON_SOURCE_ID_REGEX.match(plan_source):
-            # Not lesson-sourced — the relocated lesson is unexpected, but a
-            # non-lesson-id plan_source is out of scope for stalled detection.
-            continue
+        if not isinstance(plan_source, str):
+            plan_source = ''
 
         current_phase = status.get('current_phase', '')
         phase_status = ''
@@ -449,18 +685,18 @@ def cmd_list_stalled(args: argparse.Namespace) -> dict:  # noqa: ARG001
                     phase_status = row.get('status', '')
                     break
 
-        # Terminal guard: a lesson-sourced plan whose current phase has fully
-        # completed is NOT stalled — its lesson was (or will be) restored on a
-        # normal terminal path. Stalled = the relocated lesson is present AND
-        # the current phase has not reached ``done`` (covers in_progress /
-        # blocked / pending in 5-execute / 6-finalize, and any non-terminal
-        # dormated-without-merge state).
+        # Terminal guard: a plan whose current phase has fully completed is NOT
+        # stalled — its lesson was (or will be) restored on a normal terminal
+        # path. Stalled = the relocated lesson is present AND the current phase
+        # has not reached ``done`` (covers in_progress / blocked / pending in
+        # 5-execute / 6-finalize, and any non-terminal dormated-without-merge
+        # state). This classification is unchanged; only the population feeding
+        # it widened.
         is_stalled = current_phase in ('5-execute', '6-finalize') and phase_status != 'done'
 
         if not is_stalled:
             continue
 
-        plan_id = plan_dir.name
         stalled_plans.append({
             'plan_id': plan_id,
             'plan_source': plan_source,
@@ -474,11 +710,14 @@ def cmd_list_stalled(args: argparse.Namespace) -> dict:  # noqa: ARG001
             ),
         })
 
-    return {
-        'status': 'success',
-        'stalled_count': len(stalled_plans),
-        'stalled_plans': stalled_plans,
-    }
+    return _stalled_payload(
+        plans_store,
+        'present',
+        scanned_plan_count=len(by_plan),
+        stalled=stalled_plans,
+        duplicates=duplicate_lessons,
+        unclassifiable=unclassifiable_plans,
+    )
 
 
 def cmd_set_body(args: argparse.Namespace) -> dict:

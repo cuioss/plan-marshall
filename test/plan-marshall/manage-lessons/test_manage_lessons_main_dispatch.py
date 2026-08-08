@@ -185,11 +185,22 @@ class TestMainReadVerbs:
         assert toon['status'] == 'success'
         assert toon['filtered'] == 2
 
-    def test_main_list_stalled_empty_corpus_reports_zero(self, corpus, monkeypatch, capsys):
+    def test_main_list_stalled_absent_plans_root_reports_could_not_look(
+        self, corpus, monkeypatch, capsys
+    ):
+        """Through main(), an absent plans root reports WHICH kind of zero it is.
+
+        The corpus fixture seeds no ``plans/`` directory, so the scan could not
+        look. The verb stays non-faulting (a sweep is never aborted by it), but
+        the payload must carry ``plans_root_state: missing`` — a bare
+        ``stalled_count: 0`` here is indistinguishable from a clean corpus.
+        """
         code, toon = _run_main(monkeypatch, capsys, ['list-stalled'])
         assert code == 0
         assert toon['status'] == 'success'
+        assert toon['plans_root_state'] == 'missing'
         assert toon['stalled_count'] == 0
+        assert toon['scanned_plan_count'] == 0
 
 
 class TestMainMutationVerbs:
@@ -348,13 +359,25 @@ class TestMainRelocationVerbs:
         assert toon2['restored_count'] == 1
         assert (corpus / 'lessons-learned' / '2025-01-01-01-080.md').exists()
 
-    def test_main_restore_from_plan_no_lesson_is_idempotent(self, corpus, monkeypatch, capsys):
+    def test_main_restore_from_plan_absent_dir_reports_unresolved(
+        self, corpus, monkeypatch, capsys
+    ):
+        """Through main(), an absent plan dir is the non-benign outcome.
+
+        The verb never scanned anything, so it must NOT report ``no_lesson_file``
+        — that would claim the plan verifiably carries no lesson. Per the
+        manage-* output contract an operation failure exits 0 and carries its
+        verdict in the TOON, so the exit code stays 0 while ``status`` is
+        ``error``.
+        """
         code, toon = _run_main(
             monkeypatch, capsys, ['restore-from-plan', '--plan-id', 'empty-plan']
         )
         assert code == 0
-        assert toon['status'] == 'success'
-        assert toon['action'] == 'no_lesson_file'
+        assert toon['status'] == 'error'
+        assert toon['error'] == 'plan_dir_unresolved'
+        assert toon['action'] == 'plan_dir_unresolved'
+        assert toon['restored_count'] == 0
 
 
 class TestMainAggregateVerb:

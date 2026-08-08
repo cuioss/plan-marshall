@@ -314,18 +314,26 @@ Parse `path` from the output and `Write` the body. `references/lessons-proposal.
 
 In non-interactive finalize-step mode, emit lessons automatically only when confidence is high (documented in the reference). User-invocable mode uses `AskUserQuestion` for each draft.
 
-### Step 5.5: Stalled-lesson-sourced-plan detection (detection-and-prompt)
+### Step 5.5: Stalled-lesson detection (detection-and-prompt)
 
-When the audited plan is itself a **stalled lesson-sourced plan**, its relocated lesson is trapped inside the plan directory and out of the active corpus. The signal is self-evident from the plan's own `status.json` — no new script-backed aspect is needed. Detect it from the status already read in Step 1:
+When the audited plan is itself a **stalled plan carrying a relocated lesson**, that lesson is trapped inside the plan directory and out of the active corpus. **Consume the signal — do not re-derive it.** `manage-lessons list-stalled` already scans every plan for exactly this condition, so this step reads its output and looks for the audited plan rather than re-implementing the predicate from `status.metadata.plan_source` + `current_phase` in prose:
 
-- `status.metadata.plan_source` matches the lesson-id pattern `YYYY-MM-DD-HH-NNN` (the plan is lesson-sourced), AND
-- `status.current_phase` is one of `5-execute` / `6-finalize` with that phase's row `status != done` (the plan is stalled in a non-terminal state).
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons list-stalled
+```
 
-When BOTH conditions hold, surface the stranded-lesson signal in the report and prompt the user (live modes only — skip the prompt in archived mode, which is read-only):
+Re-deriving the predicate here would be actively wrong, not merely duplicative: any gate on `status.metadata.plan_source` matching the lesson-id pattern reports clean for precisely the plans whose lesson is trapped, because that field is unset on every `convert-to-plan`-carried plan. The verb derives its population from the observable `lesson-*.md` file instead, and consuming the verb is what keeps this step in lockstep with that predicate.
+
+Branch on the returned payload:
+
+- **`status: error` (`store_unresolved`) or `plans_root_state: missing`** — the scan could not look at the store, so this is NOT evidence the plan is healthy. Surface the could-not-look outcome in the report naming `store_resolution` / `plans_root`, and do NOT prompt. Reporting a clean result here would be the same fail-open the verb exists to close.
+- **The audited `plan_id` appears in `stalled_plans[]`** — the plan is stalled with a trapped lesson. Surface the signal and prompt (live modes only — skip the prompt in archived mode, which is read-only).
+- **The audited `plan_id` appears in `duplicate_lessons[]`** — a carried lesson id ALREADY exists in the active corpus, so `restore-from-plan` would fail with `destination_exists`. Surface this distinctly from the absence case and do NOT offer "Restore lesson(s)" as an unqualified option; the collision must be resolved first.
+- **Otherwise** — `plans_root_state: present` and the plan is absent from both lists: a genuine, scanned clean result. Nothing to surface.
 
 ```text
 AskUserQuestion:
-  question: "This plan is a stalled lesson-sourced plan ({plan_id}) — its lesson(s) are trapped out of the active corpus. Resume the plan or restore the lesson(s)?"
+  question: "This plan is stalled and carries a relocated lesson ({plan_id}) — its lesson(s) are trapped out of the active corpus. Resume the plan or restore the lesson(s)?"
   header: "Stalled lesson"
   options:
     - label: "Resume plan"
@@ -342,7 +350,9 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons rest
   --plan-id {plan_id}
 ```
 
-This detection note is the per-plan counterpart of the corpus-wide tooling: `manage-lessons list-stalled` (see [`../manage-lessons/SKILL.md`](../manage-lessons/SKILL.md) § `list-stalled`) scans every plan for the same signal, and the `Action: cleanup` stalled-lesson restore pass (see [`../plan-marshall/workflow/planning.md`](../plan-marshall/workflow/planning.md) § "Action: cleanup" → "Stalled-lesson-sourced-plan restore") restores them in bulk. Keep this addition thin — it is a detection-and-prompt note, not a new script-backed aspect in the Step 3 table.
+Branch on its `action` rather than on `status` alone: `restored` is the success path; `no_lesson_file` means the plan directory was scanned and held nothing; `plan_dir_unresolved` means it was never scanned, which must be reported as a failure to look, never as "nothing to restore". See [`../manage-lessons/SKILL.md`](../manage-lessons/SKILL.md) § `restore-from-plan` for the three-state contract.
+
+This detection note is the per-plan counterpart of the corpus-wide tooling: `list-stalled` (see [`../manage-lessons/SKILL.md`](../manage-lessons/SKILL.md) § `list-stalled`) is the shared scanner, and the `Action: cleanup` stalled-lesson restore pass (see [`../plan-marshall/workflow/planning.md`](../plan-marshall/workflow/planning.md) § "Action: cleanup" → "Stalled-lesson restore") restores them in bulk. Keep this addition thin — it is a detection-and-prompt note that consumes an existing signal, not a new script-backed aspect in the Step 3 table.
 
 ### Step 6: Mode-Specific Termination
 

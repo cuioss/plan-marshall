@@ -4,9 +4,11 @@
 
 Split from test_manage_status.py: covers cmd_transition (incl. inline
 strict-verify guard for guarded boundaries, and last-phase symmetry with
-cmd_archive), cmd_archive (incl. --reason flag), cmd_delete_plan (incl.
-lesson-restoration), cmd_list (incl. worktree moved-in plan discovery),
-cmd_list_orphans, and cmd_mark_step_done loop-back target validation.
+cmd_archive), cmd_archive (incl. --reason flag), cmd_delete_plan (incl. the main-anchored
+lesson carry-back, its three-value ``lesson_carry_back_action``, and the veto
+that refuses the deletion when a carried lesson did not land), cmd_list (incl.
+worktree moved-in plan discovery), cmd_list_orphans, and cmd_mark_step_done
+loop-back target validation.
 """
 
 import json
@@ -90,8 +92,15 @@ def test_delete_plan_auto_restores_lesson(plan_context):
 
     assert result['status'] == 'success'
     assert result['action'] == 'deleted'
+    assert result['lesson_carry_back_action'] == 'restored'
     assert result['lesson_restored'] is True
     assert result['restored_lesson_ids'] == ['2025-01-01-001']
+    assert result['skipped_lessons'] == []
+    # The payload names the substrate the lesson was restored INTO, so a
+    # worktree-pinned run cannot silently report success against a store the
+    # caller did not expect.
+    assert result['lesson_store_resolution'] in ('main_anchored', 'override')
+    assert result['lessons_dir'].endswith('lessons-learned')
 
     # Plan dir was deleted
     assert not plan_dir.exists()
@@ -101,8 +110,14 @@ def test_delete_plan_auto_restores_lesson(plan_context):
     assert '# Lesson' in restored.read_text()
 
 
-def test_delete_plan_no_lesson_file_unchanged_behaviour(plan_context):
-    """delete-plan on a plan dir without a lesson file reports lesson_restored: False."""
+def test_delete_plan_no_lesson_file_reports_the_benign_zero(plan_context):
+    """A plan dir carrying no lesson file reports the SCANNED zero.
+
+    ``lesson_carry_back_action: no_lesson_file`` says the directory was looked
+    at and held nothing — distinct from ``plan_dir_unresolved``, which says the
+    carry-back never looked. The count fields ride every branch unconditionally,
+    so a consumer never has to test for their presence.
+    """
     plan_dir = plan_context.plan_dir_for('delete-no-lesson')
     (plan_dir / 'request.md').write_text('# Request')
 
@@ -110,13 +125,15 @@ def test_delete_plan_no_lesson_file_unchanged_behaviour(plan_context):
 
     assert result['status'] == 'success'
     assert result['action'] == 'deleted'
+    assert result['lesson_carry_back_action'] == 'no_lesson_file'
     assert result['lesson_restored'] is False
-    assert 'restored_lesson_ids' not in result
+    assert result['restored_lesson_ids'] == []
+    assert result['skipped_lessons'] == []
     assert not plan_dir.exists()
 
 
 def test_delete_plan_no_restore_lessons_flag_skips_restoration(plan_context):
-    """--no-restore-lessons preserves the prior unconditional-delete behaviour."""
+    """--no-restore-lessons opts out of the carry-back, and therefore its veto."""
     plan_dir = plan_context.plan_dir_for('lesson-2025-01-01-002')
     (plan_dir / 'lesson-2025-01-01-002.md').write_text(
         'id=2025-01-01-002\ncomponent=foo\ncategory=bug\ncreated=2025-01-01\n\n# Lesson\n\nBody.\n'
@@ -155,6 +172,82 @@ def test_delete_plan_restores_all_lesson_files(plan_context):
     assert (lessons_dir / '2025-02-01-001.md').exists()
     assert (lessons_dir / '2025-02-01-002.md').exists()
     assert not plan_dir.exists()
+
+
+def test_delete_plan_refuses_when_carried_lesson_collides(plan_context):
+    """A colliding lesson id is a reported skip AND vetoes the deletion.
+
+    The sharpest edge on the lesson path: the plan directory holds the only copy
+    of the carried lesson, so a silent per-file skip followed by an
+    unconditional delete destroys it with no signal. The veto is what makes that
+    unreachable — the directory MUST survive.
+    """
+    lessons_dir = plan_context.fixture_dir / 'lessons-learned'
+    lessons_dir.mkdir(parents=True, exist_ok=True)
+    (lessons_dir / '2025-03-03-003.md').write_text('id=2025-03-03-003\n\n# Incumbent\n\nCorpus copy.\n')
+
+    plan_dir = plan_context.plan_dir_for('collide-plan')
+    (plan_dir / 'request.md').write_text('# Request')
+    (plan_dir / 'lesson-2025-03-03-003.md').write_text(
+        'id=2025-03-03-003\ncomponent=foo\ncategory=bug\ncreated=2025-03-03\n\n# Carried\n\nPlan copy.\n'
+    )
+
+    result = cmd_delete_plan(Namespace(plan_id='collide-plan', no_restore_lessons=False))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'lesson_carry_back_incomplete'
+    assert result['action'] == 'refused'
+    assert result['skipped_lessons'] == [
+        {'lesson_id': '2025-03-03-003', 'reason': 'destination_exists'}
+    ]
+    assert result['restored_lesson_ids'] == []
+
+    # The veto held: the plan directory and its only copy of the lesson survive.
+    assert plan_dir.exists()
+    assert (plan_dir / 'lesson-2025-03-03-003.md').exists()
+    # The incumbent corpus entry was not clobbered either.
+    assert 'Corpus copy.' in (lessons_dir / '2025-03-03-003.md').read_text()
+
+
+def test_delete_plan_reports_unresolvable_store_instead_of_nothing_to_restore(
+    plan_context, monkeypatch
+):
+    """An unresolvable store reports could-not-look, and vetoes the deletion.
+
+    Distinct from the collision case above: here the carry-back cannot reach the
+    corpus at all. Reporting that as a benign "nothing to restore" and deleting
+    anyway is the fail-open direction this site carried; the carried lesson is
+    un-landed, so the veto must fire on this path too.
+    """
+    import _lessons_io
+
+    monkeypatch.setattr(
+        _lessons_io,
+        'resolve_lesson_store',
+        lambda subpath=_lessons_io.DIR_LESSONS: _lessons_io.LessonStore(
+            None, 'unresolved', 'cannot resolve the main-anchored store (test stub)'
+        ),
+    )
+
+    plan_dir = plan_context.plan_dir_for('unresolved-store-plan')
+    (plan_dir / 'request.md').write_text('# Request')
+    (plan_dir / 'lesson-2025-04-04-004.md').write_text(
+        'id=2025-04-04-004\ncomponent=foo\ncategory=bug\ncreated=2025-04-04\n\n# Carried\n\nBody.\n'
+    )
+
+    result = cmd_delete_plan(Namespace(plan_id='unresolved-store-plan', no_restore_lessons=False))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'lesson_carry_back_incomplete'
+    assert result['lesson_carry_back_action'] == 'plan_dir_unresolved'
+    assert result['lesson_store_resolution'] == 'unresolved'
+    assert result['skipped_lessons'] == [
+        {'lesson_id': '2025-04-04-004', 'reason': 'store_unresolved'}
+    ]
+
+    # The plan directory holding the only copy survives the failure to look.
+    assert plan_dir.exists()
+    assert (plan_dir / 'lesson-2025-04-04-004.md').exists()
 
 
 def test_cli_transition_not_found_exits_zero(plan_context):

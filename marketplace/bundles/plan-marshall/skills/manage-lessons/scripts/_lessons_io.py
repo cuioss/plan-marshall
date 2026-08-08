@@ -13,15 +13,102 @@ This module imports only shared script-shared modules and stdlib, so the entry
 module can re-import these names without an import cycle.
 """
 
+import os
 from pathlib import Path
+from typing import NamedTuple
 
 from constants import DIR_LESSONS
 from file_ops import parse_markdown_metadata
 from input_validation import COMPONENT_RE
 from marketplace_paths import (
+    _override_is_set,
     main_anchored_store_owns_bundle,
     resolve_main_anchored_path,
 )
+
+#: The closed vocabulary :func:`resolve_lesson_store` reports as ``resolution``.
+#:
+#: - ``main_anchored`` — the store was anchored on the MAIN checkout through the
+#:   git common dir, which is the production path.
+#: - ``override`` — a ``PLAN_BASE_DIR`` / ``set_base_dir()`` override stood in
+#:   for the main checkout, which is the test path.
+#: - ``unresolved`` — NEITHER could be resolved, so the caller could not look at
+#:   the store at all.
+#:
+#: The third value is the one that carries the contract: without it a caller
+#: cannot tell "I looked at the corpus and it was empty" from "I never reached
+#: the corpus", and every lesson-retirement site collapsed those two into the
+#: same benign zero. Consumers assert against this set rather than re-listing
+#: the literals.
+STORE_RESOLUTIONS = frozenset({'main_anchored', 'override', 'unresolved'})
+
+
+class LessonStore(NamedTuple):
+    """A resolved lessons-store handle together with the resolution provenance.
+
+    ``path`` is ``None`` exactly when ``resolution == 'unresolved'``; on every
+    other resolution it is the absolute resolved path. Callers therefore state
+    which substrate a count was computed from instead of reporting a bare zero,
+    and compare ``resolution`` against a :data:`STORE_RESOLUTIONS` member by
+    explicit equality — never by the truthiness of ``path``, which cannot tell a
+    legitimately-empty store from an unreachable one.
+
+    Attributes:
+        path: The resolved absolute store path, or ``None`` when unresolved.
+        resolution: One of :data:`STORE_RESOLUTIONS`.
+        detail: Human-readable provenance naming the substrate (or, when
+            unresolved, the reason resolution failed) for direct inclusion in a
+            report line.
+    """
+
+    path: Path | None
+    resolution: str
+    detail: str
+
+
+def resolve_lesson_store(subpath: str | Path = DIR_LESSONS) -> LessonStore:
+    """Resolve a main-anchored store subpath and report HOW it resolved.
+
+    The explicit handle behind :func:`get_lessons_dir`. Where that resolver
+    answers only "where is the store", this one also answers "did I actually
+    reach it, and through which anchor" — the discriminator every consumer on
+    the lesson-retirement path needs in order to distinguish a genuinely empty
+    corpus from one it never reached.
+
+    ``subpath`` defaults to the lessons corpus but is a parameter because the
+    same main-anchored anchoring governs the ``plans`` root that
+    ``restore-from-plan`` and ``list-stalled`` scan: a plan directory reached
+    through a cwd-keyed resolver is the wrong-store failure direction, exactly
+    as an unreachable corpus is the could-not-look one.
+
+    The override branch is detected with the SAME predicate
+    :func:`marketplace_paths.resolve_main_anchored_path` itself branches on, so
+    the reported provenance can never disagree with the path actually returned.
+    (Importing that sibling private mirrors the existing convention in this
+    foundation — ``file_ops`` imports ``_find_plan_root_from_cwd`` from the same
+    module for the same reason.)
+
+    Args:
+        subpath: Path under the main checkout's ``.plan/local`` to resolve;
+            defaults to the lessons corpus.
+
+    Returns:
+        A :class:`LessonStore` handle. Never raises — an unresolvable store is
+        returned as the ``unresolved`` resolution so the caller can report it,
+        rather than as an exception that a caller might swallow into a zero.
+    """
+    resolution = 'override' if (os.environ.get('PLAN_BASE_DIR') or _override_is_set()) else 'main_anchored'
+
+    try:
+        path = resolve_main_anchored_path(subpath)
+    except RuntimeError as exc:
+        return LessonStore(
+            None,
+            'unresolved',
+            f'cannot resolve the main-anchored store for {subpath!r}: {exc}',
+        )
+
+    return LessonStore(path, resolution, f'{path} (resolved {resolution})')
 
 
 class WrongStoreError(Exception):
@@ -118,8 +205,21 @@ def get_lessons_dir() -> Path:
     ``execute-task`` lesson recording runs with cwd pinned to the worktree, and
     without main-anchoring the lesson would land in the worktree's empty corpus
     and be lost on move-back. There is NO local git-common-dir copy here.
+
+    Expressed in terms of :func:`resolve_lesson_store`, which is the explicit
+    handle carrying the resolution provenance. This resolver keeps the bare-path
+    signature its many callers use and RAISES on an unresolvable store, so a
+    caller that has no discriminator to report cannot silently proceed against a
+    store it never reached. A caller that needs to REPORT which substrate it
+    read (or that it read none) calls :func:`resolve_lesson_store` directly.
+
+    Raises:
+        RuntimeError: when the main-anchored store cannot be resolved.
     """
-    return resolve_main_anchored_path(DIR_LESSONS)
+    store = resolve_lesson_store(DIR_LESSONS)
+    if store.path is None:
+        raise RuntimeError(store.detail)
+    return store.path
 
 
 def get_tombstones_dir() -> Path:
