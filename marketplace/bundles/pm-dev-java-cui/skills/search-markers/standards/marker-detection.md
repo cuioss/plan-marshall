@@ -68,6 +68,17 @@ It silences the named CUI recipe and nothing else. In particular it does **not**
 stop `AutoFormat`, the upstream formatting recipe that runs outside this bundle's
 recipe set and is not addressable by any local marker.
 
+Where that silencing is enforced is outside this bundle. Signal A only **detects
+and categorizes**: it classifies a detected marker as `auto_suppress` or
+`ask_user` and emits the `// cui-rewrite:disable <Recipe>` text as the suggested
+comment, but it suppresses nothing — `auto_suppress` is a categorization field,
+not an enforcement switch, and any marker present keeps the `search` verb exiting
+non-zero. The silencing itself is a contract of the external CUI OpenRewrite
+recipe implementation that defines the comment marker: that recipe set honours the
+marker, and nothing here implements or controls that behaviour. This is exactly
+why no local marker reaches `AutoFormat` — the marker is honoured by the CUI
+recipe set and by nothing else, and that honouring happens outside this bundle.
+
 The consequence is a coverage boundary, not a configuration detail: a formatting
 conflict originating in `AutoFormat` — an indentation this pipeline applies and
 `AutoFormat` rewrites back — **survives every local marker**, because no local
