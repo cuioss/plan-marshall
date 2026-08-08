@@ -634,9 +634,19 @@ Worktree-aware `manage-*` scripts auto-route to the correct worktree when `--pla
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture search --content --pattern 'execute-script\.py\s+plan-marshall:(manage-files|manage-tasks|manage-findings|manage-references|manage-solution-outline|manage-plan-documents|manage-logging|manage-status):[^\s]+\s+[^\s]+\s+(?!(?:\\\n|[^\n])*--plan-id)'
 ```
 
-The whitelist of auto-routing notations is the authoritative list at [`worktree-handling.md`](../../workflow-integration-git/standards/worktree-handling.md) "Auto-routing scripts" subsection. Matches indicate a manage-* invocation that omits `--plan-id`.
+The alternation group inside the sweep regex IS the whitelist of auto-routing notations — there is no separate list to consult. The `--plan-id` contract those notations implement is documented at [`worktree-handling.md`](../../workflow-integration-git/standards/worktree-handling.md) § "The `--plan-id` Four-State Contract". A match is a **candidate**, not yet a finding: it marks a `manage-*` invocation whose logical command carries no `--plan-id`, which is a violation only when the invoked verb declares `--plan-id` required — resolve it with the optionality step below.
 
 The trailing lookahead is `(?:\\\n|[^\n])*`, not `.*`, and the pattern is single-quoted so the shell forwards the backslash escapes verbatim. This is load-bearing: `.` does not match a newline, so a `.*` lookahead sees only the FIRST physical line of a backslash-continued invocation. Every multi-line `manage-*` example in this repo — `… manage-findings resolve \` with `--plan-id` on the continuation line — would then be reported as missing `--plan-id`, flooding the gate with blocking findings for compliant commands. Traversing `\`+newline pairs makes the lookahead span the whole logical command, so only a genuinely `--plan-id`-less invocation matches. A physical line break WITHOUT a trailing backslash still terminates the traversal, so the lookahead can never reach into the next command and mask a real violation.
+
+**WL-C optionality resolution (per candidate, between the sweep and the finding)**: several auto-routing verbs declare `--plan-id` OPTIONAL in their own argparse, and for those an omitted `--plan-id` is a documented call shape rather than a worktree-isolation defect. Resolve every candidate before emitting:
+
+1. **Resolve the full verb chain** — the bare positional tokens between the script name and the first flag token. A `manage-logging` write call yields the chain `decision`; a `manage-findings` Q-Gate call yields `qgate add`. Take **every** leading positional, not just the first: truncating to one token mis-resolves nested notations.
+2. **Primary source — probe the live parser.** Run the executor with the resolved chain and `--help`, then read the `usage:` line and strip balanced `[...]` and `(...)` groups from it. If `--plan-id` survives the strip it is **REQUIRED**; if it appears only inside a stripped group it is **OPTIONAL**. This is the same bracket discriminator § 2.10 already probes with, and the same one plugin-doctor's `_parse_required_flags` implements — see § 2.10 for the ancestor-chain walk rather than repeating it here.
+3. **Fallback source — the owning skill's canonical invocations.** When the probe is unavailable, read the owning `SKILL.md`'s `## Canonical invocations` entry for that verb and apply the same bracket rule to the documented form.
+4. **Decision** — **suppress** the candidate (emit NO finding) when the verb declares `--plan-id` OPTIONAL; **emit** the finding unchanged when the verb declares it REQUIRED.
+5. **Fail closed** — when neither source resolves the verb (the probe is unreachable AND no `## Canonical invocations` entry exists, or a templated placeholder stands where the verb chain should be), emit the finding exactly as before. Unresolvable is NOT optional.
+
+This step is a **narrowing only**: it can turn an emitted finding into a suppressed one, never the reverse, and it changes nothing about WL-A or WL-B.
 
 **Suppression rule**: A match in `{affected_path}` is suppressed (no finding emitted) when EITHER:
 - `{affected_path}` is the centralized `marketplace/bundles/plan-marshall/skills/workflow-integration-git/standards/worktree-handling.md` itself (the standard quotes the forbidden patterns to define them), OR
@@ -664,7 +674,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 |---------|-------------------------|
 | WL-A | "Direct `cd <worktree_path>` shell compounds are forbidden — use `git -C`, `mvn -f`, `pytest --rootdir`, or the appropriate path-flag form documented in worktree-handling.md" |
 | WL-B | "Hard-coded `.claude/worktrees/` references are stale — worktree storage lives under `.plan/local/worktrees/`; update the reference per worktree-handling.md" |
-| WL-C | "manage-* invocation omits `--plan-id`; auto-routing scripts silently target the main checkout when `--plan-id` is missing — see worktree-handling.md 'Auto-routing scripts' subsection" |
+| WL-C | "manage-* invocation omits `--plan-id`, and the invoked verb was checked and declares `--plan-id` required; auto-routing scripts silently target the main checkout when a required `--plan-id` is missing — see worktree-handling.md § 'The `--plan-id` Four-State Contract'" |
 
 **Pass criteria** (silent — no finding emitted):
 - Every sweep returns no in-scope hit across the three patterns over a completely searched population (per the complete-coverage rule), OR
