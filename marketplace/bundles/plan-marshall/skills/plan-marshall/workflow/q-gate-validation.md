@@ -628,7 +628,7 @@ The centralized [`worktree-handling.md`](../../workflow-integration-git/standard
 
 **Pattern WL-C — Missing `--plan-id` on auto-routing scripts**:
 
-Worktree-aware `manage-*` scripts auto-route to the correct worktree when `--plan-id` is supplied. Skills and agents that invoke an auto-routing script without passing `--plan-id` will silently target the main checkout — defeating worktree isolation.
+Worktree-aware `manage-*` scripts auto-route to the correct worktree when `--plan-id` is supplied. A skill or agent that invokes an auto-routing script without passing `--plan-id` silently targets the main checkout — defeating worktree isolation — **when the invoked verb declares `--plan-id` required**. Several auto-routing verbs declare it OPTIONAL, and for those the omission is a documented call shape rather than a defect, so a sweep hit is a candidate that the optionality-resolution step below must resolve before any finding is emitted.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture search --content --pattern 'execute-script\.py\s+plan-marshall:(manage-files|manage-tasks|manage-findings|manage-references|manage-solution-outline|manage-plan-documents|manage-logging|manage-status):[^\s]+\s+[^\s]+\s+(?!(?:\\\n|[^\n])*--plan-id)'
@@ -688,7 +688,9 @@ A sweep whose coverage is non-clean passes neither criterion: it has not establi
 
 **Positive example (WL-B)**: Outline deliverable modifies an agent file that contains `worktree_path: /Users/oliver/git/plan-marshall/.claude/worktrees/foo`. The WL-B sweep returns that path; finding emitted citing the TASK-4 migration.
 
-**Positive example (WL-C)**: Outline deliverable modifies a skill that contains `python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks read --task-number 5` (no `--plan-id`). The WL-C sweep returns that path; finding emitted citing the TASK-10 auto-routing contract.
+**Positive example (WL-C)**: Outline deliverable modifies a skill that contains `python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks read --task-number 5` (no `--plan-id`). The WL-C sweep returns that path as a **candidate**; the optionality-resolution step probes `manage-tasks read --help` and finds `--plan-id` surviving the bracket strip (REQUIRED), so the candidate becomes a finding citing the TASK-10 auto-routing contract.
+
+**Negative example (WL-C — optional verb)**: A skill contains an auto-routing invocation whose verb declares `--plan-id` inside a `[...]` group in its `usage:` line (OPTIONAL). The WL-C sweep returns that path as a candidate; the optionality-resolution step suppresses it at step 4 and emits **no** finding — the omission is the verb's documented call shape, not a worktree-isolation defect.
 
 **Negative example**: The centralized `worktree-handling.md` itself contains the forbidden patterns inside an "Anti-pattern" subsection ("Do NOT use `cd $WORKTREE && git status`"). Suppression rule applies — silent pass.
 

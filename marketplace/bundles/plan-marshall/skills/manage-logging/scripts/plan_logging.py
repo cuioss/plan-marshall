@@ -190,8 +190,18 @@ def get_log_path(plan_id: str | None, log_type: str = 'script', store: str = 'pl
             point that turns a client-supplied identifier into a log file path:
             ``log_entry``, ``log_script_execution``, ``log_separator``,
             ``log_work``, ``log_decision``, ``read_work_log`` and
-            ``read_decision_log`` all resolve through here, so the check lives
-            once at this resolver rather than being repeated per caller.
+            ``read_decision_log`` all resolve through here, so no caller can
+            reach path resolution with an unvalidated identifier even if it
+            performs no check of its own.
+
+            This resolver is the BACKSTOP, not the only check. The four
+            result-dict entry points — ``log_work``, ``log_decision``,
+            ``read_work_log`` and ``read_decision_log`` — deliberately keep
+            their own ``is_valid_plan_id`` pre-check, because each returns a
+            structured ``invalid_plan_id`` result dict that is part of its
+            public contract; their handlers catch ``OSError``, not the
+            ``ValueError`` raised here, so those guards MUST NOT be removed on
+            the strength of this containment point.
             ``plan_id is None`` remains the first-class global-fallback path and
             is never rejected, and the ``NO_PLAN`` sentinel keeps resolving
             because :func:`validate_plan_id` carves it out ahead of the
