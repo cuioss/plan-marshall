@@ -640,7 +640,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   --message "(plan-marshall:plan-marshall:cleanup) Stalled-lesson scan could not read the store (store_resolution={store_resolution}, plans_root_state={plans_root_state}) — restore pass INCONCLUSIVE, not clean"
 ```
 
-**(ii) Genuinely clean — `plans_root_state: present` with `stalled_count: 0` and `duplicate_count: 0`.** The scan looked at `scanned_plan_count` plan(s) and found nothing to restore:
+**(ii) Genuinely clean — `plans_root_state: present` with `stalled_count: 0`, `duplicate_count: 0` **and** `unclassifiable_count: 0`.** All three counts must be zero: `unclassifiable_count` is independent of the other two, so a scan that classified nothing would otherwise satisfy this branch and emit the clean line — absorbing the very residual case (iv) below exists to keep visible. A plan carrying a lesson whose `status.json` could not be read was neither confirmed stalled nor cleared, so its lesson may well be trapped and the pass is not clean. Only when all three are zero did the scan look at `scanned_plan_count` plan(s) and find nothing to restore:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
